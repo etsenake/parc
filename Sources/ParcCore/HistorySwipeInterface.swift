@@ -73,6 +73,7 @@ enum HistorySwipeOutput: Equatable {
     case armed(Bool)
     case hold
     case selection(Int)
+    case rowRemainder(Double)
     case detent
     case commit(HistorySwipeCommit)
     case cancel

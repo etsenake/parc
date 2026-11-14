@@ -59,7 +59,7 @@ struct Driver {
                         reduced: Bool = false) -> Driver {
         var driver = armed(direction, back: back, forward: forward, reduced: reduced)
         driver.send(.hold)
-        driver.send(.selection(1))
+        driver.send(.selection(0))
         driver.settle()
         return driver
     }
@@ -81,15 +81,21 @@ struct Fingers {
     var x = 0.30
     var y = 0.5
     var lastStep = HistorySwipeStep()
+    var outputs: [HistorySwipeOutput] = []
 
-    init(back: Int) {
+    init(back: Int, reduced: Bool = false) {
         environment.back = back
-        overlay = Driver(back: back, forward: 0)
+        overlay = Driver(back: back, forward: 0, reduced: reduced)
     }
 
     mutating func feed(_ input: HistorySwipeInput) {
         lastStep = recognizer.receive(input, in: environment)
+        outputs += lastStep.outputs
         for output in lastStep.outputs { overlay.time = max(overlay.time, time); overlay.send(output) }
+    }
+
+    var commits: [HistorySwipeCommit] {
+        outputs.compactMap { if case let .commit(commit) = $0 { commit } else { nil } }
     }
 
     var points: [HistorySwipePoint] { [HistorySwipePoint(x: x - 0.06, y: y), HistorySwipePoint(x: x + 0.06, y: y)] }
@@ -149,11 +155,16 @@ struct Fingers {
         holdMorph()
         listLayout()
         selectionSlides()
+        selectionLeans()
+        collapseBackToCircle()
+        reopenDuringCollapse()
         longHistories()
         reduceMotion()
+        reduceMotionCollapse()
         narrowPanes()
         looks()
         recognizerToOverlay()
+        recognizerCollapseUnderReduceMotion()
         lifetimes()
         print("HistorySwipeOverlay: \(count) checks passed")
     }
@@ -173,6 +184,7 @@ struct Fingers {
         check(T.collapse == 0.2 && T.collapseScale == 0.01, "Dia's 0.2 s collapse to 1%")
         check(M.reducedAppearance == 0.2 && T.reducedFade == 0.12 && T.reducedSwap == 0.15 && T.reducedCollapse == 0.15,
               "the approved Reduce Motion crossfades")
+        check(M.rowLean == 0.1, "Dia's 0.1 rubber band on the lean between rows")
     }
 
     static func curves() {
@@ -292,7 +304,7 @@ struct Fingers {
         var driver = Driver.armed(back: 3)
         let circle = driver.frame!.circle
         driver.send(.hold)
-        driver.send(.selection(1))
+        driver.send(.selection(0))
         check(driver.haptics == [.levelChange, .generic], "opening the list plays a generic haptic")
         let opened = driver.time
         check(driver.frame.map { close($0.capsule, circle) && $0.list?.opacity == 0 && $0.list?.scale == 0.9
@@ -322,24 +334,24 @@ struct Fingers {
         check(list.rows == 4 && close(list.card.width, 200) && close(list.card.height, 4 * 38 + 16),
               "the Back card holds the current page and three entries: 200 pt wide, rows × 38 + 16 tall")
         check(close(list.card.minX, frame.circle.minX), "the Back card's left edge stays on the circle's left edge")
-        check(close(list.highlight.midY, pane.height / 2) && close(list.row(1), list.highlight),
-              "the chosen entry sits under the fingers, where the circle was")
-        check(close(list.row(0).minY, list.highlight.maxY) && close(list.row(2).maxY, list.highlight.minY)
-              && list.row(3).maxY <= list.row(2).minY + 1e-9, "Back puts the current page below and older pages above")
+        check(list.selection == 0 && close(list.highlight.midY, frame.circle.midY) && close(list.row(0), list.highlight),
+              "the list opens with the current page highlighted, its row centred where the circle was")
+        check(close(list.row(1).maxY, list.row(0).minY) && close(list.row(2).maxY, list.row(1).minY)
+              && close(list.row(3).maxY, list.row(2).minY), "Back puts the current page at the bottom and older pages above")
         check(close(list.row(0).minX, list.content.minX + 8) && close(list.row(0).width, 184)
               && close(list.highlight.width, 184), "rows and the highlight sit 8 pt inside the card")
 
         let forward = Driver.holding(.forward, forward: 3)
         let ahead = forward.frame!, rows = ahead.list!
         check(close(rows.card.maxX, ahead.circle.maxX), "the Forward card's right edge stays on the circle's right edge")
-        check(close(rows.row(0).maxY, rows.highlight.minY) && close(rows.row(2).minY, rows.highlight.maxY),
-              "Forward puts the current page above and newer pages below")
+        check(close(rows.row(0), rows.highlight) && close(rows.row(1).minY, rows.row(0).maxY)
+              && close(rows.row(3).minY, rows.row(2).maxY), "Forward puts the current page at the top and newer pages below")
     }
 
     static func selectionSlides() {
         var driver = Driver.holding(.back, back: 3)
         let before = driver.frame!.list!.content
-        driver.send(.selection(2))
+        driver.send(.selection(1))
         driver.send(.detent)
         check(driver.haptics.last == .alignment, "each row step plays an alignment haptic")
         driver.wait(0.1)
@@ -351,18 +363,128 @@ struct Fingers {
         check(close(moving.content.minY, before.minY + CGFloat(shift), 1e-6), "the slide follows Dia's 0.9 / 0.27 s spring")
         driver.settle()
         let settled = driver.frame!.list!
-        check(close(settled.content.minY, before.minY + 38) && close(settled.row(2), settled.highlight),
-              "one row step moves the Back card down a row so the older page lands under the fingers")
+        check(close(settled.content.minY, before.minY + 38) && close(settled.row(1), settled.highlight),
+              "one row step moves the Back card down a row so the previous page lands under the fingers")
 
         var forward = Driver.holding(.forward, forward: 3)
         let top = forward.frame!.list!.content
         forward.send(.selection(3))
         forward.settle()
-        check(forward.frame.map { close($0.list!.content.minY, top.minY - 76) && close($0.list!.row(3), $0.list!.highlight) } == true,
+        check(forward.frame.map { close($0.list!.content.minY, top.minY - 114) && close($0.list!.row(3), $0.list!.highlight) } == true,
               "Forward slides its card up as the selection moves down the list")
         forward.send(.selection(9))
         forward.settle()
         check(forward.frame?.list?.selection == 3, "a selection beyond the rows stays on the last row")
+    }
+
+    static func selectionLeans() {
+        check(close(G.lean(remainder: 0), 0) && close(G.lean(remainder: 0.5), 38 * (1 - 1 / 1.05))
+              && close(G.lean(remainder: -0.5), -38 * (1 - 1 / 1.05)), "Dia's lean: 38 pt times 1 - 1 / (0.1 |r| + 1)")
+        check(G.lean(remainder: 0.99) < 3.5 && G.lean(remainder: 20) < 38, "the lean resists, so it only hints at the next row")
+        var driver = Driver.holding(.back, back: 3)
+        let before = driver.frame!.list!
+        driver.send(.rowRemainder(0.5))
+        driver.wait(0.1)
+        let zeta = 0.9, omega = 2 * Double.pi / 0.27, damped = omega * (1 - zeta * zeta).squareRoot()
+        let lean = Double(G.lean(remainder: 0.5))
+        let shift = lean * (1 - exp(-zeta * omega * 0.1) * (cos(damped * 0.1) + zeta * omega / damped * sin(damped * 0.1)))
+        check(close(driver.frame!.list!.content.minY, before.content.minY + CGFloat(shift), 1e-6),
+              "the lean rides the highlight's 0.9 / 0.27 s spring")
+        driver.settle()
+        let leaning = driver.frame!.list!
+        check(close(leaning.content.minY, before.content.minY + CGFloat(lean)) && close(leaning.highlight, before.highlight)
+              && leaning.highlight.midY < leaning.row(0).midY && leaning.highlight.midY > leaning.row(1).midY,
+              "the highlight stays under the fingers and leans from the current page toward the previous one")
+        driver.send(.rowRemainder(-0.5))
+        driver.settle()
+        check(close(driver.frame!.list!.content.minY, before.content.minY - CGFloat(lean)), "a negative remainder leans the other way")
+        driver.send(.selection(1))
+        driver.send(.rowRemainder(0))
+        driver.settle()
+        check(close(driver.frame!.list!.content.minY, before.content.minY + 38) && close(driver.frame!.list!.row(1), driver.frame!.list!.highlight),
+              "a full row step lands squarely on the next row")
+
+        var forward = Driver.holding(.forward, forward: 3)
+        let top = forward.frame!.list!.content
+        forward.send(.rowRemainder(0.5))
+        forward.settle()
+        check(close(forward.frame!.list!.content.minY, top.minY - CGFloat(lean)), "a Forward list leans its card up toward newer pages")
+
+        var closed = Driver.armed()
+        closed.send(.rowRemainder(0.5))
+        check(closed.model.remainder == 0, "a closed list ignores the remainder")
+    }
+
+    static func collapseBackToCircle() {
+        var driver = Driver.holding(.back, back: 3)
+        driver.send(.selection(2))
+        driver.settle()
+        let open = driver.frame!.list!
+        driver.progress(0.9)
+        driver.send(.armed(false))
+        check(driver.haptics == [.levelChange, .generic] && !driver.model.listOpen && !driver.model.armed,
+              "sliding below the commit point closes the list silently")
+        let start = driver.frame!
+        check(close(start.capsule, open.card) && start.list?.opacity == 1 && start.chevronOpacity == 0,
+              "the collapse starts from the open card, with no jump")
+        driver.wait(0.11)
+        let mid = driver.frame!, half = HistorySwipeCurve.easeOut(0.5)
+        let swapIn = 1 - half, armedAmount = 1 - HistorySwipeCurve.easeOut(0.11 / 0.18)
+        check(mid.list.map { close($0.opacity, swapIn) && close($0.scale, 0.9 + 0.1 * swapIn) && close($0.blur, 10 * half) } == true,
+              "the list swaps out on Dia's 0.22 s curve, blurring and shrinking to 0.9")
+        check(close(mid.chevronOpacity, (0.5 + 0.5 * armedAmount) * half) && close(mid.chevronScale, 1 - 0.1 * swapIn)
+              && close(mid.chevronBlur, 10 * swapIn), "while the chevron swaps back in")
+        let zeta = 0.77, omega = 2 * Double.pi / 0.22, damped = omega * (1 - zeta * zeta).squareRoot(), t = 0.11
+        let morph = exp(-zeta * omega * t) * (cos(damped * t) + zeta * omega / damped * sin(damped * t))
+        check(close(mid.capsule.width, mid.circle.width + (200 - mid.circle.width) * CGFloat(morph), 1e-6)
+              && mid.list.map { close($0.row(2), $0.highlight) } == true,
+              "the card folds back into the circle on Dia's 0.77 / 0.22 s spring, keeping its rows in place")
+        driver.settle()
+        let rest = driver.frame!
+        check(rest.list == nil && close(rest.capsule, rest.circle) && rest.cornerRadius == 36 && rest.circle.width == 72
+              && rest.chevronOpacity == 0.5 && rest.chevronScale == 1 && rest.chevronBlur == 0 && rest.wash == 0
+              && !driver.model.isAnimating, "the collapse settles on the resting circle")
+
+        driver.progress(1.1)
+        driver.send(.armed(true))
+        driver.settle()
+        let circle = driver.frame!.circle
+        driver.send(.hold)
+        driver.send(.selection(0))
+        check(driver.haptics == [.levelChange, .generic, .levelChange, .generic], "rearming and reopening tick again")
+        check(driver.frame.map { close($0.capsule, circle) && $0.list?.opacity == 0 && $0.list?.scale == 0.9 && $0.list?.blur == 10 } == true,
+              "the list reopens from the circle the same way it first opened")
+        driver.settle()
+        check(driver.frame.map { close($0.capsule, $0.list!.card) && close($0.list!.row(0), $0.list!.highlight) } == true,
+              "the reopened list sits on the current page")
+    }
+
+    static func reopenDuringCollapse() {
+        var driver = Driver.holding(.back, back: 3)
+        driver.send(.selection(2))
+        driver.settle()
+        driver.progress(0.9)
+        driver.send(.armed(false))
+        driver.wait(0.1)
+        driver.progress(1.1)
+        driver.send(.armed(true))
+        let before = driver.frame!
+        driver.send(.hold)
+        driver.send(.selection(0))
+        let after = driver.frame!
+        check(close(after.capsule, before.capsule) && close(after.list!.content, before.list!.content)
+              && close(after.list!.opacity, before.list!.opacity) && close(after.chevronOpacity, before.chevronOpacity),
+              "reopening mid-collapse picks up exactly where the collapse is")
+        var widths: [CGFloat] = []
+        for _ in 0..<60 {
+            driver.wait(1.0 / 120)
+            widths.append(driver.frame!.capsule.width)
+        }
+        let jumps = zip(widths, widths.dropFirst()).map { abs($1 - $0) }
+        check(jumps.max()! < 20, "and morphs back out smoothly")
+        driver.settle()
+        check(driver.frame.map { close($0.capsule, $0.list!.card) && close($0.list!.row(0), $0.list!.highlight) && $0.list!.opacity == 1 } == true,
+              "ending on the current page")
     }
 
     static func longHistories() {
@@ -415,7 +537,7 @@ struct Fingers {
         check(driver.frame.map { $0.circle.width == 72 && $0.chevronSize == 28 && $0.wash == 1 && $0.chevronOpacity == 1 } == true,
               "arming changes only opacity, not size")
         driver.send(.hold)
-        driver.send(.selection(1))
+        driver.send(.selection(0))
         check(driver.frame.map { close($0.capsule, $0.list!.card) && $0.opacity == 0 && $0.list!.scale == 1
                 && $0.list!.blur == 0 && $0.chevronBlur == 0 && $0.chevronScale == 1 } == true,
               "the list replaces the circle without a morph, scale or blur")
@@ -423,9 +545,12 @@ struct Fingers {
         check(driver.frame.map { close($0.opacity, 0.5) && close($0.list!.opacity, 0.5) } == true, "and crossfades in over 0.15 s")
         driver.settle()
         let before = driver.frame!.list!.content
-        driver.send(.selection(2))
+        driver.send(.selection(1))
         check(driver.frame.map { close($0.list!.content.minY, before.minY + 38) } == true, "rows step without a slide")
-        driver.send(.commit(.entry(.back, distance: 2)))
+        driver.send(.rowRemainder(0.6))
+        driver.settle()
+        check(driver.frame.map { close($0.list!.content.minY, before.minY + 38) } == true, "and never lean between rows")
+        driver.send(.commit(.entry(.back, distance: 1)))
         driver.wait(0.075)
         check(driver.frame.map { close($0.opacity, 0.5) && $0.scale == 1 && $0.blur == 0 } == true,
               "the ending is a 0.15 s fade with no scale or blur")
@@ -439,6 +564,42 @@ struct Fingers {
         retreat.progress(0.1)
         retreat.wait(0.1201)
         check(retreat.frame?.opacity == 0, "backing off below 20% fades the circle out")
+    }
+
+    static func reduceMotionCollapse() {
+        var driver = Driver.holding(.back, back: 3, reduced: true)
+        driver.send(.selection(2))
+        driver.settle()
+        driver.progress(0.9)
+        driver.send(.armed(false))
+        check(driver.frame.map { $0.list == nil && close($0.capsule, $0.circle) && $0.opacity == 0 && $0.scale == 1 && $0.blur == 0 } == true,
+              "with Reduce Motion the card gives way to the circle without a morph, and no rows show through it")
+        driver.wait(0.075)
+        check(driver.frame.map { close($0.opacity, 0.5) && $0.chevronBlur == 0 && $0.chevronScale == 1 } == true,
+              "the circle crossfades back in over 0.15 s")
+        driver.settle()
+        check(driver.frame.map { $0.opacity == 1 && $0.list == nil && $0.circle.width == 72 } == true && !driver.model.isAnimating,
+              "and rests as the static circle")
+        driver.send(.armed(true))
+        driver.send(.hold)
+        driver.send(.selection(0))
+        check(driver.frame.map { close($0.capsule, $0.list!.card) && $0.opacity == 0 && close($0.list!.row(0), $0.list!.highlight) } == true,
+              "reopening replaces the circle with the card on the current page")
+        driver.wait(0.075)
+        check(driver.frame.map { close($0.opacity, 0.5) } == true, "and crossfades it in again")
+
+        var open = Driver.holding(.back, back: 3, reduced: true)
+        open.send(.selection(2))
+        open.progress(0.12)
+        open.settle()
+        check(open.frame.map { $0.opacity == 1 && $0.list != nil } == true, "an open list never fades while it can still navigate")
+        open.send(.armed(false))
+        var brightest = open.frame!.opacity
+        for _ in 0..<40 {
+            open.wait(1.0 / 120)
+            brightest = max(brightest, open.frame?.opacity ?? 0)
+        }
+        check(brightest == 0 && open.frame?.list == nil, "closing it that far back hides the indicator at once, without flashing the circle")
     }
 
     static func narrowPanes() {
@@ -475,13 +636,16 @@ struct Fingers {
         hand.clock()
         check(hand.overlay.haptics == [.levelChange, .generic] && hand.overlay.model.listOpen,
               "the recognizer's hold opens the list with a generic haptic")
+        check(hand.overlay.model.selection == 0 && hand.overlay.frame.map { close($0.list!.row(0), $0.list!.highlight) } == true,
+              "the recognizer opens the list on the current page")
         hand.touch(.moved, 0.38, 0.70)
         hand.touch(.moved, 0.38, 0.88)
-        check(hand.overlay.model.selection == 5 && hand.overlay.haptics.filter { $0 == .alignment }.count == 4,
+        check(hand.overlay.model.selection == 4 && hand.overlay.haptics.filter { $0 == .alignment }.count == 4,
               "every row the fingers travel ticks once")
+        check(abs(hand.overlay.model.remainder - 0.75) < 1e-9, "and the recognizer's remainder reaches the overlay")
         for _ in 0..<100 where hand.lastStep.clockDeadline != nil { hand.clock() }
         hand.overlay.settle()
-        check(hand.overlay.model.selection == 50 && hand.overlay.haptics.filter { $0 == .alignment }.count == 49,
+        check(hand.overlay.model.selection == 50 && hand.overlay.haptics.filter { $0 == .alignment }.count == 50,
               "resting at the trackpad's edge carries the list to the oldest of 50 entries, ticking each row")
         check(hand.overlay.frame.map { close($0.list!.row(50), $0.list!.highlight) } == true,
               "and the oldest entry is the one under the fingers")
@@ -489,6 +653,39 @@ struct Fingers {
         check(hand.recognizer.state == .completed, "lifting commits the oldest entry")
         hand.overlay.wait(T.collapse + 0.0001)
         check(hand.overlay.frame == nil, "and the list collapses away")
+    }
+
+    static func recognizerCollapseUnderReduceMotion() {
+        var hand = Fingers(back: 3, reduced: true)
+        hand.open()
+        hand.touch(.moved, 0.38)
+        hand.clock()
+        hand.touch(.moved, 0.38, 0.59)
+        hand.touch(.moved, 0.38, 0.67)
+        hand.overlay.settle()
+        check(hand.recognizer.selection == 2 && hand.overlay.frame.map { $0.opacity == 1 && close($0.list!.row(2), $0.list!.highlight) } == true,
+              "with Reduce Motion the list is fully shown while two pages back is picked")
+        hand.touch(.moved, 0.3096, 0.67)
+        check(hand.recognizer.state == .tracking && !hand.overlay.model.listOpen && hand.overlay.frame?.list == nil,
+              "sliding most of the way back closes the list in the recognizer and the overlay together")
+        hand.overlay.settle()
+        check(hand.overlay.frame?.opacity == 0, "and the indicator hides below 20% of travel")
+        hand.touch(.ended, 0.3096)
+        check(hand.commits.isEmpty && hand.outputs.last == .cancel, "so lifting there navigates nowhere")
+
+        var back = Fingers(back: 3, reduced: true)
+        back.open()
+        back.touch(.moved, 0.38)
+        back.clock()
+        back.touch(.moved, 0.38, 0.59)
+        back.touch(.moved, 0.36, 0.59)
+        back.touch(.moved, 0.385, 0.59)
+        back.clock()
+        back.overlay.settle()
+        check(back.overlay.model.listOpen && back.overlay.frame.map { $0.opacity == 1 && close($0.list!.row(0), $0.list!.highlight) } == true,
+              "rearming and resting reopens the list on the current page")
+        back.touch(.ended, 0.385)
+        check(back.commits.isEmpty && back.outputs.last == .cancel, "and lifting at once navigates nowhere")
     }
 
     static func lifetimes() {

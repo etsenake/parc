@@ -19,6 +19,7 @@ enum HistorySwipeOverlayMetrics {
     static let titleSize: CGFloat = 13
     static let titleGap: CGFloat = 8
     static let listMargin: CGFloat = 14
+    static let rowLean = 0.1
     static let ringWidth: CGFloat = 1
     static let shadowRadius: CGFloat = 8
     static let shadowDrop: CGFloat = 2
@@ -216,6 +217,11 @@ enum HistorySwipeOverlayGeometry {
                       width: max(0, content.width - 2 * M.cardInset), height: M.rowHeight)
     }
 
+    static func lean(remainder: Double) -> CGFloat {
+        let pull = 1 - 1 / (abs(remainder) * M.rowLean + 1)
+        return CGFloat(remainder < 0 ? -pull : pull) * M.rowHeight
+    }
+
     static func blend(_ from: CGRect, _ to: CGRect, _ amount: Double) -> CGRect {
         let t = CGFloat(amount)
         return CGRect(x: from.minX + (to.minX - from.minX) * t, y: from.minY + (to.minY - from.minY) * t,
@@ -283,8 +289,9 @@ struct HistorySwipeOverlayModel {
     private(set) var armed = false
     private(set) var listOpen = false
     private(set) var selection = 0
+    private(set) var remainder = 0.0
     private(set) var now: TimeInterval = 0
-    private var listOpenedAt: TimeInterval = 0
+    private var swappedAt: TimeInterval?
     private var snapsSelection = false
     private var diameter = HistorySwipeSpring(Double(M.restingDiameter), T.arm, tolerance: 0.01)
     private var chevron = HistorySwipeSpring(Double(M.restingChevron), T.arm, tolerance: 0.01)
@@ -314,11 +321,7 @@ struct HistorySwipeOverlayModel {
         case let .progress(progress):
             guard phase == .live else { return nil }
             stretch = max(0, progress.stretch)
-            guard reducesMotion else { return nil }
-            let shown = stretch >= M.reducedAppearance ? 1.0 : 0
-            if visibility.to != shown {
-                visibility.retarget(shown, at: time, duration: T.reducedFade, curve: .linear)
-            }
+            updateVisibility(at: time, fade: T.reducedFade)
         case let .armed(on):
             guard phase == .live, on != armed else { return nil }
             armed = on
@@ -328,18 +331,22 @@ struct HistorySwipeOverlayModel {
             return on ? .levelChange : nil
         case .hold:
             guard phase == .live, !listOpen else { return nil }
+            snapsSelection = !listShowing
             listOpen = true
-            listOpenedAt = time
-            snapsSelection = true
+            swappedAt = time
+            remainder = 0
+            updateVisibility(at: time, fade: 0)
             swap.retarget(1, at: time, duration: reducesMotion ? T.reducedSwap : T.swap,
                           curve: reducesMotion ? .linear : .easeOut)
             return .generic
         case let .selection(row):
             guard phase == .live else { return nil }
             selection = row
-            let target = Double(CGFloat(shownSelection) * M.rowHeight)
-            if snapsSelection || reducesMotion { offset.snap(target) }
+            if snapsSelection || reducesMotion { offset.snap(offsetTarget) }
             snapsSelection = false
+        case let .rowRemainder(value):
+            guard phase == .live, listOpen else { return nil }
+            remainder = value
         case .detent:
             guard phase == .live, listOpen else { return nil }
             return .alignment
@@ -383,7 +390,18 @@ struct HistorySwipeOverlayModel {
             return !diameter.isSettled(at: diameterTarget) || !chevron.isSettled(at: chevronTarget)
                 || !morph.isSettled(at: morphTarget) || !offset.isSettled(at: offsetTarget)
                 || armFade.isRunning(at: now) || visibility.isRunning(at: now) || swap.isRunning(at: now)
+                || reducedSwapFade < 1
         }
+    }
+
+    private var listShowing: Bool {
+        if reducesMotion { return listOpen }
+        return listOpen || swap.value(at: now) > 0.001 || abs(morph.value) > 0.0005
+    }
+
+    private var reducedSwapFade: Double {
+        guard reducesMotion, let swappedAt else { return 1 }
+        return min(max((now - swappedAt) / T.reducedSwap, 0), 1)
     }
 
     func frame(in size: CGSize) -> HistorySwipeOverlayFrame? {
@@ -394,10 +412,7 @@ struct HistorySwipeOverlayModel {
                                                         in: size, reducesMotion: reduced)
         let swapIn = swap.value(at: now)
         var opacity = 1.0, scale = 1.0, blur = 0.0
-        if reduced {
-            opacity = visibility.value(at: now)
-            if listOpen { opacity *= min(max((now - listOpenedAt) / T.reducedSwap, 0), 1) }
-        }
+        if reduced { opacity = visibility.value(at: now) * reducedSwapFade }
         if case let .collapsing(since) = phase {
             if reduced {
                 opacity *= 1 - min(max((now - since) / T.reducedCollapse, 0), 1)
@@ -411,11 +426,10 @@ struct HistorySwipeOverlayModel {
         var list: HistorySwipeOverlayListFrame?
         var capsule = circle
         var radius = width / 2
-        let showsList = listOpen || swapIn > 0.001 || (!reduced && abs(morph.value) > 0.0005)
-        if showsList {
+        if listShowing {
             let layout = HistorySwipeOverlayGeometry.list(direction: direction, rows: rows,
                                                           offset: CGFloat(offset.value), circle: circle, in: size)
-            let blend = reduced ? (listOpen ? 1 : 0) : morph.value
+            let blend = reduced ? 1 : morph.value
             capsule = HistorySwipeOverlayGeometry.blend(circle, layout.card, blend)
             radius = width / 2 + (M.cardRadius - width / 2) * CGFloat(blend)
             let highlight = CGRect(x: layout.content.minX + M.cardInset, y: size.height / 2 - M.rowHeight / 2,
@@ -449,11 +463,23 @@ struct HistorySwipeOverlayModel {
 
     private var morphTarget: Double { listOpen ? 1 : 0 }
 
-    private var offsetTarget: Double { Double(CGFloat(shownSelection) * M.rowHeight) }
+    private var offsetTarget: Double {
+        let lean = reducesMotion ? 0 : HistorySwipeOverlayGeometry.lean(remainder: remainder)
+        return Double(CGFloat(shownSelection) * M.rowHeight + lean)
+    }
+
+    private mutating func updateVisibility(at time: TimeInterval, fade: TimeInterval) {
+        guard reducesMotion else { return }
+        let shown = (listOpen || stretch >= M.reducedAppearance) ? 1.0 : 0
+        guard visibility.to != shown else { return }
+        visibility.retarget(shown, at: time, duration: fade, curve: .linear)
+    }
 
     private mutating func closeList(at time: TimeInterval) {
         listOpen = false
+        swappedAt = time
         swap.retarget(0, at: time, duration: reducesMotion ? T.reducedSwap : T.swap,
                       curve: reducesMotion ? .linear : .easeOut)
+        updateVisibility(at: time, fade: 0)
     }
 }

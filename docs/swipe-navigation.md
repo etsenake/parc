@@ -115,8 +115,9 @@ with its inputs, outputs and protocols in
 
 - States: waiting for the page, possible, tracking, armed past the commit point,
   holding, then completed or cancelled. Reversing below the commit point
-  disarms, vertical drift cancels before the hold, and lifting a touch-driven
-  swipe before the commit point navigates nowhere.
+  disarms, and closes the list if it is open; vertical drift cancels while the
+  list is closed, and lifting a touch-driven swipe before the commit point
+  navigates nowhere.
 - Chromium's page-first rule holds: a swipe begins only after the page leaves
   this gesture's first scroll unconsumed and its overscroll behavior lets
   horizontal overscroll through, with the system's swipe-between-pages setting
@@ -125,12 +126,15 @@ with its inputs, outputs and protocols in
   without touches (a Magic Mouse, or a swipe that arrives without them) asks
   the forwarder to start AppKit's tracked swipe and follows its progress for
   adjacent Back/Forward only.
-- Armed for the hold delay, the list opens on the adjacent entry. Vertical
-  travel steps the selection one row at a time, away from the current page,
-  with a detent, and a finger resting near the trackpad's top or bottom edge
-  keeps stepping through a long history. Lifting picks the selected entry;
-  lifting on the current page, or sliding back out past where the swipe began,
-  cancels.
+- Armed, the fingers must rest: every position update restarts the hold
+  delay, so the list opens only once they stay put that long past the commit
+  point. It opens on the current page. Vertical travel steps the selection one
+  row at a time, away from the current page, with a detent, and fingers held
+  near the trackpad's top or bottom edge keep stepping through a long history.
+  Sliding back below the commit point closes the list and disarms, and the
+  swipe carries on; rearming and resting reopens it. Lifting picks the
+  selected entry; lifting on the current page, or sliding back past where the
+  swipe began once the list has opened, cancels.
 - Its environment answers only the system setting, whether anything covers the
   page and how many entries lie each way. Focus, the key window and the active
   app never enter it.
@@ -139,9 +143,12 @@ Each input (touches, scroll events, the page's scroll answers, its overscroll
 behavior, AppKit tracked-swipe updates, clock ticks and cancels) answers
 whether to consume the event, start or stop AppKit tracking, hint a likely Back
 navigation, and when the next clock tick is due, for the hold and for edge
-stepping. The outputs are begin with the direction, progress (clamped and
-rubber-banded), armed, hold, selection, detent, commit (the adjacent page or an
-entry some rows away) and cancel.
+stepping. The hold's tick is a wake-up, not a deadline that moves with every
+touch: a tick that finds the fingers moved since only books the next one, so
+the forwarder doesn't reschedule a timer per touch. The outputs are begin with
+the direction, progress (clamped and rubber-banded), armed, hold, selection,
+the row remainder (how far the fingers sit past the selected row, in rows),
+detent, commit (the adjacent page or an entry some rows away) and cancel.
 
 Distances are fractions of the trackpad. Chromium's history swiper sets the
 gesture rules: commit at 0.08, take the events at 0.01, and cancel when
@@ -151,8 +158,11 @@ While an armed swipe waits for the list, vertical travel counts from the armed
 point as net movement, so a resting hand's tremor can't cancel it. A tracked
 swipe looks armed at 0.3 of AppKit's gesture amount, but AppKit's own end of the
 swipe decides the commit, as in Chromium. Dia's feel sets the rest: a 0.15
-rubber band past the commit point, a 0.3-second hold, a 0.08 row step, and edge
-stepping every 0.1 seconds within 0.15 of the edge.
+rubber band past the commit point, a 0.3-second hold counted from the last
+finger movement, a 0.08 row step, and edge stepping every 0.1 seconds within
+0.15 of the edge. Parc adds a 0.03 edge margin: stepping waits for that much
+travel toward the edge since the list opened, and stops only that far outside
+the zone, so tremor at the zone's boundary neither starts nor stops it.
 
 ## Planned: the new look
 
@@ -193,11 +203,12 @@ clipped to that pane, so Split and Peek stay correct.
 The page itself doesn't slide: that would need a picture of the destination
 page on every swipe.
 
-## Planned: swipe and hold for history
+## Swipe and hold for history
 
-Swipe past the commit point and keep your fingers down: 0.3 seconds after
-arming, the circle morphs into that direction's history, Back at the left edge
-and Forward at the right.
+Swipe past the commit point and rest your fingers there: once they have stayed
+put for 0.3 seconds, the circle morphs into that direction's history, Back at
+the left edge and Forward at the right. As in Dia, every movement while armed
+restarts the wait, and a resting hand's tremor can't cancel it.
 
 - The card springs out of the circle (damping 0.77, response 0.22 s) while the
   chevron and list swap over 0.22 seconds with a 10-point blur and a 0.9 scale.
@@ -210,26 +221,40 @@ and Forward at the right.
 - Rows come from the swipe's own per-page history snapshot, adjacent entry
   first. Back puts the current page at the bottom and older pages above;
   Forward puts it at the top and newer pages below.
-- The list opens on the adjacent entry under the fingers, so lifting at once
-  still goes one page, and the dwell counts from arming, so a resting hand's
-  tremor can't hold it off. Both differ from Dia.
+- The list opens with the current page highlighted, its row centred where the
+  circle was, so lifting at once navigates nowhere.
 - Two fingers moving up step a Back list, and moving down a Forward list, one
   row per 8% of trackpad height with an alignment haptic each. The other way
   heads back to the current page. The card slides on a spring (damping 0.9,
-  response 0.27 s) so the highlight stays under the fingers.
+  response 0.27 s) so the highlight stays under the fingers, and between rows
+  it leans a few points toward the next one, on Dia's 0.1 rubber band over a
+  row's height.
 - Long histories scroll: the card stays 14 points inside the pane and shows a
-  window onto its rows. Fingers resting within 15% of the trackpad's top or
-  bottom edge keep stepping ten rows a second toward that end, a selection and
-  detent per row, so every entry is reachable. The steps start only after the
-  fingers move into that zone, so a list that opens near an edge waits.
-- Lifting navigates to the selected entry. Lifting on the current page, or
-  sliding back out past where the swipe began, cancels.
+  window onto its rows. Fingers within 15% of the trackpad's top or bottom
+  edge keep stepping ten rows a second toward that end, a selection and detent
+  per row, so every entry is reachable. The steps start only after the fingers
+  move 3% of the trackpad toward that edge since the list opened, and stop
+  only once they move 3% back out of the zone, so a list that opens near an
+  edge waits and tremor at the boundary does nothing.
+- Sliding back below the commit point folds the card back into the circle on
+  the same spring and swap and disarms it; the swipe carries on. Swiping out
+  again and resting another 0.3 seconds reopens the list on the current page,
+  picking up mid-animation if the fold hasn't finished. Sliding on past where
+  the swipe began cancels.
+- Lifting navigates to the selected entry; lifting on the current page
+  cancels.
+- With Reduce Motion the card and circle replace each other with a
+  0.15-second fade both ways, rows step without sliding or leaning, and an open
+  list never fades with short travel: it closes first, and the circle then
+  hides below 20% of travel.
 - It works in background windows, like the plain swipe. The Back/Forward
   chooser remains the keyboard and VoiceOver path to the same history.
 
 `python3 tests/HistorySwipeOverlay/check.py` model-tests the overlay's geometry
-and motion, including Reduce Motion, narrow panes, long lists and a run through
-the real recognizer.
+and motion, including the fold back into the circle and the reopen, the lean,
+Reduce Motion, narrow panes, long lists and runs through the real recognizer,
+then compiles the view itself to check its pane clip, click-through,
+accessibility, material, shadow and ring.
 
 ## Review and checks
 

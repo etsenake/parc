@@ -13,6 +13,7 @@ struct HistorySwipeParameters: Equatable {
     var holdDelay: TimeInterval = 0.3
     var rowStep = 0.08
     var edgeZone = 0.15
+    var edgeMargin = 0.03
     var edgeStepInterval: TimeInterval = 0.1
 
     static let dia = HistorySwipeParameters()
@@ -44,14 +45,20 @@ struct HistorySwipeRecognizer {
     private var inverted = false
     private var announced = false
     private var receivingTouches = false
+    private var listOpened = false
+    private var restingSince: TimeInterval?
     private var start = HistorySwipePoint(x: 0, y: 0)
     private var current = HistorySwipePoint(x: 0, y: 0)
     private var totalY = 0.0
     private var armedY = 0.0
     private var armedTotalY = 0.0
     private var rowAnchor = 0.0
+    private var lastRemainder = 0.0
     private var edgeDeadline: TimeInterval?
-    private var edgeBlocked = 0
+    private var edgeSide = 0
+    private var edgeEngaged = false
+    private var edgeLow = 0.0
+    private var edgeHigh = 0.0
     private var firstScrollUnconsumed = false
     private var overscrollPropagatesX = false
     private var awaitingFirstScroll = false
@@ -128,6 +135,7 @@ struct HistorySwipeRecognizer {
     private mutating func follow(_ points: [HistorySwipePoint], time: TimeInterval,
                                  _ step: inout HistorySwipeStep) -> Bool {
         guard state != .completed, state != .cancelled, source != .trackedSwipe else { return false }
+        holdIfDue(time, &step)
         let point = Self.average(points)
         if state == .armed && holdDeadline != nil {
             totalY = armedTotalY + abs(point.y - armedY)
@@ -135,15 +143,19 @@ struct HistorySwipeRecognizer {
             totalY += abs(point.y - current.y)
         }
         current = point
+        if listOpened && touchProgress <= 0 {
+            cancel(&step)
+            return false
+        }
         if state == .holding {
-            guard touchProgress > 0 else {
-                cancel(&step)
-                return false
+            guard touchProgress < 1 else {
+                emitProgress(touchProgress, &step)
+                stepRows(&step)
+                followEdge(time: time, &step)
+                emitRemainder(&step)
+                return true
             }
-            emitProgress(touchProgress, &step)
-            stepRows(&step)
-            followEdge(time: time, &step)
-            return true
+            closeList()
         }
         if driftsVertically {
             cancel(&step)
@@ -179,34 +191,81 @@ struct HistorySwipeRecognizer {
             step.outputs.append(.armed(true))
             armedY = current.y
             armedTotalY = totalY
-            if source == .touches, parameters.holdDelay.isFinite, let time { holdDeadline = time + parameters.holdDelay }
+            if source == .touches, parameters.holdDelay.isFinite, let time {
+                restingSince = time
+                holdDeadline = time + parameters.holdDelay
+            }
         } else if progress < 1 && state == .armed {
             state = .tracking
             holdDeadline = nil
+            restingSince = nil
             step.outputs.append(.armed(false))
+        } else if state == .armed && holdDeadline != nil, let time {
+            restingSince = time
         }
         if let time { holdIfDue(time, &step) }
     }
 
     private mutating func holdIfDue(_ time: TimeInterval, _ step: inout HistorySwipeStep) {
         guard state == .armed, source == .touches, receivingTouches,
-              let deadline = holdDeadline, time >= deadline else { return }
+              let wake = holdDeadline, let rest = restingSince, time >= wake else { return }
+        let due = rest + parameters.holdDelay
+        guard time >= due else {
+            holdDeadline = due
+            return
+        }
         state = .holding
         holdDeadline = nil
-        selection = 1
+        restingSince = nil
+        listOpened = true
+        selection = 0
         rowAnchor = current.y
-        edgeBlocked = edge
+        lastRemainder = 0
+        armedTotalY = totalY
+        edgeSide = 0
+        edgeEngaged = false
+        edgeLow = current.y
+        edgeHigh = current.y
         edgeDeadline = nil
-        step.outputs += [.hold, .selection(1)]
+        trackEdge()
+        step.outputs += [.hold, .selection(0)]
+    }
+
+    private mutating func closeList() {
+        state = .armed
+        selection = nil
+        edgeDeadline = nil
+        totalY = armedTotalY
     }
 
     private var rowSign: Double { direction == .forward ? -1 : 1 }
 
     private var edge: Int {
-        guard parameters.edgeZone > 0 else { return 0 }
-        let top = current.y >= 1 - parameters.edgeZone, bottom = current.y <= parameters.edgeZone
-        guard top != bottom else { return 0 }
-        return (top ? 1 : -1) * (direction == .forward ? -1 : 1)
+        guard edgeEngaged else { return 0 }
+        return edgeSide * (direction == .forward ? -1 : 1)
+    }
+
+    private mutating func trackEdge() {
+        let zone = parameters.edgeZone, margin = parameters.edgeMargin, y = current.y
+        let side = edgeSide
+        if (edgeSide > 0 && y < 1 - zone - margin) || (edgeSide < 0 && y > zone + margin) { edgeSide = 0 }
+        if edgeSide == 0 && zone > 0 {
+            let top = y >= 1 - zone, bottom = y <= zone
+            if top != bottom { edgeSide = top ? 1 : -1 }
+        }
+        if edgeSide != side { edgeEngaged = false }
+        edgeLow = min(edgeLow, y)
+        edgeHigh = max(edgeHigh, y)
+        guard edgeSide != 0, !edgeEngaged else { return }
+        edgeEngaged = (edgeSide > 0 ? y - edgeLow : edgeHigh - y) >= margin
+    }
+
+    private mutating func emitRemainder(_ step: inout HistorySwipeStep) {
+        guard parameters.rowStep > 0 else { return }
+        let remainder = (current.y - rowAnchor) * rowSign / parameters.rowStep
+        guard remainder != lastRemainder else { return }
+        lastRemainder = remainder
+        step.outputs.append(.rowRemainder(remainder))
     }
 
     private func canStep(_ way: Int) -> Bool {
@@ -241,9 +300,9 @@ struct HistorySwipeRecognizer {
     }
 
     private mutating func followEdge(time: TimeInterval, _ step: inout HistorySwipeStep) {
+        trackEdge()
         let way = edge
-        if way != edgeBlocked { edgeBlocked = 0 }
-        guard way != 0, way != edgeBlocked, parameters.edgeStepInterval > 0, canStep(way) else {
+        guard way != 0, parameters.edgeStepInterval > 0, canStep(way) else {
             edgeDeadline = nil
             return
         }
@@ -257,11 +316,12 @@ struct HistorySwipeRecognizer {
     private mutating func edgeStepIfDue(_ time: TimeInterval, _ step: inout HistorySwipeStep) {
         guard state == .holding, receivingTouches, let deadline = edgeDeadline, time >= deadline else { return }
         let way = edge
-        guard way != 0, way != edgeBlocked, moveRow(way, &step) else {
+        guard way != 0, moveRow(way, &step) else {
             edgeDeadline = nil
             return
         }
         rowAnchor = current.y
+        emitRemainder(&step)
         let next = deadline + parameters.edgeStepInterval
         edgeDeadline = canStep(way) ? (next > time ? next : time + parameters.edgeStepInterval) : nil
     }
@@ -282,6 +342,7 @@ struct HistorySwipeRecognizer {
         }
         state = .completed
         holdDeadline = nil
+        restingSince = nil
         edgeDeadline = nil
         selection = nil
     }
@@ -326,7 +387,9 @@ struct HistorySwipeRecognizer {
         source = nil
         selection = nil
         holdDeadline = nil
+        restingSince = nil
         edgeDeadline = nil
+        listOpened = false
         entries = 0
         announced = false
         lastProgress = nil
@@ -412,6 +475,7 @@ struct HistorySwipeRecognizer {
         if announced && isLive { step.outputs.append(.cancel) }
         state = .cancelled
         holdDeadline = nil
+        restingSince = nil
         edgeDeadline = nil
         selection = nil
         liveTracking = nil

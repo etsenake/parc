@@ -73,10 +73,10 @@ struct Trace {
     }
 
     static func opening(from x: Double, toward sign: Double, natural: Bool = true, consumed: Bool = false,
-                        propagatesX: Bool? = true) -> Trace {
+                        propagatesX: Bool? = true, y: Double = 0.5) -> Trace {
         var trace = Trace(natural: natural)
         let content = natural ? sign : -sign
-        trace.land(x)
+        trace.land(x, y)
         trace.scroll(.mayBegin)
         trace.move(x + sign * 0.002)
         trace.scroll(.began, dx: content * 2)
@@ -93,6 +93,17 @@ struct Trace {
         trace.pageAnswers(consumed: consumed)
         trace.scroll(.changed, dx: dx, dy: dy)
         return trace
+    }
+}
+
+extension HistorySwipeStep {
+    var gestures: [HistorySwipeOutput] {
+        outputs.filter {
+            switch $0 {
+            case .progress, .rowRemainder: false
+            default: true
+            }
+        }
     }
 }
 
@@ -115,8 +126,10 @@ struct Run {
 
     var outputs: [HistorySwipeOutput] { steps.flatMap(\.outputs) }
 
-    var gestures: [HistorySwipeOutput] {
-        outputs.filter { if case .progress = $0 { false } else { true } }
+    var gestures: [HistorySwipeOutput] { steps.flatMap(\.gestures) }
+
+    var remainders: [Double] {
+        outputs.compactMap { if case let .rowRemainder(value) = $0 { value } else { nil } }
     }
 
     var fractions: [Double] {
@@ -181,8 +194,13 @@ struct Run {
         verticalCancel()
         reversalBelowCommitPoint()
         holdSelectionAndDetents()
+        holdWaitsForRest()
+        holdOpensOnCurrentPage()
+        listCollapsesBelowCommitPoint()
         holdEdges()
         longHistories()
+        edgeBoundaryTremor()
+        rowRemainders()
         backgroundWindow()
         interruptions()
         injectedParameters()
@@ -199,6 +217,7 @@ struct Run {
         check(p.trackedArmAmount == 0.3, "Chromium's tracked-swipe arm point")
         check(p.rubberBand == 0.15 && p.holdDelay == 0.3 && p.rowStep == 0.08, "Dia's rubber band, hold delay and row step")
         check(p.edgeZone == 0.15 && p.edgeStepInterval == 0.1, "long histories keep stepping ten rows a second at the edges")
+        check(p.edgeMargin == 0.03, "edge stepping needs a deliberate 3% of travel and stops 3% outside its zone")
     }
 
     static func trackpadBack() {
@@ -514,8 +533,8 @@ struct Run {
         let run = Run(trace)
         check(run.steps[armedIndex].clockDeadline == armedAt + 0.3, "arming schedules the hold after Dia's 0.3 s")
         check(run.steps[armedIndex + 1].outputs.isEmpty, "the list waits for the full delay")
-        check(run.gestures == [.begin(.back), .armed(true), .hold, .selection(1),
-                               .selection(2), .detent, .selection(3), .detent,
+        check(run.gestures == [.begin(.back), .armed(true), .hold, .selection(0),
+                               .selection(1), .detent, .selection(2), .detent, .selection(3), .detent,
                                .selection(2), .detent, .selection(1), .detent, .selection(0), .detent, .cancel],
               "vertical travel steps one row at a time with a detent each, clamps at the ends, and lifting on the current page cancels")
         check(run.scrollConsumes.last == true, "the hold owns its events")
@@ -525,8 +544,8 @@ struct Run {
         pick.clock(pick.time + 0.3)
         pick.move(0.40, 0.59)
         pick.lift()
-        check(Run(pick).gestures == [.begin(.back), .armed(true), .hold, .selection(1), .selection(2), .detent,
-                                     .commit(.entry(.back, distance: 2))],
+        check(Run(pick).gestures == [.begin(.back), .armed(true), .hold, .selection(0), .selection(1), .detent,
+                                     .commit(.entry(.back, distance: 1))],
               "lifting on a row commits that history entry")
 
         var forward = Trace.opening(from: 0.60, toward: -1)
@@ -535,47 +554,178 @@ struct Run {
         forward.move(0.50, 0.41)
         forward.move(0.50, 0.25)
         forward.lift()
-        check(Run(forward).gestures == [.begin(.forward), .armed(true), .hold, .selection(1), .selection(2), .detent,
-                                        .commit(.entry(.forward, distance: 2))],
+        check(Run(forward).gestures == [.begin(.forward), .armed(true), .hold, .selection(0), .selection(1), .detent,
+                                        .selection(2), .detent, .commit(.entry(.forward, distance: 2))],
               "Forward holds too, steps as the fingers move down its top-to-bottom list, and stops at the last entry")
 
         var upward = Trace.opening(from: 0.60, toward: -1)
         upward.move(0.50)
         upward.clock(upward.time + 0.3)
-        upward.move(0.50, 0.59)
+        upward.move(0.50, 0.41)
+        upward.move(0.50, 0.52)
+        upward.move(0.50, 0.70)
         upward.lift()
-        check(Run(upward).gestures == [.begin(.forward), .armed(true), .hold, .selection(1), .selection(0), .detent, .cancel],
-              "moving up a Forward list heads back to the current page at its top")
+        check(Run(upward).gestures == [.begin(.forward), .armed(true), .hold, .selection(0), .selection(1), .detent,
+                                       .selection(0), .detent, .cancel],
+              "moving up a Forward list heads back to the current page at its top, stops there, and lifting there cancels")
 
         var down = Trace.opening(from: 0.30, toward: 1)
         down.move(0.40)
         down.clock(down.time + 0.3)
-        down.move(0.40, 0.41)
+        down.move(0.40, 0.59)
+        down.move(0.40, 0.48)
+        down.move(0.40, 0.30)
         down.lift()
-        check(Run(down).gestures == [.begin(.back), .armed(true), .hold, .selection(1), .selection(0), .detent, .cancel],
-              "moving down a Back list heads back to the current page at its bottom")
+        check(Run(down).gestures == [.begin(.back), .armed(true), .hold, .selection(0), .selection(1), .detent,
+                                     .selection(0), .detent, .cancel],
+              "moving down a Back list heads back to the current page at its bottom, stops there, and lifting there cancels")
 
         var short = Trace.opening(from: 0.30, toward: 1)
         short.move(0.40)
         short.clock(short.time + 0.3)
         short.move(0.40, 0.575)
-        check(Run(short).gestures.suffix(1) == [.selection(1)], "travel short of 8% of the trackpad keeps the row")
+        check(Run(short).gestures.suffix(1) == [.selection(0)], "travel short of 8% of the trackpad keeps the row")
 
         var jump = Trace.opening(from: 0.30, toward: 1)
         jump.move(0.40)
         jump.clock(jump.time + 0.3)
         jump.move(0.40, 0.75)
-        check(Run(jump, Page(back: 5)).gestures.suffix(6) == [.selection(2), .detent, .selection(3), .detent,
-                                                              .selection(4), .detent],
+        check(Run(jump, Page(back: 5)).gestures.suffix(6) == [.selection(1), .detent, .selection(2), .detent,
+                                                              .selection(3), .detent],
               "a fast vertical sweep still steps and ticks every row")
+    }
+
+    static func holdWaitsForRest() {
+        let page = Page()
+        var sliding = Trace.opening(from: 0.30, toward: 1)
+        sliding.move(0.40)
+        let armedAt = sliding.time
+        let armedIndex = sliding.inputs.count - 1
+        for x in [0.41, 0.42, 0.43, 0.44, 0.45] { sliding.move(x, after: 0.1) }
+        let restAt = sliding.time
+        var run = Run(sliding, page)
+        check(!run.outputs.contains(.hold) && run.recognizer.state == .armed,
+              "fingers still moving past the commit point keep the list closed though 0.5 s has passed since arming")
+        check(run.steps[armedIndex].clockDeadline == armedAt + 0.3
+              && run.steps[(armedIndex + 1)...(armedIndex + 2)].allSatisfy { $0.clockDeadline == armedAt + 0.3 },
+              "movements before the first wake keep its deadline, so the clock isn't rescheduled on every movement")
+        let wakes = run.tickUntilQuiet(page)
+        check(abs(wakes.last! - (restAt + 0.3)) < 1e-9 && run.steps.last?.outputs == [.hold, .selection(0)],
+              "the list opens 0.3 s after the last movement, once the fingers rest past the commit point")
+        check(run.steps.suffix(wakes.count).dropLast().allSatisfy(\.outputs.isEmpty) && wakes == wakes.sorted(),
+              "earlier wakes only reschedule the hold")
+
+        var settled = Trace.opening(from: 0.30, toward: 1)
+        settled.move(0.40)
+        settled.move(0.44, after: 0.2)
+        let stillAt = settled.time
+        settled.clock(stillAt + 0.29)
+        settled.clock(stillAt + 0.3)
+        let rested = Run(settled, page)
+        check(rested.steps.dropLast().allSatisfy { !$0.outputs.contains(.hold) } && rested.steps.last?.outputs == [.hold, .selection(0)],
+              "a movement 0.2 s after arming pushes the list to 0.3 s after that movement")
+
+        var held = Trace.opening(from: 0.30, toward: 1)
+        held.move(0.40)
+        held.clock(held.time + 0.3)
+        held.move(0.42, 0.5, after: 0.05)
+        held.move(0.44, 0.5, after: 0.05)
+        check(Run(held, page).gestures == [.begin(.back), .armed(true), .hold, .selection(0)],
+              "once the list is open, moving past the commit point doesn't close or reopen it")
+    }
+
+    static func holdOpensOnCurrentPage() {
+        var trace = Trace.opening(from: 0.30, toward: 1)
+        trace.move(0.40)
+        trace.clock(trace.time + 0.3)
+        let opened = Run(trace)
+        check(opened.gestures == [.begin(.back), .armed(true), .hold, .selection(0)] && opened.recognizer.selection == 0,
+              "the list opens with the current page selected")
+        trace.lift()
+        let lifted = Run(trace)
+        check(lifted.gestures.last == .cancel && !lifted.gestures.contains { if case .commit = $0 { true } else { false } },
+              "lifting as soon as the list opens navigates nowhere")
+
+        var forward = Trace.opening(from: 0.60, toward: -1)
+        forward.move(0.50)
+        forward.clock(forward.time + 0.3)
+        forward.lift()
+        check(Run(forward).gestures == [.begin(.forward), .armed(true), .hold, .selection(0), .cancel],
+              "a Forward list opens on the current page too")
+
+        var older = Trace.opening(from: 0.30, toward: 1)
+        older.move(0.40)
+        older.clock(older.time + 0.3)
+        older.move(0.40, 0.40)
+        older.move(0.40, 0.49)
+        older.lift()
+        check(Run(older).gestures == [.begin(.back), .armed(true), .hold, .selection(0), .selection(1), .detent,
+                                      .commit(.entry(.back, distance: 1))],
+              "moving down a Back list stays on the current page; moving up reaches the previous page")
+    }
+
+    static func listCollapsesBelowCommitPoint() {
+        let page = Page()
+        var trace = Trace.opening(from: 0.30, toward: 1)
+        trace.move(0.40)
+        trace.clock(trace.time + 0.3)
+        trace.move(0.40, 0.59)
+        trace.move(0.40, 0.67)
+        trace.move(0.36, 0.67)
+        let belowIndex = trace.inputs.count - 1
+        trace.scroll(.changed, dx: -3)
+        let collapsed = Run(trace, page)
+        check(collapsed.gestures == [.begin(.back), .armed(true), .hold, .selection(0), .selection(1), .detent,
+                                     .selection(2), .detent, .armed(false)]
+              && collapsed.steps[belowIndex].outputs.first.map { if case .progress = $0 { true } else { false } } == true,
+              "sliding below the commit point disarms and closes the list, and the swipe carries on")
+        check(collapsed.recognizer.state == .tracking && collapsed.recognizer.selection == nil
+              && collapsed.steps.last?.clockDeadline == nil && collapsed.scrollConsumes.last == true,
+              "the collapsed swipe keeps its events, drops the selection and asks for no tick")
+
+        var lifted = trace
+        lifted.lift()
+        check(Run(lifted, page).gestures.last == .cancel, "lifting below the commit point after the list closed cancels")
+
+        var vertical = trace
+        vertical.move(0.365, 0.69)
+        vertical.move(0.37, 0.67)
+        check(Run(vertical, page).gestures.last == .armed(false),
+              "vertical travel spent choosing rows doesn't count toward the vertical cancel afterwards")
+
+        var reopened = trace
+        reopened.move(0.41, 0.67)
+        let rearmedAt = reopened.time
+        reopened.move(0.42, 0.67, after: 0.1)
+        let restAt = reopened.time
+        var again = Run(reopened, page)
+        check(again.gestures.suffix(2) == [.armed(false), .armed(true)] && !again.steps.suffix(2).contains { $0.outputs.contains(.hold) },
+              "sliding back past the commit point rearms without reopening the list at once")
+        check(again.steps.last?.clockDeadline == rearmedAt + 0.3, "rearming schedules a new hold")
+        let wakes = again.tickUntilQuiet(page)
+        check(abs(wakes.last! - (restAt + 0.3)) < 1e-9 && again.steps.last?.outputs == [.hold, .selection(0)],
+              "resting another 0.3 s reopens the list on the current page")
+        var pick = Trace()
+        pick.x = 0.42; pick.y = 0.67; pick.time = restAt + 0.3
+        pick.move(0.42, 0.76)
+        pick.lift()
+        again.play(pick.inputs, page)
+        check(again.gestures.suffix(3) == [.selection(1), .detent, .commit(.entry(.back, distance: 1))],
+              "the reopened list steps from the current page again")
+
+        var commit = trace
+        commit.move(0.42, 0.67)
+        commit.lift()
+        check(Run(commit, page).gestures.suffix(2) == [.armed(true), .commit(.adjacent(.back))],
+              "lifting after rearming, before the list reopens, goes to the adjacent page")
     }
 
     static func holdEdges() {
         var dwell = Trace.opening(from: 0.30, toward: 1)
         dwell.move(0.40)
         dwell.move(0.41, after: 0.6)
-        check(Run(dwell).gestures == [.begin(.back), .armed(true), .hold, .selection(1)],
-              "a finger movement after the delay opens the list without waiting for the clock")
+        check(Run(dwell).gestures == [.begin(.back), .armed(true), .hold, .selection(0)],
+              "fingers that already rested for the delay open the list on their next movement without waiting for the clock")
 
         var reset = Trace.opening(from: 0.30, toward: 1)
         reset.move(0.40)
@@ -585,8 +735,8 @@ struct Run {
         reset.clock(armedAt + 0.45)
         reset.clock(armedAt + 0.65)
         let restarted = Run(reset)
-        check(restarted.gestures == [.begin(.back), .armed(true), .armed(false), .armed(true), .hold, .selection(1)]
-              && restarted.steps.last?.outputs == [.hold, .selection(1)], "disarming restarts the dwell")
+        check(restarted.gestures == [.begin(.back), .armed(true), .armed(false), .armed(true), .hold, .selection(0)]
+              && restarted.steps.last?.outputs == [.hold, .selection(0)], "disarming restarts the dwell")
 
         var out = Trace.opening(from: 0.30, toward: 1)
         out.move(0.40)
@@ -597,24 +747,36 @@ struct Run {
         out.scroll(.changed, dx: -3)
         out.lift()
         let slid = Run(out)
-        check(slid.gestures == [.begin(.back), .armed(true), .hold, .selection(1), .cancel],
-              "sliding back out past the edge cancels the list, and moving inside it does not")
+        check(slid.gestures == [.begin(.back), .armed(true), .hold, .selection(0), .armed(false), .cancel],
+              "sliding back below the commit point closes the list, and sliding on past the start cancels")
         check(slid.scrollConsumes.suffix(2) == [true, false], "the page gets its events back after sliding out")
+
+        var jump = Trace.opening(from: 0.30, toward: 1)
+        jump.move(0.40)
+        jump.clock(jump.time + 0.3)
+        jump.move(0.29)
+        check(Run(jump).gestures == [.begin(.back), .armed(true), .hold, .selection(0), .cancel],
+              "a single slide from the list past the start cancels")
 
         var lifted = Trace.opening(from: 0.30, toward: 1)
         lifted.move(0.40)
         lifted.time += 0.6
         lifted.lift()
         check(Run(lifted).gestures == [.begin(.back), .armed(true), .commit(.adjacent(.back))],
-              "lifting before the list opens commits the adjacent page even after the delay")
+              "a lift never opens the list itself, so without it the swipe commits the adjacent page")
 
         var tremor = Trace.opening(from: 0.30, toward: 1)
         tremor.move(0.39)
         let restAt = tremor.time
         for index in 0..<70 { tremor.move(0.39, index.isMultiple(of: 2) ? 0.501 : 0.5, after: 0.007) }
+        let stillAt = tremor.time
         tremor.clock(restAt + 0.5)
-        check(Run(tremor).gestures == [.begin(.back), .armed(true), .hold, .selection(1)],
-              "resting fingers that tremble while the list waits still open it")
+        let trembling = Run(tremor)
+        check(trembling.gestures == [.begin(.back), .armed(true)] && trembling.recognizer.state == .armed,
+              "resting fingers that tremble while the list waits never cancel, and each tremor restarts the wait")
+        tremor.clock(stillAt + 0.3)
+        check(Run(tremor).gestures == [.begin(.back), .armed(true), .hold, .selection(0)],
+              "the list opens 0.3 s after the trembling stops")
 
         var slide = Trace.opening(from: 0.30, toward: 1)
         slide.move(0.39)
@@ -630,8 +792,8 @@ struct Run {
         trace.clock(trace.time + 0.3)
         trace.move(0.40, 0.59)
         trace.lift()
-        check(Run(trace, background).gestures == [.begin(.back), .armed(true), .hold, .selection(1),
-                                                  .selection(2), .detent, .commit(.entry(.back, distance: 2))],
+        check(Run(trace, background).gestures == [.begin(.back), .armed(true), .hold, .selection(0),
+                                                  .selection(1), .detent, .commit(.entry(.back, distance: 1))],
               "a swipe and hold need nothing from the page beyond coverage and history")
 
         var untouched = Trace.wheel(dx: 4)
@@ -706,16 +868,17 @@ struct Run {
         trace.move(0.315)
         trace.move(0.39)
         trace.move(0.45)
-        let armedAt = trace.time
         trace.move(0.60)
-        trace.clock(armedAt + 0.5)
-        trace.clock(armedAt + 1)
+        let restAt = trace.time
+        trace.clock(restAt + 0.5)
+        trace.clock(restAt + 1)
+        trace.time = restAt + 1
         trace.move(0.60, 0.56)
         trace.move(0.60, 0.61)
         let run = Run(trace, parameters: tuned)
         check(near(run.fractions, [0.15, 0.9, 1, 1]), "the commit distance is injectable")
         check(near(run.stretches, [0.15, 0.9, 1.2, 1.5]), "the rubber band's resistance is injectable")
-        check(run.gestures == [.begin(.back), .armed(true), .hold, .selection(1), .selection(2), .detent],
+        check(run.gestures == [.begin(.back), .armed(true), .hold, .selection(0), .selection(1), .detent],
               "the hold delay and row step are injectable")
 
         var off = HistorySwipeParameters.dia
@@ -735,7 +898,7 @@ struct Run {
         edge.move(0.40, 0.95)
         let page = Page(back: 20)
         var fixed = Run(edge, page, parameters: still)
-        check(fixed.tickUntilQuiet(page).isEmpty && fixed.selections == [1, 2, 3, 4, 5, 6],
+        check(fixed.tickUntilQuiet(page).isEmpty && fixed.selections == [0, 1, 2, 3, 4, 5],
               "an empty edge zone leaves long histories to finger travel alone")
     }
 
@@ -748,12 +911,12 @@ struct Run {
         climb.move(0.40, 0.88)
         let entered = climb.time
         var run = Run(climb, page)
-        check(run.selections == [1, 2, 3, 4, 5] && run.steps.last?.clockDeadline == entered + 0.1,
+        check(run.selections == [0, 1, 2, 3, 4] && run.steps.last?.clockDeadline == entered + 0.1,
               "fingers that reach the top edge step by travel, then ask for a clock tick")
         let deadlines = run.tickUntilQuiet(page)
-        check(run.selections == Array(1...50) && run.detents == 49,
+        check(run.selections == Array(0...50) && run.detents == 50,
               "resting at the top edge reaches all 50 Back entries, one selection and detent per row")
-        check(deadlines.count == 45 && zip(deadlines, deadlines.dropFirst()).allSatisfy { abs($1 - $0 - 0.1) < 1e-9 },
+        check(deadlines.count == 46 && zip(deadlines, deadlines.dropFirst()).allSatisfy { abs($1 - $0 - 0.1) < 1e-9 },
               "the edge steps one row every tenth of a second")
         check(run.steps.last?.clockDeadline == nil, "the ticks stop at the oldest entry")
         var lift = Trace()
@@ -775,7 +938,7 @@ struct Run {
         leave.move(0.40, 0.72)
         down.play(leave.inputs, page)
         let settled = down.selections.last ?? 0
-        check(high == 8 && settled == 6 && down.steps.last?.clockDeadline == nil,
+        check(high == 7 && settled == 5 && down.steps.last?.clockDeadline == nil,
               "leaving the edge stops the ticks and travel steps back from where the edge left off")
         down.play([.clock(first + 0.4)], page)
         check(down.steps.last?.outputs.isEmpty == true, "a stale tick after leaving the edge changes nothing")
@@ -799,7 +962,7 @@ struct Run {
         home.play(sink.inputs, page)
         let afterTravel = home.selections.last ?? 0
         _ = home.tickUntilQuiet(page)
-        check(far == 35 && afterTravel == 26 && home.selections.last == 0,
+        check(far == 34 && afterTravel == 25 && home.selections.last == 0,
               "resting at the bottom edge steps a long Back list all the way back to the current page")
 
         let ahead = Page(back: 0, forward: 30)
@@ -809,7 +972,7 @@ struct Run {
         forward.move(0.50, 0.10)
         var newer = Run(forward, ahead)
         _ = newer.tickUntilQuiet(ahead)
-        check(newer.selections == Array(1...30) && newer.gestures.contains(.begin(.forward)),
+        check(newer.selections == Array(0...30) && newer.gestures.contains(.begin(.forward)),
               "a long Forward list keeps stepping at the bottom edge")
 
         var high0 = Trace(natural: true)
@@ -824,7 +987,7 @@ struct Run {
         high0.clock(high0.time + 0.3)
         high0.move(0.40, 0.92)
         var parked = Run(high0, page)
-        check(parked.gestures == [.begin(.back), .armed(true), .hold, .selection(1)] && parked.steps.last?.clockDeadline == nil,
+        check(parked.gestures == [.begin(.back), .armed(true), .hold, .selection(0)] && parked.steps.last?.clockDeadline == nil,
               "a list that opens with the fingers already at the edge waits instead of scrolling by itself")
         var again = Trace()
         again.x = 0.40; again.y = 0.92; again.time = high0.time
@@ -833,7 +996,7 @@ struct Run {
         parked.play(again.inputs, page)
         let rearmed = parked.steps.last?.clockDeadline
         _ = parked.tickUntilQuiet(page, limit: 3)
-        check(rearmed != nil && parked.selections == [1, 0, 1, 2, 3],
+        check(rearmed != nil && parked.selections == [0, 1, 2, 3],
               "leaving the edge and coming back starts the steps")
 
         var late = Trace.opening(from: 0.30, toward: 1)
@@ -843,7 +1006,7 @@ struct Run {
         var lagging = Run(late, page)
         let due = lagging.steps.last?.clockDeadline ?? 0
         lagging.play([.clock(due + 1)], page)
-        check(lagging.steps.last?.outputs == [.selection(6), .detent]
+        check(lagging.steps.last?.gestures == [.selection(5), .detent]
               && abs((lagging.steps.last?.clockDeadline ?? 0) - (due + 1.1)) < 1e-9,
               "a late tick steps a single row instead of jumping")
 
@@ -855,9 +1018,121 @@ struct Run {
         lifted.lift()
         lifted.clock(pending)
         let gone = Run(lifted, page)
-        check(gone.gestures.last == .commit(.entry(.back, distance: 5)) && gone.steps.last?.outputs.isEmpty == true,
+        check(gone.gestures.last == .commit(.entry(.back, distance: 4)) && gone.steps.last?.outputs.isEmpty == true,
               "lifting ends the edge steps")
         check(gone.steps.suffix(2).allSatisfy { $0.clockDeadline == nil }, "a finished swipe asks for no more ticks")
+    }
+
+    static func edgeBoundaryTremor() {
+        let page = Page(back: 50)
+        var inside = Trace.opening(from: 0.30, toward: 1, y: 0.851)
+        inside.move(0.40)
+        inside.clock(inside.time + 0.3)
+        for y in [0.849, 0.851, 0.849, 0.852, 0.8505] { inside.move(0.40, y, after: 0.03) }
+        var parkedInside = Run(inside, page)
+        check(parkedInside.tickUntilQuiet(page).isEmpty && parkedInside.selections == [0],
+              "a list that opens just inside the top zone ignores tremor across the zone's edge")
+        var liftInside = Trace()
+        liftInside.x = 0.40; liftInside.y = 0.8505; liftInside.time = inside.time + 1
+        liftInside.lift()
+        parkedInside.play(liftInside.inputs, page)
+        check(parkedInside.gestures.last == .cancel, "so lifting there still goes nowhere")
+
+        var outside = Trace.opening(from: 0.30, toward: 1, y: 0.849)
+        outside.move(0.40)
+        outside.clock(outside.time + 0.3)
+        for y in [0.851, 0.849, 0.852, 0.8515] { outside.move(0.40, y, after: 0.03) }
+        var parkedOutside = Run(outside, page)
+        check(parkedOutside.tickUntilQuiet(page).isEmpty && parkedOutside.selections == [0],
+              "a list that opens just outside the top zone ignores tremor into it")
+
+        let ahead = Page(back: 0, forward: 30)
+        var low = Trace.opening(from: 0.60, toward: -1, y: 0.151)
+        low.move(0.50)
+        low.clock(low.time + 0.3)
+        for y in [0.149, 0.151, 0.148, 0.1495] { low.move(0.50, y, after: 0.03) }
+        var parkedLow = Run(low, ahead)
+        check(parkedLow.tickUntilQuiet(ahead).isEmpty && parkedLow.selections == [0],
+              "a Forward list that opens just above the bottom zone ignores tremor into it")
+
+        var push = Trace.opening(from: 0.30, toward: 1, y: 0.84)
+        push.move(0.40)
+        push.clock(push.time + 0.3)
+        push.move(0.40, 0.88)
+        var pushed = Run(push, page)
+        check(pushed.steps.last?.clockDeadline != nil && !pushed.tickUntilQuiet(page, limit: 3).isEmpty
+              && pushed.selections == [0, 1, 2, 3],
+              "a deliberate push toward the edge starts the steps even from a list that opened near it")
+
+        var engaged = Trace.opening(from: 0.30, toward: 1)
+        engaged.move(0.40)
+        engaged.clock(engaged.time + 0.3)
+        engaged.move(0.40, 0.86)
+        var stepping = Run(engaged, page)
+        _ = stepping.tickUntilQuiet(page, limit: 2)
+        var hand = Trace()
+        hand.x = 0.40; hand.y = 0.86; hand.time = stepping.steps.last?.clockDeadline ?? 0
+        var stillStepping = true
+        for y in [0.849, 0.84, 0.851, 0.83] {
+            hand.move(0.40, y, after: 0.001)
+            stepping.play(Array(hand.inputs.suffix(1)), page)
+            stillStepping = stillStepping && stepping.steps.last?.clockDeadline != nil
+        }
+        let before = stepping.selections.count
+        _ = stepping.tickUntilQuiet(page, limit: 2)
+        check(stillStepping && stepping.selections.count == before + 2,
+              "once stepping, tremor back across the zone's edge doesn't stop it")
+        hand.move(0.40, 0.81)
+        stepping.play(Array(hand.inputs.suffix(1)), page)
+        check(stepping.steps.last?.clockDeadline == nil, "moving 3% out of the zone stops it")
+    }
+
+    static func rowRemainders() {
+        var trace = Trace.opening(from: 0.30, toward: 1)
+        trace.move(0.40)
+        trace.clock(trace.time + 0.3)
+        let opened = trace.inputs.count
+        trace.move(0.40, 0.54)
+        trace.move(0.40, 0.60)
+        let stepped = trace.inputs.count - 1
+        trace.move(0.40, 0.46)
+        trace.move(0.40, 0.40)
+        let run = Run(trace)
+        check(!run.steps.prefix(opened).contains { $0.outputs.contains { if case .rowRemainder = $0 { true } else { false } } },
+              "nothing reports a remainder before the list opens")
+        check(near(run.remainders, [0.5, 0.25, -0.5, 0]),
+              "between rows the recognizer reports how far the fingers are toward the next row, and nothing past the current page")
+        let outputs = run.steps[stepped].outputs
+        check(outputs.count == 3 && outputs[0] == .selection(1) && outputs[1] == .detent
+              && { if case .rowRemainder = outputs[2] { true } else { false } }(),
+              "a row step reports its selection first, then the remainder past it")
+
+        var forward = Trace.opening(from: 0.60, toward: -1)
+        forward.move(0.50)
+        forward.clock(forward.time + 0.3)
+        forward.move(0.50, 0.46)
+        check(near(Run(forward).remainders, [0.5]), "a Forward list leans toward newer pages as the fingers move down")
+
+        let page = Page(back: 50)
+        var edge = Trace.opening(from: 0.30, toward: 1)
+        edge.move(0.40)
+        edge.clock(edge.time + 0.3)
+        edge.move(0.40, 0.88)
+        var climbing = Run(edge, page)
+        let leaning = climbing.remainders.last ?? 0
+        _ = climbing.tickUntilQuiet(page, limit: 1)
+        check(abs(leaning - 0.75) < 1e-9 && climbing.remainders.last == 0, "an edge step lands squarely on its row")
+
+        var collapse = Trace.opening(from: 0.30, toward: 1)
+        collapse.move(0.40)
+        collapse.clock(collapse.time + 0.3)
+        collapse.move(0.40, 0.54)
+        let held = collapse.inputs.count
+        collapse.move(0.36, 0.54)
+        collapse.move(0.36, 0.58)
+        let closed = Run(collapse)
+        check(!closed.steps.dropFirst(held).contains { $0.outputs.contains { if case .rowRemainder = $0 { true } else { false } } },
+              "a closed list reports no remainder")
     }
 
     static func controller() {

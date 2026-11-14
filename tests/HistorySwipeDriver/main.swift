@@ -170,10 +170,11 @@ do {
     hand.touch(.moved, x: 0.5 + p.commitDistance * 1.25)
     expect(page.ticks.count == 1, "an unchanged deadline is not scheduled twice")
     hand.tick()
-    expect(page.gestures.suffix(2) == [.hold, .selection(1)], "the scheduled tick opens the list")
+    hand.tick()
+    expect(page.gestures.suffix(2) == [.hold, .selection(0)], "the tick after the fingers rest opens the list on the current page")
     hand.touch(.moved, y: 0.5 + p.rowStep * 1.1)
     hand.touch(.ended)
-    expect(page.commits == [.entry(.back, distance: 2)], "lifting on a row navigates that many entries back")
+    expect(page.commits == [.entry(.back, distance: 1)], "lifting on a row navigates that many entries back")
 }
 
 do {

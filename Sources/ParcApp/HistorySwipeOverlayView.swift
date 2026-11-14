@@ -20,6 +20,7 @@ struct HistorySwipeOverlayRow: Equatable {
     private var shownRows: (direction: HistorySwipeDirection, revision: Int)?
     private var chevronDirection: HistorySwipeDirection?
     private let shadowView = NSView()
+    private let shadowLayer = CALayer()
     private let capsule = NSView()
     private let material = NSVisualEffectView()
     private let wash = NSView()
@@ -33,9 +34,10 @@ struct HistorySwipeOverlayRow: Equatable {
         layer?.masksToBounds = true
         shadowView.wantsLayer = true
         shadowView.layer?.masksToBounds = false
-        shadowView.layer?.shadowColor = NSColor.black.cgColor
-        shadowView.layer?.shadowRadius = M.shadowRadius
-        shadowView.layer?.shadowOffset = CGSize(width: 0, height: -M.shadowDrop)
+        shadowView.layer?.addSublayer(shadowLayer)
+        shadowLayer.shadowColor = NSColor.black.cgColor
+        shadowLayer.shadowRadius = M.shadowRadius
+        shadowLayer.shadowOffset = CGSize(width: 0, height: -M.shadowDrop)
         capsule.wantsLayer = true
         capsule.layerUsesCoreImageFilters = true
         capsule.layer?.masksToBounds = true
@@ -124,8 +126,9 @@ struct HistorySwipeOverlayRow: Equatable {
             view.alphaValue = CGFloat(frame.opacity)
             scale(view, by: frame.scale)
         }
-        shadowView.layer?.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: box.size),
-                                          cornerWidth: radius, cornerHeight: radius, transform: nil)
+        shadowLayer.frame = CGRect(origin: .zero, size: box.size)
+        shadowLayer.shadowPath = CGPath(roundedRect: shadowLayer.bounds, cornerWidth: radius, cornerHeight: radius,
+                                        transform: nil)
         capsule.layer?.cornerRadius = radius
         blur(capsule, frame.blur)
         material.frame = capsule.bounds
@@ -178,7 +181,7 @@ struct HistorySwipeOverlayRow: Equatable {
     private func applyLook() {
         let look = HistorySwipeOverlayLook(dark: effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
         capsule.layer?.borderColor = NSColor(white: look.ringWhite, alpha: look.ringAlpha).cgColor
-        shadowView.layer?.shadowOpacity = Float(look.shadowAlpha)
+        shadowLayer.shadowOpacity = Float(look.shadowAlpha)
         wash.layer?.backgroundColor = NSColor(white: 1, alpha: look.washAlpha).cgColor
         list.highlightColor = NSColor(white: look.highlightWhite, alpha: look.highlightAlpha)
     }
