@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -20,6 +21,11 @@ def require(text, where, present=(), absent=()):
         assert token not in text, f"{where} depends on {token!r} again"
 
 
+def refuses(text, where, *patterns):
+    for pattern in patterns:
+        assert re.search(pattern, text), f"{where} no longer refuses on {pattern!r}"
+
+
 focus = ("isKeyWindow", "keyWindow", "NSApp.isActive", "NSApp.active", "firstResponder",
          "selectedNativePage", "focusedTabID", "makeKeyAndOrderFront", "orderFront", "makeFirstResponder",
          "activateIgnoringOtherApps", "NSApp activate", "NSApp.activate")
@@ -36,13 +42,15 @@ require(allows, "the shell's swipe rule", present=(
     "PCNativeBrowserApplication.owner(of: page) === browser", "historySwipePages.contains"), absent=focus)
 pages = body(controller, "private var historySwipePages: [PCNativePage] {", "\n    }\n")
 require(pages, "the swipeable page list", present=(
-    "HistorySwipeTargets.pages(", "renderedPaneIDs", "activePeek", "isHiddenOrHasHiddenAncestor",
-    "InternalPage.isInternal"), absent=focus)
+    "HistorySwipeTargets.pages(", "renderedPaneIDs", "activePeek", "selectedPage",
+    "isInternal: tab.map { InternalPage.isInternal($0.url) } ?? true",
+    "isHidden: browser?.isHiddenOrHasHiddenAncestor ?? true"), absent=focus)
 
 engine = body("Engine/ParcNative/native_appkit_page.mm", "bool CanNativePageHistorySwipe(PCNativePage* page) {", "\n}\n")
-require(engine, "the engine's swipe rule", present=(
-    "PCNativeWindowHasSecurityReservation", "window.visible", "window.miniaturized", "hiddenOrHasHiddenAncestor",
-    "allowsHistorySwipeForPage"), absent=focus)
+require(engine, "the engine's swipe rule", present=("allowsHistorySwipeForPage",), absent=focus)
+refuses(engine, "the engine's swipe rule", r"if \(!browser \|\| !window\.visible \|\| (?<!!)window\.miniaturized \|\|",
+        r"\|\|\s+(?<!!)page\.nativeView\.hiddenOrHasHiddenAncestor \|\|",
+        r"\|\|\s+(?<!!)PCNativeWindowHasSecurityReservation\(window\)\) return false;")
 
 session = body("Engine/ParcNative/native_history_swipe.mm", "class SwipeSession final", "\n};\n")
 require(session, "the swipe session", present=(

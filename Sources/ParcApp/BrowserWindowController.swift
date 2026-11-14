@@ -7906,11 +7906,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private var historySwipePages: [PCNativePage] {
         let peek = activePeek
-        let panes = renderedPaneIDs.compactMap { id -> PCNativePage? in
-            if let page = easelEditors[id]?.editor.pageObjects?.selectedPage { return page }
-            guard let tab = store.state.tabs.first(where: { $0.id == id }), !InternalPage.isInternal(tab.url),
-                  let browser = browsers[id], !browser.isHiddenOrHasHiddenAncestor else { return nil }
-            return browser.nativePage
+        let panes = renderedPaneIDs.map { id in
+            let tab = store.state.tabs.first(where: { $0.id == id })
+            let browser = tab == nil ? nil : browsers[id]
+            return HistorySwipeTargets.Pane(easelPage: easelEditors[id]?.editor.pageObjects?.selectedPage,
+                                            page: browser?.nativePage,
+                                            isInternal: tab.map { InternalPage.isInternal($0.url) } ?? true,
+                                            isHidden: browser?.isHiddenOrHasHiddenAncestor ?? true)
         }
         return HistorySwipeTargets.pages(peek: peek?.page, peekShown: peek?.view.isHidden == false, panes: panes)
     }

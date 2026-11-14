@@ -16,10 +16,11 @@ adds no competing recognizer.
 
 Parc supplies the renderer view's delegate, `PCNativeHistorySwipeDelegate` in
 [native_history_swipe.mm](../Engine/ParcNative/native_history_swipe.mm). It
-wraps Chromium's recognizer with Parc's eligibility check and navigates through
-the page's own Back/Forward actions. A gesture keeps its original page, document,
-window and pane; navigation, transfer, selection, security or window changes
-cancel it. Delayed Magic Mouse work checks the same generation.
+wraps Chromium's recognizer with Parc's eligibility check and moves the
+gesture's own page Back or Forward with Chromium's per-page navigation. A
+gesture keeps its original page, document, window and pane; navigation,
+transfer, a security change, or the window closing, miniaturizing or showing a
+sheet cancels it. Delayed Magic Mouse work checks the same generation.
 
 Chromium's grey semicircle arrow is drawn inside the original page's clipped
 pane, including Split and Peek. Reduce Motion keeps static edge feedback, and no
@@ -58,7 +59,9 @@ field, the sidebar or another control, and over any visible split pane, as it
 
 A background swipe never activates Parc, raises the window, changes the
 selected pane or moves keyboard focus. `python3 tests/HistorySwipeTargets/check.py`
-checks these rules.
+runs model tests of which panes can swipe, checks that the shell, engine and
+session rules keep each refusal, and checks that those rules call none of the
+focus, key-window or activation APIs.
 
 ## How Dia does it
 
@@ -174,8 +177,8 @@ left edge, Forward at the right.
 
 - The list opens after a short dwell. Dia's delay is the reference, with the
   value tuned in review.
-- Rows show favicon and title from the same history snapshot as the Back/Forward
-  chooser, with the current page at the inner end. Reuse the chooser's row and
+- Rows show favicon and title from the swipe's own per-page history snapshot,
+  with the current page at the inner end. Reuse the chooser's row and
   card styling ([navigation](navigation.md#history-chooser-presentation)) unless
   the review wants Dia's denser rows.
 - Moving two fingers vertically steps the selection one row at a time, with a
