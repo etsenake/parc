@@ -29,7 +29,7 @@ import Foundation
         try check(InterProfileMoveGate.resolve(sourceProfiles: [p], destination: q, decision: .alwaysProceed, bypass: false) == .proceed(remembersChoice: true), "always stores preference")
         let one = InterProfileMovePrompt(tabCount: 1, spaceName: "Work")
         try check(one.title == "Move tab to Work?", "singular title")
-        try check(one.message == "Work is using a different Profile, so you might get logged out or lose your progress in this tab.\n\nThis can't be undone!", "singular message")
+        try check(one.message == "Work uses different data, so you might get logged out or lose your progress in this tab.\n\nThis can't be undone!", "singular message")
         let many = InterProfileMovePrompt(tabCount: 3, spaceName: "Work")
         try check(many.title == "Move tabs to Work?" && many.message.contains("progress in these tabs."), "plural copy")
         try check(InterProfileMovePrompt.displayName("123456789012345678901234") == "123456789012345678901234", "24 characters fit")

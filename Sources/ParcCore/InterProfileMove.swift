@@ -43,7 +43,7 @@ struct InterProfileMovePrompt: Equatable {
 
     var title: String { "Move \(tabCount > 1 ? "tabs" : "tab") to \(destinationName)?" }
     var message: String {
-        "\(destinationName) is using a different Profile, so you might get logged out or lose your progress in "
+        "\(destinationName) uses different data, so you might get logged out or lose your progress in "
             + (tabCount > 1 ? "these tabs" : "this tab") + ".\n\nThis can't be undone!"
     }
 
@@ -51,7 +51,7 @@ struct InterProfileMovePrompt: Equatable {
         [("Move \(tabCount > 1 ? "tabs" : "tab") to ", false), (destinationName, true), ("?", false)]
     }
     var messageSegments: [(String, Bool)] {
-        [(destinationName, true), (" is using a different Profile, so you might get logged out or lose your progress in "
+        [(destinationName, true), (" uses different data, so you might get logged out or lose your progress in "
             + (tabCount > 1 ? "these tabs" : "this tab") + ".\n\nThis can't be undone!", false)]
     }
 
