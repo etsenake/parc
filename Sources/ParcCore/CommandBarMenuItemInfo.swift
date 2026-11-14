@@ -17,6 +17,7 @@ struct CommandBarMenuItemInfo: Equatable, Sendable {
 
     private static let table: [String: CommandBarMenuItemInfo] = [
         "actualSize:": .init(triggers: ["Reset Zoom"]),
+        "adjustWindowFrame:": .init(triggers: ["Window Frame", "Frame Thickness", "Border", "Crank", "Thinner Frame", "Thicker Frame"]),
         "addExtension:": .init(triggers: ["Install Extensions", "Extension Store", "Plugins", "Chrome Extensions", "Chrome Store"]),
         "archive:": .init(triggers: ["Archive"]),
         "captureFullPage:": .init(triggers: ["Full Page Capture", "Capture Entire Page", "Screenshot Full Page", "Capture Full Page", "Screenshot"]),

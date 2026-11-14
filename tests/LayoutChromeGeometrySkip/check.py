@@ -33,9 +33,9 @@ assert "library: libraryView != nil,\n            libraryContentWidth: libraryCo
     "chromeGeometryFingerprint must read the Library page's content width"
 
 layout = re.search(
-    r"private func layoutChrome\(\) \{(?P<body>.*?)\n    \}\n\n    /// Cheap chrome-geometry \+ full-pass eligibility inputs",
+    r"private func layoutChrome\(\) \{(?P<body>.*?)\n    \}\n\n    private func chromeGeometryFingerprint\(\)",
     controller, re.S)
-assert layout, "layoutChrome not found (or fingerprint helper comment moved)"
+assert layout, "layoutChrome not found before chromeGeometryFingerprint"
 body = layout.group("body")
 
 assert "let fingerprint = chromeGeometryFingerprint()" in body, \

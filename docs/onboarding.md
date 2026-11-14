@@ -38,9 +38,10 @@ The account-free sequence is:
 1. Browser or HTML bookmark import, including conditional access/password pages.
 2. Favorites.
 3. Theme and Space name.
-4. Ad blockers when applicable.
-5. Default browser.
-6. The finished card and **Get Started**.
+4. **Find your frame**: window frame thickness.
+5. Ad blockers when applicable.
+6. Default browser.
+7. The finished card and **Get Started**.
 
 Account, cloud and AI steps are excluded. No starter folder is seeded. Import
 is skipped if no browser is found; HTML selection remains available through its
@@ -49,7 +50,8 @@ existing default pending the product ordering decision (OB17).
 
 Back follows the actual conditional order. Import pages use **Do this later**
 or **Skip for now** as appropriate. Theme Skip clears the first-launch color;
-replay instead restores its starting theme. Favorites Skip selects no new
+replay instead restores its starting theme. Frame Skip keeps the saved thickness.
+Favorites Skip selects no new
 Favorites, preserving existing ones in replay. Back is hidden on the finished
 card. The counter reflects the included setup steps rather than enum values.
 
@@ -224,6 +226,32 @@ The left-column Space-name field is a Parc addition. Theme and appearance update
 live without replacing the editor. First launch saves the final choices with
 setup; replay uses the reversible preview transaction below.
 
+## Find your frame step
+
+Setup runs before any browser window exists, so this step shows a true-size
+copy of a browser window drawn at one pixel per point: 560 by 380 points,
+rounded like a real window, in the Space colors and light or dark from the Theme
+step, with no sidebar and a plain page card inset by the frame on all four
+sides. The window crank sits at its real place and size, 125 points in from the
+copy's left and bottom edges, clipped by the copy's corners. No panel, border or
+number field surrounds the copy. On compact displays the whole setup card,
+copy included, scales down with it.
+
+Turning the crank re-insets the page card live; at 3 and 13 the card gives the
+real window's short sideways shudder, except under Reduce Motion. The crank
+stays out for the whole step and takes keyboard focus when the step appears.
+Return or a click elsewhere keeps the value in the draft and brings a fresh crank
+straight back with focus on Next, so a second Return continues; Escape returns
+to the value the step last kept. Next and Back keep a value that differs from
+where the step started; untouched, and with Skip, the saved thickness, 10 on
+first launch, stays. The step never previews live
+browser windows.
+
+Successful completion saves the chosen thickness as the app-wide
+[window frame](window-frame.md) preference before the browser opens. A save
+failure is logged and setup continues. Replay starts from the saved thickness
+and applies a choice only at Finish.
+
 ## Optional default-browser step and setup order
 
 The initial choice is **YES, make Parc default.** The No option advances without
@@ -246,8 +274,9 @@ with Share, Download, Randomize and Get Started. The card actions use the local
 window, after a short arrival delay, and is disabled by Reduce Motion. Successful
 completion closes setup and reveals the browser without an extra reveal fade.
 
-Entering theme focuses Space name; other setup steps focus their progression
-control. Phase-only welcome updates do not steal focus. Each step's choices,
+Entering theme focuses Space name. On the frame step the crank takes focus
+when it appears, so arrow keys turn it and VoiceOver reads it as a slider; other
+setup steps focus their progression control. Phase-only welcome updates do not steal focus. Each step's choices,
 Back, Skip, card actions and Next participate in the native key-view loop.
 Stage changes issue a layout-change announcement. Escape dismisses a presented
 modal rather than navigating Back. Command-Q remains available during setup.
@@ -338,7 +367,8 @@ The main owners are `OnboardingDraft`, `OnboardingExperience`,
 Relevant existing checks include:
 
 - `scripts/test-onboarding.sh`: draft migration, defaults, ordering and commits.
-- `scripts/test-onboarding-presentation.sh`, `test-onboarding-keyboard.sh`,
+- `scripts/test-onboarding-presentation.sh` (including the frame step's
+  geometry), `test-onboarding-keyboard.sh`,
   `test-onboarding-theme.sh` and `test-onboarding-video.sh`: component behavior.
 - Browser-import coordinator/access/password checks and replay lifecycle checks.
 - The whole-module Swift check for material application changes.

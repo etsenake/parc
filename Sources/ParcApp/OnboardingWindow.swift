@@ -61,6 +61,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private var defaultChoice: NSHostingView<OnboardingDefaultBrowserChoice>?
     private var adBlockerHost: NSHostingView<OnboardingAdBlockersChoice>?
     private let favoritePicker = OnboardingFavoritesControl(frame: .zero)
+    private var windowFrameStep: OnboardingWindowFrameStep?
     private var replayAppearance: AppAppearance?
     private var pendingReplayTheme: SpaceTheme?
     private var replayThemeFrame: DispatchWorkItem?
@@ -145,6 +146,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             guard let self, !self.isFinishing,
                   self.window?.attachedSheet == nil, self.passwordHelp?.isPresented != true else { return }
             if let browserImport = self.browserImport { browserImport.goBack(); return }
+            self.captureWindowFrame()
             if let stage = self.draft.previousStage() { self.transition(to: stage) }
         }
         skip.actionBlock = { [weak self] in self?.skipStep() }
@@ -207,6 +209,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         applyMusicPolicy(.close)
         confetti.stop()
         readyContent.cancelPresentation()
+        windowFrameStep?.end()
         welcomeBackdrop.cancel()
         welcome?.removeFromSuperview(); welcome = nil
         background?.removeFromSuperview(); background = nil
@@ -383,7 +386,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         next.isHidden = false
         let themeWasVisible = themeChrome.superview === body
         let retainedImport = draft.stage == .bookmarks ? browserImport?.view : nil
-        body.subviews.filter { $0 !== retainedImport }.forEach { $0.removeFromSuperview() }
+        let retainedFrame = draft.stage == .windowFrame ? windowFrameStep : nil
+        if retainedFrame == nil { windowFrameStep?.end() }
+        body.subviews.filter { $0 !== retainedImport && $0 !== retainedFrame }.forEach { $0.removeFromSuperview() }
         defaultChoice = nil
         adBlockerHost = nil
         body.onLayout = nil
@@ -403,7 +408,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         back.isHidden = isReady || draft.previousStage() == nil
             || (importFoundNoSources && draft.previousStage()?.current == .bookmarks)
         skip.title = "Skip for now"
-        skip.isHidden = ![.theme, .favorites, .bookmarks, .adBlockers].contains(draft.stage.current)
+        skip.isHidden = ![.theme, .windowFrame, .favorites, .bookmarks, .adBlockers].contains(draft.stage.current)
         let canAdvance = browserImport == nil
         next.isEnabled = canAdvance; next.isLoading = false; back.isEnabled = canAdvance; skip.isEnabled = canAdvance
         next.title = isReady ? "Get Started" : "Next"
@@ -416,6 +421,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         case .theme:
             title = "Add some flair with a theme."
             subtitle = "Pick a color, any color—add your favorite shade to your new home on the internet."
+        case .windowFrame:
+            title = "Find your frame."
+            subtitle = "Turn the crank to make the frame around your pages thinner or thicker. You can change it later in Settings."
         case .favorites:
             title = "Choose the apps you use most."
             subtitle = "Select your favorite apps to keep them handy in your sidebar."
@@ -444,6 +452,12 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                 themeChrome.prepareAppearance(reduceMotion: reduceMotion)
             }
             lower = [themeChrome]
+        } else if stage == .windowFrame {
+            let step = frameStep()
+            if entering != .windowFrame || step.superview !== body {
+                step.begin(value: draft.windowFrameValue(saved: WindowFramePreferences.shared.state.thickness))
+            }
+            lower = [step]
         } else if stage == .favorites {
             favoritePicker.configure(draft: draft, enabled: canAdvance)
             lower = [favoritePicker]
@@ -468,7 +482,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             importBrowser.isEnabled = browserImport == nil
             lower = [importBrowser]
         }
-        lower.forEach { body.addSubview($0) }
+        lower.filter { $0.superview !== body }.forEach { body.addSubview($0) }
         let current = stage
         let adBlockerCount = draft.importedAdBlockers.count
         body.onLayout = { [weak self] in
@@ -594,6 +608,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             case .theme:
                 loop += views([spaceField])
                 loop.append((themeEditor.firstKeyView, { self.themeEditor.chainKeyViews(to: $0) }))
+            case .windowFrame: loop += views(windowFrameStep?.keyboardView.map { [$0] } ?? [])
             case .favorites: loop += views([favoritePicker.keyboardView])
             case .defaultBrowser: loop += views(defaultChoice.map { [$0] } ?? [])
             case .adBlockers: loop += views(adBlockerHost.map { [$0] } ?? [])
@@ -653,6 +668,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                        foreground: hasTheme ? palette.backgroundExtra : .white,
                        reduceMotion: reduceMotion)
         spaceName.updateColors()
+        windowFrameStep?.apply(theme: selectedTheme, appearance: NSApp.effectiveAppearance, reduceMotion: reduceMotion)
         for button in [back, skip] { button.contentTintColor = setupCard.chromeColor }
         for view in body.subviews + setupCard.instructions.subviews {
             if let label = view as? NSTextField, label !== spaceField {
@@ -672,6 +688,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         }
         if let browserImport { browserImport.advance(); return }
         if draft.stage == .ready { finish(); return }
+        captureWindowFrame()
         if draft.stage == .defaultBrowser, draft.wantsDefaultBrowser { defaultBrowser.makeDefault() }
         if let next = draft.nextStage() { transition(to: next) }
     }
@@ -714,6 +731,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                 replayThemeFrame?.cancel(); replayThemeFrame = nil
                 if isReplay { try store.applyOnboardingReplay(draft) } else { try store.completeOnboarding(draft) }
                 setupCommitted = true
+                applyWindowFrameChoice()
                 if let appearance = replayAppearance, AppAppearance.current == appearance { AppAppearance.apply(appearance) }
             }
             guard let onComplete else { throw CocoaError(.featureUnsupported) }
@@ -731,6 +749,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             applyMusicPolicy(.finish)
             confetti.stop()
             readyContent.cancelPresentation()
+            windowFrameStep?.end()
             welcomeBackdrop.cancel()
             if !isReplay { try? OnboardingDraft.remove(directory: store.directory) }
             if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver) }
@@ -752,6 +771,42 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                 PArcDialog.inform(in: window, .init(error: error, title: setupCommitted ? "Parc couldn’t open the browser." : "Parc couldn’t finish setup."),
                                  queued: true)
             }
+        }
+    }
+
+    private func frameStep() -> OnboardingWindowFrameStep {
+        if let windowFrameStep { return windowFrameStep }
+        let step = OnboardingWindowFrameStep(frame: .zero)
+        step.onCommit = { [weak self] value in
+            guard let self, !self.isClosed, !self.isFinishing, self.draft.stage == .windowFrame,
+                  self.draft.windowFrameThickness != nil || value != self.windowFrameStep?.startValue else { return }
+            self.draft.chooseWindowFrame(value)
+            self.persistDraft()
+        }
+        step.onKept = { [weak self] in
+            guard let self, !self.isClosed, self.draft.stage == .windowFrame else { return }
+            self.restoreFocus(from: self.draft.stage, previousResponder: self.next.keyboardView)
+        }
+        step.onCrankChange = { [weak self] in
+            guard let self, !self.isClosed, self.draft.stage == .windowFrame else { return }
+            self.restoreFocus(from: self.draft.stage, previousResponder: self.window?.firstResponder)
+        }
+        windowFrameStep = step
+        step.apply(theme: selectedTheme, appearance: NSApp.effectiveAppearance, reduceMotion: reduceMotion)
+        return step
+    }
+
+    private func captureWindowFrame() {
+        guard draft.stage == .windowFrame, let step = windowFrameStep, step.superview === body,
+              draft.windowFrameThickness != nil || step.chosenValue != step.startValue else { return }
+        draft.chooseWindowFrame(step.chosenValue)
+        persistDraft()
+    }
+
+    private func applyWindowFrameChoice() {
+        guard let thickness = draft.windowFrameThickness else { return }
+        do { try WindowFramePreferences.shared.setThickness(thickness) } catch {
+            NSLog("Parc could not save the chosen window frame: %@", error.localizedDescription)
         }
     }
 
@@ -844,6 +899,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             applySetupPalette()
         } else if draft.stage == .favorites {
             draft.skipFavorites(keeping: isReplay ? replayExistingFavorites : [])
+            persistDraft()
+        } else if draft.stage == .windowFrame {
+            draft.skipWindowFrame()
             persistDraft()
         } else if draft.stage == .adBlockers {
             draft.adBlockerChoice = .keepAll

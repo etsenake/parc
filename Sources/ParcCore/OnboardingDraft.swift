@@ -5,11 +5,12 @@ struct OnboardingDraft: Codable, Equatable {
         case introAnimation, sellIntro, sellCompleted, introduction, theme, favorites, bookmarks, ready
         case defaultBrowser
         case adBlockers
+        case windowFrame
         var isWelcome: Bool { rawValue <= Self.sellCompleted.rawValue }
 
         static var setupOrder: [Self] { setupOrder(includingAdBlockers: false) }
         static func setupOrder(includingAdBlockers: Bool, retaining current: Self? = nil) -> [Self] {
-            var order: [Self] = [.bookmarks, .favorites, .theme]
+            var order: [Self] = [.bookmarks, .favorites, .theme, .windowFrame]
             if includingAdBlockers || current == .adBlockers { order.append(.adBlockers) }
             order.append(contentsOf: [.defaultBrowser, .ready])
             return order
@@ -51,6 +52,7 @@ struct OnboardingDraft: Codable, Equatable {
     var iCloudPasswordsProfileID: UUID?
     var importedAdBlockers: [ImportedAdBlocker] = []
     var adBlockerChoice: AdBlockerChoice?
+    var windowFrameThickness: Int?
     var replayBaseName: String?
     var replayBaseTheme: SpaceTheme?
     var replayAppearance: String?
@@ -66,6 +68,13 @@ struct OnboardingDraft: Codable, Equatable {
     func displayedSetupCount() -> Int {
         visibleSetupOrder().filter { $0 != .ready }.count
     }
+    func windowFrameValue(saved: Int) -> Int {
+        WindowFrameThickness.clamped(windowFrameThickness ?? saved)
+    }
+    mutating func chooseWindowFrame(_ value: Int) {
+        windowFrameThickness = WindowFrameThickness.clamped(value)
+    }
+    mutating func skipWindowFrame() { windowFrameThickness = nil }
 
     struct ImportedAdBlocker: Codable, Equatable, Identifiable {
         var identifier: String
@@ -176,7 +185,7 @@ struct OnboardingDraft: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case version, spaceID, stage, spaceName, theme, favoriteURLs, favoriteOrder
         case bookmarks, bookmarkFileName, defaultBrowserChoice, iCloudPasswordsProfileID
-        case importedAdBlockers, adBlockerChoice
+        case importedAdBlockers, adBlockerChoice, windowFrameThickness
         case replayBaseName, replayBaseTheme, replayAppearance
     }
 
@@ -203,6 +212,7 @@ struct OnboardingDraft: Codable, Equatable {
         iCloudPasswordsProfileID = try container.decodeIfPresent(UUID.self, forKey: .iCloudPasswordsProfileID)
         importedAdBlockers = try container.decodeIfPresent([ImportedAdBlocker].self, forKey: .importedAdBlockers) ?? []
         adBlockerChoice = try container.decodeIfPresent(AdBlockerChoice.self, forKey: .adBlockerChoice)
+        windowFrameThickness = try container.decodeIfPresent(Int.self, forKey: .windowFrameThickness)
         replayBaseName = try container.decodeIfPresent(String.self, forKey: .replayBaseName)
         replayBaseTheme = try container.decodeIfPresent(SpaceTheme.self, forKey: .replayBaseTheme)
         replayAppearance = try container.decodeIfPresent(String.self, forKey: .replayAppearance)
@@ -223,6 +233,7 @@ struct OnboardingDraft: Codable, Equatable {
         try container.encodeIfPresent(iCloudPasswordsProfileID, forKey: .iCloudPasswordsProfileID)
         try container.encode(importedAdBlockers, forKey: .importedAdBlockers)
         try container.encodeIfPresent(adBlockerChoice, forKey: .adBlockerChoice)
+        try container.encodeIfPresent(windowFrameThickness, forKey: .windowFrameThickness)
         try container.encodeIfPresent(replayBaseName, forKey: .replayBaseName)
         try container.encodeIfPresent(replayBaseTheme, forKey: .replayBaseTheme)
         try container.encodeIfPresent(replayAppearance, forKey: .replayAppearance)
@@ -252,6 +263,9 @@ struct OnboardingDraft: Codable, Equatable {
                 ? choice.keptIdentifier.map(OnboardingAdBlocker.isKnown) ?? (choice != .uBlock || draft.importedAdBlockers.isEmpty)
                 : choice == .keepAll || AdBlockerChoice.settled(choice, for: draft.importedAdBlockers) == choice
             if !valid { draft.adBlockerChoice = nil }
+        }
+        if let thickness = draft.windowFrameThickness, !WindowFrameThickness.range.contains(thickness) {
+            draft.windowFrameThickness = nil
         }
         draft.stage = draft.stage.current
         return draft

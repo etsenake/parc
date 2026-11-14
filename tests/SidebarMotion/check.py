@@ -72,8 +72,8 @@ assert ("        pageHost.frame = frames.pageHost\n"
         "        extensionSidePanel.frame = frames.sidePanel\n") in geometry, \
     "the geometry pass moves the extension side panel with the page"
 assert "pageHost.layer?.cornerRadius = PageCard.cornerRadius\n        pageHost.layer?.cornerCurve = .continuous" in controller \
-    and "static let cornerRadius: CGFloat = 6" in (root / "Sources/ParcApp/PageCardShadow.swift").read_text(), \
-    "the page host uses the 6-point continuous corner in every mode"
+    and "nonisolated(unsafe) private(set) static var cornerRadius: CGFloat = 6" in (root / "Sources/ParcApp/PageCardShadow.swift").read_text(), \
+    "the page host starts at the 6-point continuous corner and follows the window frame thickness"
 assert "let sidebarless = isPopupWindow && nativeFullscreenTabID == nil" in controller, \
     "Library is not sidebarless; only a popup is"
 assert "libraryView?.showsWindowButtons = showsOwn && !sidebarless" in controller, \

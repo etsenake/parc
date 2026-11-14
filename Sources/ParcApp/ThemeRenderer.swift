@@ -404,6 +404,12 @@ final class ThemeRendererView: NSView {
     private(set) var canvasActivityDisplayInvalidations = 0
     private(set) var surfaceStyle = ThemeSurfaceStyle(theme: SpaceTheme(), appearance: NSAppearance(named: .aqua)!)
     override var isFlipped: Bool { true }
+    var contextMenu: ((NSView?) -> NSMenu?)?
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let contextMenu else { return super.menu(for: event) }
+        let point = superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
+        return contextMenu(hitTest(point)) ?? super.menu(for: event)
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

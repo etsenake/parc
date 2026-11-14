@@ -69,9 +69,10 @@ and follows its own content-focus request.
 
 ## Page card shadow
 
-`ContentShadowImage` caches a 51-point stretchable image per backing scale: a
-10-point outset, six-point corner radius and nine points of straight edge on
-either side of the stretchable point. The ordinary shadow is black at 0.25,
+`ContentShadowImage` caches a stretchable image per backing scale and corner
+radius: a 10-point outset, the page card's current corner radius (six points at
+the default [window frame](window-frame.md#geometry), 51 points across) and nine
+points of straight edge on either side of the stretchable point. The ordinary shadow is black at 0.25,
 radius 3 and offset (0, 1), rendered with a Core Graphics blur of 6.
 
 The image clears the card's interior through the continuous-corner mask, so

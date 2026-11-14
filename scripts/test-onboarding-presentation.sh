@@ -23,3 +23,14 @@ xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0
   tests/OnboardingSetupCardTests.swift -o "$output/check"
 cp -R Resources/ThemeTextures "$output/ThemeTextures"
 "$output/check"
+xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
+  Sources/ParcCore/SpaceTheme.swift \
+  Sources/ParcCore/OnboardingStepMotion.swift \
+  Sources/ParcCore/WindowFrame.swift \
+  Sources/ParcApp/WindowFramePreferences.swift \
+  Sources/ParcApp/OnboardingWindowFrameLayout.swift \
+  Sources/ParcApp/OnboardingSetupCard.swift \
+  Sources/ParcApp/BrowserImportBackdrop.swift \
+  Sources/ParcApp/SidebarSpacePaging.swift \
+  tests/OnboardingWindowFrameTests.swift -o "$output/frame"
+"$output/frame"

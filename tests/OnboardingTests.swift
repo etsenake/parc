@@ -58,38 +58,79 @@ struct OnboardingTests {
         precondition(OnboardingDraft.Stage.sellCompleted.next == .bookmarks
             && OnboardingDraft.Stage.bookmarks.previous == nil
             && OnboardingDraft.Stage.favorites.previous == .bookmarks
-            && OnboardingDraft.Stage.theme.next == .defaultBrowser
+            && OnboardingDraft.Stage.theme.next == .windowFrame
+            && OnboardingDraft.Stage.windowFrame.next == .defaultBrowser
+            && OnboardingDraft.Stage.windowFrame.previous == .theme
+            && OnboardingDraft.Stage.defaultBrowser.previous == .windowFrame
             && OnboardingDraft.Stage.ready.next == nil,
             "Setup navigation must not use persisted integer arithmetic or replay the welcome on Back")
-        precondition(OnboardingDraft.Stage.setupOrder == [.bookmarks, .favorites, .theme, .defaultBrowser, .ready]
+        precondition(OnboardingDraft.Stage.setupOrder == [.bookmarks, .favorites, .theme, .windowFrame, .defaultBrowser, .ready]
             && OnboardingDraft.Stage.setupOrder(includingAdBlockers: true) ==
-                [.bookmarks, .favorites, .theme, .adBlockers, .defaultBrowser, .ready],
-            "Included setup inserts ad blockers only between theme and default browser")
+                [.bookmarks, .favorites, .theme, .windowFrame, .adBlockers, .defaultBrowser, .ready],
+            "The frame step follows theme, and ad blockers sit between it and default browser")
+        precondition(OnboardingDraft.Stage.adBlockers.rawValue == 9 && OnboardingDraft.Stage.windowFrame.rawValue == 10
+            && OnboardingDraft.Stage.theme.rawValue == 4 && OnboardingDraft.Stage.defaultBrowser.rawValue == 8
+            && !OnboardingDraft.Stage.windowFrame.isWelcome,
+            "The frame step appends a new persisted tag without renumbering saved drafts")
+        var framed = draft
+        framed.stage = .theme
+        precondition(framed.nextStage() == .windowFrame && framed.windowFrameThickness == nil
+            && framed.windowFrameValue(saved: 10) == 10 && framed.windowFrameValue(saved: 6) == 6,
+            "Theme continues to the frame step, which starts from the saved thickness")
+        framed.stage = .windowFrame
+        framed.importedAdBlockers = [.init(identifier: OnboardingAdBlocker.uBlockOrigin, displayName: "uBlock Origin")]
+        precondition(framed.nextStage() == .defaultBrowser && framed.previousStage() == .theme
+            && framed.visibleSetupOrder().firstIndex(of: .windowFrame) == 3 && framed.displayedSetupCount() == 5,
+            "The frame step is the fourth counted step and Back returns to theme")
+        framed.importedAdBlockers = []
+        precondition(framed.nextStage() == .adBlockers, "The ad-blocker step follows the frame step when shown")
+        framed.chooseWindowFrame(4)
+        try framed.save(directory: root)
+        let resumedFrame = try OnboardingDraft.load(directory: root, space: store.activeSpace)
+        precondition(resumedFrame.stage == .windowFrame && resumedFrame.windowFrameThickness == 4
+            && resumedFrame.windowFrameValue(saved: 10) == 4,
+            "A chosen thickness and the frame stage resume after restart")
+        framed.chooseWindowFrame(40)
+        precondition(framed.windowFrameThickness == 13, "A chosen thickness stays inside the range")
+        framed.skipWindowFrame()
+        precondition(framed.windowFrameThickness == nil && framed.windowFrameValue(saved: 7) == 7,
+            "Skip keeps whatever thickness is already saved")
+        var frameJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: draftFile)) as! [String: Any]
+        frameJSON["windowFrameThickness"] = 99
+        try JSONSerialization.data(withJSONObject: frameJSON).write(to: draftFile)
+        let rangedFrame = try OnboardingDraft.load(directory: root, space: store.activeSpace)
+        precondition(rangedFrame.windowFrameThickness == nil,
+            "An out-of-range saved thickness is dropped rather than applied")
+        frameJSON.removeValue(forKey: "windowFrameThickness")
+        try JSONSerialization.data(withJSONObject: frameJSON).write(to: draftFile)
+        let olderFrame = try OnboardingDraft.load(directory: root, space: store.activeSpace)
+        precondition(olderFrame.windowFrameThickness == nil && olderFrame.stage == .windowFrame,
+            "Drafts saved before the frame step decode without a chosen thickness")
         let ublock = OnboardingDraft.ImportedAdBlocker(
             identifier: "cjpalhdlnbpafiamejdnhcphjbkeiagm", displayName: "uBlock Origin")
         let setupProfile = store.activeSpace.profileID, sideProfile = UUID()
         let adGuard = OnboardingDraft.ImportedAdBlocker(identifier: "bgnkhhnnamicmpeenaelnjfhikgbkllg",
             displayName: "AdGuard AdBlocker", profileIDs: [setupProfile, sideProfile])
         var blocked = draft
-        blocked.stage = .theme
-        precondition(blocked.nextStage() == .adBlockers && blocked.displayedSetupCount() == 5,
+        blocked.stage = .windowFrame
+        precondition(blocked.nextStage() == .adBlockers && blocked.displayedSetupCount() == 6,
                      "With no ad blocker imported, allSteps includes the YES/NO ad-blocker step")
         blocked.importedAdBlockers = [ublock]
         precondition(blocked.nextStage() == .defaultBrowser && !blocked.visibleSetupOrder().contains(.adBlockers)
-            && blocked.displayedSetupCount() == 4,
+            && blocked.displayedSetupCount() == 5,
                      "uBlock Origin alone is already the choice, so the step is omitted; Ready is not in the total")
         blocked.importedAdBlockers = [ublock, adGuard]
         blocked.adBlockerChoice = .keep(ublock.identifier)
         precondition(blocked.nextStage() == .adBlockers && blocked.visibleSetupOrder().contains(.adBlockers),
                      "Any other imported blocker continues into the setup step")
         blocked.stage = .adBlockers
-        precondition(blocked.nextStage() == .defaultBrowser && blocked.previousStage() == .theme,
-                     "Ad-blocker setup continues to the default-browser step and returns to theme")
+        precondition(blocked.nextStage() == .defaultBrowser && blocked.previousStage() == .windowFrame,
+                     "Ad-blocker setup continues to the default-browser step and returns to the frame step")
         blocked.stage = .defaultBrowser
         precondition(blocked.previousStage() == .adBlockers,
                      "Back from default browser returns to ad blockers while they remain included")
         blocked.importedAdBlockers = [ublock]
-        precondition(blocked.previousStage() == .theme && !blocked.visibleSetupOrder().contains(.adBlockers),
+        precondition(blocked.previousStage() == .windowFrame && !blocked.visibleSetupOrder().contains(.adBlockers),
                      "A blocker set of only uBlock Origin omits the step without changing the remaining order")
         blocked.stage = .adBlockers
         precondition(blocked.visibleSetupOrder().contains(.adBlockers) && blocked.nextStage() == .defaultBrowser,
@@ -551,7 +592,11 @@ struct OnboardingTests {
                      && OnboardingExperience.direction(from: .theme, to: .adBlockers) == .forward
                      && OnboardingExperience.direction(from: .adBlockers, to: .defaultBrowser) == .forward
                      && OnboardingExperience.direction(from: .adBlockers, to: .theme) == .back
-                     && OnboardingExperience.direction(from: .theme, to: .theme) == nil,
+                     && OnboardingExperience.direction(from: .theme, to: .theme) == nil
+                     && OnboardingExperience.direction(from: .theme, to: .windowFrame) == .forward
+                     && OnboardingExperience.direction(from: .windowFrame, to: .theme) == .back
+                     && OnboardingExperience.direction(from: .windowFrame, to: .adBlockers) == .forward
+                     && OnboardingExperience.direction(from: .defaultBrowser, to: .windowFrame) == .back,
                      "Setup TransitionDirection is back/forward from step order")
         precondition(OnboardingExperience.direction(from: .sellCompleted, to: .bookmarks) == nil
                      && OnboardingExperience.direction(from: .introAnimation, to: .bookmarks) == nil
@@ -607,6 +652,7 @@ struct OnboardingTests {
         precondition(OnboardingExperience.focusTarget(entering: .theme, from: .favorites) == .spaceName
                      && OnboardingExperience.focusTarget(entering: .theme, from: .theme) == .unchanged
                      && OnboardingExperience.focusTarget(entering: .ready, from: .defaultBrowser) == .next
+                     && OnboardingExperience.focusTarget(entering: .windowFrame, from: .theme) == .next
                      && OnboardingExperience.focusTarget(entering: .introAnimation, from: nil) == .welcome
                      && OnboardingExperience.focusTarget(entering: .sellIntro, from: .introAnimation) == .unchanged
                      && OnboardingExperience.focusTarget(entering: .introAnimation, from: .introAnimation) == .unchanged

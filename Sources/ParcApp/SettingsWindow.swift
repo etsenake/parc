@@ -102,6 +102,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private let moreSettings = SettingsPillButton(title: "More Settings…")
     private let exportData = SettingsPillButton(title: "Export Data")
     private let replay = SettingsPillButton(title: "Replay onboarding")
+    private let adjustWindowFrame = SettingsPillButton(title: "Adjust")
+    private let windowFrameValue = NSTextField(labelWithString: "")
+    private var windowFrameSubscription: AnyCancellable?
     private var dataExportPanel: NSSavePanel?
     private var dataExportID: UUID?
     var onMoreSettings: ((UUID, UUID) -> Bool)?
@@ -261,6 +264,11 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         moreSettings.target = self; moreSettings.action = #selector(openMoreSettings)
         exportData.target = self; exportData.action = #selector(exportBrowserData)
         replay.target = self; replay.action = #selector(replayWelcome)
+        adjustWindowFrame.target = self; adjustWindowFrame.action = #selector(adjustWindowFrameSelected)
+        adjustWindowFrame.setAccessibilityLabel("Adjust window frame")
+        windowFrameSubscription = WindowFramePreferences.shared.$state.receive(on: RunLoop.main).sink { [weak self] state in
+            self?.refreshWindowFrame(state)
+        }
         exportData.setAccessibilityHelp("Export your Spaces and saved tab links as Markdown.")
         moreSettings.setAccessibilityHelp(applicationProfileID == nil ? "Open browser settings for this window’s Space and profile." : "Open browser settings for the original regular profile.")
         removeProfile.destructive = true
@@ -352,6 +360,17 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         rowLabel("Warn before quitting", in: quitting, row: 0)
         warnBeforeQuitting.setAccessibilityLabel("Warn before quitting")
         trailingSwitch(warnBeforeQuitting, in: quitting, top: 0)
+        let frameTitle = SettingsSectionHeading(title: "Window")
+        content.addSubview(frameTitle)
+        let frame = group(in: content, y: 0, height: rowHeight)
+        rowLabel("Window frame", in: frame, row: 0, width: 200)
+        trailingPill(adjustWindowFrame, in: frame, top: 0)
+        windowFrameValue.font = .systemFont(ofSize: NSFont.systemFontSize)
+        windowFrameValue.textColor = .secondaryLabelColor
+        windowFrameValue.alignment = .right
+        place(windowFrameValue, in: frame, NSRect(x: frame.bounds.width - SettingsLayout.rowInset - adjustWindowFrame.fittingWidth - 12 - 160,
+                                                  y: 12, width: 160, height: 18))
+        refreshWindowFrame(WindowFramePreferences.shared.state)
         let previewsTitle = SettingsSectionHeading(title: "Previews")
         content.addSubview(previewsTitle)
         let preferences = group(in: content, y: 0, height: rowHeight)
@@ -390,7 +409,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
                                      width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 3 - replay.fittingWidth, height: 28), help: true)
         trailingPill(replay, in: onboarding, top: 0, rowHeight: noteHeight + 6)
         generalLayout = GeneralLayout(quitting: quitting,
-                                      sections: [(previewsTitle, preferences), (searchTitle, searching),
+                                      sections: [(frameTitle, frame), (previewsTitle, preferences), (searchTitle, searching),
                                                  (downloadsTitle, downloads), (onboardingTitle, onboarding)],
                                       search: searching, downloads: downloads, content: content)
         layoutGeneralPane()
@@ -1128,6 +1147,18 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
 
     var replaySpaceID: UUID? { settingsContextSpace()?.id }
+
+    @objc private func adjustWindowFrameSelected() {
+        NSApp.sendAction(#selector(AppDelegate.adjustWindowFrameFromSettings(_:)), to: NSApp.delegate, from: self)
+    }
+
+    private func refreshWindowFrame(_ state: WindowFramePreferences.State) {
+        windowFrameValue.stringValue = WindowFrameThickness.label(state.thickness)
+        windowFrameValue.setAccessibilityLabel("Window frame, \(WindowFrameThickness.spokenValue(state.thickness))")
+        let failure = WindowFramePreferences.shared.loadError
+        adjustWindowFrame.isEnabled = !failure
+        adjustWindowFrame.toolTip = failure ? WindowFramePreferences.Failure.unavailable.localizedDescription : nil
+    }
 
     @objc private func replayWelcome() {
         NSApp.sendAction(#selector(AppDelegate.replayOnboarding(_:)), to: NSApp.delegate, from: self)

@@ -135,10 +135,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 Visual work in each item follows the [interface review](visual-review.md)
 workflow, renders first.
 
-- Let people set the window frame anywhere from 3 to 13 points, never invisible,
-  with today's 10 as the default, by turning a window crank on the window, with
-  a ring of lights, sound and haptics. A Parc addition.
-  [Window frame](window-frame.md#planned-adjustable-thickness).
 - Closing the last tab removes its page at once instead of fading it out
   before the start page fades in. [Start page](start-page.md#transitions).
 

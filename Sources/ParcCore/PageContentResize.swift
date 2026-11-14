@@ -13,6 +13,7 @@ struct PageContentResizeReasons: OptionSet, Hashable {
     static let splitDividerResize = Self(rawValue: 0x2)
     static let splitInteractiveEditing = Self(rawValue: 0x4)
     static let sidebarResize = Self(rawValue: 0x8)
+    static let frameAdjust = Self(rawValue: 0x10)
 
     var mode: PageContentResizeMode {
         contains(.splitInteractiveEditing) ? .locked : isEmpty ? .intrinsic : .throttle

@@ -29,7 +29,8 @@ struct LayoutChromeGeometrySkipTests {
         activePeekID: UUID? = nil,
         commandBarOpen: Bool = false,
         windowClosePending: Bool = false,
-        transferringTabIDs: [UUID] = []
+        transferringTabIDs: [UUID] = [],
+        frameThickness: CGFloat = 10
     ) -> LayoutChromeGeometryFingerprint {
         LayoutChromeGeometryFingerprint(
             boundsWidth: width,
@@ -51,7 +52,8 @@ struct LayoutChromeGeometrySkipTests {
             activePeekID: activePeekID,
             commandBarOpen: commandBarOpen,
             windowClosePending: windowClosePending,
-            transferringTabIDs: transferringTabIDs
+            transferringTabIDs: transferringTabIDs,
+            frameThickness: frameThickness
         )
     }
 
@@ -129,6 +131,17 @@ struct LayoutChromeGeometrySkipTests {
             next: fingerprint(currentTabID: tabA, transferringTabIDs: [tabA]),
             dirtyHostedLayout: false),
                "In-flight tab transfers must still run layoutChrome eligibility work")
+
+        expect(!LayoutChromeGeometrySkip.shouldReturnEarly(
+            previous: settled,
+            next: fingerprint(frameThickness: 7),
+            dirtyHostedLayout: false),
+               "A window frame thickness change must relayout open windows")
+        expect(!LayoutChromeGeometrySkip.shouldReturnEarly(
+            previous: fingerprint(frameThickness: 10),
+            next: fingerprint(frameThickness: 10.4),
+            dirtyHostedLayout: false),
+               "A live crank preview between points must relayout")
 
         print("\(assertions) layoutChrome geometry skip assertions passed")
     }

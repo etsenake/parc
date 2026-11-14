@@ -223,7 +223,7 @@ struct SidebarChromeFrames {
 
     init(bounds: NSRect, sidebarWidth width: CGFloat, presentation: SidebarPresentation, placement: SidebarPresentationFrame,
          previewingHidden: Bool = false, fullscreen: Bool = false, library: Bool = false, libraryContentWidth: CGFloat = 0,
-         popup: Bool = false, sidePanel: Bool = false) {
+         popup: Bool = false, sidePanel: Bool = false, thickness: CGFloat = SidebarChromeFrames.pageInset) {
         var sidebar = placement.rect(width: width, in: bounds)
         if previewingHidden { sidebar.origin.x = -width }
         self.sidebar = sidebar
@@ -231,8 +231,8 @@ struct SidebarChromeFrames {
             : max(Self.libraryMinimumWidth, min(bounds.width - 56, libraryContentWidth))
         self.library = NSRect(x: 0, y: 0, width: libraryWidth, height: bounds.height)
         let left: CGFloat = fullscreen ? 0 : libraryWidth > 0 ? libraryWidth
-            : (!popup && presentation == .locked && !previewingHidden ? width : popup ? 8 : Self.pageInset)
-        let inset: CGFloat = fullscreen ? 0 : Self.pageInset
+            : (!popup && presentation == .locked && !previewingHidden ? width : popup ? 8 : thickness)
+        let inset: CGFloat = fullscreen ? 0 : popup ? Self.pageInset : thickness
         let popupHeight: CGFloat = popup && !fullscreen ? 47 : 0
         popupChrome = NSRect(x: 8, y: 0, width: max(0, bounds.width - 16), height: popupHeight)
         let panelRight = max(0, bounds.width - inset)
@@ -265,6 +265,7 @@ struct LayoutChromeGeometryFingerprint: Equatable {
     var commandBarOpen: Bool
     var windowClosePending: Bool
     var transferringTabIDs: [UUID]
+    var frameThickness: CGFloat
 }
 
 enum LayoutChromeGeometrySkip {

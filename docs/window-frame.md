@@ -1,187 +1,147 @@
 # Window frame
 
 The window frame is the band of Space color between a browser window's edge and
-its page card. This guide records its current geometry and the planned setting
-that lets people make it thinner or thicker. The open item is indexed in the
-[backlog](backlog.md#planned-interface-work).
+its page card. People set its thickness from 3 to 13 points by turning a window
 
-## Geometry today
+## Geometry
 
-- Standard and private windows keep 10 points between the window edge and the
-  page card on the top, right and bottom, and on the left when the sidebar is
-  hidden or floating. A docked sidebar forms the left edge. The value is
-  `SidebarChromeFrames.pageInset` in
-  [SidebarMotionController.swift](../Sources/ParcApp/SidebarMotionController.swift).
+- One app-wide thickness, 10 points by default, frames the page card on the top,
+  right and bottom of every standard and private window, and on the left when
+  the sidebar is hidden or floating. A docked sidebar forms the left edge.
+  `SidebarChromeFrames` takes the thickness as a parameter;
+  `SidebarChromeFrames.pageInset` remains the 10-point default and the popup
+  inset.
 - The extension side panel shares the right margin.
-- The page card has a six-point continuous corner and a shadow with a ten-point
-  outset; see [page card shadow](window-appearance.md#page-card-shadow).
-- Divided splits leave 10-point gutters between panes (the split view's divider
-  thickness), and each pane draws its own card corner and shadow.
+- The page card's continuous corner stays concentric with the window's rounded
+  corner: `WindowFrameThickness.cornerRadius(for:)` gives 12 points at 3, 6 at
+  10 and 4 at 13. `PageCard.cornerRadius` follows the current thickness, and
+  `ContentShadowImage` caches its stretchable shadow per scale and radius; see
+  [page card shadow](window-appearance.md#page-card-shadow).
+- Divided splits use the frame thickness for their gutters, and each pane draws
+  its own card corner and shadow.
 - The floating sidebar sits 5 points in from the window's left, top and bottom
-  edges; hidden, it moves its own width plus 10 to 15 points off the left edge.
+  edges at every thickness; hidden, it moves its own width plus 10 to 15 points
+  off the left edge.
 - A standalone page shows the decorative two-by-24-point split grip in the right
-  margin, with a 44-point hover band; see [split groups](split-groups.md).
-- The hidden-sidebar reveal zones are sized from the same 10 points
-  (`SidebarHoverZones.contentInset` in `ParcCore`).
-- Popup windows use an 8-point left and chrome inset. Full screen has no frame.
+  margin, with a 44-point hover band; see [split groups](split-groups.md). The
+  grip hides when the frame is thinner than 6 points.
+- The hidden-sidebar reveal zones keep their own 10-point constant
+  (`SidebarHoverZones.contentInset` in `ParcCore`), as do split divider drag
+  targets, so no thickness makes anything harder to hit.
+- Popup windows keep their 8-point left and 10-point chrome inset, six-point
+  corner and matching shadow at every thickness. Full screen has no frame.
 - The toolbar, when shown, sits inside the page card and is unaffected.
 
 
-## Planned: adjustable thickness
+## The setting
 
-
-- One app-wide value applies live to every standard and private window. Popup
-  windows keep their compact chrome, and full screen stays frameless.
-- The range is 3 to 13 points, and the default stays today's 10, so no one's
-  window changes until they choose.
-- The 3-point floor is thin, but the Space color still reads as a frame; it
-  never reaches zero.
-- Store it like the other app-wide preferences: a versioned Codable record in
-  user defaults that keeps malformed or future records instead of overwriting them.
-- It is not per Space. A frame that changed as you swiped between Spaces would
+- `WindowFramePreferences` stores the value as a versioned Codable record in
+  user defaults (`parc.windowFrame.v1`). A malformed, future or out-of-range
+  record is preserved, the frame stays at 10, and saving is refused.
+- It is not per Space: a frame that changed as you swiped between Spaces would
   move every page under you.
+- While the crank turns, `preview` carries the live, fractional thickness to
+  every window; `state` changes only when the crank finishes with a kept value.
+- `LayoutChromeGeometryFingerprint` includes the thickness, so open windows
+  relayout when it changes. The sidebar motion key does not, so adjusting never
+  settles a running sidebar animation.
 
 People reach it in four places:
 
-- **Onboarding**, as the step after Theme, where most people set it once. Setup
-  runs before any browser window exists, so the step shows a true-size copy of a
-  window instead: the Space colors and light or dark chosen on the Theme step, a
-  hidden sidebar and a plain page card, with the crank, lights and readout in
-  their real place and size. The frame is drawn at one pixel per point so 3 and 13
-  look honest. The left column carries the heading **Find your frame**, one line
-  of copy, and Next and Skip; Skip keeps 10. No panel, card or number field sits
-  around the window copy. Replay onboarding shows the same step with the current
-  value.
-- **Settings → General**, as a Window frame row showing the value and its name,
-  for example 10 · Classic, with an **Adjust** button. Adjust fades the Settings
-  window out, brings the front browser window forward (opening one if none is
-  open) and slides the crank in. When the crank leaves, Settings fades back with
-  the row updated.
+- **Onboarding**, as the **Find your frame** step after Theme; see
+  [onboarding](onboarding.md).
+- **Settings → General**, as the Window row showing the value and its name, for
+  example 10 · Classic, with an **Adjust** button. Adjust fades the Settings
+  window out, brings a browser window forward (opening one if none is open) and
+  presents the crank. When the crank leaves, or if it cannot appear, Settings
+  fades back with the row updated.
+- **View → Adjust Window Frame…**, which the command bar also offers.
 - **Right-click** on the frame or the empty part of the sidebar: Adjust Window
-  Frame…. It stays out of the Space menu, which would suggest a per-Space value.
-- **The command bar**, as an Adjust Window Frame action that brings the crank onto
-  the current window.
+  Frame…. Controls, the page, the Library and the side panel keep their own
+  right-click behaviour. It stays out of the Space menu, which would suggest a
+  per-Space value.
 
 ## The crank
 
-The control is a car window crank that sits on the window itself.
+`WindowFrameCrankView` presents a car window crank on the window.
+`WindowFrameCrankModel` builds it in SceneKit, `WindowFrameCrankFeedback` plays
+its sound and haptics, and `WindowFrameCrank` in `ParcCore` owns the turning model.
 
 - **Object.** One-piece matte satin metal: a wide, waisted paddle arm with a
   gentle bend up to the knob, PARC etched into the arm, a short ribbed knob, and
   soft-touch caps on the knob and hub in the Space's color, over a round
   escutcheon. It is about 105 points long and its knob sweeps an 87-point
-  radius. It is drawn live in 3D with SceneKit so the metal lights correctly
-  and turns exactly with your hand; RealityKit's SwiftUI view needs macOS 15,
-  and Parc supports macOS 13.
-- **Placement.** The base sits 125 points in from the window's left and bottom
-  edges. With the sidebar docked, it sits on the seam between sidebar and page
-  at that height. With the sidebar hidden it sits over the page's lower-left;
-  a floating sidebar slides away while the crank is out. The whole swing and the
-  lights stay inside the window, including a window that fills the screen. The
-  hidden-sidebar reveal zones are off while the crank is out.
-- **Coming and going.** The crank slides in from the corner with a small spring
-  and stays until you click anywhere else or press Return or Escape, then slides
-  back out. There is no timeout. Escape restores the thickness you had when the
-  crank appeared; every other way out keeps the new value.
-- **Turning.** A two-finger scroll over it or a drag on the knob turns it, a
+  radius. SceneKit draws it live so the metal lights correctly and turns exactly
+  with your hand; RealityKit's SwiftUI view needs macOS 15, and Parc supports
+  macOS 13. A soft shadow is drawn from flattened copies of the crank.
+- **Placement.** `WindowFrameCrankPlacement` puts the hub 125 points in from the
+  window's left and bottom edges. With the sidebar docked it sits on the seam
+  between sidebar and page at that height; with the sidebar hidden it sits over
+  the page's lower-left, and a floating sidebar slides away first. The swing and
+  the lights stay inside the window, including a window that fills the screen; a
+  window too small for that centres the crank. The hidden-sidebar reveal zones
+  are off while the crank is out, and only one window shows a crank at a time:
+  opening it in another window keeps the first window's value and moves it.
+  Opening the Library or full screen puts the crank away, keeping its value.
+- **Coming and going.** The crank slides in from the lower-left with a small
+  spring and stays until you click anywhere else in the window or press Return
+  or Escape, then slides back out. There is no timeout. Escape restores the
+  thickness you had when the crank appeared; every other way out keeps the new
+  value, and closing the window keeps the value too.
+- **Turning.** A two-finger scroll over it or a drag around the hub turns it, a
   third of a turn per point. It follows your hand 1:1, eases through a soft notch
   at each point, and at 3 and 13 gives slightly past the end with a faint tremble,
-  then springs back when you let go.
+  then springs back when you let go. Momentum scrolling is ignored; a wheel
+  mouse settles after a short pause.
 - **Lights.** Eleven small pills, one per point, sit on an arc around the crank
-  with a gap at the bottom. They fill in order as the frame thickens, like a
-  meter: lit pills glow in the Space's accent with a thin bright core, unlit ones
-  are faint dashes, and 10 is slightly larger with a dot beside it. Each pill
-  pops with a small burst of sparkles as you reach its point, and at 3 and 13
-  the lit pills flash. There is no backdrop behind the lights.
-- **Readout.** A small capsule under the arc shows the value and its name:
+  with a gap at the bottom. They fill in order as the frame thickens: lit pills
+  glow in the Space's accent with a thin bright core, unlit ones are faint
+  dashes, and 10 is slightly larger with a dot beside it. Each pill pops with a
+  small burst of sparkles as you reach its point, and at 3 and 13 the lit pills
+  flash. There is no backdrop behind the lights.
+- **Readout.** A capsule under the arc shows the value and its name:
   3 Hairline, 4 Whisker, 5 Pinstripe, 6 Ribbon, 7 Piping, 8 Snug, 9 Comfy,
   10 Classic, 11 Roomy, 12 Salon, 13 Gallery.
-- **Window.** Every open window's frame follows as you turn. At 3 and 13 the page
-  card shudders a few points sideways with the crank's give.
-- **Sound.** Clicks only. Each point has a metallic notch click with a little
-  body, pitched one semitone higher per point, so the clicks rise as the frame
-  opens and fall as it closes. The click at 10 is deeper and seats twice, like a
-  detent dropping in, at its own pitch. A soft thunk with a short creak marks the
-  give at 3 and 13. Everything sits well below normal listening levels, and
-  sounds follow the system setting for interface sound effects.
+- **Window.** Every open window's frame follows as you turn. At 3 and 13 the
+  page card, its shadow and the side panel shudder a few points sideways.
+- **Sound.** Clicks only, synthesized once and played through AVAudioEngine.
+  Each point has a metallic notch click with a little body, pitched one semitone
+  higher per point, so the clicks rise as the frame opens and fall as it closes.
+  The click at 10 is deeper and seats twice, like a detent dropping in. A soft
+  thunk with a short creak marks the give at 3 and 13. Everything sits well below
+  normal listening levels, and sounds play only while Parc is active and its
+  interface sound effects are on.
 - **Haptics.** A light trackpad tick at each notch, and a firmer one at 10 and at
-  the ends, through `NSHapticFeedbackManager`. These only reach Force Touch
-  trackpads, and macOS offers a few fixed strengths.
-- **Reduce Motion.** No shudder, sparkles or overshoot; the lights and the frame
-  crossfade to each value.
+  the ends. These only reach Force Touch trackpads.
+- **Reduce Motion.** The crank fades instead of sliding; there is no shudder,
+  sparkle, pop or tremble.
 - **Keyboard and VoiceOver.** Arrow keys move one point, Return keeps the value
   and Escape restores the previous one. VoiceOver reads it as a slider:
   "Window frame, 10 points, Classic".
 
-## Building it
+## Resizing pages while you turn
 
-What follows the value:
+Pages normally follow every frame change immediately, and each change sends a
+new size to the page's renderer. While a preview is active, every window adds
+the `frameAdjust` page resize reason, which switches visible pages to throttle
+mode: a page keeps at most one size waiting for its renderer and stays clipped at
+that size until the renderer catches up. Windows coalesce preference changes to
+one layout per run-loop turn, use the lighter geometry pass while adjusting, and
+finish with a full pass when the preview ends. A window in the middle of a
+sidebar or Library animation catches up in that animation's final pass.
 
-- `SidebarChromeFrames` takes the thickness as a parameter instead of reading
-  the static `pageInset`; it sets the page margins on every side that has one and
-  the side panel's right edge.
-- Split gutters: `splitMarginFrame` in `BrowserWindowController` and
-  `dividerThickness` in `ParcSplitView`, both hard-coded to 10 today.
-- The page and pane corner radius scales with the thickness so it stays
-  concentric with the window's rounded corner; six points at 10.
-- `LayoutChromeGeometryFingerprint` must include the thickness, or open windows
-  skip the relayout. Leave it out of the sidebar motion key, which settles running
-  sidebar animations whenever it changes.
-- Nothing calls `layoutChrome()` when only the thickness changes, so the
-  controller asks every window for a layout pass.
-
-These keep today's sizes, so no thickness makes anything harder to hit:
-
-- the hidden-sidebar reveal zones, which get their own constant;
-- the floating sidebar's 5-to-15-point inset and hide offsets;
-- split divider drag targets and the split grip's hover band. The grip hides
-  when the frame is thinner than about 6 points;
-- window resize edges, which belong to macOS.
-
-The page shadow stays; check how it looks at both ends of the range in review.
-
-**Resizing pages while you turn.** Pages follow every frame change immediately
-today, and each change sends a new size to the page's renderer. Turning the crank
-would do that on every display frame in every window. The sidebar-width and
-split-divider drags already avoid this with a page resize reason that switches
-visible pages to throttle mode: a page keeps at most one size waiting for its
-renderer and stays clipped at that size until the renderer catches up. Add a
-frame-adjust reason that is active while the crank is held, run the lighter
-geometry layout pass at most once per display frame, and finish with a full pass
-when you let go.
-
-**The shudder.** The window's view tree has no container around the page card,
-so the shudder applies the same temporary, additive sideways translation to the
-page card, its shadow and the side panel. Nothing resizes, the window itself
-stays put, and the sidebar and Space background stay still. Sidebar motion
-animates position, bounds and corner radius, so a transform animation does not
-collide with it.
-
-## Visual review is required
-
-Design and build this through the [interface review](visual-review.md)
-workflow, renders first. Renders have settled the crank's look, its placement in
-each sidebar mode, the swing staying inside the window, the lights and readout,
-and the turning motion. Still to render before building:
-
-- the onboarding step and the Settings hand-off;
-- 3, about 5, 10 and 13 points with the sidebar docked, floating and hidden, a
-  divided split, the side panel open, and light, dark and private themes;
-- Reduce Motion.
-
-The generated clicks and end thunk need a final listening pass in the app. The live look-and-feel pass in Parc follows that guide's runtime
-boundary. After visual approval, write tests and docs, then hand it to a fresh
-reviewer.
+The shudder applies a temporary, additive sideways translation to the page card's
+layers; nothing resizes and the window stays put. Sidebar motion animates
+position, bounds and corner radius, so the transform does not collide with it.
 
 ## Checks
 
-- Geometry model tests of the chrome frames at 3, 10 and 13 points for
-  every sidebar presentation, split, side panel, Library, popup and full screen.
-- Preference tests for persistence and malformed or future records.
-- A layout-skip test proving a thickness change relayouts open windows.
-- Model tests for turning: scroll and drag to angle to value, the notches, the
-  give at both ends, and the crank's swing staying inside the window for every
-  sidebar presentation and window size.
-- A resize-reason test proving pages throttle while the crank is held and
-  return to following layout when it is released.
-- Swift typecheck and whole-module SIL. No engine change is needed.
+- `tests/WindowFrame/check.py`: the turning, placement and naming model, the
+  click and thunk synthesis and feedback gating, and the crank view's input,
+  lights, dismissal, Reduce Motion and accessibility.
+- `tests/WindowFrameIntegration/check.py`: chrome frames at 3, 10 and 13 points
+  for every sidebar presentation, side panel, Library, popup and full screen;
+  preference persistence and preserved records; and the window controller's
+  wiring.
+- `tests/LayoutChromeGeometrySkipTests.swift` proves a thickness change relayouts
+  open windows; `tests/SidebarResize` covers the `frameAdjust` throttle reason.

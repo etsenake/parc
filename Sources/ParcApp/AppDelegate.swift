@@ -441,6 +441,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
+    @objc func adjustWindowFrameFromSettings(_ sender: Any?) {
+        guard let settings = sender as? SettingsWindow, started, initialBrowserOpened, !terminationInProgress,
+              onboarding == nil else { return }
+        let owner = windows.first(where: { $0.ownsSettings(settings) && $0.canAdjustWindowFrame })
+            ?? front.flatMap { $0.canAdjustWindowFrame ? $0 : nil }
+            ?? windows.last(where: { $0.canAdjustWindowFrame })
+            ?? createStandardWindow(showCommandBar: false)
+        guard let owner, owner.canAdjustWindowFrame else { return }
+        let settingsWindow = settings.window
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        func returnSettings() {
+            guard let settingsWindow else { return }
+            settingsWindow.alphaValue = 0
+            settingsWindow.makeKeyAndOrderFront(nil)
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = reduceMotion ? 0.12 : 0.22
+                settingsWindow.animator().alphaValue = 1
+            }
+        }
+        func present(on owner: BrowserWindowController?) {
+            guard let owner, owner.canAdjustWindowFrame else { returnSettings(); return }
+            owner.onFrameCrankFinished = { returnSettings() }
+            owner.presentFrameCrank()
+            if owner.onFrameCrankFinished != nil, !owner.isPresentingFrameCrank {
+                owner.onFrameCrankFinished = nil
+                returnSettings()
+            }
+        }
+        guard let settingsWindow, settingsWindow.isVisible else { present(on: owner); return }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = reduceMotion ? 0.12 : 0.2
+            settingsWindow.animator().alphaValue = 0
+        }, completionHandler: { [weak owner] in
+            MainActor.assumeIsolated {
+                settingsWindow.orderOut(nil)
+                settingsWindow.alphaValue = 1
+                present(on: owner)
+            }
+        })
+    }
+
     @objc func replayOnboarding(_ sender: Any?) {
         guard let settings = sender as? SettingsWindow,
               started, initialBrowserOpened, !terminationInProgress, !replayCloseInProgress,
@@ -1877,6 +1918,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if item.action == #selector(copyCurrentURLAsQuote) { return browserInputCommandWindow?.canCopyCurrentURLAsQuote ?? false }
         if item.action == #selector(focusSidebar) { return browserInputCommandWindow?.canFocusSidebar ?? false }
         if item.action == #selector(toggleSidebar) { return browserInputCommandWindow != nil }
+        if item.action == #selector(adjustWindowFrame) { return browserInputCommandWindow?.canAdjustWindowFrame ?? false }
         if item.action == #selector(zoomIn) || item.action == #selector(zoomOut) || item.action == #selector(actualSize) {
             return browserInputCommandWindow?.canChangePageZoom ?? false
         }
@@ -2213,6 +2255,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc func pasteAsPlainText(_ sender: Any?) { WebpageEditCommands.pasteMatchingStyle(from: sender) }
     @objc private func toggleArcToolbar(_ sender: NSMenuItem) { spaceCommandWindow?.toggleToolbar(from: sender) }
     @objc private func toggleSidebar(_ sender: Any?) { browserInputCommandWindow?.toggleSidebar() }
+    @objc private func adjustWindowFrame(_ sender: Any?) { browserInputCommandWindow?.presentFrameCrank() }
     @objc private func goBackArrow(_ sender: Any?) {
         guard let owner = browserInputCommandWindow, owner.window === NSApp.keyWindow,
               KeyboardShortcuts.permitsArrowNavigation(in: owner.window) else { return }
@@ -2773,6 +2816,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         AppAppearance.addMenu(to: view, target: self)
         view.addItem(.separator())
         item("Show / Hide Sidebar", #selector(toggleSidebar), "s", in: view)
+        item("Adjust Window Frame…", #selector(adjustWindowFrame), in: view)
         item("Show Toolbar", #selector(toggleArcToolbar), "d", in: view, modifiers: [.command, .shift])
         hideKeepingShortcut(view)
         item("Reveal Current Tab", #selector(focusSidebar), " ", in: view, modifiers: [.control])

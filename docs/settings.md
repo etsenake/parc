@@ -12,7 +12,7 @@ selected pane; explicit commands can select Profiles or a particular shortcut.
 
 | Pane | Current controls |
 |---|---|
-| General | Default browser, Warn before quitting, Previews Settings, Search (engine, Manage search, suggestions), Download location, Replay onboarding |
+| General | Default browser, Warn before quitting, Window frame (Adjust), Previews Settings, Search (engine, Manage search, suggestions), Download location, Replay onboarding |
 | Profiles | Profile list with Space counts and New Profile; Edit Profile with rename, automatic archive, native data/settings destinations, Clear Browsing Data and Delete Profile |
 | Links | Ordered Air Traffic Control rules |
 | Shortcuts | Search, bindings, priority, conflict resolution and Reset All |

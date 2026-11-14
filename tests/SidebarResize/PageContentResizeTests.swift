@@ -17,6 +17,8 @@ import Foundation
         check(R.sidebarResize.mode == .throttle && R.windowResize.mode == .throttle && R.splitDividerResize.mode == .throttle,
               "each non-locking reason throttles")
         check(R([.sidebarResize, .windowResize]).mode == .throttle, "reasons combine")
+        check(R.frameAdjust.rawValue == 0x10 && R.frameAdjust.mode == .throttle, "turning the window crank throttles pages")
+        check(R([.frameAdjust, .splitInteractiveEditing]).mode == .locked, "interactive editing still locks over the crank")
         check(R.splitInteractiveEditing.mode == .locked && R([.splitInteractiveEditing, .sidebarResize]).mode == .locked,
               "interactive editing locks over every throttle reason")
         check(H.maxPendingFrames == 1 && H.tolerance == 1.00001, "recovered flag default and tolerance")

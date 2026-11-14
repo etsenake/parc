@@ -28,8 +28,9 @@ guard = "guard sidebarPresentation != presentation else { return }"
 assert setter.index(mapping) < setter.index("cancelSpaceCreation(restoreFocus: false)") < setter.index(held) < setter.index(guard), \
     "the stored hover input no longer sits between the rule and the guard"
 hides = re.findall(r"setSidebarPresentation\(\.hidden[,)]", controller)
-assert len(hides) == 3, f"unexpected hide paths: {hides}"
-for path in ("if self.sidebarPresentation == .floating && !self.sidebarPointerDown { self.setSidebarPresentation(.hidden) }",
+assert len(hides) == 4, f"unexpected hide paths: {hides}"
+for path in ("if sidebarPresentation == .floating { setSidebarPresentation(.hidden) }",
+             "if self.sidebarPresentation == .floating && !self.sidebarPointerDown { self.setSidebarPresentation(.hidden) }",
              "if commit.collapses { setSidebarPresentation(.hidden, allowsMotion: false) }",
              "case .dismiss: setSidebarPresentation(.hidden)",
              "setSidebarPresentation(sidebarPresentation == .locked ? .hidden : .locked)"):

@@ -410,7 +410,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                 layer.addSublayer(shadow)
                 paneShadows[id] = shadow
             }
-            if shadow.contents == nil || shadow.contentsScale != paneBackingScale {
+            if !ContentShadowImage.isCurrent(shadow, scale: paneBackingScale) {
                 ContentShadowImage.apply(to: shadow, scale: paneBackingScale)
             }
             shadow.frame = ContentShadowImage.frame(around: pane.layer?.frame ?? pane.frame)
@@ -491,7 +491,9 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     override var isFlipped: Bool { true }
     var dividerColor: NSColor { .clear }
     override var isOpaque: Bool { false }
-    var dividerThickness: CGFloat { 10 }
+    var dividerThickness: CGFloat = 10 {
+        didSet { if dividerThickness != oldValue { needsLayout = true } }
+    }
     private let expandedPaneMinimum: CGFloat = 220
     private let draggableTopInset: CGFloat = 53
     private let draggableEndInset: CGFloat = 8
@@ -595,6 +597,14 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         dividerPan.delaysPrimaryMouseButtonEvents = false
         addGestureRecognizer(dividerPan)
     }
+    func refreshPaneCorners(radius: CGFloat) {
+        guard arrangedSubviews.count > 1 else { return }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        for pane in arrangedSubviews { pane.layer?.cornerRadius = radius }
+        CATransaction.commit()
+        needsLayout = true
+    }
+
     func configureBacking(in host: NSView, hasTranslucentPane: Bool, backing: NSColor = .white) {
         let divided = arrangedSubviews.count > 1
         CATransaction.begin(); CATransaction.setDisableActions(true)

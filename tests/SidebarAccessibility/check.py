@@ -47,14 +47,15 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
                     if re.search(r"weak var \w*[rR]esponder: NSResponder\?", p.read_text()))
     assert owners == ["BrowserWindowController.swift", "CaptureMotion.swift", "CommandBar.swift", "EaselWebInput.swift",
                       "NavigationControls.swift", "OnboardingPasswordHelp.swift", "PeekFocusReturn.swift",
-                      "SidebarPreviewController.swift"], \
+                      "SidebarPreviewController.swift", "WindowFrameCrankView.swift"], \
         f"a new saved-focus owner must restore through SavedFocus.mayReturn: {owners}"
     for name, use in (("CommandBar.swift", "SavedFocus.mayReturn(to: view, in: parent), parent.makeFirstResponder(view)"),
                       ("BrowserWindowController.swift", "SavedFocus.mayReturn(to: responder, in: window) { window?.makeFirstResponder(responder) }"),
                       ("BrowserWindowController.swift", "(responder as? NSView).map({ SavedFocus.mayReturn(to: $0, in: sourceWindow) }) ?? true {\n                    sourceWindow.makeFirstResponder(responder)"),
                       ("NavigationControls.swift", "(oldResponder as? NSView).map({ SavedFocus.mayReturn(to: $0, in: parent) }) ?? true {\n                        parent.makeFirstResponder(oldResponder)"),
                       ("EaselWebInput.swift", "if SavedFocus.mayReturn(to: previousView, in: parentWindow) { parentWindow.makeFirstResponder(previousView) }"),
-                      ("SidebarPreviewController.swift", "let responder = previousResponder as? NSView, SavedFocus.mayReturn(to: responder, in: window) {\n                    window.makeFirstResponder(responder)")):
+                      ("SidebarPreviewController.swift", "let responder = previousResponder as? NSView, SavedFocus.mayReturn(to: responder, in: window) {\n                    window.makeFirstResponder(responder)"),
+                      ("WindowFrameCrankView.swift", "guard let view, SavedFocus.mayReturn(to: view, in: window), view.acceptsFirstResponder else { return nil }")):
         assert use in (app / name).read_text(), f"{name} restores saved focus without SavedFocus: {use}"
     (scratch / "ActionButton.swift").write_text(sidebar[:sidebar.index("final class MenuAction")]
         + "\nenum SplitOrientation: Equatable { case horizontal, vertical }\n")
