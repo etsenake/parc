@@ -82,6 +82,12 @@
           "scope": "start-page",
           "summary": "Give empty Spaces a page of their own, with a command bar on Note paper and a Parc logo that does three different tricks",
           "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "engine",
+          "summary": "Point the engine framework's Aperitif link at the library beside it instead of Chrome's install path",
+          "breaking": false
         }
       ]
     },

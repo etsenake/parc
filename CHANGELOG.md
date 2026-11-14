@@ -20,6 +20,7 @@
 - **engine:** Open again on Chromium 157 with its earlier-sandboxed helpers, and keep translation, auto sign-in and new-extension pinning as before
 - **swipe:** Keep the swipe circle's shadow from fading on a theme flip and drop the row lean when the list folds away
 - **swipe:** Keep a picked history row when the fingers drift a hair sideways, and fold the list away without cancelling the swipe
+- **engine:** Point the engine framework's Aperitif link at the library beside it instead of Chrome's install path
 
 ## 2.1.2 (2026-11-13)
 
