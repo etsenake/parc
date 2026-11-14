@@ -141,7 +141,7 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
                 if let image = icon.image {
                     let copy = image.copy() as? NSImage ?? image
                     copy.size = NSSize(width: 14, height: 14)
-                    item.image = copy
+                    item.showImage(copy)
                 } else if let emoji = icon.emoji {
                     item.title = emoji + " " + space.name
                 }
