@@ -687,7 +687,7 @@ class Release:
                       "--artifact-only", "--resume", "--appcast", self.state["appcast"]], name="tap-update")
         self.git("diff", "--check", cwd=tap)
         self.command(["brew", "ruby", "--", "-c", tap / "Casks/parc.rb"], name="tap-syntax")
-        if self.git("status", "--porcelain", cwd=tap):
+        if self.git("status", "--porcelain", "--untracked-files=no", cwd=tap):
             self.git("commit", "--only", "Casks/parc.rb", "-m", "Release Parc " + self.state["version"]["version"], cwd=tap)
             head = self.git("rev-parse", "HEAD", cwd=tap)
             self.git("push", "origin", head + ":refs/heads/main", cwd=tap, retries=2)
@@ -700,7 +700,7 @@ class Release:
                 raise Failure('Tap commit publication was not verified')
         self.command(["brew", "tap", "etsenake/tap"], name="tap-register")
         installed_tap = Path(self.command(["brew", "--repo", "etsenake/tap"], capture=True))
-        if self.git("status", "--porcelain", cwd=installed_tap):
+        if self.git("status", "--porcelain", "--untracked-files=no", cwd=installed_tap):
             raise Failure("Installed Homebrew tap has local edits; preserved without overwriting")
         self.git("fetch", "origin", "main", cwd=installed_tap, retries=2)
         self.git("merge", "--ff-only", "origin/main", cwd=installed_tap)

@@ -273,7 +273,7 @@ def main():
         acceptance = json.loads(args.acceptance.read_text()) if args.acceptance else None
         if acceptance is not None:
             require_evidence(acceptance)
-        dirty = run("git", "status", "--porcelain", cwd=tap)
+        dirty = run("git", "status", "--porcelain", "--untracked-files=no", cwd=tap)
         if dirty and (not args.resume or dirty.strip() not in ('M Casks/parc.rb', 'M  Casks/parc.rb')):
             raise ValueError("The tap clone has unrelated edits; preserved without overwriting")
         origin = run("git", "remote", "get-url", "origin", cwd=tap).removesuffix(".git")

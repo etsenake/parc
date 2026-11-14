@@ -252,6 +252,39 @@ class ArtifactOnlyPublicationTests(unittest.TestCase):
                     startup.assert_not_called()
 
 
+    def test_untracked_files_in_the_tap_never_block_publishing_but_tracked_edits_do(self):
+        import sys
+        with tempfile.TemporaryDirectory() as temporary:
+            tap = Path(temporary); (tap / 'Casks').mkdir()
+            (tap / 'Casks/.keep').write_text(''); (tap / 'README.md').write_text('tap\n')
+            for command in (['init', '-q', '-b', 'main'], ['add', '.'], ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'tap']):
+                subprocess.run(['git', *command], cwd=tap, check=True)
+            (tap / '.DS_Store').write_bytes(b'finder')
+            feed = tap.parent / (tap.name + '-appcast.xml'); feed.write_text('<rss/>')
+            app_version = {'version':'1.1.0','build':2}
+            release = {'tag_name':'v1.1.0','target_commitish':'a'*40,'name':'Parc 1.1.0 candidate'}
+            real = publisher.run
+            def run(*args, **kwargs):
+                if args[:2] == ('git','status'): return real(*args, **kwargs)
+                if args[:3] == ('git','remote','get-url'): return 'https://github.com/etsenake/homebrew-tap.git'
+                if args[:3] == ('git','branch','--show-current'): return 'main'
+                if args[:3] == ('git','show','a'*40 + ':release-notes.json'):
+                    return json.dumps({'releases': [{'version': '1.1.0', 'changes': []}]})
+                if args[:2] == ('git','show'): return json.dumps(app_version)
+                return ''
+            def github(*args):
+                return json.dumps(release) if args[0]=='api' else ''
+            def publish():
+                with patch.object(sys,'argv',['publish-homebrew.py','v1.1.0','--tap',str(tap),'--artifact-only','--resume','--appcast',str(feed)]), patch.object(publisher,'verify_appcast'), patch.object(publisher,'run',side_effect=run), patch.object(publisher,'github',side_effect=github), patch.object(publisher,'verify_tag'), patch.object(publisher,'verify_release',return_value=(app_version,'zip-sha','a'*40,{},'report-sha')), patch.object(publisher,'verify_dmg_asset',return_value='dmg-sha'), patch.object(publisher,'promote_verified_artifacts'), patch.object(publisher,'verify_acceptance'), patch.object(publisher,'publish_public') as public, patch.object(Path,'rename'):
+                    publisher.main()
+                    return public
+            self.assertTrue(publish().called)
+            (tap / 'README.md').write_text('edited\n')
+            with self.assertRaises(SystemExit):
+                publish()
+            self.assertEqual((tap / 'README.md').read_text(), 'edited\n')
+
+
 class AppcastTests(unittest.TestCase):
     def test_appcast_must_offer_this_releases_public_zip(self):
         with tempfile.TemporaryDirectory() as temporary:
