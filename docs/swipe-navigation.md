@@ -131,8 +131,10 @@ with its inputs, outputs and protocols in
   point. It opens on the current page. Vertical travel steps the selection one
   row at a time, away from the current page, with a detent, and fingers held
   near the trackpad's top or bottom edge keep stepping through a long history.
-  Sliding back below the commit point closes the list and disarms, and the
-  swipe carries on; rearming and resting reopens it. Lifting picks the
+  Sliding back clearly below the commit point, to 85% of it, closes the list
+  and disarms, and the swipe carries on with its vertical travel forgiven;
+  rearming and resting reopens it. Rows past either end of the history never
+  get a lean. Lifting picks the
   selected entry; lifting on the current page, or sliding back past where the
   swipe began once the list has opened, cancels.
 - Its environment answers only the system setting, whether anything covers the
@@ -236,8 +238,9 @@ restarts the wait, and a resting hand's tremor can't cancel it.
   move 3% of the trackpad toward that edge since the list opened, and stop
   only once they move 3% back out of the zone, so a list that opens near an
   edge waits and tremor at the boundary does nothing.
-- Sliding back below the commit point folds the card back into the circle on
-  the same spring and swap and disarms it; the swipe carries on. Swiping out
+- Sliding back to 85% of the commit point folds the card back into the circle
+  on the same spring and swap and disarms it; the swipe carries on. The margin
+  keeps a hair of sideways drift while picking a row from closing the list. Swiping out
   again and resting another 0.3 seconds reopens the list on the current page,
   picking up mid-animation if the fold hasn't finished. Sliding on past where
   the swipe began cancels.

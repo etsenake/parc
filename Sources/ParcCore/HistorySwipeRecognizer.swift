@@ -15,6 +15,7 @@ struct HistorySwipeParameters: Equatable {
     var edgeZone = 0.15
     var edgeMargin = 0.03
     var edgeStepInterval: TimeInterval = 0.1
+    var listCloseProgress = 0.85
 
     static let dia = HistorySwipeParameters()
 }
@@ -148,7 +149,7 @@ struct HistorySwipeRecognizer {
             return false
         }
         if state == .holding {
-            guard touchProgress < 1 else {
+            guard touchProgress < parameters.listCloseProgress else {
                 emitProgress(touchProgress, &step)
                 stepRows(&step)
                 followEdge(time: time, &step)
@@ -235,7 +236,7 @@ struct HistorySwipeRecognizer {
         state = .armed
         selection = nil
         edgeDeadline = nil
-        totalY = armedTotalY
+        totalY = 0
     }
 
     private var rowSign: Double { direction == .forward ? -1 : 1 }
@@ -262,7 +263,8 @@ struct HistorySwipeRecognizer {
 
     private mutating func emitRemainder(_ step: inout HistorySwipeStep) {
         guard parameters.rowStep > 0 else { return }
-        let remainder = (current.y - rowAnchor) * rowSign / parameters.rowStep
+        var remainder = (current.y - rowAnchor) * rowSign / parameters.rowStep
+        if (remainder > 0 && !canStep(1)) || (remainder < 0 && !canStep(-1)) { remainder = 0 }
         guard remainder != lastRemainder else { return }
         lastRemainder = remainder
         step.outputs.append(.rowRemainder(remainder))

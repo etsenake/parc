@@ -201,6 +201,7 @@ struct Run {
         longHistories()
         edgeBoundaryTremor()
         rowRemainders()
+        openListMargins()
         backgroundWindow()
         interruptions()
         injectedParameters()
@@ -218,6 +219,7 @@ struct Run {
         check(p.rubberBand == 0.15 && p.holdDelay == 0.3 && p.rowStep == 0.08, "Dia's rubber band, hold delay and row step")
         check(p.edgeZone == 0.15 && p.edgeStepInterval == 0.1, "long histories keep stepping ten rows a second at the edges")
         check(p.edgeMargin == 0.03, "edge stepping needs a deliberate 3% of travel and stops 3% outside its zone")
+        check(p.listCloseProgress == 0.85, "an open list closes only once the fingers slide clearly below the commit point")
     }
 
     static func trackpadBack() {
@@ -1100,7 +1102,7 @@ struct Run {
         let run = Run(trace)
         check(!run.steps.prefix(opened).contains { $0.outputs.contains { if case .rowRemainder = $0 { true } else { false } } },
               "nothing reports a remainder before the list opens")
-        check(near(run.remainders, [0.5, 0.25, -0.5, 0]),
+        check(near(run.remainders, [0.5, 0.25, 0]),
               "between rows the recognizer reports how far the fingers are toward the next row, and nothing past the current page")
         let outputs = run.steps[stepped].outputs
         check(outputs.count == 3 && outputs[0] == .selection(1) && outputs[1] == .detent
@@ -1133,6 +1135,43 @@ struct Run {
         let closed = Run(collapse)
         check(!closed.steps.dropFirst(held).contains { $0.outputs.contains { if case .rowRemainder = $0 { true } else { false } } },
               "a closed list reports no remainder")
+    }
+
+    static func openListMargins() {
+        var jitter = Trace.opening(from: 0.30, toward: 1)
+        jitter.move(0.3804)
+        jitter.clock(jitter.time + 0.3)
+        jitter.move(0.3799, 0.665)
+        jitter.lift()
+        let slipped = Run(jitter)
+        check(slipped.gestures.contains(.hold) && slipped.gestures.last == .commit(.entry(.back, distance: 2)),
+              "a hair of drift below the commit point keeps the open list and its pick")
+
+        var drifted = Trace.opening(from: 0.30, toward: 1)
+        drifted.move(0.34, 0.52)
+        drifted.move(0.38, 0.55)
+        drifted.move(0.42, 0.58)
+        drifted.clock(drifted.time + 0.3)
+        let opened = drifted.inputs.count
+        drifted.move(0.364, 0.58)
+        let folded = Run(drifted)
+        check(folded.steps.prefix(opened).flatMap(\.gestures).contains(.hold)
+              && folded.steps.dropFirst(opened).flatMap(\.gestures) == [.armed(false)]
+              && folded.recognizer.state == .tracking,
+              "sliding back after earlier vertical travel folds the list and keeps the swipe going")
+
+        var end = Trace.opening(from: 0.30, toward: 1)
+        end.move(0.40)
+        end.clock(end.time + 0.3)
+        end.move(0.40, 0.59)
+        let atEnd = end.inputs.count
+        end.move(0.40, 0.63)
+        let last = Run(end, Page(back: 1))
+        let beyond = last.steps.dropFirst(atEnd).flatMap(\.outputs).compactMap { output -> Double? in
+            if case let .rowRemainder(value) = output { value } else { nil }
+        }
+        check(last.recognizer.selection == 1 && beyond.allSatisfy { $0 <= 0 },
+              "the last row leans toward nothing past the end of history")
     }
 
     static func controller() {
