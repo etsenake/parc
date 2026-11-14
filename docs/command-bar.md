@@ -100,12 +100,12 @@ hairline. The large palette is at most 765 points wide, with a 64-point header,
 50-point rows and up to five visible rows in its nominal 326-point height.
 Containment follows the owning window. The compact editor remains distinct.
 
-Floating panels follow the window's appearance; the empty inline sidebar input
-and the resident card take the Space's content appearance, falling back to the
-window. The popover material blends within that window, with a light/dark wash,
-decorative border and masked shadow outside the surface. It is not forced dark.
-The resident card sits flat on the page at the mark's level: the sidebar field's
-soft fill, with no border or shadow. The
+Floating panels and the resident card follow the window's appearance, which
+View → Appearance sets; the empty inline sidebar input takes the Space's content
+appearance, falling back to the window. The popover material blends within that
+window, with a light/dark wash, decorative border and masked shadow outside the
+surface. It is not forced dark. The resident card sits flat on the page at the
+mark's level: the sidebar field's soft fill, with no border or shadow. The
 inline sidebar input has its own plain fill before there is a query.
 
 The field is single-line native text: 18 points centered, 13 inline. Selection

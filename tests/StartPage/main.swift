@@ -1,5 +1,4 @@
 import AppKit
-import MetalKit
 
 @MainActor @main struct StartPageChecks {
     static var count = 0
@@ -25,10 +24,10 @@ import MetalKit
         chromeVisibilityAndAction()
         hitTesting()
         accessibility()
-        notePaper()
-        backgroundForwarding()
+        tintedPaper()
+        paperView()
+        forwarding()
         livePalette()
-        renderedBackground()
         print("StartPage: \(count) assertions passed")
     }
 
@@ -105,7 +104,7 @@ import MetalKit
     static func viewPlacement() {
         let (root, _, page) = hierarchy()
         let layout = StartPageLayout(size: page.bounds.size, barRestHeight: 64, chromeOrigin: nil, showsWindowButtons: true)
-        check(page.background.frame == page.bounds && page.subviews.first === page.background, "the theme fills the page beneath everything")
+        check(page.paper.frame == page.bounds && page.subviews.first === page.paper, "the tinted paper fills the page beneath everything")
         check(page.mark.frame == layout.mark && page.commandBarSlot.frame == layout.commandBarSlot, "the view places the mark and slot from the layout")
         check(page.mark.superview === page && page.commandBarSlot.superview === page, "mark and slot are the page's own")
         check(page.chromeOrigin == CGPoint(x: -5, y: -5), "the chrome anchors to the floating sidebar's corner in the window's space")
@@ -115,7 +114,7 @@ import MetalKit
                                                            showsWindowButtons: true).commandBarSlot, "the owner's resting height re-centres the pair")
         page.frame.size = NSSize(width: 700, height: 500)
         page.layoutSubtreeIfNeeded()
-        check(page.commandBarSlot.frame.width == 620 && page.background.frame == page.bounds, "resizing re-lays out the slot and background")
+        check(page.commandBarSlot.frame.width == 620 && page.paper.frame == page.bounds, "resizing re-lays out the slot and paper")
         _ = root
     }
 
@@ -176,28 +175,13 @@ import MetalKit
         page.isDeparting = false
     }
 
-    static func notePaper() {
-        let (_, _, page) = hierarchy()
-        let order = page.subviews
-        check(order.firstIndex(of: page.paper).map { $0 == order.firstIndex(of: page.background)! + 1 } == true
-              && order.firstIndex(of: page.paper)! < order.firstIndex(of: page.mark)!, "Note paper lies on the theme, under the mark and the bar")
-        check(page.paper.frame == page.bounds && page.paper.hitTest(CGPoint(x: 10, y: 10)) == nil, "the paper covers the page and takes no clicks")
-        for (name, alpha, white) in [(NSAppearance.Name.aqua, 0.85, 1.0), (.darkAqua, 0.5, 0.0)] {
-            page.paper.appearance = NSAppearance(named: name)
-            page.paper.updateLayer()
-            let color = page.paper.layer?.backgroundColor.flatMap(NSColor.init(cgColor:))?.usingColorSpace(.sRGB)
-            check(color.map { abs($0.alphaComponent - alpha) < 0.001 && abs($0.redComponent - white) < 0.001 } == true,
-                  "the page is a Note's paper in \(name.rawValue)")
-        }
-    }
-
     static func accessibility() {
         let (root, _, page) = hierarchy()
         check(page.isAccessibilityElement() && page.accessibilityRole() == .group && page.accessibilityLabel() == "Start page",
               "the page is one labelled group")
         check(page.sidebarButton.accessibilityLabel() == "Show sidebar" && page.sidebarButton.cell?.accessibilityLabel() == "Show sidebar",
               "the sidebar button says what it does")
-        check(!page.background.isAccessibilityElement() && !page.commandBarSlot.isAccessibilityElement(), "the background and slot add no elements")
+        check(!page.paper.isAccessibilityElement() && !page.commandBarSlot.isAccessibilityElement(), "the paper and slot add no elements")
         let window = NSWindow(contentRect: root.frame, styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
@@ -214,113 +198,78 @@ import MetalKit
         window.contentView = nil
     }
 
-    static func backgroundForwarding() {
+    static func tintedPaper() {
+        typealias Style = StartPagePaperStyle
+        let colourless = Style(theme: SpaceTheme(), dark: false), colourlessDark = Style(theme: SpaceTheme(), dark: true)
+        check(colourless.glows.isEmpty && colourless.base == Style.colorlessLight && colourlessDark.base == Style.colorlessDark,
+              "a colourless theme is plain solid paper in light and dark")
+        let multi = SpaceTheme(primaryColor: ThemeColor(red: 0.48, green: 0.87, blue: 0.38)!, colorCount: 3, wheel: .complimentary)
+        let light = Style(theme: multi, dark: false), dark = Style(theme: multi, dark: true)
+        check(light.glows.count == 3 && light.glows.map(\.anchor) == Style.anchors, "every theme colour glows from its corner")
+        let colors = multi.colors.map { ThemeRenderMath.srgb($0) }.map { SIMD3(Double($0.x), Double($0.y), Double($0.z)) }
+        let average = colors.reduce(SIMD3<Double>(repeating: 0), +) / 3
+        check(light.glows.map(\.color) == colors, "the glows are the theme's own colours")
+        check(light.base == Style.mix(average, SIMD3(repeating: 1), Style.lightTint), "light paper is the theme's average tint, mostly white")
+        check(dark.base == Style.mix(average, Style.darkBase, Style.darkTint), "dark paper is the theme's average tint, mostly near-black")
+        check(light.glowStrength == 0.55 && dark.glowStrength == 0.42 && light.grain > dark.grain, "glows and grain are softer in the dark")
+        let single = Style(theme: violet, dark: false)
+        check(single.glows.count == 1 && single.glows.first?.anchor == Style.anchors[0], "a single colour glows from the top-left corner")
+        check(Style.glowAlpha(at: 0, strength: 0.5) == 0.5 && Style.glowAlpha(at: 1, strength: 0.5) == 0
+              && Style.glowAlpha(at: 0.3, strength: 0.5) > Style.glowAlpha(at: 0.6, strength: 0.5), "a glow fades from its centre to nothing")
+        let frame = Style.glowFrame(CGPoint(x: 1, y: 0.25), in: CGSize(width: 1000, height: 600))
+        check(frame.midX == 1000 && frame.midY == 150 && frame.width == 1240 && frame.height == 1240, "a glow is centred on its anchor, 62% of the page's long side in radius")
+    }
+
+    static func paperView() {
+        let (_, _, page) = hierarchy()
+        let paper = page.paper
+        check(paper.hitTest(CGPoint(x: 10, y: 10)) == nil && !paper.isAccessibilityElement(), "the paper takes no clicks and adds no element")
+        page.theme = SpaceTheme(primaryColor: ThemeColor(red: 0.48, green: 0.87, blue: 0.38)!, colorCount: 3, wheel: .complimentary)
+        for (name, dark) in [(NSAppearance.Name.aqua, false), (.darkAqua, true)] {
+            page.appearance = NSAppearance(named: name)
+            page.viewDidChangeEffectiveAppearance(); paper.viewDidChangeEffectiveAppearance()
+            paper.updateLayer()
+            check(paper.style.dark == dark, "the paper follows the \(name.rawValue) appearance it lives in")
+            let base = paper.style.base
+            let drawn = paper.layer?.backgroundColor.flatMap(NSColor.init(cgColor:))?.usingColorSpace(.sRGB)
+            check(drawn.map { abs($0.redComponent - base.x) < 0.002 && abs($0.greenComponent - base.y) < 0.002 } == true,
+                  "the paper's layer is its tint in \(name.rawValue)")
+        }
+        let glows = paper.layer?.sublayers?.first?.sublayers ?? []
+        check(glows.count == 3 && glows.allSatisfy { ($0 as? CAGradientLayer)?.type == .radial }, "three radial glows sit on the tint")
+        page.pagingTransition = ThemePagingTransition(from: violet, theme: amber, progress: 0.25)
+        check(paper.incomingStyle != nil, "a Space swipe prepares the incoming Space's paper")
+        let layers = paper.layer?.sublayers ?? []
+        check(layers.count >= 2 && abs(layers[0].opacity - 0.75) < 0.001 && abs(layers[1].opacity - 0.25) < 0.001, "the swipe cross-fades the two Spaces' glows")
+        page.pagingTransition = nil
+        check(paper.incomingStyle == nil && layers[1].opacity == 0, "the swipe's end leaves one Space's paper")
+        page.incognito = true
+        check(paper.effectiveTheme == IncognitoWindowTheme.paletteTheme, "a private window's paper uses the private palette")
+    }
+
+    static func forwarding() {
         let (root, _, page) = hierarchy()
-        check(page.background.coordinateSpace === root && page.mark.coordinateSpace === root, "background and mark share the window's gradient space")
+        check(page.mark.coordinateSpace === root, "the mark shares the window's coordinate space")
         let theme = textured(violet, .tweed)
         page.theme = theme
-        let drawn = page.background.theme
-        check(drawn.noise == 0, "the page background draws no texture")
-        check(drawn.primaryColor == theme.primaryColor && drawn.colorCount == theme.colorCount && drawn.wheel == theme.wheel
-              && drawn.appearance == theme.appearance && drawn.intensity == theme.intensity, "every colour, the intensity and the appearance stay")
-        check(page.mark.theme == theme, "the mark keeps the theme's texture")
-        var multi = SpaceTheme(primaryColor: ThemeColor(red: 0.2, green: 0.5, blue: 0.7)!, colorCount: 3, wheel: .analogous,
-                               appearance: .dark, noise: 0.6, intensity: 0.35, texture: .denim)
-        page.theme = multi
-        check(page.background.theme.colors == multi.colors && page.background.theme.noise == 0, "three-colour themes keep all three colours")
-        multi.noise = 2
-        page.theme = multi
-        check(page.background.theme == multi, "an invalid theme passes through untouched, so it falls back to material like the window")
-        page.theme = SpaceTheme()
-        check(page.background.theme == SpaceTheme(), "a colourless theme reaches the background as material")
-        page.pagingTransition = ThemePagingTransition(from: textured(violet), theme: textured(amber, .sand), progress: 0.3)
-        let paging = page.background.pagingTransition
-        check(paging?.from == StartPageView.untextured(textured(violet)) && paging?.theme == StartPageView.untextured(textured(amber, .sand))
-              && paging?.progress == 0.3, "a Space swipe reaches the background, untextured on both sides")
-        page.pagingTransition = nil
-        check(page.background.pagingTransition == nil, "the swipe's end clears it")
+        check(page.paper.theme == theme && page.mark.theme == theme, "the theme reaches the paper and the mark")
+        let swipe = ThemePagingTransition(from: violet, theme: amber, progress: 0.3)
+        page.pagingTransition = swipe
+        check(page.paper.pagingTransition == swipe && page.mark.pagingTransition == swipe, "a Space swipe reaches the paper and the mark")
         page.incognito = true
-        check(page.background.incognito && page.mark.incognito, "a private window's page uses the private palette")
-        let canvas = page.background.subviews.compactMap { $0 as? MTKView }.first
-        let material = page.background.subviews.compactMap { $0 as? NSVisualEffectView }.first
-        check(canvas.map(\.isHidden) != false && material?.isHidden == true
-              && page.background.layer?.backgroundColor == IncognitoWindowTheme.background.cgColor, "private: the opaque private fill, no material or canvas")
-        page.incognito = false
-        page.theme = SpaceTheme()
-        check(material?.isHidden == false && canvas.map(\.isHidden) != false, "a colourless theme shows material only")
-        page.theme = violet
-        check(material?.isHidden == false && canvas.map { !$0.isHidden } != false, "a coloured theme draws the gradient over the window's material")
-        check(material?.blendingMode == .behindWindow, "the material is the window's own behind-window kind")
+        check(page.paper.incognito && page.mark.incognito, "a private window reaches the paper and the mark")
     }
 
     static func livePalette() {
         let (_, _, page) = hierarchy()
-        page.theme = textured(violet, appearance: .dark)
-        check(page.windowButtons.appearance?.name == .darkAqua && page.sidebarButton.appearance?.name == .darkAqua
-              && page.commandBarSlot.appearance?.name == .darkAqua, "a dark theme dresses the chrome and the bar's slot dark")
-        check(page.sidebarButton.contentTintColor == page.background.palette.title, "the toggle takes the palette's title colour")
-        page.theme = textured(amber, appearance: .light)
-        check(page.windowButtons.appearance?.name == .aqua && page.sidebarButton.appearance?.name == .aqua
-              && page.commandBarSlot.appearance?.name == .aqua, "switching to a light theme refreshes live")
-        page.appearance = NSAppearance(named: .darkAqua)
         page.theme = violet
-        check(page.commandBarSlot.appearance?.name == page.background.palette.contentAppearance?.name,
-              "an automatic theme follows the appearance the page lives in")
-    }
-
-    static func pixels(_ surface: ThemeRendererView) -> (bytes: [UInt8], width: Int, height: Int) {
-        surface.needsLayout = true; surface.layoutSubtreeIfNeeded()
-        guard let canvas = surface.subviews.compactMap({ $0 as? MTKView }).first else { fatalError("StartPage: Metal canvas") }
-        canvas.framebufferOnly = false
-        canvas.releaseDrawables()
-        guard let drawable = canvas.currentDrawable else { fatalError("StartPage: offscreen drawable") }
-        canvas.draw(canvas.bounds)
-        canvas.needsDisplay = false
-        let texture = drawable.texture, length = texture.width * texture.height * 4
-        let buffer = canvas.device!.makeBuffer(length: length, options: .storageModeShared)!
-        let command = canvas.device!.makeCommandQueue()!.makeCommandBuffer()!, blit = command.makeBlitCommandEncoder()!
-        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
-                  sourceSize: MTLSize(width: texture.width, height: texture.height, depth: 1),
-                  to: buffer, destinationOffset: 0, destinationBytesPerRow: texture.width * 4, destinationBytesPerImage: length)
-        blit.endEncoding(); command.commit(); command.waitUntilCompleted()
-        let bytes = Array(UnsafeBufferPointer(start: buffer.contents().bindMemory(to: UInt8.self, capacity: length), count: length))
-        return (bytes, texture.width, texture.height)
-    }
-
-    static func rightHalf(_ image: (bytes: [UInt8], width: Int, height: Int)) -> [UInt8] {
-        (0..<image.height).flatMap { row in image.bytes[(row * image.width + image.width / 2) * 4 ..< (row * image.width + image.width) * 4] }
-    }
-
-    static func difference(_ a: [UInt8], _ b: [UInt8]) -> (maximum: Int, changed: Int) {
-        zip(a, b).reduce((0, 0)) { result, pair in
-            let delta = abs(Int(pair.0) - Int(pair.1))
-            return (max(result.0, delta), result.1 + (delta > 2 ? 1 : 0))
-        }
-    }
-
-    static func renderedBackground() {
-        guard MTLCreateSystemDefaultDevice() != nil else { return check(false, "Metal is available for the render check") }
-        let size = NSRect(x: 0, y: 0, width: 200, height: 100)
-        let root = ThemeRendererView(frame: size)
-        let page = StartPageView(frame: NSRect(x: 100, y: 0, width: 100, height: 100))
-        root.addSubview(page)
-        page.coordinateSpace = root
-        let reference = ThemeRendererView(frame: size)
-        let theme = textured(violet)
-        root.theme = theme; page.theme = theme; reference.theme = StartPageView.untextured(theme)
-        let window = pixels(root), plain = pixels(reference), drawn = pixels(page.background)
-        check(plain.width == 2 * drawn.width && plain.height == drawn.height && window.width == plain.width && drawn.width > 0,
-              "the page draws half the window's width at the same density")
-        let textureShows = difference(window.bytes, plain.bytes)
-        check(textureShows.changed > plain.bytes.count / 20, "the window's own surface still draws its texture (\(textureShows.changed) values differ)")
-        let sameAsWindow = difference(drawn.bytes, rightHalf(plain))
-        check(sameAsWindow.maximum <= 1, "the page draws the window's gradient for the same spot, untextured (max Δ \(sameAsWindow.maximum))")
-        let swipe = ThemePagingTransition(from: theme, theme: textured(amber, .tweed), progress: 0.5)
-        page.pagingTransition = swipe
-        reference.pagingTransition = StartPageView.untextured(swipe)
-        let blended = pixels(page.background), blendedPlain = pixels(reference)
-        check(difference(blended.bytes, rightHalf(blendedPlain)).maximum <= 1, "mid-swipe the page blends both themes like the window")
-        check(difference(blended.bytes, drawn.bytes).changed > drawn.bytes.count / 4, "the swipe visibly changes the page")
+        page.appearance = NSAppearance(named: .darkAqua)
+        page.viewDidChangeEffectiveAppearance()
+        check(page.commandBarSlot.appearance == nil && page.windowButtons.appearance == nil && page.sidebarButton.appearance == nil,
+              "the bar and chrome follow the page's own appearance")
+        check(page.sidebarButton.contentTintColor == ThemeChromePalette(theme: violet, isDark: true).title, "dark: the toggle takes the dark title colour")
+        page.appearance = NSAppearance(named: .aqua)
+        page.viewDidChangeEffectiveAppearance()
+        check(page.sidebarButton.contentTintColor == ThemeChromePalette(theme: violet, isDark: false).title, "light: switching appearance refreshes live")
     }
 }

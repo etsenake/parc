@@ -1,8 +1,8 @@
 # Start page
 
-A Space with no open tab shows a start page: the Parc mark above a resident
-command bar, on a page of Note paper over the Space's own colors. It replaced the "No tab open"
-placeholder, and the sidebar no longer refuses to hide in an empty window, so
+A Space with no open tab shows a start page: the multi-colour Parc mark above a
+resident command bar, on solid paper tinted from the Space's own colors. It
+replaced the "No tab open" placeholder, and the sidebar no longer refuses to hide in an empty window, so
 Command-S works there like anywhere else. Open review decisions are in the
 [backlog](backlog.md#planned-interface-work).
 
@@ -45,6 +45,10 @@ resident presentation and lifetime.
 - It sits flat on the page at the mark's level: the sidebar address field's soft
   fill (ink at 5% in light, white at 10% in dark), 12-point corners, no border
   or shadow. Results list on the same fill below a divider.
+- Like the page, it follows the light or dark appearance the window has, which
+  View → Appearance sets for websites, Easels and Notes; it takes no light or
+  dark override from the Space's theme. Its selection color still comes from
+  the theme.
 - At rest only the 64-point field shows. Typing grows results downward with the
   top edge fixed, up to five rows, once the first suggestions arrive.
 - Submitting a navigation opens a new tab in this Space, as Command-T does.
@@ -64,35 +68,34 @@ resident presentation and lifetime.
 
 ## Background
 
-The page reads as a page, the way a Note does in the same card: Note paper
-(`NotePaper`, white at 85% in light, black at 50% in dark, in the Space's
-content appearance) over the Space's theme. Light themes come out near-white
-with a faint tint of every theme color; dark themes as a dim tinted surface.
+The page is solid paper tinted from the Space's theme, with each theme color
+glowing in from its own corner, so it reads as a page rather than colored glass
+(`StartPagePaper.swift`).
 
-- Under the paper, the existing theme renderer draws the Space's full theme
-  exactly as the window gradient does, with the theme's intensity and without
-  texture: the page hands its renderer the theme with noise set to zero,
-  leaving every other theme surface unchanged.
-- It shares the window's gradient coordinate space, so it lines up with the
-  frame and the floating sidebar; the window refreshes those coordinates when
-  the page card moves. Space paging reaches it, so swiping between an empty
-  Space and a busy one blends both themes.
-- Private windows use the private palette. Themes without color fall back to
-  material like every other theme surface, under the same paper.
+- The tint is the average of the theme's colors mixed 84% toward white in a
+  light appearance, or 82% toward near-black in a dark one.
+- Each color glows from its corner: the first from the top left, the second
+  from the right edge, the third from the bottom. A glow's radius is 62% of the
+  page's long side, fading from 55% opacity at its centre (42% in dark) to
+  nothing. A single-color theme has one glow; a colorless theme is plain solid
+  paper.
+- The theme's grain texture at its usual 100-point pitch and a fine paper
+  noise sit over everything, lighter in dark.
+- Light or dark follows the window's appearance, which View → Appearance sets,
+  not the Space theme's own light or dark choice. Private windows use the
+  private palette on dark paper.
+- Everything is static layers: nothing redraws at rest. A Space swipe
+  cross-fades the two Spaces' glows and blends their tints.
 - The page card stays: the [window frame](window-frame.md) setting still
   applies, and the textured frame reads as a border around the paper.
 
 ## The mark
 
-- `StartPageMarkView` draws Parc's monochrome mark, 65 points wide, 24 points
+- `StartPageMarkView` shows Parc's multi-colour mark, 65 points wide, 24 points
   above the bar, with the pair centered at 45% of the page height.
-- In a colored theme the mark's shape is filled with the Space gradient in the
-  window's coordinates and keeps the theme's texture, so it is the one textured
-  thing on the page. A 25% wash of the palette's high-contrast color keeps it
-  visible: the same gradient alone would vanish into the background.
-- Colorless themes fill it with the secondary label color; private windows with
-  the private palette's blue. Its `style` switches to the color mark.
 - It is decorative for accessibility, and dragging on it never moves the window.
+- Its `style` can still switch to the monochrome mark filled with the Space's
+  textured gradient; nothing uses that today.
 
 ## Easter eggs
 
@@ -128,8 +131,6 @@ Rules they share:
 - A haptic tick marks Taffy's release, each landing and the Reduce Motion
   shimmer, through the system haptic call the theme editor uses; the
   tab-reordering haptic switch doesn't apply. There is no sound.
-- During a Space swipe the mark's textured gradient and tint blend between the
-  two Spaces, toward the label color when one side has no color.
 
 ## Transitions
 
@@ -145,8 +146,10 @@ render the options first, then build the approved direction. Two rounds
 settled the current design. The first compared themes, sidebar states, frame
 thickness, page card against edge-to-edge fill, texture, mark treatments and
 the Easter egg candidates; the card and the three Easter eggs were approved.
-The second replaced the lifted card with the flat soft-fill bar and the
-translucent empty-card look with Note paper. The build scripts and pages live
+The second replaced the lifted card with the flat soft-fill bar. Image renders
+of the theme's own blend made solid, a frosted panel and tinted paper with
+glows then settled the background on tinted paper, the multi-colour mark, and a
+page and bar that follow View → Appearance. The render scripts and images live
 in ignored `work/start-page/review/`.
 
 ## Source and checks
@@ -157,7 +160,7 @@ in ignored `work/start-page/review/`.
   `StartPageMarkEasterEgg.swift`, `StartPageMarkMotion.swift`,
   `StartPageMarkTaffy.swift`, `StartPageMarkSwoop.swift` and
   `StartPageMarkCharge.swift`: the Easter eggs.
-- `Sources/ParcApp/NotePaper.swift`: the paper shared with Notes.
+- `Sources/ParcApp/StartPagePaper.swift`: the tinted paper and its glows.
 - `Sources/ParcApp/CommandBarResidentLayout.swift` and
   `CommandBarResidentLifetime.swift`: the resident bar.
 
@@ -168,6 +171,6 @@ python3 tests/CommandBar/resident_check.py
 python3 tests/EmptyWindow/check.py
 ```
 
-The first renders the page and the window's surface offscreen and compares
-their gradients. The empty-window check covers the sidebar rule, Command-T and
+The first checks the paper's tint, glows, appearance and swipe hand-off. The
+empty-window check covers the sidebar rule, Command-T and
 Command-L routing and the start page's focus conditions.

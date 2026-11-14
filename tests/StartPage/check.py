@@ -11,10 +11,10 @@ sys.path.insert(0, str(root / "tests/Tooltip"))
 from support import tooltip_sources
 
 page = (app / "StartPageView.swift").read_text()
-for use in ("let background = ThemeRendererView()",
-            "background.theme = Self.untextured(theme)",
-            "background.pagingTransition = pagingTransition.map(Self.untextured)",
-            "background.coordinateSpace = coordinateSpace; mark.coordinateSpace = coordinateSpace",
+for use in ("let paper = StartPagePaperView()",
+            "        paper.theme = theme\n        mark.theme = theme\n",
+            "            paper.pagingTransition = pagingTransition\n            mark.pagingTransition = pagingTransition\n",
+            "            paper.incognito = incognito; mark.incognito = incognito\n",
             "let windowButtons = WindowStandardButtons()",
             "let sidebarButton = ActionButton(StartPageView.sidebarButtonTitle, symbol: \"sidebar.left\")",
             "LiveShortcutToolTip.set(sidebarButton, Self.sidebarButtonTitle, commandID: \"toggleSidebar:\")",
@@ -41,7 +41,7 @@ mark = (app / "StartPageMarkView.swift").read_text()
 for member in ("final class StartPageMarkView: NSView {", "    var theme = SpaceTheme()", "    var incognito = false",
                "    weak var coordinateSpace: NSView?", "    override var intrinsicContentSize: NSSize {",
                "    weak var effectsHost: NSView?", "    var pagingTransition: ThemePagingTransition?",
-               "    func invalidateCoordinates() {"):
+               "    func invalidateCoordinates() {", "    var style = ParcBrandMark.Style.borderless {"):
     assert member in mark, f"StartPageMarkView no longer offers what the start page uses: {member.strip()}"
 MARK_STAND_IN = """import AppKit
 
@@ -60,19 +60,19 @@ final class StartPageMarkView: NSView {
 sources = [root / "Sources/ParcCore/SpaceTheme.swift"] + [app / name for name in (
     "ThemeRenderer.swift", "WindowStandardButtons.swift", "SidebarChromeLayout.swift", "SidebarTablistBackground.swift",
     "SidebarAccessibility.swift", "SidebarMotionController.swift", "TranslucentButtonFace.swift", "ReloadControl.swift",
-    "PointingHand.swift", "PointerCover.swift", "NotePaper.swift", "StartPageView.swift")]
+    "PointingHand.swift", "PointerCover.swift", "StartPagePaper.swift", "StartPageView.swift")]
 
 
 
 def build(scratch, name, support, replace=None):
     files = list(sources)
     if replace:
-        old, new = replace
-        text = (app / "StartPageView.swift").read_text()
-        assert old in text, f"negative control no longer matches StartPageView.swift: {old}"
-        changed = scratch / f"{name}-StartPageView.swift"
+        source, old, new = replace
+        text = (app / source).read_text()
+        assert old in text, f"negative control no longer matches {source}: {old}"
+        changed = scratch / f"{name}-{source}"
         changed.write_text(text.replace(old, new))
-        files = [changed if path == app / "StartPageView.swift" else path for path in files]
+        files = [changed if path == app / source else path for path in files]
     executable = scratch / name
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     *map(str, files + support), str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
@@ -80,15 +80,16 @@ def build(scratch, name, support, replace=None):
 
 
 controls = {
-    "textured background": (("background.theme = Self.untextured(theme)", "background.theme = theme"),
-                            "the page background draws no texture"),
-    "private coordinate space": (("background.coordinateSpace = coordinateSpace; mark.coordinateSpace = coordinateSpace",
-                                  "mark.coordinateSpace = coordinateSpace"), "background and mark share the window's gradient space"),
-    "dropped swipe": (("background.pagingTransition = pagingTransition.map(Self.untextured)", "background.pagingTransition = nil"),
-                      "a Space swipe reaches the background"),
-    "slot swallows clicks": (("        return hit === self ? nil : hit\n", "        return hit\n"),
+    "paper ignores appearance": (("StartPagePaper.swift",
+                                  "var isDark: Bool { effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }",
+                                  "var isDark: Bool { false }"), "the paper follows the NSAppearanceNameDarkAqua appearance"),
+    "glows lost": (("StartPagePaper.swift", "glows = zip(colors, Self.anchors).map { Glow(color: $0, anchor: $1) }", "glows = []"),
+                   "every theme colour glows from its corner"),
+    "dropped swipe": (("StartPageView.swift", "            paper.pagingTransition = pagingTransition\n", ""),
+                      "a Space swipe prepares the incoming Space's paper"),
+    "slot swallows clicks": (("StartPageView.swift", "        return hit === self ? nil : hit\n", "        return hit\n"),
                              "the slot below the bar card falls through to the page background"),
-    "chrome never shows": (("if sidebarButton.isHidden == showsWindowChrome { sidebarButton.isHidden = !showsWindowChrome }",
+    "chrome never shows": (("StartPageView.swift", "if sidebarButton.isHidden == showsWindowChrome { sidebarButton.isHidden = !showsWindowChrome }",
                             "sidebarButton.isHidden = true"), "a hidden sidebar shows the window buttons and the sidebar button"),
 }
 

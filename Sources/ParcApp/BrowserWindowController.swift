@@ -736,7 +736,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.commandBar?.theme = self.rootView.paletteTheme
                 self.commandBar?.contentAppearance = palette.contentAppearance
                 self.residentCommandBar?.theme = self.rootView.paletteTheme
-                self.residentCommandBar?.contentAppearance = palette.contentAppearance
             }
             self?.popupChrome.palette = palette
             NotificationCenter.default.post(name: NSNotification.Name(PCNativeAirPlayThemeDidChangeNotification), object: self?.window)
@@ -3392,7 +3391,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         commandBar?.contentAppearance = rootView.palette.contentAppearance
         loadedStartPage?.theme = theme
         residentCommandBar?.theme = rootView.paletteTheme
-        residentCommandBar?.contentAppearance = rootView.palette.contentAppearance
     }
     private var windowPaletteTheme: SpaceTheme { rootView.incognito ? IncognitoWindowTheme.paletteTheme : activeSpace.theme }
     private var windowBasicBackground: NSColor? { rootView.incognito ? IncognitoWindowTheme.background : nil }
@@ -5027,7 +5025,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             currentPageTitle: currentBrowser?.title ?? store.state.tabs.first(where: { $0.id == commandTab })?.title,
             initialEdit: initialEdit,
             extensionDisposition: isPopupWindow && newTab ? nil : (newTab ? .newForegroundTab : .currentTab),
-            theme: windowPaletteTheme, contentAppearance: rootView.palette.contentAppearance, resident: resident)
+            theme: windowPaletteTheme, contentAppearance: resident ? nil : rootView.palette.contentAppearance, resident: resident)
         panel.isOwnerValid = isOriginal
         panel.tabCaption = { [weak self] tab in self?.commandBarTabCaption(tab)
             ?? .switchToTab }

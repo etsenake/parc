@@ -42,7 +42,6 @@ final class StartPageView: NSView {
 
     let commandBarSlot: NSView = StartPageCommandBarSlot()
     let mark = StartPageMarkView()
-    let background = ThemeRendererView()
     let paper = StartPagePaperView()
     let windowButtons = WindowStandardButtons()
     let markEffects = StartPagePassthroughView()
@@ -51,20 +50,21 @@ final class StartPageView: NSView {
     var incognito = false {
         didSet {
             guard incognito != oldValue else { return }
-            background.incognito = incognito; mark.incognito = incognito
+            paper.incognito = incognito; mark.incognito = incognito
+            applyPalette()
         }
     }
     weak var coordinateSpace: NSView? {
         didSet {
             guard coordinateSpace !== oldValue else { return }
-            background.coordinateSpace = coordinateSpace; mark.coordinateSpace = coordinateSpace
+            mark.coordinateSpace = coordinateSpace
             needsLayout = true
         }
     }
     var pagingTransition: ThemePagingTransition? {
         didSet {
             guard pagingTransition != oldValue else { return }
-            background.pagingTransition = pagingTransition.map(Self.untextured)
+            paper.pagingTransition = pagingTransition
             mark.pagingTransition = pagingTransition
         }
     }
@@ -81,7 +81,7 @@ final class StartPageView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        for view in [background, paper, mark, commandBarSlot, windowButtons, sidebarButton, markEffects] { addSubview(view) }
+        for view in [paper, mark, commandBarSlot, windowButtons, sidebarButton, markEffects] { addSubview(view) }
         mark.effectsHost = markEffects
         sidebarButton.imagePosition = .imageOnly
         sidebarButton.translucentFace = TranslucentButtonFace(view: sidebarButton)
@@ -89,29 +89,15 @@ final class StartPageView: NSView {
         sidebarButton.actionBlock = { [weak self] in self?.onToggleSidebar?() }
         sidebarButton.cell?.setAccessibilityLabel(Self.sidebarButtonTitle)
         LiveShortcutToolTip.set(sidebarButton, Self.sidebarButtonTitle, commandID: "toggleSidebar:")
-        background.onPaletteChange = { [weak self] palette in self?.applyPalette(palette) }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel(Self.accessibilityTitle)
         applyTheme()
-        applyPalette(background.palette)
         refreshChrome()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    static func untextured(_ theme: SpaceTheme) -> SpaceTheme {
-        guard theme.isValid else { return theme }
-        var plain = theme
-        plain.noise = 0
-        return plain
-    }
-
-    static func untextured(_ transition: ThemePagingTransition) -> ThemePagingTransition {
-        ThemePagingTransition(from: untextured(transition.from), theme: untextured(transition.theme), progress: transition.progress)
-    }
-
     func invalidateCoordinates() {
-        background.invalidateCoordinates()
         mark.invalidateCoordinates()
         needsLayout = true
     }
@@ -124,7 +110,6 @@ final class StartPageView: NSView {
 
     override func layout() {
         super.layout()
-        if background.frame != bounds { background.frame = bounds }
         if paper.frame != bounds { paper.frame = bounds }
         if markEffects.frame != bounds { markEffects.frame = bounds }
         let frames = StartPageLayout(size: bounds.size, barRestHeight: barRestHeight, markSize: mark.intrinsicContentSize,
@@ -144,8 +129,7 @@ final class StartPageView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         if isDeparting { return nil }
-        let hit = super.hitTest(point)
-        return hit === background ? self : hit
+        return super.hitTest(point)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -166,16 +150,19 @@ final class StartPageView: NSView {
     }
 
     private func applyTheme() {
-        background.theme = Self.untextured(theme)
+        paper.theme = theme
         mark.theme = theme
+        applyPalette()
     }
 
-    private func applyPalette(_ palette: ThemeChromePalette) {
-        let content = palette.contentAppearance
-        for view in [paper, commandBarSlot, sidebarButton] where view.appearance?.name != content?.name { view.appearance = content }
-        let buttons: NSAppearance.Name = palette.isDark ? .darkAqua : .aqua
-        if windowButtons.appearance?.name != buttons { windowButtons.appearance = NSAppearance(named: buttons) }
-        sidebarButton.contentTintColor = palette.title
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyPalette()
+    }
+
+    private func applyPalette() {
+        let palette = ThemeChromePalette(theme: paper.effectiveTheme, isDark: paper.isDark)
+        if sidebarButton.contentTintColor != palette.title { sidebarButton.contentTintColor = palette.title }
     }
 
     private func refreshChrome() {
@@ -199,23 +186,4 @@ final class StartPagePassthroughView: NSView {
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func isAccessibilityElement() -> Bool { false }
-}
-
-final class StartPagePaperView: NSView {
-    override var isFlipped: Bool { true }
-    override var wantsUpdateLayer: Bool { true }
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override func isAccessibilityElement() -> Bool { false }
-    override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance { layer?.backgroundColor = NotePaper.color.cgColor }
-    }
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        needsDisplay = true
-    }
 }

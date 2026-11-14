@@ -10,7 +10,7 @@ final class StartPageMarkView: NSView {
     weak var coordinateSpace: NSView? { didSet { renderer?.coordinateSpace = coordinateSpace } }
     weak var effectsHost: NSView? { didSet { if effectsHost !== oldValue { stopInteraction() } } }
     var pagingTransition: ThemePagingTransition? { didSet { if pagingTransition != oldValue { refreshFill() } } }
-    var style = ParcBrandMark.Style.monochrome { didSet { if style != oldValue { refreshFill() } } }
+    var style = ParcBrandMark.Style.borderless { didSet { if style != oldValue { refreshFill() } } }
     private var fill = StartPageMarkFill.ink
 
     private let body = NSView()

@@ -184,7 +184,7 @@ enum ThemeWindowActivity {
     }
 }
 
-private enum ThemeRenderMath {
+enum ThemeRenderMath {
     static func nativeColor(_ color: ThemeColor) -> NSColor {
         let space: NSColorSpace
         switch color.colorSpace {

@@ -38,6 +38,8 @@ import AppKit
         mark.layoutSubtreeIfNeeded()
         check(!mark.mouseDownCanMoveWindow, "dragging the mark never moves the window")
         check(!mark.isAccessibilityElement() && mark.accessibilityChildren()?.isEmpty == true, "the mark is decorative for accessibility")
+        check(mark.style == .borderless && renderer(mark) == nil, "the start page shows the multi-colour mark and builds no gradient renderer for it")
+        mark.style = .monochrome
         let red = theme(1, 0, 0, noise: 0.4), blue = theme(0, 0, 1, noise: 0.7), colourless = SpaceTheme()
         mark.theme = red
         guard let renderer = renderer(mark) else { return check(false, "a coloured theme fills the mark with its gradient") }
