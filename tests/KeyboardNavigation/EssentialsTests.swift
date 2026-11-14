@@ -40,7 +40,7 @@ import CoreText
             == NSPoint(x: 815, y: 452), "Final placement uses the original physical window's top-right ten-point inset")
         let fields = surface.subviews.compactMap { $0 as? NSTextField }
         let headline = fields.first { $0.stringValue == "Essential Keyboard Shortcuts" }!
-        expect(headline.font?.fontName == "MarlinSoftSQ-ExtraBold", "Bundled original font is used when available")
+        expect(headline.font?.fontName == "Nunito-ExtraBold", "Bundled Nunito ExtraBold is used when available")
         expect(headline.font?.pointSize == 20, "Recovered headline size")
         expect(headline.attributedStringValue.attribute(.kern, at: 0, effectiveRange: nil) as? Double == -0.8, "Recovered headline tracking")
         expect(fields.filter { $0.font?.pointSize == 15 }.count == 4, "Included rows use the original 15-point title style")

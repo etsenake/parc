@@ -189,10 +189,10 @@ private final class EssentialsSurface: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     private static let headlineFont: NSFont = {
-        if let url = Bundle.main.url(forResource: "MarlinSoftSQ-ExtraBold", withExtension: "otf", subdirectory: "Onboarding") {
+        if let url = Bundle.main.url(forResource: "Nunito-ExtraBold", withExtension: "ttf", subdirectory: "NoteFonts") {
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
-        return NSFont(name: "MarlinSoftSQ-ExtraBold", size: 20) ?? .systemFont(ofSize: 20, weight: .heavy)
+        return NSFont(name: "Nunito-ExtraBold", size: 20) ?? .systemFont(ofSize: 20, weight: .heavy)
     }()
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance(); updateColors()

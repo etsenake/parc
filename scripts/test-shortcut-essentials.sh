@@ -12,4 +12,4 @@ xcrun swiftc -whole-module-optimization -warnings-as-errors -parse-as-library -t
   "$repo_root/tests/KeyboardNavigation/NativeShortcutStub.swift" \
   "$repo_root/tests/KeyboardNavigation/EssentialsTests.swift" \
   -o "$check_dir/essentials"
-"$check_dir/essentials" "$repo_root/Resources/Onboarding/MarlinSoftSQ-ExtraBold.otf"
+"$check_dir/essentials" "$repo_root/Resources/NoteFonts/Nunito-ExtraBold.ttf"

@@ -12,8 +12,11 @@ links AVFoundation for playback.
 
 ## Typeface and background
 
-- `MarlinSoftSQ-ExtraBold.otf` supplies the welcome's Marlin Soft SQ ExtraBold
-  typeface and is an unchanged font file.
+- `Sniglet-ExtraBold.ttf` sets the "A browser for you." headline at 59 points.
+  It is Sniglet ExtraBold from google/fonts under the SIL Open Font License in
+  `OFL.txt`.
+- Setup card titles (35 points) and the Essential Keyboard Shortcuts title
+  (20 points) use Nunito ExtraBold from `Resources/NoteFonts`.
   silent and 100 × 100 pixels, lasting 6 and 8 seconds respectively.
 - `orb-poster.png` and `background-poster.png` are native AVFoundation exports
   of each video's first frame.

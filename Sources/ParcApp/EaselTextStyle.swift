@@ -4,7 +4,7 @@ import CoreText
 enum EaselTextAppearance {
     private static let registerFonts: Void = {
         let names = ["SpaceMono-Regular", "SpaceMono-Bold", "EBGaramond-VariableFont_wght",
-                     "SohneBreit-Buch", "SohneBreit-Dreiviertelfett", "SohneBreit-Extrafett"]
+                     "ParcWide-Regular", "ParcWide-SemiBold", "ParcWide-Black"]
         for name in names {
             if let url = Bundle.main.url(forResource: name, withExtension: "ttf", subdirectory: "EaselFonts") {
                 CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
@@ -24,7 +24,7 @@ enum EaselTextAppearance {
         case .fancy:
             return NSFont(name: "EBGaramond-Regular", size: size) ?? .systemFont(ofSize: size)
         case .hip:
-            let name = style.size == .body ? "SohneBreit-Buch" : style.size == .h2 ? "SohneBreit-Dreiviertelfett" : "SohneBreit-Extrafett"
+            let name = style.size == .body ? "ParcWide-Regular" : style.size == .h2 ? "ParcWide-SemiBold" : "ParcWide-Black"
             return NSFont(name: name, size: size) ?? .systemFont(ofSize: size, weight: .bold)
         }
     }

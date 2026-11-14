@@ -6,9 +6,9 @@ struct OnboardingSetupCardTests {
     @MainActor static func main() {
         _ = NSApplication.shared
         let fontURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent("Resources/Onboarding/MarlinSoftSQ-ExtraBold.otf")
+            .appendingPathComponent("Resources/NoteFonts/Nunito-ExtraBold.ttf")
         CTFontManagerRegisterFontsForURL(fontURL as CFURL, .process, nil)
-        guard let font = NSFont(name: "MarlinSoftSQ-ExtraBold", size: 35) else {
+        guard let font = NSFont(name: "Nunito-ExtraBold", size: 35) else {
             fatalError("The production onboarding font must be available")
         }
         let card = OnboardingSetupCard(frame: NSRect(origin: .zero, size: OnboardingSetupLayout.size))

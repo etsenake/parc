@@ -13,7 +13,7 @@ The whole-selection palette offers four families and five sizes:
 | --- | --- | --- |
 | Mono | Space Mono, regular body/bold display | 15, 24, 44, 60, 80 |
 | Fancy | EB Garamond | 16, 28, 48, 60, 80 |
-| Hip | Söhne | 18, 21, 44, 60, 80 |
+| Hip | Parc Wide (Mona Sans Expanded) | 18, 21, 44, 60, 80 |
 | Clean | System | 15, 24, 44, 60, 80 |
 
 During native text editing, selection formatting applies to the selected range

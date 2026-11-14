@@ -16,13 +16,22 @@ enum OnboardingArtwork {
         image(name)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 
-    static let headlineFont: NSFont = {
-        if let url = url("MarlinSoftSQ-ExtraBold", extension: "otf") {
+    static let welcomeFont: NSFont = {
+        if let url = url("Sniglet-ExtraBold", extension: "ttf") {
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
-        if let font = NSFont(name: "MarlinSoftSQ-ExtraBold", size: 65) { return font }
+        if let font = NSFont(name: "Sniglet-ExtraBold", size: 59) { return font }
         NSLog("Parc welcome font unavailable; using the system fallback.")
-        return .systemFont(ofSize: 65, weight: .heavy)
+        return .systemFont(ofSize: 59, weight: .heavy)
+    }()
+
+    static let headlineFont: NSFont = {
+        if let url = Bundle.main.url(forResource: "Nunito-ExtraBold", withExtension: "ttf", subdirectory: "NoteFonts") {
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+        if let font = NSFont(name: "Nunito-ExtraBold", size: 35) { return font }
+        NSLog("Parc setup font unavailable; using the system fallback.")
+        return .systemFont(ofSize: 35, weight: .heavy)
     }()
 }
 

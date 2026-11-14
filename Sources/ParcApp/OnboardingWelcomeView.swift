@@ -126,7 +126,7 @@ private struct OnboardingHeadline: View {
     let visible: Bool
     let reduceMotion: Bool
     private let title = "A browser for you."
-    private let font = OnboardingArtwork.headlineFont
+    private let font = OnboardingArtwork.welcomeFont
 
     var body: some View {
         HStack(spacing: -3) {
