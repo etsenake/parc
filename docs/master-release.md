@@ -12,7 +12,8 @@ installs/replaces/quits/opens Parc, runs startup or browser tests, or installs,
 upgrades or reinstalls Parc with Homebrew. Users run `brew upgrade --cask parc`
 themselves. There is no quiet-window timer.
 
-`release.sh` starts the release with Python 3.12 or later: `python3` when it is
+`release.sh` first loads Homebrew's environment from `/opt/homebrew` when
+`brew` isn't on `PATH`, as in a non-login shell. It starts the release with Python 3.12 or later: `python3` when it is
 new enough, otherwise a Homebrew `python3.x` (macOS's own Python 3.9 is too
 old). Release steps that call `python3`, such as packaging, get that same
 interpreter. With no suitable Python it stops and names
