@@ -13466,6 +13466,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         menu.popUp(positioning: nil, at: point, in: anchor)
     }
 
+    var isCreatingSpace: Bool { spaceCreation != nil }
+
     func createSpace() {
         if let session = spaceCreation { session.view.focusName(); return }
         guard !isPrivateBrowsing, !isPopupWindow, !store.isEphemeral else { return }

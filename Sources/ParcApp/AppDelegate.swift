@@ -2381,16 +2381,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc private func createSpace(_ sender: Any?) {
         guard started, !terminationInProgress, !store.isEphemeral else { return }
         let ready = windows.filter(\.hasReadyPresentation)
+        let zOrder = NSApp.orderedWindows
+        let stacked = ready.sorted { first, second in
+            (first.window.flatMap { zOrder.firstIndex(of: $0) } ?? Int.max) < (second.window.flatMap { zOrder.firstIndex(of: $0) } ?? Int.max)
+        }
         var ordered: [BrowserWindowController] = []
         for candidate in ready.filter({ $0.window === NSApp.keyWindow || $0.window === NSApp.mainWindow })
-            + [lastActiveWindow].compactMap({ $0 }) + ready.reversed() where !ordered.contains(where: { $0 === candidate }) {
+            + [lastActiveWindow].compactMap({ $0 }).filter({ candidate in ready.contains { $0 === candidate } }) + stacked
+            where !ordered.contains(where: { $0 === candidate }) {
             ordered.append(candidate)
         }
         let choice = NewSpaceWindowChoice.choose(from: ordered.enumerated().map {
-            (id: $0.offset, isPrivate: $0.element.isPrivateBrowsing, isPopup: $0.element.isPopupWindow)
+            (id: $0.offset, isPrivate: $0.element.isPrivateBrowsing, isPopup: $0.element.isPopupWindow,
+             isMinimized: $0.element.window?.isMiniaturized == true, isCreating: $0.element.isCreatingSpace)
         })
         switch choice {
-        case .existing(let index): ordered[index].createSpace()
+        case .existing(let index):
+            if let window = ordered[index].window, window.isMiniaturized { window.deminiaturize(nil) }
+            ordered[index].createSpace()
         case .openNew:
             if !initialBrowserOpened { restorationLaunch.deferAction(.blankWindow); return }
             createStandardWindow(showCommandBar: false)?.createSpace()

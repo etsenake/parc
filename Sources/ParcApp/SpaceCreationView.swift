@@ -73,9 +73,11 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
         sharingPicker.bezelStyle = .rounded
         sharingPicker.target = self; sharingPicker.action = #selector(sharingChanged(_:))
         sharingPicker.setAccessibilityLabel("Share data with")
+        sharingPicker.setAccessibilityHelp(Self.sharingCaption)
         sharingCard.addSubview(sharingPicker)
         sharingCaptionLabel.font = .systemFont(ofSize: 11)
         sharingCaptionLabel.textColor = .secondaryLabelColor
+        sharingCaptionLabel.setAccessibilityElement(false)
         addSubview(sharingCaptionLabel)
 
         configure(themeButton, title: "Choose a Theme", action: #selector(chooseTheme(_:)))
@@ -108,14 +110,14 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
         nameCard.frame = NSRect(x: 14, y: 198, width: width, height: 36)
         iconButton.frame = NSRect(x: 5, y: 5, width: 26, height: 26)
         nameField.frame = NSRect(x: 33, y: 8, width: max(0, width - 40), height: 21)
-        sharingCard.frame = NSRect(x: 14, y: 240, width: width, height: 36)
+        sharingCard.frame = NSRect(x: 14, y: 240, width: width, height: 62)
         sharingGlyph.frame = NSRect(x: 10, y: 10, width: 17, height: 16)
-        sharingLabel.frame = NSRect(x: 33, y: 8, width: 78, height: 20)
-        sharingPicker.frame = NSRect(x: 111, y: 6, width: max(40, width - 118), height: 26)
-        sharingCaptionLabel.frame = NSRect(x: 18, y: 282, width: max(0, width - 8), height: 32)
-        themeCard.frame = NSRect(x: 14, y: 322, width: width, height: 36)
+        sharingLabel.frame = NSRect(x: 33, y: 8, width: max(0, width - 40), height: 20)
+        sharingPicker.frame = NSRect(x: 6, y: 30, width: max(40, width - 12), height: 26)
+        sharingCaptionLabel.frame = NSRect(x: 18, y: 306, width: max(0, width - 8), height: 32)
+        themeCard.frame = NSRect(x: 14, y: 346, width: width, height: 36)
         themeButton.frame = NSRect(x: 10, y: 2, width: width - 20, height: 32)
-        let bottom = max(410, bounds.height - 82)
+        let bottom = max(434, bounds.height - 82)
         errorLabel.frame = NSRect(x: 14, y: bottom - 48, width: width, height: 42)
         createButton.frame = NSRect(x: 14, y: bottom, width: width, height: 36)
         cancelButton.frame = NSRect(x: 14, y: bottom + 42, width: width, height: 26)
@@ -132,8 +134,8 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
         availableSpaces = spaces; selectedSpaceID = selected
         sharingPicker.removeAllItems()
         for space in spaces {
-            sharingPicker.addItem(withTitle: space.name)
-            guard let item = sharingPicker.lastItem else { continue }
+            let item = NSMenuItem(title: space.name, action: nil, keyEquivalent: "")
+            sharingPicker.menu?.addItem(item)
             item.representedObject = space.id
             if let icon = space.customIcon {
                 if let image = icon.image {
@@ -146,8 +148,9 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
             }
         }
         sharingPicker.menu?.addItem(.separator())
-        sharingPicker.addItem(withTitle: Self.keepSeparateTitle)
-        sharingPicker.lastItem?.representedObject = Self.keepSeparateTitle
+        let separate = NSMenuItem(title: Self.keepSeparateTitle, action: nil, keyEquivalent: "")
+        separate.representedObject = Self.keepSeparateTitle
+        sharingPicker.menu?.addItem(separate)
         selectCurrentSharing()
         sharingPicker.isEnabled = !committing
         refreshAvailability()
@@ -186,6 +189,7 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
     @objc private func chooseTheme(_ sender: Any?) { if !committing { onChooseTheme?(themeButton) } }
     @objc private func sharingChanged(_ sender: Any?) {
         guard !committing else { selectCurrentSharing(); return }
+        showError(nil)
         if let id = sharingPicker.selectedItem?.representedObject as? UUID {
             selectedSpaceID = id; onSharingChange?(.share(withSpace: id))
         } else {
@@ -199,7 +203,10 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
             sharingPicker.select(item)
         } else if selectedSpaceID == nil, let item = sharingPicker.itemArray.last {
             sharingPicker.select(item)
-        } else { sharingPicker.select(nil) }
+        } else {
+            sharingPicker.select(nil)
+            showError("Choose a Space to share data with, or Keep separate.")
+        }
     }
 }
 
