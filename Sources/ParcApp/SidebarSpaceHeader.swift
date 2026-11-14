@@ -162,7 +162,7 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         typealias H = SidebarChromeLayout.SpaceHeader
         let shown = H.showsEditButton(editing: isEditing, hovered: isHovered, canShowHeaderButtons: canShowHeaderButtonsIfPossible)
         editButton.hoveredBackgroundColor = editButtonHoverFill
-        let width = H.editButtonWidth(shown: shown, editing: isEditing)
+        let width = H.editButtonWidth(shown: shown, editing: isEditing, titleWidth: editButton.attributedTitle.size().width)
         if width != editButtonWidth {
             editButtonWidth = width
             needsLayout = true
@@ -235,6 +235,9 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         let point = convert(event.locationInWindow, from: nil)
         if showsIcon, symbolView.frame.contains(point) || emojiField.frame.contains(point) {
             onChangeIcon?(); return
+        }
+        if SidebarChromeLayout.SpaceHeader.beginsRename(clickCount: event.clickCount, modifiers: event.modifierFlags, editing: isEditing) {
+            onRenameSpace?(); return
         }
         super.mouseDown(with: event)
     }
@@ -324,6 +327,10 @@ final class SidebarSpaceHeaderEditButton: PointingHandButton {
 }
 
 extension SidebarChromeLayout.SpaceHeader {
+    static func beginsRename(clickCount: Int, modifiers: NSEvent.ModifierFlags, editing: Bool) -> Bool {
+        clickCount == 2 && !editing && modifiers.isDisjoint(with: [.command, .shift, .option, .control])
+    }
+
     struct Content: Equatable {
         var isShown: Bool
         var title: String

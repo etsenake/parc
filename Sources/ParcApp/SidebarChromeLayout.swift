@@ -37,8 +37,8 @@ enum SidebarChromeLayout {
         static let fontSize: CGFloat = 13
 
         static let editButtonHeight: CGFloat = 24
-        static func editButtonWidth(shown: Bool, editing: Bool) -> CGFloat {
-            shown ? (editing ? 30 : 24) : 0
+        static func editButtonWidth(shown: Bool, editing: Bool, titleWidth: CGFloat = 0) -> CGFloat {
+            shown ? (editing ? max(30, ceil(titleWidth) + 4) : 24) : 0
         }
 
         static func showsEditButton(editing: Bool, hovered: Bool, canShowHeaderButtons: Bool) -> Bool {

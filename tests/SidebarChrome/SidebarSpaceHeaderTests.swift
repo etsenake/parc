@@ -291,6 +291,25 @@ struct SidebarSpaceHeaderTests {
         check(header.makeMenu().items.map(\.title) == base && (field.cell?.accessibilityCustomActions() ?? []).count == 3,
               "the toggle leaves with the content's toggle title")
 
+        func press(clickCount: Int, modifiers: NSEvent.ModifierFlags = []) {
+            guard let event = NSEvent.mouseEvent(with: .leftMouseDown, location: header.convert(NSPoint(x: 100, y: 18), to: nil),
+                                                 modifierFlags: modifiers, timestamp: 0, windowNumber: window.windowNumber,
+                                                 context: nil, eventNumber: 0, clickCount: clickCount, pressure: 1) else { return }
+            header.mouseDown(with: event)
+        }
+        calls.removeAll()
+        press(clickCount: 1)
+        check(calls.isEmpty, "a single click on the name does not rename")
+        press(clickCount: 2)
+        check(calls == ["rename"], "double-clicking the name starts Rename Space")
+        calls.removeAll()
+        for modifiers: NSEvent.ModifierFlags in [.command, .shift, .option] { press(clickCount: 2, modifiers: modifiers) }
+        check(calls.isEmpty, "a Command, Shift or Option double-click does not rename")
+        check(!H.beginsRename(clickCount: 2, modifiers: .control, editing: false)
+              && !H.beginsRename(clickCount: 2, modifiers: [], editing: true) && !H.beginsRename(clickCount: 3, modifiers: [], editing: false),
+              "a Control double-click stays AppKit's context-menu click; double-clicking while renaming, or a triple click, leaves the name alone")
+        calls.removeAll()
+
         let button = header.editButton
         header.layoutSubtreeIfNeeded()
         header.display()
@@ -397,9 +416,12 @@ struct SidebarSpaceHeaderTests {
         header.mouseExited(with: crossing(.mouseExited))
         _ = wait(upTo: 2) { button.frame.width == 0 && button.alphaValue == 0 }
         header.isEditing = true
-        let editingFrames = H.frames(width: 228, icon: false, titleHeight: titleHeight, editButtonWidth: 30)
-        check(button.frame == editingFrames.editButton && button.frame == NSRect(x: 184, y: 6, width: 30, height: 24)
-              && field.frame == editingFrames.title && field.frame.maxX == 180, "editing: 184…214 and the name ends at 180, without hover")
+        let doneTitleWidth = button.attributedTitle.size().width
+        let editingFrames = H.frames(width: 228, icon: false, titleHeight: titleHeight,
+                                     editButtonWidth: H.editButtonWidth(shown: true, editing: true, titleWidth: doneTitleWidth))
+        check(button.frame == editingFrames.editButton && button.frame.maxX == 214 && button.frame.width >= ceil(doneTitleWidth) + 4
+              && field.frame == editingFrames.title && field.frame.maxX == button.frame.minX - 4,
+              "editing: Done ends at 214 with room for its whole title and the name ends 4 points before it, without hover")
         check(button.alphaValue == 1 && isArcFade(opacityFade()), "the editing change fades in, in the group")
         check(button.image?.tiffRepresentation != ellipsis?.tiffRepresentation && (button.image?.size.width ?? 0) <= 1
               && button.title == "Done" && editElement?.accessibilityLabel() == "Done", "\"Done\" replaces the ellipsis")

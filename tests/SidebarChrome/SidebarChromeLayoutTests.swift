@@ -143,7 +143,10 @@ extension SidebarChromeLayout.Toolbar {
         check(H.frames(width: 20, icon: true, titleHeight: 16).title.width == 0, "a too-narrow header never gives the name a negative width")
         check(H.editButtonHeight == 24 && H.editButtonWidth(shown: false, editing: false) == 0
               && H.editButtonWidth(shown: false, editing: true) == 0 && H.editButtonWidth(shown: true, editing: false) == 24
-              && H.editButtonWidth(shown: true, editing: true) == 30, "edit button widths: 0 hidden, 24 shown, 30 while editing")
+              && H.editButtonWidth(shown: true, editing: true) == 30
+              && H.editButtonWidth(shown: true, editing: true, titleWidth: 33.4) == 38
+              && H.editButtonWidth(shown: false, editing: true, titleWidth: 33.4) == 0,
+              "edit button widths: 0 hidden, 24 shown, and while editing at least 30 and wide enough for the whole Done title")
         check(iconFrames.editButton == CGRect(x: 214, y: 6, width: 0, height: 24) && plain.editButton == CGRect(x: 150, y: 6, width: 0, height: 24),
               "at rest the button is a zero-width slot at the trailing inset")
         let shown = H.frames(width: 228, icon: true, titleHeight: 16, editButtonWidth: 24)
