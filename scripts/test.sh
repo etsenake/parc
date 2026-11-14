@@ -291,6 +291,8 @@ python3 "$repo_root/tests/DocumentsLibraryCatalogSkip/check.py"
 compile_and_run sidebar-new-space SidebarNewSpaceTests
 compile_and_run new-space-window-choice NewSpaceWindowChoiceTests \
   "$repo_root/Sources/ParcCore/NewSpaceWindowChoice.swift"
+compile_and_run new-space-blocker-wait NewSpaceBlockerWaitTests \
+  "$repo_root/Sources/ParcCore/NewSpaceBlockerWait.swift"
 compile_and_run sidebar-space-moves SidebarSpaceMoveTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift"
 

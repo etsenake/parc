@@ -13486,13 +13486,26 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if siteControlCenter != nil { dismissSiteControlCenter() }
     }
 
-    private func presentNewSpaceForm(attemptsLeft: Int) {
+    private var newSpaceBlockingPeekState: NewSpaceBlockerWait.PeekState {
+        guard let peek = activePeek else { return .none }
+        switch peek.modalPhase {
+        case .awaitingDismissConfirmation: return .awaitingConfirmation
+        case .dismissing: return .closing
+        case .presented: return .open
+        }
+    }
+
+    private func presentNewSpaceForm(attemptsLeft: Int, confirmationShown: Bool = false) {
         if let session = spaceCreation { session.view.focusName(); return }
         guard window != nil, !isClosing, !wholeWindowClose, !windowClosePending, !windowCloseApproved else { return }
         if prepareSidebarNewSpace([])?() == true { return }
-        guard attemptsLeft > 0 else { return }
+        let peek = newSpaceBlockingPeekState
+        let shown = confirmationShown || peek == .awaitingConfirmation
+        let step = NewSpaceBlockerWait.next(peek: peek, confirmationShown: shown, attemptsLeft: attemptsLeft)
+        guard step != .giveUp else { return }
+        let remaining = step == .waitForConfirmation ? attemptsLeft : attemptsLeft - 1
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.presentNewSpaceForm(attemptsLeft: attemptsLeft - 1)
+            self?.presentNewSpaceForm(attemptsLeft: remaining, confirmationShown: shown)
         }
     }
 
