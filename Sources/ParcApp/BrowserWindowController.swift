@@ -13465,13 +13465,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     var isCreatingSpace: Bool { spaceCreation != nil }
+    private var newSpaceWait = 0
+    private var newSpaceWaitActive = false
 
     func createSpace() {
         if let session = spaceCreation { session.view.focusName(); return }
         guard !isPrivateBrowsing, !isPopupWindow, !store.isEphemeral else { return }
         window?.makeKeyAndOrderFront(nil)
-        if presentation.isReady { dismissForNewSpaceForm() }
-        presentNewSpaceForm(attemptsLeft: 40)
+        let press = NewSpaceBlockerWait.press(peek: newSpaceBlockingPeekState, waitActive: newSpaceWaitActive)
+        guard press != .bringForward else { return }
+        if press == .dismissAndWait, presentation.isReady { dismissForNewSpaceForm() }
+        newSpaceWait &+= 1
+        newSpaceWaitActive = true
+        presentNewSpaceForm(attemptsLeft: 40, wait: newSpaceWait)
     }
 
     private func dismissForNewSpaceForm() {
@@ -13495,17 +13501,20 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    private func presentNewSpaceForm(attemptsLeft: Int, confirmationShown: Bool = false) {
-        if let session = spaceCreation { session.view.focusName(); return }
-        guard window != nil, !isClosing, !wholeWindowClose, !windowClosePending, !windowCloseApproved else { return }
-        if prepareSidebarNewSpace([])?() == true { return }
+    private func presentNewSpaceForm(attemptsLeft: Int, wait: Int, confirmationShown: Bool = false) {
+        guard wait == newSpaceWait else { return }
+        if let session = spaceCreation { newSpaceWaitActive = false; session.view.focusName(); return }
+        guard window != nil, !isClosing, !wholeWindowClose, !windowClosePending, !windowCloseApproved else {
+            newSpaceWaitActive = false; return
+        }
+        if prepareSidebarNewSpace([])?() == true { newSpaceWaitActive = false; return }
         let peek = newSpaceBlockingPeekState
         let shown = confirmationShown || peek == .awaitingConfirmation
         let step = NewSpaceBlockerWait.next(peek: peek, confirmationShown: shown, attemptsLeft: attemptsLeft)
-        guard step != .giveUp else { return }
+        guard step != .giveUp else { newSpaceWaitActive = false; return }
         let remaining = step == .waitForConfirmation ? attemptsLeft : attemptsLeft - 1
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.presentNewSpaceForm(attemptsLeft: remaining, confirmationShown: shown)
+            self?.presentNewSpaceForm(attemptsLeft: remaining, wait: wait, confirmationShown: shown)
         }
     }
 

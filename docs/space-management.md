@@ -150,7 +150,9 @@ or focuses it if it is already open. A Peek whose page has the camera or
 microphone live asks to be confirmed first: New Space shows the Peek's own Hang up
 button and, once the person confirms and the Peek closes, goes straight on to the
 form; if they let the confirmation lapse or the window closes, nothing more
-happens and no capture is ever cut off. Other blockers are retried for about two
+happens and no capture is ever cut off. Pressing New Space again while Hang up is
+showing only brings the window forward; only Hang up ends the call, and one wait
+runs at a time. Other blockers are retried for about two
 seconds before New Space quietly gives up. With only private windows or none, it opens
 a regular window first. It works while Settings is the key window, so Settings
 closes itself and sends the same action. `NewSpaceWindowChoice` makes the window

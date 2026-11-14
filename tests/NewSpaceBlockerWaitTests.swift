@@ -15,6 +15,10 @@ import Foundation
         check(Wait.next(peek: .open, confirmationShown: false, attemptsLeft: 5) == .retry, "Other blockers keep retrying")
         check(Wait.next(peek: .none, confirmationShown: false, attemptsLeft: 0) == .giveUp, "Retries stay bounded")
         check(Wait.next(peek: .closing, confirmationShown: true, attemptsLeft: 0) == .giveUp, "A confirmed close still respects the retry bound")
+        check(Wait.press(peek: .awaitingConfirmation, waitActive: true) == .bringForward, "Pressing New Space again while Hang up is showing never hangs up the call or starts a second wait")
+        check(Wait.press(peek: .awaitingConfirmation, waitActive: false) == .waitWithoutDismissing, "A Hang up prompt already showing is waited on without asking the Peek to close again")
+        check(Wait.press(peek: .open, waitActive: true) == .dismissAndWait, "Without a pending Hang up, New Space asks blockers to close and waits")
+        check(Wait.press(peek: .none, waitActive: false) == .dismissAndWait, "With nothing in the way New Space starts normally")
         print("NewSpaceBlockerWaitTests: \(checks) assertions passed")
     }
 }
