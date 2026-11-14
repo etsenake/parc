@@ -190,9 +190,6 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
 - **`native-fullscreen-window`**: leaving full screen recovers the window's original frame. The
   controller's pending transition and frame are private to
   `native_widget_ns_window_fullscreen_controller.{h,mm}`.
-- **`native-history-swipe-direct`**: a cancelled back or forward swipe never navigates late.
-  Cancellation must reach the retained AppKit tracker in the history swiper and its overlay; five
-  files under `chrome/browser/renderer_host` and `chrome/browser/ui/cocoa`.
 - **`native-input-diagnostics-direct`**: opt-in input and accessibility probes at responder and
   accessibility branches no observer exposes, in four Cocoa, frame-host and accessibility files.
 - **`native-external-split-drop`**: dropping a link onto a page can open it in a split, because the

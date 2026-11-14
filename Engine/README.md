@@ -170,7 +170,7 @@ the overlay together: the overlay records the exact Chromium commit it fits, so
 every bump needs a new overlay version even when no patch breaks. Never commit
 the lock alone; the next release would move its engine to the new version and
 then stop at the overlay check. A minor bump (same milestone, new patch number)
-usually breaks a few of the 73 patches and keeps the compiler, so the build is
+usually breaks a few of the 72 patches and keeps the compiler, so the build is
 incremental. A major bump (new milestone) breaks many patches, adds and drops
 dependencies and usually rolls the compiler, so the next build recompiles
 nearly everything; also check the new version's required macOS SDK in its
