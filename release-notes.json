@@ -1,6 +1,37 @@
 {
   "releases": [
     {
+      "version": "2.4.0",
+      "build": 37,
+      "date": "2026-11-14",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "private",
+          "summary": "Show the Incognito pill in every private window instead of only when you have a second profile",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "spaces",
+          "summary": "Swap Set Profile for Share data with, warn only when it costs something, and give Settings a Spaces pane",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "settings",
+          "summary": "Give search engine, suggestions and download folder back to each Space, since they travel with its data",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "spaces",
+          "summary": "Only delete a Space's data under the warning you actually saw, and let Settings' Delete Space and New Space always follow through",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.3.0",
       "build": 36,
       "date": "2026-11-14",

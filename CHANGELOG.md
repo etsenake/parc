@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.0 (2026-11-14)
+
+### New
+
+- **spaces:** Swap Set Profile for Share data with, warn only when it costs something, and give Settings a Spaces pane
+
+### Fixed
+
+- **private:** Show the Incognito pill in every private window instead of only when you have a second profile
+- **settings:** Give search engine, suggestions and download folder back to each Space, since they travel with its data
+- **spaces:** Only delete a Space's data under the warning you actually saw, and let Settings' Delete Space and New Space always follow through
+
 ## 2.3.0 (2026-11-14)
 
 ### New
