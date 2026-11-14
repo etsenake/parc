@@ -14,6 +14,7 @@ import Foundation
         try draftCreation()
         try changeSharing()
         try deletion()
+        try legacyRemovalFallback()
         print("SpaceSharingTests: \(count) assertions passed")
     }
 
@@ -255,5 +256,21 @@ import Foundation
         let unused = store.unusedProfile(q.id)
         try check(unused == UnusedProfile(id: q.id, name: "Q"), "Profile is unused after deletion")
         try check(try store.stageRemoval(of: unused!).profileID == q.id && store.isProfileRemovalPending(q.id), "removal stages right after deletion")
+    }
+
+    static func legacyRemovalFallback() throws {
+        let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
+        var state = BrowserState.initial()
+        let p = state.profiles[0]
+        state.settings.defaultProfileID = p.id
+        let r = BrowserProfile(id: UUID(), name: "R")
+        state.profiles.append(r)
+        state.profileRemovals = [ProfileRemovalRecord(id: UUID(), profileID: r.id, profileName: "R", fallbackProfileID: nil)]
+        try write(state, to: directory)
+        let store = try BrowserStore(directory: directory)
+        try check(store.state.profileRemovals.first?.fallbackProfileID == p.id,
+                  "a removal pending from before sharing keeps the Default it was journaled with")
+        try check(try BrowserStore(directory: directory).state.profileRemovals.first?.fallbackProfileID == p.id,
+                  "that recorded fallback persists, so a later Default handoff cannot change it")
     }
 }

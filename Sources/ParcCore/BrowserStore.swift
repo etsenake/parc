@@ -2002,7 +2002,11 @@ final class BrowserStore: ObservableObject {
                 state.history[i].url = BrowserInternalURL.publicString(state.history[i].url)
             }
             try validateState()
-            let upgradedSharing = state.upgradeSpaceSharing()
+            _ = state.upgradeSpaceSharing()
+            let legacyFallback = defaultProfileID
+            for index in state.profileRemovals.indices where state.profileRemovals[index].fallbackProfileID == nil {
+                state.profileRemovals[index].fallbackProfileID = legacyFallback
+            }
             if state.settings.restoreSession {
                 normalizeSelection()
                 state = SplitMembership.resolvingSharedLegacyFavorites(state)
@@ -2016,9 +2020,7 @@ final class BrowserStore: ObservableObject {
                 migrateLegacySplitContainers()
                 if state != decoded { try save() }
             }
-            if upgradedSharing {
-                linkRouting.convertProfileDestinations(spaces: state.spaces.map { LinkRoutingSpace(id: $0.id, profileID: $0.profileID) })
-            }
+            linkRouting.convertProfileDestinations(spaces: state.spaces.map { LinkRoutingSpace(id: $0.id, profileID: $0.profileID) })
         } else {
             state = .initial()
         }
@@ -3475,7 +3477,12 @@ final class BrowserStore: ObservableObject {
         }
         next.profileRemovals.removeAll { $0.id == record.id }
         let fallback = fallbackProfileID(for: record)
-        let survivor = next.profiles.contains(where: { $0.id == fallback }) ? fallback : next.profiles.first?.id
+        let keeps: (UUID) -> Bool = { id in
+            next.profiles.contains { $0.id == id } && next.spaces.contains { $0.profileID == id }
+                && !next.profileRemovals.contains { $0.profileID == id }
+        }
+        let survivor = keeps(fallback) ? fallback
+            : next.spaces.map(\.profileID).first(where: keeps) ?? next.profiles.first?.id
         if next.settings.defaultProfileID == record.profileID { next.settings.defaultProfileID = survivor }
         if next.settings.settingsProfileID == record.profileID { next.settings.settingsProfileID = survivor }
         try commitProfileSettings(next)

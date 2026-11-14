@@ -81,6 +81,7 @@ extension BrowserStore {
     private func soleProfile(of spaceID: UUID) -> UnusedProfile? {
         guard let space = state.spaces.first(where: { $0.id == spaceID }),
               let profile = state.profiles.first(where: { $0.id == space.profileID }),
+              !isProfileRemovalPending(profile.id),
               !state.spaces.contains(where: { $0.id != spaceID && $0.profileID == space.profileID }) else { return nil }
         return UnusedProfile(id: profile.id, name: profile.name)
     }
