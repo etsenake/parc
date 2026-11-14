@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import re
 import subprocess
@@ -112,7 +113,6 @@ def build(directory, name, replace=None):
 
 
 with tempfile.TemporaryDirectory(prefix="parc-empty-window-") as directory:
-    subprocess.run([str(build(directory, "check"))], check=True)
     controls = {
         "hiding with a pending pane": (("SidebarMotionController.swift", "requested == .hidden && pendingPane ? .floating : requested",
                                         "requested"), "hiding while a pane is pending floats the sidebar"),
@@ -129,7 +129,12 @@ with tempfile.TemporaryDirectory(prefix="parc-empty-window-") as directory:
                                            "            shadow.frame = ContentShadowImage.frame(around: card)\n"),
                                           "a shadow surrounds the pane's layer"),
     }
+    with ThreadPoolExecutor() as pool:
+        main = pool.submit(build, directory, "check")
+        built = {name: pool.submit(build, directory, name.replace(" ", "-"), replace)
+                 for name, (replace, _) in controls.items()}
+    subprocess.run([str(main.result())], check=True)
     for name, (replace, failure) in controls.items():
-        result = subprocess.run([str(build(directory, name.replace(" ", "-"), replace))], capture_output=True, text=True)
+        result = subprocess.run([str(built[name].result())], capture_output=True, text=True)
         assert result.returncode != 0 and failure in result.stderr, f"negative control did not fail: {name}\n{result.stderr[-1000:]}"
         print(f"EmptyWindow negative control fails as expected: {name}")

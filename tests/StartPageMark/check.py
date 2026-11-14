@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import subprocess
 import tempfile
@@ -116,9 +117,13 @@ controls = {
 }
 
 with tempfile.TemporaryDirectory(prefix="parc-start-page-mark-") as directory:
-    for target in builds:
-        subprocess.run([str(build(directory, target, "check"))], check=True)
+    with ThreadPoolExecutor() as pool:
+        mains = [pool.submit(build, directory, target, "check") for target in builds]
+        built = {name: pool.submit(build, directory, target, name.replace(" ", "-"), replace)
+                 for name, (target, replace, _) in controls.items()}
+    for main in mains:
+        subprocess.run([str(main.result())], check=True)
     for name, (target, replace, failure) in controls.items():
-        result = subprocess.run([str(build(directory, target, name.replace(" ", "-"), replace))], capture_output=True, text=True)
+        result = subprocess.run([str(built[name].result())], capture_output=True, text=True)
         assert result.returncode != 0 and failure in result.stderr, f"negative control did not fail: {name}\n{result.stderr[-1000:]}"
         print(f"StartPageMark negative control fails as expected: {name}")

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import shutil
 import subprocess
@@ -102,9 +103,13 @@ with tempfile.TemporaryDirectory(prefix="parc-start-page-") as directory:
     stand_in.write_text(MARK_STAND_IN)
     support = [button, stand_in] + tooltip_sources(root, scratch, [str(path) for path in sources])
     shutil.copytree(root / "Resources/ThemeTextures", scratch / "ThemeTextures")
-    subprocess.run([str(build(scratch, "checks", support))], check=True, timeout=120)
+    with ThreadPoolExecutor() as pool:
+        main = pool.submit(build, scratch, "checks", support)
+        built = {name: pool.submit(build, scratch, name.replace(" ", "-"), support, replace)
+                 for name, (replace, _) in controls.items()}
+    subprocess.run([str(main.result())], check=True, timeout=120)
     for name, (replace, failure) in controls.items():
-        result = subprocess.run([str(build(scratch, name.replace(" ", "-"), support, replace))], capture_output=True, text=True, timeout=120)
+        result = subprocess.run([str(built[name].result())], capture_output=True, text=True, timeout=120)
         assert result.returncode != 0 and failure in result.stderr, f"negative control did not fail: {name}\n{result.stderr[-1000:]}"
         print(f"StartPage negative control fails as expected: {name}")
 print("StartPage check passed")
