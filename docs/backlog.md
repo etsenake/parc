@@ -135,13 +135,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 Visual work in each item follows the [interface review](visual-review.md)
 workflow, renders first.
 
-- Replace Chromium's swipe recognizer and grey edge arrow with a Parc-owned
-  gesture and a Dia-inspired capsule, commit haptic and confirmation wash, then
-  retire the `native-history-swipe-direct` patch. Needs a Dia reference recording.
-  [Swipe navigation](swipe-navigation.md#planned-a-parc-owned-gesture).
-- Swipe and hold opens that direction's history list at the pane edge; vertical
-  finger movement picks an entry and lifting navigates to it, Back and Forward.
-  [Swipe navigation](swipe-navigation.md#planned-swipe-and-hold-for-history).
 - Let people set the window frame anywhere from 3 to 13 points, never invisible,
   with today's 10 as the default, through a playful, direct-manipulation control.
   A Parc addition.

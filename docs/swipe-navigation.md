@@ -1,41 +1,56 @@
 # Swipe navigation
 
 A two-finger horizontal swipe on a trackpad, or a one-finger swipe on a Magic
-Mouse, moves a page Back or Forward. This guide covers how that works today,
-including in windows that aren't in focus, and the planned Parc-owned gesture
-with a new look and a swipe-and-hold history list. The open items are indexed
-in the [backlog](backlog.md#planned-interface-work).
+Mouse, moves a page Back or Forward. Parc recognizes the gesture itself. This
+guide covers how that works, including in windows that aren't in focus, the
+indicator's look and the swipe-and-hold history list.
 
 ## How it works today
 
-Page history gestures use Chromium's history swiper. The page gets the gesture
-first: Back or Forward can begin only when the page leaves the first scroll
-unconsumed and its CSS overscroll behavior lets horizontal overscroll through,
-so carousels, maps and editors keep their own horizontal scrolling. The shell
-adds no competing recognizer.
+Parc supplies each page's renderer-view delegate, `PCNativeHistorySwipeDelegate`
+in [native_history_swipe.mm](../Engine/ParcNative/native_history_swipe.mm). It
+is a thin forwarder: it hands Parc's recognizer what Chromium's public delegate
+protocol provides (touches, every scroll event, the page's answer to the first
+scroll and its overscroll behavior) and cancels the gesture when the page's
+renderer view goes away. The Swift half,
+[HistorySwipeForwarder.swift](../Sources/ParcApp/HistorySwipeForwarder.swift)
+and [HistorySwipeDriver.swift](../Sources/ParcApp/HistorySwipeDriver.swift),
+runs one recognizer per renderer view and applies each answer: consume the
+scroll event, start or stop AppKit's tracked swipe, warm a likely Back
+navigation and schedule the next clock tick. Chromium's history swiper and grey
+arrow never run, and Parc patches no Chromium file for swipes.
 
-Parc supplies the renderer view's delegate, `PCNativeHistorySwipeDelegate` in
-[native_history_swipe.mm](../Engine/ParcNative/native_history_swipe.mm). It
-wraps Chromium's recognizer with Parc's eligibility check and moves the
-gesture's own page Back or Forward with Chromium's per-page navigation. A
-gesture keeps its original page, document, window and pane; navigation,
-transfer, a security change, or the window closing, miniaturizing or showing a
-sheet cancels it. Delayed Magic Mouse work checks the same generation.
+The page gets the gesture first: Back or Forward can begin only when the page
+leaves the first scroll unconsumed and its CSS overscroll behavior lets
+horizontal overscroll through, so carousels, maps and editors keep their own
+horizontal scrolling. Developer Tools pages, which Chromium marks as never
+swiping, don't swipe, and neither do pages in a Profile Parc doesn't host.
 
-Chromium's grey semicircle arrow is drawn inside the original page's clipped
-pane, including Split and Peek. Reduce Motion keeps static edge feedback, and no
-extra haptic is played. The kept Chromium patch
-[`native-history-swipe-direct`](chromium-hooks-browser.md) stops a cancelled
-same Chromium arrow.
+When a swipe begins, a session records the page's own history. The indicator,
+`HistorySwipeOverlayView`, goes in the page host's click-through history
+container, above the pane's compositor and clipped to the gesture's own pane,
+so Split and Peek stay correct. It takes the window's palette (private windows
+use the private palette) and the session's history rows, adjacent entry first,
+receives every recognizer output, and is removed once its commit or cancel
+animation ends.
+
+A commit moves the page Back or Forward with Chromium's per-page navigation,
+the call the page's own Back and Forward make; a pick from the history list goes
+to that entry with Chromium's index navigation, as the Back/Forward chooser
+does. Both first check that the page's history is unchanged since the swipe
+began, so history and POST state behave as they do for the page's own
+Back/Forward. A cancelled swipe never navigates late: a cancelled session
+refuses every commit, an AppKit tracker that ends after a cancel is stopped by
+its generation, and the session ends with the page's renderer view. The
+indicator follows Reduce Motion ([the look](#planned-the-new-look)).
 
 ## Windows that aren't in focus
 
 A swipe belongs to the page under the gesture whenever that page can go that
 way and nothing covers it. macOS delivers scroll gestures to the window under
-the pointer whatever has focus, and Chromium's recognizer never asks about
-focus, so Parc doesn't either. Swiping works while another app is frontmost,
-over a Parc window behind another one, with keyboard focus in the address
-field, the sidebar or another control, and over any visible split pane, as it
+the pointer whatever has focus, and Parc's recognizer never asks about focus.
+Swiping works while another app is frontmost, over a Parc window behind another
+one, with keyboard focus in the address field, the sidebar or another control,
 
 - `nativeBrowser(_:allowsHistorySwipeFor:)` in
   [BrowserWindowController.swift](../Sources/ParcApp/BrowserWindowController.swift)
@@ -50,17 +65,20 @@ field, the sidebar or another control, and over any visible split pane, as it
   live, attached page in a visible, unminiaturized window with no sheet or
   security reservation. It doesn't ask whether Parc is active, the window is
   key or the page has keyboard focus.
-- The swipe session records the page's own history when it starts, checks at
-  commit that it is unchanged, and then moves that page Back or Forward with
-  Chromium's per-page navigation, so an unselected pane never borrows the
-  selected page's commands. Navigation, page change, visibility loss,
-  destruction, close, miniaturize, sheet, security change, tab deactivation and
-  detach cancel it; the window resigning key or Parc resigning active don't.
+- The swipe session records the page's own history when the swipe begins,
+  checks at commit that it is unchanged, and then moves that page Back or
+  Forward, or to the picked entry, with Chromium's per-page navigation. The
+  page's Back/Forward actions and the history chooser reach only the selected
+  page of the key window, so an unselected pane never borrows them. Navigation,
+  page change, visibility loss, destruction, close, miniaturize, sheet,
+  security change, tab deactivation and detach cancel it; the window resigning
+  key or Parc resigning active don't.
 
 A background swipe never activates Parc, raises the window, changes the
 selected pane or moves keyboard focus. `python3 tests/HistorySwipeTargets/check.py`
 runs model tests of which panes can swipe, checks that the shell, engine and
-session rules keep each refusal, and checks that those rules call none of the
+session rules keep each refusal and commit through the per-page path, and
+checks that those rules and both halves of the forwarder call none of the
 focus, key-window or activation APIs.
 
 ## How Dia does it
@@ -88,20 +106,12 @@ Dia replaced Chromium's arrow with its own gesture module:
 Dia ignores Reduce Motion. Its sizes, springs, timings and colors were read
 from its gesture module without running it; Parc's look below uses them.
 
-## Planned: a Parc-owned gesture
+## The recognizer
 
-Replace Chromium's recognizer and arrow for Parc pages with Parc code, reached
-through the delegate Parc already supplies. Chromium's public renderer-view
-delegate protocol already hands that object everything a recognizer needs:
-every scroll event (with the power to consume it), touch began, moved, ended
-and cancelled, the page's answer to the first scroll, and its overscroll
-behavior. No Chromium change is needed.
-
-The state machine exists as a `ParcCore` model,
+The state machine is the `ParcCore` model
 [HistorySwipeRecognizer.swift](../Sources/ParcCore/HistorySwipeRecognizer.swift),
 with its inputs, outputs and protocols in
 [HistorySwipeInterface.swift](../Sources/ParcCore/HistorySwipeInterface.swift).
-Nothing feeds it yet, so Chromium's recognizer still runs every swipe.
 
 - States: waiting for the page, possible, tracking, armed past the commit point,
   holding, then completed or cancelled. Reversing below the commit point
@@ -115,42 +125,34 @@ Nothing feeds it yet, so Chromium's recognizer still runs every swipe.
   without touches (a Magic Mouse, or a swipe that arrives without them) asks
   the forwarder to start AppKit's tracked swipe and follows its progress for
   adjacent Back/Forward only.
-- Armed for the hold delay, the list opens on the adjacent entry. Each row step
-  of vertical travel moves one row, upward away from the current page, with a
-  detent. Lifting picks the selected entry; lifting on the current page, or
-  sliding back out past where the swipe began, cancels.
+- Armed for the hold delay, the list opens on the adjacent entry. Vertical
+  travel steps the selection one row at a time, away from the current page,
+  with a detent, and a finger resting near the trackpad's top or bottom edge
+  keeps stepping through a long history. Lifting picks the selected entry;
+  lifting on the current page, or sliding back out past where the swipe began,
+  cancels.
 - Its environment answers only the system setting, whether anything covers the
   page and how many entries lie each way. Focus, the key window and the active
   app never enter it.
 
-The forwarder feeds touches, scroll events, the page's scroll answers, its
-overscroll behavior, AppKit tracked-swipe updates, a clock tick for the hold
-and lifecycle cancels. Each input answers whether to consume the event, start
-or stop AppKit tracking or hint a likely Back navigation, and when the hold is
-due. The shell receives begin with the direction, progress (clamped and
+Each input (touches, scroll events, the page's scroll answers, its overscroll
+behavior, AppKit tracked-swipe updates, clock ticks and cancels) answers
+whether to consume the event, start or stop AppKit tracking, hint a likely Back
+navigation, and when the next clock tick is due, for the hold and for edge
+stepping. The outputs are begin with the direction, progress (clamped and
 rubber-banded), armed, hold, selection, detent, commit (the adjacent page or an
-entry some rows away) and cancel, and adds the pane, title and favicon from the
-history snapshot.
+entry some rows away) and cancel.
 
-Defaults come from Chromium's history swiper, as fractions of the trackpad:
-commit at 0.08, take the events at 0.01, and cancel when vertical travel exceeds
-twice the horizontal, when 1.3 times the vertical travel exceeds the horizontal
-once it passes 0.01, or when it passes 0.24 in total. While an armed swipe waits
-for the list, vertical travel counts from the armed point as net movement, so
-a resting hand's tremor can't cancel it. A tracked swipe looks armed at 0.3 of
-AppKit's gesture amount, but AppKit's own end of the swipe decides the commit,
-as in Chromium. Chromium has no rubber band, so progress stops at the
-commit point. The hold delay is 0.5 seconds, Chromium's press-and-hold delay for
-the Back button's menu, and the row step is 0.05. All are parameters for Dia's
-values to replace. `python3 tests/HistorySwipe/check.py` runs the model tests.
-
-Next, the forwarder feeds the model through the existing AppKit bridge client.
-Commits and list picks go through the per-page history path background swipes
-already use in `native_history_swipe.mm`, because the page's Back/Forward
-actions and the history chooser reach only the selected page of the key window.
-History and POST state must behave as they do for the page's own Back/Forward. Once no context uses Chromium's recognizer, remove
-`native-history-swipe-direct` and update the [hooks reference](chromium-hooks.md)
-in the same change. Removing a patch while preserving behavior needs no approval.
+Distances are fractions of the trackpad. Chromium's history swiper sets the
+gesture rules: commit at 0.08, take the events at 0.01, and cancel when
+vertical travel exceeds twice the horizontal, when 1.3 times the vertical travel
+exceeds the horizontal once it passes 0.01, or when it passes 0.24 in total.
+While an armed swipe waits for the list, vertical travel counts from the armed
+point as net movement, so a resting hand's tremor can't cancel it. A tracked
+swipe looks armed at 0.3 of AppKit's gesture amount, but AppKit's own end of the
+swipe decides the commit, as in Chromium. Dia's feel sets the rest: a 0.15
+rubber band past the commit point, a 0.3-second hold, a 0.08 row step, and edge
+stepping every 0.1 seconds within 0.15 of the edge.
 
 ## Planned: the new look
 
@@ -229,18 +231,22 @@ and Forward at the right.
 and motion, including Reduce Motion, narrow panes, long lists and a run through
 the real recognizer.
 
-## Build order and review
+## Review and checks
 
-1. Parc-owned recognizer with the new look, then retire the Chromium patch.
-2. Swipe and hold.
+Changes to the look follow the [interface review](visual-review.md) workflow:
+approve renders or animated mockups of tracking, armed, commit, cancel and
+hold, in light, dark and private themes and under Reduce Motion, before tests
+or review. A live look-and-feel pass in Parc follows that guide's runtime
+boundary.
 
-Both steps follow the [interface review](visual-review.md) workflow. Start
-from a Dia reference recording, and approve renders or animated mockups of
-tracking, armed, commit, cancel and hold, in light, dark and private themes and
-under Reduce Motion, before tests or review. A live look-and-feel pass in Parc
-follows that guide's runtime boundary.
-
-Checks: recognizer model tests over recorded event sequences (trackpad, Magic
-Mouse, page-consumed scroll, `overscroll-behavior: none`, vertical cancel,
-reversal, hold and selection, background window), Swift typecheck and SIL, and
-an authorized engine build for the forwarder.
+- `python3 tests/HistorySwipe/check.py` runs the recognizer over recorded event
+  sequences: trackpad, Magic Mouse, page-consumed scroll,
+  `overscroll-behavior: none`, vertical cancel, reversal, hold and selection,
+  and background windows.
+- `python3 tests/HistorySwipeDriver/check.py` drives the forwarder's Swift half:
+  sessions, commits and list picks, refused and late navigation, engine
+  cancels, clock ticks and AppKit tracking.
+- `python3 tests/HistorySwipeTargets/check.py` covers which panes can swipe and
+  the focus-free rules above.
+- Swift typecheck and whole-module SIL cover the app; the engine build compiles
+  the forwarder's engine half.

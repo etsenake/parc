@@ -807,6 +807,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         })
         rootView.layer?.masksToBounds = true
         rootView.onLayout = { [weak self] in self?.layoutChrome() }
+        HistorySwipeForwarding.install()
         nativeBinding = try PCNativeBrowserApplication.register(self)
         websiteThemeSubscription = WebsiteThemePreferences.shared.$state.sink { [weak self] state in
             self?.refreshWebsiteTheme(enabled: state.isEnabled)
@@ -7908,6 +7909,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             && PCNativeBrowserApplication.owner(of: page) === browser
             && historySwipePages.contains { $0 === page }
     }
+    var historySwipePalette: ThemeChromePalette { rootView.palette }
     private var historySwipePages: [PCNativePage] {
         let peek = activePeek
         let panes = renderedPaneIDs.map { id in

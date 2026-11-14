@@ -57,7 +57,18 @@ require(session, "the swipe session", present=(
     "NSWindowWillCloseNotification", "NSWindowDidMiniaturizeNotification", "NSWindowWillBeginSheetNotification",
     "PCNativeWindowSecurityStateChanged", "RegisterWillDeactivate", "RegisterWillDetach", "DidStartNavigation",
     "PrimaryPageChanged", "OnVisibilityChanged", "WebContentsDestroyed", "HistoryUnchanged()",
-    "CanNativePageHistorySwipe(page_)"), absent=focus + ("ResignKey", "ResignActive"))
+    "CanNativePageHistorySwipe(page_)", "chrome::GoBack(web_contents())", "chrome::GoForward(web_contents())",
+    "GetController().GoToIndex(index)"), absent=focus + ("ResignKey", "ResignActive", "NavigationBrowser("))
+
+delegate = body("Engine/ParcNative/native_history_swipe.mm", "@implementation PCNativeHistorySwipeDelegate {", "\n@end\n")
+require(delegate, "the swipe forwarder's engine half", present=(
+    "CanNativePageHistorySwipe(", "HistorySwipingControl::FromWebContents", "_session->Current()",
+    "historyOverlayContainer", "BackNavigationLikely"), absent=focus + (
+    "[super handleEvent", "[super touches", "[super rendererHandled", "cancelHistorySwiping", "HistorySwiperDelegate"))
+glue = "".join((root / path).read_text() for path in (
+    "Sources/ParcApp/HistorySwipeForwarder.swift", "Sources/ParcApp/HistorySwipeDriver.swift"))
+require(glue, "the swipe forwarder's Swift half", present=("source.navigate(back:", "source?.allowsHistorySwipe"),
+        absent=focus + ("performNavigation", "navigationHistory("))
 
 with tempfile.TemporaryDirectory(prefix="parc-history-swipe-") as directory:
     executable = Path(directory) / "checks"

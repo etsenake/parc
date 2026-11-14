@@ -115,10 +115,10 @@ rows do not add another loading spinner.
 
 ## History swipe
 
-Two-finger Back/Forward swipes use Chromium's history swiper behind Parc's
-eligibility check. [Swipe navigation](swipe-navigation.md) owns the current
-behavior, the defect with windows that aren't in focus, and the planned
-Parc-owned gesture, look and swipe-and-hold history list.
+Two-finger Back/Forward swipes use Parc's own recognizer and indicator, fed
+through Parc's renderer-view delegate behind its eligibility check.
+[Swipe navigation](swipe-navigation.md) owns the behavior, including windows
+that aren't in focus, the look and the swipe-and-hold history list.
 
 ## Focus traversal across page, controls and auxiliary contexts
 
