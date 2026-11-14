@@ -100,28 +100,55 @@ every scroll event (with the power to consume it), touch began, moved, ended
 and cancelled, the page's answer to the first scroll, and its overscroll
 behavior. No Chromium change is needed.
 
-- Keep the delegate a thin forwarder. Put the state machine in `ParcCore` Swift,
-  so it is checked with model tests and iterates without engine builds; the
-  forwarder needs one engine build.
+The state machine exists as a `ParcCore` model,
+[HistorySwipeRecognizer.swift](../Sources/ParcCore/HistorySwipeRecognizer.swift),
+with its inputs, outputs and protocols in
+[HistorySwipeInterface.swift](../Sources/ParcCore/HistorySwipeInterface.swift).
+Nothing feeds it yet, so Chromium's recognizer still runs every swipe.
+
 - States: waiting for the page, possible, tracking, armed past the commit point,
   holding, then completed or cancelled. Reversing below the commit point
-  disarms. Vertical drift cancels before the hold, as Chromium does.
-- Keep Chromium's page-first rule and its direction handling for natural
-  scrolling.
-- With touch callbacks, finger positions drive progress, reversal and hold
-  selection. Without them (a Magic Mouse, or any gesture that arrives without
-  touches), AppKit's tracked swipe reports progress; adjacent Back/Forward works
-  there, while the hold list needs finger positions.
-- The shell gets begin (direction, pane, destination title and favicon from the
-  history snapshot), progress, armed, hold, selection, commit and cancel through
-  the existing AppKit bridge client.
-- Commits use the page's existing Back/Forward actions, and list picks use the
-  same index navigation as the Back/Forward history chooser, so history and
-  POST state behave identically.
+  disarms, vertical drift cancels before the hold, and lifting before the
+  commit point navigates nowhere.
+- Chromium's page-first rule holds: a swipe begins only after the page leaves
+  this gesture's first scroll unconsumed and its overscroll behavior lets
+  horizontal overscroll through, with the system's swipe-between-pages setting
+  on. Direction follows Chromium's handling of natural scrolling.
+- Finger positions drive progress, reversal and hold selection. A gesture
+  without touches (a Magic Mouse, or a swipe that arrives without them) asks
+  the forwarder to start AppKit's tracked swipe and follows its progress for
+  adjacent Back/Forward only.
+- Armed for the hold delay, the list opens on the adjacent entry. Each row step
+  of vertical travel moves one row, upward away from the current page, with a
+  detent. Lifting picks the selected entry; lifting on the current page, or
+  sliding back out past where the swipe began, cancels.
+- Its environment answers only the system setting, whether anything covers the
+  page and how many entries lie each way. Focus, the key window and the active
+  app never enter it.
 
-Once no context uses Chromium's recognizer, remove `native-history-swipe-direct`
-and update the [hooks reference](chromium-hooks.md) in the same change. Removing
-a patch while preserving behavior needs no approval.
+The forwarder feeds touches, scroll events, the page's scroll answers, its
+overscroll behavior, AppKit tracked-swipe updates, a clock tick for the hold
+and lifecycle cancels. Each input answers whether to consume the event, start
+or stop AppKit tracking or hint a likely Back navigation, and when the hold is
+due. The shell receives begin with the direction, progress (clamped and
+rubber-banded), armed, hold, selection, detent, commit (the adjacent page or an
+entry some rows away) and cancel, and adds the pane, title and favicon from the
+history snapshot.
+
+Defaults come from Chromium's history swiper, as fractions of the trackpad:
+commit at 0.08, take the events at 0.01, and cancel when vertical travel exceeds
+twice the horizontal, 1.3 times it beyond 0.01, or 0.24 in total. A tracked
+swipe commits at 0.3. Chromium has no rubber band, so progress stops at the
+commit point. The hold delay is 0.5 seconds, Chromium's press-and-hold delay for
+the Back button's menu, and the row step is 0.05. All are parameters for Dia's
+values to replace. `python3 tests/HistorySwipe/check.py` runs the model tests.
+
+Next, the forwarder feeds the model through the existing AppKit bridge client.
+Commits use the page's existing Back/Forward actions, and list picks use the
+same index navigation as the Back/Forward history chooser, so history and POST
+state behave identically. Once no context uses Chromium's recognizer, remove
+`native-history-swipe-direct` and update the [hooks reference](chromium-hooks.md)
+in the same change. Removing a patch while preserving behavior needs no approval.
 
 ## Planned: the new look
 
