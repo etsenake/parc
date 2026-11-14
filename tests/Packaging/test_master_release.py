@@ -18,7 +18,7 @@ import release_install
 import release_lease
 
 
-class Repository(unittest.TestCase):
+class RepositoryFixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -44,6 +44,81 @@ class Repository(unittest.TestCase):
         self.addCleanup(lambda: [item.close() for item in runner.locks])
         return runner
 
+    def stopped_patch_release(self):
+        self.commit('fix: Keep tabs')
+        runner = release.Release(self.root); runner.start(); runner.prepare()
+        runner.checkpoint(status='stopped', stage='engine', completed=['source'], command_pid=None,
+                          error='compiler error',
+                          engine_seal_path=str(Path(runner.state['run']) / 'engine-artifacts.json'))
+        for item in runner.locks: item.close()
+
+    def refresh(self, commit=None):
+        refreshed = release.Release(self.root, refresh_source=True, source_commit=commit); refreshed.start()
+        self.addCleanup(lambda: [item.close() for item in refreshed.locks])
+        return refreshed
+
+    def commit(self, message):
+        self.git('commit', '--allow-empty', '-m', message); self.git('push', 'origin', 'main')
+
+    def automatic(self):
+        runner = release.Release(self.root); runner.start()
+        self.addCleanup(lambda: [item.close() for item in runner.locks])
+        return runner
+
+    def notes(self):
+        return json.loads((self.root / 'release-notes.json').read_text())['releases']
+
+    def race(self, runner, killed=None, rewritten=False):
+        peer = Path(self.tmp.name) / 'peer'
+        subprocess.run(['git', 'clone', '-q', str(self.remote), str(peer)], check=True)
+        original = runner.git; pushes = []
+        def racing(*args, **kwargs):
+            if args[0] == 'push':
+                pushes.append(args)
+                if len(pushes) == 1:
+                    if rewritten:
+                        subprocess.run(['git', 'reset', '-q', '--hard', 'HEAD~1'], cwd=peer, check=True)
+                    (peer / 'release-notes.json').write_text('{"releases":[]}\n')
+                    (peer / 'Resources/icon').write_bytes(b'late icon')
+                    for command in (['-c', 'user.name=Peer', '-c', 'user.email=peer@example.invalid', 'commit',
+                                     '-qam', 'feat: Land late'], ['push', '-qf', 'origin', 'main']):
+                        subprocess.run(['git', *command], cwd=peer, check=True, capture_output=True)
+                elif killed == 'push':
+                    raise OSError('power lost before the merged version commit was pushed')
+            return original(*args, **kwargs)
+        saved = runner.checkpoint
+        def checkpoint(**values):
+            saved(**values)
+            if pushes and 'notes' in values and killed == 'merge':
+                raise OSError('power lost while merging, after saving the raised version')
+        with patch.object(runner, 'git', side_effect=racing), patch.object(runner, 'checkpoint', side_effect=checkpoint):
+            runner.prepare()
+
+    def resume_after_a_kill_in_the_late_merge(self, killed):
+        self.commit('fix: Keep tabs')
+        runner = self.automatic()
+        with self.assertRaises(OSError):
+            self.race(runner, killed)
+        for item in runner.locks: item.close()
+        self.assertEqual((self.git('status', '--porcelain'), self.git('log', '-1', '--format=%s')),
+                         ('', 'chore(release): 1.0.1'))
+        self.assertTrue(subprocess.run(['git', 'rev-parse', '-q', '--verify', 'MERGE_HEAD'], cwd=self.root).returncode)
+        resumed = self.automatic(); resumed.prepare()
+        [entry] = json.loads(self.git('show', 'origin/main:release-notes.json'))['releases']
+        self.assertEqual((entry['version'], [item['summary'] for item in entry['changes']]),
+                         ('1.1.0', ['Keep tabs', 'Land late']))
+        self.assertEqual(len(self.git('log', '-1', '--format=%p', 'origin/main').split()), 2)
+        self.assertEqual(self.git('log', '-1', '--format=%s', 'origin/main'), 'chore(release): 1.1.0')
+        self.assertEqual(self.git('log', '--format=%s', 'v1.0.0..origin/main').count('chore(release): 1.1.0'), 1)
+        self.assertEqual(self.git('show', 'origin/main:Resources/icon'), 'late icon')
+        self.assertEqual(json.loads(self.git('show', 'origin/main:app-version.json')), {'version': '1.1.0', 'build': 2})
+        self.assertEqual((resumed.state['release_type'], resumed.state['tag']), ('minor', 'v1.1.0'))
+        self.assertTrue(resumed.published(resumed.state['commit']))
+        self.assertEqual(self.git('rev-parse', 'origin/main'), resumed.state['commit'])
+
+
+
+class Repository(RepositoryFixture):
     def test_resume_ignores_obsolete_checkpoint_fields(self):
         runner = self.runner()
         legacy = {"storage_" + suffix: value for suffix, value in
@@ -89,19 +164,6 @@ class Repository(unittest.TestCase):
         self.git('tag', 'v1.1.0'); self.git('push', 'origin', 'v1.1.0')
         with self.assertRaisesRegex(release.Failure, 'immutable'):
             refreshed.refresh_inputs()
-
-    def stopped_patch_release(self):
-        self.commit('fix: Keep tabs')
-        runner = release.Release(self.root); runner.start(); runner.prepare()
-        runner.checkpoint(status='stopped', stage='engine', completed=['source'], command_pid=None,
-                          error='compiler error',
-                          engine_seal_path=str(Path(runner.state['run']) / 'engine-artifacts.json'))
-        for item in runner.locks: item.close()
-
-    def refresh(self, commit=None):
-        refreshed = release.Release(self.root, refresh_source=True, source_commit=commit); refreshed.start()
-        self.addCleanup(lambda: [item.close() for item in refreshed.locks])
-        return refreshed
 
     def test_refresh_lists_the_fixes_it_freezes_and_keeps_later_commits_out(self):
         self.stopped_patch_release()
@@ -326,17 +388,6 @@ class Repository(unittest.TestCase):
         for item in second.locks: item.close()
         self.assertEqual(first.state['release_type'], 'minor')
 
-    def commit(self, message):
-        self.git('commit', '--allow-empty', '-m', message); self.git('push', 'origin', 'main')
-
-    def automatic(self):
-        runner = release.Release(self.root); runner.start()
-        self.addCleanup(lambda: [item.close() for item in runner.locks])
-        return runner
-
-    def notes(self):
-        return json.loads((self.root / 'release-notes.json').read_text())['releases']
-
     def test_nothing_to_release_takes_no_lease_and_commits_nothing(self):
         self.commit('docs: Explain releases'); self.commit('Unconventional history')
         head = self.git('rev-parse', 'HEAD')
@@ -391,54 +442,6 @@ class Repository(unittest.TestCase):
         self.assertEqual((resumed.state['id'], resumed.kind), (explicit.state['id'], 'major'))
         self.assertEqual(resumed.state['version']['version'], '2.0.0')
 
-    def race(self, runner, killed=None, rewritten=False):
-        peer = Path(self.tmp.name) / 'peer'
-        subprocess.run(['git', 'clone', '-q', str(self.remote), str(peer)], check=True)
-        original = runner.git; pushes = []
-        def racing(*args, **kwargs):
-            if args[0] == 'push':
-                pushes.append(args)
-                if len(pushes) == 1:
-                    if rewritten:
-                        subprocess.run(['git', 'reset', '-q', '--hard', 'HEAD~1'], cwd=peer, check=True)
-                    (peer / 'release-notes.json').write_text('{"releases":[]}\n')
-                    (peer / 'Resources/icon').write_bytes(b'late icon')
-                    for command in (['-c', 'user.name=Peer', '-c', 'user.email=peer@example.invalid', 'commit',
-                                     '-qam', 'feat: Land late'], ['push', '-qf', 'origin', 'main']):
-                        subprocess.run(['git', *command], cwd=peer, check=True, capture_output=True)
-                elif killed == 'push':
-                    raise OSError('power lost before the merged version commit was pushed')
-            return original(*args, **kwargs)
-        saved = runner.checkpoint
-        def checkpoint(**values):
-            saved(**values)
-            if pushes and 'notes' in values and killed == 'merge':
-                raise OSError('power lost while merging, after saving the raised version')
-        with patch.object(runner, 'git', side_effect=racing), patch.object(runner, 'checkpoint', side_effect=checkpoint):
-            runner.prepare()
-
-    def resume_after_a_kill_in_the_late_merge(self, killed):
-        self.commit('fix: Keep tabs')
-        runner = self.automatic()
-        with self.assertRaises(OSError):
-            self.race(runner, killed)
-        for item in runner.locks: item.close()
-        self.assertEqual((self.git('status', '--porcelain'), self.git('log', '-1', '--format=%s')),
-                         ('', 'chore(release): 1.0.1'))
-        self.assertTrue(subprocess.run(['git', 'rev-parse', '-q', '--verify', 'MERGE_HEAD'], cwd=self.root).returncode)
-        resumed = self.automatic(); resumed.prepare()
-        [entry] = json.loads(self.git('show', 'origin/main:release-notes.json'))['releases']
-        self.assertEqual((entry['version'], [item['summary'] for item in entry['changes']]),
-                         ('1.1.0', ['Keep tabs', 'Land late']))
-        self.assertEqual(len(self.git('log', '-1', '--format=%p', 'origin/main').split()), 2)
-        self.assertEqual(self.git('log', '-1', '--format=%s', 'origin/main'), 'chore(release): 1.1.0')
-        self.assertEqual(self.git('log', '--format=%s', 'v1.0.0..origin/main').count('chore(release): 1.1.0'), 1)
-        self.assertEqual(self.git('show', 'origin/main:Resources/icon'), 'late icon')
-        self.assertEqual(json.loads(self.git('show', 'origin/main:app-version.json')), {'version': '1.1.0', 'build': 2})
-        self.assertEqual((resumed.state['release_type'], resumed.state['tag']), ('minor', 'v1.1.0'))
-        self.assertTrue(resumed.published(resumed.state['commit']))
-        self.assertEqual(self.git('rev-parse', 'origin/main'), resumed.state['commit'])
-
     def test_commits_landing_before_the_push_ship_with_their_notes_and_bump(self):
         self.resume_after_a_kill_in_the_late_merge('push')
 
@@ -481,6 +484,7 @@ class Repository(unittest.TestCase):
         self.race(runner)
         self.assertEqual((runner.state['id'], runner.state['tag']), (automatic.state['id'], 'v1.0.1'))
         self.assertEqual([item['version'] for item in self.notes()], ['1.0.1'])
+
 
 
 class EngineWorkspaceChoice(unittest.TestCase):
@@ -613,7 +617,7 @@ class InterruptedOverlayCheck(unittest.TestCase):
                 self.runner.locks.clear()
 
 
-class Pipeline(Repository):
+class Pipeline(RepositoryFixture):
     def test_publish_then_immediate_install_and_resume_without_rebuild(self):
         calls = []
         runner = release.Release(self.root, 'minor')

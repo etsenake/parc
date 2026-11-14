@@ -82,6 +82,14 @@ class PackagingIconTests(unittest.TestCase):
         (framework / "Versions/Current").symlink_to("B")
         self.commands = []
         self.signed_entitlements = []
+        fetch = patch.object(pkg.sparkle, "fetch", return_value=self.sparkle)
+        fetch.start()
+        self.addCleanup(fetch.stop)
+
+    @staticmethod
+    def fake_icons(resources):
+        (resources / "Parc.icns").write_bytes(b"fixture icon")
+        return "Parc.icns"
 
     def fake_run(self, *args, **kwargs):
         values = tuple(str(value) for value in args)
@@ -111,11 +119,12 @@ class PackagingIconTests(unittest.TestCase):
         return None if identity == "-" or "self-signed" in identity else "FIXTURETEAM"
 
     @contextlib.contextmanager
-    def fixture_tools(self):
+    def fixture_tools(self, real_icons=False):
         with contextlib.ExitStack() as stack:
             stack.enter_context(patch.object(pkg, "run", self.fake_run))
             stack.enter_context(patch.object(pkg, "copy_engine", self.fake_copy_engine))
-            stack.enter_context(patch.object(pkg.sparkle, "fetch", return_value=self.sparkle))
+            if not real_icons:
+                stack.enter_context(patch.object(pkg.app_icons, "package_app_icons", side_effect=self.fake_icons))
             stack.enter_context(patch.object(pkg, "inspect_macho", return_value={"loads": ["/usr/lib/libSystem.B.dylib"]}))
             stack.enter_context(patch.object(pkg, "verify_development_layout", return_value={}))
             stack.enter_context(patch.object(pkg, "exported_symbols", return_value=pkg.PUBLIC_SYMBOLS))
@@ -132,9 +141,6 @@ class PackagingIconTests(unittest.TestCase):
         copy.assert_not_called()
 
     def test_gn_helpers_are_copied_without_compilation(self):
-        def icons(resources):
-            (resources / "Parc.icns").write_bytes(b"fixture icon")
-            return "Parc.icns"
         (self.repo / "Sources/ParcEngine/ParcEngine.h").write_text('#import "native_application_protocols.h"\n')
         (self.repo / "Engine/ParcNative/native_application_protocols.h").write_text("#pragma once\n")
         helper = self.engine / "parc_helper"
@@ -145,7 +151,7 @@ class PackagingIconTests(unittest.TestCase):
         self.commands = []
         self.signed_entitlements = []
         output = self.root / "direct"
-        with self.fixture_tools(), patch.object(pkg.app_icons, "package_app_icons", side_effect=icons):
+        with self.fixture_tools():
             pkg.build_app(self.repo, self.engine, self.manifest, output, "-")
         for suffix, _, _ in pkg.HELPERS:
             name = "Parc Helper" + suffix
@@ -160,7 +166,7 @@ class PackagingIconTests(unittest.TestCase):
         for configuration in ("debug", "release"):
             output_dir = self.root / configuration
             app = output_dir / "Parc.app"
-            with self.fixture_tools() as verified:
+            with self.fixture_tools(real_icons=True) as verified:
                 report = pkg.build_app(self.repo, self.engine, self.manifest, output_dir, "-", configuration)
                 self.assertEqual(verified.call_args_list, [call(self.manifest, self.engine, self.repo)] * 2)
             info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
