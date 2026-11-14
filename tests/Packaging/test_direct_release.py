@@ -12,6 +12,15 @@ import release
 
 
 class DirectReleaseTests(unittest.TestCase):
+    def test_engine_jobs_scale_with_cores_and_memory(self):
+        gib = 2**30
+        self.assertEqual(release.engine_jobs(8, 24 * gib), 7)
+        self.assertEqual(release.engine_jobs(18, 36 * gib), 17)
+        self.assertEqual(release.engine_jobs(10, 16 * gib), 8)
+        self.assertEqual(release.engine_jobs(8, 8 * gib), 4)
+        self.assertEqual(release.engine_jobs(2, 1 * gib), 1)
+        self.assertEqual(release.engine_jobs(8, 0), 7)
+
     def test_selected_lock_routes_reuse_and_build_to_matching_overlay(self):
         for reuse, stale in ((False, False), (True, False), (True, True)):
             with self.subTest(reuse=reuse, stale=stale), tempfile.TemporaryDirectory() as temporary:

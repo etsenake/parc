@@ -42,6 +42,17 @@ def retargetable(before, after):
             and all(before.get(name, {}).get('url') == after.get(name, {}).get('url') for name in ('chromium', 'depot_tools')))
 
 
+def engine_jobs(cores=None, memory=None):
+    cores = cores or os.cpu_count() or 4
+    if memory is None:
+        try:
+            memory = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+        except (ValueError, OSError):
+            memory = 0
+    by_memory = memory // (2 * 2**30) if memory else cores
+    return max(1, min(cores - 1, by_memory))
+
+
 def metal_toolchain_ready(env=None):
     try:
         return subprocess.run(["xcrun", "metal", "--version"], env=env, capture_output=True, timeout=120).returncode == 0
@@ -623,7 +634,7 @@ class Release:
         try:
             self.command([sys.executable, source / "scripts/build.py", "seal-engine", "--engine-dir", output, "--manifest", manifest, "--purpose", "distribution"], name="engine-reuse")
         except Failure:
-            jobs = str(min(7, os.cpu_count() or 4))
+            jobs = str(engine_jobs())
             generated = json.loads((workspace / '.parc-engine-source.json').read_text())
             if generated.get('phase') not in ('generated', 'built'):
                 self.command([sys.executable, script, "generate", "--workspace", workspace, "--jobs", jobs], name="engine-generate")
