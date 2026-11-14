@@ -6,7 +6,8 @@ for playback and ownership.
 
 ## Welcome audio
 
-`intro-music.mp3` is Parc's own welcome music: a 21-second stereo MP3 at
+`intro-music.mp3` is Parc's own welcome music, made for Parc by its author with
+a tool whose terms permit commercial use. It is a 21-second stereo MP3 at
 44.1 kHz and 192 kbps, mastered to peak at −1.2 dBFS with its body near
 −13.5 dBFS. Onboarding plays it once at 30% volume. `scripts/build.py` copies
 the complete Resources tree and links AVFoundation for playback.
