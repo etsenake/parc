@@ -2,10 +2,10 @@ import AppKit
 
 @MainActor
 final class SpaceCreationView: NSView, NSTextFieldDelegate {
-    static let profileHelp = "Profiles keep website accounts, cookies and browsing data separate."
+    static let sharingCaption = "Logins, passwords, history, extensions and Favorites."
+    static let keepSeparateTitle = "Keep separate"
     var onNameChange: ((String) -> Void)?
-    var onProfileChange: ((UUID) -> Void)?
-    var onCreateProfile: (() -> Void)?
+    var onSharingChange: ((SpaceDataSharing) -> Void)?
     var onChooseIcon: ((NSView) -> Void)?
     var onChooseTheme: ((NSView) -> Void)?
     var onCreate: (() -> Void)?
@@ -15,24 +15,23 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
     private let titleLabel = NSTextField(labelWithString: "Create a Space")
     private let detailLabel = NSTextField(wrappingLabelWithString: "Separate your tabs for life,\nwork, projects, and more.")
     private let nameCard = SpaceCreationCard()
-    private let profileCard = SpaceCreationCard()
+    private let sharingCard = SpaceCreationCard()
     private let themeCard = SpaceCreationCard()
     private let nameField = NSTextField()
     private let iconButton = PointingHandButton()
-    private let profileGlyph = NSImageView()
-    private let profileLabel = NSTextField(labelWithString: "Profile")
-    private let profilePicker = PointingHandPopUpButton(frame: .zero, pullsDown: false)
-    private let profileInfo = PointingHandButton()
+    private let sharingGlyph = NSImageView()
+    private let sharingLabel = NSTextField(labelWithString: "Share data with")
+    private let sharingPicker = PointingHandPopUpButton(frame: .zero, pullsDown: false)
+    private let sharingCaptionLabel = NSTextField(wrappingLabelWithString: SpaceCreationView.sharingCaption)
     private let themeButton = PointingHandButton()
     private let createButton = SpaceCreationCreateButton()
     var palette: ThemeChromePalette? { didSet { createButton.palette = palette } }
     private let cancelButton = PointingHandButton()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
-    private var availableProfiles: [BrowserProfile] = []
-    private var selectedProfileID: UUID
+    private var availableSpaces: [BrowserSpace] = []
+    private var selectedSpaceID: UUID?
     private var creationAvailable = true
     private var committing = false
-    private var canChangeProfile = true
 
     override var isFlipped: Bool { true }
     var name: String { nameField.stringValue }
@@ -40,8 +39,8 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
     var themeAnchor: NSView { themeButton }
     var hasMarkedText: Bool { (nameField.currentEditor() as? NSTextView)?.hasMarkedText() == true }
 
-    init(profileID: UUID, profiles: [BrowserProfile]) {
-        selectedProfileID = profileID
+    init(spaceID: UUID, spaces: [BrowserSpace]) {
+        selectedSpaceID = spaceID
         super.init(frame: NSRect(x: 0, y: 0, width: 228, height: 740))
         setAccessibilityLabel("Create a Space")
         titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
@@ -50,7 +49,7 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
         detailLabel.alignment = .center
         detailLabel.textColor = .secondaryLabelColor
         addSubview(cards); addSubview(titleLabel); addSubview(detailLabel)
-        addSubview(nameCard); addSubview(profileCard); addSubview(themeCard)
+        addSubview(nameCard); addSubview(sharingCard); addSubview(themeCard)
 
         nameField.isBordered = false; nameField.drawsBackground = false
         nameField.font = .systemFont(ofSize: 14)
@@ -64,21 +63,20 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
         nameCard.addSubview(iconButton)
         setIcon(nil)
 
-        profileGlyph.image = NSImage(systemSymbolName: "person.crop.square", accessibilityDescription: nil)
-        profileGlyph.contentTintColor = .secondaryLabelColor
-        profileCard.addSubview(profileGlyph)
-        profileLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        profileCard.addSubview(profileLabel)
-        profilePicker.font = .systemFont(ofSize: 12, weight: .semibold)
-        profilePicker.bezelStyle = .rounded
-        profilePicker.target = self; profilePicker.action = #selector(profileChanged(_:))
-        profilePicker.setAccessibilityLabel("Profile for new Space")
-        profileCard.addSubview(profilePicker)
-        configure(profileInfo, title: "", action: #selector(showProfileInfo(_:)))
-        profileInfo.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: "About profiles")
-        LiveShortcutToolTip.set(profileInfo, Self.profileHelp, behavior: .onMouseIdle(delay: 0))
-        profileInfo.setAccessibilityLabel("About profiles")
-        profileCard.addSubview(profileInfo)
+        sharingGlyph.image = NSImage(systemSymbolName: "person.2", accessibilityDescription: nil)
+        sharingGlyph.contentTintColor = .secondaryLabelColor
+        sharingCard.addSubview(sharingGlyph)
+        sharingLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        sharingLabel.lineBreakMode = .byTruncatingTail
+        sharingCard.addSubview(sharingLabel)
+        sharingPicker.font = .systemFont(ofSize: 12, weight: .semibold)
+        sharingPicker.bezelStyle = .rounded
+        sharingPicker.target = self; sharingPicker.action = #selector(sharingChanged(_:))
+        sharingPicker.setAccessibilityLabel("Share data with")
+        sharingCard.addSubview(sharingPicker)
+        sharingCaptionLabel.font = .systemFont(ofSize: 11)
+        sharingCaptionLabel.textColor = .secondaryLabelColor
+        addSubview(sharingCaptionLabel)
 
         configure(themeButton, title: "Choose a Theme", action: #selector(chooseTheme(_:)))
         themeButton.image = NSImage(systemSymbolName: "paintbrush.pointed.fill", accessibilityDescription: nil)
@@ -92,7 +90,7 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
         cancelButton.font = .systemFont(ofSize: 12, weight: .medium)
         errorLabel.font = .systemFont(ofSize: 11); errorLabel.textColor = .systemRed
         addSubview(errorLabel); addSubview(createButton); addSubview(cancelButton)
-        replaceProfiles(profiles, selected: profileID, canChange: true)
+        replaceSpaces(spaces, selected: spaceID)
         refreshAvailability()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -110,14 +108,14 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
         nameCard.frame = NSRect(x: 14, y: 198, width: width, height: 36)
         iconButton.frame = NSRect(x: 5, y: 5, width: 26, height: 26)
         nameField.frame = NSRect(x: 33, y: 8, width: max(0, width - 40), height: 21)
-        profileCard.frame = NSRect(x: 14, y: 240, width: width, height: 36)
-        profileGlyph.frame = NSRect(x: 10, y: 10, width: 15, height: 16)
-        profileLabel.frame = NSRect(x: 33, y: 10, width: 48, height: 20)
-        profilePicker.frame = NSRect(x: 81, y: 6, width: max(40, width - 110), height: 26)
-        profileInfo.frame = NSRect(x: width - 25, y: 8, width: 18, height: 20)
-        themeCard.frame = NSRect(x: 14, y: 284, width: width, height: 36)
+        sharingCard.frame = NSRect(x: 14, y: 240, width: width, height: 36)
+        sharingGlyph.frame = NSRect(x: 10, y: 10, width: 17, height: 16)
+        sharingLabel.frame = NSRect(x: 33, y: 8, width: 78, height: 20)
+        sharingPicker.frame = NSRect(x: 111, y: 6, width: max(40, width - 118), height: 26)
+        sharingCaptionLabel.frame = NSRect(x: 18, y: 282, width: max(0, width - 8), height: 32)
+        themeCard.frame = NSRect(x: 14, y: 322, width: width, height: 36)
         themeButton.frame = NSRect(x: 10, y: 2, width: width - 20, height: 32)
-        let bottom = max(368, bounds.height - 82)
+        let bottom = max(410, bounds.height - 82)
         errorLabel.frame = NSRect(x: 14, y: bottom - 48, width: width, height: 42)
         createButton.frame = NSRect(x: 14, y: bottom, width: width, height: 36)
         cancelButton.frame = NSRect(x: 14, y: bottom + 42, width: width, height: 26)
@@ -130,32 +128,42 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
         iconButton.font = .systemFont(ofSize: 17)
         if icon == nil { iconButton.image = NSImage(systemSymbolName: "plus.square.dashed", accessibilityDescription: nil) }
     }
-    func replaceProfiles(_ profiles: [BrowserProfile], selected: UUID, canChange: Bool) {
-        availableProfiles = profiles; selectedProfileID = selected; canChangeProfile = canChange
-        profilePicker.removeAllItems()
-        for profile in profiles {
-            profilePicker.addItem(withTitle: profile.name)
-            profilePicker.lastItem?.representedObject = profile.id
+    func replaceSpaces(_ spaces: [BrowserSpace], selected: UUID?) {
+        availableSpaces = spaces; selectedSpaceID = selected
+        sharingPicker.removeAllItems()
+        for space in spaces {
+            sharingPicker.addItem(withTitle: space.name)
+            guard let item = sharingPicker.lastItem else { continue }
+            item.representedObject = space.id
+            if let icon = space.customIcon {
+                if let image = icon.image {
+                    let copy = image.copy() as? NSImage ?? image
+                    copy.size = NSSize(width: 14, height: 14)
+                    item.image = copy
+                } else if let emoji = icon.emoji {
+                    item.title = emoji + " " + space.name
+                }
+            }
         }
-        profilePicker.menu?.addItem(.separator())
-        profilePicker.addItem(withTitle: "New Profile…")
-        profilePicker.lastItem?.representedObject = "new-profile"
-        selectOriginalProfile()
-        profilePicker.isEnabled = canChange && !committing
+        sharingPicker.menu?.addItem(.separator())
+        sharingPicker.addItem(withTitle: Self.keepSeparateTitle)
+        sharingPicker.lastItem?.representedObject = Self.keepSeparateTitle
+        selectCurrentSharing()
+        sharingPicker.isEnabled = !committing
         refreshAvailability()
     }
     func setCreationAvailable(_ available: Bool, committing: Bool = false) {
         creationAvailable = available; self.committing = committing
         nameField.isEnabled = !committing; iconButton.isEnabled = !committing
         themeButton.isEnabled = !committing; cancelButton.isEnabled = !committing
-        profilePicker.isEnabled = canChangeProfile && !committing
+        sharingPicker.isEnabled = !committing
         refreshAvailability()
     }
     func showError(_ error: String?) { errorLabel.stringValue = error ?? "" }
     private func refreshAvailability() {
         createButton.isEnabled = creationAvailable && !committing && !hasMarkedText &&
             !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            availableProfiles.contains { $0.id == selectedProfileID }
+            (selectedSpaceID.map { id in availableSpaces.contains { $0.id == id } } ?? true)
     }
     func controlTextDidChange(_ notification: Notification) {
         showError(nil); onNameChange?(name); refreshAvailability()
@@ -176,21 +184,22 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
     @objc private func cancelCreation(_ sender: Any?) { if !committing { onCancel?() } }
     @objc private func chooseIcon(_ sender: Any?) { if !committing { onChooseIcon?(iconButton) } }
     @objc private func chooseTheme(_ sender: Any?) { if !committing { onChooseTheme?(themeButton) } }
-    @objc private func profileChanged(_ sender: Any?) {
-        guard !committing else { selectOriginalProfile(); return }
-        guard let id = profilePicker.selectedItem?.representedObject as? UUID else {
-            selectOriginalProfile(); onCreateProfile?(); return
+    @objc private func sharingChanged(_ sender: Any?) {
+        guard !committing else { selectCurrentSharing(); return }
+        if let id = sharingPicker.selectedItem?.representedObject as? UUID {
+            selectedSpaceID = id; onSharingChange?(.share(withSpace: id))
+        } else {
+            selectedSpaceID = nil; onSharingChange?(.separate)
         }
-        selectedProfileID = id; onProfileChange?(id); refreshAvailability()
+        refreshAvailability()
     }
-    private func selectOriginalProfile() {
-        if let item = profilePicker.itemArray.first(where: { ($0.representedObject as? UUID) == selectedProfileID }) {
-            profilePicker.select(item)
-        } else { profilePicker.select(nil) }
-    }
-    @objc private func showProfileInfo(_ sender: Any?) {
-        NSHelpManager.shared.setContextHelp(NSAttributedString(string: Self.profileHelp), for: profileInfo)
-        NSHelpManager.shared.showContextHelp(for: profileInfo, locationHint: NSEvent.mouseLocation)
+    private func selectCurrentSharing() {
+        if let id = selectedSpaceID,
+           let item = sharingPicker.itemArray.first(where: { ($0.representedObject as? UUID) == id }) {
+            sharingPicker.select(item)
+        } else if selectedSpaceID == nil, let item = sharingPicker.itemArray.last {
+            sharingPicker.select(item)
+        } else { sharingPicker.select(nil) }
     }
 }
 

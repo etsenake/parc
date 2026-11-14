@@ -73,10 +73,11 @@ Expired notices cannot target a different window/item.
 
 ## Create a Space with original items
 
-New Space and Move To → New Space share a window-owned draft: name, existing
-Profile, optional icon and theme. Empty creation can explicitly create a local
-Profile; cancelling the Space does not undo that independently created Profile.
-The nonempty draft retains its original move admission.
+New Space and Move To → New Space share a window-owned draft: name,
+what data it shares (an existing Space, or Keep separate), optional icon and
+theme. Keep separate creates its data only when the Space is committed, so
+cancelling leaves nothing behind. The nonempty draft retains its original move
+admission, with the cross-data confirmation when the data differs.
 
 The window snapshots presentation, focus and actual native/editor claims before
 parking selected panes. Cancel, Escape/Exit or footer navigation restore those

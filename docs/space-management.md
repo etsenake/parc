@@ -132,6 +132,25 @@ commit, so cancelling the form leaves no Profile behind. When the draft moves
 items onto another Profile, `createSpace(_:completion:)` runs the ordinary
 inter-Profile move: page retirement and Note/Easel relocation.
 
+**The creation form.** The sidebar's "Create a Space" form has a **Share data
+with** popup instead of a Profile picker. It lists every Space by name, with its
+icon when it has one, then a separator and **Keep separate**. A small line under
+the row says "Logins, passwords, history, extensions and Favorites." The popup
+starts on the Space the window is in, and carried tabs may go to any choice; a
+different-data choice asks the move confirmation first. Spaces whose data is
+being removed are not listed. Create commits through `createSpace(_:completion:)`
+and a failure or cancelled confirmation keeps the form open for another try.
+
+**New Space from anywhere.** File → New Space…, the command bar's Create New Space
+and the sidebar and Library entries run one app action. It uses the frontmost
+regular window (never a private window or popup), first closing whatever is in the
+way there: Library, the command bar, a Peek, a page capture, Find, the Site
+Control Center, pending renames and pickers. It then opens the sidebar form,
+or focuses it if it is already open. With only private windows or none, it opens
+a regular window first. It works while Settings is the key window, so Settings
+closes itself and sends the same action. `NewSpaceWindowChoice` makes the window
+decision.
+
 **Change sharing** moves a Space, never merges Profiles. `changeSharing(ofSpace:to:)`
 reuses the [assignment](#profile-assignment-dependency) transaction; Keep separate
 creates the new Profile in the same save and does nothing for a Space that already

@@ -1880,7 +1880,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if item.action == #selector(zoomIn) || item.action == #selector(zoomOut) || item.action == #selector(actualSize) {
             return browserInputCommandWindow?.canChangePageZoom ?? false
         }
-        if item.action == #selector(createSpace) { return browserInputCommandWindow?.canCreateSpaceFromMenu ?? false }
+        if item.action == #selector(createSpace) { return started && !terminationInProgress && !store.isEphemeral }
         if item.action == #selector(editTheme) { return browserInputCommandWindow?.canEditThemeFromMenu ?? false }
         if item.action == #selector(togglePin) {
             return browserInputCommandWindow.map {
@@ -2379,8 +2379,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc private func captureRenderingMetrics(_ sender: Any?) { front?.captureRenderingMetrics() }
     @objc private func downloads(_ sender: Any?) { performLibraryMenuCommand { $0.showDownloads() } }
     @objc private func createSpace(_ sender: Any?) {
-        guard let owner = browserInputCommandWindow, owner.canCreateSpaceFromMenu else { return }
-        owner.createSpace()
+        guard started, !terminationInProgress, !store.isEphemeral else { return }
+        let ready = windows.filter(\.hasReadyPresentation)
+        var ordered: [BrowserWindowController] = []
+        for candidate in ready.filter({ $0.window === NSApp.keyWindow || $0.window === NSApp.mainWindow })
+            + [lastActiveWindow].compactMap({ $0 }) + ready.reversed() where !ordered.contains(where: { $0 === candidate }) {
+            ordered.append(candidate)
+        }
+        let choice = NewSpaceWindowChoice.choose(from: ordered.enumerated().map {
+            (id: $0.offset, isPrivate: $0.element.isPrivateBrowsing, isPopup: $0.element.isPopupWindow)
+        })
+        switch choice {
+        case .existing(let index): ordered[index].createSpace()
+        case .openNew:
+            if !initialBrowserOpened { restorationLaunch.deferAction(.blankWindow); return }
+            createStandardWindow(showCommandBar: false)?.createSpace()
+        }
     }
     @objc private func editTheme(_ sender: Any?) {
         guard let owner = browserInputCommandWindow, owner.canEditThemeFromMenu else { return }

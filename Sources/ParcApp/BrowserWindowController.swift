@@ -109,7 +109,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         var iconPicker: SidebarGroupIconPicker?
         var themePopover: NSPopover?
         var themeEditor: SpaceThemeEditorView?
-        var profileDialog: PArcDialog?
+        var sharedSpaceID: UUID?
 
         init(draft: SidebarNewSpaceDraft, owner: BrowserWindowController,
              claims: [UUID: NativePageOwnership.Claim], validateOwners: @escaping () -> Bool) {
@@ -117,7 +117,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             originalPresentation = owner.presentation; originalFocus = owner.focusedTabID
             originalSidebar = owner.sidebarPresentation
             window = owner.window; originalResponder = owner.window?.firstResponder
-            view = SpaceCreationView(profileID: draft.profileID, profiles: owner.store.state.profiles)
+            sharedSpaceID = draft.source.spaceID
+            view = SpaceCreationView(spaceID: draft.source.spaceID, spaces: owner.creationSharingSpaces)
         }
     }
     private weak var sidebarMoveToast: PArcToastPresentation?
@@ -1264,7 +1265,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         library.onLeaveSpaces = { [weak self] in self?.spaceIconPicker?.cancel(); self?.themePopover?.performClose(nil) }
         manager.onCreate = { [weak self] in
             guard let self, valid() else { return }
-            self.closeLibrary(restoreFocus: false); self.createSpace()
+            self.createSpace()
         }
         manager.onReorder = { [weak self] id, before, order in
             guard let self, valid(), self.managementSpace(id) != nil else { return false }
@@ -13465,14 +13466,34 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         menu.popUp(positioning: nil, at: point, in: anchor)
     }
 
-    var canCreateSpaceFromMenu: Bool {
-        if let session = spaceCreation { return creationOwnerIsCurrent(session) && !session.committing }
-        return prepareSidebarNewSpace([]) != nil
-    }
-
     func createSpace() {
         if let session = spaceCreation { session.view.focusName(); return }
-        _ = prepareSidebarNewSpace([])?()
+        guard !isPrivateBrowsing, !isPopupWindow, !store.isEphemeral else { return }
+        window?.makeKeyAndOrderFront(nil)
+        if presentation.isReady { dismissForNewSpaceForm() }
+        presentNewSpaceForm(attemptsLeft: 40)
+    }
+
+    private func dismissForNewSpaceForm() {
+        closeLibrary(restoreFocus: false)
+        commandBar?.dismiss()
+        pageCapture?.dismiss(restoreFocus: false)
+        if !findHost.isHidden { dismissFind(restoreFocus: false) }
+        navigationHistory?.dismiss(); sidebarPreviews?.dismiss()
+        favoriteRename?.cancel(); favoriteSplitRename?.cancel(); splitIconPicker?.cancel()
+        sidebar.cancelSpaceNameEditing()
+        if let peek = activePeek { peek.requestDismiss(.closeShortcut) }
+        if siteControlCenter != nil { dismissSiteControlCenter() }
+    }
+
+    private func presentNewSpaceForm(attemptsLeft: Int) {
+        if let session = spaceCreation { session.view.focusName(); return }
+        guard window != nil, !isClosing, !wholeWindowClose, !windowClosePending, !windowCloseApproved else { return }
+        if prepareSidebarNewSpace([])?() == true { return }
+        guard attemptsLeft > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.presentNewSpaceForm(attemptsLeft: attemptsLeft - 1)
+        }
     }
 
     private var spaceCreationCanBegin: Bool {
@@ -13576,15 +13597,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             session.draft.name = name
             self.refreshSpaceCreation(session)
         }
-        view.onProfileChange = { [weak self, weak session] profile in
+        view.onSharingChange = { [weak self, weak session] sharing in
             guard let self, let session, self.creationOwnerIsCurrent(session), !session.committing else { return }
-            guard session.draft.canUseProfile(profile, in: self.store.state) else {
-                self.refreshSpaceCreation(session); return
+            switch sharing {
+            case .share(let id):
+                guard session.draft.shareData(withSpace: id, in: self.store.state) else {
+                    self.refreshSpaceCreation(session); return
+                }
+                session.sharedSpaceID = id
+            case .separate:
+                session.draft.keepSeparate()
+                session.sharedSpaceID = nil
             }
-            session.draft.profileID = profile; session.view.showError(nil); self.refreshSpaceCreation(session)
-        }
-        view.onCreateProfile = { [weak self, weak session] in
-            guard let self, let session else { return }; self.createProfileForSpace(session)
+            session.view.showError(nil); self.refreshSpaceCreation(session)
         }
         view.onChooseIcon = { [weak self, weak session] anchor in
             guard let self, let session else { return }; self.chooseCreationIcon(session, from: anchor)
@@ -13604,10 +13629,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         render(store.state); requestNativeSelection(); view.focusName()
     }
 
+    private var creationSharingSpaces: [BrowserSpace] {
+        store.state.spaces.filter { !store.isProfileRemovalPending($0.profileID) }
+    }
+
     private func refreshSpaceCreation(_ session: SpaceCreationSession) {
         guard spaceCreation === session else { return }
-        let profiles = store.state.profiles.filter { !store.isProfileRemovalPending($0.id) }
-        session.view.replaceProfiles(profiles, selected: session.draft.profileID, canChange: session.draft.roots.isEmpty)
+        session.view.replaceSpaces(creationSharingSpaces, selected: session.sharedSpaceID)
         session.view.setCreationAvailable(creationOwnerIsCurrent(session), committing: session.committing)
     }
 
@@ -13624,13 +13652,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         spaceCreation = nil
         session.iconPicker?.cancel(); session.iconPicker = nil
         session.themePopover?.close(); session.themePopover = nil; session.themeEditor = nil
-        if let dialog = session.profileDialog, let window = session.window, window.attachedSheet === dialog.panel {
-            window.endSheet(dialog.panel, returnCode: .cancel)
-        }
-        session.profileDialog = nil
         sidebar.setSpaceCreationView(nil)
-        session.view.onNameChange = nil; session.view.onProfileChange = nil
-        session.view.onCreateProfile = nil; session.view.onChooseIcon = nil; session.view.onChooseTheme = nil
+        session.view.onNameChange = nil; session.view.onSharingChange = nil
+        session.view.onChooseIcon = nil; session.view.onChooseTheme = nil
         session.view.onCreate = nil; session.view.onCancel = nil
     }
 
@@ -13666,20 +13690,25 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         session.themeEditor?.finishEditing()
         guard creationOwnerIsCurrent(session), session.validateOwners() else { return }
         session.committing = true; refreshSpaceCreation(session)
-        do {
-            guard let id = try store.createSpaceAndMoveSidebarItems(session.draft) else {
-                session.committing = false; refreshSpaceCreation(session)
-                session.view.showError("The original items changed. Cancel and try again."); return
+        store.createSpace(session.draft) { [weak self, weak session] result in
+            guard let self, let session, self.spaceCreation === session else { return }
+            switch result {
+            case .failure(let error):
+                session.committing = false; self.refreshSpaceCreation(session)
+                session.view.showError(error.localizedDescription)
+            case .success(nil):
+                session.committing = false; self.refreshSpaceCreation(session)
+                if !session.draft.movesItemsAcrossProfiles {
+                    session.view.showError("The original items changed. Cancel and try again.")
+                }
+            case .success(let id?):
+                self.finishSpaceCreation(session)
+                self.presentation = session.originalPresentation
+                self.presentation.reconcile(self.store.state) { self.ownership.canUse($0, owner: self.presentationID) }
+                self.focusedTabID = self.presentation.preferredFocusedTabID
+                self.selectSpace(id)
+                session.window?.makeFirstResponder(self.sidebar)
             }
-            finishSpaceCreation(session)
-            presentation = session.originalPresentation
-            presentation.reconcile(store.state) { ownership.canUse($0, owner: presentationID) }
-            focusedTabID = presentation.preferredFocusedTabID
-            selectSpace(id)
-            window.makeFirstResponder(sidebar)
-        } catch {
-            session.committing = false; refreshSpaceCreation(session)
-            session.view.showError(error.localizedDescription)
         }
     }
 
@@ -13728,34 +13757,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         session.themeEditor = editor; session.themePopover = popover
         popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxX)
         editor.window?.makeFirstResponder(editor)
-    }
-
-    private func createProfileForSpace(_ session: SpaceCreationSession) {
-        guard creationOwnerIsCurrent(session), !session.committing, session.draft.roots.isEmpty,
-              let window = session.window, window.attachedSheet == nil else { return }
-        let dialog = PArcDialog(.init(title: [("Create a new Profile", false)],
-            message: [("Profiles make your Spaces truly separate — with their own history, saved passwords, extensions, and other browsing data. No more flipping between work and personal accounts!\n\nWhat do you want to call this Profile?", false)],
-            confirm: "Create Profile", cancel: "Cancel", field: .init(value: "", placeholder: "Profile name")))
-        guard let name = dialog.textField else { return }
-        session.profileDialog = dialog
-        let began = dialog.begin(for: window) { [weak self, weak session, weak dialog] response in
-            guard let self, let session, let dialog, self.spaceCreation === session,
-                  session.profileDialog === dialog else { return }
-            session.profileDialog = nil
-            defer {
-                DispatchQueue.main.async { [weak self, weak session, weak parentWindow = window] in
-                    guard let self, let session, let parentWindow, self.creationOwnerIsCurrent(session),
-                          parentWindow.isKeyWindow, parentWindow.attachedSheet == nil else { return }
-                    session.view.focusName()
-                }
-            }
-            guard response == .confirm, self.creationOwnerIsCurrent(session),
-                  !session.committing, (name.currentEditor() as? NSTextView)?.hasMarkedText() != true,
-                  !name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            session.draft.profileID = self.store.createProfile(name: name.stringValue)
-            self.refreshSpaceCreation(session); session.view.focusName()
-        }
-        if !began { session.profileDialog = nil }
     }
 
     private func copyFolderLinks(_ target: FolderLinkTarget, format: FolderLinkFormat) {
