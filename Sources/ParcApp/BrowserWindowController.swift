@@ -856,7 +856,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.isClosing, !self.wholeWindowClose else { return }
             self.refreshDownloadProfiles()
-            self.startLibraryFlyoutFileQuery()
+            LibraryFolderPrompts.shared.whenAnswered { [weak self] in
+                guard let self, !self.isClosing, !self.wholeWindowClose else { return }
+                self.startLibraryFlyoutFileQuery()
+            }
         }
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .rightMouseDown, .otherMouseDown]) { [weak self] event in
             guard let self else { return event }
@@ -2817,6 +2820,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.onLibrary = { [weak self] page in self?.showLibraryFromEntry(page) }
         sidebar.onLibraryItem = { [weak self] action in self?.performLibraryFlyout(action) ?? false }
         sidebar.libraryDownloadFileURL = { [weak self] item in self?.libraryDownloadFileURL(item) }
+        sidebar.onLibraryHover = { LibraryFolderPrompts.shared.ask() }
         sidebar.onToggle = { [weak self] in self?.toggleSidebar() }
         sidebar.onNewSpace = { [weak self] in self?.createSpace() }
         sidebar.prepareSidebarNewSpace = { [weak self] items in self?.prepareSidebarNewSpace(items) }

@@ -334,6 +334,7 @@ struct LibraryEntryCanvas: View {
     var onItemAction: ((LibraryFlyoutAction) -> Bool)?
     var downloadFileURL: ((BrowserDownload) -> URL?)?
     var onFlyoutExpansion: ((Bool, Int) -> Void)?
+    var onHover: (() -> Void)?
     var now: () -> Date {
         get { flyout.now }
         set { flyout.now = newValue; lifecycle.now = newValue }
@@ -624,7 +625,7 @@ struct LibraryEntryCanvas: View {
     }
     private func regionChanged(_ region: LibraryFlyoutHoverTracker.Region, _ hovered: Bool) {
         switch region {
-        case .button: flyout.setButtonHovered(hovered)
+        case .button: flyout.setButtonHovered(hovered); if hovered { onHover?() }
         case .flyout: flyout.setFlyoutHovered(hovered)
         case .dock: if hovered { flyout.setFlyoutHovered(false) }
         }

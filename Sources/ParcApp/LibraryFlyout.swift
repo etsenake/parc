@@ -168,6 +168,45 @@ final class LibraryFlyoutFolderMonitor {
     }
 }
 
+@MainActor
+final class LibraryFolderPrompts {
+    static let shared = LibraryFolderPrompts()
+    static let answeredKey = "ParcLibraryFolderPromptsAnswered"
+    private let defaults: UserDefaults
+    private let probe: (@escaping @MainActor @Sendable () -> Void) -> Void
+    private var waiting: [() -> Void] = []
+    private(set) var asking = false
+    var answered: Bool { defaults.bool(forKey: Self.answeredKey) }
+
+    init(defaults: UserDefaults = .standard,
+         probe: @escaping (@escaping @MainActor @Sendable () -> Void) -> Void = LibraryFolderPrompts.scanOnce) {
+        self.defaults = defaults; self.probe = probe
+    }
+
+    nonisolated static func scanOnce(_ done: @escaping @MainActor @Sendable () -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = LibraryFlyoutFiles.scan()
+            DispatchQueue.main.async { MainActor.assumeIsolated(done) }
+        }
+    }
+
+    func whenAnswered(_ body: @escaping () -> Void) {
+        if answered { body() } else { waiting.append(body) }
+    }
+
+    func ask() {
+        guard !answered, !asking else { return }
+        asking = true
+        probe { [weak self] in
+            guard let self else { return }
+            self.asking = false
+            self.defaults.set(true, forKey: Self.answeredKey)
+            let ready = self.waiting; self.waiting = []
+            ready.forEach { $0() }
+        }
+    }
+}
+
 enum LibraryFlyoutItem: Identifiable, Equatable {
     case download(BrowserDownload)
     case capture(SavedCapture)

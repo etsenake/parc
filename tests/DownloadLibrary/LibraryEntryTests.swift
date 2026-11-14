@@ -833,9 +833,34 @@ import UniformTypeIdentifiers
                && flyout.rows[0].accessibilityLabel == "File \u{2014} Screenshot 2026-10-30.png",
                "Folder files appear on the Library hover flyout")
         let fileID = flyout.rows[0].id
+        var hovers = 0
+        entry.onHover = { hovers += 1 }
         entry.pointerMoved(to: NSPoint(x: entry.buttonRect.midX, y: entry.buttonRect.midY))
+        expect(hovers == 0, "Passing over the Library button doesn't ask for folders yet")
         clock.advance(0.16); clock.advance(0.16)
         expect(flyout.expanded && !flyout.animating, "Hover expands once folder files are present")
+        expect(hovers == 1, "Settling on the Library button reports one hover: \(hovers)")
+        entry.onHover = nil
+
+        let promptSuite = "parc.library-entry-checks.folder-prompts"
+        let promptDefaults = UserDefaults(suiteName: promptSuite)!
+        promptDefaults.removePersistentDomain(forName: promptSuite)
+        preferenceSuites.append(promptSuite)
+        var probes: [@MainActor @Sendable () -> Void] = []
+        let prompts = LibraryFolderPrompts(defaults: promptDefaults) { probes.append($0) }
+        var started: [String] = []
+        prompts.whenAnswered { started.append("first") }
+        prompts.whenAnswered { started.append("second") }
+        expect(!prompts.answered && started.isEmpty && probes.isEmpty, "Windows wait without reading Desktop or Documents")
+        prompts.ask(); prompts.ask()
+        expect(probes.count == 1 && prompts.asking && started.isEmpty, "Hovering twice asks macOS once and starts nothing early")
+        probes[0]()
+        expect(prompts.answered && !prompts.asking && started == ["first", "second"], "Every waiting window starts once the prompts are answered")
+        prompts.ask()
+        expect(probes.count == 1, "Answered prompts never probe again")
+        let relaunched = LibraryFolderPrompts(defaults: promptDefaults) { probes.append($0) }
+        relaunched.whenAnswered { started.append("launch") }
+        expect(started.last == "launch" && probes.count == 1, "After the prompts are answered, windows start reading at launch")
         expect(entry.tapRow(fileID) && actions.last == "file:Screenshot 2026-10-30.png:open",
                "Tapping a folder file opens it")
         entry.pointerMoved(to: nil); clock.advance(1)

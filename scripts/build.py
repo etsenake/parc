@@ -1097,8 +1097,8 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                     NSWebBrowserPublicKeyCredentialUsageDescription="Sign in to websites with passkeys saved in iCloud Keychain or your password manager.",
                     NSAudioCaptureUsageDescription="Websites you allow can share this Mac's audio, for example when casting a tab.",
                     NSLocalNetworkUsageDescription="Find Chromecast and other devices on your network to cast to.",
-                    NSDesktopFolderUsageDescription="Show images and videos from Desktop in your Media Library.",
-                    NSDocumentsFolderUsageDescription="Show images and videos from Documents in your Media Library.",
+                    NSDesktopFolderUsageDescription="Show your recent files from Desktop in Library.",
+                    NSDocumentsFolderUsageDescription="Show your recent files from Documents in Library.",
                     NSDownloadsFolderUsageDescription="Show images and videos from Downloads in your Media Library.")
         if purpose == "distribution":
             info.update(sparkle.INFO)

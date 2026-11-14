@@ -179,7 +179,11 @@ closes it.
 
 The entry menu selects media sources: Downloads, Saved Captures, Documents,
 Desktop and Screenshots. Folder sources contribute immediate children to the
-flyout. The download catalog itself remains manager-backed. Badging state is
+flyout. Parc leaves those folders alone until someone first settles on the
+Library button, so macOS asks for Desktop and Documents access then, worded
+around Library's recent files, instead of right after onboarding. Once those
+prompts have been answered, every window reads and watches the folders from
+launch. The download catalog itself remains manager-backed. Badging state is
 per window. Source removal, detachment and window close retire timers and the
 visible item once.
 

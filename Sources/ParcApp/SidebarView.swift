@@ -1141,6 +1141,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         get { libraryEntry.downloadFileURL }
         set { libraryEntry.downloadFileURL = newValue }
     }
+    var onLibraryHover: (() -> Void)? {
+        get { libraryEntry.onHover }
+        set { libraryEntry.onHover = newValue }
+    }
     var onToggle: (() -> Void)?
     var onNewSpace: (() -> Void)?
     var onNewFolder: (() -> Void)?
