@@ -156,36 +156,50 @@ final class SettingsCommandButton: SettingsRowButton {
 }
 
 @MainActor
-final class SettingsProfileButton: SettingsRowButton {
+final class SettingsSpaceButton: SettingsRowButton {
     let name = NSTextField(labelWithString: "")
     let detail = NSTextField(labelWithString: "")
+    let iconImage = NSImageView()
+    let iconEmoji = NSTextField(labelWithString: "")
     private let chevron = NSImageView(image: NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil) ?? NSImage())
     init(action: (() -> Void)? = nil) {
         super.init(title: "", action: action)
         name.font = .systemFont(ofSize: 13); name.lineBreakMode = .byTruncatingTail
         detail.font = .systemFont(ofSize: 13); detail.textColor = .secondaryLabelColor
         detail.alignment = .right; detail.lineBreakMode = .byTruncatingTail
+        iconImage.symbolConfiguration = .init(pointSize: 13, weight: .medium)
+        iconImage.contentTintColor = .secondaryLabelColor
+        iconEmoji.font = .systemFont(ofSize: 14); iconEmoji.alignment = .center
         chevron.symbolConfiguration = .init(pointSize: 12, weight: .semibold)
         chevron.contentTintColor = .tertiaryLabelColor
-        [name, detail, chevron].forEach { $0.setAccessibilityElement(false); addSubview($0) }
+        [iconImage, iconEmoji, name, detail, chevron].forEach { $0.setAccessibilityElement(false); addSubview($0) }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    override var passiveViews: [NSView] { [name, detail, chevron] }
-    func update(name value: String, detail note: String) {
+    override var passiveViews: [NSView] { [iconImage, iconEmoji, name, detail, chevron] }
+    func update(name value: String, detail note: String, image: NSImage? = nil, emoji: String? = nil) {
         name.stringValue = value; detail.stringValue = note
+        iconEmoji.stringValue = emoji ?? ""
+        iconEmoji.isHidden = emoji == nil
+        iconImage.image = emoji == nil ? image : nil
+        iconImage.isHidden = iconImage.image == nil
         title = value
-        setAccessibilityLabel(value + ", " + note)
+        setAccessibilityLabel(note.isEmpty ? value : value + ", " + note)
         needsLayout = true
     }
     override func layout() {
         super.layout()
         let inset = SettingsLayout.rowInset
+        let hasIcon = !iconImage.isHidden || !iconEmoji.isHidden
+        let iconSlot = NSRect(x: inset, y: (bounds.height - 20) / 2, width: 20, height: 20)
+        iconImage.frame = iconSlot
+        iconEmoji.frame = NSRect(x: iconSlot.minX, y: (bounds.height - 18) / 2, width: 20, height: 18)
+        let nameX = hasIcon ? iconSlot.maxX + 8 : inset
         let chevronX = max(0, bounds.width - inset - 10)
-        let detailWidth = min(ceil(detail.intrinsicContentSize.width) + 6, 160)
-        let detailX = max(inset, chevronX - 10 - detailWidth)
+        let detailWidth = detail.stringValue.isEmpty ? 0 : min(ceil(detail.intrinsicContentSize.width) + 6, 160)
+        let detailX = max(nameX, chevronX - 10 - detailWidth)
         chevron.frame = NSRect(x: chevronX, y: (bounds.height - 14) / 2, width: 10, height: 14)
         detail.frame = NSRect(x: detailX, y: (bounds.height - 17) / 2, width: detailWidth, height: 17)
-        name.frame = NSRect(x: inset, y: (bounds.height - 17) / 2, width: max(0, detailX - inset - 12), height: 17)
+        name.frame = NSRect(x: nameX, y: (bounds.height - 17) / 2, width: max(0, detailX - nameX - 12), height: 17)
     }
     override func draw(_ dirtyRect: NSRect) {
         name.textColor = isEnabled ? .labelColor : .disabledControlTextColor

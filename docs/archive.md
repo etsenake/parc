@@ -59,18 +59,14 @@ native favicon lookup uses the database and never adds a Swift network request.
 
 ## Automatic-archive settings and education — AUTO11
 
-Settings → Profiles offers **12 hours (default), 24 hours, 7 days and 30 days**.
+Settings → Spaces → Edit Space offers **12 hours (default), 24 hours, 7 days and 30 days**
+under **Archive tabs after**.
 Legacy 1-hour, 6-hour and Never values remain readable as disabled saved choices.
 Local help explains Library → Archive → Put Back; it does not archive anything.
 
-An interval change saves its original Profile immediately. If at least two
-Profiles then have different intervals, Settings offers **All Profiles** or
-**Only this Profile**. All Profiles atomically updates the captured set. Added,
-removed, renamed or changed Profiles, removal staging, a changed Settings
-selection or a closed window revoke the callback. Failed saves preserve the
-published intervals. A shared interval becomes the fallback for newly created
-or imported Profiles; a per-profile change updates it only when all converge.
-Migration does not infer a new fallback from unrelated historical values.
+An interval change saves for that Space alone, immediately, and asks nothing else;
+failed saves preserve the published interval. A new Space takes the interval of the
+Space it was created from.
 
 Education eligibility is shared app state and false when absent. Genuine first
 local onboarding completion arms it atomically; replay and old completed setups

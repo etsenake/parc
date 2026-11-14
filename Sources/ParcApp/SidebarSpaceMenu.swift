@@ -3,10 +3,12 @@ import AppKit
 @MainActor
 struct SidebarSpaceMenu {
     static let renameTitle = "Rename Space…", editThemeTitle = "Edit Theme Color…", newFolderTitle = "New Folder"
+    static let shareDataTitle = "Share data with", keepSeparateTitle = "Keep separate"
 
     var includesManagement = false
     var changeIcon: (() -> Void)? = nil
-    var profiles: [(name: String, selected: Bool, action: (() -> Void)?)] = []
+    var shareData: [(name: String, shared: Bool, action: (() -> Void)?)] = []
+    var keepSeparate: (selected: Bool, action: (() -> Void)?)? = nil
     var delete: (() -> Void)? = nil
     var manage: (() -> Void)? = nil
     var turnIntoFolder: [(name: String, action: (() -> Void)?)] = []
@@ -49,28 +51,32 @@ struct SidebarSpaceMenu {
                 parent.submenu = submenu; menu.addItem(parent)
             }
             menu.addItem(item)
-            if title == Self.editThemeTitle, !profiles.isEmpty {
-                let parent = NSMenuItem(title: "Set Profile", action: nil, keyEquivalent: "")
-                parent.submenu = profileMenu()
+            if title == Self.editThemeTitle, let keepSeparate {
+                let parent = NSMenuItem(title: Self.shareDataTitle, action: nil, keyEquivalent: "")
+                parent.submenu = shareDataMenu(keepSeparate)
                 parent.isEnabled = true; menu.addItem(parent)
             }
         }
     }
 
-    func profileMenu() -> NSMenu {
+    func shareDataMenu(_ keepSeparate: (selected: Bool, action: (() -> Void)?)) -> NSMenu {
         let menu = NSMenu(); menu.autoenablesItems = false
-        for profile in profiles {
-            let target = SidebarSpaceMenuTarget(profile.action)
-            let item = NSMenuItem(title: profile.name, action: #selector(SidebarSpaceMenuTarget.run), keyEquivalent: "")
+        func add(_ title: String, checked: Bool, action: (() -> Void)?) {
+            let target = SidebarSpaceMenuTarget(action)
+            let item = NSMenuItem(title: title, action: #selector(SidebarSpaceMenuTarget.run), keyEquivalent: "")
             item.target = target; item.representedObject = target
-            item.state = profile.selected ? .on : .off
-            item.isEnabled = profile.action != nil; menu.addItem(item)
+            item.state = checked ? .on : .off
+            item.isEnabled = action != nil; menu.addItem(item)
         }
+        for space in shareData { add(space.name, checked: space.shared, action: space.action) }
+        if !shareData.isEmpty { menu.addItem(.separator()) }
+        add(Self.keepSeparateTitle, checked: keepSeparate.selected, action: keepSeparate.action)
         return menu
     }
 
     var accessibilityActions: [NSAccessibilityCustomAction] {
-        (entries + profiles.map { ("Set Profile: " + $0.name, $0.action) } + turnIntoFolder.map { ("Turn into Folder in " + $0.name, $0.action) }).compactMap { title, action in
+        (entries + shareData.map { ("Share data with " + $0.name, $0.action) }
+            + (keepSeparate.map { [(Self.keepSeparateTitle, $0.action)] } ?? []) + turnIntoFolder.map { ("Turn into Folder in " + $0.name, $0.action) }).compactMap { title, action in
             action.map { run in NSAccessibilityCustomAction(name: title) { run(); return true } }
         }
     }

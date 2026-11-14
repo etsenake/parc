@@ -1,7 +1,7 @@
 # Space management
 
 Space management includes native header editing, Library cards/order, original-
-target menus, Profile assignment, deletion/Undo and Turn into Folder. Space
+target menus, data sharing, deletion/Undo and Turn into Folder. Space
 navigation, global app appearance and theme Undo retain their separate owners.
 
 ## Header, title and icon
@@ -22,10 +22,14 @@ each accepted choice; Remove writes nil and failure preserves the draft.
 The header shows only the Space's icon, name and the ellipsis or Done button,
 plus the Incognito indicator in a private window. It never names a Profile, and
 the Spaces menu and File menu have no Change Profile or New Profile items. The
-Space menu's Set Profile submenu and its accessibility actions share
-original-target callbacks; retiring Profiles cannot be chosen. New Profile there
-asks for the name in a Parc dialog over the browser window and assigns it to
-that Space, without opening Settings or switching the browser selection.
+Space menu (header ellipsis, sidebar and dock context menus, Library cards) has
+**Share data with**, a submenu listing each other Space with a checkmark on the
+Spaces that already share data with this one, a separator and **Keep separate**,
+checked when no other Space shares. VoiceOver gets the same choices as "Share data
+with <Space>" and "Keep separate". The menu and its accessibility actions share
+original-target callbacks; a Space whose data is being removed cannot be chosen.
+Each choice goes through the confirmation described under
+[Sharing data between Spaces](#sharing-data-between-spaces).
 
 ## Complete manager and original-content transactions
 
@@ -59,11 +63,15 @@ Space/folders and archives original tab/document references with provenance.
 Refusal or failed persistence publishes no partial model. Deleting a Space never
 deletes the underlying Note/Easel document.
 
-`unusedProfile(ifDeletingSpace:)` tells beforehand whether the Space is the last
-one on its Profile; after a successful deletion `unusedProfile(_:)` and
-`stageRemoval(of:)` stage that Profile's removal. Deleting a Space that shares
-data is unchanged and keeps its Undo; Undo of a last-Space deletion is refused
-once its Profile's removal is pending.
+Delete is available from the Space menu and from Edit Space in Settings (the
+confirmation then appears over Settings). `unusedProfile(ifDeletingSpace:)` tells
+beforehand whether the Space is the last one using its data. In that case the
+confirmation adds "This also deletes its logins, saved passwords and history. This
+can’t be undone.", no Undo is registered, and after the deletion succeeds the data's
+removal is handed to `ProfileRemovalController`, which stages it and removes the data
+in the background. If the data's users changed while the dialog was open the delete
+is refused. Deleting a Space that shares data is unchanged and keeps its Undo; Redo
+is refused if it would now delete the last copy of the data.
 
 Profile-wide Favorites survive even when that Profile loses its last Space.
 Their storage anchor moves without changing Profile, navigation or split geometry;
@@ -90,12 +98,11 @@ Stored-alias restrictions remain authoritative.
 
 ### Profile assignment dependency
 
-Assignment always asks its own confirmation, independently of move-confirmation
-suppression. Header, card and Settings use the same transaction. `assignProfile`
-relocates exact Note/Easel storage and rolls it back if persistence fails; it
-never just changes their Profile IDs after closing pages. Original membership
-and ownership remain valid through retirement. New Profile creation authorizes
-its original assignment context and saves the Profile atomically.
+Changing sharing asks its own confirmation when something consequential happens,
+independently of move-confirmation suppression. Menu, card and Settings use the
+same transaction. `assignProfile` relocates exact Note/Easel storage and rolls it
+back if persistence fails; it never just changes their Profile IDs after closing
+pages. Original membership and ownership remain valid through retirement.
 
 ### Moving tabs between Spaces
 
@@ -122,8 +129,8 @@ code never leaves one behind.
 **Auto-Archive per Space.** `BrowserSpace.autoArchiveHours` is optional (older
 files decode it as nil) and the upgrade seeds it from the Profile. The archive
 sweep uses the Space's interval, falling back to the Profile's. New Spaces take
-the creating Space's interval. Changing a Profile's interval in Settings sets every
-Space on that Profile; `setAutoArchiveInterval(_:forSpace:)` changes one Space.
+the creating Space's interval. Settings changes only the edited Space through
+`setAutoArchiveInterval(_:forSpace:)`.
 
 **Create.** `createSpace(name:sharing:)` and the sidebar's `SidebarNewSpaceDraft`
 (`shareData(withSpace:in:)` / `keepSeparate()`) add the Space and, for Keep
@@ -162,9 +169,26 @@ decision and `NewSpaceBlockerWait` the wait-or-give-up decision.
 reuses the [assignment](#profile-assignment-dependency) transaction; Keep separate
 creates the new Profile in the same save and does nothing for a Space that already
 keeps separate. The result names the previous Profile when no Space uses it any
-more. `unusedProfile(ifSpace:joins:)` answers that before acting, so the interface
-can warn that its logins, saved passwords and history will be deleted and then
-stage removal with `stageRemoval(of:)`.
+more. `SpaceSharingConfirmation` shows one of these, only when something consequential
+happens, and re-checks the Space, its tabs and the target before and after the
+confirmation:
+
+- **Share data, previous data becomes unused:** "Share <Target>'s data with
+  <Space>?" with a red **Share Data**; the Space's pages reload signed in as the
+  target and its own logins, saved passwords and history are deleted for good.
+- **Share data, previous data still used by another Space:** the same title with a
+  plain **Share Data**; pages reload with the target's logins, history, extensions
+  and Favorites.
+- **Keep separate** for a Space that shares: "Keep <Space> separate?" with **Keep
+  Separate**; it starts fresh, signed out everywhere with no history, extensions or
+  Favorites.
+- Choosing what the Space already has, or keeping separate a Space that already is,
+  shows nothing and changes nothing.
+
+The wording and the choice live in `SpaceSharingWarning`. When the change leaves
+data unused, the confirmation hands it to `ProfileRemovalController.remove`, which
+stages the removal record and prepares it natively in one step. Failures use the
+standard error dialog.
 
 ## Library Spaces page presentation
 
@@ -210,7 +234,8 @@ at completion, and closed windows reject stale completions.
 ## Checks
 
 `scripts/test-space-sharing.sh` covers the upgrade, Links conversion, per-Space
-Auto-Archive, atomic creation, change sharing and unused-Profile reporting.
+Auto-Archive, atomic creation, change sharing, which warning each situation gets
+and unused-Profile reporting.
 Space-management/store/inter-Profile components cover title migration, exact
 leases, failed saves, deletion/Undo, document relocation and owner preservation.
 `tests/SpaceManager/check.py` exercises real inert cards/sidebar controls and

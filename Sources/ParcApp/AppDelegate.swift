@@ -703,7 +703,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if !hasRestoredWindow { launchOwner.window?.makeKeyAndOrderFront(nil) }
         if let input = argument("--parc-open") { launchOwner.openInput(input) }
         if arguments.contains("--parc-smoke"), let name = argument("--parc-settings") {
-            launchOwner.showSettings(pane: SettingsWindow.Pane(rawValue: name) ?? .membership)
+            launchOwner.showSettings(pane: SettingsWindow.Pane.named(name) ?? .membership)
         }
         deliverPendingBrowserRequests(to: launchOwner)
         if !hasRestoredWindow { NSApp.activate(ignoringOtherApps: true) }
@@ -2201,6 +2201,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             settings.onProfileSettingsPage = { [weak self, weak settings] spaceID, profileID, page in
                 guard let self, let settings else { return false }
                 return self.openApplicationSettingsPage(settings, spaceID: spaceID, profileID: profileID, page: page)
+            }
+            settings.onDeleteSpace = { [weak self, weak settings] spaceID in
+                guard let self, let settings, self.applicationSettings === settings, let sheetWindow = settings.window else { return false }
+                let owner = self.windows.last {
+                    !$0.isPrivateBrowsing && $0.window?.attachedSheet == nil && $0.window?.isMiniaturized == false
+                }
+                return owner?.deleteSpace(spaceID, confirmingIn: sheetWindow) ?? false
             }
         }
         if shortcutID != nil, applicationSettings?.window?.attachedSheet != nil { return }

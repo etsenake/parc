@@ -21,6 +21,54 @@ struct SpaceSharingChange: Equatable {
     let unusedProfile: UnusedProfile?
 }
 
+enum SpaceSharingWarning: Equatable {
+    case share(target: String, space: String, discardsOwnData: Bool)
+    case keepSeparate(space: String)
+
+    static let deletionNote = "This also deletes its logins, saved passwords and history. This can’t be undone."
+
+    static func choose(_ sharing: SpaceDataSharing, space: String, target: String?, joinsOtherData: Bool,
+                       spaceSharesData: Bool, discardsOwnData: Bool) -> SpaceSharingWarning? {
+        switch sharing {
+        case .share:
+            guard joinsOtherData, let target else { return nil }
+            return .share(target: target, space: space, discardsOwnData: discardsOwnData)
+        case .separate:
+            return spaceSharesData ? .keepSeparate(space: space) : nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .share(let target, let space, _): return "Share \(target)’s data with \(space)?"
+        case .keepSeparate(let space): return "Keep \(space) separate?"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .share(let target, let space, true):
+            return "\(space)’s pages will reload signed in as \(target). \(space)’s own logins, saved passwords and history will be deleted. This can’t be undone."
+        case .share(let target, let space, false):
+            return "\(space)’s pages will reload with \(target)’s logins, history, extensions and Favorites."
+        case .keepSeparate:
+            return "It starts fresh: signed out of every site, with no history, extensions or Favorites."
+        }
+    }
+
+    var confirm: String {
+        switch self {
+        case .share: return "Share Data"
+        case .keepSeparate: return "Keep Separate"
+        }
+    }
+
+    var destructive: Bool {
+        if case .share(_, _, true) = self { return true }
+        return false
+    }
+}
+
 extension BrowserState {
     func resolvedAutoArchiveHours(forSpace id: UUID) -> Double {
         guard let space = spaces.first(where: { $0.id == id }) else { return autoArchiveDefaultHours }
@@ -92,6 +140,16 @@ extension BrowserStore {
               let other = state.spaces.first(where: { $0.id == otherID }),
               other.profileID != space.profileID else { return nil }
         return soleProfile(of: spaceID)
+    }
+
+    func sharingWarning(forSpace spaceID: UUID, to sharing: SpaceDataSharing) -> SpaceSharingWarning? {
+        guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return nil }
+        var target: BrowserSpace?
+        if case .share(let otherID) = sharing { target = state.spaces.first { $0.id == otherID && $0.id != spaceID } }
+        return SpaceSharingWarning.choose(sharing, space: space.name, target: target?.name,
+                                          joinsOtherData: target.map { $0.profileID != space.profileID } ?? false,
+                                          spaceSharesData: !spaceSharing(of: spaceID).isEmpty,
+                                          discardsOwnData: unusedProfile(ifSpace: spaceID, joins: sharing) != nil)
     }
 
     func wouldOrphanProfile(ifSpace spaceID: UUID, joins sharing: SpaceDataSharing) -> Bool {

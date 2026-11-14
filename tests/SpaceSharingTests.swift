@@ -13,6 +13,7 @@ import Foundation
         try separateCreation()
         try draftCreation()
         try changeSharing()
+        try warnings()
         try deletion()
         try legacyRemovalFallback()
         print("SpaceSharingTests: \(count) assertions passed")
@@ -272,5 +273,39 @@ import Foundation
                   "a removal pending from before sharing keeps the Default it was journaled with")
         try check(try BrowserStore(directory: directory).state.profileRemovals.first?.fallbackProfileID == p.id,
                   "that recorded fallback persists, so a later Default handoff cannot change it")
+    }
+
+    static func warnings() throws {
+        let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
+        var state = BrowserState.initial()
+        let p = state.profiles[0], q = BrowserProfile(id: UUID(), name: "Q")
+        state.spaces[0].name = "Alpha"
+        let a = state.spaces[0]
+        let b = BrowserSpace(id: UUID(), name: "Beta", symbol: "circle", color: "B9B5D4", profileID: p.id)
+        let c = BrowserSpace(id: UUID(), name: "Gamma", symbol: "circle", color: "B9B5D4", profileID: q.id)
+        state.profiles.append(q); state.spaces += [b, c]
+        try write(state, to: directory)
+        let store = try BrowserStore(directory: directory)
+
+        let reload = store.sharingWarning(forSpace: a.id, to: .share(withSpace: c.id))
+        try check(reload == .share(target: "Gamma", space: "Alpha", discardsOwnData: false)
+            && reload?.title == "Share Gamma’s data with Alpha?" && reload?.confirm == "Share Data" && reload?.destructive == false
+            && reload?.message == "Alpha’s pages will reload with Gamma’s logins, history, extensions and Favorites.",
+                  "joining other data while the old data stays in use only warns about the reload")
+        let discard = store.sharingWarning(forSpace: c.id, to: .share(withSpace: a.id))
+        try check(discard == .share(target: "Alpha", space: "Gamma", discardsOwnData: true)
+            && discard?.title == "Share Alpha’s data with Gamma?" && discard?.confirm == "Share Data" && discard?.destructive == true
+            && discard?.message == "Gamma’s pages will reload signed in as Alpha. Gamma’s own logins, saved passwords and history will be deleted. This can’t be undone.",
+                  "joining other data while the old data becomes unused asks for a destructive confirmation")
+        try check(store.sharingWarning(forSpace: b.id, to: .share(withSpace: a.id)) == nil, "choosing the data a Space already has asks nothing")
+        try check(store.sharingWarning(forSpace: a.id, to: .share(withSpace: a.id)) == nil
+            && store.sharingWarning(forSpace: a.id, to: .share(withSpace: UUID())) == nil, "an unknown or own Space asks nothing")
+        let keep = store.sharingWarning(forSpace: a.id, to: .separate)
+        try check(keep == .keepSeparate(space: "Alpha") && keep?.title == "Keep Alpha separate?" && keep?.confirm == "Keep Separate" && keep?.destructive == false
+            && keep?.message == "It starts fresh: signed out of every site, with no history, extensions or Favorites.",
+                  "separating a sharing Space warns that it starts fresh")
+        try check(store.sharingWarning(forSpace: c.id, to: .separate) == nil, "keeping an already separate Space asks nothing")
+        try check(SpaceSharingWarning.deletionNote == "This also deletes its logins, saved passwords and history. This can’t be undone.",
+                  "the deletion note names what is lost")
     }
 }

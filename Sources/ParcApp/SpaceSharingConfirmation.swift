@@ -1,0 +1,54 @@
+import AppKit
+
+@MainActor enum SpaceSharingConfirmation {
+    static func present(on window: NSWindow, store: BrowserStore, spaceID: UUID, sharing: SpaceDataSharing,
+                        ownerValid: @escaping () -> Bool,
+                        completion: @escaping (Result<Bool, Error>) -> Void) {
+        guard let space = store.state.spaces.first(where: { $0.id == spaceID }) else { completion(.success(false)); return }
+        let target = sharing.partner.flatMap { id in store.state.spaces.first { $0.id == id } }
+        func openTabs() -> Set<UUID> {
+            Set(store.state.tabs.filter { $0.spaceID == spaceID && $0.kind != .favorite && $0.archivedAt == nil }.map(\.id))
+        }
+        let ids = openTabs()
+        let valid: () -> Bool = {
+            guard ownerValid(),
+                  store.state.spaces.contains(where: { $0.id == spaceID && $0.profileID == space.profileID }),
+                  !store.isProfileRemovalPending(space.profileID), openTabs() == ids else { return false }
+            guard let target else { return sharing == .separate }
+            return store.state.spaces.contains { $0.id == target.id && $0.profileID == target.profileID }
+                && !store.isProfileRemovalPending(target.profileID)
+        }
+        guard window.attachedSheet == nil, valid() else { completion(.success(false)); return }
+        guard let warning = store.sharingWarning(forSpace: spaceID, to: sharing) else { completion(.success(false)); return }
+        let dialog = PArcDialog(.init(
+            title: [(warning.title, false)], message: [(warning.message, false)],
+            confirm: warning.confirm, cancel: "Cancel", width: CGFloat(InterProfileMovePrompt.dialogWidth),
+            destructive: warning.destructive))
+        let began = dialog.begin(for: window) { [weak window] response in
+            DispatchQueue.main.async {
+                guard response == .confirm, window != nil, valid() else { completion(.success(false)); return }
+                store.changeSharing(ofSpace: spaceID, to: sharing, shouldCommit: valid) { result in
+                    switch result {
+                    case .success(let change):
+                        if let unused = change?.unusedProfile { handOff(unused) }
+                        completion(.success(change != nil))
+                    case .failure(let error):
+                        completion(.failure(error))
+                    }
+                }
+            }
+        }
+        if !began { completion(.success(false)) }
+    }
+
+    static func handOff(_ unused: UnusedProfile) {
+        ProfileRemovalController.shared.remove(profileID: unused.id, expectedName: unused.name)
+    }
+}
+
+extension SpaceDataSharing {
+    var partner: UUID? {
+        if case .share(let id) = self { return id }
+        return nil
+    }
+}

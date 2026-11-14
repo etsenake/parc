@@ -40,8 +40,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private let archive = PointingHandPopUpButton()
     private let archiveInfo = PointingHandButton()
     private var archiveInfoPopover: NSPopover?
-    private var archiveScopeAlert: PArcDialog?
-    private var archiveScopeChange: AutoArchiveProfileChange?
     private let restore = PointingHandSwitch()
     private let warnBeforeQuitting = PointingHandSwitch()
     private var defaultBrowserSubscription: AnyCancellable?
@@ -58,14 +56,15 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private var toolbarSubscription: AnyCancellable?
     private let toolbarFullURL = PointingHandSwitch()
     enum Pane: String, CaseIterable {
-        case membership = "Membership", general = "General", profiles = "Profiles", links = "Links", shortcuts = "Shortcuts", icon = "Icon", advanced = "Advanced"
+        static func named(_ name: String?) -> Pane? { name == "Profiles" ? .spaces : name.flatMap(Pane.init(rawValue:)) }
+        case membership = "Membership", general = "General", spaces = "Spaces", links = "Links", shortcuts = "Shortcuts", icon = "Icon", advanced = "Advanced"
         var symbol: String {
-            switch self { case .membership: return "person.crop.square.filled.and.at.rectangle"; case .general: return "gearshape"; case .profiles: return "person"; case .shortcuts: return "keyboard"; case .icon: return "app"; case .links: return "macwindow.on.rectangle"; case .advanced: return "slider.horizontal.3" }
+            switch self { case .membership: return "person.crop.square.filled.and.at.rectangle"; case .general: return "gearshape"; case .spaces: return "square.stack"; case .shortcuts: return "keyboard"; case .icon: return "app"; case .links: return "macwindow.on.rectangle"; case .advanced: return "slider.horizontal.3" }
         }
     }
     enum Destination: Equatable {
-        case pane(Pane), profile(UUID)
-        var pane: Pane { if case .pane(let pane) = self { return pane }; return .profiles }
+        case pane(Pane), space(UUID)
+        var pane: Pane { if case .pane(let pane) = self { return pane }; return .spaces }
     }
     private static let backItem = NSToolbarItem.Identifier("Parc.Settings.Back")
     private static let forwardItem = NSToolbarItem.Identifier("Parc.Settings.Forward")
@@ -80,18 +79,23 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private var navigation = SettingsNavigation<Destination>()
     private let paneHost = SettingsPaneHost(frame: NSRect(x: 0, y: 0, width: SettingsLayout.contentWidth, height: SettingsLayout.contentHeight))
     private var panes: [Pane: NSScrollView] = [:]
-    private var profileEditor = NSScrollView()
-    private let profileList = SettingsGroupView(frame: NSRect(x: SettingsLayout.margin, y: 0, width: SettingsLayout.groupWidth, height: SettingsLayout.rowHeight))
-    private var profileRows: [UUID: SettingsProfileButton] = [:]
-    private struct ProfileRowState: Equatable { let id: UUID; let name: String; let detail: String }
-    private var renderedProfileRows: [ProfileRowState] = []
-    private let newProfile = SettingsPillButton(title: "New Profile…")
-    private var selectedProfileID: UUID?
-    private let profileNameValue = NSTextField(labelWithString: "")
-    private let renameProfile = SettingsPillButton(title: "Rename…")
-    private var profileNameDialog: (dialog: PArcDialog, profileID: UUID)?
+    private var spaceEditor = NSScrollView()
+    private let spaceList = SettingsGroupView(frame: NSRect(x: SettingsLayout.margin, y: 0, width: SettingsLayout.groupWidth, height: SettingsLayout.rowHeight))
+    private var spaceRows: [UUID: SettingsSpaceButton] = [:]
+    private struct SpaceRowState: Equatable { let id: UUID; let name: String; let symbol: String; let emoji: String? }
+    private var renderedSpaceRows: [SpaceRowState] = []
+    private let newSpace = SettingsPillButton(title: "New Space…")
+    private var selectedSpaceID: UUID?
+    private let spaceNameValue = NSTextField(labelWithString: "")
+    private let renameSpace = SettingsPillButton(title: "Rename…")
+    private var spaceNameDialog: (dialog: PArcDialog, spaceID: UUID)?
     private var previewSettingsSheet: SidebarPreviewSettingsSheet?
-    private let removeProfile = SettingsPillButton(title: "Delete Profile…")
+    private let deleteSpace = SettingsPillButton(title: "Delete Space…")
+    private let shareData = PointingHandPopUpButton(frame: .zero, pullsDown: true)
+    private var shareChoices: [SpaceDataSharing] = []
+    private let removalNote = NSTextField(labelWithString: "Removing old data…")
+    private let removalRetry = SettingsPillButton(title: "Retry")
+    private let removalRow = SettingsGroupView(frame: NSRect(x: SettingsLayout.margin, y: 0, width: SettingsLayout.groupWidth, height: SettingsLayout.rowHeight))
     private var removalSubscription: AnyCancellable?
     private var membershipSubscription: AnyCancellable?
 
@@ -99,6 +103,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private let downloadHelp = NSTextField(wrappingLabelWithString: "")
     private var profilePageButtons: [ProfileSettingsPage: NSButton] = [:]
     var onProfileSettingsPage: ((UUID, UUID, ProfileSettingsPage) -> Bool)?
+    var onDeleteSpace: ((UUID) -> Bool)?
     private let moreSettings = SettingsPillButton(title: "More Settings…")
     private let exportData = SettingsPillButton(title: "Export Data")
     private let replay = SettingsPillButton(title: "Replay onboarding")
@@ -113,8 +118,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private var downloadPreferencesGeneration: UInt64 = 0
     private let downloadRetry = PointingHandButton(title: "Retry", target: nil, action: nil)
     private var subscription: AnyCancellable?
-    private var displayedProfileID: UUID?
-    private var displayedSpaceID: UUID?
     private struct Snapshot: Equatable {
         let settings: BrowserSettings
         let profiles: [BrowserProfile]
@@ -128,10 +131,10 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         contextSpaceID = spaceID
         self.applicationProfileID = applicationProfileID
         let savedProfileID = store.state.settings.settingsProfileID
-        selectedProfileID = store.state.profiles.first { $0.id == applicationProfileID }?.id
-            ?? store.state.profiles.first { $0.id == savedProfileID }?.id
-            ?? store.state.spaces.first { $0.id == spaceID }?.profileID
-            ?? store.state.profiles.first?.id
+        selectedSpaceID = store.state.spaces.first { $0.id == spaceID }?.id
+            ?? store.state.spaces.first { $0.profileID == applicationProfileID }?.id
+            ?? store.state.spaces.first { $0.profileID == savedProfileID }?.id
+            ?? store.state.spaces.first?.id
         let width = SettingsLayout.sidebarWidth + SettingsLayout.contentWidth
         let window = SettingsNativeWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: SettingsLayout.contentHeight),
                               styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
@@ -155,8 +158,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             self?.refreshMembershipTitle()
         }
         panes[.general] = makeGeneralPane()
-        panes[.profiles] = makeProfilesPane()
-        profileEditor = makeProfileEditorPane()
+        panes[.spaces] = makeSpacesPane()
+        spaceEditor = makeSpaceEditorPane()
         panes[.advanced] = makeAdvancedPane()
         let shortcutScroll = NSScrollView(frame: frame)
         shortcutScroll.drawsBackground = false; shortcutScroll.documentView = shortcutsPane
@@ -194,7 +197,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         let chrome = max(0, window.frame.height - window.contentLayoutRect.height)
         window.setContentSize(NSSize(width: width, height: SettingsLayout.contentHeight + chrome))
         refreshMembershipTitle()
-        showPane(store.state.settings.settingsPane.flatMap(Pane.init(rawValue:)) ?? .membership, persist: false)
+        showPane(store.state.settings.settingsPane.flatMap { Pane.named($0) } ?? .membership, persist: false)
         subscription = store.statePublisher.map { state in
             Snapshot(settings: state.settings, profiles: state.profiles, spaces: state.spaces)
         }.removeDuplicates().receive(on: RunLoop.main).sink { [weak self] snapshot in
@@ -270,25 +273,31 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             self?.refreshWindowFrame(state)
         }
         exportData.setAccessibilityHelp("Export your Spaces and saved tab links as Markdown.")
-        moreSettings.setAccessibilityHelp(applicationProfileID == nil ? "Open browser settings for this window’s Space and profile." : "Open browser settings for the original regular profile.")
-        removeProfile.destructive = true
-        removeProfile.setAccessibilityLabel("Delete profile")
-        removeProfile.target = self; removeProfile.action = #selector(deleteSelectedProfile)
-        renameProfile.toolTip = "Rename profile"
-        renameProfile.setAccessibilityLabel("Rename profile")
-        renameProfile.target = self; renameProfile.action = #selector(renameSelectedProfile)
-        newProfile.target = self; newProfile.action = #selector(addProfile)
-        newProfile.setAccessibilityLabel("New profile")
-        newProfile.toolTip = applicationProfileID == nil ? "Create a profile for this Space" : "Create a regular profile"
-        profileNameValue.font = .systemFont(ofSize: 13); profileNameValue.textColor = .secondaryLabelColor
-        profileNameValue.alignment = .right; profileNameValue.lineBreakMode = .byTruncatingTail
+        moreSettings.setAccessibilityHelp(applicationProfileID == nil ? "Open browser settings for this window’s Space." : "Open browser settings for the original Space.")
+        deleteSpace.destructive = true
+        deleteSpace.setAccessibilityLabel("Delete Space")
+        deleteSpace.target = self; deleteSpace.action = #selector(deleteSelectedSpace)
+        renameSpace.toolTip = "Rename Space"
+        renameSpace.setAccessibilityLabel("Rename Space")
+        renameSpace.target = self; renameSpace.action = #selector(renameSelectedSpace)
+        newSpace.target = self; newSpace.action = #selector(addSpace)
+        newSpace.setAccessibilityLabel("New Space")
+        newSpace.toolTip = "Create a Space"
+        spaceNameValue.font = .systemFont(ofSize: 13); spaceNameValue.textColor = .secondaryLabelColor
+        spaceNameValue.alignment = .right; spaceNameValue.lineBreakMode = .byTruncatingTail
+        shareData.setAccessibilityLabel("Share data with")
+        shareData.menu?.autoenablesItems = false
+        removalNote.font = .systemFont(ofSize: 13); removalNote.textColor = .secondaryLabelColor
+        removalRetry.target = self; removalRetry.action = #selector(retryRemoval)
+        removalRetry.setAccessibilityLabel("Retry removing old data")
         for field in [downloadHelp, searchHelp] {
             field.font = .systemFont(ofSize: 11); field.textColor = .secondaryLabelColor
         }
     }
-    @objc private func deleteSelectedProfile() { showProfileRemoval() }
-    @objc private func renameSelectedProfile() { showProfileNameEditor() }
-    @objc private func addProfile() { createProfile() }
+    @objc private func deleteSelectedSpace() { showSpaceDeletion() }
+    @objc private func renameSelectedSpace() { showSpaceNameEditor() }
+    @objc private func addSpace() { createSpace() }
+    @objc private func retryRemoval() { retryPendingRemovals() }
 
     private func pane(height: CGFloat = SettingsLayout.contentHeight) -> (NSScrollView, LayoutView) {
         let content = LayoutView(frame: NSRect(x: 0, y: 0, width: SettingsLayout.contentWidth, height: height))
@@ -444,78 +453,120 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
     @objc private func openPreviewSettings() { showPreviewSettings() }
 
-    private func makeProfilesPane() -> NSScrollView {
+    private func makeSpacesPane() -> NSScrollView {
         let (scroll, content) = pane()
-        let intro = NSTextField(labelWithAttributedString: profilesIntroduction())
-        intro.isSelectable = true; intro.allowsEditingTextAttributes = true
-        intro.maximumNumberOfLines = 3; intro.lineBreakMode = .byWordWrapping
+        let intro = NSTextField(wrappingLabelWithString: "Spaces that share data stay signed in to the same sites and share history, extensions and Favorites. A Space you keep separate starts fresh.")
+        intro.font = .systemFont(ofSize: 12); intro.textColor = .secondaryLabelColor
+        intro.maximumNumberOfLines = 3
         place(intro, in: content, NSRect(x: SettingsLayout.margin + SettingsLayout.rowInset, y: 18,
                                          width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 2, height: 46))
         let listY: CGFloat = 104
-        heading("Your Profiles", in: content, above: listY)
-        profileList.setFrameOrigin(NSPoint(x: SettingsLayout.margin, y: listY))
-        profileList.setAccessibilityElement(true)
-        profileList.setAccessibilityRole(.group)
-        profileList.setAccessibilityLabel("Your Profiles")
-        content.addSubview(profileList)
-        content.addSubview(newProfile)
-        layoutProfileList()
+        heading("Your Spaces", in: content, above: listY)
+        spaceList.setFrameOrigin(NSPoint(x: SettingsLayout.margin, y: listY))
+        spaceList.setAccessibilityElement(true)
+        spaceList.setAccessibilityRole(.group)
+        spaceList.setAccessibilityLabel("Your Spaces")
+        content.addSubview(spaceList)
+        content.addSubview(newSpace)
+        removalRow.frame = NSRect(x: SettingsLayout.margin, y: 0, width: SettingsLayout.groupWidth, height: SettingsLayout.rowHeight)
+        removalRow.isHidden = true
+        removalNote.frame = NSRect(x: SettingsLayout.rowInset, y: 12, width: 260, height: 18)
+        removalRow.addSubview(removalNote)
+        removalRow.addSubview(removalRetry)
+        content.addSubview(removalRow)
+        layoutSpaceList()
         return scroll
     }
 
-    private func layoutProfileList() {
-        let height = max(SettingsLayout.rowHeight, CGFloat(renderedProfileRows.count) * SettingsLayout.rowHeight)
-        profileList.setFrameSize(NSSize(width: SettingsLayout.groupWidth, height: height))
-        newProfile.frame = NSRect(x: profileList.frame.maxX - newProfile.fittingWidth, y: profileList.frame.maxY + 12,
-                                  width: newProfile.fittingWidth, height: SettingsLayout.buttonHeight)
-        if let content = profileList.superview {
-            content.setFrameSize(NSSize(width: content.frame.width, height: max(SettingsLayout.contentHeight, newProfile.frame.maxY + 20)))
+    private func layoutSpaceList() {
+        let height = max(SettingsLayout.rowHeight, CGFloat(renderedSpaceRows.count) * SettingsLayout.rowHeight)
+        spaceList.setFrameSize(NSSize(width: SettingsLayout.groupWidth, height: height))
+        newSpace.frame = NSRect(x: spaceList.frame.maxX - newSpace.fittingWidth, y: spaceList.frame.maxY + 12,
+                                width: newSpace.fittingWidth, height: SettingsLayout.buttonHeight)
+        var bottom = newSpace.frame.maxY
+        if !removalRow.isHidden {
+            removalRow.setFrameOrigin(NSPoint(x: SettingsLayout.margin, y: bottom + 16))
+            removalRetry.frame = NSRect(x: removalRow.bounds.width - SettingsLayout.rowInset - removalRetry.fittingWidth,
+                                        y: ((SettingsLayout.rowHeight - SettingsLayout.buttonHeight) / 2).rounded(),
+                                        width: removalRetry.fittingWidth, height: SettingsLayout.buttonHeight)
+            bottom = removalRow.frame.maxY
+        }
+        if let content = spaceList.superview {
+            content.setFrameSize(NSSize(width: content.frame.width, height: max(SettingsLayout.contentHeight, bottom + 20)))
         }
     }
 
-    private func renderProfileList() {
-        let rows = store.state.profiles.map { profile -> ProfileRowState in
-            let count = store.state.spaces.filter { $0.profileID == profile.id }.count
-            let detail = store.isProfileRemovalPending(profile.id)
-                ? (ProfileRemovalController.shared.status(for: profile.id)?.running == true ? "Removing…" : "Retry")
-                : "\(count) \(count == 1 ? "Space" : "Spaces")"
-            return ProfileRowState(id: profile.id, name: profile.name, detail: detail)
+    private var pendingRemovals: [(id: UUID, name: String, running: Bool)] {
+        let controller = ProfileRemovalController.shared
+        var ids = store.state.profileRemovals.map(\.profileID)
+        for profile in store.state.profiles where !ids.contains(profile.id)
+            && !store.state.spaces.contains(where: { $0.profileID == profile.id }) && controller.status(for: profile.id) != nil {
+            ids.append(profile.id)
         }
-        guard rows != renderedProfileRows else { return }
-        let focused = profileRows.first { window?.firstResponder === $0.value }?.key
-        renderedProfileRows = rows
-        profileList.subviews.forEach { $0.removeFromSuperview() }
-        profileRows.removeAll()
+        return ids.compactMap { id in
+            store.state.profiles.first { $0.id == id }.map { (id: id, name: $0.name, running: controller.status(for: id)?.running == true) }
+        }
+    }
+
+    private func renderRemovalRow() {
+        let pending = pendingRemovals
+        let running = pending.contains { $0.running }
+        removalRow.isHidden = pending.isEmpty
+        removalNote.stringValue = running || pending.isEmpty ? "Removing old data…" : "Couldn’t finish removing old data."
+        removalRetry.isHidden = pending.isEmpty || running
+        layoutSpaceList()
+    }
+
+    private func retryPendingRemovals() {
+        for pending in pendingRemovals where !pending.running {
+            ProfileRemovalController.shared.remove(profileID: pending.id, expectedName: pending.name)
+        }
+    }
+
+    private func renderSpaceList() {
+        let rows = store.state.spaces.map { space in
+            SpaceRowState(id: space.id, name: space.name, symbol: space.symbol, emoji: space.customIcon?.emoji)
+        }
+        guard rows != renderedSpaceRows else { renderRemovalRow(); return }
+        let focused = spaceRows.first { window?.firstResponder === $0.value }?.key
+        renderedSpaceRows = rows
+        spaceList.subviews.forEach { $0.removeFromSuperview() }
+        spaceRows.removeAll()
         for (index, row) in rows.enumerated() {
             let top = CGFloat(index) * SettingsLayout.rowHeight
-            if index > 0 { profileList.separator(at: top) }
-            let button = SettingsProfileButton { [weak self] in self?.openProfile(row.id) }
-            button.update(name: row.name, detail: row.detail)
-            button.setAccessibilityIdentifier("settings.profile.row." + row.id.uuidString)
+            if index > 0 { spaceList.separator(at: top) }
+            let button = SettingsSpaceButton { [weak self] in self?.openSpace(row.id) }
+            let customImage = store.state.spaces.first { $0.id == row.id }?.customIcon?.image
+            button.update(name: row.name, detail: "",
+                          image: customImage ?? NSImage(systemSymbolName: row.symbol, accessibilityDescription: nil), emoji: row.emoji)
+            button.setAccessibilityIdentifier("settings.space.row." + row.id.uuidString)
             button.frame = NSRect(x: 0, y: top, width: SettingsLayout.groupWidth, height: SettingsLayout.rowHeight)
-            profileList.addSubview(button)
-            profileRows[row.id] = button
+            spaceList.addSubview(button)
+            spaceRows[row.id] = button
         }
-        layoutProfileList()
-        if selectedPane == .profiles, shownDestination == .pane(.profiles), let content = panes[.profiles] {
+        renderRemovalRow()
+        if selectedPane == .spaces, shownDestination == .pane(.spaces), let content = panes[.spaces] {
             connectKeyViews(in: content)
         }
-        if let focused, let row = profileRows[focused] { window?.makeFirstResponder(row) }
+        if let focused, let row = spaceRows[focused] { window?.makeFirstResponder(row) }
     }
 
-    private func openProfile(_ id: UUID) {
-        guard store.state.profiles.contains(where: { $0.id == id }) else { return }
-        show(.profile(id))
+    private func openSpace(_ id: UUID) {
+        guard store.state.spaces.contains(where: { $0.id == id }) else { return }
+        show(.space(id))
     }
 
-    private func makeProfileEditorPane() -> NSScrollView {
+    private func makeSpaceEditorPane() -> NSScrollView {
         let (scroll, content) = pane()
         let rowHeight = SettingsLayout.rowHeight
-        let identity = group(in: content, y: 20, height: rowHeight)
-        rowLabel("Profile Name", in: identity, row: 0, width: 160)
-        trailingPill(renameProfile, in: identity, top: 0)
-        place(profileNameValue, in: identity, NSRect(x: 180, y: 12,
-                                                     width: SettingsLayout.groupWidth - 180 - SettingsLayout.rowInset * 2 - renameProfile.fittingWidth, height: 18))
+        let identity = group(in: content, y: 20, height: rowHeight * 2)
+        rowLabel("Space Name", in: identity, row: 0, width: 160)
+        trailingPill(renameSpace, in: identity, top: 0)
+        place(spaceNameValue, in: identity, NSRect(x: 180, y: 12,
+                                                   width: SettingsLayout.groupWidth - 180 - SettingsLayout.rowInset * 2 - renameSpace.fittingWidth, height: 18))
+        identity.separator(at: rowHeight)
+        rowLabel("Share data with", in: identity, row: 1, width: 160)
+        trailing(shareData, in: identity, top: rowHeight, width: 220, height: 25)
 
         let browsingTitle = SettingsSectionHeading(title: "Tabs")
         content.addSubview(browsingTitle)
@@ -535,22 +586,22 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
                                                             width: SettingsLayout.groupWidth, height: rowHeight))
         }
         if let clear = profilePageButton(.clearBrowsingData) as? SettingsPillButton { content.addSubview(clear) }
-        content.addSubview(removeProfile)
-        profileEditorLayout = ProfileEditorLayout(identity: identity, sections: [(browsingTitle, tabs), (dataTitle, data)],
-                                                  content: content)
-        layoutProfileCards()
+        content.addSubview(deleteSpace)
+        spaceEditorLayout = SpaceEditorLayout(identity: identity, sections: [(browsingTitle, tabs), (dataTitle, data)],
+                                              content: content)
+        layoutSpaceCards()
         return scroll
     }
 
-    private struct ProfileEditorLayout {
+    private struct SpaceEditorLayout {
         let identity: SettingsGroupView
         let sections: [(NSTextField, SettingsGroupView)]
         let content: LayoutView
     }
-    private var profileEditorLayout: ProfileEditorLayout?
+    private var spaceEditorLayout: SpaceEditorLayout?
 
-    private func layoutProfileCards() {
-        guard let layout = profileEditorLayout else { return }
+    private func layoutSpaceCards() {
+        guard let layout = spaceEditorLayout else { return }
         var bottom = layout.identity.frame.maxY
         for (title, group) in layout.sections {
             let top = bottom + SettingsLayout.headingSpacing
@@ -561,24 +612,15 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             bottom = group.frame.maxY
         }
         let buttonsY = bottom + 20
-        let deleteWidth = max(removeProfile.fittingWidth, 120)
-        removeProfile.frame = NSRect(x: SettingsLayout.margin + SettingsLayout.groupWidth - deleteWidth, y: buttonsY,
-                                     width: deleteWidth, height: SettingsLayout.buttonHeight)
+        let deleteWidth = max(deleteSpace.fittingWidth, 120)
+        deleteSpace.frame = NSRect(x: SettingsLayout.margin + SettingsLayout.groupWidth - deleteWidth, y: buttonsY,
+                                   width: deleteWidth, height: SettingsLayout.buttonHeight)
         if let clear = profilePageButtons[.clearBrowsingData] as? SettingsPillButton {
-            clear.frame = NSRect(x: removeProfile.frame.minX - 12 - clear.fittingWidth, y: buttonsY,
+            clear.frame = NSRect(x: deleteSpace.frame.minX - 12 - clear.fittingWidth, y: buttonsY,
                                  width: clear.fittingWidth, height: SettingsLayout.buttonHeight)
         }
         layout.content.setFrameSize(NSSize(width: layout.content.frame.width,
                                            height: max(SettingsLayout.contentHeight, buttonsY + SettingsLayout.buttonHeight + 20)))
-    }
-
-    private func profilesIntroduction() -> NSAttributedString {
-        let font = NSFont.systemFont(ofSize: 12)
-        let text = NSMutableAttributedString(string: "Profiles help keep your data separate across Spaces — like history, logins, cookies, and extensions. You can use any Profile across one or more Spaces. ",
-            attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
-        text.append(NSAttributedString(string: "Learn more.", attributes: [.font: font,
-            .link: URL(string: "https://resources.arc.net/hc/en-us/articles/19227964556183-Profiles-Separate-Work-Personal-Browsing")!]))
-        return text
     }
 
     private func profilePageButton(_ page: ProfileSettingsPage) -> NSButton {
@@ -664,15 +706,15 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         return shortcutsPane.selectCommand(id)
     }
 
-    @discardableResult func showAutoArchiveSettings(profileID: UUID) -> Bool {
+    @discardableResult func showAutoArchiveSettings(spaceID: UUID) -> Bool {
         guard let window, window.attachedSheet == nil,
-              store.state.profiles.contains(where: { $0.id == profileID }),
-              !store.isProfileRemovalPending(profileID) else { return false }
-        do { try store.saveSettingsSelection(pane: Pane.profiles.rawValue, profileID: profileID) }
+              let space = store.state.spaces.first(where: { $0.id == spaceID }),
+              !store.isProfileRemovalPending(space.profileID) else { return false }
+        do { try store.saveSettingsSelection(pane: Pane.spaces.rawValue, profileID: space.profileID) }
         catch { reportProfileSettingsError(error); return false }
         cancelDownloadFolderSelection()
-        selectedProfileID = profileID
-        show(.profile(profileID), persist: false)
+        selectedSpaceID = spaceID
+        show(.space(spaceID), persist: false)
         refresh()
         archive.scrollToVisible(archive.bounds)
         window.makeFirstResponder(archive)
@@ -686,7 +728,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private func content(for destination: Destination) -> NSScrollView? {
         switch destination {
         case .pane(let pane): return panes[pane]
-        case .profile(let id): return store.state.profiles.contains(where: { $0.id == id }) ? profileEditor : nil
+        case .space(let id): return store.state.spaces.contains(where: { $0.id == id }) ? spaceEditor : nil
         }
     }
 
@@ -694,7 +736,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         switch destination {
         case .pane(.membership)?: return membershipPane.displayName
         case .pane(let pane)?: return pane.rawValue
-        case .profile?: return "Edit Profile"
+        case .space?: return "Edit Space"
         case nil: return Pane.general.rawValue
         }
     }
@@ -710,16 +752,16 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         guard let content = content(for: destination), let window else { syncChrome(); return false }
         let pane = destination.pane
         guard window.attachedSheet == nil else { syncChrome(); return false }
-        if case .profile(let id) = destination, id != selectedProfileID {
+        if case .space(let id) = destination, id != selectedSpaceID {
             if persist {
-                do { try store.saveSettingsSelection(pane: pane.rawValue, profileID: id) }
+                do { try store.saveSettingsSelection(pane: pane.rawValue, profileID: store.state.spaces.first { $0.id == id }?.profileID) }
                 catch { syncChrome(); reportProfileSettingsError(error); return false }
             }
             cancelDownloadFolderSelection()
-            selectedProfileID = id
+            selectedSpaceID = id
             refresh()
         } else if persist {
-            do { try store.saveSettingsSelection(pane: pane.rawValue, profileID: selectedProfileID) }
+            do { try store.saveSettingsSelection(pane: pane.rawValue, profileID: editedSpace?.profileID) }
             catch {
                 syncChrome()
                 reportProfileSettingsError(error)
@@ -793,14 +835,14 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
 
     private var focusContext: String {
-        selectedPane.rawValue + (shownDestination.flatMap { if case .profile(let id) = $0 { return ":" + id.uuidString }; return nil } ?? "")
+        selectedPane.rawValue + (shownDestination.flatMap { if case .space(let id) = $0 { return ":" + id.uuidString }; return nil } ?? "")
     }
 
-    private var profileFallback: NSView? {
-        guard selectedPane == .profiles else { return nil }
-        if case .profile? = shownDestination { return renameProfile }
-        return store.state.profiles.first(where: { $0.id == selectedProfileID }).flatMap { profileRows[$0.id] }
-            ?? store.state.profiles.first.flatMap { profileRows[$0.id] }
+    private var spaceFallback: NSView? {
+        guard selectedPane == .spaces else { return nil }
+        if case .space? = shownDestination { return renameSpace }
+        return store.state.spaces.first(where: { $0.id == selectedSpaceID }).flatMap { spaceRows[$0.id] }
+            ?? store.state.spaces.first.flatMap { spaceRows[$0.id] }
     }
 
     private func restorePaneFocus(context: String? = nil) {
@@ -829,10 +871,10 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             self.onSheetEnded?()
             guard !self.isClosing else { return }
             self.reportRemovalFailures()
-            if context?.hasPrefix(Pane.profiles.rawValue + ":") == true, self.selectedPane == .profiles,
+            if context?.hasPrefix(Pane.spaces.rawValue + ":") == true, self.selectedPane == .spaces,
                context != self.focusContext {
                 if let window = self.window, let content = window.contentView {
-                    self.focusState.restore(in: window, root: content, context: nil, fallback: self.profileFallback)
+                    self.focusState.restore(in: window, root: content, context: nil, fallback: self.spaceFallback)
                 }
             } else { self.restorePaneFocus(context: context) }
         }
@@ -883,14 +925,14 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         return item
     }
 
-    private func pruneRemovedProfiles() {
-        let ids = Set(store.state.profiles.map(\.id))
-        let removed: (Destination) -> Bool = { if case .profile(let id) = $0 { return !ids.contains(id) }; return false }
+    private func pruneRemovedSpaces() {
+        let ids = Set(store.state.spaces.map(\.id))
+        let removed: (Destination) -> Bool = { if case .space(let id) = $0 { return !ids.contains(id) }; return false }
         let currentRemoved = shownDestination.map(removed) ?? false
-        navigation.removeAll(where: removed, replacingCurrentWith: .pane(.profiles))
+        navigation.removeAll(where: removed, replacingCurrentWith: .pane(.spaces))
         if currentRemoved, !isClosing {
-            if !show(.pane(.profiles), persist: false, record: false) {
-                shownDestination = .pane(.profiles)
+            if !show(.pane(.spaces), persist: false, record: false) {
+                shownDestination = .pane(.spaces)
                 syncChrome()
             }
         } else {
@@ -898,58 +940,44 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         }
     }
 
+    private var editedSpace: BrowserSpace? {
+        store.state.spaces.first { $0.id == selectedSpaceID }
+    }
+
     private func profilePageSpace() -> BrowserSpace? {
-        store.settingsPageSpace(profileID: selectedProfileID, originatingSpaceID: contextSpaceID)
+        editedSpace.flatMap { space in
+            !store.isProfileRemovalPending(space.profileID) && store.state.profiles.contains { $0.id == space.profileID } ? space : nil
+        }
     }
 
     func refresh() {
-        let space = store.state.spaces.first { $0.id == contextSpaceID }
-        if !store.state.profiles.contains(where: { $0.id == selectedProfileID }) {
-            selectedProfileID = space?.profileID ?? store.state.profiles.first?.id
-        }
-        displayedSpaceID = space?.id
-        displayedProfileID = selectedProfileID
-        let removing = displayedProfileID.map(store.isProfileRemovalPending) ?? false
-        archive.isEnabled = displayedProfileID != nil && !removing
+        if editedSpace == nil { selectedSpaceID = store.state.spaces.first { $0.id == contextSpaceID }?.id ?? store.state.spaces.first?.id }
+        let edited = editedSpace
+        let removing = edited.map { store.isProfileRemovalPending($0.profileID) } ?? false
+        archive.isEnabled = edited != nil && !removing
         archiveInfo.isEnabled = archive.isEnabled
-        if let change = archiveScopeChange,
-           change.profileID != displayedProfileID || change.profiles != store.state.profiles || removing {
-            cancelArchiveScopeSheet()
-        }
-        renameProfile.isEnabled = displayedProfileID != nil && !removing
-        profileNameValue.stringValue = store.state.profiles.first { $0.id == displayedProfileID }?.name ?? ""
-        if let id = displayedProfileID {
-            if removing {
-                let status = ProfileRemovalController.shared.status(for: id)
-                removeProfile.isEnabled = status?.running != true || status?.canCancel == true
-                removeProfile.toolTip = status?.running == true ? (status?.canCancel == true ? "Cancel this profile’s removal" : "This profile is being removed") : "Retry this profile’s removal"
-                removeProfile.setLabel(status?.running == true ? (status?.canCancel == true ? "Cancel Removal" : "Removing…") : "Retry Removal")
-            } else {
-                removeProfile.setLabel("Delete Profile…")
-                do {
-                    _ = try store.profileRemovalSummary(id)
-                    removeProfile.isEnabled = true
-                    removeProfile.toolTip = "Delete profile"
-                } catch {
-                    removeProfile.isEnabled = false
-                    removeProfile.toolTip = error.localizedDescription
-                }
-            }
+        renameSpace.isEnabled = edited != nil && !removing
+        spaceNameValue.stringValue = edited?.name ?? ""
+        renderShareData(edited, removing: removing)
+        if let edited, !removing {
+            let canDelete = store.state.spaces.count > 1 && SpaceDeletionTarget(spaceID: edited.id, state: store.state) != nil
+            deleteSpace.isEnabled = canDelete && onDeleteSpace != nil
+            deleteSpace.toolTip = store.state.spaces.count <= 1 ? "Parc needs at least one Space."
+                : canDelete ? "Delete this Space" : "This Space can’t be deleted right now."
         } else {
-            removeProfile.setLabel("Delete Profile…")
-            removeProfile.isEnabled = false
-            removeProfile.toolTip = "Select an available profile."
+            deleteSpace.isEnabled = false
+            deleteSpace.toolTip = "This Space isn’t available right now."
         }
-        if let editing = profileNameDialog,
-           !store.state.profiles.contains(where: { $0.id == editing.profileID }) {
-            cancelProfileNameEditor()
+        if let editing = spaceNameDialog,
+           !store.state.spaces.contains(where: { $0.id == editing.spaceID }) {
+            cancelSpaceNameEditor()
         }
         archive.removeAllItems()
         for choice in AutoArchiveInterval.settingsChoices {
             archive.addItem(withTitle: choice.title)
             archive.lastItem?.representedObject = choice.rawValue
         }
-        let interval = displayedProfileID.flatMap { store.autoArchiveInterval(for: $0) } ?? .twelveHours
+        let interval = edited.flatMap { store.autoArchiveInterval(forSpace: $0.id) } ?? .twelveHours
         if AutoArchiveInterval.settingsChoices.contains(interval) {
             archive.selectItem(at: AutoArchiveInterval.settingsChoices.firstIndex(of: interval)!)
         } else {
@@ -957,21 +985,20 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             archive.lastItem?.isEnabled = false
             archive.select(archive.lastItem)
         }
-        let profileName = store.state.profiles.first { $0.id == displayedProfileID }?.name ?? "Default"
-        archive.setAccessibilityHelp("Applies to all Spaces using the \(profileName) Profile.")
+        archive.setAccessibilityHelp("Applies to \(edited?.name ?? "this Space") only.")
         for (page, button) in profilePageButtons {
             let available = (page == .search ? settingsContextSpace() : profilePageSpace()) != nil
             button.isEnabled = available && onProfileSettingsPage != nil
             button.toolTip = button.isEnabled ? nil : page == .search
                 ? "Open Settings from a browser window to manage search."
-                : "Use this profile for a Space to manage its browser settings."
+                : "This Space’s browser settings aren’t available right now."
         }
         moreSettings.isEnabled = settingsContextSpace() != nil && onMoreSettings != nil
         replay.isEnabled = replaySpaceID != nil && NSApp.delegate?.responds(to: #selector(AppDelegate.replayOnboarding(_:))) == true
         restore.state = store.state.settings.restoreSession ? .on : .off
-        renderProfileList()
-        layoutProfileCards()
-        pruneRemovedProfiles()
+        renderSpaceList()
+        layoutSpaceCards()
+        pruneRemovedSpaces()
         refreshDownloadPreferences()
         refreshSearchPreferences()
         reportRemovalFailures()
@@ -1024,13 +1051,12 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         lifecycleRevision &+= 1
         sheetFocusContext = nil
         membershipPane.cancelPresentation()
-        cancelArchiveScopeSheet()
         archiveInfoPopover?.close(); archiveInfoPopover = nil
         downloadPreferencesGeneration &+= 1
         previewSettingsSheet?.dismiss()
         previewSettingsSheet = nil
         cancelPendingDataExport()
-        cancelProfileNameEditor()
+        cancelSpaceNameEditor()
         shortcutsPane.endRecording()
         searchGeneration &+= 1; searchPreferences = nil
         cancelDownloadFolderSelection()
@@ -1080,26 +1106,12 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         panel.cancel(nil)
     }
 
-    private func showProfileRemoval() {
-        guard let window, window.attachedSheet == nil,
-              let profile = store.state.profiles.first(where: { $0.id == displayedProfileID }) else { return }
-        let controller = ProfileRemovalController.shared
-        if controller.status(for: profile.id)?.running == true {
-            controller.cancel(profileID: profile.id)
+    private func showSpaceDeletion() {
+        guard let window, window.attachedSheet == nil, let space = editedSpace, let onDeleteSpace else { return }
+        guard onDeleteSpace(space.id) else {
+            PArcDialog.inform(in: window, .init(title: "Parc couldn’t delete this Space.",
+                message: "Its window is unavailable or busy. Finish its current operation and try again."))
             return
-        }
-        if store.isProfileRemovalPending(profile.id) {
-            controller.remove(profileID: profile.id, expectedName: profile.name)
-            return
-        }
-        let summary: ProfileRemovalSummary
-        do { summary = try store.profileRemovalSummary(profile.id) }
-        catch { reportProfileSettingsError(error); return }
-        let tabs = summary.savedTabCount, entries = summary.historyEntryCount
-        PArcDialog.confirm(in: window, title: "Delete your “\(profile.name)” Profile?",
-                          message: "This permanently removes the Profile’s cookies, history, preferences and logins, plus its \(tabs) saved \(tabs == 1 ? "tab" : "tabs") and \(entries) local history \(entries == 1 ? "entry" : "entries"). Saved captures, downloaded files and Easels stay on this Mac.",
-                          confirm: "Delete", destructive: true) { approved in
-            if approved { ProfileRemovalController.shared.remove(profileID: profile.id, expectedName: profile.name) }
         }
     }
 
@@ -1107,35 +1119,78 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         guard !isClosing, let window, window.isVisible, window.isKeyWindow, window.attachedSheet == nil else { return }
         for profile in store.state.profiles {
             guard let status = ProfileRemovalController.shared.claimFailure(for: profile.id) else { continue }
-            PArcDialog.inform(in: window, .init(title: "Parc couldn’t delete “\(profile.name)”.", message: status.message))
+            PArcDialog.inform(in: window, .init(title: "Parc couldn’t finish removing old data.", message: status.message))
             return
         }
     }
 
-    private func showProfileNameEditor() {
-        guard let window, window.attachedSheet == nil, profileNameDialog == nil,
-              let profile = store.state.profiles.first(where: { $0.id == displayedProfileID }) else { return }
-        let dialog = PArcDialog(.init(title: [("Rename your Profile", false)],
-            message: [("This won’t affect the names of any of the Spaces associated with this Profile.", false)],
-            confirm: "Save", cancel: "Cancel", field: .init(value: profile.name, placeholder: "Profile name")))
+    private func renderShareData(_ edited: BrowserSpace?, removing: Bool) {
+        shareData.menu?.removeAllItems()
+        shareChoices = []
+        func add(_ title: String, choice: SpaceDataSharing?, checked: Bool = false, enabled: Bool = true) {
+            let item = NSMenuItem(title: title, action: choice == nil ? nil : #selector(shareDataChosen(_:)), keyEquivalent: "")
+            item.target = self
+            if let choice { item.tag = shareChoices.count; shareChoices.append(choice) }
+            item.state = checked ? .on : .off
+            item.isEnabled = enabled
+            shareData.menu?.addItem(item)
+        }
+        guard let edited else {
+            add("Keep separate", choice: nil, enabled: false)
+            shareData.isEnabled = false
+            return
+        }
+        let sharing = store.spaceSharing(of: edited.id)
+        let others = store.state.spaces.filter { $0.id != edited.id }
+        add(sharing.isEmpty ? "Keep separate" : sharing.map(\.name).joined(separator: ", "), choice: nil)
+        for other in others {
+            add(other.name, choice: .share(withSpace: other.id), checked: other.profileID == edited.profileID,
+                enabled: !store.isProfileRemovalPending(other.profileID))
+        }
+        if !others.isEmpty { shareData.menu?.addItem(.separator()) }
+        add("Keep separate", choice: .separate, checked: sharing.isEmpty)
+        shareData.isEnabled = !removing && !others.isEmpty
+        shareData.setAccessibilityHelp(others.isEmpty ? "Add another Space to share data between Spaces." : nil)
+    }
+
+    @objc private func shareDataChosen(_ sender: NSMenuItem) {
+        guard let window, window.attachedSheet == nil, let space = editedSpace,
+              shareChoices.indices.contains(sender.tag) else { return }
+        let revision = lifecycleRevision
+        SpaceSharingConfirmation.present(on: window, store: store, spaceID: space.id, sharing: shareChoices[sender.tag],
+            ownerValid: { [weak self] in
+                guard let self else { return false }
+                return !self.isClosing && self.lifecycleRevision == revision && self.editedSpace?.id == space.id
+            }, completion: { [weak self] result in
+                guard let self, !self.isClosing, self.lifecycleRevision == revision else { return }
+                if case .failure(let error) = result { self.reportProfileSettingsError(error) }
+                self.refresh()
+            })
+    }
+
+    private func showSpaceNameEditor() {
+        guard let window, window.attachedSheet == nil, spaceNameDialog == nil, let space = editedSpace,
+              !store.isProfileRemovalPending(space.profileID) else { return }
+        let dialog = PArcDialog(.init(title: [("Rename Space", false)], confirm: "Save", cancel: "Cancel",
+            field: .init(value: space.title ?? "", placeholder: space.name, required: false)))
         guard let field = dialog.textField else { return }
-        field.setAccessibilityLabel("Profile name")
-        profileNameDialog = (dialog, profile.id)
+        field.setAccessibilityLabel("Space name")
+        spaceNameDialog = (dialog, space.id)
         let began = dialog.begin(for: window) { [weak self, weak dialog] response in
             guard let self else { return }
-            if self.profileNameDialog?.dialog === dialog { self.profileNameDialog = nil }
+            if self.spaceNameDialog?.dialog === dialog { self.spaceNameDialog = nil }
             if response == .confirm {
-                do { try self.store.saveProfileName(profile.id, expectedName: profile.name, name: field.stringValue) }
-                catch { self.reportProfileSettingsError(error) }
+                do { try self.store.saveSpaceTitle(space, title: field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                catch { if (error as NSError).code != CocoaError.userCancelled.rawValue { self.reportProfileSettingsError(error) } }
             }
             self.refresh()
         }
-        if !began { profileNameDialog = nil }
+        if !began { spaceNameDialog = nil }
     }
 
-    private func cancelProfileNameEditor() {
-        guard let editing = profileNameDialog else { return }
-        profileNameDialog = nil
+    private func cancelSpaceNameEditor() {
+        guard let editing = spaceNameDialog else { return }
+        spaceNameDialog = nil
         let panel = editing.dialog.panel
         panel.sheetParent?.endSheet(panel, returnCode: .cancel)
         panel.orderOut(nil)
@@ -1164,13 +1219,13 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         NSApp.sendAction(#selector(AppDelegate.replayOnboarding(_:)), to: NSApp.delegate, from: self)
     }
 
-    private var showsProfileEditor: Bool {
-        if case .profile(let id)? = shownDestination { return id == selectedProfileID }
+    private var showsSpaceEditor: Bool {
+        if case .space(let id)? = shownDestination { return id == selectedSpaceID }
         return false
     }
 
     private func openProfileSettingsPage(_ page: ProfileSettingsPage) {
-        guard page == .search ? selectedPane == .general : (selectedPane == .profiles && showsProfileEditor),
+        guard page == .search ? selectedPane == .general : (selectedPane == .spaces && showsSpaceEditor),
               window?.isKeyWindow == true, window?.attachedSheet == nil else { return }
         guard let space = page == .search ? settingsContextSpace() : profilePageSpace(),
               onProfileSettingsPage?(space.id, space.profileID, page) == true else {
@@ -1183,7 +1238,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private func reportSettingsCommandRefusal(_ title: String) {
         guard let window, window.attachedSheet == nil else { return }
         PArcDialog.inform(in: window, .init(title: "Parc couldn’t open " + title.trimmingCharacters(in: CharacterSet(charactersIn: "…")) + ".",
-            message: "The original window or profile is unavailable or busy. Finish its current operation and try again."))
+            message: "The original window is unavailable or busy. Finish its current operation and try again."))
     }
 
     private func settingsContextSpace() -> BrowserSpace? {
@@ -1202,7 +1257,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     func permitsProfilePage(in ownerStore: BrowserStore, spaceID: UUID, profileID: UUID) -> Bool {
         (selectedPane == .general
             ? settingsContextSpace()?.id == spaceID
-            : selectedPane == .profiles && showsProfileEditor && selectedProfileID == profileID && profilePageSpace()?.id == spaceID)
+            : selectedPane == .spaces && showsSpaceEditor && profilePageSpace()?.id == spaceID)
             && permitsPage(in: ownerStore, spaceID: spaceID, profileID: profileID)
     }
 
@@ -1212,7 +1267,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         if onMoreSettings(space.id, space.profileID) { _ = attemptClose(); return }
         guard let window else { return }
         PArcDialog.inform(in: window, .init(title: "Parc couldn’t open more settings.",
-            message: "The original window or profile is busy. Finish its current operation and try again."), queued: true)
+            message: "The original window is busy. Finish its current operation and try again."), queued: true)
     }
 
     private func cancelDownloadFolderSelection() {
@@ -1315,77 +1370,19 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             } catch { self.reportDownloadPreferenceError(error) }
         }
     }
-    private func createProfile() {
-        guard let window, window.attachedSheet == nil else { return }
-        let revision = lifecycleRevision
-        let spaceID = displayedSpaceID
-        let originalSpace = store.state.spaces.first { $0.id == spaceID }
-        let dialog = PArcDialog(.init(title: [("New local profile", false)],
-            message: [(spaceID == nil
-                ? "A profile keeps its own cookies and website sessions. You can assign it to a regular Space later."
-                : "A profile keeps its own cookies and website sessions. This Space will use the new profile.", false)],
-            confirm: "Create", cancel: "Cancel", field: .init(value: "", placeholder: "Profile name")))
-        guard let field = dialog.textField else { return }
-        field.setAccessibilityLabel("New profile name")
-        _ = dialog.begin(for: window) { [weak self, weak window] response in
-            guard let self, let window, self.window === window, window.isVisible,
-                  !self.isClosing, self.lifecycleRevision == revision,
-                  response == .confirm else { return }
-            let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty else { return }
-            do {
-                let id = try self.store.createProfilePersisted(name: name)
-                self.selectedProfileID = id
-                if let originalSpace {
-                    self.store.assignProfile(id, toSpace: originalSpace.id, shouldCommit: { [weak self, weak window] in
-                        guard let self, let window else { return false }
-                        return self.window === window && window.isVisible && !self.isClosing
-                            && self.lifecycleRevision == revision && self.displayedSpaceID == originalSpace.id
-                            && self.store.state.spaces.contains { $0.id == originalSpace.id && $0.profileID == originalSpace.profileID }
-                    }, completion: { [weak self] result in
-                        guard let self, self.lifecycleRevision == revision, !self.isClosing else { return }
-                        if case .failure(let error) = result { self.reportProfileSettingsError(error) }
-                        self.refresh()
-                    })
-                }
-                self.refresh()
-                try self.store.saveSettingsSelection(pane: self.selectedPane.rawValue, profileID: id)
-                self.show(.profile(id), persist: false)
-            } catch { self.reportProfileSettingsError(error) }
-        }
+    private func createSpace() {
+        guard window?.attachedSheet == nil, attemptClose() else { return }
+        DispatchQueue.main.async { NSApp.sendAction(NSSelectorFromString("createSpace:"), to: nil, from: nil) }
     }
+
     @objc private func archiveChanged() {
-        guard let window, window.attachedSheet == nil, let profileID = displayedProfileID,
-              profileID == selectedProfileID, !store.isProfileRemovalPending(profileID),
+        guard let window, window.attachedSheet == nil, let space = editedSpace,
+              !store.isProfileRemovalPending(space.profileID),
               let hours = archive.selectedItem?.representedObject as? Double,
               let interval = AutoArchiveInterval(rawValue: hours),
               AutoArchiveInterval.settingsChoices.contains(interval) else { refresh(); return }
-        do {
-            guard let change = try store.changeAutoArchiveInterval(interval, for: profileID) else { return }
-            var content = PArcDialog.Content(title: "Parc will now archive your tabs after \(interval.durationTitle)",
-                message: "Would you like to apply this change to all of your Profiles, or only your \(change.profileName) Profile?",
-                confirm: "All Profiles")
-            content.secondary = "Only this Profile"
-            let dialog = PArcDialog(content)
-            archiveScopeChange = change; archiveScopeAlert = dialog
-            _ = dialog.begin(for: window) { [weak self, weak dialog, weak window] response in
-                guard let self, let dialog, self.archiveScopeAlert === dialog,
-                      self.window === window else { return }
-                self.archiveScopeAlert = nil; self.archiveScopeChange = nil
-                guard response == .confirm,
-                      self.displayedProfileID == change.profileID,
-                      self.selectedProfileID == change.profileID else { return }
-                do { try self.store.applyAutoArchiveIntervalToAllProfiles(change) }
-                catch { self.refresh(); self.reportProfileSettingsError(error) }
-            }
-        } catch { refresh(); reportProfileSettingsError(error) }
-    }
-
-    private func cancelArchiveScopeSheet() {
-        guard let dialog = archiveScopeAlert else { return }
-        archiveScopeAlert = nil; archiveScopeChange = nil
-        dialog.panel.sheetParent?.endSheet(dialog.panel, returnCode: .cancel)
-        dialog.panel.orderOut(nil)
+        do { try store.setAutoArchiveInterval(interval, forSpace: space.id) }
+        catch { refresh(); reportProfileSettingsError(error) }
     }
 
     @objc private func showArchiveInformation() {
@@ -1393,7 +1390,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         if archiveInfoPopover?.isShown == true { archiveInfoPopover?.close(); return }
         let controller = NSViewController()
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 126))
-        let text = NSTextField(wrappingLabelWithString: "Parc automatically archives inactive Today tabs after this Profile’s selected interval. Pinned tabs and Favorites stay put. Find automatically closed tabs in Library → Archive and choose Put Back to restore them.")
+        let text = NSTextField(wrappingLabelWithString: "Parc automatically archives inactive Today tabs after this Space’s selected interval. Pinned tabs and Favorites stay put. Find automatically closed tabs in Library → Archive and choose Put Back to restore them.")
         text.font = .systemFont(ofSize: 12)
         text.frame = content.bounds.insetBy(dx: 14, dy: 14)
         content.addSubview(text); controller.view = content

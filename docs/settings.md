@@ -1,19 +1,20 @@
 # Settings and application preferences
 
 Settings is a native window whose sidebar lists your card, then General,
-Profiles, Links, Shortcuts, Icon and Advanced. Back and Forward retrace the pages
-you visited, and Profiles drills into an Edit Profile page. Each pane retains its
+Spaces, Links, Shortcuts, Icon and Advanced. Back and Forward retrace the pages
+you visited, and Spaces drills into an Edit Space page. Each pane retains its
 scroll position and responder while owned. Ordinary Settings entry preserves the
-selected pane; explicit commands can select Profiles or a particular shortcut.
+selected pane; explicit commands can select Spaces or a particular shortcut.
+A pane name saved as Profiles by an earlier version opens Spaces.
 [Presentation](settings-presentation.md), [motion](settings-motion.md) and the
 [local card](settings-membership-card.md) have focused guides.
 
-## General and Profiles command inventory — SET21
+## General and Spaces command inventory — SET21
 
 | Pane | Current controls |
 |---|---|
 | General | Default browser, Warn before quitting, Window frame (Adjust), Previews Settings, Search (engine, Manage search, suggestions), Download location, Replay onboarding |
-| Profiles | Profile list with Space counts and New Profile; Edit Profile with rename, automatic archive, native data/settings destinations, Clear Browsing Data and Delete Profile |
+| Spaces | Space list (icon and name) and New Space; a Removing old data row while a background removal runs; Edit Space with rename, Share data with, Archive tabs after, native data/settings destinations, Clear Browsing Data and Delete Space |
 | Links | Ordered Air Traffic Control rules |
 | Shortcuts | Search, bindings, priority, conflict resolution and Reset All |
 | Icon | Available application icons |
@@ -32,67 +33,66 @@ the installed system WebKit build, and WebKit/AVFoundation media information.
 It refreshes the icon on opening and labels missing development metadata rather
 than guessing. Project/source links refer to the actual components.
 
-## Profiles and original-context ownership
+## Spaces and original-context ownership
 
-Selecting a Profile for editing does not reassign a Space. **Use for this Space**
-uses the explicit, always-confirmed reassignment transaction for the originating
-Space. New Profile follows its create-and-assign flow; app-owned Settings with
-no regular Space can create an unassigned Profile. See
-[Space management](space-management.md#profile-assignment-dependency).
+The Spaces pane lists every Space with its icon and name. **New Space…** closes
+Settings and then sends the app's New Space action, so the browser window that
+becomes frontmost shows the creation form. Choosing a Space saves it as the editing
+Space, then opens Edit Space; reopening Settings on Spaces shows the list. The
+Auto-Archive education banner opens Edit Space for the Space it was shown in. The
+selected pane and editing Space are session fields with backward-compatible optional
+decoding. An unavailable selection falls back to the originating Space, then the
+first Space. Selection saves atomically before adoption; failure leaves the old
+selection.
 
-Choosing a Profile in the list saves it as the editing Profile, then opens Edit
-Profile; reopening Settings on Profiles shows the list. Archive education opens Edit
-Profile directly. The selected pane and
-editing Profile are session fields with backward-compatible optional decoding. An unavailable saved selection falls back to the originating
-Space's Profile, then the first available Profile. Selection saves atomically
-before adoption; failure leaves the old selection.
+Edit Space holds:
 
-Rename retains UUID, native storage path and all references. It trims outer
-whitespace, rejects empty names and compares the original name before commit,
-preventing a concurrent rename from being overwritten. Return saves; Escape,
-window closure or Profile loss cancels. Failed writes preserve the draft.
+- **Space Name** with Rename, which follows the Space rename rules: an empty name
+  returns to the positional Space N, and a competing rename or a failed write keeps
+  the authoritative name.
+- **Share data with**, a menu of every other Space plus Keep separate. Checkmarks
+  mark the Spaces that already share data with this one. Choosing what the Space
+  already has does nothing. Anything else asks the same confirmation as the Space
+  menu and moves the Space; see
+  [Space management](space-management.md#sharing-data-between-spaces).
+- **Archive tabs after** for this Space alone, with no all-Spaces question.
+- Privacy and Security, Passwords, Credit Cards and Notifications, which open the
+  edited Space's browser settings, and **Clear Browsing Data…**.
+- **Delete Space…**, the same flow as the Space menu (see
+  [Delete Space](space-management.md#delete-space)); the last Space cannot be
+  deleted. The confirmation appears over Settings, then the browser window comes
+  forward for the retirement.
 
-### Profile removal
+While old data is being deleted in the background after a share, Keep separate or
+Space deletion, the Spaces pane shows **Removing old data…**. If it stops, the row
+offers **Retry**, and a failure is reported once in a Parc dialog. Closing Settings
+never cancels the removal.
 
-Any Profile with no assigned Spaces can be deleted, including the Default one.
-Default is a UUID setting, not the editable name, and nothing protects it. Staging
-picks a surviving Profile that still has a Space (Default first, then the active
-Space's Profile), records it on the removal record and, in the same save, moves
-Default and the Settings selection to it when they pointed at the removed
-Profile. Records saved before survivors were recorded use Default. The confirmation
-shows the original Profile's saved-tab/history counts and explains permanent
-browser-data removal in a standard Delete/Cancel dialog; no name is typed.
-Downloaded files and app-global Easel documents remain.
+### Background data removal
 
-`ProfileRemovalController` owns the process-wide operation; Settings owns only
-its confirmation. Before native preparation, the store atomically records operation and
-Profile UUIDs. Pending Profiles cannot be renamed or assigned, and their native
-preference controls stop requesting the retiring context.
+Data left without a Space is removed through `ProfileRemovalController`. Before
+native preparation, the store atomically records the operation, picks a surviving
+data set that still has a Space (the default first, then the active Space's), and moves
+the default and Settings selection to it when they pointed at the removed one.
+Pending data cannot be renamed or assigned, and its native preference controls stop
+requesting the retiring context.
 
 The native lease binds the removed and the recorded survivor's storage paths
 and the operation identity; preparation and restart recovery pass the same
 survivor path, because the native journal stores it. Its
-last revalidation checks the current Profile/name and absence of assigned Spaces.
+last revalidation checks the current name and absence of assigned Spaces.
 Only a native `removed` receipt permits metadata deletion. `failed` releases an
 operation only before irreversible cleanup; `pending` retains it for retry.
 Committed cleanup and restart recovery outlive the sheet. A failed final metadata
 write preserves the operation so retry can consume the same native receipt.
 
-Completion removes the selected Profile's tabs, local history, download records
-and related selection/split references, then selects the survivor. It preserves other
-Profiles, downloaded files, routing destination UUIDs and app-global Easels.
-See [removal presentation and recovery](settings-profile-removal.md).
+Completion removes the data's tabs, local history, download records and related
+selection/split references, then selects the survivor. It preserves other data sets,
+downloaded files, routing destination UUIDs and app-global Easels. See
+[removal presentation and recovery](settings-profile-removal.md).
 
-### Unused-profile cleanup
-
-Bulk cleanup fixes a UUID/name set of eligible unassigned Profiles, sharing one survivor.
-Later-created Profiles are not added, and a changed name, assignment or failed
-durable save rejects new authorization. Settings has no bulk entry point yet.
-
-All new operation records stage atomically, then each Profile uses the same
-native removal/recovery transaction. Results stay per Profile: one failure does
-not hide or undo another success. Retry reuses operation IDs and skips completed
-members.
+Bulk cleanup of several unused data sets shares one survivor and fixes the set up
+front; later-created ones are not added. Settings has no bulk entry point.
 
 ## Search and downloads
 
@@ -121,13 +121,11 @@ disable the picker. Callbacks validate window and preference identity, and
 leaving General or closing Settings cancels an open folder panel.
 See [downloads](download-library.md).
 
-Automatic archive keeps its per-Profile control, application-to-all-Profile
-scope and new-Profile default; each Space now has its own interval, and changing
-a Profile's interval sets every Space on it (see
-[Space management](space-management.md#sharing-data-between-spaces)). Education is consumed by actual automatic archival;
-its Settings link selects the original Profile. See [archive](archive.md).
+Automatic archive is a per-Space interval saved when chosen. Education is consumed
+by actual automatic archival; its Settings link opens Edit Space for the original
+Space. See [archive](archive.md).
 
-| Profile action | Native destination | Reuse policy |
+| Space action | Native destination | Reuse policy |
 |---|---|---|
 | Privacy and Security | `parc://settings/privacy` | Exact subpage |
 | Passwords | `parc://password-manager/passwords` | Keep existing credential detail/authentication |
@@ -135,8 +133,8 @@ its Settings link selects the original Profile. See [archive](archive.md).
 | Notifications | `parc://settings/content/notifications` | Exact subpage |
 | Clear Browsing Data | `parc://settings/clearBrowserData` | Exact dialog; opening erases nothing |
 
-Each Edit Profile action resolves an existing Space in the selected Profile, preferring the
-originating Space; Manage search uses the originating Space. Missing, retiring or unassigned Profiles refuse. The original
+Each Edit Space action acts on the edited Space; Manage search uses the originating
+Space. Missing or retiring Spaces refuse. The original
 Settings/browser owner remains the destination when another window becomes
 frontmost. Normal security, close/transfer and sheet gates still apply. Success
 closes Settings; refusal leaves it open with feedback.
@@ -375,9 +373,9 @@ disables Back and Forward; refused changes leave the old pane and sidebar
 selection intact. Controls follow their visible group order and native
 keyboard eligibility; labels are not extra key stops.
 
-Each pane remembers a weak original responder; Profiles includes its UUID and
+Each pane remembers a weak original responder; Spaces includes its UUID and
 text fields retain their native selection. Sheet return restores only the same
-eligible context. Removed Profiles return to the list. Hidden, disabled, detached,
+eligible context. Removed Spaces return to the list. Hidden, disabled, detached,
 closed, non-key or inactive owners cannot steal focus. Closing cancels unanswered
 panels, input/preview subscriptions and old callbacks; approved exports and
 committed removals keep their established operation lifetimes.
@@ -387,6 +385,6 @@ committed removals keep their established operation lifetimes.
 Existing checks include `test-settings-commands.sh`, `test-quit-warning.sh`,
 `test-default-browser.sh`, shortcut component scripts, `tests/WebsiteTheme`,
 `tests/SettingsFocus`, and the file-backed store/controller suites. Follow
-[AGENTS.md](../AGENTS.md) before running them. Profile-removal fixtures use native
+[AGENTS.md](../AGENTS.md) before running them. Background-removal fixtures use native
 boundary doubles and disposable stores. Concrete routing work belongs in the
 [routing guide](routing-interaction.md) and [backlog](backlog.md).

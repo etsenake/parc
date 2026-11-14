@@ -84,16 +84,28 @@ import AppKit
             "the header adds no keyboard stop of its own, so Tab moves straight to the item list")
         var selected = 0
         let menu = SidebarSpaceMenu(includesManagement: true, changeIcon: {},
-            profiles: [("Default", true, {}), ("Work", false, { selected += 1 }), ("Retiring", false, nil)],
+            shareData: [("Work", true, {}), ("Play", false, { selected += 1 }), ("Retiring", false, nil)],
+            keepSeparate: (selected: false, action: { selected += 100 }),
             rename: {}, editTheme: {}, newFolder: {}, toggleTitle: nil, toggleHeader: nil)
         let native = menu.makeMenu()
-        try check(native.items.map(\.title) == ["Change Space Icon…", "Rename Space…", "Edit Theme Color…", "Set Profile", "New Folder", "Delete Space", "Manage Spaces…"], "menu order and titles")
-        let profiles = native.item(withTitle: "Set Profile")!.submenu!
-        try check(profiles.items[0].state == .on && !profiles.items[2].isEnabled, "profile identity and retirement availability")
-        profiles.performActionForItem(at: 1)
+        try check(native.items.map(\.title) == ["Change Space Icon…", "Rename Space…", "Edit Theme Color…", "Share data with", "New Folder", "Delete Space", "Manage Spaces…"], "menu order and titles")
+        let sharing = native.item(withTitle: "Share data with")!.submenu!
+        try check(sharing.items.map(\.title) == ["Work", "Play", "Retiring", "", "Keep separate"], "each other Space, a separator and Keep separate")
+        try check(sharing.items[0].state == .on && sharing.items[1].state == .off && sharing.items[4].state == .off && !sharing.items[2].isEnabled,
+                  "checkmarks show who shares and retirement availability")
+        sharing.performActionForItem(at: 1)
         try check(selected == 1, "native submenu reaches actual action")
-        try check(menu.accessibilityActions.contains { $0.name == "Set Profile: Work" }, "profile choice is keyboard-independent AX action")
-        try check(!menu.accessibilityActions.contains { $0.name == "Set Profile: Retiring" }, "unavailable profile omitted from AX actions")
+        sharing.performActionForItem(at: 4)
+        try check(selected == 101, "Keep separate reaches its action")
+        try check(menu.accessibilityActions.contains { $0.name == "Share data with Play" }, "Space choice is keyboard-independent AX action")
+        try check(menu.accessibilityActions.contains { $0.name == "Keep separate" }, "Keep separate is an AX action")
+        try check(!menu.accessibilityActions.contains { $0.name == "Share data with Retiring" }, "unavailable Space omitted from AX actions")
+        try check(!native.items.contains { $0.title.contains("Profile") } && !sharing.items.contains { $0.title.contains("Profile") }, "the menu never says Profile")
+        let alone = SidebarSpaceMenu(includesManagement: true, changeIcon: {}, keepSeparate: (selected: true, action: {}),
+                                     rename: {}, editTheme: {}, newFolder: {}, toggleTitle: nil, toggleHeader: nil).makeMenu()
+        let aloneChoices = alone.item(withTitle: "Share data with")!.submenu!
+        try check(aloneChoices.items.map(\.title) == ["Keep separate"] && aloneChoices.items[0].state == .on, "a lone Space only offers a checked Keep separate")
+        selected = 0
         header.onRenameSpace = { selected += 10 }
         header.managementMenu = { nil }
         try check(header.makeMenu().items.isEmpty && header.nameField.accessibilityCustomActions()?.isEmpty == true,

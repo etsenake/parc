@@ -1771,12 +1771,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return available
     }
 
+    private var spaceStateAvailable: Bool {
+        !isPopupWindow && presentation.isReady && !isClosing && !wholeWindowClose
+            && !windowClosePending && !windowCloseApproved && nativeFullscreenTabID == nil
+            && transferringTabIDs.isEmpty && resolvingTransfers.isEmpty
+            && closingTabIDs.isEmpty && modelRetirementIDs.isEmpty && peekRetirementParents.isEmpty
+            && tabSwitcher == nil && themePopover == nil
+    }
     private var spaceCommandsAvailable: Bool {
-        guard !isPopupWindow, presentation.isReady, !isClosing, !wholeWindowClose,
-              !windowClosePending, !windowCloseApproved, nativeFullscreenTabID == nil,
-              transferringTabIDs.isEmpty, resolvingTransfers.isEmpty,
-              closingTabIDs.isEmpty, modelRetirementIDs.isEmpty, peekRetirementParents.isEmpty,
-              tabSwitcher == nil, themePopover == nil, ownsSpaceCommandFocus,
+        guard spaceStateAvailable, ownsSpaceCommandFocus,
               let window, window.attachedSheet == nil else { return false }
         return PCNativeBrowserApplication.canPresentTabSwitcher(in: window)
     }
@@ -3861,8 +3864,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         sidebar.onAutoArchiveEducationSettings = { [weak self] in
             guard mayAct(), let self else { return }
-            self.showSettings(pane: .profiles)
-            guard self.settings?.showAutoArchiveSettings(profileID: originalProfile) == true else { return }
+            self.showSettings(pane: .spaces)
+            guard self.settings?.showAutoArchiveSettings(spaceID: originalSpace) == true else { return }
             self.store.dismissAutoArchiveEducation()
             self.refreshSidebarBanners()
         }
@@ -5569,7 +5572,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.presentation.recordCreation(id, state: self.store.state)
             }
         }
-        panel.onSearchSettings = { [weak self] in if isOriginal() { self?.showSettings(pane: .profiles) } }
+        panel.onSearchSettings = { [weak self] in if isOriginal() { self?.showSettings(pane: .spaces) } }
         panel.onDismiss = { [weak self, weak panel] in
             guard let self else { return }
             if resident {
@@ -6254,7 +6257,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             switch pane {
             case .account: destination = .membership
             case .general: destination = .general
-            case .profiles: destination = .profiles
+            case .profiles: destination = .spaces
             case .shortcuts: destination = .shortcuts
             case .links: destination = .links
             case .appIcon: destination = .icon
@@ -6345,37 +6348,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func renameActiveSpace() {
         guard canRenameActiveSpace else { return }
         renameSpace(activeSpaceID)
-    }
-    var canCreateProfile: Bool {
-        !isPrivateBrowsing && spaceCommandsAvailable && window?.attachedSheet == nil
-    }
-    private func newProfile(for spaceID: UUID) {
-        guard canCreateProfile, let expected = managementSpace(spaceID) else { return }
-        commandBar?.dismiss()
-        guard canCreateProfile, managementSpace(spaceID, profileID: expected.profileID) != nil,
-              let window else { return }
-        let dialog = PArcDialog(.init(title: [("New local profile", false)],
-            message: [("A profile keeps its own cookies and website sessions. This Space will use the new profile.", false)],
-            confirm: "Create", cancel: "Cancel", field: .init(value: "", placeholder: "Profile name")))
-        guard let field = dialog.textField else { return }
-        field.setAccessibilityLabel("New profile name")
-        _ = dialog.begin(for: window) { [weak self, weak window] response in
-            guard let self, let window, response == .confirm,
-                  self.managementSpace(spaceID, profileID: expected.profileID) != nil else { return }
-            let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty else { return }
-            do {
-                let id = try self.store.createProfilePersisted(name: name)
-                self.store.assignProfile(id, toSpace: spaceID, shouldCommit: { [weak self] in
-                    self?.managementSpace(spaceID, profileID: expected.profileID) != nil
-                }, completion: { [weak window] result in
-                    guard case .failure(let error) = result, let window else { return }
-                    PArcDialog.inform(in: window, .init(error: error, title: "Parc couldn’t switch this Space to the new profile."))
-                })
-            } catch {
-                PArcDialog.inform(in: window, .init(error: error, title: "Parc couldn’t create this profile."))
-            }
-        }
     }
     var canOpenPageInNewTab: Bool {
         presentation.isReady && !isClosing && !wholeWindowClose && !isPrivateBrowsing && !isPopupWindow
@@ -8606,7 +8578,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func nativeBrowserFocusAddress(_ browser: PCNativeBrowserWindow) { if browser === nativeBinding { focusAddress() } }
     func nativeBrowserShowTabSearch(_ browser: PCNativeBrowserWindow) { if browser === nativeBinding { newTab() } }
     func nativeBrowserCloseTabSearch(_ browser: PCNativeBrowserWindow) { if browser === nativeBinding { commandBar?.dismiss() } }
-    func nativeBrowserShowProfiles(_ browser: PCNativeBrowserWindow) { if browser === nativeBinding { showSettings(pane: .profiles) } }
+    func nativeBrowserShowProfiles(_ browser: PCNativeBrowserWindow) { if browser === nativeBinding { showSettings(pane: .spaces) } }
     func nativeBrowser(_ browser: PCNativeBrowserWindow, bookmarkURL url: URL) {
         guard browser === nativeBinding else { return }
         if let peek = activePeek, peek.browser.url == url { promotePeek(peek, split: false) }
@@ -11729,6 +11701,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let self, let settings = self.settings else { return false }
                 return self.showAdvancedSettings(spaceID: spaceID, profileID: profileID, from: settings)
             }
+            settings?.onDeleteSpace = { [weak self] spaceID in
+                guard let self, let sheetWindow = self.settings?.window else { return false }
+                return self.deleteSpace(spaceID, confirmingIn: sheetWindow)
+            }
         }
         if shortcutID != nil, settings?.window?.attachedSheet != nil { return }
         settings?.refresh()
@@ -14209,27 +14185,39 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    private func deleteSpace(_ id: UUID) {
-        guard spaceCommandsAvailable, !folderUndo.isBusy, managementSpace(id) != nil, let window,
+    @discardableResult
+    func deleteSpace(_ id: UUID, confirmingIn sheetWindow: NSWindow? = nil) -> Bool {
+        guard let window, sheetWindow == nil ? spaceCommandsAvailable : (spaceStateAvailable && !isPrivateBrowsing),
+              !folderUndo.isBusy, managementSpace(id) != nil,
               let target = SpaceDeletionTarget(spaceID: id, state: store.state),
-              retirementUnavailableReason?(target.tabIDs) == nil else { return }
+              retirementUnavailableReason?(target.tabIDs) == nil else { return false }
         commandBar?.dismiss(); sidebar.cancelSpaceNameEditing(); spaceIconPicker?.cancel()
         let typed = target.tabs.filter { InternalPage(urlString: $0.savedURL) != nil }
         guard let documents = typed.isEmpty ? [:] : resolveSidebarCopyDestinations?(typed)?.documents,
-              SidebarDocumentReference.validates(target.tabs, references: documents) else { return }
+              SidebarDocumentReference.validates(target.tabs, references: documents) else { return false }
         let wasFocused = activeSpaceID == id, selection = selectedTabIDs, focus = focusedTabID
-        PArcDialog.confirm(in: window, title: "Delete your “\(target.space.name)” Space?",
-                          message: "This will archive all the tabs and folders inside it.",
-                          confirm: "Delete", destructive: true) { [weak self, weak window] approved in
+        let unused = store.unusedProfile(ifDeletingSpace: id)
+        let message = "This will archive all the tabs and folders inside it."
+            + (unused == nil ? "" : " " + SpaceSharingWarning.deletionNote)
+        let dialogWindow = sheetWindow ?? window
+        return PArcDialog.confirm(in: dialogWindow, title: "Delete your “\(target.space.name)” Space?", message: message,
+                                 confirm: "Delete", destructive: true) { [weak self, weak window] approved in
             DispatchQueue.main.async {
-                guard approved, let self, let window, self.window === window,
-                      self.spaceCommandsAvailable, !self.folderUndo.isBusy,
-                      SpaceDeletionTarget(spaceID: id, state: self.store.state) == target else { return }
+                guard approved, let self, let window, self.window === window else { return }
+                if sheetWindow != nil {
+                    window.makeKeyAndOrderFront(nil)
+                }
+                guard self.spaceCommandsAvailable, !self.folderUndo.isBusy,
+                      SpaceDeletionTarget(spaceID: id, state: self.store.state) == target,
+                      self.store.unusedProfile(ifDeletingSpace: id) == unused else { return }
                 self.performSpaceDeletion(target, documents: documents, wasFocused: wasFocused,
                     didCommit: { [weak self] record in
+                        guard unused == nil else { return }
                         self?.registerSpaceDeletionUndo(SpaceUndoOperation(record: record,
                             wasFocused: wasFocused, selection: selection, focus: focus))
-                    }, completion: { _ in })
+                    }, completion: { committed in
+                        if committed, let unused { SpaceSharingConfirmation.handOff(unused) }
+                    })
             }
         }
     }
@@ -14267,6 +14255,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let self else { return false }
             return direction == .undo ? self.store.canUndoSpaceDeletion(operation.record)
                 : operation.record.redoTarget(in: self.store.state) != nil
+                    && self.store.unusedProfile(ifDeletingSpace: operation.record.target.space.id) == nil
         }, isAvailable: { [weak self] direction in
             guard let self, self.windowUndoContextAvailable, operation.record.documentsAreAvailable,
                   operation.record.target.tabIDs.isDisjoint(with: self.store.retiringTabIDs) else { return false }
@@ -14322,27 +14311,27 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let self else { return false }
             return self.spaceCommandsAvailable && self.managementSpace(id, profileID: expected.profileID) != nil
         }
-        var profiles = store.state.profiles.map { profile in
-            (name: profile.name, selected: profile.id == expected.profileID,
-             action: store.isProfileRemovalPending(profile.id) ? nil : { [weak self] in
-                guard let self, valid(), self.store.state.profiles.contains(where: { $0.id == profile.id }) else { return }
-                self.commandBar?.dismiss()
-                guard let window = self.window else { return }
-                SpaceProfileAssignmentConfirmation.present(on: window, store: self.store, space: expected, profile: profile,
-                    ownerValid: { [weak self, weak window] in
-                        guard let self, let window, self.window === window else { return false }
-                        return !self.isClosing && !self.wholeWindowClose && !self.windowClosePending
-                            && !self.windowCloseApproved && self.spaceCreation == nil
-                    }, completion: { [weak self] result in
-                        if case .failure(let error) = result { self?.showError(error) }
-                    })
-             })
+        let choose: (SpaceDataSharing) -> Void = { [weak self] sharing in
+            guard let self, valid() else { return }
+            self.commandBar?.dismiss()
+            guard let window = self.window else { return }
+            SpaceSharingConfirmation.present(on: window, store: self.store, spaceID: id, sharing: sharing,
+                ownerValid: { [weak self, weak window] in
+                    guard let self, let window, self.window === window else { return false }
+                    return !self.isClosing && !self.wholeWindowClose && !self.windowClosePending
+                        && !self.windowCloseApproved && self.spaceCreation == nil
+                }, completion: { [weak self] result in
+                    if case .failure(let error) = result { self?.showError(error) }
+                })
         }
-        profiles.append((name: "New Profile…", selected: false, action: { [weak self] in
-            if valid() { self?.newProfile(for: id) }
-        }))
+        let others = store.state.spaces.filter { $0.id != id }
+        let shareData = others.map { other in
+            (name: other.name, shared: other.profileID == expected.profileID,
+             action: store.isProfileRemovalPending(other.profileID) ? nil : { choose(.share(withSpace: other.id)) } as (() -> Void)?)
+        }
         return SidebarSpaceMenu(includesManagement: true, changeIcon: { [weak self] in if valid() { self?.changeSpaceIcon(id) } },
-            profiles: profiles,
+            shareData: shareData,
+            keepSeparate: (selected: !shareData.contains { $0.shared }, action: { choose(.separate) }),
             delete: store.state.spaces.count > 1 ? { [weak self] in if valid() { self?.deleteSpace(id) } } : nil,
             manage: { [weak self] in if valid() { self?.showLibrary(.spaces) } },
             turnIntoFolder: store.state.spaces.filter { $0.id != id }.map { destination in

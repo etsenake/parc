@@ -17,7 +17,7 @@ grey behind it. Cell text colors follow the row's background style rather than
 the bound-text-field recolor, so an unfocused selection never turns blue.
 
 The first row is your card: a monogram over the card's own palette and your
-display name, which is also that page's title. Then come General, Profiles,
+display name, which is also that page's title. Then come General, Spaces,
 Links, Shortcuts, Icon and Advanced. Keyboard focus starts in the sidebar;
 arrowing through it switches pages without leaving it. Tab moves from the
 sidebar into the page and back.
@@ -28,8 +28,8 @@ Back and Forward are two plain navigational toolbar buttons, which macOS places
 on one glass capsule without a divider. The title is a non-bordered 15-point
 bold toolbar label so it stays off the glass. Command-[ and Command-] reach the
 same history through the menu, which validates them against it. History
-records each page and Edit Profile visit; a removed profile drops out of it and
-a shown removed profile returns to the list. Panes sit below the toolbar, so
+records each page and Edit Space visit; a deleted Space drops out of it and
+a shown deleted Space returns to the list. Panes sit below the toolbar, so
 the header stays solid with no scroll-edge line or hover separator.
 
 ## Pages
@@ -40,11 +40,12 @@ with a note; separators inset 12 points. Section headings are 13-point
 semibold, outside the group. Command rows (Privacy and Security, Passwords,
 Credit Cards, Notifications) show a 20-point badge, the title and a diagonal
 arrow because they open a page in the browser. Pill buttons use a quiet fill;
-Delete Profile uses red text.
+Delete Space uses red text.
 
-Profiles lists every profile with its Space count and a chevron, then New
-Profile. Choosing one opens Edit Profile: the name with Rename, Tabs, Your Data and
-Settings, and Clear Browsing Data and Delete Profile at the bottom right. Rename
+Spaces lists every Space with its icon, name and a chevron, then New Space and,
+while old data is being removed, a Removing old data row with Retry. Choosing a
+Space opens Edit Space: the name with Rename, Share data with, Tabs, Your Data and
+Settings, and Clear Browsing Data and Delete Space at the bottom right. Rename
 keeps Parc's rename dialog.
 
 General groups Warn before quitting, Previews, Search, Downloads and Replay
