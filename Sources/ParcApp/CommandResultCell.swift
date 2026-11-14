@@ -69,7 +69,7 @@ final class CommandResultCell: NSView {
         deleteButton.isHidden = true; addSubview(deleteButton)
         spaceCapsule.wantsLayer = true; spaceCapsule.layer?.cornerRadius = 4
         spaceCapsule.isHidden = !hasContext
-        spaceCapsule.toolTip = spaceAction.map { $0.name + " — " + $0.profileName }
+        spaceCapsule.toolTip = spaceAction.map { $0.detail.isEmpty ? $0.name : $0.name + " — " + $0.detail }
             ?? folderAction.map { $0.name + " — " + $0.detail }
         spaceLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         spaceLabel.lineBreakMode = .byTruncatingTail

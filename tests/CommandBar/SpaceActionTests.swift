@@ -17,10 +17,10 @@ struct SpaceActionTests {
         let original = CommandBarSpaceAction.snapshot(spaces: [first, second, cafe, invalid], profiles: profiles)
         expect(original.count == 3, "Missing profiles never become destinations")
         expect(Set(original.map(\.id)).count == 3, "Identical names retain distinct original identities")
-        expect(original[0].detail == "Personal" && original[1].detail == "Work", "Duplicate names expose profile context")
+        expect(original[0].detail == "Space 1" && original[1].detail == "Space 2", "Duplicate names expose their position")
         expect(original[2].detail.isEmpty, "Unique Space retains the compact reference row")
         expect(CommandBarSpaceAction.matching(original, query: "space").map(\.id) == original.map(\.id), "Generic Space query preserves user order")
-        expect(CommandBarSpaceAction.matching(original, query: "research work").map(\.spaceID) == [second.id], "Profile disambiguation is searchable")
+        expect(CommandBarSpaceAction.matching(original, query: "research").map(\.spaceID) == [first.id, second.id], "Duplicate names both match")
         expect(CommandBarSpaceAction.matching(original, query: "focus on cafe").map(\.spaceID) == [cafe.id], "Word matching and accents preserve actual destination")
         expect(CommandBarSpaceAction.matching(original, query: "  ").isEmpty, "Empty query does not replace recent tab/history behavior")
         expect(CommandBarSpaceAction.matching(original, query: "> space").isEmpty, "No invented command-only trigger")
@@ -42,7 +42,7 @@ struct SpaceActionTests {
         row.frame = NSRect(x: 0, y: 0, width: 745, height: 50)
         row.layoutSubtreeIfNeeded()
         expect(row.subviews.first(where: { $0.toolTip != nil })?.frame.width ?? 0 > 0, "The actual native capsule is laid out")
-        expect(row.accessibilityLabel() == "Focus on, Research, Work", "Native AX exposes full original name/profile")
+        expect(row.accessibilityLabel() == "Focus on, Research, Space 2", "Native AX exposes full original name/position")
         expect(row.isAccessibilityEnabled(), "Available row exposes its native action")
         var presses = 0
         row.onPress = { presses += 1; return true }
@@ -60,8 +60,8 @@ struct SpaceActionTests {
         let longRow = CommandResultCell(title: longTarget.title, detail: longTarget.detail, accessory: "", isTab: false,
             icon: nil, enabled: true, spaceAction: longTarget)
         longRow.frame = NSRect(x: 0, y: 0, width: 220, height: 50); longRow.needsLayout = true; longRow.layoutSubtreeIfNeeded()
-        let profileField = longRow.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == "Personal" }
-        expect((profileField?.frame.width ?? 0) > 0, "A long Space capsule cannot erase duplicate-profile disambiguation")
+        let profileField = longRow.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == "Space 1" }
+        expect((profileField?.frame.width ?? 0) > 0, "A long Space capsule cannot erase duplicate-name disambiguation")
         let disabled = CommandResultCell(title: original[0].title, detail: "", accessory: "", isTab: false,
             icon: nil, enabled: false, spaceAction: original[0])
         disabled.onPress = { presses += 1; return true }

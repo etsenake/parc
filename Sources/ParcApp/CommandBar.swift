@@ -921,8 +921,8 @@ import SwiftUI
             },
             spaceTokens: spaces.map {
                 CommandBarOpenResultsSkip.spaceToken(id: $0.id, name: $0.name,
-                                                     profileName: $0.profileName,
-                                                     needsProfileLabel: $0.needsProfileLabel)
+                                                     position: $0.position,
+                                                     needsPositionLabel: $0.needsPositionLabel)
             },
             folderTokens: folders.map {
                 CommandBarOpenResultsSkip.folderToken(id: $0.id, name: $0.name, detail: $0.detail)
@@ -1621,7 +1621,7 @@ import SwiftUI
         menu.addItem(.separator())
         menu.addItem(MenuAction.item("Learn More") { [weak self] in
             guard let self, self.scopeMenuIsCurrent(lease) else { return }
-            let alert = PArcDialog(.init(title: "Site Search", message: "Type a site's search shortcut, then press Tab to search that site. Space also enters when enabled in your search settings. Use Change Site Search to keep your query and search another site. Removing a site search deletes its saved shortcut from this profile; you can add it again in Manage. Press Escape to return to your original address.", confirm: "Done"))
+            let alert = PArcDialog(.init(title: "Site Search", message: "Type a site's search shortcut, then press Tab to search that site. Space also enters when enabled in your search settings. Use Change Site Search to keep your query and search another site. Removing a site search deletes its saved shortcut from this Space; you can add it again in Manage. Press Escape to return to your original address.", confirm: "Done"))
             self.presentScopeAlert(alert, lease: lease) { _ in }
         })
         scopeMenu = menu
@@ -1671,7 +1671,7 @@ import SwiftUI
         }
         if lease.requiresRemovalConfirmation {
             let alert = PArcDialog(.init(title: "Remove “\(lease.activeScope.name)” Site Search?",
-                message: "This removes the saved search shortcut from this profile.", confirm: "Remove", cancel: "Cancel"))
+                message: "This removes the saved search shortcut from this Space.", confirm: "Remove", cancel: "Cancel"))
             presentScopeAlert(alert, lease: lease) { [weak self] response in
                 if response == .confirm { remove(true) }
                 else { self?.restoreScopeSelection(editing.selection) }

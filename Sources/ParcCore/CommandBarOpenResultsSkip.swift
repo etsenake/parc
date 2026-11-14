@@ -20,8 +20,8 @@ enum CommandBarOpenResultsSkip {
         [id, title, group].joined(separator: "\u{1f}")
     }
 
-    static func spaceToken(id: String, name: String, profileName: String, needsProfileLabel: Bool) -> String {
-        [id, name, profileName, needsProfileLabel ? "1" : "0"].joined(separator: "\u{1f}")
+    static func spaceToken(id: String, name: String, position: Int, needsPositionLabel: Bool) -> String {
+        [id, name, String(position), needsPositionLabel ? "1" : "0"].joined(separator: "\u{1f}")
     }
 
     static func folderToken(id: String, name: String, detail: String) -> String {

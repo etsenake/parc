@@ -194,7 +194,7 @@ import AppKit
                && !accent(dark).contains { near($0, rgba(plainCell.selectedColor, dark), 0.05) }, "no system-accent cell default")
 
         let longSpace = CommandBarSpaceAction(spaceID: UUID(), profileID: UUID(), name: "Personal Projects", symbol: "briefcase",
-                                              profileName: "Work Profile", needsProfileLabel: true)
+                                              position: 2, needsPositionLabel: true)
         let longCell = CommandResultCell(title: "Focus on", detail: longSpace.detail, accessory: "", isTab: false, icon: nil,
                                          enabled: true, spaceAction: longSpace)
         longCell.frame = NSRect(x: 0, y: 0, width: 600, height: 50); surface.addSubview(longCell); longCell.layoutSubtreeIfNeeded()
@@ -212,7 +212,7 @@ import AppKit
         window.appearance = light; command.layoutSubtreeIfNeeded()
         expect(near(rgba(tile(command)?.layer?.backgroundColor), SIMD4(0, 0, 0, 0.05)), "light tile after an appearance change")
         let space = CommandBarSpaceAction(spaceID: UUID(), profileID: UUID(), name: "Work", symbol: "briefcase",
-                                          profileName: "Personal", needsProfileLabel: false)
+                                          position: 1, needsPositionLabel: false)
         let spaceCell = CommandResultCell(title: "Focus on", detail: "", accessory: "", isTab: false, icon: nil, enabled: true,
                                           spaceAction: space)
         spaceCell.frame = NSRect(x: 0, y: 0, width: 600, height: 50); surface.addSubview(spaceCell)

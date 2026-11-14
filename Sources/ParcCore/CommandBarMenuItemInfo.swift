@@ -60,7 +60,6 @@ struct CommandBarMenuItemInfo: Equatable, Sendable {
         "networkInspector:": .init(triggers: ["Network Inspector"]),
         "newBlankWindow:": .init(triggers: ["Create Window"]),
         "newIncognitoWindow:": .init(triggers: ["Create Incognito Window", "New Private Window", "Incognito"]),
-        "newProfile:": .init(triggers: ["Profile"]),
         "newWindow:": .init(triggers: ["Create Window", "Copy Window", "Duplicate Window"]),
         "nextSpace:": .init(triggers: ["Focus Next Space"]),
         "openSpaceManager:": .init(triggers: ["Space Management", "Organize", "Toggle Space Manager", "View Spaces"]),

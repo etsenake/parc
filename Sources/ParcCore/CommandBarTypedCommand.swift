@@ -37,7 +37,7 @@ struct CommandBarTypedCommand: Hashable, Sendable {
             switch self {
             case .account: return "Settings"
             case .general: return "Open General Preferences"
-            case .profiles: return "Open Profile Preferences"
+            case .profiles: return "Open Space Preferences"
             case .shortcuts: return "Edit Keyboard Shortcuts"
             case .links: return "Open Link Preferences"
             case .appIcon: return "Open App Icon"
@@ -87,7 +87,7 @@ struct CommandBarTypedCommand: Hashable, Sendable {
     }
     enum Kind: Hashable, Sendable {
         case undo(String), redo(String)
-        case pinToSpace(UUID, name: String, profileName: String? = nil)
+        case pinToSpace(UUID, name: String, position: Int? = nil)
         case pinToNewFolder
         case replacePinWithCurrentPage
         case duplicateCurrentTab
@@ -163,7 +163,7 @@ struct CommandBarTypedCommand: Hashable, Sendable {
     }
 
     var detail: String {
-        if case .pinToSpace(_, _, let profile?) = kind { return profile }
+        if case .pinToSpace(_, _, let position?) = kind { return "Space \(position)" }
         return ""
     }
 
@@ -194,7 +194,7 @@ struct CommandBarTypedCommand: Hashable, Sendable {
 
     var searchPhrases: [String] {
         switch kind {
-        case .pinToSpace(_, _, let profile): return ["move space"] + (profile.map { [$0] } ?? [])
+        case .pinToSpace: return ["move space"]
         case .pinToNewFolder: return ["move folder create"]
         case .replacePinWithCurrentPage: return ["pinned tab url"]
         case .duplicateCurrentTab: return ["copy"]

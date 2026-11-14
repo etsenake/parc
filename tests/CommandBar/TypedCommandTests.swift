@@ -63,7 +63,7 @@ struct TypedCommandTests {
         check(Command.splitCommands(paneCount: 0, vertical: false).isEmpty, "No pane, no split command")
 
         let panes = Command.SettingsPane.allCases
-        check(panes.map(\.title) == ["Settings", "Open General Preferences", "Open Profile Preferences",
+        check(panes.map(\.title) == ["Settings", "Open General Preferences", "Open Space Preferences",
             "Edit Keyboard Shortcuts", "Open Link Preferences", "Open App Icon", "Open Advanced Preferences"],
               "Recovered pane titles in the order")
         check(Command(kind: .settingsPane(.shortcuts)).matches(query: "hotkeys"), "Pane trigger phrase matches")
@@ -94,10 +94,11 @@ struct TypedCommandTests {
         check(Command(kind: .openTaskManager).matches(query: "cpu") && Command(kind: .openTaskManager).matches(query: "memory"),
               "Task Manager triggers")
 
-        let foreignPin = Command(kind: .pinToSpace(space, name: "Work", profileName: "Personal"))
-        check(foreignPin.title == "Pin to Work" && foreignPin.detail == "Personal", "Profile shown beside the Space")
-        check(foreignPin.matches(query: "pin personal"), "Profile name finds it")
-        check(Command(kind: .pinToSpace(space, name: "Work")).detail.isEmpty, "Own Profile shows no label")
+        let foreignPin = Command(kind: .pinToSpace(space, name: "Work", position: 3))
+        check(foreignPin.title == "Pin to Work" && foreignPin.detail == "Space 3", "Duplicate names show their position")
+        check(!foreignPin.matches(query: "pin personal"), "No profile name finds it")
+        check(Command(kind: .pinToSpace(space, name: "Work")).detail.isEmpty, "A unique name shows no label")
+        check(Command(kind: .settingsPane(.profiles)).matches(query: "profile"), "Profile stays a hidden keyword for Space Preferences")
 
         check(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "toggleSidebar:") == 0.5, "Sidebar bump")
         check(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "exportNotes:") == 1.5, "Export Notes bump")
