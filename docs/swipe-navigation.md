@@ -42,7 +42,7 @@ began, so history and POST state behave as they do for the page's own
 Back/Forward. A cancelled swipe never navigates late: a cancelled session
 refuses every commit, an AppKit tracker that ends after a cancel is stopped by
 its generation, and the session ends with the page's renderer view. The
-indicator follows Reduce Motion ([the look](#planned-the-new-look)).
+indicator follows Reduce Motion ([the indicator](#the-indicator)).
 
 ## Windows that aren't in focus
 
@@ -164,14 +164,14 @@ finger movement, a 0.08 row step, and edge stepping every 0.1 seconds within
 travel toward the edge since the list opened, and stops only that far outside
 the zone, so tremor at the zone's boundary neither starts nor stops it.
 
-## Planned: the new look
+## The indicator
 
 [HistorySwipeOverlayView.swift](../Sources/ParcApp/HistorySwipeOverlayView.swift)
 draws the indicator and the list to Dia's values, with the geometry and motion
 as pure functions in
 [HistorySwipeOverlayMotion.swift](../Sources/ParcApp/HistorySwipeOverlayMotion.swift).
-It is made for the forwarder to place over the swiping pane's page and feed
-every recognizer output. It is click-through, hidden from accessibility and
+The forwarder places it over the swiping pane's page and feeds it every
+recognizer output. It is click-through, hidden from accessibility and
 clipped to that pane, so Split and Peek stay correct.
 
 - **Circle:** 72 points across on the system popover material, with a 1-point
