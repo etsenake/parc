@@ -1009,7 +1009,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     self.inputRevisions.removeValue(forKey: tabID)
                 }
                 guard let navigation else {
-                    self.showSearchError(error?.localizedDescription ?? "Search is unavailable for this profile.")
+                    self.showSearchError(error?.localizedDescription ?? "Search is unavailable for this Space.")
                     return
                 }
                 self.openSearchNavigation(navigation, replacing: tabID)
@@ -2537,7 +2537,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         PArcDialog.inform(in: window, .init(error: error), queued: true)
     }
     private func showNote(_ tab: BrowserTab, id: UUID, in pane: BrowserPane) {
-        guard !isPrivateBrowsing, !store.isProfileRemovalPending(tab.profileID) else { pane.showError("Notes are unavailable in this profile."); return }
+        guard !isPrivateBrowsing, !store.isProfileRemovalPending(tab.profileID) else { pane.showError("Notes are unavailable in this Space."); return }
         if let cached = noteEditors[tab.id], cached.documentID == id, cached.profileID == tab.profileID {
             pane.showNativeContent(cached.editor.view); return
         }
@@ -5321,7 +5321,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                           commandBrowser?.url == originalURL else { return }
                     self.pendingCommandSplitValidation = nil; self.pendingCommandSplitBrowser = nil
                     guard let navigation else {
-                        self.showSearchError(error?.localizedDescription ?? "Search is unavailable for this profile.")
+                        self.showSearchError(error?.localizedDescription ?? "Search is unavailable for this Space.")
                         return
                     }
                     commitSplit(navigation, nil)
@@ -5896,12 +5896,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let undo = folderUndo.command(.undo), !undo.name.isEmpty { commands.append(.init(kind: .undo(undo.name))) }
         if let redo = folderUndo.command(.redo), !redo.name.isEmpty { commands.append(.init(kind: .redo(redo.name))) }
         if let items, !isPrivateBrowsing {
-            let profiles = Dictionary(uniqueKeysWithValues: store.state.profiles.map { ($0.id, $0.name) })
-            commands += store.state.spaces.filter { space in
+            let allSpaces = store.state.spaces
+            commands += allSpaces.enumerated().filter { _, space in
                 space.id != activeSpaceID && commandBarSpaceMoveIsPossible(items, to: space)
-            }.map { space in
-                .init(kind: .pinToSpace(space.id, name: space.name,
-                                        profileName: space.profileID == profileID ? nil : profiles[space.profileID]))
+            }.map { offset, space in
+                let shared = allSpaces.filter { $0.name == space.name }.count > 1
+                return .init(kind: .pinToSpace(space.id, name: space.name, position: shared ? offset + 1 : nil))
             }
             if commandBarFolderCollectionIsPossible(items) {
                 commands.append(.init(kind: .pinToNewFolder))
@@ -6164,7 +6164,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var canCreateProfile: Bool {
         !isPrivateBrowsing && spaceCommandsAvailable && window?.attachedSheet == nil
     }
-    func newProfile() { newProfile(for: activeSpaceID) }
     private func newProfile(for spaceID: UUID) {
         guard canCreateProfile, let expected = managementSpace(spaceID) else { return }
         commandBar?.dismiss()
@@ -10687,7 +10686,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         guard let self, let session, self.splitInsertion === session else { return }
                         guard session.isValid else { self.cancelSplitInsertion(restoreFocus: false); return }
                         if let navigation { submission.run(navigation, nil) }
-                        else { self.cancelSplitInsertion(restoreFocus: true); self.showSearchError(error?.localizedDescription ?? "Search is unavailable for this profile.") }
+                        else { self.cancelSplitInsertion(restoreFocus: true); self.showSearchError(error?.localizedDescription ?? "Search is unavailable for this Space.") }
                     }
                 }
         }
@@ -14217,16 +14216,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         picker.present(from: anchor)
     }
 
-    func canChangeSpaceProfile(_ id: UUID, profileID: UUID) -> Bool {
-        spaceCommandsAvailable && activeSpaceID == id && managementSpace(id, profileID: profileID) != nil
-    }
-    func showChangeProfileMenu(_ id: UUID, profileID: UUID) {
-        guard canChangeSpaceProfile(id, profileID: profileID), let window, let menu = spaceManagementMenu(id) else { return }
-        commandBar?.dismiss()
-        closeLibrary(restoreFocus: false); revealSidebarForEditing()
-        guard window === self.window, canChangeSpaceProfile(id, profileID: profileID) else { return }
-        menu.profileMenu().popUp(positioning: nil, at: NSPoint(x: sidebar.bounds.midX, y: 100), in: sidebar)
-    }
     private func prompt(_ title: String, detail: String, value: String, placeholder: String, accept: @escaping (String) -> Void) {
         guard let window else { return }
         let dialog = PArcDialog(.init(title: [(title, false)], message: [(detail, false)], confirm: "Save", cancel: "Cancel",
@@ -14328,7 +14317,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     self.loadingDownloadProfiles.remove(profile.id)
                     if catalog.state.profiles.contains(where: { $0.id == profile.id }) {
                         if error == nil, let identifiers { catalog.reconcileDownloads(profileID: profile.id, nativeIDs: Set(identifiers)) }
-                        self.downloadProfileErrors[profile.id] = error.map { profile.name + ": " + $0.localizedDescription }
+                        let spaceName = catalog.state.spaces.first { $0.profileID == profile.id }?.name
+                        self.downloadProfileErrors[profile.id] = error.map { error in
+                            spaceName.map { $0 + ": " + error.localizedDescription } ?? error.localizedDescription
+                        }
                     }
                     self.updateDownloadLoading()
                 }

@@ -269,7 +269,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         } else { reloadRows(selecting: DownloadLibrarySelection.retainedRows(originals, in: rowItems)) }
         scroll.contentView.scroll(to: origin); scroll.reflectScrolledClipView(scroll.contentView)
         let isUnfilteredEmpty = query.isEmpty && selectedProfile == nil
-        let message = loadingCount > 0 && next.isEmpty ? "Loading downloads…" : loadMessage != nil && next.isEmpty ? loadMessage! : isUnfilteredEmpty ? "Nothing here yet!\nCome back after you’ve found some cool stuff to save." : "No downloads match this search or profile."
+        let message = loadingCount > 0 && next.isEmpty ? "Loading downloads…" : loadMessage != nil && next.isEmpty ? loadMessage! : isUnfilteredEmpty ? "Nothing here yet!\nCome back after you’ve found some cool stuff to save." : "No downloads match this search."
         let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center; paragraph.paragraphSpacing = 6
         let attributed = NSMutableAttributedString(string: message, attributes: [.font: NSFont.systemFont(ofSize: 13), .paragraphStyle: paragraph,
             .foregroundColor: palette?.foregroundSecondary ?? NSColor.secondaryLabelColor])
@@ -279,7 +279,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         }
         empty.attributedStringValue = attributed
         emptyContent.show(!next.isEmpty ? .hidden : loadingCount > 0 || loadMessage != nil ? .status : .empty)
-        let status = actionMessage ?? (loadingCount > 0 ? "Loading \(loadingCount) profile\(loadingCount == 1 ? "" : "s")…" : loadMessage)
+        let status = actionMessage ?? (loadingCount > 0 ? "Loading downloads…" : loadMessage)
         footer.stringValue = status ?? ""
         footer.toolTip = status
         footer.isHidden = status == nil
@@ -466,8 +466,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         case let .heading(title):
             return DownloadSectionHeading(title)
         case let .item(item):
-            let profile = item.profileID.flatMap { id in store.state.profiles.first { $0.id == id }?.name } ?? "Previous session"
-            let cell = DownloadLibraryCell(item: item, profile: profile, palette: palette, operation: operations[DownloadLibraryIdentity(item)])
+            let cell = DownloadLibraryCell(item: item, palette: palette, operation: operations[DownloadLibraryIdentity(item)])
             configure(cell, item: item)
             return cell
         }
@@ -478,8 +477,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
             guard case let .item(item) = rows[index],
                   let cell = table.view(atColumn: 0, row: index, makeIfNecessary: false) as? DownloadLibraryCell,
                   cell.identity == DownloadLibraryIdentity(item) else { reload.insert(index); continue }
-            let profile = item.profileID.flatMap { id in store.state.profiles.first { $0.id == id }?.name } ?? "Previous session"
-            cell.update(item: item, profile: profile, palette: palette, operation: operations[cell.identity])
+            cell.update(item: item, palette: palette, operation: operations[cell.identity])
             configure(cell, item: item)
         }
         if !reload.isEmpty { table.reloadData(forRowIndexes: reload, columnIndexes: IndexSet(integer: 0)) }
@@ -1312,7 +1310,7 @@ enum LibraryPageHeader {
     private let icon = DownloadArtworkView(frame: .zero)
     private var highlighted = false
     override var isFlipped: Bool { true }
-    init(item: BrowserDownload, profile: String, palette: ThemeChromePalette?, operation: String?) {
+    init(item: BrowserDownload, palette: ThemeChromePalette?, operation: String?) {
         self.identity = DownloadLibraryIdentity(item); self.item = item
         super.init(frame: .zero)
         for label in [name, detail] {
@@ -1326,9 +1324,9 @@ enum LibraryPageHeader {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: self.more.bounds.maxY), in: self.more)
         }
         more.isHidden = true; addSubview(more)
-        update(item: item, profile: profile, palette: palette, operation: operation)
+        update(item: item, palette: palette, operation: operation)
     }
-    func update(item: BrowserDownload, profile: String, palette: ThemeChromePalette?, operation: String?) {
+    func update(item: BrowserDownload, palette: ThemeChromePalette?, operation: String?) {
         precondition(identity == DownloadLibraryIdentity(item))
         self.item = item; retired = false
         name.stringValue = DownloadRowArtwork.title(for: item); name.font = .systemFont(ofSize: 14, weight: .regular)
@@ -1336,8 +1334,7 @@ enum LibraryPageHeader {
         detail.stringValue = operation ?? DownloadRowSubtitle.text(for: item)
         detail.font = .systemFont(ofSize: 12); detail.textColor = .secondaryLabelColor
         let host = item.sourceURL.flatMap(URL.init(string:))?.host
-        source.stringValue = [profile,
-            host.flatMap { detail.stringValue.contains("from " + $0) ? nil : $0 },
+        source.stringValue = [host.flatMap { detail.stringValue.contains("from " + $0) ? nil : $0 },
             item.statusText == detail.stringValue ? nil : item.statusText]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         icon.kind = DownloadRowArtwork.kind(for: item)
