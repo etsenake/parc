@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.2.0 (2026-11-14)
+
+### New
+
+- **swipe:** Lay out the welcome mat for the new Back and Forward swipe indicator
+- **swipe:** Tune swipe-and-hold to a snappier 0.3 s, give the indicator some stretch, and keep scrolling long histories while your fingers rest at the trackpad's edge
+- **swipe:** Swipe Back or Forward and a frosted circle slides in with the chevron, then hold to morph it into a scrolling list of where you've been
+- **swipe:** Hand Back and Forward swipes to Parc's own recognizer, so the frosted circle and hold-for-history list show up on every page, split pane and Peek, even in windows you aren't looking at
+- **swipe:** Rest your fingers to open the history list on the page you're on, slide back to fold it into the circle, and keep edge scrolling from twitching on its own
+- **start-page:** Give empty Spaces a page of their own, with a command bar on Note paper and a Parc logo that does three different tricks
+
+### Fixed
+
+- **swipe:** Let Back and Forward swipes land on the page under your fingers, even in a window or split pane that isn't paying attention
+- **swipe:** Let a resting hand wait for the history list without trembling it shut, and say plainly that AppKit decides a Magic Mouse commit
+- **peek:** Peek ditches its title bar, moves to round theme-colored buttons on the right and lets your Space's colors wash over the page behind it
+- **library:** Wait for a hover on the Library button before asking for your Desktop and Documents, instead of ambushing you right after onboarding
+- **engine:** Open again on Chromium 157 with its earlier-sandboxed helpers, and keep translation, auto sign-in and new-extension pinning as before
+- **swipe:** Keep the swipe circle's shadow from fading on a theme flip and drop the row lean when the list folds away
+- **swipe:** Keep a picked history row when the fingers drift a hair sideways, and fold the list away without cancelling the swipe
+
 ## 2.1.2 (2026-11-13)
 
 ### Fixed
