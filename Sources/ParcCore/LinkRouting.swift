@@ -90,6 +90,19 @@ struct LinkRoutingState: Codable, Equatable {
     var recentSpaceIDs: [UUID] = []
 }
 
+extension LinkRoutingState {
+    func convertingProfileDestinations(spaces: [LinkRoutingSpace]) -> LinkRoutingState {
+        func converted(_ destination: LinkRouteDestination) -> LinkRouteDestination {
+            guard case .profile(let id) = destination else { return destination }
+            return spaces.first { $0.profileID == id }.map { .space($0.id) } ?? .mostRecent
+        }
+        var next = self
+        for index in next.rules.indices { next.rules[index].destination = converted(next.rules[index].destination) }
+        next.defaultDestination = converted(defaultDestination)
+        return next
+    }
+}
+
 struct LinkRoutingSpace: Equatable {
     let id: UUID
     let profileID: UUID
@@ -215,6 +228,12 @@ final class LinkRoutingStore: ObservableObject {
         var next = state; next.rules.removeAll(); next.defaultDestination = .mostRecent
         if commit(next) { return true }
         unreadableFile = blocked; return false
+    }
+
+    @discardableResult
+    func convertProfileDestinations(spaces: [LinkRoutingSpace]) -> Bool {
+        let next = state.convertingProfileDestinations(spaces: spaces)
+        return next == state || commit(next)
     }
 
     private func commit(_ next: LinkRoutingState) -> Bool {

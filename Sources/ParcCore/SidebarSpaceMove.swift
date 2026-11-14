@@ -195,6 +195,8 @@ struct SidebarNewSpaceDraft: Equatable {
     var profileID: UUID
     var customIcon: SidebarGroupIcon?
     var theme: SpaceTheme
+    private(set) var separateProfileID: UUID?
+    private var acceptsProfileChange = false
 
     init?(items: [SidebarItemReference] = [], from source: SidebarHierarchySnapshot,
           state: BrowserState, spaceID: UUID = UUID(), insertion: SidebarSpaceInsertion? = nil,
@@ -231,18 +233,48 @@ struct SidebarNewSpaceDraft: Equatable {
         (roots.isEmpty || id == source.profileID)
     }
 
+    var keepsSeparate: Bool { separateProfileID != nil }
+    var movesItemsAcrossProfiles: Bool { !tabIDs.isEmpty && profileID != source.profileID }
+
+    @discardableResult
+    mutating func shareData(withSpace id: UUID, in state: BrowserState) -> Bool {
+        guard let space = state.spaces.first(where: { $0.id == id }),
+              state.profiles.contains(where: { $0.id == space.profileID }),
+              !state.profileRemovals.contains(where: { $0.profileID == space.profileID }) else { return false }
+        separateProfileID = nil; acceptsProfileChange = true; profileID = space.profileID
+        return true
+    }
+
+    mutating func keepSeparate(profileID id: UUID = UUID()) {
+        let id = separateProfileID ?? id
+        separateProfileID = id; acceptsProfileChange = true; profileID = id
+    }
+
+    private func profileIsUsable(in state: BrowserState) -> Bool {
+        if let separateProfileID {
+            return profileID == separateProfileID && !state.profiles.contains { $0.id == separateProfileID }
+        }
+        return state.profiles.contains { $0.id == profileID }
+            && !state.profileRemovals.contains { $0.profileID == profileID }
+            && (roots.isEmpty || profileID == source.profileID || acceptsProfileChange)
+    }
+
     private func stagedState(in state: BrowserState) -> BrowserState? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !state.spaces.contains(where: { $0.id == spaceID }),
               state.spaces.contains(where: { $0.id == source.spaceID && $0.profileID == source.profileID }),
               state.profiles.contains(where: { $0.id == source.profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == source.profileID }),
-              canUseProfile(profileID, in: state),
-              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              profileIsUsable(in: state), !trimmed.isEmpty,
               customIcon?.isValid != false, theme.isValid,
               let index = insertion.index(in: state) else { return nil }
         var next = state
+        let hours = state.resolvedAutoArchiveHours(forSpace: source.spaceID)
+        if let separateProfileID {
+            next.profiles.append(BrowserProfile(id: separateProfileID, name: trimmed, autoArchiveHours: hours))
+        }
         var space = BrowserSpace(id: spaceID, name: name, symbol: "circle", color: "B9B5D4", profileID: profileID)
-        space.customIcon = customIcon; space.theme = theme
+        space.customIcon = customIcon; space.theme = theme; space.autoArchiveHours = hours
         next.spaces.insert(space, at: index)
         for position in next.spaces.indices { next.spaces[position].updateDisplayName(position: position) }
         return next

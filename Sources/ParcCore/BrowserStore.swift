@@ -50,6 +50,7 @@ struct BrowserSpace: Codable, Identifiable, Equatable {
     var customIcon: SidebarGroupIcon? = nil
     var theme: SpaceTheme
     var profileID: UUID
+    var autoArchiveHours: Double?
 
     init(id: UUID, name: String, symbol: String, color: String, profileID: UUID) {
         self.id = id; self.title = name.isEmpty ? nil : name
@@ -57,7 +58,7 @@ struct BrowserSpace: Codable, Identifiable, Equatable {
         theme = .singleColor(ThemeColor(hex: color) ?? ThemeColor(hex: "B9B5D4")!)
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, title, symbol, customIcon, theme, color, profileID }
+    private enum CodingKeys: String, CodingKey { case id, name, title, symbol, customIcon, theme, color, profileID, autoArchiveHours }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -68,6 +69,8 @@ struct BrowserSpace: Codable, Identifiable, Equatable {
         symbol = try c.decode(String.self, forKey: .symbol)
         customIcon = SidebarGroupIcon.decodeIfValid(c, forKey: .customIcon)
         profileID = try c.decode(UUID.self, forKey: .profileID)
+        autoArchiveHours = (try? c.decodeIfPresent(Double.self, forKey: .autoArchiveHours))
+            .flatMap { $0 }.flatMap { AutoArchiveInterval(rawValue: $0)?.rawValue }
         if c.contains(.theme) {
             theme = try c.decode(SpaceTheme.self, forKey: .theme)
         } else {
@@ -86,11 +89,13 @@ struct BrowserSpace: Codable, Identifiable, Equatable {
         try c.encode(symbol, forKey: .symbol); try c.encode(profileID, forKey: .profileID)
         try c.encode(theme, forKey: .theme)
         try c.encodeIfPresent(customIcon, forKey: .customIcon)
+        try c.encodeIfPresent(autoArchiveHours, forKey: .autoArchiveHours)
     }
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.title == rhs.title && lhs.name == rhs.name
             && lhs.symbol == rhs.symbol && lhs.customIcon == rhs.customIcon
             && lhs.theme == rhs.theme && lhs.profileID == rhs.profileID
+            && lhs.autoArchiveHours == rhs.autoArchiveHours
     }
     mutating func updateDisplayName(position: Int) {
         let placeholder = "Space \(position + 1)"
@@ -680,11 +685,13 @@ struct BrowserState: Codable, Equatable {
     var profileRemovals: [ProfileRemovalRecord] = []
     var arcImportedSpaces: [String: UUID] = [:]
     var windows: [BrowserWindowRecord] = []
+    var spaceSharingVersion = SpaceSharing.version
 
     static func initial() -> Self {
         let profile = BrowserProfile(id: UUID(), name: "Default")
         var space = BrowserSpace(id: UUID(), name: "", symbol: "circle.fill", color: "B9B5D4", profileID: profile.id)
         space.updateDisplayName(position: 0)
+        space.autoArchiveHours = profile.autoArchiveHours
         return Self(profiles: [profile], spaces: [space], activeSpaceID: space.id)
     }
 
@@ -738,7 +745,7 @@ struct BrowserState: Codable, Equatable {
 extension BrowserState {
     private enum CodingKeys: String, CodingKey {
         case version, profiles, spaces, tabs, folders, activeSpaceID, selectedTabIDs,
-             selectionBySpace, splitLayouts, sidebarItemOrder, autoArchiveStartedAt, autoArchiveDefaultHours, autoArchiveEducationEligible, history, downloads, recentlyClosedIDs, settings, profileRemovals, arcImportedSpaces, windows
+             selectionBySpace, splitLayouts, sidebarItemOrder, autoArchiveStartedAt, autoArchiveDefaultHours, autoArchiveEducationEligible, history, downloads, recentlyClosedIDs, settings, profileRemovals, arcImportedSpaces, windows, spaceSharingVersion
     }
     private enum LegacySplitKeys: String, CodingKey { case splitWidthFactors }
 
@@ -764,6 +771,7 @@ extension BrowserState {
         autoArchiveDefaultHours = try values.decodeIfPresent(Double.self, forKey: .autoArchiveDefaultHours) ?? AutoArchiveInterval.twelveHours.rawValue
         autoArchiveEducationEligible = try values.decodeIfPresent(Bool.self, forKey: .autoArchiveEducationEligible) ?? false
         windows = try values.decodeIfPresent([BrowserWindowRecord].self, forKey: .windows) ?? []
+        spaceSharingVersion = try values.decodeIfPresent(Int.self, forKey: .spaceSharingVersion) ?? 0
         if let saved = try values.decodeIfPresent([BrowserSplitLayout].self, forKey: .splitLayouts) {
             splitLayouts = saved
         } else {
@@ -1994,6 +2002,7 @@ final class BrowserStore: ObservableObject {
                 state.history[i].url = BrowserInternalURL.publicString(state.history[i].url)
             }
             try validateState()
+            let upgradedSharing = state.upgradeSpaceSharing()
             if state.settings.restoreSession {
                 normalizeSelection()
                 state = SplitMembership.resolvingSharedLegacyFavorites(state)
@@ -2006,6 +2015,9 @@ final class BrowserStore: ObservableObject {
                 reconcileSplitLayouts()
                 migrateLegacySplitContainers()
                 if state != decoded { try save() }
+            }
+            if upgradedSharing {
+                linkRouting.convertProfileDestinations(spaces: state.spaces.map { LinkRoutingSpace(id: $0.id, profileID: $0.profileID) })
             }
         } else {
             state = .initial()
@@ -3021,6 +3033,7 @@ final class BrowserStore: ObservableObject {
         var space = BrowserSpace(id: UUID(), name: name,
                                  symbol: "circle.fill", color: color, profileID: activeSpace.profileID)
         space.updateDisplayName(position: state.spaces.count)
+        space.autoArchiveHours = state.resolvedAutoArchiveHours(forSpace: activeSpaceID)
         var next = state
         next.spaces.append(space)
         next.selectionBySpace[next.activeSpaceID.uuidString] = next.selectedTabIDs
@@ -3031,6 +3044,39 @@ final class BrowserStore: ObservableObject {
         next.selectionBySpace[next.activeSpaceID.uuidString] = next.selectedTabIDs
         state = next
         changed(selectionAlreadyStamped: true)
+        return space.id
+    }
+
+    @discardableResult
+    func createSpace(name: String, sharing: SpaceDataSharing, newProfileID: UUID = UUID()) throws -> UUID {
+        guard !isEphemeral else { throw ProfileSettingsError.unavailable }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var next = state
+        let profileID: UUID
+        switch sharing {
+        case .share(let spaceID):
+            guard let space = state.spaces.first(where: { $0.id == spaceID }), !isProfileRemovalPending(space.profileID) else {
+                throw ProfileSettingsError.unavailable
+            }
+            profileID = space.profileID
+        case .separate:
+            guard !trimmed.isEmpty, !state.profiles.contains(where: { $0.id == newProfileID }) else { throw ProfileSettingsError.unavailable }
+            profileID = newProfileID
+            next.profiles.append(BrowserProfile(id: profileID, name: trimmed,
+                autoArchiveHours: state.resolvedAutoArchiveHours(forSpace: activeSpaceID)))
+        }
+        var space = BrowserSpace(id: UUID(), name: trimmed, symbol: "circle.fill", color: "B9B5D4", profileID: profileID)
+        space.theme = savedTheme(of: activeSpace)
+        space.autoArchiveHours = state.resolvedAutoArchiveHours(forSpace: activeSpaceID)
+        space.updateDisplayName(position: next.spaces.count)
+        next.spaces.append(space)
+        next.selectionBySpace[next.activeSpaceID.uuidString] = next.selectedTabIDs
+        next.activeSpaceID = space.id
+        next.selectedTabIDs = next.selectionBySpace[space.id.uuidString] ?? []
+        normalizeSelection(in: &next)
+        stampSelection(in: &next)
+        next.selectionBySpace[next.activeSpaceID.uuidString] = next.selectedTabIDs
+        try commitProfileSettings(next)
         return space.id
     }
 
@@ -3427,7 +3473,7 @@ final class BrowserStore: ObservableObject {
         if historyChanged { historyRevision &+= 1 }
     }
 
-    private func commitProfileSettings(_ next: BrowserState) throws {
+    func commitProfileSettings(_ next: BrowserState) throws {
         if isEphemeral { state = next; return }
         do {
             try persistSnapshot(persisted(next), wait: true)
@@ -3460,14 +3506,20 @@ final class BrowserStore: ObservableObject {
         try commitProfileSettings(next); return profile.id
     }
 
-    func assignProfile(_ profileID: UUID, toSpace spaceID: UUID,
+    func assignProfile(_ profileID: UUID, toSpace spaceID: UUID, creating newProfile: BrowserProfile? = nil,
                        shouldCommit: @escaping () -> Bool = { true },
                        completion: @escaping (Result<Bool, Error>) -> Void = { _ in }) {
-        guard !isEphemeral, let space = state.spaces.first(where: { $0.id == spaceID }),
-              InterProfileMove.profilesAvailable(space.profileID, profileID, in: state) else { completion(.success(false)); return }
+        func including(_ state: BrowserState) -> BrowserState? {
+            guard let newProfile else { return state }
+            guard newProfile.id == profileID, !state.profiles.contains(where: { $0.id == profileID }) else { return nil }
+            var next = state; next.profiles.append(newProfile); return next
+        }
+        guard !isEphemeral, let space = state.spaces.first(where: { $0.id == spaceID }), let available = including(state),
+              InterProfileMove.profilesAvailable(space.profileID, profileID, in: available) else { completion(.success(false)); return }
         let ids = Set(state.tabs.filter { $0.spaceID == spaceID && $0.kind != .favorite && $0.archivedAt == nil }.map(\.id))
-        moveAcrossProfiles(ids, proposal: { current in
-            guard shouldCommit(), InterProfileMove.profilesAvailable(space.profileID, profileID, in: current),
+        moveAcrossProfiles(ids, proposal: { original in
+            guard shouldCommit(), let current = including(original),
+                  InterProfileMove.profilesAvailable(space.profileID, profileID, in: current),
                   let index = current.spaces.firstIndex(where: { $0.id == spaceID && $0.profileID == space.profileID }),
                   Set(current.tabs.filter { $0.spaceID == spaceID && $0.kind != .favorite && $0.archivedAt == nil }.map(\.id)) == ids else { return nil }
             var next = current
@@ -3668,7 +3720,7 @@ final class BrowserStore: ObservableObject {
 
     @discardableResult
     func createSpaceAndMoveSidebarItems(_ draft: SidebarNewSpaceDraft) throws -> UUID? {
-        guard !isEphemeral, !draft.tabIDs.contains(where: { retiringTabIDs.contains($0) }),
+        guard !isEphemeral, !draft.movesItemsAcrossProfiles, !draft.tabIDs.contains(where: { retiringTabIDs.contains($0) }),
               let next = draft.applying(to: state) else { return nil }
         try commitProfileSettings(next)
         return draft.spaceID
@@ -3677,7 +3729,7 @@ final class BrowserStore: ObservableObject {
     @discardableResult
     func turnFolderIntoSpace(_ draft: SidebarNewSpaceDraft, folder expected: BrowserFolder) throws -> UUID? {
         let contents = SidebarContainerLocation(spaceID: expected.spaceID, folderID: expected.id, section: .pinned)
-        guard !isEphemeral, !draft.tabIDs.contains(where: { retiringTabIDs.contains($0) }),
+        guard !isEphemeral, !draft.movesItemsAcrossProfiles, !draft.tabIDs.contains(where: { retiringTabIDs.contains($0) }),
               state.folders.contains(expected), expected.spaceID == draft.source.spaceID,
               let staged = draft.applying(to: state),
               let location = SidebarHierarchy.location(of: .folder(expected.id), state: staged, spaceID: expected.spaceID),
@@ -4513,9 +4565,11 @@ final class BrowserStore: ObservableObject {
               let index = state.profiles.firstIndex(where: { $0.id == profileID }) else {
             throw ProfileSettingsError.unavailable
         }
-        guard state.profiles[index].autoArchiveHours != interval.rawValue else { return nil }
+        guard state.profiles[index].autoArchiveHours != interval.rawValue
+                || state.spaces.contains(where: { $0.profileID == profileID && $0.autoArchiveHours != interval.rawValue }) else { return nil }
         var next = state
         next.profiles[index].autoArchiveHours = interval.rawValue
+        for i in next.spaces.indices where next.spaces[i].profileID == profileID { next.spaces[i].autoArchiveHours = interval.rawValue }
         if Set(next.profiles.map(\.autoArchiveHours)).count == 1 {
             next.autoArchiveDefaultHours = interval.rawValue
         }
@@ -4534,6 +4588,7 @@ final class BrowserStore: ObservableObject {
         }
         var next = state
         for index in next.profiles.indices { next.profiles[index].autoArchiveHours = change.interval.rawValue }
+        for index in next.spaces.indices { next.spaces[index].autoArchiveHours = change.interval.rawValue }
         next.autoArchiveDefaultHours = change.interval.rawValue
         next.autoArchiveEducationEligible = false
         try commitProfileSettings(next)
@@ -4655,7 +4710,7 @@ final class BrowserStore: ObservableObject {
         var candidates: [AutomaticArchiveItem] = []
         for space in state.spaces {
             guard !isProfileRemovalPending(space.profileID),
-                  let threshold = autoArchiveInterval(for: space.profileID)?.seconds,
+                  let threshold = autoArchiveInterval(forSpace: space.id)?.seconds,
                   now.timeIntervalSince(startedAt) > threshold else { continue }
             let location = SidebarContainerLocation(spaceID: space.id, folderID: nil, section: .today)
             for item in SidebarHierarchy.children(in: location, state: state) {

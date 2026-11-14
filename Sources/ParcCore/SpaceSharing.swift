@@ -1,0 +1,154 @@
+import Foundation
+
+enum SpaceSharing {
+    static let version = 1
+}
+
+enum SpaceDataSharing: Equatable {
+    case share(withSpace: UUID)
+    case separate
+}
+
+struct UnusedProfile: Equatable {
+    let id: UUID
+    let name: String
+    let isProtected: Bool
+}
+
+struct SpaceSharingChange: Equatable {
+    let spaceID: UUID
+    let profileID: UUID
+    let previousProfileID: UUID
+    let unusedProfile: UnusedProfile?
+}
+
+extension BrowserState {
+    func resolvedAutoArchiveHours(forSpace id: UUID) -> Double {
+        guard let space = spaces.first(where: { $0.id == id }) else { return autoArchiveDefaultHours }
+        return space.autoArchiveHours ?? profiles.first { $0.id == space.profileID }?.autoArchiveHours ?? autoArchiveDefaultHours
+    }
+
+    var profilesWithoutSpaces: [BrowserProfile] {
+        profiles.filter { profile in
+            !spaces.contains { $0.profileID == profile.id } && !profileRemovals.contains { $0.profileID == profile.id }
+        }
+    }
+
+    @discardableResult
+    mutating func upgradeSpaceSharing() -> Bool {
+        guard spaceSharingVersion < SpaceSharing.version, !spaces.isEmpty else { return false }
+        let template = spaces.first { $0.id == activeSpaceID } ?? spaces[0]
+        for profile in profilesWithoutSpaces {
+            var space = BrowserSpace(id: UUID(), name: profile.name, symbol: "circle.fill", color: "B9B5D4", profileID: profile.id)
+            space.theme = template.theme
+            spaces.append(space)
+        }
+        for index in spaces.indices {
+            if spaces[index].autoArchiveHours == nil {
+                spaces[index].autoArchiveHours = profiles.first { $0.id == spaces[index].profileID }?.autoArchiveHours
+            }
+            spaces[index].updateDisplayName(position: index)
+        }
+        spaceSharingVersion = SpaceSharing.version
+        return true
+    }
+}
+
+extension BrowserStore {
+    func autoArchiveInterval(forSpace spaceID: UUID) -> AutoArchiveInterval? {
+        guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return nil }
+        return space.autoArchiveHours.flatMap(AutoArchiveInterval.init(rawValue:)) ?? autoArchiveInterval(for: space.profileID)
+    }
+
+    @discardableResult
+    func setAutoArchiveInterval(_ interval: AutoArchiveInterval, forSpace spaceID: UUID) throws -> Bool {
+        guard let index = state.spaces.firstIndex(where: { $0.id == spaceID }),
+              !isProfileRemovalPending(state.spaces[index].profileID) else { throw ProfileSettingsError.unavailable }
+        guard state.spaces[index].autoArchiveHours != interval.rawValue else { return false }
+        var next = state
+        next.spaces[index].autoArchiveHours = interval.rawValue
+        next.autoArchiveEducationEligible = false
+        try commitProfileSettings(next)
+        return true
+    }
+
+    func unusedProfile(_ profileID: UUID) -> UnusedProfile? {
+        guard let profile = state.profiles.first(where: { $0.id == profileID }),
+              !state.spaces.contains(where: { $0.profileID == profileID }),
+              !isProfileRemovalPending(profileID) else { return nil }
+        return UnusedProfile(id: profileID, name: profile.name, isProtected: profileID == defaultProfileID)
+    }
+
+    private func soleProfile(of spaceID: UUID) -> UnusedProfile? {
+        guard let space = state.spaces.first(where: { $0.id == spaceID }),
+              let profile = state.profiles.first(where: { $0.id == space.profileID }),
+              !state.spaces.contains(where: { $0.id != spaceID && $0.profileID == space.profileID }) else { return nil }
+        return UnusedProfile(id: profile.id, name: profile.name, isProtected: profile.id == defaultProfileID)
+    }
+
+    func unusedProfile(ifSpace spaceID: UUID, joins sharing: SpaceDataSharing) -> UnusedProfile? {
+        guard case .share(let otherID) = sharing,
+              let space = state.spaces.first(where: { $0.id == spaceID }),
+              let other = state.spaces.first(where: { $0.id == otherID }),
+              other.profileID != space.profileID else { return nil }
+        return soleProfile(of: spaceID)
+    }
+
+    func wouldOrphanProfile(ifSpace spaceID: UUID, joins sharing: SpaceDataSharing) -> Bool {
+        unusedProfile(ifSpace: spaceID, joins: sharing) != nil
+    }
+
+    func unusedProfile(ifDeletingSpace spaceID: UUID) -> UnusedProfile? { soleProfile(of: spaceID) }
+
+    func wouldOrphanProfile(ifDeletingSpace spaceID: UUID) -> Bool { unusedProfile(ifDeletingSpace: spaceID) != nil }
+
+    func stageRemoval(of unused: UnusedProfile) throws -> ProfileRemovalRecord? {
+        guard !unused.isProtected else { return nil }
+        guard unusedProfile(unused.id) == unused else { throw ProfileRemovalError.unavailable }
+        return try stageProfileRemoval(unused.id, expectedName: unused.name)
+    }
+
+    func spaceSharing(of spaceID: UUID) -> [BrowserSpace] {
+        guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return [] }
+        return state.spaces.filter { $0.id != spaceID && $0.profileID == space.profileID }
+    }
+
+    func createSpace(_ draft: SidebarNewSpaceDraft, completion: @escaping (Result<UUID?, Error>) -> Void) {
+        guard !isEphemeral, !draft.tabIDs.contains(where: { retiringTabIDs.contains($0) }) else { completion(.success(nil)); return }
+        guard draft.movesItemsAcrossProfiles else {
+            completion(Result { try createSpaceAndMoveSidebarItems(draft) })
+            return
+        }
+        moveAcrossProfiles(Set(draft.tabIDs), proposal: { draft.applying(to: $0) }) { result in
+            completion(result.map { $0 ? draft.spaceID : nil })
+        }
+    }
+
+    func changeSharing(ofSpace spaceID: UUID, to sharing: SpaceDataSharing, newProfileID: UUID = UUID(),
+                       shouldCommit: @escaping () -> Bool = { true },
+                       completion: @escaping (Result<SpaceSharingChange?, Error>) -> Void) {
+        guard let space = state.spaces.first(where: { $0.id == spaceID }) else { completion(.success(nil)); return }
+        let previous = space.profileID
+        let target: UUID
+        var created: BrowserProfile?
+        switch sharing {
+        case .share(let otherID):
+            guard otherID != spaceID, let other = state.spaces.first(where: { $0.id == otherID }),
+                  other.profileID != previous else { completion(.success(nil)); return }
+            target = other.profileID
+        case .separate:
+            guard !spaceSharing(of: spaceID).isEmpty else { completion(.success(nil)); return }
+            let name = space.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            created = BrowserProfile(id: newProfileID, name: name.isEmpty ? "Profile" : name,
+                                     autoArchiveHours: state.resolvedAutoArchiveHours(forSpace: spaceID))
+            target = newProfileID
+        }
+        assignProfile(target, toSpace: spaceID, creating: created, shouldCommit: shouldCommit) { [weak self] result in
+            completion(result.map { moved in
+                guard moved, let self else { return nil }
+                return SpaceSharingChange(spaceID: spaceID, profileID: target, previousProfileID: previous,
+                                          unusedProfile: self.unusedProfile(previous))
+            })
+        }
+    }
+}
