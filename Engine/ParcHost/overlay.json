@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 729,
+  "version": 730,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -359,7 +359,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_page.mm",
       "target": "parc/native/native_appkit_page.mm",
-      "sha256": "d0f0e3a3fe91de9081f173421cfd1631b6d268c36fe816a959d5d2479b0976fc"
+      "sha256": "a59f7b0185912c96d415691f87d8fc0ef96e342690becdfb113c0d58b6cd7777"
     },
     {
       "source": "Engine/ParcNative/native_page_shell_notify.h",
@@ -1094,12 +1094,12 @@
     {
       "source": "Engine/ParcNative/native_history_swipe.h",
       "target": "parc/native/native_history_swipe.h",
-      "sha256": "a3c28412e0f8c400385763d32faf8426b397ad2306cafcb15761af502a1e09d5"
+      "sha256": "c12a634d6ebaab4f4d19149d88cb2b0d9a84aeb0aeac34aca15d807f242054eb"
     },
     {
       "source": "Engine/ParcNative/native_history_swipe.mm",
       "target": "parc/native/native_history_swipe.mm",
-      "sha256": "4a565e8abfeeca32480a66a3889562a798af589a3815e5d9551046e1c1ee2fbb"
+      "sha256": "4ebbd23ab67645b81b4982380ee3fea46b846730de51d81c1469c06c1f7d0afe"
     },
     {
       "source": "Engine/ParcNative/native_copy_link.mm",
@@ -3498,37 +3498,6 @@
           "target": "components/remote_cocoa/app_shim/native_widget_ns_window_fullscreen_controller.mm",
           "before_sha256": "8f6e89996d07cf09e0bf9acc327d5cd59253228a2ffb568e0fdc4122e14a26f2",
           "after_sha256": "e274327bc2474492bf6ed8401a1ae1f9ee63cd137719b463b97a6c11c08a95b2"
-        }
-      ]
-    },
-    {
-      "source": "Engine/ParcHost/integration/native-history-swipe-direct.patch",
-      "sha256": "16d1bd96df744e8f4b0db1f32949812b6c574aeba7d19af42636838b8542bd6f",
-      "files": [
-        {
-          "target": "chrome/browser/renderer_host/chrome_render_widget_host_view_mac_delegate.h",
-          "before_sha256": "8dd69476d985a4334cda4c1ade46b803252444fb9ee9fe77e118d7cd720e4e82",
-          "after_sha256": "720dcb3add1b8afe67d7d8fa008e969bb95170f8e4ad2aacac4675bb928fb351"
-        },
-        {
-          "target": "chrome/browser/renderer_host/chrome_render_widget_host_view_mac_delegate.mm",
-          "before_sha256": "72511ced9340dd4d5eb195db79113f54ef198d8e103e44282482d625f9ea0f1c",
-          "after_sha256": "85832cd67782a64f1493f5ac5e281e6c415e19a38d6d3a1c4cb57c43e6474246"
-        },
-        {
-          "target": "chrome/browser/renderer_host/chrome_render_widget_host_view_mac_history_swiper.h",
-          "before_sha256": "c37647ca16b7e8305fb0c27774505b49228257e80488274f0a39bf50e5ace555",
-          "after_sha256": "09dc83149e8b84955dc09c1d75ee2bbc59c45e73474ef3f715c1c6cd6a289a98"
-        },
-        {
-          "target": "chrome/browser/renderer_host/chrome_render_widget_host_view_mac_history_swiper.mm",
-          "before_sha256": "178748abeda855f05269e48e1f366a97b9e88af8adea5c8fbfb7ae8ae545d8e9",
-          "after_sha256": "ace8dde6eaa15d050574f423a1aecd163ce0b051710fcbd1e564db22082f96ed"
-        },
-        {
-          "target": "chrome/browser/ui/cocoa/history_overlay_controller.mm",
-          "before_sha256": "e1086d41c02e3a798cd3f15934280c88622bf03b38e3257d36595e726e9fce80",
-          "after_sha256": "1eb0664d8feb3329d2e55002fa7a0c3511e0a3d1c3c698a59a387bcdeee7cc79"
         }
       ]
     },

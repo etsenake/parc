@@ -86,8 +86,10 @@ namespace content {
 class RenderWidgetHost;
 }
 namespace parc {
+NS_ASSUME_NONNULL_BEGIN
 NSObject<RenderWidgetHostViewMacDelegate>* CreateNativeHistorySwipeDelegate(
     content::RenderWidgetHost* host);
+NS_ASSUME_NONNULL_END
 }
 #endif
 #endif
