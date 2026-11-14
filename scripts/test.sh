@@ -2,6 +2,32 @@
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$repo_root/build/tests"
+jobs_limit="${PARC_TEST_JOBS:-$(sysctl -n hw.ncpu)}"
+steps_dir="$(mktemp -d "${TMPDIR:-/tmp}/parc-test-steps.XXXXXX")"
+trap 'kill $(jobs -pr) 2>/dev/null; rm -rf "$steps_dir"' EXIT
+began=$SECONDS
+step_count=0
+step() {
+  while [ "$(jobs -pr | wc -l)" -ge "$jobs_limit" ]; do sleep 0.05; done
+  step_count=$((step_count + 1))
+  local id
+  id=$(printf '%03d' "$step_count")
+  printf '%s\n' "$*" | sed "s|$repo_root/||g" > "$steps_dir/$id.name"
+  (
+    set +e
+    started=$SECONDS
+    ( set -e; "$@" ) > "$steps_dir/$id.log" 2>&1
+    code=$?
+    if [ "$code" -eq 0 ]; then result=ok; else result=failed; fi
+    echo "$result $((SECONDS - started))" > "$steps_dir/$id.status"
+  ) &
+}
+swift_test() {
+  local executable="$repo_root/build/tests/$1"
+  shift
+  xcrun swiftc "$@" -o "$executable"
+  "$executable"
+}
 core_sources=(
   "$repo_root/Sources/ParcCore/BrowserStore.swift"
   "$repo_root/Sources/ParcCore/AppWidePreferences.swift"
@@ -20,6 +46,7 @@ core_sources=(
   "$repo_root/Sources/ParcCore/PagePlaceholderImages.swift"
   "$repo_root/Sources/ParcCore/SpaceTheme.swift"
   "$repo_root/Sources/ParcCore/OnboardingDraft.swift"
+  "$repo_root/Sources/ParcCore/WindowFrame.swift"
   "$repo_root/Sources/ParcCore/LinkRouting.swift"
   "$repo_root/Sources/ParcCore/SettingsPrettyJSONPersistSkip.swift"
   "$repo_root/Sources/ParcCore/ProfileRemoval.swift"
@@ -38,284 +65,306 @@ compile_and_run() {
   xcrun swiftc -parse-as-library "${core_sources[@]}" "$test_source" "$@" -o "$executable"
   "$executable"
 }
-compile_and_run favorite-moves FavoriteMoveTests \
+step compile_and_run favorite-moves FavoriteMoveTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift" \
   "$repo_root/Sources/ParcCore/TabCommandNavigation.swift" \
   "$repo_root/Sources/ParcCore/SidebarKeyboardNavigation.swift" \
   "$repo_root/Sources/ParcCore/RecentTabOrder.swift"
-compile_and_run browser-store BrowserStoreTests \
+step compile_and_run browser-store BrowserStoreTests \
   "$repo_root/Sources/ParcCore/FolderLinks.swift" "$repo_root/tests/Support/FileObservation.swift"
-compile_and_run whats-new-page WhatsNewPageTests
-compile_and_run link-routing-store LinkRoutingStoreTests
-bash "$repo_root/scripts/test-link-routing-fallback.sh"
-compile_and_run link-routing-editor LinkRoutingEditorTests
+step compile_and_run whats-new-page WhatsNewPageTests
+step compile_and_run link-routing-store LinkRoutingStoreTests
+step bash "$repo_root/scripts/test-link-routing-fallback.sh"
+step compile_and_run link-routing-editor LinkRoutingEditorTests
 
-mkdir -p "$repo_root/build/tests"
-xcrun swiftc -parse-as-library \
+step swift_test settings-pretty-json-persist-skip -parse-as-library \
   "$repo_root/Sources/ParcCore/SettingsPrettyJSONPersistSkip.swift" \
-  "$repo_root/tests/SettingsPrettyJSONPersistSkipTests.swift" \
-  -o "$repo_root/build/tests/settings-pretty-json-persist-skip"
-"$repo_root/build/tests/settings-pretty-json-persist-skip"
-python3 "$repo_root/tests/SettingsPrettyJSONPersistSkip/check.py"
-python3 "$repo_root/tests/PointingHand/check.py"
+  "$repo_root/tests/SettingsPrettyJSONPersistSkipTests.swift"
+step python3 "$repo_root/tests/SettingsPrettyJSONPersistSkip/check.py"
+step python3 "$repo_root/tests/PointingHand/check.py"
 
-xcrun swiftc -parse-as-library \
+step swift_test native-messaging-hosts -parse-as-library \
   "$repo_root/Sources/ParcCore/NativeMessagingHosts.swift" \
-  "$repo_root/tests/NativeMessagingHostsTests.swift" \
-  -o "$repo_root/build/tests/native-messaging-hosts"
-"$repo_root/build/tests/native-messaging-hosts"
-bash "$repo_root/scripts/test-shortcut-persist-skip.sh"
-bash "$repo_root/scripts/test-split-link-snapshot.sh"
-bash "$repo_root/scripts/test-split-link-policy.sh"
-bash "$repo_root/scripts/test-page-shell-notify.sh"
-bash "$repo_root/scripts/test-top-band-color.sh"
-bash "$repo_root/scripts/test-pane-compositor-policy.sh"
-python3 "$repo_root/tests/PaneCompositorDisplay/run.py"
-bash "$repo_root/scripts/test-fairplay-identity.sh"
-bash "$repo_root/tests/NativePageHost/run.sh"
-bash "$repo_root/tests/NativeFocusManager/run.sh"
-bash "$repo_root/tests/NativeExtensionPopup/run.sh"
-bash "$repo_root/scripts/test-media-notify.sh"
-compile_and_run link-routing-text LinkRoutingTextEditingTests \
+  "$repo_root/tests/NativeMessagingHostsTests.swift"
+step bash "$repo_root/scripts/test-shortcut-persist-skip.sh"
+step bash "$repo_root/scripts/test-split-link-snapshot.sh"
+step bash "$repo_root/scripts/test-split-link-policy.sh"
+step bash "$repo_root/scripts/test-page-shell-notify.sh"
+step bash "$repo_root/scripts/test-top-band-color.sh"
+step bash "$repo_root/scripts/test-pane-compositor-policy.sh"
+step python3 "$repo_root/tests/PaneCompositorDisplay/run.py"
+step bash "$repo_root/scripts/test-fairplay-identity.sh"
+step bash "$repo_root/tests/NativePageHost/run.sh"
+step bash "$repo_root/tests/NativeFocusManager/run.sh"
+step bash "$repo_root/tests/NativeExtensionPopup/run.sh"
+step bash "$repo_root/scripts/test-media-notify.sh"
+step compile_and_run link-routing-text LinkRoutingTextEditingTests \
   "$repo_root/Sources/ParcApp/LinkRoutingTextEditing.swift"
-compile_and_run automatic-archive-presentation AutoArchivePresentationTests
-compile_and_run automatic-archive-education-view AutoArchiveEducationViewTests \
+step compile_and_run automatic-archive-presentation AutoArchivePresentationTests
+step compile_and_run automatic-archive-education-view AutoArchiveEducationViewTests \
   "$repo_root/Sources/ParcApp/ThemeRenderer.swift" \
   "$repo_root/Sources/ParcApp/AutoArchiveEducationView.swift" "$repo_root/Sources/ParcApp/PointingHand.swift"
-compile_and_run update-complete-card UpdateCompleteCardTests \
+step compile_and_run update-complete-card UpdateCompleteCardTests \
   "$repo_root/Sources/ParcApp/ThemeRenderer.swift" \
   "$repo_root/Sources/ParcApp/UpdateCompleteCard.swift"
-compile_and_run update-ready-card UpdateReadyCardTests \
+step compile_and_run update-ready-card UpdateReadyCardTests \
   "$repo_root/Sources/ParcApp/ThemeRenderer.swift" \
   "$repo_root/Sources/ParcApp/UpdateCompleteCard.swift" "$repo_root/Sources/ParcApp/UpdateReadyCard.swift"
-compile_and_run tab-creation-provenance TabCreationProvenanceTests \
+step compile_and_run tab-creation-provenance TabCreationProvenanceTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift"
-compile_and_run recent-tab-switcher RecentTabSwitcherTests \
+step compile_and_run recent-tab-switcher RecentTabSwitcherTests \
   "$repo_root/Sources/ParcCore/RecentTabOrder.swift"
-compile_and_run same-container-focus SameContainerFocusTests \
+step compile_and_run same-container-focus SameContainerFocusTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift"
-compile_and_run peek-referrer-pool PeekReferrerPoolTests \
+step compile_and_run peek-referrer-pool PeekReferrerPoolTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift"
-compile_and_run folder-undo-manager FolderUndoManagerTests \
+step compile_and_run folder-undo-manager FolderUndoManagerTests \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift"
-compile_and_run folder-document-close FolderDocumentCloseTests \
+step compile_and_run folder-document-close FolderDocumentCloseTests \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift" \
   "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
-compile_and_run profile-removal ProfileRemovalTests
-compile_and_run profile-removal-controller ProfileRemovalControllerTests \
+step compile_and_run profile-removal ProfileRemovalTests
+step compile_and_run profile-removal-controller ProfileRemovalControllerTests \
   "$repo_root/Sources/ParcApp/ProfileRemovalController.swift" \
   "$repo_root/tests/ProfileRemovalTestSupport.swift"
 
-compile_and_run sidebar-plural-duplicate SidebarPluralDuplicateTests \
+step compile_and_run sidebar-plural-duplicate SidebarPluralDuplicateTests \
   "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
-compile_and_run sidebar-split-copy SidebarSplitCopyTests
+step compile_and_run sidebar-split-copy SidebarSplitCopyTests
 
-compile_and_run sidebar-plural-removal SidebarPluralRemovalTests \
+step compile_and_run sidebar-plural-removal SidebarPluralRemovalTests \
   "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift"
 
-python3 "$repo_root/tests/FolderDeletion/check.py"
+step python3 "$repo_root/tests/FolderDeletion/check.py"
 
-compile_and_run sidebar-keyboard-close SidebarKeyboardCloseTests \
+step compile_and_run sidebar-keyboard-close SidebarKeyboardCloseTests \
   "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift"
 
-compile_and_run closed-items ClosedItemsTests \
+step compile_and_run closed-items ClosedItemsTests \
   "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift"
-bash "$repo_root/scripts/test-close-undo.sh"
-bash "$repo_root/scripts/test-tab-history.sh"
-bash "$repo_root/scripts/test-handoff-activity.sh"
-bash "$repo_root/scripts/test-page-placeholder.sh"
-bash "$repo_root/scripts/test-page-placeholder-images.sh"
-compile_and_run browser-data-export BrowserDataExportTests \
+step bash "$repo_root/scripts/test-close-undo.sh"
+step bash "$repo_root/scripts/test-tab-history.sh"
+step bash "$repo_root/scripts/test-handoff-activity.sh"
+step bash "$repo_root/scripts/test-page-placeholder.sh"
+step bash "$repo_root/scripts/test-page-placeholder-images.sh"
+step compile_and_run browser-data-export BrowserDataExportTests \
   "$repo_root/Sources/ParcCore/BrowserDataExport.swift"
-compile_and_run command-bar-scope-menu CommandBar/ScopeMenuTests \
+step compile_and_run command-bar-scope-menu CommandBar/ScopeMenuTests \
   "$repo_root/Sources/ParcApp/CommandBarScopeEditing.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
 spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$repo_root/build/tests/command-bar-privacy-spinner.swift" PArcButtonSpinner)
-compile_and_run command-bar-privacy CommandBar/SearchPrivacyBannerTests \
+step compile_and_run command-bar-privacy CommandBar/SearchPrivacyBannerTests \
   "$repo_root/Sources/ParcApp/CommandBarSearchPrivacyBanner.swift" \
   "$repo_root/Sources/ParcApp/SidebarTablistBackground.swift" \
   "$repo_root/Sources/ParcApp/PArcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
-compile_and_run command-bar-background CommandBar/BackgroundOpenTests \
+step compile_and_run command-bar-background CommandBar/BackgroundOpenTests \
   "$repo_root/Sources/ParcApp/CommandBarSubmission.swift" \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift"
 
-compile_and_run command-bar-result-navigation CommandBar/ResultNavigationTests \
+step compile_and_run command-bar-result-navigation CommandBar/ResultNavigationTests \
   "$repo_root/Sources/ParcApp/CommandResultsTable.swift" \
   "$repo_root/Sources/ParcApp/CommandBarEditState.swift"
 
-compile_and_run command-bar-row-diff CommandBar/RowDiffTests \
+step compile_and_run command-bar-row-diff CommandBar/RowDiffTests \
   "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift"
-compile_and_run command-bar-native-hold CommandBar/NativeHoldTests \
+step compile_and_run command-bar-native-hold CommandBar/NativeHoldTests \
   "$repo_root/Sources/ParcApp/CommandBarNativeHold.swift"
-compile_and_run command-bar-ranking CommandBar/RankingTests \
+step compile_and_run command-bar-ranking CommandBar/RankingTests \
   "$repo_root/Sources/ParcApp/CommandBarRanking.swift" "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift"
-bash "$repo_root/scripts/test-command-bar-site-search.sh"
-bash "$repo_root/scripts/test-command-bar-navigation.sh"
-compile_and_run command-bar-command-ranking CommandBar/CommandRankingTests \
+step bash "$repo_root/scripts/test-command-bar-site-search.sh"
+step bash "$repo_root/scripts/test-command-bar-navigation.sh"
+step compile_and_run command-bar-command-ranking CommandBar/CommandRankingTests \
   "$repo_root/Sources/ParcApp/CommandBarRanking.swift" "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift" \
   "$repo_root/Sources/ParcApp/CommandBarCommandCandidate.swift" \
   "$repo_root/Sources/ParcCore/CommandBarTypedCommand.swift" "$repo_root/Sources/ParcCore/CommandBarMenuItemInfo.swift" \
   "$repo_root/Sources/ParcCore/CommandBarCommandPresentation.swift"
 
-compile_and_run command-bar-pointer CommandBar/PointerSelectionTests \
+step compile_and_run command-bar-pointer CommandBar/PointerSelectionTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandResultsTable.swift" \
   "$repo_root/Sources/ParcApp/CommandResultRowView.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
-compile_and_run command-bar-appearance CommandBar/AppearanceTests \
+step compile_and_run command-bar-appearance CommandBar/AppearanceTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandResultRowView.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" \
   "$repo_root/Sources/ParcApp/PopoverBackgroundView.swift" "${tooltip_sources[@]}"
 
-compile_and_run command-bar-site-color CommandBar/SiteColorTests \
+step compile_and_run command-bar-site-color CommandBar/SiteColorTests \
   "$repo_root/Sources/ParcApp/CommandBarSiteColor.swift" \
   "$repo_root/Sources/ParcApp/CommandBarScopeEditing.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
-compile_and_run command-bar-result-text CommandBar/ResultTextTests \
+step compile_and_run command-bar-result-text CommandBar/ResultTextTests \
   "$repo_root/Sources/ParcCore/CommandBarResultText.swift" \
   "$repo_root/Sources/ParcCore/CommandBarCommandPresentation.swift"
 
-compile_and_run command-bar-result-row CommandBar/ResultRowTests \
+step compile_and_run command-bar-result-row CommandBar/ResultRowTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
-compile_and_run command-bar-folder-copy CommandBar/FolderCopyTests
-compile_and_run command-bar-document-alias CommandBar/DocumentAliasTests \
+step compile_and_run command-bar-folder-copy CommandBar/FolderCopyTests
+step compile_and_run command-bar-document-alias CommandBar/DocumentAliasTests \
   "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
 
-compile_and_run command-bar-folder-move CommandBar/FolderMoveTests \
+step compile_and_run command-bar-folder-move CommandBar/FolderMoveTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
-compile_and_run command-bar-favorites CommandBar/FavoriteActionTests \
+step compile_and_run command-bar-favorites CommandBar/FavoriteActionTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
-compile_and_run command-bar-spaces CommandBar/SpaceActionTests \
+step compile_and_run command-bar-spaces CommandBar/SpaceActionTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
-compile_and_run command-bar-typed-commands CommandBar/TypedCommandTests \
+step compile_and_run command-bar-typed-commands CommandBar/TypedCommandTests \
   "$repo_root/Sources/ParcCore/CommandBarTypedCommand.swift" \
   "$repo_root/Sources/ParcCore/CommandBarMenuItemInfo.swift" \
   "$repo_root/Sources/ParcCore/CommandBarCommandPresentation.swift"
 
-compile_and_run command-bar-reconcile-inputs CommandBar/ReconcileInputsTests \
+step compile_and_run command-bar-reconcile-inputs CommandBar/ReconcileInputsTests \
   "$repo_root/Sources/ParcCore/CommandBarReconcileInputs.swift"
 
-compile_and_run command-bar-open-results-skip CommandBar/OpenResultsSkipTests \
+step compile_and_run command-bar-open-results-skip CommandBar/OpenResultsSkipTests \
   "$repo_root/Sources/ParcCore/CommandBarOpenResultsSkip.swift"
 
-compile_and_run command-bar-history-scan-skip CommandBar/HistoryScanSkipTests \
+step compile_and_run command-bar-history-scan-skip CommandBar/HistoryScanSkipTests \
   "$repo_root/Sources/ParcCore/CommandBarHistoryScanSkip.swift"
 
-compile_and_run find-reconcile-skip KeyboardNavigation/FindReconcileSkipTests \
+step compile_and_run find-reconcile-skip KeyboardNavigation/FindReconcileSkipTests \
   "$repo_root/Sources/ParcCore/FindReconcileSkip.swift"
 
-compile_and_run shortcut-tooltip-discovery-skip ShortcutTooltipDiscoverySkipTests \
+step compile_and_run shortcut-tooltip-discovery-skip ShortcutTooltipDiscoverySkipTests \
   "$repo_root/Sources/ParcCore/ShortcutTooltipDiscoverySkip.swift"
-python3 "$repo_root/tests/ShortcutTooltipDiscoverySkip/check.py"
+step python3 "$repo_root/tests/ShortcutTooltipDiscoverySkip/check.py"
 
-compile_and_run peek-presentation-skip PeekPresentationSkipTests \
+step compile_and_run peek-presentation-skip PeekPresentationSkipTests \
   "$repo_root/Sources/ParcCore/PeekPresentationSkip.swift"
-python3 "$repo_root/tests/PeekPresentationSkip/check.py"
+step python3 "$repo_root/tests/PeekPresentationSkip/check.py"
 
-compile_and_run split-layout-flush-skip SplitLayoutFlushSkipTests \
+step compile_and_run split-layout-flush-skip SplitLayoutFlushSkipTests \
   "$repo_root/Sources/ParcCore/SplitLayoutFlushSkip.swift"
-python3 "$repo_root/tests/SplitLayoutFlushSkip/check.py"
-compile_and_run page-switch-hold PageSwitchHoldTests \
+step python3 "$repo_root/tests/SplitLayoutFlushSkip/check.py"
+step compile_and_run page-switch-hold PageSwitchHoldTests \
   "$repo_root/Sources/ParcApp/PageSwitchHold.swift"
-compile_and_run sidebar-outline-layout-flush-skip SidebarOutlineLayoutFlushSkipTests \
+step compile_and_run sidebar-outline-layout-flush-skip SidebarOutlineLayoutFlushSkipTests \
   "$repo_root/Sources/ParcCore/SidebarOutlineLayoutFlushSkip.swift"
-python3 "$repo_root/tests/SidebarOutlineLayoutFlushSkip/check.py"
-compile_and_run sidebar-outline-configure-skip SidebarOutlineConfigureSkipTests \
+step python3 "$repo_root/tests/SidebarOutlineLayoutFlushSkip/check.py"
+step compile_and_run sidebar-outline-configure-skip SidebarOutlineConfigureSkipTests \
   "$repo_root/Sources/ParcCore/SidebarOutlineConfigureSkip.swift"
-python3 "$repo_root/tests/SidebarOutlineConfigureSkip/check.py"
-python3 "$repo_root/tests/SidebarSpaceSwipe/check.py"
-python3 "$repo_root/tests/SidebarHeaderGlyphs/check.py"
-python3 "$repo_root/tests/Tooltip/check.py"
-python3 "$repo_root/tests/FloatingSidebarSurface/check.py"
-python3 "$repo_root/tests/IncognitoWindowTheme/check.py"
-python3 "$repo_root/tests/EmptyWindow/check.py"
-python3 "$repo_root/tests/StartPage/check.py"
-python3 "$repo_root/tests/StartPageMark/check.py"
-python3 "$repo_root/tests/CommandBar/resident_check.py"
-compile_and_run mini-player-layout-flush-skip MiniPlayerLayoutFlushSkipTests
-python3 "$repo_root/tests/MiniPlayerLayoutFlushSkip/check.py"
-compile_and_run pane-content-hosted-layout-flush PaneContentHostedLayoutFlushTests
-python3 "$repo_root/tests/PaneContentHostedLayoutFlush/check.py"
+step python3 "$repo_root/tests/SidebarOutlineConfigureSkip/check.py"
+step python3 "$repo_root/tests/SidebarSpaceSwipe/check.py"
+step python3 "$repo_root/tests/SidebarHeaderGlyphs/check.py"
+step python3 "$repo_root/tests/Tooltip/check.py"
+step python3 "$repo_root/tests/FloatingSidebarSurface/check.py"
+step python3 "$repo_root/tests/IncognitoWindowTheme/check.py"
+step python3 "$repo_root/tests/EmptyWindow/check.py"
+step python3 "$repo_root/tests/StartPage/check.py"
+step python3 "$repo_root/tests/StartPageMark/check.py"
+step python3 "$repo_root/tests/CommandBar/resident_check.py"
+step compile_and_run mini-player-layout-flush-skip MiniPlayerLayoutFlushSkipTests
+step python3 "$repo_root/tests/MiniPlayerLayoutFlushSkip/check.py"
+step compile_and_run pane-content-hosted-layout-flush PaneContentHostedLayoutFlushTests
+step python3 "$repo_root/tests/PaneContentHostedLayoutFlush/check.py"
 
-python3 "$repo_root/tests/CaptureLensTimerIdle/check.py"
+step python3 "$repo_root/tests/CaptureLensTimerIdle/check.py"
 
-bash "$repo_root/scripts/test-shortcut-smiley-timer-idle.sh"
+step bash "$repo_root/scripts/test-shortcut-smiley-timer-idle.sh"
 
-bash "$repo_root/scripts/test-theme-appearance-timer-idle.sh"
+step bash "$repo_root/scripts/test-theme-appearance-timer-idle.sh"
 
-compile_and_run layout-chrome-geometry-skip LayoutChromeGeometrySkipTests \
+step compile_and_run layout-chrome-geometry-skip LayoutChromeGeometrySkipTests \
   "$repo_root/Sources/ParcApp/SidebarMotionController.swift"
-python3 "$repo_root/tests/LayoutChromeGeometrySkip/check.py"
-python3 "$repo_root/tests/LayoutChromePageHostSkip/check.py"
+step python3 "$repo_root/tests/LayoutChromeGeometrySkip/check.py"
+step python3 "$repo_root/tests/LayoutChromePageHostSkip/check.py"
 
-compile_and_run note-editor-chrome-layout-skip NoteEditorChromeLayoutSkipTests
-python3 "$repo_root/tests/NoteEditorChromeLayoutSkip/check.py"
+step compile_and_run note-editor-chrome-layout-skip NoteEditorChromeLayoutSkipTests
+step python3 "$repo_root/tests/NoteEditorChromeLayoutSkip/check.py"
 
-python3 "$repo_root/tests/DocumentsLibraryCatalogSkip/check.py"
+step python3 "$repo_root/tests/DocumentsLibraryCatalogSkip/check.py"
 
-compile_and_run sidebar-new-space SidebarNewSpaceTests
-compile_and_run new-space-window-choice NewSpaceWindowChoiceTests \
+step compile_and_run sidebar-new-space SidebarNewSpaceTests
+step compile_and_run new-space-window-choice NewSpaceWindowChoiceTests \
   "$repo_root/Sources/ParcCore/NewSpaceWindowChoice.swift"
-compile_and_run new-space-blocker-wait NewSpaceBlockerWaitTests \
+step compile_and_run new-space-blocker-wait NewSpaceBlockerWaitTests \
   "$repo_root/Sources/ParcCore/NewSpaceBlockerWait.swift"
-compile_and_run sidebar-space-moves SidebarSpaceMoveTests \
+step compile_and_run sidebar-space-moves SidebarSpaceMoveTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift"
 
-compile_and_run command-bar-folders CommandBar/FolderActionTests \
+step compile_and_run command-bar-folders CommandBar/FolderActionTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
-compile_and_run download-library-selection DownloadLibrary/SelectionTests \
+step compile_and_run download-library-selection DownloadLibrary/SelectionTests \
   "$repo_root/Sources/ParcApp/DownloadLibrarySelection.swift" \
   "$repo_root/Sources/ParcApp/DownloadLibraryTable.swift"
-python3 "$repo_root/tests/DownloadLibrary/check-view.py"
-python3 "$repo_root/tests/LibraryRail/check.py"
-python3 "$repo_root/tests/DownloadLocation/check-picker.py"
-python3 "$repo_root/tests/MenuImages/check.py"
-bash "$repo_root/scripts/test-arc-dialog.sh"
+step python3 "$repo_root/tests/DownloadLibrary/check-view.py"
+step python3 "$repo_root/tests/LibraryRail/check.py"
+step python3 "$repo_root/tests/DownloadLocation/check-picker.py"
+step python3 "$repo_root/tests/MenuImages/check.py"
+step bash "$repo_root/scripts/test-arc-dialog.sh"
 
-compile_and_run sidebar-window-move SidebarWindowMoveTests \
+step compile_and_run sidebar-window-move SidebarWindowMoveTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift" \
   "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
 
-xcrun swiftc -warnings-as-errors -parse-as-library "$repo_root/Sources/ParcCore/DockReopen.swift" \
-  "$repo_root/tests/DockReopenTests.swift" -o "$repo_root/build/tests/dock-reopen"
-"$repo_root/build/tests/dock-reopen"
+step swift_test dock-reopen -warnings-as-errors -parse-as-library "$repo_root/Sources/ParcCore/DockReopen.swift" \
+  "$repo_root/tests/DockReopenTests.swift"
+
+wait
+shopt -s nullglob
+failed=0
+passed=0
+for status in "$steps_dir"/*.status; do
+  id="${status%.status}"
+  read -r result seconds < "$status"
+  if [ "$result" = ok ]; then
+    passed=$((passed + 1))
+  else
+    failed=$((failed + 1))
+    printf '%s\nFAILED after %ss: %s\n%s\n' "$(printf '=%.0s' {1..70})" "$seconds" "$(cat "$id.name")" "$(printf -- '-%.0s' {1..70})"
+    cat "$id.log"
+  fi
+done
+missing=$((step_count - passed - failed))
+if [ -n "${PARC_TEST_DURATIONS:-}" ]; then
+  echo "Slowest steps"
+  for status in "$steps_dir"/*.status; do
+    read -r result seconds < "$status"
+    printf '%5ss  %s\n' "$seconds" "$(cat "${status%.status}.name" | cut -c1-110)"
+  done | sort -rn | head -n "$PARC_TEST_DURATIONS"
+fi
+summary="Ran $step_count steps in $((SECONDS - began))s with $jobs_limit jobs: $passed passed, $failed failed"
+[ "$missing" -eq 0 ] || summary="$summary, $missing without a result"
+echo "$summary"
+[ "$failed" -eq 0 ] && [ "$missing" -eq 0 ]
