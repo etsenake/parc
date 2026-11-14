@@ -289,7 +289,7 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
         case .mostRecent: return "Most Recent Space"
         case .space(let id): return browserStore.state.spaces.first { $0.id == id }?.name ?? "Unavailable Space"
         case .profile(let id):
-            return browserStore.state.profiles.first { $0.id == id }.map { $0.name + " · Most Recent Space" } ?? "Unavailable Profile"
+            return browserStore.state.spaces.first { $0.profileID == id }?.name ?? "Unavailable Space"
         }
     }
     private func captureEditor() {
@@ -376,11 +376,12 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
                     popup.menu?.addItem(NSMenuItem(title: title, action: nil, keyEquivalent: "")); choices.append(destination)
                 }
                 addChoice("Most Recent Space", .mostRecent)
-                for profile in browserStore.state.profiles {
-                    let spaces = browserStore.state.spaces.filter { $0.profileID == profile.id }
-                    guard !spaces.isEmpty else { continue }
-                    addChoice(profile.name + " · Most Recent Space", .profile(profile.id))
-                    for space in spaces { addChoice(profile.name + " · " + space.name, .space(space.id)) }
+                var profileStandIn: UUID?
+                if case .profile(let id) = rule.destination {
+                    profileStandIn = browserStore.state.spaces.first { $0.profileID == id }?.id
+                }
+                for space in browserStore.state.spaces {
+                    addChoice(space.name, space.id == profileStandIn ? rule.destination : .space(space.id))
                 }
                 if !choices.contains(rule.destination) {
                     addChoice("", rule.destination); popup.lastItem?.isEnabled = false
@@ -531,7 +532,7 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
     private func confirmReset() {
         guard let window else { return }
         let dialog = PArcDialog(.init(title: "Reset all routes?",
-            message: "Your Air Traffic Control routes will be removed. Tabs, Spaces and profiles stay unchanged.",
+            message: "Your Air Traffic Control routes will be removed. Your tabs and Spaces stay unchanged.",
             confirm: "Reset Routes", cancel: "Cancel"))
         _ = dialog.begin(for: window, queued: true) { [weak self, weak window] response in
             guard response == .confirm, let self, self.routing.reset(basedOn: self.originalRules) else { return }
