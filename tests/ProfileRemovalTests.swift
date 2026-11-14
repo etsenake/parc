@@ -44,7 +44,7 @@ struct ProfileRemovalTests {
         try rejects { _ = try store.stageUnusedProfileRemovals([seed.profiles[1]]) }
         try expect(store.state.profileRemovals.isEmpty, "Preview lease prevents single and bulk staging")
         store.releaseArchivePreview(preview)
-        try expect(store.defaultProfileID == originalProfile, "Legacy default is immutable original identity")
+        try expect(store.defaultProfileID == originalProfile, "Legacy default resolves to the original Profile")
         try store.saveProfileName(originalProfile, expectedName: "Default", name: "Renamed Default")
         try rejects { _ = try store.profileRemovalSummary(originalProfile) }
         try rejects { _ = try store.validateProfileRemoval(deleting, expectedName: "Other") }
@@ -108,11 +108,11 @@ struct ProfileRemovalTests {
         try expect(restarted.state.settings.settingsProfileID == originalProfile && restarted.state.profileRemovals.isEmpty,
                    "Completion repairs Settings selection and clears transaction")
         let final = try BrowserStore(directory: directory)
-        try expect(final.state.profiles.count == 1 && final.defaultProfileID == originalProfile, "Final identity survives reload")
+        try expect(final.state.profiles.count == 1 && final.defaultProfileID == originalProfile, "Removing another Profile keeps Default in place")
         let firstUnused = final.createProfile(name: "Personal")
         let secondUnused = final.createProfile(name: "Research")
         let reviewed = final.unusedProfilesForRemoval
-        try expect(reviewed.map(\.id) == [firstUnused, secondUnused], "Bulk candidates exclude the renamed Default")
+        try expect(reviewed.map(\.id) == [firstUnused, secondUnused], "Bulk candidates exclude the Default while a Space uses it")
         try rejects { _ = try final.stageUnusedProfileRemovals([]) }
         try rejects { _ = try final.stageUnusedProfileRemovals([reviewed[0], reviewed[0]]) }
         try rejects { _ = try final.stageUnusedProfileRemovals([final.state.profiles[0]]) }
@@ -149,6 +149,27 @@ struct ProfileRemovalTests {
         try bulkRestart.cancelProfileRemoval(bulk[1])
         try expect(bulkRestart.state.profiles.map(\.id) == [originalProfile, secondUnused, newAfterReview],
                    "Independent cancellation preserves the unsuccessful and unreviewed profiles")
+        let legacy = try JSONDecoder().decode(ProfileRemovalRecord.self, from: Data(
+            #"{"id":"\#(UUID().uuidString)","profileID":"\#(secondUnused.uuidString)","profileName":"Research"}"#.utf8))
+        try expect(legacy.fallbackProfileID == nil && bulkRestart.fallbackProfileID(for: legacy) == originalProfile,
+                   "Records saved before fallbacks were recorded use the Default Profile")
+        let space = bulkRestart.state.activeSpaceID
+        bulkRestart.assignProfile(secondUnused, toSpace: space)
+        try expect(bulkRestart.state.spaces.allSatisfy { $0.profileID == secondUnused }, "Default loses its last Space")
+        try bulkRestart.saveSettingsSelection(pane: "Profiles", profileID: originalProfile)
+        let defaultSummary = try bulkRestart.validateProfileRemoval(originalProfile, expectedName: "Renamed Default")
+        try expect(defaultSummary.profile.id == originalProfile, "The Default Profile is deletable once unused")
+        let defaultRecord = try bulkRestart.stageProfileRemoval(originalProfile, expectedName: "Renamed Default")
+        try expect(defaultRecord.fallbackProfileID == secondUnused && bulkRestart.defaultProfileID == secondUnused
+                   && bulkRestart.state.settings.settingsProfileID == secondUnused,
+                   "Staging records the surviving Profile and moves Default and Settings to it in the same save")
+        let pendingRestart = try BrowserStore(directory: directory)
+        try expect(pendingRestart.state.profileRemovals == [defaultRecord] && pendingRestart.defaultProfileID == secondUnused,
+                   "A pending Default removal survives restart with its recorded survivor")
+        try pendingRestart.finishProfileRemoval(defaultRecord)
+        try expect(!pendingRestart.state.profiles.contains { $0.id == originalProfile } && pendingRestart.defaultProfileID == secondUnused,
+                   "Completing the removal leaves the survivor as Default")
+        try expect(try BrowserStore(directory: directory).defaultProfileID == secondUnused, "The new Default survives reload")
         print("Profile removal model: \(assertions) assertions passed")
     }
 }

@@ -4,6 +4,7 @@ struct ProfileRemovalRecord: Codable, Equatable, Identifiable {
     let id: UUID
     let profileID: UUID
     let profileName: String
+    var fallbackProfileID: UUID?
 }
 
 struct ProfileRemovalSummary: Equatable {
@@ -13,12 +14,11 @@ struct ProfileRemovalSummary: Equatable {
 }
 
 enum ProfileRemovalError: LocalizedError, Equatable {
-    case unavailable, defaultProfile, assignedToSpaces, alreadyRemoving, nameChanged
+    case unavailable, assignedToSpaces, alreadyRemoving, nameChanged
     case incompleteOperation, invalidSelection, activeDocumentWrite
     var errorDescription: String? {
         switch self {
         case .unavailable: return "This profile is no longer available."
-        case .defaultProfile: return "The Default Profile cannot be deleted."
         case .assignedToSpaces: return "Only Profiles not assigned to any Spaces can be deleted."
         case .alreadyRemoving: return "This profile has a removal operation in progress."
         case .nameChanged: return "This profile was renamed. Select it again to delete it."
@@ -46,6 +46,17 @@ extension BrowserStore {
 
     var defaultProfileID: UUID { state.settings.defaultProfileID ?? state.profiles[0].id }
 
+    func fallbackProfileID(for record: ProfileRemovalRecord) -> UUID {
+        record.fallbackProfileID ?? defaultProfileID
+    }
+
+    func survivingProfileID(excluding removed: Set<UUID>) -> UUID? {
+        let used = state.spaces.map(\.profileID).filter { !removed.contains($0) && !isProfileRemovalPending($0) }
+        if let current = state.settings.defaultProfileID ?? state.profiles.first?.id, used.contains(current) { return current }
+        if let active = state.spaces.first(where: { $0.id == state.activeSpaceID })?.profileID, used.contains(active) { return active }
+        return used.first
+    }
+
     func isProfileRemovalPending(_ profileID: UUID) -> Bool {
         state.profileRemovals.contains { $0.profileID == profileID }
     }
@@ -54,7 +65,6 @@ extension BrowserStore {
         guard let profile = state.profiles.first(where: { $0.id == profileID }) else {
             throw ProfileRemovalError.unavailable
         }
-        guard profileID != defaultProfileID else { throw ProfileRemovalError.defaultProfile }
         guard !state.spaces.contains(where: { $0.profileID == profileID }) else {
             throw ProfileRemovalError.assignedToSpaces
         }

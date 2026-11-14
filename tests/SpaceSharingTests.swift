@@ -202,13 +202,12 @@ import Foundation
         }
 
         try check(store.wouldOrphanProfile(ifSpace: c.id, joins: .share(withSpace: a.id))
-            && store.unusedProfile(ifSpace: c.id, joins: .share(withSpace: a.id)) == UnusedProfile(id: q.id, name: "Q", isProtected: false), "joining away from a sole Profile reports it")
+            && store.unusedProfile(ifSpace: c.id, joins: .share(withSpace: a.id)) == UnusedProfile(id: q.id, name: "Q"), "joining away from a sole Profile reports it")
         try check(!store.wouldOrphanProfile(ifSpace: a.id, joins: .share(withSpace: c.id)), "a Profile still used elsewhere is not reported")
         try check(!store.wouldOrphanProfile(ifSpace: c.id, joins: .separate), "Keep separate never leaves a Profile unused")
 
         let joined = try change(a.id, .share(withSpace: c.id))
         try check(joined == SpaceSharingChange(spaceID: a.id, profileID: q.id, previousProfileID: p.id, unusedProfile: nil), "moving to a shared Profile reports nothing unused")
-        try check(store.unusedProfile(ifSpace: b.id, joins: .share(withSpace: a.id))?.isProtected == true, "the protected default Profile is flagged")
 
         let profiles = store.state.profiles.count
         let split = try change(c.id, .separate)
@@ -220,13 +219,16 @@ import Foundation
         try check(try change(b.id, .separate) == nil && store.state.profiles.count == profiles + 1, "a Space that already keeps separate is left alone")
 
         let left = try change(a.id, .share(withSpace: c.id))
-        try check(left?.unusedProfile == UnusedProfile(id: q.id, name: "Q", isProtected: false), "leaving a Profile empty reports it")
+        try check(left?.unusedProfile == UnusedProfile(id: q.id, name: "Q"), "leaving a Profile empty reports it")
         let record = try store.stageRemoval(of: left!.unusedProfile!)
-        try check(record?.profileID == q.id && store.isProfileRemovalPending(q.id), "unused Profile removal stages")
+        try check(record.profileID == q.id && store.isProfileRemovalPending(q.id), "unused Profile removal stages")
 
         let last = try change(b.id, .share(withSpace: c.id))
-        try check(last?.unusedProfile == UnusedProfile(id: p.id, name: p.name, isProtected: true), "unused default Profile is reported as protected")
-        try check(try store.stageRemoval(of: last!.unusedProfile!) == nil && !store.isProfileRemovalPending(p.id), "protected Profile is never staged")
+        try check(last?.unusedProfile == UnusedProfile(id: p.id, name: p.name), "the default Profile is reported like any other")
+        let fallback = store.state.spaces.first { $0.id == c.id }!.profileID
+        let defaultRecord = try store.stageRemoval(of: last!.unusedProfile!)
+        try check(store.isProfileRemovalPending(p.id) && defaultRecord.fallbackProfileID == fallback
+            && store.defaultProfileID == fallback, "removing the default Profile hands Default to a surviving Profile in the same save")
     }
 
     static func deletion() throws {
@@ -239,7 +241,7 @@ import Foundation
         try write(state, to: directory)
         let store = try BrowserStore(directory: directory)
         try check(!store.wouldOrphanProfile(ifDeletingSpace: b.id), "deleting a sharing Space reports nothing")
-        try check(store.unusedProfile(ifDeletingSpace: c.id) == UnusedProfile(id: q.id, name: "Q", isProtected: false), "deleting the last Space reports its Profile")
+        try check(store.unusedProfile(ifDeletingSpace: c.id) == UnusedProfile(id: q.id, name: "Q"), "deleting the last Space reports its Profile")
         func delete(_ id: UUID) throws -> SpaceDeletionUndo? {
             var undo: SpaceDeletionUndo?
             store.deleteSpace(SpaceDeletionTarget(spaceID: id, state: store.state)!, documents: [:],
@@ -251,7 +253,7 @@ import Foundation
         try check(shared.flatMap { $0.restoring(in: store.state) } != nil, "shared deletion keeps its Undo")
         try check(try delete(c.id) != nil, "last Space deletes")
         let unused = store.unusedProfile(q.id)
-        try check(unused == UnusedProfile(id: q.id, name: "Q", isProtected: false), "Profile is unused after deletion")
-        try check(try store.stageRemoval(of: unused!)?.profileID == q.id && store.isProfileRemovalPending(q.id), "removal stages right after deletion")
+        try check(unused == UnusedProfile(id: q.id, name: "Q"), "Profile is unused after deletion")
+        try check(try store.stageRemoval(of: unused!).profileID == q.id && store.isProfileRemovalPending(q.id), "removal stages right after deletion")
     }
 }

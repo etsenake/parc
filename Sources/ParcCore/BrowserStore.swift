@@ -3407,9 +3407,11 @@ final class BrowserStore: ObservableObject {
     func stageProfileRemoval(_ profileID: UUID, expectedName: String) throws -> ProfileRemovalRecord {
         let summary = try validateProfileRemoval(profileID, expectedName: expectedName)
         guard !hasProfileWrite(profileID), !hasArchiveActivity(profileID) else { throw ProfileRemovalError.activeDocumentWrite }
-        let record = ProfileRemovalRecord(id: UUID(), profileID: profileID, profileName: summary.profile.name)
+        guard let survivor = survivingProfileID(excluding: [profileID]) else { throw ProfileRemovalError.unavailable }
+        let record = ProfileRemovalRecord(id: UUID(), profileID: profileID, profileName: summary.profile.name,
+                                          fallbackProfileID: survivor)
         var next = state
-        next.settings.defaultProfileID = defaultProfileID
+        handOff(from: [profileID], to: survivor, in: &next)
         next.profileRemovals.append(record)
         try commitProfileSettings(next)
         return record
@@ -3418,12 +3420,19 @@ final class BrowserStore: ObservableObject {
     func stageUnusedProfileRemovals(_ profiles: [BrowserProfile]) throws -> [ProfileRemovalRecord] {
         try validateUnusedProfileRemoval(profiles)
         guard profiles.allSatisfy({ !hasProfileWrite($0.id) && !hasArchiveActivity($0.id) }) else { throw ProfileRemovalError.activeDocumentWrite }
-        let records = profiles.map { ProfileRemovalRecord(id: UUID(), profileID: $0.id, profileName: $0.name) }
+        let removed = Set(profiles.map(\.id))
+        guard let survivor = survivingProfileID(excluding: removed) else { throw ProfileRemovalError.unavailable }
+        let records = profiles.map { ProfileRemovalRecord(id: UUID(), profileID: $0.id, profileName: $0.name, fallbackProfileID: survivor) }
         var next = state
-        next.settings.defaultProfileID = defaultProfileID
+        handOff(from: removed, to: survivor, in: &next)
         next.profileRemovals.append(contentsOf: records)
         try commitProfileSettings(next)
         return records
+    }
+
+    private func handOff(from removed: Set<UUID>, to survivor: UUID, in next: inout BrowserState) {
+        next.settings.defaultProfileID = removed.contains(defaultProfileID) ? survivor : defaultProfileID
+        if let selected = next.settings.settingsProfileID, removed.contains(selected) { next.settings.settingsProfileID = survivor }
     }
 
     func cancelProfileRemoval(_ record: ProfileRemovalRecord) throws {
@@ -3438,7 +3447,6 @@ final class BrowserStore: ObservableObject {
               state.profiles.contains(where: { $0.id == record.profileID }) else {
             throw ProfileRemovalError.unavailable
         }
-        guard record.profileID != defaultProfileID else { throw ProfileRemovalError.defaultProfile }
         guard !state.spaces.contains(where: { $0.profileID == record.profileID }) else {
             throw ProfileRemovalError.assignedToSpaces
         }
@@ -3466,9 +3474,10 @@ final class BrowserStore: ObservableObject {
             }
         }
         next.profileRemovals.removeAll { $0.id == record.id }
-        if next.settings.settingsProfileID == record.profileID {
-            next.settings.settingsProfileID = defaultProfileID
-        }
+        let fallback = fallbackProfileID(for: record)
+        let survivor = next.profiles.contains(where: { $0.id == fallback }) ? fallback : next.profiles.first?.id
+        if next.settings.defaultProfileID == record.profileID { next.settings.defaultProfileID = survivor }
+        if next.settings.settingsProfileID == record.profileID { next.settings.settingsProfileID = survivor }
         try commitProfileSettings(next)
         if historyChanged { historyRevision &+= 1 }
     }
@@ -5112,7 +5121,6 @@ final class BrowserStore: ObservableObject {
         var removalIDs = Set<UUID>(), removalProfiles = Set<UUID>()
         for record in state.profileRemovals {
             guard removalIDs.insert(record.id).inserted, removalProfiles.insert(record.profileID).inserted,
-                  record.profileID != defaultProfileID,
                   state.profiles.contains(where: { $0.id == record.profileID }),
                   !state.spaces.contains(where: { $0.profileID == record.profileID }) else {
                 throw CocoaError(.fileReadCorruptFile)

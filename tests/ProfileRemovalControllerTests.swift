@@ -94,6 +94,20 @@ import Foundation
         PCNativeBrowserApplication.recoveries[1].completion(.removed, nil)
         try expect(!store.state.profiles.contains { $0.id == single } && controller.status(for: single) == nil,
                    "Recovered removal finishes silently")
+        let defaultPath = store.independentEngineProfilePath(for: originalDefault)
+        let survivorPath = store.independentEngineProfilePath(for: assigned)
+        let native = PCNativeBrowserApplication.self
+        try expect(native.preparations.prefix(5).allSatisfy { $0.protectedPath == defaultPath }
+                   && native.preparations.dropFirst(5).allSatisfy { $0.protectedPath == survivorPath },
+                   "Preparation protects the surviving Profile recorded at staging")
+        try expect(native.recoveries[0].protectedPath == defaultPath && native.recoveries[1].protectedPath == survivorPath,
+                   "Recovery passes the same protected Profile the journal recorded")
+        controller.remove(profileID: originalDefault, expectedName: "Default")
+        try expect(native.preparations.count == 8 && native.preparations[7].protectedPath == survivorPath
+                   && store.defaultProfileID == assigned, "The unused Default Profile removes like any other")
+        native.prepare(7).completion?(.removed, nil)
+        try expect(store.state.profiles.map(\.id) == [unreviewed, assigned] && store.defaultProfileID == assigned,
+                   "Removing the Default leaves the survivor as Default")
         print("Profile removal controller: \(assertions) assertions passed (isolated native-boundary doubles)")
     }
 }

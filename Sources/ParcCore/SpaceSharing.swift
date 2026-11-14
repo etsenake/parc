@@ -12,7 +12,6 @@ enum SpaceDataSharing: Equatable {
 struct UnusedProfile: Equatable {
     let id: UUID
     let name: String
-    let isProtected: Bool
 }
 
 struct SpaceSharingChange: Equatable {
@@ -76,14 +75,14 @@ extension BrowserStore {
         guard let profile = state.profiles.first(where: { $0.id == profileID }),
               !state.spaces.contains(where: { $0.profileID == profileID }),
               !isProfileRemovalPending(profileID) else { return nil }
-        return UnusedProfile(id: profileID, name: profile.name, isProtected: profileID == defaultProfileID)
+        return UnusedProfile(id: profileID, name: profile.name)
     }
 
     private func soleProfile(of spaceID: UUID) -> UnusedProfile? {
         guard let space = state.spaces.first(where: { $0.id == spaceID }),
               let profile = state.profiles.first(where: { $0.id == space.profileID }),
               !state.spaces.contains(where: { $0.id != spaceID && $0.profileID == space.profileID }) else { return nil }
-        return UnusedProfile(id: profile.id, name: profile.name, isProtected: profile.id == defaultProfileID)
+        return UnusedProfile(id: profile.id, name: profile.name)
     }
 
     func unusedProfile(ifSpace spaceID: UUID, joins sharing: SpaceDataSharing) -> UnusedProfile? {
@@ -102,8 +101,7 @@ extension BrowserStore {
 
     func wouldOrphanProfile(ifDeletingSpace spaceID: UUID) -> Bool { unusedProfile(ifDeletingSpace: spaceID) != nil }
 
-    func stageRemoval(of unused: UnusedProfile) throws -> ProfileRemovalRecord? {
-        guard !unused.isProtected else { return nil }
+    func stageRemoval(of unused: UnusedProfile) throws -> ProfileRemovalRecord {
         guard unusedProfile(unused.id) == unused else { throw ProfileRemovalError.unavailable }
         return try stageProfileRemoval(unused.id, expectedName: unused.name)
     }

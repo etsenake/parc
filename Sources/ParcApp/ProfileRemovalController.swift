@@ -70,7 +70,7 @@ final class ProfileRemovalController: ObservableObject {
         set(record.profileID, message: "Preparing this profile for removal…", running: true, canCancel: true)
         PCNativeBrowserApplication.prepareProfileRemoval(
             profilePath: store.independentEngineProfilePath(for: record.profileID),
-            protectedProfilePath: store.independentEngineProfilePath(for: store.defaultProfileID),
+            protectedProfilePath: store.independentEngineProfilePath(for: store.fallbackProfileID(for: record)),
             operationID: record.id.uuidString) { [weak self] lease, error in
                 MainActor.assumeIsolated { self?.prepared(record, lease: lease, error: error) }
             }
@@ -114,7 +114,7 @@ final class ProfileRemovalController: ObservableObject {
             MainActor.assumeIsolated {
                 guard let store = self?.store,
                       store.state.profileRemovals.contains(record),
-                      record.profileID != store.defaultProfileID,
+                      record.profileID != store.fallbackProfileID(for: record),
                       store.state.profiles.contains(where: { $0.id == record.profileID && $0.name == record.profileName }),
                       !store.state.spaces.contains(where: { $0.profileID == record.profileID }) else { return false }
                 return true
@@ -129,7 +129,7 @@ final class ProfileRemovalController: ObservableObject {
         set(record.profileID, message: "Finishing this profile’s removal…", running: true, canCancel: false)
         PCNativeBrowserApplication.recoverProfileRemoval(
             profilePath: store.independentEngineProfilePath(for: record.profileID),
-            protectedProfilePath: store.independentEngineProfilePath(for: store.defaultProfileID),
+            protectedProfilePath: store.independentEngineProfilePath(for: store.fallbackProfileID(for: record)),
             operationID: record.id.uuidString) { [weak self] result, error in
                 MainActor.assumeIsolated { self?.completed(record, result: result, error: error) }
             }

@@ -16,11 +16,13 @@ enum PCNativeProfileRemovalState { case removed, pending, failed }
 @MainActor enum PCNativeBrowserApplication {
     struct Preparation {
         let path: String
+        let protectedPath: String
         let operation: String
         let completion: (PCNativeProfileRemoval?, Error?) -> Void
     }
     struct Recovery {
         let path: String
+        let protectedPath: String
         let operation: String
         let completion: (PCNativeProfileRemovalState, Error?) -> Void
     }
@@ -31,12 +33,12 @@ enum PCNativeProfileRemovalState { case removed, pending, failed }
                                       completion: @escaping (PCNativeProfileRemoval?, Error?) -> Void) {
         precondition(profilePath != protectedProfilePath)
         willPrepare?()
-        preparations.append(Preparation(path: profilePath, operation: operationID, completion: completion))
+        preparations.append(Preparation(path: profilePath, protectedPath: protectedProfilePath, operation: operationID, completion: completion))
     }
     static func recoverProfileRemoval(profilePath: String, protectedProfilePath: String, operationID: String,
                                       completion: @escaping (PCNativeProfileRemovalState, Error?) -> Void) {
         precondition(profilePath != protectedProfilePath)
-        recoveries.append(Recovery(path: profilePath, operation: operationID, completion: completion))
+        recoveries.append(Recovery(path: profilePath, protectedPath: protectedProfilePath, operation: operationID, completion: completion))
     }
     static func prepare(_ index: Int) -> PCNativeProfileRemoval {
         let request = preparations[index]
