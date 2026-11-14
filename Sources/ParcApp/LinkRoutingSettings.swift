@@ -285,12 +285,20 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
         style(result); result.frame = frame; parent.addSubview(result); keyViews.append(result); return result
     }
     private func destinationTitle(_ destination: LinkRouteDestination) -> String {
+        let spaces = browserStore.state.spaces
+        let space: BrowserSpace?
         switch destination {
         case .mostRecent: return "Most Recent Space"
-        case .space(let id): return browserStore.state.spaces.first { $0.id == id }?.name ?? "Unavailable Space"
-        case .profile(let id):
-            return browserStore.state.spaces.first { $0.profileID == id }?.name ?? "Unavailable Space"
+        case .space(let id): space = spaces.first { $0.id == id }
+        case .profile(let id): space = spaces.first { $0.profileID == id }
         }
+        return space.map(spaceChoiceTitle) ?? "Unavailable Space"
+    }
+    private func spaceChoiceTitle(_ space: BrowserSpace) -> String {
+        let spaces = browserStore.state.spaces
+        guard spaces.filter({ $0.name == space.name }).count > 1,
+              let position = spaces.firstIndex(where: { $0.id == space.id }) else { return space.name }
+        return "\(space.name) (Space \(position + 1))"
     }
     private func captureEditor() {
         for item in conditionFields {
@@ -381,7 +389,7 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
                     profileStandIn = browserStore.state.spaces.first { $0.profileID == id }?.id
                 }
                 for space in browserStore.state.spaces {
-                    addChoice(space.name, space.id == profileStandIn ? rule.destination : .space(space.id))
+                    addChoice(spaceChoiceTitle(space), space.id == profileStandIn ? rule.destination : .space(space.id))
                 }
                 if !choices.contains(rule.destination) {
                     addChoice("", rule.destination); popup.lastItem?.isEnabled = false

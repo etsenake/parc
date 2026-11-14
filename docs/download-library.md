@@ -76,7 +76,8 @@ Rows are 56 points high with 12-point outer insets, a 24-point file image,
 subtitle. Progress and missing-file artwork use a separate 32-point accessory
 slot. Names truncate without covering controls. Full name, status and source
 remain available through accessibility and tooltips; rows never name a Profile.
-Loading shows "Loading downloads…" and a failed load names the Space it belongs to.
+Loading shows "Loading downloads…" and a failed load names a Space that uses
+that data.
 
 ## Keyboard selection and original-item commands
 
