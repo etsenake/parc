@@ -73,17 +73,20 @@ Dia replaced Chromium's arrow with its own gesture module:
 - An overlay controller that is asked whether a gesture may begin, follows its
   position, and on release commits either the adjacent navigation or the
   selected row of a destination list.
-- A capsule view that rides the gesture, an animated Gaussian blur, and a
-  confirmation wash at commit: white at 40% in light appearance, none in dark.
-- A destination list of favicon-and-title rows shown when you swipe and hold.
-  For Back it sits at the left edge, the current page at the bottom and older
-  pages above, with a rounded highlight on the chosen row.
+- A frosted circle with a chevron that rides the gesture. Armed, it grows and a
+  confirmation wash fills it: white at 40% in light appearance, none in dark.
+  The chevron grows and brightens but never moves.
+- One exit for commit and cancel: the circle collapses in place with a blur and
+  fade. A cancel doesn't spring back to the edge.
+- A destination list of favicon-and-title rows that opens once the fingers rest
+  0.3 seconds past the commit point, highlighting the current page. For Back it
+  sits at the left edge, the current page at the bottom and older pages above.
+  A long history grows the card past the pane; Dia doesn't scroll it.
 - An event interceptor view that takes over the gesture once it belongs to
   navigation, so the page stops scrolling underneath.
 
-Dia's binary is stripped, so its timings, distances, springs, blur radius and
-hold delay come from a targeted decompile of that module or a reference screen
-recording of Dia's swipe.
+Dia ignores Reduce Motion. Its sizes, springs, timings and colors were read
+from its gesture module without running it; Parc's look below uses them.
 
 ## Planned: a Parc-owned gesture
 
@@ -151,42 +154,80 @@ in the same change. Removing a patch while preserving behavior needs no approval
 
 ## Planned: the new look
 
-Dia's motion is the starting reference, made Parc's own:
+[HistorySwipeOverlayView.swift](../Sources/ParcApp/HistorySwipeOverlayView.swift)
+draws the indicator and the list to Dia's values, with the geometry and motion
+as pure functions in
+[HistorySwipeOverlayMotion.swift](../Sources/ParcApp/HistorySwipeOverlayMotion.swift).
+It is made for the forwarder to place over the swiping pane's page and feed
+every recognizer output. It is click-through, hidden from accessibility and
+clipped to that pane, so Split and Peek stay correct.
 
-- A capsule grows out of the pane's edge on the swipe side and follows the
-  fingers with rubber-band resistance. It carries the direction arrow and can
-  show the destination's favicon.
-- At the commit point the capsule fills with the Space's accent, the arrow
-  nudges forward and a trackpad haptic ticks once. Backing off reverses all three.
-- Releasing armed commits: the capsule leaves and the light-appearance wash
-  flashes over the pane. Releasing early springs it back.
-- Colors come from the Space palette, private windows use the private palette,
-  and nothing draws outside the pane, so Split and Peek stay correct.
-- Reduce Motion: no stretch, blur or morph. A static capsule appears when
-  armed, and the wash becomes a short fade.
+- **Circle:** 72 points across on the system popover material, with a 1-point
+  ring (white 15% in dark, black 12.5% in light) and a soft black shadow (25%
+  in dark, 20% in light). A bold 28-point chevron points the way in the label
+  color at half opacity.
+- **Tracking:** the circle starts fully hidden past the pane's edge on the
+  swipe side, vertically centered, and follows the fingers with no lag. At the
+  commit point its edge sits 14 points inside the pane. Beyond it the
+  recognizer's 0.15 rubber band resists, so twice the commit distance carries an
+  armed circle about 26 points in.
+- **Armed:** the circle springs to 82 points and the chevron to 34 (damping
+  0.70, response 0.18 s); the chevron reaches full opacity and the light wash
+  fills the circle over 0.18 seconds on an ease-out. The trackpad plays one
+  level-change haptic. Backing off reverses it silently.
+- **Commit and cancel:** both collapse in place over 0.2 seconds, easing in to
+  1% scale with a 10-point blur and a fade. Cancel just doesn't navigate.
+- **Appearance:** the overlay takes the Space palette's content appearance, as
+  the page loading indicator does, so a light or dark Space and private windows
+  (always dark) pick the matching ring, shadow, wash and highlight. There is no
+  Space accent.
+- **Reduce Motion:** nothing slides, grows, blurs or morphs. The circle stays
+  hidden for the first 20% of travel, then a static 72-point circle crossfades
+  in at its resting spot, 14 points inside the edge, over 0.12 seconds. Arming
+  crossfades the wash and chevron; the list replaces the circle with a
+  0.15-second crossfade, rows step without sliding, and the exit is a
+  0.15-second fade. Haptics stay.
 
-Whether the page itself slides is open for the visual review. The default is
-no: a sliding page needs a picture of the destination page, which costs
-capture work on every swipe.
+The page itself doesn't slide: that would need a picture of the destination
+page on every swipe.
 
 ## Planned: swipe and hold for history
 
-Swipe, keep your fingers down past the commit point, and the capsule morphs into
-a list of that direction's history. It works in both directions: Back at the
-left edge, Forward at the right.
+Swipe past the commit point and keep your fingers down: 0.3 seconds after
+arming, the circle morphs into that direction's history, Back at the left edge
+and Forward at the right.
 
-- The list opens after a short dwell. Dia's delay is the reference, with the
-  value tuned in review.
-- Rows show favicon and title from the swipe's own per-page history snapshot,
-  with the current page at the inner end. Reuse the chooser's row and
-  card styling ([navigation](navigation.md#history-chooser-presentation)) unless
-  the review wants Dia's denser rows.
-- Moving two fingers vertically steps the selection one row at a time, with a
-  haptic detent per row. Long histories scroll with the selection.
+- The card springs out of the circle (damping 0.77, response 0.22 s) while the
+  chevron and list swap over 0.22 seconds with a 10-point blur and a 0.9 scale.
+  A generic haptic marks the opening.
+- The card is 200 points wide with 38-point rows inside 8-point insets, an
+  18-point radius and the circle's material, ring and shadow. Rows show a
+  16-point favicon (a globe when there is none) and a 13-point title. A
+  10-point-radius highlight at 10% white or black marks the choice. Back keeps
+  the card's left edge on the circle's, Forward its right.
+- Rows come from the swipe's own per-page history snapshot, adjacent entry
+  first. Back puts the current page at the bottom and older pages above;
+  Forward puts it at the top and newer pages below.
+- The list opens on the adjacent entry under the fingers, so lifting at once
+  still goes one page, and the dwell counts from arming, so a resting hand's
+  tremor can't hold it off. Both differ from Dia.
+- Two fingers moving up step a Back list, and moving down a Forward list, one
+  row per 8% of trackpad height with an alignment haptic each. The other way
+  heads back to the current page. The card slides on a spring (damping 0.9,
+  response 0.27 s) so the highlight stays under the fingers.
+- Long histories scroll: the card stays 14 points inside the pane and shows a
+  window onto its rows. Fingers resting within 15% of the trackpad's top or
+  bottom edge keep stepping ten rows a second toward that end, a selection and
+  detent per row, so every entry is reachable. The steps start only after the
+  fingers move into that zone, so a list that opens near an edge waits.
 - Lifting navigates to the selected entry. Lifting on the current page, or
-  sliding back out past the edge, cancels.
+  sliding back out past where the swipe began, cancels.
 - It works in background windows, like the plain swipe. The Back/Forward
   chooser remains the keyboard and VoiceOver path to the same history.
+
+`python3 tests/HistorySwipeOverlay/check.py` model-tests the overlay's geometry
+and motion, including Reduce Motion, narrow panes, long lists and a run through
+the real recognizer.
 
 ## Build order and review
 
