@@ -42,6 +42,7 @@ refresh = refresh[:refresh.index("\n    }\n")]
 assert "applyPagePalette(page, paletteForPage(spaceID))" in refresh, "a page shown beside the strip no longer takes its Space's palette"
 assert ("        sidebar.onPagingTheme = { [weak self] transition in\n"
         "            self?.rootView.pagingTransition = transition; self?.sidebarContainer.pagingTransition = transition\n"
+        "            self?.startPage.pagingTransition = transition\n"
         "        }\n") in controller, "the controller no longer gives the swipe to the window's background and the sidebar surface"
 assert "isOnFloatingSurface" not in controller, "the swipe's colour no longer depends on the presentation"
 assert 'shutil.copytree(repo / "Resources", resources, symlinks=True)' in (root / "scripts/build.py").read_text(), \

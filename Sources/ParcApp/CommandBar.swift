@@ -89,6 +89,16 @@ import SwiftUI
     var onSidebarCommit: (() -> Void)?
     var onSidebarQueryState: ((Bool) -> Void)?
     private weak var sidebarAnchor: NSView?
+    private let resident: Bool
+    var isResident: Bool { resident }
+    static var residentRestHeight: CGFloat { CommandBarResidentLayout.restHeight }
+    static var residentMaximumWidth: CGFloat { CommandBarResidentLayout.maximumWidth }
+    private var residentRefocusPending = false
+    private var residentExpanded: Bool {
+        CommandBarResidentLayout.expands(resultCount: results.count, actionsScope: actionsScope, websiteScoped: isWebsiteScoped,
+                                         inputIsEmpty: input.stringValue.isEmpty, scopeInvalidated: scopeInvalidated,
+                                         hasError: nativeError != nil)
+    }
     private let addressOnly: Bool
     private let currentPageTitle: String?
     private var addressWasEdited = false
@@ -171,7 +181,7 @@ import SwiftUI
     private lazy var documents: [CommandBarDocument] = documentSource?() ?? []
     private var topDomainList: [CommandBarRanking.Domain] = []
     private var topDomainGeneration = 0
-    private let typedCommands: [CommandBarTypedCommand]
+    private var typedCommands: [CommandBarTypedCommand]
     private var commands: [KeyboardShortcuts.MenuCommand] = []
     private var commandSearch: [(title: String, text: String)] = []
     private func adoptCommands(_ list: [KeyboardShortcuts.MenuCommand]) {
@@ -202,7 +212,8 @@ import SwiftUI
     private var nativeHold = CommandBarNativeHold()
     private var nativeHoldDeadline: DispatchWorkItem?
 
-    init(parent: NSWindow, tabs: [BrowserTab], history: [BrowserHistoryEntry], historyRevision: UInt64 = 0, historyExcludedURL: String? = nil, spaces: [CommandBarSpaceAction] = [], folders: [CommandBarFolderAction] = [], favoriteAction: CommandBarFavoriteAction? = nil, folderMoves: [CommandBarFolderMove] = [], favoriteRename: CommandBarFavoriteRenameAction? = nil, documents: (() -> [CommandBarDocument])? = nil, typedCommands: [CommandBarTypedCommand] = [], currentURL: String?, profilePath: String, page: PCNativePage?, nativeWindow: PCNativeBrowserWindow? = nil, sidebarAnchor: NSView? = nil, addressOnly: Bool = false, currentPageTitle: String? = nil, initialEdit: (String, NSRange)? = nil, extensionDisposition: PCNativeOmniboxExtensionDisposition? = .currentTab, theme: SpaceTheme = SpaceTheme(), contentAppearance: NSAppearance? = nil) {
+    init(parent: NSWindow, tabs: [BrowserTab], history: [BrowserHistoryEntry], historyRevision: UInt64 = 0, historyExcludedURL: String? = nil, spaces: [CommandBarSpaceAction] = [], folders: [CommandBarFolderAction] = [], favoriteAction: CommandBarFavoriteAction? = nil, folderMoves: [CommandBarFolderMove] = [], favoriteRename: CommandBarFavoriteRenameAction? = nil, documents: (() -> [CommandBarDocument])? = nil, typedCommands: [CommandBarTypedCommand] = [], currentURL: String?, profilePath: String, page: PCNativePage?, nativeWindow: PCNativeBrowserWindow? = nil, sidebarAnchor: NSView? = nil, addressOnly: Bool = false, currentPageTitle: String? = nil, initialEdit: (String, NSRange)? = nil, extensionDisposition: PCNativeOmniboxExtensionDisposition? = .currentTab, theme: SpaceTheme = SpaceTheme(), contentAppearance: NSAppearance? = nil, resident: Bool = false) {
+        self.resident = resident
         self.addressOnly = addressOnly
         self.currentPageTitle = currentPageTitle
         self.addressWasEdited = initialEdit != nil
@@ -216,11 +227,14 @@ import SwiftUI
         self.historyRevision = historyRevision
         self.historyExcludedURL = historyExcludedURL ?? (currentURL == "about:blank" ? nil : currentURL)
         self.spaces = spaces; self.folders = folders; self.favoriteAction = favoriteAction; self.folderMoves = folderMoves; self.favoriteRename = favoriteRename; self.documentSource = documents; self.typedCommands = typedCommands; self.parent = parent; self.profilePath = profilePath
-        if let editor = parent.firstResponder as? NSTextView, editor.isFieldEditor,
+        if resident {
+            originalResponder = nil
+        } else if let editor = parent.firstResponder as? NSTextView, editor.isFieldEditor,
            let field = editor.delegate as? NSTextField {
             originalResponder = field; originalSelection = editor.selectedRange()
         } else { originalResponder = parent.firstResponder }
-        host.appearance = CommandBarPalette.panelAppearance(inlineEmpty: sidebarAnchor != nil, space: contentAppearance, window: parent.appearance)
+        host.appearance = CommandBarPalette.panelAppearance(inlineEmpty: sidebarAnchor != nil, resident: resident,
+                                                            space: contentAppearance, window: parent.appearance)
         super.init()
         host.bar = container
         host.onKeyEquivalent = { [weak self] event in
@@ -248,6 +262,8 @@ import SwiftUI
         input.setAccessibilityHelp("Use Up and Down to choose a result, wrapping at either end while searching, Tab on empty input to search Actions, or Tab to accept its completion or enter its offered search scope, Return to open, Option-Return to open an eligible result in a split pane, Command-Option-Return to open a web result in a background tab and keep searching, Command-Option-Delete to remove a removable suggestion, or Escape to return to the page.")
         if addressOnly {
             input.setAccessibilityHelp("Search or enter an address for the current tab. Use Up and Down to choose a result, Return to open it, or Escape to return to the page.")
+        } else if resident {
+            input.setAccessibilityHelp("Use Up and Down to choose a result, wrapping at either end while searching, Tab on empty input to search Actions, or Tab to accept its completion or enter its offered search scope, Return to open, Command-Option-Return to open a web result in a background tab and keep searching, Command-Option-Delete to remove a removable suggestion, or Escape to clear the search.")
         }
         input.stringValue = initialEdit?.0 ?? initialInput
         previousInput = input.stringValue
@@ -280,9 +296,7 @@ import SwiftUI
         }
         privacyBanner.onSearchSettings = { [weak self] in
             guard let self, !self.dismissed else { return }
-            let action = self.onSearchSettings, valid = self.isOwnerValid
-            self.dismiss()
-            if valid?() != false { action?() }
+            self.handOff(self.onSearchSettings)
         }
         container.onLayout = { [weak self] in self?.layoutContents() }
         container.onAppearanceChange = { [weak self] in self?.applyPalette() }
@@ -299,7 +313,7 @@ import SwiftUI
         omnibox = session
         session.snapshotChanged = { [weak self, weak session] snapshot in
             guard let self, !self.dismissed, snapshot.revision >= self.snapshotRevision else { return }
-            guard self.isOwnerValid?() != false else { self.dismiss(restoreFocus: false); return }
+            guard self.isOwnerValid?() != false else { self.respond(to: .ownerInvalid); return }
             if self.actionsScope { self.snapshotRevision = snapshot.revision; return }
             guard self.nativeHold.accept(input: snapshot.input, isError: snapshot.error != nil) else {
                 self.snapshotRevision = snapshot.revision; return
@@ -332,6 +346,7 @@ import SwiftUI
     }
 
     func present() {
+        guard !resident else { return }
         guard let parent, let content = parent.contentView, !dismissed, isOwnerValid?() != false else { dismiss(restoreFocus: false); return }
         presented = true
         host.frame = content.bounds; host.autoresizingMask = [.width, .height]
@@ -345,43 +360,115 @@ import SwiftUI
             editor.setSelectedRange(NSRange(location: min(selection.location, count), length: min(selection.length, max(0, count - selection.location))))
             initialEditSelection = nil
         }
+        if let editor = input.currentEditor() as? NSTextView { observeEditing(of: editor) }
+        observeLifetime(of: parent)
+    }
+    func presentResident(in slot: NSView) {
+        guard resident, !presented, !dismissed, let parent, slot.window == nil || slot.window === parent else { return }
+        presented = true
+        showsShadow = false
+        container.flatFill = true
+        host.frame = slot.bounds; host.autoresizingMask = [.width, .height]
+        host.onGeometryChange = { [weak self] in self?.refreshPosition() }
+        slot.addSubview(host, positioned: .above, relativeTo: nil)
+        observeEditing(of: fieldEditor)
+        observeLifetime(of: parent)
+        refreshResults(requestNative: false)
+        position(); layoutContents()
+    }
+    func focusResident() {
+        guard resident, presented, !dismissed, let parent, host.window === parent,
+              parent.isKeyWindow, parent.attachedSheet == nil else { return }
+        guard holdsFirstResponder || parent.makeFirstResponder(input) else { return }
+        applySelectionColor(); input.selectText(nil)
+    }
+    func resetResident() {
+        guard resident, !dismissed else { return }
+        let stopsNative = !editState.query.isEmpty || isScoped || scopeInvalidated
+        retireScopeMenu()
+        if isWebsiteScoped && !scopeInvalidated { _ = omnibox?.leaveScope() }
+        if isWebsiteScoped || scopeInvalidated { clearScopeColor() }
+        actionsScope = false; activeScope = nil; enteringScopeName = nil
+        scopeInvalidated = false; unavailableScopeName = nil; queryBeforeScope = ""
+        endNativeHold(); clearNativeResults()
+        explicitSelectionID = nil; backgroundGeneration &+= 1; retainedBackgroundHistory = nil
+        privacyBannerVisible = false
+        editState.edit(""); deletingCharacters = false
+        applyingCompletion = true
+        input.stringValue = ""; previousInput = ""
         if let editor = input.currentEditor() as? NSTextView {
-            if let storage = editor.textStorage {
-                observe(NSTextStorage.didProcessEditingNotification, object: storage) { owner in
-                    guard !owner.applyingCompletion,
-                          let storage = (owner.input.currentEditor() as? NSTextView)?.textStorage,
-                          storage.editedMask.contains(.editedCharacters) else { return }
-                    owner.deletingCharacters = CommandBarEditState.deletesCharacters(
-                        editedRange: storage.editedRange, changeInLength: storage.changeInLength)
-                }
-            }
-            observe(NSTextView.didChangeSelectionNotification, object: editor) { owner in
-                guard !owner.applyingCompletion, let projection = owner.editState.projection else { return }
-                owner.editState.stopAutomaticCompletion()
-                owner.explicitSelectionID = projection.resultID
+            editor.string = ""; editor.setSelectedRange(NSRange(location: 0, length: 0))
+        }
+        applyingCompletion = false
+        if stopsNative { omnibox?.updateInput("", allowsInlineCompletion: false) }
+        refreshResults(requestNative: false)
+        position(); layoutContents()
+    }
+    private func releaseForAction() {
+        guard resident, !dismissed else { return }
+        residentRefocusPending = false
+        if holdsFirstResponder, let parent { residentRefocusPending = parent.makeFirstResponder(nil) }
+        resetResident()
+    }
+    private func refocusAfterAction() {
+        guard residentRefocusPending, submissionDepth == 0 else { return }
+        residentRefocusPending = false
+        guard resident, presented, !dismissed, NSApp.isActive, let parent, parent.isKeyWindow, parent.isVisible,
+              !parent.isMiniaturized, parent.attachedSheet == nil, parent.firstResponder === parent,
+              isOwnerValid?() != false else { return }
+        restorePageFocus?()
+    }
+    private func handOff(_ action: (() -> Void)?) {
+        let valid = isOwnerValid
+        respond(to: .submitted)
+        if valid?() != false { action?() }
+        refocusAfterAction()
+    }
+    private func respond(to event: CommandBarLifetime.Event) {
+        switch CommandBarLifetime.response(to: event, resident: resident) {
+        case .keep: break
+        case .reposition: position()
+        case .retireScopeMenu: retireScopeMenu()
+        case .leaveScope: leaveScope()
+        case .reset: resetResident()
+        case .resetForAction: releaseForAction()
+        case .dismiss: dismiss(restoreFocus: false)
+        case .dismissRestoringFocus: dismiss()
+        }
+    }
+    private func observeEditing(of editor: NSTextView) {
+        if let storage = editor.textStorage {
+            observe(NSTextStorage.didProcessEditingNotification, object: storage) { owner in
+                guard !owner.applyingCompletion,
+                      let storage = (owner.input.currentEditor() as? NSTextView)?.textStorage,
+                      storage.editedMask.contains(.editedCharacters) else { return }
+                owner.deletingCharacters = CommandBarEditState.deletesCharacters(
+                    editedRange: storage.editedRange, changeInLength: storage.changeInLength)
             }
         }
-        observe(NSWindow.didResignKeyNotification, object: parent) { owner in
-            if let alert = owner.scopeAlert, owner.parent?.attachedSheet === alert.panel { return }
-            owner.dismiss(restoreFocus: false)
+        observe(NSTextView.didChangeSelectionNotification, object: editor) { owner in
+            guard !owner.applyingCompletion, let projection = owner.editState.projection else { return }
+            owner.editState.stopAutomaticCompletion()
+            owner.explicitSelectionID = projection.resultID
         }
+    }
+    private func observeLifetime(of parent: NSWindow) {
+        observe(NSWindow.didResignKeyNotification, object: parent) { $0.respond(to: .resignedKey(ownAlert: $0.ownsAttachedSheet)) }
         focusObservation = parent.observe(\.firstResponder) { [weak self] _, _ in
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
                     guard let self, self.presented, !self.dismissed, !self.holdsFirstResponder else { return }
-                    self.dismiss(restoreFocus: false)
+                    self.respond(to: .focusMoved)
                 }
             }
         }
-        observe(NSWindow.willCloseNotification, object: parent) { $0.dismiss(restoreFocus: false) }
-        observe(NSWindow.willMiniaturizeNotification, object: parent) { $0.dismiss(restoreFocus: false) }
-        observe(NSWindow.willBeginSheetNotification, object: parent) { owner in
-            if owner.scopeAlert == nil { owner.dismiss(restoreFocus: false) }
-        }
-        observe(Notification.Name("PCNativeWindowSecurityStateChanged"), object: parent) { $0.dismiss(restoreFocus: false) }
-        observe(NSApplication.didResignActiveNotification, object: NSApp) { $0.dismiss(restoreFocus: false) }
-        observe(NSWindow.didResizeNotification, object: parent) { $0.position() }
-        observe(NSWindow.didMoveNotification, object: parent) { $0.position() }
+        observe(NSWindow.willCloseNotification, object: parent) { $0.respond(to: .closing) }
+        observe(NSWindow.willMiniaturizeNotification, object: parent) { $0.respond(to: .miniaturizing) }
+        observe(NSWindow.willBeginSheetNotification, object: parent) { $0.respond(to: .sheetBegan(ownAlert: $0.scopeAlert != nil)) }
+        observe(Notification.Name("PCNativeWindowSecurityStateChanged"), object: parent) { $0.respond(to: .securityChanged) }
+        observe(NSApplication.didResignActiveNotification, object: NSApp) { $0.respond(to: .appDeactivated) }
+        observe(NSWindow.didResizeNotification, object: parent) { $0.respond(to: .resized) }
+        observe(NSWindow.didMoveNotification, object: parent) { $0.respond(to: .moved) }
     }
     private var holdsFirstResponder: Bool {
         (parent?.firstResponder as? NSView)?.isDescendant(of: host) == true
@@ -403,6 +490,17 @@ import SwiftUI
     private func position() {
         guard let parent, host.window === parent else { return }
         applyAppearance()
+        if resident {
+            let slot = host.bounds
+            let banner = showsPrivacyBanner
+                ? privacyBanner.preferredHeight(forWidth: min(slot.width, CommandBarResidentLayout.maximumWidth)) : 0
+            let height = CommandBarResidentLayout.height(expanded: residentExpanded, rows: results.count, banner: banner)
+            let frame = host.backingAlignedRect(CommandBarResidentLayout.surfaceFrame(in: slot, height: height),
+                                                options: .alignAllEdgesNearest)
+            if container.frame != frame { container.frame = frame; container.needsLayout = true }
+            syncShadow()
+            return
+        }
         let available = parent.screen?.visibleFrame ?? parent.frame
         if let anchor = sidebarAnchor, anchor.window === parent, !anchor.isHiddenOrHasHiddenAncestor {
             let anchorRect = parent.convertToScreen(anchor.convert(anchor.bounds, to: nil))
@@ -411,7 +509,7 @@ import SwiftUI
             let x = min(max(anchorRect.minX, available.minX + 8), available.maxX - width - 8)
             let y = min(max(anchorRect.maxY - height, available.minY + 8), available.maxY - height - 8)
             showsShadow = !sidebarBrowsing
-            container.sidebarBrowsing = sidebarBrowsing
+            container.flatFill = sidebarBrowsing
             container.cornerRadius = sidebarBrowsing ? 7 : 12
             setSurfaceFrame(NSRect(x: x, y: y, width: width, height: height))
             input.placeholderString = sidebarBrowsing || isScoped ? "Search…" : "Search or Enter URL…"
@@ -452,7 +550,8 @@ import SwiftUI
     var contentAppearance: NSAppearance? { didSet { applyAppearance() } }
     private func applyAppearance() {
         let inline = sidebarAnchor.map { $0.window === parent && !$0.isHiddenOrHasHiddenAncestor } ?? false
-        let appearance = CommandBarPalette.panelAppearance(inlineEmpty: inline && sidebarBrowsing, space: contentAppearance, window: parent?.appearance)
+        let appearance = CommandBarPalette.panelAppearance(inlineEmpty: inline && sidebarBrowsing, resident: resident,
+                                                           space: contentAppearance, window: parent?.appearance)
         if host.appearance != appearance { host.appearance = appearance }
     }
     private func applySelectionColor() {
@@ -527,11 +626,11 @@ import SwiftUI
         privacyBanner.isHidden = bannerHeight == 0
         privacyBanner.frame = NSRect(x: 0, y: container.bounds.height - bannerHeight, width: width, height: bannerHeight)
         scroll.frame = NSRect(x: 8, y: 68, width: max(0, width - 16), height: max(0, container.bounds.height - 76 - bannerHeight))
-        emptyLabel.frame = NSRect(x: 24, y: 111, width: max(0, width - 48), height: 40)
+        emptyLabel.frame = NSRect(x: 24, y: resident ? 77 : 111, width: max(0, width - 48), height: 40)
     }
     func reconcile(tabs: [BrowserTab], history: [BrowserHistoryEntry], historyRevision: UInt64, historyExcludedURL: String?, spaces: [CommandBarSpaceAction], folders: [CommandBarFolderAction]) {
         guard !dismissed else { return }
-        guard isOwnerValid?() != false else { dismiss(restoreFocus: false); return }
+        guard isOwnerValid?() != false else { respond(to: .ownerInvalid); return }
         let historyInputChanged = historyRevision != self.historyRevision
             || historyExcludedURL != self.historyExcludedURL
         guard tabs != self.tabs || historyInputChanged || spaces != self.spaces || folders != self.folders else { return }
@@ -548,7 +647,7 @@ import SwiftUI
     }
     func reconcileExtensionActions() {
         guard !dismissed else { return }
-        guard isOwnerValid?() != false else { dismiss(restoreFocus: false); return }
+        guard isOwnerValid?() != false else { respond(to: .ownerInvalid); return }
         extensionLaunchSnapshotIsStale = true
         refreshResults(requestNative: false)
     }
@@ -659,6 +758,9 @@ import SwiftUI
             omnibox?.updateInput(query, allowsInlineCompletion: !isScoped && query == editState.query && editState.allowsInlineCompletion)
         }
         if nativeHold.isHolding { return }
+        if resident, CommandBarResidentLayout.rests(query: query, scoped: isScoped, scopeInvalidated: scopeInvalidated) {
+            restResidentResults(); return
+        }
         let fingerprint = openResultsFingerprint(query: query)
         if CommandBarOpenResultsSkip.shouldSkip(previous: lastOpenResultsFingerprint, next: fingerprint) {
             return
@@ -724,7 +826,7 @@ import SwiftUI
             results.insert(expired, at: 0)
         }
         emptyLabel.stringValue = actionsScope ? "No matching actions" : nativeError ?? (isScoped ? "Search \(scopedName)…" : "Search or Enter URL…")
-        if isScoped || scopeInvalidated { position() }
+        if isScoped || scopeInvalidated || resident { position() }
         let previousIDs = presentedRows.map(\.id)
         let rows = results.map { CommandBarRowDiff.Row(id: $0.id, content: rowContent($0)) }
         let diff = CommandBarRowDiff(old: presentedRows, new: rows)
@@ -774,6 +876,16 @@ import SwiftUI
                 }
             }
         }
+    }
+    private func restResidentResults() {
+        guard !CommandBarOpenResultsSkip.shouldSkip(previous: lastOpenResultsFingerprint,
+                                                    next: CommandBarResidentLayout.restingToken) else { return }
+        lastOpenResultsFingerprint = CommandBarResidentLayout.restingToken
+        resultPublication = UUID()
+        results = []; presentedRows = []; table.reloadData()
+        selectingProgrammatically = true; table.deselectAll(nil); selectingProgrammatically = false
+        clearCompletion(); emptyLabel.isHidden = true
+        updateSelectionAppearance(); position(); layoutContents()
     }
     private func openResultsFingerprint(query: String) -> String {
         "\(addressOnly):\(addressWasEdited):" + CommandBarOpenResultsSkip.fingerprint(
@@ -960,6 +1072,12 @@ import SwiftUI
             }
         }
         return CommandBarRanking.rank(candidates, query: query).map { pool[$0] }
+    }
+    func updateTypedCommands(_ list: [CommandBarTypedCommand]) {
+        guard !dismissed, list != typedCommands else { return }
+        typedCommands = list
+        lastOpenResultsFingerprint = nil
+        refreshResults(requestNative: false)
     }
     func updateTopDomains(_ domains: [CommandBarRanking.Domain]) {
         guard !dismissed, domains != topDomainList else { return }
@@ -1363,7 +1481,7 @@ import SwiftUI
         }
         input.frame.origin.x = left
         input.frame.size.width = max(24, container.bounds.width - left - trailing)
-        if isWebsiteScoped, input.stringValue.isEmpty, results.isEmpty, nativeError == nil {
+        if (isWebsiteScoped && input.stringValue.isEmpty && results.isEmpty && nativeError == nil) || (resident && !residentExpanded) {
             emptyLabel.isHidden = true; scroll.isHidden = true; divider.isHidden = true
         } else {
             scroll.isHidden = sidebarBrowsing; divider.isHidden = sidebarAnchor != nil || addressOnly
@@ -1427,7 +1545,7 @@ import SwiftUI
         return true
     }
     private func leaveScope(restoringQuery: Bool = false) {
-        guard isScoped || scopeInvalidated, !dismissed, isOwnerValid?() != false else { dismiss(); return }
+        guard isScoped || scopeInvalidated, !dismissed, isOwnerValid?() != false else { respond(to: .scopeExitFailed); return }
         retireScopeMenu()
         if actionsScope {
             actionsScope = false; explicitSelectionID = nil
@@ -1437,7 +1555,7 @@ import SwiftUI
             announceScope("Actions search ended")
             return
         }
-        if !scopeInvalidated, omnibox?.leaveScope() != true { dismiss(); return }
+        if !scopeInvalidated, omnibox?.leaveScope() != true { respond(to: .scopeExitFailed); return }
         clearScopeColor()
         activeScope = nil; enteringScopeName = nil; endNativeHold(); clearNativeResults()
         scopeInvalidated = false; unavailableScopeName = nil; explicitSelectionID = nil; nativeError = nil
@@ -1497,9 +1615,7 @@ import SwiftUI
         menu.addItem(.separator())
         let manage = MenuAction.item("Manage…") { [weak self] in
             guard let self, self.scopeMenuIsCurrent(lease) else { return }
-            let action = self.onManageSiteSearch, valid = self.isOwnerValid
-            self.dismiss()
-            if valid?() != false { action?() }
+            self.handOff(self.onManageSiteSearch)
         }
         manage.isEnabled = lease.canManage && onManageSiteSearch != nil; menu.addItem(manage)
         menu.addItem(.separator())
@@ -1581,7 +1697,7 @@ import SwiftUI
         return true
     }
     private func submitSelection(_ disposition: CommandBarSubmission) {
-        guard !dismissed, isOwnerValid?() != false else { dismiss(restoreFocus: false); return }
+        guard !dismissed, isOwnerValid?() != false else { respond(to: .ownerInvalid); return }
         if sidebarBrowsing {
             if disposition != .ordinary { NSSound.beep() } else { onSidebarCommit?() }
             return
@@ -1598,6 +1714,7 @@ import SwiftUI
         defer {
             submissionDepth -= 1
             if dismissed && submissionDepth == 0 { onDismissalSettled?() }
+            refocusAfterAction()
         }
         if let action = result.extensionLaunch {
             guard disposition == .ordinary, !dismissed, parent?.isKeyWindow == true,
@@ -1606,7 +1723,7 @@ import SwiftUI
                 NSSound.beep(); return
             }
             let launch = onLaunchExtension, stillValid = isOwnerValid
-            dismiss()
+            respond(to: .submitted)
             if stillValid?() == false || launch?(action) != true { NSSound.beep() }
             return
         }
@@ -1621,7 +1738,7 @@ import SwiftUI
                 extensionActions = []; explicitSelectionID = nil
                 refreshResults(requestNative: false)
                 announceScope("Request sent to \(action.detail)")
-            } else { dismiss() }
+            } else { respond(to: .submitted) }
             return
         }
         if let move = result.folderMove,
@@ -1652,7 +1769,7 @@ import SwiftUI
         let stillValid = isOwnerValid, rejectDestination = onRejectedDestination
         let isDestination = result.navigation != nil || result.tabID != nil || result.input != nil || result.document != nil || splitCommand != nil
         if isDestination { onWillSubmitDestination?() }
-        dismiss()
+        respond(to: .submitted)
         guard stillValid?() != false else {
             if isDestination { rejectDestination?() }; return
         }
@@ -1730,7 +1847,7 @@ import SwiftUI
             guard (isScoped || scopeInvalidated), textView.string.isEmpty else { return false }
             leaveScope(restoringQuery: true); return true
         case "cancelOperation:":
-            if isScoped || scopeInvalidated { leaveScope() } else { dismiss() }
+            respond(to: .escape(scoped: isScoped || scopeInvalidated))
             return true
         case "moveDown:": moveSelection(1); return true
         case "moveUp:": moveSelection(-1); return true
@@ -1750,7 +1867,7 @@ import SwiftUI
             guard (isScoped || scopeInvalidated), input.stringValue.isEmpty else { return false }
             leaveScope(restoringQuery: true); return true
         case 53:
-            if isScoped || scopeInvalidated { leaveScope() } else { dismiss() }
+            respond(to: .escape(scoped: isScoped || scopeInvalidated))
             return true
         case 125: moveSelection(1); return true
         case 126: moveSelection(-1); return true
@@ -1776,8 +1893,15 @@ private final class CommandFieldEditor: NSTextView {
 private final class CommandBarHost: NSView {
     weak var bar: NSView?
     var onKeyEquivalent: ((NSEvent) -> Bool)?
+    var onGeometryChange: (() -> Void)?
     override func hitTest(_ point: NSPoint) -> NSView? {
         bar?.hitTest(convert(point, from: superview))
+    }
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize); onGeometryChange?()
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow(); onGeometryChange?()
     }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         onKeyEquivalent?(event) == true || super.performKeyEquivalent(with: event)

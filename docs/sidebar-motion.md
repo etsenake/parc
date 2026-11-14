@@ -145,22 +145,22 @@ Containment can be reevaluated several times as region geometry changes, but
 reports once. Timer work is bounded and stale movement cannot promote an old
 stop. The toolbar preference supplies Parc's top-left exclusion rule.
 
-## A window with no tab keeps its sidebar
+## Add Split's pending pane keeps its sidebar
 
-`EmptyWindowSidebarRule` prevents an empty ordinary window from losing its
-navigation. A request to hide its sidebar yields floating presentation instead.
-Closing its last tab can float a hidden sidebar, independently of hover.
-Creating a Space, Library and popup windows are excluded from this rule.
-When an active item returns, a floating sidebar goes back to the hover rule.
-The planned [start page](start-page.md#sidebar) retires the no-tab half of it.
+`PendingSplitPaneSidebarRule` keeps navigation available while Add Split's
+pending pane waits for a result, including a typed result awaiting creation.
+A request to hide the sidebar yields floating presentation, and opening the
+pane floats a hidden sidebar, independently of hover. Filling the pane,
+creating a Note or Easel there, or cancelling ends the hold, and a floating
+sidebar goes back to the hover rule. Creating a Space, the Library and popup
+windows are excluded. The existing tab remains owned by the window throughout;
+the pending pane does not steal or duplicate it.
 
-### Add Split's pending pane
-
-The pending pane for Add Split also counts as having no active item. The
-sidebar remains available while a result is being chosen, including a typed
-result awaiting creation. Filling the pane, creating a Note or Easel there,
-or cancelling ends that hold. The existing tab remains owned by the window
-throughout; the pending pane does not steal or duplicate it.
+An empty Space has no hold. Command-S docks and hides the sidebar there like
+anywhere else, closing the last tab leaves the sidebar where it was, and the
+left edge reveals the floating sidebar on hover. With the sidebar hidden, the
+[start page](start-page.md#sidebar) shows the window buttons and a sidebar
+button.
 
 ## Traffic lights
 

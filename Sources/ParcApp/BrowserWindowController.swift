@@ -400,6 +400,31 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
     var hasCommandBarDuringActivation: Bool { commandBar != nil }
+    private var loadedStartPage: StartPageView?
+    private var startPage: StartPageView { loadedStartPage ?? loadStartPage() }
+    private var residentCommandBar: CommandBar?
+    private var residentCommandOwner: (spaceID: UUID, profileID: UUID)?
+    private var startPagePresented = false
+    private var startPageRefreshScheduled = false
+    private var startPageDeparting = false
+    private var residentTypedCommands: (items: [SidebarItemReference]?, commands: [CommandBarTypedCommand]) = (nil, [])
+    private var residentTopDomainRevision: UInt64?
+    private var residentCommandInputs: ResidentCommandBarInputs?
+    private struct ResidentCommandBarInputs: Equatable {
+        let state: UInt64
+        let history: UInt64
+        let space: UUID
+        let profile: UUID
+        let selection: [UUID]
+        let undo: String?
+        let redo: String?
+    }
+    private func refreshResidentTopDomains(_ bar: CommandBar) {
+        guard !isPrivateBrowsing, residentTopDomainRevision != store.historyRevision else { return }
+        residentTopDomainRevision = store.historyRevision
+        deliverCommandBarTopDomains(to: bar, profileID: activeProfileID)
+    }
+    private func presentsCommandBar(_ panel: CommandBar) -> Bool { commandBar === panel || residentCommandBar === panel }
     var onCommandBarDismissalSettled: (() -> Void)?
     private var commandBarCreatesNewTab = false
     private var commandBarShowsNewTabPlaceholder = false
@@ -709,6 +734,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.toasts.update(theme: self.rootView.theme)
                 self.commandBar?.theme = self.rootView.paletteTheme
                 self.commandBar?.contentAppearance = palette.contentAppearance
+                self.residentCommandBar?.theme = self.rootView.paletteTheme
+                self.residentCommandBar?.contentAppearance = palette.contentAppearance
             }
             self?.popupChrome.palette = palette
             NotificationCenter.default.post(name: NSNotification.Name(PCNativeAirPlayThemeDidChangeNotification), object: self?.window)
@@ -941,6 +968,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var pendingSearchNavigations: [UUID: PCNativeSearchNavigation] = [:]
     private var inputRevisions: [UUID: UUID] = [:]
     private var commandSubmissionRevision = UUID()
+    private var residentCommandSubmissionRevision = UUID()
     private var splitInsertion: SplitPaneInsertionSession?
     private var renderedSplitInsertionID: UUID?
     private var pendingCommandSplitValidation: (() -> Bool)?
@@ -1474,9 +1502,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         libraryMotion.cancel()
         libraryView?.removeFromSuperview(); libraryView = nil; libraryContentWidth = 0
         layoutChrome()
-        refreshEmptyWindowSidebar()
+        refreshPendingPaneSidebar()
         if restoreFocus, let window, window.isKeyWindow, window.attachedSheet == nil {
             if let currentBrowser { window.makeFirstResponder(currentBrowser) }
+            else if showsStartPage, let bar = residentCommandBar { bar.focusResident() }
             else { focusSelectedLocalContent() }
         }
     }
@@ -2933,6 +2962,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.onSelectSpace = { [weak self] id, profile in _ = self?.selectSpaceFromUser(id, profileID: profile) }
         sidebar.onPagingTheme = { [weak self] transition in
             self?.rootView.pagingTransition = transition; self?.sidebarContainer.pagingTransition = transition
+            self?.loadedStartPage?.pagingTransition = transition
         }
         sidebar.onToggleFolder = { [weak self] id in self?.store.toggleFolder(id) }
         sidebar.onCopyFolderLinks = { [weak self] target, format in
@@ -3106,7 +3136,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         lastChromeState = sharedState
         lastChromeRevision = presentedRevision
         noteReturnGate()
-        refreshEmptyWindowSidebar()
+        refreshStartPage()
+        refreshPendingPaneSidebar()
         scheduleUntargetedReturns()
     }
 
@@ -3156,15 +3187,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return false
     }
 
-    private var emptyWindowHoldsSidebar: Bool {
-        EmptyWindowSidebarRule.holdsSidebar(focusedTab: currentTabID, pendingSplitPane: splitInsertion != nil,
-                                            creatingSpace: spaceCreation != nil, popup: isPopupWindow, library: libraryView != nil)
+    private var pendingPaneHoldsSidebar: Bool {
+        PendingSplitPaneSidebarRule.holdsSidebar(pendingSplitPane: splitInsertion != nil, creatingSpace: spaceCreation != nil,
+                                                 popup: isPopupWindow, library: libraryView != nil)
     }
-    private var sidebarHeldByEmptyWindow = false
-    private func refreshEmptyWindowSidebar() {
-        let holds = emptyWindowHoldsSidebar
-        defer { sidebarHeldByEmptyWindow = holds }
-        switch EmptyWindowSidebarRule.refresh(sidebarPresentation, noActiveItem: holds, heldBefore: sidebarHeldByEmptyWindow) {
+    private var sidebarHeldByPendingPane = false
+    private func refreshPendingPaneSidebar() {
+        let holds = pendingPaneHoldsSidebar
+        defer { sidebarHeldByPendingPane = holds }
+        switch PendingSplitPaneSidebarRule.refresh(sidebarPresentation, pendingPane: holds, heldBefore: sidebarHeldByPendingPane) {
         case .keep: break
         case .float: setSidebarPresentation(.floating)
         case .applyHover: refreshSidebarPointer()
@@ -3356,6 +3387,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.plusMenuTheme = rootView.paletteTheme
         commandBar?.theme = rootView.paletteTheme
         commandBar?.contentAppearance = rootView.palette.contentAppearance
+        loadedStartPage?.theme = theme
+        residentCommandBar?.theme = rootView.paletteTheme
+        residentCommandBar?.contentAppearance = rootView.palette.contentAppearance
     }
     private var windowPaletteTheme: SpaceTheme { rootView.incognito ? IncognitoWindowTheme.paletteTheme : activeSpace.theme }
     private var windowBasicBackground: NSColor? { rootView.incognito ? IncognitoWindowTheme.background : nil }
@@ -3571,7 +3605,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let pane = $0 as? BrowserPane else { return false }
             return pane.showsNoteCanvas || pane.showsTopBar || pane.showsPlaceholder
         }
-        let showsEmpty = splitView.arrangedSubviews.count == 1 && splitView.arrangedSubviews.first is SplitPanePlaceholder
+        let showsEmpty = splitView.arrangedSubviews.count == 1
+            && (splitView.arrangedSubviews.first is SplitPanePlaceholder || splitView.arrangedSubviews.first === loadedStartPage)
         let backing = (splitView.arrangedSubviews.first as? BrowserPane)?.contentBacking ?? .white
         splitView.configureBacking(in: pageHost, hasTranslucentPane: translucentPane || showsEmpty, backing: backing)
         refreshPageShadow()
@@ -3634,14 +3669,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if spaceCreation != nil {
                 wanted = [LayoutView()]
             } else {
-                let empty = SplitPanePlaceholder(frame: .zero)
-                empty.setAccessibilityLabel("No tab open")
-                wanted = [empty]
+                wanted = [startPage]
             }
         }
         let previous = splitView.arrangedSubviews
         let leaving = splitView.reconcileArrangedSubviews(wanted)
-        for view in leaving where !(view is BrowserPane) { view.removeFromSuperview() }
+        for view in leaving where !(view is BrowserPane) {
+            if view === loadedStartPage { playStartPageDeparture() } else { view.removeFromSuperview() }
+        }
         let arriving = wanted.filter { view in !previous.contains { $0 === view } }.compactMap { $0 as? BrowserPane }
         let drawing = displayed.compactMap { tab in drawsReportedFrame(tab) ? panes[tab.id] : nil }
         let leavingPanes = leaving.compactMap { $0 as? BrowserPane }
@@ -4399,6 +4434,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return
         }
         refreshSidebarHoverZones()
+        refreshStartPageChrome()
         if sidebarChromePass == .geometry {
             layoutChromeGeometry()
             lastAppliedChromeGeometryFingerprint = fingerprint
@@ -4457,6 +4493,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         var flushedHostedLayout = false
         let pageHostMoved = pageHost.frame != frames.pageHost
         pageHost.frame = frames.pageHost
+        if pageHostMoved, loadedStartPage?.superview != nil { loadedStartPage?.invalidateCoordinates() }
         pageShadow.place(around: frames.pageHost)
         refreshPageShadow()
         splitMarginHandle.frame = splitMarginFrame(frames)
@@ -4542,6 +4579,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let showsOwn = WindowFullscreenPhase.apply(phase, sidebarless: sidebarless, system: systemWindowButtons)
         sidebar.showsWindowButtons = showsOwn
         libraryView?.showsWindowButtons = showsOwn && !sidebarless
+        loadedStartPage?.showsWindowButtons = showsOwn
     }
     private func setFullscreenPhase(_ phase: WindowFullscreenPhase?) {
         guard fullscreenPhase != phase else { return }
@@ -4577,10 +4615,128 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard window?.isKeyWindow == true, windowCommandSecurityAvailable else { return }
             onRequestBrowserTab?(nil); return
         }
+        if focusResidentCommandBar() { return }
         presentCommandBar(newTab: true)
     }
     func focusAddress(anchor: NSView? = nil) {
+        if !isPopupWindow, focusResidentCommandBar() { return }
         presentCommandBar(newTab: false, addressAnchor: anchor)
+    }
+
+    private var showsStartPage: Bool {
+        guard let page = loadedStartPage else { return false }
+        return page.superview === splitView && !isClosing && !isPopupWindow
+    }
+    private func loadStartPage() -> StartPageView {
+        let page = StartPageView()
+        page.coordinateSpace = rootView; page.incognito = rootView.incognito
+        page.barRestHeight = CommandBar.residentRestHeight
+        page.theme = rootView.theme; page.pagingTransition = rootView.pagingTransition
+        page.showsWindowButtons = sidebar.showsWindowButtons
+        page.onToggleSidebar = { [weak self] in self?.toggleSidebar() }
+        loadedStartPage = page
+        return page
+    }
+    private func scheduleStartPageRefresh() {
+        guard !startPageRefreshScheduled else { return }
+        startPageRefreshScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.startPageRefreshScheduled = false
+            if !self.rendering { self.refreshStartPage() }
+        }
+    }
+    private func refreshStartPageChrome() {
+        guard let page = loadedStartPage else { return }
+        let chrome = sidebarPresentation != .locked && nativeFullscreenTabID == nil
+        if page.showsWindowChrome != chrome { page.showsWindowChrome = chrome }
+        page.sidebarToolbarWidth = sidebarLayoutWidth
+        page.sidebarShowsNavigation = !sidebar.usesContentToolbar && !sidebar.navigationInContentToolbar
+    }
+    private func refreshStartPage() {
+        guard showsStartPage, let window else {
+            startPagePresented = false
+            guard !startPageDeparting else { return }
+            residentCommandOwner = nil
+            if let bar = residentCommandBar { residentCommandBar = nil; bar.dismiss(restoreFocus: false) }
+            return
+        }
+        refreshStartPageChrome()
+        let owner = (spaceID: activeSpaceID, profileID: activeProfileID)
+        if let bar = residentCommandBar, residentCommandOwner.map({ $0 != owner }) ?? true {
+            residentCommandBar = nil; residentCommandOwner = nil; bar.dismiss(restoreFocus: false)
+        }
+        var rebuilt = false
+        if residentCommandBar == nil, canOwnDownloadDialog(for: owner.profileID) {
+            let panel = makeCommandBar(in: window, newTab: true, inSidebar: false, addressAnchor: nil, initialEdit: nil, resident: true)
+            residentCommandBar = panel; residentCommandOwner = owner; rebuilt = true
+            panel.restorePageFocus = { [weak self, weak panel] in
+                DispatchQueue.main.async {
+                    guard let self, let panel, self.residentCommandBar === panel, self.showsStartPage,
+                          let window = self.window, window.isKeyWindow, window.attachedSheet == nil, self.commandBar == nil,
+                          ContentFocusRequest.holdsContentFocus(window.firstResponder, window: window, content: self.startPage) else { return }
+                    panel.focusResident()
+                }
+            }
+            panel.presentResident(in: startPage.commandBarSlot)
+            residentCommandInputs = nil
+            refreshResidentTopDomains(panel)
+        }
+        let arrived = !startPagePresented
+        startPagePresented = true
+        if arrived { playStartPageArrival() }
+        guard arrived || rebuilt else { return }
+        DispatchQueue.main.async { [weak self, weak window] in
+            guard let self, let window, self.window === window, self.showsStartPage, window.isKeyWindow,
+                  window.attachedSheet == nil, self.commandBar == nil, self.libraryView == nil, self.spaceCreation == nil,
+                  ContentFocusRequest.holdsContentFocus(window.firstResponder, window: window, content: self.startPage) else { return }
+            self.residentCommandBar?.focusResident()
+        }
+    }
+    private func playStartPageDeparture() {
+        let frame = startPage.convert(startPage.bounds, to: pageHost)
+        guard window?.isVisible == true, window?.isMiniaturized != true, presentation.isReady, !isClosing else {
+            startPage.removeFromSuperview(); return
+        }
+        pageHost.addSubview(startPage, positioned: .above, relativeTo: nil)
+        startPage.frame = frame
+        startPageDeparting = true
+        startPage.isDeparting = true
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            startPage.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.startPageDeparting = false
+                guard self.startPage.superview !== self.splitView else { return }
+                self.startPage.isDeparting = false
+                self.startPage.removeFromSuperview()
+                self.startPage.alphaValue = 1
+                self.refreshStartPage()
+            }
+        })
+    }
+    private func playStartPageArrival() {
+        startPage.isDeparting = false
+        guard window?.isVisible == true, window?.isMiniaturized != true, presentation.isReady else { return }
+        startPage.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            startPage.animator().alphaValue = 1
+        }
+    }
+    private func focusResidentCommandBar() -> Bool {
+        guard showsStartPage, libraryView == nil, spaceCreation == nil, splitInsertion == nil,
+              let bar = residentCommandBar, let window, ownsWindowCommandFocus, window.attachedSheet == nil else { return false }
+        navigationHistory?.dismiss(); sidebarPreviews?.dismiss(); tabSwitcher?.cancel()
+        if let open = commandBar { commandBar = nil; open.dismiss(restoreFocus: false) }
+        if !window.isKeyWindow { window.makeKey() }
+        bar.focusResident()
+        refreshResidentTopDomains(bar)
+        return true
     }
 
     var canFocusSidebar: Bool {
@@ -4642,7 +4798,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             DispatchQueue.main.async {
                 guard let self else { return }
                 if self.store.historyRevision == revision { self.commandBarTopDomainCache = (profileID, revision, domains) }
-                if let panel, self.commandBar === panel { panel.updateTopDomains(domains) }
+                if let panel, self.presentsCommandBar(panel) { panel.updateTopDomains(domains) }
             }
         }
     }
@@ -4702,6 +4858,24 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                           historyExcludedURL: currentURL,
                           spaces: commandBarSpaceActions(), folders: commandBarFolderActions())
         }
+        CommandBarReconcileInputs.withPresentedBar(residentCommandBar) { bar in
+            let profileID = activeProfileID
+            let stamp = ResidentCommandBarInputs(state: store.stateRevision, history: store.historyRevision, space: activeSpaceID,
+                                                 profile: profileID, selection: selectedTabIDs,
+                                                 undo: folderUndo.command(.undo)?.name, redo: folderUndo.command(.redo)?.name)
+            if residentCommandInputs != stamp {
+                residentCommandInputs = stamp
+                bar.reconcile(tabs: commandBarTabs(profileID: profileID, excluding: nil),
+                              history: commandBarHistory(profileID: profileID),
+                              historyRevision: store.historyRevision, historyExcludedURL: nil,
+                              spaces: commandBarSpaceActions(), folders: commandBarFolderActions())
+                let items = currentSidebarMenuItems
+                let commands = commandBarTypedCommands(items: items, profileID: profileID)
+                residentTypedCommands = (items, commands)
+                bar.updateTypedCommands(commands)
+            }
+            if bar.hasFocus { refreshResidentTopDomains(bar) }
+        }
         if let bar = commandBar, let asked = commandBarRecentPages, asked.revision != store.historyRevision {
             deliverCommandBarRecentPages(to: bar, profileID: asked.profileID)
         }
@@ -4740,6 +4914,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             sidebar.setKeyboardSearchActive(true)
             reconcileSidebarKeyboardFocus(scroll: true)
         }
+        let panel = makeCommandBar(in: window, newTab: newTab, inSidebar: inSidebar, addressAnchor: addressAnchor,
+                                   initialEdit: initialEdit, resident: false)
+        commandBarCreatesNewTab = newTab; commandBarShowsNewTabPlaceholder = newTab && !inSidebar
+        commandBar = panel; panel.present()
+        if !isPopupWindow, !isPrivateBrowsing {
+            deliverCommandBarTopDomains(to: panel, profileID: activeProfileID)
+            deliverCommandBarRecentPages(to: panel, profileID: activeProfileID)
+        }
+    }
+    private func makeCommandBar(in window: NSWindow, newTab: Bool, inSidebar: Bool, addressAnchor: NSView?,
+                                initialEdit: (String, NSRange)?, resident: Bool) -> CommandBar {
         let membershipItems = sidebar.commandBarSelectionItems()
             ?? (selectedTabIDs.count == 1 ? currentTabID.map { [.tab($0)] } : nil) ?? []
         let favoriteAction = !isPrivateBrowsing && !isPopupWindow && activePeek == nil
@@ -4785,7 +4970,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let renameEasel = favoriteRenameAction.flatMap { easelEditors[$0.tab.id]?.editor }
         let hadRenameNote = renameNote != nil, hadRenameEasel = renameEasel != nil
         let submissionRevision = UUID()
-        commandSubmissionRevision = submissionRevision
+        if resident { residentCommandSubmissionRevision = submissionRevision } else { commandSubmissionRevision = submissionRevision }
+        let submissionIsCurrent: () -> Bool = { [weak self] in
+            (resident ? self?.residentCommandSubmissionRevision : self?.commandSubmissionRevision) == submissionRevision
+        }
         let commandSelection = selectedTabIDs
         let commandSpace = activeSpaceID
         let commandProfile = activeProfileID
@@ -4800,7 +4988,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   self.activeSpaceID == commandSpace, self.activeProfileID == commandProfile,
                   self.currentTabID == commandTab, self.activePeek === sourcePeek,
                   self.currentBrowser === commandBrowser, self.selectedNativePage() === commandPage,
-                  commandPage?.isClosed != true, window.isVisible, !window.isMiniaturized,
+                  commandPage?.isClosed != true else { return false }
+            if resident { return self.showsStartPage }
+            guard window.isVisible, !window.isMiniaturized,
                   window.attachedSheet == nil || self.commandBar?.ownsAttachedSheet == true else { return false }
             if inSidebar && (self.libraryView != nil || self.sidebarPresentation == .hidden
                 || self.nativeFullscreenTabID != nil) { return false }
@@ -4816,6 +5006,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let seedURL = newTab || WhatsNewPage.matches(historyExcludedURL ?? "") ? nil : historyExcludedURL
         let typedItems = currentSidebarMenuItems
         let typedCommands = commandBarTypedCommands(items: typedItems, profileID: commandProfile)
+        if resident { residentTypedCommands = (typedItems, typedCommands) }
+        let typedSnapshot: () -> (items: [SidebarItemReference]?, commands: [CommandBarTypedCommand]) = { [weak self] in
+            resident ? self?.residentTypedCommands ?? (nil, []) : (typedItems, typedCommands)
+        }
         let panel = CommandBar(parent: window,
             tabs: commandBarTabs(profileID: commandProfile, excluding: commandTab),
             history: commandBarHistory(profileID: commandProfile),
@@ -4830,25 +5024,25 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             currentPageTitle: currentBrowser?.title ?? store.state.tabs.first(where: { $0.id == commandTab })?.title,
             initialEdit: initialEdit,
             extensionDisposition: isPopupWindow && newTab ? nil : (newTab ? .newForegroundTab : .currentTab),
-            theme: windowPaletteTheme, contentAppearance: rootView.palette.contentAppearance)
+            theme: windowPaletteTheme, contentAppearance: rootView.palette.contentAppearance, resident: resident)
         panel.isOwnerValid = isOriginal
         panel.tabCaption = { [weak self] tab in self?.commandBarTabCaption(tab)
             ?? .switchToTab }
         let canPerformTyped: (CommandBarTypedCommand) -> Bool = { [weak self] command in
-            guard isOriginal(), let self, self.commandSubmissionRevision == submissionRevision,
-                  typedCommands.contains(command) else { return false }
-            return self.typedCommandIsAvailable(command, items: typedItems, profileID: commandProfile)
+            guard isOriginal(), let self, submissionIsCurrent(),
+                  typedSnapshot().commands.contains(command) else { return false }
+            return self.typedCommandIsAvailable(command, items: typedSnapshot().items, profileID: commandProfile)
         }
         panel.canPerformTypedCommand = canPerformTyped
         panel.onPerformTypedCommand = { [weak self] command in
             guard let self, self.commandBar == nil, canPerformTyped(command),
-                  let action = self.prepareTypedCommand(command, items: typedItems, profileID: commandProfile),
+                  let action = self.prepareTypedCommand(command, items: typedSnapshot().items, profileID: commandProfile),
                   action() else { NSSound.beep(); return }
         }
         if PCNativeBrowserApplication.responds(to: #selector(PCNativeBrowserApplication.setAllTabAudioMuted(_:in:))) {
             panel.onMuteAllTabs = { [weak self, weak window] muted in
                 guard let self, let window, isOriginal(), self.commandBar == nil,
-                      self.commandSubmissionRevision == submissionRevision,
+                      submissionIsCurrent(),
                       self.window === window, window.isKeyWindow, NSApp.isActive,
                       window.attachedSheet == nil,
                       PCNativeBrowserApplication.responds(to: #selector(PCNativeBrowserApplication.setAllTabAudioMuted(_:in:))) else { return false }
@@ -4869,7 +5063,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return binding.executeExtensionAction(action, for: page)
         }
         panel.onCopyText = { [weak self, weak panel, weak commandBrowser] text in
-            guard let self, let panel, self.commandBar === panel, isOriginal(), self.currentTabID == commandTab else { return }
+            guard let self, let panel, self.presentsCommandBar(panel), isOriginal(), self.currentTabID == commandTab else { return }
             let pageURL = commandBrowser?.url?.absoluteString
                 ?? self.store.state.tabs.first(where: { $0.id == commandTab })?.url
             let upsell = SuperCopyUpsell()
@@ -4878,7 +5072,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if self.showToast(.superCopyUpsell(shortcut: shortcut.display, message: message)) != nil { upsell.recordShown() }
         }
         let canPerformFavorite: (CommandBarFavoriteAction) -> Bool = { [weak self] action in
-            guard isOriginal(), let self, self.commandSubmissionRevision == submissionRevision,
+            guard isOriginal(), let self, submissionIsCurrent(),
                   action == favoriteAction, action.isCurrent(in: self.store.state),
                   self.selectedTabIDs == commandSelection, self.spaceCommandsAvailable,
                   self.activePeek == nil, !self.isPrivateBrowsing,
@@ -4895,7 +5089,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             } catch { showError(error) }
         }
         let canMoveToFolder: (CommandBarFolderMove) -> Bool = { [weak self] move in
-            guard isOriginal(), let self, self.commandSubmissionRevision == submissionRevision,
+            guard isOriginal(), let self, submissionIsCurrent(),
                   self.selectedTabIDs == commandSelection, self.focusedTabID == folderMoveFocus,
                   self.spaceCommandsAvailable, self.activePeek == nil,
                   move.source == folderMoveSource, folderMoves.contains(move),
@@ -4952,7 +5146,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard isOriginal(), let self, let renameBinding, action == favoriteRenameAction,
                   commandTab == action.tab.id, self.nativeBinding === renameBinding,
                   !renameBinding.isPrivateBrowsing, renameBinding.browsingContextKind != .mixed,
-                  self.commandSubmissionRevision == submissionRevision,
+                  submissionIsCurrent(),
                   self.favoriteRename == nil, !self.folderUndo.isBusy, !self.sidebar.isEditingTitle,
                   !self.isPrivateBrowsing, self.activePeek == nil, self.spaceCommandsAvailable,
                   let tab = action.currentTab(in: self.store.state, spaceID: self.activeSpaceID,
@@ -5032,6 +5226,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if let find = self.visibleFind, self.isCurrentFind(find), !self.findHost.isHidden,
                self.window?.makeFirstResponder(self.findField) == true { return }
             if let browser = self.currentBrowser { self.window?.makeFirstResponder(browser.nativePage?.nativeView ?? browser); return }
+            if !resident, self.activePeek == nil, self.currentTabID == nil, self.showsStartPage {
+                self.residentCommandBar?.focusResident(); return
+            }
             guard self.activePeek == nil, let id = self.currentTabID, self.renderedPaneIDs.contains(id) else { return }
             if let editor = self.noteEditors[id]?.editor { editor.focusContent() }
             else if let editor = self.easelEditors[id]?.editor { editor.focusContent() }
@@ -5055,7 +5252,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.selectTab(id)
         }
         let canSplit: (UUID?) -> Bool = { [weak self] target in
-            guard isOriginal(), let self, self.commandSubmissionRevision == submissionRevision,
+            guard isOriginal(), let self, submissionIsCurrent(),
                   self.selectedTabIDs == commandSelection, let commandTab,
                   self.activePeek == nil, !self.isPopupWindow, self.libraryView == nil,
                   self.nativeFullscreenTabID == nil, !self.promotingPeek,
@@ -5130,8 +5327,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         }
         let backgroundOwner: () -> Bool = { [weak self, weak panel] in
-            guard isOriginal(), let self, let panel, self.commandBar === panel,
-                  self.commandSubmissionRevision == submissionRevision,
+            guard isOriginal(), let self, let panel, self.presentsCommandBar(panel),
+                  submissionIsCurrent(),
                   self.selectedTabIDs == commandSelection, !self.isPopupWindow,
                   !self.store.isProfileRemovalPending(commandProfile),
                   self.transferringTabIDs.isEmpty else { return false }
@@ -5188,7 +5385,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         panel.onSearchSettings = { [weak self] in if isOriginal() { self?.showSettings(pane: .profiles) } }
         panel.onDismiss = { [weak self, weak panel] in
-            guard let self, self.commandBar === panel else { return }
+            guard let self else { return }
+            if resident {
+                if self.residentCommandBar === panel { self.residentCommandBar = nil; self.scheduleStartPageRefresh() }
+                return
+            }
+            guard self.commandBar === panel else { return }
             self.commandBar = nil
             self.commandBarRecentPages?.query.invalidate(); self.commandBarRecentPages = nil
             if inSidebar {
@@ -5198,12 +5400,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             self.refreshSidebarPointer()
         }
-        commandBarCreatesNewTab = newTab; commandBarShowsNewTabPlaceholder = newTab && !inSidebar
-        commandBar = panel; panel.present()
-        if !isPopupWindow, !isPrivateBrowsing {
-            deliverCommandBarTopDomains(to: panel, profileID: commandProfile)
-            deliverCommandBarRecentPages(to: panel, profileID: commandProfile)
-        }
+        return panel
     }
     private func openCommandBarBackground(_ navigation: PCNativeSearchNavigation, sourcePage: PCNativePage?,
         spaceID: UUID, profileID: UUID, selection: [UUID], validate: @escaping () -> Bool,
@@ -5281,11 +5478,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         setSidebarPresentation(sidebarPresentation == .locked ? .hidden : .locked)
     }
     private func setSidebarPresentation(_ requested: SidebarPresentation, allowsMotion: Bool = true) {
-        var presentation = EmptyWindowSidebarRule.presentation(for: requested, noActiveItem: emptyWindowHoldsSidebar)
+        var presentation = PendingSplitPaneSidebarRule.presentation(for: requested, pendingPane: pendingPaneHoldsSidebar)
         if sidebarResize != nil { sidebarResizeRegion.cancelInteraction() }
         if presentation == .hidden, spaceCreation != nil {
             cancelSpaceCreation(restoreFocus: false)
-            presentation = EmptyWindowSidebarRule.presentation(for: requested, noActiveItem: emptyWindowHoldsSidebar)
+            presentation = PendingSplitPaneSidebarRule.presentation(for: requested, pendingPane: pendingPaneHoldsSidebar)
         }
         if presentation == .hidden {
             SidebarPlusMenuController.dismiss(in: window)
@@ -9597,7 +9794,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func windowWillReturnFieldEditor(_ sender: NSWindow, to client: Any?) -> Any? {
-        sender === window ? commandBar?.fieldEditor(for: client) : nil
+        guard sender === window else { return nil }
+        return commandBar?.fieldEditor(for: client) ?? residentCommandBar?.fieldEditor(for: client)
     }
 
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
@@ -14685,7 +14883,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard !isClosing else { return }
         if pendingApprovedWindowClose { window?.performClose(nil) }
     }
-    func windowWillClose(_ notification: Notification) { archiveEducationSubscription?.cancel(); updateCompleteSubscription?.cancel(); updateReadySubscription?.cancel(); sidebar.resetAutoArchiveEducation(); sidebar.resetUpdateComplete(); sidebar.resetUpdateReady(); loadingIndicator.reset(); paneFrameObservers.values.forEach(NotificationCenter.default.removeObserver); paneFrameObservers.removeAll(); if isPrivateBrowsing { store.clearPrivateDownloads() }; if let session = spaceCreation { finishSpaceCreation(session) }; pageHost.cancelDrop(); favoriteRename?.cancel(); favoriteSplitRename?.cancel(); splitIconPicker?.cancel(); spaceIconPicker?.cancel(); sidebar.cancelSpaceNameEditing(); noteExport?.cancel(); dismissSidebarMoveNotice(); sharedQuotes.invalidate(); noteEditors.removeAll(); closedItems = WindowClosedItems(); peekRedo = nil; peekUndoOpen = nil; peekUndoAwaitingParent.removeAll(); awaitedPeekRetries.removeAll(); undoHiddenPeek = nil; retiringPageHistory.removeAll(); folderUndo.removeAllActions(); nativeEditingUndo.removeAllActions(); finishScriptingWindowClose(true); pageCapture?.dismiss(restoreFocus: false); navigationHistory?.dismiss(); shortcutEssentials?.close(); tabSwitcher?.cancel(); libraryMotion.cancel(); libraryView?.removeFromSuperview(); libraryView = nil; libraryContentWidth = 0; easelImageDestination?.dismiss(); downloadReview?.dismiss(); downloadArrival.dismiss(force: true); dismissSiteControlCenter(); addressPromptHolds.values.forEach { $0.end() }; shutdownBrowsers(); userActivity?.invalidate(); userActivity = nil; onClose?() }
+    func windowWillClose(_ notification: Notification) { archiveEducationSubscription?.cancel(); updateCompleteSubscription?.cancel(); updateReadySubscription?.cancel(); sidebar.resetAutoArchiveEducation(); sidebar.resetUpdateComplete(); sidebar.resetUpdateReady(); loadingIndicator.reset(); paneFrameObservers.values.forEach(NotificationCenter.default.removeObserver); paneFrameObservers.removeAll(); if isPrivateBrowsing { store.clearPrivateDownloads() }; if let session = spaceCreation { finishSpaceCreation(session) }; pageHost.cancelDrop(); favoriteRename?.cancel(); favoriteSplitRename?.cancel(); splitIconPicker?.cancel(); spaceIconPicker?.cancel(); sidebar.cancelSpaceNameEditing(); noteExport?.cancel(); dismissSidebarMoveNotice(); sharedQuotes.invalidate(); noteEditors.removeAll(); closedItems = WindowClosedItems(); peekRedo = nil; peekUndoOpen = nil; peekUndoAwaitingParent.removeAll(); awaitedPeekRetries.removeAll(); undoHiddenPeek = nil; retiringPageHistory.removeAll(); folderUndo.removeAllActions(); nativeEditingUndo.removeAllActions(); finishScriptingWindowClose(true); pageCapture?.dismiss(restoreFocus: false); navigationHistory?.dismiss(); shortcutEssentials?.close(); tabSwitcher?.cancel(); libraryMotion.cancel(); libraryView?.removeFromSuperview(); libraryView = nil; libraryContentWidth = 0; easelImageDestination?.dismiss(); downloadReview?.dismiss(); downloadArrival.dismiss(force: true); dismissSiteControlCenter(); addressPromptHolds.values.forEach { $0.end() }; if let bar = residentCommandBar { residentCommandBar = nil; bar.dismiss(restoreFocus: false) }; shutdownBrowsers(); userActivity?.invalidate(); userActivity = nil; onClose?() }
     func windowDidResignKey(_ notification: Notification) {
         if notification.object as? NSWindow === window { splitLinkGeneration &+= 1 }
         pageHost.cancelDrop()

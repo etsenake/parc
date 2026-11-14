@@ -9,7 +9,7 @@ import AppKit
 
     static func main() {
         presentationRule()
-        activeItemPredicate()
+        pendingPanePredicate()
         hoverHandOff()
         placeholderBacking()
         shadowImage()
@@ -19,40 +19,38 @@ import AppKit
     }
 
     static func presentationRule() {
-        typealias Rule = EmptyWindowSidebarRule
+        typealias Rule = PendingSplitPaneSidebarRule
         for requested in [SidebarPresentation.locked, .floating, .hidden] {
-            check(Rule.presentation(for: requested, noActiveItem: false) == requested, "a window with a tab presents \(requested) as asked")
+            check(Rule.presentation(for: requested, pendingPane: false) == requested, "without a pending pane \(requested) presents as asked")
         }
-        check(Rule.presentation(for: .hidden, noActiveItem: true) == .floating, "hiding a window with no tab floats its sidebar")
-        check(Rule.presentation(for: .locked, noActiveItem: true) == .locked, "⌘S still locks a floating sidebar with no tab")
-        check(Rule.presentation(for: .floating, noActiveItem: true) == .floating, "a reveal with no tab floats")
-        check(Rule.refresh(.hidden, noActiveItem: true, heldBefore: false) == .float, "a window left without a tab floats its hidden sidebar")
-        check(Rule.refresh(.hidden, noActiveItem: true, heldBefore: true) == .float, "a hidden sidebar is floated again on any render without a tab")
-        check(Rule.refresh(.floating, noActiveItem: true, heldBefore: true) == .keep, "a floating sidebar with no tab stays")
-        check(Rule.refresh(.locked, noActiveItem: true, heldBefore: false) == .keep, "a locked sidebar is untouched")
-        check(Rule.refresh(.floating, noActiveItem: false, heldBefore: true) == .applyHover, "a tab hands the floating sidebar back to the hover rule")
-        check(Rule.refresh(.floating, noActiveItem: false, heldBefore: false) == .keep, "an ordinary hover-floating sidebar is not re-decided by a render")
-        check(Rule.refresh(.hidden, noActiveItem: false, heldBefore: true) == .keep, "a hidden sidebar with a tab stays hidden")
-        check(Rule.refresh(.locked, noActiveItem: false, heldBefore: true) == .keep, "a locked sidebar with a tab is untouched")
+        check(Rule.presentation(for: .hidden, pendingPane: true) == .floating, "hiding while a pane is pending floats the sidebar")
+        check(Rule.presentation(for: .locked, pendingPane: true) == .locked, "⌘S still locks a floating sidebar while a pane is pending")
+        check(Rule.presentation(for: .floating, pendingPane: true) == .floating, "a reveal while a pane is pending floats")
+        check(Rule.refresh(.hidden, pendingPane: true, heldBefore: false) == .float, "opening a pending pane floats a hidden sidebar")
+        check(Rule.refresh(.hidden, pendingPane: true, heldBefore: true) == .float, "a hidden sidebar is floated again on any render while the pane is pending")
+        check(Rule.refresh(.floating, pendingPane: true, heldBefore: true) == .keep, "a floating sidebar stays while the pane is pending")
+        check(Rule.refresh(.locked, pendingPane: true, heldBefore: false) == .keep, "a locked sidebar is untouched")
+        check(Rule.refresh(.floating, pendingPane: false, heldBefore: true) == .applyHover, "ending the pane hands the floating sidebar back to the hover rule")
+        check(Rule.refresh(.floating, pendingPane: false, heldBefore: false) == .keep, "an ordinary hover-floating sidebar is not re-decided by a render")
+        check(Rule.refresh(.hidden, pendingPane: false, heldBefore: true) == .keep, "a hidden sidebar stays hidden once the pane ends")
+        check(Rule.refresh(.locked, pendingPane: false, heldBefore: true) == .keep, "a locked sidebar is untouched once the pane ends")
     }
 
-    static func activeItemPredicate() {
-        typealias Rule = EmptyWindowSidebarRule
-        let tab = UUID()
-        func holds(_ focused: UUID?, pending: Bool = false, space: Bool = false, popup: Bool = false, library: Bool = false) -> Bool {
-            Rule.holdsSidebar(focusedTab: focused, pendingSplitPane: pending, creatingSpace: space, popup: popup, library: library)
+    static func pendingPanePredicate() {
+        typealias Rule = PendingSplitPaneSidebarRule
+        func holds(pending: Bool = false, space: Bool = false, popup: Bool = false, library: Bool = false) -> Bool {
+            Rule.holdsSidebar(pendingSplitPane: pending, creatingSpace: space, popup: popup, library: library)
         }
-        check(holds(nil), "a window with no tab holds its sidebar")
-        check(!holds(tab), "a focused tab leaves the sidebar to the hover rule")
-        check(holds(tab, pending: true), "a pending Add Split pane holds the sidebar although a tab exists")
-        check(!holds(nil, library: true) && !holds(tab, pending: true, library: true), "the Library is left alone")
-        check(!holds(nil, popup: true) && !holds(tab, pending: true, popup: true), "a popup is left alone")
-        check(!holds(nil, space: true) && !holds(tab, pending: true, space: true), "Space creation is left alone")
-        check(Rule.presentation(for: .hidden, noActiveItem: holds(tab, pending: true)) == .floating,
-              "every hide floats while the pane is pending")
-        check(Rule.refresh(.hidden, noActiveItem: holds(tab, pending: true), heldBefore: false) == .float,
-              "opening the pending pane floats a hidden sidebar")
-        check(Rule.refresh(.floating, noActiveItem: holds(tab), heldBefore: true) == .applyHover,
+        check(!holds(), "an empty Space leaves the sidebar to Command-S")
+        check(holds(pending: true), "a pending Add Split pane holds the sidebar")
+        check(!holds(pending: true, library: true), "the Library is left alone")
+        check(!holds(pending: true, popup: true), "a popup is left alone")
+        check(!holds(pending: true, space: true), "Space creation is left alone")
+        check(Rule.presentation(for: .hidden, pendingPane: holds()) == .hidden, "Command-S hides the sidebar in an empty Space")
+        check(Rule.refresh(.hidden, pendingPane: holds(), heldBefore: false) == .keep, "closing the last tab leaves a hidden sidebar hidden")
+        check(Rule.refresh(.locked, pendingPane: holds(), heldBefore: false) == .keep, "closing the last tab leaves a docked sidebar docked")
+        check(Rule.presentation(for: .hidden, pendingPane: holds(pending: true)) == .floating, "every hide floats while the pane is pending")
+        check(Rule.refresh(.floating, pendingPane: holds(), heldBefore: true) == .applyHover,
               "filling or cancelling the pane hands the floating sidebar back to the hover rule")
     }
 
@@ -75,7 +73,7 @@ import AppKit
         check(decide(.hidden, key: true).action == .keep, "no hover reveal without an activation")
         check(decide(stored: true, info: inSidebar).action == .keep, "the pointer still on the sidebar keeps it")
         check(decide(stored: true).action == .dismiss
-              && EmptyWindowSidebarRule.presentation(for: .hidden, noActiveItem: false) == .hidden, "the pointer elsewhere hides it")
+              && PendingSplitPaneSidebarRule.presentation(for: .hidden, pendingPane: false) == .hidden, "the pointer elsewhere hides it")
     }
 
     static func placeholderBacking() {

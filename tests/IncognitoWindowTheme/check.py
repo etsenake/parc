@@ -21,7 +21,8 @@ for use in ("        let incognitoTheme = store.isEphemeral && !popup\n"
             "completion(.closed(self.recentSwitcherItems(available, in: window), theme: self.windowPaletteTheme))",
             "DownloadReviewController(review: snapshot, theme: activeSpace.theme, incognito: rootView.incognito)"):
     assert use in controller, f"a private window no longer takes the incognito theme: {use}"
-assert controller.count(".incognito = ") == 2, "only the window's own two surfaces are incognito"
+assert controller.count(".incognito = ") == 3 and "page.coordinateSpace = rootView; page.incognito = rootView.incognito" in controller, \
+    "only the window's own two surfaces and its start page are incognito"
 review = (app / "DownloadReviewController.swift").read_text()
 assert ("        if incognito { panel.appearance = NSAppearance(named: .darkAqua) }\n"
         "        super.init(window: panel)\n"

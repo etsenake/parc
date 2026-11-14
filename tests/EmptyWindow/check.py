@@ -16,13 +16,13 @@ def body(name):
 
 
 setter = body("setSidebarPresentation")
-mapping = "var presentation = EmptyWindowSidebarRule.presentation(for: requested, noActiveItem: emptyWindowHoldsSidebar)"
-assert setter.splitlines()[1].strip() == mapping, "setSidebarPresentation no longer applies the no-tab rule before anything else"
+mapping = "var presentation = PendingSplitPaneSidebarRule.presentation(for: requested, pendingPane: pendingPaneHoldsSidebar)"
+assert setter.splitlines()[1].strip() == mapping, "setSidebarPresentation no longer applies the pending-pane rule before anything else"
 assert ("if presentation == .hidden, spaceCreation != nil {\n"
         "            cancelSpaceCreation(restoreFocus: false)\n"
-        "            presentation = EmptyWindowSidebarRule.presentation(for: requested, noActiveItem: emptyWindowHoldsSidebar)\n"
-        "        }\n") in setter, "cancelling Space creation no longer re-applies the no-tab rule"
-assert setter.count("EmptyWindowSidebarRule.presentation(") == 2
+        "            presentation = PendingSplitPaneSidebarRule.presentation(for: requested, pendingPane: pendingPaneHoldsSidebar)\n"
+        "        }\n") in setter, "cancelling Space creation no longer re-applies the pending-pane rule"
+assert setter.count("PendingSplitPaneSidebarRule.presentation(") == 2
 held = "if presentation == .floating { sidebarHoverActive = true }"
 guard = "guard sidebarPresentation != presentation else { return }"
 assert setter.index(mapping) < setter.index("cancelSpaceCreation(restoreFocus: false)") < setter.index(held) < setter.index(guard), \
@@ -40,8 +40,8 @@ assert sorted(direct) == [".hidden", ".hidden", "presentation", "presentation", 
 render = re.search(r"^    private func render\(_ sharedState: BrowserState\) \{.*?^    }\n", controller, re.S | re.M).group(0)
 tail = [line.strip() for line in render[render.index("        lastChromeState = sharedState\n"):].rstrip().removesuffix("}").splitlines()
         if line.strip()]
-assert "refreshEmptyWindowSidebar()" in tail, "render no longer ends by applying the no-tab rule"
-for later in tail[tail.index("refreshEmptyWindowSidebar()") + 1:]:
+assert "refreshPendingPaneSidebar()" in tail, "render no longer ends by applying the pending-pane rule"
+for later in tail[tail.index("refreshPendingPaneSidebar()") + 1:]:
     deferred = re.fullmatch(r"(\w+)\(\)", later)
     assert deferred, f"render changes state after applying the no-tab rule: {later}"
     scheduled = body(deferred.group(1))
@@ -50,10 +50,11 @@ for later in tail[tail.index("refreshEmptyWindowSidebar()") + 1:]:
     assert start > 0 and scheduled[scheduled.index("\n        }\n", start):] == "\n        }\n    }\n" \
         and all(re.fullmatch(r"|guard [^()]* else \{ return \}|\w+Scheduled = true", line.strip()) for line in now), \
         f"render changes state after applying the no-tab rule: {later}"
-assert "layoutChrome()\n        refreshEmptyWindowSidebar()" in body("closeLibrary"), "closing the Library no longer applies the no-tab rule"
-assert ("EmptyWindowSidebarRule.holdsSidebar(focusedTab: currentTabID, pendingSplitPane: splitInsertion != nil,\n"
-        "                                            creatingSpace: spaceCreation != nil, popup: isPopupWindow, library: libraryView != nil)"
-        ) in controller, "the window no longer feeds its focused tab and pending Add Split pane to the rule"
+assert "layoutChrome()\n        refreshPendingPaneSidebar()" in body("closeLibrary"), "closing the Library no longer applies the pending-pane rule"
+assert ("PendingSplitPaneSidebarRule.holdsSidebar(pendingSplitPane: splitInsertion != nil, creatingSpace: spaceCreation != nil,\n"
+        "                                                 popup: isPopupWindow, library: libraryView != nil)"
+        ) in controller, "the window no longer feeds its pending Add Split pane to the rule"
+assert "focusedTab" not in (app / "SidebarMotionController.swift").read_text(), "an empty Space holds the sidebar again"
 assert "splitInsertion = session\n        render(store.state)" in body("beginSplitInsertion"), "opening the pending pane no longer renders"
 assert "splitInsertion = nil; session.cancel()\n        let panel = commandBar; commandBar = nil; panel?.dismiss(restoreFocus: false)\n        render(store.state)" \
     in body("cancelSplitInsertion"), "cancelling the pending pane no longer renders"
@@ -63,10 +64,30 @@ assert fill.index("splitInsertion = nil; session.cancel()") < fill.index("focuse
 assert controller.index("self.splitInsertion = nil; session.cancel()") < controller.index("self.focusedTabID = id; self.render(self.store.state)"), \
     "filling the pane with a result no longer renders after ending it"
 assert controller.count("splitInsertion = nil; session.cancel()") == 3, "an unexpected end of the pending pane"
-assert "let empty = SplitPanePlaceholder(frame: .zero)\n                empty.setAccessibilityLabel(\"No tab open\")" in controller
-assert "let showsEmpty = splitView.arrangedSubviews.count == 1 && splitView.arrangedSubviews.first is SplitPanePlaceholder" in controller
+assert "            } else {\n                wanted = [startPage]\n            }" in controller, "an empty Space no longer shows the start page"
+assert ("let showsEmpty = splitView.arrangedSubviews.count == 1\n"
+        "            && (splitView.arrangedSubviews.first is SplitPanePlaceholder || splitView.arrangedSubviews.first === loadedStartPage)") in controller
 assert re.search(r"splitView\.configureBacking\(in: pageHost, hasTranslucentPane: translucentPane \|\| showsEmpty[,)]", controller)
 assert "pageShadow.isHidden = splitView.arrangedSubviews.count > 1 || nativeFullscreenTabID != nil" in controller
+assert "        if focusResidentCommandBar() { return }\n        presentCommandBar(newTab: true)" in controller, \
+    "Command-T no longer focuses the start page's command bar"
+assert "        if !isPopupWindow, focusResidentCommandBar() { return }\n        presentCommandBar(newTab: false, addressAnchor: anchor)" \
+    in controller, "Command-L no longer focuses the start page's command bar"
+start_page = body("refreshStartPage")
+assert "panel.presentResident(in: startPage.commandBarSlot)" in start_page, "the start page no longer hosts a resident command bar"
+assert "ContentFocusRequest.holdsContentFocus(window.firstResponder, window: window, content: self.startPage)" in start_page, \
+    "the start page's field takes focus away from another control"
+assert "canOwnDownloadDialog(for: owner.profileID)" in start_page, "a resident bar is rebuilt for a Profile that cannot own it"
+assert "noteReturnGate()\n        refreshStartPage()\n        refreshPendingPaneSidebar()" in render, "render no longer refreshes the start page"
+assert "else if showsStartPage, let bar = residentCommandBar { bar.focusResident() }" in body("closeLibrary"), \
+    "closing the Library over the start page leaves nothing focused"
+assert "self.currentTabID == nil, self.showsStartPage {\n                self.residentCommandBar?.focusResident(); return" in controller, \
+    "dismissing a palette over the start page leaves nothing focused"
+assert "residentTypedCommands = (items, commands)\n                bar.updateTypedCommands(commands)" in controller, \
+    "the resident bar keeps the typed commands it was built with"
+assert "if residentCommandInputs != stamp {" in controller, "the start page redoes command bar bookkeeping on every render"
+assert "if let bar = residentCommandBar { residentCommandBar = nil; bar.dismiss(restoreFocus: false) }; shutdownBrowsers();" in controller, \
+    "closing the window leaves the resident command bar behind"
 
 sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [app / name for name in (
     "SidebarMotionController.swift", "SidebarChromeLayout.swift", "WindowStandardButtons.swift", "ParcSplitView.swift",
@@ -92,10 +113,10 @@ def build(directory, name, replace=None):
 with tempfile.TemporaryDirectory(prefix="parc-empty-window-") as directory:
     subprocess.run([str(build(directory, "check"))], check=True)
     controls = {
-        "hiding with no tab": (("SidebarMotionController.swift", "requested == .hidden && noActiveItem ? .floating : requested",
-                                "requested"), "hiding a window with no tab floats its sidebar"),
-        "pending pane": (("SidebarMotionController.swift", "(focusedTab == nil || pendingSplitPane) && !creatingSpace",
-                          "focusedTab == nil && !creatingSpace"), "a pending Add Split pane holds the sidebar although a tab exists"),
+        "hiding with a pending pane": (("SidebarMotionController.swift", "requested == .hidden && pendingPane ? .floating : requested",
+                                        "requested"), "hiding while a pane is pending floats the sidebar"),
+        "empty Space holds": (("SidebarMotionController.swift", "pendingSplitPane && !creatingSpace", "!creatingSpace"),
+                              "an empty Space leaves the sidebar to Command-S"),
         "shadow over the card": (("PageCardShadow.swift", "        context.clear(canvas)\n", ""),
                                  "the card's interior is clear"),
         "circular clear": (("PageCardShadow.swift", "        shape.cornerCurve = .continuous\n", "        shape.cornerCurve = .circular\n"),

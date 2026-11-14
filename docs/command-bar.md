@@ -13,10 +13,21 @@ owner; neither reconstructs a classified request from its display URL.
 | Command–L | Large palette with the current native URL selected |
 | Click sidebar, page-toolbar or popup URL | 350-point compact editor anchored to that control |
 | Control–Space | Sidebar keyboard session, expanding results when typing |
+| A Space with no open tab | Resident bar on the [start page](start-page.md), which Command–T and Command–L focus |
 
 The compact editor offers current/recent web addresses and native suggestions,
 with no application commands, document actions or Actions scope. It navigates the
 original current tab. The large palette retains commands and tab switching.
+
+The resident bar is the large palette's session hosted in a slot the start page
+provides, with the same results, commands, scopes and submission. It rests as the
+64-point field with no empty-query tab or history lists; typing grows results
+downward from a fixed top edge, up to five rows. Escape leaves a scope, then
+clears and collapses; it never dismisses. A submission resets the bar instead,
+and the start page dismisses it when a tab opens or the window closes. Outside
+its card the slot passes the mouse through, so the page still drags the window.
+`CommandBarResidentLayout.swift` holds its geometry and
+`CommandBarResidentLifetime.swift` the lifetime rules it shares with the palette.
 
 `Sources/ParcApp/CommandBar.swift` owns the surface/session;
 `CommandBarEditState.swift`, `CommandBarScopeEditing.swift` and
@@ -48,7 +59,11 @@ History ordering is refreshed when visits change, not for every keystroke.
 
 The session leases its original Space, Profile, tab, Peek, browser, page and
 window. Transfer, navigation/selection changes, retirement, security presentation,
-deactivation, lost key window or field focus invalidate it. Favicon callbacks
+deactivation, lost key window or field focus invalidate it. The resident bar
+outlives window events: losing key or focus, deactivation, resizing and
+miniaturizing leave it in place, and an unrelated sheet or security prompt closes
+only its own scope menu. An invalid owner blocks its actions until the start page
+dismisses it. Favicon callbacks
 also validate the exact Profile, URL and session. A dismissed session cannot
 clear or update its replacement.
 
@@ -72,7 +87,9 @@ native behavior while the bar is open.
 
 Escape/committed actions return focus to the focused content's open Find, else
 Peek, page or local document. The saved responder can return only inside that
-eligible target. Outside clicks preserve their new focus. Sidebar rows suppress
+eligible target. Outside clicks preserve their new focus. The resident bar keeps
+focus on Escape; a committed action takes focus off its field, resets it, and asks
+for content focus afterwards only if nothing else has taken it. Sidebar rows suppress
 hover when the command surface covers them; remaining control coverage is listed
 under [remaining work](#checks-and-remaining-work).
 
@@ -83,10 +100,13 @@ hairline. The large palette is at most 765 points wide, with a 64-point header,
 50-point rows and up to five visible rows in its nominal 326-point height.
 Containment follows the owning window. The compact editor remains distinct.
 
-The panel takes the Space's content appearance, falling back to the window. Its
-popover material blends within that window, with a light/dark wash, decorative
-border and masked shadow outside the surface. It is not forced dark. The inline
-sidebar input has its own plain fill before there is a query.
+Floating panels follow the window's appearance; the empty inline sidebar input
+and the resident card take the Space's content appearance, falling back to the
+window. The popover material blends within that window, with a light/dark wash,
+decorative border and masked shadow outside the surface. It is not forced dark.
+The resident card sits flat on the page at the mark's level: the sidebar field's
+soft fill, with no border or shadow. The
+inline sidebar input has its own plain fill before there is a query.
 
 The field is single-line native text: 18 points centered, 13 inline. Selection
 uses the theme subtitle role; caret and input indicators stay system-owned.

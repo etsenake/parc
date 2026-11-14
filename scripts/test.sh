@@ -261,6 +261,10 @@ python3 "$repo_root/tests/SidebarHeaderGlyphs/check.py"
 python3 "$repo_root/tests/Tooltip/check.py"
 python3 "$repo_root/tests/FloatingSidebarSurface/check.py"
 python3 "$repo_root/tests/IncognitoWindowTheme/check.py"
+python3 "$repo_root/tests/EmptyWindow/check.py"
+python3 "$repo_root/tests/StartPage/check.py"
+python3 "$repo_root/tests/StartPageMark/check.py"
+python3 "$repo_root/tests/CommandBar/resident_check.py"
 compile_and_run mini-player-layout-flush-skip MiniPlayerLayoutFlushSkipTests
 python3 "$repo_root/tests/MiniPlayerLayoutFlushSkip/check.py"
 compile_and_run pane-content-hosted-layout-flush PaneContentHostedLayoutFlushTests

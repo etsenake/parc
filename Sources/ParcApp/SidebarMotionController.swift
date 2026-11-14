@@ -160,16 +160,16 @@ enum SidebarPresentation {
     func presents(inMotion: Bool) -> Bool { self != .hidden || inMotion }
 }
 
-enum EmptyWindowSidebarRule {
-    static func holdsSidebar(focusedTab: UUID?, pendingSplitPane: Bool, creatingSpace: Bool, popup: Bool, library: Bool) -> Bool {
-        (focusedTab == nil || pendingSplitPane) && !creatingSpace && !popup && !library
+enum PendingSplitPaneSidebarRule {
+    static func holdsSidebar(pendingSplitPane: Bool, creatingSpace: Bool, popup: Bool, library: Bool) -> Bool {
+        pendingSplitPane && !creatingSpace && !popup && !library
     }
-    static func presentation(for requested: SidebarPresentation, noActiveItem: Bool) -> SidebarPresentation {
-        requested == .hidden && noActiveItem ? .floating : requested
+    static func presentation(for requested: SidebarPresentation, pendingPane: Bool) -> SidebarPresentation {
+        requested == .hidden && pendingPane ? .floating : requested
     }
     enum Refresh { case keep, float, applyHover }
-    static func refresh(_ presentation: SidebarPresentation, noActiveItem: Bool, heldBefore: Bool) -> Refresh {
-        if noActiveItem { return presentation == .hidden ? .float : .keep }
+    static func refresh(_ presentation: SidebarPresentation, pendingPane: Bool, heldBefore: Bool) -> Refresh {
+        if pendingPane { return presentation == .hidden ? .float : .keep }
         return heldBefore && presentation == .floating ? .applyHover : .keep
     }
 }

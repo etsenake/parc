@@ -139,10 +139,8 @@ workflow, renders first.
   with today's 10 as the default, through a playful, direct-manipulation control.
   A Parc addition.
   [Window frame](window-frame.md#planned-adjustable-thickness).
-- A Space with no open tab shows a start page: the Parc mark with an Easter-egg
-  animation above a resident command bar, on the Space's untextured theme
-  gradient. It replaces the "No tab open" placeholder and retires the rule that
-  keeps the sidebar out, so Command-S hides it there too. [Start page](start-page.md).
+- Closing the last tab removes its page at once instead of fading it out
+  before the start page fades in. [Start page](start-page.md#transitions).
 
 ## Peek
 

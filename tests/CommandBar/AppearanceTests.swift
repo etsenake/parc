@@ -89,11 +89,11 @@ import AppKit
         expect(surface.outerBorder.borderWidth == pixel && surface.innerBorder.borderWidth == 1, "ring widths")
         expect(surface.innerBorder.frame == surface.bounds.insetBy(dx: pixel, dy: pixel)
                && surface.innerBorder.cornerRadius == surface.cornerRadius - pixel, "inner ring sits inside the outer pixel")
-        surface.sidebarBrowsing = true; host.layoutSubtreeIfNeeded(); surface.updateLayer()
+        surface.flatFill = true; host.layoutSubtreeIfNeeded(); surface.updateLayer()
         expect(surface.translucency.isHidden && surface.wash.isHidden && surface.outerBorder.borderWidth == 0
                && surface.layer?.backgroundColor != nil,
                "inline sidebar bar has a fill and no material or ring")
-        surface.sidebarBrowsing = false
+        surface.flatFill = false
 
         let bar = NSRect(x: 100, y: 200, width: 700, height: 326)
         let m = CommandBarShadowView.margins

@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 struct CommandBarPalette {
-    static func panelAppearance(inlineEmpty: Bool, space: NSAppearance?, window: NSAppearance?) -> NSAppearance? {
-        inlineEmpty ? space ?? window : window
+    static func panelAppearance(inlineEmpty: Bool, resident: Bool = false, space: NSAppearance?, window: NSAppearance?) -> NSAppearance? {
+        inlineEmpty || resident ? space ?? window : window
     }
     let selected: NSColor
     let inputIcon: NSColor

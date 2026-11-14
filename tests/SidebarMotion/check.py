@@ -81,7 +81,7 @@ assert "libraryView?.showsWindowButtons = showsOwn && !sidebarless" in controlle
 split = (root / "Sources/ParcApp/ParcSplitView.swift").read_text()
 assert "pane.layer?.cornerRadius = divided ? PageCard.cornerRadius : 0" in split, "split panes keep their own 6-point radius"
 assert "NativeStartView" not in controller, "the Parc start page is gone"
-assert "let empty = SplitPanePlaceholder(frame: .zero)" in controller, "a window with no tab shows the empty content"
+assert "wanted = [startPage]" in controller, "a window with no tab shows the start page"
 assert controller.index("rootView.addSubview(pageShadow)") < controller.index("rootView.addSubview(pageHost)"), \
     "the page card's shadow sits below the page host"
 assert controller.count("pageShadow.place(around: frames.pageHost)") == 2, "both chrome passes place the page card's shadow"

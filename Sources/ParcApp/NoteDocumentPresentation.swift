@@ -35,8 +35,7 @@ enum NoteDocumentAppearance {
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
         }
     }
-    static let backgroundColor = adaptive("Background", light: NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.85),
-        dark: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.5))
+    static let backgroundColor = NotePaper.color
     static let bodyColor = EaselRichTextCodec.noteBodyColor
     static let cursorColor = adaptive("Cursor", light: NSColor(srgbRed: 39 / 255, green: 2 / 255, blue: 194 / 255, alpha: 1),
         dark: NSColor(srgbRed: 147 / 255, green: 128 / 255, blue: 224 / 255, alpha: 1))

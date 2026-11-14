@@ -1,151 +1,173 @@
 # Start page
 
-A Space with no open tab gets a start page: the Parc mark above a resident
-command bar, on the Space's own colors. It replaces the "No tab open"
-placeholder and retires the rule that keeps the sidebar out in an empty window,
-so Command-S hides the sidebar there like anywhere else. The open item is in the
+A Space with no open tab shows a start page: the Parc mark above a resident
+command bar, on a page of Note paper over the Space's own colors. It replaced the "No tab open"
+placeholder, and the sidebar no longer refuses to hide in an empty window, so
+Command-S works there like anywhere else. Open review decisions are in the
 [backlog](backlog.md#planned-interface-work).
-
-## Today
-
-- An ordinary window whose Space has no selected item shows
-  `SplitPanePlaceholder`, a translucent card reading "No tab open" that takes no
-  input. See [window appearance](window-appearance.md#a-window-with-no-tab).
-- `EmptyWindowSidebarRule` in
-  [SidebarMotionController.swift](../Sources/ParcApp/SidebarMotionController.swift)
-  keeps the sidebar out: a request to hide it yields the floating sidebar, and
-  closing the last tab floats a hidden sidebar. Command-S therefore can't hide
-  [sidebar motion](sidebar-motion.md#a-window-with-no-tab-keeps-its-sidebar).
-- Add Split's pending pane counts as empty under the same rule.
-
-## Reference: Dia's empty Space
-
-- The window fills edge to edge with a dark vertical gradient in the profile's
-  color, with no page card.
-- Dia's logo, about 65 points wide and tinted in that color with a brushed
-  texture, sits about 24 points above a 565-point rounded input card. The pair
-  sits a little above the window's center.
-- Typing grows the card downward with suggestion rows while its top edge stays put.
-- Sidebar, Back, Forward and Reload buttons sit in the top-left corner.
 
 ## When it shows
 
 The start page shows when an ordinary or private window's current Space has no
 selected tab, Note, Easel or split, including in full screen. Closing the last
-open tab in a Space, by Command-W, its close button or a closing command, opens
-the start page in that window with the command bar focused and ready to type;
-the window stays open. Switching to a Space with no open tab, or creating one,
+open tab in a Space opens it in that window with the command bar focused; the
+window stays open. Switching to a Space with no open tab, or creating one,
 lands there too. Popup windows, an open Library and Space creation keep their
-own content. Add Split's pending pane keeps today's placeholder and sidebar hold
-while a result is being chosen.
+own content. Add Split's pending pane keeps its placeholder and sidebar hold
+while a result is being chosen; see [sidebar motion](sidebar-motion.md#add-splits-pending-pane-keeps-its-sidebar).
+
+`BrowserWindowController` places one `StartPageView` per window as the page
+card's only content and builds it the first time a window needs it, so windows
+with tabs never pay for it. Every render refreshes it: a new Space or Profile
+rebuilds the resident bar, and leaving the start page dismisses it.
 
 ## Sidebar
 
-- Retire the no-tab half of `EmptyWindowSidebarRule`. Command-S toggles docked
-  and hidden in an empty Space, closing the last tab leaves the sidebar where it
-  was, and the left edge reveals the floating sidebar on hover as usual.
-- With the sidebar hidden, the start page shows the window controls and a
-  sidebar button in the top-left corner, so the window can always be closed and
-  the sidebar found. Its background drags the window like the sidebar background.
-- The rule retires in the same change that ships the start page, because the
-  start page's command bar is what replaces the sidebar as the way out of an
-  empty Space.
+- Command-S toggles docked and hidden in an empty Space, closing the last tab
+  leaves the sidebar where it was, and the left edge reveals the floating
+  sidebar on hover as usual.
+- While the sidebar isn't docked, the start page shows the window buttons and a
+  Show Sidebar button in the top-left corner, exactly where the floating
+  sidebar's own controls land, so nothing jumps when it slides in. In full
+  screen the window buttons follow the sidebar's own full-screen rule.
+- The background drags the window with the sidebar background's single-click
+  rule. The page is one accessibility group, "Start page": window buttons, then
+  the sidebar button, then the bar.
 
 ## Command bar
 
 The input is the command bar itself, not a new search box: the same native
 suggestions, open-tab switching, application commands, Type Travel, website
-scopes and Tab-to-search as Command-T.
+scopes and Tab-to-search as Command-T. See the
+[command bar guide](command-bar.md#entry-points-and-source-owners) for its
+resident presentation and lifetime.
 
-- At rest only the field shows. Typing grows results downward in place with
-  the top edge fixed, up to the palette's five visible rows.
-- Submitting a navigation opens a new tab in this Space, exactly as Command-T
-  does. Switch-to-tab rows and commands behave as in the palette.
-- Escape clears the query and collapses the results; it never dismisses the page.
-- Command-T and Command-L focus the resident bar instead of stacking a palette
-  over it.
-- The field takes focus when the start page appears in the key window, unless
-  another control already holds it, following the existing content-focus rules.
-- It is a resident presentation of the existing command bar session, hosted in
-  the page area instead of the window overlay host. Result ownership, ranking
-  and submission stay unchanged; `CommandBarAppearance` supplies its palette
-  over the Space's content appearance. Width is the palette's 765-point maximum
-  or narrower, settled in review.
+- It sits flat on the page at the mark's level: the sidebar address field's soft
+  fill (ink at 5% in light, white at 10% in dark), 12-point corners, no border
+  or shadow. Results list on the same fill below a divider.
+- At rest only the 64-point field shows. Typing grows results downward with the
+  top edge fixed, up to five rows, once the first suggestions arrive.
+- Submitting a navigation opens a new tab in this Space, as Command-T does.
+  Switch-to-tab rows and commands behave as in the palette, and a submission
+  resets the bar rather than dismissing it.
+- Escape leaves a scope, then clears the query and collapses the results; it
+  never dismisses the page.
+- Command-T and Command-L, and a click on the sidebar's address field, focus the
+  resident bar instead of stacking a palette over it.
+- The field takes focus when the start page appears or its bar is rebuilt in
+  the key window, unless another control already holds focus. After a command
+  that leaves the start page in place, focus returns to the field on the same
+  terms.
+- The bar lives in its own window-controller slot, not the palette's, so
+  closing or toggling the palette never dismisses it. The window returns its
+  field editor and delivers top domains to it like the palette.
 
 ## Background
 
-- The Space's full theme: every color combined by the existing theme renderer
-  exactly as the window gradient draws them, with the theme's intensity, in its
-  light or dark content appearance. No texture by default; the review compares
-  it with texture.
+The page reads as a page, the way a Note does in the same card: Note paper
+(`NotePaper`, white at 85% in light, black at 50% in dark, in the Space's
+content appearance) over the Space's theme. Light themes come out near-white
+with a faint tint of every theme color; dark themes as a dim tinted surface.
+
+- Under the paper, the existing theme renderer draws the Space's full theme
+  exactly as the window gradient does, with the theme's intensity and without
+  texture: the page hands its renderer the theme with noise set to zero,
+  leaving every other theme surface unchanged.
 - It shares the window's gradient coordinate space, so it lines up with the
-  frame and the floating sidebar, and it takes part in Space paging, so swiping
-  between an empty Space and a busy one blends both themes.
+  frame and the floating sidebar; the window refreshes those coordinates when
+  the page card moves. Space paging reaches it, so swiping between an empty
+  Space and a busy one blends both themes.
 - Private windows use the private palette. Themes without color fall back to
-  material like every other theme surface.
-- The page card stays by default: the [window frame](window-frame.md) setting
-  still applies, and opening a tab swaps the card's content without a layout
-  jump. The card holds the untextured gradient, so the textured frame reads as
-  a border around it. Dia's edge-to-edge fill is the review alternative.
+  material like every other theme surface, under the same paper.
+- The page card stays: the [window frame](window-frame.md) setting still
+  applies, and the textured frame reads as a border around the paper.
 
 ## The mark
 
-- Parc's mark from `ParcBrandMark`, sized and spaced close to Dia's: about 65
-  points, about 24 points above the bar, the pair a little above center.
-- Default treatment: the monochrome mark's shape filled with the Space gradient
-  and keeping the theme's texture, so the mark is the one textured thing on the
-  page. The color mark is the alternative.
-- It is decorative for accessibility, and nothing depends on it.
+- `StartPageMarkView` draws Parc's monochrome mark, 65 points wide, 24 points
+  above the bar, with the pair centered at 45% of the page height.
+- In a colored theme the mark's shape is filled with the Space gradient in the
+  window's coordinates and keeps the theme's texture, so it is the one textured
+  thing on the page. A 25% wash of the palette's high-contrast color keeps it
+  visible: the same gradient alone would vanish into the background.
+- Colorless themes fill it with the secondary label color; private windows with
+  the private palette's blue. Its `style` switches to the color mark.
+- It is decorative for accessibility, and dragging on it never moves the window.
 
-## Easter egg
+## Easter eggs
 
-Interacting with the mark in one deliberate way plays a playful, Browser
-Company-spirited animation: tactile, colorful, physics-driven, surprising the
-first time and never in the way. Candidates for review:
+Three Easter eggs share the mark, each with its own deliberate gesture, through
+one recognizer (`StartPageMarkGesture`):
 
-1. **Taffy.** Press and drag the mark: it stretches on a spring and, released,
-   snaps home with a wobble and a haptic tick.
-   trailing a ribbon in the Space's colors, landing with squash and stretch.
-3. **Charge-up.** Press and hold: the mark squishes and glows in the theme's
-   colors; let go and it loops the loop, dusting the page with theme-colored
-   confetti.
+- **Taffy:** press and drag more than four points. The mark stretches toward
+  the pointer on a spring, thinning as it lengthens up to about 36 points, and
+  on release snaps home with a wobble that settles in about a second.
+- **Charge-up:** press and hold still for 0.35 seconds. The mark squishes and
+  glows through the theme's colors, filling over the next 0.65 seconds with a
+  slight buzz once full. Released past 60% charge it loops the loop and dusts
+  the page with 90 pieces of theme-colored confetti; released earlier it just
+  springs back. A wobble up to eight points is fine; more cancels the charge
+  quietly, and that press does nothing else.
+  interval and eight points of the first. The mark flies an arc across the
+  page with a full turn, trailing a striped ribbon in the Space's colors, and
+  lands with a squash and a wobble.
 
-- A single click does nothing, so it never fires by accident. Each trigger
-  plays once, and triggers don't stack.
-- Nothing animates at rest. Hidden, occluded and miniaturized windows pause.
-- Reduce Motion replaces motion with a short shimmer through the theme colors.
-- Sound and haptics follow Parc's existing interface feedback preferences.
+Rules they share:
+
+- One or two clicks do nothing. A press during an animation is ignored for its
+  whole gesture and resets the click count, so eggs never stack.
+- Nothing animates or polls at rest; the hold threshold is the only one-shot
+  timer. A hidden, occluded or miniaturized window, the page leaving, a lost
+  mouse-up or the window losing key sends the mark straight home and removes
+  ribbon and confetti.
+- Ribbon and confetti are fixed sets of layers in a pass-through effects view
+  covering the page; the ribbon is cut where it passes under the mark so it
+  trails from behind.
+  through the theme's colors; Charge-up keeps its glow while held, since it is
+  light rather than motion, and shimmers on a charged release.
+- A haptic tick marks Taffy's release, each landing and the Reduce Motion
+  shimmer, through the system haptic call the theme editor uses; the
+  tab-reordering haptic switch doesn't apply. There is no sound.
+- During a Space swipe the mark's textured gradient and tint blend between the
+  two Spaces, toward the label color when one side has no color.
 
 ## Transitions
 
-Closing the last tab fades its page out and the start page in, within the same
-card, and the command bar takes focus as it arrives. Opening a tab from the bar
-reverses it. Reduce Motion crossfades.
+The start page fades in over 0.2 seconds when it arrives and fades out over 0.2
+seconds above the new page when a tab opens. Both are opacity only, so Reduce
+Motion needs no separate path. The closing tab's page is removed at once rather
+than fading out first.
 
-## Visual review is required
+## Visual review
 
-Design this through the [interface review](visual-review.md) workflow, renders
-first, and approve the direction before building:
+Visual changes here go through the [interface review](visual-review.md):
+render the options first, then build the approved direction. Two rounds
+settled the current design. The first compared themes, sidebar states, frame
+thickness, page card against edge-to-edge fill, texture, mark treatments and
+the Easter egg candidates; the card and the three Easter eggs were approved.
+The second replaced the lifted card with the flat soft-fill bar and the
+translucent empty-card look with Note paper. The build scripts and pages live
+in ignored `work/start-page/review/`.
 
-- empty Spaces in single-color, multi-color, light, dark, colorless and private
-  themes, at rest, while typing and with results;
-- docked and hidden sidebar, at the default, thinnest and thickest frame;
-- page card against edge to edge, texture on and off, both mark treatments;
-- each Easter egg candidate as an animated mockup, plus its Reduce Motion form.
+## Source and checks
 
-The live look-and-feel pass in Parc follows that guide's runtime boundary.
+- `Sources/ParcApp/StartPageView.swift`: layout, background, chrome, dragging.
+- `Sources/ParcApp/StartPageMarkView.swift` and `StartPageMarkStage.swift`: the
+  mark, its layers and cleanup; `StartPageMarkGesture.swift`,
+  `StartPageMarkEasterEgg.swift`, `StartPageMarkMotion.swift`,
+  `StartPageMarkTaffy.swift`, `StartPageMarkSwoop.swift` and
+  `StartPageMarkCharge.swift`: the Easter eggs.
+- `Sources/ParcApp/NotePaper.swift`: the paper shared with Notes.
+- `Sources/ParcApp/CommandBarResidentLayout.swift` and
+  `CommandBarResidentLifetime.swift`: the resident bar.
 
-## Build order and checks
+```sh
+python3 tests/StartPage/check.py
+python3 tests/StartPageMark/check.py
+python3 tests/CommandBar/resident_check.py
+python3 tests/EmptyWindow/check.py
+```
 
-1. Start page with the resident command bar and theme background, retiring the
-   no-tab sidebar rule in the same change.
-2. The mark and its Easter egg.
-
-Checks: model tests for the empty-Space condition and sidebar toggling
-(Command-S hides in an empty Space, closing the last tab shows the start page
-with the field focused and keeps the sidebar presentation, Add Split still holds), resident command bar tests (Escape, Command-T focus,
-submission opens a tab in the Space), theme surface tests (texture off, shared
-coordinate space, paging), Swift typecheck and whole-module SIL. No engine
-change is needed. When it ships, update the empty-window sections of
-[window appearance](window-appearance.md) and [sidebar motion](sidebar-motion.md)
-and the command bar's entry points.
+The first renders the page and the window's surface offscreen and compares
+their gradients. The empty-window check covers the sidebar rule, Command-T and
+Command-L routing and the start page's focus conditions.

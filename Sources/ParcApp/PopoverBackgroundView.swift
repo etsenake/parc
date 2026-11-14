@@ -5,7 +5,7 @@ final class PopoverBackgroundView: NSView {
     let wash = NSView()
     let outerBorder = CALayer()
     let innerBorder = CALayer()
-    var sidebarBrowsing = false { didSet { if sidebarBrowsing != oldValue { needsDisplay = true; needsLayout = true } } }
+    var flatFill = false { didSet { if flatFill != oldValue { needsDisplay = true; needsLayout = true } } }
     var cornerRadius: CGFloat = 12 { didSet { needsDisplay = true; needsLayout = true } }
     var onLayout: (() -> Void)?
     var onAppearanceChange: (() -> Void)?
@@ -60,18 +60,18 @@ final class PopoverBackgroundView: NSView {
         }
         translucency.layer?.masksToBounds = true; wash.layer?.masksToBounds = true
         outerBorder.frame = bounds; outerBorder.cornerRadius = radius
-        outerBorder.borderWidth = sidebarBrowsing ? 0 : hairline
+        outerBorder.borderWidth = flatFill ? 0 : hairline
         let pixel = outerBorder.borderWidth
         innerBorder.frame = bounds.insetBy(dx: pixel, dy: pixel)
         innerBorder.cornerRadius = max(0, radius - pixel)
-        innerBorder.borderWidth = sidebarBrowsing ? 0 : 1
+        innerBorder.borderWidth = flatFill ? 0 : 1
         CATransaction.commit()
     }
 
     private func applyColors() {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        if sidebarBrowsing {
+        if flatFill {
             translucency.isHidden = true; wash.isHidden = true
             layer?.backgroundColor = (dark
                 ? NSColor(displayP3Red: 0.98, green: 0.984, blue: 1, alpha: 0.1)

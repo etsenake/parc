@@ -57,12 +57,15 @@ includes them; the shell needs to consume that catalog.
 
 ## A window with no tab
 
-A window with no tab uses `SplitPanePlaceholder`, the same pending content as
-Add Split. It accepts no input and exposes “No tab open” to accessibility. Its
-six-point rounded translucent card follows the window appearance: white at
-0.666 in light appearance and 0.1 in dark appearance, over the window backdrop.
-A blank tab is a real white page and follows its own content-focus request.
-The planned [start page](start-page.md) replaces this placeholder in an empty Space.
+An ordinary or private window whose Space has no selected item shows the
+[start page](start-page.md) inside the page card, with the Space's own colors
+and a resident command bar.
+
+Add Split's pending pane uses `SplitPanePlaceholder`. It accepts no input and
+exposes “New split pane” to accessibility. Its six-point rounded translucent
+card follows the window appearance: white at 0.666 in light appearance and 0.1
+in dark appearance, over the window backdrop. A blank tab is a real white page
+and follows its own content-focus request.
 
 ## Page card shadow
 

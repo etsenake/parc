@@ -123,7 +123,7 @@ for name in ("themePopover", "siteControlCenter", "peeks", "promotingPeek"):
 expect("noteReturnGate()" in body(controller, "private var commandBar: CommandBar?"), "closing the command bar checks the gate")
 navigation = body(controller, "private func updateNavigation()")
 expect(navigation.rstrip("}").rstrip().endswith("noteReturnGate()"), "every navigation refresh checks the gate")
-expect("noteReturnGate()\n        refreshEmptyWindowSidebar()\n        scheduleUntargetedReturns()\n    }" in controller,
+expect("noteReturnGate()\n        refreshStartPage()\n        refreshPendingPaneSidebar()\n        scheduleUntargetedReturns()\n    }" in controller,
        "every render checks the gate, so a Space change any path made is seen")
 expect("heldReturns.formIntersection(returnableIDs); heldReturns.subtract(displayedIDs)" in controller
        and "failedReturns.formIntersection(returnableIDs); failedReturns.subtract(displayedIDs)" in controller,
