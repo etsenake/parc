@@ -14206,7 +14206,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 if sheetWindow != nil {
                     window.makeKeyAndOrderFront(nil)
                 }
-                guard self.spaceCommandsAvailable, !self.folderUndo.isBusy,
+                guard sheetWindow == nil ? self.spaceCommandsAvailable : (self.spaceStateAvailable && !self.isPrivateBrowsing),
+                      !self.folderUndo.isBusy,
                       SpaceDeletionTarget(spaceID: id, state: self.store.state) == target,
                       self.store.unusedProfile(ifDeletingSpace: id) == unused else { return }
                 self.performSpaceDeletion(target, documents: documents, wasFocused: wasFocused,

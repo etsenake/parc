@@ -1366,7 +1366,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         }
     }
     private func createSpace() {
-        guard window?.attachedSheet == nil, attemptClose() else { return }
+        guard window?.attachedSheet == nil else { return }
+        _ = attemptClose()
         DispatchQueue.main.async { NSApp.sendAction(NSSelectorFromString("createSpace:"), to: nil, from: nil) }
     }
 

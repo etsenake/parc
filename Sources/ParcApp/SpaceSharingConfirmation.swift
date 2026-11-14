@@ -20,14 +20,15 @@ import AppKit
         }
         guard window.attachedSheet == nil, valid() else { completion(.success(false)); return }
         guard let warning = store.sharingWarning(forSpace: spaceID, to: sharing) else { completion(.success(false)); return }
+        let stillWarned: () -> Bool = { valid() && store.sharingWarning(forSpace: spaceID, to: sharing) == warning }
         let dialog = PArcDialog(.init(
             title: [(warning.title, false)], message: [(warning.message, false)],
             confirm: warning.confirm, cancel: "Cancel", width: CGFloat(InterProfileMovePrompt.dialogWidth),
             destructive: warning.destructive))
         let began = dialog.begin(for: window) { [weak window] response in
             DispatchQueue.main.async {
-                guard response == .confirm, window != nil, valid() else { completion(.success(false)); return }
-                store.changeSharing(ofSpace: spaceID, to: sharing, shouldCommit: valid) { result in
+                guard response == .confirm, window != nil, stillWarned() else { completion(.success(false)); return }
+                store.changeSharing(ofSpace: spaceID, to: sharing, shouldCommit: stillWarned) { result in
                     switch result {
                     case .success(let change):
                         if let unused = change?.unusedProfile { handOff(unused) }
