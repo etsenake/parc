@@ -557,7 +557,14 @@ import UniformTypeIdentifiers
    return [field.superview!,field,action].map{library.convert($0.bounds,from:$0)}
   }
   let archiveHeader=headerFrames(archiveView), pageX=LibraryRailLayout.width+LibraryPageHeader.inset
-  expect(archiveHeader==headerFrames(headerReference),"Archive header frames match the Downloads page header exactly")
+  let downloadsField=all(headerReference).compactMap{$0 as? DownloadSearchField}.first{!$0.isHiddenOrHasHiddenAncestor}!
+  let downloadsBackdrop=headerReference.convert(downloadsField.superview!.bounds,from:downloadsField.superview!)
+  expect(!all(headerReference).contains{($0 as? DownloadFilterButton)?.style == .header && !$0.isHiddenOrHasHiddenAncestor},
+         "The Downloads page has no Filter now that its only filter was by profile")
+  expect(downloadsBackdrop.minX==archiveHeader[0].minX && downloadsBackdrop.minY==archiveHeader[0].minY
+         && downloadsBackdrop.height==archiveHeader[0].height
+         && abs(downloadsBackdrop.maxX-(headerReference.bounds.width-LibraryPageHeader.inset))<0.5,
+         "Downloads search starts where Archive's does and runs to the page inset without a Filter")
   expect(archiveHeader[0]==NSRect(x:pageX,y:LibraryPageHeader.top,width:archiveHeader[2].minX-LibraryPageHeader.spacing-pageX,height:LibraryPageHeader.height)
          && archiveHeader[2].maxX==archiveView.bounds.width-LibraryPageHeader.inset && archiveHeader[2].minY==LibraryPageHeader.top
          && archiveHeader[2].height==LibraryPageHeader.height,"Archive header uses LibraryPageHeader's inset, top, height and field-action gap")

@@ -80,8 +80,8 @@ import AppKit
         let list = NSView(), favorites = NSView()
         let chain = SidebarAccessibility.keyViewChain(leading: [], favorites: favorites, list: list, regions: [],
             trailing: [], space: header, beforeList: [header])
-        try check(chain.contains { $0 === header.editButton } && chain.firstIndex { $0 === header.editButton }! < chain.firstIndex { $0 === list }!,
-            "header button enters the keyboard chain before item list")
+        try check(!chain.contains { $0 === header.editButton } && chain.first === list,
+            "the header adds no keyboard stop of its own, so Tab moves straight to the item list")
         var selected = 0
         let menu = SidebarSpaceMenu(includesManagement: true, changeIcon: {},
             profiles: [("Default", true, {}), ("Work", false, { selected += 1 }), ("Retiring", false, nil)],
