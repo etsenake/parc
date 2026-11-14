@@ -93,7 +93,7 @@ struct HistorySwipeRecognizer {
         case .cancel:
             cancel(&step)
         }
-        step.holdDeadline = holdDeadline
+        step.clockDeadline = holdDeadline
         return step
     }
 

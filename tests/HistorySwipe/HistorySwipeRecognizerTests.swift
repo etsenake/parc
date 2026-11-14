@@ -276,7 +276,7 @@ struct Run {
         check(run.gestures == [.begin(.back), .armed(true), .commit(.adjacent(.back))],
               "AppKit's tracked progress arms and commits the adjacent page")
         check(near(run.fractions, [0.4, 1]), "tracked progress is the gesture amount over Chromium's 0.3")
-        check(run.steps.contains { $0.holdDeadline != nil } == false, "a tracked swipe never schedules the list")
+        check(run.steps.contains { $0.clockDeadline != nil } == false, "a tracked swipe never schedules the list")
         check(!run.outputs.contains(.hold), "without finger positions there is no hold list")
         check(run.steps.dropLast().allSatisfy { !$0.stopsTracking } && run.steps.last?.stopsTracking == true,
               "AppKit's settle animation runs out, and a callback after completion stops")
@@ -482,7 +482,7 @@ struct Run {
         trace.move(0.40, 0.40)
         trace.lift()
         let run = Run(trace)
-        check(run.steps[armedIndex].holdDeadline == armedAt + 0.5, "arming schedules the hold after the delay")
+        check(run.steps[armedIndex].clockDeadline == armedAt + 0.5, "arming schedules the hold after the delay")
         check(run.steps[armedIndex + 1].outputs.isEmpty, "the list waits for the full delay")
         check(run.gestures == [.begin(.back), .armed(true), .hold, .selection(1),
                                .selection(2), .detent, .selection(3), .detent,

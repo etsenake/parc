@@ -89,7 +89,7 @@ struct HistorySwipeStep: Equatable {
     var startsTracking: HistorySwipeTrackingRequest?
     var stopsTracking = false
     var preloadsBack = false
-    var holdDeadline: TimeInterval?
+    var clockDeadline: TimeInterval?
 }
 
 protocol HistorySwipeEnvironment {
