@@ -420,10 +420,12 @@ struct Fingers {
         driver.send(.selection(2))
         driver.settle()
         let open = driver.frame!.list!
+        driver.send(.rowRemainder(0.5))
         driver.progress(0.9)
         driver.send(.armed(false))
         check(driver.haptics == [.levelChange, .generic] && !driver.model.listOpen && !driver.model.armed,
               "sliding below the commit point closes the list silently")
+        check(driver.model.remainder == 0, "closing drops the lean toward the next row")
         let start = driver.frame!
         check(close(start.capsule, open.card) && start.list?.opacity == 1 && start.chevronOpacity == 0,
               "the collapse starts from the open card, with no jump")

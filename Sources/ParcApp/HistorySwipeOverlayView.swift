@@ -181,7 +181,10 @@ struct HistorySwipeOverlayRow: Equatable {
     private func applyLook() {
         let look = HistorySwipeOverlayLook(dark: effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
         capsule.layer?.borderColor = NSColor(white: look.ringWhite, alpha: look.ringAlpha).cgColor
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         shadowLayer.shadowOpacity = Float(look.shadowAlpha)
+        CATransaction.commit()
         wash.layer?.backgroundColor = NSColor(white: 1, alpha: look.washAlpha).cgColor
         list.highlightColor = NSColor(white: look.highlightWhite, alpha: look.highlightAlpha)
     }

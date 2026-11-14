@@ -477,6 +477,7 @@ struct HistorySwipeOverlayModel {
 
     private mutating func closeList(at time: TimeInterval) {
         listOpen = false
+        remainder = 0
         swappedAt = time
         swap.retarget(0, at: time, duration: reducesMotion ? T.reducedSwap : T.swap,
                       curve: reducesMotion ? .linear : .easeOut)
