@@ -82,11 +82,11 @@ The control is a car window crank that sits on the window itself.
   10 Classic, 11 Roomy, 12 Salon, 13 Gallery.
 - **Window.** Every open window's frame follows as you turn. At 3 and 13 the page
   card shudders a few points sideways with the crank's give.
-- **Sound.** A metallic notch click with a little body at each point, a deeper
-  two-stage click at 10, and a thunk with a short creak at 3 and 13. A very soft
-  wind, generated live, swells gently as the frame opens, like air through a
-  cracked window rather than a hiss, and a faint seal whistle fades in above
-  about 11.5 points. Everything sits well below normal listening levels, and
+- **Sound.** Clicks only. Each point has a metallic notch click with a little
+  body, pitched one semitone higher per point, so the clicks rise as the frame
+  opens and fall as it closes. The click at 10 is deeper and seats twice, like a
+  detent dropping in, at its own pitch. A soft thunk with a short creak marks the
+  give at 3 and 13. Everything sits well below normal listening levels, and
   sounds follow the system setting for interface sound effects.
 - **Haptics.** A light trackpad tick at each notch, and a firmer one at 10 and at
   the ends, through `NSHapticFeedbackManager`. These only reach Force Touch
@@ -155,8 +155,7 @@ and the turning motion. Still to render before building:
   divided split, the side panel open, and light, dark and private themes;
 - Reduce Motion.
 
-The sound needs a listening pass on the generated clicks, wind and whistle before
-they are final. The live look-and-feel pass in Parc follows that guide's runtime
+The generated clicks and end thunk need a final listening pass in the app. The live look-and-feel pass in Parc follows that guide's runtime
 boundary. After visual approval, write tests and docs, then hand it to a fresh
 reviewer.
 
