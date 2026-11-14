@@ -49,3 +49,13 @@ non-component releases carry the engine inside `Parc.app` and install on their o
 
 Build products, profiles, logs and dependency binaries stay in ignored local
 storage. Git contains used source, focused checks and current documentation.
+
+## License
+
+Copyright © 2026 Josh Etsenake and Parc contributors.
+
+Parc is free software under the [GNU Affero General Public License, version 3 or
+later](LICENSE) (`AGPL-3.0-or-later`). Chromium, the Chromium Embedded Framework
+code Parc retains and other bundled components keep their own licenses, listed
+in the app under `chrome://credits`. Bundled fonts carry their SIL Open Font
+License beside them.
