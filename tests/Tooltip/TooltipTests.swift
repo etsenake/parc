@@ -29,7 +29,6 @@ import SwiftUI
         placement()
         layout()
         drawing()
-        dockItem()
         eligibility()
         presentationState()
         viewConfiguration()
@@ -53,8 +52,6 @@ import SwiftUI
               && TooltipConfiguration("Tab", anchorRect: .zero) != TooltipConfiguration("Tab")
               && TooltipConfiguration("Tab", requiresShortcut: true) != TooltipConfiguration("Tab"),
               "style, anchor rect and the binding requirement take part in equality")
-        check(TooltipConfiguration("Work", style: .dockItem(profileName: "Personal")) != TooltipConfiguration("Work", style: .dockItem(profileName: nil)),
-              "the dock item's Profile takes part in equality")
 
         check(TooltipShadow.standard == [TooltipShadow(radius: 2.5, offset: .zero, opacity: 0.18),
                                          TooltipShadow(radius: 10, offset: CGSize(width: 0, height: 2.5), opacity: 0.15)],
@@ -312,74 +309,6 @@ import SwiftUI
         let titleInk = darkest(labelView.contentLayout.label.offsetBy(dx: m, dy: m))
         let subtitleInk = darkest(labelView.contentLayout.subtitle!.offsetBy(dx: m, dy: m))
         check(titleInk < 40 && (60...130).contains(subtitleInk), "black title; subtitle at 0.66 opacity over white")
-    }
-
-    static func dockItem() {
-        func content(_ label: String, profile: String?, keycaps: [TooltipKeycap] = TooltipKeycap.keycaps(for: KeyboardShortcut(key: "1", flags: .control)))
-            -> TooltipView.Content {
-            TooltipView.Content(label: label, keycaps: keycaps, corners: TooltipCorners(anchor: .top), palette: .neutral, maxWidth: 296,
-                                style: .dockItem(profileName: profile))
-        }
-        func onPixel(_ value: CGFloat) -> CGFloat { ceil(value * 2 - 0.001) / 2 }
-        let layout = TooltipView.layout(for: content("Work", profile: "Personal"), scale: 2)
-        let name = onPixel(TooltipView.profileString("Personal").size().width)
-        check(TooltipView.Label.lineHeight(TooltipView.Profile.font) == 14, "the 11-point medium name sits on a 14-point line")
-        if let profile = layout.profile {
-            check(profile.minX == 10 + layout.label.width + 6 && profile.width == 5 + 20 + 2 + name + 6 && profile.height == 22,
-                  "the capsule follows the title by 6 points and is 5 / 20 / 2 / name / 6 wide and 22 tall")
-            check(profile.minY == 3 && layout.size.height == 28, "the capsule is centred in the 28-point row")
-            check(layout.keycaps.first?.minX == profile.maxX + 6, "the Space's keycaps follow the capsule")
-            check(layout.size.width == profile.maxX + 6 + (layout.keycaps.last!.maxX - layout.keycaps.first!.minX) + 10,
-                  "the pill holds title, capsule and keycaps with 10 points either side")
-        } else {
-            check(false, "a Profile name lays out its capsule")
-        }
-        let bare = TooltipView.layout(for: content("Work", profile: nil), scale: 2)
-        let standard = TooltipView.layout(for: TooltipView.Content(label: "Work", keycaps: content("Work", profile: nil).keycaps,
-                                                                   corners: TooltipCorners(anchor: .top), palette: .neutral, maxWidth: 296), scale: 2)
-        check(bare.profile == nil && bare == standard, "without a Profile the dock item is the standard pill")
-        let long = TooltipView.layout(for: content(String(repeating: "Research ", count: 8), profile: "Personal", keycaps: []), scale: 2)
-        check(long.size.width == 296 && long.profile.map { $0.maxX <= 296 - 10 } == true && long.label.height > 28,
-              "a long title wraps beside the capsule within 296 points")
-        let longName = "Personal Research and Writing Account"
-        let capped = TooltipView.layout(for: content("Work", profile: longName), scale: 2)
-        let room = 296 - 20 - (6 + capped.keycaps.last!.maxX - capped.keycaps.first!.minX)
-        check(capped.pill.width <= 296 && capped.size.width <= 296 && capped.label.width > 0 && capped.label.width == layout.label.width
-              && capped.profile?.width == floor((room - 6) / 2 * 2) / 2,
-              "a long Profile name caps the capsule at half the row's room, within 296 points, and the title keeps its width")
-        let crowded = TooltipView.layout(for: content(String(repeating: "Research ", count: 8), profile: longName), scale: 2)
-        check(crowded.pill.width <= 296 && crowded.size.width == 296 && crowded.label.width > 0,
-              "a long title beside a long Profile wraps within 296 points")
-
-        func draw(_ name: String) -> (rep: NSBitmapImageRep, capsule: CGRect) {
-            var drawn = content("Work", profile: name, keycaps: [])
-            drawn.palette.keyForeground = .init(NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
-            drawn.palette.keyTitle = .init(NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
-            let view = TooltipView(content: drawn)
-            let m = TooltipView.margin(scale: 2), size = view.contentLayout.size
-            view.frame = NSRect(x: 0, y: 0, width: size.width + 2 * m, height: size.height + 2 * m)
-            view.appearance = NSAppearance(named: .aqua)
-            return (render(view), view.contentLayout.profile!.offsetBy(dx: m, dy: m))
-        }
-        func bluest(_ rep: NSBitmapImageRep, _ rect: CGRect) -> Int {
-            var value = 0
-            for y in stride(from: rect.minY, to: rect.maxY, by: 0.5) {
-                for x in stride(from: rect.minX, to: rect.maxX, by: 0.5) {
-                    let p = pixel(rep, CGPoint(x: x, y: y)); value = max(value, p[2] - p[0])
-                }
-            }
-            return value
-        }
-        let (rep, capsule) = draw("Personal")
-        check(pixel(rep, CGPoint(x: capsule.midX, y: capsule.minY + 1.5)) == [255, 0, 0, 255], "the capsule fills with the key face colour")
-        check(pixel(rep, CGPoint(x: capsule.minX + 0.5, y: capsule.minY + 0.5))[1] == 255, "its corners are round, a capsule")
-        let icon = CGRect(x: capsule.minX + 5, y: capsule.minY + 4, width: 20, height: 14)
-        let text = CGRect(x: capsule.minX + 27, y: capsule.minY + 4, width: capsule.width - 33, height: 14)
-        check(bluest(rep, icon) > 200 && bluest(rep, text) > 200, "the icon and name draw in the key glyph colour")
-        let truncated = draw(longName)
-        let tail = CGRect(x: truncated.capsule.maxX - 5.5, y: truncated.capsule.minY + 4, width: 3, height: 14)
-        check(bluest(truncated.rep, CGRect(x: truncated.capsule.minX + 27, y: truncated.capsule.minY + 4, width: 20, height: 14)) > 200
-              && bluest(truncated.rep, tail) < 40, "a long name truncates inside the capsule's 6-point trailing padding")
     }
 
     static func eligibility() {

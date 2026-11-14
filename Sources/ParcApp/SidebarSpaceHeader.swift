@@ -10,34 +10,15 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
     private let symbolView = NSImageView()
     private let emojiField = NSTextField(labelWithString: "")
     private var showsIcon = false
-    let profileButton = SpaceProfileIndicatorButton(title: "", target: nil, action: nil)
     let incognitoIndicator = IncognitoProfileIndicatorView()
-    private var profileMenuProvider: (() -> NSMenu?)?
     private var isIncognitoIndicator = false
     private var isPrivateUnpinnedHeader = false
-    func updateProfile(name: String?, menu: (() -> NSMenu?)?) {
-        profileButton.isHidden = name == nil
-        profileButton.title = name ?? ""
-        profileButton.parcTooltip = name == nil ? nil : TooltipConfiguration(menu == nil ? "Current profile" : "Edit Space profile")
-        profileButton.setAccessibilityLabel(name.map { "Profile: " + $0 } ?? "Profile")
-        profileButton.cell?.setAccessibilityLabel(name.map { "Profile: " + $0 } ?? "Profile")
-        profileButton.setAccessibilityHelp("Choose the Profile used by this Space")
-        profileMenuProvider = menu
-        profileButton.isEnabled = menu != nil
-        needsLayout = true
-    }
-
     func updateIncognitoIndicator(shown: Bool) {
         isPrivateUnpinnedHeader = true
         isIncognitoIndicator = shown
         nameField.isHidden = shown
-        profileButton.isHidden = true
         incognitoIndicator.isHidden = !shown
-        profileMenuProvider = nil
         needsLayout = true
-    }
-    @objc private func chooseProfile(_ sender: Any?) {
-        profileMenuProvider?()?.popUp(positioning: nil, at: NSPoint(x: 0, y: profileButton.bounds.maxY), in: profileButton)
     }
 
     let editButton = SidebarSpaceHeaderEditButton()
@@ -106,15 +87,6 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
             view.setAccessibilityElement(false); view.cell?.setAccessibilityElement(false)
             view.isHidden = true
         }
-        profileButton.isBordered = false
-        profileButton.font = .systemFont(ofSize: 11, weight: .medium)
-        profileButton.image = NSImage(systemSymbolName: "person.crop.circle", accessibilityDescription: nil)
-        profileButton.symbolConfiguration = .init(pointSize: 11, weight: .medium)
-        profileButton.lineBreakMode = .byTruncatingTail
-        profileButton.imagePosition = .imageLeading
-        profileButton.contentTintColor = .tertiaryLabelColor
-        profileButton.target = self; profileButton.action = #selector(chooseProfile(_:))
-        profileButton.isHidden = true
         editButton.image = Self.ellipsis
         editButton.target = self
         editButton.action = #selector(didClickEditButton(_:))
@@ -122,7 +94,7 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         editButton.cell?.setAccessibilityIdentifier(Self.editButtonIdentifier)
         editButton.refusesFirstResponder = true
         incognitoIndicator.isHidden = true
-        for view in [symbolView, emojiField, nameField, profileButton, incognitoIndicator, editButton] as [NSView] { addSubview(view) }
+        for view in [symbolView, emojiField, nameField, incognitoIndicator, editButton] as [NSView] { addSubview(view) }
         addTrackingArea(NSTrackingArea(rect: .zero, options: SidebarSpaceHeaderEditButton.trackingOptions, owner: self))
         symbolView.addCursorUpdateArea(owner: self); emojiField.addCursorUpdateArea(owner: self)
         applyStyle(dark: false, tint: nil)
@@ -145,7 +117,6 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
 
     func applyStyle(dark: Bool, tint: NSColor?) {
         self.dark = dark
-        profileButton.dark = dark
         incognitoIndicator.dark = dark
         let white: CGFloat = dark ? 1 : 0
         nameField.textColor = NSColor(srgbRed: white, green: white, blue: white, alpha: 0.45)
@@ -190,11 +161,6 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
                                 height: nameField.intrinsicContentSize.height)
         } else { titleFrame = frames.title }
         nameField.frame = titleFrame
-        if !profileButton.isHidden {
-            let width = min(max(28, profileButton.intrinsicContentSize.width + 8), min(110, titleFrame.width * 0.5))
-            profileButton.frame = NSRect(x: titleFrame.maxX - width, y: (bounds.height - 20) / 2, width: width, height: 20)
-            nameField.frame.size.width = max(0, titleFrame.width - width - 4)
-        }
         if !incognitoIndicator.isHidden {
             let width = min(incognitoIndicator.intrinsicContentSize.width, titleFrame.width)
             let height = incognitoIndicator.intrinsicContentSize.height
@@ -223,7 +189,7 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
-        if hit === editButton || hit === profileButton || isEditing && (hit === nameField || hit.isDescendant(of: nameField)) { return hit }
+        if hit === editButton || isEditing && (hit === nameField || hit.isDescendant(of: nameField)) { return hit }
         return self
     }
 
@@ -404,31 +370,6 @@ final class SidebarMaskedTextField: NSTextField {
             leadingMask.locations = [0, NSNumber(value: Double(Self.rampWidth / bounds.width))]
         }
         CATransaction.commit()
-    }
-}
-
-@MainActor final class SpaceProfileIndicatorButton: PointingHandButton {
-    var dark = false { didSet { needsDisplay = true } }
-    private var hover = false { didSet { needsDisplay = true } }
-    private var tracking: NSTrackingArea?
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
-        addTrackingArea(area); tracking = area
-    }
-    override func mouseEntered(with event: NSEvent) { hover = true }
-    override func mouseExited(with event: NSEvent) { hover = false }
-    override func viewDidHide() { super.viewDidHide(); hover = false }
-    override func viewWillMove(toWindow newWindow: NSWindow?) { hover = false; super.viewWillMove(toWindow: newWindow) }
-    override func draw(_ dirtyRect: NSRect) {
-        let activeHover = hover && window?.isKeyWindow == true
-        if isEnabled && (activeHover || isHighlighted) {
-            SidebarRowAppearance.controlFill(pressed: isHighlighted, dark: dark).setFill()
-            NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
-        }
-        contentTintColor = NSColor(white: dark ? 1 : 0, alpha: activeHover || isHighlighted ? 0.65 : 0.45)
-        super.draw(dirtyRect)
     }
 }
 

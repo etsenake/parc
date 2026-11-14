@@ -16,7 +16,6 @@ import SwiftUI
         var label: CGRect
         var keycaps: [CGRect]
         var subtitle: CGRect? = nil
-        var profile: CGRect? = nil
     }
 
     static let labelFont = NSFont.systemFont(ofSize: 12, weight: .medium)
@@ -33,20 +32,6 @@ import SwiftUI
         static let lineLimit = 4
         static let subtitleOpacity: CGFloat = 0.66
         static func lineHeight(_ font: NSFont) -> CGFloat { ceil(font.ascender) + ceil(-font.descender) }
-    }
-
-    enum Profile {
-        static let spacing: CGFloat = 6
-        static let font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        static let leading: CGFloat = 5
-        static let trailing: CGFloat = 6
-        static let vertical: CGFloat = 4
-        static let iconSlot: CGFloat = 20
-        static let iconSpacing: CGFloat = 2
-        static var icon: NSImage? {
-            NSImage(systemSymbolName: "person.crop.circle", accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
-        }
     }
 
     enum Keycap {
@@ -170,7 +155,6 @@ import SwiftUI
             return (CGSize(width: min(room, pixel(measured.width)), height: pixel(min(measured.height, lines ?? .greatestFiniteMagnitude))), wraps)
         }
         let label: CGSize, subtitle: CGSize?, wraps: Bool
-        var profile: CGSize?
         switch content.style {
         case .standard:
             (label, wraps) = measure(labelString(content.label))
@@ -180,21 +164,11 @@ import SwiftUI
             let below = text.map { measure(lineString($0, font: Label.subtitleFont)) }
             label = title.size; subtitle = below?.size
             wraps = title.wraps || below?.wraps == true
-        case .dockItem(let name):
-            profile = name.map {
-                let chrome = Profile.leading + Profile.iconSlot + Profile.iconSpacing + Profile.trailing
-                let limit = floor((available - Profile.spacing) / 2 * scale) / scale
-                return CGSize(width: max(chrome, min(chrome + pixel(profileString($0).size().width), limit)),
-                              height: Label.lineHeight(Profile.font) + 2 * Profile.vertical)
-            }
-            (label, wraps) = measure(labelString(content.label), reserved: profile.map { Profile.spacing + $0.width } ?? 0)
-            subtitle = nil
         }
         let textWidth = max(label.width, subtitle?.width ?? 0), textHeight = label.height + (subtitle?.height ?? 0)
-        let profileWidth = profile.map { Profile.spacing + $0.width } ?? 0
-        let height = max(minHeight, textHeight, profile?.height ?? 0, widths.isEmpty ? 0 : Keycap.minSide)
-        let pillWidth = 2 * horizontalPadding + textWidth + profileWidth + shortcutWidth
-        var x = horizontalPadding + textWidth + profileWidth + shortcutSpacing
+        let height = max(minHeight, textHeight, widths.isEmpty ? 0 : Keycap.minSide)
+        let pillWidth = 2 * horizontalPadding + textWidth + shortcutWidth
+        var x = horizontalPadding + textWidth + shortcutSpacing
         let keycaps = widths.map { width -> CGRect in
             defer { x += width + Keycap.spacing }
             return CGRect(x: x, y: aligned((height - Keycap.minSide) / 2), width: width, height: Keycap.minSide)
@@ -204,11 +178,7 @@ import SwiftUI
                       pill: CGRect(x: 0, y: 0, width: pillWidth, height: height),
                       label: CGRect(x: horizontalPadding, y: top, width: label.width, height: label.height),
                       keycaps: keycaps,
-                      subtitle: subtitle.map { CGRect(x: horizontalPadding, y: top + label.height, width: $0.width, height: $0.height) },
-                      profile: profile.map {
-                          CGRect(x: horizontalPadding + textWidth + Profile.spacing, y: aligned((height - $0.height) / 2),
-                                 width: $0.width, height: $0.height)
-                      })
+                      subtitle: subtitle.map { CGRect(x: horizontalPadding, y: top + label.height, width: $0.width, height: $0.height) })
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -246,12 +216,6 @@ import SwiftUI
         case .standard:
             Self.labelString(content.label, color: title)
                 .draw(with: layout.label.offsetBy(dx: origin.x, dy: origin.y), options: [.usesLineFragmentOrigin, .usesFontLeading])
-        case .dockItem(let profile):
-            Self.labelString(content.label, color: title)
-                .draw(with: layout.label.offsetBy(dx: origin.x, dy: origin.y), options: [.usesLineFragmentOrigin, .usesFontLeading])
-            if let profile, let frame = layout.profile {
-                drawProfile(profile, in: frame.offsetBy(dx: origin.x, dy: origin.y), palette: palette, dark: dark, context: context)
-            }
         case .label(let subtitle):
             Self.lineString(content.label, font: Self.labelFont, color: title)
                 .draw(with: layout.label.offsetBy(dx: origin.x, dy: origin.y),
@@ -266,40 +230,6 @@ import SwiftUI
                        pressed: pressProgress.indices.contains(index) ? pressProgress[index] : 0,
                        palette: palette, dark: dark, context: context)
         }
-    }
-
-    private func drawProfile(_ name: String, in frame: CGRect, palette: TooltipColorPalette, dark: Bool, context: CGContext) {
-        func aligned(_ value: CGFloat) -> CGFloat { (value * backingScale).rounded() / backingScale }
-        let ink = palette.keyTitle.resolved(dark: dark)
-        context.addPath(CGPath(roundedRect: frame, cornerWidth: frame.height / 2, cornerHeight: frame.height / 2, transform: nil))
-        context.setFillColor(palette.keyForeground.resolved(dark: dark).cgColor)
-        context.fillPath()
-        if let icon = Profile.icon {
-            let slot = CGRect(x: frame.minX + Profile.leading, y: frame.minY + Profile.vertical,
-                              width: Profile.iconSlot, height: frame.height - 2 * Profile.vertical)
-            let rect = CGRect(x: aligned(slot.midX - icon.size.width / 2), y: aligned(slot.midY - icon.size.height / 2),
-                              width: icon.size.width, height: icon.size.height)
-            context.saveGState()
-            context.beginTransparencyLayer(in: rect, auxiliaryInfo: nil)
-            icon.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            context.setBlendMode(.sourceIn)
-            context.setFillColor(ink.cgColor)
-            context.fill(rect)
-            context.endTransparencyLayer()
-            context.restoreGState()
-        }
-        let x = frame.minX + Profile.leading + Profile.iconSlot + Profile.iconSpacing
-        Self.profileString(name, color: ink)
-            .draw(with: CGRect(x: x, y: frame.minY + Profile.vertical, width: frame.maxX - Profile.trailing - x,
-                               height: Label.lineHeight(Profile.font)),
-                  options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine])
-    }
-
-    static func profileString(_ name: String, color: NSColor = .black) -> NSAttributedString {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingTail
-        paragraph.minimumLineHeight = Label.lineHeight(Profile.font); paragraph.maximumLineHeight = Label.lineHeight(Profile.font)
-        return NSAttributedString(string: name, attributes: [.font: Profile.font, .foregroundColor: color, .paragraphStyle: paragraph])
     }
 
     private func drawKeycap(_ keycap: TooltipKeycap, in frame: CGRect, pressed: CGFloat,

@@ -15,7 +15,6 @@ struct TooltipConfiguration: Equatable {
     enum Style: Equatable {
         case standard
         case label(subtitle: String?)
-        case dockItem(profileName: String?)
     }
 
     static let defaultMaxWidth: CGFloat = 296

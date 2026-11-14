@@ -2877,9 +2877,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             }
             button.title = space.customIcon?.emoji ?? ""
             button.imagePosition = space.customIcon?.emoji == nil ? .imageOnly : .noImage
-            let profileName = state.profiles.count > 1 ? state.profiles.first(where: { $0.id == space.profileID })?.name : nil
             button.parcTooltip = TooltipConfiguration(space.name.isEmpty ? "Untitled Space" : space.name,
-                                                      style: .dockItem(profileName: profileName),
                                                       shortcut: .command(NumberedTarget.spaceBindingID(offset + 1)), anchor: .top)
             button.setAccessibilityLabel(space.name)
             SidebarAccessibility.configureSpace(button, name: space.name)
@@ -2928,12 +2926,6 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         page.headerContentShown = headerContent.isShown
         page.header.isHidden = !headerContent.isShown && !page.header.isEditing
         page.header.update(headerContent, symbol: space?.customIcon?.image, emoji: space?.customIcon?.emoji)
-        let profileName = state.profiles.count > 1 && !isPrivateBrowsing
-            ? state.profiles.first(where: { $0.id == space?.profileID })?.name : nil
-        page.header.updateProfile(name: profileName, menu: { [weak self] in
-            guard let self, let id = self.activeSpaceID else { return nil }
-            return self.makeSpaceManagementMenu?(id)?.profileMenu()
-        })
         var priorTabFaviconArt: [UUID: TabRowSettledFaviconArt] = [:]
         for row in page.tabRows {
             if let art = row.settledFaviconArt() {

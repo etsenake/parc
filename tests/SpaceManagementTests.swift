@@ -77,16 +77,11 @@ import AppKit
         header.nameField.stringValue = "Cancelled"
         _ = header.control(header.nameField, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:)))
         try check(results.count == 2 && results[1] == nil && !header.nameField.isEditable, "Escape cancels native draft")
-        header.updateProfile(name: "Work Profile", menu: { NSMenu() })
-        header.layoutSubtreeIfNeeded()
-        try check(header.profileButton.accessibilityLabel() == "Profile: Work Profile", "profile is named for accessibility")
-        try check(header.nameField.frame.maxX <= header.profileButton.frame.minX, "profile control does not overlap title")
-        try check(header.profileButton.cell?.accessibilityLabel() == "Profile: Work Profile", "exposed profile cell is named")
         let list = NSView(), favorites = NSView()
         let chain = SidebarAccessibility.keyViewChain(leading: [], favorites: favorites, list: list, regions: [],
             trailing: [], space: header, beforeList: [header])
-        try check(chain.contains { $0 === header.profileButton } && chain.firstIndex { $0 === header.profileButton }! < chain.firstIndex { $0 === list }!,
-            "profile control enters the keyboard chain before item list")
+        try check(chain.contains { $0 === header.editButton } && chain.firstIndex { $0 === header.editButton }! < chain.firstIndex { $0 === list }!,
+            "header button enters the keyboard chain before item list")
         var selected = 0
         let menu = SidebarSpaceMenu(includesManagement: true, changeIcon: {},
             profiles: [("Default", true, {}), ("Work", false, { selected += 1 }), ("Retiring", false, nil)],

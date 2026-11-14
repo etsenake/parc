@@ -125,10 +125,10 @@ struct SidebarSpaceHeaderTests {
         privateHeader.updateIncognitoIndicator(shown: true)
         privateHeader.applyStyle(dark: true, tint: nil)
         privateHeader.layoutSubtreeIfNeeded()
-        check(privateHeader.nameField.isHidden && privateHeader.profileButton.isHidden && !privateHeader.incognitoIndicator.isHidden
+        check(privateHeader.nameField.isHidden && !privateHeader.incognitoIndicator.isHidden
               && privateHeader.incognitoIndicator.parcTooltip?.label == "Incognito tabs" && privateHeader.incognitoIndicator.toolTip == nil
               && privateHeader.incognitoIndicator.frame.minX == 10.5 && abs(privateHeader.incognitoIndicator.frame.midY - 21) < 0.001,
-              "multiple Profiles replace the private title with the left-aligned incognito indicator")
+              "the incognito indicator replaces the private title with the left-aligned incognito indicator")
         let indicator = privateHeader.incognitoIndicator
         guard let indicatorIcon = indicator.subviews.compactMap({ $0 as? NSImageView }).first,
               let indicatorLabel = indicator.subviews.compactMap({ $0 as? NSTextField }).first else {
@@ -167,7 +167,7 @@ struct SidebarSpaceHeaderTests {
         check(!privateHeader.nameField.isHidden && privateHeader.incognitoIndicator.isHidden
               && privateHeader.nameField.stringValue == "Incognito Tabs" && privateHeader.nameField.frame.minX == 14
               && abs(privateHeader.nameField.frame.midY - 21) < 0.001,
-              "one Profile restores the private title")
+              "hiding the indicator restores the private title")
 
         header.update(titled("Trips"), symbol: nil, emoji: "🌴")
         header.layoutSubtreeIfNeeded()

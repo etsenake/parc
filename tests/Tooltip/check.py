@@ -40,10 +40,10 @@ assert 'LiveShortcutToolTip.help(row.button, "New tab", commandID: "newTab:")' i
 assert 'LiveShortcutToolTip.help(addressButton, "Search or enter a URL", commandID: "focusAddress:")' in sidebar \
     and "LiveShortcutToolTip.set(addressButton" not in sidebar, "the URL pill has no tooltip in Parc"
 assert 'button.parcTooltip = TooltipConfiguration(space.name.isEmpty ? "Untitled Space" : space.name,' in sidebar \
-    and "style: .dockItem(profileName: profileName)," in sidebar \
+    and "style: .dockItem" not in sidebar \
     and "shortcut: .command(NumberedTarget.spaceBindingID(offset + 1)), anchor: .top)" in sidebar \
-    and "let profileName = state.profiles.count > 1 ? state.profiles.first(where: { $0.id == space.profileID })?.name : nil" in sidebar, \
-    "a dock Space item's tooltip sits above it with its Profile and the Space's numbered binding"
+    and "let profileName = state.profiles.count > 1 ? state.profiles.first(where: { $0.id == space.profileID })?.name : nil" not in sidebar, \
+    "a dock Space item's tooltip sits above it with the Space's numbered binding and no profile name"
 assert sidebar.count('"Copy Quote as URL", commandID: "copyCurrentURLAsQuote:")') == 2 \
     and "Copy a link to the selected text" not in sidebar, "quote mode's buttons show the CopyQuoteTooltip label"
 center = source("SiteControlCenter.swift")
