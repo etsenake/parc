@@ -8,7 +8,7 @@ struct HistorySwipeParameters: Equatable {
     var verticalDriftDistance = 0.01
     var verticalDominance = 2.0
     var verticalExcess = 1.3
-    var trackedCommitAmount = 0.3
+    var trackedArmAmount = 0.3
     var rubberBand = 0.0
     var holdDelay: TimeInterval = 0.5
     var rowStep = 0.05
@@ -45,6 +45,8 @@ struct HistorySwipeRecognizer {
     private var start = HistorySwipePoint(x: 0, y: 0)
     private var current = HistorySwipePoint(x: 0, y: 0)
     private var totalY = 0.0
+    private var armedY = 0.0
+    private var armedTotalY = 0.0
     private var rowAnchor = 0.0
     private var firstScrollUnconsumed = false
     private var overscrollPropagatesX = false
@@ -122,7 +124,11 @@ struct HistorySwipeRecognizer {
                                  _ step: inout HistorySwipeStep) -> Bool {
         guard state != .completed, state != .cancelled, source != .trackedSwipe else { return false }
         let point = Self.average(points)
-        totalY += abs(point.y - current.y)
+        if state == .armed && holdDeadline != nil {
+            totalY = armedTotalY + abs(point.y - armedY)
+        } else {
+            totalY += abs(point.y - current.y)
+        }
         current = point
         if state == .holding {
             guard touchProgress > 0 else {
@@ -165,7 +171,9 @@ struct HistorySwipeRecognizer {
         if progress >= 1 && state == .tracking {
             state = .armed
             step.outputs.append(.armed(true))
-            if source == .touches, let time { holdDeadline = time + parameters.holdDelay }
+            armedY = current.y
+            armedTotalY = totalY
+            if source == .touches, parameters.holdDelay.isFinite, let time { holdDeadline = time + parameters.holdDelay }
         } else if progress < 1 && state == .armed {
             state = .tracking
             holdDeadline = nil
@@ -328,7 +336,7 @@ struct HistorySwipeRecognizer {
             step.outputs.append(.cancel)
             state = .cancelled
         default:
-            advance(abs(update.amount) / parameters.trackedCommitAmount, time: nil, &step)
+            advance(abs(update.amount) / parameters.trackedArmAmount, time: nil, &step)
         }
     }
 

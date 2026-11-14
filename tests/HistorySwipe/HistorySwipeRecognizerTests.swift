@@ -175,7 +175,7 @@ struct Run {
               "Chromium's commit, consume and direction distances")
         check(p.verticalCancelDistance == 0.24 && p.verticalDriftDistance == 0.01
               && p.verticalDominance == 2 && p.verticalExcess == 1.3, "Chromium's vertical cancel rules")
-        check(p.trackedCommitAmount == 0.3 && p.rubberBand == 0, "Chromium's tracked-swipe commit and hard clamp")
+        check(p.trackedArmAmount == 0.3 && p.rubberBand == 0, "Chromium's tracked-swipe arm point and hard clamp")
         check(p.holdDelay == 0.5 && p.rowStep == 0.05, "the starting hold delay and row step")
     }
 
@@ -276,6 +276,7 @@ struct Run {
         check(run.gestures == [.begin(.back), .armed(true), .commit(.adjacent(.back))],
               "AppKit's tracked progress arms and commits the adjacent page")
         check(near(run.fractions, [0.4, 1]), "tracked progress is the gesture amount over Chromium's 0.3")
+        check(run.steps.contains { $0.holdDeadline != nil } == false, "a tracked swipe never schedules the list")
         check(!run.outputs.contains(.hold), "without finger positions there is no hold list")
         check(run.steps.dropLast().allSatisfy { !$0.stopsTracking } && run.steps.last?.stopsTracking == true,
               "AppKit's settle animation runs out, and a callback after completion stops")
@@ -288,6 +289,31 @@ struct Run {
               "a mostly vertical Magic Mouse scroll stays with the page")
         let consumed = Run(Trace.wheel(dx: 4, consumed: true))
         check(consumed.steps.allSatisfy { $0.startsTracking == nil }, "a page that takes the scroll keeps the Magic Mouse")
+
+        var repeated = Trace.wheel(dx: 4)
+        repeated.scroll(.changed, dx: 5)
+        repeated.scroll(.changed, dx: 6)
+        repeated.tracked(0, .began)
+        repeated.scroll(.changed, dx: 4)
+        let once = Run(repeated)
+        check(once.steps.compactMap(\.startsTracking).count == 1 && once.scrollConsumes.suffix(3) == [true, true, true],
+              "later scroll events in the same gesture never ask AppKit to track again")
+
+        var short = Trace.wheel(dx: 4)
+        short.tracked(0, .began)
+        short.tracked(0.1, .changed)
+        short.tracked(0.12, .ended)
+        check(Run(short).gestures == [.begin(.back), .commit(.adjacent(.back))],
+              "AppKit's ended phase decides a tracked commit; the arm amount only moves the armed look")
+
+        var next = Trace.wheel(dx: 4)
+        next.tracked(0, .began)
+        next.tracked(0.4, .ended, complete: true)
+        next.scroll(.began, dx: 2)
+        next.scroll(.changed, dx: 4)
+        next.scroll(.changed, dx: 4)
+        check(Run(next).steps.compactMap(\.startsTracking).count == 1,
+              "a new Magic Mouse gesture waits for the page's own answer instead of reusing the last one")
     }
 
     static func magicMouseCancelsAndStaleTracking() {
@@ -410,7 +436,7 @@ struct Run {
         var long = Trace.opening(from: 0.30, toward: 1)
         long.move(0.65)
         long.move(0.65, 0.40)
-        long.move(0.65, 0.55)
+        long.move(0.65, 0.25)
         let far = Run(long)
         check(far.gestures == [.begin(.back), .armed(true), .cancel],
               "Chromium's large vertical travel cancels even an armed swipe before the hold")
@@ -527,6 +553,20 @@ struct Run {
         lifted.lift()
         check(Run(lifted).gestures == [.begin(.back), .armed(true), .commit(.adjacent(.back))],
               "lifting before the list opens commits the adjacent page even after the delay")
+
+        var tremor = Trace.opening(from: 0.30, toward: 1)
+        tremor.move(0.39)
+        let restAt = tremor.time
+        for index in 0..<70 { tremor.move(0.39, index.isMultiple(of: 2) ? 0.501 : 0.5, after: 0.007) }
+        tremor.clock(restAt + 0.5)
+        check(Run(tremor).gestures == [.begin(.back), .armed(true), .hold, .selection(1)],
+              "resting fingers that tremble while the list waits still open it")
+
+        var slide = Trace.opening(from: 0.30, toward: 1)
+        slide.move(0.39)
+        slide.move(0.39, 0.6, after: 0.1)
+        check(Run(slide).gestures == [.begin(.back), .armed(true), .cancel],
+              "a real vertical slide while the list waits still cancels")
     }
 
     static func backgroundWindow() {
@@ -538,7 +578,7 @@ struct Run {
         trace.lift()
         check(Run(trace, background).gestures == [.begin(.back), .armed(true), .hold, .selection(1),
                                                   .selection(2), .detent, .commit(.entry(.back, distance: 2))],
-              "a background window swipes and holds with nothing but coverage and history to ask")
+              "a swipe and hold need nothing from the page beyond coverage and history")
 
         var untouched = Trace.wheel(dx: 4)
         untouched.tracked(0, .began)
@@ -556,7 +596,7 @@ struct Run {
         rest.scroll(.changed, dx: 8)
         covered.play(rest.inputs, sheet)
         check(covered.gestures == [.begin(.back), .cancel] && covered.scrollConsumes.last == false,
-              "covering the window, not losing focus, is what cancels")
+              "covering the page cancels the swipe and hands its events back")
     }
 
     static func interruptions() {
@@ -652,11 +692,16 @@ struct Run {
               == [.begin(.back), .armed(true), .commit(.adjacent(.back))], "the shell receives every output in order")
         check(consumed.contains(true) && controller.recognizer.state == .completed, "the forwarder gets consume answers")
 
+        weak var released: Shell?
         var orphan: HistorySwipeController?
         do {
             let gone = Shell()
+            released = gone
             orphan = HistorySwipeController(shell: gone)
         }
-        check(orphan?.receive(.cancel, in: page) == HistorySwipeStep(), "a released shell is not retained")
+        check(released == nil, "the controller does not keep its shell alive")
+        var later: [HistorySwipeStep] = []
+        for input in trace.inputs { later.append(orphan!.receive(input, in: page)) }
+        check(later.flatMap(\.outputs).contains(.commit(.adjacent(.back))), "a controller without a shell still recognizes")
     }
 }

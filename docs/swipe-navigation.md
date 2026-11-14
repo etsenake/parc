@@ -99,8 +99,8 @@ Nothing feeds it yet, so Chromium's recognizer still runs every swipe.
 
 - States: waiting for the page, possible, tracking, armed past the commit point,
   holding, then completed or cancelled. Reversing below the commit point
-  disarms, vertical drift cancels before the hold, and lifting before the
-  commit point navigates nowhere.
+  disarms, vertical drift cancels before the hold, and lifting a touch-driven
+  swipe before the commit point navigates nowhere.
 - Chromium's page-first rule holds: a swipe begins only after the page leaves
   this gesture's first scroll unconsumed and its overscroll behavior lets
   horizontal overscroll through, with the system's swipe-between-pages setting
@@ -128,16 +128,21 @@ history snapshot.
 
 Defaults come from Chromium's history swiper, as fractions of the trackpad:
 commit at 0.08, take the events at 0.01, and cancel when vertical travel exceeds
-twice the horizontal, 1.3 times it beyond 0.01, or 0.24 in total. A tracked
-swipe commits at 0.3. Chromium has no rubber band, so progress stops at the
+twice the horizontal, when 1.3 times the vertical travel exceeds the horizontal
+once it passes 0.01, or when it passes 0.24 in total. While an armed swipe waits
+for the list, vertical travel counts from the armed point as net movement, so
+a resting hand's tremor can't cancel it. A tracked swipe looks armed at 0.3 of
+AppKit's gesture amount, but AppKit's own end of the swipe decides the commit,
+as in Chromium. Chromium has no rubber band, so progress stops at the
 commit point. The hold delay is 0.5 seconds, Chromium's press-and-hold delay for
 the Back button's menu, and the row step is 0.05. All are parameters for Dia's
 values to replace. `python3 tests/HistorySwipe/check.py` runs the model tests.
 
 Next, the forwarder feeds the model through the existing AppKit bridge client.
-Commits use the page's existing Back/Forward actions, and list picks use the
-same index navigation as the Back/Forward history chooser, so history and POST
-state behave identically. Once no context uses Chromium's recognizer, remove
+Commits and list picks go through the per-page history path background swipes
+already use in `native_history_swipe.mm`, because the page's Back/Forward
+actions and the history chooser reach only the selected page of the key window.
+History and POST state must behave as they do for the page's own Back/Forward. Once no context uses Chromium's recognizer, remove
 `native-history-swipe-direct` and update the [hooks reference](chromium-hooks.md)
 in the same change. Removing a patch while preserving behavior needs no approval.
 
