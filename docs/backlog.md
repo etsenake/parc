@@ -18,10 +18,6 @@ Finish assigned work first; explicit deferrals remain deferred.
 - **What's New address leakage:** native History can record the bundled file URL,
   and Copy URL can expose it while a new typed destination is loading. Add exact
   engine history/copy guards. [Software updates](software-update.md).
-- **Swipe in windows that aren't in focus:** Back/Forward swipes do nothing over
-  a Parc window while another app or Parc window is frontmost, after focus moves
-  navigate the page under the pointer. Drop Parc's own focus requirements.
-  [Swipe navigation](swipe-navigation.md#windows-that-arent-in-focus).
 - **Folder prompts at first launch:** every new browser window reads and watches
   Documents and Desktop for the Library button's recent-files list, so a fresh
   install greets people with two macOS folder-access dialogs the moment

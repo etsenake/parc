@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "base/callback_list.h"
 #include "base/functional/bind.h"
@@ -10,12 +11,16 @@
 #include "chrome/browser/profiles/profile.h"
 #import "chrome/browser/renderer_host/chrome_render_widget_host_view_mac_delegate.h"
 #import "chrome/browser/renderer_host/chrome_render_widget_host_view_mac_history_swiper.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "components/tabs/public/tab_interface.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #import "native_appkit_page.h"
@@ -23,8 +28,6 @@
 #import "page_host.h"
 #import "window_security_reservation.h"
 
-// These are the existing superclass implementations; the recognizer remains
-// owned by ChromeRenderWidgetHostViewMacDelegate, never recreated by the shell.
 @interface ChromeRenderWidgetHostViewMacDelegate (NativeHistory)
     <HistorySwiperDelegate>
 @end
@@ -38,8 +41,15 @@ class SwipeSession final : public content::WebContentsObserver {
                base::RepeatingClosure cancel)
       : content::WebContentsObserver(&contents), page_(page),
         window_(page.nativeView.window), direction_(direction),
-        history_([page navigationHistoryBack:direction == history_swiper::kBackwards]),
         cancel_(std::move(cancel)) {
+    auto& controller = contents.GetController();
+    current_index_ = controller.GetCurrentEntryIndex();
+    auto* pending = controller.GetPendingEntry();
+    pending_id_ = pending ? pending->GetUniqueID() : 0;
+    for (int i = 0; i < controller.GetEntryCount(); ++i)
+      entry_ids_.push_back(controller.GetEntryAtIndex(i)->GetUniqueID());
+    if (auto* frame = contents.GetPrimaryMainFrame())
+      document_ = frame->GetWeakDocumentPtr();
     auto weak = weak_factory_.GetWeakPtr();
     auto* tab = tabs::TabInterface::MaybeGetFromContents(&contents);
     if (tab) {
@@ -53,25 +63,21 @@ class SwipeSession final : public content::WebContentsObserver {
     }
     auto cancel_block = ^(NSNotification*) { if (weak) weak->Cancel(); };
     for (NSNotificationName name in @[NSWindowWillCloseNotification,
-        NSWindowDidResignKeyNotification, NSWindowDidMiniaturizeNotification,
-        NSWindowWillBeginSheetNotification, PCNativeWindowSecurityStateChanged]) {
+        NSWindowDidMiniaturizeNotification, NSWindowWillBeginSheetNotification,
+        PCNativeWindowSecurityStateChanged]) {
       [notifications_ addObject:[NSNotificationCenter.defaultCenter
           addObserverForName:name object:window_ queue:nil usingBlock:cancel_block]];
     }
-    [notifications_ addObject:[NSNotificationCenter.defaultCenter
-        addObserverForName:NSApplicationDidResignActiveNotification
-        object:NSApp queue:nil usingBlock:cancel_block]];
   }
   ~SwipeSession() override {
     weak_factory_.InvalidateWeakPtrs();
-    [history_ invalidate];
     for (id token in notifications_)
       [NSNotificationCenter.defaultCenter removeObserver:token];
   }
   bool Current() const {
-    return !cancelled_ && !consumed_ && history_.valid && page_ &&
+    return !cancelled_ && !consumed_ && page_ &&
         page_.nativeView.window == window_ &&
-        ContentsForNativePage(page_) == web_contents() &&
+        ContentsForNativePage(page_) == web_contents() && HistoryUnchanged() &&
         CanNativePageHistorySwipe(page_);
   }
   bool Matches(history_swiper::NavigationDirection direction,
@@ -80,23 +86,31 @@ class SwipeSession final : public content::WebContentsObserver {
   }
   void Navigate(history_swiper::NavigationDirection direction, NSWindow* window) {
     if (!Matches(direction, window)) { Cancel(); return; }
-    // The snapshot proves the original history is unchanged; the real command
-    // still determines its skippable-entry destination and preserves POST state.
-    PCNativePage* page = page_;
     consumed_ = true;
-    [history_ invalidate];
-    [page performNavigationAction:direction == history_swiper::kForwards
-        ? PCNativeNavigationActionForward : PCNativeNavigationActionBack inNewTab:NO];
+    if (direction == history_swiper::kForwards) chrome::GoForward(web_contents());
+    else chrome::GoBack(web_contents());
   }
   void Cancel() {
     if (cancelled_) return;
     cancelled_ = true;
-    [history_ invalidate];
-    // The delegate retains this object through the callback. It does not reset
-    // it from an observer or AppKit tracking callback executing on this stack.
     cancel_.Run();
   }
  private:
+  bool HistoryUnchanged() const {
+    auto* contents = web_contents();
+    auto* document = document_.AsRenderFrameHostIfValid();
+    if (!contents || !document || document != contents->GetPrimaryMainFrame())
+      return false;
+    auto& controller = contents->GetController();
+    auto* pending = controller.GetPendingEntry();
+    if (controller.GetCurrentEntryIndex() != current_index_ ||
+        (pending ? pending->GetUniqueID() : 0) != pending_id_ ||
+        controller.GetEntryCount() != static_cast<int>(entry_ids_.size())) return false;
+    for (int i = 0; i < controller.GetEntryCount(); ++i)
+      if (controller.GetEntryAtIndex(i)->GetUniqueID() != entry_ids_[i]) return false;
+    return direction_ == history_swiper::kForwards ? controller.CanGoForward()
+                                                   : controller.CanGoBack();
+  }
   void DidStartNavigation(content::NavigationHandle* navigation) override {
     if (navigation->IsInPrimaryMainFrame()) Cancel();
   }
@@ -108,7 +122,10 @@ class SwipeSession final : public content::WebContentsObserver {
   PCNativePage* __weak page_ = nil;
   NSWindow* __weak window_ = nil;
   history_swiper::NavigationDirection direction_;
-  PCNativeNavigationHistory* __strong history_ = nil;
+  int current_index_ = -1;
+  int pending_id_ = 0;
+  std::vector<int> entry_ids_;
+  content::WeakDocumentPtr document_;
   base::RepeatingClosure cancel_;
   bool cancelled_ = false;
   bool consumed_ = false;
@@ -116,8 +133,8 @@ class SwipeSession final : public content::WebContentsObserver {
   NSMutableArray* __strong notifications_ = [[NSMutableArray alloc] init];
   base::WeakPtrFactory<SwipeSession> weak_factory_{this};
 };
-}  // namespace
-}  // namespace parc
+}
+}
 
 @interface PCNativeHistorySwipeDelegate : ChromeRenderWidgetHostViewMacDelegate
 - (void)cancelNativeGesture;
@@ -188,8 +205,6 @@ class SwipeSession final : public content::WebContentsObserver {
   if (_native && ![self currentOwner]) { [self cancelSession]; return; }
   [super touchesEndedWithEvent:event];
 }
-//
-// its history container, above the pane compositor that shows the page.
 - (NSView*)viewThatWantsHistoryOverlay {
   NSView* view = [super viewThatWantsHistoryOverlay];
   for (NSView* ancestor = view.superview; ancestor; ancestor = ancestor.superview) {
@@ -232,4 +247,4 @@ NSObject<RenderWidgetHostViewMacDelegate>* CreateNativeHistorySwipeDelegate(
     content::RenderWidgetHost* host) {
   return [[PCNativeHistorySwipeDelegate alloc] initWithRenderWidgetHost:host];
 }
-}  // namespace parc
+}

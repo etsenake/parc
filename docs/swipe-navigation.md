@@ -2,7 +2,7 @@
 
 A two-finger horizontal swipe on a trackpad, or a one-finger swipe on a Magic
 Mouse, moves a page Back or Forward. This guide covers how that works today,
-the defect with windows that aren't in focus, and the planned Parc-owned gesture
+including in windows that aren't in focus, and the planned Parc-owned gesture
 with a new look and a swipe-and-hold history list. The open items are indexed
 in the [backlog](backlog.md#planned-interface-work).
 
@@ -29,45 +29,36 @@ same Chromium arrow.
 
 ## Windows that aren't in focus
 
-Swiping over a page does nothing when:
+A swipe belongs to the page under the gesture whenever that page can go that
+way and nothing covers it. macOS delivers scroll gestures to the window under
+the pointer whatever has focus, and Chromium's recognizer never asks about
+focus, so Parc doesn't either. Swiping works while another app is frontmost,
+over a Parc window behind another one, with keyboard focus in the address
+field, the sidebar or another control, and over any visible split pane, as it
 
-- another app is frontmost, even though the pointer is over a Parc window;
-- the Parc window under the pointer is not the frontmost Parc window;
-- keyboard focus sits in the address field, the sidebar or another control
-  instead of the page;
-- in a split, the pointer is over a pane other than the selected one.
-
-bringing the window forward; Dia even shows its swipe history list in a
-background window while another app is frontmost. macOS delivers scroll
-gestures to the window under the pointer whatever has focus, and Chromium's
-recognizer never asks about focus. The restriction is Parc's own, in three places:
-
-- `CanNativePageHistorySwipe` in
-  [native_appkit_page.mm](../Engine/ParcNative/native_appkit_page.mm) requires
-  Parc to be the active app and the window's first responder to be inside the page.
 - `nativeBrowser(_:allowsHistorySwipeFor:)` in
   [BrowserWindowController.swift](../Sources/ParcApp/BrowserWindowController.swift)
-  requires the key window and the window's selected page.
-- The swipe session cancels when its window resigns key or Parc resigns active.
+  accepts any visible split pane, an Easel's selected page or the active Peek.
+  An open Peek covers every pane, so only the Peek swipes then. It refuses
+  while a sheet is attached, a menu is tracking, the command bar, Library, tab
+  switcher, Back/Forward chooser, capture, theme popover or a deferring Site
+  Control Center covers the window, or the window or a tab is closing,
+  transferring or retiring.
+- `CanNativePageHistorySwipe` in
+  [native_appkit_page.mm](../Engine/ParcNative/native_appkit_page.mm) requires a
+  live, attached page in a visible, unminiaturized window with no sheet or
+  security reservation. It doesn't ask whether Parc is active, the window is
+  key or the page has keyboard focus.
+- The swipe session records the page's own history when it starts, checks at
+  commit that it is unchanged, and then moves that page Back or Forward with
+  Chromium's per-page navigation, so an unselected pane never borrows the
+  selected page's commands. Navigation, page change, visibility loss,
+  destruction, close, miniaturize, sheet, security change, tab deactivation and
+  detach cancel it; the window resigning key or Parc resigning active don't.
 
-**Fix.** A swipe belongs to the page under the gesture whenever that page can go
-that way and nothing covers it.
-
-- Keep refusing when a sheet is attached, a menu is tracking, the command bar,
-  Library, tab switcher, capture, theme popover or a deferring Site Control
-  Center covers the window, the window or tab is closing, transferring or
-  retiring, or the window holds a security reservation. Keep checking at commit
-  that the history snapshot is unchanged.
-- Stop requiring an active app, a key window, keyboard focus in the page or the
-  selected pane. Any visible split pane, or the active Peek, can swipe.
-- Keep cancelling on navigation, page change, visibility loss, destruction,
-  close, miniaturize, sheet, security change, tab deactivation and detach.
-  Stop cancelling on resign key and resign active.
-- A background swipe never activates Parc, raises the window, changes the
-  selected pane or moves keyboard focus.
-
-This touches only Parc-owned engine files and Swift, needs no Chromium change and
-can ship before the new look. The engine half needs an authorized engine build.
+A background swipe never activates Parc, raises the window, changes the
+selected pane or moves keyboard focus. `python3 tests/HistorySwipeTargets/check.py`
+checks these rules.
 
 ## How Dia does it
 
@@ -191,11 +182,10 @@ left edge, Forward at the right.
 
 ## Build order and review
 
-1. Unfocused-window fix, on today's look.
-2. Parc-owned recognizer with the new look, then retire the Chromium patch.
-3. Swipe and hold.
+1. Parc-owned recognizer with the new look, then retire the Chromium patch.
+2. Swipe and hold.
 
-Steps 2 and 3 follow the [interface review](visual-review.md) workflow. Start
+Both steps follow the [interface review](visual-review.md) workflow. Start
 from a Dia reference recording, and approve renders or animated mockups of
 tracking, armed, commit, cancel and hold, in light, dark and private themes and
 under Reduce Motion, before tests or review. A live look-and-feel pass in Parc

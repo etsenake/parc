@@ -7894,14 +7894,25 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, allowsHistorySwipeFor page: PCNativePage) -> Bool {
-        browser === nativeBinding && selectedNativePage() === page && !page.isClosed
+        browser === nativeBinding && !page.isClosed
             && !isClosing && !wholeWindowClose && !windowClosePending && !windowCloseApproved
             && closingTabIDs.isEmpty && modelRetirementIDs.isEmpty && peekRetirementParents.isEmpty
             && transferringTabIDs.isEmpty && resolvingTransfers.isEmpty
             && commandBar == nil && libraryView == nil && tabSwitcher == nil
             && navigationHistory == nil && themePopover == nil && !siteControlCenterDefers && pageCapture == nil
             && menuTrackingDepth == 0 && window?.attachedSheet == nil
-            && window?.isKeyWindow == true && PCNativeBrowserApplication.owner(of: page) === browser
+            && PCNativeBrowserApplication.owner(of: page) === browser
+            && historySwipePages.contains { $0 === page }
+    }
+    private var historySwipePages: [PCNativePage] {
+        let peek = activePeek
+        let panes = renderedPaneIDs.compactMap { id -> PCNativePage? in
+            if let page = easelEditors[id]?.editor.pageObjects?.selectedPage { return page }
+            guard let tab = store.state.tabs.first(where: { $0.id == id }), !InternalPage.isInternal(tab.url),
+                  let browser = browsers[id], !browser.isHiddenOrHasHiddenAncestor else { return nil }
+            return browser.nativePage
+        }
+        return HistorySwipeTargets.pages(peek: peek?.page, peekShown: peek?.view.isHidden == false, panes: panes)
     }
     override func cancelOperation(_ sender: Any?) {
         if let session = spaceCreation, !session.committing, !session.view.hasMarkedText {

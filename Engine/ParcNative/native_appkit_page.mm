@@ -222,8 +222,6 @@ int PageToolCommand(PCNativePageTool tool) {
       return IDC_CLEAR_BROWSING_DATA;
     case PCNativePageToolClearCacheAndRefresh:
     case PCNativePageToolClearCookiesAndRefresh:
-      //
-      // Never substitute IDC_RELOAD_CLEARING_CACHE's whole-profile deletion.
       return IDC_RELOAD_BYPASSING_CACHE;
   }
   return 0;
@@ -235,8 +233,8 @@ std::map<content::WebContents*, PageRecord>& Pages() {
   static base::NoDestructor<std::map<content::WebContents*, PageRecord>> value;
   return *value;
 }
-}  // namespace
-}  // namespace parc
+}
+}
 
 @interface PCNativePage ()
 - (instancetype)initWithState:(std::shared_ptr<parc::NativePageState>)state;
@@ -245,15 +243,10 @@ std::map<content::WebContents*, PageRecord>& Pages() {
 
 namespace parc {
 namespace {
-// Easel-owned pages, which are never restored as ordinary tabs. Session IDs
-// stay unique for the run, so an entry outliving its page matches no other.
 std::set<SessionID>& OmittedSessions() {
   static base::NoDestructor<std::set<SessionID>> value;
   return *value;
 }
-// Opt-in diagnostics of the actual primary widget only. Arrival at this
-// observer is distinct from a renderer ACK; neither is proof that a DOM handler
-// ran.
 class NativePageInputDiagnostics final
     : public content::WebContentsObserver,
       public content::RenderWidgetHost::InputEventObserver,
@@ -261,7 +254,6 @@ class NativePageInputDiagnostics final
  public:
   NativePageInputDiagnostics(content::WebContents& contents, NSView* view)
       : content::WebContentsObserver(&contents), view_(view) {
-    // Constructed only on the browser UI thread.
     static uint64_t next_page = 0;
     page_ = ++next_page;
     BindPrimaryWidget();
@@ -369,23 +361,17 @@ class NativePageInputDiagnostics final
       widget_observation_{this};
 };
 
-//
-// the primary main frame's TopBandColorTracker, copies the composited frame's
-// top band when the renderer cannot tell the colour, and reports changes.
 class TopBandColorSampler final : public mojom::TopBandColorObserver {
  public:
   explicit TopBandColorSampler(base::RepeatingClosure changed)
       : changed_(std::move(changed)) {}
 
-  // A new primary main document. The renderer's tracker lives as long as its
-  // LocalFrame, so only a new renderer frame (`rebind`) needs a new channel.
   void Bind(content::RenderFrameHost* frame, bool rebind) {
     delivery_.Reset();
     delivered_ = false;
     color_.reset();
     crossfade_ = false;
     host_.clear();
-    // A copy for the previous document must not deliver into this one.
     weak_factory_.InvalidateWeakPtrs();
     const auto id =
         frame ? frame->GetGlobalId() : content::GlobalRenderFrameHostId();
@@ -404,7 +390,6 @@ class TopBandColorSampler final : public mojom::TopBandColorObserver {
   bool delivered() const { return delivered_; }
   std::optional<uint32_t> color() const { return color_; }
   bool crossfade() const { return crossfade_; }
-  // The host of the document that produced the delivered colour.
   const std::string& host() const { return host_; }
 
  private:
@@ -433,7 +418,6 @@ class TopBandColorSampler final : public mojom::TopBandColorObserver {
       changed_.Run();
     }
   }
-  // 0x40c0230: the view's top kBandRows DIP at full resolution.
   void CopyFrame(int64_t id) {
     auto* frame = content::RenderFrameHost::FromID(frame_);
     auto* view = frame ? frame->GetView() : nullptr;
@@ -449,7 +433,6 @@ class TopBandColorSampler final : public mojom::TopBandColorObserver {
                        weak_factory_.GetWeakPtr(), id,
                        view->GetDeviceScaleFactor()));
   }
-  // 0x40c04bc: the band's rows and right margin scale with the display.
   void DidCopyFrame(int64_t id,
                     float scale,
                     const content::CopyFromSurfaceResult& result) {
@@ -479,16 +462,12 @@ class TopBandColorSampler final : public mojom::TopBandColorObserver {
   base::WeakPtrFactory<TopBandColorSampler> weak_factory_{this};
 };
 
-// Whether the primary main document has requests in flight, from the
-// renderer's PageNetworkActivity on the main frame's associated channel.
 class PageNetworkActivityWatcher final
     : public mojom::PageNetworkActivityObserver {
  public:
   explicit PageNetworkActivityWatcher(base::RepeatingClosure changed)
       : changed_(std::move(changed)) {}
 
-  // As TopBandColorSampler::Bind: the renderer's count lives as long as its
-  // LocalFrame, so only a new renderer frame needs a new channel.
   void Bind(content::RenderFrameHost* frame, bool rebind) {
     const auto id =
         frame ? frame->GetGlobalId() : content::GlobalRenderFrameHostId();
@@ -498,7 +477,6 @@ class PageNetworkActivityWatcher final
     receiver_.reset();
     agent_.reset();
     frame_ = id;
-    // The new frame's agent answers SetObserver with its count.
     Set(false);
     if (!frame || !frame->IsRenderFrameLive()) {
       return;
@@ -527,12 +505,6 @@ class PageNetworkActivityWatcher final
   bool busy_ = false;
 };
 
-// Tells the shell about a profile's history deletions (Clear Browsing Data,
-// history removal), so caches keyed by site, such as the top bar's colours,
-// forget them, and the shell's own visits follow Chromium's history: the
-// profile's path, the URLs removed outright and a time range's URLs, if any,
-// come with the hosts. Old history expiring is not a deletion. One per
-// regular profile, created with its first page.
 class HistoryDeletionNotifier final : public base::SupportsUserData::Data,
                                       public history::HistoryServiceObserver {
  public:
@@ -580,7 +552,6 @@ class HistoryDeletionNotifier final : public base::SupportsUserData::Data,
       [hosts addObject:base::SysUTF8ToNSString(host)];
     }
     const auto& range = info.time_range();
-    // An empty or absent restriction means every URL in the range.
     NSMutableArray<NSString*>* range_urls = nil;
     if (range.IsValid() && info.restrict_urls().has_value() &&
         !info.restrict_urls()->empty()) {
@@ -607,7 +578,6 @@ class HistoryDeletionNotifier final : public base::SupportsUserData::Data,
       details[@"restrictURLs"] = [range_urls copy];
     }
     NSDictionary* user_info = [details copy];
-    // Never call the shell from the history service's notification stack.
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(^{
           [NSNotificationCenter.defaultCenter
@@ -624,7 +594,7 @@ class HistoryDeletionNotifier final : public base::SupportsUserData::Data,
                           history::HistoryServiceObserver>
       observation_{this};
 };
-}  // namespace
+}
 class NativePageState final
     : public content::WebContentsObserver,
       public MediaStreamCaptureIndicator::Observer,
@@ -654,11 +624,11 @@ class NativePageState final
     }
     top_band_ = std::make_unique<TopBandColorSampler>(base::BindRepeating(
         &NativePageState::TopBandColorChanged, base::Unretained(this)));
-    top_band_->Bind(contents.GetPrimaryMainFrame(), /*rebind=*/true);
+    top_band_->Bind(contents.GetPrimaryMainFrame(), true);
     network_activity_ = std::make_unique<PageNetworkActivityWatcher>(
         base::BindRepeating(&NativePageState::NetworkActivityChanged,
                             base::Unretained(this)));
-    network_activity_->Bind(contents.GetPrimaryMainFrame(), /*rebind=*/true);
+    network_activity_->Bind(contents.GetPrimaryMainFrame(), true);
     if (auto* profile = Profile::FromBrowserContext(contents.GetBrowserContext())) {
       HistoryDeletionNotifier::EnsureFor(*profile);
     }
@@ -695,8 +665,6 @@ class NativePageState final
       return false;
     }
     auto keep_alive = shared_from_this();
-    // Runs only captured stream IDs. Never obtains a fresh callback after a
-    // menu has opened, and never stops managed all-screens capture.
     std::move(stop).Run();
     Notify();
     return true;
@@ -733,11 +701,6 @@ class NativePageState final
               return contents &&
                      contents->GetVisibility() == content::Visibility::VISIBLE;
             }];
-    //
-    //
-    //
-    // own routes differ for Option: Shift-Option opens a window and Option
-    // reaches no split route, so neither explains a split.
     status_text_.linkOutcome = ^PCNativeStatusLinkOutcome(NSEventModifierFlags flags, NSURL* url) {
       auto state = weak.lock();
       if (!state || !state->browser())
@@ -750,8 +713,6 @@ class NativePageState final
       if (flags != shift) return PCNativeStatusLinkOutcomeNone;
       PCNativePage* source = state->page_;
       if (!source || source.peekParentPage) return PCNativeStatusLinkOutcomeNewWindow;
-      // Parc's Shift route admits only HTTP(S) into a presentable Peek
-      // (native_link_routing.mm); otherwise the click opens a window.
       NSString* scheme = url.scheme.lowercaseString;
       if (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"])
         return PCNativeStatusLinkOutcomeNewWindow;
@@ -802,10 +763,6 @@ class NativePageState final
   NSString* identifier() const { return identifier_; }
   NSString* path() const { return profile_path_; }
   bool embedded() const { return embedded_; }
-  //
-  // (BrowserUiController::UpdateWindowForLoadingStateChanged) follow
-  // ShouldShowLoadingUI, the main document loading; frames that load on
-  // their own afterwards don't count. LoadingHold extends it past the load.
   bool ShellLoading() const {
     auto* contents = contents_.get();
     return contents &&
@@ -843,8 +800,6 @@ class NativePageState final
         destination.GetTabStripModel()->GetIndexOfTab(tab) == TabStripModel::kNoTab) {
       return false;
     }
-    // Rollback/reattachment may revisit an owner already established by this
-    // transaction. An unrelated native move never acquires this capability.
     if (embedded_browser_.get() == &destination) return EmbeddedOwnerValid();
     if (embedded_browser_.get() != &expected || !embedded_window_ ||
         AppKitBindingForBrowser(&expected).window != embedded_window_) return false;
@@ -901,7 +856,8 @@ class NativePageState final
   }
   void Notify() { PostNotification(nil); }
   Browser* PageToolBrowser(bool require_interaction = true,
-                           bool require_live_renderer = true) const {
+                           bool require_live_renderer = true,
+                           bool require_selection = true) const {
     CHECK(NSThread.isMainThread);
     auto* contents = contents_.get();
     if (!contents || contents->IsBeingDestroyed()) return nullptr;
@@ -921,19 +877,21 @@ class NativePageState final
           page_view_.hiddenOrHasHiddenAncestor)) ||
         window.attachedSheet || !AppKitBrowserAcceptsNewPages(*browser) ||
         IsNativePageRetiring(page_) || IsLiveTabTransferTarget(contents) ||
-        browser->tab_strip_model()->GetActiveWebContents() != contents ||
+        (require_selection
+             ? browser->tab_strip_model()->GetActiveWebContents() != contents
+             : browser->tab_strip_model()->GetIndexOfWebContents(contents) ==
+                   TabStripModel::kNoTab) ||
         !platform->HasAttachedPage()) {
       return nullptr;
     }
     PCNativeBrowserWindow* binding = AppKitBindingForBrowser(browser);
     if (!binding || binding.window != window ||
-        [binding.client selectedNativePage] != page_) {
+        (require_selection && [binding.client selectedNativePage] != page_)) {
       return nullptr;
     }
     return browser;
   }
   bool CanPerformPageTool(PCNativePageTool tool) const {
-    // The task manager is how a hung or crashed page is ended.
     auto* browser = PageToolBrowser(tool != PCNativePageToolCast,
                                     tool != PCNativePageToolTaskManager);
     const int command = PageToolCommand(tool);
@@ -959,7 +917,6 @@ class NativePageState final
                DevToolsWindow::AllowDevToolsFor(browser->GetProfile(),
                                                 contents());
       case PCNativePageToolClearBrowsingData:
-        // The real command retains policy and the special private-profile UI.
         return true;
       case PCNativePageToolClearCacheAndRefresh:
       case PCNativePageToolClearCookiesAndRefresh:
@@ -1014,10 +971,6 @@ class NativePageState final
       return ClearSiteDataAndRefresh();
     }
     auto* browser = PageToolBrowser(true, tool != PCNativePageToolTaskManager);
-    // Commands run synchronously on the UI thread. Their actual controllers
-    // own asynchronous preview, save chooser, cancellation and document life.
-    // The source command retains Chromium's original navigation entry/POST
-    // handling; constructing a view-source URL here would lose that behavior.
     return browser && chrome::ExecuteCommand(browser, PageToolCommand(tool));
   }
   bool ClearSiteDataAndRefresh() {
@@ -1035,18 +988,12 @@ class NativePageState final
     clearing_site_data_ = true;
     [status_text_ updateText:@"Clearing site data…"];
     Notify();
-    //
-    // Keep current Chromium's real origin/domain, partition and storage-key
-    // semantics. This is site data only, not history, passwords or permissions.
     content::ClearSiteData(
         contents->GetBrowserContext()->GetWeakPtr(),
         frame->GetStoragePartition()->GetConfig(), origin,
         content::ClearSiteDataTypeSet::All(), {},
-        /*avoid_closing_connections=*/false, storage_key.ToCookiePartitionKey(),
-        storage_key, /*partitioned_state_allowed_only=*/false, base::BindOnce(^{
-          // Leave the remover's observer stack before notifying or reloading.
-          // The deletion already authorized by the user's action cannot be
-          // undone by navigation; only the follow-up reload is cancellable.
+        false, storage_key.ToCookiePartitionKey(),
+        storage_key, false, base::BindOnce(^{
           base::SingleThreadTaskRunner::GetCurrentDefault()
               ->PostNonNestableTask(
                   FROM_HERE, base::BindOnce(^{
@@ -1063,17 +1010,13 @@ class NativePageState final
                         document.AsRenderFrameHostIfValid() !=
                             live_contents->GetPrimaryMainFrame() ||
                         state->page_view_.window != window ||
-                        !state->PageToolBrowser(
-                            /*require_interaction=*/false)) {
+                        !state->PageToolBrowser(false)) {
                       return;
                     }
                     [state->status_text_ reset];
-                    // Chromium's ClearSiteData completion means work finished;
-                    // its API does not return a per-type success mask. Do not
-                    // invent one.
                     live_contents->GetController().Reload(
                         content::ReloadType::BYPASSING_CACHE,
-                        /*check_for_repost=*/false);
+                        false);
                   }));
         }));
     return true;
@@ -1133,13 +1076,11 @@ class NativePageState final
     }
     closing_ = true;
     reader_->Cancel();
-    // A retained state survives synchronous beforeunload/observer reentry.
     auto keep_alive = shared_from_this();
     if (contents_->NeedToFireBeforeUnloadOrUnloadEvents()) {
-      contents_->DispatchBeforeUnload(/*auto_cancel=*/false);
+      contents_->DispatchBeforeUnload(false);
       return;
     }
-    // TabStripModel cannot be closed reentrantly from its own observer stack.
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce([](std::weak_ptr<NativePageState> weak) {
           auto state = weak.lock();
@@ -1203,7 +1144,6 @@ class NativePageState final
         initWithQuery:find_query_ revision:find_revision_
         matches:result.number_of_matches() ordinal:result.active_match_ordinal()
         finalUpdate:result.final_update()];
-    // Never re-enter the observer list or the shell from Chromium's delivery.
     PostFindChange();
   }
   void OnFindEmptyText(content::WebContents* contents) override {
@@ -1225,14 +1165,10 @@ class NativePageState final
                        const gfx::Image&) override {
     if (driver == favicon_observation_.GetSource() &&
         type == NON_TOUCH_16_DIP) {
-      // Re-read the current original page after leaving the observer stack;
-      // the callback's image may belong to a navigation that is now superseded.
       PostNotification(nil, true);
     }
   }
   void CaptureChanged(content::WebContents* changed) {
-    // The producer recursively includes inner contents; match their actual
-    // ownership chain, never the active tab or focused window.
     for (auto* owner = changed; owner; owner = owner->GetOuterWebContents()) {
       if (owner == contents_.get()) {
         if (!ShouldNotifyShellPayloadChange(last_shell_notify_,
@@ -1274,19 +1210,10 @@ class NativePageState final
   }
   void PrimaryPageChanged(content::Page& page) override {
     [status_text_ reset];
-    top_band_->Bind(&page.GetMainDocument(), /*rebind=*/false);
-    network_activity_->Bind(&page.GetMainDocument(), /*rebind=*/false);
+    top_band_->Bind(&page.GetMainDocument(), false);
+    network_activity_->Bind(&page.GetMainDocument(), false);
     ResendVisualProperties(page);
   }
-  // RenderWidgetHostImpl::SynchronizeVisualProperties drops size updates
-  // while a navigation's new main frame is not active yet, or its widget is
-  // not initialized, and Chromium does not re-send them at commit: it relies
-  // on the widget's creation-time size and the update WasShown sends. A page
-  // already visible when it commits (created visible, or navigating while
-  // shown) gets no WasShown, so a size the host gave it during the navigation
-  // was lost and the renderer kept its old size, 0x0 for a page created
-  // before attachment. Re-send at each commit; a size that already matches
-  // sends nothing (StoredVisualPropertiesNeedsUpdate).
   static void ResendVisualProperties(content::Page& page) {
     auto* host = content::RenderWidgetHostImpl::From(
         page.GetMainDocument().GetRenderWidgetHost());
@@ -1297,15 +1224,15 @@ class NativePageState final
   }
   void RenderFrameCreated(content::RenderFrameHost* frame) override {
     if (contents_ && frame == contents_->GetPrimaryMainFrame()) {
-      top_band_->Bind(frame, /*rebind=*/true);
-      network_activity_->Bind(frame, /*rebind=*/true);
+      top_band_->Bind(frame, true);
+      network_activity_->Bind(frame, true);
     }
   }
   void RenderFrameHostChanged(content::RenderFrameHost*,
                               content::RenderFrameHost* frame) override {
     if (contents_ && frame == contents_->GetPrimaryMainFrame()) {
-      top_band_->Bind(frame, /*rebind=*/true);
-      network_activity_->Bind(frame, /*rebind=*/true);
+      top_band_->Bind(frame, true);
+      network_activity_->Bind(frame, true);
     }
   }
   void TopBandColorChanged() {
@@ -1350,9 +1277,6 @@ class NativePageState final
   }
   void DidStopLoading() override { LoadingChanged(); }
   void DidStartLoading() override { LoadingChanged(); }
-  // The main document finishing while subframes still load, and a main
-  // navigation starting while one does, change ShouldShowLoadingUI without
-  // DidStop/DidStartLoading; the main frame's progress update follows both.
   void LoadProgressChanged(double) override { LoadingChanged(); }
   void NetworkActivityChanged() {
     loading_hold_.NetworkBusy(network_activity_->busy(), NowMs());
@@ -1398,8 +1322,6 @@ class NativePageState final
     if (!navigation) {
       return;
     }
-    // A restored or prerendered page arrives loaded and painted, and
-    // about:blank never paints content.
     if (navigation->IsInPrimaryMainFrame() && navigation->HasCommitted() &&
         !navigation->IsSameDocument() && !navigation->IsPageActivation() &&
         !navigation->GetURL().IsAboutBlank()) {
@@ -1433,15 +1355,9 @@ class NativePageState final
   void PrimaryMainFrameRenderProcessGone(
       base::TerminationStatus status) override {
     [status_text_ reset];
-    // SadTabHelper owns the policy, including background-memory discard, and
-    // publishes authoritative install/reset state. Never duplicate that as a
-    // transient NSError (observer ordering may precede helper installation).
     if (SadTab::ShouldShow(status)) {
       return;
     }
-    // Match Chromium's current macOS failure classification.
-    // TabStripModel fast-close reports NORMAL_TERMINATION with exit code 0
-    // while its mutation guard is held; that is not a renderer failure.
     switch (status) {
       case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
       case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
@@ -1473,9 +1389,6 @@ class NativePageState final
     }
     __weak PCNativePage* weak_page = page;
     __weak id<PCNativePageObserver> weak_observer = observer;
-    // The shell can activate/remove tabs in response. Leave every engine
-    // observer stack, including nested native loops, before entering that UI.
-    //
     std::weak_ptr<NativePageState> weak = weak_from_this();
     const uint64_t generation = event_generation_;
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostNonNestableTask(
@@ -1495,8 +1408,6 @@ class NativePageState final
           } else if (error) {
             [live_observer nativePage:live_page didFailWithError:error];
           } else {
-            // Metadata has no captured payload: ask the shell to read the
-            // current state, even if navigation began after it was queued.
             [live_observer nativePageDidChange:live_page];
           }
         }));
@@ -1528,8 +1439,6 @@ class NativePageState final
     auto closed = std::move(closed_);
     PCNativePage* page = page_;
     id<PCNativePageObserver> observer = page.observer;
-    // Drop the engine registry before notifying. Shell callbacks can close or
-    // replace tabs; retaining page locally does not retain WebContents.
     Pages().erase(old_contents);
     if (closed) {
       std::move(closed).Run();
@@ -1575,7 +1484,6 @@ class NativePageState final
   LoadingHold loading_hold_;
   base::WeakPtr<content::Page> painted_page_;
   base::OneShotTimer loading_hold_timer_;
-  // After loading_hold_, which its reports update.
   std::unique_ptr<PageNetworkActivityWatcher> network_activity_;
   NativePageShellNotifyState last_shell_notify_;
 };
@@ -1657,7 +1565,7 @@ void SetNativePageClosedCallback(PCNativePage* page,
 bool IsSessionOmittedFromRestore(SessionID session_id) {
   return OmittedSessions().contains(session_id);
 }
-}  // namespace parc
+}
 
 @implementation PCNativePage {
   std::shared_ptr<parc::NativePageState> _state;
@@ -1735,9 +1643,6 @@ bool IsSessionOmittedFromRestore(SessionID session_id) {
   if (!page) {
     return PCNativeArchiveProtectionStateUnknown;
   }
-  // Graph and native session reads are all main-thread in pinned Chromium156.
-  // Muted is intentionally a conservative superset, not an assertion that the
-  //
   if (page->HadFormInteraction() || page->HadUserEdits() ||
       contents->IsCurrentlyAudible() || contents->IsAudioMuted() ||
       contents->IsBeingCaptured() || contents->HasPictureInPictureVideo() ||
@@ -1977,9 +1882,6 @@ namespace {
 Browser* NavigationBrowser(PCNativePage* page, bool require_key) {
   if (!page || page.isClosed) return nullptr;
   auto state = [page state];
-  // Failure surfaces intentionally hide the still-attached renderer. The
-  // exact shell selection, native active tab and registered parent remain
-  // authoritative for Back/Reload on that page.
   auto* browser = state->PageToolBrowser(false, false);
   NSWindow* window = page.nativeView.window;
   if (!browser || !window.visible || window.miniaturized ||
@@ -1999,12 +1901,6 @@ int NavigationCommand(PCNativeNavigationAction action) {
   }
   return 0;
 }
-//
-//
-//
-//
-// GetTabAndRevertIfNecessary clones the active tab and appends the clone; the
-// shell adopts it later, so the exact new WebContents carries that receipt.
 const char kAlternateNavigationSourceKey = 0;
 class AlternateNavigationSource final : public base::SupportsUserData::Data {
  public:
@@ -2020,8 +1916,6 @@ std::vector<content::WebContents*> TabContents(Browser* browser) {
     result.push_back(strip->GetWebContentsAt(index));
   return result;
 }
-// Chromium clones the browser's active tab. Only that original source, with
-// exactly one newly inserted page of its own Profile, receives a receipt.
 void MarkAlternateNavigationClone(Browser* browser, content::WebContents* source,
     bool source_was_active, const std::vector<content::WebContents*>& before,
     bool top) {
@@ -2038,7 +1932,7 @@ void MarkAlternateNavigationClone(Browser* browser, content::WebContents* source
   clone->SetUserData(&kAlternateNavigationSourceKey,
       std::make_unique<AlternateNavigationSource>(*source, top));
 }
-}  // namespace
+}
 
 @interface PCNativeNavigationHistory () {
   PCNativePage* __weak _page;
@@ -2111,9 +2005,6 @@ void MarkAlternateNavigationClone(Browser* browser, content::WebContents* source
   const int index = entry->_index;
   _consumed = true;
   if (inNewTab) {
-    //
-    //
-    // Its insertion strategy is nil, so placement follows the referrer.
     const auto before = TabContents(browser);
     const bool active = browser->GetTabStripModel()->GetActiveWebContents() == contents;
     chrome::NavigateToIndexWithDisposition(
@@ -2128,19 +2019,18 @@ void MarkAlternateNavigationClone(Browser* browser, content::WebContents* source
 
 namespace parc {
 bool CanNativePageHistorySwipe(PCNativePage* page) {
-  if (!page || !NSApp.active) return false;
-  auto* browser = [page state]->PageToolBrowser();
+  if (!page) return false;
+  auto* browser = [page state]->PageToolBrowser(false, true, false);
   NSWindow* window = page.nativeView.window;
-  if (!browser || PCNativeWindowHasSecurityReservation(window)) return false;
-  NSResponder* responder = window.firstResponder;
-  if (![responder isKindOfClass:NSView.class] ||
-      ![(NSView*)responder isDescendantOf:page.nativeView]) return false;
+  if (!browser || !window.visible || window.miniaturized ||
+      page.nativeView.hiddenOrHasHiddenAncestor ||
+      PCNativeWindowHasSecurityReservation(window)) return false;
   auto* binding = AppKitBindingForBrowser(browser);
   return [binding.client respondsToSelector:
       @selector(nativeBrowser:allowsHistorySwipeForPage:)] &&
       [binding.client nativeBrowser:binding allowsHistorySwipeForPage:page];
 }
-}  // namespace parc
+}
 
 @implementation PCNativePage (NavigationControls)
 - (BOOL)canShowBackHistory {
@@ -2161,8 +2051,6 @@ bool CanNativePageHistorySwipe(PCNativePage* page) {
   CHECK(NSThread.isMainThread);
   auto* browser = NavigationBrowser(self, false);
   const int command = NavigationCommand(action);
-  // Chrome enables IDC_STOP only while the main document loads; Stop also
-  // ends this page's loading hold.
   if (browser && action == PCNativeNavigationActionStop) return _state->ShellLoading();
   if (!browser || !command || !chrome::IsCommandEnabled(browser, command)) return NO;
   auto* contents = parc::ContentsForNativePage(self);
@@ -2180,9 +2068,6 @@ bool CanNativePageHistorySwipe(PCNativePage* page) {
   auto* browser = NavigationBrowser(self, true);
   if (!browser || ![self canPerformNavigationAction:action] ||
       (inNewTab && action == PCNativeNavigationActionStop)) return NO;
-  //
-  //
-  //
   auto disposition = inNewTab ? WindowOpenDisposition::NEW_FOREGROUND_TAB
                               : WindowOpenDisposition::CURRENT_TAB;
   auto* source = parc::ContentsForNativePage(self);
@@ -2196,14 +2081,10 @@ bool CanNativePageHistorySwipe(PCNativePage* page) {
     case PCNativeNavigationActionReloadBypassingCache:
       chrome::ReloadBypassingCache(browser, disposition); break;
     case PCNativeNavigationActionStop:
-      // After the main document, Stop only ends the hold; Chrome never
-      // cancels a finished page's own fetches.
       _state->CancelLoadingHold();
       if (source->ShouldShowLoadingUI()) source->Stop();
       break;
   }
-  //
-  // Reload in a new tab passes a nil strategy with the window's active item.
   if (inNewTab) {
     MarkAlternateNavigationClone(browser, source, active, before,
         action == PCNativeNavigationActionBack ||
@@ -2232,10 +2113,6 @@ bool CanNativePageHistorySwipe(PCNativePage* page) {
 
 namespace parc {
 namespace {
-//
-// pixel size divided by a float scale, in its observer bridge (0x4413968) and
-// from the web contents' cached size/scale fields (+0x210/+0x20c, 0x440e9c0).
-// That these are cc::RenderFrameMetadata's fields is inferred.
 NSSize RenderFrameViewport(const cc::RenderFrameMetadata& metadata) {
   const float scale = metadata.device_scale_factor;
   if (!(scale > 0)) return NSZeroSize;
@@ -2247,9 +2124,6 @@ content::RenderWidgetHostImpl* PrimaryWidget(content::WebContents* contents) {
   return frame ? content::RenderWidgetHostImpl::From(frame->GetRenderWidgetHost())
                : nullptr;
 }
-// Follows the primary main-frame widget as NativePageInputDiagnostics does and
-// reports each activated frame's viewport (LastRenderFrameMetadata is the
-// metadata of the frame just activated).
 class RenderFrameViewportObserver final
     : public content::WebContentsObserver,
       public content::RenderWidgetHostObserver,
@@ -2289,7 +2163,6 @@ class RenderFrameViewportObserver final
       Invalidate();
       return;
     }
-    // The handler may end this lease; nothing is read after it returns.
     auto handler = handler_;
     if (handler) {
       handler(RenderFrameViewport(
@@ -2322,8 +2195,8 @@ class RenderFrameViewportObserver final
                           content::RenderFrameMetadataProvider::Observer>
       metadata_observation_{this};
 };
-}  // namespace
-}  // namespace parc
+}
+}
 
 @interface PCNativeRenderFrameObservation () {
   std::unique_ptr<parc::RenderFrameViewportObserver> _observer;
@@ -2429,7 +2302,6 @@ class RenderFrameViewportObserver final
 }
 @end
 
-// Engine-internal; the bridge hands it to the app only as an opaque NSObject.
 @interface PCNativeNavigationState : NSObject
 - (instancetype)initWithNavigations:
                     (std::vector<sessions::SerializedNavigationEntry>)navigations
@@ -2443,19 +2315,14 @@ class RenderFrameViewportObserver final
                                                              hidden:(bool)hidden;
 @end
 namespace {
-// Tab History bytes: version, current index, count, then each entry as its
-// own length-prefixed pickle, written the way SessionService writes one.
 constexpr int kNavigationArchiveVersion = 1;
-// SessionService's own per-navigation cap (base_session_service_commands.cc).
 constexpr int kMaxArchivedNavigationSize =
     std::numeric_limits<uint16_t>::max() - 1024;
-}  // namespace
+}
 @implementation PCNativeNavigationState {
   std::vector<sessions::SerializedNavigationEntry> _navigations;
   int _index;
   base::WeakPtr<Profile> _profile;
-  // A value read back from Tab History restores only into the persistent
-  // Profile at this path; a captured one only into its own Profile object.
   base::FilePath _archivePath;
   BOOL _archived;
 }
@@ -2487,8 +2354,6 @@ constexpr int kMaxArchivedNavigationSize =
 - (std::unique_ptr<content::WebContents>)restoredContentsForProfile:(Profile*)profile
                                                              hidden:(bool)hidden {
   CHECK(NSThread.isMainThread);
-  // A private Profile shares its parent's path, so an archived value also
-  // requires a persistent Profile.
   const bool owner =
       profile && (_archived ? !profile->IsOffTheRecord() &&
                                   profile->GetPath() == _archivePath
@@ -2512,8 +2377,6 @@ constexpr int kMaxArchivedNavigationSize =
 - (BOOL)discardIfIdle {
   CHECK(NSThread.isMainThread);
   auto* contents = self.closed ? nullptr : parc::ContentsForNativePage(self);
-  // The archive protection (typed text, audio, capture and sharing, PiP, an
-  // active media session) plus what a reload would lose or break.
   if (!contents || self.embedded || contents->IsBeingDestroyed() ||
       !base::FeatureList::IsEnabled(features::kWebContentsDiscard) ||
       contents->WasDiscarded() ||
@@ -2571,7 +2434,6 @@ constexpr int kMaxArchivedNavigationSize =
   auto& controller = contents->GetController();
   const int committed = controller.GetLastCommittedEntryIndex();
   if (committed < 0) return nil;
-  // SessionService's window around the current entry (BuildCommandsForTab).
   const int first = std::max(0, committed - sessions::gMaxPersistNavigationCount);
   const int end = std::min(controller.GetEntryCount(),
                            committed + sessions::gMaxPersistNavigationCount + 1);
@@ -2630,7 +2492,7 @@ constexpr int kMaxArchivedNavigationSize =
 namespace parc {
 namespace {
 const char kRestoredLoadPendingKey = 0;
-}  // namespace
+}
 std::unique_ptr<content::WebContents> CreateRestoredContents(
     NSObject* state, Profile& profile, bool initially_hidden) {
   if (![state isKindOfClass:[PCNativeNavigationState class]]) return nullptr;
@@ -2651,4 +2513,4 @@ bool TakeRestoredLoadPending(content::WebContents& contents) {
   contents.RemoveUserData(&kRestoredLoadPendingKey);
   return true;
 }
-}  // namespace parc
+}
