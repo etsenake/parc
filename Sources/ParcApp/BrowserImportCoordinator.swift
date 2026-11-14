@@ -151,7 +151,7 @@ final class BrowserImportCoordinator {
                     self.onChange?()
                 } else if self.passwordDestination.map({ !$0.isCurrent(in: self.store.state) }) == true {
                     self.passwordSession?.cancel()
-                    self.passwordError = "The destination Profile is no longer available."
+                    self.passwordError = "The destination Space is no longer available."
                     self.onChange?()
                 } else if self.stage == .bookmarks {
                     self.onChange?()
@@ -793,7 +793,7 @@ final class BrowserImportCoordinator {
                 let page = bookmarkPages[index]
                 guard page.destination.isCurrent(in: store.state) else {
                     if !page.committed {
-                        failed("\(page.sourceName): its destination Profile or Space was removed; these bookmarks were not added.")
+                        failed("\(page.sourceName): its destination Space was removed; these bookmarks were not added.")
                     }
                     bookmarkPages[index].discarded = true
                     continue

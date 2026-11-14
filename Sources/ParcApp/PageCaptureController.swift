@@ -440,7 +440,7 @@ final class PageCaptureController: NSObject {
 
     private func persistCapture() {
         guard let destination, let library, !libraryWriteInProgress, valid(), lease.isValid, let pngData else { return }
-        guard let reservation = destination.reserve() else { overlay.showError("The profile is no longer available."); return }
+        guard let reservation = destination.reserve() else { overlay.showError("This Space is no longer available."); return }
         let id = captureID
         let input = destination.input(id: id, expectedRevision: savedCapture?.revision, capturedAt: capturedAt,
             title: lease.pageTitle, sourceURL: sourceURL, kind: captureKind, pngData: pngData)
@@ -461,7 +461,7 @@ final class PageCaptureController: NSObject {
     }
     private func removeFromLibrary(_ item: SavedCapture) {
         guard let destination, let library, valid(), lease.isValid else { return }
-        guard let reservation = destination.reserve() else { overlay.showError("The profile is no longer available."); return }
+        guard let reservation = destination.reserve() else { overlay.showError("This Space is no longer available."); return }
         libraryWriteInProgress = true; overlay.setLibraryBusy(true)
         Task { [weak self, library] in
             do {

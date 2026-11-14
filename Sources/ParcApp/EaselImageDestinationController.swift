@@ -59,7 +59,7 @@ final class EaselImageDestinationController: NSWindowController {
         name.stringValue = image.pageTitle.isEmpty ? "Untitled Easel" : image.pageTitle
         root.addArrangedSubview(name); name.widthAnchor.constraint(equalToConstant: 392).isActive = true
         status.font = .systemFont(ofSize: 12); status.textColor = .secondaryLabelColor
-        status.stringValue = "Saved locally in this profile."; root.addArrangedSubview(status)
+        status.stringValue = "Saved locally."; root.addArrangedSubview(status)
         let buttons = NSStackView(); buttons.orientation = .horizontal; buttons.spacing = 10
         let cancel = PointingHandButton(title: "Cancel", target: self, action: #selector(cancel))
         cancel.keyEquivalent = "\u{1b}"; cancel.bezelStyle = .rounded

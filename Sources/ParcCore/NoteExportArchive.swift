@@ -11,7 +11,7 @@ enum NoteExportError: Error, LocalizedError {
     case empty, invalid, archiveFailed
     var errorDescription: String? {
         switch self {
-        case .empty: return "There are no notes to export in this profile."
+        case .empty: return "There are no notes to export."
         case .invalid: return "These notes could not be prepared for export."
         case .archiveFailed: return "The Notes archive could not be created. Your notes have not changed."
         }

@@ -41,7 +41,7 @@ final class NoteExportController {
                 panel.allowedContentTypes = [.zip]; panel.canCreateDirectories = true
                 panel.nameFieldStringValue = archive.suggestedName
                 panel.title = "Export Notes"
-                panel.message = "Save this profile’s notes as HTML documents in a ZIP archive."
+                panel.message = "Save your notes as HTML documents in a ZIP archive."
                 panel.beginSheetModal(for: window) { [weak self] result in
                     guard let self, !self.finished else { return }
                     self.panel = nil

@@ -441,7 +441,7 @@ final class BrowserImportViewController: NSViewController {
         let panel = NSOpenPanel(); passwordPanel = panel
         panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.commaSeparatedText]; panel.prompt = "Import Passwords"
-        panel.message = "Choose the password CSV you exported. It will be imported into the selected Parc Profile."
+        panel.message = "Choose the password CSV you exported. It will be imported into the selected Space."
         panel.beginSheetModal(for: window) { [weak self, weak panel] response in
             guard let self, !self.closed, self.passwordPanel === panel else { return }
             self.passwordPanel = nil

@@ -349,7 +349,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
             let explanation: String
             switch folder.access {
             case .available: explanation = "Available"
-            case .disabled: explanation = "Not shown in this profile"
+            case .disabled: explanation = "Not shown in this Space"
             case .unavailable(let reason): explanation = reason
             }
             let status = NSMenuItem(title: explanation, action: nil, keyEquivalent: ""); status.isEnabled = false; submenu.addItem(status)
@@ -1178,7 +1178,7 @@ private final class CaptureLibraryPreview: NSObject {
               panel.attachedSheet == nil else { return }
         let item = selected
         var content = PArcDialog.Content(title: [("Delete this capture?", false)],
-            message: [("The saved image will be permanently removed from this profile’s Library. Exported files and copies in Easels are kept.", false)],
+            message: [("The saved image will be permanently removed from your Library. Exported files and copies in Easels are kept.", false)],
             confirm: "Delete", cancel: "Cancel")
         content.destructive = true
         let dialog = PArcDialog(content)

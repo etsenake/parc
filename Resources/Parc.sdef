@@ -20,7 +20,7 @@
     <command name="go forward" code="CrSuFwd " description="Go forward in the original live tab, when possible."><direct-parameter type="specifier"/></command>
     <command name="reload" code="CrSuRlod" description="Reload the original live tab."><direct-parameter type="specifier"/></command>
     <command name="stop" code="CrSustop" description="Stop loading the original live tab."><direct-parameter type="specifier"/></command>
-    <command name="execute" code="CrSuExJa" description="Execute JavaScript in the original live tab with this profile's Apple Events permission. Return JSON text.">
+    <command name="execute" code="CrSuExJa" description="Execute JavaScript in the original live tab with this Space's Apple Events permission. Return JSON text.">
       <direct-parameter type="specifier"/>
       <parameter name="javascript" code="JvSc" type="text"><cocoa key="javascript"/></parameter>
       <result type="text"/>
@@ -53,7 +53,7 @@
       <property name="mode" code="mode" type="text" description="Normal or incognito; accepted only during creation. The original window cannot change context."><cocoa key="mode"/></property>
       <responds-to command="close"><cocoa method="close:"/></responds-to>
     </class>
-    <class name="tab" code="tAbB" plural="tabs" description="An original tab with stable model and profile identity.">
+    <class name="tab" code="tAbB" plural="tabs" description="An original tab with stable model and Space identity.">
       <cocoa class="ParcScriptTab"/>
       <property name="id" code="ID  " type="text" access="r"><cocoa key="id"/></property>
       <property name="title" code="pnam" type="text" access="r"/>
@@ -68,7 +68,7 @@
       <responds-to command="stop"><cocoa method="stopLoading:"/></responds-to>
       <responds-to command="close"><cocoa method="close:"/></responds-to>
     </class>
-    <class name="space" code="sPaC" plural="spaces" description="A profile-bound Space accessed through its original window.">
+    <class name="space" code="sPaC" plural="spaces" description="A Space accessed through its original window.">
       <cocoa class="ParcScriptSpace"/>
       <property name="id" code="ID  " type="text" access="r"><cocoa key="id"/></property>
       <property name="title" code="pnam" type="text" access="r"/>
