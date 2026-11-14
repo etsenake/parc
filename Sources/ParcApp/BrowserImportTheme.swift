@@ -62,11 +62,9 @@ enum BrowserImportArcIcon {
         if let cached = installed[appURL] { return cached }
         let image = Bundle(url: appURL).flatMap { bundle in
             bundle.bundleIdentifier == BrowserImportCoordinator.arcBundleIdentifier ? bundle.image(forResource: "AppIcon") : nil
-        } ?? bundled
+        } ?? NSWorkspace.shared.icon(forFile: appURL.path)
         installed[appURL] = image
         return image
     }
     private static var installed: [URL: NSImage] = [:]
-    static let bundled = Bundle.main.url(forResource: "Arc", withExtension: "icns", subdirectory: "BrowserImport")
-        .flatMap(NSImage.init(contentsOf:)) ?? NSImage(size: NSSize(width: 64, height: 64))
 }

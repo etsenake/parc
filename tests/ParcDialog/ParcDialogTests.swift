@@ -63,7 +63,7 @@ struct ParcDialogTests {
         let okLabel = ("OK" as NSString).size(withAttributes: [.font: ParcDialogStyle.buttonFont]).width
         expect(ok.bodyWidth > 12 + okLabel + 8 + 12, "The body holds padding, label and the return hint")
         expect(close(pixel(root, 445, 5), 0xFAFBFF, in: root), "DialogViewBase fills light PopoverBackground")
-        expect(close(pixel(ok, 6, 18), 0x3139FB, in: root), "The primary face is the indigo")
+        expect(close(pixel(ok, 6, 18), 0x3139FB, in: root), "The primary face is the dialog indigo")
         panel.appearance = NSAppearance(named: .darkAqua)
         expect(close(pixel(root, 445, 5), 0x151C30, in: root), "DialogViewBase fills dark PopoverBackground")
         ok.isEnabled = false
@@ -86,7 +86,7 @@ struct ParcDialogTests {
         }
         let sample = InterProfileMoveDialog(prompt: prompt).dialog
         let sampleRoot = sample.panel.contentView!
-        expect(sampleRoot.frame.width == 455, "The move prompt keeps the 455-point width")
+        expect(sampleRoot.frame.width == 455, "The move prompt keeps its 455-point width")
         let moveTitle = sampleRoot.subviews.compactMap { $0 as? NSTextField }[0].attributedStringValue
         let nameRange = (moveTitle.string as NSString).range(of: "Work")
         let nameFont = moveTitle.attribute(.font, at: nameRange.location, effectiveRange: nil) as? NSFont
@@ -133,7 +133,7 @@ struct ParcDialogTests {
         let destructiveRoot = destructive.panel.contentView!
         expect(destructive.confirmButton.destructive && destructive.cancelButton?.destructive == false,
                "Only the confirm button is destructive")
-        expect(close(pixel(destructive.confirmButton, 6, 18), 0xF53714, in: destructiveRoot), "The destructive face is the red")
+        expect(close(pixel(destructive.confirmButton, 6, 18), 0xF53714, in: destructiveRoot), "The destructive face is the dialog red")
         destructive.panel.appearance = NSAppearance(named: .darkAqua)
         expect(close(pixel(destructive.confirmButton, 6, 18), 0xF53714, in: destructiveRoot), "The destructive face is the same in dark")
         destructive.panel.appearance = nil

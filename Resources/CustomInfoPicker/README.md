@@ -10,8 +10,8 @@
 - The icomoon font supplies Remove (U+E9F0, trash) and eight emoji categories:
   smile (U+E9DE), sun (U+E9E3), coffee (U+E943), award (U+E919), truck (U+E9F6),
   gift (U+E971), heart (U+E97D) and flag (U+E96B).
-- `emojis.json` comes from `ARC_Emojis.bundle/Contents/Resources/emojis.json`:
-  a gemoji-format catalog containing 1,870 entries.
+- `emojis.json` is `db/emoji.json` from github/gemoji v4.1.0, unchanged: 1,870
+  entries under the MIT license in `LICENSE-gemoji.txt`.
 
 ## Images and colors
 
