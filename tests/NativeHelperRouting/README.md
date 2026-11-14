@@ -17,8 +17,9 @@ actual FeatureList precedence.
 
 Both engine configurations also set `disable_fieldtrial_testing_config=true`;
 packaging verifies the generated buildflag. With that configuration excluded,
-Chromium refuses `--enable-field-trial-config`. Aperitif otherwise retains its
-upstream default; this is not a separate helper-parity project.
+Chromium refuses `--enable-field-trial-config`. Aperitif keeps its upstream
+default, on since Chromium 157; Parc ships the Aperitif helpers and the library
+they load ([packaging](../Packaging/README.md#helper-and-signing-contract)).
 
 The complete enabled/disabled feature lists and page-translation policy live in
 [engine flags](../../docs/engine-flags.md#runtime-features).

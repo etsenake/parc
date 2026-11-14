@@ -32,11 +32,13 @@ void Expect(bool value, const char* label) {
 constexpr char kPolicyDisabled[] =
     "HistoryEmbeddings,Glic,GlicActorUi,AutofillActorMode,LensOverlay,"
     "TranslateRankerQuery,TranslateRankerEnforcement,"
+    "CentralizedInfoBarFramework,TranslateTrigger,"
     "MacAppCodeSignClone,MacAppCodeSignCloneRenameAsBundle,FedCm,"
     "AutofillServerCommunication,PreloadMediaEngagementData,BrowsingTopics,"
     "NetworkTimeServiceQuerying,LiveCaption,MerchantTrust,"
     "PageInfoAboutThisSite,PageInfoAboutThisSiteMoreLangs,"
-    "TailoredSecurityIntegration";
+    "TailoredSecurityIntegration,CredentialManagementUnifiedUi,"
+    "ExtensionsPinnedByDefault";
 constexpr char kPolicyEnabled[] =
     "CertificateTransparencyAskBeforeEnabling,WebContentsDiscard";
 void CheckStartupPolicy() {
@@ -48,8 +50,8 @@ void CheckStartupPolicy() {
   parc::ApplyNativeStartupPolicy(actual);
   Expect(actual.HasSwitch("disable-field-trial-config"),
          "default startup disables Chromium's bundled testing config");
-  Expect(actual.HasSwitch("disable-translate-trigger"),
-         "default startup never offers page translation");
+  Expect(!actual.HasSwitch("disable-translate-trigger"),
+         "the translate switch Chromium 157 removed is no longer passed");
   Expect(actual.GetSwitchValueASCII("disable-features") ==
              std::string("UserDisabledFeature,") + kPolicyDisabled,
          "explicit disable-features precede product and Parc disables");

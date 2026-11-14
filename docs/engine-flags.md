@@ -39,16 +39,20 @@ performance. Keep dependencies pinned and preserve compiled objects/caches.
 The main app and helpers receive `MallocNanoZone=0`; helpers inherit the browser
 process environment. Production signing limits disabled library validation to
 `Parc Helper (CDM)`, which loads the independently signed Widevine CDM. Default
-and Alerts helpers have no extra entitlement; Renderer/GPU retain `allow-jit`.
+and Alerts helpers have no extra entitlement; the Renderer and GPU helpers,
+classic and Aperitif alike, retain `allow-jit`.
 Ad-hoc component development needs broader library-validation exceptions because
 its libraries lack a team ID; that is not the shipping entitlement policy.
 
 ## Runtime features
 
-`ApplyNativeStartupPolicy` always adds `disable-field-trial-config` and
-`disable-translate-trigger`. Product exclusions override an explicit enable:
-`HistoryEmbeddings`, `Glic`, `GlicActorUi`, `AutofillActorMode`, `LensOverlay`,
-`TranslateRankerQuery` and `TranslateRankerEnforcement`.
+`ApplyNativeStartupPolicy` always adds `disable-field-trial-config`. Product
+exclusions override an explicit enable: `HistoryEmbeddings`, `Glic`,
+`GlicActorUi`, `AutofillActorMode`, `LensOverlay`, `TranslateRankerQuery`,
+`TranslateRankerEnforcement`, `CentralizedInfoBarFramework` and
+`TranslateTrigger`. `TranslateTrigger` replaced Chromium's
+`disable-translate-trigger` switch in 157; with it off, Chromium never offers or
+starts page translation on its own.
 
 Defaults applied only when the command line has not explicitly named a feature:
 
@@ -57,8 +61,11 @@ Defaults applied only when the command line has not explicitly named a feature:
 - Disabled: `MacAppCodeSignClone`, `MacAppCodeSignCloneRenameAsBundle`, `FedCm`,
   `AutofillServerCommunication`, `PreloadMediaEngagementData`, `BrowsingTopics`,
   `NetworkTimeServiceQuerying`, `LiveCaption`, `MerchantTrust`,
-  `PageInfoAboutThisSite`, `PageInfoAboutThisSiteMoreLangs` and
-  `TailoredSecurityIntegration`.
+  `PageInfoAboutThisSite`, `PageInfoAboutThisSiteMoreLangs`,
+  `TailoredSecurityIntegration`, `CredentialManagementUnifiedUi` and
+  `ExtensionsPinnedByDefault`. The last two keep automatic sign-in on Parc's
+  password prompt instead of Chromium's toast, and keep newly installed
+  extensions unpinned.
 
 Back/forward cache, ServiceWorkerAutoPreload and Privacy Sandbox attestation
 retain upstream defaults. On-device omnibox suggestions and the web Translator

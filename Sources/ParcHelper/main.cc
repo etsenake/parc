@@ -1,10 +1,5 @@
 // Copyright 2026 Parc contributors.
-// Seatbelt must be initialized before loading the engine framework.
-// Do not link this executable to the engine framework: dyld would load it
-// before main, before SeatbeltExecServer consumes the child's sandbox
-// arguments.
-#include "base/allocator/early_zone_registration_apple.h"
-#include "sandbox/mac/seatbelt_exec.h"
+#include "content/public/app/aperitif_mac.h"
 
 #include <dlfcn.h>
 #include <mach-o/dyld.h>
@@ -12,6 +7,10 @@
 #include <cstdio>
 #include <string>
 #include <vector>
+
+__attribute__((constructor)) static void CheckAperitif() {
+  AperitifCheckInitialized();
+}
 
 namespace {
 class Library {
@@ -50,7 +49,6 @@ class Library {
 }  // namespace
 
 int main(int argc, char** argv) {
-  partition_alloc::EarlyMallocZoneRegistration();
   uint32_t size = 0;
   if (_NSGetExecutablePath(nullptr, &size) != -1 || size == 0) {
     return 1;
@@ -64,17 +62,8 @@ int main(int argc, char** argv) {
   if (slash == std::string::npos) {
     return 1;
   }
-  // Same relative layout for Default, Renderer, GPU and Alerts helpers.
   std::string framework = path.substr(0, slash) +
                           "/../../../Chromium Embedded Framework.framework/";
-  auto seatbelt = sandbox::SeatbeltExecServer::CreateFromArguments(
-      executable.data(), argc, argv);
-  if (seatbelt.sandbox_required &&
-      (!seatbelt.server || !seatbelt.server->InitializeSandbox())) {
-    std::fprintf(stderr, "Parc Helper: sandbox initialization failed\n");
-    return 1;
-  }
-  // Declaration order keeps the sandbox alive until the framework unloads.
   Library engine(framework + "Chromium Embedded Framework");
   auto execute =
       engine.Symbol<int (*)(int, char**)>("parc_engine_execute_process");
@@ -82,6 +71,5 @@ int main(int argc, char** argv) {
     return 1;
   }
   int result = execute(argc, argv);
-  // A helper must never become the browser process or create application UI.
   return result < 0 ? 1 : result;
 }

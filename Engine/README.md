@@ -205,7 +205,14 @@ so releases keep using the current engine:
    patch that needs refitting. Resolve them, fix Parc-owned files that broke on
    API changes, and commit. A refit that grows a patch, or adds a hook other than
    a step 6 conversion, needs the user's approval; every refit updates the
-   [hooks reference](../docs/chromium-hooks.md).
+   [hooks reference](../docs/chromium-hooks.md). Then compare every feature
+   default between the two versions as the shipping build compiles them on the
+   Mac: preprocess each feature file with its real compile command, so
+   per-platform and macro defaults resolve. Check each change against the Parc
+   code it reaches and the [startup feature policy](../docs/engine-flags.md#runtime-features),
+   and check Chromium's embedder lists such as
+   `content/public/app/mac_helpers.gni`. A default that changes Parc's behaviour
+   is fixed, or raised with the user, before release.
 6. Audit every patch for conversion, whether the upgrade is minor or major. New
    Chromium versions add observers, delegates and overrides, so a patch that had
    to stay last time may not now. For each patch, check against the new Chromium

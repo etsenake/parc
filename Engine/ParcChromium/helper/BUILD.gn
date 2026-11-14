@@ -1,14 +1,19 @@
-# The framework is deliberately absent from this pre-sandbox executable.
+import("//build/util/branding.gni")
+import("//chrome/version.gni")
+
 executable("parc_helper") {
+  output_dir = "$root_out_dir/Parc Helper.app/Contents/MacOS"
+  output_name = "Parc Helper"
   sources = [ "main.cc" ]
-  deps = [
-    "//base/allocator:early_zone_registration_apple",
-    "//sandbox/mac:seatbelt",
-  ]
+  deps = [ "//content/public/app:aperitif" ]
+  _aperitif = "@loader_path/../../../Chromium Embedded Framework.framework/Libraries/libaperitif.dylib"
   if (is_component_build) {
     ldflags = [
       "-Wl,-rpath,@executable_path/../../../Chromium Embedded Framework.framework/Libraries",
       "-Wl,-rpath,@executable_path/../../../../../..",
+      "-Wcrl,installnametool,-change,@rpath/libaperitif.dylib,$_aperitif",
     ]
+  } else {
+    ldflags = [ "-Wcrl,installnametool,-change,@executable_path/../Frameworks/$chrome_product_full_name Framework.framework/Versions/$chrome_version_full/Libraries/libaperitif.dylib,$_aperitif" ]
   }
 }

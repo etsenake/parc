@@ -50,7 +50,9 @@ PUBLIC_SYMBOLS = {
 }
 CDM_HELPER = " (CDM)"
 HELPERS = (("", "", False), (" (Renderer)", ".renderer", True),
-           (" (GPU)", "", True), (" (Alerts)", ".alerts", False), (CDM_HELPER, ".cdm", False))
+           (" (GPU)", "", True), (" (Alerts)", ".alerts", False), (CDM_HELPER, ".cdm", False),
+           (" (Aperitif)", "", False), (" (Aperitif Renderer)", ".renderer", True),
+           (" (Aperitif GPU)", "", True))
 PROOF_FILES = (
     "content/public/app/mac_helpers.gni",
     "chrome/app/helper-renderer-entitlements.plist",
@@ -298,9 +300,14 @@ def check_helper_contract(source: Path) -> None:
     actual = re.findall(r'\[\s*"([^"]*)"\s*,\s*"([^"]*)"\s*,\s*"([^"]*)"\s*,?\s*\]', block)
     if actual != [("default", "", ""), ("renderer", ".renderer", " (Renderer)"), ("gpu", "", " (GPU)")]:
         raise Refusal("Pinned content helper variants changed; review packaging")
+    block = content.split("content_mac_aperitif_helpers = [", 1)[1].split("\n]", 1)[0]
+    actual = re.findall(r'\[\s*"([^"]*)"\s*,\s*"([^"]*)"\s*,\s*"([^"]*)"\s*,?\s*\]', block)
+    if actual != [("aperitif", "", " (Aperitif)"), ("aperitif_renderer", ".renderer", " (Aperitif Renderer)"),
+                  ("aperitif_gpu", "", " (Aperitif GPU)")]:
+        raise Refusal("Pinned Aperitif helper variants changed; review packaging")
     helper = (source / "parc/helper/BUILD.gn").read_text()
-    if 'executable("parc_helper")' not in helper or '"//sandbox/mac:seatbelt"' not in helper:
-        raise Refusal("Direct engine helper target or Seatbelt dependency is missing")
+    if 'executable("parc_helper")' not in helper or '"//content/public/app:aperitif"' not in helper:
+        raise Refusal("Direct engine helper target or its Aperitif sandbox library is missing")
     client = (source / "parc/parc_content_clients.mm").read_text()
     bundle = (source / "parc/parc_bundle_mac.mm").read_text()
     constants = (source / "chrome/common/chrome_constants.cc").read_text()
@@ -430,19 +437,22 @@ def make_manifest(engine: Path, repo: Path) -> dict:
     return seal_framework(engine, provenance)
 
 
+APERITIF = "libaperitif.dylib"
+APERITIF_LOAD = "@loader_path/../../../" + FRAMEWORK + "/Libraries/" + APERITIF
+
+
 def check_bootstrap_graph(images: dict, helper_name: str = "parc_helper") -> None:
+    aperitif = FRAMEWORK + "/Versions/A/Libraries/" + APERITIF
     for name, info in images.items():
-        if name != helper_name and name != "libseatbelt.dylib":
+        if name not in {helper_name, aperitif, "libseatbelt.dylib"}:
             raise Refusal("Forbidden pre-sandbox dependency: " + name)
         for load in info["loads"]:
-            if not system_library(load) and load != "@rpath/libseatbelt.dylib":
+            if not system_library(load) and load not in {"@rpath/libseatbelt.dylib", APERITIF_LOAD}:
                 raise Refusal("Forbidden pre-sandbox load: " + load)
 
 
 def engine_helper(engine: Path) -> Path:
-    helper = engine / "parc_helper"
-    if not helper.exists():
-        helper = engine / "Parc Helper.app/Contents/MacOS/Parc Helper"
+    helper = engine / "Parc Helper.app/Contents/MacOS/Parc Helper"
     if not helper.is_file():
         raise Refusal("GN helper is missing from the engine output")
     return inside(helper, engine)
@@ -468,7 +478,7 @@ def seal_framework(engine: Path, provenance: dict) -> dict:
     if not (list((framework / "Resources").glob("v8_context_snapshot*.bin")) or
             (framework / "Resources/snapshot_blob.bin").is_file()):
         raise Refusal("Framework V8 startup snapshot is missing")
-    runtime_libraries = ["libvk_swiftshader.dylib",
+    runtime_libraries = [APERITIF, "libvk_swiftshader.dylib",
                          "libvulkan.dylib", "vk_swiftshader_icd.json"]
     if not provenance["use_static_angle"]:
         runtime_libraries += ["libEGL.dylib", "libGLESv2.dylib"]

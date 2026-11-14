@@ -272,7 +272,7 @@ class PackagingIconTests(unittest.TestCase):
         self.assertIn("-O", compiles[1]); self.assertNotIn("-Onone", compiles[1]); self.assertNotIn("-g", compiles[1])
         self.assertIn("-whole-module-optimization", compiles[1]); self.assertNotIn("-whole-module-optimization", compiles[0])
         signs = [cmd for cmd in self.commands if cmd[0] == "/usr/bin/codesign" and "--sign" in cmd]
-        self.assertEqual(len(signs), 22)
+        self.assertEqual(len(signs), 28)
         self.assertTrue(all("--deep" not in cmd for cmd in signs))
         signed_paths = [Path(cmd[-1]) for cmd in signs]
         plugins = [path for path in signed_paths if path.name == "ParcDockTile.plugin"]
@@ -293,7 +293,7 @@ class PackagingIconTests(unittest.TestCase):
         for path, ent in self.signed_entitlements:
             self.assertTrue(ent["com.apple.security.cs.disable-library-validation"])
             if "Parc Helper" in path:
-                self.assertEqual(bool(ent.get("com.apple.security.cs.allow-jit")), "(Renderer)" in path or "(GPU)" in path)
+                self.assertEqual(bool(ent.get("com.apple.security.cs.allow-jit")), "Renderer)" in path or "GPU)" in path)
             else:
                 self.assertTrue(ent["com.apple.security.device.camera"])
 
@@ -310,7 +310,9 @@ class PackagingIconTests(unittest.TestCase):
         jit = {"com.apple.security.cs.allow-jit": True}
         self.assertEqual(helpers, {"Parc Helper.app": {}, "Parc Helper (Renderer).app": jit,
                                    "Parc Helper (GPU).app": jit, "Parc Helper (Alerts).app": {},
-                                   "Parc Helper (CDM).app": {"com.apple.security.cs.disable-library-validation": True}})
+                                   "Parc Helper (CDM).app": {"com.apple.security.cs.disable-library-validation": True},
+                                   "Parc Helper (Aperitif).app": {}, "Parc Helper (Aperitif Renderer).app": jit,
+                                   "Parc Helper (Aperitif GPU).app": jit})
         main = [ent for path, ent in self.signed_entitlements if Path(path).name == "Parc.app"]
         self.assertEqual(main, [{"com.apple.security.device.camera": True}])
         self.assertEqual(report["widevine"]["host_signatures"], "unsigned")

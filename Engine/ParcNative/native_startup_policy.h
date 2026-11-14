@@ -22,6 +22,7 @@ inline constexpr const char* kExcludedFeatures[] = {
     "TranslateRankerQuery",
     "TranslateRankerEnforcement",
     "CentralizedInfoBarFramework",
+    "TranslateTrigger",
 };
 inline constexpr const char* kArcEnabledFeatures[] = {
     "CertificateTransparencyAskBeforeEnabling",
@@ -42,6 +43,8 @@ inline constexpr const char* kArcDisabledFeatures[] = {
     "PageInfoAboutThisSite",
     "PageInfoAboutThisSiteMoreLangs",
     "TailoredSecurityIntegration",
+    "CredentialManagementUnifiedUi",
+    "ExtensionsPinnedByDefault",
 };
 
 inline void AppendFeature(std::string& list, std::string_view feature) {
@@ -53,7 +56,6 @@ inline void AppendFeature(std::string& list, std::string_view feature) {
 
 inline void ApplyNativeStartupPolicy(base::CommandLine& command) {
   command.AppendSwitch("disable-field-trial-config");
-  command.AppendSwitch("disable-translate-trigger");
   std::string enabled = command.GetSwitchValueUTF8(switches::kEnableFeatures);
   std::string disabled = command.GetSwitchValueUTF8(switches::kDisableFeatures);
   std::set<std::string, std::less<>> named;

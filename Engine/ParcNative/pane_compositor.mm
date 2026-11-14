@@ -533,7 +533,7 @@ void NativePaneCompositor::ReleaseCaptureLock() {
 void NativePaneCompositor::AcceleratedWidgetCALayerParamsUpdated(
     gfx::CALayerParams params) {
   if (!drawing_) {
-    deferred_ca_layer_params_ = std::move(params);
+    deferred_ca_layer_params_ = params.CloneWithoutFence();
     return;
   }
   deferred_ca_layer_params_.reset();

@@ -228,13 +228,13 @@ one is accepted, following the same manual-install boundary above.
 
 ## Helper and signing contract
 
-Direct engines use the GN-built `//parc/helper:parc_helper`, copied into all five helper bundles. `Sources/ParcHelper/main.cc` registers the allocator zone and initializes Seatbelt before loading the framework. A required sandbox with no server or failed initialization is fatal; the server stays alive until the framework unloads. Sealing hashes the helper and audits its complete bootstrap graph: only system libraries and the component build's `@rpath/libseatbelt.dylib` are permitted. Component helper RPATHs resolve that library from the package's sibling libraries. Framework name, identifier, versioned layout, helper identities and signing entitlements stay the same.
+Direct engines use the GN-built `//parc/helper:parc_helper`, built at `Parc Helper.app/Contents/MacOS/Parc Helper` in the engine output and copied into all eight helper bundles: Default, Renderer, GPU, Alerts and CDM, plus the Aperitif Default, Renderer and GPU variants Chromium launches while its `AperitifHelpers` feature is on. The helper links Chromium's Apéritif library, `libaperitif.dylib`, which the framework carries in `Libraries` and the helper loads by its exact `@loader_path` location. Its static initializer registers the allocator zone and engages Seatbelt before any other helper code runs, a required sandbox with no server or failed initialization is fatal, and the helper's constructor stops the process if Apéritif did not run. `Sources/ParcHelper/main.cc` then loads the framework. Sealing hashes the helper and audits its complete bootstrap graph: only system libraries, the framework's `libaperitif.dylib` and the component build's `@rpath/libseatbelt.dylib` are permitted. The helper contract pins Chromium's classic and Aperitif helper lists, so a change to either stops packaging. Component helper RPATHs resolve that library from the package's sibling libraries. Framework name, identifier, versioned layout, helper identities and signing entitlements stay the same.
 
 Sealing and packaging support only the direct GN helper. They refuse any
 retired sandbox library, preserve the framework bundle identity and require
 helper hashes, modes and load commands to match the seal. Component helpers
 resolve only the sealed sibling Seatbelt library before sandbox initialization.
-The five helper identities and entitlements remain unchanged.
+The eight helper identities and entitlements remain unchanged.
 
 ## Sparkle
 

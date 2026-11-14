@@ -21,7 +21,7 @@ class DirectEngineTests(unittest.TestCase):
                      "Resources/chrome_200_percent.pak", "Resources/icudtl.dat",
                      "Resources/v8_context_snapshot.arm64.bin", "Resources/en.lproj/locale.pak",
                      "Libraries/libvk_swiftshader.dylib", "Libraries/libvulkan.dylib",
-                     "Libraries/vk_swiftshader_icd.json"):
+                     "Libraries/vk_swiftshader_icd.json", "Libraries/" + pkg.APERITIF):
             target = self.framework / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"fixture")
@@ -33,9 +33,11 @@ class DirectEngineTests(unittest.TestCase):
         (self.framework / "Versions/Current").symlink_to("A")
         (version / "Resources/Info.plist").write_bytes(plistlib.dumps({
             "CFBundleIdentifier": "org.cef.framework", "CFBundleExecutable": pkg.ENGINE_NAME}))
-        (self.root / "parc_helper").write_bytes(b"helper")
-        (self.root / "parc_helper").chmod(0o755)
-        self.loads = {}
+        self.helper = self.root / "Parc Helper.app/Contents/MacOS/Parc Helper"
+        self.helper.parent.mkdir(parents=True)
+        self.helper.write_bytes(b"helper")
+        self.helper.chmod(0o755)
+        self.loads = {"Parc Helper": [pkg.APERITIF_LOAD]}
 
     def seal(self, shipping=False):
         closure = pkg.dependency_closure
@@ -49,13 +51,26 @@ class DirectEngineTests(unittest.TestCase):
     def test_direct_shipping_seals_helper_without_cef_sandbox(self):
         manifest = self.seal(shipping=True)
         self.assertEqual(manifest["engine_runtime"], "chromium-direct")
-        self.assertEqual(manifest["helper"]["sha256"], pkg.sha(self.root / "parc_helper"))
+        self.assertEqual(manifest["helper"]["sha256"], pkg.sha(self.helper))
         self.assertEqual(manifest["components"], {})
-        self.assertIn("parc_helper", manifest["images"])
+        helper = self.helper.relative_to(self.root).as_posix()
+        aperitif = pkg.FRAMEWORK + "/Versions/A/Libraries/" + pkg.APERITIF
+        self.assertEqual(manifest["images"][helper]["resolved"], {pkg.APERITIF_LOAD: aperitif})
+        self.assertIn(aperitif, manifest["images"])
+
+    def test_helper_must_load_aperitif_from_the_framework_and_the_framework_must_carry_it(self):
+        (self.root / pkg.APERITIF).write_bytes(b"loose copy")
+        self.loads["Parc Helper"] = ["@rpath/" + pkg.APERITIF]
+        with self.assertRaisesRegex(pkg.Refusal, "pre-sandbox"):
+            self.seal(shipping=True)
+        self.loads["Parc Helper"] = [pkg.APERITIF_LOAD]
+        (self.framework / "Versions/A/Libraries" / pkg.APERITIF).unlink()
+        with self.assertRaisesRegex(pkg.Refusal, "libaperitif"):
+            self.seal(shipping=True)
 
     def test_component_seatbelt_is_included_and_engine_dependency_is_refused(self):
         (self.root / "libseatbelt.dylib").write_bytes(b"seatbelt")
-        self.loads["parc_helper"] = ["@rpath/libseatbelt.dylib"]
+        self.loads["Parc Helper"] = [pkg.APERITIF_LOAD, "@rpath/libseatbelt.dylib"]
         manifest = self.seal()
         self.assertIn("libseatbelt.dylib", manifest["components"])
         self.loads["libseatbelt.dylib"] = ["@rpath/libbase.dylib"]
@@ -78,8 +93,9 @@ class DirectEngineTests(unittest.TestCase):
 
     def test_direct_helper_contract_refuses_missing_cdm_or_alerts_routes(self):
         files = {
-            "content/public/app/mac_helpers.gni": 'content_mac_helpers = [\n["default", "", ""], ["renderer", ".renderer", " (Renderer)"], ["gpu", "", " (GPU)"],\n]',
-            "parc/helper/BUILD.gn": 'executable("parc_helper") { deps = [ "//sandbox/mac:seatbelt" ] }',
+            "content/public/app/mac_helpers.gni": ('content_mac_helpers = [\n["default", "", ""], ["renderer", ".renderer", " (Renderer)"], ["gpu", "", " (GPU)"],\n]\n'
+                                                   'content_mac_aperitif_helpers = [\n["aperitif", "", " (Aperitif)"], ["aperitif_renderer", ".renderer", " (Aperitif Renderer)"], ["aperitif_gpu", "", " (Aperitif GPU)"],\n]'),
+            "parc/helper/BUILD.gn": 'executable("parc_helper") { deps = [ "//content/public/app:aperitif" ] }',
             "parc/parc_content_clients.mm": 'constexpr char kMacHelperSuffixCdm[] = " (CDM)"; SetCdmServiceChildFlags( HelperExecutablePath(chrome::kMacHelperSuffixAlerts)',
             "parc/parc_bundle_mac.mm": 'name + " Helper"',
             "chrome/common/chrome_constants.cc": 'kMacHelperSuffixAlerts[] = " (Alerts)";',
@@ -93,7 +109,7 @@ class DirectEngineTests(unittest.TestCase):
             path = self.root / name
             original = path.read_text()
             path.write_text("")
-            with self.assertRaisesRegex(pkg.Refusal, "routing|Seatbelt"):
+            with self.assertRaisesRegex(pkg.Refusal, "routing|Aperitif"):
                 pkg.check_helper_contract(self.root)
             path.write_text(original)
 
@@ -117,12 +133,12 @@ class DirectEngineTests(unittest.TestCase):
             self.seal()
 
     def test_missing_gn_helper_cannot_be_sealed(self):
-        (self.root / "parc_helper").unlink()
+        self.helper.unlink()
         with self.assertRaisesRegex(pkg.Refusal, "GN helper"):
             self.seal()
 
     def test_helper_cannot_link_framework_before_sandbox(self):
-        self.loads["parc_helper"] = ["@rpath/" + pkg.FRAMEWORK + "/" + pkg.ENGINE_NAME]
+        self.loads["Parc Helper"] = [pkg.APERITIF_LOAD, "@rpath/" + pkg.FRAMEWORK + "/" + pkg.ENGINE_NAME]
         with self.assertRaisesRegex(pkg.Refusal, "pre-sandbox"):
             self.seal()
 
@@ -130,9 +146,22 @@ class DirectEngineTests(unittest.TestCase):
         with self.assertRaisesRegex(pkg.Refusal, "pre-sandbox"):
             pkg.check_bootstrap_graph({"parc_helper": {"loads": ["@rpath/other/libseatbelt.dylib"]}})
 
-    def test_release_layout_uses_signed_default_helper(self):
-        target = self.root / "Parc Helper.app/Contents/MacOS/Parc Helper"
-        target.parent.mkdir(parents=True)
-        (self.root / "parc_helper").rename(target)
+    def test_release_layout_uses_the_app_layout_helper_not_a_stale_bare_one(self):
+        (self.root / "parc_helper").write_bytes(b"stale helper from an older engine build")
+        (self.root / "parc_helper").chmod(0o755)
         manifest = self.seal(shipping=True)
-        self.assertEqual(manifest["helper"]["image"], target.relative_to(self.root).as_posix())
+        self.assertEqual(manifest["helper"]["image"], self.helper.relative_to(self.root).as_posix())
+        self.assertEqual(manifest["helper"]["sha256"], pkg.sha(self.helper))
+
+    def test_helper_contract_pins_the_aperitif_helper_names(self):
+        files = {
+            "content/public/app/mac_helpers.gni": ('content_mac_helpers = [\n["default", "", ""], ["renderer", ".renderer", " (Renderer)"], ["gpu", "", " (GPU)"],\n]\n'
+                                                   'content_mac_aperitif_helpers = [\n["aperitif", "", " (Aperitif)"], ["aperitif_renderer", ".renderer", " (Aperitif Renderer)"], ["aperitif_gpu", "", " (Aperitif GPU)"], ["aperitif_utility", "", " (Aperitif Utility)"],\n]'),
+            "parc/helper/BUILD.gn": 'executable("parc_helper") { deps = [ "//content/public/app:aperitif" ] }',
+        }
+        for name, text in files.items():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        with self.assertRaisesRegex(pkg.Refusal, "Aperitif helper variants"):
+            pkg.check_helper_contract(self.root)
