@@ -5,6 +5,7 @@ mkdir -p "$repo_root/build/tests"
 core_sources=(
   "$repo_root/Sources/ParcCore/BrowserStore.swift"
   "$repo_root/Sources/ParcCore/AppWidePreferences.swift"
+  "$repo_root/Sources/ParcCore/SpaceSharing.swift"
   "$repo_root/Sources/ParcCore/SpaceManagement.swift"
   "$repo_root/Sources/ParcCore/BrowserImport.swift"
   "$repo_root/Sources/ParcCore/ArcSidebarImport.swift"
