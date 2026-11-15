@@ -20,14 +20,16 @@ small controls.
 
 ## Images and colors
 
-`linear.png`, `linear@2x.png`, `linear-dark.png`, `linear-dark@2x.png`,
-`figma.png` and `figma@2x.png` come from the `linear` and `figma` assets in
-light or dark appearance and ImageIO exported 32 × 32 and 64 × 64 bitmaps without
+`linear.png`, `linear@2x.png`, `linear-dark.png` and `linear-dark@2x.png` are
+Linear's mark rendered at 32 × 32 and 64 × 64 from the Simple Icons path data,
+in #222326 for light appearance and white for dark. `figma.png` and
+`figma@2x.png` render Figma's multicolor logo from its published SVG. Both
+marks belong to their companies and appear only as icons for links to their
+sites.
 
-The picker's named colors are recorded in source. `CustomizationBackground`
-comes from `ARC_CustomInfoPicker.bundle`: Display P3 0.525/0.533/0.553 at
-0.25 alpha in light appearance, and white at 0.25 alpha in dark appearance.
-`BrandGray`, `ForegroundSecondary`, `ForegroundTertiary` and
-`SidebarItemBackground` come from the BaseAssets catalog.
+The picker's named colors are recorded in source: `CustomizationBackground`
+is Display P3 0.525/0.533/0.553 at 0.25 alpha in light appearance and white at
+0.25 alpha in dark appearance, alongside `BrandGray`, `ForegroundSecondary`,
+`ForegroundTertiary` and `SidebarItemBackground`.
 
 See [split groups](../../docs/split-groups.md) for picker behavior.
