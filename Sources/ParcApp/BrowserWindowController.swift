@@ -391,6 +391,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private var pendingNativeSelection: NativeSelectionRequest?
     private var pendingTabShownMark: UUID?
+    private var markedTabSelection: (tab: UUID, superseded: UUID?)?
     private static var windowOnScreenMarked = false
     private var attachingOwnedPages = false
     private var sidebarKeyboardCursor: SidebarKeyboardCursor?
@@ -7595,14 +7596,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func markTabSelect(_ id: UUID, source: String) {
+        markedTabSelection = nil
         guard let marks = PerfMarks.shared, id != currentTabID else { return }
+        markedTabSelection = (id, pendingTabShownMark)
         pendingTabShownMark = id
         marks.mark("tab-select", ["tab": id.uuidString, "source": source])
     }
 
     @discardableResult
     private func settleTabSelectMark(_ selected: Bool) -> Bool {
-        if !selected { pendingTabShownMark = nil }
+        if !selected, let marked = markedTabSelection, pendingTabShownMark == marked.tab {
+            pendingTabShownMark = marked.superseded
+        }
+        markedTabSelection = nil
         return selected
     }
 

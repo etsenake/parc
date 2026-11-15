@@ -125,6 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private let arguments = ProcessInfo.processInfo.arguments
     private let testInstance = TestInstance.current
     private var testWindowFramePending = TestInstance.current.placesFirstWindow
+    private var commandBarMarkRequest = 0
     private var front: BrowserWindowController? {
         let ready = windows.filter(\.hasReadyPresentation)
         return ready.first { $0.window === NSApp.keyWindow || $0.window === NSApp.mainWindow }
@@ -1737,7 +1738,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
     private func markCommandBarTypeable(in owner: BrowserWindowController?) {
         guard let marks = PerfMarks.shared, let owner else { return }
-        marks.markAfterDisplay("command-bar-typeable") { [weak owner] in owner?.commandBarIsTypeable == true }
+        commandBarMarkRequest += 1
+        let request = commandBarMarkRequest
+        marks.markAfterDisplay("command-bar-typeable") { [weak self, weak owner] in
+            self?.commandBarMarkRequest == request && owner?.commandBarIsTypeable == true
+        }
     }
     @objc private func focusSidebar(_ sender: Any?) { browserInputCommandWindow?.focusSidebar() }
     @objc private func renameCurrentItem(_ sender: Any?) { front?.renameCurrentItem() }
