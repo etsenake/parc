@@ -1,8 +1,8 @@
 # Performance benchmarks
 
 This folder measures Parc the way Ardia measures itself, so the two compare row for
-row. The cross-browser harness runs Parc, Ardia, Helium and Google Chrome (and Dia)
-on one Mac with the same pages, profile state, window size and run counts. It
+row. The cross-browser harness runs Parc, Ardia and Google Chrome by default, and
+Helium or Dia when asked with `--browsers`, on one Mac with the same pages, profile state, window size and run counts. It
 interleaves them run by run so every browser sees the same machine. The harness,
 its native probes and the test page are ported from Ardia's rig with their method
 unchanged; [NOTICE](NOTICE) records the source and licence.
@@ -44,8 +44,8 @@ bench.json from either project reads the same way.
 ## Running it
 
 Copies live under `build/perf/xbench/apps`, never in `/Applications`:
-`parc/Parc.app`, `ardia/Ardia.app`, `helium/Helium.app` and
-`chrome/Google Chrome.app`. The harness refuses to run any bundle outside that
+`parc/Parc.app`, `ardia/Ardia.app` and `chrome/Google Chrome.app`, plus
+`helium/Helium.app` or `dia/Dia.app` when those are measured. The harness refuses to run any bundle outside that
 folder or the repository's `build` folder, so it can never launch, quit or
 unregister an installed browser. Make the Parc copy from a released Parc:
 
@@ -61,8 +61,9 @@ python3 tests/Performance/xbench.py clean --out build/perf/xbench/out
 By default every item waits until the owner is away (screen locked, or no input
 for ten minutes) and is thrown away the moment input comes. `--gate off` runs on a
 Mac in use. `--help` lists every flag; `--browsers`, `--rows`, `--rounds` and
-`--idle` narrow a run. A full run of four browsers takes roughly one and a half
-to two hours.
+`--idle` narrow a run. A full run of the three default browsers takes roughly an
+hour and a half. `clean` quits leftovers and deletes the runs; delete the copies
+under `build/perf/xbench/apps` when they're no longer needed.
 
 ## How each browser runs
 

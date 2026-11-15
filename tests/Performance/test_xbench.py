@@ -442,7 +442,7 @@ class HarnessTests(unittest.TestCase):
 
     def test_the_defaults_are_ardias_with_parc_first(self):
         opt = options()
-        self.assertEqual(opt.browsers, "parc,ardia,helium,chrome")
+        self.assertEqual(opt.browsers, "parc,ardia,chrome")
         self.assertEqual((opt.port, opt.page_port, opt.rounds, opt.launches, opt.idle, opt.deadline), (9461, 9462, 3, 2, 60, 100))
         self.assertEqual((opt.gate, opt.away, opt.window, opt.launch_tab, opt.rows), ("away", 600, "40,80", "on", "link,restore,session,size"))
         self.assertEqual(opt.apps, str(Path(xbench.__file__).resolve().parents[2] / "build/perf/xbench/apps"))

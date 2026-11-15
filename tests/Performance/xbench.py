@@ -1636,8 +1636,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("command", nargs="?", help="run, check, report, clean, signin, prepare-bg or prepare-parc")
     p.add_argument("extra", nargs="*", help=argparse.SUPPRESS)
     p.add_argument("--out", default=str(DEFAULT_ROOT / "out"), help="results, templates and runs (default build/perf/xbench/out)")
-    p.add_argument("--browsers", default="parc,ardia,helium,chrome",
-                   help="parc,ardia,dia,helium,chrome (default: parc,ardia,helium,chrome, in that order); <name>-bg runs prepare-bg's copy")
+    p.add_argument("--browsers", default="parc,ardia,chrome",
+                   help="parc,ardia,dia,helium,chrome (default: parc,ardia,chrome, in that order); <name>-bg runs prepare-bg's copy")
     p.add_argument("--apps", default=str(DEFAULT_ROOT / "apps"),
                    help="where the copies live (default build/perf/xbench/apps): parc/Parc.app, ardia/Ardia.app, dia/Dia.app, "
                         "helium/Helium.app, chrome/Google Chrome.app. Never a bundle in /Applications")
