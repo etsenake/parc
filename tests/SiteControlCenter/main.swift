@@ -30,7 +30,7 @@ struct SiteControlCenterChecks {
             expect(image?.representations.contains { $0 is NSPDFImageRep } == true, "\(name) keeps its vector rendition")
         }
         expect(SiteControlCenterArtwork.controlCenter === SiteControlCenterArtwork.image("icon-control-center"),
-               "the entry glyph is the cached catalog image")
+               "the entry glyph is the cached bundled image")
 
         let model = SiteControlCenterModel()
         expect(model.buttons == [.share, .copyURL], "without capture only Share and Copy URL remain")
