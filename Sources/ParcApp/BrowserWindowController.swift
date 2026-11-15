@@ -4733,7 +4733,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let hub = WindowFrameCrankPlacement.hub(in: bounds, dockedSidebarEdge: docked)
         let flippedY = rootView.isFlipped ? bounds.maxY - (hub.y - bounds.minY) : hub.y
         let side = WindowFrameCrankView.side
-        crank.frame = NSRect(x: hub.x - side / 2, y: flippedY - side / 2, width: side, height: side)
+        crank.frame = rootView.backingAlignedRect(NSRect(x: hub.x - side / 2, y: flippedY - side / 2, width: side, height: side),
+                                                  options: .alignAllEdgesNearest)
     }
 
     private func frameCrankPalette() -> WindowFrameCrankPalette {

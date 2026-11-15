@@ -72,7 +72,9 @@ its sound and haptics, and `WindowFrameCrank` in `ParcCore` owns the turning mod
   soft-touch caps on the knob and hub in the Space's color, over a round
   escutcheon. It is about 105 points long and its knob sweeps an 87-point
   radius. SceneKit draws it live so the metal lights correctly and turns exactly
-  with your hand; RealityKit's SwiftUI view needs macOS 15, and Parc supports
+  with your hand, rendering at twice the display's resolution and scaling down so
+  its curves and shadow stay smooth on Retina screens; the crank snaps to whole
+  pixels so it is never resampled; RealityKit's SwiftUI view needs macOS 15, and Parc supports
   macOS 13. A soft shadow is drawn from flattened copies of the crank.
 - **Placement.** `WindowFrameCrankPlacement` puts the hub 125 points in from the
   window's left and bottom edges. With the sidebar docked it sits on the seam

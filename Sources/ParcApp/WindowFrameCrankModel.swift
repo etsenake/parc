@@ -38,8 +38,18 @@ final class WindowFrameCrankModel {
     static let paddleDepth: CGFloat = 5
     static let paddleLift: Float = 6
     static let shadowOffset = CGVector(dx: 7, dy: -9)
-    static let shadowSpread: [(CGFloat, CGFloat)] = [(0, 0), (2.2, 0), (-2.2, 0), (0, 2.2), (0, -2.2),
-                                                       (1.6, 1.6), (-1.6, -1.6), (1.6, -1.6), (-1.6, 1.6)]
+    static let shadowSpread: [(CGFloat, CGFloat)] = {
+        var points: [(CGFloat, CGFloat)] = [(0, 0)]
+        for index in 0..<8 {
+            let angle = CGFloat(index) * .pi / 4
+            points.append((1.3 * cos(angle), 1.3 * sin(angle)))
+        }
+        for index in 0..<10 {
+            let angle = CGFloat(index) * .pi / 5 + 0.3
+            points.append((2.6 * cos(angle), 2.6 * sin(angle)))
+        }
+        return points
+    }()
     static let shadowBase: CGFloat = 0.05
     static let shadowLayer: CGFloat = 0.01
     static let shadowFlatness: CGFloat = 0.0001
@@ -102,7 +112,7 @@ final class WindowFrameCrankModel {
         guard force || next != palette else { return }
         palette = next
         cap.diffuse.contents = Self.srgb(next.cap)
-        shade.transparency = next.dark ? 0.09 : 0.06
+        shade.transparency = (next.dark ? 0.09 : 0.06) * 9 / CGFloat(Self.shadowSpread.count) * 1.15
         key.intensity = next.dark ? 700 : 900
         scene.lightingEnvironment.contents = Self.cachedEnvironment(deep: next.deep, dark: next.dark)
         scene.lightingEnvironment.intensity = next.dark ? 1.6 : 1.15

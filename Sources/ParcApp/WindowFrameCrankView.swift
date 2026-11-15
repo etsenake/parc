@@ -54,7 +54,7 @@ final class WindowFrameCrankView: NSView {
     private(set) var tremble: Double = 0
     let model: WindowFrameCrankModel
     let lights: WindowFrameCrankLightsView
-    let sceneView: SCNView
+    let sceneView: WindowFrameCrankSceneView
     private let stage = NSView()
     private let feedback: WindowFrameCrankFeedback
     private let reducesMotion: () -> Bool
@@ -88,7 +88,7 @@ final class WindowFrameCrankView: NSView {
         self.reducesMotion = reducesMotion
         model = WindowFrameCrankModel(side: Self.side, palette: palette)
         lights = WindowFrameCrankLightsView(frame: square, litCount: start.litCount, readout: start.value, palette: palette)
-        sceneView = SCNView(frame: square, options: nil)
+        sceneView = WindowFrameCrankSceneView(frame: square, options: nil)
         super.init(frame: square)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -742,5 +742,28 @@ final class WindowFrameCrankLightsView: NSView {
         return NSColor(srgbRed: a.redComponent + (b.redComponent - a.redComponent) * t,
                        green: a.greenComponent + (b.greenComponent - a.greenComponent) * t,
                        blue: a.blueComponent + (b.blueComponent - a.blueComponent) * t, alpha: 1)
+    }
+}
+
+final class WindowFrameCrankSceneView: SCNView {
+    static let supersampling: CGFloat = 2
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applySupersampling()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        applySupersampling()
+    }
+
+    func applySupersampling() {
+        guard let layer, let window else { return }
+        let scale = window.backingScaleFactor * Self.supersampling
+        layer.minificationFilter = .linear
+        guard layer.contentsScale != scale else { return }
+        layer.contentsScale = scale
+        needsDisplay = true
     }
 }

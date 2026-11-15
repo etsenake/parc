@@ -166,6 +166,8 @@ final class FocusView: NSView {
         check(view.hitTest(h.superPoint(view.hub)) == nil, "a hidden crank never catches clicks")
         view.present()
         check(view.phase == .presenting && h.window.firstResponder === view && !view.sceneView.isHidden, "presenting takes the keyboard and renders")
+        check(view.sceneView.layer?.contentsScale == h.window.backingScaleFactor * WindowFrameCrankSceneView.supersampling,
+              "the crank renders at twice the window's resolution so its curves stay smooth")
         check(view.stageOffset.x < 0 && view.stageOffset.y < 0, "it slides in from the lower left")
         check(view.isAnimating, "presenting animates")
         h.run(0.5)
