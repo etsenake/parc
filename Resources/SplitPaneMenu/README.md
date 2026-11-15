@@ -2,8 +2,10 @@
 
 Parc's split-menu images: a soft frame of the pane layout with one strong accent,
 an arrow or plus breaking through the frame, or a blue arrow for separating a
-tab. Frames are 20% black (20% white in Dark Aqua) with 1.4-point strokes; the
-accent is solid ink, with blue #418AF9 (#7AABFA dark) for Separate.
+tab. Frames are 20% black (20% white in Dark Aqua) and accents are solid ink,
+with blue #418AF9 (#7AABFA dark) for Separate. Both use 1.5-point strokes snapped
+to the 2× pixel grid: frame lines are centred on pixel centres so their three
+pixels have hard edges, and accents are centred on pixel boundaries.
 
 Each asset has light and Dark Aqua renditions at 1× and 2×: `name.png`,
 `name@2x.png`, `name-dark.png` and `name-dark@2x.png`, rendered from vector
