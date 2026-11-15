@@ -1963,7 +1963,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return front.prepareReaderMenuItem(item)
         }
         if item.action == #selector(toggleScriptPermission) { return front?.prepareScriptPermissionMenuItem(item, preservingTarget: scriptPermissionMenuIsTracking) ?? false }
-        if item.action == #selector(toggleArcToolbar) { return spaceCommandWindow?.prepareToolbarMenuItem(item) ?? false }
+        if item.action == #selector(toggleShowToolbar) { return spaceCommandWindow?.prepareToolbarMenuItem(item) ?? false }
         if item.action == #selector(toggleDeveloperMode) { return front?.prepareDeveloperModeMenuItem(item) ?? false }
         if item.action == #selector(developerTools) {
             if let tools = devToolsWindows.first(where: { $0.window === NSApp.keyWindow }) {
@@ -2259,7 +2259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         owner.copyCurrentURLAsQuote()
     }
     @objc func pasteAsPlainText(_ sender: Any?) { WebpageEditCommands.pasteMatchingStyle(from: sender) }
-    @objc private func toggleArcToolbar(_ sender: NSMenuItem) { spaceCommandWindow?.toggleToolbar(from: sender) }
+    @objc private func toggleShowToolbar(_ sender: NSMenuItem) { spaceCommandWindow?.toggleToolbar(from: sender) }
     @objc private func toggleSidebar(_ sender: Any?) { browserInputCommandWindow?.toggleSidebar() }
     @objc private func adjustWindowFrame(_ sender: Any?) { browserInputCommandWindow?.presentFrameCrank() }
     @objc private func goBackArrow(_ sender: Any?) {
@@ -2539,8 +2539,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         owner.toggleStayOnTop()
     }
     @objc private func about(_ sender: Any?) {
-        if aboutWindow == nil { aboutWindow = AboutParcWindow() }
+        if aboutWindow == nil { aboutWindow = AboutParcWindow(openPage: { [weak self] url in self?.openPageFromAbout(url) }) }
         aboutWindow?.present()
+    }
+    private func openPageFromAbout(_ url: URL) {
+        guard let owner = browserWindowCommandOwner ?? windows.first(where: { !$0.isPopupWindow })
+                ?? createStandardWindow(showCommandBar: false) else { return }
+        owner.window?.makeKeyAndOrderFront(nil)
+        owner.openAddress(url)
     }
     private func trace(_ value: @autoclosure () -> String) {
         if arguments.contains("--parc-smoke") { FileHandle.standardError.write(Data(("Parc test: " + value() + "\n").utf8)) }
@@ -2823,7 +2829,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         view.addItem(.separator())
         item("Show / Hide Sidebar", #selector(toggleSidebar), "s", in: view)
         item("Adjust Window Frame…", #selector(adjustWindowFrame), in: view)
-        item("Show Toolbar", #selector(toggleArcToolbar), "d", in: view, modifiers: [.command, .shift])
+        item("Show Toolbar", #selector(toggleShowToolbar), "d", in: view, modifiers: [.command, .shift])
         hideKeepingShortcut(view)
         item("Reveal Current Tab", #selector(focusSidebar), " ", in: view, modifiers: [.control])
         hideKeepingShortcut(view)

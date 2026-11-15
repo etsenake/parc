@@ -229,9 +229,6 @@
   if (_invalidated) {
     return nil;
   }
-  // -[WebContentsPaneHostView initWithFrame:] 0x4749ef4 adds it clipped,
-  // above the compositor overlay. An infobar shelf added later goes above
-  // it, so restore it to the top; autoresizing survives that re-add.
   if (!_historyOverlayContainer) {
     _historyOverlayContainer =
         [[PCNativeHistoryOverlayContainerView alloc] initWithFrame:self.bounds];

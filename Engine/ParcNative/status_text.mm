@@ -51,10 +51,6 @@ constexpr CGFloat kCompactWidth = 400;
 constexpr NSEventModifierFlags kLinkModifiers = NSEventModifierFlagShift |
     NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand;
 
-//
-// must flip. False when the pointer/overlay fingerprint still yields the same
-// trailing bit — including overlapping-zone retain — so layoutOverlay is a
-// true no-op.
 bool StatusTextAvoidanceNeedsLayout(NSRect bounds, NSRect pill, BOOL trailing,
                                     NSPoint point) {
   const CGFloat width = NSWidth(pill) + 20;
@@ -65,8 +61,6 @@ bool StatusTextAvoidanceNeedsLayout(NSRect bounds, NSRect pill, BOOL trailing,
   return trailing != in_left;
 }
 
-//
-// order) is removed, then one trailing slash. http and mailto get an icon.
 NSString* SchemePrefix(NSString* text) {
   for (NSString* prefix in @[@"mailto:", @"http://", @"https://"]) {
     if ([text hasPrefix:prefix]) return prefix;
@@ -80,11 +74,9 @@ NSImage* SchemeIcon(NSString* prefix) {
       : @"lock with a slash through it";
   if (!symbol) return nil;
   NSImage* image = [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:description];
-  //
   return [image imageWithSymbolConfiguration:
       [NSImageSymbolConfiguration configurationWithPointSize:10 weight:NSFontWeightHeavy]];
 }
-//
 NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   switch (outcome) {
     case PCNativeStatusLinkOutcomeNewBackgroundTab: return @"Open %@ in a new tab";
@@ -273,13 +265,11 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
     _background = [[PCStatusBackground alloc] initWithFrame:NSZeroRect];
     _background.identifier = @"parc-status-background";
     [_pill addSubview:_background];
-    //
     _icon = [[NSImageView alloc] initWithFrame:NSZeroRect];
     _icon.identifier = @"parc-status-icon";
     _icon.contentTintColor = BaseSecondary();
     _icon.hidden = YES;
     [_pill addSubview:_icon];
-    //
     _label = [NSTextField labelWithString:@""];
     _label.identifier = @"parc-status-label";
     _label.font = [NSFont systemFontOfSize:12 weight:NSFontWeightMedium];
@@ -334,8 +324,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   if (_invalidated) { return; }
   [self applyTheme];
 }
-//
-// a parseable URL and an outcome for those modifiers the explained form shows.
 - (void)rebuildContent {
   NSString* text = _text;
   PCNativeStatusLinkOutcome outcome = PCNativeStatusLinkOutcomeNone;
@@ -352,8 +340,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   NSMutableAttributedString* content;
   NSString* prefix;
   if (format) {
-    //
-    // always truncating in the middle.
     NSString* absolute = url.absoluteString ?: text;
     NSString* sentence = [NSString stringWithFormat:format, absolute];
     content = [[NSMutableAttributedString alloc] initWithString:sentence attributes:@{
@@ -381,7 +367,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   _icon.hidden = icon == nil;
   _label.lineBreakMode = paragraph.lineBreakMode;
   _label.attributedStringValue = content;
-  //
   if (_explained && !_expanded) {
     [_expansionTimer invalidate];
     _expansionTimer = nil;

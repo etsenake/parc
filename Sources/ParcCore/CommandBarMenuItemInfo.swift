@@ -80,7 +80,7 @@ struct CommandBarMenuItemInfo: Equatable, Sendable {
         "showEssentialShortcuts:": .init(triggers: ["Essential Keyboard Shortcuts", "keyboard", "shortcuts"], bump: 0.1),
         "showReleaseNotes:": .init(triggers: ["Changelog", "Whats new", "What's new", "parc updates"]),
         "split:": .init(triggers: ["Add Split View", "Split View", "Create Split View Pane", "New Split View", "Split"]),
-        "toggleArcToolbar:": .init(triggers: ["Toggle Hide Show Toolbar"]),
+        "toggleShowToolbar:": .init(triggers: ["Toggle Hide Show Toolbar"]),
         "toggleDeveloperMode:": .init(triggers: ["Developer Mode", "Enable Developer Mode", "Disable Developer Mode"]),
         "toggleFairPlayIdentity:": .init(triggers: ["Safari Identity", "Chrome Identity", "FairPlay"]),
         "toggleFullScreen:": .init(triggers: ["Enter Full Screen", "Exit Full Screen", "Full Screen", "Toggle Full Screen"]),

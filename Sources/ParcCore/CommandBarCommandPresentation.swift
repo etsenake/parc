@@ -30,7 +30,7 @@ enum CommandBarCommandPresentation {
         "pasteAsPlainText": "list.clipboard",
         "find": "magnifyingglass", "findAndReplace": "magnifyingglass", "findNext": "arrow.right",
         "findPrevious": "arrow.left", "useSelectionForFind": "magnifyingglass", "jumpToSelection": "arrow.turn.right.down",
-        "toggleSidebar": "sidebar.left", "toggleArcToolbar": "rectangle.topthird.inset.filled", "focusSidebar": "sidebar.left",
+        "toggleSidebar": "sidebar.left", "toggleShowToolbar": "rectangle.topthird.inset.filled", "focusSidebar": "sidebar.left",
         "adjustWindowFrame": "macwindow",
         "stopLoading": "xmark.circle", "reload": "arrow.clockwise", "forceReload": "arrow.clockwise",
         "clearCookiesAndRefresh": "trash", "clearCacheAndRefresh": "trash", "clearBrowsingData": "trash",

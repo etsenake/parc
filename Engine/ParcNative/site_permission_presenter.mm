@@ -13,8 +13,6 @@ static NSColor* PCPromptWhite(CGFloat alpha) {
 static NSColor* PCPromptBlack(CGFloat alpha) {
   return [NSColor colorWithWhite:0 alpha:alpha];
 }
-// Title, button text and icon: white (dark) or black (light) at 66%
-//
 static NSColor* PCPromptForeground(BOOL dark) {
   return dark ? PCPromptWhite(0.66) : PCPromptBlack(0.66);
 }

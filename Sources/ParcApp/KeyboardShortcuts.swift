@@ -304,7 +304,18 @@ final class KeyboardShortcuts: ObservableObject {
                     }
                     document.version = 3
                 }
-                if needsMigration {
+                var renamedCommand = false
+                for (old, new) in [("toggleArcToolbar:", "toggleShowToolbar:")] {
+                    if let value = document.overrides.removeValue(forKey: old) {
+                        if document.overrides[new] == nil { document.overrides[new] = value }
+                        renamedCommand = true
+                    }
+                    if let value = document.priorities?.removeValue(forKey: old) {
+                        if document.priorities?[new] == nil { document.priorities?[new] = value }
+                        renamedCommand = true
+                    }
+                }
+                if needsMigration || renamedCommand {
                     do {
                         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                         try encoder.encode(document).write(to: fileURL, options: .atomic)
@@ -636,7 +647,7 @@ final class KeyboardShortcuts: ObservableObject {
     private func defaultPriority(for id: String) -> Priority {
         if let priority = Self.recoveredMenuPriorities[id] { return priority }
         if ["copyCurrentURL:", "copyCurrentURLAsMarkdown:", "copyCurrentURLAsQuote:", "closeTab:", "closeWindow:"].contains(id) { return .preferParc }
-        if ["developerTools_Alternate", "developerTools:", "viewSource:", "toggleDeveloperMode:", "inspectElements:", "toggleArcToolbar:", "toggleFullScreen:", "exit:", "openInCurrentSpace:"].contains(id) { return .useBoth }
+        if ["developerTools_Alternate", "developerTools:", "viewSource:", "toggleDeveloperMode:", "inspectElements:", "toggleShowToolbar:", "toggleFullScreen:", "exit:", "openInCurrentSpace:"].contains(id) { return .useBoth }
         return .preferWebsites
     }
     func priority(for id: String) -> Priority { priorities[id] ?? defaultPriority(for: id) }

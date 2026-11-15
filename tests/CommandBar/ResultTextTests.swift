@@ -75,7 +75,7 @@ import Foundation
 
         typealias Command = CommandBarCommandPresentation
         expect(Command.symbol(commandID: "createEasel:", title: "New Easel") == "scribble.variable", "the Easel symbol")
-        expect(Command.symbol(commandID: "toggleArcToolbar:", title: "Hide Toolbar") == "rectangle.topthird.inset.filled",
+        expect(Command.symbol(commandID: "toggleShowToolbar:", title: "Hide Toolbar") == "rectangle.topthird.inset.filled",
                "a toggled title keeps its icon")
         expect(Command.symbol(commandID: "toggleReaderMode:", title: "Exit Reader") == "newspaper", "Exit Reader")
         expect(Command.symbol(commandID: "closeTab:", title: "Close Settings") == "archivebox",
