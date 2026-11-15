@@ -1086,7 +1086,10 @@ class Harness:
                     **({"userAgent": version["User-Agent"]} if "User-Agent" in version else {}), "pages": left, "info": app.info}
             Path(directory, "template.json").write_text(stringify(made, 2))
         finally:
-            app.quit()
+            if app.pid:
+                app.quit()
+            elif app.prefs:
+                app.prefs.restore()
         if is_ardia(name):
             self.fix_ardia_session(os.path.join(directory, "home/data/session.json"))
         for chromium in chromium_dirs(base_of(name), os.path.join(directory, "home")):
