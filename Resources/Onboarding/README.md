@@ -31,7 +31,8 @@ the complete Resources tree and links AVFoundation for playback.
   2100 × 1500 with constant 66/255 alpha: every pixel's red, green and blue
   are drawn independently with a bright-leaning spread, so the moving film
   grain reads as soft colour speckle rather than harsh grey static.
-- `orb-mask.png` is a 630 × 630 smooth twelve-point blob that shapes the orb.
+- `orb-mask.png` is a 630 × 630 smooth twelve-point blob that fills its canvas
+  edge to edge and shapes the orb.
 
 Parc resolves every file from its own bundle; Swift uses CoreText for the font and AVFoundation for media.
 
