@@ -134,7 +134,7 @@ import AppKit
         check(RecentSwitcherArtwork.directory == Bundle.main.resourceURL?.appendingPathComponent("RecentSwitcher", isDirectory: true),
               "the artwork loads from the bundle's RecentSwitcher resources")
         check(RecentSwitcherArtwork.note != nil && RecentSwitcherArtwork.easel != nil
-            && RecentSwitcherArtwork.incognito != nil, "all copied native PDF templates decode")
+            && RecentSwitcherArtwork.incognito != nil, "all bundled PDF templates decode")
         func swatch(_ color: NSColor) -> NSImage {
             NSImage(size: NSSize(width: 240, height: 180), flipped: false) { rect in
                 color.setFill(); rect.fill(); return true
