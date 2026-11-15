@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var previousRunRecorded = false
     private var launchWindowID: UUID?
     private var requiresOnboarding: Bool {
-        store != nil && !arguments.contains("--parc-smoke") && !store.state.settings.onboardingComplete
+        store != nil && !arguments.contains("--parc-smoke") && !testInstance.isActive && !store.state.settings.onboardingComplete
     }
     private var windows: [BrowserWindowController] = []
     private var miniPlayerRefreshPending = false
@@ -123,6 +123,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private weak var scriptPermissionMenu: NSMenu?
     private var scriptPermissionMenuIsTracking = false
     private let arguments = ProcessInfo.processInfo.arguments
+    private let testInstance = TestInstance.current
+    private var testWindowFramePending = TestInstance.current.placesFirstWindow
     private var front: BrowserWindowController? {
         let ready = windows.filter(\.hasReadyPresentation)
         return ready.first { $0.window === NSApp.keyWindow || $0.window === NSApp.mainWindow }
@@ -279,9 +281,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 failureExitCode = startup.exitCode
                 throw startup.error ?? NSError(domain: "Parc", code: Int(startup.exitCode), userInfo: [NSLocalizedDescriptionKey: "The browser engine could not start."])
             case .ready:
+                PerfMarks.shared?.mark("engine-started")
                 trace("runtime.application=" + NSStringFromClass(type(of: NSApp)))
                 started = true
-                pendingImportResume = try? BrowserImportRestartIntent.take(from: root)
+                pendingImportResume = testInstance.isActive ? nil : try? BrowserImportRestartIntent.take(from: root)
                 if pendingImportResume?.replay != true { Self.removeReplayRestartDraft(in: root) }
                 ProfileRemovalController.shared.configure(store: store)
                 let presentImportFailures = { [weak self] in
@@ -293,7 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 FairPlayIdentityController.shared.start(profilePaths: store.state.profiles.map {
                     store.independentEngineProfilePath(for: $0.id)
                 })
-                SoftwareUpdateBanner.shared.launch(in: root, existingData: previousRunRecorded)
+                if !testInstance.isActive { SoftwareUpdateBanner.shared.launch(in: root, existingData: previousRunRecorded) }
                 LaunchContinuity(running: true, build: Self.buildIdentity).write(in: root)
                 resumePendingAppKitRestorations()
                 return .ready
@@ -348,7 +351,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     func openInitialWindow() {
         NSApp.finishLaunching()
         SoftwareUpdater.shared.start(disabled: argument("--parc-profile") != nil
-                                     || arguments.contains("--disable-software-updater"))
+                                     || arguments.contains("--disable-software-updater") || testInstance.isActive)
         SoftwareUpdater.shared.activity = { [weak self] in self?.automaticUpdateActivity }
         AppIconController.shared.configure(directory: store.directory, updatesSystemIdentity: argument("--parc-profile") == nil)
         restorationLaunch.finishLaunch()
@@ -382,7 +385,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func restoreBrowserWindow(id: UUID, completion: @escaping (NSWindow?, Error?) -> Void) {
-        guard !appKitRestorationCancelled, store != nil, !requiresOnboarding, store.state.settings.restoreSession else {
+        guard !appKitRestorationCancelled, store != nil, !requiresOnboarding, store.state.settings.restoreSession,
+              !testWindowFramePending else {
             completion(nil, nil); return
         }
         if WindowRestorationLaunch.shouldDeferWindow(engineReady: started, terminating: terminationInProgress) {
@@ -1115,7 +1119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             continueApplicationTermination(sender)
             return
         }
-        if fromQuitCommand, QuitWarningPreferences.shared.state.isEnabled, let owner = quitWarningOwner,
+        if fromQuitCommand, !testInstance.isActive, QuitWarningPreferences.shared.state.isEnabled, let owner = quitWarningOwner,
            let parent = owner.window {
             let warning = ApplicationQuitWarning(preferences: .shared)
             warning.isCurrent = { [weak self, weak owner, weak parent, weak warning] in
@@ -1609,6 +1613,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         recordWindowSessions()
         scheduleMiniPlayerRefresh()
+        if testWindowFramePending, nativeRequest == nil, privateParentProfileID == nil,
+           let window = controller.window, let screen = NSScreen.screens.first {
+            testWindowFramePending = false
+            window.setFrame(testInstance.firstWindowFrame(from: window.frame, primaryScreen: screen.frame), display: false)
+        }
         if renderInitialSelection && showImmediately { controller.showWindow(nil) }
         return controller
     }
@@ -1716,9 +1725,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             education.activateCommand("newTab:", event: NSApp.currentEvent)
             return
         }
-        front?.newTab()
+        let owner = front
+        owner?.newTab()
+        markCommandBarTypeable(in: owner)
     }
-    @objc private func focusAddress(_ sender: Any?) { trace("command.focusAddress"); front?.focusAddress() }
+    @objc private func focusAddress(_ sender: Any?) {
+        trace("command.focusAddress")
+        let owner = front
+        owner?.focusAddress()
+        markCommandBarTypeable(in: owner)
+    }
+    private func markCommandBarTypeable(in owner: BrowserWindowController?) {
+        guard let marks = PerfMarks.shared, let owner else { return }
+        marks.markAfterDisplay("command-bar-typeable") { [weak owner] in owner?.commandBarIsTypeable == true }
+    }
     @objc private func focusSidebar(_ sender: Any?) { browserInputCommandWindow?.focusSidebar() }
     @objc private func renameCurrentItem(_ sender: Any?) { front?.renameCurrentItem() }
     private func sidebarCommandKind(for action: Selector?) -> SidebarSelectionCommandKind? {

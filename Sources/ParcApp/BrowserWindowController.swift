@@ -390,6 +390,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
     private var pendingNativeSelection: NativeSelectionRequest?
+    private var pendingTabShownMark: UUID?
+    private static var windowOnScreenMarked = false
     private var attachingOwnedPages = false
     private var sidebarKeyboardCursor: SidebarKeyboardCursor?
     private var sidebarKeyboardBrowsing = false
@@ -576,6 +578,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
     func windowDidChangeOcclusionState(_ notification: Notification) {
+        if let marks = PerfMarks.shared, !Self.windowOnScreenMarked, !isPopupWindow, presentation.isReady,
+           window?.occlusionState.contains(.visible) == true {
+            Self.windowOnScreenMarked = true
+            marks.mark("window-on-screen")
+        }
         if window?.occlusionState.contains(.visible) != true, sidebarMotion.isAnimating {
             settleSidebarMotion()
             layoutChrome()
@@ -4810,6 +4817,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if !isPopupWindow, focusResidentCommandBar() { return }
         presentCommandBar(newTab: false, addressAnchor: anchor)
     }
+    var commandBarIsTypeable: Bool { commandBar?.hasFocus == true || residentCommandBar?.hasFocus == true }
 
     private var showsStartPage: Bool {
         guard let page = loadedStartPage else { return false }
@@ -6946,6 +6954,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if closing {
                 return self.closeTabMovingHere(expected.id)
             }
+            self.markTabSelect(expected.id, source: "click")
             return self.selectTab(expected.id)
         }
     }
@@ -7487,6 +7496,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         parkPanes(ended)
         attachOwnedPages()
         synchronizeNativeLayout()
+        markTabShownIfVisible()
     }
 
     private func attachOwnedPages() {
@@ -7581,6 +7591,26 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         defer { synchronizingNativeLayout = false }
         binding.synchronizeSelectionAndLayout()
         refreshNavigationControls()
+        markTabShownIfVisible()
+    }
+
+    private func markTabSelect(_ id: UUID, source: String) {
+        guard let marks = PerfMarks.shared else { return }
+        pendingTabShownMark = id
+        marks.mark("tab-select", ["tab": id.uuidString, "source": source])
+    }
+
+    private func markTabShownIfVisible() {
+        guard let id = pendingTabShownMark, pendingNativeSelection == nil, let marks = PerfMarks.shared,
+              let window, let pane = panes[id], pane.window === window, renderedPaneIDs.contains(id),
+              !pane.isHiddenOrHasHiddenAncestor, !switchHold.covered.contains(where: { $0 === pane }) else { return }
+        if let browser = browsers[id] {
+            guard pane.browser === browser, !browser.isHidden, let page = browser.nativePage, !page.isClosed,
+                  attachedPageIDs.contains(page.identifier), page.nativeView.window === window,
+                  page.nativeView.isDescendant(of: browser) else { return }
+        }
+        pendingTabShownMark = nil
+        marks.mark("tab-shown", ["tab": id.uuidString])
     }
 
     func embeddedEaselPages(forTabID id: UUID) -> [PCNativePage] { easelEditors[id]?.editor.pageObjects?.pages ?? [] }
@@ -8526,6 +8556,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         var next = presentation
         guard next.selectExistingTab(id, state: store.state,
                                      available: { ownership.canUse($0, owner: presentationID) }) else { return }
+        if id != currentTabID { markTabSelect(id, source: "script") }
         pendingNativeSelection = nil
         if let peek = activePeek, peek.parentPage === page {
             DispatchQueue.main.async { [weak self, weak peek] in
@@ -8544,6 +8575,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         recordRecentTabSelection()
         guard existingNativeSelection(browser, page)?.1 === view else { return }
         render(store.state)
+        markTabShownIfVisible()
         guard existingNativeSelection(browser, page)?.1 === view,
               currentTabID == id, renderedPaneIDs.contains(id),
               let window, window.attachedSheet == nil, commandBar == nil,
@@ -11154,6 +11186,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard canSelectAdjacentTab(forward: forward), let item = positionalDestination(forward: forward),
               canSelectTabCommandItem(item) else { return }
         sidebarPreviews?.dismiss()
+        markTabSelect(item.focusedTabID, source: "shortcut")
         selectRecentItem(item)
     }
 
@@ -11175,6 +11208,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard canSelectSidebarItem(number: number), let item = sidebarItemDestination(number: number),
               item.tabIDs != selectedTabIDs else { return }
         sidebarPreviews?.dismiss()
+        markTabSelect(item.focusedTabID, source: "shortcut")
         _ = selectRecentItem(item)
     }
 
@@ -11187,6 +11221,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebarPreviews?.dismiss()
         let previous = tabSelectionHistory
         guard let item = tabSelectionHistory.move(in: activeSpaceID, forward: forward, available: canSelectTabCommandItem) else { return }
+        markTabSelect(item.focusedTabID, source: "shortcut")
         if !selectRecentItem(item) { tabSelectionHistory = previous }
     }
 
@@ -11245,7 +11280,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let self, let controller, self.tabSwitcher === controller else { return }
             self.tabSwitcher = nil
             self.noteReturnGate()
-            if let selection { self.selectRecentItem(selection) }
+            if let selection {
+                self.markTabSelect(selection.focusedTabID, source: "shortcut")
+                self.selectRecentItem(selection)
+            }
         }
         controller.onCloseItem = { [weak self, weak controller, weak window] selection, completion in
             guard let self, let controller, self.tabSwitcher === controller,
@@ -15401,6 +15439,7 @@ extension BrowserWindowController: BrowserScriptOwner {
         if action == .select {
             guard activePeek == nil else { throw BrowserScriptError.busy }
             commandBar?.dismiss(); navigationHistory?.dismiss(); closeLibrary(restoreFocus: false)
+            markTabSelect(id, source: "script")
             guard selectTab(id) else { throw BrowserScriptError.busy }
             focusSelectedLocalContent()
             return

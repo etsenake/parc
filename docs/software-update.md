@@ -11,8 +11,9 @@ notes generation is covered by [What's New](../Sources/WhatsNew/README.md).
 `SoftwareUpdateSession` is the AppKit/Sparkle-independent state model. Distribution
 packages carry the pinned Sparkle framework, feed and verification key. Without
 `SUFeedURL`, Sparkle never starts and Check for Updates remains disabled with
-“Updates are only available in released builds.” `--parc-profile` and
-`--disable-software-updater` also block updater startup.
+“Updates are only available in released builds.” `--parc-profile`,
+`--disable-software-updater` and `--parc-test-instance` also block updater
+startup; a test instance also skips the completed-update What's New card.
 
 ## Menus
 

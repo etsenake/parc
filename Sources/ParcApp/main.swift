@@ -30,6 +30,10 @@ final class ParcApplication: PCNativeApplication, CrAppControlProtocol {
         let previous = handlingEvent
         handlingEvent = true
         defer { handlingEvent = previous }
+        if event.type == .keyDown, let marks = PerfMarks.shared {
+            marks.mark("keydown", ["keyCode": Int(event.keyCode),
+                                   "modifierFlags": Int(event.modifierFlags.intersection(.deviceIndependentFlagsMask).rawValue)])
+        }
         let traceMouse = inputDiagnosticsEnabled &&
             [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
              .otherMouseDown, .otherMouseUp].contains(event.type)
@@ -62,6 +66,7 @@ final class ParcApplication: PCNativeApplication, CrAppControlProtocol {
 }
 
 MainActor.assumeIsolated {
+    PerfMarks.shared?.mark("main")
     let application = ParcApplication.shared
     precondition(application is ParcApplication, "NSApplication was created before ParcApplication")
     application.setActivationPolicy(.regular)
