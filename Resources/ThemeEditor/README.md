@@ -5,14 +5,15 @@
 ## Grid and texture controls
 
 `DotGrid.png`, `DenimKnob.png`, `GrainKnob.png`, `SandKnob.png` and
-`TweedKnob.png` come from `ARC_SpaceStyleEditor.bundle/Contents/Resources/Assets.car`.
-AppKit selected the native 2× bitmaps and ImageIO wrote them without resizing or
-redrawing, preserving their embedded color profiles and alpha.
+`TweedKnob.png` are Parc's own procedural artwork, drawn from fixed random
+seeds and supersampled before downsampling.
 
-DotGrid is template artwork at 799 × 801 pixels, with an original logical size
-of 400 × 401. Each knob is 112 × 112 pixels with a nominal 56-point size;
-the source GrainKnob reports 56 × 57. Keep native layout dimensions separate
-from pixel dimensions.
+DotGrid is template artwork at 799 × 801 pixels: 2.2-pixel dots on a 10-pixel
+grid, drawn at the 2× scale of a 400 × 401-point canvas. Each knob is a
+112 × 112-pixel swatch for a nominal 56-point control: a steep 3/1 denim
+twill with thread shading, translucent grey grain fading darker toward the
+bottom, sand pebbles with lit faces and dark gaps, and a tweed of short curved
+fibres. Keep layout dimensions separate from pixel dimensions.
 
 ## Appearance animations
 
