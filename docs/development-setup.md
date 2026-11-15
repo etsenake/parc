@@ -5,7 +5,7 @@ This page documents the prerequisite and build commands it uses.
 
 Clone Parc to get its application source, reviewed engine overlays, build tools,
 resources and focused tests. Restore the pinned engine artifacts from the
-repository's private release assets using the [engine artifact guide](engine-artifacts.md).
+maintainer's private archive repository, `etsenake/parc-private`, using the [engine artifact guide](engine-artifacts.md).
 The completed app-and-engine package is available separately. The larger
 workspace snapshot retains Chromium source, build tools and compiled work for
 incremental development.
@@ -232,7 +232,7 @@ fixture or change a real profile.
 ## What to carry over from the old Mac
 
 Git carries the reusable application/build tools and pinned artifact manifests.
-The private release assets carry the completed engine package and build workspace
+The private archive's release assets carry the completed engine package and build workspace
 archives. Use the documented restore commands so their hashes,
 provenance and compatibility are checked. Do not manually rewrite receipts to
 make a copied workspace pass validation. Code-signing certificates and local app

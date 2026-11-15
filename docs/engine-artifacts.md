@@ -33,7 +33,8 @@ incrementally whatever Xcode it has installed.
 
 ## Restore the saved artifacts
 
-The private release stores the **existing incremental workspace** and the **last
+A release in the maintainer's private archive repository, `etsenake/parc-private`,
+stores the **existing incremental workspace** and the **last
 completed development package** separately. Restoring the workspace preserves
 source repositories, toolchains, object files and Siso build state. Its captured
 receipt may describe an unfinished build; the snapshot does not turn it into a
@@ -44,7 +45,7 @@ The development package includes `Parc.app`, its sibling
 engine libraries and its original `package-report.json`.
 
 Use Python 3.12 or later and authenticate GitHub CLI with access to
-`etsenake/parc`. The release and SHA-256 identities are pinned in
+`etsenake/parc-private`. The release and SHA-256 identities are pinned in
 `Engine/engine-artifacts.json`. Git pull updates that pin without automatically
 downloading or replacing local files.
 
@@ -125,7 +126,8 @@ python3 scripts/engine-artifacts.py create-package \
 Capture streams gzip directly into parts capped at 2,000,000,000 bytes; there is
 no full intermediate engine copy or unsplit archive. It writes
 `<name>.manifest.json`, `<name>.inventory.jsonl` and numbered parts. Upload all
-files to a new private release and commit the pin below using the actual
+files to a new release in `etsenake/parc-private`, never the public
+repository, and commit the pin below using the actual
 manifest hashes and metadata hashes printed by the commands. Never replace an
 earlier release's assets.
 
@@ -133,7 +135,7 @@ earlier release's assets.
 {
   "schema_version": 1,
   "target": "mac-arm64",
-  "repository": "etsenake/parc",
+  "repository": "etsenake/parc-private",
   "release": "engine-snapshot-YYYY-MM-DD",
   "source_revision": "MATCHING_PARC_COMMIT_WITH_RESTORE_TOOLS",
   "artifacts": {
