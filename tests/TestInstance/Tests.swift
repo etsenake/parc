@@ -51,19 +51,25 @@ struct TestInstanceTests {
         var displayed = false
         marks.markAfterDisplay("command-bar-typeable") { displayed = true; return true }
         marks.markAfterDisplay("never") { false }
+        var checks = 0
+        marks.markAfterDisplay("late") { checks += 1; return checks >= 3 }
+        marks.markAfterDisplay("expired", within: 0) { false }
         check(!displayed, "Display marks wait for the run loop")
         for _ in 0..<5 { CFRunLoopRunInMode(.defaultMode, 0.01, false) }
         check(displayed, "Display mark ran after the run loop turn")
+        let lateChecks = checks
+        for _ in 0..<3 { CFRunLoopRunInMode(.defaultMode, 0.01, false) }
+        check(lateChecks == 3 && checks == 3, "A display mark keeps checking until its condition holds, then stops")
         let again = try PerfMarks(path: file.path).unwrap()
         again.mark("keydown", ["keyCode": 17, "modifierFlags": 1_048_576])
         let records = try String(contentsOf: file, encoding: .utf8).split(separator: "\n").map {
             try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any]
         }
-        check(records.map { $0["mark"] as? String } == ["main", "tab-select", "command-bar-typeable", "keydown"],
+        check(records.map { $0["mark"] as? String } == ["main", "tab-select", "command-bar-typeable", "late", "keydown"],
               "One JSON line per mark, appended across opens")
         check(records.allSatisfy { (($0["t"] as? Double) ?? 0) >= before - 1 }, "Epoch milliseconds")
         check(records[1]["tab"] as? String == "7C1A" && records[1]["source"] as? String == "click", "String fields")
-        check(records[3]["keyCode"] as? Int == 17 && records[3]["modifierFlags"] as? Int == 1_048_576, "Number fields")
+        check(records[4]["keyCode"] as? Int == 17 && records[4]["modifierFlags"] as? Int == 1_048_576, "Number fields")
         print("TestInstance: \(assertions) assertions passed")
     }
 }

@@ -21,11 +21,18 @@ final class PerfMarks: Sendable {
         _ = line.withUnsafeBytes { write(descriptor, $0.baseAddress, $0.count) }
     }
 
-    func markAfterDisplay(_ name: String, _ fields: [String: Any] = [:], when condition: @escaping @MainActor () -> Bool) {
+    func markAfterDisplay(_ name: String, _ fields: [String: Any] = [:], within seconds: TimeInterval = 5,
+                          when condition: @escaping @MainActor () -> Bool) {
         let activities = CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.exit.rawValue
-        let observer = CFRunLoopObserverCreateWithHandler(nil, activities, false, Self.afterDisplayOrder) { [self] _, _ in
+        let deadline = Date().addingTimeInterval(seconds)
+        let observer = CFRunLoopObserverCreateWithHandler(nil, activities, true, Self.afterDisplayOrder) { [self] observer, _ in
             MainActor.assumeIsolated {
-                if condition() { mark(name, fields) }
+                if condition() {
+                    CFRunLoopObserverInvalidate(observer)
+                    mark(name, fields)
+                } else if Date() >= deadline {
+                    CFRunLoopObserverInvalidate(observer)
+                }
             }
         }
         CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)

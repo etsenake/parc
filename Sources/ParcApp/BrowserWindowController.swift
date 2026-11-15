@@ -6955,7 +6955,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 return self.closeTabMovingHere(expected.id)
             }
             self.markTabSelect(expected.id, source: "click")
-            return self.selectTab(expected.id)
+            return self.settleTabSelectMark(self.selectTab(expected.id))
         }
     }
 
@@ -7595,9 +7595,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func markTabSelect(_ id: UUID, source: String) {
-        guard let marks = PerfMarks.shared else { return }
+        guard let marks = PerfMarks.shared, id != currentTabID else { return }
         pendingTabShownMark = id
         marks.mark("tab-select", ["tab": id.uuidString, "source": source])
+    }
+
+    @discardableResult
+    private func settleTabSelectMark(_ selected: Bool) -> Bool {
+        if !selected { pendingTabShownMark = nil }
+        return selected
     }
 
     private func markTabShownIfVisible() {
@@ -7610,7 +7616,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   page.nativeView.isDescendant(of: browser) else { return }
         }
         pendingTabShownMark = nil
-        marks.mark("tab-shown", ["tab": id.uuidString])
+        marks.markAfterDisplay("tab-shown", ["tab": id.uuidString]) { true }
     }
 
     func embeddedEaselPages(forTabID id: UUID) -> [PCNativePage] { easelEditors[id]?.editor.pageObjects?.pages ?? [] }
@@ -8556,7 +8562,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         var next = presentation
         guard next.selectExistingTab(id, state: store.state,
                                      available: { ownership.canUse($0, owner: presentationID) }) else { return }
-        if id != currentTabID { markTabSelect(id, source: "script") }
+        markTabSelect(id, source: "script")
         pendingNativeSelection = nil
         if let peek = activePeek, peek.parentPage === page {
             DispatchQueue.main.async { [weak self, weak peek] in
@@ -11187,7 +11193,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               canSelectTabCommandItem(item) else { return }
         sidebarPreviews?.dismiss()
         markTabSelect(item.focusedTabID, source: "shortcut")
-        selectRecentItem(item)
+        settleTabSelectMark(selectRecentItem(item))
     }
 
     private func sidebarItemDestination(number: Int) -> RecentTabOrder.Item? {
@@ -11209,7 +11215,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               item.tabIDs != selectedTabIDs else { return }
         sidebarPreviews?.dismiss()
         markTabSelect(item.focusedTabID, source: "shortcut")
-        _ = selectRecentItem(item)
+        settleTabSelectMark(selectRecentItem(item))
     }
 
     func canCycleTabHistory(forward: Bool) -> Bool {
@@ -11222,7 +11228,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let previous = tabSelectionHistory
         guard let item = tabSelectionHistory.move(in: activeSpaceID, forward: forward, available: canSelectTabCommandItem) else { return }
         markTabSelect(item.focusedTabID, source: "shortcut")
-        if !selectRecentItem(item) { tabSelectionHistory = previous }
+        if !settleTabSelectMark(selectRecentItem(item)) { tabSelectionHistory = previous }
     }
 
     var canShowRecentTabSwitcher: Bool {
@@ -11282,7 +11288,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.noteReturnGate()
             if let selection {
                 self.markTabSelect(selection.focusedTabID, source: "shortcut")
-                self.selectRecentItem(selection)
+                self.settleTabSelectMark(self.selectRecentItem(selection))
             }
         }
         controller.onCloseItem = { [weak self, weak controller, weak window] selection, completion in
@@ -15440,7 +15446,7 @@ extension BrowserWindowController: BrowserScriptOwner {
             guard activePeek == nil else { throw BrowserScriptError.busy }
             commandBar?.dismiss(); navigationHistory?.dismiss(); closeLibrary(restoreFocus: false)
             markTabSelect(id, source: "script")
-            guard selectTab(id) else { throw BrowserScriptError.busy }
+            guard settleTabSelectMark(selectTab(id)) else { throw BrowserScriptError.busy }
             focusSelectedLocalContent()
             return
         }

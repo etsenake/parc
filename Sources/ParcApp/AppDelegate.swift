@@ -285,7 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 trace("runtime.application=" + NSStringFromClass(type(of: NSApp)))
                 started = true
                 pendingImportResume = testInstance.isActive ? nil : try? BrowserImportRestartIntent.take(from: root)
-                if pendingImportResume?.replay != true { Self.removeReplayRestartDraft(in: root) }
+                if !testInstance.isActive, pendingImportResume?.replay != true { Self.removeReplayRestartDraft(in: root) }
                 ProfileRemovalController.shared.configure(store: store)
                 let presentImportFailures = { [weak self] in
                     guard NSApp.isActive, let front = self?.front, front.window?.isKeyWindow == true else { return }
