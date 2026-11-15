@@ -28,16 +28,16 @@ for their use.
 ## Animated rail icons
 
 `screenshots.json`, `downloads.json`, `easels.json`, `spaces.json` and
-`archive.json` are unchanged Lottie compositions from the same HomeButton bundle.
-`boosts.json` is not included because Boosts are excluded.
+`archive.json` are Parc's own Lottie compositions on a 128 × 128 canvas at 60
+frames per second: two photo cards that fan apart, a download ring whose arrow
+drops in, an easel canvas with a triangle and circle that tilts and settles,
+two Space cards that spread, and an archive box whose lid lifts and lands. Each
+uses only shape layers, parenting, path strokes and fills, and carries the
+`hover-start` (1), `hover-end` (11) and `selection-end` (35) markers.
 
 `LibraryRailAnimation` renders the files directly; Parc does not bundle a
 Lottie runtime. It colors `primaryColor` and `secondaryColor` layers with the
 theme's `maxContrastColor` and `cutoutColor`. Selection plays `hover-start` to
 `selection-end` once unless Reduce Motion is on. Deselection does not interrupt
-an animation. Completion parks on `selection-end`; an unplayed page shows
-frame 0 (`ip`).
-
-The renderer draws the stored shape paths without the 12 Offset Path modifiers
-in `easels`, `spaces` and `archive`. Those modifiers specify a −0.5-unit inset
-with miter joins.
+an animation. Completion parks on `selection-end`, where the archive lid rests
+slightly higher than before; an unplayed page shows frame 0 (`ip`).
