@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.5.1 (2026-11-15)
+
+### Fixed
+
+- **themes:** Redraw the grain, sand, denim and tweed textures and their picker swatches so they read as fine grain, gravel, woven threads and fibre
+- **onboarding:** Give the welcome screen soft colour film grain instead of harsh grey static
+- **library:** Spring the rail icons when a page is picked and give Easels & Notes the paintbrush from its cards
+- **splits:** Snap the split menu icons to the pixel grid so they render crisp on retina
+- **sidebar:** Centre the New Split menu icon's plus inside its right pane instead of crowding the edge
+- **library:** Make the Library button's hover glow rise from the box instead of fading toward it
+- **settings:** Give the membership card a fine date-ticket hatch and vivid fallback gradients
+- **themes:** Match the theme editor's dot grid weight and give the sun icon short rays close to its disc
+- **onboarding:** Fill the welcome orb's mask to its canvas so the opening orb appears at full size
+- **shortcuts:** Give the shortcuts keycap face livelier head moves, snappier blinks and a bigger wink
+- **window-frame:** Render the crank at twice your screen's sharpness so its curves and shadow stop looking like they were cut out with safety scissors
+
 ## 2.5.0 (2026-11-15)
 
 ### New
