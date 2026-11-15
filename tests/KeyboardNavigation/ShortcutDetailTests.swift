@@ -156,7 +156,7 @@ import Carbon.HIToolbox
         expect(keycaps.presentation == .introduction && picker.isHidden, "Filtering selected action away restores introduction")
         let data = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
         let artwork = ShortcutSmileyArtwork(data: data)!
-        expect(artwork.frameRate == 30 && artwork.duration == 5, "Bundled original animation timeline")
+        expect(artwork.frameRate == 30 && artwork.duration == 5, "Bundled winking-face timeline")
         func pixels(_ seconds: Double) -> Data {
             let context = CGContext(data: nil, width: 100, height: 100, bitsPerComponent: 8, bytesPerRow: 400,
                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
@@ -164,13 +164,13 @@ import Carbon.HIToolbox
             return Data(bytes: context.data!, count: 40000)
         }
         let initial = pixels(0), middle = pixels(1), final = pixels(5)
-        expect(initial != middle && middle != final, "Actual parent transforms, eye scale and smile morph affect rendered vectors")
+        expect(initial != middle && middle != final, "Face transform, eye scale and mouth morph affect rendered vectors")
         expect(final == pixels(50), "Play-once endpoint clamps instead of looping")
         expect(initial == pixels(-1), "Reduced-motion initial frame is stable")
         let alpha = stride(from: 3, to: initial.count, by: 4).filter { initial[$0] != 0 }
-        expect(alpha.count > 500 && alpha.count < 1800, "Original three strokes render inside the mask without a solid rectangle")
+        expect(alpha.count > 500 && alpha.count < 1800, "The face's three strokes render inside the mask without a solid rectangle")
         expect(initial[(60 * 100 + 39) * 4 + 3] > 0 && initial[(60 * 100 + 60) * 4 + 3] > 0,
-               "Parented eye paths occupy their original canvas positions")
+               "Both eyes occupy their canvas positions")
         let smiley = ShortcutSmileyView(frame: .zero)
         expect(!smiley.acceptsFirstResponder && smiley.hitTest(.zero) == nil && !smiley.isAccessibilityElement(), "Animated decoration is passive and hidden from AX")
         let commandWindow = ShortcutMenuWindow(contentRect: view.frame, styleMask: .titled, backing: .buffered, defer: false)
