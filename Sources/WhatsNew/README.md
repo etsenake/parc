@@ -32,7 +32,7 @@ The wave follows `y = maxY − A + (A / 2) · sin(−2πx / 20)` with a 20 pt
 wavelength. A 20 × 6 pt CSS mask holds one period; release dividers reuse the
 wave as a line. An SVG noise filter uses `#2F39FF`, and the shared
 `Resources/ThemeTextures/grain.png` tile repeats every 100 px with overlay
-blending; `scripts/artwork.py` generates that tile. Small inline assets keep the
+blending. Small inline assets keep the
 page self-contained and quick to load.
 
 Headings use Cormorant Garamond SemiBold Italic, selected from rendered

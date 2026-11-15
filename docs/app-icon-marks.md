@@ -20,10 +20,9 @@ Packaging copies both marks with `Resources`; no runtime generation is needed.
 
 ## Asset preservation
 
-Regenerate with `scripts/derive_app_icon_marks.py`, supplying the retained
-approved originals and a distinct output directory. Review output and preservation
-fingerprints before replacing assets. This deterministic tool preserves artwork;
-do not redraw or generate replacement masters as routine maintenance.
+The marks and cleaned masters were produced once by a deterministic process
+that preserves the artwork; do not redraw or regenerate them as routine
+maintenance.
 
 The cleaned masters preserve every RGB byte, including hidden RGB, and every
 pixel with alpha at least 128. Only low-alpha debris farther than two pixels from

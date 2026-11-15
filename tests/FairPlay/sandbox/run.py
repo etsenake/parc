@@ -29,8 +29,7 @@ import tempfile
 import time
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
-DEFAULT_SOURCE = pathlib.Path(
-    "/Users/josh/Documents/Codex/2026-10-23/re/work/engine-source/chromium/src")
+DEFAULT_SOURCE = REPO / "work/engine/chromium/src"
 PROBE_NAME = "fpsbprobe"
 SCENARIOS = ["h264", "hevc", "dolby-vision", "eac3", "ac3", "audio-switch", "video-switch", "hls-ts", "hls-fmp4"]
 CHROMIUM_MEDIA = ["glass-blowing2-dolby-vision-profile-5-frag.mp4",

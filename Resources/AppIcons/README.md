@@ -23,10 +23,9 @@ defines the selectable variants.
 The approved deterministic processing preserves
 the artwork. The masters now have their outer alpha debris removed while every
 RGB byte and every pixel with alpha at least 128 remains identical to the approved
-input. `artwork-provenance.json` records the preservation fingerprints. The
-source-owned `scripts/derive_app_icon_marks.py` maintenance tool also extracts
-`Marks/Borderless.png` from Original's colored P and derives
-`Marks/Monochrome.png` with the identical alpha. These are UI marks, not extra
+input. `artwork-provenance.json` records the preservation fingerprints.
+`Marks/Borderless.png` was extracted from Original's colored P, and
+`Marks/Monochrome.png` shares its exact alpha. These are UI marks, not extra
 selectable Dock icons. The borderless mark is used by welcome/import branding;
 the monochrome mark is tinted by the actual portrait-export compositor. Their
 geometry, provenance and checks are in [UI marks](../../docs/app-icon-marks.md).

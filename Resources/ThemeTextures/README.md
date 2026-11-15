@@ -1,12 +1,7 @@
 # Theme renderer textures
 
-`grain.png`, `sand.png`, `denim.png` and `tweed.png` are Parc's procedural
-surface textures. `scripts/artwork.py` generates each one from a fixed seed with
-the Python standard library, so rerunning it reproduces the same bytes:
-
-```sh
-python3 scripts/artwork.py Resources/ThemeTextures/grain.png
-```
+`grain.png`, `sand.png`, `denim.png` and `tweed.png` are Parc's own procedural
+surface textures, generated from fixed random seeds:
 
 - `grain.png`: 200 × 200 straight-alpha colour noise at alpha 66, softened by a
   wrapped three-tap kernel so the 100-point tile repeats without a seam.

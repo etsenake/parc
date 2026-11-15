@@ -27,8 +27,7 @@ the placeholder's consumer.
 `note.png` is Parc's P mark (`Resources/AppIcons/Marks/Monochrome.png`) with a
 cursor bar; `easel.png` is a paintbrush laying a stroke. Both are coral, with
 lighter `-dark` variants, at 18 and 36 pixels for the 18-point card artwork.
-`scripts/library_icons.py` renders them from vector geometry with 8x
-supersampling (it needs fontTools, skia-pathops and Pillow). These are colored
+They were drawn for Parc as vectors and rendered with 8x supersampling. These are colored
 images, not templates. See [documents Library](../../docs/documents-library-grid.md)
 for their use.
 

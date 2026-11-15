@@ -7,10 +7,9 @@ small controls.
 
 - `ionicons.ttf` holds the 59 sidebar icons from Ionicons 5.1.2 and
   `feather.ttf` holds 16 glyphs from Feather 4.29.2, both MIT-licensed
-  (`LICENSE-ionicons.txt`, `LICENSE-feather.txt`). `scripts/icon_fonts.py`
-  downloads both packages from npm, turns their strokes into fills and builds the
-  fonts at the code points Parc's source uses; it needs fontTools, picosvg and
-  skia-pathops.
+  (`LICENSE-ionicons.txt`, `LICENSE-feather.txt`). Each glyph is the upstream
+  SVG with its strokes turned into fills, placed at the code point Parc's source
+  uses.
 - Every `SidebarIconType` except Linear and Figma uses an ionicons glyph.
 - Feather supplies Remove (U+E9F0, trash), the eight emoji categories (smile
   U+E9DE, sun U+E9E3, coffee U+E943, award U+E919, truck U+E9F6, gift U+E971,
