@@ -29,15 +29,21 @@ for their use.
 
 `screenshots.json`, `downloads.json`, `easels.json`, `spaces.json` and
 `archive.json` are Parc's own Lottie compositions on a 128 × 128 canvas at 60
-frames per second: two photo cards that fan apart, a download ring whose arrow
-drops in, an easel canvas with a triangle and circle that tilts and settles,
-two Space cards that spread, and an archive box whose lid lifts and lands. Each
-uses only shape layers, parenting, path strokes and fills, and carries the
-`hover-start` (1), `hover-end` (11) and `selection-end` (35) markers.
+frames per second: two photo cards, a download ring and arrow, an easel canvas
+with the Easel card's paintbrush and stroke, two Space cards, and an archive box
+with a lid. Each selection is a spring: the icon squashes and winds up through
+`hover-end`, launches with a stretch and hop on an overshooting curve, swings
+past rest and settles exactly back on its first frame by `selection-end`. The
+photo cards press together and fan out, the arrow lifts then drops and bounces,
+the paintbrush winds back and sweeps its stroke on again, the front Space card
+swings wide against the back one, and the lid flies up and lands with a bounce.
+Each uses only shape layers, nested parenting, transforms, path strokes and
+fills, and carries the `hover-start` (1), `hover-end` (11) and `selection-end`
+(35) markers.
 
 `LibraryRailAnimation` renders the files directly; Parc does not bundle a
 Lottie runtime. It colors `primaryColor` and `secondaryColor` layers with the
 theme's `maxContrastColor` and `cutoutColor`. Selection plays `hover-start` to
 `selection-end` once unless Reduce Motion is on. Deselection does not interrupt
-an animation. Completion parks on `selection-end`, where the archive lid rests
-slightly higher than before; an unplayed page shows frame 0 (`ip`).
+an animation. Completion parks on `selection-end`, which matches frame 0 (`ip`), the pose
+an unplayed page shows.
