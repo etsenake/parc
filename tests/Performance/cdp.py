@@ -51,6 +51,8 @@ def parse_frame(buffer: bytearray):
         if len(buffer) < 10:
             return None
         size = struct.unpack("!Q", buffer[2:10])[0]
+        if size >> 63:
+            raise WebSocketClosed("websocket frame length is invalid")
         offset = 10
     masked = bool(second & 0x80)
     key = bytes(buffer[offset:offset + 4]) if masked else b""
@@ -122,7 +124,11 @@ class WebSocket:
     def receive(self, deadline: float) -> str:
         parts, kind = [], None
         while True:
-            parsed = parse_frame(self.buffer)
+            try:
+                parsed = parse_frame(self.buffer)
+            except WebSocketClosed:
+                self.state = CLOSED
+                raise
             if parsed is None:
                 try:
                     self.fill(deadline)
@@ -137,7 +143,11 @@ class WebSocket:
                 self.close()
                 raise WebSocketClosed("websocket closed")
             if opcode == 0x9:
-                self.send(0xA, payload)
+                try:
+                    self.send(0xA, payload)
+                except OSError:
+                    self.state = CLOSED
+                    raise
                 continue
             if opcode == 0xA:
                 continue
@@ -191,17 +201,21 @@ class Socket:
         self.ready()
         self.seq += 1
         ident = self.seq
-        timed_out = {"error": {"message": f"{method} timed out"}}
         deadline = time.monotonic() + timeout / 1000
+
+        def failed(error: OSError) -> dict:
+            closed = isinstance(error, WebSocketClosed)
+            return {"error": {"message": "websocket closed" if closed else f"{method} timed out"}}
+
         try:
             self.ws.send_text(json.dumps({"id": ident, "method": method, "params": params or {}}))
-        except OSError:
-            return timed_out
+        except OSError as error:
+            return failed(error)
         while True:
             try:
                 text = self.ws.receive(deadline)
-            except OSError:
-                return timed_out
+            except OSError as error:
+                return failed(error)
             try:
                 message = json.loads(text)
             except ValueError:

@@ -85,13 +85,6 @@ class RefusalTests(unittest.TestCase):
 
 
 class EntitlementTests(unittest.TestCase):
-    def test_authority_is_the_first_one_codesign_names(self):
-        self.assertEqual(app_copy.authority(DETAILS), "Developer ID Application: Example (TEAM123456)")
-
-    def test_unsigned_or_ad_hoc_apps_sign_ad_hoc(self):
-        self.assertEqual(app_copy.authority("Executable=/x\nSignature=adhoc\n"), "-")
-        self.assertEqual(app_copy.authority(""), "-")
-
     def test_no_entitlements_read_as_empty(self):
         self.assertEqual(app_copy.granted_entitlements(b""), {})
         self.assertEqual(app_copy.granted_entitlements(b"\n"), {})
@@ -129,11 +122,9 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(app_copy.clone_command(source, copy), ["cp", "-cR", "/b/Parc.app", "/c/Parc.app"])
         self.assertEqual(app_copy.entitlements_command(source),
                          ["codesign", "-d", "--entitlements", "-", "--xml", "/b/Parc.app"])
-        self.assertEqual(app_copy.details_command(source), ["codesign", "-dvv", "/b/Parc.app"])
-        self.assertEqual(app_copy.sign_command("Developer ID Application: Example (TEAM123456)", plist, copy),
-                         ["codesign", "--force", "--sign", "Developer ID Application: Example (TEAM123456)",
-                          "--timestamp=none", "--options", "runtime", "--entitlements", "/c/entitlements.plist",
-                          "/c/Parc.app"])
+        self.assertEqual(app_copy.sign_command(plist, copy),
+                         ["codesign", "--force", "--sign", "-", "--timestamp=none", "--options", "runtime",
+                          "--entitlements", "/c/entitlements.plist", "/c/Parc.app"])
 
 
 class PrepareTests(unittest.TestCase):
@@ -161,14 +152,13 @@ class PrepareTests(unittest.TestCase):
         self.prepare(fake)
         self.assertEqual([command[:2] for command in fake.commands], [["cp", "-cR"], ["codesign", "-d"]])
 
-    def test_missing_entitlements_resign_with_the_original_identity(self):
+    def test_missing_entitlements_resign_ad_hoc_without_the_keychain(self):
         fake = FakeCodesign(granted=entitlements({JIT: True}))
         copy = self.prepare(fake, entitlements=app_copy.INJECTION_ENTITLEMENTS)
         plist = self.out / "entitlements.plist"
         self.assertEqual(plistlib.loads(plist.read_bytes()), {JIT: True, DYLD: True, LIBRARY: True})
-        self.assertEqual(fake.commands[2], app_copy.details_command(self.app))
-        self.assertEqual(fake.commands[3], app_copy.sign_command("Developer ID Application: Example (TEAM123456)", plist, copy))
-        self.assertEqual(len(fake.commands), 4)
+        self.assertEqual(fake.commands[2], app_copy.sign_command(plist, copy))
+        self.assertEqual(len(fake.commands), 3)
 
     def test_ad_hoc_build_is_resigned_ad_hoc(self):
         fake = FakeCodesign(granted=b"", details="Signature=adhoc\n")
@@ -178,10 +168,25 @@ class PrepareTests(unittest.TestCase):
 
     def test_previous_copy_is_replaced(self):
         self.out.mkdir(parents=True)
-        (self.out / "stale").write_text("old")
+        (self.out / "entitlements.plist").write_text("old")
         (self.out / "Parc.app").mkdir()
         self.prepare(FakeCodesign(granted=entitlements({})))
         self.assertEqual(sorted(path.name for path in self.out.iterdir()), ["Parc.app"])
+
+    def test_folder_with_other_files_is_kept(self):
+        self.out.mkdir(parents=True)
+        (self.out / "notes.txt").write_text("mine")
+        fake = FakeCodesign()
+        with patch.object(app_copy.subprocess, "run", side_effect=fake):
+            with self.assertRaisesRegex(ValueError, "notes.txt"):
+                app_copy.prepare_app(self.app, self.out)
+        self.assertEqual(fake.commands, [])
+        self.assertEqual((self.out / "notes.txt").read_text(), "mine")
+
+    def test_installed_app_is_refused_whatever_the_case(self):
+        for path in ("/applications/Parc.app", "/System/Volumes/Data/Applications/Parc.app"):
+            with self.subTest(path=path):
+                self.assertTrue(app_copy.installed(path))
 
     def test_installed_app_runs_nothing(self):
         fake = FakeCodesign()

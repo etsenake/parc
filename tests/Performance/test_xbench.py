@@ -8,6 +8,7 @@ from pathlib import Path
 import plistlib
 import tempfile
 import unittest
+import unittest.mock
 
 import cdp
 import instance
@@ -504,6 +505,63 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual([t["id"] for t in session["tabs"]], ["b"])
         self.assertEqual(session["windows"][0], {"tabIds": ["b"], "frame": [40, 102, 1280, 800]})
         self.assertNotIn("frame", session["windows"][1])
+
+
+class SafetyTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(os.path.realpath(self.temp.name))
+
+    def test_installed_apps_are_recognized_whatever_the_case(self):
+        for path in ("/Applications/Parc.app", "/applications/Parc.app", "/System/Volumes/Data/Applications/x.app"):
+            with self.subTest(path=path):
+                self.assertTrue(xbench.in_applications(path))
+        self.assertFalse(xbench.in_applications(str(self.root / "Applications-copy/Parc.app")))
+
+    def test_inside_and_overlap_follow_whole_folders(self):
+        runs = self.root / "runs"
+        self.assertTrue(xbench.is_inside(str(runs / "parc-1/home"), str(runs / "parc-1")))
+        self.assertFalse(xbench.is_inside(str(runs / "parc-10"), str(runs / "parc-1")))
+        self.assertTrue(xbench.overlaps(str(runs), str(runs / "parc-1")))
+        self.assertFalse(xbench.overlaps(str(runs / "a"), str(runs / "b")))
+
+    def test_only_processes_running_from_a_copy_are_claimed(self):
+        apps, run = self.root / "apps", self.root / "out/runs/parc-1"
+        rows = [
+            {"pid": 11, "ppid": 1, "command": f"{apps}/parc/Parc.app/Contents/MacOS/Parc --parc-profile {run}/home/profile"},
+            {"pid": 12, "ppid": 1, "command": f"/usr/bin/tail -f {run}/home/perf-marks.jsonl"},
+            {"pid": 13, "ppid": 1, "command": f"{apps}/parc/Parc.app/Contents/MacOS/Parc --parc-profile {run}0/home/profile"},
+            {"pid": 14, "ppid": 1, "command": f"/Applications/Parc.app/Contents/MacOS/Parc --parc-profile {run}/home"},
+        ]
+        with unittest.mock.patch.object(xbench, "process_rows", return_value=rows):
+            self.assertEqual(xbench.pids_using(str(run), [str(apps)]), [11])
+
+    def test_prefs_snapshot_left_by_a_stopped_run_blocks_the_next(self):
+        guard = xbench.PrefsGuard(str(self.root), "example.domain")
+        os.makedirs(guard.dir)
+        for leftover in (guard.file, guard.absent):
+            with self.subTest(leftover=leftover):
+                Path(leftover).write_text("")
+                with self.assertRaisesRegex(RuntimeError, "run clean first"):
+                    guard.save()
+                os.unlink(leftover)
+
+    def test_base_home_cannot_be_the_real_home_or_its_library(self):
+        harness = xbench.Harness.__new__(xbench.Harness)
+        home = os.path.realpath(os.path.expanduser("~"))
+        for path in (home, os.path.dirname(home), os.path.join(home, "Library/Application Support/x")):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(RuntimeError, "real home folder"):
+                    harness.checked_base(path)
+        self.assertEqual(harness.checked_base(str(self.root / "dia-home")), str(self.root / "dia-home"))
+
+
+class FrameTests(unittest.TestCase):
+    def test_frame_length_with_the_top_bit_set_closes(self):
+        buffer = bytearray(b"\x81\x7f" + (1 << 63).to_bytes(8, "big"))
+        with self.assertRaises(cdp.WebSocketClosed):
+            cdp.parse_frame(buffer)
 
 
 if __name__ == "__main__":

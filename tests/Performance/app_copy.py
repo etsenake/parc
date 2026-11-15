@@ -2,7 +2,6 @@
 import os
 from pathlib import Path
 import plistlib
-import re
 import shutil
 import subprocess
 
@@ -13,7 +12,8 @@ ENTITLEMENTS_NAME = "entitlements.plist"
 
 
 def installed(path: str) -> bool:
-    return path.startswith("/Applications/")
+    lowered = path.lower()
+    return lowered.startswith("/applications/") or lowered.startswith("/system/volumes/data/applications/")
 
 
 def source_of(app) -> Path:
@@ -30,11 +30,6 @@ def refuse_overlap(source: Path, directory) -> None:
     target = Path(os.path.realpath(directory))
     if target == source or target in source.parents or source in target.parents:
         raise ValueError(f"{directory} and {source} overlap: pick a folder outside the app for its copy")
-
-
-def authority(details: str) -> str:
-    match = re.search(r"^Authority=(.+)$", details, re.MULTILINE)
-    return match.group(1) if match else "-"
 
 
 def granted_entitlements(xml: bytes) -> dict:
@@ -63,23 +58,18 @@ def entitlements_command(app: Path) -> list[str]:
     return ["codesign", "-d", "--entitlements", "-", "--xml", str(app)]
 
 
-def details_command(app: Path) -> list[str]:
-    return ["codesign", "-dvv", str(app)]
-
-
-def sign_command(identity: str, plist: Path, copy: Path) -> list[str]:
-    return ["codesign", "--force", "--sign", identity, "--timestamp=none", "--options", "runtime",
+def sign_command(plist: Path, copy: Path) -> list[str]:
+    return ["codesign", "--force", "--sign", "-", "--timestamp=none", "--options", "runtime",
             "--entitlements", str(plist), str(copy)]
-
-
-def signing_identity(app) -> str:
-    return authority(subprocess.run(details_command(Path(app)), capture_output=True, text=True).stderr)
 
 
 def clear(directory: Path) -> None:
     if directory.is_symlink() or directory.is_file():
-        directory.unlink()
-    elif directory.is_dir():
+        raise ValueError(f"{directory} is not a folder for an app copy")
+    if directory.is_dir():
+        unknown = sorted(set(os.listdir(directory)) - {COPY_NAME, ENTITLEMENTS_NAME})
+        if unknown:
+            raise ValueError(f"{directory} holds {', '.join(unknown)}: pick an empty folder or a previous copy")
         shutil.rmtree(directory)
 
 
@@ -97,5 +87,5 @@ def prepare_app(app, directory, entitlements=()) -> Path:
         return copy
     plist = directory / ENTITLEMENTS_NAME
     plist.write_bytes(plan)
-    subprocess.run(sign_command(signing_identity(source), plist, copy), check=True)
+    subprocess.run(sign_command(plist, copy), check=True)
     return copy

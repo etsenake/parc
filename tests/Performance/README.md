@@ -45,7 +45,9 @@ bench.json from either project reads the same way.
 
 Copies live under `build/perf/xbench/apps`, never in `/Applications`:
 `parc/Parc.app`, `ardia/Ardia.app`, `helium/Helium.app` and
-`chrome/Google Chrome.app`. Make the Parc copy from a released Parc:
+`chrome/Google Chrome.app`. The harness refuses to run any bundle outside that
+folder or the repository's `build` folder, so it can never launch, quit or
+unregister an installed browser. Make the Parc copy from a released Parc:
 
 ```sh
 python3 tests/Performance/xbench.py prepare-parc --app parc=<path to a released Parc.app>
@@ -89,7 +91,10 @@ complete and turns off update checks, What's New, pending import resumes and the
 quit warning for that run, and places the first window at the given frame. Without
 these switches Parc behaves exactly as before. The harness waits for a Parc window
 and a page target before creating tabs, and quits through `Browser.close`, then the
-quit probe, then SIGTERM.
+quit probe, then SIGTERM. Before the last memory reading it closes only its own test
+pages in Parc, leaving Parc's start page and internal extension pages, where other
+browsers close every page but the seed. Cleanup only signals processes running from
+a copy that name the run's folder.
 
 Parc's remote debugging server, `Target.createTarget`, `activateTarget`,
 `closeTarget` and `Browser.getWindowForTarget` use Chromium's own handlers; created

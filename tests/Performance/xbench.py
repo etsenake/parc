@@ -565,8 +565,30 @@ def launchd_jobs() -> list[str]:
     return [line.split("\t")[-1] for line in run_text(["launchctl", "list"]).split("\n") if LAUNCHD_VENDORS.search(line)]
 
 
-def pids_using(directory: str) -> list[int]:
-    found = [int(p) for p in run_text(["pgrep", "-f", directory]).split("\n") if p.strip().isdigit()]
+def path_forms(path: str) -> set[str]:
+    forms = {os.path.abspath(path), os.path.realpath(path)}
+    return forms | {f[len("/private"):] for f in forms if f.startswith("/private/")}
+
+
+def in_applications(path: str) -> bool:
+    real = os.path.realpath(path).lower().rstrip("/") + "/"
+    return real.startswith("/applications/") or real.startswith("/system/volumes/data/applications/")
+
+
+def is_inside(path: str, folder: str) -> bool:
+    real, base = os.path.realpath(path), os.path.realpath(folder).rstrip("/")
+    return real == base or real.startswith(base + "/")
+
+
+def overlaps(first: str, second: str) -> bool:
+    return is_inside(first, second) or is_inside(second, first)
+
+
+def pids_using(directory: str, roots) -> list[int]:
+    markers = tuple(form.rstrip("/") + "/" for form in path_forms(directory))
+    starts = tuple(form.rstrip("/") + "/" for root in roots for form in path_forms(root))
+    found = [r["pid"] for r in process_rows()
+             if any(m in r["command"] for m in markers) and r["command"].startswith(starts)]
     return list(dict.fromkeys(p for p in found if p and p != os.getpid()))
 
 
@@ -673,17 +695,21 @@ class PrefsGuard:
         self.domain = domain
         self.dir = os.path.join(out, "prefs-guard")
         self.file = os.path.join(self.dir, f"{domain}.plist")
+        self.absent = os.path.join(self.dir, f"{domain}.absent")
         self.existed = False
 
     def save(self):
         os.makedirs(self.dir, mode=0o700, exist_ok=True)
+        if os.path.exists(self.file) or os.path.exists(self.absent):
+            raise RuntimeError(f"a stopped run left {self.domain}'s settings snapshot: run clean first")
         self.existed = os.path.exists(os.path.join(os.environ["HOME"], "Library/Preferences", f"{self.domain}.plist"))
         if self.existed:
-            rm_rf(self.file)
             subprocess.run(["sh", "-c", 'umask 077 && exec defaults export "$0" "$1"', self.domain, self.file], check=True)
             first = os.path.join(self.dir, f"{self.domain}.first.plist")
             if not os.path.exists(first):
                 subprocess.run(["cp", "-p", self.file, first], check=True)
+        else:
+            Path(self.absent).write_text("")
         return self
 
     def restore(self):
@@ -691,6 +717,7 @@ class PrefsGuard:
         if self.existed:
             subprocess.run(["defaults", "import", self.domain, self.file], check=True)
         rm_rf(self.file)
+        rm_rf(self.absent)
 
 
 class Instance:
@@ -971,11 +998,23 @@ class Harness:
     def bundle_of(self, name: str) -> str:
         given = self.option_for(self.opt.app, name)
         app = os.path.abspath(given if given else os.path.join(self.opt.apps, name, os.path.basename(spec(name)["bundle"])))
-        if os.path.realpath(app).startswith("/Applications/"):
+        if in_applications(app):
             raise RuntimeError(f"{app} is in /Applications: run a copy")
+        if not any(is_inside(app, folder) for folder in self.copy_roots()):
+            raise RuntimeError(f"{app} is outside {self.opt.apps} and the repository's build folder: run a copy kept there")
         if not os.path.exists(app):
             raise RuntimeError(f"no {name} copy at {app}")
         return app
+
+    def copy_roots(self) -> list[str]:
+        return [os.path.abspath(self.opt.apps), str(REPO / "build")]
+
+    def checked_base(self, path: str) -> str:
+        base = os.path.abspath(path)
+        home = os.path.realpath(os.path.expanduser("~"))
+        if is_inside(home, base) or is_inside(base, os.path.join(home, "Library")):
+            raise RuntimeError(f"--base {path} is the real home folder or inside ~/Library: use a separate folder")
+        return base
 
     def is_test_page(self, target: dict) -> bool:
         return str(target.get("url", "")).startswith(f"{self.base()}/static?")
@@ -1014,7 +1053,7 @@ class Harness:
     def prepare_home(self, name: str, directory: str):
         base_home = self.option_for(self.opt.base, name)
         if base_home:
-            subprocess.run(["cp", "-Rc", os.path.abspath(base_home), os.path.join(directory, "home")], check=True)
+            subprocess.run(["cp", "-Rc", self.checked_base(base_home), os.path.join(directory, "home")], check=True)
         else:
             os.makedirs(os.path.join(directory, "home"), exist_ok=True)
         if is_ardia(name):
@@ -1027,9 +1066,10 @@ class Harness:
         os.makedirs(directory)
         self.prepare_home(name, directory)
         log(f"making {name}'s template profile")
-        app = Instance(self, name, directory).launch(None)
+        app = Instance(self, name, directory)
         version = {}
         try:
+            app.launch(None)
             version = app.ready()
             app.hold(3000)
             if app.b.get("await_window"):
@@ -1088,10 +1128,10 @@ class Harness:
 
     def remove_run_dir(self, directory: str):
         for sig in (signal.SIGTERM, signal.SIGKILL):
-            for pid in pids_using(directory):
+            for pid in pids_using(directory, self.copy_roots()):
                 kill(pid, sig)
             end = now_ms() + 3000
-            while now_ms() < end and pids_using(directory):
+            while now_ms() < end and pids_using(directory, self.copy_roots()):
                 sleep_ms(200)
         for _ in range(10):
             try:
@@ -1465,9 +1505,10 @@ class Harness:
             home = self.option_for(self.opt.base, name)
             if not home:
                 raise RuntimeError(f"signin needs --base {name}=<home>")
+            home = self.checked_base(home)
             os.makedirs(home, exist_ok=True)
-            app = Instance(self, name, os.path.dirname(os.path.abspath(home)))
-            app.home = os.path.abspath(home)
+            app = Instance(self, name, os.path.dirname(home))
+            app.home = home
             app.launch(None)
             log(f"{name} is open (pid {app.pid}) on {app.home}: sign in, then quit it (⌘Q)")
             deadline = now_ms() + self.opt.deadline * 60_000
@@ -1481,7 +1522,9 @@ class Harness:
             if spec(name).get("hidden") or name != base_of(name):
                 raise RuntimeError(f"prepare-bg takes a competitor's own name, not {name}")
             src = self.bundle_of(name)
-            dst = os.path.join(self.opt.apps, f"{name}-bg", os.path.basename(src))
+            dst = os.path.join(os.path.abspath(self.opt.apps), f"{name}-bg", os.path.basename(src))
+            if in_applications(dst) or overlaps(src, os.path.dirname(dst)):
+                raise RuntimeError(f"{src} and {os.path.dirname(dst)} overlap or sit in /Applications: keep copies apart under --apps")
             rm_rf(os.path.dirname(dst))
             os.makedirs(os.path.dirname(dst))
             subprocess.run(["cp", "-Rc", src, dst], check=True)
@@ -1520,11 +1563,9 @@ class Harness:
             if not os.path.exists(os.path.join(src, "Contents/Info.plist")):
                 raise RuntimeError(f"no app at {src}")
             dst = os.path.join(os.path.abspath(self.opt.apps), name, os.path.basename(spec(name)["bundle"]))
-            folder = os.path.realpath(os.path.dirname(dst))
-            real_src = os.path.realpath(src)
-            if folder.startswith("/Applications/"):
+            if in_applications(dst):
                 raise RuntimeError(f"{dst} is in /Applications: keep copies under --apps")
-            if real_src == folder or real_src.startswith(folder + "/") or folder.startswith(real_src + "/"):
+            if overlaps(src, os.path.dirname(dst)):
                 raise RuntimeError(f"{src} and {os.path.dirname(dst)} overlap: copy from another folder")
             rm_rf(os.path.dirname(dst))
             os.makedirs(os.path.dirname(dst))
@@ -1557,6 +1598,9 @@ class Harness:
             if os.path.exists(guard.file):
                 log(f"restoring {guard.domain} from the snapshot a stopped run left")
                 guard.existed = True
+                guard.restore()
+            elif os.path.exists(guard.absent):
+                log(f"removing {guard.domain}, which a stopped run created")
                 guard.restore()
 
     def on_signal(self, signum, frame):
@@ -1595,7 +1639,7 @@ def parser() -> argparse.ArgumentParser:
                    help="where the copies live (default build/perf/xbench/apps): parc/Parc.app, ardia/Ardia.app, dia/Dia.app, "
                         "helium/Helium.app, chrome/Google Chrome.app. Never a bundle in /Applications")
     p.add_argument("--app", action="append", default=[], metavar="NAME=PATH",
-                   help="repeatable: another copy for one browser (Parc built from main, say); prepare-parc: the Parc.app to clone")
+                   help="repeatable: another copy for one browser (Parc built from main, say), kept under --apps or the repository's build folder; prepare-parc: the Parc.app to clone")
     p.add_argument("--rounds", type=int, default=3, help="rounds (default 3). A round is every launch, then every session, browser by browser")
     p.add_argument("--launches", type=int, default=2, help="launches of each kind per browser per round (default 2)")
     p.add_argument("--rows", default="link,restore,session,size", help="link,restore,session,size (default all). session = idle, memory, newtab, switch, newwindow")
