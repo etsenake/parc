@@ -2,8 +2,8 @@
 
 `add-space`, `split-add-right` and `add-tab` are Parc's New Space, New Split and
 New Tab template images: a pair of stacked cards, a card split into two equal
-halves with a plus breaking through its right edge, and a single card with a
-plus, drawn on a 28-point canvas with 2.2-point strokes.
+halves with a plus centred in its right half, and a single card with a plus,
+drawn on a 28-point canvas with 2.2-point strokes.
 
 Each has a vector `.pdf` plus `.png` and `@2x.png` renditions at 28 × 28 and
 56 × 56 pixels, rendered from the same geometry with 8× supersampling.
