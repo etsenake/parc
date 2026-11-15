@@ -34,11 +34,10 @@ solid Brand, three-color analogous Brand, Pastel, Drab and Greyscale. The first
 two pages intentionally reuse nine colors with different color counts and
 harmony settings.
 
-the remaining families come from the editor catalog. Floating-point RGBA values
-are preserved. Brand1–4 use sRGB; Brand5 uses extended linear sRGB (`linearSRGB`
-in the loader); Brand6–9 and every Pastel, Drab and Greyscale color use Display
-P3. Selecting a named color converts it to Display P3.
-
-Extraction used semantic asset names, since internal rendition filenames can
-be reused. See [theme editor](../../docs/space-theme-editor.md) for interaction
-and animation behavior.
+The nine Brand colors are Parc's own palette around its coral-red P: cream,
+rose, plum, coral, vermilion, saffron, mint, sky and slate. Pastel tints each
+Brand color toward white, Drab is a darker, muted counterpart of each, and
+Greyscale steps from white to black. Every value is Display P3, and selecting
+a named color keeps it in Display P3. See
+[theme editor](../../docs/space-theme-editor.md) for interaction and animation
+behavior.
