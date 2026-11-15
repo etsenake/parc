@@ -18,6 +18,9 @@ class ShippingTests(unittest.TestCase):
         sdk = patch.object(engine, "ensure_xcode", return_value=None)
         sdk.start()
         self.addCleanup(sdk.stop)
+        profile = patch.object(engine, "ensure_pgo_profile", return_value=None)
+        profile.start()
+        self.addCleanup(profile.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.workspace = Path(self.temp.name).resolve()
@@ -98,6 +101,32 @@ class ShippingTests(unittest.TestCase):
         engine.write_marker(self.workspace, receipt, engine.SHIPPING_MARKER)
         self.build()
         self.assertEqual(engine.read_shipping_marker(self.workspace, self.sha, self.state)["phase"], "built")
+
+    def emulate_previous_recipe(self):
+        receipt = engine.read_shipping_marker(self.workspace, self.sha, self.state)
+        old_arguments = b"chrome_pgo_phase=0\n"
+        (self.output / "args.gn").write_bytes(old_arguments)
+        receipt.update(gn_defines=engine.SHIPPING_DEFINES.replace("chrome_pgo_phase=2", "chrome_pgo_phase=0"),
+                       args_sha256=engine.digest(old_arguments), phase="build-in-progress")
+        engine.write_marker(self.workspace, receipt, engine.SHIPPING_MARKER)
+
+    def test_changed_shipping_recipe_rebuilds_existing_output(self):
+        self.build()
+        self.emulate_previous_recipe()
+        calls = self.build()
+        self.assertEqual(calls[0].args[0][-2:], ["gen", "out/" + engine.SHIPPING_CONFIGURATION])
+        self.assertEqual((self.output / "args.gn").read_bytes(), self.arguments)
+        receipt = engine.read_shipping_marker(self.workspace, self.sha, self.state)
+        self.assertEqual((receipt["phase"], receipt["args_sha256"]), ("built", engine.digest(self.arguments)))
+        engine.verify_shipping_build(self.workspace, self.sha, self.state)
+
+    def test_changed_shipping_recipe_preserves_hand_edited_arguments(self):
+        self.build()
+        self.emulate_previous_recipe()
+        (self.output / "args.gn").write_bytes(b"hand edited\n")
+        with self.assertRaisesRegex(engine.Refusal, "arguments changed"):
+            self.build()
+        self.assertEqual((self.output / "args.gn").read_bytes(), b"hand edited\n")
 
     def emulate_previous_lock(self, args_bytes=b"is_component_build=false\n"):
         previous = copy.deepcopy(self.lock)
@@ -180,11 +209,55 @@ class ShippingTests(unittest.TestCase):
         self.assertIn("is_component_build=false", env["GN_DEFINES"])
         self.assertIn("dcheck_always_on=false", env["GN_DEFINES"].split())
         self.assertIn("is_official_build=true", env["GN_DEFINES"].split())
-        self.assertIn("chrome_pgo_phase=0", env["GN_DEFINES"].split())
+        self.assertIn("chrome_pgo_phase=2", env["GN_DEFINES"].split())
         self.assertIn("disable_fieldtrial_testing_config=true", env["GN_DEFINES"].split())
         self.assertIn("symbol_level=1", env["GN_DEFINES"])
         self.assertIn("use_remoteexec=false", env["GN_DEFINES"])
         self.assertEqual(env["GN_OUT_CONFIGS"], "Release_GN_arm64")
+
+
+class PGOProfileTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.workspace = Path(self.temp.name).resolve()
+        self.build_dir = self.workspace / "chromium/src/chrome/build"
+        self.build_dir.mkdir(parents=True)
+        self.name = engine.SHIPPING_PGO_PROFILE["name"]
+        (self.build_dir / "mac-arm.pgo.txt").write_text(self.name + "\n")
+        self.profile = self.build_dir / "pgo_profiles" / self.name
+        self.content = b"profile data"
+        self.pin = patch.dict(engine.SHIPPING_PGO_PROFILE, sha256=engine.digest(self.content))
+        self.pin.start()
+        self.addCleanup(self.pin.stop)
+
+    def download(self, argv, cwd, env):
+        self.profile.parent.mkdir(exist_ok=True)
+        self.profile.write_bytes(self.content)
+
+    def test_missing_profile_is_downloaded_and_checked(self):
+        with patch.object(engine, "run", side_effect=self.download) as run:
+            self.assertEqual(engine.ensure_pgo_profile(self.workspace, {}), self.profile)
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[1:4], ["tools/update_pgo_profiles.py", "--target=mac-arm", "update"])
+        self.assertEqual(run.call_args.args[1], self.workspace / "chromium/src")
+
+    def test_present_profile_is_not_downloaded_again(self):
+        self.download(None, None, None)
+        with patch.object(engine, "run", side_effect=AssertionError("downloaded again")):
+            engine.ensure_pgo_profile(self.workspace, {})
+
+    def test_wrong_profile_contents_are_refused(self):
+        self.profile.parent.mkdir()
+        self.profile.write_bytes(b"other data")
+        with patch.object(engine, "run"), self.assertRaisesRegex(engine.Refusal, "digest mismatch"):
+            engine.ensure_pgo_profile(self.workspace, {})
+
+    def test_chromium_naming_another_profile_is_refused(self):
+        (self.build_dir / "mac-arm.pgo.txt").write_text("chrome-mac-arm-other.profdata\n")
+        with patch.object(engine, "run", side_effect=AssertionError("downloaded")), \
+             self.assertRaisesRegex(engine.Refusal, "different PGO profile"):
+            engine.ensure_pgo_profile(self.workspace, {})
 
 
 if __name__ == "__main__":

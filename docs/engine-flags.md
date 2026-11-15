@@ -18,7 +18,7 @@ project. Disabled features are not evidence of measured CPU or memory savings.
 |---|---|---|
 | Engine configuration | ARM64 component build | ARM64 standalone framework |
 | `is_official_build` | false | true; official ThinLTO/stripping policy |
-| `chrome_pgo_phase` | upstream development default | 0; profile download not pinned |
+| `chrome_pgo_phase` | upstream development default | 2; pinned profile, checksum verified |
 | `dcheck_always_on` | false | false |
 | `disable_fieldtrial_testing_config` | true | true |
 | `proprietary_codecs` | true | true |
@@ -29,8 +29,9 @@ project. Disabled features are not evidence of measured CPU or memory savings.
 | Platform Dolby Vision, encrypted Dolby Vision, AC-3/E-AC-3 | true | true |
 | `enable_dsyms`, `use_remoteexec` | false | false |
 
-The lock permits symbol levels 0 and 1, default 0. PGO and distributed dSYM delivery
-are not currently part of the release recipe. Component engines change linking
+The lock permits symbol levels 0 and 1, default 0. Distributed dSYM delivery is not
+part of the release recipe. The [engine guide](../Engine/README.md#build-configuration)
+describes the shipping build's pinned PGO profile. Component engines change linking
 and allocator behavior; their memory/startup measurements do not predict shipping
 performance. Keep dependencies pinned and preserve compiled objects/caches.
 

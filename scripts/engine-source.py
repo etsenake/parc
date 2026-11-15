@@ -36,7 +36,7 @@ XCODE_DOWNLOADS = {"MetalToolchain": re.compile(r"metal|metallib|metal-[\w.+-]+|
 SHIPPING_MARKER = ".parc-shipping-build.json"
 SHIPPING_CONFIGURATION = "ParcDistribution_GN_arm64"
 OVERLAY_RECORD_LIMIT = 64 * 1024 * 1024
-SHIPPING_DEFINES = ('is_component_build=false is_official_build=true chrome_pgo_phase=0 '
+SHIPPING_DEFINES = ('is_component_build=false is_official_build=true chrome_pgo_phase=2 '
                     'dcheck_always_on=false '
                     'disable_fieldtrial_testing_config=true '
                     'proprietary_codecs=true ffmpeg_branding="Chromium" enable_ffmpeg_video_decoders=false '
@@ -44,6 +44,12 @@ SHIPPING_DEFINES = ('is_component_build=false is_official_build=true chrome_pgo_
                     'enable_platform_dolby_vision=true enable_platform_encrypted_dolby_vision=true '
                     'enable_platform_ac3_eac3_audio=true '
                     'target_cpu="arm64" enable_dsyms=false use_remoteexec=false')
+SHIPPING_PGO_PROFILE = {
+    "target": "mac-arm",
+    "name": "chrome-mac-arm-8103-1794339562-84ddfc7d1c5fe7fc113e444ab916130f0f2bfbbe-"
+            "daac8bae4a27dc53b769aa796473fc6a5ddd8cdd.profdata",
+    "sha256": "d06b4421e1b0b3d4fc7f6609c8d79aa4df3745380eb7c4c5d5fbc0c8e8330b9f",
+}
 GIT = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "init.templateDir="]
 READ_ONLY_GIT = {"GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_COUNT": "1",
                  "GIT_CONFIG_KEY_0": "diff.autoRefreshIndex", "GIT_CONFIG_VALUE_0": "false"}
@@ -63,6 +69,14 @@ def digest(data: bytes) -> str:
 
 def repository_names(lock: dict) -> tuple[str, ...]:
     return ('depot_tools', 'chromium')
+
+
+def file_digest(path: Path) -> str:
+    result = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            result.update(chunk)
+    return result.hexdigest()
 
 
 def gn_arguments(defines: str) -> bytes:
@@ -341,13 +355,13 @@ def shipping_arguments(workspace: Path, env: dict, lock: dict | None = None) -> 
     return engine_arguments(lock or load_lock()[0], env["GN_DEFINES"])
 
 
-def read_shipping_marker(workspace: Path, lock_sha: str, state: dict) -> dict:
+def read_shipping_marker(workspace: Path, lock_sha: str, state: dict, *, recipe_change: bool = False) -> dict:
     path = internal_path(workspace / SHIPPING_MARKER, workspace)
     receipt = json.loads(path.read_text())
     if (receipt.get("schema_version") != 1 or receipt.get("workspace") != str(workspace)
             or receipt.get("lock_sha256") != lock_sha
             or receipt.get("configuration") != SHIPPING_CONFIGURATION
-            or receipt.get("gn_defines") != SHIPPING_DEFINES
+            or not recipe_change and receipt.get("gn_defines") != SHIPPING_DEFINES
             or receipt.get("symbol_level") != state["symbol_level"]):
         raise Refusal("Shipping build ownership/configuration mismatch")
     return receipt
@@ -362,6 +376,21 @@ def verify_shipping_build(workspace: Path, lock_sha: str, state: dict) -> dict:
             or receipt.get("args_sha256") != digest(args_path.read_bytes())):
         raise Refusal("A completed shipping build for the current source and GN arguments is required")
     return receipt
+
+
+def ensure_pgo_profile(workspace: Path, env: dict) -> Path:
+    chromium = locations(workspace)["chromium"]
+    target, name = SHIPPING_PGO_PROFILE["target"], SHIPPING_PGO_PROFILE["name"]
+    state_file = internal_path(chromium / "chrome/build" / (target + ".pgo.txt"), workspace)
+    if state_file.is_symlink() or state_file.read_text().strip() != name:
+        raise Refusal("The pinned Chromium names a different PGO profile than the shipping recipe")
+    profile = internal_path(chromium / "chrome/build/pgo_profiles" / name, workspace)
+    if not profile.exists():
+        run([sys.executable, "tools/update_pgo_profiles.py", "--target=" + target, "update",
+             "--gs-url-base=chromium-optimization-profiles/pgo_profiles"], chromium, env)
+    if profile.is_symlink() or not profile.is_file() or file_digest(profile) != SHIPPING_PGO_PROFILE["sha256"]:
+        raise Refusal("PGO profile digest mismatch: " + str(profile))
+    return profile
 
 
 RESUMABLE_SHIPPING_PHASES = {"generated", "built", "generation-failed", "build-failed", "reconfigured"}
@@ -387,16 +416,21 @@ def shipping_build(workspace: Path, lock: dict, lock_sha: str, symbol_level: int
         if not applied:
             raise Refusal("Shipping requires the reviewed native source overlay")
         ensure_xcode(workspace, lock)
+        ensure_pgo_profile(workspace, env)
         output = internal_path(locations(workspace)["chromium"] / "out" / SHIPPING_CONFIGURATION, workspace)
         receipt_path = internal_path(workspace / SHIPPING_MARKER, workspace)
         arguments = shipping_arguments(workspace, env, lock)
         if receipt_path.exists():
-            previous = settle_dead_operation(workspace, read_shipping_marker(workspace, lock_sha, state),
-                                             SHIPPING_MARKER)
+            previous = settle_dead_operation(
+                workspace, read_shipping_marker(workspace, lock_sha, state, recipe_change=True), SHIPPING_MARKER)
             if previous.get("phase") not in RESUMABLE_SHIPPING_PHASES:
                 raise Refusal("Interrupted shipping operation preserved; receipt is not resumable")
             args_path = internal_path(output / "args.gn", workspace)
-            if args_path.read_bytes() != arguments or previous.get("args_sha256") != digest(arguments):
+            current = args_path.read_bytes()
+            recipe_changed = previous.get("gn_defines") != SHIPPING_DEFINES
+            if recipe_changed and digest(current) == previous.get("args_sha256"):
+                write_source(args_path, arguments, args_path.stat().st_mode & 0o777)
+            elif current != arguments or not recipe_changed and previous.get("args_sha256") != digest(arguments):
                 raise Refusal("Shipping GN arguments changed; existing output is preserved")
         elif output.exists():
             raise Refusal("Shipping output exists without its ownership receipt")

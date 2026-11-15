@@ -38,7 +38,7 @@ class DirectTests(unittest.TestCase):
         env = engine.shipping_environment(self.workspace, self.lock, 0)
         with patch.object(engine, 'run', side_effect=AssertionError('CEF generator called')):
             args = engine.shipping_arguments(self.workspace, env, self.lock).decode()
-        for value in ['is_component_build=false', 'is_official_build=true', 'chrome_pgo_phase=0']:
+        for value in ['is_component_build=false', 'is_official_build=true', 'chrome_pgo_phase=2']:
             self.assertIn(value + '\n', args)
         plan = engine.shipping_command_plan(self.workspace, 4, self.lock)
         self.assertEqual(plan[-1]['argv'][-2:], [t[2:] for t in self.lock['build']['targets']])

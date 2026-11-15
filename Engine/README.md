@@ -46,8 +46,12 @@ corresponding generated build flag.
 The development output is component-based. Its app requires sibling libraries;
 keep the packaged directory together and preserve upstream load commands.
 Production output is non-component in `out/ParcDistribution_GN_arm64`, with
-`is_official_build=true`, ThinLTO/stripping and `chrome_pgo_phase=0`. The PGO
-profile is not pinned by the source lock. Development objects remain in their
+`is_official_build=true`, ThinLTO/stripping and `chrome_pgo_phase=2`, Chromium's
+profile-guided optimization. Its profile is the one the pinned Chromium names in
+`chrome/build/mac-arm.pgo.txt`; the shipping build downloads it once into the
+engine's Chromium tree, where Chromium's ignore rules keep it through source
+resets, and refuses a file whose SHA-256 differs from `SHIPPING_PGO_PROFILE` in
+`scripts/engine-source.py`. Development objects remain in their
 separate output directory. A Swift release build or signing certificate cannot
 turn component artifacts into a standalone distribution.
 
@@ -183,7 +187,9 @@ so releases keep using the current engine:
 1. Choose the new Chrome stable tag and its commit (and a depot_tools commit if
    the new version needs one). Save the current lock with
    `git show HEAD:Engine/source-lock.json > "$PWD/work/previous-source-lock.json"`,
-   then write the new pins into your checkout's lock without committing.
+   then write the new pins into your checkout's lock without committing. Set
+   `SHIPPING_PGO_PROFILE` to the profile the new tag's
+   `chrome/build/mac-arm.pgo.txt` names and that file's SHA-256.
 2. Make an APFS copy of an idle engine and adopt it with
    `--previous-lock "$PWD/work/previous-source-lock.json"` (see the clone
    commands above).

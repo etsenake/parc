@@ -13,7 +13,7 @@ def recover(source, workspace, process_group, evidence, inputs_replaced=False):
     with (workspace / '.parc-operation.lock').open('rb') as guard:
         fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
         state = engine.read_marker(workspace, identity)
-        receipt = engine.read_shipping_marker(workspace, identity, state)
+        receipt = engine.read_shipping_marker(workspace, identity, state, recipe_change=inputs_replaced)
         if receipt.get('phase') not in ('generation-in-progress', 'build-in-progress'):
             return
         try:
@@ -27,8 +27,8 @@ def recover(source, workspace, process_group, evidence, inputs_replaced=False):
         engine.recorded_overlay(workspace, state)
         arguments = engine.shipping_arguments(workspace, env, lock)
         output = workspace / 'chromium/src/out' / engine.SHIPPING_CONFIGURATION
-        if ((output / 'args.gn').read_bytes() != arguments
-                or receipt['args_sha256'] != engine.digest(arguments)):
+        if not inputs_replaced and ((output / 'args.gn').read_bytes() != arguments
+                                    or receipt['args_sha256'] != engine.digest(arguments)):
             raise ValueError('Cancelled build inputs changed (GN arguments); receipt and objects preserved')
         if not inputs_replaced and (receipt['source_fingerprint'] != state['source_fingerprint']
                                     or receipt['overlay'] != state.get('overlay')):
