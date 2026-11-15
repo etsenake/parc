@@ -22,7 +22,7 @@ import MetalKit
         guard let shadowImage = FloatingSidebarSurface.shadowImage else { fatalError("FloatingSidebarSurface: CellDropShadow loads from the bundle") }
         check(shadowImage.size == NSSize(width: 40, height: 40), "40-point image")
         let caps = shadowImage.capInsets
-        check(caps.top == 19 && caps.left == 19 && caps.bottom == 20 && caps.right == 20, "the catalog's cap insets")
+        check(caps.top == 19 && caps.left == 19 && caps.bottom == 20 && caps.right == 20, "the cap insets")
         let bitmaps = shadowImage.representations.compactMap { $0 as? NSBitmapImageRep }
         check(bitmaps.map(\.pixelsWide).sorted() == [40, 80] && bitmaps.allSatisfy { $0.size == NSSize(width: 40, height: 40) },
               "both renditions at the 1× point size")

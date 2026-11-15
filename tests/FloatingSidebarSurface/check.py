@@ -48,11 +48,11 @@ assert "isOnFloatingSurface" not in controller, "the swipe's colour no longer de
 assert 'shutil.copytree(repo / "Resources", resources, symlinks=True)' in (root / "scripts/build.py").read_text(), \
     "scripts/build.py no longer packages the whole Resources directory"
 artwork = root / "Resources/FloatingSidebar"
-for name, recorded in (("CellDropShadow.png", "b6f8273641f1a68ab12dca9e2c86919aa1e585628f2bd4111c488f79778f9a06"),
-                       ("CellDropShadow@2x.png", "8acfb6bbb6930fa38c54e0cfddf49a4fe590b720fbc6b4e91562b2dc4213b16c")):
-    assert hashlib.sha256((artwork / name).read_bytes()).hexdigest() == recorded, f"{name} no longer matches the recorded artwork"
+for name, recorded in (("CellDropShadow.png", "a537e2218c29a0467b4e80ccb70469d082662e2927beeccacf926aba501152a1"),
+                       ("CellDropShadow@2x.png", "7e84d6eef8e795b798011214fdd84d92a390346692a3237ff4519ffa52eb63fd")):
+    assert hashlib.sha256((artwork / name).read_bytes()).hexdigest() == recorded, f"{name} no longer matches the recorded shadow"
 assert sorted(path.name for path in artwork.iterdir() if not path.name.startswith(".")) == ["CellDropShadow.png", "CellDropShadow@2x.png", "README.md"], \
-    "Resources/FloatingSidebar holds only the copied artwork and its README"
+    "Resources/FloatingSidebar holds only the shadow and its README"
 with tempfile.TemporaryDirectory(prefix="parc-floating-sidebar-surface-") as directory:
     executable = Path(directory) / "checks"
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
