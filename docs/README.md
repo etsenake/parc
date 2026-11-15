@@ -53,7 +53,7 @@ Git and release notes retain history.
   [motion](settings-motion.md), [old-data removal](settings-profile-removal.md),
   [membership card](settings-membership-card.md).
 - [Notes](notes.md), [automation and scripting](scripting.md),
-  [performance](performance-navigation.md).
+  [performance](performance-navigation.md), [performance benchmarks](../tests/Performance/README.md).
 
 ## Capture, Library and Easels
 

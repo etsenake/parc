@@ -97,6 +97,7 @@ step bash "$repo_root/tests/NativePageHost/run.sh"
 step bash "$repo_root/tests/NativeFocusManager/run.sh"
 step bash "$repo_root/tests/NativeExtensionPopup/run.sh"
 step bash "$repo_root/tests/TestInstance/run.sh"
+step python3 -m unittest discover -s "$repo_root/tests/Performance" -p 'test_*.py'
 step bash "$repo_root/scripts/test-media-notify.sh"
 step compile_and_run link-routing-text LinkRoutingTextEditingTests \
   "$repo_root/Sources/ParcApp/LinkRoutingTextEditing.swift"

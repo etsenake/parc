@@ -41,7 +41,8 @@ class NamingTests(unittest.TestCase):
     def test_every_native_source_has_a_build(self):
         sources = sorted(path for path in native.NATIVE.iterdir() if not path.name.startswith("."))
         self.assertEqual([source.name for source in sources],
-                         ["parcframes.m", "parcmark.m", "parcperf.swift", "parcsample.c", "parctabs.m"])
+                         ["parcframes.m", "parcmark.m", "parcperf.swift", "parcsample.c", "parctabs.m",
+                          "xbench_probe.swift"])
         for source in sources:
             self.assertTrue(native.command_templates(source))
 

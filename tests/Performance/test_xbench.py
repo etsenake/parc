@@ -139,7 +139,7 @@ class BenchJsonTests(unittest.TestCase):
         data = bench_json(result, ["parc"])
         self.assertEqual(list(data), ["date", "machine", "harness", "browsers", "rows", "method", "notes"])
         self.assertEqual(data["harness"], 1)
-        self.assertEqual(data["method"], "docs/perf/vs-browsers.md")
+        self.assertEqual(data["method"], "tests/Performance/README.md")
         self.assertEqual(data["machine"], MACHINE)
         self.assertNotIn("download", [r["id"] for r in data["rows"]])
         self.assertIn("download", [r["id"] for r in result["rows"]])
