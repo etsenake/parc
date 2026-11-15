@@ -114,7 +114,7 @@ final class CommandBarShadowView: NSView {
 }
 
 enum CommandBarBounce {
-    static let key = "arc_commandBarBounce"
+    static let key = "parc.commandBarBounce"
     static let scale: CGFloat = 0.95
     static let dampingRatio: CGFloat = 0.9
     static let response: CGFloat = 0.7

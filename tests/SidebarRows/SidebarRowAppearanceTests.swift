@@ -79,7 +79,7 @@ import AppKit
               && SidebarRowAppearance.subtitleTextAlpha == 0.5, "Hover subtitle motion and color")
         check(SidebarRowAppearance.resetSubtitle == "Back to Pinned URL", "Reset hover subtitle text")
         check(SidebarRowAppearance.separateSubtitle == "Separate From Pinned Tab", "Separate hover subtitle text")
-        check(SidebarRowAppearance.subtitleFontSize == 11, "Subtitle uses arc_subLabel's 11-point system font")
+        check(SidebarRowAppearance.subtitleFontSize == 11, "Subtitle uses an 11-point system font")
 
         func child(_ width: CGFloat, recording: Bool = false, hovered: Bool = false, close: Bool = true)
             -> SidebarRowAppearance.SplitChildLayout {
