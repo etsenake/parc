@@ -1,13 +1,13 @@
 # Split pane menu artwork
 
-`ARC_ContextMenus.bundle/Contents/Resources/Assets.car`. Parc loads standalone
+Parc's split-menu images: a soft frame of the pane layout with one strong accent,
+an arrow or plus breaking through the frame, or a blue arrow for separating a
+tab. Frames are 20% black (20% white in Dark Aqua) with 1.4-point strokes; the
+accent is solid ink, with blue #418AF9 (#7AABFA dark) for Separate.
 
-Each asset has light and Dark Aqua renditions at 1× and 2×:
-`name.png`, `name@2x.png`, `name-dark.png` and `name-dark@2x.png`. AppKit selected
-the named image under the matching drawing appearance; ImageIO exported its
-native bitmap without resizing, preserving sRGB or Generic Gray Gamma 2.2
-color and alpha. Vector renditions are not included, and these images are not
-templates.
+Each asset has light and Dark Aqua renditions at 1× and 2×: `name.png`,
+`name@2x.png`, `name-dark.png` and `name-dark@2x.png`, rendered from vector
+geometry with 8× supersampling. These images are not templates.
 
 | Item | Horizontal split | Vertical split |
 |---|---|---|
