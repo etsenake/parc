@@ -5,8 +5,9 @@ introduction. Parc drew it for this project as a 100 × 100 Lottie timeline at
 30 frames per second and 150 frames long: two round eyes and a smile, all white
 strokes with round caps that `ShortcutSmileyView` masks to the accent color.
 
-The face rests until frame 18, glances up and left with a blink, looks right,
-blinks again, then dips and pops into a wink. The right eye closes like a blink
+The face rests until frame 18, then snaps up and left with a tilt and a blink,
+swings right, blinks again, squashes and pops into a wink, each move landing
+with a small overshoot. The right eye closes like a blink
 and opens again as an arc while the smile lifts toward it and the face tilts.
 At frame 99 the eye blinks back open, and the face settles at frame 122 with a
 slightly wider smile than it started with. Reduce Motion shows the first frame.
