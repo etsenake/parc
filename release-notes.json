@@ -1,6 +1,151 @@
 {
   "releases": [
     {
+      "version": "2.5.0",
+      "build": 38,
+      "date": "2026-11-15",
+      "changes": [
+        {
+          "type": "feat",
+          "scope": "onboarding",
+          "summary": "Give the welcome headline, setup titles and Easel Hip text new open-licensed typefaces",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "onboarding",
+          "summary": "Welcome new users with Parc's own intro music",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "library",
+          "summary": "Give Notes cards Parc's own P and Easel cards a paintbrush",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "about",
+          "summary": "Show Parc's licence, warranty notice, licences page and source link, list every bundled font, icon set and library on the licences page, and finish scrubbing reverse-engineering notes",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "sidebar",
+          "summary": "Draw the New Space, New Tab and New Split menu icons in Parc's own hand",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "site-controls",
+          "summary": "Draw the Control Center, Copy Link and full-page capture icons in Parc's own hand",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "sidebar",
+          "summary": "Give the New Split icon two equal halves and a plus sized to them",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "navigation",
+          "summary": "Draw the hard-refresh icon in Parc's own hand",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "splits",
+          "summary": "Draw the split-view menu icons in Parc's own hand",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "pages",
+          "summary": "Show a wilting flower when a page crashes",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "library",
+          "summary": "Draw the Library button's box of things, its hover glow and the download placeholder in Parc's own hand",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "capture",
+          "summary": "Draw the screenshot cursor in Parc's own hand",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "sidebar",
+          "summary": "Draw the floating sidebar's shadow in Parc's own hand",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "themes",
+          "summary": "Draw the theme editor's texture knobs and dot grid in Parc's own hand",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "themes",
+          "summary": "Animate the sun, moon and automatic appearance icons in Parc's own hand",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "library",
+          "summary": "Animate the Library rail's Media, Downloads, Easels, Spaces and Archive icons in Parc's own hand",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "settings",
+          "summary": "Draw the membership card's masks, blob, stripes and fallback gradients in Parc's own hand",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "onboarding",
+          "summary": "Give the welcome orb, background, grain and favorites Parc's own videos and the services' official logos",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "switcher",
+          "summary": "Draw the recent switcher's Note, Easel and private-page fallbacks in Parc's own hand",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "capture",
+          "summary": "Play Parc's own shutter sound when a capture completes",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "themes",
+          "summary": "Fill the theme editor's preset pages with Parc's own palette",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "shortcuts",
+          "summary": "Animate Parc's own winking face on the shortcuts keycap",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "settings",
+          "summary": "Give the alternate app icons their own names and carry saved choices over",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.4.0",
       "build": 37,
       "date": "2026-11-14",

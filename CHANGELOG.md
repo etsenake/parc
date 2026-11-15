@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.5.0 (2026-11-15)
+
+### New
+
+- **onboarding:** Give the welcome headline, setup titles and Easel Hip text new open-licensed typefaces
+- **onboarding:** Welcome new users with Parc's own intro music
+- **library:** Give Notes cards Parc's own P and Easel cards a paintbrush
+- **about:** Show Parc's licence, warranty notice, licences page and source link, list every bundled font, icon set and library on the licences page, and finish scrubbing reverse-engineering notes
+- **sidebar:** Draw the New Space, New Tab and New Split menu icons in Parc's own hand
+- **site-controls:** Draw the Control Center, Copy Link and full-page capture icons in Parc's own hand
+- **sidebar:** Give the New Split icon two equal halves and a plus sized to them
+- **navigation:** Draw the hard-refresh icon in Parc's own hand
+- **splits:** Draw the split-view menu icons in Parc's own hand
+- **pages:** Show a wilting flower when a page crashes
+- **library:** Draw the Library button's box of things, its hover glow and the download placeholder in Parc's own hand
+- **capture:** Draw the screenshot cursor in Parc's own hand
+- **sidebar:** Draw the floating sidebar's shadow in Parc's own hand
+- **themes:** Draw the theme editor's texture knobs and dot grid in Parc's own hand
+- **themes:** Animate the sun, moon and automatic appearance icons in Parc's own hand
+- **library:** Animate the Library rail's Media, Downloads, Easels, Spaces and Archive icons in Parc's own hand
+- **settings:** Draw the membership card's masks, blob, stripes and fallback gradients in Parc's own hand
+- **onboarding:** Give the welcome orb, background, grain and favorites Parc's own videos and the services' official logos
+- **switcher:** Draw the recent switcher's Note, Easel and private-page fallbacks in Parc's own hand
+- **capture:** Play Parc's own shutter sound when a capture completes
+- **themes:** Fill the theme editor's preset pages with Parc's own palette
+- **shortcuts:** Animate Parc's own winking face on the shortcuts keycap
+- **settings:** Give the alternate app icons their own names and carry saved choices over
+
 ## 2.4.0 (2026-11-14)
 
 ### New
