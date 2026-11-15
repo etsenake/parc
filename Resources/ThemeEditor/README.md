@@ -10,7 +10,7 @@ executable code or asset catalog is involved.
 `TweedKnob.png` are Parc's own procedural artwork, drawn from fixed random
 seeds and supersampled before downsampling.
 
-DotGrid is template artwork at 799 × 801 pixels: 2.2-pixel dots on a 10-pixel
+DotGrid is template artwork at 799 × 801 pixels: 1.97-pixel dots on a 10-pixel
 grid, drawn at the 2× scale of a 400 × 401-point canvas. Each knob is a
 112 × 112-pixel swatch for a nominal 56-point control, drawn at 8× and box
 filtered: half-transparent grey grain whose light falls off toward the lower
@@ -26,7 +26,8 @@ separate from pixel dimensions.
 `sun.json`, `moon.json` and `automatic.json` are Parc's own Lottie animations
 on a 500 × 500 canvas at 60 frames per second, built only from filled shape
 layers with static paths and animated layer transforms. The sun's eight
-rounded rays turn a full ray spacing every second while its disc breathes; the
+short, rounded rays sit close to its disc and turn a full ray spacing every
+second while the disc breathes; the
 moon rocks and settles while two sparkles twinkle, then holds from frame 74;
 the automatic icon is three twinkling sparkles. Selected appearance icons loop
 and unselected icons pause. Parc's source renderer supports this subset.
