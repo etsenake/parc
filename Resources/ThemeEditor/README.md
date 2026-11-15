@@ -1,6 +1,8 @@
 # Theme editor assets
 
-(71105) reference. Parc loads standalone bundled resources without an installed
+The theme editor's grid, texture knobs and appearance animations are Parc's
+own artwork. Parc loads these standalone bundled resources; no other app,
+executable code or asset catalog is involved.
 
 ## Grid and texture controls
 
@@ -17,9 +19,13 @@ fibres. Keep layout dimensions separate from pixel dimensions.
 
 ## Appearance animations
 
-`sun.json`, `moon.json` and `automatic.json` are unchanged Lottie files from
-the same bundle. Selected appearance icons loop and unselected icons pause.
-Parc's source renderer supports the animation subset these files use.
+`sun.json`, `moon.json` and `automatic.json` are Parc's own Lottie animations
+on a 500 × 500 canvas at 60 frames per second, built only from filled shape
+layers with static paths and animated layer transforms. The sun's eight
+rounded rays turn a full ray spacing every second while its disc breathes; the
+moon rocks and settles while two sparkles twinkle, then holds from frame 74;
+the automatic icon is three twinkling sparkles. Selected appearance icons loop
+and unselected icons pause. Parc's source renderer supports this subset.
 
 ## Color presets
 
