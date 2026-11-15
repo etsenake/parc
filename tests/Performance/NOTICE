@@ -1,0 +1,15 @@
+Parc performance benchmarks
+
+Parts of this folder are adapted from Ardia's performance benchmarks
+(https://github.com/ardia-browser/ardia, apps/browser/scripts/perf and
+scripts/lib, at commit 882b2b474865ed3fe5dd25517b3aa53c464ef409).
+
+Ardia
+Copyright 2026 Mantra Patel
+
+Ardia's own source files are licensed under the Apache License, Version 2.0
+(see LICENSE.Apache-2.0 in this folder). Files adapted from them carry a notice
+naming their Ardia source and stating that Parc modified them. Parc's
+modifications and the rest of this folder are part of Parc and licensed under
+the GNU Affero General Public License, version 3 or later (see the repository's
+LICENSE).
