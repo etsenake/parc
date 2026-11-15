@@ -24,15 +24,13 @@ the placeholder's consumer.
 
 ## Easel and Note title cards
 
-`easel.png`, `note.png`, their `-dark` variants and their `@2x.png` versions
-come from `ARC_HomeButton.bundle/Contents/Resources/Assets.car`. The original
-asset names are `icon-home-easel.svg`, `icon-home-easel-dark.svg`,
-`icon-home-notes.svg` and `icon-home-notes-dark.svg`.
-
-The 18 × 18 and 36 × 36 compiled representations were exported through AppKit
-and ImageIO without resampling, using Aqua and Dark Aqua to select the matching
-appearance. These are colored images, not templates. See
-[documents Library](../../docs/documents-library-grid.md) for their use.
+`note.png` is Parc's P mark (`Resources/AppIcons/Marks/Monochrome.png`) with a
+cursor bar; `easel.png` is a paintbrush laying a stroke. Both are coral, with
+lighter `-dark` variants, at 18 and 36 pixels for the 18-point card artwork.
+`scripts/library_icons.py` renders them from vector geometry with 8x
+supersampling (it needs fontTools, skia-pathops and Pillow). These are colored
+images, not templates. See [documents Library](../../docs/documents-library-grid.md)
+for their use.
 
 ## Animated rail icons
 
