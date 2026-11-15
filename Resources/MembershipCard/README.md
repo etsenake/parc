@@ -7,12 +7,13 @@ These images are Parc's own drawings for the local membership card. See
 artwork: a ticket with four round bites along its top, a drop with one square
 corner, a panel split by an S-shaped gap, and a pointed arch.
 `AnimatingCardBlob` (1268 × 1338 at 2×) is a smooth seven-lobed blob that the
-card tints and blurs. `Lines` (116 × 134 at 2×) is a block of diagonal stripes
-for the date ticket. All of these were drawn as vectors and rendered with 8×
+card tints and blurs. `Lines` (116 × 134 at 2×) is a full-canvas hatch of fine
+diagonal stripes, 16 pixels apart and covering 39% of the area, for the date
+ticket's 14-point mark. All of these were drawn as vectors and rendered with 8×
 supersampling.
 
-`fallback-gradient-1`…`8` (956 × 772 at 2×) are soft gradients mixed from each
-card palette's three colors, numbered through
+`fallback-gradient-1`…`8` (956 × 772 at 2×) are soft, vivid gradients mixed
+from each card palette's three colors, numbered through
 `MembershipCardState.fallbackNumbers`. Parc supplies the card's text and
 identity; no branded stamp, other app's mark, asset catalog or executable is
 bundled.
