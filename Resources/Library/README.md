@@ -6,7 +6,8 @@ The Library entry combines five Parc template layers: `box` (a bucket with a
 short handle slot), `star`, `triangle`, `circle` and `glow` (a soft beam shown
 only on hover in dark mode). Each layer has a vector `.pdf` plus `.png` and
 `@2x.png` renditions rendered from the same geometry with 8× supersampling; the
-glow's PDF is a banded opacity gradient.
+glow's PDF is a banded opacity gradient, nearly clear at its wide top and
+strongest at its narrow base so the beam rises from the box.
 
 `EmptyFavicon` is the Downloads placeholder: a rounded square at 72/255 template
 alpha, as `EmptyFavicon.svg` plus 1× and 2× PNGs.
