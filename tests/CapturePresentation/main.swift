@@ -48,6 +48,6 @@ import AppKit
                      "The artwork loads from the bundle's Capture resources")
         let cursor = CaptureArtwork.image("camera-cross-cursor")!
         precondition(cursor.size.height == 50 && cursor.representations.count >= 3 && !cursor.isTemplate)
-        print("Capture presentation passed: source anchors, crop mapping, \(layouts) fitted layouts, appearance states and original cursor renditions.")
+        print("Capture presentation passed: source anchors, crop mapping, \(layouts) fitted layouts, appearance states and cursor renditions.")
     }
 }
