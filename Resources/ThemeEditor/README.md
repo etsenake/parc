@@ -12,10 +12,14 @@ seeds and supersampled before downsampling.
 
 DotGrid is template artwork at 799 × 801 pixels: 2.2-pixel dots on a 10-pixel
 grid, drawn at the 2× scale of a 400 × 401-point canvas. Each knob is a
-112 × 112-pixel swatch for a nominal 56-point control: a steep 3/1 denim
-twill with thread shading, translucent grey grain fading darker toward the
-bottom, sand pebbles with lit faces and dark gaps, and a tweed of short curved
-fibres. Keep layout dimensions separate from pixel dimensions.
+112 × 112-pixel swatch for a nominal 56-point control, drawn at 8× and box
+filtered: half-transparent grey grain whose light falls off toward the lower
+right; rounded matte pebbles of mixed size, each an irregular oval with its own
+tone and soft top-left light, set in broken dark crevices; darker diagonal
+denim threads interrupted by unevenly spaced bright vertical threads; and an
+even tweed of short, randomly curling fibres over a faint mottle. The editor
+clips each swatch to its control circle at 60% opacity. Keep layout dimensions
+separate from pixel dimensions.
 
 ## Appearance animations
 
