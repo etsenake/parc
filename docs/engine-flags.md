@@ -18,7 +18,7 @@ project. Disabled features are not evidence of measured CPU or memory savings.
 |---|---|---|
 | Engine configuration | ARM64 component build | ARM64 standalone framework |
 | `is_official_build` | false | true; official ThinLTO/stripping policy |
-| `chrome_pgo_phase` | upstream development default | 2; pinned profile, checksum verified |
+| `chrome_pgo_phase` | upstream development default | 2; pinned Chromium and V8 builtins profiles, checksums verified |
 | `dcheck_always_on` | false | false |
 | `disable_fieldtrial_testing_config` | true | true |
 | `proprietary_codecs` | true | true |

@@ -21,6 +21,9 @@ class ShippingTests(unittest.TestCase):
         profile = patch.object(engine, "ensure_pgo_profile", return_value=None)
         profile.start()
         self.addCleanup(profile.stop)
+        builtins = patch.object(engine, "ensure_v8_builtins_profile", return_value=None)
+        builtins.start()
+        self.addCleanup(builtins.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.workspace = Path(self.temp.name).resolve()
@@ -262,3 +265,56 @@ class PGOProfileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class V8BuiltinsProfileTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.workspace = Path(self.temp.name).resolve()
+        self.v8 = self.workspace / "chromium/src/v8"
+        (self.v8 / "include").mkdir(parents=True)
+        self.write_version("15.7.112.43")
+        self.profile = self.v8 / "tools/builtins-pgo/profiles" / engine.SHIPPING_V8_BUILTINS_PROFILE["name"]
+        self.content = b"builtins profile"
+        self.pin = patch.dict(engine.SHIPPING_V8_BUILTINS_PROFILE, version="15.7.112.43",
+                              sha256=engine.digest(self.content))
+        self.pin.start()
+        self.addCleanup(self.pin.stop)
+
+    def write_version(self, version):
+        major, minor, build, patch_level = version.split(".")
+        (self.v8 / "include/v8-version.h").write_text(
+            f"#define V8_MAJOR_VERSION {major}\n#define V8_MINOR_VERSION {minor}\n"
+            f"#define V8_BUILD_NUMBER {build}\n#define V8_PATCH_LEVEL {patch_level}\n")
+
+    def download(self, argv, cwd, env):
+        self.profile.parent.mkdir(parents=True, exist_ok=True)
+        self.profile.write_bytes(self.content)
+
+    def test_missing_profile_is_downloaded_for_the_pinned_v8_and_checked(self):
+        with patch.object(engine, "run", side_effect=self.download) as run:
+            self.assertEqual(engine.ensure_v8_builtins_profile(self.workspace, {}), self.profile)
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[1:3], ["v8/tools/builtins-pgo/download_profiles.py", "download"])
+        self.assertIn("--check-v8-revision", argv)
+        self.assertEqual(argv[argv.index("--depot-tools") + 1], str(self.workspace / "depot_tools"))
+        self.assertEqual(run.call_args.args[1], self.workspace / "chromium/src")
+
+    def test_present_profile_is_not_downloaded_again(self):
+        self.download(None, None, None)
+        with patch.object(engine, "run", side_effect=AssertionError("downloaded again")):
+            engine.ensure_v8_builtins_profile(self.workspace, {})
+
+    def test_wrong_profile_contents_are_refused(self):
+        self.profile.parent.mkdir(parents=True)
+        self.profile.write_bytes(b"other data")
+        with patch.object(engine, "run"), self.assertRaisesRegex(engine.Refusal, "digest mismatch"):
+            engine.ensure_v8_builtins_profile(self.workspace, {})
+
+    def test_another_v8_version_is_refused_before_downloading(self):
+        self.write_version("15.8.1.0")
+        with patch.object(engine, "run", side_effect=AssertionError("downloaded")), \
+             self.assertRaisesRegex(engine.Refusal, "differs from the shipping recipe"):
+            engine.ensure_v8_builtins_profile(self.workspace, {})
+

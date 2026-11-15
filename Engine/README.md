@@ -51,7 +51,11 @@ profile-guided optimization. Its profile is the one the pinned Chromium names in
 `chrome/build/mac-arm.pgo.txt`; the shipping build downloads it once into the
 engine's Chromium tree, where Chromium's ignore rules keep it through source
 resets, and refuses a file whose SHA-256 differs from `SHIPPING_PGO_PROFILE` in
-`scripts/engine-source.py`. Development objects remain in their
+`scripts/engine-source.py`. That setting also turns on V8's builtins
+optimization, so the shipping build downloads V8's `x64.profile` (which arm64
+uses) for the pinned V8 version with V8's own `download_profiles.py`, checked
+against Chromium's V8 revision, and refuses a file or V8 version that differs
+from `SHIPPING_V8_BUILTINS_PROFILE`. Development objects remain in their
 separate output directory. A Swift release build or signing certificate cannot
 turn component artifacts into a standalone distribution.
 
@@ -189,7 +193,9 @@ so releases keep using the current engine:
    `git show HEAD:Engine/source-lock.json > "$PWD/work/previous-source-lock.json"`,
    then write the new pins into your checkout's lock without committing. Set
    `SHIPPING_PGO_PROFILE` to the profile the new tag's
-   `chrome/build/mac-arm.pgo.txt` names and that file's SHA-256.
+   `chrome/build/mac-arm.pgo.txt` names and that file's SHA-256, and
+   `SHIPPING_V8_BUILTINS_PROFILE` to the new tag's V8 version (from
+   `v8/include/v8-version.h`) and its downloaded `x64.profile` SHA-256.
 2. Make an APFS copy of an idle engine and adopt it with
    `--previous-lock "$PWD/work/previous-source-lock.json"` (see the clone
    commands above).

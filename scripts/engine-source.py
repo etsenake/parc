@@ -50,6 +50,11 @@ SHIPPING_PGO_PROFILE = {
             "daac8bae4a27dc53b769aa796473fc6a5ddd8cdd.profdata",
     "sha256": "d06b4421e1b0b3d4fc7f6609c8d79aa4df3745380eb7c4c5d5fbc0c8e8330b9f",
 }
+SHIPPING_V8_BUILTINS_PROFILE = {
+    "version": "15.7.112.43",
+    "name": "x64.profile",
+    "sha256": "e577f2839be777bd9c5794773c0357201e170f3b1893443d8cb1f48f064d7076",
+}
 GIT = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "init.templateDir="]
 READ_ONLY_GIT = {"GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_COUNT": "1",
                  "GIT_CONFIG_KEY_0": "diff.autoRefreshIndex", "GIT_CONFIG_VALUE_0": "false"}
@@ -393,6 +398,22 @@ def ensure_pgo_profile(workspace: Path, env: dict) -> Path:
     return profile
 
 
+def ensure_v8_builtins_profile(workspace: Path, env: dict) -> Path:
+    chromium = locations(workspace)["chromium"]
+    header = internal_path(chromium / "v8/include/v8-version.h", workspace).read_text()
+    version = ".".join(re.search(r"#define V8_" + key + r" (\d+)", header).group(1)
+                       for key in ("MAJOR_VERSION", "MINOR_VERSION", "BUILD_NUMBER", "PATCH_LEVEL"))
+    if version != SHIPPING_V8_BUILTINS_PROFILE["version"]:
+        raise Refusal("The pinned Chromium's V8 " + version + " differs from the shipping recipe's builtins profile")
+    profile = internal_path(chromium / "v8/tools/builtins-pgo/profiles" / SHIPPING_V8_BUILTINS_PROFILE["name"], workspace)
+    if not profile.exists():
+        run([sys.executable, "v8/tools/builtins-pgo/download_profiles.py", "download",
+             "--depot-tools", str(locations(workspace)["depot_tools"]), "--check-v8-revision", "--quiet"], chromium, env)
+    if profile.is_symlink() or not profile.is_file() or file_digest(profile) != SHIPPING_V8_BUILTINS_PROFILE["sha256"]:
+        raise Refusal("V8 builtins PGO profile digest mismatch: " + str(profile))
+    return profile
+
+
 RESUMABLE_SHIPPING_PHASES = {"generated", "built", "generation-failed", "build-failed", "reconfigured"}
 
 
@@ -417,6 +438,7 @@ def shipping_build(workspace: Path, lock: dict, lock_sha: str, symbol_level: int
             raise Refusal("Shipping requires the reviewed native source overlay")
         ensure_xcode(workspace, lock)
         ensure_pgo_profile(workspace, env)
+        ensure_v8_builtins_profile(workspace, env)
         output = internal_path(locations(workspace)["chromium"] / "out" / SHIPPING_CONFIGURATION, workspace)
         receipt_path = internal_path(workspace / SHIPPING_MARKER, workspace)
         arguments = shipping_arguments(workspace, env, lock)
