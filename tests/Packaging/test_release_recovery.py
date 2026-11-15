@@ -25,7 +25,7 @@ class Recovery(unittest.TestCase):
         self.before=self.marker.read_bytes()
         self.engine=SimpleNamespace(SHIPPING_CONFIGURATION='Shipping',SHIPPING_MARKER='shipping.json',
             load_lock=lambda:({'schema_version':2},'lock'),read_marker=lambda *args:self.state,
-            read_shipping_marker=lambda *args:json.loads(self.marker.read_text()),
+            read_shipping_marker=lambda *args,**kwargs:json.loads(self.marker.read_text()),
             shipping_environment=lambda *args:{},verify_workspace=Mock(),recorded_overlay=Mock(),
             shipping_arguments=Mock(return_value=b'unchanged args'),digest=lambda b:hashlib.sha256(b).hexdigest(),
             write_marker=lambda workspace,value,name:self.marker.write_text(json.dumps(value)))
@@ -67,12 +67,14 @@ class Recovery(unittest.TestCase):
         self.assertEqual(receipt['phase'],'build-failed'); self.assertIn('superseding',receipt['error'])
         self.assertEqual((self.output/'compiled.o').read_bytes(),b'valuable compiled output')
 
-    def test_replaced_inputs_still_require_unchanged_arguments(self):
+    def test_replaced_inputs_accept_a_changed_recipe_but_unchanged_inputs_do_not(self):
         (self.output/'args.gn').write_bytes(b'changed recipe')
         with patch.object(release_recover.os,'killpg',side_effect=ProcessLookupError):
-            with self.assertRaisesRegex(ValueError,'GN arguments'):
-                release_recover.recover(self.root,self.root,12345,self.root/'evidence.json',inputs_replaced=True)
-        self.assertEqual(self.marker.read_bytes(),self.before)
+            with self.assertRaisesRegex(ValueError,'GN arguments'):self.recover()
+            self.assertEqual(self.marker.read_bytes(),self.before)
+            release_recover.recover(self.root,self.root,12345,self.root/'evidence.json',inputs_replaced=True)
+        self.assertEqual(json.loads(self.marker.read_text())['phase'],'build-failed')
+        self.assertEqual((self.output/'compiled.o').read_bytes(),b'valuable compiled output')
 
     def test_built_receipt_needs_no_cancellation_recovery(self):
         self.receipt['phase']='built';self.marker.write_text(json.dumps(self.receipt))

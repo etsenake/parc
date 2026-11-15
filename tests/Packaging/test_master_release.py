@@ -593,17 +593,40 @@ class InterruptedOverlayCheck(unittest.TestCase):
                 for item in self.runner.locks: item.close()
                 self.runner.locks.clear()
 
-    def test_cancelled_shipping_build_awaiting_recovery_refuses_refresh(self):
-        release.save(self.runner.current, dict(self.prior, command=['git', 'fetch'], interrupted_process_group=999998))
+    def test_cancelled_shipping_build_awaiting_recovery_allows_refresh(self):
+        Path(self.prior['run']).mkdir(parents=True, exist_ok=True)
+        release.save(self.runner.current, dict(self.prior, status='stopped', command_pid=None,
+                                               command=['git', 'fetch'], interrupted_process_group=999998))
+        self.runner.start()
+        self.assertEqual(self.runner.state['interrupted_process_group'], 999998)
+        self.assertTrue(self.runner.state['interrupted_inputs_refreshed'])
+        self.assertEqual(self.runner.state['completed'], ['source'])
+
+    def test_dead_cancelled_shipping_build_hands_refresh_to_recovery(self):
+        shipping = ['python3', self.prior['command'][1], 'shipping-build', '--workspace', '/Volumes/Parc']
+        release.save(self.runner.current, dict(self.prior, status='stopped', command=shipping))
         with patch.object(release.os, 'kill', side_effect=ProcessLookupError), \
              patch.object(release.os, 'killpg', side_effect=ProcessLookupError):
-            with self.assertRaisesRegex(release.Failure, 'stopped engine'):
+            self.runner.start()
+        self.assertIsNone(self.runner.state['command_pid'])
+        self.assertEqual(self.runner.state['interrupted_process_group'], 999999)
+        self.assertTrue(self.runner.state['interrupted_inputs_refreshed'])
+        self.assertNotIn('interrupted_command', self.runner.state)
+        self.assertEqual(self.runner.state['version'], self.prior['version'])
+
+    def test_live_cancelled_shipping_build_still_refuses_refresh(self):
+        shipping = ['python3', self.prior['command'][1], 'shipping-build']
+        release.save(self.runner.current, dict(self.prior, status='stopped', command=shipping))
+        with patch.object(release.os, 'kill'), patch.object(release.os, 'killpg', side_effect=ProcessLookupError):
+            with self.assertRaisesRegex(release.Failure, 'still alive'):
                 self.runner.start()
-        self.assertEqual(json.loads(self.runner.current.read_text())['interrupted_process_group'], 999998)
+        saved = json.loads(self.runner.current.read_text())
+        self.assertEqual(saved['command_pid'], 999999)
+        self.assertNotIn('interrupted_process_group', saved)
 
     def test_mutating_or_foreign_command_keeps_existing_recovery_guard(self):
-        for script, operation in ((self.prior['command'][1], 'shipping-build'),
-                                  (self.prior['command'][1], 'overlay-apply'),
+        for script, operation in ((self.prior['command'][1], 'overlay-apply'),
+                                  ('/other/engine-source.py', 'shipping-build'),
                                   ('/other/engine-source.py', 'overlay-check')):
             with self.subTest(operation=operation, script=script):
                 release.save(self.runner.current,

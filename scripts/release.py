@@ -219,8 +219,10 @@ class Release:
                 if self.refresh_source and (prior.get('status') != 'stopped'
                         or prior.get('stage') != 'engine'
                         or prior.get('completed') != ['source']
-                        or prior.get('command_pid') is not None or prior.get('interrupted_process_group')):
+                        or prior.get('command_pid') is not None):
                     raise Failure('Source refresh requires a stopped engine stage with no active command or packaged artifacts')
+                if self.refresh_source and prior.get('interrupted_process_group'):
+                    prior['interrupted_inputs_refreshed'] = True
                 self.refresh_previous = dict(prior)
                 self.state = prior
                 if self.kind:
@@ -247,8 +249,9 @@ class Release:
         overlay_check = bool(source) and command[1:3] == [str(Path(source) / 'scripts/engine-source.py'), 'overlay-check']
         tool = command[:1] in (['git'], ['gh'], ['xcrun'], ['xcodebuild'], ['security']) or command[:2] == ['brew', 'install']
         restore = command[1:3] == [str(self.root / 'scripts/signing-backup.py'), 'restore']
+        shipping = bool(source) and command[1:3] == [str(Path(source) / 'scripts/engine-source.py'), 'shipping-build']
         if (prior.get('status') != 'stopped' or prior.get('stage') != 'engine' or not pid
-                or not (overlay_check or tool or restore)):
+                or not (overlay_check or tool or restore or shipping)):
             return
         for probe in (os.kill, os.killpg):
             try:
@@ -256,9 +259,12 @@ class Release:
             except ProcessLookupError:
                 continue
             raise Failure('Previous command ' + str(pid) + ' or its process group is still alive')
-        prior['interrupted_command'] = {
-            'command': command, 'pid': pid,
-            'started_utc': prior.get('command_started_utc'), 'recovered_utc': now()}
+        if shipping:
+            prior.update(interrupted_process_group=pid)
+        else:
+            prior['interrupted_command'] = {
+                'command': command, 'pid': pid,
+                'started_utc': prior.get('command_started_utc'), 'recovered_utc': now()}
         prior.update(command_pid=None, last_command_exit=None)
         save(self.current, prior)
         save(Path(prior['run']) / 'state.json', prior)
@@ -609,12 +615,14 @@ class Release:
         if self.state.get('interrupted_process_group'):
             self.command([sys.executable, self.root / 'scripts/release_recover.py', source, workspace,
                           str(self.state['interrupted_process_group']), Path(self.state['run']) / 'cancelled-shipping-receipt.json',
-                          *(['--inputs-replaced'] if self.state.get('interrupted_inputs_replaced') else [])],
+                          *(['--inputs-replaced'] if self.state.get('interrupted_inputs_replaced')
+                            or self.state.get('interrupted_inputs_refreshed') else [])],
                          name='recover-cancelled-engine')
             if self.state.get('interrupted_inputs_replaced'):
                 retired = self.base / self.state['interrupted_inputs_replaced'] / 'state.json'
                 save(retired, dict(json.loads(retired.read_text()), cancelled_build_recovered=self.state['id']))
-            self.checkpoint(interrupted_process_group=None, interrupted_inputs_replaced=None)
+            self.checkpoint(interrupted_process_group=None, interrupted_inputs_replaced=None,
+                            interrupted_inputs_refreshed=None)
         self.git("fetch", "origin", "main", retries=2)
         if hasattr(engine_tool, "reset_source"):
             self.command([sys.executable, script, "reset-source", "--workspace", workspace], name="engine-reset-source")

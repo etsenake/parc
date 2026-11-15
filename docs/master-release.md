@@ -198,8 +198,11 @@ source refresh was fetching, source
 refresh verifies that both the saved command PID and its process group are gone,
 records the interrupted command and reruns from its start. A live PID or group
 still refuses. It does not record a successful exit or clear an interrupted
-apply/build operation; a cancelled shipping build awaiting recovery first needs
-a plain resume.
+overlay apply. A cancelled shipping build is handed to the cancelled-build
+recovery instead: once its process group is gone, the refresh freezes the new
+source and the engine stage verifies the old receipt with replaced inputs before
+compiling incrementally, so stopping a compile and refreshing needs no plain
+resume first.
 
 The command cannot repair arbitrary source bugs, revoke/reissue certificates,
 bypass protected authorization, resolve someone else's local edits, or invent
