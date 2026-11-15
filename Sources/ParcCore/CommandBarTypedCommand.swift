@@ -225,7 +225,7 @@ struct CommandBarTypedCommand: Hashable, Sendable {
     }
 
     static func rankingPhrases(forMenuCommand id: String) -> [String] {
-        (CommandBarMenuItemInfo.info(forMenuCommand: id)?.triggers ?? []) + (id == "createNote:" ? ["New Arc Note"] : [])
+        CommandBarMenuItemInfo.info(forMenuCommand: id)?.triggers ?? []
     }
 
     static func commandBarTitle(forMenuCommand id: String, menuTitle: String) -> String {

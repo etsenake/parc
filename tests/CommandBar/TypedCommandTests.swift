@@ -39,7 +39,7 @@ struct TypedCommandTests {
         check(Command.commandBarTitle(forMenuCommand: "split:", menuTitle: "Add Split View") == "Add Split View", "Add Split View keeps its menu title (side by side)")
         check(Command(kind: .addVerticalSplit).title == "Add Vertical Split View", "the stacked add")
         check(Command.commandBarTitle(forMenuCommand: "createNote:", menuTitle: "New Note") == "New Parc Note", "New Note takes Parc's name")
-        check(Command.commandBarSearchText(forMenuCommand: "createNote:").contains("arc note"), "\"arc note\" still finds it")
+        check(Command.commandBarSearchText(forMenuCommand: "createNote:").contains("parc note"), "\"parc note\" finds it")
         check(Command.commandBarTitle(forMenuCommand: "newTab:", menuTitle: "New Tab") == "New Tab", "Other menu titles are unchanged")
 
         check(CommandBarWebDocument.catalog.count == 11, "Eleven recovered document types")
