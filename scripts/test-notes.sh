@@ -16,6 +16,7 @@ xcrun swiftc -parse-as-library "${core[@]}" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/NoteKeyboardEditing.swift" \
   "$repo_root/Sources/ParcApp/NoteDocumentPresentation.swift" \
+  "$repo_root/Sources/ParcApp/NotePaper.swift" \
   "$repo_root/Sources/ParcApp/NoteImageImport.swift" \
   "$repo_root/Sources/ParcApp/NoteAccessibility.swift" \
   "$repo_root/Sources/ParcApp/NoteFormatting.swift" \
@@ -39,6 +40,7 @@ xcrun swiftc -parse-as-library "${core[@]}" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/NoteKeyboardEditing.swift" \
   "$repo_root/Sources/ParcApp/NoteDocumentPresentation.swift" \
+  "$repo_root/Sources/ParcApp/NotePaper.swift" \
   "$repo_root/Sources/ParcApp/NoteImageImport.swift" \
   "$repo_root/Sources/ParcApp/NoteAccessibility.swift" \
   "$repo_root/Sources/ParcApp/NoteFormatting.swift" \
