@@ -27,8 +27,10 @@ the complete Resources tree and links AVFoundation for playback.
   seamless 8-second cycle. Onboarding blurs both heavily, so only their color
   and motion read on screen.
 - `orb-poster.png` and `background-poster.png` are each video's first frame.
-- `grain-1.png` through `grain-4.png` are seeded grayscale noise frames at
-  2100 × 1500 with constant 66/255 alpha, cycled as moving film grain.
+- `grain-1.png` through `grain-4.png` are seeded colour noise frames at
+  2100 × 1500 with constant 66/255 alpha: every pixel's red, green and blue
+  are drawn independently with a bright-leaning spread, so the moving film
+  grain reads as soft colour speckle rather than harsh grey static.
 - `orb-mask.png` is a 630 × 630 smooth twelve-point blob that shapes the orb.
 
 Parc resolves every file from its own bundle; Swift uses CoreText for the font and AVFoundation for media.
