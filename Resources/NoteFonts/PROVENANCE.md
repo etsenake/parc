@@ -1,11 +1,19 @@
 # Notes fonts
 
-Nunito ExtraBold, version 3.601, is by the Nunito Project Authors (Vernon Adams).
-The unmodified font is licensed under the SIL Open Font License 1.1. Its
-copyright notice and complete license are in [OFL.txt](OFL.txt), with font
-name, copyright and license metadata also embedded in the font.
+Nunito is by the Nunito Project Authors (Vernon Adams) under the SIL Open Font
+License 1.1, with no reserved font name. Its copyright notice and complete
+license are in [OFL.txt](OFL.txt), and each font embeds its name, copyright and
+license metadata.
 
-34-point Notes titles.
+`Nunito-ExtraBold.ttf` (version 3.602) is the weight-800 instance of
+google/fonts' `ofl/nunito/Nunito[wght].ttf`:
+
+```sh
+python3 -m fontTools.varLib.instancer 'Nunito[wght].ttf' wght=800 --update-name-table -o Nunito-ExtraBold.ttf
+```
+
+Parc registers it locally for 34-point Notes titles, setup card titles and the
+Essential Keyboard Shortcuts title.
 
 `Nunito-Regular.ttf`, `Nunito-Bold.ttf`, `Nunito-Italic.ttf` and
 `Nunito-BoldItalic.ttf` support the 18-point body and native emphasis/round-trip

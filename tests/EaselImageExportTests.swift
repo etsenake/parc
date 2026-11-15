@@ -147,7 +147,7 @@ struct EaselImageExportTests {
         let row = menu.items[0]
         expect(row.title == "Export as Image" && row.keyEquivalent.isEmpty && row.isEnabled, "the row title, with no shortcut, enabled")
         expect(row.image?.size == NSSize(width: 14, height: 14) && row.image?.isTemplate == true, "The row shows a 14-point template glyph")
-        expect(SidebarIconCatalog.font(.icomoon, size: 14).fontName == "icomoon", "The glyph comes from the bundled Feather font")
+        expect(SidebarIconCatalog.font(.feather, size: 14).fontName == "feather", "The glyph comes from the bundled Feather font")
         if #available(macOS 27, *) { expect(row.preferredImageVisibility == .visible, "macOS 27 is asked to show the row's image") }
         menu.performActionForItem(at: 0)
         expect(chosen == 1, "Choosing the row exports")

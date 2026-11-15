@@ -137,7 +137,7 @@ import AppKit
 
         let link = SidebarIconCatalog.emojiImage(String(Character(Unicode.Scalar(0xE98A)!)), size: 22)
         check(link.size == NSSize(width: 25, height: 25) && !link.isTemplate,
-              "the link icon is icomoon's 22-point chain link in a 25-point square, not a template")
+              "the link icon is Feather's 22-point chain link in a 25-point square, not a template")
         if let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 50, pixelsHigh: 50, bitsPerSample: 8, samplesPerPixel: 4,
                                       hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) {
             rep.size = link.size
@@ -146,7 +146,7 @@ import AppKit
             NSGraphicsContext.restoreGraphicsState()
             var ink = 0, light = 0
             for y in 0..<50 { for x in 0..<50 { let p = pixel(rep, x, y); if p.a > 200 { ink += 1; if p.r > 40 { light += 1 } } } }
-            check(ink > 100 && light == 0, "the glyph draws in black from the shipped icomoon font")
+            check(ink > 100 && light == 0, "the glyph draws in black from the shipped Feather font")
         }
 
         let type = SidebarSplitDrag.pasteboardType

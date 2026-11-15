@@ -53,7 +53,7 @@ xcrun swiftc -parse-as-library \
 "$style_bundle/MacOS/EaselCanvas"
 
 mkdir -p "$style_bundle/Resources/CustomInfoPicker" "$style_bundle/Resources/AppIcons/Marks"
-cp "$repo_root/Resources/CustomInfoPicker/icomoon.ttf" "$style_bundle/Resources/CustomInfoPicker/"
+cp "$repo_root/Resources/CustomInfoPicker/feather.ttf" "$style_bundle/Resources/CustomInfoPicker/"
 cp "$repo_root/Resources/AppIcons/Marks/Borderless.png" "$style_bundle/Resources/AppIcons/Marks/"
 xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \

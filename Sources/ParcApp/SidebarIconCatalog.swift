@@ -2,7 +2,7 @@ import AppKit
 import CoreText
 
 enum SidebarIconCatalog {
-    enum Font: String { case ionicons, icomoon }
+    enum Font: String { case ionicons, feather }
 
     static let resourceDirectory: URL? = Bundle.main.resourceURL?.appendingPathComponent("CustomInfoPicker", isDirectory: true)
     private static var descriptors: [Font: CTFontDescriptor] = [:]
@@ -69,13 +69,13 @@ enum SidebarIconCatalog {
     }
 
     static func featherImage(_ code: UInt32, size: CGFloat) -> NSImage {
-        glyphImage(Unicode.Scalar(code).map { String(Character($0)) } ?? "", font: .icomoon, size: size)
+        glyphImage(Unicode.Scalar(code).map { String(Character($0)) } ?? "", font: .feather, size: size)
     }
 
     static func emojiImage(_ emoji: String, size: CGFloat) -> NSImage {
         let key = "emoji|\(size)|\(emoji)" as NSString
         if let cached = cache.object(forKey: key) { return cached }
-        let text = NSAttributedString(string: emoji, attributes: [.font: font(.icomoon, size: size)])
+        let text = NSAttributedString(string: emoji, attributes: [.font: font(.feather, size: size)])
         let measured = text.size()
         let side = ceil(max(measured.width, measured.height) * 1.1)
         let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in

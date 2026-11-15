@@ -1448,8 +1448,8 @@ struct NoteEditorTests {
         try expect(NoteFormatGlyph.letter(for: .bold) == "B" && NoteFormatGlyph.letter(for: .text) == "Aa", "Recovered compact B/Aa letters")
         let linkGlyph = NoteFormatGlyph.formattedHyperlink(), imageGlyph = NoteFormatGlyph.insertImage()
         try expect(NoteFormatGlyph.iconFontDirectory == Bundle.main.resourceURL?.appendingPathComponent("CustomInfoPicker", isDirectory: true)
-                   && FileManager.default.fileExists(atPath: NoteFormatGlyph.iconFontDirectory?.appendingPathComponent("icomoon.ttf").path ?? ""),
-                   "Feather glyphs load from the bundle's CustomInfoPicker icomoon.ttf")
+                   && FileManager.default.fileExists(atPath: NoteFormatGlyph.iconFontDirectory?.appendingPathComponent("feather.ttf").path ?? ""),
+                   "Feather glyphs load from the bundle's CustomInfoPicker feather.ttf")
         try expect(linkGlyph.size == NSSize(width: 20, height: 20) && linkGlyph.isTemplate, "formattedHyperlink is IconFontImageCache 20pt template")
         try expect(imageGlyph.size == NSSize(width: 20, height: 20) && imageGlyph.isTemplate, "insertImage is IconFontImageCache 20pt template")
         func raster(_ image: NSImage) throws -> [UInt8] {

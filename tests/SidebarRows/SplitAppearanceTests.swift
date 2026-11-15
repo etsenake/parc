@@ -169,7 +169,7 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
         try check(SidebarIconType.folderPicker.count == 24 && SidebarIconType.folderPicker[8] == .chatBubbleEllipses && SidebarIconType.folderPicker.last == .skull, "Folder catalog order")
         try check(SidebarIconType(rawValue: "colorPallete") == .colorPallete && SidebarIconType.fileTrayFull.rawValue == "fileTrayFull", "Raw values are the imported sidebar icon names")
         let ionicons = SidebarIconCatalog.font(.ionicons, size: 14)
-        try check(ionicons.fontName == "ionicons" && SidebarIconCatalog.font(.icomoon, size: 14).fontName == "icomoon", "Bundled icon fonts load")
+        try check(ionicons.fontName == "ionicons" && SidebarIconCatalog.font(.feather, size: 14).fontName == "feather", "Bundled icon fonts load")
         let fontURL = CTFontCopyAttribute(ionicons as CTFont, kCTFontURLAttribute) as? URL
         try check(fontURL?.standardizedFileURL == SidebarIconCatalog.resourceDirectory?.appendingPathComponent("ionicons.ttf").standardizedFileURL, "Icon font comes from the bundled file, not a name lookup")
         for type in SidebarIconType.allCases {

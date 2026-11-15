@@ -408,7 +408,7 @@ enum NoteFormatGlyph {
     static func feather(_ code: UInt32) -> NSImage {
         if let cached = featherCache[code] { return cached }
         if iconDescriptor == nil,
-           let url = iconFontDirectory?.appendingPathComponent("icomoon.ttf"),
+           let url = iconFontDirectory?.appendingPathComponent("feather.ttf"),
            let found = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor],
            let first = found.first {
             iconDescriptor = first
