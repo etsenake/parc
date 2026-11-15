@@ -1,14 +1,13 @@
 # Crashed-page artwork
 
-`ARC_SadTab.bundle/Contents/Resources/Assets.car`. The original rendition is
-`sad_tab.svg`, at 96 × 103 points. Parc loads the standalone bundled files
+`SadTab` is Parc's crashed-page template image: a flower wilting in its pot,
+drawn in rounded 8.5-point strokes on a 96 × 103-point canvas.
 
-- `SadTab.svg` preserves the catalog's vector payload after decompression.
-- `SadTab.png` and `SadTab@2x.png` preserve its 96 × 103 and 192 × 206 compiled
-  bitmaps. AppKit supplied the images and ImageIO wrote them without resizing
-  or redrawing, keeping Generic Gray Gamma 2.2 color and alpha.
+- `SadTab.svg` is the vector drawing.
+- `SadTab.png` and `SadTab@2x.png` are its 96 × 103 and 192 × 206 renditions,
+  rendered from the same geometry with 8× supersampling.
 
 `SadTabContent.artwork` combines both bitmaps and the vector at the 1× point
 size. Parc treats the result as a template and tints it with the source
-branding. See [web interactions](../../docs/web-interactions.md) for crashed-page
-behavior.
+`ForegroundTertiary` color. See [web interactions](../../docs/web-interactions.md)
+for crashed-page behavior.
