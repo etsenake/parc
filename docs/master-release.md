@@ -43,8 +43,8 @@ their text is only those notes under Heads up, New, Fixed and Faster, rendered
 by `scripts/release_notes.py`. A release with none, possible only with a forced
 `--type`, says "Small fixes and improvements." there, on the What's New page and
 in the appcast. Build provenance stays in `package-report.json`, `delivery.json`
-and the run state, never the release text; promotion rewrites the private
-release's title and text from the frozen `release-notes.json`, so a resumed
+and the run state, never the release text; promotion rewrites the
+etsenake/parc release's title and text from the frozen `release-notes.json`, so a resumed
 candidate packaged with older text is corrected. If main moves while the
 version commit is being pushed, the release merges it and adds those commits to
 its notes. A feat or breaking change among them raises the version, since it

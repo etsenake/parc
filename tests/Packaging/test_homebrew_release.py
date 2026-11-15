@@ -202,8 +202,6 @@ class HomebrewReleaseTests(unittest.TestCase):
         def request(*args):
             if "git/ref/tags" in args[1]:
                 return json.dumps({"object": {"type": "commit", "sha": "a" * 40}})
-            if args[:2] == ("api", "repos/etsenake/parc"):
-                return "true"
             if args[:2] == ("release", "edit"):
                 self.assertIn("--prerelease=false", args)
                 self.assertIn("--latest", args)

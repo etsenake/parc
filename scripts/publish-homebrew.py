@@ -166,8 +166,6 @@ def promote_release(release, acceptance, app_version, report_sha, notes):
 
 def promote_verified_artifacts(release, notes):
     verify_tag(release["tag_name"], release["target_commitish"])
-    if github("api", f"repos/{REPOSITORY}", "--jq", ".private") != "true":
-        raise ValueError("Parc release assets must remain in the private repository")
     github("release", "edit", release["tag_name"], "--repo", REPOSITORY,
            "--prerelease=false", "--latest", "--title", release["tag_name"].removeprefix("v"), "--notes", notes)
     after = json.loads(github("api", f'repos/{REPOSITORY}/releases/tags/{release["tag_name"]}'))

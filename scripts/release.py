@@ -393,8 +393,6 @@ class Release:
             raise Failure("GitHub authentication missing; run gh auth login once")
         token = result.stdout.strip(); self.secrets.append(token)
         self.env.update(GH_TOKEN=token, GITHUB_TOKEN="")
-        if json.loads(self.github("api", "repos/" + REPOSITORY))["private"] is not True:
-            raise Failure("The app repository must remain private")
         self.env.update(GIT_CONFIG_COUNT="2", GIT_CONFIG_KEY_0="credential.helper", GIT_CONFIG_VALUE_0="",
                         GIT_CONFIG_KEY_1="credential.helper", GIT_CONFIG_VALUE_1="!gh auth git-credential")
 
