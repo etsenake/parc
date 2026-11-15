@@ -77,8 +77,8 @@ class AppIconTests(unittest.TestCase):
         catalog = json.loads((icons / "catalog.json").read_text())
         self.assertEqual(catalog["default"], "Original")
         self.assertEqual(set(catalog["variants"]), {
-            "Original", "Candy", "Colorful", "FlutedGlass", "Hologram",
-            "Neon", "Schoolbook", "EarlyBirds", "Canary", "Dev",
+            "Original", "Sorbet", "Twilight", "RainGlass", "Opal",
+            "AfterHours", "Recess", "TracingPaper", "Grapefruit", "Terminal",
         })
         self.assertEqual(len(catalog["variants"]), 10)
         for name in catalog["variants"]:
@@ -125,10 +125,10 @@ class AppIconTests(unittest.TestCase):
                         self.assertIsNotNone(bounds)
                         left, top, right, bottom = bounds
                         extent = max(right - left, bottom - top)
-                        target = round(width * (204 / 256 if name == "Dev" else 824 / 1024))
+                        target = round(width * (204 / 256 if name == "Terminal" else 824 / 1024))
                         self.assertLessEqual(abs(extent - target), 1, (name, representation, bounds))
                         self.assertLessEqual(abs((left + right) / 2 - width / 2), 1)
-                        target_y = height * (130 / 256 if name == "Dev" else 0.5)
+                        target_y = height * (130 / 256 if name == "Terminal" else 0.5)
                         self.assertLessEqual(abs((top + bottom) / 2 - target_y), 1)
                         perimeter = [rows[0], rows[-1]]
                         self.assertTrue(all(row[x] == 0 for row in perimeter

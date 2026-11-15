@@ -2,23 +2,28 @@
 
 `Original.png` is the user-approved master: a rounded P with a small left-facing terminal at the bowl crossing, a long slimmer stem, and an open inward curl turning right at the bottom. Preserve that geometry when adapting other Parc branding. The earlier outward-curl and straight-stem designs are not the selected design.
 
-`catalog.json` selects **Original for every build configuration**, including development and release. `Dev.png` is an optional terminal mascot; its filename does not make it the development default. The mascot has a numeral 1 on the left, a winking eyelid on the right, and a small Parc P on its pedestal.
+`catalog.json` selects **Original for every build configuration**, including development and release. `Terminal.png` is the optional terminal mascot and is never a default. The mascot has a numeral 1 on the left, a winking eyelid on the right, and a small Parc P on its pedestal.
 
-| Original | Candy | Colorful | Fluted Glass | Hologram |
+| Original | Sorbet | After Hours | Rain Glass | Recess |
 |---|---|---|---|---|
-| <img src="Original.png" width="120" alt="Original Parc icon"> | <img src="Candy.png" width="120" alt="Candy Parc icon"> | <img src="Colorful.png" width="120" alt="Colorful Parc icon"> | <img src="FlutedGlass.png" width="120" alt="Fluted Glass Parc icon"> | <img src="Hologram.png" width="120" alt="Hologram Parc icon"> |
+| <img src="Original.png" width="120" alt="Original Parc icon"> | <img src="Sorbet.png" width="120" alt="Sorbet Parc icon"> | <img src="AfterHours.png" width="120" alt="After Hours Parc icon"> | <img src="RainGlass.png" width="120" alt="Rain Glass Parc icon"> | <img src="Recess.png" width="120" alt="Recess Parc icon"> |
 
-| Neon | Schoolbook | Early Birds | Canary | Terminal |
+| Twilight | Opal | Tracing Paper | Grapefruit | Terminal |
 |---|---|---|---|---|
-| <img src="Neon.png" width="120" alt="Neon Parc icon"> | <img src="Schoolbook.png" width="120" alt="Schoolbook Parc icon"> | <img src="EarlyBirds.png" width="120" alt="Early Birds Parc icon"> | <img src="Canary.png" width="120" alt="Canary Parc icon"> | <img src="Dev.png" width="120" alt="Winking Parc terminal icon"> |
+| <img src="Twilight.png" width="120" alt="Twilight Parc icon"> | <img src="Opal.png" width="120" alt="Opal Parc icon"> | <img src="TracingPaper.png" width="120" alt="Tracing Paper Parc icon"> | <img src="Grapefruit.png" width="120" alt="Grapefruit Parc icon"> | <img src="Terminal.png" width="120" alt="Winking Parc terminal icon"> |
 
 ## Provenance
 
-treatments corresponding to this family. AppKit decoded those shipped assets
-for visual reference. Parc's [availability policy](../../docs/app-icon-availability.md)
-defines the selectable variants.
+The artwork was generated with the built-in image generation tool from the
+user's P sketch and the approved Original master, then refined with the user's
+feedback. Rain Glass was regenerated with a heavier stem, and the Terminal face
+was changed to the requested 1-and-wink expression. These PNGs are new Parc
+artwork, not third-party editable source. Every image is 1254 × 1254 RGBA.
+Parc's [availability policy](../../docs/app-icon-availability.md) defines the
+selectable variants.
 
-
+The build reads only these checked-in images and never calls an image-generation
+service. Intermediate generations and prompt logs stay outside the repository.
 
 The approved deterministic processing preserves
 the artwork. The masters now have their outer alpha debris removed while every
@@ -60,8 +65,8 @@ The independent-engine packager retains this shared catalog/default and icon pac
 ## Optical framing and small sizes
 
 The native exporter measures each master's opaque body and uniformly fits it to
-the retained reference envelope: 824/1024 for the nine tiles; 204/256 with a
-slightly lower center for Dev. Every size is rendered directly from the master
+a fixed envelope: 824/1024 for the nine tiles; 204/256 with a
+slightly lower center for Terminal. Every size is rendered directly from the master
 with native software Lanczos downsampling in sRGB. Pixel-aligned placement and
 a transparent outer guard pixel keep small representations consistent without
 changing their P geometry, proportions, color or mascot identity. Source PNGs

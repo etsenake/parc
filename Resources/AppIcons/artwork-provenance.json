@@ -11,7 +11,7 @@
       "removedAlphaPixels": 19481,
       "opaquePixelsChanged": 0
     },
-    "Candy": {
+    "Sorbet": {
       "originalFileSHA256": "96e471d0529c17b43b18c6048b2d247e43f7e230a218e4b3bc1aa31b661e1af2",
       "originalRGBSHA256": "83e52fe7b458afddcea9b072379ce6c5d9c98272c8be80c40a8fecb80390f1f2",
       "originalOpaqueSHA256": "66347d681549ba638c9de443d00a7b58af73608fa8def3c08d7f49309693ff0e",
@@ -19,7 +19,7 @@
       "removedAlphaPixels": 62587,
       "opaquePixelsChanged": 0
     },
-    "Colorful": {
+    "Twilight": {
       "originalFileSHA256": "072e8dbffa812e474a2549a70145f7e01fdb7fcbedf81c7f43cf91b59cee1a55",
       "originalRGBSHA256": "93b9c3f1b1bd81ef41532cf623cea505e1969915bc3b672ea34d26223cb25660",
       "originalOpaqueSHA256": "660bce85557d599da40af093609f3b517d393fd6e5356fca07fc0b3793dfc7e6",
@@ -27,7 +27,7 @@
       "removedAlphaPixels": 31244,
       "opaquePixelsChanged": 0
     },
-    "FlutedGlass": {
+    "RainGlass": {
       "originalFileSHA256": "6ad7dfdc33cddc7013938dd30699c593167715427d200283031ca54423aea82a",
       "originalRGBSHA256": "88d44e52140071187a7176e13a85760222314b03fef9f174e0c507c9cdc45dd2",
       "originalOpaqueSHA256": "590b74b3474de54a727a566bd66e4a0465256cd01fbd9590de3472ddf60019e3",
@@ -35,7 +35,7 @@
       "removedAlphaPixels": 25876,
       "opaquePixelsChanged": 0
     },
-    "Hologram": {
+    "Opal": {
       "originalFileSHA256": "abeadb2d7077f1b48c4665b663dc736fc68ee469bd298510e0e24a977216c7ba",
       "originalRGBSHA256": "42904d2a21259edaa4202e93cba0bafef659b04ec82f1bad7396d8e0cfe9be1e",
       "originalOpaqueSHA256": "557f07b2f12c2c70cf6a80a62920a93c12e8a07b57e3bbe1623006f7e863296d",
@@ -43,7 +43,7 @@
       "removedAlphaPixels": 16499,
       "opaquePixelsChanged": 0
     },
-    "Neon": {
+    "AfterHours": {
       "originalFileSHA256": "479188050d1dc622525ecb402b773f37a667f681be4a6432435a0709ba5ca688",
       "originalRGBSHA256": "7515aa94ad71848e5c3b853dcdd117d50f6219f53fbd8308687acc8f535ffddf",
       "originalOpaqueSHA256": "72d05fbe5ddde181922209ce843b59bb92093eacdb721fafee213742a9d18799",
@@ -51,7 +51,7 @@
       "removedAlphaPixels": 11074,
       "opaquePixelsChanged": 0
     },
-    "Schoolbook": {
+    "Recess": {
       "originalFileSHA256": "2b7b4d7300e0f64fc0f84e7b10f8d497afde9bd864680bd2c8f12f169b05a269",
       "originalRGBSHA256": "689875aa392683afa54c9358d9df1a16f872be05cc6612ae7459b48aac2cfb1b",
       "originalOpaqueSHA256": "5219ee84ffe85f980d9c24351f0c7596ababd67e7e1d3525cf53a903ac48ba2c",
@@ -59,7 +59,7 @@
       "removedAlphaPixels": 29879,
       "opaquePixelsChanged": 0
     },
-    "EarlyBirds": {
+    "TracingPaper": {
       "originalFileSHA256": "61b2a96fa9ebf5f8022173f97d37e730622829f8db215b1c6dbcbe66a1ffccbe",
       "originalRGBSHA256": "4d2f2fcc1eb7911544eabeaab10490a3ca157d1a201083990dae19cef57d8591",
       "originalOpaqueSHA256": "6baa65029f7a664495683ea0aeabe94456f0718948cc1708b17f51d25373d9f1",
@@ -67,7 +67,7 @@
       "removedAlphaPixels": 34749,
       "opaquePixelsChanged": 0
     },
-    "Canary": {
+    "Grapefruit": {
       "originalFileSHA256": "3299a1e7b72e5b485bc97e40614f7a56361483b66d0ab397062ffc68eafb99a8",
       "originalRGBSHA256": "1f306d0dffc2bc3ec15fea6df21992f4b391bceee6895d634367dc3125bcc8a5",
       "originalOpaqueSHA256": "94e3985361c9fbfb927288fb689290acc9b802499bcdeb2cc2a8b1cae3b965fe",
@@ -75,7 +75,7 @@
       "removedAlphaPixels": 12433,
       "opaquePixelsChanged": 0
     },
-    "Dev": {
+    "Terminal": {
       "originalFileSHA256": "6b825554e4c8ee60d62cba08540e869bb6288e8cd3bd85449129752a55738c4a",
       "originalRGBSHA256": "865af1f343e8ca460def237e1c5a77fc5a22676eb78c88bb56c4222015b2650c",
       "originalOpaqueSHA256": "191e40a1cc1fdf4d0f900e5c631e667ef727874b6241b0ee529ea58d7e3bd6f6",

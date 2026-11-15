@@ -12,11 +12,11 @@ import ImageIO
         let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         let source = root.appendingPathComponent("source", isDirectory: true)
         let packaged = root.appendingPathComponent("packaged", isDirectory: true)
-        let expected = ["Original", "Candy", "Neon", "FlutedGlass", "Schoolbook", "Colorful", "Hologram", "EarlyBirds", "Canary", "Dev"]
+        let expected = ["Original", "Sorbet", "AfterHours", "RainGlass", "Recess", "Twilight", "Opal", "TracingPaper", "Grapefruit", "Terminal"]
         let sourceController = AppIconController(resources: source)
         try expect(sourceController.availabilityError == nil, "Source-only PNG previews remain supported")
-        try expect(sourceController.variants.map(\.id) == expected, "Every approved offline choice keeps its reference/Parc order")
-        try expect(sourceController.selectedID == "Original", "A new controller never uses the optional Dev mascot as default")
+        try expect(sourceController.variants.map(\.id) == expected, "Every approved offline choice keeps Parc's picker order")
+        try expect(sourceController.selectedID == "Original", "A new controller never uses the optional Terminal mascot as default")
 
         let preference = root.appendingPathComponent("session/app-icon.json")
         var applied: [NSImage] = []
@@ -37,8 +37,29 @@ import ImageIO
         let savedData = try Data(contentsOf: preference)
         let applyCount = applied.count
         sourceController.select("../../Unapproved")
-        try expect(applied.count == applyCount && sourceController.selectedID == "Dev", "Unknown choices cannot reach the applier")
+        try expect(applied.count == applyCount && sourceController.selectedID == "Terminal", "Unknown choices cannot reach the applier")
         try expect(try Data(contentsOf: preference) == savedData, "Unknown choices cannot replace the preference")
+        let legacy = ["Candy": "Sorbet", "Neon": "AfterHours", "FlutedGlass": "RainGlass", "Schoolbook": "Recess", "Colorful": "Twilight",
+                      "Hologram": "Opal", "EarlyBirds": "TracingPaper", "Canary": "Grapefruit", "Dev": "Terminal"]
+        for (old, new) in legacy {
+            try JSONSerialization.data(withJSONObject: ["version": 1, "icon": old]).write(to: preference)
+            let migrated = AppIconController(resources: source)
+            var migratedImage: NSImage?
+            migrated.configure(preferenceURL: preference) { migratedImage = $0; return nil }
+            try expect(migrated.selectedID == new && migrated.message == nil && migratedImage === migrated.variants.first(where: { $0.id == new })?.image,
+                       "A saved \(old) choice restores as \(new)")
+            let rewritten = try JSONSerialization.jsonObject(with: Data(contentsOf: preference)) as! [String: Any]
+            try expect(rewritten.count == 2 && rewritten["version"] as? Int == 1 && rewritten["icon"] as? String == new,
+                       "A saved \(old) choice is rewritten as \(new) for the Dock plugin")
+        }
+        let unknown = try JSONSerialization.data(withJSONObject: ["version": 1, "icon": "Unapproved"])
+        try unknown.write(to: preference)
+        let rejected = AppIconController(resources: source)
+        var rejectedApplyCount = 0
+        rejected.configure(preferenceURL: preference) { _ in rejectedApplyCount += 1; return nil }
+        try expect(rejected.selectedID == "Original" && rejected.message != nil && rejectedApplyCount == 0,
+                   "An unknown saved choice reports an unreadable preference")
+        try expect(try Data(contentsOf: preference) == unknown, "An unknown saved choice is left for the user to replace")
 
         for id in expected {
             try Data("invalid preview".utf8).write(to: packaged.appendingPathComponent("AppIcons/\(id).png"))
@@ -71,8 +92,8 @@ import ImageIO
         }
         var nativeApplied: NSImage?
         nativeController.configure(preferenceURL: root.appendingPathComponent("native/app-icon.json")) { nativeApplied = $0; return nil }
-        nativeController.select("Hologram")
-        try expect(nativeApplied === nativeController.variants.first(where: { $0.id == "Hologram" })?.image,
+        nativeController.select("Opal")
+        try expect(nativeApplied === nativeController.variants.first(where: { $0.id == "Opal" })?.image,
                    "The live identity consumer receives the same native multi-size image")
 
         let nativeOriginal = packaged.appendingPathComponent("AppIcons/Original.icns")

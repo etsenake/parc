@@ -59,14 +59,14 @@ struct IconSettingsTests {
         view.layoutSubtreeIfNeeded()
         let choices = rows(in: view)
         expect(choices.count == 10, "Every approved variant gets one control")
-        let original = choices[0], candy = choices[1], neon = choices[2]
+        let original = choices[0], sorbet = choices[1], afterHours = choices[2]
         let originalTitle = original.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == "The Original Parc" }!
         let titleFrame = originalTitle.frame
         expect(original.subviews.compactMap { $0 as? NSImageView }.first?.frame.size == NSSize(width: 64, height: 64),
                "Preview uses the recovered 64-point frame without cropping")
         expect(original.state == .on && choices.dropFirst().allSatisfy { $0.state == .off }, "Only saved choice is selected")
         _ = window.makeFirstResponder(original)
-        expect(original.showsIconFocusRing && !candy.showsIconFocusRing, "Only the current responder draws the active focus ring")
+        expect(original.showsIconFocusRing && !sorbet.showsIconFocusRing, "Only the current responder draws the active focus ring")
         original.needsDisplay = false
         window.simulatedKey = false
         NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
@@ -83,97 +83,97 @@ struct IconSettingsTests {
         application.simulatedActive = true
         NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: application)
         expect(original.showsIconFocusRing && original.needsDisplay, "Application return redraws the eligible ring")
-        expect(candy.accessibilityRole() == .radioButton, "Native radio role")
-        expect(candy.accessibilityLabel() == "Candy Parc", "Variant is the single AX name")
-        expect(candy.accessibilityChildren()?.isEmpty == true, "Artwork and labels do not duplicate AX controls")
-        expect(candy.superview?.accessibilityRole() == .radioGroup, "Choices are one named radio group")
+        expect(sorbet.accessibilityRole() == .radioButton, "Native radio role")
+        expect(sorbet.accessibilityLabel() == "Sorbet", "Variant is the single AX name")
+        expect(sorbet.accessibilityChildren()?.isEmpty == true, "Artwork and labels do not duplicate AX controls")
+        expect(sorbet.superview?.accessibilityRole() == .radioGroup, "Choices are one named radio group")
         for point in [NSPoint(x: 26, y: 39), NSPoint(x: 90, y: 39), NSPoint(x: 170, y: 39), NSPoint(x: 450, y: 39)] {
-            expect(candy.hitTest(candy.convert(point, to: candy.superview)) === candy, "Entire row shares one hit target")
+            expect(sorbet.hitTest(sorbet.convert(point, to: sorbet.superview)) === sorbet, "Entire row shares one hit target")
         }
-        expect(candy.hitTest(candy.convert(NSPoint(x: -2, y: 40), to: candy.superview)) == nil, "Unclipped children cannot enlarge the row hit target")
+        expect(sorbet.hitTest(sorbet.convert(NSPoint(x: -2, y: 40), to: sorbet.superview)) == nil, "Unclipped children cannot enlarge the row hit target")
 
-        candy.mouseDown(with: mouse(.leftMouseDown, row: candy))
-        expect(candy.isHighlighted && applications == 0 && original.state == .on, "Press feedback precedes selection")
-        candy.mouseDragged(with: mouse(.leftMouseDragged, row: candy, inside: false))
-        expect(!candy.isHighlighted, "Leaving the row disarms its appearance")
-        candy.mouseUp(with: mouse(.leftMouseUp, row: candy, inside: false))
-        expect(applications == 0 && candy.state == .off, "Release outside cancels")
-        candy.mouseDown(with: mouse(.leftMouseDown, row: candy))
-        candy.mouseDragged(with: mouse(.leftMouseDragged, row: candy, inside: false))
-        candy.mouseDragged(with: mouse(.leftMouseDragged, row: candy))
-        expect(candy.isHighlighted, "Returning before release re-arms the press")
-        candy.mouseUp(with: mouse(.leftMouseUp, row: candy))
-        expect(applications == 1 && icons.selectedID == "Candy" && candy.state == .on && original.state == .off,
+        sorbet.mouseDown(with: mouse(.leftMouseDown, row: sorbet))
+        expect(sorbet.isHighlighted && applications == 0 && original.state == .on, "Press feedback precedes selection")
+        sorbet.mouseDragged(with: mouse(.leftMouseDragged, row: sorbet, inside: false))
+        expect(!sorbet.isHighlighted, "Leaving the row disarms its appearance")
+        sorbet.mouseUp(with: mouse(.leftMouseUp, row: sorbet, inside: false))
+        expect(applications == 0 && sorbet.state == .off, "Release outside cancels")
+        sorbet.mouseDown(with: mouse(.leftMouseDown, row: sorbet))
+        sorbet.mouseDragged(with: mouse(.leftMouseDragged, row: sorbet, inside: false))
+        sorbet.mouseDragged(with: mouse(.leftMouseDragged, row: sorbet))
+        expect(sorbet.isHighlighted, "Returning before release re-arms the press")
+        sorbet.mouseUp(with: mouse(.leftMouseUp, row: sorbet))
+        expect(applications == 1 && icons.selectedID == "Sorbet" && sorbet.state == .on && original.state == .off,
                "One completed gesture changes the saved choice and all radio states synchronously")
         view.layoutSubtreeIfNeeded()
         expect(originalTitle.frame == titleFrame, "Selection marker does not shift the title")
-        candy.mouseUp(with: mouse(.leftMouseUp, row: candy))
+        sorbet.mouseUp(with: mouse(.leftMouseUp, row: sorbet))
         expect(applications == 1, "A stray release does not replay the action")
 
         for notification in [NSWindow.didResignKeyNotification, NSWindow.willCloseNotification] {
-            neon.mouseDown(with: mouse(.leftMouseDown, row: neon))
+            afterHours.mouseDown(with: mouse(.leftMouseDown, row: afterHours))
             NotificationCenter.default.post(name: notification, object: window)
-            neon.mouseUp(with: mouse(.leftMouseUp, row: neon))
-            expect(!neon.isHighlighted && applications == 1, "Window interruption cancels an outstanding press")
+            afterHours.mouseUp(with: mouse(.leftMouseUp, row: afterHours))
+            expect(!afterHours.isHighlighted && applications == 1, "Window interruption cancels an outstanding press")
             if notification == NSWindow.willCloseNotification {
-                expect(!neon.accessibilityPerformPress(), "A stale AX reference cannot activate a closed Settings window")
+                expect(!afterHours.accessibilityPerformPress(), "A stale AX reference cannot activate a closed Settings window")
                 NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
             }
         }
-        neon.mouseDown(with: mouse(.leftMouseDown, row: neon))
+        afterHours.mouseDown(with: mouse(.leftMouseDown, row: afterHours))
         NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApp)
-        neon.mouseUp(with: mouse(.leftMouseUp, row: neon))
+        afterHours.mouseUp(with: mouse(.leftMouseUp, row: afterHours))
         expect(applications == 1, "App deactivation cancels")
-        neon.mouseDown(with: mouse(.leftMouseDown, row: neon))
-        neon.isEnabled = false
-        neon.mouseUp(with: mouse(.leftMouseUp, row: neon))
-        expect(applications == 1 && !neon.accessibilityPerformPress(), "Disabled controls cannot activate through mouse or AX")
-        neon.isEnabled = true
+        afterHours.mouseDown(with: mouse(.leftMouseDown, row: afterHours))
+        afterHours.isEnabled = false
+        afterHours.mouseUp(with: mouse(.leftMouseUp, row: afterHours))
+        expect(applications == 1 && !afterHours.accessibilityPerformPress(), "Disabled controls cannot activate through mouse or AX")
+        afterHours.isEnabled = true
 
-        _ = window.makeFirstResponder(neon)
-        neon.keyDown(with: key(.keyDown, 49))
-        neon.keyDown(with: key(.keyDown, 49, repeat: true))
-        expect(neon.isHighlighted && applications == 1, "Held Space provides feedback without repeating saves")
-        neon.keyUp(with: key(.keyUp, 49))
-        expect(applications == 2 && neon.state == .on && !neon.isHighlighted, "Space release selects exactly once")
-        neon.keyUp(with: key(.keyUp, 49))
+        _ = window.makeFirstResponder(afterHours)
+        afterHours.keyDown(with: key(.keyDown, 49))
+        afterHours.keyDown(with: key(.keyDown, 49, repeat: true))
+        expect(afterHours.isHighlighted && applications == 1, "Held Space provides feedback without repeating saves")
+        afterHours.keyUp(with: key(.keyUp, 49))
+        expect(applications == 2 && afterHours.state == .on && !afterHours.isHighlighted, "Space release selects exactly once")
+        afterHours.keyUp(with: key(.keyUp, 49))
         expect(applications == 2, "Repeated keyboard release is inert")
-        candy.keyDown(with: key(.keyDown, 36))
-        candy.keyDown(with: key(.keyDown, 53))
-        candy.keyUp(with: key(.keyUp, 36))
-        expect(applications == 2 && !candy.isHighlighted, "Escape cancels keyboard activation")
-        _ = window.makeFirstResponder(candy)
-        candy.keyDown(with: key(.keyDown, 49))
-        _ = window.makeFirstResponder(neon)
-        candy.keyUp(with: key(.keyUp, 49))
+        sorbet.keyDown(with: key(.keyDown, 36))
+        sorbet.keyDown(with: key(.keyDown, 53))
+        sorbet.keyUp(with: key(.keyUp, 36))
+        expect(applications == 2 && !sorbet.isHighlighted, "Escape cancels keyboard activation")
+        _ = window.makeFirstResponder(sorbet)
+        sorbet.keyDown(with: key(.keyDown, 49))
+        _ = window.makeFirstResponder(afterHours)
+        sorbet.keyUp(with: key(.keyUp, 49))
         expect(applications == 2, "Moving focus cancels held input")
-        neon.keyDown(with: key(.keyDown, 126))
-        expect(window.firstResponder === candy && icons.selectedID == "Candy" && applications == 3,
+        afterHours.keyDown(with: key(.keyDown, 126))
+        expect(window.firstResponder === sorbet && icons.selectedID == "Sorbet" && applications == 3,
                "Arrow navigation focuses and selects the neighbor through the controller")
-        candy.keyDown(with: key(.keyDown, 126))
+        sorbet.keyDown(with: key(.keyDown, 126))
         original.keyDown(with: key(.keyDown, 126))
         expect(icons.selectedID == "Original" && applications == 4, "Navigation stops at list edge without writing again")
-        expect(neon.accessibilityPerformPress() && icons.selectedID == "Neon" && applications == 5,
+        expect(afterHours.accessibilityPerformPress() && icons.selectedID == "AfterHours" && applications == 5,
                "AX press uses the same persisted selection")
-        expect((neon.accessibilityValue() as? NSNumber)?.intValue == 1 && (original.accessibilityValue() as? NSNumber)?.intValue == 0,
+        expect((afterHours.accessibilityValue() as? NSNumber)?.intValue == 1 && (original.accessibilityValue() as? NSNumber)?.intValue == 0,
                "AX values follow authoritative selection")
 
-        candy.mouseDown(with: mouse(.leftMouseDown, row: candy))
+        sorbet.mouseDown(with: mouse(.leftMouseDown, row: sorbet))
         view.isHidden = true
         view.isHidden = false
-        candy.mouseUp(with: mouse(.leftMouseUp, row: candy))
+        sorbet.mouseUp(with: mouse(.leftMouseUp, row: sorbet))
         expect(applications == 5, "Pane hide/show never inherits a press")
-        candy.mouseDown(with: mouse(.leftMouseDown, row: candy))
+        sorbet.mouseDown(with: mouse(.leftMouseDown, row: sorbet))
         icons.select("Original")
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02))
-        candy.mouseUp(with: mouse(.leftMouseUp, row: candy))
+        sorbet.mouseUp(with: mouse(.leftMouseUp, row: sorbet))
         expect(applications == 6 && icons.selectedID == "Original", "External selection retires pending input")
 
         let blocker = temporary.appendingPathComponent("not-a-directory")
         try Data([1]).write(to: blocker)
         icons.configure(preferenceURL: blocker.appendingPathComponent("choice.json")) { _ in applications += 1; return nil }
-        candy.performClick(nil)
-        expect(applications == 6 && icons.selectedID == "Original" && original.state == .on && candy.state == .off,
+        sorbet.performClick(nil)
+        expect(applications == 6 && icons.selectedID == "Original" && original.state == .on && sorbet.state == .off,
                "Failed persistence keeps previous model and visual selection")
         expect(icons.message != nil && !icons.canRetry, "Save failure keeps truthful feedback")
 
@@ -189,12 +189,12 @@ struct IconSettingsTests {
                 try image.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent(name + ".png"))
             }
         }
-        let retainedParent = candy.superview!
-        candy.mouseDown(with: mouse(.leftMouseDown, row: candy))
-        candy.removeFromSuperview()
-        expect(!candy.accessibilityPerformPress() && !candy.isHighlighted, "Detached row cancels and refuses AX activation")
-        retainedParent.addSubview(candy)
-        candy.mouseUp(with: mouse(.leftMouseUp, row: candy))
+        let retainedParent = sorbet.superview!
+        sorbet.mouseDown(with: mouse(.leftMouseDown, row: sorbet))
+        sorbet.removeFromSuperview()
+        expect(!sorbet.accessibilityPerformPress() && !sorbet.isHighlighted, "Detached row cancels and refuses AX activation")
+        retainedParent.addSubview(sorbet)
+        sorbet.mouseUp(with: mouse(.leftMouseUp, row: sorbet))
         expect(applications == 6, "Reattachment does not revive old input")
 
         weak var releasedView: IconSettingsView?

@@ -1,7 +1,7 @@
 # App icon optical export
 
 Parc exports ten approved master PNGs into native ICNS representations without
-redrawing or modifying the masters. Preserve Original's geometry and Dev's
+redrawing or modifying the masters. Preserve Original's geometry and Terminal's
 numeral, wink and pedestal. Artwork provenance belongs in
 [the resource guide](../Resources/AppIcons/README.md).
 
@@ -16,7 +16,7 @@ there is no additional Python package or external application dependency.
 The exporter measures alpha-at-least-128 bounds so faint shadows do not enlarge
 the optical body. It uniformly scales the complete source, preserves aspect
 ratio and centers it on a transparent canvas. Standard variants use a dominant
-824/1024 extent; Dev uses 204/256 with vertical center 130/256. Extent and
+824/1024 extent; Terminal uses 204/256 with vertical center 130/256. Extent and
 placement are rounded at each output size: the standard 16- and 32-pixel
 representations have 13- and 26-pixel dominant bodies.
 

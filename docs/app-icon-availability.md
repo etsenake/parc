@@ -6,10 +6,12 @@ Profiles and Spaces do not change availability or own the selection.
 
 ## Parc availability contract
 
-The picker order is Original, Candy, Neon, Fluted Glass, Schoolbook, Colorful,
-Hologram, Early Birds, Canary and Dev. The last four names carry no eligibility
+The picker order is Original, Sorbet, After Hours, Rain Glass, Recess, Twilight,
+Opal, Tracing Paper, Grapefruit and Terminal. No choice carries an eligibility
 or build-channel requirement. Every choice supports preview, current-icon state,
-atomic local selection, restoration and native identity application.
+atomic local selection, restoration and native identity application. A choice
+saved under an icon's earlier name restores as its current name, and the saved
+preference is rewritten so the Dock plugin shows it while Parc is closed.
 
 Parc has no referral counters, account gates, locked/loading reward rows or
 unlock banner. The permanent Icon settings pane is the discovery surface.
@@ -25,5 +27,6 @@ an artwork failure instead of silently falling back.
 The controller owns persistence and native identity; the [picker](app-icon-picker.md)
 owns interaction. `scripts/test-app-icon-controller.sh` exercises the production
 controller with disposable catalogs and an injected identity applier. It covers
-choice/order/defaults, restoration, invalid IDs, native sizes, missing-ICNS
-fallback and corrupt-ICNS refusal without changing the system icon or Dock.
+choice/order/defaults, restoration, earlier-name migration, invalid IDs, native
+sizes, missing-ICNS fallback and corrupt-ICNS refusal without changing the
+system icon or Dock.

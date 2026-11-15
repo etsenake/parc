@@ -12,6 +12,8 @@ final class AppIconController: ObservableObject {
     }
     private struct Catalog: Decodable { let `default`: String; let variants: [String] }
     private struct Selection: Codable { let version: Int; let icon: String }
+    private static let renamedIDs = ["Candy": "Sorbet", "Neon": "AfterHours", "FlutedGlass": "RainGlass", "Schoolbook": "Recess", "Colorful": "Twilight",
+                                     "Hologram": "Opal", "EarlyBirds": "TracingPaper", "Canary": "Grapefruit", "Dev": "Terminal"]
     private(set) var variants: [Variant] = []
     private(set) var availabilityError: String?
     @Published private(set) var selectedID = "Original"
@@ -25,11 +27,10 @@ final class AppIconController: ObservableObject {
             guard let resources else { throw CocoaError(.fileNoSuchFile) }
             let root = resources.appendingPathComponent("AppIcons", isDirectory: true)
             let catalog = try JSONDecoder().decode(Catalog.self, from: Data(contentsOf: root.appendingPathComponent("catalog.json")))
-            let approved = Set(["Original", "Candy", "Colorful", "FlutedGlass", "Hologram", "Neon", "Schoolbook", "EarlyBirds", "Canary", "Dev"])
-            guard catalog.default == "Original", Set(catalog.variants) == approved,
-                  catalog.variants.count == approved.count else { throw CocoaError(.fileReadCorruptFile) }
-            let titles = ["Original": "The Original Parc", "Candy": "Candy Parc", "FlutedGlass": "Fluted Glass", "EarlyBirds": "Early Birds"]
-            let order = ["Original", "Candy", "Neon", "FlutedGlass", "Schoolbook", "Colorful", "Hologram", "EarlyBirds", "Canary", "Dev"]
+            let order = ["Original", "Sorbet", "AfterHours", "RainGlass", "Recess", "Twilight", "Opal", "TracingPaper", "Grapefruit", "Terminal"]
+            guard catalog.default == "Original", Set(catalog.variants) == Set(order),
+                  catalog.variants.count == order.count else { throw CocoaError(.fileReadCorruptFile) }
+            let titles = ["Original": "The Original Parc", "AfterHours": "After Hours", "RainGlass": "Rain Glass", "TracingPaper": "Tracing Paper"]
             variants = try order.map { id in
                 let native = root.appendingPathComponent(id + ".icns")
                 let artwork = FileManager.default.fileExists(atPath: native.path)
@@ -70,8 +71,10 @@ final class AppIconController: ObservableObject {
         guard FileManager.default.fileExists(atPath: preferenceURL.path) else { return }
         do {
             let selection = try JSONDecoder().decode(Selection.self, from: Data(contentsOf: preferenceURL))
-            guard selection.version == 1, variants.contains(where: { $0.id == selection.icon }) else { throw CocoaError(.fileReadCorruptFile) }
-            selectedID = selection.icon
+            let icon = Self.renamedIDs[selection.icon] ?? selection.icon
+            guard selection.version == 1, variants.contains(where: { $0.id == icon }) else { throw CocoaError(.fileReadCorruptFile) }
+            guard icon == selection.icon else { return select(icon) }
+            selectedID = icon
             applyCurrent()
         } catch {
             message = "The saved icon choice couldn’t be read. Choose an icon to save a new preference."

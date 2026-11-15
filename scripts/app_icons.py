@@ -26,7 +26,7 @@ def package_app_icons(resources: Path) -> str:
                         "-o", str(renderer)], check=True)
         for name in variants:
             _package_icon(icons / (name + ".png"), icons / (name + ".icns"),
-                          renderer, mascot=name == "Dev")
+                          renderer, mascot=name == "Terminal")
     shutil.copyfile(icons / (default + ".icns"), resources / ICON_FILE)
     return ICON_FILE
 
