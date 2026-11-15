@@ -1,26 +1,20 @@
 # Library artwork
 
-
 ## Library entry and download placeholder
 
-The Library entry combines five layers from
-`circle` and `glow`. Their source renditions use the same names with `.pdf`,
-except `glow`, whose original name is `Rectangle 14.pdf`.
+The Library entry combines five Parc template layers: `box` (a bucket with a
+short handle slot), `star`, `triangle`, `circle` and `glow` (a soft beam shown
+only on hover in dark mode). Each layer has a vector `.pdf` plus `.png` and
+`@2x.png` renditions rendered from the same geometry with 8× supersampling; the
+glow's PDF is a banded opacity gradient.
 
-`EmptyFavicon` is the Downloads placeholder from
-`EmptyFavicon.svg`. Its two layers, with fill opacity 0.1 over 0.2, combine to
-72/255 template alpha.
+`EmptyFavicon` is the Downloads placeholder: a rounded square at 72/255 template
+alpha, as `EmptyFavicon.svg` plus 1× and 2× PNGs.
 
-Each layer has a vector (`.pdf` or `.svg`) and 1×/2× bitmap (`.png` and
-`@2x.png`) representation. Vectors preserve the catalog payload after any
-required decompression. AppKit supplied the compiled bitmaps and ImageIO wrote
-them without resizing or redrawing, preserving alpha and color profiles:
-Generic Gray Gamma 2.2 for the layers, sRGB for EmptyFavicon.
-
-`LibraryArtwork` combines these representations as templates at their original
-point sizes: box 12 × 9, star 9 × 9, triangle 4 × 3, circle 2 × 2, glow 81 × 27
-and EmptyFavicon 14 × 14. See [downloads](../../docs/download-library.md) for
-the placeholder's consumer.
+`LibraryArtwork` combines these representations as templates at their point
+sizes: box 12 × 9, star 9 × 9, triangle 3.5 × 3 (4 × 3 pixels at 1×), circle
+2 × 2, glow 81 × 27 and EmptyFavicon 14 × 14. See
+[downloads](../../docs/download-library.md) for the placeholder's consumer.
 
 ## Easel and Note title cards
 

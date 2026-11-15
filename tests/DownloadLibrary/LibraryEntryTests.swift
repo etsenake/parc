@@ -83,42 +83,42 @@ import UniformTypeIdentifiers
         let railArtwork = Set(["screenshots", "downloads", "easels", "spaces", "archive"].map { "\($0).json" })
         expect(Set(files) == originalArtwork.union(documentArtwork).union(railArtwork), "Original entry, Easels & Notes and rail artwork inventory: \(files)")
         let recordedDigests = [
-            "EmptyFavicon.png": "68ce600e150b7abc0b92849b2adbc0c75ee9da9f90940f1683551d24d58e9588",
-            "EmptyFavicon.svg": "4f298519f16c3add785a401b515ed071eb10de902d1ae7c609df65a3f6ff9052",
-            "EmptyFavicon@2x.png": "7c60b23c4a66b4fa29252b86e95b9eb7e25093a8715507a46b77c73b173c2eb0",
+            "EmptyFavicon.png": "9f8c215d6a4cd681212f199b6ced7a474b96142da70b135a4742ad4e6058ea59",
+            "EmptyFavicon.svg": "a8c3c907ce1edf91505144b35a5c72e9e221bf7ad26fc99e57f6049bf21a5b6d",
+            "EmptyFavicon@2x.png": "975803fa39539559a47f403ebb2ea12dec3a5efd35cd7dc0eab86df517a547f2",
             "archive.json": "b26687a38114a3f72f2de7ab3c8c2febdc59c7c84e9b87a6069f374890942acc",
-            "box.pdf": "52774965c5b67f7cc3369d397ff37f1a1ee1418ba2b3110660e113eb23c5da05",
-            "box.png": "d18edab2ba459dd1e6db1e14e35e6148ac70cf92343d5e389aaba1c9df4b152d",
-            "box@2x.png": "b1a281b8fe6870724af4ba04aa96b2f2506813723c0eada03ef0e5224df3bed2",
-            "circle.pdf": "455bf930089c413cef0fc466e72b7e141ccf959b2fa4729ed6815a88eaa9cd6c",
-            "circle.png": "974211a1e3db991bb97968ae4528d46a84dbee0ec6402da7f8549202476b1fa5",
-            "circle@2x.png": "80124245b37b4352040024e518ad0cded1c88bb5b189a08a6dec120d697914a4",
+            "box.pdf": "2e346cef04224535cc627b12f24e73c3fc3b7f0c5ef561961c54b7e0938f1a32",
+            "box.png": "8cf280b20c879d3ab59bfa2f6d67a8be6887bc1acb7da1bdffbe97b85df51608",
+            "box@2x.png": "ce6a1b382dd108e7b217c796618510f1736784948bb4ecaa4b894e9604eef33a",
+            "circle.pdf": "ff75dc7e559d7c2854968139f7f53aa002bdf7a16b6d940bb8a93618411ea2f7",
+            "circle.png": "0de741cd1cef116ff56f62bb54adf75be3b1d1a347b07a91f2f91f31a415430f",
+            "circle@2x.png": "9f68d2791c4b0219dbaf4dcfbbf24fbc155be5fc501b77e6d7e46560f7ddc7e7",
             "downloads.json": "2d01cdaa855829318661bb0ca94136015e033aa6de6f62f1fa8ce92c360bc017",
             "easel-dark.png": "442dfc837df6c362e85bd6fb0a8274e38be65f621fa05712a3425c5944d2bf33",
             "easel-dark@2x.png": "eab14c70fdfc2fc7a216f21ebaf5deab0d01ac186d3ad910cb9c7a9aef8f0391",
             "easel.png": "3fab1cfcb190d836c2e166b28ff803974d16aba67c3ad738d86f3c6942e09e6f",
             "easel@2x.png": "dca7f41cfc59ceeef0b86c91195dea9c298b328f53723ce3af23b87b79bd93a4",
             "easels.json": "30c1299da7f108c97912574d6373c492dd1226e15b72eca8b7edfbe2337875d5",
-            "glow.pdf": "0ed84fb85507cac231aaeb2cf120360d0c36c9430e5ae37e6b957d20a1be7df6",
-            "glow.png": "1e008a605e461be8b7875f45cb4c1dc0d0253090d03a150341d7ff3c1530c561",
-            "glow@2x.png": "82c129676ad89fdd702b06defab8db701fb468baf2f961b2aad1e99b8f4f5caf",
+            "glow.pdf": "a7b29010dbbb02daae2cd71b5edb1e852d949a892f609e0c3e2123945ca146f2",
+            "glow.png": "df88cb4f80747ba859f04df0ba0c9fd6ef60de7461ecb6a03a0ef9554eacc67a",
+            "glow@2x.png": "66af6fcc44de3b0d8c63dae972b698018b94c88faf298f68abbaced7bd72c2a4",
             "note-dark.png": "71547ee102f9d7076a394c1badd65707875ae2580739bb87e96dd8b545db83a1",
             "note-dark@2x.png": "b1cef5ce4aec49141d9ba46fbbb7936da1ba91a048206993e0144f6e905a4809",
             "note.png": "d9d9ece1bf83c2f2d618ee0a2421c95ac04cad5b2ce560e8723ff5b067f38603",
             "note@2x.png": "af8ad6f2d6fd2d4e6f570965f519ff1246310f58676be3223e1a8d30fac70a89",
             "screenshots.json": "2ddf7063fe4e6de2d83d68123beb8f459c5424539bd3fb37e25b650622df2e8c",
             "spaces.json": "f87b671825d99100c476827809936aea5ce8bfa9730c5809a1411247aefb0fbd",
-            "star.pdf": "ea981f2b67b10380ac93121d949f80bc163956c386e0481b6a85b97fc7509cd2",
-            "star.png": "32a09bd7840f5d1665f0a5125e00a33d65fd588f1c3a26733653a264637c009f",
-            "star@2x.png": "a74e346454d2427192af3f08c3f9214baa5fac4516c849c5d95a88602cbdf8aa",
-            "triangle.pdf": "c18298bd467e0c5b717839919df1291cdbd5816d557140327d857b044f854b21",
-            "triangle.png": "f0980d7b496243dff9b1852e1f0bbb66f7a60df27a5edf3e01590486d720de2c",
-            "triangle@2x.png": "bffe42132a30285197737f19bc2b2cfe5ad87ec4f7bb6daceeac8aecf1b0f32b"
+            "star.pdf": "9d155e0d1bd5215436842dc3523350621c970a352c224ee4236a85c6ce222a59",
+            "star.png": "8ec11168b78904b3fc15f1e7b730702a3283c74d606fb3d78e9f18bed3b78715",
+            "star@2x.png": "c87a25aaa7097129bbed1b167a4225972ff4d7e54bf7caa5d0c1cb6fb384bb09",
+            "triangle.pdf": "b9de9f417b49cf911cb40bda3fc0db903fe8f4d0cda282aba7fdb0f35ca2d893",
+            "triangle.png": "db7689b3a019d6fa93aa2e0a450dc1ee2b4ad55230950a34357a44ef192d9ea3",
+            "triangle@2x.png": "eefeff24657fc9edb6fe9a99be7c20d62e6e17cdcd25f0e22295524619dcfeef"
         ]
         expect(Set(recordedDigests.keys) == Set(files), "Every bundled artwork file has a recorded digest")
         for file in files {
             let digest = SHA256.hash(data: try Data(contentsOf: resources.appendingPathComponent(file))).map { String(format: "%02x", $0) }.joined()
-            expect(recordedDigests[file] == digest, "\(file) is byte for byte the catalog artwork Parc recorded")
+            expect(recordedDigests[file] == digest, "\(file) is byte for byte the artwork Parc recorded")
         }
         let sizes: [String: NSSize] = ["glow": NSSize(width: 81, height: 27), "star": NSSize(width: 9, height: 9),
                                        "triangle": NSSize(width: 4, height: 3), "circle": NSSize(width: 2, height: 2),
