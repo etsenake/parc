@@ -2009,7 +2009,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         header.canShowHeaderButtonsIfPossible = true
     }
 
-    private let spacePager = SidebarSpacePager()
+    let spacePager = SidebarSpacePager()
     private let pageStrip = SidebarPageStripView()
     private var pagingSourceID: UUID?
     private var creationEnded = false
@@ -2237,6 +2237,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         neighborPreparation = timer
     }
     private var inputRecent: Bool { SidebarInputClock.secondsSinceInput < Self.preparationQuiet }
+    var isPreparingNeighborPages: Bool {
+        neighborPreparation != nil || !pendingPreparation.isEmpty || !retiredLists.isEmpty || !retiredPageViews.isEmpty
+    }
     private func prepareNeighborPage() {
         neighborPreparation = nil
         guard window != nil else { pendingPreparation = []; return }

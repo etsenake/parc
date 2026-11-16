@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix="parc-space-swipe-") as directory:
     path.write_text("import AppKit\nimport UniformTypeIdentifiers\n" + text[text.index("enum DownloadFileActivation"):])
     extracted.append(path)
     sources = list((root / "Sources/ParcCore").glob("*.swift")) + [app / name for name in names] + extracted
-    sources += [root / "tests/KeyboardNavigation/NativeShortcutStub.swift",
+    sources += [root / "tests/KeyboardNavigation/NativeShortcutStub.swift", root / "tests/Support/AppKitObservation.swift",
                 root / "tests/SpaceManager/NativeHostStub.swift", Path(__file__).with_name("main.swift")]
     executable = Path(os.environ.get("SWIPE_BINARY", scratch / "swipe"))
     subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-O", "-whole-module-optimization", "-parse-as-library",
