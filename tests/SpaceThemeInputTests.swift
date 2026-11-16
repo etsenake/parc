@@ -98,6 +98,8 @@ private final class ThemeInputEvent: NSEvent {
         dialMappingAndRotation()
         dialKnobGeometry()
         editorTooltips()
+        handlesSwellAndDotsFill()
+        padHoverFollowsStillPointer()
         wheelThrottleAndUndo()
         interruptionAndLifetime()
         print("Space theme input: \(assertions) assertions passed")
@@ -268,7 +270,7 @@ private final class ThemeInputEvent: NSEvent {
         }!
         NSCursor.arrow.set()
         pad.mouseDown(with: mouse(.leftMouseDown, pad, clicked)); pad.mouseUp(with: mouse(.leftMouseUp, pad, clicked))
-        expect(knobs[0].transform.m11 == 1 && NSCursor.current == .arrow, "a plain click on the pad moves the knob there without growing it under the arrow")
+        expect(knobs[0].transform.m11 == 1 && NSCursor.current == .arrow, "outside a key window a plain click leaves the knob it moves unhovered under the arrow")
         pad.mouseDown(with: mouse(.leftMouseDown, pad, background))
         pad.mouseDragged(with: mouse(.leftMouseDragged, pad, interior))
         pad.mouseDragged(with: mouse(.leftMouseDragged, pad, NSPoint(x: -10, y: pad.bounds.midY)))
@@ -475,6 +477,123 @@ private final class ThemeInputEvent: NSEvent {
         enter(NSPoint(x: c.x + 19, y: c.y + 19)); drain(0.6)
         expect(label() == "Noise", "the centre knob's frame shows Noise, where the pointing hand shows")
         expect(window.childWindows?.first?.isVisible == false && !window.isVisible, "nothing was put on screen")
+    }
+    static func snapshot(_ view: NSView) -> NSBitmapImageRep {
+        let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
+        view.cacheDisplay(in: view.bounds, to: rep)
+        return rep
+    }
+    static func ink(_ rep: NSBitmapImageRep, _ view: NSView, _ point: NSPoint) -> CGFloat {
+        let scale = CGFloat(rep.pixelsWide) / view.bounds.width
+        return rep.colorAt(x: Int(point.x * scale), y: Int(point.y * scale))!.alphaComponent
+    }
+    static func patch(_ rep: NSBitmapImageRep, _ view: NSView, _ rect: NSRect) -> [CGFloat] {
+        stride(from: rect.minY, to: rect.maxY, by: 0.5).flatMap { y in
+            stride(from: rect.minX, to: rect.maxX, by: 0.5).map { ink(rep, view, NSPoint(x: $0, y: y)) }
+        }
+    }
+    static func edge(_ type: NSEvent.EventType) -> NSEvent {
+        NSEvent.enterExitEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                               eventNumber: 0, trackingNumber: 0, userData: nil)!
+    }
+    static func handlesSwellAndDotsFill() {
+        var hovered = ThemeButtonMotion()
+        hovered.setHovered(true, animated: false)
+        expect(hovered.hoverScale == 1.05 && ThemeButtonMotion().hoverScale == 1,
+               "the slider thumb and dial marker swell with the editor buttons' own 5% hover scale")
+        expect(ThemeControlHandle.shadowOpacity(hover: 0) == 0.05 && abs(ThemeControlHandle.shadowOpacity(hover: 1) - 0.12) < 1e-9
+               && ThemeControlHandle.shadowBlur(hover: 0) == 1.5 && ThemeControlHandle.shadowBlur(hover: 1) == 4
+               && ThemeControlHandle.shadowDrop(hover: 0) == 2 && ThemeControlHandle.shadowDrop(hover: 1) == 3,
+               "their shadow deepens from 5% with a 1.5-point blur and 2-point drop to 12%, 4 and 3")
+        near(Double(ThemeControlHandle.dotFill(step: 6, value: 0.33)), 0.6, "a dot fills with the turn from its own step to the next")
+        expect(ThemeControlHandle.dotFill(step: 0, value: 0) == 0 && ThemeControlHandle.dotFill(step: 5, value: 0.33) == 1
+               && ThemeControlHandle.dotFill(step: 7, value: 0.33) == 0 && ThemeControlHandle.dotFill(step: 19, value: 1) == 1,
+               "dots the marker has passed are full, dots ahead are empty, and zero noise lights nothing")
+
+        var theme = SpaceTheme(); theme.intensity = 0.5; theme.noise = 0.25
+        let view = make(theme), slider = control("Theme intensity", view), dial = control("Theme texture and noise", view)
+        expect(slider.frame.size == NSSize(width: 248, height: 80) && slider.frame.midY == dial.frame.midY && slider.frame.minX == 6,
+               "the slider draws with four points of room beside and ten above and below its old frame, on the dial's centre line")
+        func hits(_ x: CGFloat, _ y: CGFloat) -> Bool {
+            slider.hitTest(slider.convert(NSPoint(x: x, y: slider.bounds.midY + y), to: slider.superview)) === slider
+        }
+        expect(!hits(slider.bounds.midX, -31) && hits(slider.bounds.midX, -29) && !hits(3, 0) && hits(5, 0)
+               && !hits(slider.bounds.width - 3, 0) && hits(slider.bounds.width - 5, 0),
+               "clicks keep the slider's old 240 × 60 band")
+        let restingSlider = pixels(slider)
+        slider.mouseEntered(with: edge(.mouseEntered))
+        let hoveredSlider = pixels(slider)
+        expect(hoveredSlider != restingSlider, "hovering the track swells the thumb")
+        slider.mouseExited(with: edge(.mouseExited))
+        expect(pixels(slider) == restingSlider, "leaving the track settles the thumb")
+        let middle = NSPoint(x: slider.bounds.midX, y: slider.bounds.midY)
+        slider.mouseDown(with: mouse(.leftMouseDown, slider, middle))
+        expect(view.theme.intensity == 0.5 && pixels(slider) == hoveredSlider, "a held drag keeps the thumb swollen")
+        slider.mouseUp(with: mouse(.leftMouseUp, slider, NSPoint(x: middle.x, y: 2)))
+        expect(pixels(slider) == restingSlider, "releasing outside the band settles the thumb")
+
+        let marker = NSRect(x: 61, y: 33, width: 19, height: 14), centre = NSPoint(x: dial.bounds.midX, y: dial.bounds.midY)
+        let restingMarker = patch(snapshot(dial), dial, marker)
+        dial.mouseMoved(with: mouse(.mouseMoved, dial, NSPoint(x: centre.x - 30, y: centre.y)))
+        let swollenMarker = patch(snapshot(dial), dial, marker)
+        expect(swollenMarker != restingMarker, "hovering the ring swells the position marker")
+        dial.mouseMoved(with: mouse(.mouseMoved, dial, centre))
+        expect(patch(snapshot(dial), dial, marker) == restingMarker, "the centre knob grows its texture, not the marker")
+        dial.mouseDown(with: mouse(.leftMouseDown, dial, NSPoint(x: centre.x + 24, y: centre.y)))
+        dial.mouseDragged(with: mouse(.leftMouseDragged, dial, NSPoint(x: centre.x + 38, y: centre.y)))
+        dial.mouseDragged(with: mouse(.leftMouseDragged, dial, NSPoint(x: centre.x + 5, y: centre.y)))
+        expect(view.theme.noise == 0.25 && patch(snapshot(dial), dial, marker) == swollenMarker,
+               "a dial drag keeps the marker swollen even over the knob")
+        dial.mouseUp(with: mouse(.leftMouseUp, dial, NSPoint(x: centre.x + 5, y: centre.y)))
+        expect(patch(snapshot(dial), dial, marker) == restingMarker, "releasing over the knob settles the marker")
+
+        func dotInk(_ value: Double, step: Int) -> CGFloat {
+            var theme = SpaceTheme(); theme.noise = value
+            let dial = control("Theme texture and noise", make(theme))
+            let angle = (-90 + Double(step) * 18) * .pi / 180
+            return ink(snapshot(dial), dial, NSPoint(x: 40 + cos(angle) * 32, y: 40 + sin(angle) * 32))
+        }
+        let empty = dotInk(0.25, step: 6), most = dotInk(0.345, step: 6), full = dotInk(0.35, step: 6)
+        expect(empty < most && most < full, "a dot the marker has nearly passed is partly filled, between empty and full")
+        expect(dotInk(0.34, step: 6) < most, "and keeps filling as the dial turns")
+    }
+    static func padHoverFollowsStillPointer() {
+        var theme = SpaceTheme.singleColor(offAxisColor); theme.appearance = .light
+        let view = make(theme)
+        let window = KeyHostWindow(contentRect: NSRect(x: 200, y: 200, width: view.frame.width, height: view.frame.height),
+                                   styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+        defer { window.contentView = nil; window.close(); NSCursor.arrow.set() }
+        let pad = control("Theme color pad", view), knob = knobs(pad)[0]
+        let start = drawn(knob, pad, in: view)
+        window.pointer = pad.convert(start, to: nil)
+        pad.mouseMoved(with: mouse(.mouseMoved, pad, start))
+        expect(knob.transform.m11 > 1 && NSCursor.current == .openHand, "the knob under the pointer shows its growth and the open hand")
+        let towardCentre: UInt16 = start.x > pad.bounds.midX ? 123 : 124
+        func nudge() {
+            pad.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .shift, timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "",
+                isARepeat: false, keyCode: towardCentre)!)
+        }
+        nudge(); nudge()
+        let nudged = view.theme
+        expect(knob.transform.m11 == 1 && NSCursor.current == .arrow,
+               "arrow-key nudges that carry the knob from under a still pointer drop its growth and the open hand")
+        view.synchronizeTheme(theme)
+        expect(knob.transform.m11 > 1 && NSCursor.current == .openHand, "a theme sync that brings it back under the pointer restores both")
+        view.synchronizeTheme(nudged)
+        expect(knob.transform.m11 == 1 && NSCursor.current == .arrow, "a theme sync that moves it away drops both")
+        let away = drawn(knob, pad, in: view)
+        let empty = stride(from: 60.0, through: pad.bounds.width - 60, by: 20).flatMap { x in
+            stride(from: 80.0, through: pad.bounds.height - 80, by: 20).map { NSPoint(x: x, y: $0) }
+        }.first { hypot($0.x - away.x, $0.y - away.y) > 60 }!
+        window.pointer = pad.convert(empty, to: nil)
+        pad.mouseMoved(with: mouse(.mouseMoved, pad, empty))
+        pad.mouseDown(with: mouse(.leftMouseDown, pad, empty)); pad.mouseUp(with: mouse(.leftMouseUp, pad, empty))
+        expect(knob.transform.m11 > 1 && NSCursor.current == .openHand,
+               "in a key window a plain click shows the knob it brings under the still pointer with growth and the open hand")
     }
     static func dialKnobGeometry() {
         var theme = SpaceTheme(); theme.noise = 0.5

@@ -11,8 +11,11 @@ The pad clips to continuous 8-point corners, fills `labelColor` at 0.05 and tint
 its stretched DotGrid at 0.4. Color handles keep their own position/hover springs.
 The knob under the pointer keeps its hover growth through a pad drag, including
 a grabbed knob and the primary knob arriving under a background drag, so the
-growth always matches the open or closed hand. Pad buttons suppress hover while
-a knob is hovered or dragged, restoring that state from the actual pointer after
+growth always matches the open or closed hand. When a knob moves under a still
+pointer, through a plain click, an arrow-key nudge, Undo or a theme sync, the
+editor rereads the pointer once no gesture is under way and its window is key,
+so growth and cursor follow the knob. Pad buttons suppress hover while a knob is
+hovered or dragged, restoring that state from the actual pointer after
 cancellation.
 
 ## Preset swatches
@@ -45,7 +48,14 @@ The slider's 224 × 44-point wave has 8-point padding, 5-point stroke and freque
 `2π − 0.25`. Its leading region overlays a 16-point capsule and foreground wave.
 The white thumb starts 12 × 44 and grows by 15 × value in both dimensions. Dark/light
 appearance changes its faint shadow and the track colors, not the white thumb.
-The current implementation draws the resting thumb/shadow without hover growth.
+
+While the pointer is over the track, or a drag holds the thumb, it swells 5%,
+matching the editor buttons, and its shadow deepens from 5% opacity with a
+1.5-point blur and 2-point drop to 12%, 4 and 3. The swell uses the buttons'
+0.1-second ease, hover scale and `ThemeButtonMotion`, so Reduce Motion settles it
+at once. The control draws with 4 points of room on each side and 10 above and
+below its old 240 × 60 frame, so the swollen thumb and shadow fit at full
+intensity; clicks, hover and the accessibility frame keep the old band.
 
 ## Noise dial
 
@@ -56,10 +66,18 @@ press must remain inside the circle. Wheel eligibility changes immediately.
 
 Nineteen 5-point dots lie on a 32-point radius at 18-degree increments, leaving
 the bottom slot empty. Lit dots overlay foreground ink on separator ink, counting
-clockwise from the top. The current drawing lights whole twentieth steps rather
-than partial dots. The indicator is an 8 × 16 white radial capsule; its shadow also
-uses resting values. Gesture admission and wheel/rotation cancellation are in
-[theme input](space-theme-input.md).
+clockwise from the top. Each dot fills as the marker turns past it: its ink fades
+in over the twentieth of a turn from its own step to the next, so the ring's ink
+grows continuously with the value; the empty bottom slot adds none. The marker
+covers the dot it sits on, so the filling shows on the dot just behind it.
+
+The marker is an 8 × 16 white radial capsule. Over the ring, where the open hand
+shows, and while a drag or rotation is turning the dial, it swells and deepens
+its shadow exactly like the slider thumb, moving inward so its tip stays inside
+the dial. With the marker at the bottom, the dial's frame cuts off the shadow
+below its tip, as it already did for the resting shadow. Hovering the centre
+knob grows only the texture. Gesture admission and
+wheel/rotation cancellation are in [theme input](space-theme-input.md).
 
 ## Preset start page
 
@@ -82,11 +100,6 @@ tooltip below the control and inherit their popover's palette. Noise lives on a
 tooltip anchor covering the centre knob's square frame, the same region that
 shows the pointing hand, so the ring and corners stay quiet while you line up a
 drag. The anchor passes every click and drag through to the dial.
-
-## Remaining presentation limits
-
-The intensity thumb/noise indicator do not grow their shadow/scale on hover.
-Noise uses whole lit dots during continuous rotation.
 
 ## Checks
 

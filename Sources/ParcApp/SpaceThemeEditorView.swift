@@ -142,7 +142,7 @@ final class SpaceThemeEditorView: NSView {
         for (index, button) in presets.enumerated() {
             button.frame = NSRect(x: 48 + CGFloat(index) * spacing, y: rowY, width: 24, height: 24)
         }
-        intensity.frame = NSRect(x: 10, y: rowY + 56, width: bounds.width - 116, height: 60)
+        intensity.frame = NSRect(x: 6, y: rowY + 46, width: bounds.width - 108, height: 80)
         noise.frame = NSRect(x: bounds.width - 98, y: rowY + 46, width: 80, height: 80)
     }
     var firstKeyView: NSView { pad }
@@ -231,6 +231,7 @@ final class SpaceThemeEditorView: NSView {
     }
     private func refresh() {
         pad.refresh(animated: !editor.isGestureInProgress)
+        pad.refreshHoverFromPointer()
         pad.emptyStateText = emptyStatePrompt
         intensity.value = theme.intensity
         noise.value = theme.noise; noise.texture = theme.texture
@@ -363,12 +364,13 @@ private enum ThemeEditorColors {
     static let track = color(dark: 0.075, light: 0.075)
     static let foreground = color(dark: 0.45, light: 0.3)
     static let chevron = labelColor(opacity: 0.6)
-    static let thumbShadow: NSShadow = {
-        let shadow = NSShadow()
-        shadow.shadowColor = color(dark: 0.05, light: 0.05)
-        shadow.shadowBlurRadius = 1.5; shadow.shadowOffset = NSSize(width: 0, height: -2)
+    static func thumbShadow(hover: CGFloat) -> NSShadow {
+        let shadow = NSShadow(), opacity = ThemeControlHandle.shadowOpacity(hover: hover)
+        shadow.shadowColor = color(dark: opacity, light: opacity)
+        shadow.shadowBlurRadius = ThemeControlHandle.shadowBlur(hover: hover)
+        shadow.shadowOffset = NSSize(width: 0, height: -ThemeControlHandle.shadowDrop(hover: hover))
         return shadow
-    }()
+    }
     nonisolated private static func labelColor(opacity: CGFloat) -> NSColor {
         NSColor(name: nil) { appearance in
             var label = NSColor.labelColor
@@ -739,6 +741,14 @@ private final class ThemeColorPad: NSView {
     private func updateHoveredHandle(at point: NSPoint) {
         setHoveredHandle(buttonContains(point) ? nil : handle(at: point))
     }
+    func refreshHoverFromPointer() {
+        guard dragOrigin == nil, editor?.isGestureInProgress != true, let window, window.isKeyWindow else { return }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard bounds.contains(point) else { setHoveredHandle(nil); return }
+        updateHoveredHandle(at: point)
+        updateButtonHoverStyle(at: point)
+        hoverCursor(at: point).set()
+    }
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         updateHoveredHandle(at: point)
@@ -807,13 +817,28 @@ private final class ThemeColorPad: NSView {
     }
 }
 
+enum ThemeControlHandle {
+    static let dialSteps = 20
+    static func shadowOpacity(hover: CGFloat) -> CGFloat { 0.05 + 0.07 * hover }
+    static func shadowBlur(hover: CGFloat) -> CGFloat { 1.5 + 2.5 * hover }
+    static func shadowDrop(hover: CGFloat) -> CGFloat { 2 + hover }
+    static func dotFill(step: Int, value: Double) -> CGFloat {
+        CGFloat(min(1, max(0, value * Double(dialSteps) - Double(step))))
+    }
+}
+
 private final class ThemeIntensityControl: NSControl {
     var value: Double = 0 { didSet { needsDisplay = true; setAccessibilityValue(Int(value * 100)) } }
     var onBegin: (() -> Void)?
     var onDiscreteBegin: (() -> Void)?
     var onChange: ((Double) -> Void)?
     var onEnd: (() -> Void)?
+    static let drawingOutset = NSSize(width: 4, height: 10)
     private var pointerActive = false
+    private var pointerInside = false
+    private var tracking: NSTrackingArea?
+    private lazy var thumbMotion = ThemeButtonMotionDriver(view: self)
+    private var track: NSRect { bounds.insetBy(dx: Self.drawingOutset.width, dy: Self.drawingOutset.height) }
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override init(frame: NSRect) {
@@ -824,12 +849,13 @@ private final class ThemeIntensityControl: NSControl {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func draw(_ dirtyRect: NSRect) {
-        let width = bounds.width - 16, padding = 8.0, waveWidth = width - 2 * padding
+        let track = self.track
+        let width = track.width - 16, padding = 8.0, waveWidth = width - 2 * padding
         let amplitude = 15 * value, frequency = waveWidth / (2 * .pi - 0.25)
-        let centerX = 8 + padding + waveWidth * value
+        let centerX = track.minX + 8 + padding + waveWidth * value
         let wave = NSBezierPath()
         for x in stride(from: CGFloat(0), through: waveWidth, by: 1) {
-            let point = NSPoint(x: x + 8 + padding,
+            let point = NSPoint(x: track.minX + x + 8 + padding,
                                y: bounds.midY + amplitude * sin(x / (waveWidth / frequency) + .pi))
             if x == 0 { wave.move(to: point) } else { wave.line(to: point) }
         }
@@ -838,35 +864,64 @@ private final class ThemeIntensityControl: NSControl {
         NSGraphicsContext.saveGraphicsState()
         NSRect(x: 0, y: 0, width: centerX, height: bounds.height).clip()
         ThemeEditorColors.track.setFill()
-        NSBezierPath(roundedRect: NSRect(x: 8, y: bounds.midY - 8, width: width, height: 16), xRadius: 8, yRadius: 8).fill()
+        NSBezierPath(roundedRect: NSRect(x: track.minX + 8, y: bounds.midY - 8, width: width, height: 16), xRadius: 8, yRadius: 8).fill()
         ThemeEditorColors.foreground.setStroke(); wave.stroke()
         NSGraphicsContext.restoreGraphicsState()
-        let thumbWidth = 12 + amplitude, thumbHeight = 44 + amplitude
+        let hover = thumbMotion.motion.hover, scale = thumbMotion.motion.hoverScale
+        let thumbWidth = (12 + amplitude) * scale, thumbHeight = (44 + amplitude) * scale
         NSGraphicsContext.saveGraphicsState()
-        ThemeEditorColors.thumbShadow.set()
+        ThemeEditorColors.thumbShadow(hover: hover).set()
         NSColor.white.setFill()
         NSBezierPath(roundedRect: NSRect(x: centerX - thumbWidth / 2, y: bounds.midY - thumbHeight / 2,
                                         width: thumbWidth, height: thumbHeight),
                      xRadius: thumbWidth / 2, yRadius: thumbWidth / 2).fill()
         NSGraphicsContext.restoreGraphicsState()
     }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let superview, track.contains(convert(point, from: superview)) else { return nil }
+        return super.hitTest(point)
+    }
+    override func accessibilityFrame() -> NSRect {
+        guard let window else { return super.accessibilityFrame() }
+        return window.convertToScreen(convert(track, to: nil))
+    }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        tracking = NSTrackingArea(rect: track, options: [.activeInKeyWindow, .mouseEnteredAndExited], owner: self)
+        addTrackingArea(tracking!)
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { pointerInside = false; thumbMotion.reset() }
+    }
+    override func mouseEntered(with event: NSEvent) { pointerInside = true; updateHover() }
+    override func mouseExited(with event: NSEvent) { pointerInside = false; updateHover() }
+    private func updateHover() { thumbMotion.update(hovered: pointerInside || pointerActive) }
+    private func pointerIsInside(_ point: NSPoint?) -> Bool { point.map(track.contains) ?? false }
     func cancelGesture() {
         if pointerActive { NSCursor.arrow.set() }
         pointerActive = false
+        pointerInside = pointerIsInside(window.flatMap { $0.isKeyWindow ? convert($0.mouseLocationOutsideOfEventStream, from: nil) : nil })
+        updateHover()
     }
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self); onBegin?(); pointerActive = true
+        updateHover()
         NSCursor.closedHand.set(); update(event)
     }
     override func mouseDragged(with event: NSEvent) { if pointerActive { update(event) } }
     override func mouseUp(with event: NSEvent) {
-        guard pointerActive else { return }
+        pointerInside = pointerIsInside(convert(event.locationInWindow, from: nil))
+        guard pointerActive else { updateHover(); return }
         pointerActive = false; onEnd?(); NSCursor.openHand.set()
+        updateHover()
     }
     private func update(_ event: NSEvent) {
-        guard bounds.width > 32 else { return }
-        let x = convert(event.locationInWindow, from: nil).x - 16
-        let next = min(1, max(0, x / (bounds.width - 32)))
+        let track = self.track
+        guard track.width > 32 else { return }
+        let x = convert(event.locationInWindow, from: nil).x - track.minX - 16
+        let next = min(1, max(0, x / (track.width - 32)))
         if abs(next - value) >= 0.001 { onChange?(next) }
     }
     override func keyDown(with event: NSEvent) {
@@ -890,7 +945,9 @@ private final class ThemeNoiseControl: NSControl {
     private var didDrag = false
     private var pressedKnob = false
     private var pointerInsideCenter = false
+    private var pointerOnRing = false
     private lazy var knobMotion = ThemeButtonMotionDriver(view: self)
+    private lazy var markerMotion = ThemeButtonMotionDriver(view: self)
     private var tracking: NSTrackingArea?
     private var rotationActive = false
     private var rotationSequenceActive = false
@@ -930,7 +987,7 @@ private final class ThemeNoiseControl: NSControl {
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil { pointerInsideCenter = false; knobMotion.reset() }
+        if window == nil { pointerInsideCenter = false; pointerOnRing = false; knobMotion.reset(); markerMotion.reset() }
     }
     override func draw(_ dirtyRect: NSRect) {
         let center = NSPoint(x: bounds.midX, y: bounds.midY)
@@ -938,10 +995,14 @@ private final class ThemeNoiseControl: NSControl {
             let step = (index + 10) % 20
             let a = (90 + Double(index) * 18) * .pi / 180
             let p = NSPoint(x: center.x + cos(a) * 32, y: center.y + sin(a) * 32)
-            let lit = value > 0 && Double(step) <= value * 20 + 1e-9
+            let fill = ThemeControlHandle.dotFill(step: step, value: value)
             let dot = NSBezierPath(ovalIn: NSRect(x: p.x - 2.5, y: p.y - 2.5, width: 5, height: 5))
             ThemeEditorColors.separator.setFill(); dot.fill()
-            if lit { ThemeEditorColors.foreground.setFill(); dot.fill() }
+            guard fill > 0 else { continue }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current?.cgContext.setAlpha(fill)
+            ThemeEditorColors.foreground.setFill(); dot.fill()
+            NSGraphicsContext.restoreGraphicsState()
         }
         let name = texture.rawValue.prefix(1).uppercased() + texture.rawValue.dropFirst() + "Knob"
         let knob = knobRect, side = knob.width * 1.2 * knobMotion.motion.scale
@@ -954,13 +1015,15 @@ private final class ThemeNoiseControl: NSControl {
         ThemeEditorColors.separator.setStroke()
         NSBezierPath(ovalIn: knob).stroke()
         let angle = (-90 + value * 360) * .pi / 180
+        let hover = markerMotion.motion.hover, scale = markerMotion.motion.hoverScale, radius = 32 - 8 * (scale - 1)
         NSGraphicsContext.saveGraphicsState()
         let transform = NSAffineTransform()
-        transform.translateX(by: center.x + cos(angle) * 32, yBy: center.y + sin(angle) * 32)
+        transform.translateX(by: center.x + cos(angle) * radius, yBy: center.y + sin(angle) * radius)
         transform.rotate(byRadians: angle + .pi / 2); transform.concat()
-        ThemeEditorColors.thumbShadow.set()
+        ThemeEditorColors.thumbShadow(hover: hover).set()
         NSColor.white.setFill()
-        NSBezierPath(roundedRect: NSRect(x: -4, y: -8, width: 8, height: 16), xRadius: 4, yRadius: 4).fill()
+        NSBezierPath(roundedRect: NSRect(x: -4 * scale, y: -8 * scale, width: 8 * scale, height: 16 * scale),
+                     xRadius: 4 * scale, yRadius: 4 * scale).fill()
         NSGraphicsContext.restoreGraphicsState()
     }
     private func angleValue(_ point: NSPoint) -> Double {
@@ -975,15 +1038,25 @@ private final class ThemeNoiseControl: NSControl {
         addTrackingArea(tracking!)
     }
     override func mouseMoved(with event: NSEvent) {
-        pointerInsideCenter = knobRect.contains(convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        pointerInsideCenter = knobRect.contains(point)
+        pointerOnRing = ringContains(point)
         knobMotion.update(hovered: pointerInsideCenter)
+        updateMarkerHover()
         if !didDrag && !rotationActive { (pointerInsideCenter ? NSCursor.pointingHand : NSCursor.openHand).set() }
     }
     override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
     override func mouseExited(with event: NSEvent) {
-        pointerInsideCenter = false
+        pointerInsideCenter = false; pointerOnRing = false
         knobMotion.update(hovered: false)
+        updateMarkerHover()
         if !didDrag && !rotationActive { NSCursor.arrow.set() }
+    }
+    private func ringContains(_ point: NSPoint?) -> Bool {
+        point.map { bounds.contains($0) && !knobRect.contains($0) } ?? false
+    }
+    private func updateMarkerHover() {
+        markerMotion.update(hovered: didDrag || rotationActive || (pointerOnRing && !pressedKnob))
     }
 
     private func observeScroll() {
@@ -1012,6 +1085,8 @@ private final class ThemeNoiseControl: NSControl {
         if didDrag || rotationActive { NSCursor.arrow.set() }
         startPoint = nil; didDrag = false; pressedKnob = false; rotationActive = false; pendingRotation = 0
         knobMotion.update(pressed: false)
+        pointerOnRing = ringContains(window.flatMap { $0.isKeyWindow ? convert($0.mouseLocationOutsideOfEventStream, from: nil) : nil })
+        updateMarkerHover()
     }
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
@@ -1020,6 +1095,8 @@ private final class ThemeNoiseControl: NSControl {
         let p = convert(event.locationInWindow, from: nil)
         startPoint = p; didDrag = false; pressedKnob = knobContains(p)
         knobMotion.update(hovered: knobRect.contains(p), pressed: pressedKnob)
+        pointerOnRing = ringContains(p)
+        updateMarkerHover()
     }
     override func mouseDragged(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
@@ -1029,17 +1106,20 @@ private final class ThemeNoiseControl: NSControl {
             guard hypot(p.x - startPoint.x, p.y - startPoint.y) >= 10 else { return }
             onBegin?()
             self.startPoint = startPoint; didDrag = true; NSCursor.closedHand.set()
+            updateMarkerHover()
         }
         onChange?(angleValue(p), .drag)
     }
     override func mouseUp(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         knobMotion.update(hovered: knobRect.contains(p), pressed: false)
-        guard startPoint != nil else { return }
+        pointerOnRing = ringContains(p)
+        guard startPoint != nil else { updateMarkerHover(); return }
         if didDrag { onEnd?() }
         else if pressedKnob { if knobContains(p) { onClick?() } }
         else if bounds.contains(p) { onBegin?(); onChange?(angleValue(p), .dialClick); onEnd?() }
         startPoint = nil; didDrag = false; pressedKnob = false; NSCursor.arrow.set()
+        updateMarkerHover()
     }
     override func rotate(with event: NSEvent) {
         if event.phase.contains(.began) {
@@ -1055,7 +1135,7 @@ private final class ThemeNoiseControl: NSControl {
         }
         if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
             pendingRotation = 0; rotationSequenceActive = false
-            if rotationActive { rotationActive = false; onEnd?(); NSCursor.arrow.set() }
+            if rotationActive { rotationActive = false; onEnd?(); NSCursor.arrow.set(); updateMarkerHover() }
             return
         }
         let delta = Double(event.rotation)
@@ -1070,6 +1150,7 @@ private final class ThemeNoiseControl: NSControl {
             startPoint = nil; pressedKnob = false; rotationActive = true
             rotationSequenceActive = true; cancelledRotation = false
             knobMotion.update(pressed: false)
+            updateMarkerHover()
             NSCursor.closedHand.set()
         }
         pendingRotation = 0

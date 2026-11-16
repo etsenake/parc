@@ -18,11 +18,6 @@ For otherwise unassigned work, retain the requested order: Routing, Windows,
 Data, Folders, Archive, Command bar, Tab switcher, Peek and Onboarding.
 Finish assigned work first.
 
-## Sidebar accessibility and presentation
-
-- Finish the documented theme-control hover/dot details.
-  [Theme editor](space-theme-editor.md).
-
 ## Folders
 
 - Ordinary-tab, folder and mixed-selection Option-drag copies are absent; whole

@@ -299,10 +299,10 @@ struct SpaceThemeRenderingTests {
         check(pixel(snapshot(next), 1, 16).alphaComponent < 0.01, "the hover fill fades out on exit")
 
         let slider = control("Theme intensity"), sliderImage = snapshot(slider)
-        check(slider.frame == NSRect(x: 10, y: 422, width: 240, height: 60), "intensity slider shares the dial's center line")
-        let midY = slider.bounds.midY, thumb = pixel(sliderImage, 16 + 208 * 0.5, midY)
+        check(slider.frame == NSRect(x: 6, y: 412, width: 248, height: 80), "intensity slider shares the dial's center line with room for its swollen thumb")
+        let midY = slider.bounds.midY, thumb = pixel(sliderImage, 20 + 208 * 0.5, midY)
         check(thumb.alphaComponent > 0.95 && thumb.redComponent > 0.95, "slider thumb is white")
-        let leading = 16 + 6.0332 * 1.5 * .pi, trailing = 16 + 6.0332 * 9.5 * .pi
+        let leading = 20 + 6.0332 * 1.5 * .pi, trailing = 20 + 6.0332 * 9.5 * .pi
         let track = pixel(sliderImage, leading, midY).alphaComponent
         check(track > 0.04 && track < 0.12, "leading side draws the half-opacity separator track")
         check(pixel(sliderImage, trailing, midY).alphaComponent < 0.02, "trailing side has no track")
