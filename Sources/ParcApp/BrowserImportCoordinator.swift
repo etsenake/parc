@@ -112,6 +112,8 @@ final class BrowserImportCoordinator {
         discardSafariExport()
         hasBackgroundWork = false
         reportDataFailure()
+        let held = heldExtensionFailures; heldExtensionFailures = []
+        for item in held { ImportedExtensionRetries.record(item, store: store) }
         if detached {
             onDetachedAdBlockers?(importedAdBlockers)
             onDetachedAdBlockers = nil
@@ -127,6 +129,7 @@ final class BrowserImportCoordinator {
     private var extensionInstall: PCNativeImportSession?
     private var extensionBatch: UUID?
     private var announcedExtensions = Set<String>()
+    private var heldExtensionFailures: [ImportedExtensionRetries.Item] = []
     private let arcSidebarURL: URL
     private let arcPreferencesURL: URL
     private let safariExportRoot: URL
@@ -416,7 +419,7 @@ final class BrowserImportCoordinator {
         stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
         dataFailed = false; dataImported = false; dataFailureReported = false
         pendingExtensions = []; backgroundProfiles = []; extensionBatch = nil; passwordStageOffered = false
-        announcedExtensions = []
+        announcedExtensions = []; heldExtensionFailures = []
         keepsPasswordChoice = false; passwordsWithoutData = false; parkedStage = nil; pendingStart = nil
         queue = []; queuedDestinations = [:]; usedProfiles = []; activeDestination = nil
         generation = UUID()
@@ -611,7 +614,7 @@ final class BrowserImportCoordinator {
             backgroundProfiles = []
             for entry in pendingExtensions {
                 reportFailedExtensions(extensionItems(entry, namingProfile: naming),
-                                       retryable: entry.destination.isCurrent(in: store.state), announcing: !dataFailed)
+                                       retryable: entry.destination.isCurrent(in: store.state))
             }
             pendingExtensions = []; finishBackground(); return
         }
@@ -633,7 +636,7 @@ final class BrowserImportCoordinator {
             let chosen = item.profile.extensions.filter { item.ids.contains($0.identifier) }
             let retries = extensionItems(item, namingProfile: naming)
             guard item.destination.isCurrent(in: store.state) else {
-                reportFailedExtensions(retries, retryable: false, announcing: !dataFailed); continue
+                reportFailedExtensions(retries, retryable: false); continue
             }
             let path = store.independentEngineProfilePath(for: item.destination.profileID)
             let ids = item.ids.subtracting(requested[path] ?? [])
@@ -663,7 +666,7 @@ final class BrowserImportCoordinator {
         extensionInstall = PCImportedExtensions.install(requests, completion: { [weak self] result, failures in
             guard let self, self.backgroundToken == token, !self.cancelled else { return }
             self.extensionInstall = nil
-            self.reportFailedExtensions(failed(failures), announcing: !self.dataFailed)
+            self.reportFailedExtensions(failed(failures))
             ImportedExtensionFailures.clearFailed(result.installedIdentifiers)
             let added = result.installedIdentifiers.union(result.installingIdentifiers)
                 .subtracting(ImportedExtensionFailures.failedIdentifiers)
@@ -685,12 +688,12 @@ final class BrowserImportCoordinator {
             ImportedExtensionFailures.recordFailed(items.map(\.identifier))
             self?.importedAdBlockers.removeAll { ImportedExtensionFailures.failedIdentifiers.contains($0.identifier) }
             if let self, !self.detached, self.isCurrent, self.extensionBatch == batch {
-                self.reportFailedExtensions(items, announcing: !self.dataFailed); self.onChange?()
+                self.reportFailedExtensions(items); self.onChange?()
             } else if let store {
                 for item in items { ImportedExtensionRetries.record(item, store: store) }
             }
         })
-        if extensionInstall == nil { reportFailedExtensions(attempts, announcing: !dataFailed); finishBackground() }
+        if extensionInstall == nil { reportFailedExtensions(attempts); finishBackground() }
     }
 
     private func namesExtensionProfiles(_ pending: [(profile: PCNativeImportProfile, destination: BrowserImportDestination,
@@ -707,14 +710,12 @@ final class BrowserImportCoordinator {
         }
     }
 
-    private func reportFailedExtensions(_ items: [ImportedExtensionRetries.Item], retryable: Bool = true,
-                                        announcing: Bool = true) {
+    private func reportFailedExtensions(_ items: [ImportedExtensionRetries.Item], retryable: Bool = true) {
         var seen = Set(warnings)
         warnings += items.map { "\($0.name) couldn’t be added." }.filter { seen.insert($0).inserted }
-        guard announcing else { return }
         for var item in items where announcedExtensions.insert(item.target).inserted {
             item.retryable = item.retryable && retryable
-            ImportedExtensionRetries.record(item, store: store)
+            if hasBackgroundWork { heldExtensionFailures.append(item) } else { ImportedExtensionRetries.record(item, store: store) }
         }
     }
 

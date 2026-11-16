@@ -46,15 +46,16 @@ data.
 
 The engine reports each extension it couldn't add with its destination Profile
 and the reason when one is known. Each failure reaches the browser window's
-[notice](onboarding.md#included-setup-order-and-ad-blocker-branch), except those
-known when the import ends with failed data, whose single notice covers them. It
-names the Profile when the import was adding extensions to more than one, as in
-“Couldn’t add Grammarly to Work”, and **Retry** installs just that extension
-again from the same source Profile into the same Parc Profile. An extension whose
-destination went away before installing has no Retry, and a policy, parental or
-safety block says so instead of offering one. The app reads these reports
-through its own adapter, so paired with an older engine that only names the
-extensions, it shows the plain notice without a Profile or Retry.
+[notice](onboarding.md#included-setup-order-and-ad-blocker-branch), queued
+behind the import's own “Only some of your data imported” or failed notice when
+its data failed too. It names the Profile when the import was adding extensions
+to more than one, as in “Couldn’t add Grammarly to Work”, and **Retry** installs
+just that extension again from the same source Profile into the same Parc
+Profile. An extension whose destination went away before installing has no
+Retry, and a policy, parental or safety block says so instead of offering one.
+The app reads these reports through its own adapter, so paired with an older
+engine that only names the extensions, it shows the plain notice without a
+Profile or Retry.
 
 All callbacks check generation, source lease and original/current destination.
 Stop waits for the actual native result. Cancellation is not rollback: confirmed

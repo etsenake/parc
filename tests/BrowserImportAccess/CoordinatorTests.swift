@@ -412,13 +412,19 @@ import AppKit
                && failing.requests[0].profilePath == store.independentEngineProfilePath(for: destination.profileID)
                && coordinator.stage == .finished && coordinator.hasBackgroundWork,
                "Every extension found, including known ad blockers, installs even when other data failed")
+        var announced: [String] = []
+        ImportedBrowserDataFailures.present = { announced.append("data") }
+        ImportedExtensionFailures.present = { announced.append("extension") }
         failing.complete(.init(outcome: .failed, failures: [failure(known), failure(unknown)]))
+        ImportedBrowserDataFailures.present = nil; ImportedExtensionFailures.present = nil
         expect(coordinator.stage == .finished && coordinator.importedAdBlockers.isEmpty
                && coordinator.warnings.contains("uBlock Origin couldn’t be added.")
                && coordinator.warnings.contains("Extension couldn’t be added."),
                "Extensions that fail are listed and none reaches the ad-blocker step")
-        expect(ImportedExtensionFailures.pending.isEmpty && ImportedBrowserDataFailures.take() == .failed,
-               "An import whose data all failed says so once, its failed extensions under that one toast")
+        let alongside = ImportedExtensionFailures.take()
+        expect(announced == ["data", "extension", "extension"] && ImportedBrowserDataFailures.take() == .failed
+               && alongside?.failures == [imported(known), imported(unknown)] && alongside?.canRetry == true,
+               "An import whose data all failed files that notice first, then each failed extension's own notice, still retryable")
         run()
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
         coordinator.stopImport()
@@ -598,10 +604,14 @@ import AppKit
         expect(ImportedBrowserDataFailures.pending == nil, "A failed profile is reported only once the whole import is over")
         install.complete(.init(outcome: .partial, installedIdentifiers: [blocker.identifier],
                                failures: [.init(identifier: broken.identifier, name: broken.displayName, profilePath: path)]))
+        let brokenNotice = ImportedExtensionFailures.take()
         expect(retained == nil && delivered == [.init(identifier: blocker.identifier, displayName: blocker.displayName,
                                                       profileIDs: [destination.profileID])]
-               && ImportedExtensionFailures.pending.isEmpty && ImportedBrowserDataFailures.take() == .partial,
-               "Completion delivers blockers, one partial-import toast that covers its failed extensions, and releases the coordinator")
+               && ImportedBrowserDataFailures.take() == .partial
+               && brokenNotice?.failures == [.init(name: broken.displayName,
+                                                   target: "import " + destination.profileID.uuidString + " " + broken.identifier)]
+               && brokenNotice?.canRetry == true,
+               "Completion delivers blockers, the partial-import notice, the failed extension's own retryable notice, and releases the coordinator")
         install.background([.init(identifier: blocker.identifier, name: blocker.displayName, profilePath: path)])
         let detachedFailure = ImportedExtensionFailures.take()
         expect(detachedFailure?.failures == [.init(name: blocker.displayName,
