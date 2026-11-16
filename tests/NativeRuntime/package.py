@@ -52,7 +52,7 @@ def main():
         binary = engine / package.FRAMEWORK / package.ENGINE_NAME
         if not TEST_EXPORTS <= package.exported_symbols(binary):
             raise package.Refusal("Real engine lacks the native runtime test driver")
-        inputs = [test_dir / "main_mac.mm", test_dir / "runtime_driver.h",
+        inputs = [test_dir / "main_mac.mm", test_dir / "runtime_driver.h", repo / "tests/Support/TestFailure.h",
                   repo / ('Sources/ParcHelper/main.cc'),
                   repo / "scripts/build.py",
                   test_dir / "fixtures/extension-action/manifest.json",
