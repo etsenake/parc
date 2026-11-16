@@ -35,4 +35,6 @@ retains the complete title in its accessibility label and tooltip.
 media types. It covers stack dimensions, expanded spacing, focus eligibility,
 single-player layout, retained layers, marquee continuity, key-view rebuilding,
 PiP actions that do not reveal the tab and hover-state isolation between players.
-Whole-module compilation checks the real bridge.
+Whole-module compilation checks the real bridge. The same runner builds
+`tests/MiniPlayerMotion`, which pins the cards' spring, moves the companion with
+the deck, leaves views outside it alone and settles only the deck's own motion.

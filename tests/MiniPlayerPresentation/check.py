@@ -25,3 +25,8 @@ with tempfile.TemporaryDirectory(prefix="parc-mini-presentation-") as directory:
                     *map(str, tooltip_sources(root, scratch, ["ReloadControl.swift"])),
                     "-o", str(executable)], check=True)
     subprocess.run([str(executable), "-ParcMiniPlayerMarqueeTitleEnabled", "YES"], check=True)
+    motion = scratch / "motion"
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-target", "arm64-apple-macos13.0",
+                    str(root / "Sources/ParcApp/MiniPlayerMotion.swift"), str(root / "tests/MiniPlayerMotion/main.swift"),
+                    "-o", str(motion)], check=True)
+    subprocess.run([str(motion)], check=True)

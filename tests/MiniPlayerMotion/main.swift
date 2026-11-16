@@ -26,27 +26,27 @@ func verifyMotion() {
         companion.frame.origin.x = 110
         unrelated.frame.origin.x = 10
     }
-    precondition(card.frame == NSRect(x: 10, y: 15, width: 75, height: 70))
-    precondition(unrelated.layer?.animation(forKey: "parc.media.position") == nil)
-    precondition(card.layer?.animation(forKey: "parc.media.opacity") == nil)
-    precondition(card.layer?.animation(forKey: "unrelated") != nil)
+    precondition(card.frame == NSRect(x: 10, y: 15, width: 75, height: 70), "the layout change lands on the card's frame")
+    precondition(unrelated.layer?.animation(forKey: "parc.media.position") == nil, "a view outside the deck and companion never moves")
+    precondition(card.layer?.animation(forKey: "parc.media.opacity") == nil, "an unchanged opacity is not animated")
+    precondition(card.layer?.animation(forKey: "unrelated") != nil, "the card keeps its own unrelated animation")
     if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
         let spring = card.layer?.animation(forKey: "parc.media.position") as? CASpringAnimation
-        precondition(spring != nil && companion.layer?.animation(forKey: "parc.media.position") != nil)
-        precondition(backCard.layer?.animation(forKey: "parc.media.opacity") != nil)
+        precondition(spring != nil && companion.layer?.animation(forKey: "parc.media.position") != nil, "the card and its companion move on a spring")
+        precondition(backCard.layer?.animation(forKey: "parc.media.opacity") != nil, "the rear card fades")
         let omega = 2 * Double.pi / 0.25
-        precondition(abs(spring!.stiffness - omega * omega) < 0.01)
-        precondition(abs(spring!.damping - 1.8 * omega) < 0.01)
+        precondition(abs(spring!.stiffness - omega * omega) < 0.01, "the spring answers in 0.25 seconds")
+        precondition(abs(spring!.damping - 1.8 * omega) < 0.01, "the spring is damped at 0.9")
     }
     deck.removeFromSuperview()
     motion.settle()
-    precondition(card.layer?.animation(forKey: "parc.media.position") == nil)
-    precondition(companion.layer?.animation(forKey: "parc.media.position") == nil)
-    precondition(backCard.layer?.animation(forKey: "parc.media.opacity") == nil)
-    precondition(card.layer?.animation(forKey: "unrelated") != nil)
-    precondition(unrelated.layer?.animation(forKey: "unrelated") != nil)
-    precondition(MiniPlayerMotion.hoverOffDelay == 2)
+    precondition(card.layer?.animation(forKey: "parc.media.position") == nil, "settling stops the card's spring")
+    precondition(companion.layer?.animation(forKey: "parc.media.position") == nil, "settling stops the companion's spring")
+    precondition(backCard.layer?.animation(forKey: "parc.media.opacity") == nil, "settling stops the rear card's fade")
+    precondition(card.layer?.animation(forKey: "unrelated") != nil, "settling keeps the card's unrelated animation")
+    precondition(unrelated.layer?.animation(forKey: "unrelated") != nil, "settling leaves other views' animations alone")
+    precondition(MiniPlayerMotion.hoverOffDelay == 2, "the deck collapses 2 seconds after the pointer leaves")
     print("Mini Player inert motion checks passed")
 }
 
-MainActor.assumeIsolated { verifyMotion() }
+MainActor.assumeIsolated { exitOnFailure(verifyMotion) }
