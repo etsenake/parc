@@ -6,7 +6,6 @@ final class SoftwareUpdateBanner: ObservableObject {
     static var releaseNotesURL: URL? {
         Bundle.main.url(forResource: "WhatsNew", withExtension: "html") == nil ? nil : URL(string: WhatsNewPage.address)
     }
-    static let shareURL = URL(string: "https://github.com/etsenake/parc-releases")!
 
     @Published private(set) var completedUpdate: AppVersion?
     private(set) var updatedFrom: AppVersion?

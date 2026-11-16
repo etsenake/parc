@@ -14,13 +14,17 @@ struct UpdateCompleteCardTests {
         _ = NSApplication.shared
         let card = UpdateCompleteCard(frame: .zero)
         var actions = 0
-        card.onSeeWhatsNew = { actions += 1 }; card.onShare = { actions += 1 }; card.onDismiss = { actions += 1 }
+        card.onSeeWhatsNew = { actions += 1 }; card.onDismiss = { actions += 1 }
         try expect(card.keyViewControls.allSatisfy { !$0.acceptsFirstResponder }, "A banner not yet taking input takes no focus")
+        let labels = card.keyViewControls.map { $0.accessibilityLabel() ?? "" }
+        try expect(labels == ["Dismiss", "See What’s New"], "Close and See What’s New are the only controls: \(labels)")
+        let properties = Mirror(reflecting: card).children.compactMap(\.label)
+        try expect(!properties.contains { $0.localizedCaseInsensitiveContains("share") }, "No Share row is left behind: \(properties)")
         for dark in [false, true] {
             card.applyPalette(ThemeChromePalette(theme: .singleColor(ThemeColor(hex: "B9B5D4")!), isDark: dark))
             let heights = [CGFloat(148), 212, 484].map { card.preferredHeight(for: $0) }
-            try expect(heights.allSatisfy { $0 == heights[0] } && (70...90).contains(heights[0]),
-                       "One header and two single-line rows at every sidebar width: \(heights)")
+            try expect(heights.allSatisfy { $0 == heights[0] } && heights[0] == 24 + 8 + 16 + 8,
+                       "One header and one single-line row at every sidebar width: \(heights)")
         }
         try expect(actions == 0, "Laying out never reaches the original owner")
         let grey = ThemeChromePalette(theme: .singleColor(ThemeColor(hex: "808080")!), isDark: false)
@@ -29,7 +33,7 @@ struct UpdateCompleteCardTests {
                    "The gradient never paints a grey base")
         let blue = UpdateCompleteModel.gradientBase(ThemeChromePalette(theme: .singleColor(ThemeColor(hex: "0000FF")!), isDark: false))
         try expect(blue != .controlAccentColor, "A saturated theme keeps its own colour")
-        try keyLoop()
+        if !CommandLine.arguments.contains("--windowless") { try keyLoop() }
         print("UpdateCompleteCard: \(assertions) assertions passed")
     }
 
@@ -42,13 +46,13 @@ struct UpdateCompleteCardTests {
         card.setInteractionEnabled(true)
         card.layoutSubtreeIfNeeded()
         let stops = card.keyViewControls.compactMap { $0 as? UpdateBannerKeyStop }
-        try expect(stops.map { $0.accessibilityLabel() ?? "" } == ["Dismiss", "See What’s New", "Share Parc"],
-                   "Every control is a stop: close, then the rows")
+        try expect(stops.map { $0.accessibilityLabel() ?? "" } == ["Dismiss", "See What’s New"],
+                   "Every control is a stop: close, then See What’s New")
         let frames = stops.map { $0.convert($0.bounds, to: card) }
         try expect(stops.allSatisfy { $0.window === window } && frames.allSatisfy { !$0.isEmpty && card.bounds.contains($0) },
                    "SwiftUI places each stop over its control: \(frames)")
-        try expect(frames[0].maxX == card.bounds.maxX && frames[0].minY < frames[1].minY && frames[1].maxY <= frames[2].minY,
-                   "The loop runs in visual order: the trailing close button, then the rows")
+        try expect(frames[0].maxX == card.bounds.maxX && frames[0].maxY <= frames[1].minY,
+                   "The loop runs in visual order: the trailing close button, then the row: \(frames)")
         let before = NSButton(), after = NSButton()
         let chain = [before] + stops + [after]
         chain.forEach { if $0.window == nil { window.contentView!.addSubview($0) } }
@@ -69,7 +73,7 @@ struct UpdateCompleteCardTests {
             try expect(hit is NSHostingView<UpdateCompleteBanner>, "The pointer reaches SwiftUI's control under the stop, not \(hit as Any)")
         }
         card.setInteractionEnabled(false)
-        try expect(window.firstResponder !== stops[2] && stops.allSatisfy { !$0.acceptsFirstResponder },
+        try expect(window.firstResponder !== stops[1] && stops.allSatisfy { !$0.acceptsFirstResponder },
                    "An exiting banner gives focus up and takes no more")
     }
 }

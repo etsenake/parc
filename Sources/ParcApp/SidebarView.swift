@@ -1494,7 +1494,6 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private let updateComplete = UpdateCompleteCard(frame: .zero)
     private lazy var updateCompleteHost = SidebarBannerHost(card: updateComplete)
     var onSeeWhatsNew: (() -> Void)?
-    var onShareParc: (() -> Void)?
     var onDismissUpdateComplete: (() -> Void)?
     func showUpdateComplete(_ visible: Bool) {
         updateCompleteHost.show(visible)
@@ -1875,7 +1874,6 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         archiveEducationHost.onRelinquishFocus = { [weak self] in self?.onBannerRelinquishFocus?() }
         contentSurface.addSubview(updateCompleteHost)
         updateComplete.onSeeWhatsNew = { [weak self] in self?.onSeeWhatsNew?() }
-        updateComplete.onShare = { [weak self] in self?.onShareParc?() }
         updateComplete.onDismiss = { [weak self] in self?.onDismissUpdateComplete?() }
         updateCompleteHost.onLayoutChanged = { [weak self] in self?.setNeedsKeyViewLinking() }
         updateCompleteHost.onInteractionChanged = { [weak self] enabled in

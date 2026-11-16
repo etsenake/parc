@@ -492,12 +492,6 @@ extension BrowserWindowController {
             self.openReleaseNotes(fragment: updateComplete.completedUpdateFragment)
             updateComplete.retireCompletedUpdate()
         }
-        sidebar.onShareParc = { [weak self] in
-            guard mayActOnUpdate(), let self else { return }
-            NSPasteboard.general.clearContents()
-            guard NSPasteboard.general.setString(SoftwareUpdateBanner.shareURL.absoluteString, forType: .string) else { return }
-            self.showToast(.copiedLink(SoftwareUpdateBanner.shareURL), at: .window)
-        }
         sidebar.onDismissUpdateComplete = { guard mayActOnUpdate() else { return }; updateComplete.retireCompletedUpdate() }
         sidebar.showUpdateComplete(completeVisible)
 

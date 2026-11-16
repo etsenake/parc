@@ -4,23 +4,20 @@ import SwiftUI
 @MainActor
 final class UpdateCompleteCard: NSView {
     var onSeeWhatsNew: (() -> Void)?
-    var onShare: (() -> Void)?
     var onDismiss: (() -> Void)?
     private let model = UpdateCompleteModel()
     private var hosting: NSHostingController<UpdateCompleteBanner>!
     private var measured: (width: CGFloat, height: CGFloat)?
     private let close = UpdateBannerKeyStop(label: "Dismiss", cornerRadius: 12)
     private let whatsNew = UpdateBannerKeyStop(label: "See What’s New", cornerRadius: 4)
-    private let share = UpdateBannerKeyStop(label: "Share Parc", cornerRadius: 4)
     override var isFlipped: Bool { true }
-    var keyViewControls: [NSView] { [close, whatsNew, share] }
+    var keyViewControls: [NSView] { [close, whatsNew] }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         whatsNew.onPress = { [weak self] in self?.perform(self?.onSeeWhatsNew) }
-        share.onPress = { [weak self] in self?.perform(self?.onShare) }
         close.onPress = { [weak self] in self?.perform(self?.onDismiss) }
-        hosting = NSHostingController(rootView: UpdateCompleteBanner(model: model, close: close, whatsNew: whatsNew, share: share))
+        hosting = NSHostingController(rootView: UpdateCompleteBanner(model: model, close: close, whatsNew: whatsNew))
         hosting.sizingOptions = []
         hosting.view.frame = bounds
         hosting.view.autoresizingMask = [.width, .height]
@@ -35,7 +32,7 @@ final class UpdateCompleteCard: NSView {
     }
     func setInteractionEnabled(_ enabled: Bool) {
         model.interactive = enabled
-        for stop in [close, whatsNew, share] { stop.isEnabled = enabled }
+        for stop in [close, whatsNew] { stop.isEnabled = enabled }
     }
     func preferredHeight(for width: CGFloat) -> CGFloat {
         if let measured, measured.width == width { return measured.height }
@@ -119,18 +116,14 @@ struct UpdateCompleteBanner: View {
     @ObservedObject var model: UpdateCompleteModel
     let close: UpdateBannerKeyStop
     let whatsNew: UpdateBannerKeyStop
-    let share: UpdateBannerKeyStop
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 8) {
             UpdateBannerHeader(title: "Update Complete!", dark: model.dark, sparkles: !reduceMotion, sparkleColor: model.gradientBase,
                                close: close)
-            VStack(alignment: .leading) {
-                UpdateBannerRow(title: "See What’s New", icon: "heart.circle.fill", dark: model.dark, stop: whatsNew)
-                UpdateBannerRow(title: "Share Parc", icon: "gift", dark: model.dark, stop: share)
-            }
-            .padding(.horizontal, 8)
+            UpdateBannerRow(title: "See What’s New", icon: "heart.circle.fill", dark: model.dark, stop: whatsNew)
+                .padding(.horizontal, 8)
         }
         .padding(.bottom, 8)
         .background(UpdateBannerCard(dark: model.dark))

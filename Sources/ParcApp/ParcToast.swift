@@ -41,7 +41,6 @@ struct ParcToastContent: Equatable {
     static func copiedQuoteLink(_ url: URL?) -> ParcToastContent {
         standard("Copied Link", icon: "quote.bubble.fill", subLabel: "With Quote", buttons: share(url.map { [$0] } ?? []))
     }
-    static func copiedLink(_ url: URL) -> ParcToastContent { standard("Copied Link", buttons: share([url])) }
     static let copiedBuildInfo = standard("Copied Build Info")
     static let cannotAddNewPane = standard("Cannot Add New Pane")
     static let copiedImage = standard("Copied Image")

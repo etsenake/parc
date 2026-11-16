@@ -117,14 +117,14 @@ repeat banners after downgrade/re-upgrade. Missing bundled notes suppress it.
 
 See What's New opens `parc://whats-new/#from=<replaced>&to=<installed>` and
 retires the banner only after admission to open succeeds. The page marks skipped
-releases only when `to` matches its own version. Share Parc copies the public
-release URL and leaves the banner open; Close retires it. There is no referral
-service or vendor-video row.
+releases only when `to` matches its own version. Close retires the banner. The
+card has no share, referral or vendor-video row: copying the public releases link
+from an update banner gave people nothing to act on.
 
-The card has radius 12, shared spring/fade motion, a close control and separate
-native key/accessibility stops for Close, See What's New and Share Parc. Notes
-text stays black/white, including hover, so pale Space themes remain readable.
-Decorative sparkles are bounded to 15 seconds.
+The card has radius 12, shared spring/fade motion, a close control and the See
+What's New row, with separate native key/accessibility stops for Close and the
+row, in that order. Notes text stays black/white, including hover, so pale Space
+themes remain readable. Decorative sparkles are bounded to 15 seconds.
 
 ## What's New page ownership
 
