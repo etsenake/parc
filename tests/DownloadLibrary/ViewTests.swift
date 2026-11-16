@@ -17,6 +17,16 @@ import UniformTypeIdentifiers
   made += 1; return base.collectionView(collectionView, itemForRepresentedObjectAt: indexPath)
  }
 }
+private final class LiveCloud: ExternalMediaCloudObservation, @unchecked Sendable {
+ private let lock = NSLock()
+ private var evicted = Set<String>(), handler: (@Sendable (Set<String>) -> Void)?
+ var source: ExternalMediaCloud {
+  ExternalMediaCloud(isSynced: { _ in true }, isLocal: { [self] path, flags in flags & UInt32(SF_DATALESS) == 0 && !lock.withLock { evicted.contains(path) } },
+   observe: { [self] report in lock.withLock { handler = report }; return self })
+ }
+ func present(_ paths: Set<String>) {}
+ func evict(_ path: String) { lock.withLock { _ = evicted.insert(path) }; lock.withLock { handler }?([path]) }
+}
 @main @MainActor struct ViewCheck {
  static var count=0
  static func expect(_ c: @autoclosure () -> Bool, _ s: String) {count += 1; precondition(c(),s)}
@@ -1761,8 +1771,9 @@ import UniformTypeIdentifiers
   let liveProfile=liveStore.activeSpace.profileID
   let liveCatalog=CaptureLibraryStore.shared(directory:liveStore.capturesDirectory(for:liveProfile),profileID:liveProfile)
   for _ in 0..<50 where liveCatalog.isLoading { RunLoop.main.run(mode:.default,before:Date(timeIntervalSinceNow:0.02)) }
+  let liveCloud=LiveCloud()
   let liveMedia=ExternalMediaLibrary(directory:liveRoot.appendingPathComponent("Preferences",isDirectory:true),
-   preferencesAreEphemeral:true,systemFolders:{[liveFolder]})
+   preferencesAreEphemeral:true,systemFolders:{[liveFolder]},cloud:liveCloud.source,screenshotPreferences:nil)
   let liveView=CaptureLibraryView(store:liveCatalog,profileOwner:liveStore,media:liveMedia,regularHeader:true,ownerValid:{true})
   liveView.frame=NSRect(x:0,y:0,width:400,height:600)
   let liveWindow=DownloadHoverWindow(contentRect:liveView.frame,styleMask:.titled,backing:.buffered,defer:false)
@@ -1807,6 +1818,13 @@ import UniformTypeIdentifiers
   quietWait { liveTitle(11) != "fixture-10b.png" }
   liveView.layoutSubtreeIfNeeded();drainMain()
   expect(liveGrid.numberOfItems(inSection:0)==25 && liveTitle(11)=="fixture-10b.png" && liveSource.made<=2,"A rename swaps one tile (made \(liveSource.made))")
+  liveSource.made=0
+  let liveCloudName=liveTitle(12)!,liveCloudPath=liveMedia.items.first{$0.title==liveCloudName}!.id
+  liveCloud.evict(liveCloudPath)
+  quietWait { liveMedia.items.first{$0.id==liveCloudPath}?.isLocal != false }
+  liveView.layoutSubtreeIfNeeded();drainMain()
+  expect(liveMedia.items.first{$0.id==liveCloudPath}?.isLocal==false && liveGrid.numberOfItems(inSection:0)==25 && liveTitle(12)==liveCloudName
+         && liveSource.made>=1 && liveSource.made<=2,"An iCloud download-status change replaces just that tile (made \(liveSource.made))")
   liveSource.made=0
   try FileManager.default.removeItem(at:liveEdited)
   liveSettle(24)

@@ -58,6 +58,80 @@ final class ExternalMediaAccess: @unchecked Sendable {
     deinit { if scoped { url.stopAccessingSecurityScopedResource() } }
 }
 
+protocol ExternalMediaCloudObservation: AnyObject, Sendable {
+    func present(_ paths: Set<String>)
+}
+
+struct ExternalMediaCloud: Sendable {
+    let isSynced: @Sendable (URL) -> Bool
+    let isLocal: @Sendable (String, UInt32) -> Bool
+    let observe: @Sendable (@escaping @Sendable (Set<String>) -> Void) -> any ExternalMediaCloudObservation
+    static let system = ExternalMediaCloud(
+        isSynced: { (try? $0.resourceValues(forKeys: [.isUbiquitousItemKey]))?.isUbiquitousItem == true },
+        isLocal: { _, flags in flags & UInt32(SF_DATALESS) == 0 },
+        observe: { ExternalMediaCloudStatus(handler: $0) })
+}
+
+final class ExternalMediaCloudStatus: ExternalMediaCloudObservation, @unchecked Sendable {
+    private final class Presenter: NSObject, NSFilePresenter, @unchecked Sendable {
+        let presentedItemURL: URL?
+        let presentedItemOperationQueue: OperationQueue
+        let observedPresentedItemUbiquityAttributes: Set<URLResourceKey> = [.ubiquitousItemDownloadingStatusKey]
+        private let report: @Sendable () -> Void
+        init(url: URL, queue: OperationQueue, report: @escaping @Sendable () -> Void) {
+            presentedItemURL = url; presentedItemOperationQueue = queue; self.report = report
+        }
+        func presentedItemDidChangeUbiquityAttributes(_ attributes: Set<URLResourceKey>) { report() }
+    }
+    private let handler: @Sendable (Set<String>) -> Void
+    private let queue = DispatchQueue(label: "org.parc.media-cloud-status")
+    private let callbacks = OperationQueue()
+    private var presenters: [String: Presenter] = [:]
+    private var changed = Set<String>()
+    init(handler: @escaping @Sendable (Set<String>) -> Void) {
+        self.handler = handler; callbacks.maxConcurrentOperationCount = 1; callbacks.qualityOfService = .utility
+    }
+    deinit {
+        let retired = Array(presenters.values)
+        queue.async { retired.forEach { NSFileCoordinator.removeFilePresenter($0) } }
+    }
+    func present(_ paths: Set<String>) {
+        queue.async { [self] in
+            for (path, presenter) in presenters where !paths.contains(path) {
+                NSFileCoordinator.removeFilePresenter(presenter); presenters[path] = nil
+            }
+            for path in paths where presenters[path] == nil {
+                let presenter = Presenter(url: URL(fileURLWithPath: path, isDirectory: false), queue: callbacks) { [weak self] in self?.note(path) }
+                NSFileCoordinator.addFilePresenter(presenter); presenters[path] = presenter
+            }
+        }
+    }
+    private func note(_ path: String) {
+        queue.async { [weak self] in
+            guard let self, self.changed.insert(path).inserted, self.changed.count == 1 else { return }
+            self.queue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, !self.changed.isEmpty else { return }
+                let batch = self.changed; self.changed = []; self.handler(batch)
+            }
+        }
+    }
+}
+
+private final class ExternalMediaPreferenceObserver: NSObject {
+    private let defaults: UserDefaults
+    private let key: String
+    private let changed: @Sendable () -> Void
+    init(_ defaults: UserDefaults, key: String, changed: @escaping @Sendable () -> Void) {
+        self.defaults = defaults; self.key = key; self.changed = changed
+        super.init()
+        defaults.addObserver(self, forKeyPath: key, options: [], context: nil)
+    }
+    deinit { defaults.removeObserver(self, forKeyPath: key) }
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
+        changed()
+    }
+}
+
 @MainActor
 final class ExternalMediaLibrary: ObservableObject {
     private final class Weak { weak var value: ExternalMediaLibrary?; init(_ value: ExternalMediaLibrary) { self.value = value } }
@@ -89,17 +163,26 @@ final class ExternalMediaLibrary: ObservableObject {
     private var generation: UInt64 = 0
     private var rescanPending = false
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
-    init(directory: URL, preferencesAreEphemeral: Bool = false, systemFolders: @escaping () -> [URL] = ExternalMediaLibrary.defaultFolders) {
-        self.systemFolders = systemFolders; disk = ExternalMediaDisk(directory: directory, preferencesAreEphemeral: preferencesAreEphemeral)
+    private let cloud: ExternalMediaCloud
+    private var cloudStatus: (any ExternalMediaCloudObservation)?
+    private var cloudSession: UInt64 = 0
+    private var settleTask: Task<Void, Never>?
+    private let screenshotPreferences: UserDefaults?
+    private var screenshotObserver: ExternalMediaPreferenceObserver?
+    nonisolated static let screenshotDomain = "com.apple.screencapture"
+    init(directory: URL, preferencesAreEphemeral: Bool = false, systemFolders: @escaping () -> [URL] = ExternalMediaLibrary.defaultFolders,
+         cloud: ExternalMediaCloud = .system, screenshotPreferences: UserDefaults? = UserDefaults(suiteName: ExternalMediaLibrary.screenshotDomain)) {
+        self.systemFolders = systemFolders; self.cloud = cloud; self.screenshotPreferences = screenshotPreferences
+        disk = ExternalMediaDisk(directory: directory, preferencesAreEphemeral: preferencesAreEphemeral, cloud: cloud)
     }
     deinit {
-        refreshTask?.cancel(); updateTask?.cancel(); safetyTimer?.cancel()
+        refreshTask?.cancel(); updateTask?.cancel(); settleTask?.cancel(); safetyTimer?.cancel()
         observers.forEach { $0.center.removeObserver($0.token) }
     }
     nonisolated static func defaultFolders() -> [URL] {
         let manager = FileManager.default
         let desktop = manager.urls(for: .desktopDirectory, in: .userDomainMask).first!
-        let setting = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location")
+        let setting = UserDefaults(suiteName: screenshotDomain)?.string(forKey: "location")
         let screenshots = setting.flatMap { path -> URL? in
             let expanded = (path as NSString).expandingTildeInPath
             return expanded.hasPrefix("/") ? URL(fileURLWithPath: expanded, isDirectory: true) : nil
@@ -120,6 +203,11 @@ final class ExternalMediaLibrary: ObservableObject {
                     MainActor.assumeIsolated { self?.volumeChanged(volume) }
                 }))
             }
+            screenshotObserver = screenshotPreferences.map {
+                ExternalMediaPreferenceObserver($0, key: "location") { [weak self] in
+                    Task { @MainActor [weak self] in self?.screenshotLocationChanged() }
+                }
+            }
         }
         if safetyTimer == nil {
             let timer = DispatchSource.makeTimerSource(queue: .main)
@@ -132,9 +220,9 @@ final class ExternalMediaLibrary: ObservableObject {
     func deactivate(_ client: UUID) {
         clients.remove(client)
         guard clients.isEmpty else { return }
-        cancelRefresh(); updateTask?.cancel(); updateTask = nil; stopWatching()
+        cancelRefresh(); updateTask?.cancel(); updateTask = nil; settleTask?.cancel(); settleTask = nil; stopWatching()
         safetyTimer?.cancel(); safetyTimer = nil
-        observers.forEach { $0.center.removeObserver($0.token) }; observers = []
+        observers.forEach { $0.center.removeObserver($0.token) }; observers = []; screenshotObserver = nil
         clear()
         if !folders.isEmpty { folders = [] }
         if isLoading { isLoading = false }
@@ -179,6 +267,10 @@ final class ExternalMediaLibrary: ObservableObject {
             if self.rescanPending { self.startRefresh(announced: false) }
         }
     }
+    private func screenshotLocationChanged() {
+        guard !clients.isEmpty else { return }
+        if refreshTask == nil { reconcile() } else { rescanPending = true }
+    }
     private func volumeChanged(_ volume: String?) {
         guard !clients.isEmpty else { return }
         guard let volume else { requestRescan(); return }
@@ -194,12 +286,42 @@ final class ExternalMediaLibrary: ObservableObject {
     private func publish(_ catalog: ExternalMediaDisk.Catalog) {
         if let appliedVersion, catalog.version <= appliedVersion { return }
         appliedVersion = catalog.version; index = catalog.index
+        observeCloud(catalog.cloud)
         guard !(catalog.items.isEmpty && items.isEmpty) else { return }
         revision &+= 1; items = catalog.items
     }
+    private func absorb(_ change: ExternalMediaDisk.Change) {
+        if let catalog = change.catalog { publish(catalog) }
+        guard let delay = change.settle, settleTask == nil else { return }
+        settleTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, !Task.isCancelled else { return }
+            self.settleTask = nil
+            guard !self.clients.isEmpty, let change = try? await self.disk.settle(), !self.clients.isEmpty else { return }
+            self.absorb(change)
+        }
+    }
     private func clear() {
-        appliedVersion = nil; index = [:]
+        appliedVersion = nil; index = [:]; stopCloud()
         if !items.isEmpty { revision &+= 1; items = [] }
+    }
+    private func observeCloud(_ paths: Set<String>) {
+        guard !clients.isEmpty, !paths.isEmpty else { stopCloud(); return }
+        if cloudStatus == nil {
+            cloudSession &+= 1; let session = cloudSession
+            cloudStatus = cloud.observe { [weak self] changed in
+                Task { @MainActor [weak self] in self?.receiveCloud(changed, session: session) }
+            }
+        }
+        cloudStatus?.present(paths)
+    }
+    private func stopCloud() {
+        guard cloudStatus != nil else { return }
+        cloudStatus = nil; cloudSession &+= 1
+    }
+    private func receiveCloud(_ paths: Set<String>, session: UInt64) {
+        guard session == cloudSession, !clients.isEmpty else { return }
+        reread(paths)
     }
     private func cancelRefresh() { generation &+= 1; refreshTask?.cancel(); refreshTask = nil; rescanPending = false }
     func contains(_ item: ExternalMediaFile) -> Bool { index[item.id] == item }
@@ -233,11 +355,13 @@ final class ExternalMediaLibrary: ObservableObject {
         guard session == watchSession, !clients.isEmpty else { return }
         switch batch {
         case .rescan: requestRescan()
-        case .paths(let paths):
-            updateTask = Task { [weak self] in
-                guard let self, let catalog = try? await self.disk.update(paths: paths), !self.clients.isEmpty else { return }
-                self.publish(catalog)
-            }
+        case .paths(let paths): reread(paths)
+        }
+    }
+    private func reread(_ paths: Set<String>) {
+        updateTask = Task { [weak self] in
+            guard let self, let change = try? await self.disk.update(paths: paths), !self.clients.isEmpty else { return }
+            self.absorb(change)
         }
     }
 }
@@ -306,7 +430,9 @@ final class ExternalMediaWatcher {
 }
 
 actor ExternalMediaDisk {
-    struct Catalog: Sendable { let items: [ExternalMediaFile]; let index: [String: ExternalMediaFile]; let version: UInt64 }
+    struct Catalog: Sendable { let items: [ExternalMediaFile]; let index: [String: ExternalMediaFile]; let version: UInt64; let cloud: Set<String> }
+    struct Change: Sendable { let catalog: Catalog?; let settle: Duration? }
+    static let settleDelay = Duration.seconds(1)
     struct Snapshot: Sendable {
         let catalog: Catalog
         let folders: [ExternalMediaFolder]; let warning: String?; let access: [ExternalMediaAccess]; let watch: [String: String]
@@ -323,10 +449,15 @@ actor ExternalMediaDisk {
     private var available: [String: URL] = [:]
     private var readable: [String: Bool] = [:]
     private var remote = false
-    init(directory: URL, preferencesAreEphemeral: Bool = false) {
-        self.directory = directory; self.preferencesAreEphemeral = preferencesAreEphemeral
+    private let cloud: ExternalMediaCloud
+    private var synced: Set<String> = []
+    private var cloudPaths: Set<String> = []
+    private var lastEvent: [String: ContinuousClock.Instant] = [:]
+    private var settling: [String: ContinuousClock.Instant] = [:]
+    init(directory: URL, preferencesAreEphemeral: Bool = false, cloud: ExternalMediaCloud = .system) {
+        self.directory = directory; self.preferencesAreEphemeral = preferencesAreEphemeral; self.cloud = cloud
     }
-    private var catalog: Catalog { Catalog(items: ordered, index: current, version: version) }
+    private var catalog: Catalog { Catalog(items: ordered, index: current, version: version, cloud: cloudPaths) }
     private var manifest: URL { directory.appendingPathComponent("MediaFolders.json") }
     private func read() throws -> Configuration {
         if let configuration { return configuration }
@@ -356,16 +487,18 @@ actor ExternalMediaDisk {
             next.grants[index].disabled = !enabled
             if !enabled { next.grants[index].bookmark = nil }
         } else { next.grants.append(Grant(path: path, bookmark: nil, disabled: !enabled)) }
-        try commit(next); available[path] = nil
+        try commit(next); available[path] = nil; synced.remove(path)
         let kept = current.filter { $0.value.folder.path != path }
-        if kept.count != current.count { current = kept; ordered.removeAll { $0.folder.path == path }; version &+= 1 }
+        if kept.count != current.count {
+            current = kept; ordered.removeAll { $0.folder.path == path }; cloudPaths = cloudPaths.filter { kept[$0] != nil }; version &+= 1
+        }
         return catalog
     }
     @discardableResult func hide(_ file: ExternalMediaFile) throws -> Catalog {
         let scope = try checkedAccess(file, requireLocal: false)
         defer { if scope.1 { scope.0.stopAccessingSecurityScopedResource() } }
         var next = try read(); next.hiddenPaths.insert(file.id); try commit(next)
-        if current.removeValue(forKey: file.id) != nil { ordered.removeAll { $0.id == file.id }; version &+= 1 }
+        if current.removeValue(forKey: file.id) != nil { ordered.removeAll { $0.id == file.id }; cloudPaths.remove(file.id); version &+= 1 }
         return catalog
     }
     func restoreHidden() throws { var next = try read(); next.hiddenPaths = []; try commit(next) }
@@ -387,6 +520,7 @@ actor ExternalMediaDisk {
         let roots = Self.roots(systemFolders, config)
         var files: [String: ExternalMediaFile] = [:], folders: [ExternalMediaFolder] = []; var skipped = 0
         var leases: [ExternalMediaAccess] = [], reached: [String: URL] = [:], probes: [String: Bool] = [:], aliases: [String: String] = [:], foundRemote = false
+        var syncedRoots = Set<String>()
         for path in roots {
             try Task.checkCancellation()
             let root = URL(fileURLWithPath: path, isDirectory: true)
@@ -401,17 +535,19 @@ actor ExternalMediaDisk {
                 defer { withExtendedLifetime(lease) {} }
                 for name in try FileManager.default.contentsOfDirectory(atPath: path) where Self.isMedia(name) {
                     try Task.checkCancellation()
-                    do { if let file = try Self.describe(Self.url(name, in: root), folder: root), !config.hiddenPaths.contains(file.id) { files[file.id] = file } }
+                    do { if let file = try describe(Self.url(name, in: root), folder: root), !config.hiddenPaths.contains(file.id) { files[file.id] = file } }
                     catch { skipped += 1 }
                 }
                 folders.append(.init(url: root, name: root.lastPathComponent, access: .available)); leases.append(lease); reached[path] = root
                 if (try? root.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal) == false { foundRemote = true }
+                if cloud.isSynced(root) { syncedRoots.insert(path) }
             } catch is CancellationError { throw CancellationError() }
             catch { folders.append(.init(url: root, name: root.lastPathComponent, access: .unavailable(error.localizedDescription))) }
         }
-        current = files; scannedRoots = roots; available = reached; readable = probes; remote = foundRemote
+        current = files; scannedRoots = roots; available = reached; readable = probes; remote = foundRemote; synced = syncedRoots; settling = [:]
         let sorted = files.values.sorted(by: Self.precedes)
-        if sorted != ordered { ordered = sorted; version &+= 1 }
+        let nextCloud = syncedRoots.isEmpty ? [] : Set(files.values.lazy.filter { syncedRoots.contains($0.folder.path) }.map(\.id))
+        if sorted != ordered || nextCloud != cloudPaths { ordered = sorted; cloudPaths = nextCloud; version &+= 1 }
         return Snapshot(catalog: catalog, folders: folders,
                         warning: skipped == 0 ? nil : "\(skipped) file\(skipped == 1 ? " was" : "s were") unavailable while Media refreshed.", access: leases, watch: aliases)
     }
@@ -420,21 +556,36 @@ actor ExternalMediaDisk {
         guard roots == scannedRoots, !remote, readable.allSatisfy({ Self.isReadable($0.key) == $0.value }) else { return try scan(systemFolders: systemFolders) }
         return nil
     }
-    func update(paths: Set<String>) throws -> Catalog? {
+    func update(paths: Set<String>) throws -> Change {
+        let now = ContinuousClock.now
+        lastEvent = lastEvent.filter { now - $0.value < Self.settleDelay }
+        return try change(paths, at: now, coalescing: true)
+    }
+    func settle() throws -> Change {
+        let now = ContinuousClock.now
+        return try change(Set(settling.filter { now - $0.value >= Self.settleDelay }.keys), at: now, coalescing: false)
+    }
+    private func change(_ paths: Set<String>, at now: ContinuousClock.Instant, coalescing: Bool) throws -> Change {
         let config = try read()
         var replaced = Set<String>(), added: [ExternalMediaFile] = []
         for path in paths {
-            guard let root = available[(path as NSString).deletingLastPathComponent] else { continue }
-            let name = (path as NSString).lastPathComponent, url = Self.url(name, in: root)
-            var next = config.hiddenPaths.contains(url.path) ? nil : try? Self.describe(url, folder: root)
-            if next != nil, Self.storedName(url.path) != name { next = nil }
-            let previous = current[url.path]
-            guard previous != next else { continue }
-            if previous != nil { replaced.insert(url.path) }
-            current[url.path] = next
+            let parent = (path as NSString).deletingLastPathComponent
+            guard let root = available[parent] else { settling[path] = nil; continue }
+            let name = (path as NSString).lastPathComponent, url = Self.url(name, in: root), key = url.path
+            var next = config.hiddenPaths.contains(key) ? nil : try? describe(url, folder: root)
+            if next != nil, Self.storedName(key) != name { next = nil }
+            let previous = current[key]
+            let recent = coalescing ? lastEvent.updateValue(now, forKey: key) : nil
+            guard previous != next else { settling[key] = nil; continue }
+            if recent != nil, let previous, let next, previous.isLocal == next.isLocal { settling[key] = now; continue }
+            settling[key] = nil
+            if previous != nil { replaced.insert(key) }
+            current[key] = next
+            if synced.contains(parent) { if next == nil { cloudPaths.remove(key) } else { cloudPaths.insert(key) } }
             if let next { added.append(next) }
         }
-        guard !replaced.isEmpty || !added.isEmpty else { return nil }
+        let pending = settling.values.min().map { max(.zero, $0 + Self.settleDelay - now) }
+        guard !replaced.isEmpty || !added.isEmpty else { return Change(catalog: nil, settle: pending) }
         var merged = replaced.isEmpty ? ordered : ordered.filter { !replaced.contains($0.id) }
         if added.count > 32 { merged = (merged + added).sorted(by: Self.precedes) }
         else {
@@ -445,7 +596,7 @@ actor ExternalMediaDisk {
             }
         }
         ordered = merged; version &+= 1
-        return catalog
+        return Change(catalog: catalog, settle: pending)
     }
     static func precedes(_ a: ExternalMediaFile, _ b: ExternalMediaFile) -> Bool { a.date == b.date ? a.id < b.id : a.date > b.date }
     static func isMedia(_ name: String) -> Bool { mediaType(name) != nil }
@@ -473,8 +624,8 @@ actor ExternalMediaDisk {
         }
     }
     private static func url(_ name: String, in root: URL) -> URL { root.appendingPathComponent(name, isDirectory: false).standardizedFileURL }
-    static func describe(_ url: URL, folder: URL) throws -> ExternalMediaFile? {
-        guard let type = mediaType(url.lastPathComponent) else { return nil }
+    private func describe(_ url: URL, folder: URL) throws -> ExternalMediaFile? {
+        guard let type = Self.mediaType(url.lastPathComponent) else { return nil }
         var value = stat()
         guard lstat(url.path, &value) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         guard (value.st_mode & S_IFMT) == S_IFREG, value.st_flags & UInt32(UF_HIDDEN) == 0 else { return nil }
@@ -482,13 +633,13 @@ actor ExternalMediaDisk {
         let hasOrigin = getxattr(url.path, "com.apple.metadata:kMDItemWhereFroms", nil, 0, 0, XATTR_NOFOLLOW) >= 0
         let movie = type.conforms(to: .movie)
         return ExternalMediaFile(url: url.standardizedFileURL, folder: folder, revision: .init(value), kind: movie ? .movie : .image,
-                                 isScreenshot: screenshot, isScreenRecording: movie && !hasOrigin, isLocal: value.st_flags & UInt32(SF_DATALESS) == 0)
+                                 isScreenshot: screenshot, isScreenRecording: movie && !hasOrigin, isLocal: cloud.isLocal(url.path, value.st_flags))
     }
     private func checkedAccess(_ file: ExternalMediaFile, requireLocal: Bool = true) throws -> (URL, Bool) {
         guard current[file.id] == file else { throw ExternalMediaFailure.changed }
         let scope = try access(file.folder, configuration: read())
         do {
-            guard try Self.describe(file.url, folder: file.folder) == file else { throw ExternalMediaFailure.changed }
+            guard try describe(file.url, folder: file.folder) == file else { throw ExternalMediaFailure.changed }
             guard !requireLocal || file.isLocal else { throw ExternalMediaFailure.unavailable }
             return scope
         } catch { if scope.1 { scope.0.stopAccessingSecurityScopedResource() }; throw error }
@@ -510,7 +661,7 @@ actor ExternalMediaDisk {
     private func finishRead(_ descriptor: Int32, file: ExternalMediaFile) throws {
         var value = stat()
         guard fstat(descriptor, &value) == 0, ExternalMediaFile.Revision(value) == file.revision,
-              try Self.describe(file.url, folder: file.folder) == file else { throw ExternalMediaFailure.changed }
+              try describe(file.url, folder: file.folder) == file else { throw ExternalMediaFailure.changed }
     }
     func data(_ file: ExternalMediaFile) throws -> Data {
         let scope = try checkedAccess(file); defer { if scope.1 { scope.0.stopAccessingSecurityScopedResource() } }

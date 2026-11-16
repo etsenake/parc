@@ -31,18 +31,31 @@ for gone in ("reloadData", ".sort", ".map", "firstIndex"):
     assert gone not in reload, f"reload(force:) must not touch the whole list on the main thread: {gone}"
 
 schedule = body(source, "private func scheduleRebuild() {")
-for needle in ("guard rebuildTask == nil else { rebuildPending = true; return }",
-               "Task.detached(priority: .userInitiated) { Self.plan(",
-               "if current { self.apply(plan) }",
-               "if self.rebuildPending || !current { self.scheduleRebuild() }"):
-    assert needle in schedule, f"catalog changes must be planned off the main thread and never starve: {needle}"
+for needle in ("planner.start { [weak self] in",
+               "let base = self.items, version = self.listVersion, captures = self.store.items, files = self.media.items",
+               "return (work: { try Self.plan(from: base, captures: captures, files: files, query: query) }, finish:",
+               "if self.listVersion == version { self.apply(plan) } else { self.scheduleRebuild() }"):
+    assert needle in schedule, f"catalog changes must be planned off the main thread by the latest-wins planner: {needle}"
+assert "rebuildPending" not in source and "rebuildTask" not in source, "a newer catalog must replace the calculation in flight, not queue behind it"
+assert "planner.cancel()" in body(source, "private func rebuildItems() {"), "a forced rebuild cancels the calculation in flight"
 invalidate = body(source, "func invalidate() {")
-assert "rebuildTask?.cancel()" not in invalidate, "leaving Media must not drop a pending grid update"
+assert "planner.cancel()" not in invalidate, "leaving Media must not drop a pending grid update"
+context = (root / "Sources/ParcApp/MediaLibraryContext.swift").read_text()
+latest = body(context, "    func start(_ request: @escaping Request) {")
+for needle in ("task?.cancel(); task = nil; ticket &+= 1; queued = nil", "Task.detached(priority: .userInitiated) { try work() }",
+               "if task != nil, replaced >= replacementsBeforeFinishing { queued = request; return }",
+               "guard let next = request() else { return }",
+               "if let waiting = self.queued { self.queued = nil; self.start(waiting) }",
+               "withTaskCancellationHandler { try? await worker.value } onCancel: { worker.cancel() }", "guard let self, self.ticket == current else { return }"):
+    assert needle in latest, f"a superseded grid calculation must be cancelled, not run to the end: {needle}"
 assert "nonisolated private static func plan(from base: [Item]" in source, "the diff must run outside the main actor"
 assert "nonisolated private static func sortedItems(" in source, "merging, filtering and sorting must run outside the main actor"
 plan = body(source, "nonisolated private static func plan(from base: [Item]")
-assert "sortedItems(captures: captures, files: files, query: query)" in plan and "collection" not in plan, \
+assert "sortedItems(captures: captures, files: files, query: query, check: { try Task.checkCancellation() })" in plan and "collection" not in plan, \
     "the plan sorts and diffs without touching the grid"
+assert plan.count("try Task.checkCancellation()") >= 3, "the plan stops promptly once a newer catalog replaces it"
+sorted_items = body(source, "nonisolated private static func sortedItems(")
+assert "if offset % 512 == 511 { try check() }" in sorted_items, "a long search filter checks for cancellation as it goes"
 
 apply = body(source, "private func apply(_ plan: ListPlan) {")
 for needle in ("collection.performBatchUpdates({", "self.collection.deleteItems(at: plan.removed)", "self.collection.insertItems(at: plan.inserted)",
@@ -76,7 +89,16 @@ for needle in ("kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWat
                "timer.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(10))",
                "timer.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.reconcile() } }",
                "MainActor.assumeIsolated { self?.reconcile() }",
-               "func update(paths: Set<String>) throws -> Catalog?",
+               "func update(paths: Set<String>) throws -> Change",
+               "func settle() throws -> Change",
+               "if recent != nil, let previous, let next, previous.isLocal == next.isLocal { settling[key] = now; continue }",
+               "guard let delay = change.settle, settleTask == nil else { return }",
+               "observedPresentedItemUbiquityAttributes: Set<URLResourceKey> = [.ubiquitousItemDownloadingStatusKey]",
+               "func presentedItemDidChangeUbiquityAttributes(_ attributes: Set<URLResourceKey>) { report() }",
+               "guard !clients.isEmpty, !paths.isEmpty else { stopCloud(); return }",
+               "if cloud.isSynced(root) { syncedRoots.insert(path) }",
+               "ExternalMediaPreferenceObserver($0, key: \"location\")",
+               "if refreshTask == nil { reconcile() } else { rescanPending = true }",
                "guard roots == scannedRoots, !remote, readable.allSatisfy({ Self.isReadable($0.key) == $0.value }) else { return try scan(systemFolders: systemFolders) }",
                "if let appliedVersion, catalog.version <= appliedVersion { return }",
                "func contains(_ item: ExternalMediaFile) -> Bool { index[item.id] == item }",

@@ -34,8 +34,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private var items: [Item] = []
     private var positions: [String: Int]?
     private var listVersion: UInt64 = 0
-    private var rebuildTask: Task<Void, Never>?
-    private var rebuildPending = false
+    private let planner = MediaLibraryLatestWork<ListPlan>()
     private var appliedQuery = ""
     private let accessStatus = NSTextField(labelWithString: "")
     private var actionError: String?
@@ -202,10 +201,10 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     }
 
     private func rebuildItems() {
-        rebuildTask?.cancel(); rebuildTask = nil; rebuildPending = false
+        planner.cancel()
         let selected = selectedItem?.id
         appliedQuery = search.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let next = Self.sortedItems(captures: store.items, files: media.items, query: appliedQuery)
+        let next = Self.sortedItems(captures: store.items, files: media.items, query: appliedQuery, check: {})
         guard next != items else { return }
         items = next; positions = nil; listVersion &+= 1
         let keys = Set(items.map(\.cacheKey)); thumbnails = thumbnails.filter { keys.contains($0.key) }
@@ -215,32 +214,42 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     }
 
     private func scheduleRebuild() {
-        guard rebuildTask == nil else { rebuildPending = true; return }
-        rebuildPending = false
-        let base = items, version = listVersion, captures = store.items, files = media.items
-        let query = search.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        rebuildTask = Task { [weak self] in
-            let plan = await Task.detached(priority: .userInitiated) { Self.plan(from: base, captures: captures, files: files, query: query) }.value
-            guard let self, !Task.isCancelled else { return }
-            self.rebuildTask = nil
-            let current = self.listVersion == version
-            if current { self.apply(plan) }
-            if self.rebuildPending || !current { self.scheduleRebuild() }
+        planner.start { [weak self] in
+            guard let self else { return nil }
+            let base = self.items, version = self.listVersion, captures = self.store.items, files = self.media.items
+            let query = self.search.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (work: { try Self.plan(from: base, captures: captures, files: files, query: query) }, finish: { [weak self] plan in
+                guard let self else { return }
+                if self.listVersion == version { self.apply(plan) } else { self.scheduleRebuild() }
+            })
         }
     }
 
-    nonisolated private static func sortedItems(captures: [SavedCapture], files: [ExternalMediaFile], query: String) -> [Item] {
+    nonisolated private static func sortedItems(captures: [SavedCapture], files: [ExternalMediaFile], query: String,
+                                                check: () throws -> Void) rethrows -> [Item] {
         var next = captures.map(Item.capture)
         next.append(contentsOf: files.map(Item.file))
-        if !query.isEmpty { next = next.filter { $0.searchText.localizedStandardContains(query) } }
+        try check()
+        if !query.isEmpty {
+            var matched: [Item] = []
+            for (offset, item) in next.enumerated() {
+                if offset % 512 == 511 { try check() }
+                if item.searchText.localizedStandardContains(query) { matched.append(item) }
+            }
+            next = matched
+            try check()
+        }
         next.sort(by: Item.precedes)
         return next
     }
 
-    nonisolated private static func plan(from base: [Item], captures: [SavedCapture], files: [ExternalMediaFile], query: String) -> ListPlan {
-        let next = sortedItems(captures: captures, files: files, query: query)
-        var removed: [Int] = [], inserted: [Int] = [], old = 0, new = 0
+    nonisolated private static func plan(from base: [Item], captures: [SavedCapture], files: [ExternalMediaFile], query: String) throws -> ListPlan {
+        let next = try sortedItems(captures: captures, files: files, query: query, check: { try Task.checkCancellation() })
+        try Task.checkCancellation()
+        var removed: [Int] = [], inserted: [Int] = [], old = 0, new = 0, steps = 0
         while old < base.count || new < next.count {
+            steps += 1
+            if steps % 4096 == 0 { try Task.checkCancellation() }
             if new == next.count || (old < base.count && Item.precedes(base[old], next[new])) { removed.append(old); old += 1 }
             else if old == base.count || Item.precedes(next[new], base[old]) { inserted.append(new); new += 1 }
             else {
@@ -248,6 +257,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
                 old += 1; new += 1
             }
         }
+        try Task.checkCancellation()
         let evicted = Set(removed.map { base[$0].cacheKey }).subtracting(inserted.map { next[$0].cacheKey })
         return ListPlan(items: next, positions: Dictionary(next.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first }), query: query,
                         removed: Set(removed.map { IndexPath(item: $0, section: 0) }), inserted: Set(inserted.map { IndexPath(item: $0, section: 0) }),
@@ -283,7 +293,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private func refreshMessage() {
         let nextMessage: String
         if let error = store.loadError { nextMessage = error }
-        else if store.isLoading || media.isLoading || (rebuildTask != nil && items.isEmpty) { nextMessage = "Loading Media…" }
+        else if store.isLoading || media.isLoading || (planner.isRunning && items.isEmpty) { nextMessage = "Loading Media…" }
         else if appliedQuery.isEmpty { nextMessage = "Saved captures and media in your folders appear here." }
         else { nextMessage = "No matching media" }
         let nextAccess = statusText()

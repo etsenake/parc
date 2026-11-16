@@ -61,3 +61,33 @@ final class MediaLibraryThumbnailOperation: @unchecked Sendable {
         continuation?.resume(throwing: CancellationError())
     }
 }
+
+@MainActor
+final class MediaLibraryLatestWork<Value: Sendable> {
+    typealias Work = @Sendable () throws -> Value
+    typealias Finish = @MainActor (Value) -> Void
+    typealias Request = @MainActor () -> (work: Work, finish: Finish)?
+    private let replacementsBeforeFinishing = 2
+    private var task: Task<Void, Never>?
+    private var ticket: UInt64 = 0
+    private var replaced = 0
+    private var queued: Request?
+    var isRunning: Bool { task != nil }
+    deinit { task?.cancel() }
+    func start(_ request: @escaping Request) {
+        if task != nil, replaced >= replacementsBeforeFinishing { queued = request; return }
+        replaced = task == nil ? 0 : replaced + 1
+        task?.cancel(); task = nil; ticket &+= 1; queued = nil
+        guard let next = request() else { return }
+        let current = ticket, work = next.work, finish = next.finish
+        let worker = Task.detached(priority: .userInitiated) { try work() }
+        task = Task { [weak self] in
+            let value = await withTaskCancellationHandler { try? await worker.value } onCancel: { worker.cancel() }
+            guard let self, self.ticket == current else { return }
+            self.task = nil; self.replaced = 0
+            if let value { finish(value) }
+            if let waiting = self.queued { self.queued = nil; self.start(waiting) }
+        }
+    }
+    func cancel() { ticket &+= 1; task?.cancel(); task = nil; replaced = 0; queued = nil }
+}

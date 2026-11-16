@@ -35,6 +35,70 @@ import UniformTypeIdentifiers
         probe.complete(.success(Data([1, 2, 3])))
         let immediate = MediaLibraryThumbnailOperation(start: { $0(.success(Data([4, 5]))) }, stop: {})
         let immediateBytes = try await immediate.value(); precondition(immediateBytes == Data([4, 5]))
+        let latest = MediaLibraryLatestWork<Int>(), finished = FinishedWork()
+        func request(_ work: @escaping @Sendable () throws -> Int) -> MediaLibraryLatestWork<Int>.Request {
+            { finished.requests += 1; return (work: work, finish: { finished.values.append($0) }) }
+        }
+        func spin(_ probe: WorkProbe, _ value: Int) -> @Sendable () throws -> Int {
+            {
+                probe.begin()
+                for _ in 0..<5_000 {
+                    if Task.isCancelled { probe.cancel(); throw CancellationError() }
+                    if probe.released { return value }
+                    usleep(1_000)
+                }
+                return value
+            }
+        }
+        func waitFor(_ condition: () -> Bool) async throws {
+            for _ in 0..<2_000 where !condition() { try await Task.sleep(nanoseconds: 1_000_000) }
+        }
+        let stale = WorkProbe()
+        latest.start(request(spin(stale, 1)))
+        try await waitFor { stale.started }
+        precondition(stale.started && latest.isRunning)
+        latest.start(request { 2 })
+        try await waitFor { !latest.isRunning && stale.cancelled }
+        precondition(finished.values == [2] && stale.cancelled && !latest.isRunning, "A newer grid calculation cancels the one it replaces")
+        let abandoned = WorkProbe()
+        latest.start(request(spin(abandoned, 3)))
+        try await waitFor { abandoned.started }
+        latest.cancel()
+        try await waitFor { abandoned.cancelled }
+        try await Task.sleep(nanoseconds: 20_000_000)
+        precondition(abandoned.cancelled && !latest.isRunning && finished.values == [2], "A forced rebuild cancels the calculation in flight")
+        let firstRun = WorkProbe(), secondRun = WorkProbe(), thirdRun = WorkProbe()
+        for (probe, value) in [(firstRun, 4), (secondRun, 5), (thirdRun, 6)] {
+            latest.start(request(spin(probe, value)))
+            try await waitFor { probe.started }
+        }
+        let requestsBeforeQueue = finished.requests
+        latest.start(request { 7 }); latest.start(request { 8 })
+        try await waitFor { firstRun.cancelled && secondRun.cancelled }
+        precondition(firstRun.cancelled && secondRun.cancelled && !thirdRun.cancelled && latest.isRunning && finished.requests == requestsBeforeQueue,
+                     "A steady stream of updates lets one grid calculation finish and waits to read the newest catalog")
+        thirdRun.release()
+        try await waitFor { !latest.isRunning && finished.values.count == 3 }
+        precondition(finished.values == [2, 6, 8] && finished.requests == requestsBeforeQueue + 1 && !latest.isRunning,
+                     "Only the newest waiting update is planned, from the catalog current when it starts")
+        let longRun = WorkProbe()
+        latest.start(request(spin(longRun, 9)))
+        try await waitFor { longRun.started }
+        latest.start(request { 10 })
+        try await waitFor { !latest.isRunning && longRun.cancelled }
+        precondition(longRun.cancelled && finished.values == [2, 6, 8, 10], "Once a calculation finishes, newer updates cancel stale ones again")
+        let stubborn = WorkProbe()
+        latest.start(request {
+            stubborn.begin()
+            for _ in 0..<5_000 where !stubborn.released { usleep(1_000) }
+            return 11
+        })
+        try await waitFor { stubborn.started }
+        latest.start(request { 12 })
+        try await waitFor { !latest.isRunning && finished.values.last == 12 }
+        stubborn.release()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        precondition(finished.values == [2, 6, 8, 10, 12] && !latest.isRunning, "A stale calculation that finishes late anyway is thrown away")
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("ParcMedia-" + UUID().uuidString)
         defer { try? fm.removeItem(at: root) }
@@ -84,24 +148,58 @@ import UniformTypeIdentifiers
         func revision(_ catalog: ExternalMediaDisk.Catalog?, _ url: URL) -> ExternalMediaFile.Revision? { catalog?.items.first { $0.url == url }?.revision }
         let quietOther = revision(grown.catalog, other)!
         try grow(addition); try grow(other)
-        let touched = try await disk.update(paths: [addition.path])
+        let touched = try await disk.update(paths: [addition.path]).catalog
         precondition(revision(touched, addition)?.size == Int64(png.count * 2) && revision(touched, other) == quietOther,
                      "A targeted update rereads only the file that changed")
         precondition(touched!.version > grown.catalog.version && touched!.index[addition.path]?.revision.size == Int64(png.count * 2))
         let unchanged = try await disk.update(paths: [addition.path, nested.appendingPathComponent("NotScanned.png").path, root.appendingPathComponent("Outside.png").path])
-        precondition(unchanged == nil, "An unchanged file, a nested file and a file outside every folder publish nothing")
+        precondition(unchanged.catalog == nil && unchanged.settle == nil, "An unchanged file, a nested file and a file outside every folder publish nothing")
         let renamedAddition = folder.appendingPathComponent("Renamed.png"); try fm.moveItem(at: addition, to: renamedAddition)
-        let renamed = try await disk.update(paths: [addition.path, renamedAddition.path])
+        let renamed = try await disk.update(paths: [addition.path, renamedAddition.path]).catalog
         precondition(revision(renamed, addition) == nil && revision(renamed, renamedAddition)?.size == Int64(png.count * 2), "A rename moves the file in one update")
         let recased = folder.appendingPathComponent("RENAMED.png")
         precondition(Darwin.rename(renamedAddition.path, recased.path) == 0)
-        let caseOnly = try await disk.update(paths: [renamedAddition.path, recased.path])
+        let caseOnly = try await disk.update(paths: [renamedAddition.path, recased.path]).catalog
         precondition(revision(caseOnly, renamedAddition) == nil && revision(caseOnly, recased) != nil && caseOnly?.items.count == renamed?.items.count,
                      "A case-only rename leaves one tile under the new name")
         try fm.removeItem(at: recased)
-        let removed = try await disk.update(paths: [recased.path])
+        let removed = try await disk.update(paths: [recased.path]).catalog
         precondition(removed?.items.count == snapshot.catalog.items.count && removed?.index[recased.path] == nil, "A removal drops the file")
         precondition(zip(removed!.items, removed!.items.dropFirst()).allSatisfy { ExternalMediaDisk.precedes($0, $1) })
+        let copying = folder.appendingPathComponent("Copying.png"); try png.write(to: copying)
+        let arrived = try await disk.update(paths: [copying.path])
+        precondition(arrived.catalog?.index[copying.path] != nil && arrived.settle == nil, "A file that arrives whole appears at once")
+        try grow(copying)
+        let growing = try await disk.update(paths: [copying.path])
+        precondition(growing.catalog == nil && growing.settle != nil, "A file still being written waits to settle")
+        try grow(copying)
+        let stillGrowing = try await disk.update(paths: [copying.path])
+        let early = try await disk.settle()
+        precondition(stillGrowing.catalog == nil && early.catalog == nil && early.settle != nil, "A file written moments ago has not settled")
+        try await Task.sleep(for: early.settle! + .milliseconds(50))
+        let landed = try await disk.settle()
+        precondition(landed.catalog?.index[copying.path]?.revision.size == Int64(png.count * 3) && landed.settle == nil
+                     && landed.catalog?.version == arrived.catalog.map { $0.version + 1 }, "A grown file lands in one update once it goes quiet")
+        try await Task.sleep(for: ExternalMediaDisk.settleDelay)
+        try grow(copying)
+        let later = try await disk.update(paths: [copying.path])
+        precondition(later.catalog?.index[copying.path]?.revision.size == Int64(png.count * 4) && later.settle == nil, "A change after a quiet spell shows at once")
+        try fm.removeItem(at: copying)
+        let copyGone = try await disk.update(paths: [copying.path])
+        precondition(copyGone.catalog?.index[copying.path] == nil && copyGone.catalog?.items.count == snapshot.catalog.items.count, "A removal never waits to settle")
+        let flipCloud = CloudProbe(syncedName: folder.lastPathComponent)
+        let flipDisk = ExternalMediaDisk(directory: root.appendingPathComponent("FlipProfile"), cloud: flipCloud.source)
+        let flipScan = try await flipDisk.scan(systemFolders: [folder, missing])
+        precondition(!flipScan.catalog.items.isEmpty && flipScan.catalog.cloud == Set(flipScan.catalog.items.map(\.id)), "Every file in an iCloud folder is watched")
+        let flipped = flipScan.catalog.items[0]
+        let quiet = try await flipDisk.update(paths: [flipped.id])
+        flipCloud.evict(flipped.id)
+        let evicted = try await flipDisk.update(paths: [flipped.id])
+        flipCloud.restore(flipped.id)
+        let downloaded = try await flipDisk.update(paths: [flipped.id])
+        precondition(quiet.catalog == nil && evicted.catalog?.index[flipped.id]?.isLocal == false && evicted.settle == nil
+                     && downloaded.catalog?.index[flipped.id]?.isLocal == true && downloaded.settle == nil,
+                     "An eviction or download shows at once even right after another event for that file")
         try png.write(to: other, options: .atomic)
         let data = try await disk.data(capture); precondition(data == png)
         let export = root.appendingPathComponent("Export.png")
@@ -215,6 +313,17 @@ import UniformTypeIdentifiers
         try await eventually({ !live.items.contains { $0.url == moved } }, "A removal is seen from its folder event")
         try fm.removeItem(at: watchedNote)
         try await until { live.items.count == 2 }
+        var copyChanges = 0
+        let copyObserver = live.$items.dropFirst().sink { _ in copyChanges += 1 }
+        let slow = folder.appendingPathComponent("Slow.png"); try png.write(to: slow)
+        try await eventually({ live.items.contains { $0.url == slow } }, "A new file appears without waiting to settle")
+        for _ in 0..<5 { try grow(slow); try await Task.sleep(nanoseconds: 200_000_000) }
+        try await eventually({ live.items.first { $0.url == slow }?.revision.size == Int64(png.count * 6) }, "A slowly copied file settles at its final size")
+        try await Task.sleep(nanoseconds: 300_000_000)
+        copyObserver.cancel()
+        precondition(copyChanges <= 2, "A slowly copied file took \(copyChanges) updates to settle")
+        try fm.removeItem(at: slow)
+        try await until { live.items.count == 2 }
         live.deactivate(a)
         let arrival = folder.appendingPathComponent("Arrival.png"); try png.write(to: arrival)
         try await until { live.items.contains { $0.url == arrival } }
@@ -224,6 +333,66 @@ import UniformTypeIdentifiers
         try png.write(to: arrival)
         try await Task.sleep(nanoseconds: 400_000_000)
         precondition(live.items.isEmpty)
+        let cloudFolder = root.appendingPathComponent("Cloud", isDirectory: true), plainFolder = root.appendingPathComponent("Plain", isDirectory: true)
+        try fm.createDirectory(at: cloudFolder, withIntermediateDirectories: true); try fm.createDirectory(at: plainFolder, withIntermediateDirectories: true)
+        let cloudA = cloudFolder.appendingPathComponent("A.png"), cloudB = cloudFolder.appendingPathComponent("B.png"), plainC = plainFolder.appendingPathComponent("C.png")
+        for file in [cloudA, cloudB, plainC] { try png.write(to: file) }
+        let cloud = CloudProbe(syncedName: "Cloud")
+        let plainOnly = ExternalMediaLibrary(directory: root.appendingPathComponent("PlainObserved"), systemFolders: { [plainFolder] },
+                                             cloud: cloud.source, screenshotPreferences: nil)
+        let plainClient = UUID(); plainOnly.activate(plainClient)
+        try await until { plainOnly.items.count == 1 && !plainOnly.isLoading }
+        plainOnly.deactivate(plainClient)
+        precondition(cloud.observations == 0, "Media without an iCloud folder never watches download status")
+        let synced = ExternalMediaLibrary(directory: root.appendingPathComponent("CloudObserved"), systemFolders: { [cloudFolder, plainFolder] },
+                                          cloud: cloud.source, screenshotPreferences: nil)
+        precondition(cloud.observations == 0, "Download status is not watched before Media is shown")
+        let cloudClient = UUID(); synced.activate(cloudClient)
+        try await until { synced.items.count == 3 && !synced.isLoading }
+        precondition(cloud.observations == 1 && cloud.presented == [cloudA.path, cloudB.path], "Shown Media watches download status for just its iCloud folder's files")
+        var cloudChanges = 0
+        let cloudObserver = synced.$items.dropFirst().sink { _ in cloudChanges += 1 }
+        let beforeEviction = synced.items.filter { $0.url != cloudA }
+        cloud.evict(cloudA.path); cloud.report([cloudA.path])
+        try await eventually({ synced.items.first { $0.url == cloudA }?.isLocal == false }, "An eviction reported by iCloud reaches its tile")
+        try await Task.sleep(nanoseconds: 200_000_000)
+        precondition(cloudChanges == 1 && synced.items.filter { $0.url != cloudA } == beforeEviction, "An eviction rereads only that file and publishes once")
+        precondition(synced.items.first { $0.url == cloudA }?.detail == "Download in Finder to preview")
+        cloud.restore(cloudA.path); cloud.report([cloudA.path])
+        try await eventually({ synced.items.first { $0.url == cloudA }?.isLocal == true }, "A finished download reaches its tile without waiting to settle")
+        precondition(cloudChanges == 2, "A finished download publishes once")
+        cloudObserver.cancel()
+        let cloudD = cloudFolder.appendingPathComponent("D.png"); try png.write(to: cloudD)
+        try fm.removeItem(at: cloudB)
+        try await eventually({ cloud.presented == [cloudA.path, cloudD.path] }, "Arrivals and removals in an iCloud folder update the watched files")
+        weak var watching = cloud.current
+        let lateReport = cloud.handler
+        synced.deactivate(cloudClient)
+        precondition(watching == nil && synced.items.isEmpty, "Leaving Media stops watching download status")
+        lateReport?([cloudA.path])
+        try await Task.sleep(nanoseconds: 300_000_000)
+        precondition(synced.items.isEmpty, "A status report after Media closes is ignored")
+        synced.activate(cloudClient)
+        try await until { synced.items.count == 3 && !synced.isLoading }
+        precondition(cloud.observations == 2 && cloud.presented == [cloudA.path, cloudD.path])
+        watching = cloud.current
+        try await synced.setEnabled(false, folder: cloudFolder)
+        precondition(watching == nil && synced.items.count == 1, "Hiding the only iCloud folder stops watching download status")
+        synced.deactivate(cloudClient)
+        let shotsSuite = "parc.media-screenshot-tests." + UUID().uuidString
+        let shotsDefaults = UserDefaults(suiteName: shotsSuite)!
+        defer { shotsDefaults.removePersistentDomain(forName: shotsSuite) }
+        let shotsHome = root.appendingPathComponent("Home", isDirectory: true), shotsFolder = root.appendingPathComponent("Screenshots", isDirectory: true)
+        try fm.createDirectory(at: shotsHome, withIntermediateDirectories: true); try fm.createDirectory(at: shotsFolder, withIntermediateDirectories: true)
+        try png.write(to: shotsHome.appendingPathComponent("Home.png")); try png.write(to: shotsFolder.appendingPathComponent("Shot.png"))
+        let located = ExternalMediaLibrary(directory: root.appendingPathComponent("LocatedObserved"), preferencesAreEphemeral: true,
+            systemFolders: { [shotsHome] + (shotsDefaults.string(forKey: "location").map { [URL(fileURLWithPath: $0, isDirectory: true)] } ?? []) },
+            screenshotPreferences: shotsDefaults)
+        let locatedClient = UUID(); located.activate(locatedClient)
+        try await until { located.items.count == 1 && !located.isLoading }
+        shotsDefaults.set(shotsFolder.path, forKey: "location")
+        try await eventually({ located.items.count == 2 }, "A new screenshot location is picked up without waiting for the minute check")
+        located.deactivate(locatedClient)
         let denied = root.appendingPathComponent("Denied", isDirectory: true)
         try fm.createDirectory(at: denied, withIntermediateDirectories: true)
         try png.write(to: denied.appendingPathComponent("Private.png"))
@@ -238,8 +407,54 @@ import UniformTypeIdentifiers
         do { _ = try await broken.scan(systemFolders: [folder]); fatalError("Invalid preferences accepted") } catch ExternalMediaFailure.invalidConfiguration {}
         do { try await broken.setEnabled(true, folder: folder); fatalError("Invalid preferences replaced") } catch ExternalMediaFailure.invalidConfiguration {}
         let preservedConfig = try Data(contentsOf: config.appendingPathComponent("MediaFolders.json")); precondition(preservedConfig == corrupt)
-        print("External media discovery, change publication, original-byte export, revision, hiding, source access and corruption checks passed")
+        print("External media discovery, change publication, settling, iCloud status, screenshot location, cancellation, original-byte export, revision, hiding, source access and corruption checks passed")
     }
+}
+
+@MainActor private final class FinishedWork { var values: [Int] = []; var requests = 0 }
+
+private final class WorkProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didStart = false, didCancel = false
+    var started: Bool { lock.lock(); defer { lock.unlock() }; return didStart }
+    var cancelled: Bool { lock.lock(); defer { lock.unlock() }; return didCancel }
+    private var didRelease = false
+    var released: Bool { lock.lock(); defer { lock.unlock() }; return didRelease }
+    func begin() { lock.lock(); didStart = true; lock.unlock() }
+    func cancel() { lock.lock(); didCancel = true; lock.unlock() }
+    func release() { lock.lock(); didRelease = true; lock.unlock() }
+}
+
+private final class CloudProbe: @unchecked Sendable {
+    private final class Observation: ExternalMediaCloudObservation, @unchecked Sendable {
+        private let probe: CloudProbe
+        init(_ probe: CloudProbe) { self.probe = probe }
+        func present(_ paths: Set<String>) { probe.record(paths) }
+    }
+    private let lock = NSLock()
+    private let syncedName: String
+    private var evicted = Set<String>(), watched = Set<String>(), count = 0
+    private var reporter: (@Sendable (Set<String>) -> Void)?
+    private weak var live: Observation?
+    init(syncedName: String) { self.syncedName = syncedName }
+    var source: ExternalMediaCloud {
+        ExternalMediaCloud(isSynced: { [self] in $0.lastPathComponent == syncedName },
+                           isLocal: { [self] path, flags in flags & UInt32(SF_DATALESS) == 0 && !locked { evicted.contains(path) } },
+                           observe: { [self] handler in
+                               let observation = Observation(self)
+                               locked { count += 1; reporter = handler; live = observation }
+                               return observation
+                           })
+    }
+    var observations: Int { locked { count } }
+    var presented: Set<String> { locked { watched } }
+    var current: AnyObject? { locked { live } }
+    var handler: (@Sendable (Set<String>) -> Void)? { locked { reporter } }
+    func evict(_ path: String) { locked { _ = evicted.insert(path) } }
+    func restore(_ path: String) { locked { _ = evicted.remove(path) } }
+    func report(_ paths: Set<String>) { handler?(paths) }
+    fileprivate func record(_ paths: Set<String>) { locked { watched = paths } }
+    private func locked<T>(_ body: () -> T) -> T { lock.lock(); defer { lock.unlock() }; return body() }
 }
 
 private final class ThumbnailProbe: @unchecked Sendable {

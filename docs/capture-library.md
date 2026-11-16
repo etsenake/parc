@@ -74,18 +74,23 @@ Recording permission.
 
 Only visible clients keep observation active. One file-level FSEvents stream
 covers every shown folder, including missing or unreadable ones, so a file that
-appears, is written in place, gains the screenshot marker, is renamed or is removed
-reaches Media within about a third of a second. Each event rereads just that file;
-events for subfolders, hidden files and non-media names are dropped on the stream's
-own queue. The stream replays from the moment its scan began, so nothing that
-happens during a scan is lost. Media rescans everything only when macOS reports
-dropped events, a shown folder itself appears, moves, disappears or changes
-permissions, a volume holding one mounts or unmounts, or a person refreshes;
-requests that arrive during a rescan fold into one more afterwards.
+appears, is renamed or is removed reaches Media within about a third of a second,
+and so does a file's first in-place write or screenshot marker after a quiet second.
+Each event rereads just that file; events for subfolders, hidden files and non-media
+names are dropped on the stream's own queue. The stream replays from the moment its
+scan began, so nothing that happens during a scan is lost. Further changes to a file
+that changed within the last second wait until it has been quiet for a second, so a
+file still being copied settles into one or two tile updates instead of several a
+second; a change in iCloud availability never waits. Media rescans everything only when
+macOS reports dropped events, a shown folder itself appears, moves, disappears or
+changes permissions, a volume holding one mounts or unmounts, or a person
+refreshes; requests that arrive during a rescan fold into one more afterwards.
 
-Nothing polls files on a local disk. App activation and a once-a-minute check
-reread the screenshot location and whether each folder can still be opened, and
-rescan only when one of those changed. Network folders are the one case events
+Nothing polls files on a local disk. While Media is shown it observes the macOS
+screenshot location setting, so a new location chosen in the Screenshot app is
+picked up at once. App activation and a once-a-minute check reread that location
+and whether each folder can still be opened, and rescan only when one of those
+changed. Network folders are the one case events
 miss, because macOS reports only changes made on this Mac; while one is shown, that
 check rescans all folders once a minute. It does the same if the stream cannot
 start. Last-client retirement cancels work, releases the stream and scopes and
@@ -93,11 +98,21 @@ clears results. Owned sheets, previews and thumbnail requests carry
 window/generation. Cancellation settles once even if Quick Look never answers, and
 late callbacks cannot restore retired work.
 
+iCloud download status has its own source. While Media is shown and a folder iCloud
+syncs (usually Desktop and Documents) is in scope, each of that folder's media files
+gets a file presenter that asks macOS for changes to its download status. An
+eviction or a finished download rereads just that file, and its tile changes at once
+without waiting to settle. Presenters follow arrivals and removals and are all
+released when Media closes or no iCloud folder remains. A Spotlight metadata query
+cannot do this for Parc: download status appears only in iCloud query scopes, which
+need an iCloud container entitlement Parc does not carry.
+
 Folder size never costs the main thread. The disk actor keeps the sorted list, a
 lookup index and a version; a rescan or event that changes nothing publishes
 nothing, and a change hands Media the list and index together, so membership checks
 are lookups. The grid compares that version instead of the list, then merges,
-filters, sorts and diffs against what it shows on a background task. The main
+filters, sorts and diffs against what it shows on a background task. A newer change
+cancels a calculation still in flight and plans again from the newest lists. The main
 thread applies only the difference as one batch of tile removals and insertions; a
 file changed in place is removed and reinserted at its new position, and more than
 200 changed tiles reload the grid instead. Selection follows its file, the scroll
@@ -142,15 +157,24 @@ from the drawn thumbnail rectangle. Increase Contrast adds the selected focus ed
 classification, aliases, same-path replacement, disappearance, hiding, source
 configuration, bookmarks, unreadable/missing folders and corrupt preferences.
 Its disk checks reread only the file an update names, ignore nested and outside
-paths, and apply renames and removals. Native client checks cover event-driven
-arrival, in-place writes, a later screenshot marker, renames and removals, shutdown,
-a quiet rescan that publishes nothing and a new file that publishes the list exactly
-once without a loading flip. Library view checks cover thumbnail geometry, hover,
-scrolling, selection, source rectangles, mixed capture/file navigation, a loading
-flip that leaves the grid alone, and arrivals, in-place changes, renames and
-removals that make at most two tiles while selection, scroll position and hover
-stay correct. `tests/CaptureLibraryCatalogSkip` pins the skip, off-main planning
-and event structure; `scripts/test.sh` runs both Media checks.
+paths, apply renames and removals, and hold a growing file until it settles while
+arrivals, removals and changes after a quiet spell apply at once. Native client
+checks cover event-driven arrival, in-place writes, a later screenshot marker,
+renames and removals, a slowly copied file landing in at most two updates, shutdown,
+a quiet rescan that publishes nothing, a new file that publishes the list exactly
+once without a loading flip, and a screenshot location change picked up without
+activation. An injected iCloud source checks that download status is watched only
+for a shown iCloud folder's files, that evictions and downloads reread just that
+file and publish once, that watched files follow arrivals and removals, and that
+closing Media or hiding the folder stops watching and ignores late reports. The
+latest-wins planner checks that a newer or forced rebuild cancels the calculation
+in flight. Library view checks cover thumbnail geometry, hover, scrolling,
+selection, source rectangles, mixed capture/file navigation, a loading flip that
+leaves the grid alone, and arrivals, in-place changes, renames, removals and iCloud
+status changes that make at most two tiles while selection, scroll position and
+hover stay correct. `tests/CaptureLibraryCatalogSkip` pins the skip, off-main and
+cancellable planning, settling, iCloud status and event structure; `scripts/test.sh`
+runs both Media checks.
 
 ## Private Media ownership
 
