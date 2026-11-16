@@ -111,6 +111,12 @@ class ColorProviderSource;
 class DialogModel;
 }
 
+namespace views {
+class DialogDelegate;
+class Widget;
+class WidgetDelegate;
+}
+
 namespace web_app {
 class AppBrowserController;
 }
@@ -164,6 +170,13 @@ using FolderUploadConfirmation =
              content::WebContents* web_contents,
              content::RenderFrameHost* frame);
 void SetFolderUploadConfirmation(FolderUploadConfirmation confirmation);
+
+using WebModalPresenter = views::Widget* (*)(views::WidgetDelegate* dialog,
+                                             content::WebContents* contents);
+using BrowserModalPresenter = views::Widget* (*)(views::DialogDelegate* dialog,
+                                                 gfx::NativeWindow parent);
+void SetConstrainedWindowPresenters(WebModalPresenter web_modal,
+                                    BrowserModalPresenter browser_modal);
 
 #ifdef __OBJC__
 

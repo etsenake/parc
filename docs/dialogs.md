@@ -22,6 +22,16 @@ refuses an unqueued dialog; a caller that always showed its alert passes
 builds what `NSAlert(error:)` showed, and `ParcDialog.present` is the app-modal
 error alert that replaces `presentError`.
 
+Chromium's own Views dialogs that belong to a page or window, such as DevTools'
+"Allow DevTools to edit files" prompt, the remote-debugging approval, the
+process-sharing restart and the File System Access warnings, attach as a child
+window (`Engine/ParcNative/constrained_dialog.mm`). A page's dialog sits centred
+along the top of the tab, docked DevTools pane, extension pop-up or side panel
+that asked, follows it as the window moves or resizes, hides with its tab, keeps
+the page or DevTools pane blocked until it closes, closes with its page or window
+and hands focus back to it. A window's dialog sits along the top of the page area.
+Each holds the window's security reservation and waits while another prompt has it.
+
 The response says which button ended it: confirm, the checkbox-ticked confirm,
 secondary (the second action, left of confirm), auxiliary (leftmost, for example
 Keep Open) or cancel. Buttons keep the order a system alert had. A choice between

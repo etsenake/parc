@@ -33,14 +33,14 @@ Each patch entry says what it changes, which files it touches and why it must st
 
 ## Counts
 
-The reference covers 67 hooks and 72 patches:
+The reference covers 68 hooks and 73 patches:
 
-- 62 setters in `parc/chromium_hooks.h`, plus its one call-in, `DestroyUnusedOTRProfile`.
+- 63 setters in `parc/chromium_hooks.h`, plus its one call-in, `DestroyUnusedOTRProfile`.
 - 5 setters in layer headers: the Widevine request observer, the Safari-identity query, worker
   identity, the AirPlay playback-target handler and Blink's player move. Their 5 call-ins are the
   Safari-identity check, the three AirPlay answers and picture-in-picture scrubbing. One more
   call-in, `content::NotifyNativeDeferredOpenURL`, lives in `content/public/browser/parc_native_links.h`.
-- 72 patches in [`overlay.json`](../Engine/ParcHost/overlay.json): 71 in
+- 73 patches in [`overlay.json`](../Engine/ParcHost/overlay.json): 72 in
   `Engine/ParcHost/integration/` and `extension_context_menu_native` in `Engine/ParcNative/`.
 
 To recheck the counts after a change, compare the setters the header declares with the ones the
@@ -53,7 +53,7 @@ rg -n 'EXPORT .*Set\w+\(' Engine/ParcHost/integration/*.h Engine/ParcNative/fair
 python3 -c "import json; print(len(json.load(open('Engine/ParcHost/overlay.json'))['patches']))"
 ```
 
-The second command lists the 62 header setters plus the four layer setters and three AirPlay
+The second command lists the 63 header setters plus the four layer setters and three AirPlay
 call-ins the patches define; per-object member setters are indented and left out. Blink's
 player-move setter is defined in Parc's own `parc_media_element.cc`, so only the third finds it.
 
@@ -63,7 +63,7 @@ player-move setter is defined in Parc's own `parc_media_element.cc`, so only the
 |---|---|---|---|
 | Browser and startup | 23 | 14 | [browser, pages and windows](chromium-hooks-browser.md#browser-and-startup-hooks) |
 | Page and window | 18 | 8 | [browser, pages and windows](chromium-hooks-browser.md#page-and-window-hooks) |
-| Interface routing and prompts | 17 | 26 | [interface and prompts](chromium-hooks-interface.md) |
+| Interface routing and prompts | 18 | 27 | [interface and prompts](chromium-hooks-interface.md) |
 | Media and FairPlay | 8 | 16 | [media and Blink](chromium-hooks-media.md#media-and-fairplay-hooks) |
 | Blink and renderer | 1 | 4 | [media and Blink](chromium-hooks-media.md#blink-and-renderer-hooks) |
 | Build and tests | 0 | 4 | [below](#build-and-test-patches) |
@@ -84,7 +84,8 @@ Patches by area:
   `native-password-prompt-direct`, `chromium-direct-shared`, `native-devtools-auxiliary`,
   `native-devtools-direct-overlay`, `native-developer-panels`, `native-intent-picker-direct-overlay`,
   `native-client-certificates`, `native-external-protocol`, `native-folder-upload-direct-overlay`,
-  `native-extension-install`, `native-webauthn`, `native-autofill-capabilities-direct`,
+  `native-constrained-window`, `native-extension-install`, `native-webauthn`,
+  `native-autofill-capabilities-direct`,
   `native-autofill-controllers-direct`, `native-address-editor`, `native-address-account`,
   `native-protocol-handler-request`, `native-current-tab-picker`, `native-delegated-picker` and
   `native-file-dialogs-direct-overlay`.

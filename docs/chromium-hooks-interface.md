@@ -56,6 +56,14 @@ which an embedder cannot override without replacing that file.
   cancelled if the asking frame navigates or goes away. `chrome/browser/file_select_helper.cc`
   hands over the dialog model and frame. Answered by `ShowFolderUploadConfirmation` in
   `folder_upload.mm`.
+- **`SetConstrainedWindowPresenters`**: Chromium's tab-modal and window-modal dialogs, such as
+  DevTools' "Allow DevTools to edit files" prompt, the remote-debugging approval and the File
+  System Access warnings, attach to the Parc page or window that asked instead of floating loose.
+  `components/constrained_window/constrained_window_views.cc` parents them to a Views window Parc
+  doesn't have, and its helpers are free functions every caller uses directly. It runs in
+  `ShowWebModalDialogViews` and `CreateBrowserModalDialogViews`, and Parc takes only dialogs whose
+  host or parent isn't a Views window. Answered by `PresentNativeWebModal` and
+  `CreateNativeBrowserModal` in `constrained_dialog.mm`.
 - **`SetFileTypeInfoFactory`**: a page's file chooser offers both the combined and the per-type
   filters Parc's dialog shows. `chrome/browser/file_select_helper.cc` builds them from the page's
   accept types before the dialog exists. Installed in `file_dialog.mm`; answered by
@@ -110,6 +118,8 @@ which an embedder cannot override without replacing that file.
 - **`native-folder-upload-direct-overlay`**: only a dialog host can run a dialog model's accept
   action, so Parc's sheet attaches an acceptance validator to `bubble_dialog_model_host.{h,cc}`;
   also touches `web_contents_modal_dialog_manager.cc`.
+- **`native-constrained-window`**: only its hook, in `constrained_window_views.cc`; when Parc
+  declines, Chromium's own path runs unchanged.
 - **`native-extension-install`**: binds consent when the prompt is created, before the icon loads, in
   `extension_install_prompt.{h,cc}` and the supervised-user delegate
   ([decisions](chromium-seams.md#decisions)).

@@ -511,6 +511,26 @@ source_set("native_downloads") {
   }
 }
 
+source_set("native_constrained_dialogs") {
+  public = [ "constrained_dialog.h" ]
+  sources = [
+    "constrained_dialog.h",
+    "constrained_dialog.mm",
+  ]
+  frameworks = [ "AppKit.framework" ]
+  public_deps = [ "//ui/gfx" ]
+  deps = [
+    ":native_components",
+    "//base",
+    "//chrome/browser/ui/browser_window",
+    "//components/constrained_window",
+    "//components/web_modal",
+    "//content/public/browser",
+    "//ui/gfx/geometry",
+    "//ui/views",
+  ]
+}
+
 source_set("native_http_auth") {
   public = [ "http_auth.h" ]
   sources = [

@@ -1,0 +1,67 @@
+--- a/components/constrained_window/constrained_window_views.cc
++++ b/components/constrained_window/constrained_window_views.cc
+@@ -41,6 +41,20 @@
+ DEFINE_OWNED_UI_CLASS_PROPERTY_KEY(ModalDialogHostObserver,
+                                    kModalDialogHostObserverKey)
+-
++
++namespace parc_hooks {
++using WebModalPresenter = views::Widget* (*)(views::WidgetDelegate* dialog,
++                                             content::WebContents* contents);
++using BrowserModalPresenter = views::Widget* (*)(views::DialogDelegate* dialog,
++                                                 gfx::NativeWindow parent);
++void SetConstrainedWindowPresenters(WebModalPresenter web_modal,
++                                    BrowserModalPresenter browser_modal);
++}
++
++namespace {
++parc_hooks::WebModalPresenter g_parc_web_modal_presenter = nullptr;
++parc_hooks::BrowserModalPresenter g_parc_browser_modal_presenter = nullptr;
++}
++
+ namespace constrained_window {
+-
++
+ const void* kConstrainedWindowWidgetIdentifier = "ConstrainedWindowWidget";
+@@ -261,6 +275,12 @@
+   // window.
+   content::WebContents* web_contents =
+       GetTopLevelWebContents(initiator_web_contents);
++  if (views::Widget* parc_widget =
++          g_parc_web_modal_presenter
++              ? g_parc_web_modal_presenter(dialog, web_contents)
++              : nullptr) {
++    return parc_widget;
++  }
+   views::Widget* widget = CreateWebModalDialogViews(dialog, web_contents);
+-
++
+   // The widget should not be destroyed during the process of being shown.
+@@ -324,6 +344,13 @@
+   DCHECK_NE(ui::mojom::ModalType::kChild, dialog->GetModalType());
+   DCHECK_NE(ui::mojom::ModalType::kNone, dialog->GetModalType());
+   DCHECK(!parent || CurrentBrowserModalClient());
++
++  if (views::Widget* parc_widget =
++          g_parc_browser_modal_presenter
++              ? g_parc_browser_modal_presenter(dialog, parent)
++              : nullptr) {
++    return parc_widget;
++  }
+-
++
+   gfx::NativeView parent_view =
+       parent ? CurrentBrowserModalClient()->GetDialogHostView(parent)
+@@ -427,3 +454,11 @@
+ }
+-
++
+ }  // namespace constrained_window
++
++namespace parc_hooks {
++void SetConstrainedWindowPresenters(WebModalPresenter web_modal,
++                                    BrowserModalPresenter browser_modal) {
++  g_parc_web_modal_presenter = web_modal;
++  g_parc_browser_modal_presenter = browser_modal;
++}
++}

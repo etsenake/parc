@@ -14,7 +14,7 @@
     {
       "source": "Engine/ParcNative/BUILD.gn",
       "target": "parc/native/BUILD.gn",
-      "sha256": "4cc65dd760f6914d5849151235a7fe2dfd6d43473efcc57c43aebb75541f4a55"
+      "sha256": "5dcfcbaef0446750f86c89627b54aa0366be604bd26b7d801f892e7d914506ec"
     },
     {
       "source": "Engine/ParcNative/page_host.h",
@@ -855,6 +855,16 @@
       "source": "Engine/ParcNative/folder_upload.mm",
       "target": "parc/native/folder_upload.mm",
       "sha256": "3ca5c8d0e32ca9359c9197431fc06b3c4b008b1d05c6cc9a9601f5ba0a33b78e"
+    },
+    {
+      "source": "Engine/ParcNative/constrained_dialog.h",
+      "target": "parc/native/constrained_dialog.h",
+      "sha256": "22d1236da9a8a2b50a460a8e4cebc78046ad46f4df1302d986fa897f5a8ea3f9"
+    },
+    {
+      "source": "Engine/ParcNative/constrained_dialog.mm",
+      "target": "parc/native/constrained_dialog.mm",
+      "sha256": "e56332541fe9f4a9db241386227915b2661fb0eee07602308a378b7f339b9234"
     },
     {
       "source": "tests/NativeDownloads/folder_upload_browsertest.mm",
@@ -2069,7 +2079,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "5c0e1786e0d97765fb97d564bc6e0ac1d6f98f3994f3489262e3d49ac9ef11b9"
+      "sha256": "c9a7aee4b29fa17e572a6dd86677ffb132a756280181c48ba5aae1cb8e97fb88"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
@@ -2179,7 +2189,7 @@
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "77cab96e18c78081042a0576d18f79e200fe2188176f64ec927870951a558a27"
+      "sha256": "e64eba225bb3e99012485ab97de77c82b986638fde21fdd713f663f9194ebc30"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2224,7 +2234,7 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.mm",
       "target": "parc/parc_content_clients.mm",
-      "sha256": "05bb7b47ba803b60ab57eb1c84363741d18dc24fe1a663a27c6c73fb02c24be2"
+      "sha256": "77e1199573233f85343f8ba32d877a1f3b13ec3745a54216821c5a05e3d7d5de"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",
@@ -3590,6 +3600,17 @@
           "target": "ui/views/bubble/bubble_dialog_model_host.h",
           "before_sha256": "9bf8943688781f6af379dff75c1fee9064076d1272f9d3e6603aedc4cf00cef0",
           "after_sha256": "33df520ddfb603afdf939478b4da844fcdcba1ce1c6d4543aa9b4d85a68fd4ab"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/native-constrained-window.patch",
+      "sha256": "b462f3da4f8386d06ebdf532bf776970bfd49a47353d8d2347a370efa159ed24",
+      "files": [
+        {
+          "target": "components/constrained_window/constrained_window_views.cc",
+          "before_sha256": "49149ba4374f35e97bb73423b4b1cc92cbee54d4cda5bca36ac7be2e8a173766",
+          "after_sha256": "640a3ac0d37a0ca9f049c021ea6765275cd852268238f1862bf72d29c4c2c79c"
         }
       ]
     },

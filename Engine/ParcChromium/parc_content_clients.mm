@@ -37,6 +37,7 @@
 #include "parc/native/certificate_viewer.h"
 #include "parc/native/native_address_editor.h"
 #include "parc/native/client_certificates.h"
+#include "parc/native/constrained_dialog.h"
 #include "parc/native/extension_install.h"
 #include "parc/native/extension_uninstall.h"
 #include "parc/native/external_protocol.h"
@@ -117,6 +118,8 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
         &NativeExtensionInstallService::CaptureFor);
     parc_hooks::SetExtensionUninstallHandler(&BeginExtensionUninstall);
     parc_hooks::SetFolderUploadConfirmation(&ShowFolderUploadConfirmation);
+    parc_hooks::SetConstrainedWindowPresenters(&PresentNativeWebModal,
+                                               &CreateNativeBrowserModal);
     parc_hooks::SetSadTabFactory(&CreateSadTab);
     parc_hooks::SetExternalProtocolPrompt(&RunExternalProtocolPrompt);
     parc_hooks::SetCertificateViewer(&ShowServerCertificateViewer);
