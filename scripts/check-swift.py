@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Check Parc's complete Swift module without linking, packaging or launching it.
 
-Portable replacement for the retained claude-split-checks/typecheck.sh. Uses
-the same warnings-as-errors, whole-module, ARM64 macOS 13 compiler contract.
-Bridge declarations are self-contained in Engine/ParcNative. This tool never selects a built package.
+Uses the release compile's warnings-as-errors, ARM64 macOS 13 compiler contract and fails on any
+warning the compiler still reports. Bridge declarations are self-contained in Engine/ParcNative.
+This tool never selects a built package.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 from datetime import datetime, timezone
 import hashlib
 import importlib.util
@@ -17,12 +18,21 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 REPO = Path(__file__).resolve().parents[1]
 sparkle_spec = importlib.util.spec_from_file_location("parc_sparkle", Path(__file__).with_name("sparkle.py"))
 sparkle = importlib.util.module_from_spec(sparkle_spec)
 sparkle_spec.loader.exec_module(sparkle)
+compiler_spec = importlib.util.spec_from_file_location("parc_compiler", Path(__file__).with_name("compiler.py"))
+compiler = importlib.util.module_from_spec(compiler_spec)
+compiler_spec.loader.exec_module(compiler)
+MODE_FLAGS = {
+    "typecheck": lambda: ["-whole-module-optimization", "-typecheck"],
+    "sil": lambda: ["-whole-module-optimization", "-emit-sil", "-Onone", "-o", "/dev/null"],
+    "release": lambda: [*compiler.release_swift_optimization(), "-c"],
+}
 
 
 class Refusal(Exception):
@@ -49,7 +59,7 @@ def git_state(repo: Path) -> dict:
 
 def swift_sources(repo: Path) -> list[Path]:
     sources = []
-    for directory in ("Sources/ParcCore", "Sources/ParcApp"):
+    for directory in compiler.APP_SWIFT_DIRECTORIES:
         group = sorted((repo / directory).glob("*.swift"))
         if not group:
             raise Refusal(f"Missing Swift sources: {repo / directory}")
@@ -68,20 +78,13 @@ def snapshot(repo: Path, bridge_headers: Path, sparkle_release: Path) -> tuple[l
     files.update(path for path in bridge_headers.rglob("*") if path.is_file())
     files.add(repo / "Engine/source-lock.json")
     files.add(Path(__file__).resolve())
+    files.add(Path(compiler.__file__).resolve())
     return sources, {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(files)}
 
 
-def compiler_command(repo: Path, bridge_headers: Path, sparkle_release: Path, mode: str,
-                     sources: list[Path]) -> list[str]:
-    flags = ["-emit-sil", "-Onone", "-o", "/dev/null"] if mode == "sil" else ["-typecheck"]
-    return [
-        "xcrun", "--sdk", "macosx", "swiftc", "-warnings-as-errors",
-        "-whole-module-optimization", *flags, "-target", "arm64-apple-macos13.0",
-        "-I", str(repo / "Engine/ParcNative"), "-Xcc", "-DOS_MAC=1",
-        "-F", str(sparkle_release),
-        "-import-objc-header", str(repo / "Sources/ParcEngine/ParcEngine.h"),
-        *map(str, sources),
-    ]
+def compiler_command(repo: Path, sparkle_release: Path, mode: str, sources: list[Path]) -> list[str]:
+    return ["xcrun", "--sdk", "macosx", "swiftc", *compiler.app_swift_flags(repo, sparkle_release),
+            *MODE_FLAGS[mode](), *map(str, sources)]
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -94,8 +97,9 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--repo", type=Path, default=REPO,
                         help="Parc checkout root (default: this script's checkout)")
-    result.add_argument("--mode", choices=("typecheck", "sil"), default="typecheck",
-                        help="Fast iteration check, or whole-module SIL for a finished row")
+    result.add_argument("--mode", choices=tuple(MODE_FLAGS), default="typecheck",
+                        help="Fast iteration check, whole-module SIL, or the release's optimized compile "
+                             "without linking (for publishing Swift changes)")
     result.add_argument("--output-dir", type=Path,
                         help="Receipt parent (default: <repo>/build/swift-checks)")
     result.add_argument("--label", help="Fresh receipt subdirectory name (default: unique timestamp and PID)")
@@ -126,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         cache = repo / "build/sparkle"
         sparkle_release = sparkle.directory(cache) if args.plan else sparkle.fetch(cache)
         sources, before = snapshot(repo, bridge_headers, sparkle_release)
-        command = compiler_command(repo, bridge_headers, sparkle_release, args.mode, sources)
+        command = compiler_command(repo, sparkle_release, args.mode, sources)
         record = {
             "schema_version": 1, "mode": args.mode, "repo": str(repo), "git_before": state,
             "bridge_headers": str(bridge_headers), "sparkle_release": str(sparkle_release),
@@ -153,11 +157,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.mode}: {record['source_count']} Swift sources; log: {output / 'compiler.log'}", flush=True)
         error = None
         compiler_exit = None
-        with (output / "compiler.log").open("x") as log:
+        objects = (tempfile.TemporaryDirectory(prefix="objects-", dir=output) if args.mode == "release"
+                   else contextlib.nullcontext(repo))
+        with (output / "compiler.log").open("x") as log, objects as directory:
             try:
-                compiler_exit = subprocess.run(command, cwd=repo, stdout=log, stderr=subprocess.STDOUT).returncode
+                compiler_exit = subprocess.run(command, cwd=directory, stdout=log,
+                                               stderr=subprocess.STDOUT).returncode
             except OSError as exc:
                 error = str(exc)
+        warnings = compiler.warnings((output / "compiler.log").read_text(errors="replace"))
         unchanged = False
         head_unchanged = False
         after_state = None
@@ -168,13 +176,21 @@ def main(argv: list[str] | None = None) -> int:
             head_unchanged = after_state["head"] == state["head"]
         except (Refusal, OSError, subprocess.CalledProcessError) as exc:
             error = str(exc)
-        passed = compiler_exit == 0 and unchanged and head_unchanged and error is None
-        status = 0 if passed else (compiler_exit if compiler_exit and compiler_exit > 0 else 2)
+        passed = compiler_exit == 0 and not warnings and unchanged and head_unchanged and error is None
+        if passed:
+            status = 0
+        elif compiler_exit and compiler_exit > 0:
+            status = compiler_exit
+        else:
+            status = 1 if warnings and unchanged and head_unchanged and error is None else 2
         record.update(finished=utc(), seconds=round(time.monotonic() - started, 3),
-                      compiler_exit=compiler_exit, status=status, passed=passed,
+                      compiler_exit=compiler_exit, warnings=warnings, status=status, passed=passed,
                       inputs_unchanged=unchanged, head_unchanged=head_unchanged,
                       git_after=after_state, error=error)
         write_json(output / "result.json", record)
+        if warnings:
+            print(f"{len(warnings)} compiler warning(s); Parc treats every warning as an error:",
+                  *warnings, sep="\n", file=sys.stderr)
         print(f"{'PASS' if passed else 'FAIL'}: {output / 'result.json'}", flush=True)
         if not unchanged or not head_unchanged:
             print("Compiler inputs or Git HEAD changed; this check cannot validate the finished tree", file=sys.stderr)

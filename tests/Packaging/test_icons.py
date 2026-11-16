@@ -272,7 +272,7 @@ class PackagingIconTests(unittest.TestCase):
         for compile in compiles:
             self.assertEqual(compile[compile.index(str(self.sparkle)) - 1], "-F")
             self.assertEqual(compile[compile.index("Sparkle") - 1], "-framework")
-        self.assertTrue(all("-v" in cmd for cmd in compiles))
+        self.assertTrue(all("-v" in cmd and "-warnings-as-errors" in cmd for cmd in compiles))
         self.assertIn("-g", compiles[0]); self.assertIn("-Onone", compiles[0]); self.assertNotIn("-O", compiles[0])
         self.assertIn("-O", compiles[1]); self.assertNotIn("-Onone", compiles[1]); self.assertNotIn("-g", compiles[1])
         self.assertIn("-whole-module-optimization", compiles[1]); self.assertNotIn("-whole-module-optimization", compiles[0])

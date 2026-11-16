@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+SWIFT_TARGET = "arm64-apple-macos13.0"
+APP_SWIFT_DIRECTORIES = ("Sources/ParcCore", "Sources/ParcApp")
+WARNING = re.compile(r"^(?:\S[^:]*:\d+(?::\d+)?: |<unknown>:0: "
+                     r"|(?:clang(?:\+\+)?|swiftc?|swift-frontend|swift-driver): )?warning: ")
+
+
+class Warnings(ValueError):
+    pass
+
+
+def release_swift_optimization() -> list[str]:
+    return ["-O", "-whole-module-optimization", "-num-threads", str(os.cpu_count() or 4)]
+
+
+def app_swift_flags(repo: Path, sparkle_release: Path) -> list[str]:
+    return ["-warnings-as-errors", "-target", SWIFT_TARGET,
+            "-I", str(repo / "Engine/ParcNative"), "-Xcc", "-DOS_MAC=1", "-F", str(sparkle_release),
+            "-import-objc-header", str(repo / "Sources/ParcEngine/ParcEngine.h")]
+
+
+def warnings(output: str) -> list[str]:
+    return [line.rstrip() for line in output.splitlines() if WARNING.match(line)]
+
+
+def require_no_warnings(command: list[str], found: list[str]) -> None:
+    if found:
+        raise Warnings(f"{' '.join(command[:2])} reported {len(found)} warning(s); "
+                       "Parc treats every compiler warning as an error:\n" + "\n".join(found))
+
+
+def run(command: list[str], *, capture: bool = True, cwd: Path | None = None) -> str:
+    if capture:
+        result = subprocess.run(command, cwd=cwd, text=True, errors="replace", capture_output=True)
+        if result.returncode:
+            raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+        require_no_warnings(command, warnings(result.stdout) + warnings(result.stderr))
+        return result.stdout
+    found = []
+    with subprocess.Popen(command, cwd=cwd, text=True, errors="replace", stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT) as process:
+        for line in process.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            if WARNING.match(line):
+                found.append(line.rstrip())
+    if process.returncode:
+        raise subprocess.CalledProcessError(process.returncode, command)
+    require_no_warnings(command, found)
+    return ""

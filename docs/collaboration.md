@@ -58,7 +58,7 @@ authorization for the current task. Follow the
 Otherwise use permitted compiler, model and inert component checks.
 Documentation-only changes need size, link and diff checks, not an engine or app build. See
 [development setup](development-setup.md)
-for Swift typecheck and whole-module SIL commands.
+for the Swift typecheck, SIL and release compile commands.
 
 Keep each check's command, result and source identity in ignored output. Be
 truthful about the checks run. Do not invent validation-only backlog work or

@@ -26,6 +26,10 @@ elif '--show-sdk-path' in args:
     print('/fake/SDK/MacOSX.sdk')
 else:
     print('test compiler diagnostics')
+    if os.environ.get('FAKE_COMPILER_WARNING'):
+        print(os.environ['FAKE_COMPILER_WARNING'])
+    if os.environ.get('FAKE_RECORD_CWD'):
+        pathlib.Path(os.environ['FAKE_RECORD_CWD']).write_text(os.getcwd())
     if os.environ.get('FAKE_MUTATE_INPUT'):
         path = pathlib.Path(os.environ['FAKE_MUTATE_INPUT'])
         path.write_text(path.read_text() + '// changed during check\\n')
@@ -77,7 +81,8 @@ class CheckSwiftTests(unittest.TestCase):
             executable.chmod(0o755)
         self.env = {**os.environ, "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"]}
         self.env.pop("PARC_CHROMIUM_SOURCE", None)
-        for name in ("FAKE_MUTATE_INPUT", "FAKE_ADD_SOURCE", "FAKE_COMPILER_EXIT", "FAKE_ADD_BEFORE_COMPILER"):
+        for name in ("FAKE_MUTATE_INPUT", "FAKE_ADD_SOURCE", "FAKE_COMPILER_EXIT", "FAKE_ADD_BEFORE_COMPILER",
+                     "FAKE_COMPILER_WARNING", "FAKE_RECORD_CWD"):
             self.env.pop(name, None)
 
     def run_check(self, *extra, headers=True):
@@ -133,7 +138,47 @@ class CheckSwiftTests(unittest.TestCase):
                          ["-emit-sil", "-Onone", "-o", "/dev/null"])
 
 
+    def test_release_mode_uses_release_optimization_without_linking(self):
+        result = self.run_check("--mode", "release", "--plan")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        command = json.loads(result.stdout)["command"]
+        for flag in ("-warnings-as-errors", "-O", "-whole-module-optimization", "-num-threads", "-c"):
+            self.assertIn(flag, command)
+        for flag in ("-typecheck", "-emit-sil", "-Onone", "-o"):
+            self.assertNotIn(flag, command)
 
+    def test_release_mode_writes_objects_only_to_a_removed_directory(self):
+        recorded = Path(self.temp.name) / "compiler cwd"
+        self.env["FAKE_RECORD_CWD"] = str(recorded)
+        result = self.run_check("--mode", "release")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        objects = Path(recorded.read_text())
+        self.assertEqual(objects.resolve().parent, (self.output / "case").resolve())
+        self.assertFalse(objects.exists())
+        self.assertEqual(sorted(path.name for path in (self.output / "case").iterdir()),
+                         ["compiler.log", "result.json", "start.json"])
+
+    def test_warning_left_by_compiler_fails_the_check(self):
+        warning = (f"{self.repo}/Sources/ParcApp/App.swift:3:47: warning: passing non-Sendable parameter "
+                   "'open' to function expecting a '@Sendable' closure")
+        self.env["FAKE_COMPILER_WARNING"] = warning
+        for mode in ("typecheck", "sil", "release"):
+            with self.subTest(mode=mode):
+                result = self.run_check("--mode", mode, "--label", mode)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                receipt = json.loads((self.output / mode / "result.json").read_text())
+                self.assertEqual(receipt["compiler_exit"], 0)
+                self.assertFalse(receipt["passed"])
+                self.assertEqual(receipt["warnings"], [warning])
+                self.assertIn(warning, result.stderr)
+                self.assertIn("FAIL", result.stdout)
+
+    def test_changed_input_outranks_a_warning(self):
+        self.env["FAKE_COMPILER_WARNING"] = "App.swift:1:1: warning: unused"
+        self.env["FAKE_MUTATE_INPUT"] = str(self.headers / "native_application_protocols.h")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(self.receipt()["warnings"], ["App.swift:1:1: warning: unused"])
 
     def test_missing_headers_fail_before_output_creation(self):
         (self.headers / "native_application_protocols.h").unlink()
@@ -153,6 +198,7 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertTrue(receipt["head_unchanged"])
         self.assertEqual(receipt["toolchain"]["DEVELOPER_DIR"], self.env["DEVELOPER_DIR"])
         self.assertEqual(receipt["compiler_exit"], 0)
+        self.assertEqual(receipt["warnings"], [])
         self.assertIn(str(self.headers / "native_application_protocols.h"), receipt["inputs"])
         self.assertIn(str(self.sparkle_header), receipt["inputs"])
         self.assertEqual(receipt["command"][receipt["command"].index(str(self.sparkle)) - 1], "-F")

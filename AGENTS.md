@@ -227,8 +227,10 @@ Never claim monitoring unless actively following the work through completion.
 
 Use checks appropriate to the changed inputs; inspect scripts before execution.
 Swift iteration uses `scripts/check-swift.py` typechecking. A completed feature
-with material Swift changes also needs whole-module SIL (`--mode sil`,
-`-emit-sil -Onone -o /dev/null`). Keep warnings as errors. Documentation-only
+with material Swift changes also needs the release compile check
+(`--mode release`: the release's optimized whole-module compile without linking,
+which covers whole-module SIL too). Keep warnings as errors: the checker and
+every packaging compile fail on any compiler warning. Documentation-only
 changes need documentation checks, not app compilation. Report relevant results
 without boilerplate disclaimers about everything those checks did not test.
 

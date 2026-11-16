@@ -1,0 +1,118 @@
+from __future__ import annotations
+
+import contextlib
+import importlib.util
+import io
+from pathlib import Path
+import subprocess
+import sys
+import unittest
+from unittest.mock import patch
+
+SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
+
+
+def load(name: str, file: str):
+    spec = importlib.util.spec_from_file_location(name, SCRIPTS / file)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+compiler = load("parc_compiler_test", "compiler.py")
+SENDABLE = ("/Users/me/Parc checkout/Sources/ParcApp/Peek.swift:418:47: warning: passing non-Sendable "
+            "parameter 'open' to function expecting a '@Sendable' closure")
+
+
+def tool(*lines: str, stream: str = "stdout", code: int = 0) -> list[str]:
+    script = f"import sys\nfor line in {list(lines)!r}:\n    print(line, file=sys.{stream})\nsys.exit({code})\n"
+    return [sys.executable, "-c", script]
+
+
+class CompilerWarningTests(unittest.TestCase):
+    def test_finds_only_compiler_warning_lines(self):
+        output = "\n".join([
+            SENDABLE,
+            "410 |     func movePeekParentHere(_ parent: UUID, then open: @escaping () -> Void) -> Bool {",
+            "    |                                               `- warning: passing non-Sendable parameter",
+            "<unknown>:0: warning: unknown option ignored",
+            "warning: unknown argument '-frobnicate'",
+            "clang: warning: -lfoo: 'linker' input unused [-Wunused-command-line-argument]",
+            "Sources/ParcRestart/main.c:12: warning: implicit conversion",
+            "ld: warning: duplicate -rpath ignored",
+            "Sources/ParcApp/App.swift:3:1: error: cannot find 'x' in scope",
+            "1 warning generated.",
+        ])
+        self.assertEqual(compiler.warnings(output), [
+            SENDABLE,
+            "<unknown>:0: warning: unknown option ignored",
+            "warning: unknown argument '-frobnicate'",
+            "clang: warning: -lfoo: 'linker' input unused [-Wunused-command-line-argument]",
+            "Sources/ParcRestart/main.c:12: warning: implicit conversion",
+        ])
+
+    def test_undecodable_output_still_reaches_the_scan(self):
+        script = "import sys\nsys.stderr.buffer.write(b'a.swift:1:2: warning: \\xff bad byte\\n')\n"
+        with self.assertRaises(compiler.Warnings) as raised:
+            compiler.run([sys.executable, "-c", script])
+        self.assertIn("a.swift:1:2: warning:", str(raised.exception))
+
+    def test_captured_compile_returns_output_when_clean(self):
+        self.assertEqual(compiler.run(tool("deps.o: main.c")), "deps.o: main.c\n")
+
+    def test_captured_compile_rejects_a_warning_on_either_stream(self):
+        for stream in ("stdout", "stderr"):
+            with self.subTest(stream=stream), self.assertRaises(compiler.Warnings) as raised:
+                compiler.run(tool(SENDABLE, stream=stream))
+            self.assertIn(SENDABLE, str(raised.exception))
+            self.assertIsInstance(raised.exception, ValueError)
+
+    def test_captured_failure_keeps_compiler_errors(self):
+        with self.assertRaises(subprocess.CalledProcessError) as raised:
+            compiler.run(tool("main.c:1:1: error: nope", stream="stderr", code=3))
+        self.assertEqual(raised.exception.returncode, 3)
+        self.assertIn("error: nope", raised.exception.stderr)
+
+    def test_streamed_compile_echoes_everything_and_rejects_a_warning(self):
+        echoed = io.StringIO()
+        with contextlib.redirect_stdout(echoed), self.assertRaises(compiler.Warnings) as raised:
+            compiler.run(tool("swift-frontend -frontend -c", SENDABLE, stream="stderr"), capture=False)
+        self.assertEqual(echoed.getvalue(), f"swift-frontend -frontend -c\n{SENDABLE}\n")
+        self.assertIn(SENDABLE, str(raised.exception))
+
+    def test_streamed_failure_raises_its_exit_status(self):
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(subprocess.CalledProcessError) as raised:
+            compiler.run(tool("main.c:1:1: error: nope", code=4), capture=False)
+        self.assertEqual(raised.exception.returncode, 4)
+
+    def test_streamed_clean_compile_passes(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(compiler.run(tool("Apple Swift version 6"), capture=False), "")
+
+
+class PackagingCompilerTests(unittest.TestCase):
+    def test_packaging_routes_every_compiler_through_the_warning_check(self):
+        build = load("parc_build_compiler_test", "build.py")
+        commands = [("xcrun", "swiftc", "-v", "main.swift"), ("xcrun", "clang", "-Werror", "main.c")]
+        for command in commands:
+            for capture in (True, False):
+                with self.subTest(command=command, capture=capture), \
+                        patch.object(build.compiler, "run", return_value="checked") as checked:
+                    self.assertEqual(build.run(*command, capture=capture), "checked")
+                    checked.assert_called_once_with(list(command), capture=capture)
+        with patch.object(build.compiler, "run") as checked, \
+                patch.object(build.subprocess, "check_output", return_value="signed") as other:
+            self.assertEqual(build.run("/usr/bin/codesign", "-dv", "Parc.app"), "signed")
+        checked.assert_not_called()
+        other.assert_called_once()
+
+    def test_release_swift_flags_keep_warnings_as_errors(self):
+        flags = compiler.app_swift_flags(Path("/repo"), Path("/sparkle"))
+        self.assertIn("-warnings-as-errors", flags)
+        self.assertEqual(flags[flags.index("-target") + 1], compiler.SWIFT_TARGET)
+        self.assertEqual(flags[flags.index("-F") + 1], "/sparkle")
+        self.assertEqual(compiler.release_swift_optimization()[:2], ["-O", "-whole-module-optimization"])
+
+
+if __name__ == "__main__":
+    unittest.main()

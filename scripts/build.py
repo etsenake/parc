@@ -36,6 +36,9 @@ vmp_spec.loader.exec_module(widevine_vmp)
 sparkle_spec = importlib.util.spec_from_file_location("parc_sparkle", Path(__file__).with_name("sparkle.py"))
 sparkle = importlib.util.module_from_spec(sparkle_spec)
 sparkle_spec.loader.exec_module(sparkle)
+compiler_spec = importlib.util.spec_from_file_location("parc_compiler", Path(__file__).with_name("compiler.py"))
+compiler = importlib.util.module_from_spec(compiler_spec)
+compiler_spec.loader.exec_module(compiler)
 WIDEVINE_KEY_PASSPHRASE = widevine_vmp.PASSPHRASE_VARIABLE
 FRAMEWORK = "Chromium Embedded Framework.framework"
 ENGINE_NAME = "Chromium Embedded Framework"
@@ -77,6 +80,8 @@ class Refusal(RuntimeError):
 
 def run(*args: object, capture: bool = True) -> str:
     cmd = [str(a) for a in args]
+    if cmd[:2] in (["xcrun", "swiftc"], ["xcrun", "clang"]):
+        return compiler.run(cmd, capture=capture)
     if capture:
         return subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE)
     subprocess.check_call(cmd)
@@ -980,8 +985,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         version = app_version.read(repo)
     except ValueError as error:
         raise Refusal(str(error)) from error
-    optimization = (["-g", "-Onone"] if configuration == "debug" else
-                    ["-O", "-whole-module-optimization", "-num-threads", str(os.cpu_count() or 4)])
+    optimization = ["-g", "-Onone"] if configuration == "debug" else compiler.release_swift_optimization()
     for name in ("native_engine_entry.h", "native_appkit_bridge.h"):
         if not (repo / "Engine/ParcNative" / name).is_file():
             raise Refusal("Independent native engine source is not integrated")
@@ -1051,15 +1055,13 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
             helper_apps.append((helper, jit, suffix == CDM_HELPER))
         run("xcrun", "clang", *common, repo / "Sources/ParcRestart/main.c",
             "-o", contents / "MacOS/ParcRestart")
-        swift = sorted((repo / "Sources/ParcCore").glob("*.swift")) + sorted((repo / "Sources/ParcApp").glob("*.swift"))
+        swift = [path for directory in compiler.APP_SWIFT_DIRECTORIES for path in sorted((repo / directory).glob("*.swift"))]
         if not swift:
             raise Refusal("Native Swift application sources are missing")
         progress(f"packaging: compiling Swift app ({len(swift)} sources, swiftc -v)")
-        run("xcrun", "swiftc", "-v", "-target", "arm64-apple-macos13.0", *optimization, "-I", headers,
-            "-Xcc", "-DOS_MAC=1",
-            "-import-objc-header", repo / "Sources/ParcEngine/ParcEngine.h", *swift,
+        run("xcrun", "swiftc", "-v", *compiler.app_swift_flags(repo, sparkle_release), *optimization, *swift,
             stage / "ParcEngine.o", stage / "VideoPiPWindow.o", "-F", frameworks, "-framework", ENGINE_NAME,
-            "-F", sparkle_release, "-framework", "Sparkle", "-framework", "Cocoa", "-framework", "QuartzCore", "-framework", "AVFoundation", "-framework", "AVKit",
+            "-framework", "Sparkle", "-framework", "Cocoa", "-framework", "QuartzCore", "-framework", "AVFoundation", "-framework", "AVKit",
             "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
             "-o", contents / "MacOS/Parc", capture=False)
         sparkle_framework = embed_sparkle(sparkle_release, frameworks)

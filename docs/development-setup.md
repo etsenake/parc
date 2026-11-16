@@ -186,10 +186,10 @@ measure the intended configuration before making performance claims.
 
 ## Check Swift without building an engine or app
 
-The reusable checker preserves the previous scratch helper's compiler contract:
-warnings as errors, whole-module checking, ARM64 macOS 13, the checkout's current
-native bridge headers. The direct facade needs no engine headers or built
-package.
+The checker compiles the whole app module with the release compile's own
+flags, which it shares with `scripts/build.py` through `scripts/compiler.py`:
+warnings as errors, ARM64 macOS 13, the checkout's current native bridge headers
+and Sparkle. The direct facade needs no engine headers or built package.
 
 Run:
 
@@ -197,12 +197,24 @@ Run:
 python3 scripts/check-swift.py --plan
 python3 scripts/check-swift.py
 python3 scripts/check-swift.py --mode sil
+python3 scripts/check-swift.py --mode release
 ```
 
-The default `typecheck` mode is for iteration. `--mode sil` emits SIL to
-`/dev/null` with `-Onone`; use it for completed features with material Swift changes,
-as required by [the working contract](../AGENTS.md). It catches compiler stages
-that plain typechecking omits, including definite initialization.
+The default `typecheck` mode is for iteration. `--mode sil` emits whole-module
+SIL to `/dev/null` with `-Onone`, catching compiler stages that plain
+typechecking omits, including definite initialization. `--mode release` is the
+release's optimized app compile (`-O`, whole-module, one thread per core) through
+object files, without linking, so it also covers what SIL mode checks. Run it
+before publishing material Swift changes, as required by
+[the working contract](../AGENTS.md), and on the commit you are about to release.
+
+Every compiler warning is an error. `-warnings-as-errors` alone doesn't
+guarantee that: Swift deliberately keeps some downgraded concurrency
+diagnostics, such as a non-Sendable closure handed to a Dispatch API, as
+warnings and exits successfully. The checker fails any run whose compiler log
+holds a warning. Packaging stops the same way for the Swift app, the native
+facade, Dock tile and restart helper (all built with `-Wall -Wextra -Werror`),
+the icon renderer and the signing keychain helper.
 
 The script finds its own checkout regardless of the shell's working directory.
 Use `--repo /absolute/other-worktree` to select another checkout. The checker
@@ -211,9 +223,11 @@ uses self-contained declarations in `Engine/ParcNative`.
 Each execution creates a fresh directory under `build/swift-checks` containing
 `start.json`, `compiler.log` and `result.json`. Use `--output-dir` and `--label`
 to choose another location/name; an existing receipt directory is never
-overwritten. A passing result requires compiler exit zero, unchanged Git HEAD
-and unchanged hashes/file membership for the Swift sources, bridge headers,
-source lock and checker. The receipt records the command,
+overwritten. Release mode writes its objects to a temporary folder inside the
+receipt directory and removes them. A passing result requires compiler exit
+zero, no warning in the log, unchanged Git HEAD and unchanged hashes/file
+membership for the Swift sources, bridge headers, source lock, checker and its
+compiler module. The receipt records the command, any warnings,
 selected compiler/SDK, source hashes and Git state. `--plan` validates input
 paths and prints the command/hashes without invoking the compiler or writing
 receipts.

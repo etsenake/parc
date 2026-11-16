@@ -162,6 +162,10 @@ are reused when app packaging resumes. Tooling corrections are committed on
 canonical main and the same command is rerun; no manual receipt edits or cache
 cleanup are needed.
 
+The app compile treats every compiler warning as an error and runs only after
+the engine is sealed, so check main with
+`python3 scripts/check-swift.py --mode release` before starting a release.
+
 If compilation exposes a source bug, fix, check and publish the source on main,
 then run `bash scripts/release.sh --refresh-source`, which keeps the saved
 release type. This explicitly freezes a new published source archive for the

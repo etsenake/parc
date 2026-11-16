@@ -1,9 +1,13 @@
+import importlib.util
 import json
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 
+compiler_spec = importlib.util.spec_from_file_location("parc_compiler", Path(__file__).with_name("compiler.py"))
+compiler = importlib.util.module_from_spec(compiler_spec)
+compiler_spec.loader.exec_module(compiler)
 ICON_FILE = "Parc.icns"
 
 
@@ -21,9 +25,9 @@ def package_app_icons(resources: Path) -> str:
             raise FileNotFoundError(icons / (name + ".png"))
     with tempfile.TemporaryDirectory(prefix="parc-app-icons-") as temporary:
         renderer = Path(temporary) / "render-app-icon"
-        subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-O",
-                        str(Path(__file__).with_name("render_app_icon.swift")),
-                        "-o", str(renderer)], check=True)
+        compiler.run(["xcrun", "swiftc", "-warnings-as-errors", "-O",
+                      str(Path(__file__).with_name("render_app_icon.swift")),
+                      "-o", str(renderer)], capture=False)
         for name in variants:
             _package_icon(icons / (name + ".png"), icons / (name + ".icns"),
                           renderer, mascot=name == "Terminal")

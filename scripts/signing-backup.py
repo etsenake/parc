@@ -37,6 +37,7 @@ def load(name):
 
 sparkle = load('sparkle')
 developer_id = load('developer_id')
+compiler = load('compiler')
 
 
 def run(args, *, data=None, umask=-1, start_new_session=False):
@@ -72,7 +73,13 @@ def helper():
     cache = ROOT / 'build/signing-tools'; cache.mkdir(parents=True, exist_ok=True, mode=0o700)
     output = cache / ('keychain-' + hashlib.sha256(source.read_bytes()).hexdigest()[:16])
     if not output.exists():
-        run(['xcrun','swiftc',str(source),'-o',str(output),'-framework','Security'])
+        staged = output.with_name(output.name + '.new')
+        try:
+            compiler.run(['xcrun','swiftc','-warnings-as-errors',str(source),'-o',str(staged),'-framework','Security'], capture=False)
+        except Exception:
+            staged.unlink(missing_ok=True)
+            raise
+        staged.replace(output)
     return str(output)
 
 
