@@ -1,9 +1,9 @@
 # Archive previews
 
 Selecting an eligible archived web tab opens its live page over the Library as
-a Peek, whatever the window shows behind it: a web page, a Note, an Easel, a
-split whose focused pane is a document, or the start page of an empty Space or
-empty window. Closing the preview leaves the archive record intact. Expand
+a Peek, whatever the window shows behind it: a web page, including one that
+hasn't loaded yet, a Note, an Easel, a split whose focused pane is a document,
+or the start page of an empty Space or empty window. Closing the preview leaves the archive record intact. Expand
 restores the original archived item into the current Space and transfers the
 preview's existing native page into that tab. The Library remains visible until
 a successful expansion.
@@ -13,13 +13,19 @@ a successful expansion.
 `BrowserWindowController.previewArchivedItem` picks a route from
 `PeekBackdrop`, which describes what the window shows. Over a live web page it
 uses the native `openPeek` route from that page and the reopened-Peek identity
-flag, and `adoptPeek` accepts the new page. Over a Note, an Easel or the start
-page there is no page to open from, so the window creates the preview's page
-itself, hidden among its parked pages, and wraps it in a Peek with no parent
-page. That Peek belongs to the current tab, or to the Space while its start
-page shows, so like any Peek it hides when you switch away and returns with
-you. A web tab whose page isn't live yet can't host a preview, because its page
-would later cover it.
+flag, and `adoptPeek` accepts the new page. Over a Note, an Easel, the start
+page or a web tab whose page is still opening, blank or failed to open, there
+is no page to open from, so the window creates the preview's page itself,
+hidden among its parked pages, and wraps it in a Peek with no parent page.
+That Peek belongs to the current tab, or to the Space while its start page
+shows, so like any Peek it hides when you switch away and returns with you.
+
+When a web tab's page arrives under its preview, the preview adopts that page
+as its parent on the page's first report, after the same window, Profile,
+binding and single-Peek checks `adoptPeek` makes, and from then on it is an
+ordinary Peek over that page: it closes and moves with the tab and is promoted
+if the page goes. Until then the lookup keeps showing it, while a Peek that has
+a parent still shows only over that exact page.
 
 A pending request holds the parent page (none for the window route), archive
 lease and one-shot token, and keeps any second Peek out. A missing callback

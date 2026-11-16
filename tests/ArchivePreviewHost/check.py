@@ -17,7 +17,9 @@ def body(text, start, end="\n    }\n"):
     return text[begin:text.index(end, begin)]
 
 
-assert "let parentPage: PCNativePage?" in peek, "a Peek over a Note, Easel or start page has no parent page"
+assert "private(set) var parentPage: PCNativePage?" in peek, "a Peek over a Note, Easel, start page or unloaded tab has no parent page"
+assert "if parentPage == nil { parentPage = page }" in body(peek, "    func adoptParent(_ page: PCNativePage) {"), \
+    "a tab-owned preview takes the tab's page as its parent once, and never swaps a parent it already has"
 active = body(window, "    var activePeek: PeekController? {")
 assert "peekHostID" in active and "currentTabID" not in active, \
     "the shown Peek is found by the window's host, so a start-page preview shows with no tab selected"
@@ -34,14 +36,15 @@ assert "archivePreviews.values.contains(lease)" in preview, \
     "a preview that failed straight away lets a double-click put the item back"
 
 backdrop = body(window, "    var peekBackdrop: PeekBackdrop {")
-for token in ("InternalPage.isInternal($0.url)", "showsStartPage: showsStartPage", "hasLivePage:"):
+for token in ("containsTab($0, where: { $0.archivedAt == nil })", "showsStartPage: showsStartPage", "hasLivePage:"):
     assert token in backdrop, f"the backdrop lost {token!r}"
 
 opening = body(window, "    private func openHostedArchivePreview(")
 assert "binding.open(url, profilePath: path, container: parkedPages)" in opening, \
     "the hosted page is created hidden in this window, with no parent page"
 adopt = body(window, "    private func adoptHostedArchivePreview(")
-for token in ("request.token == token", "PeekController(page: page, parent: nil, parentTabID: host",
+for token in ("request.token == token", "PeekController(page: page, parent: parent, parentTabID: host",
+              "peekHostID == host", "adoptableHostPage(host, profilePath: $0.profilePath)",
               "archivePreviews[peek.identity] = lease", "wirePeek(peek, binding: binding)",
               "store.releaseArchivePreview(lease); page?.requestClose", "binding.pageWillDetach(page)",
               "presentAdoptedPeek(peek, shown: true, entryFocus: entryFocus)"):
@@ -63,6 +66,21 @@ assert "preserveHostlessPeeks()" in body(window, "    func render(_ sharedState:
     "a hosted preview whose Note, Easel or Space is gone closes instead of holding its archive item"
 assert "if peek.parentPage.map({ $0.isClosed }) ?? !self.peekHostLives(peek) { self.promotePeek(peek, split: false, orphaned: true) }" in window, \
     "a hosted preview that refuses to close after its host went keeps its page as a tab"
+assert "($0.parentPage == nil && browsers[$0.parentTabID]?.nativePage === page)" in body(window, "    func canHostPeek("), \
+    "no second Peek opens over a tab whose waiting preview hasn't adopted its page yet"
+lookup = body(window, "    func peek(over id: UUID) -> PeekController? {")
+assert "PeekBackdrop.peekStays(parent: $0.parentPage, hostPage: browsers[id]?.nativePage)" in lookup, \
+    "a tab-owned preview stays shown when the tab's page arrives, and an ordinary Peek still needs its own parent page"
+downloads = (root / "Sources/ParcApp/BrowserWindowController+Downloads.swift").read_text()
+assert "adoptHostedPeekParent(over: id)" in body(downloads, "    func browserView(_ view: PCBrowserView, didChangeCaptureState"), \
+    "the tab-owned preview adopts the tab's page on the page's very first report"
+assert "adoptHostedPeekParent(over: peek.parentTabID)" in body(window, "    func preserveHostlessPeeks() {"), \
+    "each render also adopts a page that arrived under a tab-owned preview"
+adoptable = body(window, "    private func adoptableHostPage(_ id: UUID, profilePath: String) -> PCNativePage? {")
+for token in ("PCNativeBrowserApplication.owner(of: page) === binding", "page.profilePath == profilePath",
+              "!closingTabIDs.contains(id)", "!transferringTabIDs.contains(id)", "!peeks.values.contains(where: { $0.parentPage === page })",
+              "!tabPeekHolds(page)"):
+    assert token in adoptable, f"adopting the tab's page lost the Peek ownership check {token!r}"
 lost = body(window, "    private func hostlessPreviewLost(_ peek: PeekController) -> Bool {")
 for token in ("archivePreviews[peek.identity] != nil", "!peekHostLives(peek)", "!peek.closePending"):
     assert token in lost, f"the automatic close lost {token!r}: after one refusal it must not ask again"

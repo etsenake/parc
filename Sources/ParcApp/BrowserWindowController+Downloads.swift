@@ -328,7 +328,9 @@ extension BrowserWindowController {
         finishPageSwitch(switchHold.presented(pane))
     }
     func browserView(_ view: PCBrowserView, didChangeCaptureState state: PCNativeCaptureState?) {
-        guard id(for: view) != nil, !rendering, !isClosing, !wholeWindowClose else { return }
+        guard let id = id(for: view) else { return }
+        adoptHostedPeekParent(over: id)
+        guard !rendering, !isClosing, !wholeWindowClose else { return }
         refreshLivePageChromeOrRender()
     }
     private var publicationRefreshesChrome: Bool {

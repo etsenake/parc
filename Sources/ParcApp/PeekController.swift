@@ -6,7 +6,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     let identity = UUID()
     let parentTabID: UUID
     let sourceSpaceID: UUID
-    let parentPage: PCNativePage?
+    private(set) var parentPage: PCNativePage?
     let page: PCNativePage
     let browser: PCBrowserView
     let returnsPage: Bool
@@ -272,6 +272,10 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
                 self.refuseClose()
             }
         }
+    }
+
+    func adoptParent(_ page: PCNativePage) {
+        if parentPage == nil { parentPage = page }
     }
 
     func refuseClose() {

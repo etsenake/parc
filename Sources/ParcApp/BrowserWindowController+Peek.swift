@@ -6,7 +6,8 @@ extension BrowserWindowController {
                      ignoringCommandBar: Bool = false) -> Bool {
         windowAdmitsPeek(browser, overLibrary: overLibrary, ignoringCommandBar: ignoringCommandBar) && !page.isClosed
             && PCNativeBrowserApplication.owner(of: page) === browser
-            && !peeks.values.contains { $0.parentPage === page } && tabPeeks.current == nil
+            && !peeks.values.contains { $0.parentPage === page || ($0.parentPage == nil && browsers[$0.parentTabID]?.nativePage === page) }
+            && tabPeeks.current == nil
     }
 
     func windowAdmitsPeek(_ browser: PCNativeBrowserWindow, overLibrary: Bool = false,
@@ -60,10 +61,8 @@ extension BrowserWindowController {
 
     var peekBackdrop: PeekBackdrop {
         let id = currentTabID
-        let tab = id.flatMap { store.state.tab($0, where: { $0.archivedAt == nil }) }
-        let wrapper = id.flatMap { browsers[$0] }
-        return PeekBackdrop(currentTabID: id, tabIsOpen: tab != nil, isDocument: tab.map { InternalPage.isInternal($0.url) } ?? false,
-                            hasPageWrapper: wrapper != nil, hasLivePage: wrapper?.nativePage.map { !$0.isClosed } ?? false,
+        return PeekBackdrop(currentTabID: id, tabIsOpen: id.map { store.state.containsTab($0, where: { $0.archivedAt == nil }) } ?? false,
+                            hasLivePage: id.flatMap { browsers[$0]?.nativePage }.map { !$0.isClosed } ?? false,
                             showsStartPage: showsStartPage, activeSpaceID: activeSpaceID)
     }
 
@@ -84,14 +83,16 @@ extension BrowserWindowController {
         }
         archivePreviewRequest = nil
         let lease = request.lease
+        let parent = page.flatMap { adoptableHostPage(host, profilePath: $0.profilePath) }
         guard let page, !page.isClosed, nativeBinding === binding, activePeek == nil, tabPeeks.current == nil,
-              peekBackdrop.archivePreviewRoute == .overWindow(hostID: host), windowAdmitsPeek(binding, overLibrary: true),
+              peekHostID == host, peekBackdrop.archivePreviewRoute != nil, windowAdmitsPeek(binding, overLibrary: true),
+              parent != nil || browsers[host]?.nativePage.map({ $0.isClosed }) ?? true,
               PCNativeBrowserApplication.owner(of: page) === binding, lease.profileID == activeProfileID,
               page.profilePath == store.independentEngineProfilePath(for: lease.profileID),
               store.archivePreviewIsValid(lease), ownership.canAdopt(page.identifier) else {
             store.releaseArchivePreview(lease); page?.requestClose { _ in }; return
         }
-        let peek = PeekController(page: page, parent: nil, parentTabID: host, sourceSpaceID: activeSpaceID)
+        let peek = PeekController(page: page, parent: parent, parentTabID: host, sourceSpaceID: activeSpaceID)
         guard ownership.claim(peek.identity, owner: presentationID, page: page.identifier) else {
             peek.finish(); store.releaseArchivePreview(lease); page.requestClose { _ in }; return
         }
@@ -104,7 +105,24 @@ extension BrowserWindowController {
         presentAdoptedPeek(peek, shown: true, entryFocus: entryFocus)
     }
 
+    func adoptHostedPeekParent(over id: UUID) {
+        guard let peek = peeks.values.first(where: { $0.parentTabID == id && $0.parentPage == nil && !$0.page.isClosed }),
+              let page = adoptableHostPage(id, profilePath: peek.page.profilePath) else { return }
+        peek.adoptParent(page)
+    }
+
+    private func adoptableHostPage(_ id: UUID, profilePath: String) -> PCNativePage? {
+        guard let page = browsers[id]?.nativePage, !page.isClosed, let binding = nativeBinding,
+              PCNativeBrowserApplication.owner(of: page) === binding, page.profilePath == profilePath,
+              store.state.containsTab(id, where: { $0.archivedAt == nil }), ownership.canUse(id, owner: presentationID),
+              !closingTabIDs.contains(id), !modelRetirementIDs.contains(id), !peekRetirementParents.contains(id),
+              !transferringTabIDs.contains(id), tabPeeks.current?.parentTabID != id, !tabPeekHolds(page),
+              !peeks.values.contains(where: { $0.parentPage === page }) else { return nil }
+        return page
+    }
+
     func preserveHostlessPeeks() {
+        for peek in Array(peeks.values) where peek.parentPage == nil { adoptHostedPeekParent(over: peek.parentTabID) }
         guard peeks.values.contains(where: { hostlessPreviewLost($0) }) else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.isClosing, !self.wholeWindowClose else { return }

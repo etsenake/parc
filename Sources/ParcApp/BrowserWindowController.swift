@@ -200,7 +200,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let held = tabPeeks.current?.shownController, held.parentTabID == id, !held.page.isClosed,
            browsers[id]?.nativePage === held.parentPage { return held }
         return peeks.values.first { $0.parentTabID == id && !$0.page.isClosed
-            && browsers[id]?.nativePage === $0.parentPage }
+            && PeekBackdrop.peekStays(parent: $0.parentPage, hostPage: browsers[id]?.nativePage) }
     }
     var browserProfiles: [UUID: UUID] = [:]
     var easelImageDestination: EaselImageDestinationController?
