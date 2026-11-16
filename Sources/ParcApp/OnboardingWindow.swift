@@ -766,10 +766,16 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             if !submittedICloudPasswords, let profileID = draft.iCloudPasswordsProfileID,
                BrowserImportDestination(spaceID: draft.spaceID, profileID: profileID).isCurrent(in: store.state) {
                 submittedICloudPasswords = true
-                PCNativeBrowserApplication.installICloudPasswordsExtension(
-                    toProfilePath: store.independentEngineProfilePath(for: profileID)) { error in
-                        if let error { NSLog("Parc could not install the selected iCloud Passwords extension: %@", error.localizedDescription) }
-                    }
+                if ICloudPasswordsSupport.connects() {
+                    PCNativeBrowserApplication.installICloudPasswordsExtension(
+                        toProfilePath: store.independentEngineProfilePath(for: profileID)) { error in
+                            guard let error else { return }
+                            NSLog("Parc could not install the selected iCloud Passwords extension: %@", error.localizedDescription)
+                            MainActor.assumeIsolated { ImportedExtensionFailures.add(["iCloud Passwords"]) }
+                        }
+                } else {
+                    ImportedExtensionFailures.add(["iCloud Passwords"])
+                }
             }
             applyAdBlockerChoice()
             scheduledAdvance?.cancel(); scheduledAdvance = nil

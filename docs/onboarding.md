@@ -195,7 +195,7 @@ late panel and file callbacks; no password material is placed in the setup draft
 
 ### Safari password choice and finish-owned installation
 
-On macOS 14 and later, Safari setup offers **Add iCloud Passwords Extension**
+On macOS 14 through 15.4, Safari setup offers **Add iCloud Passwords Extension**
 (recommended, initially selected) or **Import Passwords from Safari** (manual).
 Selecting a row changes pending state only. Next accepts it; the manual route
 opens CSV import, while the extension route stores the exact destination Profile
@@ -203,10 +203,21 @@ and skips CSV.
 
 An accepted extension request runs only after successful setup completion and
 browser preparation; replay uses Finish. Skip, cancellation, stale ownership and
-failed completion cannot install it. The request outlives the setup window. An
-installation failure is currently logged without a visible failure or retry
-notice. Chromium retains metadata, policy, signature and CRX validation. Child Profiles are refused because this path cannot provide parental
-reauthentication. Older macOS versions keep the manual path.
+failed completion cannot install it. The request outlives the setup window. A
+failed install shows **Couldn’t add iCloud Passwords** in the browser window,
+sharing the ad-blocker notice above. Chromium retains metadata, policy, signature
+and CRX validation. Child Profiles are refused because this path cannot provide
+parental reauthentication.
+
+Older macOS versions, and macOS 15.5 and later, go straight to manual import with
+no extension choice. From 15.5, Apple's iCloud Passwords helper starts only for
+browsers on [Apple's list](https://github.com/apple/password-manager-resources)
+or signed with Apple's passkey-browser entitlement. Parc has neither, so the
+extension would install but never connect. Parc deliberately does not ask Apple
+to add it to that list. If Parc is listed or gains the entitlement, the choice
+can return on the macOS versions that admit it. A setup saved with the
+extension choice before an upgrade to 15.5 or later installs nothing at Finish
+and shows the Couldn’t add notice.
 
 ### Import content and initial bookmark recommendations
 

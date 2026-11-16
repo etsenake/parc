@@ -45,6 +45,16 @@ struct OnboardingTests {
                      "An older draft never invents extension installation authorization")
         precondition(migrated.selectedFavorites.map(\.url) == [OnboardingDraft.favoriteChoices[0].url],
                      "A missing order preserves old explicit choices, not new defaults")
+        func release(_ major: Int, _ minor: Int, _ patch: Int = 0) -> OperatingSystemVersion {
+            OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: patch)
+        }
+        precondition(!ICloudPasswordsSupport.connects(on: release(13, 6))
+            && ICloudPasswordsSupport.connects(on: release(14, 0))
+            && ICloudPasswordsSupport.connects(on: release(15, 4, 1)),
+            "iCloud Passwords stays offered from macOS 14 through 15.4")
+        precondition([release(15, 5), release(15, 7, 2), release(16, 0), release(26, 1), release(27, 2, 1)]
+            .allSatisfy { !ICloudPasswordsSupport.connects(on: $0) },
+            "From macOS 15.5 Apple's helper refuses browsers missing from its list, so setup stops offering the extension")
         legacy["stage"] = 4
         try JSONSerialization.data(withJSONObject: legacy).write(to: draftFile)
         let legacyTheme = try OnboardingDraft.load(directory: root, space: store.activeSpace)

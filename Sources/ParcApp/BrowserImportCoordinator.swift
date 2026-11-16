@@ -129,8 +129,7 @@ final class BrowserImportCoordinator {
     private var subscription: AnyCancellable?
 
     init(store: BrowserStore, destination: BrowserImportDestination, window: NSWindow, onboarding: Bool = false,
-         supportsICloudPasswords: Bool = ProcessInfo.processInfo.isOperatingSystemAtLeast(
-            OperatingSystemVersion(majorVersion: 14, minorVersion: 0, patchVersion: 0)),
+         supportsICloudPasswords: Bool = ICloudPasswordsSupport.connects(),
          arcSidebarURL: URL = ArcSidebarSnapshot.defaultURL,
          arcPreferencesURL: URL = ArcSidebarSnapshot.preferencesURL,
          ownerIsCurrent: @escaping () -> Bool) {
