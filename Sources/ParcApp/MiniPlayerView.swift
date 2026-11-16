@@ -46,7 +46,10 @@ final class MiniPlayerDeck: NSView {
     private var dismissed = Set<String>()
     private var expanded = false
     private var tracking: NSTrackingArea?
-    private var collapse: DispatchWorkItem?
+    var after: (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { body() } }
+    }
+    private var collapseGeneration = 0
     private var collapseDue = false
     private var pointerInside = false
     private var focusObserver: NSObjectProtocol?
@@ -161,7 +164,7 @@ final class MiniPlayerDeck: NSView {
         }
     }
     private func resetExpansion() {
-        collapse?.cancel(); collapse = nil; collapseDue = false; expanded = false
+        collapseGeneration &+= 1; collapseDue = false; expanded = false
         rows.values.forEach { $0.collapseVolume() }
     }
     private func expandForFocus() {
@@ -169,7 +172,7 @@ final class MiniPlayerDeck: NSView {
         expanded = true; resize()
     }
     private func setExpanded(_ value: Bool) {
-        collapse?.cancel(); collapse = nil; collapseDue = false
+        collapseGeneration &+= 1; collapseDue = false
         guard expanded != value else { return }
         expanded = value
         if !value { rows.values.forEach { $0.collapseVolume() } }
@@ -234,14 +237,13 @@ final class MiniPlayerDeck: NSView {
     func updateHover(_ inside: Bool) {
         pointerInside = inside
         if inside { setExpanded(true); return }
-        collapse?.cancel(); collapseDue = false
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.collapse = nil; self.collapseDue = true
+        collapseGeneration &+= 1; collapseDue = false
+        let token = collapseGeneration
+        after(MiniPlayerMotion.hoverOffDelay) { [weak self] in
+            guard let self, self.collapseGeneration == token else { return }
+            self.collapseDue = true
             self.finishDeferredCollapse()
         }
-        collapse = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + MiniPlayerMotion.hoverOffDelay, execute: work)
     }
     private func finishDeferredCollapse() {
         guard collapseDue, !pointerInside else { return }
@@ -250,7 +252,7 @@ final class MiniPlayerDeck: NSView {
     }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow !== window {
-            collapse?.cancel(); collapse = nil; collapseDue = false; pointerInside = false
+            collapseGeneration &+= 1; collapseDue = false; pointerInside = false
             motion.settle()
             if let focusObserver { NotificationCenter.default.removeObserver(focusObserver); self.focusObserver = nil }
             if let newWindow {

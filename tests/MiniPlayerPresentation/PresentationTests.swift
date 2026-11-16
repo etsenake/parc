@@ -13,6 +13,13 @@ import AppKit
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let deck = MiniPlayerDeck(frame: NSRect(x: 0, y: 0, width: 212, height: 150))
+        var collapses: [(delay: TimeInterval, body: @MainActor () -> Void)] = []
+        deck.after = { delay, body in collapses.append((delay, body)) }
+        func hoverOff() {
+            let pending = collapses.count
+            deck.updateHover(false)
+            check(collapses.count == pending + 1 && collapses[pending].delay == 2, "leaving the deck schedules one collapse 2 seconds out")
+        }
         window.contentView = deck
         func item(_ id: String) -> MiniPlayerItem {
             let page = PCNativePage(), state = PCNativeMediaState(identifier: id)
@@ -120,8 +127,8 @@ import AppKit
         expand.actionBlock?(); deck.layoutSubtreeIfNeeded()
         volumeButton.actionBlock?(); deck.layoutSubtreeIfNeeded()
         check(window.makeFirstResponder(slider), "off-screen slider can regain focus")
-        deck.updateHover(false)
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: MiniPlayerMotion.hoverOffDelay + 0.1))
+        hoverOff()
+        collapses.last!.body()
         check(deck.desiredHeight > 69, "hover-off waits while focus stays in the deck")
         _ = window.makeFirstResponder(nil)
         window.update(); deck.layoutSubtreeIfNeeded()
@@ -138,7 +145,7 @@ import AppKit
         deck.update([item("hover-a"), item("hover-b")])
         deck.updateHover(true); deck.layoutSubtreeIfNeeded()
         closeFirst()
-        deck.updateHover(false)
+        hoverOff()
         deck.update([item("fresh-a"), item("fresh-b")]); deck.layoutSubtreeIfNeeded()
         check(deck.desiredHeight == 62, "a later player after hover-off does not inherit expansion")
         var pipActions = 0, reveals = 0
@@ -150,8 +157,8 @@ import AppKit
         let pipButton = descendants(deck).compactMap { $0 as? ActionButton }.first { $0.parcTooltip?.label == "Open Picture in Picture" }!
         pipButton.actionBlock?()
         check(pipActions == 1 && reveals == 0, "PiP control enters Picture in Picture instead of revealing the tab")
-        deck.updateHover(false)
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: MiniPlayerMotion.hoverOffDelay + 0.1))
+        hoverOff()
+        collapses.last!.body()
         _ = window.makeFirstResponder(nil)
         deck.layoutSubtreeIfNeeded()
         deck.update([item("only")])
@@ -202,9 +209,14 @@ import AppKit
         check(deck.desiredHeight == 66 && onlySlider.alphaValue == 0, "Escape closes the volume")
         onlyVolume.actionBlock?(); deck.frame.size.height = deck.desiredHeight; deck.layoutSubtreeIfNeeded()
         _ = window.makeFirstResponder(nil)
-        deck.updateHover(false)
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: MiniPlayerMotion.hoverOffDelay + 0.1))
-        deck.layoutSubtreeIfNeeded()
+        hoverOff()
+        let stale = collapses.last!.body
+        deck.updateHover(true)
+        hoverOff()
+        stale(); deck.layoutSubtreeIfNeeded()
+        check(deck.desiredHeight == 99 && onlySlider.alphaValue == 1,
+              "a collapse cancelled by returning stays cancelled after leaving again")
+        collapses.last!.body(); deck.layoutSubtreeIfNeeded()
         check(deck.desiredHeight == 33 && onlySlider.alphaValue == 0, "hover-off returns to compact transport")
         window.close()
         checkAppearanceSwitch()
