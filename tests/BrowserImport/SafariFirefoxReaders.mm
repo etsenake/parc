@@ -1,3 +1,4 @@
+#include "../Support/TestFailure.h"
 #import <Foundation/Foundation.h>
 #include <cstdio>
 #include <cstdlib>
@@ -281,6 +282,7 @@ void WAL(const base::FilePath& path) {
 }
 }
 int main() {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     std::fprintf(stderr, "fixture: start\n");
     base::ScopedTempDir temporary;

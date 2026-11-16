@@ -1,3 +1,4 @@
+#include "../Support/TestFailure.h"
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -176,6 +177,7 @@ void CheckApplication(const std::string& name) {
 }
 
 int main(int argc, char** argv) {
+  ParcExitOnUncaughtExceptions();
   base::AtExitManager at_exit;
   base::CommandLine::Init(argc, argv);
   base::FeatureList::InitInstance("", "");
