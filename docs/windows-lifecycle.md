@@ -10,6 +10,11 @@ lives in `BrowserWindowController+<Topic>.swift` extensions grouped by area
 (sidebar, splits, Peek, command bar, downloads and so on), and its page panes
 live in `BrowserPane.swift`. Add new window code to the matching topic file.
 
+A background tab that has not been on screen for four hours sleeps through
+Chromium's in-place discard, which keeps its history and reloads it when shown;
+pages in use by the automatic-archive standard stay awake. Easel pages follow
+the same rule through [embedded page retirement](easel-embedded-pages.md#admission-and-lifetime).
+
 ## Restoration and launch continuity
 
 AppKit restores regular windows by stable ID and owns frame, minimized and

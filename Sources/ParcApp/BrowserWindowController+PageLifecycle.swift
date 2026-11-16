@@ -229,6 +229,37 @@ extension BrowserWindowController {
         })
     }
 
+    func easelPagesCanSleep(_ pane: EaselPane) -> Bool {
+        guard pane.editor.canPrepareForProfileRelocation, let objects = pane.editor.pageObjects,
+              !objects.hasPendingCreation, !objects.pages.isEmpty else { return false }
+        return objects.ownedViews.values.allSatisfy { $0.automaticArchiveProtectionState == .eligible }
+    }
+
+    func releaseIdleEaselPages(_ id: UUID, cached: EaselPane) {
+        guard !closingTabIDs.contains(id), let objects = cached.editor.pageObjects,
+              cached.editor.prepareForPreviewClose() else { return }
+        let pages = objects.pages, expected = store.state.tab(id)
+        closingTabIDs.insert(id)
+        PCNativeBrowserApplication.requestClosePages(pages, shouldCommit: { [weak self, weak objects] in
+            MainActor.assumeIsolated {
+                guard let self, let objects, let current = self.easelEditors[id], current.editor.pageObjects === objects else { return false }
+                let shown = self.renderedPaneIDs.contains(id) || self.selectedTabIDs.contains(id) || self.pendingNativeSelection?.tabID == id
+                return !self.isClosing && !self.wholeWindowClose && !shown && !self.transferringTabIDs.contains(id)
+                    && self.store.state.tab(id) == expected && self.easelPagesCanSleep(current)
+            }
+        }, completion: { [weak self, weak objects] allowed in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.closingTabIDs.remove(id)
+                if allowed, let objects, self.easelEditors[id]?.editor.pageObjects === objects {
+                    cached.editor.retirePageOwner(); self.panes[id]?.clearNativeContent(); self.easelEditors.removeValue(forKey: id)
+                }
+                guard !self.isClosing else { return }
+                self.render(self.store.state); self.requestNativeSelection()
+            }
+        })
+    }
+
     func peekPages(forTabID id: UUID) -> [PCNativePage] {
         peeks.values.filter { $0.parentTabID == id && !$0.page.isClosed }.map(\.page)
     }

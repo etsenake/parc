@@ -541,6 +541,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   page.responds(to: #selector(PCNativePage.discardIfIdle)) else { continue }
             _ = page.discardIfIdle()
         }
+        for (id, pane) in easelEditors where !shown.contains(id) && !closingTabIDs.contains(id) && !transferringTabIDs.contains(id) {
+            guard let tab = store.state.tab(id, where: { $0.archivedAt == nil }), tab.lastAccessed < cutoff,
+                  easelPagesCanSleep(pane) else { continue }
+            releaseIdleEaselPages(id, cached: pane)
+        }
     }
 
     var visibleTabIDsForActivity: Set<UUID> {

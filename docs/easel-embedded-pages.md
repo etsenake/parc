@@ -23,6 +23,13 @@ window. Selection contributes the embedded page to `visibleNativePages` and
 real `beforeunload` consent for the entire child-page set. A failed or missing
 native owner never becomes an invisible replacement browser.
 
+Easel pages sleep on the same four-hour idle rule as background tabs. When an
+Easel's tab has gone that long without being shown in its window, its editor has
+nothing mid-edit, and no page is in use by the automatic-archive standard, the
+window closes those pages through the same page retirement as archiving and
+drops the editor. Showing the Easel again rebuilds it, and each page loads its
+saved address fresh, without its earlier back history or scroll position.
+
 ## Physical-window collection transfer
 
 A same-Profile collection move transfers the original editor, pool, wrappers

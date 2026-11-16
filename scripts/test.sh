@@ -333,8 +333,14 @@ step compile_and_run command-bar-folders CommandBar/FolderActionTests \
 step compile_and_run download-library-selection DownloadLibrary/SelectionTests \
   "$repo_root/Sources/ParcApp/DownloadLibrarySelection.swift" \
   "$repo_root/Sources/ParcApp/DownloadLibraryTable.swift"
+step swift_test external-media-library -parse-as-library -warnings-as-errors \
+  "$repo_root/Sources/ParcApp/ExternalMediaLibrary.swift" \
+  "$repo_root/Sources/ParcApp/MediaLibraryContext.swift" \
+  "$repo_root/tests/ExternalMediaLibraryTests.swift"
+step python3 "$repo_root/tests/CaptureLibraryCatalogSkip/check.py"
 step python3 "$repo_root/tests/DownloadLibrary/check-view.py"
 step python3 "$repo_root/tests/LibraryRail/check.py"
+step python3 "$repo_root/tests/EaselIdleSleep/check.py"
 step python3 "$repo_root/tests/DownloadLocation/check-picker.py"
 step python3 "$repo_root/tests/MenuImages/check.py"
 step bash "$repo_root/scripts/test-parc-dialog.sh"
