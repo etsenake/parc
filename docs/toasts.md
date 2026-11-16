@@ -96,6 +96,7 @@ session, so clicks never take focus.
 | Press Again | Again-to-action cue and Edit accessory |
 | Fifth split pane | Cannot Add New Pane |
 | Move/copy to Space or folder | Move message; click reveals original item |
+| Note/Easel move blocked by its other entries | Can’t move to the destination, then where the document is still used |
 | Pin to folder | Pinned to the named folder |
 | Separate pinned tab | New Tab Created, optionally naming its Space; click selects |
 | Capture Copy | Copied Image |

@@ -312,7 +312,8 @@ cannot publish a partial item move.
 Notes/Easels flush and close their editors, then relocate the exact documents.
 Easel image assets copy to the destination store; record-save failure rolls the
 documents back. A document still referenced in the source Profile refuses the
-move, including a pinned document whose saved home would remain there.
+move, including a pinned document whose saved home would remain there; the
+refusal explains where, as [folder moves](folder-moves.md#notes-and-easels-still-used-in-the-source-space) describes.
 
 Same-Profile cross-window moves transfer actual pages/editors and embedded pages
 without reload. Cross-Profile sidebar-to-pane, collection/window and Move to

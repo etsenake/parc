@@ -354,6 +354,7 @@ extension BrowserWindowController {
         }
         session.themeEditor?.finishEditing()
         guard creationOwnerIsCurrent(session), session.validateOwners() else { return }
+        if let block = documentMoveBlock(session.draft) { session.view.showError(block.message); return }
         session.committing = true; refreshSpaceCreation(session)
         store.createSpace(session.draft) { [weak self, weak session] result in
             guard let self, let session, self.spaceCreation === session else { return }
@@ -365,6 +366,8 @@ extension BrowserWindowController {
                 session.committing = false; self.refreshSpaceCreation(session)
                 if !session.draft.movesItemsAcrossProfiles {
                     session.view.showError("The original items changed. Cancel and try again.")
+                } else if let block = self.documentMoveBlock(session.draft) {
+                    session.view.showError(block.message)
                 }
             case .success(let id?):
                 self.finishSpaceCreation(session)
@@ -375,6 +378,11 @@ extension BrowserWindowController {
                 session.window?.makeFirstResponder(self.sidebar)
             }
         }
+    }
+
+    private func documentMoveBlock(_ draft: SidebarNewSpaceDraft) -> InterProfileDocumentBlock? {
+        guard draft.movesItemsAcrossProfiles else { return nil }
+        return InterProfileDocumentBlock(moving: Set(draft.tabIDs), before: store.state, after: draft.applying(to: store.state))
     }
 
     private func chooseCreationIcon(_ session: SpaceCreationSession, from anchor: NSView) {
@@ -526,20 +534,22 @@ extension BrowserWindowController {
               SidebarDocumentReference.validates(target.tabs, references: documents),
               let conversion = SpaceFolderConversion(source: id, destination: destinationID, state: store.state, documents: documents) else { return }
         if conversion.crossesProfiles {
+            let proposal: (BrowserState) -> BrowserState? = { [weak self] state in
+                guard let self, !self.isClosing, !self.wholeWindowClose, !self.windowClosePending else { return nil }
+                return conversion.applying(to: state)?.0
+            }
             _ = confirmInterProfileMove(tabCount: conversion.tabIDs.count,
-                sourceProfiles: conversion.tabIDs.isEmpty ? [] : [target.space.profileID], destinationSpaceID: destinationID) { [weak self] in
+                sourceProfiles: conversion.tabIDs.isEmpty ? [] : [target.space.profileID], destinationSpaceID: destinationID,
+                moving: conversion.tabIDs, proposal: proposal) { [weak self] in
                 guard let self, self.spaceCommandsAvailable, self.managementSpace(id, profileID: target.space.profileID) != nil else { return }
                 let wasFocused = self.activeSpaceID == id
-                self.store.moveAcrossProfiles(conversion.tabIDs, proposal: { [weak self] state in
-                    guard let self, !self.isClosing, !self.wholeWindowClose, !self.windowClosePending else { return nil }
-                    return conversion.applying(to: state)?.0
-                }) { [weak self] result in
+                self.store.moveAcrossProfiles(conversion.tabIDs, proposal: proposal) { [weak self] result in
                     guard let self else { return }
                     switch result {
                     case .success(true):
                         self.onInterProfileMoveCommitted?(conversion.tabIDs)
                         self.finishSpaceConversion(conversion, wasFocused: wasFocused)
-                    case .success(false): NSSound.beep()
+                    case .success(false): self.explainRefusedInterProfileMove(conversion.tabIDs, proposal: proposal)
                     case .failure(let error): showError(error)
                     }
                 }

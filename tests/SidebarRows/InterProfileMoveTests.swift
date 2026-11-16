@@ -15,6 +15,7 @@ import Foundation
         try documentRelocation()
         try mixedDocumentCollection()
         try sharedAssetRollback()
+        try documentBlocks()
         print("InterProfileMoveTests: \(count) assertions passed")
     }
 
@@ -480,6 +481,132 @@ import Foundation
         try check(try ey.load(easelID).document.items.first?.assetID == asset && assetExists("X") && assetExists("Y"), "destination resolves the asset; source assets stay")
         _ = try ey.relocate(easelID, to: ex); ey.removeAssets(copied)
         try check(!assetExists("Y") && assetExists("X") && (try ex.load(easelID)).document.title == "Board", "rollback removes only copied assets")
+    }
+
+    static func documentBlocks() throws {
+        let f = fixture()
+        let note = InternalPage.note(UUID()).urlString, easel = InternalPage.easel(UUID()).urlString
+        let research = BrowserFolder(id: UUID(), spaceID: f.s.id, name: "Research")
+        func set(_ id: UUID, _ url: String, title: String? = nil, in state: inout BrowserState) {
+            let index = state.tabs.firstIndex { $0.id == id }!
+            state.tabs[index].url = url; state.tabs[index].savedURL = url
+            if let title { state.tabs[index].title = title; state.tabs[index].savedTitle = title }
+        }
+        func alias(_ url: String, _ space: BrowserSpace, _ kind: TabKind, folder: UUID? = nil, archived: Bool = false) -> BrowserTab {
+            BrowserTab(id: UUID(), spaceID: space.id, profileID: space.profileID, url: url, title: "Alias", kind: kind,
+                       folderID: folder, createdAt: Date(timeIntervalSince1970: 3), lastAccessed: Date(timeIntervalSince1970: 4),
+                       archivedAt: archived ? Date(timeIntervalSince1970: 5) : nil, savedURL: url, savedTitle: "Alias")
+        }
+        func block(_ items: [SidebarItemReference], _ state: BrowserState) throws -> (InterProfileDocumentBlock?, Bool) {
+            let source = SidebarHierarchySnapshot(state: state, spaceID: f.s.id, profileID: f.p.id)!
+            let target = SidebarHierarchySnapshot(state: state, spaceID: f.d.id, profileID: f.q.id)!
+            let move = try unwrap(SidebarSpaceMove(items: items, from: source, to: target, state: state), "cross-data move proposal")
+            let after = move.applying(to: state)
+            let refused = after.map { InterProfileMove.documents(moving: Set(move.tabIDs), after: $0) == nil } ?? false
+            return (InterProfileDocumentBlock(moving: Set(move.tabIDs), before: state, after: after), refused)
+        }
+
+        try check(InterProfileMoveGate.resolve(sourceProfiles: [f.p.id], destination: f.q.id, decision: nil, bypass: false, blocked: true) == .blocked,
+                  "a blocked document move explains instead of asking for the data warning")
+        try check(InterProfileMoveGate.resolve(sourceProfiles: [f.p.id], destination: f.q.id, decision: nil, bypass: true, blocked: true) == .blocked,
+                  "don’t ask again still explains a blocked move instead of moving")
+        try check(InterProfileMoveGate.resolve(sourceProfiles: [f.q.id], destination: f.q.id, decision: nil, bypass: false, blocked: true) == .proceed(remembersChoice: false),
+                  "a same-data move is never gated by the document check")
+        try check(InterProfileMoveGate.resolve(sourceProfiles: [f.p.id], destination: f.q.id, decision: nil, bypass: false, blocked: false) == .confirm,
+                  "an unblocked move still asks first")
+
+        var clean = f.state; set(f.today.id, note, in: &clean)
+        let (none, cleanRefused) = try block([.tab(f.today.id)], clean)
+        try check(none == nil && !cleanRefused, "a Note with no other entries has nothing to explain and still moves")
+        let (web, webRefused) = try block([.split(f.group.id)], f.state)
+        try check(web == nil && !webRefused, "web pages never produce a document explanation")
+        try check(InterProfileDocumentBlock(moving: [f.today.id], before: f.state, after: nil) == nil, "a move that no longer applies explains nothing")
+
+        var duplicated = clean; duplicated.folders = [research]
+        duplicated.tabs.append(alias(note, f.s, .pinned, folder: research.id))
+        let (copy, copyRefused) = try block([.tab(f.today.id)], duplicated)
+        let folder = try unwrap(copy, "a duplicate in a folder blocks the move")
+        try check(copyRefused, "the explanation matches a move the store refuses")
+        try check(folder.places == [.sidebar(.folder("Research"), split: false, otherSpace: nil)], "the duplicate is placed in its folder")
+        try check(folder.title == "Can’t move to Office", "the title names the destination Space")
+        try check(folder.message == "This Note is still used elsewhere in Home: in the folder “Research”.", "folder duplicate wording")
+
+        var archived = f.state; set(f.today.id, easel, in: &archived)
+        archived.tabs.append(alias(easel, f.s, .today, archived: true))
+        let (old, oldRefused) = try block([.tab(f.today.id)], archived)
+        let archive = try unwrap(old, "an archived entry blocks the move")
+        try check(oldRefused && archive.places == [.archive], "an archived entry is reported as the Archive")
+        try check(archive.message == "This Easel is still used elsewhere in Home: in the Archive.", "archived entry wording")
+
+        var joined = f.state
+        var pinnedNote = joined.tabs.first { $0.id == f.pinned.id }!
+        pinnedNote.url = note; pinnedNote.savedURL = note
+        let home = SplitMembership.makeHome(of: pinnedNote, id: UUID(), now: Date(timeIntervalSince1970: 6), activeTabBeforeCreationID: nil)
+        joined.tabs.append(home)
+        set(f.g1.id, note, title: "Plans", in: &joined)
+        var away = clean
+        let awayIndex = away.tabs.firstIndex { $0.id == f.pinned.id }!
+        away.tabs[awayIndex].savedURL = note; away.tabs[awayIndex].savedTitle = "Plans"; away.tabs[awayIndex].title = "Docs page"
+        let (navigated, navigatedRefused) = try block([.tab(f.pinned.id)], away)
+        try check(navigatedRefused && navigated?.message == "The Note “Plans” is still used elsewhere in Home: in Today.",
+                  "a pinned tab showing a web page names the Note saved in it")
+        let (spot, spotRefused) = try block([.split(f.group.id)], joined)
+        let saved = try unwrap(spot, "the saved spot a pinned Note left when it joined a split blocks the move")
+        try check(spotRefused && saved.places == [.sidebar(.pinned, split: false, otherSpace: nil)], "the saved spot is reported where it is pinned")
+        try check(saved.message == "The Note “Plans” is still used elsewhere in Home: in Pinned.", "a multi-tab move names the Note that blocks it")
+
+        var pinnedSplit = clean
+        for id in f.group.tabIDs { pinnedSplit.tabs[pinnedSplit.tabs.firstIndex { $0.id == id }!].kind = .pinned }
+        set(f.g2.id, note, in: &pinnedSplit)
+        let (split, splitRefused) = try block([.tab(f.today.id)], pinnedSplit)
+        let paired = try unwrap(split, "a copy inside a pinned split blocks the move")
+        try check(splitRefused && paired.places == [.sidebar(.pinned, split: true, otherSpace: nil)], "a pinned split member is reported as a split")
+        try check(paired.message == "This Note is still used elsewhere in Home: in a pinned split.", "pinned split wording")
+
+        var dragged = f.state; set(f.pinned.id, note, in: &dragged)
+        let dragRequest = ForeignSplitDrop.Request(source: dragged.tab(f.pinned.id)!, sourceHomeID: UUID(), spaceID: f.d.id, profileID: f.q.id,
+            selection: [f.d1.id], layout: nil, target: .insert(1), orientation: .horizontal, destinationHomeIDs: [:])
+        let dropped = ForeignSplitDrop.proposal(dragRequest, state: dragged, now: Date(timeIntervalSince1970: 7), creation: nil)
+        let behind = try unwrap(InterProfileDocumentBlock(moving: [f.pinned.id], before: dragged, after: dropped),
+                                "dragging a pinned Note into another data’s split leaves its pinned spot behind")
+        try check(behind.places == [.leftBehind(.pinned, split: false)], "the spot this move would leave is reported as left behind")
+        try check(behind.message == "This Note is still used elsewhere in Home: in the pinned spot it leaves behind.", "left-behind spot wording")
+
+        let work = BrowserSpace(id: UUID(), name: "Work", symbol: "circle", color: "AABBCC", profileID: f.p.id)
+        var shared = duplicated; shared.spaces.append(work)
+        let favorite = alias(note, f.s, .favorite)
+        shared.tabs.insert(contentsOf: [alias(note, work, .today), favorite], at: shared.tabs.count - 1)
+        let (spread, spreadRefused) = try block([.tab(f.today.id)], shared)
+        let many = try unwrap(spread, "entries in a Space sharing the same data block the move")
+        try check(spreadRefused && many.places == [.sidebar(.today, split: false, otherSpace: "Work"), .sidebar(.favorites, split: false, otherSpace: nil),
+                                                   .sidebar(.folder("Research"), split: false, otherSpace: nil)], "every distinct place is kept once, in a stable order")
+        try check(many.message == "This Note is still used elsewhere: in Today in Work, in Favorites and in the folder “Research” in Home.",
+                  "entries outside the source Space name their Space")
+        shared.tabs.append(alias(note, f.s, .today, archived: true))
+        try check(try block([.tab(f.today.id)], shared).0?.message == "This Note is still used elsewhere: in Today in Work, in Favorites and 2 more places.",
+                  "a long list stays short")
+
+        var pair = duplicated
+        set(f.g1.id, note, title: "Plans", in: &pair); set(f.g2.id, easel, title: "Board", in: &pair)
+        pair.tabs.removeAll { $0.id == f.today.id }
+        pair.tabs.append(alias(easel, f.s, .today, archived: true))
+        let (both, bothRefused) = try block([.split(f.group.id)], pair)
+        let first = try unwrap(both, "a split with two blocked documents refuses")
+        try check(bothRefused && first.document == InternalPage(urlString: note) && first.others == [InternalPage(urlString: easel)!],
+                  "the first blocked document is explained and the other is counted")
+        try check(first.message == "The Note “Plans” is still used elsewhere in Home: in the folder “Research”. 1 more Easel is too.",
+                  "a multi-item move explains once and counts the rest")
+        var onlyEasel = pair; onlyEasel.tabs.removeAll { $0.folderID == research.id }
+        let (one, oneRefused) = try block([.split(f.group.id)], onlyEasel)
+        try check(oneRefused && one?.message == "The Easel “Board” is still used elsewhere in Home: in the Archive.",
+                  "a multi-item move names the one item that blocks it")
+
+        var draft = try unwrap(SidebarNewSpaceDraft(items: [.tab(f.today.id)], from: SidebarHierarchySnapshot(state: duplicated, spaceID: f.s.id, profileID: f.p.id)!,
+                                                    state: duplicated), "New Space draft with the Note")
+        draft.name = "Fresh"; draft.keepSeparate()
+        let fresh = try unwrap(InterProfileDocumentBlock(moving: Set(draft.tabIDs), before: duplicated, after: draft.applying(to: duplicated)),
+                               "a New Space that keeps separate data is blocked the same way")
+        try check(fresh.message == "This Note is still used elsewhere in Home: in the folder “Research”.", "the New Space form shows the same explanation")
     }
 
     static func unwrap<T>(_ value: T?, _ reason: String) throws -> T {

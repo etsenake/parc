@@ -62,6 +62,31 @@ Cross-Profile moves use their separate consent, storage and reload path in
 [split groups](split-groups.md#cross-profile-moves). They cannot reuse an
 in-process same-Profile transfer by changing a directory or identifier.
 
+### Notes and Easels still used in the source Space
+
+A Note or Easel moves into a Space that keeps separate data only when nothing
+left in its current data still uses the document: a second entry made by
+Duplicate or an Option-drag copy, the saved spot a pinned Note keeps when it
+joins a split (including the one a split drop would leave behind), an entry in a
+Space sharing that data, a Favorite, or an archived entry, which the Archive keeps
+for 60 days. The refusal is deliberate. A document lives in one data store, so
+moving it would leave those entries pointing at nothing. Removing or moving the
+other entries first lets the move go ahead.
+
+The refusal explains itself. Every move route checks for these entries before
+the "uses different data" warning, and when it finds any the warning never
+appears; Don't ask again does not skip the check. A window notice beside the move notice
+says "Can’t move to Office" and, underneath, where the document is still used,
+for example "This Note is still used elsewhere in Home: in the folder “Research”
+and in the Archive." A notice fits because nothing needs deciding and nothing
+moved. A multi-item move names the first item that blocks it and counts the rest.
+New Space with Keep separate shows the same sentence in its own form. If the
+entries appear after the warning was confirmed, the same notice replaces the
+refusal beep; other late refusals still beep. `InterProfileDocumentBlock` builds
+the text from the same check the store applies, and every other move rule and the
+document rollback are unchanged. Changing what data a Space uses applies the same
+refusal without explaining it yet; see the [backlog](backlog.md#folders).
+
 ### Reveal after moving
 
 The completion toast says Tab moved! Click to go there. Its action checks the

@@ -344,9 +344,10 @@ extension BrowserWindowController {
                     return self.moveForeignSplitDropHere(original.id, from: source, sourceSpaceID: original.spaceID,
                         proposal: { proposal(value, $0) }, sourceHomeID: sourceHomeID, homeIDs: Array(homeIDs.values))
                 }
-                return self.confirmInterProfileMove(tabCount: 1, sourceProfiles: [original.profileID], destinationSpaceID: spaceID) { [weak self, weak source] in
+                let moved: Set<UUID> = [original.id]
+                return self.confirmInterProfileMove(tabCount: 1, sourceProfiles: [original.profileID], destinationSpaceID: spaceID,
+                                                    moving: moved, proposal: { proposal(value, $0) }) { [weak self, weak source] in
                     guard let self, current() else { return }
-                    let moved: Set<UUID> = [original.id]
                     self.store.moveAcrossProfiles(moved, proposal: { proposal(value, $0) }) { [weak self, weak source] result in
                         guard let self else { return }
                         switch result {
@@ -360,7 +361,7 @@ extension BrowserWindowController {
                                         window: window, originatingSpaceID: spaceID)
                                 }
                             }
-                        case .success(false): NSSound.beep()
+                        case .success(false): self.explainRefusedInterProfileMove(moved) { proposal(value, $0) }
                         case .failure: self.showToast(.standard("Couldn’t move tab"), at: .window)
                         }
                     }
@@ -401,12 +402,17 @@ extension BrowserWindowController {
     }
 
     func confirmInterProfileMove(tabCount: Int, sourceProfiles: Set<UUID>, destinationSpaceID: UUID,
-                                         proceed: @escaping () -> Void) -> Bool {
+                                 moving ids: Set<UUID> = [], proposal: ((BrowserState) -> BrowserState?)? = nil,
+                                 proceed: @escaping () -> Void) -> Bool {
+        let block = proposal.flatMap { InterProfileDocumentBlock(moving: ids, before: store.state, after: $0(store.state)) }
         guard let destination = store.state.spaces.first(where: { $0.id == destinationSpaceID }),
               let gate = InterProfileMoveGate.resolve(sourceProfiles: sourceProfiles, destination: destination.profileID,
-                  decision: nil, bypass: store.bypassesInterProfileMoveConfirmation) else { return false }
+                  decision: nil, bypass: store.bypassesInterProfileMoveConfirmation, blocked: block != nil) else { return false }
         switch gate {
         case .abort: return false
+        case .blocked:
+            if let block { showDocumentMoveBlock(block) }
+            return false
         case .proceed: proceed(); return true
         case .confirm:
             guard let window, window.attachedSheet == nil, interProfileDialog == nil,
@@ -427,6 +433,17 @@ extension BrowserWindowController {
             if !began { interProfileDialog = nil }
             return began
         }
+    }
+
+    func showDocumentMoveBlock(_ block: InterProfileDocumentBlock) {
+        showToast(.standard(block.title, subLabel: block.message), at: .window)
+    }
+
+    func explainRefusedInterProfileMove(_ ids: Set<UUID>, proposal: (BrowserState) -> BrowserState?) {
+        guard let block = InterProfileDocumentBlock(moving: ids, before: store.state, after: proposal(store.state)) else {
+            NSSound.beep(); return
+        }
+        showDocumentMoveBlock(block)
     }
 
     func finishInterProfileArrival(_ id: UUID) {

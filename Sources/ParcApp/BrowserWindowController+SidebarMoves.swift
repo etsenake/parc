@@ -352,7 +352,7 @@ extension BrowserWindowController {
                   placement(self.store.state) != nil else { return false }
             return self.confirmInterProfileMove(tabCount: move.tabIDs.count,
                                                 sourceProfiles: move.tabIDs.isEmpty ? [] : [move.source.profileID],
-                                                destinationSpaceID: spaceID) { [weak self] in
+                                                destinationSpaceID: spaceID, moving: Set(move.tabIDs), proposal: placement) { [weak self] in
                 guard let self, self.activeSpaceID == spaceID, self.activeProfileID == profileID else { return }
                 let moved = Set(move.tabIDs)
                 self.store.moveAcrossProfiles(moved, proposal: placement) { [weak self] result in
@@ -363,7 +363,7 @@ extension BrowserWindowController {
                         if selection.isEmpty, self.selectedTabIDs.isEmpty, let first = move.tabIDs.first {
                             self.finishInterProfileArrival(first)
                         } else { self.render(self.store.state) }
-                    case .success(false): NSSound.beep()
+                    case .success(false): self.explainRefusedInterProfileMove(moved, proposal: placement)
                     case .failure(let error): showError(error)
                     }
                 }
@@ -529,14 +529,15 @@ extension BrowserWindowController {
             }
             return self.confirmInterProfileMove(tabCount: move.tabIDs.count,
                                                 sourceProfiles: move.tabIDs.isEmpty ? [] : [profileID],
-                                                destinationSpaceID: location.spaceID) { [weak self] in
+                                                destinationSpaceID: location.spaceID, moving: Set(move.tabIDs),
+                                                proposal: { current($0)?.applying(to: $0) }) { [weak self] in
                 guard let self else { return }
                 let moved = Set(move.tabIDs)
                 self.store.moveAcrossProfiles(moved, proposal: { current($0)?.applying(to: $0) }) { [weak self] result in
                     guard let self else { return }
                     switch result {
                     case .success(true): self.onInterProfileMoveCommitted?(moved); arrive()
-                    case .success(false): NSSound.beep()
+                    case .success(false): self.explainRefusedInterProfileMove(moved) { current($0)?.applying(to: $0) }
                     case .failure(let error): showError(error)
                     }
                 }
@@ -640,12 +641,13 @@ extension BrowserWindowController {
                   self.selectedTabIDs == selection, self.focusedTabID == focus,
                   move.applying(to: self.store.state) != nil else { return false }
             consumed = true
+            let moved = Set(move.tabIDs)
+            let proposal: (BrowserState) -> BrowserState? = { move.applying(to: $0) }
             return self.confirmInterProfileMove(tabCount: move.tabIDs.count,
                                                 sourceProfiles: move.tabIDs.isEmpty ? [] : [expected.profileID],
-                                                destinationSpaceID: destination.id) { [weak self] in
+                                                destinationSpaceID: destination.id, moving: moved, proposal: proposal) { [weak self] in
                 guard let self else { return }
-                let moved = Set(move.tabIDs)
-                self.store.moveAcrossProfiles(moved, proposal: { move.applying(to: $0) }) { [weak self] result in
+                self.store.moveAcrossProfiles(moved, proposal: proposal) { [weak self] result in
                     guard let self else { return }
                     switch result {
                     case .success(true):
@@ -654,7 +656,7 @@ extension BrowserWindowController {
                         if let item = move.roots.first {
                             self.showSidebarMoveNotice(item: item, space: destination.id, profile: destination.profileID)
                         }
-                    case .success(false): NSSound.beep()
+                    case .success(false): self.explainRefusedInterProfileMove(moved, proposal: proposal)
                     case .failure(let error): showError(error)
                     }
                 }
