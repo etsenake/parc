@@ -24,8 +24,12 @@ extension BrowserWindowController {
         refreshBlockedContent()
         for (id, pane) in panes where selectedTabIDs.contains(id) && pane.browser?.nativePage === page {
             pane.browserToolbar.updateBlockedContent(blockedContent(for: page))
+            if let toolbar = pane.loadedDeveloperToolbar, !toolbar.isHidden { toolbar.updateBlockedContent(blockedContent(for: page)) }
         }
-        if let peek = peeks[page.identifier] { peek.view.browserToolbar.updateBlockedContent(blockedContent(for: page)) }
+        if let peek = peeks[page.identifier] {
+            peek.view.browserToolbar.updateBlockedContent(blockedContent(for: page))
+            if !peek.view.developerToolbar.isHidden { peek.view.developerToolbar.updateBlockedContent(blockedContent(for: page)) }
+        }
         announceBlockedContent(page)
     }
 

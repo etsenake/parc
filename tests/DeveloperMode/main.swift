@@ -29,5 +29,31 @@ let unavailable = DeveloperModePreferences(defaults: defaults)
 check(unavailable.loadError, "unknown version rejected")
 do { try unavailable.setEnabled(true, host: "example.test"); preconditionFailure("unknown data overwritten") } catch { checks += 1 }
 check(defaults.data(forKey: key) == invalid, "unknown data preserved")
+let toolbar = DeveloperToolbarView(frame: NSRect(x: 0, y: 0, width: 900, height: 40))
+func button(_ label: String) -> DeveloperToolbarButton? {
+    toolbar.subviews.compactMap { $0 as? DeveloperToolbarButton }.first { $0.accessibilityLabel() == label }
+}
+toolbar.layoutSubtreeIfNeeded()
+check(button("Blocked")?.isHidden == true, "no blocked sign without blocked content")
+let blocked = BlockedPageContent(snapshot: ["revision": NSNumber(value: 1),
+    "items": [["kind": "popup", "identifier": NSNumber(value: 0), "url": "https://popup.example/"]]])
+toolbar.updateBlockedContent(blocked)
+toolbar.layoutSubtreeIfNeeded()
+let sign = button("Pop-up blocked"), extensions = button("Extensions Menu")
+check(sign?.isHidden == false && sign?.isAccessibilityHidden() == false, "the blocked sign shows and reaches VoiceOver")
+check(sign?.accessibilityHelp() == BlockedContentSign.help, "the blocked sign explains itself to VoiceOver")
+check(sign.map { abs($0.frame.maxX - (extensions?.frame.minX ?? 0)) < 0.01 } == true, "the blocked sign sits just left of Extensions")
+var received: DeveloperToolbarView.Action?
+toolbar.onAction = { action, _ in received = action }
+sign?.actionBlock?()
+check(received == .blocked, "the blocked sign asks for the Site Control Center")
+toolbar.frame.size.width = 370
+toolbar.layoutSubtreeIfNeeded()
+check(extensions?.isHidden == true && sign?.frame == DeveloperToolbarLayout.frames(in: NSRect(x: 0, y: 0, width: 370, height: 40)).trailing[6],
+      "a narrow strip gives the blocked sign the Extensions button's place")
+toolbar.updateBlockedContent(nil)
+toolbar.layoutSubtreeIfNeeded()
+check(sign?.isHidden == true && sign?.isAccessibilityHidden() == true && extensions?.isHidden == false,
+      "clearing blocked content hides the sign and brings Extensions back")
 print("Developer Mode preference checks: \(checks) passed")
 }

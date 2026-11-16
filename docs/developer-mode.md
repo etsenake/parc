@@ -38,7 +38,9 @@ real controller, including undocked tools and excluding closing controllers.
 The strip is 40 points high with a monospaced address, 28-point controls and
 40-point-page chrome. Trailing controls yield before the address's 20-point
 minimum. Its buttons reuse policy-aware copying, site information, extensions,
-split commands and the shared capture controller. Pointer controls provide
+split commands and the shared capture controller. A page that blocked a pop-up
+or redirect adds the [blocked sign](web-interactions.md#banners-and-blocked-pop-ups)
+just left of Extensions. Pointer controls provide
 current accessibility names and visible focus; hidden, disabled and non-key
 surfaces do not retain hover.
 

@@ -11,6 +11,7 @@ enum DeveloperToolbarLayout {
     static let dividerHeight: CGFloat = 20
     static let dividerPadding: CGFloat = 7.5
     static let dividerAfterTrailingIndex = 2
+    static let siteControlsTrailingIndex = 6
     static let trailingCount = 8
 
     static let stripeDegrees: Double = -45
@@ -26,6 +27,7 @@ enum DeveloperToolbarLayout {
         var trailing: [NSRect]
         var divider: NSRect
         var hiddenTrailing: [Bool]
+        var blocked: NSRect?
     }
 
     static func stripeForegroundAlpha(isDark: Bool) -> CGFloat {
@@ -64,7 +66,7 @@ enum DeveloperToolbarLayout {
         }
     }
 
-    static func frames(in bounds: NSRect) -> Frames {
+    static func frames(in bounds: NSRect, blockedTitleRoom: CGFloat? = nil) -> Frames {
         var hidden = Array(repeating: false, count: trailingCount)
         var result = pack(in: bounds, hiddenTrailing: hidden)
         while result.address.width + 0.5 < addressMinWidth {
@@ -72,38 +74,52 @@ enum DeveloperToolbarLayout {
             hidden[index] = true
             result = pack(in: bounds, hiddenTrailing: hidden)
         }
+        guard let room = blockedTitleRoom else { return result }
+        let signed = pack(in: bounds, hiddenTrailing: hidden, blocked: true)
+        if signed.address.width + 0.5 >= room { return signed }
+        let card = siteControlsTrailingIndex
+        guard !hidden[card], result.address.width + 0.5 >= room else { return result }
+        result.blocked = result.trailing[card]
+        result.trailing[card] = .zero
+        result.hiddenTrailing[card] = true
         return result
     }
 
-    private static func pack(in bounds: NSRect, hiddenTrailing: [Bool]) -> Frames {
+    private static func pack(in bounds: NSRect, hiddenTrailing: [Bool], blocked: Bool = false) -> Frames {
         let y = (bounds.height - buttonSize) / 2
         let siteInfo = NSRect(x: leadingInset, y: y, width: buttonSize, height: buttonSize)
         var trailing = Array(repeating: NSRect.zero, count: trailingCount)
         var divider = NSRect.zero
+        var blockedFrame: NSRect?
         var right = bounds.width - trailingInset
         for index in stride(from: trailingCount - 1, through: 0, by: -1) {
-            guard !hiddenTrailing[index] else { continue }
-            if index == dividerAfterTrailingIndex,
-               dividerAfterTrailingIndex + 1 < trailingCount,
-               !hiddenTrailing[dividerAfterTrailingIndex + 1] {
-                right -= dividerPadding
-                divider = NSRect(x: right - dividerWidth,
-                                 y: (bounds.height - dividerHeight) / 2,
-                                 width: dividerWidth, height: dividerHeight)
-                right -= dividerWidth + dividerPadding
+            if !hiddenTrailing[index] {
+                if index == dividerAfterTrailingIndex,
+                   dividerAfterTrailingIndex + 1 < trailingCount,
+                   !hiddenTrailing[dividerAfterTrailingIndex + 1] {
+                    right -= dividerPadding
+                    divider = NSRect(x: right - dividerWidth,
+                                     y: (bounds.height - dividerHeight) / 2,
+                                     width: dividerWidth, height: dividerHeight)
+                    right -= dividerWidth + dividerPadding
+                }
+                right -= buttonSize
+                trailing[index] = NSRect(x: right, y: y, width: buttonSize, height: buttonSize)
             }
-            right -= buttonSize
-            trailing[index] = NSRect(x: right, y: y, width: buttonSize, height: buttonSize)
+            if blocked, index == siteControlsTrailingIndex {
+                right -= buttonSize
+                blockedFrame = NSRect(x: right, y: y, width: buttonSize, height: buttonSize)
+            }
         }
-        let trailingLeft = trailing.enumerated()
+        let trailingLeft = (trailing.enumerated()
             .filter { !hiddenTrailing[$0.offset] && $0.element.width > 0 }
-            .map(\.element.minX)
+            .map(\.element.minX) + [blockedFrame?.minX].compactMap { $0 })
             .min() ?? (bounds.width - trailingInset)
         let addressX = siteInfo.maxX + addressLeadingSpacing
         let addressWidth = max(0, trailingLeft - addressLeadingSpacing - addressX)
         let address = NSRect(x: addressX, y: 0, width: addressWidth, height: bounds.height)
         return Frames(siteInfo: siteInfo, address: address, trailing: trailing,
-                      divider: divider, hiddenTrailing: hiddenTrailing)
+                      divider: divider, hiddenTrailing: hiddenTrailing, blocked: blockedFrame)
     }
 }
 

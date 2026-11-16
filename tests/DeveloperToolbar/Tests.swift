@@ -72,6 +72,35 @@ struct DeveloperToolbarTests {
             expect(narrow.divider.width < 0.5, "Divider hides when Capture or Console yields")
         }
 
+        expect(wide.blocked == nil, "No blocked sign without blocked content")
+        let signed = DeveloperToolbarLayout.frames(in: NSRect(x: 0, y: 0, width: 900, height: 40), blockedTitleRoom: 60)
+        expect(signed.hiddenTrailing.allSatisfy { !$0 } && signed.trailing[7] == wide.trailing[7]
+                && signed.trailing[6] == wide.trailing[6],
+               "The blocked sign leaves Extensions and Split in place")
+        expect(signed.blocked.map { abs($0.maxX - signed.trailing[6].minX) < 0.01 && $0.size == NSSize(width: 28, height: 28) } == true,
+               "The blocked sign sits right before the Site Control Center button")
+        expect(signed.blocked.map { abs(signed.trailing[5].maxX - $0.minX) < 0.01 } == true,
+               "Inspect Element sits right before the blocked sign")
+        expect(abs(signed.address.width - (wide.address.width - 28)) < 0.01, "The blocked sign takes its width from the address")
+        for width in stride(from: CGFloat(60), through: 520, by: 1) {
+            let bounds = NSRect(x: 0, y: 0, width: width, height: 40)
+            let plain = DeveloperToolbarLayout.frames(in: bounds)
+            let frames = DeveloperToolbarLayout.frames(in: bounds, blockedTitleRoom: 60)
+            expect(frames.hiddenTrailing.enumerated().allSatisfy { $0.offset == 6 || $0.element == plain.hiddenTrailing[$0.offset] },
+                   "The blocked sign never hides another trailing control at \(width)")
+            guard let blocked = frames.blocked else {
+                expect(frames == plain, "Without room, the strip lays out as if nothing was blocked at \(width)")
+                continue
+            }
+            expect(frames.address.width + 0.5 >= 60, "The blocked sign leaves the address 60 points at \(width)")
+            expect(blocked.maxX <= width - 5 + 0.01 && blocked.minX >= frames.address.maxX - 0.01,
+                   "The blocked sign stays between the address and the trailing edge at \(width)")
+            if frames.hiddenTrailing[6] && !plain.hiddenTrailing[6] {
+                expect(blocked == plain.trailing[6] && frames.address == plain.address,
+                       "A narrow strip gives the blocked sign the Site Control Center button's place at \(width)")
+            }
+        }
+
         let squeezed = DeveloperToolbarLayout.frames(in: NSRect(x: 0, y: 0, width: 80, height: 40))
         expect(squeezed.siteInfo.origin == NSPoint(x: 8, y: 6), "The lock remains at the recovered origin")
         expect(squeezed.hiddenTrailing.filter { !$0 }.count <= 1,

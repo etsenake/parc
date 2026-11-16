@@ -46,7 +46,7 @@ final class DeveloperModePreferences: ObservableObject {
 
 @MainActor
 final class DeveloperToolbarView: NSView, NSTextFieldDelegate {
-    enum Action { case siteInfo, copy, portrait, capture, console, network, inspect, extensions, split, tools }
+    enum Action { case siteInfo, copy, portrait, capture, console, network, inspect, extensions, split, tools, blocked }
     var onAction: ((Action, NSView) -> Void)?
     var onEdit: ((String, NSRange) -> Void)?
     var onFocus: (() -> Bool)?
@@ -54,6 +54,8 @@ final class DeveloperToolbarView: NSView, NSTextFieldDelegate {
     private let field = DeveloperAddressField()
     private let divider = NSView()
     private var buttons: [(Action, DeveloperToolbarButton)] = []
+    private let blocked = DeveloperToolbarButton(symbol: "nosign", title: "Blocked")
+    private var blockedContent: BlockedPageContent?
     private var committedURL = ""
     private var tint = DeveloperToolbarLayout.fallbackTint
     private var textColor = NSColor.white
@@ -90,7 +92,12 @@ final class DeveloperToolbarView: NSView, NSTextFieldDelegate {
                 guard let self, let button else { return }; self.onAction?(action, button)
             }
             addSubview(button); buttons.append((action, button))
+            if action == .inspect { addSubview(blocked) }
         }
+        blocked.actionBlock = { [weak self] in
+            guard let self else { return }; self.onAction?(.blocked, self.blocked)
+        }
+        blocked.setTrailingHidden(true)
         applyTintLayers()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -107,12 +114,28 @@ final class DeveloperToolbarView: NSView, NSTextFieldDelegate {
             button.contentTintColor = textColor.withAlphaComponent(0.85)
             button.isEnabled = enabled && (action == .siteInfo ? siteInfo : action == .copy ? copy : action == .capture || action == .portrait ? capture : action == .split ? split : true)
         }
+        blocked.contentTintColor = textColor.withAlphaComponent(0.85)
+        blocked.isEnabled = enabled
         applyTintLayers()
         needsDisplay = true
     }
+    func updateBlockedContent(_ content: BlockedPageContent?) {
+        guard content != blockedContent else { return }
+        let appearing = blockedContent == nil && content != nil
+        if let content {
+            if content.glyphName != blockedContent?.glyphName { blocked.image = SiteControlCenterArtwork.image(content.glyphName) }
+            LiveShortcutToolTip.set(blocked, content.summary)
+            blocked.setAccessibilityLabel(content.summary)
+            blocked.setAccessibilityHelp(BlockedContentSign.help)
+        }
+        blockedContent = content
+        if appearing { BlockedContentSign.reveal(blocked, animated: true, alpha: 1) }
+        needsLayout = true
+    }
     override func layout() {
         super.layout()
-        let frames = DeveloperToolbarLayout.frames(in: bounds)
+        let frames = DeveloperToolbarLayout.frames(in: bounds,
+            blockedTitleRoom: blockedContent == nil ? nil : BlockedContentSign.toolbarTitleRoom)
         buttons[0].1.frame = frames.siteInfo
         buttons[0].1.isHidden = false
         field.frame = frames.address
@@ -121,6 +144,8 @@ final class DeveloperToolbarView: NSView, NSTextFieldDelegate {
             pair.1.setTrailingHidden(hidden)
             pair.1.frame = hidden ? .zero : frames.trailing[index]
         }
+        blocked.setTrailingHidden(frames.blocked == nil)
+        blocked.frame = frames.blocked ?? .zero
         divider.frame = frames.divider
         divider.isHidden = frames.divider.width < 0.5
         applyTintLayers()

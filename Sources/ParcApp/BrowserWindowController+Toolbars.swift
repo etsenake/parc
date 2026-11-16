@@ -386,7 +386,7 @@ extension BrowserWindowController {
                 toolbar.restoreCommittedAddress(); window?.makeFirstResponder(page.nativeView)
             }
             toolbar.isHidden = true; toolbar.onAction = nil; toolbar.onFocus = nil
-            toolbar.onEdit = nil; toolbar.onEscape = nil; return
+            toolbar.onEdit = nil; toolbar.onEscape = nil; toolbar.updateBlockedContent(nil); return
         }
         toolbar.isHidden = false
         let revision = browser.readerRevision
@@ -399,6 +399,7 @@ extension BrowserWindowController {
             editing: editing, enabled: enabled, secure: page.developerModeSecure, siteInfo: browser.canShowSiteInfo,
             copy: selected && canCopyCurrentURL, capture: selected && canCapturePage,
             split: !isPopupWindow && (activePeek?.canSplit?() ?? true))
+        toolbar.updateBlockedContent(blockedContent(for: page))
         let original: () -> Bool = { [weak self, weak browser, weak page] in
             guard let self, let browser, let page else { return false }
             return self.activateDeveloperPage(browser, page: page, revision: revision)
@@ -425,7 +426,7 @@ extension BrowserWindowController {
             case .console: self.performPageTool(.javaScriptConsole)
             case .network: self.performPageTool(.networkInspector)
             case .inspect: self.performPageTool(.inspectElements)
-            case .extensions: self.showSiteControlCenter(from: anchor)
+            case .extensions, .blocked: self.showSiteControlCenter(from: anchor)
             case .tools: self.showPageMenu(from: anchor)
             case .split: self.showDeveloperSplitMenu(from: anchor, browser: browser, page: page, revision: revision)
             }

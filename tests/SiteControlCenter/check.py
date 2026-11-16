@@ -16,6 +16,7 @@ for use in ('sidebar.onPageMenu = { [weak self] in self?.showSiteControlCenter()
             'popupChrome.prepareBlocked = { [weak self] anchor in self?.preparePopupSiteControls(requireExtensions: false, from: anchor) }',
             'sidebar.onBlockedContent = { [weak self] anchor in self?.showSiteControlCenter(from: anchor) }',
             'case .siteInfo, .siteInsecure, .blocked: self.showSiteControlCenter(from: anchor)',
+            'case .extensions, .blocked: self.showSiteControlCenter(from: anchor)',
             'model.updateBlocked(blockedContent(for: page))',
             'wireBlockedContent(controller, page: page, current: currentPresentation, afterDismissal: afterDismissal)',
             'if browser.hasPageInfo, page.responds(to: #selector(PCNativePage.openSiteControls(handler:)))',

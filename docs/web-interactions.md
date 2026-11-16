@@ -272,10 +272,11 @@ them, as the blocker itself does.
 redirect glyph when only a redirect was blocked, just left of the site button:
 in the sidebar address pill, where it stays visible while the pill's other
 buttons wait for hover; in the page toolbar, each split pane's bar and Peek's
-bar; and inside a pop-up window's address field. A narrow pane gives it the site
-button's place, and hides it only when even that would crowd out the title. There
-is no count, badge or toast; the tooltip and VoiceOver label say what happened
-("3 pop-ups blocked").
+bar; in the Developer Mode toolbar, just left of its Extensions button, which
+opens the same card; and inside a pop-up window's address field. A narrow pane
+gives it the site button's place, and hides it only when even that would crowd
+out the title. There is no count, badge or toast; the tooltip and VoiceOver
+label say what happened ("3 pop-ups blocked").
 It fades in over 0.2 seconds. In the pill it rests at 60% of the theme's ink and
 reaches full strength over 0.18 seconds on hover; toolbar and pop-up buttons use
 their own hover and pressed fills. Reduce Motion removes the fades. VoiceOver
