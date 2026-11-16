@@ -7,6 +7,13 @@ import QuartzCore
     var onChange: ((SidebarHoverInfo) -> Void)?
     var mouseLocation: () -> NSPoint = { NSEvent.mouseLocation }
     var canListen: (() -> Bool)?
+    var now: () -> CFTimeInterval = { CACurrentMediaTime() }
+    var after: (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { body() } }
+    }
+    var nextTurn: (@escaping @MainActor () -> Void) -> Void = { body in
+        DispatchQueue.main.async { MainActor.assumeIsolated { body() } }
+    }
     var isEnabled = true {
         didSet {
             guard isEnabled != oldValue, !isInvalidated else { return }
@@ -62,7 +69,7 @@ import QuartzCore
         dropScreenRects()
         guard !refreshPending else { return }
         refreshPending = true
-        DispatchQueue.main.async { [weak self] in
+        nextTurn { [weak self] in
             guard let self else { return }
             self.refreshPending = false
             self.refresh()
@@ -102,7 +109,7 @@ import QuartzCore
     func mouseMoved() {
         evaluate()
         guard tracking.needsStopPromotion else { return }
-        lastMove = CACurrentMediaTime()
+        lastMove = now()
         scheduleStop()
     }
     private func scheduleStop() {
@@ -112,10 +119,10 @@ import QuartzCore
         enqueueStop(token: listenerGeneration)
     }
     private func enqueueStop(token: Int) {
-        let remaining = max(0, SidebarHoverTracking.stopDelay - (CACurrentMediaTime() - lastMove))
-        DispatchQueue.main.asyncAfter(deadline: .now() + remaining) { [weak self] in
+        let remaining = max(0, SidebarHoverTracking.stopDelay - (now() - lastMove))
+        after(remaining) { [weak self] in
             guard let self, self.listenerGeneration == token else { return }
-            let leftover = self.lastMove + SidebarHoverTracking.stopDelay - CACurrentMediaTime()
+            let leftover = self.lastMove + SidebarHoverTracking.stopDelay - self.now()
             if leftover > 0 {
                 self.enqueueStop(token: token)
                 return
@@ -166,7 +173,7 @@ import QuartzCore
     }
     private func scheduleLinger(_ region: SidebarHoverRegion) {
         let token = trackerGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + region.lingerRequirement) { [weak self] in
+        after(region.lingerRequirement) { [weak self] in
             guard let self, self.trackerGeneration == token, self.monitor != nil, self.tracking.linger(region) else { return }
             self.onChange?(self.tracking.info)
         }
