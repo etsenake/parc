@@ -73,7 +73,8 @@ valid throughout asynchronous loading and close completion.
 An undocked tools window is titled by its tools page ("DevTools - <address>").
 While it is key, Command-Option-I, Console, Inspect and Network act on the tools
 page itself, opening tools for the tools as Chrome does, and F12 closes the
-window. Full Screen and Close Window in the menu bar work there too.
+window. Full Screen, Close Window and View's zoom items work there too, zooming
+the tools rather than a page.
 
 ## Automation profiles
 

@@ -79,6 +79,11 @@ final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
         _ = page.perform(tool)
     }
 
+    func zoomTools(_ direction: Int) {
+        guard canToggleClosed, let page else { return }
+        page.zoom(direction)
+    }
+
     private var ownsWindowCommands: Bool {
         guard !closed, !closePending, !closeApproved, NSApp.isActive, let window,
               window.isVisible, !window.isMiniaturized else { return false }

@@ -1972,6 +1972,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         if item.action == #selector(adjustWindowFrame) { return browserInputCommandWindow?.canAdjustWindowFrame ?? false }
         if item.action == #selector(zoomIn) || item.action == #selector(zoomOut) || item.action == #selector(actualSize) {
+            if let tools = keyDevToolsWindow { return tools.canToggleClosed }
             return browserInputCommandWindow?.canChangePageZoom ?? false
         }
         if item.action == #selector(createSpace) { return started && !terminationInProgress && !store.isEphemeral }
@@ -2369,9 +2370,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc private func useSelectionForFind(_ sender: Any?) { performFindCommand(sender, action: .useSelection) }
     @objc private func findAndReplace(_ sender: Any?) { performFindCommand(sender, action: .replace) }
     @objc private func jumpToSelection(_ sender: Any?) { performFindCommand(sender, action: .jumpToSelection) }
-    @objc private func zoomIn(_ sender: Any?) { browserInputCommandWindow?.zoomIn() }
-    @objc private func zoomOut(_ sender: Any?) { browserInputCommandWindow?.zoomOut() }
-    @objc private func actualSize(_ sender: Any?) { browserInputCommandWindow?.actualSize() }
+    @objc private func zoomIn(_ sender: Any?) { zoom(1) }
+    @objc private func zoomOut(_ sender: Any?) { zoom(-1) }
+    @objc private func actualSize(_ sender: Any?) { zoom(0) }
+    private func zoom(_ direction: Int) {
+        if let tools = keyDevToolsWindow { tools.zoomTools(direction); return }
+        switch direction {
+        case 1: browserInputCommandWindow?.zoomIn()
+        case -1: browserInputCommandWindow?.zoomOut()
+        default: browserInputCommandWindow?.actualSize()
+        }
+    }
     @objc private func split(_ sender: Any?) {
         if let education = NSApp.keyWindow?.windowController as? ShortcutEssentialsWindow {
             education.activateCommand("split:", event: NSApp.currentEvent)
