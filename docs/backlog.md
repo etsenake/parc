@@ -1,19 +1,22 @@
 # Product backlog
 
-This is an index of concrete unfinished behavior and explicit product decisions,
-checked against the implementation on November 10, 2026. Subsystem guides own the
-details. [Product status](parity.md) describes what exists; this list does not
-authorize starting every task.
+This is an index of concrete unfinished work Parc intends to do, checked against
+the implementation on November 10, 2026. Subsystem guides own the details and
+the product decisions; [product status](parity.md) describes what exists. This
+list does not authorize starting every task.
 
 Completed fixes stay done. Missing test receipts, browser access, user confirmation
-and routine release timing are not backlog work. New [performance](performance-navigation.md)
-work needs a concrete delay or resource problem; a missing benchmark is not a defect.
+and routine release timing are not backlog work. Neither are parked, deferred or
+declined ideas: the related guide keeps a sentence or two of reason, if there is
+one, and a real report with a use case brings the item back. New
+[performance](performance-navigation.md) work needs a concrete delay or resource
+problem; a missing benchmark is not a defect.
 Update or remove an item when its implementation lands; do not preserve completed
 rows or percentage tables.
 
 For otherwise unassigned work, retain the requested order: Routing, Windows,
 Data, Folders, Archive, Command bar, Tab switcher, Peek and Onboarding.
-Finish assigned work first; explicit deferrals remain deferred.
+Finish assigned work first.
 
 ## Sidebar accessibility and presentation
 
@@ -34,12 +37,6 @@ Finish assigned work first; explicit deferrals remain deferred.
 - **HIST14:** Library Put Back cannot reconstruct deleted nested folder roots.
   Existing window Undo restores the tree; persisted Archive restoration needs
   folder provenance. [Archive](archive.md).
-
-## Command bar
-
-- **CMD25:** Restore Data needs a window that lists the sidebar backups by time
-  and swaps the chosen one in on relaunch. [Command bar](command-bar.md),
-  [backups](windows-lifecycle.md#saved-sidebar-backups-and-startup-rescue).
 
 ## Planned interface work
 
@@ -91,15 +88,6 @@ what users see or hear today, and each must keep it that way.
   and approval because a regression would show as stalled or mis-composited protected video: the
   wait-for-key latch inside the player, `SetOutputIsSecure` in place of the parked-compositor flag,
   a composite renderer and a separate FairPlay process with `CALayerHost`.
-
-## Deferred
-
-- **SCRIPT10–SCRIPT13:** broader scripting commands, error contexts, exact
-  collection order and property fidelity, and window/sidebar mutation remain
-  deferred. Reading a tab's properties as one record and addressing a Space by
-  its title already work. [Scripting](scripting.md).
-- Rare reverse-playback optimization and additional 3GPP/AMR formats retain their
-  existing scope decisions. [Media boundaries](safari-media-edges.md).
 
 Keep details in the linked guide and current ownership only while a task is
 active. Follow [the documentation policy](documentation.md); this index should

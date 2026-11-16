@@ -36,9 +36,10 @@ control is not a delivered feature. Publish a completed independent component
 without waiting for a separately owned consumer, and record the integration
 handoff. Necessary unowned work remains the task owner's responsibility.
 
-Fix actionable problems within scope. Outside-scope work needs a concrete next
-action in the backlog and disclosure to the user in the same turn. Preserve explicit
-deferrals and existing features; do not silently turn either into completed work.
+Fix actionable problems within scope. Outside-scope work Parc intends to do needs
+a concrete next action in the backlog and disclosure to the user in the same turn.
+Parked, deferred and declined ideas stay out of the backlog. Preserve existing
+features and the product decisions recorded in guides and [product status](parity.md).
 
 For implementation work with authorized delegation, use a fresh read-only
 reviewer on the exact changed source, including new files. Author and reviewer

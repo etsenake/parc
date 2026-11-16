@@ -38,13 +38,14 @@ limitations and explicit product decisions.
 - The accepted non-perceptible differences in play-promise, end-of-stream idle
   arrival, extra timeupdate and removal/fullscreen scheduling remain, along with
   the `text/vtt` Media Source capability difference.
-- Expensive reverse-playback optimization for rare 4K files with 5–10-second
-  keyframe gaps remains explicitly deferred.
+- Reverse playback has no special optimization for 4K files with 5–10-second
+  keyframe gaps; it would be expensive, and such files are rare.
 - FairPlay `cenc` encryption and an element disabling its own video track remain
   outside the earlier agreed media scope. Late-CDM attachment, audio-output
   selection and additional Dolby Vision support remain supported.
-- Further 3GPP MIME answers, MPEG-4 Part 2 in 3GPP and raw `.amr`/`.awb` support
-  remain an explicit scope decision. Preserve the implemented H.263/AMR route.
+- Further 3GPP MIME answers, MPEG-4 Part 2 in 3GPP and raw `.amr`/`.awb` files
+  stay unsupported: Safari identity applies only to sites that need FairPlay,
+  and those streaming sites don't serve 3GPP. Preserve the H.263/AMR route.
 
 ## Casting ownership and controls
 

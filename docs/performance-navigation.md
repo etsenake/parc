@@ -2,7 +2,7 @@
 
 This guide describes the work boundaries that keep navigation metadata, session
 persistence and sidebar updates from repeating expensive operations. Concrete
-reported defects and explicit deferrals belong in [the backlog](backlog.md).
+reported defects belong in [the backlog](backlog.md).
 
 ## Metadata publication
 

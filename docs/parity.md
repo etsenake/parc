@@ -184,9 +184,9 @@ created-page proposal (ROUTE11) and speculative shutdown task (WIN14) stay out o
 
 The independent engine and picture in picture are implemented, and completed fixes
 stay done unless a new report or concrete defect evidence reopens them. The
-[backlog](backlog.md) indexes source-checked unfinished behavior, product decisions
-and explicit deferrals; recheck an item against current source before implementing
-it. Historical agent names are not proof of live ownership; coordinate through the
+[backlog](backlog.md) indexes source-checked work Parc intends to do; recheck an
+item against current source before implementing it. Historical agent names are
+not proof of live ownership; coordinate through the
 [working contract](../AGENTS.md) and [collaboration guide](collaboration.md).
 
 Keep this page below 200 lines and guides below the repository's hard limit

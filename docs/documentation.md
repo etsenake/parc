@@ -29,8 +29,8 @@ Do not replace deleted hex strings with equally unhelpful receipt inventories.
 |---|---|
 | Product introduction and install/build entry points | [README](../README.md) |
 | Current capability inventory, delivery state and product scope | [Product status](parity.md) |
-| Concrete unfinished work, deferrals and current handoffs | [Backlog](backlog.md) |
-| Behavior, architecture, important decisions and commands | Focused subsystem guide |
+| Concrete work Parc intends to do and current handoffs | [Backlog](backlog.md) |
+| Behavior, architecture, important decisions (with a short reason for a parked or declined idea) and commands | Focused subsystem guide |
 | Cross-cutting agent requirements | [AGENTS.md](../AGENTS.md) |
 | Collaboration mechanics | [Collaboration](collaboration.md) |
 | Release history | Git, release notes and [CHANGELOG](../CHANGELOG.md) |

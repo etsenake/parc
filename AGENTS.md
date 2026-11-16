@@ -38,8 +38,8 @@ engine builds, packaging or installations.
 - **Preserve working features.** Do not remove, hide or disconnect controls,
   preferences, shortcuts, behavior or tests to match another browser. Replay
   onboarding in Settings → General is a protected Parc addition.
-- Preserve all explicit inclusions, exclusions and deferrals in
-  [product status](docs/parity.md) and the [backlog](docs/backlog.md).
+- Preserve the explicit inclusions, exclusions and other product decisions in
+  [product status](docs/parity.md) and the focused guides.
   Ordinary password/autofill/security behavior and macOS dictation remain.
   Do not reopen accepted AI cleanup or picture-in-picture work without a new
   defect or user request. Generic Chromium/Google networking is outside the
@@ -153,9 +153,11 @@ Technical details should help a reader act, not serve as proof that an agent wor
   release notes do, so no regular doc changes when a release ships. Keep the compact historical progress
   comparison, with its meaning and limits; do not rebuild the old requirement
   ledger, completed-row inventory or an invented whole-product percentage.
-- `docs/backlog.md`: concrete unfinished work, explicit deferrals and current
-  handoffs. Remove resolved entries in the same delivery. Old requirement IDs
-  may identify unresolved work; they are not a second progress accounting system.
+- `docs/backlog.md`: only work Parc intends to do, plus current handoffs.
+  Parked, deferred and declined items leave it; a reason, if any, gets a
+  sentence or two in the related guide. Remove resolved entries in the same
+  delivery. Old requirement IDs may identify unresolved work; they are not a
+  second progress accounting system.
 - Focused subsystem guides: current behavior, ownership/lifetimes, important
   decisions and useful commands. Link the backlog for concrete open work.
 - `docs/README.md`: navigation. [Documentation policy](docs/documentation.md)

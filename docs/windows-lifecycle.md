@@ -72,7 +72,8 @@ newer Parc's file unless the person chooses to restore. With no usable copy the
 "Parc couldn’t start" alert says whether backups are missing or unreadable, and
 Parc quits as before. A restored sidebar's Downloads list refills from the
 engine. A missing `session.json` still starts fresh, and `--parc-smoke` reports
-instead of asking.
+instead of asking. The automatic backups and this rescue cover recovery; no
+window lists the backups for browsing or choosing an older one.
 
 **Privacy.** Copies follow the main file's rules. Clearing history over a time
 range removes every copy taken since the range began, so all of them for all

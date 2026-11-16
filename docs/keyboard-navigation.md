@@ -358,9 +358,6 @@ Focused suites include `tests/KeyboardNavigation`, `tests/ContentFocusRequest`,
 components. Full Swift typechecking is the iteration check; finished material
 Swift work also needs whole-module SIL under [the working contract](../AGENTS.md).
 
-The [command-bar guide](command-bar.md#checks-and-remaining-work)
-owns the remaining Restore Data request.
-
 Frame-focus changes invalidate pending page shortcuts through a Parc-owned
 subscription registry, at the focused-frame change itself. Each page owns its
 subscriptions; callbacks remain safe if a shortcut closes the page.

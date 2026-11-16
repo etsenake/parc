@@ -412,7 +412,7 @@ click does not. An empty list admits the double-click throughout. Library Space
 cards retain their own owner. Inactive-window first-click behavior remains
 native. This uses `SidebarTablistBackground`, not another input monitor.
 
-## Checks and remaining work
+## Checks
 
 `tests/CommandBar` covers real app decisions for editing, scope, publication
 identity, default ranking, row diffs, submission, menus, typed targets and the
@@ -423,7 +423,3 @@ then glide only sideways, for Control–Space, typing and a click. The
 command-bar scripts build focused production components; native search has
 separate owner/lifecycle coverage. Follow [the working contract](../AGENTS.md)
 before running checks.
-
-Current source still has these separate limitations, tracked in [the backlog](backlog.md):
-Restore Data has [backups and a startup rescue](windows-lifecycle.md#saved-sidebar-backups-and-startup-rescue)
-but no window to browse and restore them.
