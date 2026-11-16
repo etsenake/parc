@@ -34,21 +34,57 @@ only the selected profile, requested category, selected extension IDs and, when
 needed, the derived source decryption key. It never discovers other profiles,
 performs network requests or writes the destination. Source keys are discarded
 on completion/cancellation. Categories are read sequentially and revalidated
-before their native writes.
+before their native writes. Returned timestamps are microseconds since
+1601-01-01 UTC, address fields are keyed by Chromium's numeric field types, and
+the key is always the source browser's own, never Parc's.
 
 | Source | Directly supported data | Deliberate restriction |
 | --- | --- | --- |
-| Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Arc | History; ordered bookmarks/empty folders; cookies; saved passwords; form entries, current and historical local addresses, local payment cards; explicitly selected Web Store extensions | Actual macOS `v10` AES-CBC formats only. Unknown encryption, absent authorization or invalid encrypted-cookie host binding refuses that category. A source's concrete readable files determine availability. |
+| Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Arc | History; ordered bookmarks/empty folders from the local and account stores, plain or encrypted; cookies; saved passwords, including those saved to the browser account; form entries, current and historical local addresses, local payment cards; explicitly selected Web Store extensions | Actual macOS `v10` AES-CBC formats only. Unknown encryption, absent authorization or invalid encrypted-cookie host binding refuses that category. A source's concrete readable files determine availability. |
 | Safari | Default-store history and XML/binary-plist bookmarks | This reader supports no direct password/cookie/payment/extension import. Modern separate Safari profile stores are not advertised. Passwords require an explicit OS/source export. |
 | Firefox | History, bookmark hierarchy and form entries | Pinned macOS excludes the external NSS reader; no direct Firefox passwords, cookies, encrypted payment records or add-on installation is advertised. |
 
 Chrome-family source keys come from the browser's actual macOS Keychain service
-and account after that source is selected and an encrypted category requested.
-The native query preserves macOS authorization; it does not create a replacement
-key, fall back to Parc's key or bypass a denial. A pending OS authorization is
-owned by macOS: cancelling import stops subsequent native work and drops its
-result but cannot dismiss the system's authorization interface. Component checks
-never call Keychain or discover/read personal profiles.
+and account after that source is selected and an encrypted category requested,
+or bookmarks whose current copy is encrypted (below). The native query preserves
+macOS authorization; it does not create a replacement key, fall back to Parc's
+key or bypass a denial. One authorization serves every profile of that
+discovered source, and a refusal is remembered the same way, so a declined
+prompt is not repeated for the next profile or category; choosing the source
+again asks afresh. A pending OS authorization is owned by macOS: cancelling
+import stops subsequent native work and drops its result but cannot dismiss the
+system's authorization interface. Component checks never call Keychain or
+discover/read personal profiles.
+
+### Chromium-family bookmark stores and account passwords
+
+Chromium keeps device bookmarks in `Bookmarks` and Google Account bookmarks in
+`AccountBookmarks`. While it rolls out bookmark encryption it also writes
+`EncryptedBookmarks2` and `EncryptedAccountBookmarks2`: the same JSON as one
+macOS `v10` AES-CBC value. Its final stage writes only the encrypted copy and
+deletes the plain one after a successful load; browsers built on Chromium inherit
+the same files. Discovery offers Bookmarks when any of the four exists.
+
+For each store the reader uses the plain copy unless the encrypted copy is the
+only one or was saved more than a minute after it; Chromium writes the two back
+to back while it keeps both, so a plain copy that is current never needs the
+key. The session asks the Keychain for a bookmarks-only import only when some
+store's current copy is encrypted. A refused key or failed decryption falls back
+to an existing plain copy with a warning. Account items come first, as in
+Chromium's bookmarks bar; a same-named folder in the same place combines with
+its twin, and a bookmark with the same title and address in both stores appears
+once, while duplicates inside one store are kept. A store that cannot be read
+adds a warning and the other is still imported; the category fails only when no
+store can be read.
+
+`Login Data` keeps its all-or-nothing rule: one undecryptable saved password
+refuses the category. `Login Data For Account` is read separately; any problem
+there adds a warning and drops only that file, unless it is the only password
+file. Discovery offers Passwords when either exists. A login in both files is
+imported once, keeping the copy whose password changed most recently (the
+account copy on a tie). The password store replaces a saved login with the same
+site, address, username and field names instead of adding a second one, so a
+repeated import updates rather than duplicates.
 
 The target writes use the original regular Profile's genuine services:
 
@@ -95,7 +131,11 @@ installation's result and starts no further IDs. Actual Profile destruction
 reports confirmed counts and explicitly unconfirmed pending work, since its
 services may drop callbacks during teardown. It never claims those writes were
 rolled back. Category failures,
-partial writes, warnings and cancellation are distinct outcomes. A five-minute
+partial writes, warnings and cancellation are distinct outcomes; a warning about
+skipped records leaves its category complete, and only a failed category makes
+the import partial. History visit counts returned with an import that also
+asked for bookmarks keep the largest count per address, because Safari and
+Firefox report one row per visit carrying the same total. A five-minute
 category deadline stops new work and reports retained completed data. This is
 not an all-categories database transaction. Original source timestamps and
 available fields are retained where the target model supports them; destination
@@ -115,7 +155,10 @@ engine.
 
 `tests/BrowserImport/run_chromium.py` compiles the actual Chrome reader and snapshot
 helper with the pinned utility target flags and existing Chromium component
-libraries, then runs only temporary SQLite/JSON/encryption fixtures.
+libraries, then runs only temporary SQLite/JSON/encryption fixtures, including
+made-up encrypted, account and merged bookmark stores and an account password
+file encrypted with a test key. Its component libraries must come from the
+pinned Chromium; output built from another milestone is not a valid input.
 `tests/BrowserImport/run_readers.py` does the same for Safari/Firefox XML/binary
 plists, history/bookmarks/forms, WAL, invalid schemas, path/cancel and original
 file preservation. `tests/BrowserImport/run_writers.py` compiles the actual modified HistoryBackend

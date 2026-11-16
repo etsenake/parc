@@ -24,15 +24,19 @@ If that snapshot cannot be read, ordinary browser-data import still uses the
 normal destination policy. The explicit HTML bookmark-file import remains.
 Native category capabilities and access failures determine what can be imported;
 Swift bookmark/progress models never receive native credential contents.
+Choosing a Chromium-family browser replaces the intro line with a note that
+macOS may ask for that browser's Safe Storage key, which unlocks the bookmarks,
+passwords and cookies it keeps encrypted; Safari and Firefox keep the intro.
 
 ## Sequencing and cancellation
 
 Bookmarks are collected first. Other browser data runs in background native
 sessions, then extension installation follows using each original destination.
-Safari background data waits for its password-file session to release the
-Profile. A detached presenter can retain accepted background work; later imports
-wait for earlier background work rather than racing the same owner. Failures are
-reported as partial or failed, preserving already committed data.
+Safari and Firefox background data wait for the password-file session to
+release the Profile. A detached presenter can retain accepted background work;
+later imports wait for earlier background work rather than racing the same
+owner. Failures are reported as partial or failed, preserving already committed
+data.
 
 All callbacks check generation, source lease and original/current destination.
 Stop waits for the actual native result. Cancellation is not rollback: confirmed
@@ -40,8 +44,9 @@ category data and returned bookmark results survive. Retrying bookmark insertion
 does not repeat native import or extension installation. A nil native session
 means admission was refused, not that an asynchronous completion will arrive.
 
-First launch accepts bookmark results before optional Safari passwords; an empty
-result omits that screen. Menu import retains its password-then-bookmark order.
+First launch accepts bookmark results before the optional Safari or Firefox
+password file; an empty result omits that screen. Menu import retains its
+password-then-bookmark order.
 Accepted/discarded result pages cannot reappear later. A cancelled import keeps
 returned bookmarks but suppresses another optional import stage.
 
@@ -96,12 +101,15 @@ choices from the replay intent. No discovery token or credential is persisted
 in the restart file. A held earlier import delays restart rather than truncating
 its background work.
 
-## Exported Safari passwords
+## Exported Safari and Firefox passwords
 
 The user explicitly chooses or drops one exported CSV. Parc does not unlock
 Apple's credential applications, read their stores directly, or import passkeys
-and verification codes. The original import window and destination govern file
-selection, completion, Stop, retry and Continue/Skip.
+and verification codes. Firefox imports offer the same step, with Firefox's own
+export steps; Chromium's CSV reader takes Firefox's `url`, `username` and
+`password` columns and ignores its realm, form, identifier and time columns.
+The original import window and destination govern file selection, completion,
+Stop, retry and Continue/Skip.
 
 The native session uses Chromium's sandbox CSV parser and actual Profile
 password store. Only aggregate counts/errors reach Swift. OTR, missing owners,
@@ -121,12 +129,14 @@ precedes the OS operation but is not an atomic filesystem compare-and-swap.
 
 ## Setup-only iCloud Passwords choice
 
-On macOS 14+, Safari setup offers the Apple extension or manual CSV after
-bookmarks. Selecting the recommendation records intent; Next accepts it for the
-original destination. Successful Finish/browser preparation submits the genuine
-Profile installer. Replay supports that same Finish-owned installation;
-cancelling before Finish does not install it. Manual import keeps the same
-native password-store and file-removal contracts.
+On macOS 14 through 15.4, Safari setup offers the Apple extension or manual CSV
+after bookmarks; other versions go straight to manual CSV, for the reason in
+[onboarding](onboarding.md#safari-password-choice-and-finish-owned-installation).
+Selecting the recommendation records intent; Next accepts it for the original
+destination. Successful Finish/browser preparation submits the genuine Profile
+installer. Replay supports that same Finish-owned installation; cancelling
+before Finish does not install it. Manual import keeps the same native
+password-store and file-removal contracts.
 
 ## Implementation and validation
 

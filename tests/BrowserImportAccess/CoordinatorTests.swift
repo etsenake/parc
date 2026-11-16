@@ -22,6 +22,12 @@ import AppKit
         let impostor = PCNativeImportSource("Safari", otherURL)
         expect(BrowserImportCoordinator.isSafari(safari), "Safari is attributed by the actual app bundle")
         expect(!BrowserImportCoordinator.isSafari(impostor), "Display names do not select Safari")
+        let chromium = PCNativeImportSource("com.google.Chrome", try app("Fixture Chrome", "com.google.Chrome"))
+        expect(BrowserImportCoordinator.keychainNote(for: chromium)?.contains("Safe Storage key") == true,
+               "Chromium-family sources explain the Keychain prompt before importing")
+        expect(BrowserImportCoordinator.keychainNote(for: safari) == nil, "Safari import never mentions the Keychain")
+        expect(BrowserImportCoordinator.keychainNote(for: PCNativeImportSource("org.mozilla.firefox", otherURL)) == nil,
+               "Firefox import never mentions the Keychain")
         let store = try BrowserStore(directory: directory.appendingPathComponent("Parc"))
         let destination = BrowserImportDestination(spaceID: store.activeSpace.id, profileID: store.activeSpace.profileID)
         let original = store.state

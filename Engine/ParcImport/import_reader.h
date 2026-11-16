@@ -14,8 +14,6 @@ enum Category : uint32_t {
   kHistory = 1, kBookmarks = 2, kCookies = 4, kPasswords = 8,
   kAutofill = 16, kExtensions = 32,
 };
-// Plain data stays in the native utility/browser boundary. Never exposed in the
-// public ObjC DTOs. All timestamps are microseconds since 1601-01-01 UTC.
 struct History { std::string url; std::u16string title; int visits = 0;
   int typed = 0; int64_t last_visit = 0; bool hidden = false; };
 struct Bookmark { std::string id, parent; std::u16string title;
@@ -30,15 +28,12 @@ struct Password { std::string realm, url, action;
   int scheme = 0; bool blocked = false; };
 struct Autofill { enum class Kind { kForm, kAddress, kCard };
   Kind kind = Kind::kForm;
-  // Form: name/value. Address: numeric ServerFieldType strings. Card:
-  // name/number/month/year/nickname. Actual writers validate every field.
   std::map<std::string, std::u16string> fields;
   int64_t created = 0, last_used = 0; int use_count = 0; };
 struct Extension { std::string id; std::u16string name; };
 struct ReadOptions {
   Family family = Family::kChromium;
   base::FilePath profile_path, app_path;
-  // Original user-authorized source key only. Never target Parc's encryption key.
   std::string source_key;
   std::vector<std::string> extension_ids;
 };
@@ -54,9 +49,15 @@ struct Batch {
   std::vector<Autofill> autofill;
   std::vector<Extension> extensions;
 };
+struct ChromiumBookmarkFiles { const char* plain; const char* encrypted; };
+inline constexpr ChromiumBookmarkFiles kChromiumAccountBookmarks{
+    "AccountBookmarks", "EncryptedAccountBookmarks2"};
+inline constexpr ChromiumBookmarkFiles kChromiumLocalBookmarks{
+    "Bookmarks", "EncryptedBookmarks2"};
+inline constexpr char kChromiumLogins[] = "Login Data";
+inline constexpr char kChromiumAccountLogins[] = "Login Data For Account";
 using Cancellation = std::shared_ptr<std::atomic_bool>;
-// Blocking worker entry points. Only immutable selected-source paths, no
-// discovery, target profile, network, Keychain or user-interface work here.
+bool ChromiumBookmarksNeedKey(const base::FilePath& profile);
 Batch ReadChromiumCategory(const ReadOptions&, uint32_t, const Cancellation&);
 Batch ReadSafariCategory(const ReadOptions&, uint32_t, const Cancellation&);
 Batch ReadFirefoxCategory(const ReadOptions&, uint32_t, const Cancellation&);

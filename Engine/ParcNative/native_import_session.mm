@@ -19,6 +19,7 @@
 #import "native_appkit_host.h"
 #include "native_profiles.h"
 #import "native_import_internal.h"
+#include "parc/importer/import_reader.h"
 #import "native_import_writer.h"
 #include "url/gurl.h"
 
@@ -98,9 +99,11 @@ void ReleaseImportDestination(NSString* path, const void* owner) {
 namespace {
 using Progress = void (^)(PCNativeImportEvent*);
 using Completion = void (^)(PCNativeImportResult*);
+constexpr char kKeychainRefused[] = "macOS Keychain access was not authorized.";
 struct KeyResult {
   std::vector<uint8_t> bytes;
   std::string error;
+  bool refused = false;
 };
 KeyResult ReadKey(const Installation& source) {
   @autoreleasepool {
@@ -116,11 +119,13 @@ KeyResult ReadKey(const Installation& source) {
     CFTypeRef value = nullptr;
     OSStatus status =
         SecItemCopyMatching((__bridge CFDictionaryRef)query, &value);
+    const bool refused =
+        status == errSecUserCanceled || status == errSecAuthFailed;
     if (status != errSecSuccess || !value)
       return {{},
-              status == errSecUserCanceled || status == errSecAuthFailed
-                  ? "macOS Keychain access was not authorized."
-                  : "The source browser's encryption key is unavailable."};
+              refused ? kKeychainRefused
+                      : "The source browser's encryption key is unavailable.",
+              refused};
     if (CFGetTypeID(value) != CFDataGetTypeID()) {
       CFRelease(value);
       return {{}, "The source encryption key has an unsupported format."};
@@ -309,22 +314,41 @@ class Session final : public ProfileObserver,
              ImportError(@"A Profile cannot be imported into itself."));
       return;
     }
-    if (source_->source->family == 0 && (requested_ & (4 | 8 | 16)) &&
-        !source_->source->key.bytes.empty()) {
-      key_ = source_->source->key.bytes;
+    const bool encrypted =
+        (requested_ & (PCNativeImportCategoryCookies |
+                       PCNativeImportCategoryPasswords |
+                       PCNativeImportCategoryAutofill)) != 0;
+    const bool bookmarks = (requested_ & PCNativeImportCategoryBookmarks) != 0;
+    auto& cached = source_->source->key;
+    if (source_->source->family != 0 || !(encrypted || bookmarks)) {
       Launch();
-    } else if (source_->source->family == 0 && (requested_ & (4 | 8 | 16))) {
+    } else if (!cached.bytes.empty()) {
+      key_ = cached.bytes;
+      Launch();
+    } else if (cached.refused) {
+      if (encrypted)
+        [warnings_ addObject:base::SysUTF8ToNSString(kKeychainRefused)];
+      Launch();
+    } else {
       base::ThreadPool::PostTaskAndReplyWithResult(
           FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-          base::BindOnce(&ReadKey, *source_->source),
           base::BindOnce(
-              [](std::weak_ptr<Session> weak, KeyResult key) {
+              [](Installation source, base::FilePath profile, bool needed) {
+                return (needed || ChromiumBookmarksNeedKey(profile))
+                           ? ReadKey(source)
+                           : KeyResult();
+              },
+              *source_->source, source_->path, encrypted),
+          base::BindOnce(
+              [](std::weak_ptr<Session> weak, bool encrypted, KeyResult key) {
                 if (auto self = weak.lock()) {
+                  if (key.refused)
+                    self->source_->source->key.refused = true;
                   if (!self->finished_) {
                     if (!key.bytes.empty())
                       self->source_->source->key.bytes = key.bytes;
                     self->key_ = std::move(key.bytes);
-                    if (!key.error.empty())
+                    if (encrypted && !key.error.empty())
                       [self->warnings_
                           addObject:base::SysUTF8ToNSString(key.error)];
                     self->Launch();
@@ -332,9 +356,8 @@ class Session final : public ProfileObserver,
                 }
                 std::fill(key.bytes.begin(), key.bytes.end(), 0);
               },
-              weak_from_this()));
-    } else
-      Launch();
+              weak_from_this(), encrypted));
+    }
   }
   void Launch() {
     if (!remaining_) {
@@ -384,8 +407,6 @@ class Session final : public ProfileObserver,
       return;
     }
     if (!remaining_) {
-      // Notes about skipped records leave a category complete; only a
-      // category that failed makes the import partial.
       Finish(failure_ || failed_
                  ? ((completed_ || written_any_) ? PCNativeImportOutcomePartial
                                                  : PCNativeImportOutcomeFailed)
@@ -429,9 +450,6 @@ class Session final : public ProfileObserver,
             },
             weak_from_this()));
   }
-  // A failed utility cannot abandon an accepted native write. Stop admission,
-  // retain the original target reservation, and publish only after that writer
-  // returns its real (possibly partial) result.
   void FailAfterDrain(NSError* error) {
     if (finished_)
       return;
@@ -497,8 +515,6 @@ class Session final : public ProfileObserver,
     }
     if (active_ == PCNativeImportCategoryHistory &&
         (requested_ & PCNativeImportCategoryBookmarks)) {
-      // Safari/Firefox readers can return one row per visit with the same
-      // aggregate count. Do not add those totals together.
       for (const auto& row : batch->history) {
         if (!GURL(row->url).is_valid() || row->visits < 0 ||
             row->last_visit <= 0 || row->typed < 0)

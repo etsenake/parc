@@ -363,7 +363,8 @@ final class BrowserImportViewController: NSViewController {
         next.isHidden = false; next.isEnabled = true; next.title = "Next"
         cancelButton.title = stage == .importing ? "Stop Import" : "Maybe Later"
         if cards || stage == .loading {
-            detail.stringValue = coordinator.error ?? (embedded ? Self.setupIntro : Self.windowIntro)
+            let note = skipSelected ? nil : coordinator.source.flatMap(BrowserImportCoordinator.keychainNote)
+            detail.stringValue = coordinator.error ?? note ?? (embedded ? Self.setupIntro : Self.windowIntro)
         }
         switch stage {
         case .loading:

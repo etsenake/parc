@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 735,
+  "version": 736,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -1259,12 +1259,12 @@
     {
       "source": "Engine/ParcImport/import_reader.h",
       "target": "parc/importer/import_reader.h",
-      "sha256": "e8fae641eef0ab91b373821a50c4133d2d5f63150f658a026bf8745b2678084a"
+      "sha256": "1699a0c9745add751d358238eb310657c9bbb1985b57d5d0ce35e0e1847d9efe"
     },
     {
       "source": "Engine/ParcImport/chromium_reader.cc",
       "target": "parc/importer/chromium_reader.cc",
-      "sha256": "bf44bf4551c9db8d3cd38dd7aa9a28e786a9a1402b8570b8cb8e1b2330272b6f"
+      "sha256": "55162b427de4210a86de8b2aeffdabe9f808a0e48d10b44c49c07c1f436cbfea"
     },
     {
       "source": "Engine/ParcImport/import_snapshot.cc",
@@ -1289,7 +1289,7 @@
     {
       "source": "Engine/ParcNative/native_import_session.mm",
       "target": "parc/native/native_import_session.mm",
-      "sha256": "91eacb2cdf4557d6b604c0d95a7bced75eb83cd897d41f78541b5292ee91ef26"
+      "sha256": "ef461cb2640ec560eb864d1b1f16118bf0194900acd9fd09159dc77e42e37e7f"
     },
     {
       "source": "Engine/ParcNative/native_import_writer.mm",
@@ -1299,7 +1299,7 @@
     {
       "source": "Engine/ParcNative/native_import_discovery.mm",
       "target": "parc/native/native_import_discovery.mm",
-      "sha256": "a9f95ad124c834ec4d5ba1801f92d54bbc4cb68987a8b1792e00be44208f147d"
+      "sha256": "ff9255734c4eb51a426711cca266f35d15eb8acf5f4fa21f25f961e1ea9fb799"
     },
     {
       "source": "Engine/ParcNative/native_import_extensions.mm",
@@ -1309,7 +1309,7 @@
     {
       "source": "Engine/ParcNative/native_import_internal.h",
       "target": "parc/native/native_import_internal.h",
-      "sha256": "e75caf3be100ec65550dda4c1cc7efea13c918cc0bea2d7d498ceb67914ec171"
+      "sha256": "c77137865b24856306723898f517d5fa6a7bff639a9bb1ee347b289451c0c1c4"
     },
     {
       "source": "Engine/ParcNative/native_import_writer.h",

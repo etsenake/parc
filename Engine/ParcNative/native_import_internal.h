@@ -20,13 +20,12 @@ struct SourceKey {
       data[i] = 0;
   }
   std::vector<uint8_t> bytes;
+  bool refused = false;
 };
 struct Installation {
   int family;
   std::string bundle_id, name, root_relative, key_service, key_account;
   base::FilePath app_path;
-  // Main thread only. One Keychain authorization serves every profile of
-  // this discovered source; copies of the descriptor never carry it.
   mutable SourceKey key;
 };
 struct ProfileData {
@@ -40,7 +39,6 @@ struct ProfileData {
   std::vector<std::pair<std::string, std::string>> extensions;
 };
 NSError* ImportError(NSString* message);
-// Both direct-browser and explicit CSV sessions share destination admission.
 bool ReserveImportDestination(NSString* path, const void* owner);
 void ReleaseImportDestination(NSString* path, const void* owner);
 bool SourceReady(const ProfileData& source, std::string& error);
@@ -76,7 +74,6 @@ bool SourceReady(const ProfileData& source, std::string& error);
                          message:(nullable NSString*)message;
 @end
 @interface PCNativeImportSession (Private)
-// Cancel is the only operation; the block keeps its owner alive.
 - (instancetype)initWithCancel:(void (^)(void))cancel;
 @end
 @interface PCNativeImportResult (Private)

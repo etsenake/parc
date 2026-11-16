@@ -5,6 +5,9 @@
 #include <cstdlib>
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/time/time.h"
 #include "parc/importer/import_reader.h"
 #include "sql/initialization.h"
 #include "third_party/sqlite/sqlite3.h"
@@ -59,6 +62,236 @@ void Blob(sqlite3* db, const char* statement, std::string_view bytes) {
           "fixture bound ciphertext");
   Require(sqlite3_step(s) == SQLITE_DONE, "fixture committed row");
   sqlite3_finalize(s);
+}
+base::FilePath Directory(const base::FilePath& root, const char* name) {
+  const auto path = root.AppendASCII(name);
+  Require(base::CreateDirectory(path), "fixture profile");
+  return path;
+}
+void Write(const base::FilePath& path, std::string_view data) {
+  Require(base::WriteFile(path, data), "fixture file");
+}
+void Age(const base::FilePath& path, base::TimeDelta age) {
+  const auto time = base::Time::Now() - age;
+  Require(base::TouchFile(path, time, time), "fixture file age");
+}
+std::string Url(std::string_view name, std::string_view url) {
+  return base::StrCat(
+      {R"({"type":"url","name":")", name, R"(","url":")", url, R"("})"});
+}
+std::string Folder(std::string_view name, std::string_view children) {
+  return base::StrCat({R"({"type":"folder","name":")", name,
+                       R"(","children":[)", children, "]}"});
+}
+std::string Roots(std::string_view bar, std::string_view other = "") {
+  return base::StrCat({R"({"roots":{"bookmark_bar":)", Folder("Bar", bar),
+                       R"(,"other":)", Folder("Other", other), "}}"});
+}
+int Count(const parc::importer::Batch& batch, std::string_view url) {
+  int count = 0;
+  for (const auto& bookmark : batch.bookmarks)
+    count += bookmark.url == url;
+  return count;
+}
+void BookmarkStores(const base::FilePath& root,
+                    const parc::importer::Cancellation& stop) {
+  using namespace parc::importer;
+  ReadOptions options;
+  options.family = Family::kChromium;
+  options.source_key = "0123456789abcdef";
+  auto without_key = [&] {
+    auto copy = options;
+    copy.source_key.clear();
+    return ReadChromiumCategory(copy, kBookmarks, stop);
+  };
+  options.profile_path = Directory(root, "encrypted-only");
+  const auto encrypted =
+      options.profile_path.AppendASCII("EncryptedBookmarks2");
+  Write(encrypted,
+        Encrypt(Roots(Url("Encrypted", "https://encrypted.test/")),
+                options.source_key));
+  Require(ChromiumBookmarksNeedKey(options.profile_path),
+          "encrypted-only bookmarks ask for the key");
+  auto original = Bytes(encrypted);
+  auto b = ReadChromiumCategory(options, kBookmarks, stop);
+  Require(b.success && b.bookmarks.size() == 3 &&
+              b.bookmarks[1].url == "https://encrypted.test/" &&
+              b.bookmarks[1].parent == "bookmark_bar",
+          "encrypted-only bookmarks decrypt with the test key");
+  Require(Bytes(encrypted) == original, "encrypted bookmarks untouched");
+  b = without_key();
+  Require(!b.success && b.bookmarks.empty() && !b.error.empty(),
+          "encrypted-only bookmarks without the key refuse");
+  options.profile_path = Directory(root, "copies");
+  const auto plain = options.profile_path.AppendASCII("Bookmarks");
+  Write(plain, Roots(Url("Plain", "https://plain.test/")));
+  Write(options.profile_path.AppendASCII("EncryptedBookmarks2"),
+        Encrypt(Roots(Url("Encrypted", "https://encrypted.test/")),
+                options.source_key));
+  Require(!ChromiumBookmarksNeedKey(options.profile_path),
+          "copies saved together need no key");
+  b = ReadChromiumCategory(options, kBookmarks, stop);
+  Require(b.success && b.bookmarks.size() == 3 &&
+              Count(b, "https://plain.test/") == 1 &&
+              Count(b, "https://encrypted.test/") == 0 && b.warnings.empty(),
+          "copies saved together import one copy");
+  Age(plain, base::Minutes(10));
+  Require(ChromiumBookmarksNeedKey(options.profile_path),
+          "an older plain copy asks for the key");
+  b = ReadChromiumCategory(options, kBookmarks, stop);
+  Require(b.success && Count(b, "https://encrypted.test/") == 1 &&
+              Count(b, "https://plain.test/") == 0,
+          "a newer encrypted copy wins");
+  b = without_key();
+  Require(b.success && Count(b, "https://plain.test/") == 1 &&
+              !b.warnings.empty(),
+          "a declined key falls back to the plain copy");
+  auto wrong = options;
+  wrong.source_key = "fedcba9876543210";
+  b = ReadChromiumCategory(wrong, kBookmarks, stop);
+  Require(b.success && Count(b, "https://plain.test/") == 1 &&
+              !b.warnings.empty(),
+          "an undecryptable copy falls back to the plain copy");
+  Age(options.profile_path.AppendASCII("EncryptedBookmarks2"),
+      base::Minutes(20));
+  Require(!ChromiumBookmarksNeedKey(options.profile_path),
+          "a stale encrypted copy needs no key");
+  b = ReadChromiumCategory(options, kBookmarks, stop);
+  Require(b.success && Count(b, "https://plain.test/") == 1 &&
+              Count(b, "https://encrypted.test/") == 0,
+          "a stale encrypted copy is ignored");
+  options.profile_path = Directory(root, "account-only");
+  Write(options.profile_path.AppendASCII("AccountBookmarks"),
+        Roots(Url("Account", "https://account.test/")));
+  Require(!ChromiumBookmarksNeedKey(options.profile_path),
+          "plain account bookmarks need no key");
+  b = ReadChromiumCategory(options, kBookmarks, stop);
+  Require(b.success && b.bookmarks.size() == 3 &&
+              Count(b, "https://account.test/") == 1,
+          "account bookmarks alone are imported");
+  options.profile_path = Directory(root, "merged");
+  Write(options.profile_path.AppendASCII("AccountBookmarks"),
+        Roots(base::StrCat({Url("Shared", "https://shared.test/"), ",",
+                            Folder("Work", Url("Docs", "https://docs.test/")),
+                            ",", Url("Account", "https://account.test/")})));
+  Write(options.profile_path.AppendASCII("Bookmarks"),
+        Roots(base::StrCat({Url("Shared", "https://shared.test/"), ",",
+                            Url("Shared", "https://shared.test/"), ",",
+                            Folder("Work",
+                                   base::StrCat({Url("Docs", "https://docs.test/"),
+                                                 ",",
+                                                 Url("Wiki", "https://wiki.test/")})),
+                            ",", Url("Local", "https://local.test/")}),
+              Url("Elsewhere", "https://elsewhere.test/")));
+  b = ReadChromiumCategory(options, kBookmarks, stop);
+  Require(b.success && b.bookmarks.size() == 10,
+          "account and local bookmarks merge");
+  Require(b.bookmarks[1].url == "https://shared.test/" &&
+              b.bookmarks[2].folder && b.bookmarks[2].title == u"Work" &&
+              b.bookmarks[3].parent == b.bookmarks[2].id &&
+              b.bookmarks[4].url == "https://wiki.test/" &&
+              b.bookmarks[4].parent == b.bookmarks[2].id &&
+              b.bookmarks[5].url == "https://account.test/" &&
+              b.bookmarks[6].url == "https://shared.test/" &&
+              b.bookmarks[7].url == "https://local.test/" &&
+              b.bookmarks[8].parent.empty() &&
+              b.bookmarks[9].url == "https://elsewhere.test/",
+          "account bookmarks lead and same-named folders combine");
+  Require(Count(b, "https://docs.test/") == 1 &&
+              Count(b, "https://shared.test/") == 2,
+          "a bookmark in both stores appears once");
+  options.profile_path = Directory(root, "encrypted-account");
+  Write(options.profile_path.AppendASCII("EncryptedAccountBookmarks2"),
+        Encrypt(Roots(Url("Account", "https://account.test/")),
+                options.source_key));
+  Write(options.profile_path.AppendASCII("Bookmarks"),
+        Roots(Url("Local", "https://local.test/")));
+  Require(ChromiumBookmarksNeedKey(options.profile_path),
+          "encrypted account bookmarks ask for the key");
+  b = ReadChromiumCategory(options, kBookmarks, stop);
+  Require(b.success && Count(b, "https://account.test/") == 1 &&
+              Count(b, "https://local.test/") == 1,
+          "encrypted account and plain local bookmarks merge");
+  b = without_key();
+  Require(b.success && Count(b, "https://local.test/") == 1 &&
+              Count(b, "https://account.test/") == 0 && !b.warnings.empty(),
+          "a declined key keeps local bookmarks");
+  options.profile_path = Directory(root, "no-bookmarks");
+  Require(!ReadChromiumCategory(options, kBookmarks, stop).success,
+          "missing bookmark files refuse");
+}
+void LoginTable(const base::FilePath& path) {
+  sqlite3* db = Database(path);
+  SQL(db,
+      "CREATE TABLE logins(signon_realm TEXT,origin_url TEXT,action_url "
+      "TEXT,username_element TEXT,username_value TEXT,password_element "
+      "TEXT,password_value BLOB,scheme INTEGER,blacklisted_by_user "
+      "INTEGER,date_password_modified INTEGER);");
+  sqlite3_close(db);
+}
+void Login(const base::FilePath& path,
+           std::string_view site,
+           std::string_view secret,
+           int changed) {
+  sqlite3* db = Database(path);
+  const auto statement = base::StrCat(
+      {"INSERT INTO logins VALUES('", site, "','", site,
+       "','','user','alice','pass',?,0,0,", base::NumberToString(changed),
+       ")"});
+  Blob(db, statement.c_str(), secret);
+  sqlite3_close(db);
+}
+const parc::importer::Password* Find(const parc::importer::Batch& batch,
+                                     std::string_view site) {
+  for (const auto& password : batch.passwords)
+    if (password.realm == site)
+      return &password;
+  return nullptr;
+}
+void AccountPasswords(const base::FilePath& root,
+                      const parc::importer::Cancellation& stop) {
+  using namespace parc::importer;
+  ReadOptions options;
+  options.family = Family::kChromium;
+  options.source_key = "0123456789abcdef";
+  const auto& key = options.source_key;
+  options.profile_path = Directory(root, "account-passwords");
+  const auto account = options.profile_path.AppendASCII("Login Data For Account");
+  LoginTable(account);
+  Login(account, "https://account.test/", Encrypt("account only", key), 200);
+  auto original = Bytes(account);
+  auto p = ReadChromiumCategory(options, kPasswords, stop);
+  Require(p.success && p.passwords.size() == 1 &&
+              p.passwords[0].password == u"account only",
+          "account passwords alone are imported");
+  Require(Bytes(account) == original, "account password database untouched");
+  const auto local = options.profile_path.AppendASCII("Login Data");
+  LoginTable(local);
+  Login(local, "https://shared.test/", Encrypt("local older", key), 100);
+  Login(local, "https://local.test/", Encrypt("local only", key), 100);
+  Login(local, "https://kept.test/", Encrypt("local newer", key), 300);
+  Login(account, "https://shared.test/", Encrypt("account newer", key), 200);
+  Login(account, "https://kept.test/", Encrypt("account older", key), 200);
+  p = ReadChromiumCategory(options, kPasswords, stop);
+  Require(p.success && p.passwords.size() == 4,
+          "a login saved in both files is imported once");
+  Require(Find(p, "https://shared.test/") && Find(p, "https://kept.test/") &&
+              Find(p, "https://shared.test/")->password == u"account newer" &&
+              Find(p, "https://kept.test/")->password == u"local newer" &&
+              Find(p, "https://local.test/") && Find(p, "https://account.test/"),
+          "the most recently changed copy of a login wins");
+  Login(account, "https://broken.test/", "v20unsupported", 400);
+  p = ReadChromiumCategory(options, kPasswords, stop);
+  Require(p.success && p.passwords.size() == 3 &&
+              !Find(p, "https://account.test/") &&
+              Find(p, "https://shared.test/") &&
+              Find(p, "https://shared.test/")->password == u"local older" &&
+              !p.warnings.empty(),
+          "an unreadable account file only warns");
+  Require(base::DeleteFile(local), "remove local logins");
+  p = ReadChromiumCategory(options, kPasswords, stop);
+  Require(!p.success && p.passwords.empty() && !p.error.empty(),
+          "an unreadable account file alone refuses");
 }
 }
 int main() {
@@ -136,6 +369,8 @@ int main() {
   failed = ReadChromiumCategory(options, kPasswords, stop);
   Require(!failed.success && failed.passwords.empty(),
           "later unsupported encryption publishes no partial passwords");
+  BookmarkStores(temp.GetPath(), stop);
+  AccountPasswords(temp.GetPath(), stop);
   const auto cookies = temp.GetPath().AppendASCII("Cookies");
   db = Database(cookies);
   SQL(db,

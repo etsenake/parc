@@ -14,6 +14,7 @@
 #include "base/task/thread_pool.h"
 #include "base/uuid.h"
 #import "native_import_internal.h"
+#include "parc/importer/import_reader.h"
 namespace parc::importer {
 NSError* ImportError(NSString* message) {
   return [NSError errorWithDomain:@"ParcBrowserImport"
@@ -102,16 +103,17 @@ void AddProfile(ProfilesResult& result,
   if (source->family == 0) {
     if (can("History"))
       p->categories |= PCNativeImportCategoryHistory;
-    if (can("Bookmarks"))
-      p->categories |= PCNativeImportCategoryBookmarks;
+    for (const auto& files :
+         {kChromiumLocalBookmarks, kChromiumAccountBookmarks}) {
+      if (can(files.plain) || can(files.encrypted))
+        p->categories |= PCNativeImportCategoryBookmarks;
+    }
     if (can("Network/Cookies") || can("Cookies"))
       p->categories |= PCNativeImportCategoryCookies;
-    if (can("Login Data"))
+    if (can(kChromiumLogins) || can(kChromiumAccountLogins))
       p->categories |= PCNativeImportCategoryPasswords;
     if (can("Web Data"))
       p->categories |= PCNativeImportCategoryAutofill;
-    // Listing browsers only needs to know a profile has data, so its
-    // preferences are read there only when nothing else would show it.
     std::optional<base::DictValue> prefs;
     if (!listing || p->categories == 0) {
       prefs = JSON(normalized.AppendASCII("Secure Preferences"));
@@ -137,9 +139,9 @@ void AddProfile(ProfilesResult& result,
     if (!p->extensions.empty())
       p->categories |= PCNativeImportCategoryExtensions;
     p->constraints.push_back(
-        "Encrypted cookies, passwords and local payment data may require macOS "
-        "Keychain authorization. Unsupported encryption is reported without "
-        "importing those records.");
+        "Encrypted bookmarks, cookies, passwords and local payment data may "
+        "require macOS Keychain authorization. Unsupported encryption is "
+        "reported without importing those records.");
   } else if (source->family == 1) {
     if (can("History.db"))
       p->categories |= PCNativeImportCategoryHistory;
@@ -185,9 +187,6 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
         AddProfile(result, source, root.AppendASCII(directory),
                    name ? *name : directory, listing);
       }
-    // Listing the user-data root is often blocked until Full Disk Access is
-    // granted. Probe the stable Chromium directory names so Default still
-    // appears as a restricted profile instead of an empty chooser.
     const char* known[] = {
         "Default", "Profile 1", "Profile 2", "Profile 3", "Profile 4", "Profile 5"};
     for (const char* directory : known)
@@ -215,7 +214,6 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
     std::string ini;
     const auto ini_path = root.AppendASCII("profiles.ini");
     if (!base::ReadFileToStringWithMaxSize(ini_path, &ini, 1024 * 1024)) {
-      // Only an existing file can be one macOS withholds.
       result.restricted = base::PathExists(ini_path);
       return result;
     }

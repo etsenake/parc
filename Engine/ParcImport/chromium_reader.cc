@@ -3,13 +3,18 @@
 #include <CommonCrypto/CommonDigest.h>
 #include <array>
 #include <limits>
+#include <map>
 #include <optional>
 #include <set>
+#include <tuple>
+#include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/numerics/checked_math.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "parc/importer/import_reader.h"
 #include "parc/importer/import_snapshot.h"
@@ -49,76 +54,229 @@ std::optional<base::DictValue> ReadJSON(const base::FilePath& file) {
     return std::nullopt;
   return base::JSONReader::ReadDict(json, base::JSON_PARSE_CHROMIUM_EXTENSIONS);
 }
+std::optional<base::DictValue> ReadEncryptedJSON(const base::FilePath& file,
+                                                 std::string_view key) {
+  std::string encrypted;
+  if (!base::ReadFileToStringWithMaxSize(file, &encrypted,
+                                         kMaxJSON + 3 + kCCBlockSizeAES128))
+    return std::nullopt;
+  auto json = Decrypt(encrypted, key);
+  if (!json || json->empty())
+    return std::nullopt;
+  auto dict =
+      base::JSONReader::ReadDict(*json, base::JSON_PARSE_CHROMIUM_EXTENSIONS);
+  std::fill(json->begin(), json->end(), '\0');
+  return dict;
+}
 std::string Column(sqlite3* db,
                    std::string_view table,
                    std::string_view name,
                    std::string_view fallback) {
   return HasColumn(db, table, name) ? std::string(name) : std::string(fallback);
 }
-bool FinishQuery(Statement& query, Batch& batch, const Cancellation& stop) {
+bool FinishQuery(Statement& query,
+                 std::string& error,
+                 const Cancellation& stop) {
   if (Stopped(stop)) {
-    batch.error = "Import was cancelled.";
+    error = "Import was cancelled.";
     return false;
   }
   if (!query.done()) {
-    batch.error = "The source database could not be read completely.";
+    error = "The source database could not be read completely.";
     return false;
   }
   return true;
 }
-bool BookmarkNode(const base::DictValue& node,
-                  const std::string& parent,
-                  const std::string& position,
-                  Batch& batch,
-                  const Cancellation& stop,
-                  int depth) {
-  if (Stopped(stop) || depth > 128 || batch.bookmarks.size() >= kMaxRows)
+constexpr base::TimeDelta kSameSave = base::Minutes(1);
+constexpr const char* kBookmarkRoots[] = {"bookmark_bar", "other", "synced"};
+struct BookmarkTree {
+  std::u16string title;
+  std::string url;
+  bool folder = false;
+  std::vector<BookmarkTree> children;
+};
+using BookmarkRoots =
+    std::array<std::optional<BookmarkTree>, std::size(kBookmarkRoots)>;
+std::optional<base::Time> Modified(const base::FilePath& path) {
+  base::File::Info info;
+  if (!base::GetFileInfo(path, &info) || info.is_directory)
+    return std::nullopt;
+  return info.last_modified;
+}
+bool UsesEncryptedCopy(const base::FilePath& profile,
+                       const ChromiumBookmarkFiles& files) {
+  const auto plain = Modified(profile.AppendASCII(files.plain));
+  const auto encrypted = Modified(profile.AppendASCII(files.encrypted));
+  return encrypted && (!plain || *encrypted - *plain > kSameSave);
+}
+bool ParseBookmark(const base::DictValue& node,
+                   BookmarkTree& tree,
+                   size_t& count,
+                   const Cancellation& stop,
+                   int depth) {
+  if (Stopped(stop) || depth > 128 || ++count > kMaxRows)
     return false;
   const auto* type = node.FindString("type");
   const auto* name = node.FindString("name");
   if (!type || !name)
     return false;
-  const bool folder = *type == "folder";
-  if (!folder && *type != "url")
+  tree.folder = *type == "folder";
+  if (!tree.folder && *type != "url")
     return false;
-  const auto* url = node.FindString("url");
-  if (!folder && (!url || !GURL(*url).is_valid()))
-    return false;
-  Bookmark item;
-  item.id = position;
-  item.parent = parent;
-  item.title = base::UTF8ToUTF16(*name);
-  item.folder = folder;
-  if (url && !folder)
-    item.url = *url;
-  batch.bookmarks.push_back(std::move(item));
-  if (folder) {
-    const auto* children = node.FindList("children");
-    if (!children)
+  tree.title = base::UTF8ToUTF16(*name);
+  if (!tree.folder) {
+    const auto* url = node.FindString("url");
+    if (!url || !GURL(*url).is_valid())
       return false;
-    size_t index = 0;
-    for (const auto& child : *children) {
-      if (!child.is_dict() ||
-          !BookmarkNode(child.GetDict(), position,
-                        position + "/" + base::NumberToString(index++), batch,
-                        stop, depth + 1))
-        return false;
+    tree.url = *url;
+    return true;
+  }
+  const auto* children = node.FindList("children");
+  if (!children)
+    return false;
+  for (const auto& child : *children) {
+    if (!child.is_dict() ||
+        !ParseBookmark(child.GetDict(), tree.children.emplace_back(), count,
+                       stop, depth + 1))
+      return false;
+  }
+  return true;
+}
+bool ParseBookmarkRoots(const base::DictValue& json,
+                        BookmarkRoots& roots,
+                        const Cancellation& stop) {
+  const auto* dict = json.FindDict("roots");
+  if (!dict)
+    return false;
+  size_t count = 0;
+  for (size_t i = 0; i < std::size(kBookmarkRoots); ++i) {
+    const auto* root = dict->FindDict(kBookmarkRoots[i]);
+    if (root && !ParseBookmark(*root, roots[i].emplace(), count, stop, 0))
+      return false;
+  }
+  return true;
+}
+struct BookmarkStore {
+  bool present = false;
+  bool read = false;
+  BookmarkRoots roots;
+  std::string problem;
+};
+BookmarkStore ReadBookmarkStore(const ReadOptions& options,
+                                const ChromiumBookmarkFiles& files,
+                                std::string_view label,
+                                const Cancellation& stop) {
+  BookmarkStore store;
+  const auto plain = options.profile_path.AppendASCII(files.plain);
+  const bool has_plain = Modified(plain).has_value();
+  if (UsesEncryptedCopy(options.profile_path, files)) {
+    store.present = true;
+    auto json = options.source_key.empty()
+                    ? std::nullopt
+                    : ReadEncryptedJSON(
+                          options.profile_path.AppendASCII(files.encrypted),
+                          options.source_key);
+    if (json && ParseBookmarkRoots(*json, store.roots, stop)) {
+      store.read = true;
+      return store;
     }
+    store.problem =
+        options.source_key.empty()
+            ? base::StrCat({label,
+                            " are encrypted, and the browser's encryption key "
+                            "was unavailable."})
+            : base::StrCat({label, " could not be decrypted."});
+    if (!has_plain || Stopped(stop))
+      return store;
+    store.roots = {};
+  }
+  if (!has_plain)
+    return store;
+  store.present = true;
+  auto json = ReadJSON(plain);
+  if (json && ParseBookmarkRoots(*json, store.roots, stop)) {
+    store.read = true;
+    if (!store.problem.empty())
+      store.problem += " An older unencrypted copy was imported instead.";
+    return store;
+  }
+  if (!store.problem.empty())
+    store.problem += " Their older unencrypted copy could not be read either.";
+  else
+    store.problem =
+        json && json->FindDict("roots")
+            ? base::StrCat({label, " contain unsupported or incomplete data."})
+            : base::StrCat({label, " could not be read."});
+  return store;
+}
+void MergeBookmarks(std::vector<BookmarkTree>& into,
+                    std::vector<BookmarkTree> from) {
+  std::map<std::tuple<bool, std::u16string, std::string>, std::vector<size_t>>
+      unmatched;
+  for (size_t i = into.size(); i-- > 0;)
+    unmatched[{into[i].folder, into[i].title, into[i].url}].push_back(i);
+  for (auto& node : from) {
+    auto match = unmatched.find({node.folder, node.title, node.url});
+    if (match == unmatched.end() || match->second.empty()) {
+      into.push_back(std::move(node));
+      continue;
+    }
+    const size_t index = match->second.back();
+    match->second.pop_back();
+    if (node.folder)
+      MergeBookmarks(into[index].children, std::move(node.children));
+  }
+}
+bool EmitBookmark(BookmarkTree& node,
+                  const std::string& parent,
+                  const std::string& id,
+                  Batch& batch,
+                  const Cancellation& stop) {
+  if (Stopped(stop) || batch.bookmarks.size() >= kMaxRows)
+    return false;
+  batch.bookmarks.push_back(
+      {id, parent, std::move(node.title), std::move(node.url), node.folder});
+  for (size_t i = 0; i < node.children.size(); ++i) {
+    if (!EmitBookmark(node.children[i], id,
+                      id + "/" + base::NumberToString(i), batch, stop))
+      return false;
   }
   return true;
 }
 bool ReadBookmarks(const ReadOptions& options,
                    Batch& batch,
                    const Cancellation& stop) {
-  auto json = ReadJSON(options.profile_path.AppendASCII("Bookmarks"));
-  const auto* roots = json ? json->FindDict("roots") : nullptr;
-  if (!roots) {
-    batch.error = "The source bookmarks could not be read.";
+  BookmarkStore account = ReadBookmarkStore(
+      options, kChromiumAccountBookmarks, "The source account bookmarks", stop);
+  BookmarkStore local = ReadBookmarkStore(options, kChromiumLocalBookmarks,
+                                          "The source bookmarks", stop);
+  if (Stopped(stop))
+    return false;
+  if (!account.read && !local.read) {
+    batch.error = local.present     ? local.problem
+                  : account.present ? account.problem
+                                    : "The source bookmarks could not be read.";
     return false;
   }
-  for (const char* key : {"bookmark_bar", "other", "synced"}) {
-    const auto* root = roots->FindDict(key);
-    if (root && !BookmarkNode(*root, "", key, batch, stop, 0)) {
+  BookmarkRoots merged;
+  for (auto* store : {&account, &local}) {
+    if (!store->problem.empty())
+      batch.warnings.push_back(store->problem);
+    if (!store->read)
+      continue;
+    for (size_t i = 0; i < merged.size(); ++i) {
+      auto& root = store->roots[i];
+      if (!root)
+        continue;
+      if (merged[i])
+        MergeBookmarks(merged[i]->children, std::move(root->children));
+      else
+        merged[i] = std::move(root);
+    }
+  }
+  for (size_t i = 0; i < merged.size(); ++i) {
+    if (merged[i] &&
+        !EmitBookmark(*merged[i], "", kBookmarkRoots[i], batch, stop)) {
       batch.error =
           "The source bookmarks contain unsupported or incomplete data.";
       return false;
@@ -149,20 +307,58 @@ bool ReadHistory(sqlite3* db, Batch& batch, const Cancellation& stop) {
     if (GURL(h.url).is_valid() && h.visits >= 0 && h.typed >= 0)
       batch.history.push_back(std::move(h));
   }
-  return FinishQuery(query, batch, stop);
+  return FinishQuery(query, batch.error, stop);
 }
-bool ReadPasswords(sqlite3* db,
-                   const ReadOptions& options,
-                   Batch& batch,
-                   const Cancellation& stop) {
+void Wipe(std::u16string& value) {
+  std::fill(value.begin(), value.end(), u'\0');
+}
+struct Logins {
+  Logins() = default;
+  Logins(const Logins&) = delete;
+  Logins& operator=(const Logins&) = delete;
+  ~Logins() { Drop(); }
+  void Drop() {
+    for (auto& row : rows)
+      Wipe(row.password);
+    rows.clear();
+    changed.clear();
+    warnings.clear();
+  }
+  std::vector<Password> rows;
+  std::vector<int64_t> changed;
+  std::vector<std::string> warnings;
+  std::string error;
+};
+bool ReadLogins(const base::FilePath& path,
+                const ReadOptions& options,
+                bool account,
+                Logins& logins,
+                const Cancellation& stop) {
+  SnapshotDatabase db;
+  if (!db.Open(path)) {
+    logins.error = db.error();
+    return false;
+  }
+  const std::string changed =
+      Column(db.get(), "logins", "date_password_modified",
+             HasColumn(db.get(), "logins", "date_created") ? "date_created"
+                                                           : "0");
   Statement query(
-      db,
+      db.get(),
       "SELECT "
       "signon_realm,origin_url,action_url,username_element,username_value,"
-      "password_element,password_value,scheme,blacklisted_by_user FROM logins");
+      "password_element,password_value,scheme,blacklisted_by_user," +
+          changed + " FROM logins");
   while (query.Step()) {
-    if (Stopped(stop) || batch.passwords.size() >= kMaxRows)
+    if (Stopped(stop)) {
+      logins.error = "Import was cancelled.";
       return false;
+    }
+    if (logins.rows.size() >= kMaxRows) {
+      logins.error =
+          "The source data exceeded supported limits or could not be read.";
+      return false;
+    }
     Password p;
     p.realm = query.Text(0);
     p.url = query.Text(1);
@@ -174,9 +370,11 @@ bool ReadPasswords(sqlite3* db,
     p.blocked = query.Int(8) != 0;
     auto value = Decrypt(query.Blob(6), options.source_key);
     if (!value && !p.blocked) {
-      batch.error =
-          "Some source passwords could not be decrypted. No passwords were "
-          "imported.";
+      logins.error =
+          account ? "Some passwords saved to the source browser's account "
+                    "could not be decrypted, so none of them were imported."
+                  : "Some source passwords could not be decrypted. No "
+                    "passwords were imported.";
       return false;
     }
     if (value) {
@@ -185,12 +383,80 @@ bool ReadPasswords(sqlite3* db,
     }
     if (p.realm.empty() || !GURL(p.url).is_valid() || p.scheme < 0 ||
         p.scheme > 2) {
-      batch.warnings.push_back("An unsupported password record was skipped.");
+      Wipe(p.password);
+      logins.warnings.push_back("An unsupported password record was skipped.");
       continue;
     }
-    batch.passwords.push_back(std::move(p));
+    logins.changed.push_back(query.Int(9));
+    logins.rows.push_back(std::move(p));
   }
-  return FinishQuery(query, batch, stop);
+  return FinishQuery(query, logins.error, stop);
+}
+void MergeLogins(Logins& local, Logins& account, Batch& batch) {
+  using Key = std::tuple<std::string, std::string, std::u16string,
+                         std::u16string, std::u16string>;
+  auto key = [](const Password& p) {
+    return Key(p.realm, p.url, p.username_element, p.username,
+               p.password_element);
+  };
+  batch.passwords = std::move(local.rows);
+  std::vector<int64_t> changed = std::move(local.changed);
+  std::map<Key, size_t> index;
+  for (size_t i = 0; i < batch.passwords.size(); ++i)
+    index.emplace(key(batch.passwords[i]), i);
+  for (size_t i = 0; i < account.rows.size(); ++i) {
+    auto& row = account.rows[i];
+    auto [existing, added] = index.emplace(key(row), batch.passwords.size());
+    if (added) {
+      batch.passwords.push_back(std::move(row));
+      changed.push_back(account.changed[i]);
+    } else if (account.changed[i] >= changed[existing->second]) {
+      Wipe(batch.passwords[existing->second].password);
+      batch.passwords[existing->second] = std::move(row);
+      changed[existing->second] = account.changed[i];
+    } else {
+      Wipe(row.password);
+    }
+  }
+}
+bool ReadPasswords(const ReadOptions& options,
+                   Batch& batch,
+                   const Cancellation& stop) {
+  const auto local_path = options.profile_path.AppendASCII(kChromiumLogins);
+  const auto account_path =
+      options.profile_path.AppendASCII(kChromiumAccountLogins);
+  const bool has_local = base::PathExists(local_path);
+  const bool has_account = base::PathExists(account_path);
+  Logins local, account;
+  if ((has_local || !has_account) &&
+      !ReadLogins(local_path, options, false, local, stop)) {
+    batch.error = std::move(local.error);
+    return false;
+  }
+  if (has_account) {
+    bool read = ReadLogins(account_path, options, true, account, stop);
+    if (read && local.rows.size() + account.rows.size() > kMaxRows) {
+      account.error =
+          "The source data exceeded supported limits or could not be read.";
+      read = false;
+    }
+    if (!read) {
+      if (Stopped(stop) || !has_local) {
+        batch.error = std::move(account.error);
+        return false;
+      }
+      account.Drop();
+      batch.warnings.push_back(
+          base::StrCat({"Passwords saved to the source browser's account were "
+                        "not imported. ",
+                        account.error}));
+    }
+  }
+  for (auto* logins : {&local, &account})
+    for (auto& warning : logins->warnings)
+      batch.warnings.push_back(std::move(warning));
+  MergeLogins(local, account, batch);
+  return !Stopped(stop);
 }
 bool ReadCookies(sqlite3* db,
                  const ReadOptions& options,
@@ -261,7 +527,7 @@ bool ReadCookies(sqlite3* db,
     c.ancestor_cross_site = query.Int(15) != 0;
     batch.cookies.push_back(std::move(c));
   }
-  return FinishQuery(query, batch, stop);
+  return FinishQuery(query, batch.error, stop);
 }
 bool ReadAutofill(sqlite3* db,
                   const ReadOptions& options,
@@ -289,10 +555,9 @@ bool ReadAutofill(sqlite3* db,
       a.use_count = query.Int(4);
       batch.autofill.push_back(std::move(a));
     }
-    if (!FinishQuery(query, batch, stop))
+    if (!FinishQuery(query, batch.error, stop))
       return false;
   }
-  // Current and the immediately preceding Chromium local-address schemas.
   const char* table = HasTable(db, "address_type_tokens")
                           ? "address_type_tokens"
                       : HasTable(db, "local_addresses_type_tokens")
@@ -309,12 +574,11 @@ bool ReadAutofill(sqlite3* db,
       a.kind = Autofill::Kind::kAddress;
       a.fields[base::NumberToString(query.Int(1))] = query.Text16(2);
     }
-    if (!FinishQuery(query, batch, stop))
+    if (!FinishQuery(query, batch.error, stop))
       return false;
     for (auto& [id, address] : addresses)
       batch.autofill.push_back(std::move(address));
   } else if (HasTable(db, "autofill_profiles")) {
-    // Historical Chromium's migration fields map to its stable FieldType IDs.
     const std::vector<std::pair<const char*, int>> fields = {
         {"company_name", 60}, {"street_address", 77}, {"city", 33},
         {"state", 34},        {"zipcode", 35},        {"country_code", 36}};
@@ -332,7 +596,7 @@ bool ReadAutofill(sqlite3* db,
       for (size_t i = 0; i < fields.size(); ++i)
         a.fields[base::NumberToString(fields[i].second)] = query.Text16(i + 1);
     }
-    if (!FinishQuery(query, batch, stop))
+    if (!FinishQuery(query, batch.error, stop))
       return false;
     const std::vector<std::tuple<const char*, const char*, int>> details = {
         {"autofill_profile_names", "first_name", 3},
@@ -354,7 +618,7 @@ bool ReadAutofill(sqlite3* db,
             !it->second.fields.contains(base::NumberToString(type)))
           it->second.fields[base::NumberToString(type)] = q.Text16(1);
       }
-      if (!FinishQuery(q, batch, stop))
+      if (!FinishQuery(q, batch.error, stop))
         return false;
     }
     for (auto& [id, address] : profiles)
@@ -387,7 +651,7 @@ bool ReadAutofill(sqlite3* db,
       std::fill(number->begin(), number->end(), '\0');
       batch.autofill.push_back(std::move(a));
     }
-    if (!FinishQuery(query, batch, stop))
+    if (!FinishQuery(query, batch.error, stop))
       return false;
   }
   return true;
@@ -424,6 +688,10 @@ bool ReadExtensions(const ReadOptions& options,
   return true;
 }
 }  // namespace
+bool ChromiumBookmarksNeedKey(const base::FilePath& profile) {
+  return UsesEncryptedCopy(profile, kChromiumAccountBookmarks) ||
+         UsesEncryptedCopy(profile, kChromiumLocalBookmarks);
+}
 Batch ReadChromiumCategory(const ReadOptions& options,
                            uint32_t category,
                            const Cancellation& stop) {
@@ -440,13 +708,14 @@ Batch ReadChromiumCategory(const ReadOptions& options,
   }
   if (category == kBookmarks)
     batch.success = ReadBookmarks(options, batch, stop);
+  else if (category == kPasswords)
+    batch.success = ReadPasswords(options, batch, stop);
   else if (category == kExtensions)
     batch.success = ReadExtensions(options, batch, stop);
   else {
-    const char* file = category == kHistory     ? "History"
-                       : category == kPasswords ? "Login Data"
-                       : category == kAutofill  ? "Web Data"
-                                                : nullptr;
+    const char* file = category == kHistory    ? "History"
+                       : category == kAutofill ? "Web Data"
+                                               : nullptr;
     base::FilePath path;
     if (category == kCookies) {
       path = options.profile_path.AppendASCII("Network/Cookies");
@@ -466,9 +735,6 @@ Batch ReadChromiumCategory(const ReadOptions& options,
     switch (category) {
       case kHistory:
         batch.success = ReadHistory(db.get(), batch, stop);
-        break;
-      case kPasswords:
-        batch.success = ReadPasswords(db.get(), options, batch, stop);
         break;
       case kCookies:
         batch.success = ReadCookies(db.get(), options, batch, stop);

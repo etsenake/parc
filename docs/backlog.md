@@ -52,10 +52,9 @@ Finish assigned work first; explicit deferrals remain deferred.
 
 ## Data and credentials
 
-- **DATA15:** direct encrypted Chromium-family import supports the macOS `v10`
-  format; Safari uses its default history/bookmarks store and explicit password
-  CSV; Firefox imports history/bookmarks/forms. Additional formats and modern
-  Safari Profile stores need reader support before being offered.
+- **DATA15:** Safari's own browsing-data export file, a Firefox step for an
+  exported password file, Safari's separate Profile stores and other import
+  formats need reader support before being offered.
   [Import capabilities](../Engine/ParcImport/README.md#reader-and-writer-boundary).
 
 ## Performance
