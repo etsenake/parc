@@ -496,6 +496,28 @@ private final class ThemeInputEvent: NSEvent {
         NSEvent.enterExitEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
                                eventNumber: 0, trackingNumber: 0, userData: nil)!
     }
+    static func onScreenColumn(_ view: NSView, x: CGFloat) -> [UInt8] {
+        view.wantsLayer = true
+        let layer = view.layer!
+        layer.setNeedsDisplay(); layer.displayIfNeeded()
+        let width = Int(view.bounds.width * 2), height = Int(view.bounds.height * 2)
+        let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.scaleBy(x: 2, y: 2)
+        layer.render(in: context)
+        let data = context.data!.assumingMemoryBound(to: UInt8.self)
+        return (0..<height).map { data[$0 * width * 4 + Int(x * 2) * 4 + 3] }
+    }
+    static func shadowSides(_ column: [UInt8], bottomFirst: Bool? = nil) -> (nearEdge: Int, farEdge: Int, edgeClear: Bool, bottomFirst: Bool) {
+        guard let first = column.firstIndex(where: { $0 > 250 }), let last = column.lastIndex(where: { $0 > 250 }) else {
+            return (0, 0, false, bottomFirst ?? true)
+        }
+        let atStart = bottomFirst ?? (first < column.count - 1 - last)
+        func shadow(_ rows: [UInt8]) -> Int { rows.prefix { $0 > 2 && $0 <= 250 }.count }
+        let before = shadow(Array(column[..<first].reversed())), after = shadow(Array(column[(last + 1)...]))
+        let edge = atStart ? column.first! : column.last!
+        return atStart ? (before, after, edge <= 2, true) : (after, before, edge <= 2, false)
+    }
     static func markerLayer(_ view: NSView) -> NSView {
         view.subviews.first { $0.identifier?.rawValue == "ThemeNoiseMarker" }!
     }
@@ -557,15 +579,26 @@ private final class ThemeInputEvent: NSEvent {
         dial.mouseUp(with: mouse(.leftMouseUp, dial, NSPoint(x: centre.x + 5, y: centre.y)))
         expect(patch(snapshot(layer), layer, marker) == restingMarker, "releasing over the knob settles the marker")
 
-        func shadowBeyondTopTip(hovered: Bool) -> CGFloat {
-            var theme = SpaceTheme(); theme.noise = 0
-            let view = make(theme), dial = control("Theme texture and noise", view), layer = markerLayer(view)
-            if hovered { dial.mouseMoved(with: mouse(.mouseMoved, dial, NSPoint(x: dial.bounds.midX - 30, y: dial.bounds.midY))) }
-            return ink(snapshot(layer), layer, NSPoint(x: layer.bounds.midX, y: 8 - 1.5))
+        func bottomMarker(hovered: Bool) -> (column: [UInt8], slider: [UInt8]) {
+            var theme = SpaceTheme(); theme.noise = 0.5; theme.intensity = 0.5
+            let view = make(theme), dial = control("Theme texture and noise", view), slider = control("Theme intensity", view)
+            if hovered {
+                dial.mouseMoved(with: mouse(.mouseMoved, dial, NSPoint(x: dial.bounds.midX - 30, y: dial.bounds.midY)))
+                slider.mouseEntered(with: edge(.mouseEntered))
+            }
+            let layer = markerLayer(view)
+            return (onScreenColumn(layer, x: layer.bounds.midX), onScreenColumn(slider, x: 4 + 16 + 208 * 0.5))
         }
-        let restingShadow = shadowBeyondTopTip(hovered: false), swollenShadow = shadowBeyondTopTip(hovered: true)
-        expect(restingShadow > 0.005 && swollenShadow > restingShadow,
-               "with the marker at the top, its shadow draws past the dial's edge, at rest and deeper when swollen")
+        let resting = bottomMarker(hovered: false), swollen = bottomMarker(hovered: true)
+        let restingSides = shadowSides(resting.column), swollenSides = shadowSides(swollen.column)
+        expect(restingSides.nearEdge >= 3 && restingSides.nearEdge > restingSides.farEdge,
+               "on screen, the marker parked at the bottom casts its shadow down past its tip")
+        expect(swollenSides.nearEdge > restingSides.nearEdge && swollenSides.edgeClear,
+               "the swollen marker's deeper shadow still fits inside the overlay's room below the dial")
+        for (column, state) in [(resting.slider, "resting"), (swollen.slider, "swollen")] {
+            let bottomFirst = restingSides.bottomFirst, sides = shadowSides(column, bottomFirst: bottomFirst)
+            expect(sides.nearEdge > sides.farEdge, "on screen, the \(state) slider thumb's shadow falls below it")
+        }
 
         func dotInk(_ value: Double, step: Int) -> CGFloat {
             var theme = SpaceTheme(); theme.noise = value

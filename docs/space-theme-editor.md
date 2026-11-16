@@ -106,4 +106,7 @@ drag. The anchor passes every click and drag through to the dial.
 
 Theme rendering/input/appearance/Undo components cover actual control constants,
 button reversal, disabled drawing, cancellation, native parent identity and
-palette propagation.
+palette propagation. On screen the slider thumb's and dial marker's shadows fall
+downward like Parc's other control shadows. An offscreen `cacheDisplay` render
+draws NSShadow offsets in these flipped views upward instead, so shadow-direction
+checks render through the view's layer, as the screen does.
