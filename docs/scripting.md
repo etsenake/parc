@@ -6,6 +6,8 @@ Parc bundles its own `Parc.sdef` and enables the Cocoa scripting interface throu
 
 The application exposes original normal and incognito browser windows in front-to-back order, including Chromium-created windows after their original page has been adopted and normal link-routing destinations. Each window exposes its accessible tabs and profile-bound Spaces, the actual focused tab (including a focused split child), active Space, identity, title and native window state. A tab exposes its identity, title, URL, loading state and sidebar location (`topApp`, `pinned`, or `unpinned`). A Space exposes its identity, title and tabs, including its profile's Favorites. Unloaded tabs return their saved model metadata; a live page supplies its actual URL, title and loading state only when its original native owner and profile match.
 
+AppleScript's standard `properties` returns a tab's identity, title, URL, loading state, location and class as one record, so `properties of every tab` lists a window's tabs in one request. A Space can also be addressed by its title, as in `tell space "Work" to focus`, which uses the first Space in the window's order with that title. Both come from Cocoa's built-in scripting rather than extra dictionary entries: Cocoa gives every window, tab and Space the standard `properties`, and a by-name reference matches `title` because it carries the standard name code. Inside a `tell application "Parc"` block, a script reads `title`, `URL`, `id` and `location` straight from these records, the way scripts written for Arc list tabs.
+
 A window or Space can make a tab with an absolute `URL` property. A tab supports `select`, `go back`, `go forward`, `reload`, `stop`, `close`, `execute javascript` and URL assignment. A Space supports `focus`. The application can make a normal or incognito window, and windows support `close`. Window state and sidebar location are read-only. Creation accepts no replacement or arbitrary collection mutation. Private windows are represented as incognito, while mixed-context, popup and auxiliary windows are not represented as normal browser windows. A native reservation without an adopted live Browser is unavailable. Requests for an unsupported window mode fail before creation.
 
 For example, these commands use the bundled dictionary (the examples do not run automatically):
@@ -18,6 +20,8 @@ tell application "Parc"
         select newPage
     end tell
     get URL of active tab of browserWindow
+    get properties of every tab of browserWindow
+    tell space "Work" of browserWindow to focus
 end tell
 ```
 

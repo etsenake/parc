@@ -185,9 +185,10 @@ what users see or hear today, and each must keep it that way.
 
 ## Deferred
 
-- **SCRIPT10–SCRIPT13:** broader scripting commands, error contexts, collection
-  properties and window/sidebar mutation remain deferred. Existing automation
-  works. [Scripting](scripting.md).
+- **SCRIPT10–SCRIPT13:** broader scripting commands, error contexts, exact
+  collection order and property fidelity, and window/sidebar mutation remain
+  deferred. Reading a tab's properties as one record and addressing a Space by
+  its title already work. [Scripting](scripting.md).
 - **Cross-window cases explicitly deferred:** automatic return to a non-key
   window can leave a blank placeholder; failed close after transfer can leave
   the tab selected; foreign-window split closing is restricted; Close-Peek Undo

@@ -16,6 +16,7 @@ cat > "$check_bundle/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 xcrun swiftc -parse-as-library \
+  "$repo_root"/Sources/ParcCore/*.swift \
   "$repo_root/Sources/ParcApp/BrowserScripting.swift" \
   "$repo_root/tests/Scripting/main.swift" \
   -o "$check_bundle/MacOS/ScriptingChecks"

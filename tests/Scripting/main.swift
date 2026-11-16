@@ -24,8 +24,10 @@ import AppKit
     var closeCallback: ((Bool) -> Void)?
     var immediateClose: Bool?
     var focused: UUID?
-    var scriptingSpaces: [ScriptSpaceRecord] { [ScriptSpaceRecord(id: space, profileID: profile, title: "Space")] }
-    var scriptingActiveTabID: UUID? { scriptingTabs.first?.id }
+    var extraSpaces: [ScriptSpaceRecord] = []
+    var scriptingSpaces: [ScriptSpaceRecord] { [ScriptSpaceRecord(id: space, profileID: profile, title: "Space")] + extraSpaces }
+    var activeTabID: UUID?
+    var scriptingActiveTabID: UUID? { activeTabID ?? scriptingTabs.first?.id }
     var scriptingActiveSpaceID: UUID { space }
     func scriptingTabs(in space: UUID, profile: UUID) -> [ScriptTabRecord] {
         guard self.space == space, self.profile == profile else { return [] }
@@ -251,6 +253,56 @@ final class ObservedCommand: NSScriptCommand {
         expect(window.mode.isEmpty, "retired or no-longer-normal owner is not reported as normal")
         expect((try? BrowserScriptError.url("https:///")) == nil, "network URLs need host")
         expect((try? BrowserScriptError.url("parc://easel/test")) == nil, "no unimplemented local document conversion")
+        func fourCharacterCode(_ text: String) -> FourCharCode { text.utf8.reduce(0) { ($0 << 8) | FourCharCode($1) } }
+        func reference(_ want: String, _ form: String, _ data: NSAppleEventDescriptor, in container: NSAppleEventDescriptor) -> NSAppleEventDescriptor {
+            let record = NSAppleEventDescriptor.record()
+            record.setDescriptor(NSAppleEventDescriptor(typeCode: fourCharacterCode(want)), forKeyword: fourCharacterCode("want"))
+            record.setDescriptor(NSAppleEventDescriptor(enumCode: fourCharacterCode(form)), forKeyword: fourCharacterCode("form"))
+            record.setDescriptor(data, forKeyword: fourCharacterCode("seld"))
+            record.setDescriptor(container, forKeyword: fourCharacterCode("from"))
+            return record.coerce(toDescriptorType: fourCharacterCode("obj "))!
+        }
+        func property(_ code: String, of container: NSAppleEventDescriptor) -> NSAppleEventDescriptor {
+            reference("prop", "prop", NSAppleEventDescriptor(typeCode: fourCharacterCode(code)), in: container)
+        }
+        func perform(_ event: String, on receiver: NSAppleEventDescriptor) -> Any? {
+            let command = NSScriptSuiteRegistry.shared().commandDescription(withAppleEventClass: fourCharacterCode(String(event.prefix(4))),
+                andAppleEventCode: fourCharacterCode(String(event.suffix(4))))!.createCommandInstance()
+            command.receiversSpecifier = NSScriptObjectSpecifier(descriptor: receiver)
+            return command.execute()
+        }
+        func field(_ record: NSAppleEventDescriptor?, _ code: String) -> NSAppleEventDescriptor? { record?.forKeyword(fourCharacterCode(code)) }
+        let listed = FakeOwner()
+        let work = ScriptSpaceRecord(id: UUID(), profileID: listed.profile, title: "Work")
+        listed.extraSpaces = [work]
+        let docs = ScriptTabRecord(id: UUID(), profileID: listed.profile, title: "Docs", url: "https://example.test/docs", loading: true, location: "pinned")
+        let news = ScriptTabRecord(id: UUID(), profileID: listed.profile, title: "News", url: "https://example.test/news", loading: false, location: "topApp")
+        listed.scriptingTabs = [docs, news]
+        delegate.owners.append(listed)
+        let listedWindow = reference("WiND", "ID  ", NSAppleEventDescriptor(string: listed.scriptingID.uuidString), in: .null())
+        var all = fourCharacterCode("all ")
+        let everyTab = reference("tAbB", "indx", NSAppleEventDescriptor(descriptorType: fourCharacterCode("abso"), bytes: &all, length: 4)!, in: listedWindow)
+        let everyRecord = perform("coregetd", on: property("pALL", of: everyTab)) as? NSAppleEventDescriptor
+        let docsRecord = everyRecord?.atIndex(1), newsRecord = everyRecord?.atIndex(2)
+        expect(everyRecord?.descriptorType == fourCharacterCode("list") && everyRecord?.numberOfItems == 2, "properties of every tab returns one record per tab")
+        expect(field(docsRecord, "ID  ")?.stringValue == docs.id.uuidString && field(docsRecord, "pnam")?.stringValue == "Docs"
+            && field(docsRecord, "URL ")?.stringValue == docs.url && field(docsRecord, "loca")?.stringValue == "pinned"
+            && field(docsRecord, "pcls")?.typeCodeValue == fourCharacterCode("tAbB"), "tab record carries id, title, URL, location and class under the dictionary codes")
+        expect(field(docsRecord, "ldng")?.descriptorType == fourCharacterCode("bool") && field(docsRecord, "ldng")?.booleanValue == true
+            && field(newsRecord, "ldng")?.booleanValue == false, "tab record reports loading as a Boolean")
+        expect(field(newsRecord, "pnam")?.stringValue == "News" && field(newsRecord, "loca")?.stringValue == "topApp", "tab records keep window tab order")
+        listed.activeTabID = news.id
+        let activeRecord = perform("coregetd", on: property("pALL", of: property("acTa", of: listedWindow))) as? NSAppleEventDescriptor
+        expect(activeRecord?.descriptorType == fourCharacterCode("reco") && field(activeRecord, "ID  ")?.stringValue == news.id.uuidString
+            && field(activeRecord, "pnam")?.stringValue == "News", "properties of active tab describes the focused tab")
+        expect(["WiND", "tAbB", "sPaC"].allSatisfy {
+            NSScriptSuiteRegistry.shared().classDescription(withAppleEventCode: fourCharacterCode($0))?.key(withAppleEventCode: fourCharacterCode("pALL")) == "scriptingProperties"
+        }, "windows, tabs and Spaces all answer the standard properties")
+        _ = perform("SpaFocus", on: reference("sPaC", "name", NSAppleEventDescriptor(string: "Work"), in: listedWindow))
+        expect(listed.focused == work.id, "a Space addressed by its title receives focus")
+        listed.focused = nil
+        _ = perform("SpaFocus", on: reference("sPaC", "name", NSAppleEventDescriptor(string: "Missing"), in: listedWindow))
+        expect(listed.focused == nil, "an unknown Space title focuses nothing")
         print("\(checks) scripting component assertions passed; no browser or Apple Event dispatch.")
     }
 }
