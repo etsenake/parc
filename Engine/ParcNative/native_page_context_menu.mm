@@ -50,7 +50,6 @@ namespace parc {
 namespace {
 constexpr int kAddImageToEasel = 26500;
 constexpr int kOpenLinkInSplitView = kAddImageToEasel + 1;
-// render_view_context_menu.cc kMaxOpenLinkInProfileItems (file-local there).
 constexpr int kProfileLinkCommands = 100;
 struct PageLease {
   base::WeakPtr<content::WebContents> contents;
@@ -77,8 +76,8 @@ PageLease Lease(RenderViewContextMenu& menu) {
                                       : content::WeakDocumentPtr(),
           page.nativeView.window};
 }
-}  // namespace
-}  // namespace parc
+}
+}
 
 @interface PCNativeContextImage () {
  @public
@@ -103,8 +102,6 @@ PageLease Lease(RenderViewContextMenu& menu) {
 - (BOOL)isValid { return _lease.Valid(true); }
 @end
 
-// Preserve MenuControllerCocoa's real target, validation and native event flags.
-// Only the source-page lease is added; commands are never reconstructed.
 @interface PCPageMenuTarget : NSObject <NSUserInterfaceValidations>
 - (instancetype)initWithItem:(NSMenuItem*)item controller:(MenuControllerCocoa*)controller
                        lease:(parc::PageLease)lease;
@@ -165,9 +162,6 @@ void DeliverImage(PageLease lease, NSURL* source, NSString* title,
            source:source title:title lease:std::move(lease) error:nil];
   [observer nativePage:page addContextImageToEasel:image];
 }
-// Local Easel export is subject to the actual copy/content-analysis policy.
-// A denied/replaced payload never becomes a local asset, and this operation
-// never changes the user's clipboard.
 void CheckImagePolicy(PageLease lease, NSURL* source, NSString* title,
     mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame> remote,
     const SkBitmap& bitmap) {
@@ -216,10 +210,15 @@ constexpr int kOmittedContextCommands[] = {
     IDC_CONTENT_CONTEXT_GLIC, IDC_CONTENT_CONTEXT_RELOAD_GLIC, IDC_CONTENT_CONTEXT_ARCHIVE_GLIC,
     IDC_CONTENT_CONTEXT_GLICSHAREIMAGE, IDC_CONTENT_CONTEXT_SEARCHLENSFORVIDEOFRAME,
     IDC_CONTENT_CONTEXT_SEARCHWEBFORVIDEOFRAME, IDC_CONTENT_CONTEXT_PARTIAL_TRANSLATE};
+bool ShownAsPeek(PCNativePage* page) {
+  PCNativeBrowserWindow* owner = [PCNativeBrowserApplication ownerForPage:page];
+  id<PCNativeBrowserWindowClient> client = owner.client;
+  return [client respondsToSelector:@selector(nativeBrowser:isPeekPage:)] &&
+      [client nativeBrowser:owner isPeekPage:page];
+}
 void RemoveCommand(ui::SimpleMenuModel& model, int command) {
   if (auto index = model.GetIndexOfCommandId(command)) model.RemoveItemAt(*index);
 }
-// Removal must not leave leading, trailing or doubled separators.
 void NormalizeSeparators(ui::SimpleMenuModel& model) {
   for (size_t i = model.GetItemCount(); i-- > 0;) {
     if (model.GetTypeAt(i) != ui::MenuModel::TYPE_SEPARATOR) continue;
@@ -238,8 +237,6 @@ class ContextObserver final : public RenderViewContextMenuObserver {
     for (int command = IDC_OPEN_LINK_IN_PROFILE_FIRST; command < IDC_OPEN_LINK_IN_PROFILE_FIRST + kProfileLinkCommands; ++command)
       RemoveCommand(model, command);
     RemoveCommand(model, IDC_CONTENT_CONTEXT_TRANSLATE);
-    // Image search is always the plain "Search ‹engine› for Image" item
-    // (IDC 50124, IDS_CONTENT_CONTEXT_SEARCHWEBFORIMAGE), never Lens, no icon.
     for (int command : {IDC_CONTENT_CONTEXT_SEARCHLENSFORIMAGE, IDC_CONTENT_CONTEXT_SEARCHWEBFORIMAGE}) {
       auto index = model.GetIndexOfCommandId(command);
       if (!index) continue;
@@ -259,7 +256,7 @@ class ContextObserver final : public RenderViewContextMenuObserver {
     if (!anchor) anchor = model.GetIndexOfCommandId(IDC_CONTENT_CONTEXT_OPENLINKNEWTAB);
     if (!params.link_url.is_empty() && anchor && browser &&
         browser->GetType() == BrowserWindowInterface::TYPE_NORMAL && page && !page.embedded &&
-        !page.peekParentPage &&
+        !ShownAsPeek(page) &&
         [page.observer respondsToSelector:@selector(nativePage:openLinkInSplitView:)]) {
       split_ = true;
       model.InsertItemAt(*anchor + 1, kOpenLinkInSplitView, u"Open Link in Split View");
@@ -316,8 +313,6 @@ class ContextObserver final : public RenderViewContextMenuObserver {
     auto* renderer = remote.get();
     NSURL* source = [NSURL URLWithString:base::SysUTF8ToNSString(PublicInternalURL(menu_->params().page_url).spec())];
     NSString* title = base::SysUTF16ToNSString(lease_.contents->GetTitle());
-    // Send on the exact menu frame before any next context-node request.
-    // The remote stays alive until this reply; no URL fetch or pasteboard use.
     renderer->RequestBitmapForContextNode(base::BindOnce(
         &CheckImagePolicy, lease_, source, title, std::move(remote)));
   }
@@ -368,7 +363,7 @@ void GuardItems(NSMenu* menu, MenuControllerCocoa* controller, PageLease lease,
     }
   }
 }
-}  // namespace
+}
 void RegisterNativePageContextMenu() {
   parc_hooks::SetNativePageContextMenu(&ShowNativePageContextMenu);
 }
@@ -393,9 +388,7 @@ bool ShowNativePageContextMenu(RenderViewContextMenu& menu, NSView* parent,
   NSPoint point = NSMakePoint(params.x, NSHeight(parent.bounds) - params.y);
   point = [parent convertPoint:point toView:nil];
   NSEvent* event = ui::EventForPositioningContextMenuRelativeToWindow(point, parent.window);
-  // Chromium's helper supplies the native nested-loop/application-event scope.
-  // Neither menu nor destination may be touched after a command destroys it.
   ui::ShowContextMenu(controller.menu, event, parent, true);
   return true;
 }
-}  // namespace parc
+}

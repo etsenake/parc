@@ -183,7 +183,9 @@ empty/repeated separators are removed.
 Open Link in Split View uses the original source page and split owner to insert
 a pane after it. It requires an eligible HTTP(S) link in a normal browser with
 capacity; a fifth pane reports **Cannot Add New Pane**. Peek, embedded Easel and
-popup owners do not offer this context-menu route.
+popup owners do not offer this context-menu route. The menu asks the window
+whether the page is showing as a Peek right now (`isPeekPage`), so a Peek
+expanded or added to a split offers it like any other tab.
 
 ### Split View from link clicks
 

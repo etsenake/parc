@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 761,
+  "version": 762,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -339,7 +339,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "parc/native/native_appkit_bridge.h",
-      "sha256": "acaf6c20e29b88b0addca8adb60061f257941d4fe3ea7e021880142f6ffae5a8"
+      "sha256": "95c8f14b83cabdb5e25031cb7611dda792a43badcf2093e1751513108a915e78"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -1009,7 +1009,7 @@
     {
       "source": "Engine/ParcNative/native_page_context_menu.mm",
       "target": "parc/native/native_page_context_menu.mm",
-      "sha256": "b68ef5f47dd6de0c46104db000964ef020aa6e0b234e3989029f59c2a652f432"
+      "sha256": "a99d720eb3fd30151e6328f536d45a9ece17f26ae0ea61908d7ac3e55bd87f6d"
     },
     {
       "source": "Engine/ParcNative/native_blocked_popups.mm",

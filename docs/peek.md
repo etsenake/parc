@@ -82,6 +82,12 @@ A page entering tab fullscreen is promoted through this same transaction first.
 New tabs created from Peek retain its parent tab as referrer. Orphan-preservation
 promotion has its separate source-Space policy.
 
+A promoted page is an ordinary tab from then on. The engine's creation marker
+only hands a new page's parent to the window while it adopts the Peek; after
+that the context menu, link routing, the hover capsule, page tools and swipe
+targets ask the window what it is showing (`isPeekPage`,
+`canNavigatePeekLinkFrom` and its selected and visible pages).
+
 ## Open in current Space command
 
 Open in [Space] is a menu/Shortcuts command with Command-O by default and Use Both

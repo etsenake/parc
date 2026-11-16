@@ -671,6 +671,9 @@ NS_SWIFT_UI_ACTOR
   canNavigatePeekLinkFromPage:(PCNativePage*)page
     NS_SWIFT_NAME(nativeBrowser(_:canNavigatePeekLinkFrom:));
 - (BOOL)nativeBrowser:(PCNativeBrowserWindow*)browser
+  isPeekPage:(PCNativePage*)page
+    NS_SWIFT_NAME(nativeBrowser(_:isPeekPage:));
+- (BOOL)nativeBrowser:(PCNativeBrowserWindow*)browser
   shouldOpenNewPageInPeekFrom:(PCNativePage*)page targetURL:(NSURL*)url
     NS_SWIFT_NAME(nativeBrowser(_:shouldOpenNewPageInPeekFrom:targetURL:));
 - (BOOL)nativeBrowser:(PCNativeBrowserWindow*)browser
