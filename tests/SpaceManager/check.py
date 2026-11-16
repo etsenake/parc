@@ -38,6 +38,8 @@ names = """ParcDialog.swift
 ParcMenuColors.swift
 SidebarBannerHost.swift
 AutoArchiveEducationView.swift
+BlockedContentSign.swift
+BlockedPageContent.swift
 BoxOfThingsIcon.swift
 CaptureIndicatorPresentation.swift
 CaptureLibraryStore.swift
@@ -78,6 +80,7 @@ SidebarLibraryEntry.swift
 SidebarMotionController.swift
 SidebarMoveAttentionView.swift
 SidebarOutline.swift
+SidebarPinnedHeader.swift
 SidebarPreviewPreferences.swift
 SidebarPlusButtonFace.swift
 SidebarPlusMenu.swift

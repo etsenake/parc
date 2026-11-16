@@ -51,6 +51,7 @@ struct BrowserSpace: Codable, Identifiable, Equatable {
     var theme: SpaceTheme
     var profileID: UUID
     var autoArchiveHours: Double?
+    var pinnedCollapsed = false
 
     init(id: UUID, name: String, symbol: String, color: String, profileID: UUID) {
         self.id = id; self.title = name.isEmpty ? nil : name
@@ -58,7 +59,7 @@ struct BrowserSpace: Codable, Identifiable, Equatable {
         theme = .singleColor(ThemeColor(hex: color) ?? ThemeColor(hex: "B9B5D4")!)
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, title, symbol, customIcon, theme, color, profileID, autoArchiveHours }
+    private enum CodingKeys: String, CodingKey { case id, name, title, symbol, customIcon, theme, color, profileID, autoArchiveHours, pinnedCollapsed }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -71,6 +72,7 @@ struct BrowserSpace: Codable, Identifiable, Equatable {
         profileID = try c.decode(UUID.self, forKey: .profileID)
         autoArchiveHours = (try? c.decodeIfPresent(Double.self, forKey: .autoArchiveHours))
             .flatMap { $0 }.flatMap { AutoArchiveInterval(rawValue: $0)?.rawValue }
+        pinnedCollapsed = (try? c.decodeIfPresent(Bool.self, forKey: .pinnedCollapsed)) ?? false
         if c.contains(.theme) {
             theme = try c.decode(SpaceTheme.self, forKey: .theme)
         } else {
@@ -90,12 +92,13 @@ struct BrowserSpace: Codable, Identifiable, Equatable {
         try c.encode(theme, forKey: .theme)
         try c.encodeIfPresent(customIcon, forKey: .customIcon)
         try c.encodeIfPresent(autoArchiveHours, forKey: .autoArchiveHours)
+        if pinnedCollapsed { try c.encode(true, forKey: .pinnedCollapsed) }
     }
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.title == rhs.title && lhs.name == rhs.name
             && lhs.symbol == rhs.symbol && lhs.customIcon == rhs.customIcon
             && lhs.theme == rhs.theme && lhs.profileID == rhs.profileID
-            && lhs.autoArchiveHours == rhs.autoArchiveHours
+            && lhs.autoArchiveHours == rhs.autoArchiveHours && lhs.pinnedCollapsed == rhs.pinnedCollapsed
     }
     mutating func updateDisplayName(position: Int) {
         let placeholder = "Space \(position + 1)"
@@ -5066,6 +5069,7 @@ final class BrowserStore: ObservableObject {
         var space = originalSpace
         space.theme = savedTheme(of: originalSpace)
         space.id = UUID(); space.name = profile.name; space.title = profile.name; space.symbol = "circle.fill"; space.profileID = profile.id
+        space.pinnedCollapsed = false
         state.profiles.append(profile); state.spaces.append(space)
         do { try save() } catch { state = previous; throw error }
         changed()
@@ -5087,7 +5091,7 @@ final class BrowserStore: ObservableObject {
         let previous = state
         space.theme = savedTheme(of: space)
         space.id = UUID(); space.name = profile.name; space.title = profile.name; space.symbol = "circle.fill"
-        space.profileID = profile.id
+        space.profileID = profile.id; space.pinnedCollapsed = false
         state.spaces.append(space)
         do { try save() } catch { state = previous; throw error }
         changed()

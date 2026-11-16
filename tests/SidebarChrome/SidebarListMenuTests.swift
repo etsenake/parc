@@ -84,7 +84,7 @@ import AppKit
             case .sectionDivider: entries.append(.init(key: "divider", content: divider, row: slot.row))
             case .newTab: entries.append(.init(key: "newTab", content: newTab, row: slot.row))
             case .todayItem: entries.append(.item(.tab(UUID()), content: todayRows.next()!, depth: 0, in: nil))
-            case .privateHeading: break
+            case .privateHeading, .pinnedSectionHeader: break
             }
         }
         list.reload(entries)

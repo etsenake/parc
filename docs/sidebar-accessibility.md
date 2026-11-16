@@ -80,8 +80,11 @@ long lists would put all those views into AppKit's layout engine.
 - A folder's `AXDisclosing` setter invokes its toggle without the pointer
   triangle's selection reset. Reconciliation removes only selections hidden
   by collapse.
-- The empty pinned header is expandable but childless. It stays collapsed;
-  setting disclosure runs no action and creates no rows.
+- An empty Pinned's header band is expandable but childless. It stays
+  collapsed; setting disclosure runs no action and creates no rows. With pinned
+  items the visible Pinned header row reports whether the section is folded,
+  and setting disclosure folds or unfolds it. Pinned rows stay its siblings at
+  level 0, and the header itself is a pressable disclosure triangle.
 - The outline exposes rows, visible rows, selected rows and one column.
   Selection includes the appropriate multi-selection or single selection and
   active item, filtered to visible model entries.

@@ -38,6 +38,11 @@ struct SidebarOutlineEntry {
     static func pinnedHeader(_ key: AnyHashable) -> Self {
         Self(key: key, content: nil, row: SidebarChromeLayout.TablistSlot.pinnedHeader.row, expandableWithoutChildren: true)
     }
+
+    static func pinnedHeader(_ key: AnyHashable, content: NSView, expanded: Bool, toggle: @escaping () -> Void) -> Self {
+        Self(key: key, content: content, row: SidebarChromeLayout.TablistSlot.pinnedSectionHeader.row,
+             expanded: expanded, toggle: toggle)
+    }
 }
 
 @MainActor
@@ -302,7 +307,7 @@ final class SidebarOutlineView: NSView {
         return frames
     }
 
-    func animateDisclosure(from previous: [AnyHashable: NSRect], duration: CFTimeInterval = 0.25) {
+    func animateDisclosure(from previous: [AnyHashable: NSRect], duration: CFTimeInterval = 0.25, fadesAppearing: Bool = false) {
         guard window != nil, !previous.isEmpty, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         if let visible = visibleArea {
             var held: [SidebarOutlineRow] = []
@@ -337,7 +342,7 @@ final class SidebarOutlineView: NSView {
                 slide.fromValue = delta; slide.toValue = 0
                 slide.isAdditive = true; slide.duration = duration; slide.timingFunction = timing
                 layer.add(slide, forKey: "parc.disclosure.slide")
-            } else if row.disclosingRow != nil {
+            } else if row.disclosingRow != nil || fadesAppearing {
                 let fade = CABasicAnimation(keyPath: "opacity")
                 fade.fromValue = 0; fade.toValue = 1
                 fade.duration = duration; fade.timingFunction = timing

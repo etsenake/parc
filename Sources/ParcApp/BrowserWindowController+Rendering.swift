@@ -15,6 +15,7 @@ extension BrowserWindowController {
         let presentedRevision = store.stateRevision
         let previousSession = sessionRecord
         presentation.reconcile(sharedState) { ownership.canUse($0, owner: presentationID) }
+        clearEmptyPinnedFolds(sharedState)
         if sessionRecord != previousSession { onSessionRecordChange?() }
         if let libraryView, libraryView.profileID != activeProfileID { closeLibrary(restoreFocus: false) }
         let state = presentation.projected(sharedState)

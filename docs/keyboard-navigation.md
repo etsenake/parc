@@ -20,7 +20,7 @@ then Today. A split is one item. Current split ownership takes precedence over
 saved overlapping layouts. Archived, foreign-profile and unavailable native
 pages are ineligible; an unavailable split member does not silently break the
 split into individual destinations. A held chord repeats and wraps. No other
-item means a consumed, silent refusal.
+item means a consumed, silent refusal. Folding Pinned doesn't change this order.
 
 `TabSelectionHistory.isEnabled` is false: its commands are not registered and
 no history stack is recorded. Saved custom bindings remain stored for possible
@@ -343,7 +343,7 @@ components. Full Swift typechecking is the iteration check; finished material
 Swift work also needs whole-module SIL under [the working contract](../AGENTS.md).
 
 The [command-bar guide](command-bar.md#checks-and-remaining-work)
-owns the remaining Restore Data and Pinned-section requests.
+owns the remaining Restore Data request.
 
 Frame-focus changes invalidate pending page shortcuts through a Parc-owned
 subscription registry, at the focused-frame change itself. Each page owns its

@@ -15,11 +15,14 @@ enum SidebarKeyboardNavigation {
     }
 
     static func items(state: BrowserState, spaceID: UUID, selected: [UUID],
-                      focused: UUID?, peeks: [UUID: [SidebarItemReference]] = [:], available: (UUID) -> Bool) -> [Item] {
+                      focused: UUID?, peeks: [UUID: [SidebarItemReference]] = [:], pinnedPeek: [SidebarItemReference]? = nil,
+                      available: (UUID) -> Bool) -> [Item] {
         guard let space = state.spaces.first(where: { $0.id == spaceID }),
               state.profiles.contains(where: { $0.id == space.profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == space.profileID }) else { return [] }
-        let selections = PositionalTabNavigation.items(state: state, spaceID: spaceID,
+        var disclosed = state
+        for index in disclosed.folders.indices where disclosed.folders[index].spaceID == spaceID { disclosed.folders[index].isExpanded = true }
+        let selections = PositionalTabNavigation.items(state: disclosed, spaceID: spaceID,
             selected: selected, focused: focused, available: available)
         let groups = SidebarSplitItems.groups(in: state, spaceID: spaceID)
         var pages: [SidebarItemReference: RecentTabOrder.Item] = [:]
@@ -43,12 +46,14 @@ enum SidebarKeyboardNavigation {
                     guard visited.insert(item).inserted,
                           let folder = state.folders.first(where: { $0.id == id && $0.spaceID == spaceID }) else { continue }
                     result.append(.init(reference: item, selection: nil, folder: folder))
-                    if folder.isExpanded { appendChildren(id) }
+                    if let pinnedPeek, let index = pinnedPeek.firstIndex(of: item) {
+                        appendChildren(id, only: Array(pinnedPeek.dropFirst(index + 1).prefix(1)))
+                    } else if folder.isExpanded { appendChildren(id) }
                     else if let peeked = peeks[id], !peeked.isEmpty { appendChildren(id, only: peeked) }
                 } else { appendPage(item) }
             }
         }
-        appendChildren(nil); appendChildren(nil, section: .today)
+        appendChildren(nil, only: pinnedPeek.map { Array($0.prefix(1)) }); appendChildren(nil, section: .today)
         return result
     }
 }

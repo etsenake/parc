@@ -27,7 +27,8 @@ extension BrowserWindowController {
 
     private func sidebarKeyboardItems() -> [SidebarKeyboardNavigation.Item] {
         SidebarKeyboardNavigation.items(state: store.state, spaceID: activeSpaceID,
-            selected: selectedTabIDs, focused: currentTabID, peeks: sidebar.peekedItems, available: { self.switcherCanUse($0) })
+            selected: selectedTabIDs, focused: currentTabID, peeks: sidebar.peekedItems,
+            pinnedPeek: pinnedKeyboardPeek, available: { self.switcherCanUse($0) })
     }
 
     private func reconcileSidebarKeyboardFocus(scroll: Bool = false) {

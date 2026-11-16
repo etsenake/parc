@@ -134,6 +134,7 @@ enum SidebarChromeLayout {
     static let tablistVisibleRowHeight: CGFloat = 36
     static let tablistRowBoundaryOutset: CGFloat = (tablistCellHeight - tablistVisibleRowHeight) / 2 + tablistIntercellSpacing / 2
     static let pinnedHeaderHeight: CGFloat = 2
+    static let pinnedSectionHeaderHeight: CGFloat = 26
     static let sectionDividerHeight: CGFloat = 24
     static let sectionDividerInset: CGFloat = 18 - 8
     static let sectionDividerSpacing: CGFloat = 8
@@ -165,11 +166,12 @@ enum SidebarChromeLayout {
     }
 
     enum TablistSlot: Equatable {
-        case pinnedHeader, pinnedItem, sectionDivider, privateHeading, newTab, todayItem
+        case pinnedHeader, pinnedSectionHeader, pinnedItem, sectionDivider, privateHeading, newTab, todayItem
 
         var row: TablistRow {
             switch self {
             case .pinnedHeader: .gap(height: pinnedHeaderHeight)
+            case .pinnedSectionHeader: .accessory(height: pinnedSectionHeaderHeight)
             case .pinnedItem, .newTab, .todayItem: .item
             case .sectionDivider: .accessory(height: sectionDividerHeight)
             case .privateHeading: .accessory(height: unpinnedHeaderHeight)
@@ -177,10 +179,10 @@ enum SidebarChromeLayout {
         }
     }
 
-    static func tablistSlots(pinnedItems: Int, todayItems: Int, isPrivate: Bool) -> [TablistSlot] {
+    static func tablistSlots(pinnedItems: Int, todayItems: Int, isPrivate: Bool, sectionHeader: Bool = false) -> [TablistSlot] {
         let divider: [TablistSlot] = todayItems > 0 ? [.sectionDivider] : []
         let pinned: [TablistSlot] = isPrivate ? [.privateHeading]
-            : [.pinnedHeader] + Array(repeating: .pinnedItem, count: pinnedItems) + divider
+            : [sectionHeader ? .pinnedSectionHeader : .pinnedHeader] + Array(repeating: .pinnedItem, count: pinnedItems) + divider
         return pinned + [.newTab] + Array(repeating: TablistSlot.todayItem, count: todayItems)
     }
 

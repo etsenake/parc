@@ -212,9 +212,9 @@ key entry rereads eligibility before tinting or dispatch. VoiceOver can press it
 the ordinary Clear Today command still targets the window's active Space.
 
 An empty Today has no divider/Clear but retains an invisible Today drop region
-below its final pinned row. An entirely empty, headerless card has only a 2.5-point
-Pinned drop band; the rest is Today. The drag-time expanded divider target is
-not implemented. This is a known narrow target, not an absent drop transaction.
+below its final pinned row. An entirely empty card shows a plain Pinned label at
+the top of its list. The whole label takes a Pinned drop, highlighted like the
+sidebar's Pinned header, and the rest of the card is Today.
 
 ### Library width on the Spaces page
 

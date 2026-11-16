@@ -52,6 +52,7 @@ enum CommandBarCommandPresentation {
         "resetTab": "arrow.backward.to.line", "clearToday": "bubbles.and.sparkles",
         "resetVisibleSavedTabs": "arrow.backward.to.line", "renameCurrentItem": "character.cursor.ibeam",
         "collapseAllFolders": "chevron.right", "expandAllFolders": "chevron.down",
+        "togglePinnedSection": "pin", "toggleCollapsedPinnedIcons": "eye.slash",
         "nextTab": "arrow.right", "previousTab": "arrow.left", "cycleTabForward": "arrow.right", "cycleTabBackward": "arrow.left",
         "cycleToNextRecentTab": "arrow.right", "cycleToPreviousRecentTab": "arrow.left",
         "goBack": "arrow.backward", "goForward": "arrow.right", "history": "book", "archive": "archivebox",

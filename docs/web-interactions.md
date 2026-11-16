@@ -363,7 +363,7 @@ Window Zoom/Bring All to Front, Manage Spaces, Stay On Top,
 Extensions menus and typed Appearance commands are connected. Edit → Format → Font menu
 integration is absent. Its implementation must use the working Note/Easel
 formatting owners without preempting their native editing behavior.
-Restore Data and collapsible Pinned-section work remain in
+Restore Data work remains in
 [the backlog](backlog.md).
 
 ## Surface motion, hover and haptics — WEB19

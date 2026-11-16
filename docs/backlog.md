@@ -26,7 +26,7 @@ Finish assigned work first; explicit deferrals remain deferred.
   material transitions.
   [Theme editor](space-theme-editor.md), [sidebar motion](sidebar-motion.md).
 - Keep fallback window geometry and sidebar width associated with the same saved
-  window. Enlarge the empty card's Pinned drop target during drag.
+  window.
   [Resizing](sidebar-resize.md), [Space management](space-management.md).
 
 ## Routing
@@ -36,12 +36,6 @@ Finish assigned work first; explicit deferrals remain deferred.
   another creator still needs it. Add shared claims through creation and teardown.
   Ordinary disposition and missing-destination fallback are implemented.
   [Private lifecycle](private-route-lifecycle.md).
-
-## Windows and lifecycle
-
-- **WIN12:** folder disclosure is shared across windows; move it into window
-  presentation state. Whole pinned-section collapse also needs implementation.
-  [Windows](windows-lifecycle.md), [sidebar resizing](sidebar-resize.md).
 
 ## Data and credentials
 
@@ -77,8 +71,8 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 
 ## Command bar
 
-- **CMD25:** Restore Data needs a backup producer and restore flow; Pinned
-  expand/collapse needs sidebar state and commands. [Command bar](command-bar.md).
+- **CMD25:** Restore Data needs a backup producer and restore flow.
+  [Command bar](command-bar.md).
 - Controls covered by the command bar can still show hover feedback.
   [Command bar](command-bar.md).
 

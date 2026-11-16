@@ -19,6 +19,7 @@ Related contracts: [motion](sidebar-motion.md),
 | Renderer-paced page sizing | `Sources/ParcCore/PageContentResize.swift`, `Sources/ParcApp/PageContentResizer.swift` |
 | Renderer reports and observation leases | `Sources/ParcApp/PageRenderFrames.swift`, `Engine/ParcNative/native_appkit_page.mm` |
 | Space header and menus | `Sources/ParcApp/SidebarSpaceHeader.swift`, `Sources/ParcApp/SidebarSpaceMenu.swift` |
+| Pinned header and fold state | `Sources/ParcApp/SidebarPinnedHeader.swift`, `Sources/ParcCore/PinnedSectionCollapse.swift`, `Sources/ParcApp/BrowserWindowController+PinnedSection.swift` |
 | Favorites empty state and dock | `Sources/ParcApp/SidebarFavoritesEmptyState.swift`, `Sources/ParcApp/SidebarDockStrip.swift` |
 
 ## Width gesture
@@ -146,7 +147,7 @@ bounded animated layout. Avoid duplicating its arithmetic in view owners.
 | Space header | 36 points tall; 8-point top spacing without Favorites, zero with Favorites |
 | Tab list | 8-point side insets; 16-point indentation per folder level |
 | Ordinary item slot | 40-point cell plus 1-point gap; visible 36-point row centered vertically |
-| Pinned header / Today divider | 3-point / 25-point row slots |
+| Pinned header / Today divider | 27-point slot with pinned items, otherwise a 3-point band / 25-point slot |
 | List bottom | 120-point inset |
 | Dock | 50 points tall; 32-point leading and trailing controls at 8-point side insets |
 
@@ -197,8 +198,52 @@ Drops on a header target the top of that Space's pinned items; dock drops use
 the same move ownership and profile checks. Whole-split and multi-item behavior
 is described in [split views](split-groups.md) and [folder moves](folder-moves.md).
 
-Collapsing the entire pinned section is not implemented; the header does not
-expose a collapse chevron or action.
+
+## Pinned section
+
+A Space with at least one pinned item shows a small Pinned header above its
+pinned rows: an 11-point "Pinned" label and a chevron in the rows' close-button
+column. Clicking the header, its context menu, View → Collapse Pinned (Expand
+Pinned while folded) or the same command in the command bar folds or unfolds
+the section. An empty Pinned keeps the 3-point drop band and no header. Rows
+slide and fade over 0.25 seconds and the chevron turns over 0.2 seconds; Reduce
+Motion makes both instant.
+
+Folded, the header says what it hides. By default it shows the favicons of the
+first four pinned tabs, in sidebar order through folders and splits, each on a
+small tile that cuts a clean ring out of the one beneath, then +N for the rest.
+Settings → Advanced → Show icons when Pinned is collapsed, the header's context
+menu and Show/Hide Collapsed Pinned Icons switch every window at once to a count
+pill in the Space's colour, which suits screen sharing. That preference is
+app-wide. A narrow sidebar folds icons into the count before the summary would
+reach the chevron.
+
+The active tab stays visible. When it lives in a folded Pinned it peeks out
+under the header, with its folder path, the way a closed folder shows its active
+tab, and it shows even with icons turned off. Selecting another tab tucks it
+away again.
+
+The fold belongs to the Space, the way a folder's open or closed state belongs
+to the folder: every window showing that Space folds and unfolds together, on
+purpose, and the Space saves it, so it survives relaunch (`PinnedSectionCollapse`
+and `BrowserStore.setPinnedSectionCollapsed`). A Space with nothing pinned shows
+no header and can't be folded. If a folded Space loses its last pinned item, the
+next tab pinned there arrives folded and shows up in the header's summary.
+
+While Pinned is folded:
+
+- A drop on the header lands at the top of Pinned. Holding a drag there for the
+  system spring-loading delay unfolds it, and it folds again if the drag leaves
+  or is cancelled. A drop in the band under the header lands at the end.
+- Arrow-key browsing and Control–Space skip the hidden rows but reach the
+  peeking tab. Number shortcuts and Next/Previous Tab still count pinned tabs,
+  so Command–1 keeps its tab, which then peeks out.
+- Select All and multi-selection act on the visible rows only.
+- Library Space cards list the whole Pinned section without a header. An
+  entirely empty card shows a plain Pinned label instead, and its whole height
+  takes a Pinned drop with the same highlight.
+- VoiceOver reads the header as a disclosure triangle, "Pinned, 6 tabs" when
+  folded, and its outline row reports the same state.
 
 ## App Tray empty state
 
@@ -229,3 +274,4 @@ components; inspect a check before running it under the current work contract:
 | `tests/SidebarChrome/check.py` | Header/list/dock geometry, Space header and settings wiring |
 | `tests/SidebarFavoritesEmptyState/check.py` | Card layout, persistence, drag state and keyboard dismissal |
 | `tests/SidebarOutline/check.py` | Row geometry, disclosure and accessibility wrappers |
+| `tests/SidebarPinnedSection/check.py` | Fold state, peeks, the folded summary and its drawing, header drops, keyboard order, commands and the icon setting |

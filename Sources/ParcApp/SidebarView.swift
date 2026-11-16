@@ -1214,6 +1214,11 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
     var peekedItems: [UUID: [SidebarItemReference]] { folderPeeks }
     var onFolderPeeksChange: (([UUID: [SidebarItemReference]]) -> Void)?
+    var showsCollapsedPinnedIcons = true
+    var onSetPinnedSection: ((UUID, Bool) -> Void)?
+    var onSetCollapsedPinnedIcons: ((Bool) -> Void)?
+    private var springPinned: (spaceID: UUID, timer: Timer)?
+    private var sprungPinned: UUID?
     private var peekedActiveItem: SidebarItemReference?
     private var outlineInvalidated = false
     var onOutlineInvalidated: (() -> Void)?
@@ -2723,6 +2728,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         tabFaviconArms.removeValue(forKey: id)
         if let tab = hierarchyState?.tabs.first(where: { $0.id == id }) {
             for page in pages.values {
+                if let header = page.pinnedHeader, header.shows(id) {
+                    header.forgetFavicon(for: id)
+                    requestPinnedFavicon(tab, header: header)
+                }
                 page.releasedFavicons.removeValue(forKey: id)
                 guard let row = page.tabRow(id) else { continue }
                 row.loadFavicon { [weak self, weak row, weak page] completion in
@@ -3036,7 +3045,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             case item(SidebarItemReference, UUID?, Int)
             case today
         }
-        var work: [Work] = isPrivateBrowsing ? [.today] : [.today, .container(nil, .pinned, 0, nil)]
+        let pinned = pinnedPresentation(state, focused: focusedTabID)
+        let pinnedFilter = pinned.folded ? Array(pinned.peek.prefix(1)) : nil
+        var work: [Work] = isPrivateBrowsing ? [.today] : [.today, .container(nil, .pinned, 0, pinnedFilter)]
         var pinnedRows: [SidebarOutlineEntry] = []
         func process(_ next: Work) {
             switch next {
@@ -3063,14 +3074,16 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 }
                 guard case .folder(let id) = item, visitedFolders.insert(id).inserted,
                       let folder = foldersByID[id] else { return }
-                let peeks = folder.isExpanded ? [] : folderPeeks[folder.id] ?? []
+                let peeks = folder.isExpanded || pinned.folded && pinned.peek.contains(item) ? [] : folderPeeks[folder.id] ?? []
                 page.addItem(item)
                 itemRows.append(.folder(folder.id, depth: depth, in: parentID, expanded: folder.isExpanded,
                                         toggle: { [weak self] in self?.onToggleFolder?(folder.id) }) { [weak self, weak page] in
                     guard let self, let page else { return NSView() }
                     return self.buildFolderRow(folder, peeks: peeks, page: page, build: build)
                 })
-                if folder.isExpanded {
+                if pinned.folded, let index = pinned.peek.firstIndex(of: item) {
+                    work.append(.container(folder.id, .pinned, depth + 1, Array(pinned.peek.dropFirst(index + 1).prefix(1))))
+                } else if folder.isExpanded {
                     work.append(.container(folder.id, .pinned, depth + 1, nil))
                 } else if !peeks.isEmpty {
                     work.append(.container(folder.id, .pinned, depth + 1, peeks))
@@ -3131,7 +3144,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             return page.newTabRow
         }
         var phase = 0, prepared = 0
-        var outline: [SidebarOutlineEntry] = [], previousFrames: [AnyHashable: NSRect] = [:], disclosureChanged = false
+        var outline: [SidebarOutlineEntry] = [], previousFrames: [AnyHashable: NSRect] = [:], disclosureChanged = false, pinnedChanged = false
         return { [self] deadline in
             func expired() -> Bool { deadline.map { CACurrentMediaTime() >= $0 } ?? false }
             if phase == 0 {
@@ -3142,9 +3155,14 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 page.pinnedEnd = nil; page.clearButton = nil; page.sectionLine = nil; page.clearRevealed = false; page.todayHasTabs = false
                 var pinnedEntries = pinnedRows.makeIterator(), todayEntries = itemRows.makeIterator()
                 for slot in Chrome.tablistSlots(pinnedItems: pinnedRows.count, todayItems: itemRows.count,
-                                                isPrivate: isPrivateBrowsing) {
+                                                isPrivate: isPrivateBrowsing, sectionHeader: pinned.header) {
                     switch slot {
                     case .pinnedHeader: outline.append(.pinnedHeader(SidebarListRow.pinnedHeader))
+                    case .pinnedSectionHeader:
+                        let spaceID = state.activeSpaceID, header = makePinnedHeader(page, pinned, state: state, animated: animated)
+                        if pinned.placeholder { outline.append(.init(key: SidebarListRow.pinnedHeader, content: header, row: slot.row)); continue }
+                        outline.append(.pinnedHeader(SidebarListRow.pinnedHeader, content: header,
+                                                     expanded: !pinned.folded) { [weak self] in self?.togglePinnedSection(spaceID) })
                     case .pinnedItem: if let entry = pinnedEntries.next() { outline.append(entry) }
                     case .todayItem: if let entry = todayEntries.next() { outline.append(entry) }
                     case .sectionDivider: outline.append(.init(key: SidebarListRow.divider, content: makeSectionDivider(), row: slot.row))
@@ -3162,6 +3180,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                         || disclosure.contains { id, expanded in previous.expanded[id].map { $0 != expanded } ?? false })
                 } ?? false
                 page.renderedDisclosure = (disclosure, visiblePeeks)
+                pinnedChanged = animated && page.renderedPinned.map { $0.folded != pinned.folded || $0.peek != pinned.peek } ?? false
+                page.renderedPinned = pinned
+                disclosureChanged = disclosureChanged || pinnedChanged
                 previousFrames = disclosureChanged ? page.list.rowFrames() : [:]
                 phase = 1
                 if expired() { return false }
@@ -3176,7 +3197,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             }
             page.list.reload(outline, budget: deadline == nil ? .max : 0)
             page.endBuild()
-            if disclosureChanged { page.list.animateDisclosure(from: previousFrames) }
+            if disclosureChanged { page.list.animateDisclosure(from: previousFrames, fadesAppearing: pinnedChanged) }
             page.key = key; page.renderedState = state; page.laidOut = false; page.framed = nil
             page.palette = nil
             applyPagePalette(page, pagePalette)
@@ -3448,7 +3469,72 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             flags: [isPrivateBrowsing, isSpaceManagement,
                     SidebarPreviewPreference.recentPages.isEnabled, SidebarPreviewPreference.folders.isEnabled,
                     canSelectItems != nil, prepareSidebarDuplicate != nil, prepareSidebarClose != nil,
-                    prepareSidebarDeletion != nil, prepareFolderDeletion != nil])
+                    prepareSidebarDeletion != nil, prepareFolderDeletion != nil],
+            pinned: pinnedPresentation(state, focused: focused))
+    }
+
+    private func pinnedPresentation(_ state: BrowserState, focused: UUID?) -> SidebarPinnedPresentation {
+        let spaceID = state.activeSpaceID
+        guard !isPrivateBrowsing else { return .init() }
+        if isSpaceManagement {
+            return PinnedSectionCollapse.isEmpty(state: state, spaceID: spaceID) ? .init(header: true, placeholder: true) : .init()
+        }
+        guard PinnedSectionCollapse.hasItems(state: state, spaceID: spaceID) else { return .init() }
+        let folded = state.spaces.contains { $0.id == spaceID && $0.pinnedCollapsed }
+        let peek = folded ? PinnedSectionCollapse.peek(state: state, spaceID: spaceID,
+            active: PinnedSectionCollapse.activeItem(state: state, spaceID: spaceID, tabID: focused ?? state.selectedTabIDs.first)) : []
+        return .init(header: true, folded: folded, peek: peek, icons: folded && showsCollapsedPinnedIcons)
+    }
+
+    private func makePinnedHeader(_ page: SidebarSpacePage, _ pinned: SidebarPinnedPresentation, state: BrowserState,
+                                  animated: Bool) -> NSView {
+        let header = page.pinnedHeader ?? SidebarPinnedHeaderView()
+        page.pinnedHeader = header
+        let spaceID = state.activeSpaceID
+        let summary = pinned.folded ? PinnedSectionCollapse.summary(state: state, spaceID: spaceID) : .init(tabs: [], count: 0)
+        let tabs = pinned.icons ? summary.tabs : []
+        var symbols: [UUID: String] = [:]
+        for tab in tabs { symbols[tab.id] = InternalPage.sidebarFallbackSymbol(urlString: tab.url) }
+        header.update(.init(placeholder: pinned.placeholder, collapsed: pinned.folded, showsIcons: pinned.icons,
+                            count: summary.count, icons: tabs.map(\.id)),
+                      fallbacks: symbols, animated: animated && header.window != nil)
+        for tab in tabs { requestPinnedFavicon(tab, header: header) }
+        header.toggle = pinned.placeholder ? nil : { [weak self] in self?.togglePinnedSection(spaceID) }
+        header.makeMenu = pinned.placeholder ? nil : { [weak self] in self?.pinnedHeaderMenu(spaceID) }
+        return header
+    }
+
+    private func requestPinnedFavicon(_ tab: BrowserTab, header: SidebarPinnedHeaderView) {
+        guard InternalPage(urlString: tab.url) == nil else { header.setFavicon(nil, for: tab.id, url: tab.url); return }
+        guard header.needsFavicon(for: tab.id, url: tab.url) else { return }
+        let url = tab.url
+        requestTabFavicon?(tab) { [weak self, weak header] image in
+            guard self?.hierarchyState?.tabs.contains(where: { $0.id == tab.id && $0.url == url }) == true else { return }
+            header?.setFavicon(image, for: tab.id, url: url)
+        }
+    }
+
+    private func pinnedFolded(_ spaceID: UUID) -> Bool {
+        hierarchyState.map { PinnedSectionCollapse.isFolded(state: $0, spaceID: spaceID) } ?? false
+    }
+
+    private func togglePinnedSection(_ spaceID: UUID) {
+        onSetPinnedSection?(spaceID, !pinnedFolded(spaceID))
+    }
+
+    private func pinnedHeaderMenu(_ spaceID: UUID) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let collapsed = pinnedFolded(spaceID)
+        menu.addItem(MenuAction.item(SidebarPinnedHeaderLayout.actionTitle(collapsed: collapsed)) { [weak self] in
+            self?.onSetPinnedSection?(spaceID, !collapsed)
+        })
+        let shows = showsCollapsedPinnedIcons
+        let icons = MenuAction.item("Show Icons When Collapsed") { [weak self] in self?.onSetCollapsedPinnedIcons?(!shows) }
+        icons.state = shows ? .on : .off
+        icons.isEnabled = onSetCollapsedPinnedIcons != nil
+        menu.addItem(icons)
+        return menu
     }
 
     private func patchLive(_ page: SidebarSpacePage, state: BrowserState, focusedTabID: UUID?) {
@@ -3617,6 +3703,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         page.sectionLine?.dark = palette.isDark
         let themed = spaces.first { $0.id == page.spaceID }.map { $0.theme.primaryColor != nil && $0.theme.isValid } ?? false
         page.header.applyStyle(dark: palette.isDark, tint: themed ? palette.maxContrastColor : nil)
+        page.pinnedHeader?.applyStyle(dark: palette.isDark, accent: themed ? palette.maxContrastColor : nil)
     }
 
     func updateSpaceAvailability() {
@@ -4648,10 +4735,46 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         return copying ? .copy : .move
     }
     private func updateDrop(_ sender: NSDraggingInfo) -> NSDragOperation {
-        springCandidate = nil
+        springCandidate = nil; springPinnedCandidate = nil
         let operation = proposeDrop(sender)
         updateSpringLoading(operation.isEmpty ? nil : springCandidate)
+        updatePinnedSpringLoading(operation.isEmpty ? nil : springPinnedCandidate)
         return operation
+    }
+    private var springPinnedCandidate: UUID?
+    private func updatePinnedSpringLoading(_ spaceID: UUID?) {
+        guard springPinned?.spaceID != spaceID else { return }
+        springPinned?.timer.invalidate(); springPinned = nil
+        guard let spaceID else { return }
+        let timer = Timer(timeInterval: Self.springLoadingDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.springPinned?.spaceID == spaceID else { return }
+                self.springPinned = nil
+                guard self.pinnedFolded(spaceID) else { return }
+                self.onSetPinnedSection?(spaceID, false)
+                self.sprungPinned = spaceID
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        springPinned = (spaceID, timer)
+    }
+    private func collapseSprungPinned() {
+        guard let spaceID = sprungPinned else { return }
+        sprungPinned = nil
+        if hierarchyState?.spaces.contains(where: { $0.id == spaceID && !$0.pinnedCollapsed }) == true { onSetPinnedSection?(spaceID, true) }
+    }
+    private func pinnedHeaderDrop(_ session: SidebarMoveSession, at point: NSPoint, copying: Bool, state: BrowserState,
+                                  spaceID: UUID) -> Bool? {
+        guard shownPage.renderedPinned?.header == true, let frame = list.itemFrame(for: SidebarListRow.pinnedHeader) else { return nil }
+        let rect = convert(frame, from: list)
+        guard rect.contains(point) else { return nil }
+        let (destination, first) = PinnedSectionCollapse.headerDrop(state: state, spaceID: spaceID, moving: session.items)
+        guard admitDrop(session, to: destination, before: first, copying: copying) else { return false }
+        dropProposal = (session, destination, first)
+        reorderFeedback.propose(index: -1)
+        dropFeedback.isInsertion = false; dropFeedback.targetRect = rect.intersection(scroll.frame)
+        if pinnedFolded(spaceID) { springPinnedCandidate = spaceID }
+        return true
     }
     private var springCandidate: UUID?
     private var springFolder: (id: UUID, timer: Timer)?
@@ -4721,6 +4844,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         var feedback: NSRect?
         var insertion = true
         var onCollapsedFolder: UUID?
+        if let admitted = pinnedHeaderDrop(session, at: point, copying: copying, state: state, spaceID: spaceID) {
+            return admitted ? operation : []
+        }
         let listEnd = isSpaceManagement && pinnedEnd == nil
             ? list.rows.last.map { convert($0.frame, from: list).maxY - SidebarChromeLayout.tablistIntercellSpacing / 2 } : nil
         let pinnedBottom = pinnedEnd.map { convert($0.bounds, from: $0).midY } ?? listEnd ?? scroll.frame.minY
@@ -4795,8 +4921,12 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     override func wantsPeriodicDraggingUpdates() -> Bool { true }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { updateDrop(sender) }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { updateDrop(sender) }
-    override func draggingExited(_ sender: NSDraggingInfo?) { clearDrop(); updateSpringLoading(nil); collapseSprungFolders() }
-    override func draggingEnded(_ sender: NSDraggingInfo) { clearDrop(); updateSpringLoading(nil); collapseSprungFolders() }
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        clearDrop(); updateSpringLoading(nil); updatePinnedSpringLoading(nil); collapseSprungFolders(); collapseSprungPinned()
+    }
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        clearDrop(); updateSpringLoading(nil); updatePinnedSpringLoading(nil); collapseSprungFolders(); collapseSprungPinned()
+    }
     private func collapseSprungFolders() {
         let sprung = sprungFolders; sprungFolders = []
         for id in sprung.reversed() where hierarchyState?.folders.first(where: { $0.id == id })?.isExpanded == true {
@@ -4807,7 +4937,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         guard !updateDrop(sender).isEmpty, let (session, destination, before) = dropProposal else { return false }
         let external = windowDropAction, copy = copyDropAction, dock = dockDropAction
-        clearDrop(); updateSpringLoading(nil); sprungFolders = []
+        clearDrop(); updateSpringLoading(nil); updatePinnedSpringLoading(nil); sprungFolders = []; sprungPinned = nil
         if let copy { return session.copy(copy) }
         if let dock { return session.transferThenEnd(dock) }
         if let external { return session.moveToAnotherWindow(external) }
@@ -4884,6 +5014,8 @@ private final class SidebarKeyboardHighlightView: NSView {
     var clearRevealed = false
     var headerContentShown = false
     var renderedDisclosure: (expanded: [UUID: Bool], peeks: [UUID: [SidebarItemReference]])?
+    var renderedPinned: SidebarPinnedPresentation?
+    var pinnedHeader: SidebarPinnedHeaderView?
     var key: SidebarSpacePageKey?
     var renderedState: BrowserState?
     var palette: ThemeChromePalette?
@@ -4927,6 +5059,7 @@ private final class SidebarKeyboardHighlightView: NSView {
     func holds(_ row: SidebarTabRow) -> Bool { tabRows.contains { $0 === row } }
     func resetPointer() {
         header.clearHover()
+        pinnedHeader?.resetPointer()
         newTabRow.invalidateHover()
         for row in tabRows { row.resetPointer() }
         for (_, view) in rowsByItem {
@@ -4982,10 +5115,12 @@ struct SidebarSpacePageKey: Equatable {
     var splitCaptures: [UUID: CaptureIndicatorPresentation]
     var keyDragged: [UUID?]
     var flags: [Bool]
+    var pinned: SidebarPinnedPresentation
 
     init(state: BrowserState, spaceID: UUID, focused: UUID?, placeholder: Bool, peeks: [UUID: [SidebarItemReference]],
          speakers: Set<UUID>, presented: Set<UUID>, splitCaptures: [UUID: CaptureIndicatorPresentation],
-         keyDragged: [UUID?], flags: [Bool]) {
+         keyDragged: [UUID?], flags: [Bool], pinned: SidebarPinnedPresentation = .init()) {
+        self.pinned = pinned
         self.spaceID = spaceID
         profiles = state.profiles; spaces = state.spaces; settings = state.settings
         tabs = state.tabs.filter { $0.spaceID == spaceID }.map {

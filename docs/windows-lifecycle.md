@@ -115,6 +115,14 @@ setting but do not persist it, and popup windows are excluded.
 Menu and command actions revalidate the captured window before changing its
 level, so delayed actions cannot affect a different key window.
 
+## Shared folder and Pinned disclosure
+
+Folders and the Pinned section open and close together in every window showing
+that Space, on purpose. A folder's disclosure is stored on the folder and the
+Pinned fold on the Space, so tidying one window's sidebar tidies the others
+and the choice survives relaunch. See
+[the Pinned section](sidebar-resize.md#pinned-section).
+
 ## Sources and validation
 
 Window presentation/session storage, `LaunchContinuity`, the native page
@@ -124,11 +132,6 @@ coverage includes `WindowPresentation`, `ClosedItems`, `CloseUndo`,
 interfaces when run.
 
 ## Remaining behavior and explicit deferrals
-
-Folder disclosure is stored on the shared folder, so expanding or collapsing it
-changes every window displaying that folder. Window-local disclosure needs a
-separate presentation owner. Pinned-section collapse has no implementation;
-[command bar](command-bar.md) owns that missing command.
 
 The explicitly deferred cross-window cases remain: an automatic return to a
 non-key window can leave a blank frozen placeholder; a close that cannot begin

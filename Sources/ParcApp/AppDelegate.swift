@@ -1922,6 +1922,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if item.action == #selector(copyCurrentURLAsQuote) { return browserInputCommandWindow?.canCopyCurrentURLAsQuote ?? false }
         if item.action == #selector(focusSidebar) { return browserInputCommandWindow?.canFocusSidebar ?? false }
         if item.action == #selector(toggleSidebar) { return browserInputCommandWindow != nil }
+        if item.action == #selector(togglePinnedSection) {
+            item.title = SidebarPinnedHeaderLayout.actionTitle(collapsed: spaceCommandWindow?.pinnedSectionCollapsed ?? false)
+            return spaceCommandWindow?.pinnedSectionCommandAvailable ?? false
+        }
+        if item.action == #selector(toggleCollapsedPinnedIcons) {
+            item.title = SidebarPinnedHeaderLayout.iconsActionTitle(shows: PinnedSectionPreferences.shared.state.showsCollapsedIcons)
+            return !PinnedSectionPreferences.shared.loadError
+        }
         if item.action == #selector(adjustWindowFrame) { return browserInputCommandWindow?.canAdjustWindowFrame ?? false }
         if item.action == #selector(zoomIn) || item.action == #selector(zoomOut) || item.action == #selector(actualSize) {
             return browserInputCommandWindow?.canChangePageZoom ?? false
@@ -2267,6 +2275,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc func pasteAsPlainText(_ sender: Any?) { WebpageEditCommands.pasteMatchingStyle(from: sender) }
     @objc private func toggleShowToolbar(_ sender: NSMenuItem) { spaceCommandWindow?.toggleToolbar(from: sender) }
     @objc private func toggleSidebar(_ sender: Any?) { browserInputCommandWindow?.toggleSidebar() }
+    @objc private func togglePinnedSection(_ sender: Any?) { spaceCommandWindow?.togglePinnedSection() }
+    @objc private func toggleCollapsedPinnedIcons(_ sender: Any?) {
+        let preferences = PinnedSectionPreferences.shared
+        try? preferences.setShowsCollapsedIcons(!preferences.state.showsCollapsedIcons)
+    }
     @objc private func adjustWindowFrame(_ sender: Any?) { browserInputCommandWindow?.presentFrameCrank() }
     @objc private func goBackArrow(_ sender: Any?) {
         guard let owner = browserInputCommandWindow, owner.window === NSApp.keyWindow,
@@ -2846,6 +2859,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         AppAppearance.addMenu(to: view, target: self)
         view.addItem(.separator())
         item("Show / Hide Sidebar", #selector(toggleSidebar), "s", in: view)
+        for (title, selector, setting, hidden) in [
+            (SidebarPinnedHeaderLayout.actionTitle(collapsed: false), #selector(togglePinnedSection), "Collapse or Expand Pinned", false),
+            (SidebarPinnedHeaderLayout.iconsActionTitle(shows: true), #selector(toggleCollapsedPinnedIcons),
+             "Show or Hide Collapsed Pinned Icons", true)
+        ] {
+            let entry = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+            entry.target = self
+            entry.isHidden = hidden; entry.allowsKeyEquivalentWhenHidden = hidden
+            view.addItem(entry)
+            KeyboardShortcuts.shared.register(entry, group: view.title, title: setting)
+        }
         item("Adjust Window Frame…", #selector(adjustWindowFrame), in: view)
         item("Show Toolbar", #selector(toggleShowToolbar), "d", in: view, modifiers: [.command, .shift])
         hideKeepingShortcut(view)

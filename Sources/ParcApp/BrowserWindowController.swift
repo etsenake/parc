@@ -156,6 +156,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var windowDraggingSubscription: AnyCancellable?
     var toolbarSubscription: AnyCancellable?
     var websiteThemeSubscription: AnyCancellable?
+    var pinnedSectionSubscription: AnyCancellable?
     var lastPushedWebsiteTheme: (binding: ObjectIdentifier, stylesheet: String?)?
     private var shortcutDiscoverySubscription: AnyCancellable?
     private var windowFrameSubscription: AnyCancellable?
@@ -816,6 +817,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         setupBlockedContent()
         sidebar.isPrivateBrowsing = store.isEphemeral
         wireSidebar()
+        pinnedSectionSubscription = wirePinnedSection()
         sidebarHover.view = rootView
         sidebarHover.regions = { [weak self] info in self?.sidebarHoverRegions(info) ?? [:] }
         sidebarHover.onChange = { [weak self] _ in self?.applySidebarHover() }

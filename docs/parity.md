@@ -66,7 +66,7 @@ is resolved.
 |---|---|---|
 | Independent browser engine | Native pages, real Chromium profiles, renderer recovery, permissions, authentication and native input; no dependency on another installed browser. Most of Parc's engine logic sits in its own files behind extension points and hooks. | [Engine](../Engine/README.md), [Chromium changes](chromium-seams.md), [web interactions](web-interactions.md) |
 | Spaces and profiles | Local profiles, named Spaces, profile assignment, per-window selection, theme editing and persistence. | [Space management](space-management.md), [themes](space-theme-editor.md) |
-| Sidebar and tabs | Today, pinned tabs, Favorites, unread/mute state, resizing, hide/reveal, multi-selection, closed-item recovery and tab picture previews. | [Saved tabs](saved-tabs.md), [sidebar previews](sidebar-previews.md), [sidebar motion](sidebar-motion.md) |
+| Sidebar and tabs | Today, pinned tabs in a collapsible Pinned section, Favorites, unread/mute state, resizing, hide/reveal, multi-selection, closed-item recovery and tab picture previews. | [Saved tabs](saved-tabs.md), [Pinned section](sidebar-resize.md#pinned-section), [sidebar previews](sidebar-previews.md), [sidebar motion](sidebar-motion.md) |
 | Folders | Nested folders, original-item moves, and duplication and bulk archive/delete with window Undo and close consent. Some collection and drag cases remain open. | [Folder moves](folder-moves.md), [folder commands](folder-commands.md) |
 | Navigation and command bar | History navigation, site search, address editing, contextual actions, typed commands and live command validation inside the browser window; an empty Space shows a start page with a resident command bar. | [Navigation](navigation.md), [command bar](command-bar.md), [start page](start-page.md) |
 | Keyboard and switching | Custom shortcuts and website priorities, Essentials, positional/history navigation and the recent-tab switcher. | [Keyboard](keyboard-navigation.md), [tab switcher](tab-switcher.md) |
@@ -146,6 +146,8 @@ changes belong in the owning guide and release notes, not an ever-growing log he
   site identity; pages remain in Chromium. Do not substitute a fixed site list.
 - Preserve upstream security maintenance through deliberate Chromium pin
   upgrades and relevant native integration checks.
+- Folders and the Pinned section open and close together in every window
+  showing that Space; the state belongs to the folder or the Space, not a window.
 - Split View deliberately offers no pane-handle drag, double-click separation,
   Option-click unsplit or sidebar drop-to-combine gesture; each duplicates an
   existing route. See [split groups](split-groups.md#split-gesture-and-context-inventory--sp33).

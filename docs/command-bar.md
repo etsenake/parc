@@ -347,6 +347,13 @@ no default shortcut and can be assigned in Settings → Shortcuts; it stays out 
 the bar's menu rows so the typed command is the bar's only Task Manager row. The
 app offers the window route only when the engine provides it.
 
+View → Collapse Pinned is one menu row whose title follows the window's active
+Space, so the bar offers Collapse Pinned or Expand Pinned and only the phrase
+that applies matches. Show or Hide Collapsed Pinned Icons switches every
+window's folded header between its icon stack and a plain count. Neither has a
+default shortcut; both can be assigned in Settings → Shortcuts. See
+[the Pinned section](sidebar-resize.md#pinned-section).
+
 Settings destinations cover Membership, General, Spaces (Open Space Preferences;
 Profile stays a hidden keyword), Shortcuts, Links,
 Icon and Advanced. Appearance switches reuse window Undo. Getting Started is
@@ -385,7 +392,7 @@ separate owner/lifecycle coverage. Follow [the working contract](../AGENTS.md)
 before running checks.
 
 Current source still has these separate limitations, tracked in [the backlog](backlog.md):
-Restore Data needs a backup producer and restore flow; the Pinned section is not
-collapsible. Toolbar/pane/split/extension controls covered by the bar can still
+Restore Data needs a backup producer and restore flow.
+Toolbar/pane/split/extension controls covered by the bar can still
 show hover feedback underneath it; their tracking does not use the same
 topmost-view check as sidebar rows.

@@ -45,6 +45,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private let sharedQuotes = PointingHandSwitch()
     private var websiteThemeSubscription: AnyCancellable?
     private let websiteTheme = PointingHandSwitch()
+    private var pinnedSectionSubscription: AnyCancellable?
+    private let collapsedPinnedIcons = PointingHandSwitch()
     private var toolbarSubscription: AnyCancellable?
     private let toolbarFullURL = PointingHandSwitch()
     enum Pane: String, CaseIterable {
@@ -247,10 +249,15 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         websiteThemeSubscription = WebsiteThemePreferences.shared.$state.sink { [weak self] state in
             self?.refreshWebsiteTheme(state)
         }
+        collapsedPinnedIcons.target = self; collapsedPinnedIcons.action = #selector(collapsedPinnedIconsChanged)
+        pinnedSectionSubscription = PinnedSectionPreferences.shared.$state.sink { [weak self] state in
+            self?.refreshCollapsedPinnedIcons(state)
+        }
         windowDragging.target = self; windowDragging.action = #selector(windowDraggingChanged)
         soundEffects.target = self; soundEffects.action = #selector(soundEffectsChanged)
         reorderingHaptics.target = self; reorderingHaptics.action = #selector(reorderingHapticsChanged)
-        for toggle in [windowDragging, soundEffects, reorderingHaptics, sharedQuotes, websiteTheme, toolbarFullURL, searchSuggestions, restore, warnBeforeQuitting] {
+        for toggle in [windowDragging, soundEffects, reorderingHaptics, sharedQuotes, websiteTheme, toolbarFullURL, collapsedPinnedIcons,
+                       searchSuggestions, restore, warnBeforeQuitting] {
             toggle.controlSize = .small
         }
         downloadLocationPicker.onChoose = { [weak self] choice in self?.downloadLocationChosen(choice) }
@@ -686,6 +693,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             AdvancedRow(symbol: "macwindow", color: .systemGreen, title: "When opening Parc, restore windows from previous session", control: restore),
             AdvancedRow(symbol: "rectangle.topthird.inset.filled", color: .systemGreen, title: "Allow window dragging from the top of webpages", control: windowDragging),
             AdvancedRow(symbol: "ellipsis.rectangle", color: .systemRed, title: "Show full URL when Toolbar is enabled", control: toolbarFullURL),
+            AdvancedRow(symbol: "pin.fill", color: .systemOrange, title: "Show icons when Pinned is collapsed", control: collapsedPinnedIcons,
+                        note: "Turn off to show only a count, handy when sharing your screen."),
             AdvancedRow(symbol: "quote.opening", color: .systemRed, title: "Enable Shared Quotes when highlighting text.", control: sharedQuotes,
                         note: "If disabled, you can still use Copy URL as Quote from the Edit menu.")])
         section("Websites", [
@@ -1532,6 +1541,16 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     @objc private func quitWarningChanged() {
         do { try QuitWarningPreferences.shared.setEnabled(warnBeforeQuitting.state == .on) }
         catch { refreshQuitWarning(QuitWarningPreferences.shared.state); reportProfileSettingsError(error) }
+    }
+    private func refreshCollapsedPinnedIcons(_ state: PinnedSectionPreferences.State) {
+        collapsedPinnedIcons.state = state.showsCollapsedIcons ? .on : .off
+        collapsedPinnedIcons.isEnabled = !PinnedSectionPreferences.shared.loadError
+        collapsedPinnedIcons.toolTip = collapsedPinnedIcons.isEnabled ? nil
+            : PinnedSectionPreferences.Failure.unavailable.localizedDescription
+    }
+    @objc private func collapsedPinnedIconsChanged() {
+        do { try PinnedSectionPreferences.shared.setShowsCollapsedIcons(collapsedPinnedIcons.state == .on) }
+        catch { refreshCollapsedPinnedIcons(PinnedSectionPreferences.shared.state); reportProfileSettingsError(error) }
     }
     @objc private func websiteThemeChanged() {
         do { try WebsiteThemePreferences.shared.setEnabled(websiteTheme.state == .on) }

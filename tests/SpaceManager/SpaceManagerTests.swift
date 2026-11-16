@@ -358,13 +358,20 @@ final class AreaEvent: NSEvent {
         manager.reload(empty); manager.layoutSubtreeIfNeeded()
         let outline = descendants(sidebar).compactMap { $0 as? SidebarOutlineView }.first!
         let headerRow = outline.convert(outline.rows[0].frame, to: sidebar)
-        check(header.isHidden && outline.rows.count == 1 && headerRow.height == SidebarChromeLayout.pinnedHeaderHeight + SidebarChromeLayout.tablistIntercellSpacing
+        let pinnedHeader = descendants(sidebar).compactMap { $0 as? SidebarPinnedHeaderView }.first
+        check(header.isHidden && outline.rows.count == 1
+              && headerRow.height == SidebarChromeLayout.pinnedSectionHeaderHeight + SidebarChromeLayout.tablistIntercellSpacing
               && !descendants(sidebar).contains { $0 is SidebarHairline },
-              "an empty card lists only the pinned header, with no divider")
-        drop(favorite.id, at: NSPoint(x: sidebar.bounds.midX, y: headerRow.maxY - SidebarChromeLayout.tablistIntercellSpacing / 2 - 0.5))
+              "an empty card lists only its Pinned header, with no divider")
+        check(pinnedHeader?.content.placeholder == true && pinnedHeader?.accessibilityRole() == .staticText
+              && pinnedHeader?.hitTest(NSPoint(x: 5, y: 5)) == nil,
+              "the empty card's Pinned header is a plain label that leaves clicks to the card")
+        drop(favorite.id, at: NSPoint(x: sidebar.bounds.midX, y: headerRow.minY + 2))
+        drop(favorite.id, at: NSPoint(x: sidebar.bounds.midX, y: headerRow.midY))
         drop(favorite.id, at: NSPoint(x: sidebar.bounds.midX, y: headerRow.maxY + 10))
-        check(commits.count == 6 && commits[4].0.section == .pinned && commits[5].0.section == .today && commits[5].0.spaceID == first.id,
-              "an empty card's Pinned band ends 2.5 points down, at the header's boundary; below it is Today")
+        check(commits.count == 7 && commits[4].0.section == .pinned && commits[5].0.section == .pinned && commits[4].1 == nil
+              && commits[6].0.section == .today && commits[6].0.spaceID == first.id,
+              "an empty card's whole Pinned header takes Pinned drops; below it is Today")
 
         var trayless = state; trayless.spaces.append(second); trayless.tabs = [pinned]
         manager.reload(trayless); manager.layoutSubtreeIfNeeded()
