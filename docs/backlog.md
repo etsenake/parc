@@ -87,12 +87,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 - Controls covered by the command bar can still show hover feedback. Some
   extension-popup, site-bubble and accessibility focus states also lack sidebar
   button-reveal ownership. [Command bar](command-bar.md), [navigation](navigation.md).
-- Clicking the address in a page toolbar, on a single page or a split pane,
-  opens the 350-point compact editor under the toolbar. It should open the full
-  command bar in the middle of the window, like Command-T, with that pane's
-  address selected so submitting navigates that pane. The compact editor belongs
-  to the sidebar's address field only; popup windows keep it because they can be
-  narrower than the full bar. [Entry points](command-bar.md#entry-points-and-source-owners).
 - The sidebar's compact editor feels cramped. At 350 points wide, titles
   truncate early, and its address row's icon and text sit left of the result
   rows' icon and title columns. Widen it to about 450 points and line the address

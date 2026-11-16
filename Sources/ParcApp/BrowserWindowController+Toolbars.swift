@@ -56,7 +56,7 @@ extension BrowserWindowController {
             }
             guard original(), let browser, let page else { return }
             switch action {
-            case .address: self.focusAddress(anchor: anchor)
+            case .address: self.focusAddress()
             case .copy: self.copyCurrentURL()
             case .siteInfo, .siteInsecure: self.showSiteControlCenter(from: anchor)
             case .pageMenu: self.showPageMenu(from: anchor)
@@ -107,7 +107,7 @@ extension BrowserWindowController {
             }
             guard admit() else { return }
             switch action {
-            case .address: self.focusAddress(anchor: anchor)
+            case .address: self.focusAddress()
             case .split: self.showSplitPaneMenu(tabID, from: anchor)
             case .closeSplit: break
             case .sidebar: self.toggleSidebar()

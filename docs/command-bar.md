@@ -1,23 +1,27 @@
 # Address and command bar
 
 Parc's command bar combines native navigation, exact-tab switching and validated
-application commands. A separate compact URL editor navigates the current tab.
-Both share the original page/Profile lease, native input methods and dismissal
-owner; neither reconstructs a classified request from its display URL.
+application commands. A separate compact URL editor serves the sidebar's
+address and pop-ups. Both share the original page/Profile lease, native input
+methods and dismissal owner; neither reconstructs a classified request from its
+display URL.
 
 ## Entry points and source owners
 
 | Entry | Behavior |
 | --- | --- |
 | Command–T | Large palette with empty input |
-| Command–L | Large palette with the current native URL selected |
-| Click sidebar, page-toolbar or popup URL | 350-point compact editor anchored to that control |
+| Command–L or click a page toolbar's URL | Large palette with that pane's native URL selected |
+| Click sidebar or popup URL | 350-point compact editor anchored to that control |
 | Control–Space | Sidebar keyboard session, expanding results when typing |
 | A Space with no open tab | Resident bar on the [start page](start-page.md), which Command–T and Command–L focus |
 
 The compact editor offers current/recent web addresses and native suggestions,
 with no application commands, document actions or Actions scope. It navigates the
 original current tab. The large palette retains commands and tab switching.
+Clicking the URL in a page toolbar, on a single page, split pane, Note, Easel or
+Peek, first makes that pane current and then takes Command–L's path, so the
+palette opens centred and Return navigates the pane that was clicked.
 
 The resident bar is the large palette's session hosted in a slot the start page
 provides, with the same results, commands, scopes and submission. It rests as the

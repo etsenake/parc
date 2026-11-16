@@ -5,6 +5,7 @@ output="$repo_root/build/tests/command-bar-navigation"
 mkdir -p "$output"
 python3 - "$repo_root" "$output" <<'PY'
 from pathlib import Path
+import re
 import sys
 repo, output = map(Path, sys.argv[1:])
 source = (repo / "Sources/ParcApp/CommandBar.swift").read_text()
@@ -28,9 +29,6 @@ blocks = []
 for start, end in markers:
     offset = source.index(start)
     blocks.append(source[offset:source.index(end, offset)].replace("    private ", "    "))
-# Keep the actual query selection, skip decision and complete row construction.
-# The fixture supplies only the native hold and table/window shell; it must not
-# reproduce the compact editor's pristine/cleared logic independently.
 query_start = source.index("        let showsCurrentAddress =", source.index("    private func refreshResults("))
 query_end = source.index("        if sidebarAnchor != nil {", query_start)
 rows_start = source.index("        let fingerprint = openResultsFingerprint(query: query)", query_end)
@@ -44,18 +42,36 @@ import sys
 sys.path.insert(0, str(repo / "tests/Support"))
 from window_sources import browser_window_controller_source
 window = browser_window_controller_source(repo / "Sources/ParcApp")
-# Integration guard: an explicit URL click supplies the compact anchor, while
-# Cmd-L's default call retains the full palette. Ordinary address submission
-# must resolve against the captured tab rather than opening/switching a tab.
 delegate = (repo / "Sources/ParcApp/AppDelegate.swift").read_text()
 assert 'front?.focusAddress()' in delegate
 for use in ("func focusAddress(anchor: NSView? = nil)",
             "presentCommandBar(newTab: false, addressAnchor: anchor)",
             "self.focusAddress(anchor: self.sidebar.addressEditorAnchor)",
+            "self.focusAddress(anchor: self.popupChrome.addressAnchor)",
             "addressOnly: addressAnchor != nil,",
             "let commandTab = currentTabID",
+            "let commandPeek = newTab ? nil : sourcePeek",
             "else { self.resolveInput(input, replacing: commandTab) }"):
     assert use in window, f"current-tab compact editor wiring changed: {use}"
+assert window.count("focusAddress(anchor:") - window.count("func focusAddress(anchor:") == 2, \
+    "only the sidebar address and popup chrome may open the compact editor"
+def toolbar_actions(name, admit):
+    match = re.search(rf"^    func {name}\(.*?^    }}\n", window, re.S | re.M)
+    assert match, f"{name} is missing"
+    body = match.group(0)
+    assert "toolbar.onAction = {" in body and admit in body, f"{name} lost its click targeting"
+    actions = body[body.index("toolbar.onAction = {"):]
+    opens = "case .address: self.focusAddress()\n"
+    assert admit in actions and opens in actions, f"{name} no longer opens the full command bar"
+    assert "focusAddress" not in actions[:actions.index(admit)] and actions.index(admit) < actions.index(opens), \
+        f"{name} opens the command bar before targeting the clicked pane"
+    return body
+browser_toolbar = toolbar_actions("configureBrowserToolbar", "guard original(), let browser, let page else { return }")
+assert "return self.activateDeveloperPage(browser, page: page, revision: revision)" in browser_toolbar, \
+    "a page toolbar click no longer targets its pane or Peek"
+document_toolbar = toolbar_actions("configureDocumentToolbar", "guard admit() else { return }")
+assert "if self.focusedTabID != tabID { self.focusedTabID = tabID; self.requestNativeSelection(); self.updateNavigation() }" \
+    in document_toolbar, "a Note or Easel toolbar click no longer targets its pane"
 start = window.index("    private func commandBarTabs(")
 end = window.index("    func commandBarTabCaption(", start)
 (output / "TabCandidates.swift").write_text("import Foundation\nextension TabCandidatesFixture {\n" +
