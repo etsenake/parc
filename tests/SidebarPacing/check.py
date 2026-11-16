@@ -4,10 +4,13 @@ import re
 import shutil
 import subprocess
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
 motion = (app / "SidebarMotionController.swift").read_text()
-controller = (app / "BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(app)
 for use in ("let transition = SidebarTransition(from: previous, to: presentation)",
             "sidebarFloatingSurface = transition.keepsFloatingSurface",
             "sidebarRevealsAnchored = transition.revealsAnchored\n"
@@ -37,6 +40,8 @@ for use in ("let transition = SidebarTransition(from: previous, to: presentation
             "        sidebarContainer.docksFloatingSurface = fullPass && sidebarFloatingSurface && sidebarPresentation == .locked\n"
             "        if fullPass { sidebarContainer.preparesFloatingDock = false }\n",
             "        pageHost.frame = frames.pageHost\n"
+            "        if pageHostMoved, loadedStartPage?.superview != nil { loadedStartPage?.invalidateCoordinates() }\n"
+            "        splitView.dividerThickness = frameThickness\n"
             "        pageShadow.place(around: frames.pageHost)\n"
             "        refreshPageShadow()\n",
             "rootView.addSubview(pageShadow)\n        rootView.addSubview(pageHost)\n"):
@@ -57,18 +62,23 @@ for use in ("        let toolbar = DeveloperToolbarView()\n        toolbar.isHid
 hold = "        for view in hidden { view.layerContentsRedrawPolicy = .beforeViewResize }\n"
 pin = "            pinDrawnContent(surface, to: .scaleAxesIndependently)\n"
 assert hold in motion and pin in motion, "SidebarMotionController no longer holds hidden drawing views or pins the floating surface"
-placeholder = re.search(r"^final class SplitPanePlaceholder\b.*?^}", (app / "SplitPaneMenu.swift").read_text(), re.S | re.M)
+split_menu = (app / "SplitPaneMenu.swift").read_text()
+placeholder = re.search(r"^final class SplitPanePlaceholder\b.*?^}", split_menu, re.S | re.M)
 assert placeholder and "override var wantsUpdateLayer: Bool { true }" in placeholder.group(0) \
     and "override func draw(" not in placeholder.group(0) and "addSubview(" not in placeholder.group(0), \
     "SplitPanePlaceholder no longer draws only through its layer; the harness's EmptyContent stands for it"
-assert "let empty = SplitPanePlaceholder(frame: .zero)" in controller, "a window with no tab no longer shows the empty content"
+assert "    let placeholder = SplitPanePlaceholder(frame: .zero)\n" in split_menu \
+    and "            wanted.insert(draft.placeholder, at: index)\n" in controller \
+    and "requested == .hidden && pendingPane ? .floating : requested" in motion, \
+    "Add Split's pending pane no longer shows the empty content while it holds the sidebar floating"
 
 def build(directory, name, motion_source):
     source = Path(directory) / f"{name}-SidebarMotionController.swift"
     source.write_text(motion_source)
     executable = Path(directory) / name
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-target", "arm64-apple-macos13.0",
-                    str(root / "Sources/ParcCore/SpaceTheme.swift"), str(app / "ThemeRenderer.swift"), str(source),
+                    str(root / "Sources/ParcCore/SpaceTheme.swift"), str(root / "Sources/ParcCore/WindowFrame.swift"),
+                    str(app / "ThemeRenderer.swift"), str(source),
                     str(app / "SidebarChromeLayout.swift"), str(app / "WindowStandardButtons.swift"),
                     str(app / "ReloadControl.swift"), str(app / "PageLoadingIndicator.swift"), str(app / "PageCardShadow.swift"),
                     str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
