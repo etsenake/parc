@@ -1,0 +1,215 @@
+{
+  "length" : 38.799999999999997,
+  "note" : "Editable scene plan for build\/hero. Order, source in\/out segments (seconds in each MOV; consecutive segments cut inside a scene on matching resting states) and dissolveIn (≤ 0.25 s, only between near-identical frames; 0 = straight cut). Pending scenes are slotted in automatically once their MOV opens.",
+  "scenes" : [
+    {
+      "dissolveIn" : 0,
+      "file" : "scene-collapse\/out\/collapse.mov",
+      "name" : "collapse",
+      "segments" : [
+        [
+          1.6000000000000001,
+          8
+        ]
+      ],
+      "status" : "included"
+    },
+    {
+      "dissolveIn" : 0,
+      "file" : "scene-spaces\/out\/spaces.mov",
+      "name" : "spaces",
+      "segments" : [
+        [
+          0.69999999999999996,
+          2.25
+        ],
+        [
+          2.6499999999999999,
+          4.2999999999999998
+        ],
+        [
+          4.5499999999999998,
+          8.3499999999999996
+        ]
+      ],
+      "status" : "included"
+    },
+    {
+      "dissolveIn" : 0,
+      "file" : "scene-peek\/out\/peek.mov",
+      "name" : "peek",
+      "segments" : [
+        [
+          0.29999999999999999,
+          4.7000000000000002
+        ],
+        [
+          6.5499999999999998,
+          7.5999999999999996
+        ]
+      ],
+      "status" : "included"
+    },
+    {
+      "dissolveIn" : 0,
+      "file" : "scene-split\/out\/split.mov",
+      "name" : "split",
+      "segments" : [
+        [
+          1.1000000000000001,
+          8.3000000000000007
+        ]
+      ],
+      "status" : "included"
+    },
+    {
+      "dissolveIn" : 0,
+      "file" : "scene-bar-easel\/out\/commandbar.mov",
+      "name" : "commandbar",
+      "segments" : [
+        [
+          0.5,
+          2.5
+        ],
+        [
+          4.2000000000000002,
+          5.5999999999999996
+        ]
+      ],
+      "status" : "included"
+    },
+    {
+      "dissolveIn" : 0,
+      "file" : "scene-bar-easel\/out\/easel.mov",
+      "name" : "easel",
+      "segments" : [
+        [
+          2.4500000000000002,
+          7.5499999999999998
+        ]
+      ],
+      "status" : "included"
+    },
+    {
+      "dissolveIn" : 0,
+      "file" : "scene-mini-card\/out\/mini.mov",
+      "name" : "mini",
+      "segments" : [
+        [
+          0.25,
+          3.8999999999999999
+        ]
+      ],
+      "status" : "included"
+    }
+  ],
+  "source" : "hero-plan",
+  "timeline" : [
+    {
+      "end" : 6.4000000000000004,
+      "join" : "opens the film",
+      "name" : "collapse",
+      "segments" : [
+        [
+          1.6000000000000001,
+          8
+        ]
+      ],
+      "start" : 0
+    },
+    {
+      "end" : 13.4,
+      "join" : "straight cut",
+      "name" : "spaces",
+      "segments" : [
+        [
+          0.69999999999999996,
+          2.25
+        ],
+        [
+          2.6499999999999999,
+          4.2999999999999998
+        ],
+        [
+          4.5499999999999998,
+          8.3499999999999996
+        ]
+      ],
+      "start" : 6.4000000000000004
+    },
+    {
+      "end" : 18.850000000000001,
+      "join" : "straight cut",
+      "name" : "peek",
+      "segments" : [
+        [
+          0.29999999999999999,
+          4.7000000000000002
+        ],
+        [
+          6.5499999999999998,
+          7.5999999999999996
+        ]
+      ],
+      "start" : 13.4
+    },
+    {
+      "end" : 26.050000000000001,
+      "join" : "straight cut",
+      "name" : "split",
+      "segments" : [
+        [
+          1.1000000000000001,
+          8.3000000000000007
+        ]
+      ],
+      "start" : 18.850000000000001
+    },
+    {
+      "end" : 29.449999999999999,
+      "join" : "straight cut",
+      "name" : "commandbar",
+      "segments" : [
+        [
+          0.5,
+          2.5
+        ],
+        [
+          4.2000000000000002,
+          5.5999999999999996
+        ]
+      ],
+      "start" : 26.050000000000001
+    },
+    {
+      "end" : 34.549999999999997,
+      "join" : "straight cut",
+      "name" : "easel",
+      "segments" : [
+        [
+          2.4500000000000002,
+          7.5499999999999998
+        ]
+      ],
+      "start" : 29.449999999999999
+    },
+    {
+      "end" : 38.200000000000003,
+      "join" : "straight cut",
+      "name" : "mini",
+      "segments" : [
+        [
+          0.25,
+          3.8999999999999999
+        ]
+      ],
+      "start" : 34.549999999999997
+    },
+    {
+      "end" : 38.799999999999997,
+      "join" : "dissolve 0.45 s",
+      "name" : "opening frame (loop)",
+      "start" : 38.200000000000003
+    }
+  ]
+}

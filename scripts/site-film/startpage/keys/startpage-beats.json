@@ -1,0 +1,485 @@
+{
+  "beats" : [
+    {
+      "beat" : "Kite page open in Side quest (single Today tab)",
+      "end" : 0.59999999999999998,
+      "endFrame" : 36,
+      "start" : 0,
+      "startFrame" : 0
+    },
+    {
+      "beat" : "Command-W: page fades out while the start page fades in beneath (0.2 s, eased out 1-(1-u)^2, opacities locked)",
+      "end" : 0.80000000000000004,
+      "endFrame" : 48,
+      "start" : 0.59999999999999998,
+      "startFrame" : 36
+    },
+    {
+      "beat" : "Close lands: Today row leaves; resident bar fades in (0.15 s easeOut), field focused",
+      "end" : 0.96666666666666679,
+      "endFrame" : 58,
+      "start" : 0.80000000000000004,
+      "startFrame" : 48
+    },
+    {
+      "beat" : "Caret blinks in the empty resident bar",
+      "end" : 2,
+      "endFrame" : 120,
+      "start" : 0.96666666666666679,
+      "startFrame" : 58
+    },
+    {
+      "beat" : "Typing \"picnic\"; results grow downward from the fixed top edge (max 5 rows)",
+      "end" : 2.7400000000000002,
+      "endFrame" : 164,
+      "start" : 2,
+      "startFrame" : 120
+    },
+    {
+      "beat" : "Hold on results",
+      "end" : 4,
+      "endFrame" : 240,
+      "start" : 2.7400000000000002,
+      "startFrame" : 164
+    },
+    {
+      "beat" : "Escape: query cleared, results collapse to the 64 pt field",
+      "end" : 4.4500000000000002,
+      "endFrame" : 267,
+      "start" : 4,
+      "startFrame" : 240
+    },
+    {
+      "beat" : "Pointer drifts to the mark",
+      "end" : 5.3499999999999996,
+      "endFrame" : 321,
+      "start" : 4.4500000000000002,
+      "startFrame" : 267
+    },
+    {
+      "beat" : "Press and hold on the mark (hold threshold 0.35 s)",
+      "end" : 5.8499999999999996,
+      "endFrame" : 351,
+      "start" : 5.5,
+      "startFrame" : 330
+    },
+    {
+      "beat" : "Charge-up: squish + glow fill over 0.65 s, buzz once full",
+      "end" : 6.9500000000000002,
+      "endFrame" : 417,
+      "start" : 5.8499999999999996,
+      "startFrame" : 351
+    },
+    {
+      "beat" : "Release at full charge: loop the loop (0.95 s) + 90 confetti pieces",
+      "end" : 7.9000000000000004,
+      "endFrame" : 474,
+      "start" : 6.9500000000000002,
+      "startFrame" : 417
+    },
+    {
+      "beat" : "Landing squash + wobble settle",
+      "end" : 8.6916666666666664,
+      "endFrame" : 522,
+      "start" : 7.9000000000000004,
+      "startFrame" : 474
+    },
+    {
+      "beat" : "Confetti falls and fades out",
+      "end" : 9.25,
+      "endFrame" : 555,
+      "start" : 6.9500000000000002,
+      "startFrame" : 417
+    },
+    {
+      "beat" : "Resting start page (pointer gone, no confetti, caret blinking; last frame caret fully on)",
+      "end" : 11.266666666666667,
+      "endFrame" : 676,
+      "start" : 9.25,
+      "startFrame" : 555
+    }
+  ],
+  "codec" : "hevcWithAlpha",
+  "commandBarSlot" : [
+    139,
+    397,
+    765
+  ],
+  "duration" : 11.266666666666667,
+  "events" : [
+    {
+      "event" : "sidebar row leaves; tab closed",
+      "t" : 0.80000000000000004
+    },
+    {
+      "event" : "close lands; resident bar fades in 0.15 s easeOut, field focused",
+      "t" : 0.83333333333333337
+    },
+    {
+      "cues" : "[]",
+      "event" : "mouse down on mark",
+      "holdDeadline" : 5.8499999999999996,
+      "t" : 5.5
+    },
+    {
+      "cues" : "[render.StartPageMarkCue.begin(render.StartPageMarkEasterEgg.charge)]",
+      "effects" : "[render.StartPageMarkSession.Effect.charge(render.StartPageMarkMotionStyle.motion)]",
+      "event" : "hold elapsed (0.35 s)",
+      "t" : 5.8499999999999996
+    },
+    {
+      "colors" : 1,
+      "event" : "confetti",
+      "home" : [
+        521.5,
+        325
+      ],
+      "lifeMax" : 2.2980338932954192,
+      "pieces" : 90
+    },
+    {
+      "cues" : "[render.StartPageMarkCue.discharge(1.0)]",
+      "effects" : "[render.StartPageMarkSession.Effect.play(render.StartPageMarkPlay.loop)]",
+      "event" : "mouse up",
+      "level" : 1,
+      "t" : 6.9500000000000002
+    },
+    {
+      "effects" : "[render.StartPageMarkSession.Effect.haptic]",
+      "event" : "loop lands; landing squash + wobble",
+      "landingDuration" : 0.79166666666666663,
+      "t" : 7.9000000000000004
+    },
+    {
+      "event" : "confetti cleared",
+      "t" : 9.25
+    }
+  ],
+  "file" : "startpage.mov",
+  "fps" : 60,
+  "frames" : 676,
+  "height" : 1800,
+  "keys" : [
+    {
+      "frame" : 120,
+      "t" : 2,
+      "text" : "p"
+    },
+    {
+      "frame" : 129,
+      "t" : 2.1499999999999999,
+      "text" : "pi"
+    },
+    {
+      "frame" : 137,
+      "t" : 2.2799999999999998,
+      "text" : "pic"
+    },
+    {
+      "frame" : 148,
+      "t" : 2.4700000000000002,
+      "text" : "picn"
+    },
+    {
+      "frame" : 156,
+      "t" : 2.6000000000000001,
+      "text" : "picni"
+    },
+    {
+      "frame" : 164,
+      "t" : 2.7400000000000002,
+      "text" : "picnic"
+    }
+  ],
+  "mark" : [
+    489,
+    277,
+    65,
+    96
+  ],
+  "pageCard" : [
+    228,
+    10,
+    1042,
+    820
+  ],
+  "pointSize" : [
+    1440,
+    900
+  ],
+  "scale" : 2,
+  "trace" : [
+    {
+      "barAlpha" : 0,
+      "caret" : 0,
+      "confetti" : 0,
+      "frame" : 18,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 1,
+      "pointer" : null,
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 0,
+      "t" : 0.29999999999999999
+    },
+    {
+      "barAlpha" : 0,
+      "caret" : 0,
+      "confetti" : 0,
+      "frame" : 42,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 0.25000000000000011,
+      "pointer" : null,
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 0.74999999999999989,
+      "t" : 0.69999999999999996
+    },
+    {
+      "barAlpha" : 0.74222066561078548,
+      "caret" : 1,
+      "confetti" : 0,
+      "frame" : 54,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 0,
+      "pointer" : null,
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 0.90000000000000002
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 0,
+      "confetti" : 0,
+      "frame" : 96,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 0,
+      "pointer" : null,
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 1.6000000000000001
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 1,
+      "confetti" : 0,
+      "frame" : 138,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 0,
+      "pointer" : null,
+      "query" : "pic",
+      "rows" : 5,
+      "startPageAlpha" : 1,
+      "t" : 2.2999999999999998
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 0,
+      "confetti" : 0,
+      "frame" : 204,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 0,
+      "pointer" : null,
+      "query" : "picnic",
+      "rows" : 5,
+      "startPageAlpha" : 1,
+      "t" : 3.3999999999999999
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 1,
+      "confetti" : 0,
+      "frame" : 258,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 0,
+      "pointer" : null,
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 4.2999999999999998
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 1,
+      "confetti" : 0,
+      "frame" : 312,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 0,
+      "pointer" : [
+        765.71982452210375,
+        369.48756060182637
+      ],
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 5.2000000000000002
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 1,
+      "confetti" : 0,
+      "frame" : 372,
+      "markShadowOpacity" : 0.84592628479003906,
+      "pageAlpha" : 0,
+      "pointer" : [
+        747,
+        345
+      ],
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 6.2000000000000002
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 0,
+      "confetti" : 0,
+      "frame" : 405,
+      "markShadowOpacity" : 0.89999997615814209,
+      "pageAlpha" : 0,
+      "pointer" : [
+        747,
+        345
+      ],
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 6.75
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 0,
+      "confetti" : 0,
+      "frame" : 408,
+      "markShadowOpacity" : 0.89999997615814209,
+      "pageAlpha" : 0,
+      "pointer" : [
+        747,
+        345
+      ],
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 6.7999999999999998
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 1,
+      "confetti" : 90,
+      "frame" : 444,
+      "markShadowOpacity" : 0.4050000011920929,
+      "pageAlpha" : 0,
+      "pointer" : [
+        747,
+        345
+      ],
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 7.4000000000000004
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 1,
+      "confetti" : 90,
+      "frame" : 445,
+      "markShadowOpacity" : 0.38666665554046631,
+      "pageAlpha" : 0,
+      "pointer" : [
+        747.95073767795554,
+        345.99144632148472
+      ],
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 7.416666666666667
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 0,
+      "confetti" : 90,
+      "frame" : 468,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 0,
+      "pointer" : [
+        900.60264428425035,
+        502.81503254559163
+      ],
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 7.7999999999999998
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 0.83333333333333037,
+      "confetti" : 90,
+      "frame" : 486,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 0,
+      "pointer" : [
+        1123.0621027555192,
+        707.45928831855269
+      ],
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 8.0999999999999996
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 0.16666666666666963,
+      "confetti" : 76,
+      "frame" : 516,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 0,
+      "pointer" : null,
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 8.5999999999999996
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 1,
+      "confetti" : 0,
+      "frame" : 564,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 0,
+      "pointer" : null,
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 9.4000000000000004
+    },
+    {
+      "barAlpha" : 1,
+      "caret" : 1,
+      "confetti" : 0,
+      "frame" : 675,
+      "markShadowOpacity" : 0,
+      "pageAlpha" : 0,
+      "pointer" : null,
+      "query" : "",
+      "rows" : 0,
+      "startPageAlpha" : 1,
+      "t" : 11.25
+    }
+  ],
+  "width" : 2880,
+  "window" : {
+    "height" : 840,
+    "origin" : "top-left",
+    "pixels" : [
+      160,
+      36,
+      2560,
+      1680
+    ],
+    "width" : 1280,
+    "x" : 80,
+    "y" : 18
+  }
+}

@@ -1,0 +1,12 @@
+*
+!*/
+!.gitignore
+!README.md
+!*.swift
+!*.py
+!*.json
+!*.html
+!pages/png/*.png
+gen/
+out/
+build/

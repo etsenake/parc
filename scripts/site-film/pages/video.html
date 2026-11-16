@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>html{padding:0!important;margin:0!important}
+*{box-sizing:border-box;margin:0}
+body{background:#0F0F12;color:#F2F2F5;font:15px system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+.top{display:flex;align-items:center;gap:16px;padding:14px 28px}
+.top b{font-size:20px;letter-spacing:-.02em}
+.top .s{flex:1;max-width:520px;margin:0 auto;padding:9px 16px;border-radius:999px;background:#1E1E24;color:#8D8D99}
+.wrap{display:grid;grid-template-columns:1fr 300px;gap:24px;padding:10px 28px}
+.player{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:linear-gradient(180deg,#3A1E52 0%,#8A3A5E 45%,#E9805B 75%,#F4B79A 100%)}
+.player .sun{position:absolute;left:58%;top:42%;width:120px;height:120px;border-radius:50%;background:#FFE3A1;box-shadow:0 0 90px 30px rgba(255,200,140,.45)}
+.player svg{position:absolute;left:0;bottom:0;width:100%;height:46%}
+.bar{position:absolute;left:18px;right:18px;bottom:16px;height:5px;border-radius:3px;background:rgba(255,255,255,.3)}
+.bar i{display:block;width:38%;height:100%;border-radius:3px;background:#FF4A57}
+h1{margin-top:16px;font-size:22px;font-weight:700}
+.ch{display:flex;align-items:center;gap:12px;margin-top:12px;color:#B5B5C0}
+.ch i{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#7DB36B,#2D5BFF)}
+.side div{display:flex;gap:12px;margin-bottom:14px}
+.side i{flex:none;width:140px;height:80px;border-radius:10px;background:linear-gradient(135deg,#2C2F6E,#E9805B)}
+.side div:nth-child(2) i{background:linear-gradient(135deg,#237A51,#9CCB8C)}
+.side div:nth-child(3) i{background:linear-gradient(135deg,#C4502E,#FFD27A)}
+.side div:nth-child(4) i{background:linear-gradient(135deg,#7550E6,#9DB4FF)}
+.side span{font-size:14px;line-height:1.35;color:#D8D8E0}
+</style>
+</head>
+<body>
+<header class="top"><b>Reel</b><div class="s">Search</div></header>
+<div class="wrap">
+<div>
+<div class="player"><div class="sun"></div><svg viewBox="0 0 800 200" preserveAspectRatio="none"><path d="M0 80 C 160 30, 330 50, 480 80 C 620 108, 720 60, 800 70 L800 200 L0 200 Z" fill="#4A2D52"/><path d="M0 140 C 240 100, 520 150, 800 120 L800 200 L0 200 Z" fill="#24162C"/></svg><div class="bar"><i></i></div></div>
+<h1>Golden hour over the hills — a slow film</h1>
+<div class="ch"><i></i><span>Slow Weekends · 214K views</span></div>
+</div>
+<div class="side"><div><i></i><span>Night sky timelapse, no music</span></div><div><i></i><span>A walk through the east meadow</span></div><div><i></i><span>Baking sourdough at dawn</span></div><div><i></i><span>City lights from the ridge</span></div></div>
+</div>
+</body>
+</html>

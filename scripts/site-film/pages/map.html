@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>html{padding:0!important;margin:0!important}
+*{box-sizing:border-box;margin:0}
+body{position:relative;height:1000px;overflow:hidden;background:#EEF0E6;font:15px system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+.map{position:absolute;inset:0;background:
+linear-gradient(90deg,transparent 0 118px,#FFFFFF 118px 132px,transparent 132px) 0 0/250px 100%,
+linear-gradient(0deg,transparent 0 98px,#FFFFFF 98px 110px,transparent 110px) 0 0/100% 210px,
+#EEF0E6}
+.park{position:absolute;left:300px;top:250px;width:420px;height:300px;border-radius:40px 80px 60px 30px;background:#B9DDA5}
+.lake{position:absolute;left:430px;top:330px;width:150px;height:90px;border-radius:50%;background:#A8D4F2}
+.river{position:absolute;left:-40px;top:640px;width:1400px;height:70px;transform:rotate(-8deg);background:#A8D4F2}
+.pin{position:absolute;left:500px;top:250px;width:40px;height:40px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#E8453C;box-shadow:0 6px 14px rgba(0,0,0,.25)}
+.pin::after{content:"";position:absolute;left:13px;top:13px;width:14px;height:14px;border-radius:50%;background:#FFFFFF}
+.search{position:absolute;left:24px;top:24px;width:360px;padding:14px 18px;border-radius:14px;background:#FFFFFF;box-shadow:0 4px 18px rgba(0,0,0,.12);color:#2B2B2B;font-weight:600}
+.search small{display:block;margin-top:4px;font-weight:400;color:#777}
+.label{position:absolute;left:350px;top:470px;font-weight:700;color:#3C6B35}
+</style>
+</head>
+<body>
+<div class="map"></div>
+<div class="park"></div><div class="lake"></div><div class="river"></div>
+<div class="pin"></div>
+<div class="search">East Meadow Park<small>12 min walk · Open until 10 pm</small></div>
+<div class="label">East Meadow</div>
+</body>
+</html>
