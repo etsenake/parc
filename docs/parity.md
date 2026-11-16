@@ -33,8 +33,8 @@ remaining effort, speed, or additions outside that old checklist.
 | Performance | 40.0% | Retired: broad comparison obligations did not describe a measured speed deficit. |
 | Whole-product polish | 0% | Retired: universal review criteria did not mean no polishing had been done. |
 
-The folder count includes answering whether Duplicate has Undo: it does not.
-Adding Undo is a separate product decision, not a newly completed feature.
+The folder count includes answering whether Duplicate had Undo; it did not then.
+Duplicate has since gained Undo, which these figures do not count.
 The setup count corrects old arithmetic; the audit also found silent failures
 when installing iCloud Passwords or removing an imported blocker. Those failures
 remain in the [backlog](backlog.md#onboarding), outside the old count.
@@ -67,7 +67,7 @@ is resolved.
 | Independent browser engine | Native pages, real Chromium profiles, renderer recovery, permissions, authentication and native input; no dependency on another installed browser. Most of Parc's engine logic sits in its own files behind extension points and hooks. | [Engine](../Engine/README.md), [Chromium changes](chromium-seams.md), [web interactions](web-interactions.md) |
 | Spaces and profiles | Local profiles, named Spaces, profile assignment, per-window selection, theme editing and persistence. | [Space management](space-management.md), [themes](space-theme-editor.md) |
 | Sidebar and tabs | Today, pinned tabs, Favorites, unread/mute state, resizing, hide/reveal, multi-selection, closed-item recovery and tab picture previews. | [Saved tabs](saved-tabs.md), [sidebar previews](sidebar-previews.md), [sidebar motion](sidebar-motion.md) |
-| Folders | Nested folders, original-item moves, duplication and bulk archive/delete with existing Undo and close consent. Some collection and drag cases remain open. | [Folder moves](folder-moves.md), [folder commands](folder-commands.md) |
+| Folders | Nested folders, original-item moves, and duplication and bulk archive/delete with window Undo and close consent. Some collection and drag cases remain open. | [Folder moves](folder-moves.md), [folder commands](folder-commands.md) |
 | Navigation and command bar | History navigation, site search, address editing, contextual actions, typed commands and live command validation inside the browser window; an empty Space shows a start page with a resident command bar. | [Navigation](navigation.md), [command bar](command-bar.md), [start page](start-page.md) |
 | Keyboard and switching | Custom shortcuts and website priorities, Essentials, positional/history navigation and the recent-tab switcher. | [Keyboard](keyboard-navigation.md), [tab switcher](tab-switcher.md) |
 | Split views and Peek | Grouped splits, pane navigation/resizing, tab and link drops, temporary page previews and promotion into normal tabs. | [Splits](split-groups.md), [Peek](peek.md) |

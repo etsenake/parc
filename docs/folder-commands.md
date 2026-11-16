@@ -53,8 +53,28 @@ saved tree or claim that a page opened.
 
 Command–Option–Return on **Pin to [folder]** copies the eligible original
 collection into that captured same-profile folder through the same fresh-ID
-transaction. See [command bar](command-bar.md). Duplicate has no registered
-browser-window Undo operation; ordinary Delete Undo is a separate capability.
+transaction. See [command bar](command-bar.md).
+
+### Duplicate Undo and Redo
+
+Duplicate and the Pin to [folder] copy each record one step, **Duplicate** or
+**Copy to Folder**, on the originating window's Undo stack. Undo removes exactly
+the copied folders, tabs, splits and Note/Easel aliases. Copies are not archived,
+originals stay untouched and document contents never change. Copied pages close
+through Delete's native consent, and a selected copy hands selection to a
+survivor using Delete's replacement rules. Undo waits while a copy's page is
+still opening or already closing.
+
+Undo binds the copies' identities and placement. Each root must stay in its
+original container, copied folders must hold exactly their copied children, and
+splits keep their members. A moved, archived or regrouped copy, or a new child
+inside a copied folder, retires the step instead of removing anything. Renames,
+navigation and other edits do not: Undo records the copies as they are, and Redo
+restores those records with the same IDs beside their surviving neighbors. It
+then reopens the background pages Duplicate opened if the window still shows the
+originating Space. Redo waits while a copied document cannot validate and refuses
+if a copied ID returned or the parent folder is gone. Whole-split Option-drag
+copies keep no Undo, like other sidebar drags.
 
 ## Typed Note and Easel reference copies
 
@@ -174,13 +194,13 @@ It uses Move to New Space ownership checks and is unavailable in private windows
 
 ## Checks and limits
 
-BrowserStore, document-alias, copy-to-folder, close/Undo and window-presentation
+BrowserStore, document-alias, copy-to-folder, close/Undo, duplicate Undo and window-presentation
 components cover atomic persistence, genuine asynchronous refusal, exact IDs,
 shared edits/assets and stale-owner cancellation using disposable data.
 
 Folder deletion keeps its nested restoration data in the window's Undo/Reopen
 record. Library Put Back restores archived tabs and splits, including their
 original folder when it still exists; it cannot recreate a deleted folder.
-See [archive restoration](archive.md) and the [Duplicate Undo decision](backlog.md#folders).
+See [archive restoration](archive.md).
 Collection Duplicate stays within the source Profile; whole-split cross-Profile
 copies have the separate [copy contract](split-groups.md#whole-split-copy-and-external-drags--sp23).

@@ -75,8 +75,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
   copy/relocation transactions. [Folder moves](folder-moves.md).
 - Close does not handle selections containing only empty saved folders. Favorite
   tiles do not join range/multi-selection. [Sidebar selection](sidebar-selection.md).
-- Decide whether Duplicate should gain Undo. Existing duplication works without
-  it; preserve that behavior until the decision changes. [Folder commands](folder-commands.md).
 
 ## Archive and history
 

@@ -294,7 +294,7 @@ autocomplete; exiting starts a fresh ordinary request in the same valid session.
 | Favorite / Unfavorite | Atomic original-item membership transaction |
 | Pin to Folder / Space | Original sidebar collection move, retaining pages and saved homes |
 | Pin to New Folder | Folder creation, Undo and rename |
-| Duplicate Current Tab | Sidebar duplicate transaction |
+| Duplicate Current Tab | Sidebar duplicate transaction and its Undo |
 | Replace Pin with Current Page | Keep identity, replace saved home |
 | Undo / Redo | Current window undo stack |
 | Add/Convert Split | Existing split insertion and orientation owners |
@@ -311,7 +311,8 @@ Command–Option–Return on Pin to Folder copies the captured collection with f
 item/folder/split identities in one save. Copies use original live addresses or
 saved homes, not navigation histories or POST replay. Local document aliases
 retain their existing document IDs after actual store validation; they do not
-clone document bytes. See [folder commands](folder-commands.md).
+clone document bytes. One window Undo step takes the copy back; see
+[folder commands](folder-commands.md#duplicate-undo-and-redo).
 
 ### MainMenu Type Travel data
 

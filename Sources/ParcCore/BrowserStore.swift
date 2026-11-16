@@ -1328,7 +1328,7 @@ struct SidebarKeyboardCloseTarget: Equatable {
     var requiresConfirmation: Bool { archivesItems && !items.folderIDs.isEmpty }
 }
 
-struct FolderDeletionUndo {
+struct FolderDeletionUndo: SidebarItemsRecord {
     let id = UUID()
     let roots: [SidebarItemReference]
     let spaceID: UUID, profileID: UUID
@@ -1377,7 +1377,21 @@ struct FolderDeletionUndo {
         focusedTabID = selection?.originalFocus.flatMap { focus in target.tabs.contains { $0.id == focus } ? focus : nil }
     }
 
-    func redoTarget(in state: BrowserState) -> FolderRemovalTarget? {
+    func redoTarget(in state: BrowserState) -> FolderRemovalTarget? { matchingTarget(in: state) }
+}
+
+protocol SidebarItemsRecord {
+    var roots: [SidebarItemReference] { get }
+    var spaceID: UUID { get }
+    var profileID: UUID { get }
+    var folders: [BrowserFolder] { get }
+    var tabs: [BrowserTab] { get }
+    var groups: [BrowserSplitLayout] { get }
+    var locations: [FolderDeletionUndo.Location] { get }
+}
+
+extension SidebarItemsRecord {
+    func matchingTarget(in state: BrowserState) -> FolderRemovalTarget? {
         guard let target = FolderRemovalTarget(items: roots, spaceID: spaceID, profileID: profileID, state: state),
               locations.allSatisfy({ location in
                   location.siblings.filter(roots.contains).allSatisfy {
@@ -1392,6 +1406,88 @@ struct FolderDeletionUndo {
               }), target.groups.count == groups.count,
               target.groups.allSatisfy({ group in groups.contains { $0.id == group.id && $0.tabIDs == group.tabIDs } }) else { return nil }
         return target
+    }
+
+    func reinsertingRoots(current state: BrowserState, into next: inout BrowserState) -> Bool {
+        for location in locations {
+            var siblings = SidebarHierarchy.children(in: location.container, state: state)
+            for root in location.siblings where roots.contains(root) {
+                guard let position = location.siblings.firstIndex(of: root), !siblings.contains(root) else { return false }
+                let following = location.siblings.dropFirst(position + 1).first { siblings.contains($0) }
+                let preceding = location.siblings.prefix(position).reversed().first { siblings.contains($0) }
+                let insertion = following.flatMap { siblings.firstIndex(of: $0) }
+                    ?? preceding.flatMap { siblings.firstIndex(of: $0).map { $0 + 1 } }
+                    ?? min(position, siblings.count)
+                siblings.insert(root, at: insertion)
+            }
+            next.sidebarItemOrder[location.container.key] = siblings.map { item in
+                if case .split(let id) = item, let anchor = next.splitLayouts.first(where: { $0.id == id })?.sidebarAnchorID { return .tab(anchor) }
+                return item
+            }
+        }
+        return true
+    }
+}
+
+struct SidebarCopyUndo: SidebarItemsRecord {
+    static let duplicateName = "Duplicate"
+    static let folderCopyName = "Copy to Folder"
+    let actionName: String
+    let roots: [SidebarItemReference]
+    let spaceID: UUID, profileID: UUID
+    let folders: [BrowserFolder]
+    let tabs: [BrowserTab]
+    let groups: [BrowserSplitLayout]
+    let locations: [FolderDeletionUndo.Location]
+    let childOrder: [String: [SidebarItemReference]]
+    let detachedArchive: [BrowserTab]
+    let documentReferences: [UUID: SidebarDocumentReference]
+    let openTabIDs: [UUID]
+
+    init?(actionName: String, roots: [SidebarItemReference], spaceID: UUID, profileID: UUID,
+          documents: [SidebarDocumentReference], openTabIDs: [UUID], state: BrowserState) {
+        guard let target = FolderRemovalTarget(items: roots, spaceID: spaceID, profileID: profileID, state: state),
+              target.roots == roots else { return nil }
+        self.actionName = actionName; self.roots = roots
+        self.spaceID = spaceID; self.profileID = profileID
+        folders = target.hierarchy.folders.filter { target.folderIDs.contains($0.id) }
+        tabs = target.tabs; groups = target.groups
+        var seen = Set<String>()
+        locations = roots.compactMap { root in
+            guard let container = SidebarHierarchy.location(of: root, state: state, spaceID: spaceID),
+                  seen.insert(container.key).inserted else { return nil }
+            return .init(container: container, siblings: SidebarHierarchy.children(in: container, state: state))
+        }
+        childOrder = Dictionary(uniqueKeysWithValues: target.folderIDs.map { id in
+            let location = SidebarContainerLocation(spaceID: spaceID, folderID: id, section: .pinned)
+            return (location.key, SidebarHierarchy.children(in: location, state: state).map { item in
+                if case .split(let id) = item, let anchor = target.groups.first(where: { $0.id == id })?.sidebarAnchorID { return .tab(anchor) }
+                return item
+            })
+        })
+        detachedArchive = state.tabs.filter { $0.archivedAt != nil && $0.folderID.map(target.folderIDs.contains) == true }
+        documentReferences = Dictionary(uniqueKeysWithValues: target.tabs.compactMap { tab in
+            guard let page = InternalPage(urlString: tab.savedURL),
+                  let reference = documents.first(where: { $0.page == page && $0.profileID == tab.profileID }) else { return nil }
+            return (tab.id, reference)
+        })
+        self.openTabIDs = openTabIDs
+    }
+
+    func refreshed(in state: BrowserState) -> SidebarCopyUndo? {
+        SidebarCopyUndo(actionName: actionName, roots: roots, spaceID: spaceID, profileID: profileID,
+                        documents: Array(documentReferences.values), openTabIDs: openTabIDs, state: state)
+    }
+
+    @MainActor var documentsAreAvailable: Bool {
+        SidebarDocumentReference.validates(tabs, references: documentReferences)
+    }
+}
+
+extension FolderRemovalSelection {
+    func isCurrent(for target: FolderRemovalTarget, in state: BrowserState) -> Bool {
+        Self.resolve(target: target, state: state, selected: original, focused: originalFocus, referrerPool: referrerPool,
+                     previouslySelectedItemID: previouslySelectedItemID, available: { tabIDs.contains($0) }) == self
     }
 }
 
@@ -4051,10 +4147,7 @@ final class BrowserStore: ObservableObject {
             guard FolderRemovalTarget(items: target.roots, spaceID: expected.spaceID,
                 profileID: expected.profileID, state: self.state) == target,
                   SidebarDocumentReference.validates(target.tabs, references: documents) else { return false }
-            guard let selection else { return true }
-            return FolderRemovalSelection.resolve(target: target, state: self.state,
-                selected: selection.original, focused: selection.originalFocus, referrerPool: selection.referrerPool,
-                previouslySelectedItemID: selection.previouslySelectedItemID, available: { selection.tabIDs.contains($0) }) == selection
+            return selection?.isCurrent(for: target, in: self.state) ?? true
         }
         guard current(), ids.isDisjoint(with: retiringTabIDs) else { completion(.success(false)); return }
         withRetiredPages(ids, shouldCommit: {
@@ -4072,39 +4165,13 @@ final class BrowserStore: ObservableObject {
                 let group = UUID()
                 for id in split.tabIDs { provenance[id]?.groupID = group; provenance[id]?.split = split }
             }
-            for index in next.tabs.indices {
-                if ids.contains(next.tabs[index].id) {
-                    next.tabs[index].archivedAt = now
-                    next.tabs[index].archiveProvenance = provenance[next.tabs[index].id]
-                }
-                if next.tabs[index].folderID.map(target.folderIDs.contains) == true { next.tabs[index].folderID = nil }
+            for index in next.tabs.indices where ids.contains(next.tabs[index].id) {
+                next.tabs[index].archivedAt = now
+                next.tabs[index].archiveProvenance = provenance[next.tabs[index].id]
             }
-            next.folders.removeAll { target.folderIDs.contains($0.id) }
-            next.splitLayouts.removeAll { !$0.tabIDs.allSatisfy { !ids.contains($0) } }
             next.recentlyClosedIDs.removeAll { ids.contains($0) }
             next.recentlyClosedIDs += target.tabs.map(\.id)
-            next.selectedTabIDs.removeAll { ids.contains($0) }
-            for key in Array(next.selectionBySpace.keys) { next.selectionBySpace[key]?.removeAll { ids.contains($0) } }
-            if let selection {
-                next.selectionBySpace[selection.replacementSpaceID.uuidString] = selection.tabIDs
-                if next.activeSpaceID == expected.spaceID && self.state.selectedTabIDs == selection.original {
-                    next.activeSpaceID = selection.replacementSpaceID
-                    next.selectedTabIDs = selection.tabIDs
-                }
-            }
-            let deletedContainers = Set(target.folderIDs.map {
-                SidebarContainerLocation(spaceID: expected.spaceID, folderID: $0, section: .pinned).key
-            })
-            for key in Array(next.sidebarItemOrder.keys) {
-                if deletedContainers.contains(key) { next.sidebarItemOrder.removeValue(forKey: key); continue }
-                next.sidebarItemOrder[key]?.removeAll { item in
-                    switch item {
-                    case .folder(let id): return target.folderIDs.contains(id)
-                    case .tab(let id): return ids.contains(id)
-                    case .split(let id): return target.groups.contains { $0.id == id }
-                    }
-                }
-            }
+            self.detachSidebarItems(target, selection: selection, from: &next)
             do {
                 let undo = FolderDeletionUndo(target: target, selection: selection, documents: documents, before: self.state, after: next)
                 try self.commitProfileSettings(next)
@@ -4155,24 +4222,106 @@ final class BrowserStore: ObservableObject {
         next.splitLayouts += undo.groups
         next.recentlyClosedIDs.removeAll { ids.contains($0) }
         for (key, order) in undo.childOrder { next.sidebarItemOrder[key] = order }
-        for location in undo.locations {
-            var siblings = SidebarHierarchy.children(in: location.container, state: state)
-            for root in location.siblings where undo.roots.contains(root) {
-                guard let position = location.siblings.firstIndex(of: root), !siblings.contains(root) else { return false }
-                let following = location.siblings.dropFirst(position + 1).first { siblings.contains($0) }
-                let preceding = location.siblings.prefix(position).reversed().first { siblings.contains($0) }
-                let insertion = following.flatMap { siblings.firstIndex(of: $0) }
-                    ?? preceding.flatMap { siblings.firstIndex(of: $0).map { $0 + 1 } }
-                    ?? min(position, siblings.count)
-                siblings.insert(root, at: insertion)
-            }
-            next.sidebarItemOrder[location.container.key] = siblings.map { item in
-                if case .split(let id) = item, let anchor = next.splitLayouts.first(where: { $0.id == id })?.sidebarAnchorID { return .tab(anchor) }
-                return item
-            }
-        }
+        guard undo.reinsertingRoots(current: state, into: &next) else { return false }
         try commitProfileSettings(next)
         return true
+    }
+
+    func removeSidebarCopy(_ undo: SidebarCopyUndo, target: FolderRemovalTarget,
+                           selection: FolderRemovalSelection? = nil,
+                           shouldCommit: @escaping () -> Bool,
+                           didCommit: ((SidebarCopyUndo) -> Void)? = nil,
+                           completion: @escaping (Result<Bool, Error>) -> Void) {
+        let ids = Set(target.tabs.map(\.id))
+        let current: () -> Bool = { [weak self] in
+            guard let self, !self.isProfileRemovalPending(undo.profileID),
+                  undo.matchingTarget(in: self.state) == target else { return false }
+            return selection?.isCurrent(for: target, in: self.state) ?? true
+        }
+        guard !isEphemeral, current(), ids.isDisjoint(with: retiringTabIDs) else { completion(.success(false)); return }
+        withRetiredPages(ids, shouldCommit: {
+            guard current(), shouldCommit() else { return false }
+            return current()
+        }, onRefusal: { completion(.success(false)) }) { [weak self] in
+            guard let self, current(), let refreshed = undo.refreshed(in: self.state) else { completion(.success(false)); return }
+            var next = self.state
+            next.tabs.removeAll { ids.contains($0.id) }
+            next.recentlyClosedIDs.removeAll { ids.contains($0) }
+            self.detachSidebarItems(target, selection: selection, from: &next)
+            do {
+                try self.commitProfileSettings(next)
+                didCommit?(refreshed)
+                completion(.success(true))
+            } catch { completion(.failure(error)) }
+        }
+    }
+
+    func canRestoreSidebarCopy(_ undo: SidebarCopyUndo) -> Bool {
+        let folderIDs = Set(undo.folders.map(\.id)), ids = Set(undo.tabs.map(\.id)), groupIDs = Set(undo.groups.map(\.id))
+        return !isEphemeral && !isProfileRemovalPending(undo.profileID)
+            && state.profiles.contains(where: { $0.id == undo.profileID })
+            && state.spaces.contains(where: { $0.id == undo.spaceID && $0.profileID == undo.profileID })
+            && folderIDs.count == undo.folders.count && ids.count == undo.tabs.count && groupIDs.count == undo.groups.count
+            && state.folders.allSatisfy({ !folderIDs.contains($0.id) })
+            && state.tabs.allSatisfy({ !ids.contains($0.id) })
+            && state.splitLayouts.allSatisfy({ group in !groupIDs.contains(group.id) && group.tabIDs.allSatisfy { !ids.contains($0) } })
+            && undo.locations.allSatisfy({ location in
+                location.container.folderID == nil || state.folders.contains(where: {
+                    $0.id == location.container.folderID && $0.spaceID == undo.spaceID
+                })
+            })
+    }
+
+    @discardableResult
+    func restoreSidebarCopy(_ undo: SidebarCopyUndo, shouldCommit: () -> Bool) throws -> Bool {
+        let ids = Set(undo.tabs.map(\.id))
+        guard canRestoreSidebarCopy(undo), undo.documentsAreAvailable, ids.isDisjoint(with: retiringTabIDs),
+              shouldCommit(), canRestoreSidebarCopy(undo), undo.documentsAreAvailable,
+              ids.isDisjoint(with: retiringTabIDs) else { return false }
+        var next = state
+        next.folders += undo.folders
+        next.tabs += undo.tabs
+        for original in undo.detachedArchive {
+            var expected = original; expected.folderID = nil
+            if let index = next.tabs.firstIndex(where: { $0 == expected }) { next.tabs[index].folderID = original.folderID }
+        }
+        next.splitLayouts += undo.groups
+        for (key, order) in undo.childOrder { next.sidebarItemOrder[key] = order }
+        guard undo.reinsertingRoots(current: state, into: &next) else { return false }
+        try commitProfileSettings(next)
+        return true
+    }
+
+    private func detachSidebarItems(_ target: FolderRemovalTarget, selection: FolderRemovalSelection?,
+                                    from next: inout BrowserState) {
+        let ids = Set(target.tabs.map(\.id)), spaceID = target.hierarchy.spaceID
+        for index in next.tabs.indices where next.tabs[index].folderID.map(target.folderIDs.contains) == true {
+            next.tabs[index].folderID = nil
+        }
+        next.folders.removeAll { target.folderIDs.contains($0.id) }
+        next.splitLayouts.removeAll { !$0.tabIDs.allSatisfy { !ids.contains($0) } }
+        next.selectedTabIDs.removeAll { ids.contains($0) }
+        for key in Array(next.selectionBySpace.keys) { next.selectionBySpace[key]?.removeAll { ids.contains($0) } }
+        if let selection {
+            next.selectionBySpace[selection.replacementSpaceID.uuidString] = selection.tabIDs
+            if next.activeSpaceID == spaceID && state.selectedTabIDs == selection.original {
+                next.activeSpaceID = selection.replacementSpaceID
+                next.selectedTabIDs = selection.tabIDs
+            }
+        }
+        let deletedContainers = Set(target.folderIDs.map {
+            SidebarContainerLocation(spaceID: spaceID, folderID: $0, section: .pinned).key
+        })
+        for key in Array(next.sidebarItemOrder.keys) {
+            if deletedContainers.contains(key) { next.sidebarItemOrder.removeValue(forKey: key); continue }
+            next.sidebarItemOrder[key]?.removeAll { item in
+                switch item {
+                case .folder(let id): return target.folderIDs.contains(id)
+                case .tab(let id): return ids.contains(id)
+                case .split(let id): return target.groups.contains { $0.id == id }
+                }
+            }
+        }
     }
 
     func canUndoClosedTabs(_ undo: ClosedTabsUndo) -> Bool {

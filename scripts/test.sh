@@ -136,6 +136,12 @@ step compile_and_run sidebar-plural-duplicate SidebarPluralDuplicateTests \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
 step compile_and_run sidebar-split-copy SidebarSplitCopyTests
+step compile_and_run duplicate-undo DuplicateUndoTests \
+  "$repo_root/Sources/ParcCore/NoteStore.swift" \
+  "$repo_root/Sources/ParcCore/EaselStore.swift" \
+  "$repo_root/Sources/ParcCore/EaselRichText.swift" \
+  "$repo_root/Sources/ParcApp/FolderUndoManager.swift" \
+  "$repo_root/Sources/ParcApp/DuplicateUndo.swift"
 
 step compile_and_run sidebar-plural-removal SidebarPluralRemovalTests \
   "$repo_root/Sources/ParcCore/NoteStore.swift" \

@@ -5306,6 +5306,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             do {
                 guard let copy = try self.store.copyCommandBarItemsToFolder(move, destinations: urls.destinations, documents: urls.documents,
                     creation: self.creationProvenance(activeTabID: self.currentTabID)) else { return }
+                self.registerSidebarCopyUndo(SidebarCopyUndo.folderCopyName, roots: copy.roots,
+                    spaceID: move.folder.spaceID, profileID: move.source.profileID, sources: urls,
+                    openTabIDs: copy.openTabIDs, originatingSpaceID: commandSpace, window: window)
                 self.render(self.store.state)
                 self.openDuplicatedChildren(copy.openTabIDs, spaceID: move.folder.spaceID,
                     profileID: move.source.profileID, window: window, originatingSpaceID: commandSpace)
@@ -9711,6 +9714,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             do {
                 guard let result = try self.store.duplicateSidebarItems(target, destinations: urls.destinations, documents: urls.documents,
                     creation: self.creationProvenance(activeTabID: self.currentTabID)) else { return false }
+                self.registerSidebarCopyUndo(SidebarCopyUndo.duplicateName, roots: result.roots,
+                    spaceID: target.hierarchy.spaceID, profileID: target.hierarchy.profileID, sources: urls,
+                    openTabIDs: result.openTabIDs, originatingSpaceID: target.hierarchy.spaceID, window: window)
                 self.openDuplicatedChildren(result.openTabIDs, spaceID: target.hierarchy.spaceID,
                     profileID: target.hierarchy.profileID, window: window)
                 return true
@@ -10038,8 +10044,48 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func redoFolder(_ operation: FolderUndoOperation, completion: @escaping (Bool) -> Void) {
-        guard folderUndoContextAvailable, let window,
-              let target = operation.record.redoTarget(in: store.state) else { completion(false); return }
+        guard let target = operation.record.redoTarget(in: store.state) else { completion(false); return }
+        retireSidebarItems(target, commit: { selection, shouldCommit, finished in
+            store.deleteFolder(target, selection: selection, documents: operation.record.documentReferences,
+                               shouldCommit: shouldCommit, didCommit: { [weak self] undo in
+                operation.record = undo
+                if let self, !target.folderIDs.isEmpty, !self.isPrivateBrowsing { self.closedItems.recordFolderDeletion(undo) }
+            }, completion: finished)
+        }, completion: completion)
+    }
+
+    private func registerSidebarCopyUndo(_ name: String, roots: [SidebarItemReference], spaceID: UUID, profileID: UUID,
+                                         sources: SidebarCopySources, openTabIDs: [UUID],
+                                         originatingSpaceID: UUID, window: NSWindow) {
+        guard let record = SidebarCopyUndo(actionName: name, roots: roots, spaceID: spaceID, profileID: profileID,
+                                           documents: Array(sources.documents.values), openTabIDs: openTabIDs,
+                                           state: store.state) else { return }
+        folderUndo.appendSidebarCopy(record, store: store, canUse: { [weak self] ids, direction in
+            guard let self, self.folderUndoContextAvailable else { return false }
+            switch direction {
+            case .undo: return self.retirementUnavailableReason?(ids) == nil
+            case .redo: return ids.allSatisfy { self.switcherCanUse($0) }
+            }
+        }, remove: { [weak self] record, target, done in
+            guard let self else { done(nil); return }
+            var refreshed: SidebarCopyUndo?
+            self.retireSidebarItems(target, commit: { selection, shouldCommit, finished in
+                self.store.removeSidebarCopy(record, target: target, selection: selection, shouldCommit: shouldCommit,
+                                             didCommit: { refreshed = $0 }, completion: finished)
+            }) { committed in done(committed ? refreshed : nil) }
+        }, didRestore: { [weak self, weak window] record in
+            guard let self, let window, self.window === window else { return }
+            self.render(self.store.state)
+            self.openDuplicatedChildren(record.openTabIDs, spaceID: record.spaceID, profileID: record.profileID,
+                                        window: window, originatingSpaceID: originatingSpaceID)
+        }, onError: { [weak self] in self?.showError($0) })
+    }
+
+    private func retireSidebarItems(_ target: FolderRemovalTarget,
+                                    commit: (FolderRemovalSelection?, @escaping () -> Bool,
+                                             @escaping (Result<Bool, Error>) -> Void) -> Void,
+                                    completion: @escaping (Bool) -> Void) {
+        guard folderUndoContextAvailable, let window else { completion(false); return }
         let space = activeSpaceID, profile = activeProfileID, selection = selectedTabIDs, focus = focusedTabID
         let ids = Set(target.tabs.map(\.id))
         guard retirementUnavailableReason?(ids) == nil else { completion(false); return }
@@ -10049,18 +10095,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 previouslySelectedItemID: presentation.previouslySelectedItemID,
                 available: { self.switcherCanUse($0) }) : nil
         guard space != target.hierarchy.spaceID || nextSelection != nil else { completion(false); return }
-        store.deleteFolder(target, selection: nextSelection, documents: operation.record.documentReferences, shouldCommit: { [weak self, weak window] in
+        commit(nextSelection, { [weak self, weak window] in
             guard let self, let window, self.window === window, self.folderUndoOwnerAvailable,
                   self.activeSpaceID == space, self.activeProfileID == profile,
                   self.selectedTabIDs == selection, self.focusedTabID == focus else { return false }
             guard let nextSelection else { return true }
             return FolderRemovalSelection.resolve(target: target, state: self.store.state,
                 selected: selection, focused: focus, referrerPool: self.presentation.referrerPool,
-            previouslySelectedItemID: self.presentation.previouslySelectedItemID,
-            available: { self.switcherCanUse($0) }) == nextSelection
-        }, didCommit: { [weak self] undo in
-            operation.record = undo
-            if let self, !target.folderIDs.isEmpty, !self.isPrivateBrowsing { self.closedItems.recordFolderDeletion(undo) }
+                previouslySelectedItemID: self.presentation.previouslySelectedItemID,
+                available: { self.switcherCanUse($0) }) == nextSelection
         }) { [weak self, weak window] result in
             guard let self, let window, self.window === window else { completion(false); return }
             switch result {
