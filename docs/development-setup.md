@@ -246,6 +246,14 @@ fixture or change a real profile.
 
 ## Write test executables
 
+`scripts/test.sh` and `scripts/test-python.py` put
+[`tests/Support/compilers`](../tests/Support/compilers/xcrun) first on `PATH`.
+Its `xcrun` passes compiler and linker calls to the real one with both output
+streams intact and fails any that print a warning, even a compile without
+`-warnings-as-errors` or `-Werror`; other tools go straight through. A runner
+started on its own gets the same check with
+`PATH="$PWD/tests/Support/compilers:$PATH"`.
+
 A failing check must exit, never crash. A trap or abort in a test binary that
 links AppKit makes macOS show a "quit unexpectedly" dialog and write a crash
 report, and negative controls fail on purpose on every run.

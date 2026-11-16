@@ -12,6 +12,8 @@ import time
 import traceback
 import unittest
 
+COMPILERS = Path(__file__).resolve().parent.parent / "tests/Support/compilers"
+
 
 def flatten(suite):
     for item in suite:
@@ -105,6 +107,7 @@ def main(argv=None):
     for folder in args.folders:
         if not folder.is_dir():
             parser.error(f"{folder} is not a folder")
+    os.environ["PATH"] = str(COMPILERS) + os.pathsep + os.environ.get("PATH", "")
     results = run_folders([str(folder.resolve()) for folder in dict.fromkeys(args.folders)], max(1, args.jobs))
     print()
     problems = [problem for outcome in results for problem in outcome["problems"]]

@@ -56,6 +56,19 @@ class ParallelRunnerTests(unittest.TestCase):
         self.assertIn("OK (skipped=1)", result.stdout)
         self.assertIn("test_fixture.Shared", result.stdout)
 
+    def test_tests_compile_through_the_warning_shim(self):
+        (self.folder / "test_path.py").write_text(textwrap.dedent(f"""
+            import shutil
+            import unittest
+
+            class Compilers(unittest.TestCase):
+                def test_xcrun_is_the_shim(self):
+                    self.assertEqual(shutil.which("xcrun"), {str(SCRIPT.parents[1] / "tests/Support/compilers/xcrun")!r})
+        """))
+        result = self.run_runner()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Ran 6 tests", result.stdout)
+
     def test_failure_and_import_error_fail_the_run_with_details(self):
         (self.folder / "test_broken.py").write_text(textwrap.dedent("""
             import unittest

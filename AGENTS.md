@@ -229,8 +229,9 @@ Use checks appropriate to the changed inputs; inspect scripts before execution.
 Swift iteration uses `scripts/check-swift.py` typechecking. A completed feature
 with material Swift changes also needs the release compile check
 (`--mode release`: the release's optimized whole-module compile without linking,
-which covers whole-module SIL too). Keep warnings as errors: the checker and
-every packaging compile fail on any compiler warning. Documentation-only
+which covers whole-module SIL too). Keep warnings as errors: the checker,
+every packaging compile and link, and the test runners fail on any compiler or
+linker warning. Documentation-only
 changes need documentation checks, not app compilation. Report relevant results
 without boilerplate disclaimers about everything those checks did not test.
 

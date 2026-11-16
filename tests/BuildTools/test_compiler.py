@@ -6,11 +6,13 @@ import io
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import threading
 import unittest
 from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
+SHIM = SCRIPTS.parent / "tests/Support/compilers/xcrun"
 
 
 def load(name: str, file: str):
@@ -117,6 +119,50 @@ class CompilerWarningTests(unittest.TestCase):
     def test_streamed_clean_compile_passes(self):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(compiler.run(tool("Apple Swift version 6"), capture=False), "")
+
+
+class TestRunnerShimTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="parc compiler shim ")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def shim(self, *arguments: str) -> subprocess.CompletedProcess:
+        return subprocess.run([str(SHIM), *arguments], cwd=self.root, text=True, capture_output=True, timeout=120)
+
+    def source(self, text: str) -> str:
+        (self.root / "main.c").write_text(text)
+        return "main.c"
+
+    def test_clean_compile_keeps_its_streams_and_status(self):
+        result = self.shim("clang", self.source("int main(void) { return 0; }\n"), "-o", "clean")
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+        self.assertTrue((self.root / "clean").is_file())
+
+    def test_softened_compiler_warning_fails_without_warnings_as_errors(self):
+        result = self.shim("clang", "-Wall", "-c", self.source("int main(void) { int unused; return 0; }\n"))
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("warning: unused variable 'unused'", result.stderr)
+        self.assertIn("clang -Wall reported 1 warning(s); Parc treats every compiler and linker warning as an error",
+                      result.stderr)
+
+    def test_linker_warning_fails(self):
+        result = self.shim("--sdk", "macosx", "clang", self.source("int main(void) { return 0; }\n"),
+                           "-Wl,-rpath,/a", "-Wl,-rpath,/a", "-o", "linked")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("ld: warning: duplicate -rpath '/a' ignored", result.stderr)
+        self.assertIn("clang main.c reported 1 warning(s)", result.stderr)
+
+    def test_compiler_errors_keep_the_compiler_status_and_message(self):
+        result = self.shim("--sdk", "macosx", "clang", "-c", self.source("int main(void) { return missing; }\n"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("error: use of undeclared identifier 'missing'", result.stderr)
+        self.assertNotIn("Parc treats", result.stderr)
+
+    def test_other_tools_pass_straight_through(self):
+        result = self.shim("--show-sdk-path")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(result.stdout.strip().endswith(".sdk"))
 
 
 class PackagingCompilerTests(unittest.TestCase):

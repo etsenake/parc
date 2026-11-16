@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import contextlib
+import importlib.util
+import os
+from pathlib import Path
+import signal
+import sys
+
+XCRUN = "/usr/bin/xcrun"
+COMPILERS = {"swiftc", "swift-frontend", "clang", "clang++", "cc", "c++", "ld", "libtool"}
+VALUED_OPTIONS = {"-sdk", "--sdk", "-toolchain", "--toolchain"}
+
+
+def tool(arguments: list[str]) -> int | None:
+    skip = False
+    for index, argument in enumerate(arguments):
+        if skip:
+            skip = False
+        elif argument in VALUED_OPTIONS:
+            skip = True
+        elif not argument.startswith("-"):
+            return index
+    return None
+
+
+def main(arguments: list[str]) -> int:
+    index = tool(arguments)
+    if index is None or Path(arguments[index]).name not in COMPILERS:
+        os.execv(XCRUN, [XCRUN, *arguments])
+    spec = importlib.util.spec_from_file_location(
+        "parc_compiler", Path(__file__).resolve().parents[3] / "scripts/compiler.py")
+    compiler = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(compiler)
+    command = [XCRUN, *arguments]
+    code, found = compiler.forward(command)
+    if code < 0:
+        with contextlib.suppress(OSError, ValueError):
+            signal.signal(-code, signal.SIG_DFL)
+        os.kill(os.getpid(), -code)
+    if code == 0 and found:
+        print(compiler.message(arguments[index:index + 2], found), file=sys.stderr, flush=True)
+        return 1
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

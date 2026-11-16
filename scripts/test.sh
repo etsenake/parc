@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
+export PATH="$repo_root/tests/Support/compilers:$PATH"
 mkdir -p "$repo_root/build/tests"
 jobs_limit="${PARC_TEST_JOBS:-$(sysctl -n hw.ncpu)}"
 steps_dir="$(mktemp -d "${TMPDIR:-/tmp}/parc-test-steps.XXXXXX")"
