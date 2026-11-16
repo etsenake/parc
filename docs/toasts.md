@@ -53,7 +53,10 @@ Tap removes the toast before invoking its captured action. Close, miniaturizatio
 sheets and fullscreen transitions dismiss immediately. A toast that finishes on
 its own (timer, tap, Retry, scroll or drag) leaves the window idle, and the
 browser window then shows any waiting import notice; replacement, those window
-changes and outside dismissal do not count. Binding changes dismiss
+changes and outside dismissal do not count. The window's `ParcToastQueue` shows
+import notices only in an ordinary, ready browser window, holds each back while
+the previous one is showing, brings the next on that idle hand-off only while the
+window is in front, and puts back one no window could show. Binding changes dismiss
 only cards showing a shortcut. VoiceOver announces label/subtitle; actionable
 cards expose a button role and the actual captured action, and Share and Retry
 stay separate named buttons.
@@ -89,8 +92,9 @@ Share actions hand the selected URLs to the chosen system service.
 ## Checks
 
 `scripts/test-toasts.sh` covers placement, one-time framing, geometry, hit testing,
-replacement, timer/hover, scroll, tap and Retry ordering, idle hand-off, setup
-notice wording, binding/parent changes and theme contrast. Shortcut cue checks
+replacement, timer/hover, scroll, tap and Retry ordering, idle hand-off, the
+import-notice queue, extension notice wording, binding/parent changes and theme
+contrast. Shortcut cue checks
 retain their own lifecycle tests; BrowserToolbar checks cover share-menu
 construction.
 

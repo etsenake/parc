@@ -101,23 +101,35 @@ extension BrowserWindowController {
               copied.scheme?.lowercased() == scheme else { return url }
         return copied
     }
-    func showImportFailures() {
-        guard presentation.isReady, !isClosing, !isPrivateBrowsing, !isPopupWindow,
-              importFailureNotice?.isRetiring != false else { return }
-        if let outcome = ImportedBrowserDataFailures.take() {
-            importFailureNotice = showToast(outcome == .failed ? .importFailed : .importPartial, at: .window)
-            if importFailureNotice == nil { ImportedBrowserDataFailures.restore(outcome) }
-            return
+    func showImportFailures() { importNotices.showNext() }
+
+    func showImportFailuresWhenIdle() { importNotices.showNextWhenIdle() }
+
+    func makeImportNotices() -> ParcToastQueue {
+        let queue = ParcToastQueue(presenter: toasts, next: { Self.nextImportNotice() }, present: { [weak self] item in
+            self?.showToast(item.content, at: .window, onRetry: item.onRetry)
+        })
+        queue.canShow = { [weak self] in
+            guard let self else { return false }
+            return self.presentation.isReady && !self.isClosing && !self.isPrivateBrowsing && !self.isPopupWindow
         }
-        guard let notice = ImportedExtensionFailures.take() else { return }
+        queue.isFront = { [weak self] in NSApp.isActive && self?.window?.isKeyWindow == true }
+        return queue
+    }
+
+    private static func nextImportNotice() -> ParcToastQueue.Item? {
+        if let outcome = ImportedBrowserDataFailures.take() {
+            return .init(content: outcome == .failed ? .importFailed : .importPartial,
+                         restore: { ImportedBrowserDataFailures.restore(outcome) })
+        }
+        guard let notice = ImportedExtensionFailures.take() else { return nil }
         func failed(_ change: ImportedExtensionFailures.Failure.Change) -> [ParcToastContent.FailedExtension] {
             notice.failures.filter { $0.change == change }.map {
                 .init(name: $0.name, profile: $0.profile, reason: $0.reason.map(Self.explained))
             }
         }
-        importFailureNotice = showToast(.extensionsNotApplied(added: failed(.add), removed: failed(.removal), retry: notice.canRetry),
-                                        at: .window, onRetry: notice.canRetry ? { notice.retry() } : nil)
-        if importFailureNotice == nil { ImportedExtensionFailures.restore(notice) }
+        return .init(content: .extensionsNotApplied(added: failed(.add), removed: failed(.removal), retry: notice.canRetry),
+                     onRetry: notice.canRetry ? { notice.retry() } : nil, restore: { ImportedExtensionFailures.restore(notice) })
     }
 
     private static func explained(_ reason: ImportedExtensionFailures.Failure.Reason) -> ParcToastContent.FailedExtension.Reason {
@@ -126,13 +138,6 @@ extension BrowserWindowController {
         case .otherApp: return .otherApp
         case .parentalApproval: return .parentalApproval
         case .blocklisted: return .blocklisted
-        }
-    }
-
-    func showImportFailuresWhenIdle() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, NSApp.isActive, self.window?.isKeyWindow == true, self.toasts.current == nil else { return }
-            self.showImportFailures()
         }
     }
 

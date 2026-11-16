@@ -456,7 +456,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var shortcutHintCommand: PCNativeShortcutCommand?
     weak var shortcutHintPage: PCNativePage?
     let toasts = ParcToastPresenter(share: { PaneShareMenu.popUp(for: $0) })
-    weak var importFailureNotice: ParcToastPresentation?
+    lazy var importNotices = makeImportNotices()
     var copyLinkOperation = UUID()
     lazy var sharedQuotes: SharedQuoteController = SharedQuoteController(isCurrent: { [weak self] page in
         guard let self else { return false }

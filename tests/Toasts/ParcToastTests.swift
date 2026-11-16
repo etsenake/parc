@@ -355,6 +355,60 @@ import AppKit
         check(swept.isRetiring && idle == 3, "a dismissal from outside doesn't finish it")
         toasts.onIdle = nil
 
+        var waiting = ["First", "Second"], restored: [String] = [], eligible = false, front = true
+        let lifetimes: [String: TimeInterval] = ["First": 0.3]
+        let queue = ParcToastQueue(presenter: toasts, next: {
+            guard !waiting.isEmpty else { return nil }
+            let text = waiting.removeFirst()
+            return .init(content: .standard(text), restore: { restored.append(text); waiting.insert(text, at: 0) })
+        }, present: { item in
+            let text = label(item.content) ?? ""
+            return toasts.show(item.content, in: parent, over: nil, theme: SpaceTheme(), duration: lifetimes[text] ?? 30,
+                               onRetry: item.onRetry)
+        })
+        queue.canShow = { eligible }
+        queue.isFront = { front }
+        toasts.onIdle = { queue.showNextWhenIdle() }
+        func showing() -> String? { toasts.current.flatMap { label($0.state.content) } }
+        queue.showNext()
+        check(showing() == nil && waiting == ["First", "Second"], "a window that can't show notices takes none")
+        eligible = true
+        queue.showNext()
+        check(showing() == "First" && waiting == ["Second"], "the first waiting notice shows")
+        queue.showNext()
+        check(showing() == "First" && waiting == ["Second"], "the next one is held back while the first is showing")
+        await drain(0.6)
+        check(showing() == "Second" && waiting.isEmpty, "once the first finishes on its own, the held notice follows")
+        waiting = ["Third"]
+        guard let ordinary = toasts.show(.copiedImage, in: parent, over: nil, theme: SpaceTheme(), duration: 30) else {
+            preconditionFailure("ordinary toast refused")
+        }
+        queue.showNextWhenIdle()
+        await drain(0.05)
+        check(toasts.current === ordinary && waiting == ["Third"],
+              "a notice replaced by an ordinary toast doesn't count as finished, and the next waits while that toast shows")
+        ordinary.scrolled(in: parent, deltaX: 0, deltaY: 3)
+        await drain(0.05)
+        check(showing() == "Third" && waiting.isEmpty, "when the ordinary toast finishes, the waiting notice follows")
+        front = false
+        waiting = ["Fourth"]
+        toasts.current?.scrolled(in: parent, deltaX: 0, deltaY: 3)
+        await drain(0.05)
+        check(toasts.current == nil && waiting == ["Fourth"], "a window that isn't in front leaves the next notice waiting")
+        front = true
+        queue.showNext()
+        check(showing() == "Fourth", "it shows when the window comes forward")
+        toasts.dismiss(animated: false)
+        queue.showNext()
+        check(waiting.isEmpty && toasts.current == nil, "a notice swept away from outside lets the next show, with none left")
+        parent.orderOut(nil)
+        waiting = ["Fifth"]
+        queue.showNext()
+        check(restored == ["Fifth"] && waiting == ["Fifth"] && toasts.current == nil,
+              "a notice no window could show goes back in line")
+        parent.orderBack(nil)
+        toasts.onIdle = nil
+
         let closing = ParcToastPresentation(content: .standard("Close"), theme: SpaceTheme())
         check(closing.present(in: parent, over: pane), "close owner admitted")
         parent.close()

@@ -628,6 +628,38 @@ final class ParcToastPresentation: NSView {
 }
 
 @MainActor
+final class ParcToastQueue {
+    struct Item {
+        let content: ParcToastContent
+        var onRetry: (() -> Void)? = nil
+        let restore: () -> Void
+    }
+    private weak var presenter: ParcToastPresenter?
+    private weak var shown: ParcToastPresentation?
+    private let next: () -> Item?
+    private let present: (Item) -> ParcToastPresentation?
+    var canShow: () -> Bool = { true }
+    var isFront: () -> Bool = { true }
+
+    init(presenter: ParcToastPresenter, next: @escaping () -> Item?, present: @escaping (Item) -> ParcToastPresentation?) {
+        self.presenter = presenter; self.next = next; self.present = present
+    }
+
+    func showNext() {
+        guard canShow(), shown?.isRetiring != false, let item = next() else { return }
+        shown = present(item)
+        if shown == nil { item.restore() }
+    }
+
+    func showNextWhenIdle() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isFront(), self.presenter?.current == nil else { return }
+            self.showNext()
+        }
+    }
+}
+
+@MainActor
 final class ParcToastPresenter {
     private(set) var current: ParcToastPresentation?
     private let share: @MainActor ([URL]) -> Void
