@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-preview-") as directory:
     action = scratch / "ActionButton.swift"
     action.write_text("enum SplitOrientation: Equatable { case horizontal, vertical }\n" + action.read_text())
     executable = scratch / "checks"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-target", "arm64-apple-macos13.0",
         str(root / "Sources/ParcCore/SpaceTheme.swift"),
         str(root / "Sources/ParcCore/SidebarPreviewTitles.swift"),
         str(root / "Sources/ParcCore/SidebarPreviewActivation.swift"),

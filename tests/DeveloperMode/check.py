@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix="parc-developer-mode-") as directory:
     artwork.write_text("import AppKit\n" + artwork_source[artwork_source.index("@MainActor enum SiteControlCenterArtwork")
                                                           :artwork_source.index("enum SiteControlCenterMetrics")])
     executable = scratch / "checks"
-    subprocess.run(["xcrun", "swiftc", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcApp/DeveloperToolbarLayout.swift"),
                     str(root / "Sources/ParcApp/DeveloperMode.swift"),
                     str(root / "Sources/ParcApp/DeveloperToolbarControls.swift"),

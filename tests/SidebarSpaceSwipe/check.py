@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix="parc-space-swipe-") as directory:
     sources += [root / "tests/KeyboardNavigation/NativeShortcutStub.swift",
                 root / "tests/SpaceManager/NativeHostStub.swift", Path(__file__).with_name("main.swift")]
     executable = Path(os.environ.get("SWIPE_BINARY", scratch / "swipe"))
-    subprocess.run(["xcrun", "swiftc", "-O", "-whole-module-optimization", "-parse-as-library",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-O", "-whole-module-optimization", "-parse-as-library",
                     *map(str, sources), "-o", str(executable)], check=True)
     if len(sys.argv) > 1:
         sys.exit(subprocess.run([str(executable), *sys.argv[1:]]).returncode)

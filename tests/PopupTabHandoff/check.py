@@ -6,13 +6,13 @@ import tempfile
 root = Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix="parc-popup-handoff-") as directory:
     executable = Path(directory) / "check"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library",
                     "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcCore/PopupTabHandoff.swift"),
                     str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
     subprocess.run([str(executable)], check=True)
     waits = Path(directory) / "waits"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library",
                     "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcApp/WindowRestoreWaits.swift"),
                     str(Path(__file__).with_name("restore_wait.swift")), "-o", str(waits)], check=True)

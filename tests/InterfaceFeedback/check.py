@@ -7,7 +7,7 @@ root = Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix="parc-feedback-") as directory:
     executable = Path(directory) / "checks"
     subprocess.run([
-        "xcrun", "swiftc", "-target", "arm64-apple-macos13.0",
+        "xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-target", "arm64-apple-macos13.0",
         str(root / "Sources/ParcApp/InterfaceFeedback.swift"),
         str(Path(__file__).with_name("main.swift")), "-o", str(executable)
     ], check=True)

@@ -3,7 +3,7 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 out="${PARC_TEST_BUILD_DIR:-$root/build/tests/renderer-crash-presentation}"
 mkdir -p "$out"
-xcrun swiftc -parse-as-library -warnings-as-errors -target arm64-apple-macos13.0 \
+xcrun swiftc "$root/tests/Support/TestFailure.swift" -parse-as-library -warnings-as-errors -target arm64-apple-macos13.0 \
   "$root/Sources/ParcApp/PageFailureView.swift" \
   "$root/Sources/ParcApp/SadTabContent.swift" \
   "$root/Sources/ParcApp/SidebarMotionController.swift" \

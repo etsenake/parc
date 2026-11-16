@@ -10,7 +10,7 @@ a=s[s.index('final class ActionButton:'):s.index('final class MenuAction:')]
 b=s[s.index('class LayoutView:'):s.index('final class FlippedStackView:')]
 pathlib.Path(sys.argv[1]).write_text('import AppKit\nextension NSColor { static let parcInk = NSColor.labelColor }\n'+a+b)
 PY
-xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
+xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
   Sources/ParcCore/SpaceTheme.swift \
   Sources/ParcCore/OnboardingStepMotion.swift \
   Sources/ParcApp/OnboardingSetupCard.swift \
@@ -23,7 +23,7 @@ xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0
   tests/OnboardingSetupCardTests.swift -o "$output/check"
 cp -R Resources/ThemeTextures "$output/ThemeTextures"
 "$output/check"
-xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
+xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
   Sources/ParcCore/SpaceTheme.swift \
   Sources/ParcCore/OnboardingStepMotion.swift \
   Sources/ParcCore/WindowFrame.swift \

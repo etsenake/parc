@@ -82,7 +82,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
     sys.path.insert(0, str(root / "tests/Tooltip"))
     from support import tooltip_sources
     compiled += tooltip_sources(root, scratch, compiled)
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     *[str(path) for path in compiled],
                     str(Path(__file__).with_name("SidebarAccessibilityTests.swift")), "-o", str(executable)], check=True)
     subprocess.run([str(executable)], check=True)

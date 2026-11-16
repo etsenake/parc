@@ -13,7 +13,7 @@ xcrun clang++ -std=c++20 -Wall -Wextra -Werror -I "$repo_root/Engine/ParcNative"
 xcrun clang++ -std=c++20 -Wall -Wextra -Werror -I "$repo_root/Engine/ParcRenderer" \
   "$repo_root/tests/FairPlayIdentity/webkit_need_key_main.cc" -o "$output/need-key"
 "$output/need-key"
-xcrun swiftc -parse-as-library -warnings-as-errors \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library -warnings-as-errors \
   "$repo_root/Sources/ParcCore/FairPlayIdentity.swift" \
   "$repo_root/tests/FairPlayIdentitySitesTests.swift" -o "$output/sites"
 "$output/sites"

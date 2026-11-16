@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix="parc-window-key-loop-") as directory:
     presentation = (root / "Sources/ParcApp/SidebarPreviewPresentation.swift").read_text()
     surface = Path(directory) / "SidebarPreviewSurface.swift"
     surface.write_text(presentation[:presentation.index("final class SidebarPreviewItemView")])
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcApp/SidebarAccessibility.swift"),
                     str(root / "Sources/ParcApp/WindowKeyViewLoop.swift"), str(surface),
                     str(root / "Sources/ParcApp/PopoverBackgroundView.swift"),

@@ -15,7 +15,7 @@ cat > "$check_bundle/Info.plist" <<'PLIST'
 <key>OSAScriptingDefinition</key><string>Parc.sdef</string>
 </dict></plist>
 PLIST
-xcrun swiftc -parse-as-library \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root"/Sources/ParcCore/*.swift \
   "$repo_root/Sources/ParcApp/BrowserScripting.swift" \
   "$repo_root/tests/Scripting/main.swift" \

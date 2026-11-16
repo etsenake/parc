@@ -9,7 +9,7 @@ cp "$repo_root/Resources/ThemeEditor/presets.json" "$app/Resources/ThemeEditor/"
 cp -R "$repo_root/Resources/AppIcons/Marks" "$app/Resources/AppIcons/"
 tooltip=()
 while IFS= read -r path; do tooltip+=("$path"); done < <(python3 "$repo_root/tests/Tooltip/support.py" "$check_root")
-xcrun swiftc -warnings-as-errors -target arm64-apple-macos13.0 -parse-as-library "${tooltip[@]}" "$repo_root/Sources/ParcApp/PortraitCapture.swift" \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -target arm64-apple-macos13.0 -parse-as-library "${tooltip[@]}" "$repo_root/Sources/ParcApp/PortraitCapture.swift" \
   "$repo_root/Sources/ParcApp/CaptureMotion.swift" \
   "$repo_root/Sources/ParcApp/DownloadArrivalMotion.swift" \
   "$repo_root/Sources/ParcApp/ParcBrandMark.swift" \

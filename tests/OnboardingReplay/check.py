@@ -41,5 +41,5 @@ with tempfile.TemporaryDirectory(prefix="parc-replay-check-") as directory:
     source = Path(directory) / "main.swift"
     binary = Path(directory) / "replay-check"
     source.write_text(generated)
-    subprocess.run(["xcrun", "swiftc", "-swift-version", "5", str(source), "-o", str(binary)], check=True)
+    subprocess.run(["xcrun", "swiftc", str(ROOT / "tests/Support/TestFailure.swift"), "-swift-version", "5", str(source), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

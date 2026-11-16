@@ -15,7 +15,7 @@ pathlib.Path(sys.argv[2]).write_text(
     + overlay
 )
 PY
-xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
   "$check_root/Components.swift" "$repo_root/Sources/ParcCore/CaptureDestinations.swift" \
   "$repo_root/Sources/ParcApp/CapturePresentation.swift" "$repo_root/Sources/ParcApp/CaptureMotion.swift" \
   "$repo_root/Sources/ParcApp/DownloadArrivalMotion.swift" "$repo_root/Sources/ParcApp/DownloadLibraryPreview.swift" \

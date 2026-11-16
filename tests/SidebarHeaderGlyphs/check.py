@@ -138,7 +138,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-header-glyphs-") as direct
     text = (root / "Sources/ParcApp/SiteControlCenter.swift").read_text()
     (scratch / "SiteControlCenterArtwork.swift").write_text(text[:text.index("enum SiteControlCenterMetrics")])
     executable = scratch / "checks"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcCore/SpaceTheme.swift"), str(scratch / "SplitOrientation.swift"),
                     *[str(scratch / name) for name in slices],
                     str(app / "ExtensionControls.swift"), str(scratch / "SiteControlCenterArtwork.swift"),

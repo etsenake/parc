@@ -20,7 +20,7 @@ assert "presentPulse(stroke: stroke)" in source, "tick must present through the 
 assert "updateSweep(" not in source, "sweep writes belong in the gated present path"
 with tempfile.TemporaryDirectory(prefix="parc-navigation-loading-") as directory:
     executable = Path(directory) / "checks"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     str(app / "PageLoadingIndicator.swift"), str(app / "ReloadControl.swift"),
                     str(app / "SidebarChromeLayout.swift"), str(root / "tests/Support/AppKitObservation.swift"),
                     str(Path(__file__).with_name("main.swift")),

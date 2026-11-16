@@ -14,6 +14,6 @@ for name in ("source", "packaged"):
     shutil.copytree("Resources/AppIcons", root / name / "AppIcons")
 package_app_icons(root / "packaged")
 PY
-xcrun swiftc -warnings-as-errors -whole-module-optimization -parse-as-library -target arm64-apple-macos13.0 \
+xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -whole-module-optimization -parse-as-library -target arm64-apple-macos13.0 \
     Sources/ParcApp/AppIconController.swift tests/AppIcons/AppIconControllerTests.swift -o "$check_dir/check"
 "$check_dir/check" "$check_dir"

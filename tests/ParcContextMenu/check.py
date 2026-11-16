@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix="parc-context-menu-") as directory:
                                           "LibraryRailTile.swift", "LibraryRailIcon.swift", "DownloadActivityBadge.swift",
                                           "DownloadLibrarySelection.swift", "WindowStandardButtons.swift",
                                           "ExtensionControls.swift", "SiteControlCenter.swift", "ParcContextMenu.swift")]]
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
         "-import-objc-header", str(root / "Engine/ParcNative/native_appkit_bridge.h"),
         *map(str, compiled), *map(str, tooltip_sources(root, scratch, compiled)),
         str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)

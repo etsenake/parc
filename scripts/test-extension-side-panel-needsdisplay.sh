@@ -5,7 +5,7 @@ check_dir="$(mktemp -d "${TMPDIR:-/tmp}/parc-extension-side-panel-needsdisplay.X
 trap 'rm -rf "$check_dir"' EXIT
 tooltip=()
 while IFS= read -r path; do tooltip+=("$path"); done < <(python3 "$repo_root/tests/Tooltip/support.py" "$check_dir")
-xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 "${tooltip[@]}" \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 "${tooltip[@]}" \
   "$repo_root/Sources/ParcApp/SplitPaneControl.swift" \
   "$repo_root/Sources/ParcApp/ExtensionSidePanelView.swift" \
   "$repo_root/tests/ExtensionSidePanelNeedsDisplay/ExtensionSidePanelNeedsDisplayTests.swift" \

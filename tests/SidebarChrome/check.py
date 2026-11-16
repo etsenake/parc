@@ -194,7 +194,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-chrome-") as directory:
               "setting": [*store_sources, here / "SpaceHeaderSettingTests.swift"]}
     def build(name, sources):
         executable = Path(directory) / name
-        subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+        subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                         *map(str, sources), "-o", str(executable)], check=True)
         return executable
     for name, sources, runs in [("chrome", suites["chrome"], [[]]),

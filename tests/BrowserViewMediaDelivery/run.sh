@@ -13,7 +13,7 @@ xcrun clang "${flags[@]}" -Wall -Werror -Wno-incomplete-implementation -Wno-objc
 xcrun clang -arch arm64 -mmacosx-version-min=13.0 -fobjc-arc -framework AppKit \
   "$output/ParcEngine.o" "$output/Tests.o" -o "$output/check"
 "$output/check"
-xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
+xcrun swiftc "$root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
   "$root/Sources/ParcApp/NextTurnCoalescer.swift" "$root/tests/BrowserViewMediaDelivery/Coalescing.swift" \
   -o "$output/coalescing"
 "$output/coalescing"

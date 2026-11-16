@@ -13,7 +13,7 @@ with tempfile.TemporaryDirectory(prefix="parc-mini-player-focus-") as directory:
         + sidebar[sidebar.index("class LayoutView: NSView {"):sidebar.index("final class FlippedStackView")]
         + "\nenum SplitOrientation: Equatable { case horizontal, vertical }\n")
     executable = scratch / "checks"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcApp/SidebarAccessibility.swift"),
                     str(root / "Sources/ParcApp/MiniPlayerView.swift"), str(root / "Sources/ParcApp/SidebarSpacePaging.swift"), str(root / "Sources/ParcApp/MiniPlayerMotion.swift"),
                     str(scratch / "ActionButton.swift"), str(root / "Sources/ParcApp/TranslucentButtonFace.swift"), str(root / "Sources/ParcApp/ReloadControl.swift"),

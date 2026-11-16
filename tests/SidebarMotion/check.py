@@ -96,7 +96,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-motion-") as directory:
         controller = Path(directory) / f"{name}.swift"
         controller.write_text(source)
         executable = Path(directory) / name
-        subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-target", "arm64-apple-macos13.0", str(controller),
+        subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-target", "arm64-apple-macos13.0", str(controller),
             str(root / "Sources/ParcApp/SidebarChromeLayout.swift"),
             str(root / "Sources/ParcApp/WindowStandardButtons.swift"),
             str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)

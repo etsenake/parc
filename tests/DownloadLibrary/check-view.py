@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
     sources += tooltip_sources(root, temporary, sources)
     shutil.copytree(root / "Resources/Library", temporary / "Library")
     executable = temporary / "download-library-view"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library", *map(str, sources), "-o", str(executable)], check=True)
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library", *map(str, sources), "-o", str(executable)], check=True)
     subprocess.run([str(executable)], check=True, timeout=120)
     selection_sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [
         root / "Sources/ParcApp/DownloadLibrarySelection.swift",
@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
         root / "tests/DownloadLibrary/SelectionTests.swift",
     ]
     selection = temporary / "download-library-selection"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
                     *map(str, selection_sources), "-o", str(selection)], check=True)
     subprocess.run([str(selection)], check=True, timeout=120)
     entry_sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [
@@ -66,7 +66,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
         root / "tests/DownloadLibrary/EntryTests.swift",
     ]
     entry = temporary / "download-entry"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
                     *map(str, entry_sources), "-o", str(entry)], check=True)
     subprocess.run([str(entry)], check=True, timeout=120)
     library_entry_sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [
@@ -76,7 +76,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
         root / "tests/DownloadLibrary/LibraryEntryTests.swift"]
     library_entry_sources += tooltip_sources(root, temporary, library_entry_sources)
     library_entry = temporary / "library-entry"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
                     *map(str, library_entry_sources), "-o", str(library_entry)], check=True)
     subprocess.run([str(library_entry)], check=True, timeout=120)
     for use in ("private let libraryEntry = SidebarLibraryEntry()",

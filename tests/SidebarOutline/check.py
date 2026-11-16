@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-outline-") as directory:
         "import AppKit\nenum SplitOrientation: Equatable { case horizontal, vertical }\n"
         + sidebar[:sidebar.index("final class MenuAction")])
     executable = scratch / "checks"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcCore/SidebarOutlineConfigureSkip.swift"),
                     str(root / "Sources/ParcApp/SidebarOutline.swift"),
                     str(root / "Sources/ParcApp/SidebarChromeLayout.swift"),

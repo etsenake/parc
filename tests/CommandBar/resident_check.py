@@ -85,7 +85,7 @@ def build(directory, name, replace=None):
     host_file = Path(directory) / f"{name}-Host.swift"
     host_file.write_text(host_text)
     executable = Path(directory) / name
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     *map(str, files), str(host_file), str(Path(__file__).with_name("ResidentTests.swift")),
                     "-o", str(executable)], check=True)
     return executable

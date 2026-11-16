@@ -36,7 +36,7 @@ def build(directory, target, name, replace=None):
         changed.write_text(text.replace(old, new))
         files = [changed if path == app / source else path for path in files]
     executable = Path(directory) / f"{target}-{name}"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     *map(str, files), "-o", str(executable)], check=True)
     return executable
 

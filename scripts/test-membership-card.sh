@@ -14,7 +14,7 @@ a=s[s.index('final class ActionButton:'):s.index('final class MenuAction:')]
 b=s[s.index('class LayoutView:'):s.index('final class FlippedStackView:')]
 pathlib.Path(sys.argv[1]).write_text('import AppKit\nextension NSColor { static let parcInk = NSColor.labelColor }\n'+a+b)
 PY
-xcrun swiftc -warnings-as-errors -parse-as-library Sources/ParcCore/MembershipCard.swift \
+xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -parse-as-library Sources/ParcCore/MembershipCard.swift \
   Sources/ParcApp/MembershipCardView.swift Sources/ParcApp/MembershipCardSettingsView.swift \
   Sources/ParcApp/SettingsHoverButton.swift Sources/ParcApp/SettingsFocus.swift Sources/ParcApp/SettingsPresentation.swift \
   Sources/ParcApp/TranslucentButtonFace.swift Sources/ParcApp/PointerCover.swift Sources/ParcApp/ReloadControl.swift Sources/ParcApp/PointingHand.swift \

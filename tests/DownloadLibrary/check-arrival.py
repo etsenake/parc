@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-arrival-") as directory:
         root / "Sources/ParcApp/ReloadControl.swift",
         root / "tests/DownloadLibrary/ArrivalTests.swift",
     ]
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
                     *map(str, sources), "-o", str(executable)], check=True)
     shutil.copytree(root / "Resources/Library", pathlib.Path(directory) / "Library")
     subprocess.run([str(executable)], check=True, timeout=120)

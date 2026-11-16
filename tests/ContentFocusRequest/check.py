@@ -46,7 +46,7 @@ peek = (root / "Sources/ParcApp/PeekController.swift").read_text()
 assert "window.selectKeyView(following: entry)" in peek and "window.selectKeyView(preceding: exit)" in peek
 with tempfile.TemporaryDirectory(prefix="parc-content-focus-") as directory:
     executable = Path(directory) / "checks"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcApp/ContentFocusRequest.swift"), str(root / "Sources/ParcApp/SavedFocus.swift"),
                     str(Path(__file__).with_name("ContentFocusRequestTests.swift")), "-o", str(executable)], check=True)
     subprocess.run([str(executable)], check=True)

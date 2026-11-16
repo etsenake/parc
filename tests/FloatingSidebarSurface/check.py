@@ -58,7 +58,7 @@ assert sorted(path.name for path in artwork.iterdir() if not path.name.startswit
     "Resources/FloatingSidebar holds only the shadow and its README"
 with tempfile.TemporaryDirectory(prefix="parc-floating-sidebar-surface-") as directory:
     executable = Path(directory) / "checks"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcCore/SpaceTheme.swift"), str(app / "ThemeRenderer.swift"),
                     str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
     shutil.copytree(artwork, Path(directory) / "FloatingSidebar")

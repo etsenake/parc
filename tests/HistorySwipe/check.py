@@ -10,6 +10,6 @@ sources = [root / "Sources/ParcCore/HistorySwipeInterface.swift",
            here / "HistorySwipeRecognizerTests.swift"]
 with tempfile.TemporaryDirectory(prefix="parc-history-swipe-") as directory:
     executable = Path(directory) / "history-swipe"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     *map(str, sources), "-o", str(executable)], check=True)
     subprocess.run([str(executable)], check=True)

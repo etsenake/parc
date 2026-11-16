@@ -41,6 +41,6 @@ with tempfile.TemporaryDirectory(prefix="parc-library-width-") as directory:
     sources += tooltip_sources(root, temporary, sources)
     shutil.copytree(root / "Resources/Library", temporary / "Library")
     executable = temporary / "library-width"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
                     *map(str, sources), "-o", str(executable)], check=True)
     subprocess.run([str(executable)], check=True, timeout=120)

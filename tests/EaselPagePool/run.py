@@ -10,7 +10,7 @@ files.append(Path(subprocess.check_output(['python3','-B',str(root/'tests/Suppor
 files += [root/'tests/EaselPagePool'/x for x in ['EngineBoundary.swift','Tests.swift']]
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
 inputs={str(p):sha(p) for p in files}
-cmd=['xcrun','swiftc','-warnings-as-errors','-parse-as-library']+[str(p) for p in files]+['-o',str(out/'pool')]
+cmd=['xcrun','swiftc', str(root / 'tests/Support/TestFailure.swift'),'-warnings-as-errors','-parse-as-library']+[str(p) for p in files]+['-o',str(out/'pool')]
 start=time.monotonic();q=subprocess.run(cmd,capture_output=True,text=True);(out/'compile.log').write_text(q.stdout+q.stderr)
 result={'command':cmd,'compile':q.returncode,'inputs':inputs,'seconds':time.monotonic()-start,'run':None}
 if q.returncode==0:

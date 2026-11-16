@@ -22,6 +22,6 @@ builds = {"history-swipe-overlay": [*core, here / "main.swift"],
 with tempfile.TemporaryDirectory(prefix="parc-history-swipe-overlay-") as directory:
     for name, sources in builds.items():
         executable = Path(directory) / name
-        subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+        subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                         *map(str, sources), "-o", str(executable)], check=True)
         subprocess.run([str(executable)], check=True)

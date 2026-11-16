@@ -85,7 +85,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-location-") as directory:
                root / "Sources/ParcApp/SettingsPresentation.swift",
                root / "tests/DownloadLocation/PickerTests.swift"]
     executable = temporary / "download-location-picker"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
                     *map(str, sources), "-o", str(executable)], check=True)
     subprocess.run([str(executable), *sys.argv[1:2]], check=True)
 print("Download location wiring: source checks passed")

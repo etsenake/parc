@@ -131,7 +131,7 @@ with tempfile.TemporaryDirectory(prefix='parc-folder-delete-') as tmp:
     swift = Path(tmp) / 'Check.swift'
     swift.write_text(program)
     binary = Path(tmp) / 'check'
-    subprocess.run(['xcrun', 'swiftc', '-parse-as-library', str(swift), '-o', str(binary)], check=True)
+    subprocess.run(['xcrun', 'swiftc', str(root / 'tests/Support/TestFailure.swift'), '-parse-as-library', str(swift), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 keys = body('    override func keyDown(with event: NSEvent)')
 assert 'handleFolderDeletionKey(event)' in keys and 'prepareSidebarClose?(itemSelection.items)' in keys, 'Singleton folder Delete/Backspace must not fall through to NSResponder'

@@ -5,7 +5,7 @@ check_dir="$repo_root/build/tests/space-management-check"
 mkdir -p "$check_dir"
 tooltip=()
 while IFS= read -r path; do tooltip+=("$path"); done < <(python3 "$repo_root/tests/Tooltip/support.py" "$check_dir" SpaceTheme.swift)
-xcrun swiftc -warnings-as-errors -whole-module-optimization -parse-as-library "${tooltip[@]}" \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -whole-module-optimization -parse-as-library "${tooltip[@]}" \
   "$repo_root"/Sources/ParcCore/*.swift \
   "$repo_root/Sources/ParcApp/SidebarChromeLayout.swift" \
   "$repo_root/Sources/ParcApp/SidebarAccessibility.swift" \

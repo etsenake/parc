@@ -5,7 +5,7 @@ output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 tooltip=()
 while IFS= read -r path; do tooltip+=("$path"); done < <(python3 tests/Tooltip/support.py "$output" SpaceTheme.swift)
-xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 "${tooltip[@]}" \
+xcrun swiftc tests/Support/TestFailure.swift -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 "${tooltip[@]}" \
   Sources/ParcCore/SpaceTheme.swift \
   Sources/ParcCore/SpaceThemeEditor.swift \
   Sources/ParcApp/AppAppearance.swift \

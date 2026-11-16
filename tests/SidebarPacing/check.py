@@ -76,7 +76,7 @@ def build(directory, name, motion_source):
     source = Path(directory) / f"{name}-SidebarMotionController.swift"
     source.write_text(motion_source)
     executable = Path(directory) / name
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcCore/SpaceTheme.swift"), str(root / "Sources/ParcCore/WindowFrame.swift"),
                     str(app / "ThemeRenderer.swift"), str(source),
                     str(app / "SidebarChromeLayout.swift"), str(app / "WindowStandardButtons.swift"),

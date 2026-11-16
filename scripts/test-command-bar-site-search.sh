@@ -13,7 +13,7 @@ end = source.index("    private static func site(of scope: PCNativeOmniboxScope)
 resolver = source[start:end].replace("private var selectedScopeOffer:", "var selectedScopeOffer:", 1)
 (output / "Resolver.swift").write_text("import AppKit\nextension ScopeOfferFixture {\n" + resolver + "}\n")
 PY
-xcrun swiftc -warnings-as-errors -parse-as-library \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcApp/CommandBarSiteColor.swift" \
   "$repo_root/tests/CommandBar/SiteSearchOfferTests.swift" \
   "$output/Resolver.swift" -o "$output/check"

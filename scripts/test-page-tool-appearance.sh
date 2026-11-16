@@ -46,7 +46,7 @@ if 'chrome-distiller' not in page:
     raise SystemExit("native_page_tool_appearance.h missing chrome-distiller")
 print("Page tool appearance: native/Swift metrics pinned")
 PY
-xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0 \
   "$repo_root/tests/PageToolAppearance/PageToolAppearance.swift" \
   "$repo_root/tests/PageToolAppearance/Tests.swift" \
   -o "$check_dir/page-tool-appearance"

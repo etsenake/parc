@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-pointer-") as directory:
         "CFBundleName": "Downloads pointer component",
         "CFBundlePackageType": "APPL",
     }))
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library",
                     str(root / "Sources/ParcApp/DownloadLibraryTable.swift"),
                     str(root / "tests/DownloadLibrary/PointerTests.swift"),
                     "-o", str(executable)], check=True)
