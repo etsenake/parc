@@ -37,9 +37,12 @@ assert "splitMarginHandle, peekLayer]" in menu, "right-clicking the Peek or its 
 shudder = body(window, "    private func shudderWindowFrame() {")
 assert "peekLayer" not in shudder and "pageHost, pageShadow" in shudder, "the crank shudders the page, never the Peek"
 step = body(window, "    func syncPeekStepBack(animated: Bool = false) {")
-for token in ("loadingIndicator.alphaValue = shown == nil ? 1 : 0", "peek.view.stepsBack", "pageHost.peekStepScale = scale",
+for token in ("loadingIndicator.alphaValue = (shown?.view.stepProgress ?? 0) > 0 ? 0 : 1", "steppingPeek.flatMap",
+              "peek.view.stepsBack", "pageHost.peekStepScale = scale",
               "peekStepBack.animateIn(scale: scale)", "peekStepBack.reset()"):
     assert token in step, f"the step-back sync lost {token!r}"
+stepping = body(window, "    private var steppingPeek: PeekController? {")
+assert "tabPeeks.leaving" in stepping, "a tab-backed Peek that is fading out still eases the page forward"
 place = body(window, "    func placePeek(_ peek: PeekController) {")
 assert "peek.view.pageFrame = pageHost.frame" in place and "accessibilityDisplayShouldReduceMotion" in place, \
     "a Peek measures its card from the window and skips the step-back under Reduce Motion"

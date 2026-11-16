@@ -167,15 +167,23 @@ extension BrowserWindowController {
             if peek.isLeaving { self.handPeekFocusToParent(peek) }
         }
         peek.view.onStep = { [weak self, weak peek] animated in
-            guard let self, let peek, self.activePeek === peek else { return }
+            guard let self, let peek, self.steppingPeek === peek else { return }
             self.syncPeekStepBack(animated: animated)
         }
         peek.onMotionPreference = { [weak self] in self?.layoutPeeks() }
     }
 
+    private var steppingPeek: PeekController? {
+        if let peek = activePeek { return peek }
+        guard let id = currentTabID else { return nil }
+        return tabPeeks.leaving.compactMap(\.controller).last {
+            $0.parentTabID == id && browsers[id]?.nativePage === $0.parentPage
+        }
+    }
+
     func syncPeekStepBack(animated: Bool = false) {
-        let shown = activePeek.flatMap { $0.view.isHidden || $0.view.superview !== peekLayer ? nil : $0 }
-        loadingIndicator.alphaValue = shown == nil ? 1 : 0
+        let shown = steppingPeek.flatMap { $0.view.isHidden || $0.view.superview !== peekLayer ? nil : $0 }
+        loadingIndicator.alphaValue = (shown?.view.stepProgress ?? 0) > 0 ? 0 : 1
         guard let peek = shown, peek.view.stepsBack, peek.view.stepProgress > 0, !isClosing, !wholeWindowClose else {
             peekStepBack.reset(); pageHost.peekStepScale = 1; return
         }
