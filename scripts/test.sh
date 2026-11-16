@@ -230,6 +230,11 @@ step compile_and_run command-bar-result-row CommandBar/ResultRowTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
+step compile_and_run command-bar-compact-layout CommandBar/CompactLayoutTests \
+  "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
+  "$repo_root/Sources/ParcApp/CommandBarCompactLayout.swift" \
+  "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
+  "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
 step compile_and_run command-bar-folder-copy CommandBar/FolderCopyTests
 step compile_and_run command-bar-document-alias CommandBar/DocumentAliasTests \

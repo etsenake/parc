@@ -12,7 +12,7 @@ display URL.
 | --- | --- |
 | Command–T | Large palette with empty input |
 | Command–L or click a page toolbar's URL | Large palette with that pane's native URL selected |
-| Click sidebar or popup URL | 350-point compact editor anchored to that control |
+| Click sidebar or popup URL | Compact editor anchored to that control |
 | Control–Space | Sidebar keyboard session, expanding results when typing |
 | A Space with no open tab | Resident bar on the [start page](start-page.md), which Command–T and Command–L focus |
 
@@ -105,7 +105,15 @@ under [remaining work](#checks-and-remaining-work).
 `CommandBarAppearance.swift` centralizes palette, typography, surface, shadow and
 hairline. The large palette is at most 765 points wide, with a 64-point header,
 50-point rows and up to five visible rows in its nominal 326-point height.
-Containment follows the owning window. The compact editor remains distinct.
+Containment follows the owning window.
+
+The compact editor is 450 points wide from the sidebar and 350 from a pop-up's
+address, capped to its window and screen with 8-point margins so a narrow
+sign-in pop-up never cuts it off. It opens at its control's left edge and slides
+back inside the window when it would overhang. Its address row's icon, text,
+scope label and trailing edge sit on the result rows' icon, title and badge
+columns; the resting Control–Space field keeps the sidebar address field's own
+geometry. `CommandBarCompactLayout.swift` holds these numbers.
 
 Floating panels and the resident card follow the window's appearance, which
 View → Appearance sets; the empty inline sidebar input takes the Space's content
@@ -360,7 +368,8 @@ native. This uses `SidebarTablistBackground`, not another input monitor.
 ## Checks and remaining work
 
 `tests/CommandBar` covers real app decisions for editing, scope, publication
-identity, default ranking, row diffs, submission, menus and typed targets. The
+identity, default ranking, row diffs, submission, menus, typed targets and the
+compact editor's width, caps and column alignment. The
 command-bar scripts build focused production components; native search has
 separate owner/lifecycle coverage. Follow [the working contract](../AGENTS.md)
 before running checks.

@@ -11,6 +11,9 @@ final class CommandResultCell: NSView {
         }
     }
     static let iconTileIdentifier = NSUserInterfaceItemIdentifier("CommandResultIconTile")
+    static let iconX: CGFloat = 16
+    static let titleX: CGFloat = 44
+    static let trailingInset: CGFloat = 12
     private let deleteButton = PointingHandButton()
     private var isHovered = false
     var selectedColor: NSColor = CommandBarPalette.colourless.selected { didSet { setSelected(isSelected) } }
@@ -141,17 +144,17 @@ final class CommandResultCell: NSView {
         let deleteWidth: CGFloat = onDelete == nil ? 0 : 23
         let trailing = max(deleteWidth, badgeWidth + (textWidth > 0 ? textWidth + 8 : 0))
         deleteButton.frame = NSRect(x: max(0, bounds.width - 35), y: 14, width: min(23, bounds.width), height: 23)
-        iconTile.frame = NSRect(x: 11, y: 13, width: 24, height: 24)
-        icon.frame = NSRect(x: 16, y: 18, width: 14, height: 14)
-        badge.frame = NSRect(x: bounds.width - badgeWidth - 12, y: 14 + (23 - badgeSize.height) / 2,
+        iconTile.frame = NSRect(x: Self.iconX - 5, y: 13, width: 24, height: 24)
+        icon.frame = NSRect(x: Self.iconX, y: 18, width: 14, height: 14)
+        badge.frame = NSRect(x: bounds.width - badgeWidth - Self.trailingInset, y: 14 + (23 - badgeSize.height) / 2,
                              width: badgeWidth, height: badgeSize.height)
         badgeLabel.frame = isTab ? badge.bounds
             : badgeLabel.frame(forAlignmentRect: NSRect(x: 4, y: 4, width: ceil(text.width), height: ceil(text.height)))
-        accessory.frame = NSRect(x: bounds.width - trailing - 12, y: 16, width: textWidth, height: 17)
+        accessory.frame = NSRect(x: bounds.width - trailing - Self.trailingInset, y: 16, width: textWidth, height: 17)
         let available = max(0, bounds.width - trailing - 70)
         if hasContext {
             let prefixWidth = min(label.singleLineWidth, available)
-            label.frame = NSRect(x: 44, y: 16, width: prefixWidth, height: 17)
+            label.frame = NSRect(x: Self.titleX, y: 16, width: prefixWidth, height: 17)
             let detailWidth = detail.isEmpty ? 0 : min(spaceDetail.singleLineWidth, available * 0.3)
             let reserve = detailWidth > 0 ? detailWidth + 8 : 0
             let capsuleWidth = min(max(0, available - prefixWidth - 8 - reserve), spaceLabel.singleLineWidth + 32)
@@ -160,13 +163,13 @@ final class CommandResultCell: NSView {
             spaceIcon.frame = NSRect(x: 7, y: 6, width: min(12, max(0, capsuleWidth - 14)), height: 12)
             spaceLabel.frame = NSRect(x: 25, y: 3, width: max(0, capsuleWidth - 32), height: 17)
             let detailX = spaceCapsule.frame.maxX + 8
-            spaceDetail.frame = NSRect(x: detailX, y: 16, width: max(0, 44 + available - detailX), height: 17)
+            spaceDetail.frame = NSRect(x: detailX, y: 16, width: max(0, Self.titleX + available - detailX), height: 17)
         } else {
             let titleWidth = min(label.singleLineWidth, 480, available)
-            label.frame = NSRect(x: 44, y: 16, width: titleWidth, height: 17)
+            label.frame = NSRect(x: Self.titleX, y: 16, width: titleWidth, height: 17)
             let subtitleX = label.frame.maxX + 4
             let subtitleWidth = subtitleLabel.isHidden ? 0
-                : min(subtitleLabel.singleLineWidth, 280, max(0, 44 + available - subtitleX))
+                : min(subtitleLabel.singleLineWidth, 280, max(0, Self.titleX + available - subtitleX))
             subtitleLabel.frame = NSRect(x: subtitleX, y: 16, width: subtitleWidth, height: 17)
         }
     }

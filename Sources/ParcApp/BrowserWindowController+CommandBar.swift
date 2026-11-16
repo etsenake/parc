@@ -293,7 +293,7 @@ extension BrowserWindowController {
             typedCommands: typedCommands, currentURL: seedURL,
             profilePath: store.independentEngineProfilePath(for: commandProfile), page: commandPage, nativeWindow: nativeBinding,
             sidebarAnchor: inSidebar ? sidebar.keyboardSearchAnchor : addressAnchor,
-            addressOnly: addressAnchor != nil,
+            addressOnly: addressAnchor != nil, popup: isPopupWindow,
             currentPageTitle: currentBrowser?.title ?? store.state.tabs.first(where: { $0.id == commandTab })?.title,
             initialEdit: initialEdit,
             extensionDisposition: isPopupWindow && newTab ? nil : (newTab ? .newForegroundTab : .currentTab),

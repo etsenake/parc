@@ -100,6 +100,7 @@ import SwiftUI
                                          hasError: nativeError != nil)
     }
     private let addressOnly: Bool
+    private let popup: Bool
     private let currentPageTitle: String?
     private var addressWasEdited = false
     private var sidebarBrowsing: Bool { !addressOnly && sidebarAnchor != nil && input.stringValue.isEmpty && !isScoped && !scopeInvalidated }
@@ -212,9 +213,10 @@ import SwiftUI
     private var nativeHold = CommandBarNativeHold()
     private var nativeHoldDeadline: DispatchWorkItem?
 
-    init(parent: NSWindow, tabs: [BrowserTab], history: [BrowserHistoryEntry], historyRevision: UInt64 = 0, historyExcludedURL: String? = nil, spaces: [CommandBarSpaceAction] = [], folders: [CommandBarFolderAction] = [], favoriteAction: CommandBarFavoriteAction? = nil, folderMoves: [CommandBarFolderMove] = [], favoriteRename: CommandBarFavoriteRenameAction? = nil, documents: (() -> [CommandBarDocument])? = nil, typedCommands: [CommandBarTypedCommand] = [], currentURL: String?, profilePath: String, page: PCNativePage?, nativeWindow: PCNativeBrowserWindow? = nil, sidebarAnchor: NSView? = nil, addressOnly: Bool = false, currentPageTitle: String? = nil, initialEdit: (String, NSRange)? = nil, extensionDisposition: PCNativeOmniboxExtensionDisposition? = .currentTab, theme: SpaceTheme = SpaceTheme(), contentAppearance: NSAppearance? = nil, resident: Bool = false) {
+    init(parent: NSWindow, tabs: [BrowserTab], history: [BrowserHistoryEntry], historyRevision: UInt64 = 0, historyExcludedURL: String? = nil, spaces: [CommandBarSpaceAction] = [], folders: [CommandBarFolderAction] = [], favoriteAction: CommandBarFavoriteAction? = nil, folderMoves: [CommandBarFolderMove] = [], favoriteRename: CommandBarFavoriteRenameAction? = nil, documents: (() -> [CommandBarDocument])? = nil, typedCommands: [CommandBarTypedCommand] = [], currentURL: String?, profilePath: String, page: PCNativePage?, nativeWindow: PCNativeBrowserWindow? = nil, sidebarAnchor: NSView? = nil, addressOnly: Bool = false, popup: Bool = false, currentPageTitle: String? = nil, initialEdit: (String, NSRange)? = nil, extensionDisposition: PCNativeOmniboxExtensionDisposition? = .currentTab, theme: SpaceTheme = SpaceTheme(), contentAppearance: NSAppearance? = nil, resident: Bool = false) {
         self.resident = resident
         self.addressOnly = addressOnly
+        self.popup = popup
         self.currentPageTitle = currentPageTitle
         self.addressWasEdited = initialEdit != nil
         self.extensionDisposition = extensionDisposition
@@ -504,9 +506,11 @@ import SwiftUI
         let available = parent.screen?.visibleFrame ?? parent.frame
         if let anchor = sidebarAnchor, anchor.window === parent, !anchor.isHiddenOrHasHiddenAncestor {
             let anchorRect = parent.convertToScreen(anchor.convert(anchor.bounds, to: nil))
-            let width = min(sidebarBrowsing ? max(180, anchor.superview?.bounds.width ?? anchorRect.width) - 18 : 350, available.width - 24)
+            let width = sidebarBrowsing ? min(max(180, anchor.superview?.bounds.width ?? anchorRect.width) - 18, available.width - 24)
+                : CommandBarCompactLayout.width(popup: popup, window: parent.frame, screen: available)
             let height = sidebarBrowsing ? anchorRect.height : min(isScoped || scopeInvalidated ? compactScopeHeight : 309, available.height - 32)
-            let x = min(max(anchorRect.minX, available.minX + 8), available.maxX - width - 8)
+            let x = sidebarBrowsing ? min(max(anchorRect.minX, available.minX + 8), available.maxX - width - 8)
+                : CommandBarCompactLayout.originX(anchor: anchorRect.minX, width: width, window: parent.frame, screen: available)
             let y = min(max(anchorRect.maxY - height, available.minY + 8), available.maxY - height - 8)
             showsShadow = !sidebarBrowsing
             container.flatFill = sidebarBrowsing
@@ -516,7 +520,8 @@ import SwiftUI
             input.font = CommandBarTypography.label
             return
         }
-        let width = max(260, min(addressOnly ? 350 : 765, parent.frame.width - 48, available.width - 24))
+        let width = addressOnly ? CommandBarCompactLayout.width(popup: popup, window: parent.frame, screen: available)
+            : max(260, min(765, parent.frame.width - 48, available.width - 24))
         let baselineHeight = min(addressOnly ? 309 : 326, max(180, available.height - 32))
         let bannerHeight = showsPrivacyBanner ? privacyBanner.preferredHeight(forWidth: width) : 0
         let height = min((isScoped || scopeInvalidated ? compactScopeHeight : baselineHeight) + bannerHeight, available.height - 32)
@@ -611,11 +616,16 @@ import SwiftUI
         defer { layoutScopeHeader(); layingOutContents = false }
         let width = container.bounds.width
         if sidebarAnchor != nil || addressOnly {
-            inputIcon.frame = NSRect(x: 15, y: sidebarBrowsing ? 10 : 17, width: 14, height: 14)
-            input.frame = NSRect(x: 38, y: sidebarBrowsing ? 7 : 13, width: max(0, width - 49), height: 22)
+            typealias Compact = CommandBarCompactLayout
+            let iconX = sidebarBrowsing ? Compact.browsingIconX : Compact.iconX
+            let textX = sidebarBrowsing ? Compact.browsingTextX : Compact.textX
+            let trailing = sidebarBrowsing ? Compact.browsingTrailing : Compact.trailing
+            inputIcon.frame = NSRect(x: iconX, y: sidebarBrowsing ? 10 : 17, width: Compact.iconSize, height: Compact.iconSize)
+            input.frame = NSRect(x: textX, y: sidebarBrowsing ? 7 : 13, width: max(0, width - textX - trailing), height: 22)
             divider.isHidden = true
             scroll.isHidden = sidebarBrowsing; emptyLabel.isHidden = sidebarBrowsing || !results.isEmpty
-            scroll.frame = NSRect(x: 9, y: 50, width: max(0, width - 18), height: max(0, container.bounds.height - 59))
+            scroll.frame = NSRect(x: Compact.listInset, y: 50, width: max(0, width - 2 * Compact.listInset),
+                                  height: max(0, container.bounds.height - 59))
             emptyLabel.frame = NSRect(x: 16, y: 77, width: max(0, width - 32), height: 40)
             return
         }
@@ -1447,9 +1457,10 @@ import SwiftUI
         else { scopePill.showSite(name: displayedName, unavailable: scopeInvalidated) }
         scopePill.isEnabled = actionsScope || (activeScope != nil && !scopeInvalidated)
         input.placeholderString = isScoped ? "Search…" : (sidebarBrowsing ? "Search…" : "Search or Enter URL…")
-        let baseX: CGFloat = sidebarAnchor == nil && !addressOnly ? 49 : 38
-        let right: CGFloat = sidebarAnchor == nil && !addressOnly ? 22 : 11
-        let headerCentre: CGFloat = sidebarAnchor == nil && !addressOnly ? 32 : 24
+        let large = sidebarAnchor == nil && !addressOnly
+        let baseX = large ? 49 : sidebarBrowsing ? CommandBarCompactLayout.browsingTextX : CommandBarCompactLayout.textX
+        let right = large ? 22 : sidebarBrowsing ? CommandBarCompactLayout.browsingTrailing : CommandBarCompactLayout.trailing
+        let headerCentre = large ? 32 : CommandBarCompactLayout.headerCentre
         var left = baseX
         if showsScope {
             let size = scopePill.intrinsicContentSize

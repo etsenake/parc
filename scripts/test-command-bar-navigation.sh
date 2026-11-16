@@ -48,7 +48,7 @@ for use in ("func focusAddress(anchor: NSView? = nil)",
             "presentCommandBar(newTab: false, addressAnchor: anchor)",
             "self.focusAddress(anchor: self.sidebar.addressEditorAnchor)",
             "self.focusAddress(anchor: self.popupChrome.addressAnchor)",
-            "addressOnly: addressAnchor != nil,",
+            "addressOnly: addressAnchor != nil, popup: isPopupWindow,",
             "let commandTab = currentTabID",
             "let commandPeek = newTab ? nil : sourcePeek",
             "else { self.resolveInput(input, replacing: commandTab) }"):
@@ -72,6 +72,19 @@ assert "return self.activateDeveloperPage(browser, page: page, revision: revisio
 document_toolbar = toolbar_actions("configureDocumentToolbar", "guard admit() else { return }")
 assert "if self.focusedTabID != tabID { self.focusedTabID = tabID; self.requestNativeSelection(); self.updateNavigation() }" \
     in document_toolbar, "a Note or Easel toolbar click no longer targets its pane"
+position = source[source.index("    private func position()"):source.index("    private func setSurfaceFrame(")]
+assert position.count("CommandBarCompactLayout.width(popup: popup, window: parent.frame, screen: available)") == 2, \
+    "the compact editor is no longer capped to its window"
+assert "CommandBarCompactLayout.originX(anchor: anchorRect.minX, width: width, window: parent.frame, screen: available)" in position
+contents = source[source.index("    private func layoutContents()"):source.index("    func reconcile(tabs:")]
+for use in ("let iconX = sidebarBrowsing ? Compact.browsingIconX : Compact.iconX",
+            "let textX = sidebarBrowsing ? Compact.browsingTextX : Compact.textX",
+            "let trailing = sidebarBrowsing ? Compact.browsingTrailing : Compact.trailing",
+            "scroll.frame = NSRect(x: Compact.listInset, y: 50, width: max(0, width - 2 * Compact.listInset),"):
+    assert use in contents, f"the compact address row no longer lines up with its results: {use}"
+header = source[source.index("    private func layoutScopeHeader()"):source.index("    private func setScopeInput(")]
+assert "let baseX = large ? 49 : sidebarBrowsing ? CommandBarCompactLayout.browsingTextX : CommandBarCompactLayout.textX" in header, \
+    "the compact scope label no longer starts at the result title column"
 start = window.index("    private func commandBarTabs(")
 end = window.index("    func commandBarTabCaption(", start)
 (output / "TabCandidates.swift").write_text("import Foundation\nextension TabCandidatesFixture {\n" +
