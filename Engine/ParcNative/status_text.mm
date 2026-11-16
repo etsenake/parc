@@ -10,12 +10,11 @@
 - (void)updatePointerInOverlay:(NSPoint)point;
 - (void)updateModifierFlags:(NSEventModifierFlags)flags;
 - (void)appearanceChanged;
+- (void)windowThemeChanged:(NSNotification*)notification;
 - (void)invalidateAvoidanceFingerprint;
 - (void)captureAvoidanceFingerprint;
 @end
 
-// The selectors of PCNativeStatusTextThemeSource (native_appkit_bridge.h,
-// another target), read from the page window's delegate when it answers them.
 @protocol PCStatusTextThemeSelectors <NSObject>
 - (nullable NSColor*)statusTextThemeBackgroundColor;
 - (nullable NSAppearance*)statusTextThemeAppearance;
@@ -50,6 +49,7 @@ constexpr CGFloat kIconSpacing = 6;
 constexpr CGFloat kCompactWidth = 400;
 constexpr NSEventModifierFlags kLinkModifiers = NSEventModifierFlagShift |
     NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand;
+NSNotificationName const kWindowThemeDidChange = @"PCNativeAirPlayThemeDidChange";
 
 bool StatusTextAvoidanceNeedsLayout(NSRect bounds, NSRect pill, BOOL trailing,
                                     NSPoint point) {
@@ -88,7 +88,7 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   }
   return nil;
 }
-}  // namespace
+}
 
 @interface PCStatusOverlay : NSView
 @property(nonatomic, weak) PCNativeStatusTextController* controller;
@@ -119,10 +119,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
 }
 @end
 
-// StatusTextView.BackgroundView: popover material within the window, a theme
-// overlay layer above it (zPosition 3), a capsule radius of half the height
-// applied to the effect layer, its mask image, the overlay and the own layer,
-// a 1 pt FloatingScrimBorder and a black 0.12 / 5 pt shadow without offset.
 @interface PCStatusBackground : NSView
 @property(nonatomic, copy, nullable) NSColor* overlayColor;
 @end
@@ -234,9 +230,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   BOOL _explained;
   BOOL _trailing;
   BOOL _layingOut;
-  // Last avoidance inputs that produced a trailing decision. When the next
-  // mouseMoved still maps to the same trailing bit under unchanged geometry,
-  // layoutOverlay is skipped.
   NSRect _avoidanceBounds;
   NSRect _avoidancePill;
   BOOL _avoidanceTrailing;
@@ -255,7 +248,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
     _overlay.identifier = @"parc-status-overlay";
     _overlay.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     _overlay.controller = self;
-    // StatusTextView: layer-backed, unclipped so the background's shadow shows.
     _pill = [[NSView alloc] initWithFrame:NSZeroRect];
     _pill.identifier = @"parc-status-pill";
     _pill.wantsLayer = YES;
@@ -280,10 +272,15 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
     [_pill addSubview:_label];
     [_overlay addSubview:_pill];
     [page addSubview:_overlay positioned:NSWindowAbove relativeTo:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self
+                                           selector:@selector(windowThemeChanged:)
+                                               name:kWindowThemeDidChange
+                                             object:nil];
   }
   return self;
 }
 - (void)dealloc {
+  [NSNotificationCenter.defaultCenter removeObserver:self];
   [_visibilityTimer invalidate];
   [_expansionTimer invalidate];
   if (_mouseMonitor) { [NSEvent removeMonitor:_mouseMonitor]; }
@@ -318,17 +315,18 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   _pill.appearance = source ? [source statusTextThemeAppearance] : nil;
   _background.overlayColor = source ? [source statusTextThemeBackgroundColor] : nil;
 }
-// Content colours are dynamic; only the theme source needs re-reading. The
-// content itself is kept, including while an emptied pill fades out.
 - (void)appearanceChanged {
   if (_invalidated) { return; }
+  [self applyTheme];
+}
+- (void)windowThemeChanged:(NSNotification*)notification {
+  if (_invalidated || _pill.hidden || !_attachedWindow ||
+      notification.object != _attachedWindow) { return; }
   [self applyTheme];
 }
 - (void)rebuildContent {
   NSString* text = _text;
   PCNativeStatusLinkOutcome outcome = PCNativeStatusLinkOutcomeNone;
-  // Parc's own transient messages ("Preparing Reader…") also use this pill;
-  // only a link URL takes the explained form.
   NSURL* url = text.length && _linkOutcome ? [NSURL URLWithString:text] : nil;
   if (url && url.scheme.length &&
       (url.host.length || [url.scheme caseInsensitiveCompare:@"mailto"] == NSOrderedSame)) {
@@ -383,7 +381,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   [_visibilityTimer invalidate];
   [_expansionTimer invalidate];
   _visibilityTimer = _expansionTimer = nil;
-  // A nil base keeps its previous content while the old pill fades away.
   if (_text.length) {
     _modifiers = NSEvent.modifierFlags;
     [self startFlagsMonitor];
@@ -422,7 +419,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   }
   __weak PCNativeStatusTextController* weak = self;
   [NSAnimationContext runAnimationGroup:^(NSAnimationContext* context) {
-    // The recovered original leaves AppKit's animation duration/curve unset.
     context.allowsImplicitAnimation = YES;
     self->_pill.animator.alphaValue = visible ? 1 : 0;
   } completionHandler:^{
@@ -473,7 +469,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   const NSRect label_frame = NSMakeRect(
       leading, floor((height - labelHeight) / 2),
       MAX(0, width - leading - kHorizontalPadding), labelHeight);
-  // Overlay/content fingerprint unchanged: frame writes cannot change presentation.
   if (NSEqualRects(_pill.frame, pill_frame) &&
       NSEqualRects(_background.frame, background_frame) &&
       (_icon.hidden || NSEqualRects(_icon.frame, icon_frame)) &&
@@ -491,8 +486,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
 }
 - (void)updatePointerInOverlay:(NSPoint)point {
   if (![self isValid]) { return; }
-  // Idle-stop: a hidden pill cannot change trailing/layout; drop the monitor so
-  // later window mouseMoved events skip convertPoint entirely.
   if (_pill.hidden) {
     [self stopMouseMonitor];
     [self invalidateAvoidanceFingerprint];
@@ -500,9 +493,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   }
   NSRect bounds = _overlay.bounds;
   NSRect pill = _pill.frame;
-  // Same overlay/pill geometry and trailing bit as the last decision: when the
-  // pointer still maps to that bit (or the overlapping retain), layout is a
-  // true no-op — skip layoutOverlay without rewriting frames.
   if (_avoidanceFingerprintValid &&
       NSEqualRects(bounds, _avoidanceBounds) &&
       NSEqualRects(pill, _avoidancePill) &&
@@ -534,8 +524,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
           [owner reset];
           return event;
         }
-        // Prefer idle-stop before convertPoint while the pill is already hidden
-        // (fade completed, reset, or a raced hide).
         if (owner->_pill.hidden) {
           [owner stopMouseMonitor];
           [owner invalidateAvoidanceFingerprint];
@@ -549,18 +537,13 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
 - (void)stopMouseMonitor {
   if (_mouseMonitor) { [NSEvent removeMonitor:_mouseMonitor]; _mouseMonitor = nil; }
 }
-// Test-visible: local mouseMoved monitor installed for pointer avoidance.
 - (BOOL)hasMouseMovedMonitor {
   return _mouseMonitor != nil;
 }
-// Test-visible: whether the next point would call layoutOverlay under the
-// current overlay/pill/trailing fingerprint.
 - (BOOL)pointerAvoidanceWouldLayoutAt:(NSPoint)point {
   if (![self isValid] || _pill.hidden) return NO;
   return StatusTextAvoidanceNeedsLayout(_overlay.bounds, _pill.frame, _trailing, point);
 }
-// ModifierFlagsObserver equivalent: content follows modifier changes at once;
-// visibility and its debounce follow only the status text.
 - (void)startFlagsMonitor {
   if (_flagsMonitor || !_linkOutcome) { return; }
   __weak PCNativeStatusTextController* weak = self;
@@ -603,6 +586,7 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
 - (void)invalidate {
   if (_invalidated) { return; }
   _invalidated = YES;
+  [NSNotificationCenter.defaultCenter removeObserver:self];
   [self reset];
   _attached = NO;
   _attachedWindow = nil;

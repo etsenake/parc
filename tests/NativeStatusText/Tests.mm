@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import "native_appkit_bridge.h"
 #import "status_text.h"
 #include <cstdio>
 #include <cstdlib>
@@ -8,6 +9,14 @@
 - (void)updateModifierFlags:(NSEventModifierFlags)flags;
 - (BOOL)hasMouseMovedMonitor;
 - (BOOL)pointerAvoidanceWouldLayoutAt:(NSPoint)point;
+@end
+@interface StatusTheme : NSObject <NSWindowDelegate>
+@property(nonatomic, strong) NSColor* background;
+@property(nonatomic, strong) NSAppearance* appearance;
+@end
+@implementation StatusTheme
+- (NSColor*)statusTextThemeBackgroundColor { return self.background; }
+- (NSAppearance*)statusTextThemeAppearance { return self.appearance; }
 @end
 static int checks;
 static void Check(bool value, const char* message) {
@@ -289,6 +298,58 @@ static void PresentationAndContent() {
   [controller invalidate];
   [window close];
 }
+static void LiveThemeColors() {
+  NSWindow* window = Window();
+  NSWindow* other = Window();
+  StatusTheme* theme = [[StatusTheme alloc] init];
+  theme.background = NSColor.systemRedColor;
+  theme.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+  window.delegate = theme;
+  NSView* page = Page(window);
+  auto controller = Controller(page);
+  NSView* pill = Find(page, @"parc-status-pill");
+  NSView* background = Find(page, @"parc-status-background");
+  NSTextField* label = static_cast<NSTextField*>(Find(page, @"parc-status-label"));
+  NSNotificationName name = PCNativeAirPlayThemeDidChangeNotification;
+  [controller updateText:@"https://theme.test/page"];
+  Pump(.8);
+  Check(!pill.hidden && [[background valueForKey:@"overlayColor"] isEqual:NSColor.systemRedColor],
+        "the pill shows the Space's colours");
+  const NSRect frame = pill.frame;
+  const NSRect labelFrame = label.frame;
+  const CGFloat alpha = pill.alphaValue;
+  theme.background = NSColor.systemBlueColor;
+  theme.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+  [NSNotificationCenter.defaultCenter postNotificationName:name object:other];
+  Check([[background valueForKey:@"overlayColor"] isEqual:NSColor.systemRedColor],
+        "another window's theme change leaves this pill alone");
+  [NSNotificationCenter.defaultCenter postNotificationName:name object:window];
+  Check([[background valueForKey:@"overlayColor"] isEqual:NSColor.systemBlueColor] &&
+        [pill.appearance.name isEqual:NSAppearanceNameDarkAqua],
+        "a theme change while showing repaints the pill's colours");
+  Check(NSEqualRects(pill.frame, frame) && NSEqualRects(label.frame, labelFrame) &&
+        pill.alphaValue == alpha && !pill.hidden &&
+        [label.stringValue isEqual:@"theme.test/page"],
+        "a theme repaint keeps layout, visibility and text");
+  [controller updateText:@""];
+  Pump(.9);
+  theme.background = NSColor.systemGreenColor;
+  [NSNotificationCenter.defaultCenter postNotificationName:name object:window];
+  Check(pill.hidden && [[background valueForKey:@"overlayColor"] isEqual:NSColor.systemBlueColor],
+        "a hidden pill leaves the theme for its next show");
+  [controller updateText:@"https://theme.test/next"];
+  Pump(.8);
+  Check(!pill.hidden && [[background valueForKey:@"overlayColor"] isEqual:NSColor.systemGreenColor],
+        "the next show reads the current theme");
+  [controller invalidate];
+  theme.background = NSColor.systemYellowColor;
+  [NSNotificationCenter.defaultCenter postNotificationName:name object:window];
+  Check([[background valueForKey:@"overlayColor"] isEqual:NSColor.systemGreenColor],
+        "an invalidated controller ignores later theme changes");
+  window.delegate = nil;
+  [window close];
+  [other close];
+}
 int main() {
   @autoreleasepool {
     [NSApplication sharedApplication];
@@ -298,6 +359,7 @@ int main() {
     ValidationAndRelease();
     MouseMonitorIdleStopAndAvoidanceSkip();
     PresentationAndContent();
+    LiveThemeColors();
     printf("Native status text: %d AppKit assertions passed; no browser engine loaded.\n", checks);
   }
 }

@@ -222,9 +222,13 @@ the same `canSplitLinkFrom` answer the click uses. Otherwise those modifiers kee
 the plain address. Only actual links are explained; local transient messages
 share the capsule. Text truncates in the middle; explained text expands
 immediately. Ordinary hover uses a 0.5-second debounce and 1.5-second expansion
-delay, token-guarded alpha fade and immediate side changes. Theme is refreshed
-on presentation and appearance change, not continuously during a Space-theme
-edit.
+delay, token-guarded alpha fade and immediate side changes.
+
+The capsule reads the Space's colours when it appears and on appearance change.
+While it shows, it also repaints when its window posts the palette notification
+it sends AirPlay (`PCNativeAirPlayThemeDidChangeNotification`), so a Space-theme
+edit recolours it in place. Only colours change; timing, visibility, text and
+layout stay put.
 
 <a id="banners-and-blocked-pop-ups-arcs-disposition"></a>
 ### Banners and blocked pop-ups
@@ -320,5 +324,5 @@ Native changes need their appropriate compiler checks; app changes need the
 Swift checks in [the working contract](../AGENTS.md). Older test helpers may
 present windows: inspect them and follow current authorization.
 
-The [backlog](backlog.md) indexes the remaining live status-capsule theme
-updates, blocked-popup controls and cross-family menu work described above.
+The [backlog](backlog.md) indexes the remaining blocked-popup controls and
+cross-family menu work described above.
