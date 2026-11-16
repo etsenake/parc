@@ -23,7 +23,7 @@ Finish assigned work first; explicit deferrals remain deferred.
   from exposing blank strip content. [Sidebar motion](sidebar-motion.md),
   [previews](sidebar-previews.md), [theme rendering](space-theme-rendering.md).
 - Finish the documented theme-control hover/dot/tooltip details and floating
-  material transitions. Refresh visible tooltips when their palette changes.
+  material transitions.
   [Theme editor](space-theme-editor.md), [sidebar motion](sidebar-motion.md).
 - Keep fallback window geometry and sidebar width associated with the same saved
   window. Enlarge the empty card's Pinned drop target during drag.

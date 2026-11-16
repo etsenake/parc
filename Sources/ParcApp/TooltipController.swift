@@ -88,7 +88,9 @@ final class TooltipAnchorView: NSView {
         objc_getAssociatedObject(window, controllerKey) as? TooltipController
     }
 
-    var palette: TooltipColorPalette?
+    var palette: TooltipColorPalette? {
+        didSet { if palette != oldValue, presentedOwnPalette == nil { presenter?.setPalette(palette ?? .neutral) } }
+    }
     var isSuppressed = false {
         didSet { if isSuppressed && !oldValue { hide(TooltipTiming.exitDuration) } }
     }
@@ -104,6 +106,7 @@ final class TooltipAnchorView: NSView {
     private var lastMoveTimestamp: TimeInterval = -1
     private var presenter: TooltipPresenter?
     private var presentedShortcut: KeyboardShortcut?
+    private var presentedOwnPalette: TooltipColorPalette?
     private var monitor: Any?
     private var pressedModifiers: NSEvent.ModifierFlags = []
     private var pressedCharacters: String?
@@ -249,6 +252,7 @@ final class TooltipAnchorView: NSView {
         if self.presenter == nil { pressedModifiers = NSEvent.modifierFlags.intersection(KeyboardShortcut.modifierMask); pressedCharacters = nil }
         self.presenter = presenter
         presentedShortcut = shortcut
+        presentedOwnPalette = configuration.palette
         targetView = view
         state.didPresent(ObjectIdentifier(view))
         presenter.setPressed(modifiers: pressedModifiers, characters: pressedCharacters)
@@ -443,6 +447,10 @@ final class TooltipAnchorView: NSView {
 
     func setPressed(modifiers: NSEvent.ModifierFlags, characters: String?) {
         view.setPressed(modifiers: modifiers, characters: characters)
+    }
+
+    func setPalette(_ palette: TooltipColorPalette) {
+        view.content.palette = palette
     }
 
     func dismiss(duration: TimeInterval, delay: TimeInterval, completion: @escaping () -> Void) {

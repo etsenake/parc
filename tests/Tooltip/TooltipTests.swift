@@ -287,6 +287,14 @@ import SwiftUI
         let other = layout.keycaps[1].offsetBy(dx: m, dy: m)
         check(pixel(heldRep, CGPoint(x: other.midX, y: other.maxY - 2)).prefix(3).allSatisfy { (140...165).contains($0) },
               "keys that are not held keep the lip")
+        var repainted = held.content.palette
+        repainted.background = .init(NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        held.content.palette = repainted
+        let repaintedRep = render(held)
+        check(pixel(repaintedRep, CGPoint(x: m + 4, y: m + 14)) == [255, 0, 0, 255] && held.contentLayout == layout,
+              "a new palette repaints the pill in place")
+        check(pixel(repaintedRep, CGPoint(x: key.midX, y: key.maxY - 2)).prefix(3).allSatisfy { (229...230).contains($0) },
+              "a new palette keeps a held key held")
 
         var labelContent = TooltipView.Content(label: "Sign in to GitHub", keycaps: [], corners: TooltipCorners(anchor: .cursor),
                                                palette: .neutral, maxWidth: 296, style: .label(subtitle: "Double-click to rename"))
@@ -598,11 +606,33 @@ import SwiftUI
         wait(0.55)
         func shownLabel() -> String? { (tooltip(of: changing)?.contentView as? TooltipView)?.content.label }
         check(shownLabel() == "Mute this tab", "the control's tooltip shows")
+        let controller = TooltipController.controller(for: changing), shownTip = tooltip(of: changing)
+        func shownPalette() -> TooltipColorPalette? { (tooltip(of: changing)?.contentView as? TooltipView)?.content.palette }
+        func fadeStart() -> CFTimeInterval? { tooltip(of: changing)?.contentView?.layer?.animation(forKey: "alpha_animation")?.beginTime }
+        var themed = TooltipColorPalette.neutral
+        themed.background = .init(NSColor(srgbRed: 0, green: 0.5, blue: 0.2, alpha: 1))
+        let shownFrame = shownTip?.frame
+        controller.palette = themed
+        check(shownPalette() == themed && tooltip(of: changing) === shownTip && shownTip?.frame == shownFrame,
+              "a new window palette repaints the shown tooltip in place")
+        controller.palette = nil
+        check(shownPalette() == .neutral && tooltip(of: changing) === shownTip, "clearing the window palette repaints it neutral")
+        var own = TooltipColorPalette.neutral
+        own.title = .init(NSColor(srgbRed: 0.8, green: 0, blue: 0, alpha: 1))
+        control.parcTooltip = TooltipConfiguration("Mute this tab", palette: own)
+        controller.palette = themed
+        check(shownPalette() == own, "a tooltip with its own palette keeps it when the window palette changes")
+        control.parcTooltip = TooltipConfiguration("Mute this tab")
+        check(shownPalette() == themed, "dropping its own palette takes the window's")
         control.parcTooltip = TooltipConfiguration("Unmute this tab")
         check(shownLabel() == "Unmute this tab", "a change with the pointer over the view replaces the shown content")
         changing.pointer = NSPoint(x: 250, y: 20)
         control.parcTooltip = TooltipConfiguration("Mute this tab")
         check(shownLabel() == "Unmute this tab", "a change after the pointer left does not show the new content")
+        let fading = fadeStart()
+        controller.palette = nil
+        check(fading != nil && fadeStart() == fading && shownPalette() == .neutral && shownLabel() == "Unmute this tab",
+              "a fading tooltip repaints without restarting its fade")
         wait(0.5)
         check(tooltip(of: changing) == nil, "it fades the tooltip and closes its window")
         changing.close()

@@ -69,8 +69,8 @@ starts at 0. Disabled arrows use 0.33 opacity.
 
 `onTooltipThemeChange` publishes the displayed theme on window attachment and
 on later preview/commit/Undo changes. The original popover window's
-`TooltipController.palette` follows it. An already shown tooltip keeps its
-presentation colors until shown again. Onboarding does not install that callback.
+`TooltipController.palette` follows it, and a tooltip already on screen repaints
+in place. Onboarding does not install that callback.
 
 ## Tooltip adoption
 

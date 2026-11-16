@@ -50,8 +50,12 @@ import SwiftUI
     var content: Content {
         didSet {
             guard content != oldValue else { return }
-            contentLayout = Self.layout(for: content, scale: backingScale)
-            pressProgress = content.keycaps.map { _ in 0 }; pressTargets = pressProgress; frames.stop()
+            var repainted = oldValue
+            repainted.palette = content.palette
+            if repainted != content {
+                contentLayout = Self.layout(for: content, scale: backingScale)
+                pressProgress = content.keycaps.map { _ in 0 }; pressTargets = pressProgress; frames.stop()
+            }
             needsDisplay = true
         }
     }

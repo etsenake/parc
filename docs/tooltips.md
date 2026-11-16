@@ -69,6 +69,9 @@ punctuation remains a known matching limitation.
 
 Explicit configuration wins over the owning window's palette, then neutral
 fallback. App appearance is not forcibly replaced by sidebar appearance.
+When the window's palette changes, for example a theme edit or a keyboard Space
+switch, a shown or fading tooltip repaints in place. Its size, position, held
+keycaps and fade continue unchanged; an explicit configuration palette stays.
 
 | Neutral role | Light | Dark |
 | --- | --- | --- |
