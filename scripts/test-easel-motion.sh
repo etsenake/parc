@@ -1,13 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-mkdir -p "$repo_root/build/tests"
-spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$repo_root/build/tests/easel-spinner.swift" ParcButtonSpinner)
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/parc-easel-motion.XXXXXX")"
+trap 'rm -rf "$scratch"' EXIT
+spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$scratch/easel-spinner.swift" ParcButtonSpinner)
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \
   "$repo_root/tests/EaselMotionTests.swift" \
-  -o "$repo_root/build/tests/easel-motion"
-"$repo_root/build/tests/easel-motion"
+  -o "$scratch/easel-motion"
+"$scratch/easel-motion"
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
@@ -28,5 +29,5 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/ParcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \
   "$repo_root/tests/EaselMotionCanvasTests.swift" \
-  -o "$repo_root/build/tests/easel-motion-canvas"
-"$repo_root/build/tests/easel-motion-canvas"
+  -o "$scratch/easel-motion-canvas"
+"$scratch/easel-motion-canvas"

@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
-mkdir -p "$repo_root/build/tests"
-spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$repo_root/build/tests/easel-spinner.swift" ParcButtonSpinner)
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/parc-easels.XXXXXX")"
+trap 'rm -rf "$scratch"' EXIT
+spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$scratch/easel-spinner.swift" ParcButtonSpinner)
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
@@ -10,10 +11,10 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselWebNavigation.swift" \
   "$repo_root/tests/Support/FileObservation.swift" \
   "$repo_root/tests/EaselStoreTests.swift" \
-  -o "$repo_root/build/tests/easel-store"
-"$repo_root/build/tests/easel-store"
+  -o "$scratch/easel-store"
+"$scratch/easel-store"
 
-style_bundle="$repo_root/build/tests/EaselTextStyle.app/Contents"
+style_bundle="$scratch/EaselTextStyle.app/Contents"
 mkdir -p "$style_bundle/MacOS" "$style_bundle/Resources/EaselFonts"
 cp "$repo_root/Resources/EaselFonts/"*.ttf "$style_bundle/Resources/EaselFonts/"
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
@@ -90,8 +91,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselImagePlacement.swift" \
   "$repo_root/Sources/ParcApp/CaptureMessageSharing.swift" \
   "$repo_root/tests/CaptureDestinationTests.swift" \
-  -o "$repo_root/build/tests/capture-destinations"
-"$repo_root/build/tests/capture-destinations"
+  -o "$scratch/capture-destinations"
+"$scratch/capture-destinations"
 
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselWebNavigation.swift" \
@@ -101,5 +102,5 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselWebInput.swift" \
   "$repo_root/Sources/ParcApp/SavedFocus.swift" \
   "$repo_root/tests/EaselWebInputTests.swift" \
-  -o "$repo_root/build/tests/easel-web-input"
-"$repo_root/build/tests/easel-web-input"
+  -o "$scratch/easel-web-input"
+"$scratch/easel-web-input"
