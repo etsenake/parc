@@ -21,6 +21,7 @@ struct ArchivedFolderPathTests {
         let work: BrowserFolder
         let inner: BrowserFolder
         let p0: UUID, p1: UUID, w1: UUID, w2: UUID, i1: UUID, i2: UUID
+        let notePage: InternalPage
 
         var pinned: SidebarContainerLocation { .init(spaceID: space.id, folderID: nil, section: .pinned) }
         var workContents: SidebarContainerLocation { .init(spaceID: space.id, folderID: work.id, section: .pinned) }
@@ -29,7 +30,7 @@ struct ArchivedFolderPathTests {
         func store() throws -> BrowserStore { try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_900_000_000) }) }
     }
 
-    static func withFixture(_ body: (Fixture) throws -> Void) throws {
+    static func withFixture(archivedNote: Bool = false, _ body: (Fixture) throws -> Void) throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("parc-archived-folder-paths-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
@@ -50,12 +51,19 @@ struct ArchivedFolderPathTests {
         }
         let p0 = tab("Before", folder: nil), p1 = tab("After", folder: nil)
         let w1 = tab("WorkFirst", folder: work.id), w2 = tab("WorkLast", folder: work.id)
-        let i1 = tab("InnerFirst", folder: inner.id), i2 = tab("InnerLast", folder: inner.id)
+        let i1 = tab("InnerFirst", folder: inner.id)
+        var i2 = tab("InnerLast", folder: inner.id)
+        let notePage = InternalPage.note(UUID())
+        if archivedNote {
+            i2.url = notePage.urlString; i2.savedURL = notePage.urlString
+            i2.archivedAt = Date(timeIntervalSince1970: 1_800_000_000)
+            i2.archiveProvenance = ArchiveProvenance(reason: .manual, spaceID: space.id, spaceName: space.name)
+        }
         var state = BrowserState(profiles: [profile], spaces: [space, other], activeSpaceID: space.id)
         state.folders = [work, inner]
         state.tabs = [p0, p1, w1, w2, i1, i2]
         let fixture = Fixture(directory: directory, profile: profile, space: space, other: other, work: work, inner: inner,
-                              p0: p0.id, p1: p1.id, w1: w1.id, w2: w2.id, i1: i1.id, i2: i2.id)
+                              p0: p0.id, p1: p1.id, w1: w1.id, w2: w2.id, i1: i1.id, i2: i2.id, notePage: notePage)
         state.sidebarItemOrder[fixture.pinned.key] = [.tab(p0.id), .folder(work.id), .tab(p1.id)]
         state.sidebarItemOrder[fixture.workContents.key] = [.tab(w1.id), .folder(inner.id), .tab(w2.id)]
         state.sidebarItemOrder[fixture.innerContents.key] = [.tab(i1.id), .tab(i2.id)]
@@ -99,6 +107,7 @@ struct ArchivedFolderPathTests {
         try testClearingRemovesPaths()
         try testBackupsCarryAndForgetPaths()
         try testUndoAfterPutBack()
+        try testPreviewedAndPendingArchives()
         print("ArchivedFolderPathTests passed \(checks) checks")
     }
 
@@ -360,28 +369,6 @@ struct ArchivedFolderPathTests {
         }
         try withFixture { f in
             let store = try f.store()
-            try delete([.tab(f.i2)], in: store, f)
-            let olderArchive = try tab(f.i2, store)
-            guard let lease = store.acquireArchivePreview(id: f.i2, profileID: f.profile.id) else { throw Failure(description: "Preview lease refused") }
-            try delete([.folder(f.work.id)], in: store, f)
-            try check(try tab(f.i2, store).archiveProvenance == olderArchive.archiveProvenance && store.archivePreviewIsValid(lease),
-                      "Deletion leaves a previewed older archive's record alone so its preview stays valid")
-            store.releaseArchivePreview(lease)
-        }
-        try withFixture { f in
-            let store = try f.store()
-            try delete([.tab(f.i2)], in: store, f)
-            let undo = try delete([.folder(f.work.id)], in: store, f)
-            let recorded = try tab(f.i2, store)
-            guard let lease = store.acquireArchivePreview(id: f.i2, profileID: f.profile.id) else { throw Failure(description: "Preview lease refused") }
-            try check(try store.undoFolderDeletion(undo, shouldCommit: { true }), "Undo still restores the tree while an older archive is previewed")
-            try check(try tab(f.i2, store) == recorded && store.archivePreviewIsValid(lease), "Undo leaves the previewed record and its path untouched")
-            try check(store.restoreArchivePreview(lease, destination: .previousSpace(fallbackSpaceID: f.space.id)) == [f.i2]
-                      && (try tab(f.i2, store)).folderID == f.inner.id && store.state.folders.count == 2,
-                      "Putting the preview back reuses the restored folder")
-        }
-        try withFixture { f in
-            let store = try f.store()
             let undo = try delete([.folder(f.work.id)], in: store, f)
             guard let lease = store.acquireArchivePreview(id: f.w1, profileID: f.profile.id) else { throw Failure(description: "Preview lease refused") }
             let archived = store.state
@@ -390,21 +377,113 @@ struct ArchivedFolderPathTests {
             store.releaseArchivePreview(lease)
             try check(try store.undoFolderDeletion(undo, shouldCommit: { true }) && store.state.folders.count == 2, "Undo works once the preview closes")
         }
+    }
+
+    typealias Retirement = (ids: Set<UUID>, gate: () -> Bool, done: (Bool) -> Void)
+    final class Retirements { var list: [Retirement] = [] }
+
+    static func deleteWhileRetiring(_ store: BrowserStore, _ f: Fixture, pending: Retirements) throws {
+        let target = FolderRemovalTarget(items: [.folder(f.work.id)], spaceID: f.space.id, profileID: f.profile.id, state: store.state)!
+        var result: Result<Bool, Error>?
+        store.deleteFolder(target, shouldCommit: { true }) { result = $0 }
+        guard pending.list.count == 2, pending.list[1].gate() else { throw Failure(description: "Folder deletion did not reach consent") }
+        pending.list[1].done(true)
+        guard (try result?.get()) == true else { throw Failure(description: "Folder deletion did not commit") }
+    }
+
+    static func testPreviewedAndPendingArchives() throws {
+        try withFixture { f in
+            let store = try f.store()
+            try delete([.tab(f.i1)], in: store, f)
+            try delete([.tab(f.i2)], in: store, f)
+            guard let lease = store.acquireArchivePreview(id: f.i2, profileID: f.profile.id) else { throw Failure(description: "Preview lease refused") }
+            try delete([.folder(f.work.id)], in: store, f)
+            let plain = try tab(f.i1, store), previewed = try tab(f.i2, store)
+            try check(plain.folderID == nil && plain.archiveProvenance?.folderPath?.parentID == nil
+                      && plain.archiveProvenance?.folderPath?.folders.map(\.id) == [f.work.id, f.inner.id],
+                      "Without a preview, an older archive from the deleted folders gains the path as before")
+            try check(previewed.folderID == nil && previewed.archiveProvenance?.folderPath == plain.archiveProvenance?.folderPath,
+                      "A previewed older archive gains exactly the same path as one without a preview")
+            try check(store.archivePreviewIsValid(lease), "The open preview stays valid while its path is extended")
+            var moved = previewed; moved.folderID = f.inner.id; moved.archiveProvenance?.folderPath = nil
+            var rearchived = previewed; rearchived.archivedAt = Date(timeIntervalSince1970: 2_000_000_000)
+            var regrouped = previewed; regrouped.archiveProvenance?.groupID = UUID()
+            try check(moved.withoutFolderPlacement == previewed.withoutFolderPlacement
+                      && rearchived.withoutFolderPlacement != previewed.withoutFolderPlacement
+                      && regrouped.withoutFolderPlacement != previewed.withoutFolderPlacement,
+                      "Only folder placement is ignored; a re-archived or regrouped entry still counts as changed")
+            try putBack(f.i1, in: store, f)
+            try check(store.restoreArchivePreview(lease, destination: .previousSpace(fallbackSpaceID: f.space.id)) == [f.i2]
+                      && (try tab(f.i2, store)).folderID == f.inner.id && store.state.folders.count == 2,
+                      "Putting the preview back lands in the rebuilt folder beside its sibling")
+        }
+        try withFixture { f in
+            let store = try f.store()
+            try delete([.folder(f.inner.id)], in: store, f)
+            guard let lease = store.acquireArchivePreview(id: f.i1, profileID: f.profile.id) else { throw Failure(description: "Preview lease refused") }
+            try delete([.folder(f.work.id)], in: store, f)
+            let previewed = try tab(f.i1, store), plain = try tab(f.i2, store)
+            try check(previewed.archiveProvenance?.folderPath?.folders.map(\.id) == [f.work.id, f.inner.id]
+                      && previewed.archiveProvenance?.folderPath?.parentID == nil
+                      && previewed.archiveProvenance?.folderPath?.folders == plain.archiveProvenance?.folderPath?.folders,
+                      "Deleting a parent extends a previewed tab's earlier path the same way")
+            try check(store.restoreArchivePreview(lease, destination: .previousSpace(fallbackSpaceID: f.space.id)) == [f.i1]
+                      && store.state.folders.first { $0.id == f.inner.id }?.parentID == f.work.id
+                      && store.state.folders.first { $0.id == f.work.id }?.parentID == nil,
+                      "Putting the preview back rebuilds both levels")
+        }
         try withFixture { f in
             let store = try f.store()
             try delete([.tab(f.i2)], in: store, f)
-            var pending: [(ids: Set<UUID>, gate: () -> Bool, done: (Bool) -> Void)] = []
-            store.requestPageRetirement = { ids, gate, done in pending.append((ids, gate, done)) }
-            store.deleteArchivedTabs([f.i2], profileID: f.profile.id)
-            try check(pending.count == 1 && pending[0].ids == [f.i2], "Archive deletion waits on retirement")
-            var result: Result<Bool, Error>?
-            let target = FolderRemovalTarget(items: [.folder(f.work.id)], spaceID: f.space.id, profileID: f.profile.id, state: store.state)!
-            store.deleteFolder(target, shouldCommit: { true }) { result = $0 }
-            try check((try result?.get()) == false && pending.count == 1 && store.state.folders.count == 2,
-                      "Folder deletion refuses while an archived tab linked to it is being deleted from Archive")
-            try check(pending[0].gate(), "The pending archive deletion is still current")
-            pending[0].done(true)
-            try check(store.state.tab(f.i2) == nil, "The pending archive deletion still completes")
+            let olderArchive = try tab(f.i2, store)
+            let undo = try delete([.folder(f.work.id)], in: store, f)
+            guard let lease = store.acquireArchivePreview(id: f.i2, profileID: f.profile.id) else { throw Failure(description: "Preview lease refused") }
+            try check(try store.undoFolderDeletion(undo, shouldCommit: { true }), "Undo restores the tree while an older archive is previewed")
+            try check(try tab(f.i2, store) == olderArchive && store.archivePreviewIsValid(lease),
+                      "Undo returns the previewed record to its exact earlier state and keeps the preview valid")
+            try check(store.restoreArchivePreview(lease, destination: .previousSpace(fallbackSpaceID: f.space.id)) == [f.i2]
+                      && (try tab(f.i2, store)).folderID == f.inner.id && store.state.folders.count == 2,
+                      "Putting the preview back returns to the restored folder")
+        }
+        for completes in [true, false] {
+            try withFixture { f in
+                let store = try f.store()
+                try delete([.tab(f.i2)], in: store, f)
+                let pending = Retirements()
+                store.requestPageRetirement = { ids, gate, done in pending.list.append((ids, gate, done)) }
+                store.deleteArchivedTabs([f.i2], profileID: f.profile.id)
+                try check(pending.list.count == 1 && pending.list[0].ids == [f.i2], "Archive deletion waits on retirement")
+                try deleteWhileRetiring(store, f, pending: pending)
+                try check(try tab(f.i2, store).folderID == nil && tab(f.i2, store).archiveProvenance?.folderPath?.folders.map(\.id) == [f.work.id, f.inner.id],
+                          "Folder deletion extends a tab that is being deleted from Archive")
+                if completes {
+                    try check(pending.list[0].gate(), "The pending archive deletion is still current")
+                    pending.list[0].done(true)
+                    try check(store.state.tab(f.i2) == nil, "The pending archive deletion still completes")
+                } else {
+                    pending.list[0].done(false)
+                    store.requestPageRetirement = nil
+                    try putBack(f.i2, in: store, f)
+                    try check(try tab(f.i2, store).folderID == f.inner.id && store.state.folders.count == 2,
+                              "A refused archive deletion leaves the extended path, so Put Back rebuilds the folders")
+                }
+            }
+        }
+        try withFixture(archivedNote: true) { f in
+            let store = try f.store()
+            let pending = Retirements()
+            var finished: Error?? = .none, removedDocument = false
+            store.requestPageRetirement = { ids, gate, done in pending.list.append((ids, gate, done)) }
+            store.deleteLocalDocument(f.notePage, profileID: f.profile.id, ownerValid: { true },
+                                      deleteDocument: { removedDocument = true }, completion: { finished = .some($0) })
+            try check(pending.list.count == 1 && pending.list[0].ids == [f.i2], "Document deletion waits on its archived alias")
+            try deleteWhileRetiring(store, f, pending: pending)
+            try check(try tab(f.i2, store).archiveProvenance?.folderPath?.folders.map(\.id) == [f.work.id, f.inner.id],
+                      "Folder deletion extends an archived alias whose document is being deleted")
+            try check(pending.list[0].gate(), "The pending document deletion is still current")
+            pending.list[0].done(true)
+            try check(removedDocument && store.state.tab(f.i2) == nil && finished.map { $0 == nil } == true,
+                      "The pending document deletion still completes")
         }
     }
 }

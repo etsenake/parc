@@ -101,8 +101,7 @@ archived, or that a folder without tabs archives none. The original subtree,
 mixed order, native pages, splits and typed aliases remain bound through
 confirmation and whole-set retirement, including owners in other windows, Peek
 children and embedded Easel pages. Cancellation, stale ownership, pending
-creation, invalid typed data or a pending Archive deletion of one of the folders'
-archived tabs refuses the operation.
+creation or invalid typed data refuses the operation.
 
 After consent, one save deletes folder records and archives original sidebar
 records as manual entries in their original Profile/Space. Complete splits keep

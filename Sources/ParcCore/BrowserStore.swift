@@ -188,6 +188,16 @@ struct ArchivedFolderPath: Codable, Equatable {
     }
 }
 
+extension BrowserTab {
+    var withoutFolderPlacement: BrowserTab {
+        var entry = self
+        entry.folderID = nil
+        entry.archiveProvenance?.folderPath = nil
+        return entry
+    }
+    var archivedWithoutFolderPlacement: BrowserTab { archivedAt == nil ? self : withoutFolderPlacement }
+}
+
 struct ArchivedFolderPathRecorder {
     let state: BrowserState
     let deleted: Set<UUID>
@@ -2404,7 +2414,8 @@ final class BrowserStore: ObservableObject {
         return zip(current.tabs, lease.tabs).allSatisfy { current, original in
             current.id == original.id && current.profileID == original.profileID
                 && current.spaceID == original.spaceID && current.createdAt == original.createdAt
-                && current.archivedAt == original.archivedAt && current.archiveProvenance == original.archiveProvenance
+                && current.archivedAt == original.archivedAt
+                && current.withoutFolderPlacement.archiveProvenance == original.withoutFolderPlacement.archiveProvenance
         }
     }
 
@@ -2434,7 +2445,9 @@ final class BrowserStore: ObservableObject {
             snapshots.allSatisfy { tabs in
                 guard let first = tabs.first, !self.isProfileRemovalPending(first.profileID),
                       self.state.profiles.contains(where: { $0.id == first.profileID }) else { return false }
-                return self.archivedItems(profileID: first.profileID).contains { $0.tabs == tabs }
+                return self.archivedItems(profileID: first.profileID).contains {
+                    $0.tabs.map(\.withoutFolderPlacement) == tabs.map(\.withoutFolderPlacement)
+                }
             }
         }
         withRetiredPages(retiring, shouldCommit: current, exclusive: true) { [weak self] in
@@ -2596,8 +2609,11 @@ final class BrowserStore: ObservableObject {
         func current() -> Bool {
             ownerValid() && !self.isProfileRemovalPending(profileID)
                 && self.state.profiles.contains(where: { $0.id == profileID })
-                && self.state.tabs.filter { $0.profileID == profileID && ($0.url == page.urlString || $0.savedURL == page.urlString) } == originals
-                && archiveGroups.allSatisfy { group in self.archivedItems(profileID: profileID).contains { $0.tabs == group } }
+                && self.state.tabs.filter { $0.profileID == profileID && ($0.url == page.urlString || $0.savedURL == page.urlString) }
+                    .map(\.archivedWithoutFolderPlacement) == originals.map(\.archivedWithoutFolderPlacement)
+                && archiveGroups.allSatisfy { group in self.archivedItems(profileID: profileID).contains {
+                    $0.tabs.map(\.withoutFolderPlacement) == group.map(\.withoutFolderPlacement)
+                } }
         }
         withRetiredPages(retiring, shouldCommit: current, onRefusal: { completion(CocoaError(.userCancelled)) }, exclusive: true) { [weak self] in
             guard let self, current(), !self.archivePreviewOverlaps(retiring) else { completion(CocoaError(.userCancelled)); return }
@@ -4344,9 +4360,7 @@ final class BrowserStore: ObservableObject {
             guard let self else { return false }
             guard FolderRemovalTarget(items: target.roots, spaceID: expected.spaceID,
                 profileID: expected.profileID, state: self.state) == target,
-                  SidebarDocumentReference.validates(target.tabs, references: documents),
-                  self.retiringTabIDs.isDisjoint(with: self.state.archivedTabs(where: {
-                      $0.folderID.map(target.folderIDs.contains) == true }).map(\.id)) else { return false }
+                  SidebarDocumentReference.validates(target.tabs, references: documents) else { return false }
             return selection?.isCurrent(for: target, in: self.state) ?? true
         }
         guard current(), ids.isDisjoint(with: retiringTabIDs) else { completion(.success(false)); return }
@@ -4366,15 +4380,13 @@ final class BrowserStore: ObservableObject {
                 for id in split.tabIDs { provenance[id]?.groupID = group; provenance[id]?.split = split }
             }
             var paths = ArchivedFolderPathRecorder(state: self.state, deleted: Set(target.folderIDs))
-            let busy = self.retiringTabIDs
             for index in next.tabs.indices {
                 let tab = next.tabs[index]
                 if ids.contains(tab.id) {
                     next.tabs[index].archivedAt = now
                     next.tabs[index].archiveProvenance = provenance[tab.id]
                     next.tabs[index].archiveProvenance?.folderPath = paths.path(for: tab)
-                } else if tab.archivedAt != nil, tab.archiveProvenance != nil, !busy.contains(tab.id),
-                          !self.archivePreviewOverlaps([tab.id]), let path = paths.path(for: tab) {
+                } else if tab.archivedAt != nil, tab.archiveProvenance != nil, let path = paths.path(for: tab) {
                     next.tabs[index].archiveProvenance?.folderPath = path
                 }
             }
@@ -4422,7 +4434,7 @@ final class BrowserStore: ObservableObject {
             guard let index = next.tabIndex(original.id) else { return false }
             next.tabs[index] = original
         }
-        for entry in undo.detachedArchive where !retiringTabIDs.contains(entry.archived.id) && !archivePreviewOverlaps([entry.archived.id]) {
+        for entry in undo.detachedArchive {
             if let index = next.tabIndex(entry.archived.id, where: { $0 == entry.archived }) { next.tabs[index] = entry.original }
         }
         next.splitLayouts += undo.groups

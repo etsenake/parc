@@ -50,13 +50,10 @@ is dropped without losing its record, and older Parc versions ignore it. It live
 inside the archive record, so Put Back, deletion, expiry and Clear Archive remove
 it with the record. A rebuilt folder retires the deletion's window Undo and Reopen,
 which refuse while any of their folders exist; Undo before any Put Back restores
-older archived tabs to their exact earlier records. Deletion refuses while an
-archived tab still linked to one of its folders is being deleted from Archive.
-Deletion and Undo leave alone an older archived tab that is open in an archive
-preview or being deleted from Archive: after deletion its record misses the newly
-deleted folders, so Put Back cannot rebuild them; after Undo it keeps its path and
-reuses the restored folder. Undo waits while one of the deleted tabs is open in
-an archive preview.
+older archived tabs to their exact earlier records. Both also update an older
+archived tab that is open in an archive preview or being deleted from Archive,
+because previews and pending deletions ignore folder placement. Undo waits while
+one of the deleted tabs is open in an archive preview.
 
 ## Archive filter presentation increment
 
@@ -170,16 +167,17 @@ sheet; it dismisses education only after Settings accepts that destination.
 
 ## Archive preview retirement boundary
 
-Deletion, Clear Archive, expiry and document deletion retain exact item snapshots
-through native retirement. Complete intersecting splits are reserved even for
-partial-ID deletion. Overlapping requests cannot supersede the reservation;
-refusal or changed snapshots preserve records.
+Deletion, Clear Archive, expiry and document deletion retain exact item snapshots,
+apart from folder placement, through native retirement. Complete intersecting
+splits are reserved even for partial-ID deletion. Overlapping requests cannot
+supersede the reservation; refusal or changed snapshots preserve records.
 
 A preview lease names one ordered item and prevents competing previews, ordinary
-restore and Profile removal. It tolerates content edits but requires original
-archive membership/provenance. Retirement checks exact live preview owners at
-admission and consent, refuses missing/creating owners and holds leases until
-those owners are destroyed. Leases must be released before model deletion.
+restore and Profile removal. It tolerates content edits and folder placement
+but requires original archive membership/provenance. Retirement checks exact live
+preview owners at admission and consent, refuses missing/creating owners and
+holds leases until those owners are destroyed. Leases must be released before
+model deletion.
 Promotion consumes its lease only after successful restore. Because restore
 publishes synchronously, the window preflights native ownership/attachments and
 suppresses ordinary rendering before calling it; a failed transfer cannot undo
