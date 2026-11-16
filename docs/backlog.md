@@ -206,13 +206,6 @@ what users see or hear today, and each must keep it that way.
   and approval because a regression would show as stalled or mis-composited protected video: the
   wait-for-key latch inside the player, `SetOutputIsSecure` in place of the parked-compositor flag,
   a composite renderer and a separate FairPlay process with `CALayerHost`.
-- Carrying Parc's Chromium changes as a branch moved by three-way merges, and the Chromium 157 (or
-  158) upgrade taken through it, are separately authorized work. The upgrade is what brings users
-  that release's Chromium security fixes; the [upgrade procedure](../Engine/README.md#upgrading-chromium)
-  describes it. No tool yet writes a refitted branch on a newer Chromium back into the overlay: the
-  export tool only proves equivalence at the current version, so step 7 regenerates patch files and
-  their hashes by hand, which is slow and error-prone across a milestone where most of the 74 patched
-  files change.
 
 ## Deferred
 

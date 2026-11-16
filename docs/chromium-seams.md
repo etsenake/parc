@@ -373,6 +373,5 @@ every miss compiled locally ([cache setup](../tests/EngineSource/README.md#share
 proves byte-for-byte equivalence with the current one
 ([export](../tests/EngineSource/README.md#branch-export-and-equivalence)); the release pipeline still
 materializes pinned Chromium plus the overlay once. The step-by-step procedure for minor and major
-Chromium bumps is in [Upgrading Chromium](../Engine/README.md#upgrading-chromium). Carrying the changes
-as a branch, the next Chromium upgrade and other open engine work are in the
-[backlog](backlog.md#engine-architecture).
+Chromium bumps is in [Upgrading Chromium](../Engine/README.md#upgrading-chromium). Open engine work is
+in the [backlog](backlog.md#engine-architecture).

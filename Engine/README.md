@@ -240,13 +240,13 @@ so releases keep using the current engine:
    is only worth raising when it serves the same goal as the existing ones:
    fewer and smaller changes in Chromium's own files. Record each patch's outcome
    and reason in the hooks reference.
-7. Write the refit back into the overlay inputs by hand (no tool does this yet;
-   see the [backlog](../docs/backlog.md#engine-architecture)): regenerate each
-   patch file as a plain `--- a/`/`+++ b/` unified diff from the new Chromium
-   file to the `parc-next` file, keeping the patch's grouping of targets; copy
-   changed Parc-owned files back to their sources; update every `sha256`,
-   `before_sha256` and `after_sha256`, set `upstream.chromium` to the new commit
-   and `version` to main's current overlay version plus one.
+7. Write the refit back into the overlay inputs by hand (no tool does this
+   yet): regenerate each patch file as a plain `--- a/`/`+++ b/` unified diff
+   from the new Chromium file to the `parc-next` file, keeping the patch's
+   grouping of targets; copy changed Parc-owned files back to their sources;
+   update every `sha256`, `before_sha256` and `after_sha256`, set
+   `upstream.chromium` to the new commit and `version` to main's current overlay
+   version plus one.
 8. Prove it in the copy: `reset-source`, then `overlay-check` and
    `overlay-apply` with the new manifest, then `generate` and `shipping-build`.
 9. Fetch main, commit the lock, manifest and changed patch and source files in
