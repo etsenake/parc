@@ -96,8 +96,10 @@ without an attached sheet; a plain page can move out of a minimized source.
 
 Peek travels with its original parent collection. Reopen/Undo restores a whole
 split even when another window holds it. Closing a shared row first moves it to
-the requesting window, then uses that window's close/Undo ownership. Commands
-that require a live page are available only to its current holder.
+the requesting window, then uses that window's close/Undo ownership; a split
+or multi-row selection held elsewhere moves all its pages first, and refuses
+only when one can't move. Commands that require a live page are available only
+to its current holder.
 
 A placeholder image can briefly show backing while a frame is captured, encoded
 or fitted to a new pane size. The image is descriptive only; failure to obtain
@@ -130,6 +132,6 @@ separate presentation owner. Pinned-section collapse has no implementation;
 
 The explicitly deferred cross-window cases remain: an automatic return to a
 non-key window can leave a blank frozen placeholder; a close that cannot begin
-after transfer can leave its tab selected; foreign-window split close eligibility
-is restricted; Close-Peek Undo is unavailable while its parent is elsewhere,
-although Reopen can bring the parent back. See [the backlog](backlog.md#deferred).
+after transfer can leave its tab selected; Close-Peek Undo is unavailable while
+its parent is elsewhere, although Reopen can bring the parent back. See
+[the backlog](backlog.md#deferred).
