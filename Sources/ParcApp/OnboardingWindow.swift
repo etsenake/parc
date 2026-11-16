@@ -882,14 +882,8 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         guard let choice = draft.adBlockerChoice,
               let space = store.state.spaces.first(where: { $0.id == draft.spaceID }) else { return }
         draft.adBlockerChoice = nil
-        let plan = choice.plan(for: draft.importedAdBlockers, setupProfileID: space.profileID)
-        let names = Dictionary(draft.importedAdBlockers.map { ($0.identifier, $0.displayName) }) { first, _ in first }
-        SetupExtensionChanges.removeAdBlockers(plan.removals, names: names, store: store)
-        if let profileID = plan.installProfileID,
-           case let destination = BrowserImportDestination(spaceID: space.id, profileID: profileID),
-           destination.isCurrent(in: store.state) {
-            SetupExtensionChanges.addAdBlocker(to: destination, store: store)
-        }
+        SetupExtensionChanges.apply(choice, to: draft.importedAdBlockers,
+                                    in: BrowserImportDestination(spaceID: space.id, profileID: space.profileID), store: store)
     }
 
     private func dropFailedAdBlockers() {

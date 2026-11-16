@@ -420,6 +420,7 @@ final class BrowserImportCoordinator {
         dataFailed = false; dataImported = false; dataFailureReported = false
         pendingExtensions = []; backgroundProfiles = []; extensionBatch = nil; passwordStageOffered = false
         announcedExtensions = []; heldExtensionFailures = []
+        if onboarding { SetupExtensionChanges.forgetAdBlockerChoice() }
         keepsPasswordChoice = false; passwordsWithoutData = false; parkedStage = nil; pendingStart = nil
         queue = []; queuedDestinations = [:]; usedProfiles = []; activeDestination = nil
         generation = UUID()
@@ -706,7 +707,7 @@ final class BrowserImportCoordinator {
         let profile = namingProfile ? store.state.profiles.first { $0.id == entry.destination.profileID }?.name : nil
         return entry.profile.extensions.filter { entry.ids.contains($0.identifier) }.map {
             .init(source: entry.profile, identifier: $0.identifier, name: $0.displayName,
-                  destination: entry.destination, profile: profile)
+                  destination: entry.destination, profile: profile, setup: onboarding)
         }
     }
 
@@ -1315,6 +1316,10 @@ enum ImportedExtensionFailures {
     static func restore(_ notice: Notice) {
         pending = notice.failures + pending.filter { !notice.failures.contains($0) }
         retries.merge(notice.retries) { current, _ in current }
+    }
+    static func discard(where unwanted: (Failure) -> Bool) {
+        pending.removeAll(where: unwanted)
+        retries = retries.filter { !unwanted($0.key) }
     }
 }
 

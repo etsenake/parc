@@ -100,6 +100,72 @@ func setupExtensionChecks(directory: URL) throws -> Int {
            && shown(retryable) == ["uBlock Origin Lite"] && retryable?.canRetry == true && ImportedExtensionFailures.take() == nil,
            "Changes another app or the administrator rules out get notices of their own that say so, without Retry")
 
+    SetupExtensionChanges.forgetAdBlockerChoice()
+    let uBlock = OnboardingAdBlocker.uBlockOrigin
+    let source = PCNativeImportProfile("Setup import", [.extensions], .complete)
+    func importedBlocker(_ identifier: String, _ name: String, setup: Bool = true) -> ImportedExtensionRetries.Item {
+        .init(source: source, identifier: identifier, name: name, destination: destination, setup: setup)
+    }
+    let chosen = importedBlocker(uBlock, "uBlock Origin"), leftOut = importedBlocker(adBlock, "AdBlock")
+    ImportedExtensionRetries.record(chosen, store: store)
+    ImportedExtensionRetries.record(leftOut, store: store)
+    SetupExtensionChanges.forgetAdBlockerChoice()
+    SetupExtensionChanges.apply(.keep(uBlock), to: [.init(identifier: uBlock, displayName: "uBlock Origin"),
+                                                    .init(identifier: ghostery, displayName: "Ghostery")],
+                                in: destination, store: store)
+    let removal = next()
+    expect(removal.kind == "remove" && removal.identifiers == [ghostery] && PCNativeBrowserApplication.setupChanges.isEmpty,
+           "Keeping just one removes the other blocker setup listed")
+    removal.complete(nil)
+    let wanted = ImportedExtensionFailures.take()
+    expect(shown(wanted) == ["uBlock Origin"] && wanted?.canRetry == true && ImportedExtensionFailures.take() == nil,
+           "The kept blocker's notice stays, and a waiting one for a blocker the choice leaves out goes")
+    let installs = PCNativeBrowserApplication.extensionInstalls.count
+    ImportedExtensionRetries.retry(leftOut, store: store)
+    ImportedExtensionRetries.retry(importedBlocker(ghostery, "Ghostery"), store: store)
+    expect(PCNativeBrowserApplication.extensionInstalls.count == installs,
+           "Retry never re-adds a blocker that setup removed or left out on purpose")
+    wanted?.retry()
+    let keptRetry = PCNativeBrowserApplication.extensionInstalls.removeLast()
+    expect(keptRetry.requests.map(\.extensionIDs) == [[uBlock]], "Retrying the kept blocker installs just that one")
+    keptRetry.complete(.init(outcome: .completed, installedIdentifiers: [uBlock]))
+    expect(ImportedExtensionFailures.pending.isEmpty && PCNativeBrowserApplication.extensionInstalls.count == installs,
+           "A successful retry still leaves just the chosen blocker")
+    ImportedExtensionRetries.record(leftOut, store: store)
+    expect(ImportedExtensionFailures.pending.isEmpty, "A late failure for a blocker the choice left out isn't announced")
+    ImportedExtensionRetries.record(importedBlocker(adBlock, "AdBlock", setup: false), store: store)
+    let fromMenu = ImportedExtensionFailures.take()
+    fromMenu?.retry()
+    expect(shown(fromMenu) == ["AdBlock"] && fromMenu?.canRetry == true
+           && PCNativeBrowserApplication.extensionInstalls.count == installs + 1,
+           "A blocker from a later File menu import keeps its Retry")
+    PCNativeBrowserApplication.extensionInstalls.removeLast()
+    SetupExtensionChanges.apply(.none, to: [], in: destination, store: store)
+    ImportedExtensionRetries.record(chosen, store: store)
+    expect(ImportedExtensionFailures.pending.isEmpty && PCNativeBrowserApplication.setupChanges.isEmpty,
+           "After Don't block ads, no imported blocker comes back")
+    SetupExtensionChanges.apply(.uBlock, to: [], in: destination, store: store)
+    let uBlockInstall = next()
+    ImportedExtensionRetries.record(leftOut, store: store)
+    ImportedExtensionRetries.record(chosen, store: store)
+    let sameBlocker = ImportedExtensionFailures.take()
+    expect(uBlockInstall.kind == "uBlock Origin" && shown(sameBlocker) == ["uBlock Origin"] && ImportedExtensionFailures.take() == nil,
+           "After setup adds uBlock Origin, only an imported uBlock Origin keeps its notice")
+    SetupExtensionChanges.apply(.keepAll, to: [], in: destination, store: store)
+    ImportedExtensionRetries.record(leftOut, store: store)
+    ImportedExtensionRetries.record(importedBlocker(adBlock, "AdBlock", setup: false), store: store)
+    SetupExtensionChanges.apply(.none, to: [], in: destination, store: store)
+    let reclaimed = ImportedExtensionFailures.take()
+    reclaimed?.retry()
+    expect(shown(reclaimed) == ["AdBlock"] && reclaimed?.canRetry == true
+           && PCNativeBrowserApplication.extensionInstalls.count == installs + 1,
+           "A File menu failure for the same blocker survives a later setup choice and keeps its Retry")
+    PCNativeBrowserApplication.extensionInstalls.removeLast()
+    SetupExtensionChanges.apply(.keepAll, to: [], in: destination, store: store)
+    ImportedExtensionRetries.record(leftOut, store: store)
+    expect(shown(ImportedExtensionFailures.take()) == ["AdBlock"], "Using all imported blockers keeps every Retry")
+    SetupExtensionChanges.forgetAdBlockerChoice()
+
     let lab = store.createProfile(name: "Lab")
     SetupExtensionChanges.removeAdBlocker(adBlock, named: "AdBlock", from: lab, namingProfile: false, store: store)
     next().complete(Refusal())

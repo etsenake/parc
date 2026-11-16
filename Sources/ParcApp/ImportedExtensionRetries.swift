@@ -10,6 +10,7 @@ enum ImportedExtensionRetries {
         var profile: String? = nil
         var reason: ImportedExtensionFailures.Failure.Reason? = nil
         var retryable = true
+        var setup = false
         var target: String { "import " + destination.profileID.uuidString + " " + identifier }
         var failure: ImportedExtensionFailures.Failure {
             .init(name: name, profile: profile, target: target, reason: reason)
@@ -22,8 +23,19 @@ enum ImportedExtensionRetries {
         }
     }
     private static var installs: [UUID: PCNativeImportSession] = [:]
+    private static var setupBlockers: [String: String] = [:]
+
+    private static func declined(_ item: Item) -> Bool { item.setup && SetupExtensionChanges.declines(item.identifier) }
+
+    static func discardDeclined() {
+        ImportedExtensionFailures.discard { failure in
+            failure.target.flatMap { setupBlockers[$0] }.map(SetupExtensionChanges.declines) ?? false
+        }
+    }
 
     static func record(_ item: Item, store: BrowserStore) {
+        guard !declined(item) else { return }
+        setupBlockers[item.target] = item.setup && OnboardingAdBlocker.isKnown(item.identifier) ? item.identifier : nil
         guard item.retryable else { ImportedExtensionFailures.record(item.failure); return }
         ImportedExtensionFailures.record(item.failure) { [weak store] in
             guard let store else { return }
@@ -32,7 +44,8 @@ enum ImportedExtensionRetries {
     }
 
     static func retry(_ item: Item, store: BrowserStore) {
-        guard !SetupExtensionChanges.removableProfiles([item.destination.profileID], in: store.state).isEmpty else { return }
+        guard !declined(item),
+              !SetupExtensionChanges.removableProfiles([item.destination.profileID], in: store.state).isEmpty else { return }
         let request = PCNativeImportExtensionRequest(source: item.source,
             profilePath: store.independentEngineProfilePath(for: item.destination.profileID), extensionIDs: [item.identifier])
         let id = UUID()

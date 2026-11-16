@@ -37,6 +37,34 @@ enum SetupExtensionChanges {
             }
     }
 
+    private(set) static var adBlockerChoice: OnboardingDraft.AdBlockerChoice?
+
+    static func apply(_ choice: OnboardingDraft.AdBlockerChoice, to blockers: [OnboardingDraft.ImportedAdBlocker],
+                      in destination: BrowserImportDestination, store: BrowserStore) {
+        adBlockerChoice = choice
+        ImportedExtensionRetries.discardDeclined()
+        let plan = choice.plan(for: blockers, setupProfileID: destination.profileID)
+        let names = Dictionary(blockers.map { ($0.identifier, $0.displayName) }) { first, _ in first }
+        removeAdBlockers(plan.removals, names: names, store: store)
+        if let profileID = plan.installProfileID,
+           case let target = BrowserImportDestination(spaceID: destination.spaceID, profileID: profileID),
+           target.isCurrent(in: store.state) {
+            addAdBlocker(to: target, store: store)
+        }
+    }
+
+    static func declines(_ identifier: String) -> Bool {
+        guard OnboardingAdBlocker.isKnown(identifier) else { return false }
+        switch adBlockerChoice {
+        case .some(.keep(let kept)): return identifier != kept
+        case .some(.uBlock): return identifier != OnboardingAdBlocker.uBlockOrigin
+        case .some(.none): return true
+        case .some(.keepAll), nil: return false
+        }
+    }
+
+    static func forgetAdBlockerChoice() { adBlockerChoice = nil }
+
     static func removableProfiles(_ profiles: [UUID], in state: BrowserState) -> [UUID] {
         profiles.filter { id in
             state.profiles.contains { $0.id == id } && !state.profileRemovals.contains { $0.profileID == id }

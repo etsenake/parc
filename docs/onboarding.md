@@ -113,7 +113,12 @@ and a failed add sits above a failed removal. Its **Retry** runs every listed
 install or removal again; one that fails again brings the notice back. The
 import's own extension failures work the same way (see
 [browser import](browser-import.md#sequencing-and-cancellation)), and their
-retries stay with the import's installs, never setup's.
+retries stay with the import's installs, never setup's. They also follow the
+ad-blocker choice: after keeping just one, adding uBlock Origin or choosing not
+to block ads, the setup import's other known blockers get no notice and Retry
+never re-adds them, so a retry that works still leaves only the chosen one; Use
+all imported ad blockers keeps every Retry. Imports from the File menu keep
+theirs.
 
 When the engine knows a change can never work, the notice says why instead of
 offering Retry: “Kept installed by your administrator” or “by another app” for a
