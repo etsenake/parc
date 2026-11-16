@@ -1411,6 +1411,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
     var onRenameFolder: ((UUID) -> Void)?
     var prepareFolderDeletion: ((UUID) -> (() -> Bool)?)?
+    var holdsOnlyEmptyFolders: (([SidebarItemReference]) -> Bool)?
     var prepareFolderDuplicate: ((UUID) -> (() -> Bool)?)?
     var prepareSidebarDuplicate: (([SidebarItemReference]) -> (() -> Bool)?)?
     var onNewSubfolder: ((UUID) -> Void)?
@@ -4448,8 +4449,14 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
               event.modifierFlags.intersection([.shift, .control, .option, .command]).isEmpty,
               [51, 117].contains(event.keyCode),
               case .folder(let id) = itemSelection.singleItem, let spaceID = activeSpaceID else { return false }
-        _ = performFolderDeletion(id, spaceID: spaceID)
+        if !performFolderDeletion(id, spaceID: spaceID) { NSSound.beep() }
         return true
+    }
+
+    private func handleSelectionDeleteKey() {
+        let items = itemSelection.items
+        let prepare = holdsOnlyEmptyFolders?(items) == true ? prepareSidebarDeletion : prepareSidebarClose
+        if prepare?(items)?() != true { NSSound.beep() }
     }
 
     override func keyDown(with event: NSEvent) {
@@ -4481,9 +4488,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         }
         if flags.isEmpty, [51, 117].contains(event.keyCode) {
             if handleFolderDeletionKey(event) { return }
-            if !itemSelection.items.isEmpty {
-                _ = prepareSidebarClose?(itemSelection.items)?(); return
-            }
+            if !itemSelection.items.isEmpty { handleSelectionDeleteKey(); return }
         }
         super.keyDown(with: event)
     }

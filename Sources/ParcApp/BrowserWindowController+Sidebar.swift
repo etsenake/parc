@@ -334,6 +334,11 @@ extension BrowserWindowController {
                 return copied
             }
         }
+        sidebar.holdsOnlyEmptyFolders = { [weak self] items in
+            guard let self else { return false }
+            return SidebarKeyboardCloseTarget(items: items, spaceID: self.activeSpaceID,
+                profileID: self.activeProfileID, state: self.store.state)?.holdsOnlyEmptyFolders == true
+        }
         sidebar.prepareSidebarClose = { [weak self] items in
             guard let self, let current = self.sidebar.itemSelectionValidator(items),
                   let target = SidebarKeyboardCloseTarget(items: items, spaceID: self.activeSpaceID,

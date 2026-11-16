@@ -21,7 +21,9 @@ menu = source[start:end]
 method = body('    func performFolderDeletion(') if '    func performFolderDeletion(' in source else ''
 edit = body('    @objc func delete(').replace('@objc ', '') if '    @objc func delete(' in source else ''
 keys = body('    func handleFolderDeletionKey(') if '    func handleFolderDeletionKey(' in source else ''
+plural = body('    private func handleSelectionDeleteKey(').replace('private ', '')
 program = '''import AppKit
+@MainActor enum NSSound { static var beeps = 0; static func beep() { beeps += 1 } }
 struct Folder { let id: UUID; let spaceID: UUID }
 struct State { var folders: [Folder] }
 enum Item { case folder(UUID), tab(UUID) }
@@ -36,7 +38,10 @@ final class Window { var isKeyWindow = true; weak var firstResponder: AnyObject?
     var activeSpaceID: UUID?
     var hierarchyState: State?
     var prepareFolderDeletion: ((UUID) -> (() -> Bool)?)?
-''' + method + '\n' + keys + '\n' + edit + '''
+    var holdsOnlyEmptyFolders: (([Item]) -> Bool)?
+    var prepareSidebarDeletion: (([Item]) -> (() -> Bool)?)?
+    var prepareSidebarClose: (([Item]) -> (() -> Bool)?)?
+''' + method + '\n' + keys + '\n' + plural + '\n' + edit + '''
     func menu(_ folder: Folder) -> NSMenu {
         let menu = NSMenu(); menu.autoenablesItems = false
         let button = NSButton()
@@ -114,6 +119,34 @@ final class Window { var isKeyWindow = true; weak var firstResponder: AnyObject?
         h.itemSelection.singleItem = nil; h.itemSelection.items = [.folder(id), .tab(UUID())]
         precondition(!h.handleFolderDeletionKey(event(51)), "Plural selection stays on existing Close route")
         precondition(commits == 4, "Rejected keys never delete")
+        let quiet = NSSound.beeps
+        h.itemSelection.singleItem = .folder(id); h.isPrivateBrowsing = true
+        precondition(h.handleFolderDeletionKey(event(51)) && NSSound.beeps == quiet + 1 && commits == 4, "A single folder Delete that cannot act beeps")
+        h.isPrivateBrowsing = false; h.itemSelection.singleItem = nil
+        let emptyFolders: Set<UUID> = [UUID(), UUID()], empties = emptyFolders.map(Item.folder)
+        var deletions = 0, closes = 0, deletionResult: Bool? = true, closeResult: Bool? = true, deleted: [Item] = [], closed: [Item] = []
+        h.holdsOnlyEmptyFolders = { items in
+            items.allSatisfy { if case .folder(let folder) = $0 { return emptyFolders.contains(folder) }; return false }
+        }
+        h.prepareSidebarDeletion = { items in deletionResult.map { result in { deleted = items; deletions += 1; return result } } }
+        h.prepareSidebarClose = { items in closeResult.map { result in { closed = items; closes += 1; return result } } }
+        h.itemSelection.items = empties; h.handleSelectionDeleteKey()
+        precondition(deletions == 1 && closes == 0 && NSSound.beeps == quiet + 1 && deleted.count == 2, "Delete on only empty folders takes the selection's folder Delete, not Close")
+        let tabbed: [Item] = [.folder(id), .tab(UUID())]
+        h.itemSelection.items = tabbed; h.handleSelectionDeleteKey()
+        precondition(deletions == 1 && closes == 1 && NSSound.beeps == quiet + 1 && closed.count == 2, "Selections holding tabs keep Close")
+        h.itemSelection.items = empties + [.folder(id)]; h.handleSelectionDeleteKey()
+        precondition(deletions == 1 && closes == 2 && closed.count == 3, "Empty folders mixed with a tab-holding folder keep Close")
+        deletionResult = nil; h.itemSelection.items = empties; h.handleSelectionDeleteKey()
+        precondition(deletions == 1 && closes == 2 && NSSound.beeps == quiet + 2, "Unavailable folder deletion beeps instead of closing")
+        deletionResult = false; h.handleSelectionDeleteKey()
+        precondition(deletions == 2 && closes == 2 && NSSound.beeps == quiet + 3, "A refused folder deletion beeps")
+        closeResult = nil; h.itemSelection.items = tabbed; h.handleSelectionDeleteKey()
+        precondition(closes == 2 && NSSound.beeps == quiet + 4, "Unavailable Close beeps")
+        closeResult = false; h.handleSelectionDeleteKey()
+        precondition(closes == 3 && NSSound.beeps == quiet + 5, "A refused Close beeps")
+        h.holdsOnlyEmptyFolders = nil; closeResult = true; deletionResult = true; h.itemSelection.items = empties; h.handleSelectionDeleteKey()
+        precondition(deletions == 2 && closes == 4 && NSSound.beeps == quiet + 5, "Without a folder answer Delete keeps Close")
         h.itemSelection.singleItem = .folder(id)
         h.delete(nil)
         precondition(commits == 5, "Edit Delete dispatches the selected folder")
@@ -134,5 +167,7 @@ with tempfile.TemporaryDirectory(prefix='parc-folder-delete-') as tmp:
     subprocess.run(['xcrun', 'swiftc', str(root / 'tests/Support/TestFailure.swift'), '-parse-as-library', str(swift), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 keys = body('    override func keyDown(with event: NSEvent)')
-assert 'handleFolderDeletionKey(event)' in keys and 'prepareSidebarClose?(itemSelection.items)' in keys, 'Singleton folder Delete/Backspace must not fall through to NSResponder'
+assert 'handleFolderDeletionKey(event)' in keys and 'handleSelectionDeleteKey()' in keys, 'Singleton folder Delete/Backspace must not fall through to NSResponder'
+wiring = (root / 'Sources/ParcApp/BrowserWindowController+Sidebar.swift').read_text()
+assert 'sidebar.holdsOnlyEmptyFolders = ' in wiring and '?.holdsOnlyEmptyFolders == true' in wiring, 'Window controller answers the empty-folder Delete question from the keyboard-close model'
 print('PASS: singleton folder keyboard routing')

@@ -912,11 +912,13 @@ extension BrowserWindowController {
                 }
             }
             if requiresConfirmation {
-                let singleFolder = target.roots.count == 1 && !target.folderIDs.isEmpty
+                let singleFolder = target.roots.count == 1 && !target.folderIDs.isEmpty, empty = target.tabs.isEmpty
                 ParcDialog.confirm(in: window,
                     title: singleFolder ? "Delete your “\(target.name)” folder?"
+                        : empty ? "Delete the selected folders?"
                         : target.folderIDs.isEmpty ? "Archive the selected tabs?" : "Delete the selected items?",
-                    message: singleFolder ? "Deleting this folder will archive the tabs inside it."
+                    message: empty ? (singleFolder ? "This folder holds" : "These folders hold") + " no tabs, so none will be archived."
+                        : singleFolder ? "Deleting this folder will archive the tabs inside it."
                         : "All selected tabs, including tabs inside selected folders, will be archived. Notes and Easels will remain in your Library.",
                     confirm: singleFolder ? "Delete Folder" : target.folderIDs.isEmpty ? "Archive Tabs" : "Delete",
                     destructive: true, decided: proceed)

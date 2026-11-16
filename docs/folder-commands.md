@@ -94,10 +94,11 @@ leaves the Library record retryable. Ordinary saved-tab Close is not deletion.
 ## Delete and plural selected-item Archive
 
 Delete asks **Delete your “name” folder?** and explains that its tabs will be
-archived. The original subtree, mixed order, native pages, splits and typed
-aliases remain bound through confirmation and whole-set retirement, including
-owners in other windows, Peek children and embedded Easel pages. Cancellation,
-stale ownership, pending creation or invalid typed data refuses the operation.
+archived, or that a folder without tabs archives none. The original subtree,
+mixed order, native pages, splits and typed aliases remain bound through
+confirmation and whole-set retirement, including owners in other windows, Peek
+children and embedded Easel pages. Cancellation, stale ownership, pending
+creation or invalid typed data refuses the operation.
 
 After consent, one save deletes folder records and archives original sidebar
 records as manual entries in their original Profile/Space. Complete splits keep
@@ -107,7 +108,8 @@ A save failure preserves the saved tree even if approved live pages have closed.
 
 Plural **Delete** (when folders are selected), **Archive Tabs**, and the matching
 accessibility action generalize this to one captured same-Space collection,
-one retirement transaction and one Undo group. Ancestors suppress duplicate
+one retirement transaction and one Undo group. A set of folders without tabs asks
+**Delete the selected folders?** instead. Ancestors suppress duplicate
 descendants. Favorites/foreign/malformed items cannot partially participate.
 Keyboard Close remains distinct: saved-only roots unload content; a collection
 with a Today root takes the archive/removal path. Folder-bearing keyboard actions

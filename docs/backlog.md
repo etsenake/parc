@@ -32,8 +32,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
   splits copy. Note/Easel splits cannot copy across Profiles, and document moves
   refuse while source aliases still reference the document. These need explicit
   copy/relocation transactions. [Folder moves](folder-moves.md).
-- Close does not handle selections containing only empty saved folders. Favorite
-  tiles do not join range/multi-selection. [Sidebar selection](sidebar-selection.md).
 
 ## Archive and history
 

@@ -103,6 +103,16 @@ whole captured set, including saved references, through one consent and durable
 transaction. Folder-bearing commands retain folder confirmation; tab-only keyboard
 close adds no warning. Explicit Delete keeps its separate confirmation policy.
 
+Delete or Forward Delete on a selection whose roots are all empty folders, with
+no tab anywhere inside them, takes the same plural folder Delete as the context
+menu: one confirmation, then deletion with Undo, as Delete already does for one
+selected folder. Close needs at least one tab, so Close Tabs in Selection stays
+hidden for such a selection. Any tab in the selection, including empty folders
+mixed with folders that hold tabs, keeps keyboard Close, so a quick multi-select
+never deletes folders full of saved tabs. When Delete cannot act on a
+selection, Parc beeps. Keyboard-close and folder-deletion checks cover this
+routing, the mixed case, Undo and the beep.
+
 Saved Reopen chooses one most-recent eligible original item in the initiating
 window; it does not invent a bulk saved stack. Archived Today steps retain original
 whole-split geometry/focus. Complete Undo retains mixed-command saved references.
@@ -110,17 +120,14 @@ See [Reopen Closed Tab](reopen-closed-tabs.md).
 
 ## App-tray move boundary
 
-Command reset and Shift activation do not create Favorite range selections.
-Original Favorite tiles and complete Favorite splits can use one-use move
-capabilities; tray admission validates every root and the twelve-root capacity.
-Supported modifiers and cross-Profile routes remain with
-[folder moves](folder-moves.md) and [split groups](split-groups.md).
-
-## Remaining selection limits
-
-Close is unavailable when the selection contains only empty saved folders,
-because the close transaction requires at least one tab. Explicit folder Delete
-remains available. Favorite tiles do not join range or multi-selection.
+Favorites keep their own click behavior and stay out of range and multi-selection
+on purpose. Command-click on a Favorite already returns it to its saved page,
+Shift-click activates it, and the tray holds at most twelve tiles, so a
+multi-set would add little. Select All leaves them out. Original Favorite tiles
+and complete Favorite splits can use one-use move capabilities; tray admission
+validates every root and the twelve-root capacity. Supported modifiers and
+cross-Profile routes remain with [folder moves](folder-moves.md) and
+[split groups](split-groups.md).
 
 ## Checks
 

@@ -150,6 +150,8 @@ changes belong in the owning guide and release notes, not an ever-growing log he
   upgrades and relevant native integration checks.
 - Folders and the Pinned section open and close together in every window
   showing that Space; the state belongs to the folder or the Space, not a window.
+- Favorites keep their own clicks and stay out of sidebar range and multi-selection.
+  See [sidebar selection](sidebar-selection.md#app-tray-move-boundary).
 - Split View deliberately offers no pane-handle drag, double-click separation,
   Option-click unsplit or sidebar drop-to-combine gesture; each duplicates an
   existing route. See [split groups](split-groups.md#split-gesture-and-context-inventory--sp33).

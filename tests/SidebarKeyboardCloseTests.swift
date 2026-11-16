@@ -38,10 +38,10 @@ struct SidebarKeyboardCloseTests {
         initial.splitLayouts = [group,todayGroup]; initial.selectedTabIDs = group.tabIDs
         initial.selectionBySpace[space.id.uuidString] = group.tabIDs
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
-        func store(_ name: String) throws -> BrowserStore {
+        func store(_ name: String, seed: BrowserState? = nil) throws -> BrowserStore {
             let dir = root.appendingPathComponent(name)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try encoder.encode(initial).write(to: dir.appendingPathComponent("session.json"))
+            try encoder.encode(seed ?? initial).write(to: dir.appendingPathComponent("session.json"))
             return try BrowserStore(directory: dir, now: { Date(timeIntervalSince1970: 1_900_000_000) })
         }
         initial = try store("normalized").state
@@ -114,6 +114,31 @@ struct SidebarKeyboardCloseTests {
         try check(record.groups == initial.splitLayouts && record.roots == mixed.items.roots, "Undo captures complete original groups/root identities")
         try check(try mixedStore.undoFolderDeletion(record, shouldCommit: { true }), "Mixed keyboard archive restores through actual window Undo transaction")
         try check(mixedStore.state.tabs == initial.tabs && mixedStore.state.folders == initial.folders && mixedStore.state.splitLayouts == initial.splitLayouts, "Undo restores exact mixed original records and geometry")
+        let later = BrowserFolder(id: UUID(), spaceID: space.id, name: "Later")
+        let someday = BrowserFolder(id: UUID(), spaceID: space.id, name: "Someday")
+        let nested = BrowserFolder(id: UUID(), spaceID: space.id, name: "Nested", parentID: someday.id)
+        var roomy = initial; roomy.folders += [later, someday, nested]
+        roomy = try store("roomy-normalized", seed: roomy).state
+        let pinnedRoot = SidebarContainerLocation(spaceID: space.id, folderID: nil, section: .pinned)
+        let empties = target([.folder(later.id),.folder(someday.id),.folder(nested.id)], state: roomy)!
+        try check(empties.holdsOnlyEmptyFolders && !empties.archivesItems && empties.items.tabs.isEmpty, "Several empty folders send Delete to folder deletion instead of a tabless Close")
+        try check(Set(empties.items.roots) == Set([.folder(later.id),.folder(someday.id)]) && Set(empties.items.folderIDs) == Set([later.id,someday.id,nested.id]), "A selected empty subfolder goes once, with its empty parent")
+        try check(target([.folder(later.id),.folder(someday.id)], state: roomy)?.holdsOnlyEmptyFolders == true, "Exactly two empty folders also delete")
+        try check(target([.folder(folder.id),.split(group.id),.tab(keep.id)], state: roomy)?.holdsOnlyEmptyFolders == false, "Saved selections with tabs keep unloading Close")
+        try check(target([.tab(keep.id),.split(todayGroup.id)], state: roomy)?.holdsOnlyEmptyFolders == false, "Tab and split selections keep Close")
+        try check(target([.folder(folder.id),.folder(later.id)], state: roomy)?.holdsOnlyEmptyFolders == false, "Empty folders mixed with a tab-holding folder keep Close")
+        try check(target([.folder(later.id),.tab(keep.id)], state: roomy)?.holdsOnlyEmptyFolders == false, "An empty folder selected with a tab keeps Close")
+        let emptyStore = try store("empty-folders", seed: roomy)
+        var emptyResult: Result<Bool,Error>?, emptyUndo: FolderDeletionUndo?, emptyAdmissions = 0
+        emptyStore.requestPageRetirement = { _, _, _ in emptyAdmissions += 1 }
+        emptyStore.deleteFolder(empties.items, shouldCommit: { true }, didCommit: { emptyUndo = $0 }) { emptyResult = $0 }
+        try check((try emptyResult?.get()) == true && emptyAdmissions == 0, "Empty folders delete without asking any page to close")
+        try check(emptyStore.state.folders == initial.folders, "Only the selected empty folders are deleted")
+        try check(emptyStore.state.tabs == roomy.tabs && emptyStore.state.splitLayouts == roomy.splitLayouts, "Deleting empty folders leaves every tab and split alone")
+        let emptyRecord = emptyUndo!
+        try check(try emptyStore.undoFolderDeletion(emptyRecord, shouldCommit: { true }), "Undo takes the deleted empty folders back")
+        try check(emptyStore.state.folders.count == roomy.folders.count && roomy.folders.allSatisfy(emptyStore.state.folders.contains), "Undo restores each empty folder, nesting included")
+        try check(SidebarHierarchy.children(in: pinnedRoot, state: emptyStore.state) == SidebarHierarchy.children(in: pinnedRoot, state: roomy), "Undo puts the empty folders back in their places")
         print("\(count) keyboard close assertions passed")
     }
 }

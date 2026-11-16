@@ -1333,6 +1333,10 @@ struct SidebarKeyboardCloseTarget: Equatable {
     }
 
     var requiresConfirmation: Bool { archivesItems && !items.folderIDs.isEmpty }
+
+    var holdsOnlyEmptyFolders: Bool {
+        items.tabs.isEmpty && items.roots.allSatisfy { if case .folder = $0 { return true }; return false }
+    }
 }
 
 struct FolderDeletionUndo: SidebarItemsRecord {
