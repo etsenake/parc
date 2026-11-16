@@ -314,6 +314,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private var dividerGrips: [CALayer] = []
     private var dividerTrackingAreas: [NSTrackingArea] = []
     private var hoveredDivider: Int?
+    private var topmostCursor = TopmostCursor()
     private var resignObserver: NSObjectProtocol?
     private let layoutAnimationKey = "Split divider equalization"
     private let reservedAnimationKey = "Split reserved layout"
@@ -636,7 +637,10 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         if let window {
             resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification,
                 object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.retireDropReservation(); self?.clearLayoutAnimation(); self?.updateDividerHover(at: nil, animated: false) }
+                MainActor.assumeIsolated {
+                    self?.retireDropReservation(); self?.clearLayoutAnimation(); self?.updateDividerHover(at: nil, animated: false)
+                    self?.topmostCursor.release()
+                }
             }
         }
         if !isTrackingDivider { applySavedFrames() }
@@ -652,10 +656,19 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         super.viewDidChangeEffectiveAppearance()
         synchronizeDividerPresentation(animated: false)
     }
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        let cursor: NSCursor = isVertical ? .resizeLeftRight : .resizeUpDown
-        for rect in dividerRegions where !rect.isEmpty { addCursorRect(rect, cursor: cursor) }
+    override func cursorUpdate(with event: NSEvent) {
+        guard let window, !isHiddenOrHasHiddenAncestor,
+              let cursor = dividerCursor(atWindowPoint: window.mouseLocationOutsideOfEventStream) else {
+            topmostCursor.release(); super.cursorUpdate(with: event); return
+        }
+        topmostCursor.update(cursor, in: self)
+    }
+    func dividerCursor(atWindowPoint point: NSPoint) -> NSCursor? {
+        dividerCursor(topmost: topmostPoint(atWindowPoint: point))
+    }
+    private func dividerCursor(topmost: NSPoint?) -> NSCursor? {
+        guard topmost != nil || isDividerPanActive else { return nil }
+        return isVertical ? .resizeLeftRight : .resizeUpDown
     }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -666,17 +679,25 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                   visible.minX.isFinite, visible.minY.isFinite,
                   visible.width.isFinite, visible.height.isFinite else { return nil }
             let area = NSTrackingArea(rect: visible,
-                options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .enabledDuringMouseDrag], owner: self, userInfo: nil)
+                options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .enabledDuringMouseDrag],
+                owner: self, userInfo: nil)
             addTrackingArea(area); return area
         }
+        resampleDividerPointer()
+    }
+    private func resampleDividerPointer() {
         if let window, window.isKeyWindow, !isHiddenOrHasHiddenAncestor {
-            updateDividerHover(at: topmostPoint(atWindowPoint: window.mouseLocationOutsideOfEventStream), animated: false)
-        } else { updateDividerHover(at: nil, animated: false) }
+            let topmost = topmostPoint(atWindowPoint: window.mouseLocationOutsideOfEventStream)
+            updateDividerHover(at: topmost, animated: false)
+            topmostCursor.update(dividerCursor(topmost: topmost), in: self)
+        } else { updateDividerHover(at: nil, animated: false); topmostCursor.release() }
     }
     override func mouseEntered(with event: NSEvent) {
         guard let area = event.trackingArea, dividerTrackingAreas.contains(where: { $0 === area }),
               let window, event.window === window, window.isKeyWindow, !isHiddenOrHasHiddenAncestor else { return }
-        updateDividerHover(at: topmostPoint(atWindowPoint: event.locationInWindow))
+        let topmost = topmostPoint(atWindowPoint: event.locationInWindow)
+        updateDividerHover(at: topmost)
+        topmostCursor.update(dividerCursor(topmost: topmost), in: self)
     }
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
@@ -684,7 +705,9 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             super.mouseMoved(with: event); return
         }
         guard let window, event.window === window, window.isKeyWindow, !isHiddenOrHasHiddenAncestor else { return }
-        updateDividerHover(at: topmostPoint(atWindowPoint: event.locationInWindow))
+        let topmost = topmostPoint(atWindowPoint: event.locationInWindow)
+        updateDividerHover(at: topmost)
+        topmostCursor.update(dividerCursor(topmost: topmost), in: self)
     }
     private func topmostPoint(atWindowPoint point: NSPoint) -> NSPoint? {
         let local = convert(point, from: nil)
@@ -693,6 +716,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     override func mouseExited(with event: NSEvent) {
         guard let area = event.trackingArea, dividerTrackingAreas.contains(where: { $0 === area }) else { return }
         updateDividerHover(at: nil)
+        topmostCursor.release()
     }
     func updateDividerHover(at point: NSPoint?, animated: Bool = true) {
         let next = point.flatMap { point in
@@ -752,7 +776,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                 grip.add(transition, forKey: "Split grip hover")
             } else if !animated { grip.removeAnimation(forKey: "Split grip hover") }
         }
-        window?.invalidateCursorRects(for: self)
     }
 
     func configure(orientation: SplitOrientation, factors: [Double]) {
@@ -983,6 +1006,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         if commit, valid, current.moved, current.commit(current.factors) { savedFactors = current.factors }
         applySavedFrames()
         isDividerPanActive = false
+        resampleDividerPointer()
     }
     private var minimumPaneLength: CGFloat {
         expandedPaneMinimum

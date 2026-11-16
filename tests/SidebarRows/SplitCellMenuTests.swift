@@ -102,8 +102,15 @@ import AppKit
                   "The two-by-24 grip is centred on the handle")
         try check(handle.hitTest(NSPoint(x: 395, y: 150)) == nil, "The handle takes no mouse events (pan and double click do nothing here)")
         try check(handle.trackingAreas.count == 1 && handle.trackingAreas[0].rect == handle.region
-                  && handle.trackingAreas[0].options == [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .enabledDuringMouseDrag],
-                  "Hover tracks the band with the handle's 0x423 options")
+                  && handle.trackingAreas[0].options == [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow,
+                                                         .enabledDuringMouseDrag],
+                  "Hover and the resize pointer track the band with the handle's 0x427 options")
+        let bandPoint = handle.convert(NSPoint(x: 5, y: 140), to: nil)
+        try check(handle.bandCursor(atWindowPoint: bandPoint) != nil, "The uncovered band shows the resize pointer")
+        let bandCover = NSView(frame: NSRect(x: 380, y: 100, width: 20, height: 100))
+        root.addSubview(bandCover)
+        try check(handle.bandCursor(atWindowPoint: bandPoint) == nil, "A command surface over the band keeps the resize pointer off it")
+        bandCover.removeFromSuperview()
         split.addArrangedSubview(other)
         split.configure(orientation: .horizontal, factors: [1, 1])
         try check(!handle.isShown && handle.region.isEmpty && handle.trackingAreas.isEmpty && grip?.isHidden == true,

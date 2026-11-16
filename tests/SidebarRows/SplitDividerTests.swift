@@ -4,6 +4,10 @@ import AppKit
     override var isFlipped: Bool { true }
 }
 
+@MainActor private final class SeeThroughView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 @MainActor private final class SplitScaleWindow: NSWindow {
     var testScale: CGFloat = 2
     override var backingScaleFactor: CGFloat { testScale }
@@ -405,6 +409,21 @@ import AppKit
                       $0.rect.minY == 53 && $0.rect.maxY == view.bounds.maxY && $0.rect.width == view.dividerThickness
                           && $0.options.contains(.enabledDuringMouseDrag) && $0.options.contains(.activeInKeyWindow)
                   }, "Tracking areas cover each draggable region with the original 0x421 options")
+        let dividerPoint = view.convert(hoverPoint, to: nil)
+        try check(view.trackingAreas.allSatisfy { $0.options.contains(.cursorUpdate) }
+                  && view.dividerCursor(atWindowPoint: dividerPoint) != nil,
+                  "An uncovered divider sets its resize pointer through cursor updates, not cursor rectangles")
+        let dividerCover = NSView(frame: win.contentView!.convert(
+            NSRect(x: hoverPoint.x - 20, y: hoverPoint.y - 20, width: 40, height: 40), from: view))
+        win.contentView!.addSubview(dividerCover)
+        try check(view.dividerCursor(atWindowPoint: dividerPoint) == nil,
+                  "A command surface over the divider keeps the resize pointer off it")
+        dividerCover.removeFromSuperview()
+        let dividerGlass = SeeThroughView(frame: dividerCover.frame)
+        win.contentView!.addSubview(dividerGlass)
+        try check(view.dividerCursor(atWindowPoint: dividerPoint) != nil,
+                  "A see-through overlay leaves the divider's resize pointer alone")
+        dividerGlass.removeFromSuperview()
         let stacked = ParcSplitView(frame: NSRect(x: 0, y: 0, width: 900, height: 900))
         let stackedPanes = [NSView(), NSView()]
         stackedPanes.forEach(stacked.addArrangedSubview)

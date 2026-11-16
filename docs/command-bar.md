@@ -107,7 +107,10 @@ because the bar may cover only part of it. Most use the shared check in
 the developer toolbar, Find and the Downloads search field run the same hit test
 themselves, and the sidebar's resize edge also counts child windows. A view that
 lets clicks through, such as a see-through overlay, never hides hover beneath
-it. The Space title row, extension buttons, split controls, background panes'
+it. The resize pointer follows the same rule: split dividers and the page's
+margin grip set it from cursor-update tracking only while they are topmost, not
+from cursor rectangles, so over the bar the pointer stays the bar's own. The Space
+title row, extension buttons, split controls and dividers, background panes'
 reveal and the resize edge have covered and uncovered checks in their suites.
 
 ## Appearance and theme

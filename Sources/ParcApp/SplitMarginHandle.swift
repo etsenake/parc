@@ -9,6 +9,7 @@ final class SplitMarginHandleView: NSView {
     private(set) var isHovered = false
     private let grip = CALayer()
     private var trackingArea: NSTrackingArea?
+    private var topmostCursor = TopmostCursor()
     private var resignObserver: NSObjectProtocol?
 
     override init(frame frameRect: NSRect) {
@@ -45,7 +46,7 @@ final class SplitMarginHandleView: NSView {
         if let window {
             resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification,
                 object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.setHovered(false, animated: false) }
+                MainActor.assumeIsolated { self?.setHovered(false, animated: false); self?.topmostCursor.release() }
             }
         }
         refresh()
@@ -63,13 +64,19 @@ final class SplitMarginHandleView: NSView {
         if !isShown { isHovered = false }
         updateColor(animated: false)
         updateTrackingAreas()
-        window?.invalidateCursorRects(for: self)
     }
 
-    override func resetCursorRects() {
-        super.resetCursorRects()
+    func bandCursor(atWindowPoint point: NSPoint) -> NSCursor? {
         let band = region
-        if !band.isEmpty { addCursorRect(band, cursor: .resizeLeftRight) }
+        guard !band.isEmpty, !isHiddenOrHasHiddenAncestor, band.contains(convert(point, from: nil)),
+              isTopmost(atWindowPoint: point) else { return nil }
+        return .resizeLeftRight
+    }
+    override func cursorUpdate(with event: NSEvent) {
+        guard let window, let cursor = bandCursor(atWindowPoint: window.mouseLocationOutsideOfEventStream) else {
+            topmostCursor.release(); super.cursorUpdate(with: event); return
+        }
+        topmostCursor.update(cursor, in: self)
     }
 
     override func updateTrackingAreas() {
@@ -77,27 +84,34 @@ final class SplitMarginHandleView: NSView {
         if let trackingArea { removeTrackingArea(trackingArea) }
         trackingArea = nil
         let band = region
-        guard !band.isEmpty else { return }
-        let area = NSTrackingArea(rect: band, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .enabledDuringMouseDrag],
-                                  owner: self, userInfo: nil)
-        addTrackingArea(area); trackingArea = area
-        if let window, window.isKeyWindow {
-            let point = window.mouseLocationOutsideOfEventStream
-            setHovered(band.contains(convert(point, from: nil)) && isTopmost(atWindowPoint: point), animated: false)
-        } else { setHovered(false, animated: false) }
+        if !band.isEmpty {
+            let area = NSTrackingArea(rect: band, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow,
+                                                            .enabledDuringMouseDrag], owner: self, userInfo: nil)
+            addTrackingArea(area); trackingArea = area
+        }
+        guard let window, window.isKeyWindow else { setHovered(false, animated: false); topmostCursor.release(); return }
+        let cursor = bandCursor(atWindowPoint: window.mouseLocationOutsideOfEventStream)
+        setHovered(cursor != nil, animated: false)
+        topmostCursor.update(cursor, in: self)
     }
     override func mouseEntered(with event: NSEvent) {
         guard event.trackingArea === trackingArea, isShown, window?.isKeyWindow == true else { return }
-        setHovered(isTopmost(atWindowPoint: event.locationInWindow), animated: true)
+        pointerMoved(toWindowPoint: event.locationInWindow)
     }
     override func mouseMoved(with event: NSEvent) {
         guard trackingArea != nil, region.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
         guard isShown, window?.isKeyWindow == true else { return }
-        setHovered(isTopmost(atWindowPoint: event.locationInWindow), animated: true)
+        pointerMoved(toWindowPoint: event.locationInWindow)
+    }
+    private func pointerMoved(toWindowPoint point: NSPoint) {
+        let topmost = isTopmost(atWindowPoint: point)
+        setHovered(topmost, animated: true)
+        topmostCursor.update(topmost ? .resizeLeftRight : nil, in: self)
     }
     override func mouseExited(with event: NSEvent) {
         guard event.trackingArea === trackingArea else { return }
         setHovered(false, animated: true)
+        topmostCursor.release()
     }
 
     private func setHovered(_ hovered: Bool, animated: Bool) {

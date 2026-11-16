@@ -10,3 +10,17 @@ extension NSView {
             || sequence(first: hit, next: \.superview).contains { $0 is ResizeHandleView }
     }
 }
+
+@MainActor struct TopmostCursor {
+    private(set) var isSet = false
+    mutating func update(_ cursor: NSCursor?, in view: NSView) {
+        if let cursor {
+            cursor.set()
+        } else if isSet {
+            NSCursor.arrow.set()
+            view.window?.invalidateCursorRects(for: view)
+        }
+        isSet = cursor != nil
+    }
+    mutating func release() { isSet = false }
+}
