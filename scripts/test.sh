@@ -371,6 +371,8 @@ step python3 "$repo_root/tests/EaselIdleSleep/check.py"
 step python3 "$repo_root/tests/DownloadLocation/check-picker.py"
 step python3 "$repo_root/tests/MenuImages/check.py"
 step bash "$repo_root/scripts/test-parc-dialog.sh"
+step bash "$repo_root/scripts/test-page-tool-appearance.sh"
+step python3 "$repo_root/tests/PopupChrome/check.py"
 
 step compile_and_run sidebar-window-move SidebarWindowMoveTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift" \
