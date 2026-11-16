@@ -575,13 +575,17 @@ struct CloseUndoTests {
 
         let peekRecord = ClosedPeekRecord(id: UUID(), url: URL(string: "https://peek.invalid/a")!, parentTabID: t1.id, profileID: profile.id)
         var opened: [ClosedPeekRecord] = [], openWorks = false, closeRequests: [UUID] = [], closeWorks = true
-        var livePeeks = Set<UUID>()
+        var livePeeks = Set<UUID>(), parentElsewhere = false, parentMoves: [() -> Void] = []
         func appendPeek(to manager: FolderUndoManager, appended: @escaping (ClosedPeekUndoOperation) -> Void) {
-            manager.appendClosedPeek(peekRecord, state: { arch.state }, canOpen: { _ in true }, open: { operation in
-                opened.append(operation.record)
-                guard openWorks else { return false }
-                let adopted = UUID(); livePeeks.insert(adopted); operation.openedPeek = adopted
-                return true
+            manager.appendClosedPeek(peekRecord, state: { arch.state }, canOpen: { _ in true }, open: { operation, done in
+                let openHere = {
+                    opened.append(operation.record)
+                    guard openWorks else { done(false); return }
+                    let adopted = UUID(); livePeeks.insert(adopted); operation.openedPeek = adopted
+                    done(true)
+                }
+                guard parentElsewhere else { openHere(); return }
+                parentMoves.append(openHere)
             }, isOpen: { operation in operation.openedPeek.map(livePeeks.contains) == true },
                canClose: { operation in operation.openedPeek.map(livePeeks.contains) == true }, close: { operation, done in
                 closeRequests.append(operation.openedPeek!)
@@ -613,6 +617,28 @@ struct CloseUndoTests {
                   "Redo closes the Peek Undo opened, not another over the same parent, and takes that close's record")
         peekOperation?.didReopen(peekOperation!.record)
         try check(!peekWindow.canUndo, "Once Reopen Closed Tab took the Peek's step, Undo has nothing left")
+        let movingParent = FolderUndoManager()
+        var movingOperation: ClosedPeekUndoOperation?
+        appendPeek(to: movingParent) { movingOperation = $0 }
+        parentElsewhere = true; openWorks = true
+        let openedBeforeMove = opened.count
+        movingParent.undo()
+        try check(movingParent.isBusy && !movingParent.canUndo && !movingParent.canRedo && parentMoves.count == 1
+                  && opened.count == openedBeforeMove,
+                  "Undo for a Peek whose page now lives in another window waits while that page moves here")
+        parentMoves.removeFirst()()
+        try check(!movingParent.isBusy && movingOperation?.openedPeek != nil && movingParent.redoMenuItemTitle == "Redo Close Peek",
+                  "once the page arrives the Peek opens over it, and Redo Close Peek follows")
+        let refusedMove = FolderUndoManager()
+        appendPeek(to: refusedMove) { _ in }
+        refusedMove.undo()
+        try check(refusedMove.isBusy && parentMoves.count == 1, "a second window's Undo also waits for its page")
+        openWorks = false
+        parentMoves.removeFirst()()
+        try check(!refusedMove.isBusy && refusedMove.canUndo && !refusedMove.canRedo
+                  && refusedMove.undoMenuItemTitle == "Undo Close Peek",
+                  "a move or Peek that doesn't work out leaves Undo Close Peek offered, untouched")
+        parentElsewhere = false; openWorks = true
         let promoted = FolderUndoManager()
         var promotedOperation: ClosedPeekUndoOperation?
         appendPeek(to: promoted) { promotedOperation = $0 }

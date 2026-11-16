@@ -586,11 +586,7 @@ extension BrowserWindowController {
     }
     private func reopenClosedPeek(_ record: ClosedPeekRecord) {
         if canMovePageHere(record.parentTabID) {
-            _ = movePagesHere([record.parentTabID]) { [weak self] in
-                guard let self, self.selectTab(record.parentTabID) else { return false }
-                DispatchQueue.main.async { [weak self] in self?.reopenClosedPeek(record) }
-                return true
-            }
+            movePeekParentHere(record.parentTabID, then: { [weak self] in self?.reopenClosedPeek(record) })
             return
         }
         guard selectTab(record.parentTabID), currentTabID == record.parentTabID,

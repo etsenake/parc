@@ -97,7 +97,8 @@ content. Live Notes, Easels and Peek require a visible, unminimized destination
 without an attached sheet; a plain page can move out of a minimized source.
 
 Peek travels with its original parent collection. Reopen/Undo restores a whole
-split even when another window holds it. Closing a shared row first moves it to
+split even when another window holds it, and Reopen and Undo Close Peek both
+move a parent page another window holds here before opening its Peek. Closing a shared row first moves it to
 the requesting window, then uses that window's close/Undo ownership; a split
 or multi-row selection held elsewhere moves all its pages first, and refuses
 only when one can't move. Close isn't offered while a page is still opening, and
@@ -141,7 +142,6 @@ interfaces when run.
 
 ## Remaining behavior and explicit deferrals
 
-The explicitly deferred cross-window cases remain: an automatic return to a
-non-key window can leave a blank frozen placeholder; Close-Peek Undo is
-unavailable while its parent is elsewhere, although Reopen can bring the parent
-back. See [the backlog](backlog.md#deferred).
+The explicitly deferred cross-window case remains: an automatic return to a
+non-key window can leave a blank frozen placeholder. See
+[the backlog](backlog.md#deferred).

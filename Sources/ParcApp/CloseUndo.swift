@@ -85,7 +85,7 @@ extension FolderUndoManager {
     @discardableResult
     func appendClosedPeek(_ record: ClosedPeekRecord, state: @escaping () -> BrowserState?,
                           canOpen: @escaping (ClosedPeekUndoOperation) -> Bool,
-                          open: @escaping (ClosedPeekUndoOperation) -> Bool,
+                          open: @escaping (ClosedPeekUndoOperation, _ done: @escaping (Bool) -> Void) -> Void,
                           isOpen: @escaping (ClosedPeekUndoOperation) -> Bool,
                           canClose: @escaping (ClosedPeekUndoOperation) -> Bool,
                           close: @escaping (ClosedPeekUndoOperation, _ done: @escaping (ClosedPeekRecord?) -> Void) -> Void,
@@ -98,7 +98,7 @@ extension FolderUndoManager {
             direction == .undo ? canOpen(operation) : canClose(operation)
         }, perform: { direction, completion in
             switch direction {
-            case .undo: completion(open(operation))
+            case .undo: open(operation, completion)
             case .redo:
                 close(operation) { next in
                     guard let next else { completion(false); return }

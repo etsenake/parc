@@ -52,6 +52,12 @@ still has priority. Reopen selects the surviving original parent and opens the
 Peek through that parent's real native Browser. If the parent has no live page,
 selection creates it and the step remains for the next Reopen.
 
+Undo Close Peek takes the same route when the parent page now lives in another
+window: it moves that page here with the ordinary transfer checks, waits for it
+to arrive, then opens the Peek over it. It isn't offered while the other window
+has a live Peek over that parent, and a move or Peek that fails leaves Undo
+offered and the Reopen step in place.
+
 Folder deletion records the actual `FolderDeletionUndo`: original folders,
 children, order, split provenance and expansion flags. Undo and Reopen share the
 same restoration transaction. Whichever restores first expires the other.

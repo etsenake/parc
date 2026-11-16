@@ -169,27 +169,29 @@ extension BrowserWindowController {
         let operation = folderUndo.appendClosedPeek(record, state: { [weak self] in self?.store.state }, canOpen: { [weak self] operation in
             guard let self, self.windowUndoContextAvailable, self.peekUndoOpen == nil, self.archivePreviewRequest == nil,
                   let binding = self.nativeBinding,
-                  PCNativePage.instancesRespond(to: #selector(PCNativePage.openPeek(url:))),
-                  self.switcherCanUse(operation.record.parentTabID) else { return false }
+                  PCNativePage.instancesRespond(to: #selector(PCNativePage.openPeek(url:))) else { return false }
+            let parent = operation.record.parentTabID
+            switch PageReparenting.rowAction(closing: false, busy: false, usableHere: self.switcherCanUse(parent),
+                                             heldElsewhere: self.peekParentCanMoveHere(parent)) {
+            case .here?: break
+            case .moveHere?: return self.windowAdmitsPeek(binding)
+            default: return false
+            }
             guard let page = self.closedPeekParentPage(operation.record) else {
                 self.pruneAwaitedPeeks()
-                return self.peekUndoAwaitingParent[operation.record.parentTabID] == nil
-                    && self.browsers[operation.record.parentTabID] == nil && self.windowAdmitsPeek(binding)
+                return self.peekUndoAwaitingParent[parent] == nil
+                    && self.browsers[parent] == nil && self.windowAdmitsPeek(binding)
             }
             return self.canHostPeek(binding, over: page)
-        }, open: { [weak self] operation in
-            guard let self, self.windowUndoContextAvailable, self.peekUndoOpen == nil,
-                  self.switcherCanUse(operation.record.parentTabID) else { return false }
-            if let page = self.closedPeekParentPage(operation.record) {
-                guard self.openUndonePeek(operation, over: page) else { return false }
-            } else {
-                self.pruneAwaitedPeeks()
-                let parent = operation.record.parentTabID
-                guard self.peekUndoAwaitingParent[parent] == nil, self.browsers[parent] == nil else { return false }
-                self.peekUndoAwaitingParent[parent] = operation; self.awaitedPeekRetries.remove(parent)
+        }, open: { [weak self] operation, done in
+            guard let self, self.windowUndoContextAvailable, self.peekUndoOpen == nil else { done(false); return }
+            let parent = operation.record.parentTabID
+            guard !self.switcherCanUse(parent), self.peekParentCanMoveHere(parent) else {
+                done(self.openClosedPeekUndo(operation)); return
             }
-            _ = self.closedItems.consume(stepID: operation.record.id)
-            return true
+            self.movePeekParentHere(parent, then: { [weak self] in
+                done(self?.openClosedPeekUndo(operation, arrived: true) ?? false)
+            }, failed: { done(false) })
         }, isOpen: { [weak self] operation in
             guard let self else { return false }
             self.pruneAwaitedPeeks()
@@ -220,6 +222,45 @@ extension BrowserWindowController {
             }
         }) { _ in }
         peekUndoOperations.add(operation)
+    }
+
+    private func openClosedPeekUndo(_ operation: ClosedPeekUndoOperation, arrived: Bool = false) -> Bool {
+        let parent = operation.record.parentTabID
+        guard windowUndoContextAvailable, peekUndoOpen == nil, switcherCanUse(parent) else { return false }
+        if let page = closedPeekParentPage(operation.record), !arrived || !loadingTabs.contains(parent) {
+            guard let binding = nativeBinding, canHostPeek(binding, over: page), openUndonePeek(operation, over: page) else { return false }
+        } else {
+            pruneAwaitedPeeks()
+            guard peekUndoAwaitingParent[parent] == nil, arrived || browsers[parent] == nil else { return false }
+            peekUndoAwaitingParent[parent] = operation; awaitedPeekRetries.remove(parent)
+        }
+        _ = closedItems.consume(stepID: operation.record.id)
+        return true
+    }
+
+    func peekParentCanMoveHere(_ parent: UUID) -> Bool {
+        guard canMovePageHere(parent) else { return false }
+        switch tabHolder?(parent, self) ?? .none {
+        case .content(let holder): return !holder.peeks.values.contains { $0.parentTabID == parent && !$0.page.isClosed }
+        case .emptyClaim: return true
+        case .none: return false
+        }
+    }
+
+    @discardableResult
+    func movePeekParentHere(_ parent: UUID, then open: @escaping () -> Void, failed: @escaping () -> Void = {}) -> Bool {
+        var settled = false
+        let fail = { if !settled { settled = true; failed() } }
+        let arrival = PendingArrival(abandoned: fail)
+        let started = movePagesHere([parent]) { [weak self] in
+            arrival.ran = true
+            guard let self, self.selectTab(parent) else { fail(); return false }
+            settled = true
+            DispatchQueue.main.async(execute: open)
+            return true
+        }
+        if !started { arrival.ran = true; fail() }
+        return started
     }
 
     func closedPeekParentPage(_ record: ClosedPeekRecord) -> PCNativePage? {
