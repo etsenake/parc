@@ -34,6 +34,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "native_appkit_page.h"
+#include "native_auxiliary_page.h"
 #include "parc/parc_content_clients.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/mojom/context_menu/context_menu.mojom.h"
@@ -55,16 +56,20 @@ struct PageLease {
   base::WeakPtr<content::WebContents> contents;
   content::WeakDocumentPtr document;
   NSWindow* __weak window;
+  std::shared_ptr<NativeAuxiliaryPage> auxiliary;
+  bool Owned() const {
+    if (auxiliary) return auxiliary->IsValid() && auxiliary->window() == window;
+    PCNativePage* page = ExistingNativePage(contents.get());
+    return page && !page.closed && page.nativeView.window == window;
+  }
   bool Valid(bool allow_sheet = false) const {
     auto* frame = document.AsRenderFrameHostIfValid();
-    PCNativePage* page = ExistingNativePage(contents.get());
     return contents && frame && frame->IsRenderFrameLive() &&
         content::WebContents::FromRenderFrameHost(frame) == contents.get() &&
         &frame->GetPage() == &contents->GetPrimaryPage() &&
         !contents->IsBeingDestroyed() && !contents->IsCrashed() &&
         contents->GetVisibility() == content::Visibility::VISIBLE &&
-        page && !page.closed && window && window.visible &&
-        page.nativeView.window == window && (allow_sheet || !window.attachedSheet) &&
+        window && window.visible && Owned() && (allow_sheet || !window.attachedSheet) &&
         !PCNativeWindowHasSecurityReservation(window);
   }
 };
@@ -72,9 +77,12 @@ PageLease Lease(RenderViewContextMenu& menu) {
   auto* contents = menu.GetWebContents();
   auto* frame = menu.GetRenderFrameHost();
   PCNativePage* page = ExistingNativePage(contents);
+  auto auxiliary = page ? nullptr : GetNativeAuxiliaryPage(*contents);
+  NSWindow* window = page ? page.nativeView.window
+                          : auxiliary ? auxiliary->window() : nil;
   return {contents->GetWeakPtr(), frame ? frame->GetWeakDocumentPtr()
                                       : content::WeakDocumentPtr(),
-          page.nativeView.window};
+          window, std::move(auxiliary)};
 }
 }
 }
@@ -251,6 +259,10 @@ class ContextObserver final : public RenderViewContextMenuObserver {
       break;
     }
     PCNativePage* page = ExistingNativePage(lease_.contents.get());
+    if (!page || HasNativeAuxiliaryRoute(*menu_->GetWebContents())) {
+      NormalizeSeparators(model);
+      return;
+    }
     auto* browser = GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(lease_.contents.get());
     auto anchor = model.GetIndexOfCommandId(IDC_CONTENT_CONTEXT_OPENLINKNEWWINDOW);
     if (!anchor) anchor = model.GetIndexOfCommandId(IDC_CONTENT_CONTEXT_OPENLINKNEWTAB);
@@ -331,6 +343,10 @@ class Tracking final : public content::WebContentsObserver {
         object:lease_.window queue:nil usingBlock:cancel];
     security_ = [NSNotificationCenter.defaultCenter addObserverForName:PCNativeWindowSecurityStateChanged
         object:lease_.window queue:nil usingBlock:cancel];
+    if (lease_.auxiliary && lease_.auxiliary->IsValid()) {
+      invalidated_ = lease_.auxiliary->OnInvalidated(
+          base::BindRepeating(&Tracking::Cancel, base::Unretained(this)));
+    }
   }
   ~Tracking() override {
     [NSNotificationCenter.defaultCenter removeObserver:close_];
@@ -347,10 +363,12 @@ class Tracking final : public content::WebContentsObserver {
   }
   void WebContentsDestroyed() override { [controller_ cancel]; }
  private:
+  void Cancel() { [controller_ cancel]; }
   PageLease lease_;
   MenuControllerCocoa* __strong controller_;
   id __strong close_;
   id __strong security_;
+  base::CallbackListSubscription invalidated_;
 };
 void GuardItems(NSMenu* menu, MenuControllerCocoa* controller, PageLease lease,
                 NSMutableArray* targets) {
@@ -369,12 +387,14 @@ void RegisterNativePageContextMenu() {
 }
 std::unique_ptr<RenderViewContextMenuObserver> CreateNativePageContextMenuObserver(
     RenderViewContextMenu* menu) {
-  return ExistingNativePage(menu->GetWebContents())
+  auto* contents = menu->GetWebContents();
+  return ExistingNativePage(contents) || GetNativeAuxiliaryPage(*contents)
       ? std::make_unique<ContextObserver>(menu) : nullptr;
 }
 bool ShowNativePageContextMenu(RenderViewContextMenu& menu, NSView* parent,
                               MenuControllerCocoa* __strong* destination) {
-  if (!ExistingNativePage(menu.GetWebContents())) return false;
+  auto* contents = menu.GetWebContents();
+  if (!ExistingNativePage(contents) && !HasNativeAuxiliaryRoute(*contents)) return false;
   auto lease = Lease(menu);
   if (!lease.Valid() || !parent || parent.window != lease.window) return true;
   MenuControllerCocoa* controller = [[MenuControllerCocoa alloc]
