@@ -105,7 +105,8 @@ its sound and haptics, and `WindowFrameCrank` in `ParcCore` owns the turning mod
   3 Hairline, 4 Whisker, 5 Pinstripe, 6 Ribbon, 7 Piping, 8 Snug, 9 Comfy,
   10 Classic, 11 Roomy, 12 Salon, 13 Gallery.
 - **Window.** Every open window's frame follows as you turn. At 3 and 13 the
-  page card, its shadow and the side panel shudder a few points sideways.
+  page card, its shadow and the side panel shudder a few points sideways; an
+  open Peek's card stays still.
 - **Sound.** Clicks only, synthesized once and played through AVAudioEngine.
   Each point has a metallic notch click with a little body, pitched one semitone
   higher per point, so the clicks rise as the frame opens and fall as it closes.

@@ -154,26 +154,20 @@ struct DeveloperToolbarTests {
             contentFrame: NSRect(x: 0, y: header, width: 790, height: 600 - header))
         expect(!moved, "a content frame change is not current")
 
-        let peekBounds = NSRect(x: 0, y: 0, width: 1000, height: 700)
-        let card = DeveloperChromeGeometry.peekCard(in: peekBounds)
-        expect(card == NSRect(x: 100, y: 12, width: 800, height: 676),
-               "the Peek card takes 80% of the width with 12-point top and bottom insets: \(card)")
-        let tight = DeveloperChromeGeometry.peekCard(in: NSRect(x: 0, y: 0, width: 400, height: 300))
-        expect(tight.minX >= DeveloperChromeGeometry.peekControlGap + DeveloperChromeGeometry.peekControlSize,
-               "a narrow page keeps room beside the card for the round controls: \(tight)")
+        let card = NSRect(x: 100, y: 12, width: 800, height: 676)
         let peekZero = NSRect(x: 0, y: 0, width: card.width, height: 0)
         let peekHidden = DeveloperChromeGeometry.peekIsCurrent(
-            bounds: peekBounds, developerHeight: 0, browserHeight: 0,
+            card: card, developerHeight: 0, browserHeight: 0,
             developerFrame: peekZero, browserFrame: peekZero,
             contentFrame: NSRect(x: 0, y: 0, width: card.width, height: card.height))
         expect(peekHidden, "hidden peek strips with full-card content are current")
         let peekShown = DeveloperChromeGeometry.peekIsCurrent(
-            bounds: peekBounds, developerHeight: shownDev, browserHeight: 0,
+            card: card, developerHeight: shownDev, browserHeight: 0,
             developerFrame: peekZero, browserFrame: peekZero,
             contentFrame: NSRect(x: 0, y: 0, width: card.width, height: card.height))
         expect(!peekShown, "newly shown peek developer strip is not current until laid out")
         let peekLaidOut = DeveloperChromeGeometry.peekIsCurrent(
-            bounds: peekBounds, developerHeight: shownDev, browserHeight: 0,
+            card: card, developerHeight: shownDev, browserHeight: 0,
             developerFrame: NSRect(x: 0, y: 0, width: card.width, height: shownDev),
             browserFrame: peekZero,
             contentFrame: NSRect(x: 0, y: shownDev, width: card.width, height: card.height - shownDev))

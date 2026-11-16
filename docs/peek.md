@@ -195,12 +195,35 @@ fresh original-owner checks. Native traversal remains intact.
 
 ## Presentation and remaining scope
 
-The card takes 80% of the page width (narrow pages keep room for the
-controls), with 12-point top and bottom insets, 8-point corners, a near-white
-or near-black card fill, a hairline edge and a soft 4-point shadow. The page fills
-the card; there is no title band. A copy of the window's theme background covers
-the parent at 70%, so the parent shows through at 30%, in light and dark
-themes alike.
+The Peek floats above the whole window in its own layer: above the page card,
+its shadow, the split grip and the side panel, below Find and the sidebar, so a
+floating sidebar still covers it. The card takes 80% of the page card's width,
+centred on it (narrow pages keep room for the controls), and sits 12 points from
+the window's top and bottom at every frame thickness, reaching past the page card
+into the frame. It has 8-point corners, a near-white or near-black fill, a
+hairline edge and a soft 4-point shadow; the page fills the card and there is no
+title band. A copy of the window's theme background covers the parent page card
+at 70%, so the parent shows through at 30%, in light and dark themes alike. The
+sidebar, side panel and split grip stay bright and keep working.
+
+While a Peek shows, the parent steps back: the page card and its shadow, or a
+split's whole group with each pane's card and shadow, shrink evenly about their
+centre by 9 points at the sides and a little less at the top and bottom.
+`PeekStepBack` applies this as a Core Animation transform on those layers, so the
+page never relays out, resizes its renderer or redraws. The step rides with the
+0.3-second entry fade, follows the swipe and closing fade through the wash, and
+drops at once when the tab changes or the Peek is promoted. The frame crank's
+shudder adds to it while the Peek card stays still. Reduce Motion keeps the page
+where it is. The page's own loading bar hides while a Peek shows; the Peek's bar
+takes the gap above its card.
+
+Clicks follow what you see (`PeekWindowLayout`). The card and its buttons are the
+Peek and the faded page closes it. Everything else belongs to the window, including
+the band of frame colour the step reveals: the top edge drags the window and a
+right-click offers Adjust Window Frame. Toasts, Find, extension popups and the
+Back swipe arrow stay with the card. Moving a tab with its Peek to another window
+lands the Peek in that window's layer. The Library still opens over the layer, as
+it opened over the page card, and an archive preview's card sits beside it.
 
 Round Close, Expand and Split controls sit 13 points right of the card, filled
 with the Space theme's background-extra colour and drawn in its primary ink (kept
@@ -212,9 +235,6 @@ window key-view loop through the Peek's renderer and controls, excluding the
 dimmed parent. Controls have
 accessible names and the close-confirmation state announces its instruction.
 
-The remaining presentation item, measuring the card from the window edge, is in
-[the backlog](backlog.md#peek).
-
 Automatic Peek for links to other sites and Shift-click Peek are both on by
 default for new users; this is a settled product decision. Either can be
 switched off in Settings → Links. The engine's default-off policy flag is
@@ -224,6 +244,9 @@ Parent transfer, orphan preservation, promotion and new-tab provenance already
 use the original page and parent identity. Model/native components cover those
 transactions, confirmation timers, renderer acknowledgments and focus
 cancellation; window key-loop checks cover forward and backward traversal.
+`tests/PeekWindowHost` checks the card and step geometry, the click regions, and
+real view hit-testing for the top edge, the revealed frame band, the split grip
+and the floating sidebar.
 
 ## Links inside a Peek
 

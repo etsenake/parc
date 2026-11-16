@@ -11,6 +11,12 @@ final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, L
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     private var handoffRouter: PCNativeContentDropRouting?
+    var peekStepScale: CGFloat = 1
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let superview, PeekWindowLayout.pageAcceptsHit(at: convert(point, from: superview), in: bounds,
+                                                             scale: peekStepScale) else { return nil }
+        return super.hitTest(point)
+    }
     var makeSession: ((NSView, NSDraggingInfo) -> ExternalSplitDropSession?)?
     private var session: ExternalSplitDropSession?
     private weak var sourceView: NSView?

@@ -134,14 +134,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var foreignSplitDropView: SplitDropView?
     var interProfileDialog: InterProfileMoveDialog?
     let loadingIndicator = PageLoadingIndicatorHost()
+    let peekLayer = PeekLayerView()
+    lazy var peekStepBack = PeekStepBack([pageHost, pageShadow])
     var paneFrameObservers: [UUID: NSObjectProtocol] = [:]
     let findHost = PageFindView(frame: .zero)
     lazy var windowKeyViews = WindowKeyViewLoop(
         root: rootView, sidebar: sidebar,
-        excluded: { [sidebarContainer, parkedPages, pageHost, weak self] in
+        excluded: { [sidebarContainer, parkedPages, pageHost, peekLayer, weak self] in
             EaselBrowserObjects.excludesFromKeyboardNavigation($0) ||
             WindowKeyViewLoop.windowExcludes($0, sidebarContainer: sidebarContainer, parkedPages: parkedPages,
-                                             pageHost: pageHost, activePeek: { self?.activePeek?.view })
+                                             pageHost: pageHost, peekLayer: peekLayer, activePeek: { self?.activePeek?.view })
         },
         isPage: { [extensionSidePanel] in $0 is PCBrowserView || $0 === extensionSidePanel.content },
         passesThrough: { $0 is PeekHostView })
@@ -739,6 +741,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         rootView.addSubview(extensionSidePanel)
         rootView.addSubview(loadingIndicator)
+        rootView.addSubview(peekLayer)
         rootView.addSubview(findHost)
         rootView.addSubview(popupChrome)
         popupChrome.isHidden = !popup

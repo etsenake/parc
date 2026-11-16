@@ -33,6 +33,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     var onUpdate: (() -> Void)?
     var onMediaChange: (() -> Void)?
     var onContextImage: ((PCNativeContextImage) -> Void)?
+    var onMotionPreference: (() -> Void)?
     var canInteract: (() -> Bool)?
     var canSplit: (() -> Bool)?
     var canExpand: (() -> Bool)?
@@ -77,7 +78,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         view.onBackground = { [weak self] in self?.requestDismiss(.background) }
         reduceMotionObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
-        ) { [weak self] _ in MainActor.assumeIsolated { self?.view.settleMotion() } }
+        ) { [weak self] _ in MainActor.assumeIsolated { self?.view.settleMotion(); self?.onMotionPreference?() } }
         refresh()
     }
 
@@ -95,7 +96,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         if visible {
             installSwipeMonitor()
             refresh()
-            if changed && animate { view.animatePresentation() }
+            if changed { if animate { view.animatePresentation() } else { view.presentWithoutAnimation() } }
             if view.window?.attachedSheet != nil { apply(closeTransition.sheetBegan(visible: true)) }
         } else {
             removeSwipeMonitor()
@@ -111,7 +112,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     }
 
     func contains(_ event: NSEvent) -> Bool {
-        !view.isHidden && event.window === view.window && view.bounds.contains(view.convert(event.locationInWindow, from: nil))
+        !view.isHidden && event.window === view.window && view.claims(view.convert(event.locationInWindow, from: nil))
     }
 
     var canHandleEscape: Bool { canRequestExit }
@@ -415,7 +416,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         view.settleMotion(); view.removeFromSuperview()
         if browser.delegate === self { browser.delegate = nil }
         failure.pageView = nil
-        onClose = nil; onCloseRefused = nil; onReturn = nil; onPromote = nil; onUpdate = nil; onMediaChange = nil; onContextImage = nil; canInteract = nil; canSplit = nil; canExpand = nil
+        onClose = nil; onCloseRefused = nil; onReturn = nil; onPromote = nil; onUpdate = nil; onMediaChange = nil; onContextImage = nil; onMotionPreference = nil; canInteract = nil; canSplit = nil; canExpand = nil
     }
 
     private func installSwipeMonitor() {
@@ -459,8 +460,14 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
 }
 
 @MainActor
-final class PeekHostView: NSView {
+final class PeekHostView: PeekHitView {
     private(set) var toastContentRect = NSRect.zero
+    var cardFrame: NSRect { card.frame }
+    var pageFrame = NSRect.zero { didSet { if pageFrame != oldValue { needsLayout = true } } }
+    var stepsBack = false { didSet { if stepsBack != oldValue { needsLayout = true } } }
+    private(set) var stepProgress: CGFloat = 0
+    private var presented = false
+    var onStep: ((Bool) -> Void)?
     var onNativeCancel: (() -> Bool)?
     override func cancelOperation(_ sender: Any?) {
         if onNativeCancel?() != true { super.cancelOperation(sender) }
@@ -499,8 +506,6 @@ final class PeekHostView: NSView {
     private var controlColors = PeekControlColors(fill: .controlBackgroundColor, accent: .labelColor)
     private var backdropOrigin: NSPoint?
     private static let cornerRadius: CGFloat = 8
-    private static let controlSpacing: CGFloat = 9
-    private static let controlTopInset: CGFloat = 7
     var palette = ThemeChromePalette(theme: SpaceTheme(), isDark: false) {
         didSet { if palette != oldValue { applyPalette() } }
     }
@@ -523,7 +528,6 @@ final class PeekHostView: NSView {
     var isBusy = false { didSet { closeButton.isEnabled = !isBusy; expandButton.isEnabled = canExpand && !isBusy } }
     var canExpand = false { didSet { expandButton.isEnabled = canExpand && !isBusy } }
     var canSplit = false { didSet { splitButton.isEnabled = canSplit } }
-    override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
     override init(frame: NSRect) {
@@ -544,6 +548,7 @@ final class PeekHostView: NSView {
         expandButton.actionBlock = { [weak self] in self?.onExpand?() }
         splitButton.actionBlock = { [weak self] in self?.onSplit?() }
         stage.wantsLayer = true
+        swipe.onWash = { [weak self] wash in self?.reportStep(CGFloat(wash)) }
         addSubview(backdrop); addSubview(stage)
         stage.addSubview(cardEdge); stage.addSubview(card); stage.addSubview(controls); stage.addSubview(loadingIndicator)
         card.addSubview(content)
@@ -578,17 +583,23 @@ final class PeekHostView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard !passesInput, let hit = super.hitTest(point) else { return nil }
-        return hit === cardEdge || hit === stage || hit === backdrop || hit.isDescendant(of: backdrop) ? self : hit
+        passesInput ? nil : super.hitTest(point)
+    }
+
+    override func claims(_ point: NSPoint) -> Bool { !passesInput && super.claims(point) }
+
+    override func routedHit(_ hit: NSView) -> NSView {
+        hit === cardEdge || hit === stage || hit === backdrop || hit.isDescendant(of: backdrop) ? self : hit
     }
 
     override func layout() {
         super.layout()
-        backdrop.frame = bounds
+        let geometry = PeekWindowLayout(bounds: bounds, page: pageFrame, stepsBack: stepsBack)
+        backdrop.frame = pageFrame
         stage.frame = bounds
-        let origin = convert(bounds.origin, to: nil)
+        let origin = backdrop.convert(backdrop.bounds.origin, to: nil)
         if backdropOrigin != origin { backdropOrigin = origin; backdrop.invalidateCoordinates() }
-        let frame = DeveloperChromeGeometry.peekCard(in: bounds)
+        let frame = geometry.card
         swipe.geometry = PeekDismissalMotion.Geometry(paneWidth: bounds.width, cardMinX: frame.minX)
         swipe.apply()
         card.frame = frame
@@ -604,7 +615,8 @@ final class PeekHostView: NSView {
         browserToolbar.frame = NSRect(x: 0, y: 0, width: frame.width, height: toolbarHeight)
         let stripHeight = max(developerHeight, toolbarHeight)
         content.frame = NSRect(x: 0, y: stripHeight, width: frame.width, height: max(0, frame.height - stripHeight))
-        layoutControls(beside: frame)
+        layoutControls(geometry.controls(closeWidth: closeButton.preferredWidth))
+        hitLayout = geometry; hitControls = controls.frame
         onLayout?()
     }
 
@@ -624,16 +636,12 @@ final class PeekHostView: NSView {
         CATransaction.commit()
     }
 
-    private func layoutControls(beside card: NSRect) {
+    private func layoutControls(_ frame: NSRect) {
         let size = PeekControlButton.diameter
-        let x = card.maxX + DeveloperChromeGeometry.peekControlGap
-        let closeWidth = min(closeButton.preferredWidth, max(size, bounds.width - x - 4))
-        let buttons = [closeButton, expandButton, splitButton]
-        controls.frame = NSRect(x: x, y: card.minY + Self.controlTopInset, width: max(size, closeWidth),
-                                height: CGFloat(buttons.count) * size + CGFloat(buttons.count - 1) * Self.controlSpacing)
-        for (index, button) in buttons.enumerated() {
-            button.frame = NSRect(x: 0, y: CGFloat(index) * (size + Self.controlSpacing),
-                                  width: button === closeButton ? closeWidth : size, height: size)
+        controls.frame = frame
+        for (index, button) in [closeButton, expandButton, splitButton].enumerated() {
+            button.frame = NSRect(x: 0, y: CGFloat(index) * (size + PeekWindowLayout.controlSpacing),
+                                  width: button === closeButton ? frame.width : size, height: size)
         }
     }
 
@@ -643,11 +651,22 @@ final class PeekHostView: NSView {
     }
     func animatePresentation() {
         settleMotion()
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        presented = true; stepProgress = 1
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { onStep?(false); return }
         let opacity = CABasicAnimation(keyPath: "opacity")
-        opacity.fromValue = 0; opacity.toValue = 1; opacity.duration = 0.3
+        opacity.fromValue = 0; opacity.toValue = 1; opacity.duration = PeekStepBack.openDuration
         opacity.timingFunction = CAMediaTimingFunction(name: .easeOut)
         layer?.add(opacity, forKey: "parc.peek.opacity")
+        onStep?(true)
+    }
+    func presentWithoutAnimation() {
+        presented = true
+        reportStep(CGFloat(swipe.washProgress))
+    }
+    private func reportStep(_ progress: CGFloat) {
+        guard presented, stepProgress != progress else { return }
+        stepProgress = progress
+        onStep?(false)
     }
     func settleMotion() {
         layer?.removeAnimation(forKey: "parc.peek.opacity")

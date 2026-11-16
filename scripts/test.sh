@@ -294,6 +294,7 @@ step python3 "$repo_root/tests/ShortcutTooltipDiscoverySkip/check.py"
 step compile_and_run peek-presentation-skip PeekPresentationSkipTests \
   "$repo_root/Sources/ParcCore/PeekPresentationSkip.swift"
 step python3 "$repo_root/tests/PeekPresentationSkip/check.py"
+step python3 "$repo_root/tests/PeekWindowHost/check.py"
 
 step compile_and_run split-layout-flush-skip SplitLayoutFlushSkipTests \
   "$repo_root/Sources/ParcCore/SplitLayoutFlushSkip.swift"

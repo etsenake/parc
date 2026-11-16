@@ -187,13 +187,14 @@ import AppKit
         let sidebar = StandInSidebar(frame: container.bounds); container.addSubview(sidebar)
         let pageHost = Flipped(frame: NSRect(x: 228, y: 10, width: 760, height: 680)); root.addSubview(pageHost)
         let parked = Flipped(frame: pageHost.frame); parked.isHidden = true; root.addSubview(parked)
+        let peekLayer = Flipped(frame: root.bounds); root.addSubview(peekLayer)
         let pane = Flipped(frame: pageHost.bounds); pageHost.addSubview(pane)
         let header = Stop("header", NSRect(x: 10, y: 4, width: 200, height: 24)); pane.addSubview(header)
         let page = StandInPage(frame: NSRect(x: 0, y: 30, width: 760, height: 650)); pane.addSubview(page)
         var peek: NSView?
         let excluded: (NSView) -> Bool = {
             WindowKeyViewLoop.windowExcludes($0, sidebarContainer: container, parkedPages: parked, pageHost: pageHost,
-                                             activePeek: { peek })
+                                             peekLayer: peekLayer, activePeek: { peek })
         }
         let isPage: (NSView) -> Bool = { $0 is StandInPage }, passesThrough: (NSView) -> Bool = { $0 is PeekLike }
         let loop = WindowKeyViewLoop(root: root, sidebar: sidebar, excluded: excluded, isPage: isPage, passesThrough: passesThrough)
@@ -227,8 +228,8 @@ import AppKit
               "without the card rule its controls would join the page side")
         card.removeFromSuperview()
 
-        let peekView = PeekLike(frame: pageHost.bounds)
-        pageHost.addSubview(peekView, positioned: .above, relativeTo: nil); peek = peekView
+        let peekView = PeekLike(frame: pageHost.frame)
+        peekLayer.addSubview(peekView, positioned: .above, relativeTo: nil); peek = peekView
         loop.relink()
         check(names(side()) == ["peekClose", "renderer"] && side().last === peekView.page.renderer,
               "a Peek's controls and page are the page side: \(names(side()))")
@@ -236,7 +237,7 @@ import AppKit
         check(step(from: sidebar.plus) == "peekClose" && step(from: peekView.page.renderer) == "toggle"
               && step(from: peekView.close, backward: true) == "plus" && step(from: sidebar.toggle, backward: true) == "renderer",
               "Tab and Shift-Tab pass between the Peek and the sidebar")
-        let other = PeekLike(frame: pageHost.bounds); other.isHidden = true; pageHost.addSubview(other, positioned: .below, relativeTo: peekView)
+        let other = PeekLike(frame: pageHost.frame); other.isHidden = true; peekLayer.addSubview(other, positioned: .below, relativeTo: peekView)
         loop.relink()
         check(!side().contains { $0.isDescendant(of: other) }, "another Peek in the host is off the page side")
         other.removeFromSuperview()

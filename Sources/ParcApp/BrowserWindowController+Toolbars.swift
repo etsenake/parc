@@ -355,7 +355,7 @@ extension BrowserWindowController {
             let browserHeight: CGFloat = peek.view.browserToolbar.isHidden ? 0 : BrowserToolbarView.height
             if peek.view.needsLayout
                 || !DeveloperChromeGeometry.peekIsCurrent(
-                    bounds: peek.view.bounds,
+                    card: peek.view.cardFrame,
                     developerHeight: developerHeight,
                     browserHeight: browserHeight,
                     developerFrame: peek.view.developerToolbar.frame,

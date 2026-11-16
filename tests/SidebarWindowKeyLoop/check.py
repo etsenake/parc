@@ -9,10 +9,10 @@ from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
 controller = browser_window_controller_source(root / "Sources/ParcApp")
 for use, count in (("lazy var windowKeyViews = WindowKeyViewLoop(", 1),
-                   ("excluded: { [sidebarContainer, parkedPages, pageHost, weak self] in\n"
+                   ("excluded: { [sidebarContainer, parkedPages, pageHost, peekLayer, weak self] in\n"
                     "            EaselBrowserObjects.excludesFromKeyboardNavigation($0) ||\n"
                     "            WindowKeyViewLoop.windowExcludes($0, sidebarContainer: sidebarContainer, parkedPages: parkedPages,\n"
-                    "                                             pageHost: pageHost, activePeek: { self?.activePeek?.view })", 1),
+                    "                                             pageHost: pageHost, peekLayer: peekLayer, activePeek: { self?.activePeek?.view })", 1),
                    ("isPage: { [extensionSidePanel] in $0 is PCBrowserView || $0 === extensionSidePanel.content },", 1),
                    ("passesThrough: { $0 is PeekHostView })", 1),
                    ("windowKeyViews.attach(to: window)", 1),
@@ -32,12 +32,12 @@ sys.path.insert(0, str(root / "tests/SidebarAccessibility"))
 from key_view_links import assert_sidebar_links
 assert_sidebar_links(sidebar)
 peek = (root / "Sources/ParcApp/PeekController.swift").read_text()
-assert "final class PeekHostView: NSView {" in peek and "override var acceptsFirstResponder: Bool { true }" in peek
+assert "final class PeekHostView: PeekHitView {" in peek and "override var acceptsFirstResponder: Bool { true }" in peek
 hosted = controller.count("addSubview(peek.view")
-assert controller.count("pageHost.addSubview(peek.view, positioned: .above, relativeTo: nil)") == hosted, \
-    "every Peek is hosted over a page host"
-assert re.search(r"^\s+pageHost\.addSubview\(peek\.view, positioned: \.above, relativeTo: nil\)", controller, re.M), \
-    "this window's own Peek is hosted over its page host"
+assert controller.count("peekLayer.addSubview(peek.view, positioned: .above, relativeTo: nil)") == hosted, \
+    "every Peek is hosted in a window's Peek layer"
+assert re.search(r"^\s+peekLayer\.addSubview\(peek\.view, positioned: \.above, relativeTo: nil\)", controller, re.M), \
+    "this window's own Peek is hosted in its Peek layer"
 preview = (root / "Sources/ParcApp/SidebarPreviewController.swift").read_text()
 assert "host.addSubview(card, positioned: .above, relativeTo: nil)" in preview and "host: rootView" in controller
 with tempfile.TemporaryDirectory(prefix="parc-window-key-loop-") as directory:

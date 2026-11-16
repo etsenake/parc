@@ -6,6 +6,7 @@ extension BrowserWindowController {
         let fingerprint = chromeGeometryFingerprint()
         let dirtyHostedLayout = pageHost.needsLayout
             || pageHost.subviews.contains(where: \.needsLayout)
+            || peekLayer.subviews.contains(where: \.needsLayout)
             || extensionSidePanel.needsLayout
             || extensionSidePanel.subviews.contains(where: \.needsLayout)
         if LayoutChromeGeometrySkip.shouldReturnEarly(
@@ -104,6 +105,7 @@ extension BrowserWindowController {
             flushedHostedLayout = true
         }
         refreshLoadingIndicators()
+        if peekLayer.subviews.contains(where: \.needsLayout) { flushedHostedLayout = true }
         layoutPeeks()
         for pane in easelEditors.values { pane.editor.refreshPageVisibility() }
         if flushedHostedLayout {
@@ -219,7 +221,7 @@ extension BrowserWindowController {
 
     func windowFrameContextMenu(rootHit hit: NSView?) -> NSMenu? {
         guard let hit else { return windowFrameContextMenu() }
-        for owner in [pageHost, sidebarContainer, extensionSidePanel, findHost, popupChrome, splitMarginHandle] as [NSView]
+        for owner in [pageHost, sidebarContainer, extensionSidePanel, findHost, popupChrome, splitMarginHandle, peekLayer] as [NSView]
         where hit === owner || hit.isDescendant(of: owner) { return nil }
         if let libraryView, hit.isDescendant(of: libraryView) { return nil }
         return Self.isInsideControl(hit, below: rootView) ? nil : windowFrameContextMenu()
@@ -360,7 +362,8 @@ extension BrowserWindowController {
         pageHost.layoutSubtreeIfNeeded()
         layoutFrameCrank(frames)
         refreshLoadingIndicators()
-        for peek in presentedPeeks { peek.view.frame = pageHost.bounds; peek.view.layoutSubtreeIfNeeded() }
+        for peek in presentedPeeks { placePeek(peek); peek.view.layoutSubtreeIfNeeded() }
+        syncPeekStepBack()
         layoutFindBar()
     }
 

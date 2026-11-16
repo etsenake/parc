@@ -84,8 +84,8 @@ extension BrowserWindowController {
         if shown { tabSwitcher?.cancel(); sidebarPreviews?.dismiss(); if archive == nil { closeLibrary(restoreFocus: false) } }
         else if undo != nil { undoHiddenPeek = peek.identity }
         let entryFocus = PeekFocusReturn(source: parent.nativeView)
-        pageHost.addSubview(peek.view, positioned: .above, relativeTo: nil)
-        peek.view.frame = pageHost.bounds; peek.view.layoutSubtreeIfNeeded()
+        peekLayer.addSubview(peek.view, positioned: .above, relativeTo: nil)
+        placePeek(peek); peek.view.layoutSubtreeIfNeeded()
         if !shown { peek.setVisible(false) }
         DispatchQueue.main.async { [weak self, weak peek] in
             guard let self, let peek, self.peeks[page.identifier] === peek, !page.isClosed else { return }
@@ -104,7 +104,7 @@ extension BrowserWindowController {
 
     func wirePeek(_ peek: PeekController, binding: PCNativeBrowserWindow) {
         let page = peek.page, id = peek.parentTabID
-        peek.view.adoptWindowTheme(rootView)
+        wirePeekPresentation(peek)
         peek.canInteract = { [weak self, weak peek] in
             guard let self, let peek else { return false }
             return self.peeks[page.identifier] === peek && self.activePeek === peek
@@ -143,12 +143,43 @@ extension BrowserWindowController {
 
     func layoutPeeks() {
         for peek in peeks.values {
-            peek.view.frame = pageHost.bounds
+            placePeek(peek)
             let visible = activePeek === peek
             peek.setVisible(visible)
             peek.view.layoutSubtreeIfNeeded()
         }
         reconcileTabPeek()
+        syncPeekStepBack()
+    }
+
+    func placePeek(_ peek: PeekController) {
+        if peekLayer.frame != rootView.bounds { peekLayer.frame = rootView.bounds }
+        peek.view.frame = peekLayer.bounds
+        peek.view.pageFrame = pageHost.frame
+        peek.view.stepsBack = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    func wirePeekPresentation(_ peek: PeekController) {
+        peek.view.adoptWindowTheme(rootView)
+        peek.view.onStep = { [weak self, weak peek] animated in
+            guard let self, let peek, self.activePeek === peek else { return }
+            self.syncPeekStepBack(animated: animated)
+        }
+        peek.onMotionPreference = { [weak self] in self?.layoutPeeks() }
+    }
+
+    func syncPeekStepBack(animated: Bool = false) {
+        let shown = activePeek.flatMap { $0.view.isHidden || $0.view.superview !== peekLayer ? nil : $0 }
+        loadingIndicator.alphaValue = shown == nil ? 1 : 0
+        guard let peek = shown, peek.view.stepsBack, peek.view.stepProgress > 0, !isClosing, !wholeWindowClose else {
+            peekStepBack.reset(); pageHost.peekStepScale = 1; return
+        }
+        let scale = PeekWindowLayout(bounds: peekLayer.bounds, page: pageHost.frame, stepsBack: true).scale
+        pageHost.peekStepScale = scale
+        if animated { peekStepBack.animateIn(scale: scale) }
+        else if peekStepBack.progress != peek.view.stepProgress || peekStepBack.scale != scale {
+            peekStepBack.set(peek.view.stepProgress, scale: scale)
+        } else { peekStepBack.refresh() }
     }
 
     private func recordClosedPeek(_ peek: PeekController, url: URL) {

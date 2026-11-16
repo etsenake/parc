@@ -25,10 +25,10 @@ final class WindowKeyViewLoop {
     }
 
     static func windowExcludes(_ view: NSView, sidebarContainer: NSView, parkedPages: NSView, pageHost: NSView,
-                               activePeek: () -> NSView?) -> Bool {
+                               peekLayer: NSView, activePeek: () -> NSView?) -> Bool {
         if view === sidebarContainer || view === parkedPages || view is SidebarPreviewSurface { return true }
-        guard view.superview === pageHost, let peek = activePeek() else { return false }
-        return view !== peek
+        if view.superview === peekLayer { return view !== activePeek() }
+        return view === pageHost && activePeek() != nil
     }
 
     deinit { if let keyObserver { NotificationCenter.default.removeObserver(keyObserver) } }

@@ -7,6 +7,7 @@ final class PeekDismissalAnimator {
     private weak var wash: NSView?
     private var motion = PeekDismissalMotion()
     private let frames = ViewDisplayFrameDriver()
+    var onWash: ((Double) -> Void)?
 
     var restingWash: CGFloat {
         didSet { if restingWash != oldValue { apply() } }
@@ -27,6 +28,8 @@ final class PeekDismissalAnimator {
             apply()
         }
     }
+
+    var washProgress: Double { motion.frame(at: CACurrentMediaTime()).wash }
 
     var isAtRest: Bool { !motion.isFollowing && motion.frame(at: CACurrentMediaTime()) == .rest }
 
@@ -90,6 +93,7 @@ final class PeekDismissalAnimator {
         stage?.alphaValue = CGFloat(frame.card)
         wash?.alphaValue = restingWash * CGFloat(frame.wash)
         CATransaction.commit()
+        onWash?(frame.wash)
     }
 
     private func run() {

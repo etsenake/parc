@@ -52,14 +52,6 @@ workflow, renders first.
 - Closing the last tab removes its page at once instead of fading it out
   before the start page fades in. [Start page](start-page.md#transitions).
 
-## Peek
-
-- The Peek card should be measured from the window edge, with the parent page
-  shrinking by 9 points per side as it fades. Parc's Peek sits inside the page
-  card's clip, so its card is measured from the page card and the parent only
-  fades. This needs a Peek host above the page card that keeps window dragging in
-  the margins.
-
 ## Media
 
 Casting continuity across navigation and picture in picture are implemented.

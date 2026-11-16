@@ -25,6 +25,11 @@ showing an unattached page. Shell selection and layout run visibility in the
 same commit after arrangement; posted reconciliation remains for adoption,
 selection and reentrant work.
 
+A Peek's step-back scales the parent page card's layers with a Core Animation
+transform. The page's views, compositor and renderer keep their size, so nothing
+relays out or redraws while the parent shrinks behind the card; see
+[Peek](peek.md#presentation-and-remaining-scope).
+
 ## Reusing a frame
 
 A retained frame is usable only for the same role, such as page versus docked

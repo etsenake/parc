@@ -312,7 +312,7 @@ extension BrowserWindowController {
                 let facts = tabPeekFacts(current, displayed: displayed)
                 applyTabPeek(current.session.resolve(TabPeekHold.resolve(facts)), current)
                 if tabPeeks.current === current, let controller = current.controller {
-                    controller.view.frame = pageHost.bounds
+                    placePeek(controller)
                     controller.view.adoptWindowTheme(rootView)
                 }
             case .promoting, .finished:
@@ -377,9 +377,9 @@ extension BrowserWindowController {
         held.relay.peek = controller
         browser.delegate = held.relay
         browser.isHidden = false
-        controller.view.adoptWindowTheme(rootView)
-        pageHost.addSubview(controller.view, positioned: .above, relativeTo: nil)
-        controller.view.frame = pageHost.bounds; controller.view.layoutSubtreeIfNeeded()
+        wirePeekPresentation(controller)
+        peekLayer.addSubview(controller.view, positioned: .above, relativeTo: nil)
+        placePeek(controller); controller.view.layoutSubtreeIfNeeded()
         guard binding.pageDidAttach(page, container: browser) else {
             controller.handBackBrowser()
             pane.browser = browser
@@ -399,7 +399,7 @@ extension BrowserWindowController {
         DispatchQueue.main.async { [weak self, weak controller, weak held] in
             guard let self, let controller, let held, self.tabPeeks.current === held,
                   held.shownController === controller, !page.isClosed else { return }
-            controller.view.frame = self.pageHost.bounds; controller.view.layoutSubtreeIfNeeded()
+            self.placePeek(controller); controller.view.layoutSubtreeIfNeeded()
             controller.view.animatePresentation()
             self.nativeBinding?.synchronizeSelectionAndLayout()
             if let window = self.window {

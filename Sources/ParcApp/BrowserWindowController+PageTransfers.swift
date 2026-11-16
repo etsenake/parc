@@ -503,10 +503,10 @@ extension BrowserWindowController {
                 }
             }
             if !peek.page.isClosed {
-                if peek.view.superview !== destination.pageHost {
-                    destination.pageHost.addSubview(peek.view, positioned: .above, relativeTo: nil)
+                if peek.view.superview !== destination.peekLayer {
+                    destination.peekLayer.addSubview(peek.view, positioned: .above, relativeTo: nil)
                 }
-                peek.view.frame = destination.pageHost.bounds
+                destination.placePeek(peek)
                 guard binding.pageDidAttach(peek.page, container: peek.browser), peek.browser.window === destinationWindow else {
                     presentTransferRecovery(id, destination: destination, pages: live, retry: retry); return
                 }
