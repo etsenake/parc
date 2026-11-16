@@ -26,9 +26,8 @@ Finish assigned work first; explicit deferrals remain deferred.
   material transitions. Refresh visible tooltips when their palette changes.
   [Theme editor](space-theme-editor.md), [sidebar motion](sidebar-motion.md).
 - Keep fallback window geometry and sidebar width associated with the same saved
-  window. Refresh open Library width after Space-count changes and enlarge the
-  empty card's Pinned drop target during drag. [Resizing](sidebar-resize.md),
-  [Space management](space-management.md).
+  window. Enlarge the empty card's Pinned drop target during drag.
+  [Resizing](sidebar-resize.md), [Space management](space-management.md).
 
 ## Routing
 

@@ -50,31 +50,99 @@ import AppKit
         check(add.maxX + Layout.horizontalInset + Layout.pageInset == library.frame.maxX,
               "the add item ends 28 points before the page: \(add)")
 
-        let pageChange = reports
-        let work = store.createSpace(name: "Work")
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
-        check(store.state.spaces.count == 2 && reports == pageChange && library.contentWidth == 480,
-              "a Space added while Spaces is shown keeps the page-change width: \(reports)")
-        library.layoutSubtreeIfNeeded()
         let strip = library.spaceManager.subviews.compactMap { $0 as? NSScrollView }.first!
-        check(strip.hasHorizontalScroller && strip.documentView!.frame.width == Layout.contentWidth(count: 2)
-              && strip.documentView!.frame.width > strip.contentSize.width,
-              "the strip scrolls horizontally to the add item: \(strip.documentView!.frame.width) in \(strip.contentSize.width)")
+        func settle() { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2)) }
+        func fits(_ count: Int, _ name: String) {
+            library.frame = frames(library.contentWidth).library
+            library.layoutSubtreeIfNeeded()
+            let add = Layout.addItemFrame(count: count, height: library.spaceManager.bounds.height)
+                .offsetBy(dx: library.spaceManager.frame.minX, dy: 0)
+            check(store.state.spaces.count == count && library.contentWidth == Layout.libraryWidth(count: count)
+                  && add.maxX + Layout.horizontalInset + Layout.pageInset == library.frame.maxX
+                  && strip.documentView!.frame.width == strip.contentSize.width,
+                  "\(name): \(count) Spaces fill the page with no gap or overflow: \(add), \(library.frame), \(reports)")
+        }
+
+        let work = store.createSpace(name: "Work")
+        settle()
+        check(reports.suffix(2) == [480, 744], "a Space created elsewhere while Spaces is shown re-measures: \(reports)")
+        fits(2, "created elsewhere")
+        var reported = reports.count
         _ = store.setSpaceTheme(store.state.spaces[0].id, theme: SpaceTheme(primaryColor: ThemeColor(red: 0.5, green: 0.4, blue: 0.9),
                                                                               colorCount: 1, appearance: .dark))
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
-        check(reports == pageChange && library.contentWidth == 480, "an unrelated Spaces reload reports nothing")
+        settle()
+        check(reports.count == reported, "a theme change on the shown page reports nothing: \(reports)")
+        let order = store.state.spaces.map(\.id)
+        let reordered = try store.reorderSpace(work, before: order[0], expectedOrder: order)
+        check(reordered, "the Spaces reorder")
+        settle()
+        check(reports.count == reported && library.contentWidth == 744, "reordering Spaces reports nothing: \(reports)")
+
         store.requestPageRetirement = { _, valid, done in done(valid()) }
-        var deleted: Bool?
-        store.deleteSpace(SpaceDeletionTarget(spaceID: work, state: store.state)!, documents: [:], shouldCommit: { true },
-                          didCommit: { _ in }) { if case .success(let value) = $0 { deleted = value } }
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
-        check(deleted == true && store.state.spaces.count == 1, "the added Space is deleted")
-        check(reports == pageChange && library.contentWidth == 480, "a Space removed while Spaces is shown keeps the page-change width: \(reports)")
+        var deletion: SpaceDeletionUndo?
+        func delete(_ target: SpaceDeletionTarget) {
+            var committed: Bool?
+            deletion = nil
+            store.deleteSpace(target, documents: [:], shouldCommit: { true }, didCommit: { deletion = $0 }) {
+                if case .success(let value) = $0 { committed = value }
+            }
+            settle()
+            check(committed == true && deletion != nil, "\(target.space.name) is deleted with an Undo record")
+        }
+        delete(SpaceDeletionTarget(spaceID: work, state: store.state)!)
+        check(reports.count == reported + 1 && reports.last == 480, "deleting a Space re-measures: \(reports)")
+        fits(1, "deleted")
+        let restored = try store.undoSpaceDeletion(deletion!, shouldCommit: { true })
+        settle()
+        check(restored && reports.count == reported + 2 && reports.last == 744, "Undo of a deletion re-measures: \(reports)")
+        fits(2, "undone deletion")
+        let card = strip.documentView!.subviews.first { $0.accessibilityLabel() == "Work" }
+        check(card.map { strip.documentVisibleRect.contains($0.frame) } == true,
+              "the restored card stays inside the visible strip: \(String(describing: card?.frame)) in \(strip.documentVisibleRect)")
+        delete(deletion!.redoTarget(in: store.state)!)
+        check(reports.count == reported + 3 && reports.last == 480, "Redo of a deletion re-measures: \(reports)")
+        fits(1, "redone deletion")
+
+        let later = store.createSpace(name: "Later")
+        settle()
+        fits(2, "created again")
+        reported = reports.count
+        let conversion = SpaceFolderConversion(source: later, destination: store.state.spaces[0].id, state: store.state, documents: [:])!
+        let folding = try store.convertSpaceToFolder(conversion)!
+        settle()
+        check(reports.count == reported + 1 && reports.last == 480, "Turn into Folder re-measures: \(reports)")
+        fits(1, "turned into a folder")
+        let unfolded = try store.undoSpaceFolderConversion(folding)
+        settle()
+        check(unfolded && reports.count == reported + 2 && reports.last == 744, "Undo of Turn into Folder re-measures: \(reports)")
+        fits(2, "undone folder")
+        _ = try store.convertSpaceToFolder(folding.redo(in: store.state)!)!
+        settle()
+        check(reports.count == reported + 3 && reports.last == 480, "Redo of Turn into Folder re-measures: \(reports)")
+        fits(1, "redone folder")
+
+        let other = LibraryView(store: store, kind: .spaces, profileID: profile)
+        var otherReports: [CGFloat] = []
+        other.onContentWidthChange = { [unowned other] in otherReports.append(other.contentWidth) }
+        check(other.contentWidth == 480, "another window's Spaces page opens at one Space's width")
+        let shared = store.createSpace(name: "Shared")
+        settle()
+        check(reports.last == 744 && otherReports == [744], "both windows' Spaces pages follow a Space created in one: \(reports), \(otherReports)")
+        fits(2, "shared creation")
+        delete(SpaceDeletionTarget(spaceID: shared, state: store.state)!)
+        check(reports.last == 480 && otherReports == [744, 480], "both windows' Spaces pages follow a Space deleted in one: \(reports), \(otherReports)")
+        fits(1, "shared deletion")
+        other.onContentWidthChange = nil
+
         library.show(.archive)
         check(reports.last == 417 && library.contentWidth == 417, "leaving Spaces returns the Library to 417: \(reports)")
-        _ = store.createSpace(name: "Later")
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
+        reported = reports.count
+        library.show(.downloads)
+        check(reports.count == reported && library.contentWidth == 417, "moving between 417 pages reports nothing: \(reports)")
+        library.show(.archive)
+        _ = store.createSpace(name: "Elsewhere")
+        settle()
+        check(reports.count == reported && library.contentWidth == 417, "a Space created while another page shows reports nothing: \(reports)")
         library.show(.spaces)
         check(reports.last == 744 && library.contentWidth == 744, "returning to Spaces reads the current count: \(reports)")
         let returned = reports.count

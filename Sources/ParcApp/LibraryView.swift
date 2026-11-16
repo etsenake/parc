@@ -44,7 +44,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     var onShowKind: ((Kind) -> Void)?
     var onLeaveSpaces: (() -> Void)?
     private(set) var contentWidth = SidebarChromeFrames.libraryMinimumWidth
-    private var contentWidthKind: Kind?
     var onContentWidthChange: (() -> Void)?
     var requestIcon: ((URL, UUID, @escaping (NSImage?) -> Void) -> Void)? { didSet { table.reloadData() } }
     var palette: ThemeChromePalette? { didSet { applyPalette() } }
@@ -342,11 +341,8 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         guard store.state.profiles.contains(where: { $0.id == profileID }) else { onClose?(); return }
         if shouldSkipCatalogReload() { return }
         defer {
-            if contentWidthKind != kind {
-                contentWidthKind = kind
-                contentWidth = kind == .spaces ? SpaceManagementLayout.libraryWidth(count: store.state.spaces.count) : SidebarChromeFrames.libraryMinimumWidth
-                onContentWidthChange?()
-            }
+            let width = kind == .spaces ? SpaceManagementLayout.libraryWidth(count: store.state.spaces.count) : SidebarChromeFrames.libraryMinimumWidth
+            if contentWidth != width { contentWidth = width; onContentWidthChange?() }
         }
         if store.isEphemeral {
             if kind == .captures, let context = privateMediaContext, context.isValid() {

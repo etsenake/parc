@@ -220,16 +220,19 @@ not implemented. This is a known narrow target, not an absent drop transaction.
 
 The page reports `216 + 264 × spaceCount`; other Library pages report 417.
 Window layout uses `max(min(windowWidth − 56, contentWidth), 417)`.
-Opening applies the first width directly. Later page changes animate Library,
-page host, side panel, Find and loading host together over 0.2 seconds with cubic
-(0.25,0.46,0.45,0.94). Close/disposal/bounds changes cancel; hidden, minimized or
-live-resizing windows lay out immediately. This width transition currently also
-runs under Reduce Motion.
+Opening applies the first width directly. Later page changes and Space-count
+changes animate Library, page host, side panel, Find and loading host together
+over 0.2 seconds with cubic (0.25,0.46,0.45,0.94). Close/disposal/bounds changes
+cancel; hidden, minimized or live-resizing windows lay out immediately. This
+width transition currently also runs under Reduce Motion.
 
-Width is sampled on page change, not every Space mutation. Adding/removing a
-Space while on this page retains that width and uses horizontal scrolling;
-leaving and returning reports the new count. Native trees are laid out once
-at completion, and closed windows reject stale completions.
+Every applied Library reload recomputes the width and reports only a different
+value. While this page shows, a Space deleted or turned into a folder, either
+one's Undo or Redo, and a Space created or deleted in another window resize
+Library, so no empty strip remains and a restored card stays in view. Theme,
+name, order and tab changes, choosing the shown page again and moving between
+417-point pages report nothing. Native trees are laid out once at completion,
+and closed windows reject stale completions.
 
 ## Checks
 
@@ -240,4 +243,5 @@ Space-management/store/inter-Profile components cover title migration, exact
 leases, failed saves, deletion/Undo, document relocation and owner preservation.
 `tests/SpaceManager/check.py` exercises real inert cards/sidebar controls and
 accessibility wiring. `tests/LibraryWidth/check.py` and sidebar motion/layout
-checks cover page-change reporting, clamps, cancellation and geometry.
+checks cover page-change and Space-count reporting, clamps, cancellation and
+geometry.
