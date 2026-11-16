@@ -260,6 +260,17 @@ C, C++ and Objective-C harnesses include
 calls `exit(1)`. Objective-C harnesses call `ParcExitOnUncaughtExceptions()`
 first in `main`. None of them use `assert` or `abort`.
 
+A check that compiles app sources can run its `swiftc` command through
+[`tests/Support/app_sources.py`](../tests/Support/app_sources.py), either by
+calling `compile_swift` from Python or by prefixing the command with
+`python3 tests/Support/app_sources.py` in a shell script. When the compiler
+reports a missing name or extension member, the helper adds the one app or core
+file that declares it, says so on standard error and compiles again, so a new
+source file in the app no longer breaks the check. Keep the explicit list complete
+anyway and add any file the helper reports; it never resolves a name that more than
+one file declares, and a slice or stub that the added file would duplicate still
+fails the compile.
+
 Negative controls build a deliberately broken copy and pass only when it exits
 with a non-zero status and the expected message. A signal death (Python's
 negative return code, a shell status above 128) is a genuine crash, so runners

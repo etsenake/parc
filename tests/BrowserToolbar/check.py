@@ -5,7 +5,9 @@ import tempfile
 root = Path(__file__).resolve().parents[2]
 import sys
 sys.path.insert(0, str(root / "tests/Tooltip"))
+sys.path.insert(0, str(root / "tests/Support"))
 from support import tooltip_sources
+from app_sources import compile_swift
 with tempfile.TemporaryDirectory(prefix="parc-toolbar-") as directory:
     scratch = Path(directory)
     slices = {
@@ -43,11 +45,13 @@ final class PCNativePage: NSObject {
     text = (root / "Sources/ParcApp/SiteControlCenter.swift").read_text()
     (scratch / "SiteControlCenterArtwork.swift").write_text(text[:text.index("enum SiteControlCenterMetrics")])
     executable = scratch / "checks"
-    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-target", "arm64-apple-macos13.0",
+    compile_swift(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-target", "arm64-apple-macos13.0",
         str(root / "Sources/ParcCore/SpaceTheme.swift"),
         str(scratch / "SplitOrientation.swift"),
         *[str(scratch / name) for name in slices],
         str(root / "Sources/ParcApp/ExtensionControls.swift"),
+        str(root / "Sources/ParcApp/BlockedContentSign.swift"),
+        str(root / "Sources/ParcApp/BlockedPageContent.swift"),
         str(scratch / "SiteControlCenterArtwork.swift"),
         str(root / "Sources/ParcApp/NavigationControlPress.swift"),
         str(root / "Sources/ParcApp/ReloadControl.swift"),
@@ -68,5 +72,5 @@ final class PCNativePage: NSObject {
         str(root / "Sources/ParcApp/ParcMenuColors.swift"),
         str(root / "tests/Support/AppKitObservation.swift"),
         *map(str, tooltip_sources(root, scratch, ["SpaceTheme.swift", "ThemeRenderer.swift", "ReloadControl.swift"])),
-        str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
+        str(Path(__file__).with_name("main.swift")), "-o", str(executable)])
     subprocess.run([str(executable)], check=True)
