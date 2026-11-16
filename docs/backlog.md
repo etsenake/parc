@@ -84,8 +84,6 @@ workflow, renders first.
 
 - Continuous swipe tracking, reversal/cancellation, exit fade/snapshots and
   haptics are absent; dismissal currently handles completed right swipes.
-- Nested Peek needs parent-chain ownership. Existing parent transfer, orphan
-  promotion, Tab/Shift-Tab and live Expand are implemented.
 - The Peek card should be measured from the window edge, with the parent page
   shrinking by 9 points per side as it fades. Parc's Peek sits inside the page
   card's clip, so its card is measured from the page card and the parent only

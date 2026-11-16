@@ -138,6 +138,8 @@ changes belong in the owning guide and release notes, not an ever-growing log he
 - Both Peek triggers, links to other sites and Shift-click, stay on by default
   for new users and remain switchable in Settings → Links.
   See [Peek](peek.md#presentation-and-remaining-scope).
+- Peeks never stack or nest: Shift-click inside a Peek opens the link in that
+  same Peek. See [Peek](peek.md#links-inside-a-peek).
 - Safari Profiles come from Safari's own export file, and Firefox and Zen
   passwords from the browser's own CSV export. Parc does not read Safari's
   private Profile folders or Firefox's encrypted password store directly. See

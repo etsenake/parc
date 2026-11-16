@@ -133,9 +133,7 @@ accessible names and the close-confirmation state announces its instruction.
 Dismissal handles a completed right swipe. Continuous drag progress, velocity,
 reversal and cancellation are absent. Teardown removes the view immediately;
 there is no exit fade, transition snapshot or Peek-specific haptic feedback.
-Nested Peek is also unavailable: a visible Peek blocks another child, and
-creation requires an original saved parent tab. These are concrete remaining
-presentation and nesting items in [the backlog](backlog.md).
+These are concrete remaining presentation items in [the backlog](backlog.md).
 
 Automatic Peek for links to other sites and Shift-click Peek are both on by
 default for new users; this is a settled product decision. Either can be
@@ -148,6 +146,11 @@ transactions, confirmation timers, renderer acknowledgments and focus
 cancellation; window key-loop checks cover forward and backward traversal.
 
 ## Links inside a Peek
+
+Peeks never stack or nest; this is a settled product decision. A tab has at most
+one Peek, and a visible Peek admits no second card. An ordinary click navigates
+the Peek's page, and a link the site opens in a new tab becomes an ordinary
+new tab, as before.
 
 Shift-click, the deliberate "peek at this" gesture, opens the link in that same
 Peek. The engine turns the click's new-window request into an ordinary
