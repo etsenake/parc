@@ -115,16 +115,17 @@ fades, so its menu offers Open Link in Split View like any tab.
 
 ## Peeking at an existing tab
 
-Open in Peek, on a folder preview card's tab row, shows that tab's own live page
-in a Peek over the page you're on. The tab keeps its place in the sidebar and it
-is the same page, so scroll position, form input, media and history come along
-and nothing reloads: the window moves the tab's existing `PCBrowserView` from
-its pane into the card and back. `TabPeekSession` and `TabPeekAdmission` in
-ParcCore decide each step and `BrowserWindowController+TabPeek.swift` performs
-it; a relay delegate keeps the sidebar row, address and history following the
-page while it is in the card. An asleep tab reloads when shown, as it would in
-its pane. A tab with no page gets its page created in its own hidden pane, with
-its saved history, and moved into the card as soon as the engine hands it over.
+Open in Peek, on a folder preview card's tab row or in a tab picture card's
+header, shows that tab's own live page in a Peek over the page you're on. The
+tab keeps its place in the sidebar and it is the same page, so scroll position,
+form input, media and history come along and nothing reloads: the window moves
+the tab's existing `PCBrowserView` from its pane into the card and back.
+`TabPeekSession` and `TabPeekAdmission` in ParcCore decide each step and
+`BrowserWindowController+TabPeek.swift` performs it; a relay delegate keeps the
+sidebar row, address and history following the page while it is in the card. An
+asleep tab reloads when shown, as it would in its pane. A tab with no page gets
+its page created in its own hidden pane, with its saved history, and moved into
+the card as soon as the engine hands it over.
 
 Closing it (Escape, a click outside, a swipe, Close or Close Tab) plays the
 usual close and then hands the page back to its tab, still loaded. The page is

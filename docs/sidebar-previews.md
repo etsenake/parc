@@ -64,7 +64,18 @@ is off, shows the
 Recents card's chrome and header with the tab's favicon, its folder-row title
 and its site (the address bar's host without "www."), an Open in Split View
 button (the sidebar's own Split View action, `rectangle.split.2x1`), and the
-tab's last picture below at its own aspect, inset 10 pt (268 pt wide in a full-width
+tab's last picture below at its own aspect. When that tab can open in a Peek
+right then (the same rule as a folder row's Open in Peek), an Open in Peek
+button sits 26 pt to the left of Split View and shows the tab's own page in a
+[Peek](peek.md#peeking-at-an-existing-tab). Every sidebar render checks the
+rule again and adds or drops the button, and so does a click, which just hides
+the button if the offer has lapsed; a focused button that goes hands the
+keyboard to Split View. Its artwork is Parc's own, sized to Split View's weight
+([sidebar preview artwork](../Resources/SidebarPreview/README.md)). The title
+and site end 8 pt before the leftmost button and truncate at the tail, so
+without a Peek offer they end 8 pt before Split View. Both buttons show Parc's 24 pt
+hover plate, carry their name as tooltip and VoiceOver label, and take keyboard
+focus with a 5 pt ring. The picture is inset 10 pt (268 pt wide in a full-width
 card) with 5 pt corners and a hairline, the card still capped at 384 pt. Chromium
 captures the thumbnail at about 530–560 pixels wide, close to the 536 a 268 pt
 picture needs on a Retina display, so it stays sharp; a wider picture would need a
@@ -207,4 +218,6 @@ picture preference is enabled. These are local preferences, not service accounts
 Focused preview components exercise original-identity query/thumbnail leases,
 modifier routes, title rules, geometry, invalidation and focus return.
 `tests/SidebarPreview/check.py` also plays the entrance and exit with Reduce
-Motion simulated off and on.
+Motion simulated off and on. `tests/SidebarPreviewHeader/check.py` builds tab
+picture cards without a window and checks the Open in Peek button against the
+Peek offer, its action, the header widths and the artwork.

@@ -4,7 +4,7 @@ import AppKit
 final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
     static let searchMiss = "No tabs matching that search\n🤔"
     var onAction: ((SidebarPreviewRow, SidebarPreviewAction) -> Void)?
-    var offersPeek: ((SidebarPreviewRow) -> Bool)?
+    var offersPeek: ((SidebarPreviewRow) -> Bool)? { didSet { refreshPeek() } }
     var onEscape: (() -> Void)?
     var onSettings: (() -> Void)?
     var onHeightChange: (() -> Void)?
@@ -17,6 +17,7 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     private let create = ActionButton("New Page", symbol: "plus")
     private let settings = ActionButton("Previews Settings", symbol: "gearshape")
     private let split = ActionButton("Open in Split View", symbol: "rectangle.split.2x1")
+    private let peek = ActionButton("Open in Peek")
     private let site = NSTextField(labelWithString: "")
     private let picture = SidebarPreviewPicture()
     private let showsPicture: Bool
@@ -48,10 +49,19 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
             heading.stringValue = title
             self.site.stringValue = site
             self.site.font = .systemFont(ofSize: 11); self.site.textColor = secondary; self.site.lineBreakMode = .byTruncatingTail
-            Self.styleHeaderButton(split, label: "Open in Split View", tint: secondary)
+            for (button, label) in [(split, "Open in Split View"), (peek, "Open in Peek")] {
+                Self.styleHeaderButton(button, label: label, tint: secondary)
+                button.showsHoverFill = true
+            }
+            peek.image = SidebarPreviewArtwork.openInPeek
             split.actionBlock = { [weak self] in
                 guard let self, let row = self.rows.first else { return }
                 self.onAction?(row, .split)
+            }
+            peek.actionBlock = { [weak self] in
+                guard let self, let row = self.rows.first else { return }
+                guard self.offersPeek?(row) == true else { self.refreshPeek(); return }
+                self.onAction?(row, .peek)
             }
             picture.image = image
             for view in [icon, heading, self.site, split, picture] as [NSView] { content.addSubview(view) }
@@ -140,7 +150,9 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
             let inset = SidebarPreviewMetrics.pictureInset, top = ((header - 31) / 2).rounded(.down)
             icon.frame = NSRect(x: 13, y: (header - 16) / 2, width: 16, height: 16)
             split.frame = NSRect(x: width - 32, y: (header - 24) / 2, width: 24, height: 24)
-            let textX = icon.frame.maxX + 8, textWidth = max(0, split.frame.minX - textX - 8)
+            peek.frame = split.frame.offsetBy(dx: -26, dy: 0)
+            let trailing = peek.superview == nil ? split.frame.minX : peek.frame.minX
+            let textX = icon.frame.maxX + 8, textWidth = max(0, trailing - textX - 8)
             heading.frame = NSRect(x: textX, y: top, width: textWidth, height: 17)
             site.frame = NSRect(x: textX, y: top + 17, width: textWidth, height: 14)
             picture.frame = NSRect(x: inset, y: header, width: max(0, width - 2 * inset),
@@ -191,7 +203,7 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     }
     func setRows(_ values: [SidebarPreviewRow]) {
         dataGeneration &+= 1; rows = values
-        guard !showsPicture else { return }
+        guard !showsPicture else { refreshPeek(); return }
         let urls = Set(values.map(\.url))
         icons = icons.filter { urls.contains($0.key) }; requestedIcons = Set(icons.keys)
         filterRows()
@@ -202,6 +214,18 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
         offersPeek = nil
         trackedMenu?.cancelTracking(); trackedMenu = nil
         table.isRetired = true
+    }
+    func refreshPeek() {
+        guard showsPicture, !isRetired else { return }
+        let offered = rows.first.map { offersPeek?($0) == true } ?? false
+        guard offered != (peek.superview != nil) else { return }
+        if offered {
+            content.addSubview(peek)
+        } else {
+            if window?.firstResponder === peek { window?.makeFirstResponder(split) }
+            peek.removeFromSuperview()
+        }
+        needsLayout = true
     }
     private func loadProviderIcon() {
         guard domain != nil || showsPicture, !providerIconRequested, let providerURL, let requestFavicon else { return }
@@ -358,6 +382,35 @@ private final class SidebarPreviewTable: NSTableView {
         guard index >= 0 else { return nil }
         selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         return makeMenu?(index)
+    }
+}
+
+@MainActor enum SidebarPreviewArtwork {
+    static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("SidebarPreview", isDirectory: true)
+    private static var cache: [String: NSImage] = [:]
+
+    static var openInPeek: NSImage? { image("open-in-peek") }
+
+    static func image(_ name: String) -> NSImage? {
+        if let image = cache[name] { return image }
+        guard let directory,
+              let data = try? Data(contentsOf: directory.appendingPathComponent(name + ".png")),
+              let base = NSBitmapImageRep(data: data) else { return nil }
+        let size = NSSize(width: base.pixelsWide, height: base.pixelsHigh)
+        base.size = size
+        let image = NSImage(size: size)
+        image.addRepresentation(base)
+        if let data = try? Data(contentsOf: directory.appendingPathComponent(name + "@2x.png")),
+           let double = NSBitmapImageRep(data: data) {
+            double.size = size
+            image.addRepresentation(double)
+        }
+        if let vector = NSImage(contentsOf: directory.appendingPathComponent(name + ".pdf")) {
+            for representation in vector.representations { image.addRepresentation(representation) }
+        }
+        image.isTemplate = true
+        cache[name] = image
+        return image
     }
 }
 

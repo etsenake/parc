@@ -260,6 +260,7 @@ final class SidebarPreviewController {
             dismiss(); return
         }
         lastAnchorView = sidebar?.previewAnchor(for: current.target)
+        card?.refreshPeek()
         guard next != anchor else { return }
         anchor = next
         if let card { card.placement.row = next; card.place() }

@@ -313,6 +313,7 @@ step compile_and_run sidebar-outline-configure-skip SidebarOutlineConfigureSkipT
 step python3 "$repo_root/tests/SidebarOutlineConfigureSkip/check.py"
 step python3 "$repo_root/tests/SidebarSpaceSwipe/check.py"
 step python3 "$repo_root/tests/SidebarHeaderGlyphs/check.py"
+step python3 "$repo_root/tests/SidebarPreviewHeader/check.py"
 step python3 "$repo_root/tests/Tooltip/check.py"
 step python3 "$repo_root/tests/FloatingSidebarSurface/check.py"
 step python3 "$repo_root/tests/IncognitoWindowTheme/check.py"
