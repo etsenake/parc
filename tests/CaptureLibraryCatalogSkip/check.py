@@ -85,6 +85,8 @@ assert "items.map(\\.id)" not in source, "navigation must use the planned positi
 media = (root / "Sources/ParcApp/ExternalMediaLibrary.swift").read_text()
 for gone in ("makeFileSystemObjectSource", "repeating: 5", "scheduleRefresh"):
     assert gone not in media, f"the five-second poll and directory watcher are gone: {gone}"
+for gone in ("presentedItemDidChangeUbiquityAttributes", "cloudPaths", "isDirectory: false), queue: callbacks"):
+    assert gone not in media, f"iCloud status is watched per folder, never per file: {gone}"
 for needle in ("kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWatchRoot",
                "timer.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(10))",
                "timer.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.reconcile() } }",
@@ -94,8 +96,14 @@ for needle in ("kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWat
                "if recent != nil, let previous, let next, previous.isLocal == next.isLocal { settling[key] = now; continue }",
                "guard let delay = change.settle, settleTask == nil else { return }",
                "observedPresentedItemUbiquityAttributes: Set<URLResourceKey> = [.ubiquitousItemDownloadingStatusKey]",
-               "func presentedItemDidChangeUbiquityAttributes(_ attributes: Set<URLResourceKey>) { report() }",
-               "guard !clients.isEmpty, !paths.isEmpty else { stopCloud(); return }",
+               "func presentedSubitemDidChange(at url: URL) { changed(url) }",
+               "NSFileCoordinator.removeFilePresenter(self); evicted(self); completionHandler(nil)",
+               "presentedItemURL = folder; presentedItemOperationQueue = queue",
+               "guard ExternalMediaDisk.isMedia(name), aliases.contains(parent) || resolved(parent).map(aliases.contains) == true else { return nil }",
+               "guard !clients.isEmpty, !folders.isEmpty else { stopCloud(); return }",
+               "let known = paths.filter { index[$0] != nil }",
+               "publish(snapshot.catalog); observeCloud(snapshot.catalog.cloudFolders)",
+               "Catalog(items: ordered, index: current, version: version, cloudFolders: synced)",
                "if cloud.isSynced(root) { syncedRoots.insert(path) }",
                "ExternalMediaPreferenceObserver($0, key: \"location\")",
                "if refreshTask == nil { reconcile() } else { rescanPending = true }",

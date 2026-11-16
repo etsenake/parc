@@ -190,7 +190,7 @@ import UniformTypeIdentifiers
         let flipCloud = CloudProbe(syncedName: folder.lastPathComponent)
         let flipDisk = ExternalMediaDisk(directory: root.appendingPathComponent("FlipProfile"), cloud: flipCloud.source)
         let flipScan = try await flipDisk.scan(systemFolders: [folder, missing])
-        precondition(!flipScan.catalog.items.isEmpty && flipScan.catalog.cloud == Set(flipScan.catalog.items.map(\.id)), "Every file in an iCloud folder is watched")
+        precondition(!flipScan.catalog.items.isEmpty && flipScan.catalog.cloudFolders == [folder.path], "An iCloud folder is watched as one folder, not file by file")
         let flipped = flipScan.catalog.items[0]
         let quiet = try await flipDisk.update(paths: [flipped.id])
         flipCloud.evict(flipped.id)
@@ -349,7 +349,7 @@ import UniformTypeIdentifiers
         precondition(cloud.observations == 0, "Download status is not watched before Media is shown")
         let cloudClient = UUID(); synced.activate(cloudClient)
         try await until { synced.items.count == 3 && !synced.isLoading }
-        precondition(cloud.observations == 1 && cloud.presented == [cloudA.path, cloudB.path], "Shown Media watches download status for just its iCloud folder's files")
+        precondition(cloud.observations == 1 && cloud.presented == [cloudFolder.path] && cloud.peak == 1, "Shown Media watches download status with one presenter for its iCloud folder")
         var cloudChanges = 0
         let cloudObserver = synced.$items.dropFirst().sink { _ in cloudChanges += 1 }
         let beforeEviction = synced.items.filter { $0.url != cloudA }
@@ -361,10 +361,21 @@ import UniformTypeIdentifiers
         cloud.restore(cloudA.path); cloud.report([cloudA.path])
         try await eventually({ synced.items.first { $0.url == cloudA }?.isLocal == true }, "A finished download reaches its tile without waiting to settle")
         precondition(cloudChanges == 2, "A finished download publishes once")
+        cloud.report([cloudFolder.appendingPathComponent("Ghost.png").path])
+        try await Task.sleep(nanoseconds: 300_000_000)
+        precondition(cloudChanges == 2, "A status report for a file Media doesn't show changes nothing")
         cloudObserver.cancel()
         let cloudD = cloudFolder.appendingPathComponent("D.png"); try png.write(to: cloudD)
         try fm.removeItem(at: cloudB)
-        try await eventually({ cloud.presented == [cloudA.path, cloudD.path] }, "Arrivals and removals in an iCloud folder update the watched files")
+        try await eventually({ synced.items.contains { $0.url == cloudD } && !synced.items.contains { $0.url == cloudB } }, "Arrivals and removals in an iCloud folder reach Media")
+        precondition(cloud.presented == [cloudFolder.path] && cloud.peak == 1, "Arrivals and removals never add presenters")
+        cloud.evict(cloudD.path); cloud.report([cloudD.path])
+        try await eventually({ synced.items.first { $0.url == cloudD }?.isLocal == false }, "A file that arrived after Media opened is covered by its folder's presenter")
+        let presentsBeforeRescan = cloud.presentations, revisionBeforeRescan = synced.revision
+        synced.refresh()
+        try await until { !synced.isLoading }
+        precondition(synced.revision == revisionBeforeRescan && cloud.presentations > presentsBeforeRescan && cloud.presented == [cloudFolder.path] && cloud.peak == 1,
+                     "A rescan that finds nothing new still puts back a folder presenter that stepped aside")
         weak var watching = cloud.current
         let lateReport = cloud.handler
         synced.deactivate(cloudClient)
@@ -374,11 +385,73 @@ import UniformTypeIdentifiers
         precondition(synced.items.isEmpty, "A status report after Media closes is ignored")
         synced.activate(cloudClient)
         try await until { synced.items.count == 3 && !synced.isLoading }
-        precondition(cloud.observations == 2 && cloud.presented == [cloudA.path, cloudD.path])
+        precondition(cloud.observations == 2 && cloud.presented == [cloudFolder.path])
         watching = cloud.current
         try await synced.setEnabled(false, folder: cloudFolder)
         precondition(watching == nil && synced.items.count == 1, "Hiding the only iCloud folder stops watching download status")
         synced.deactivate(cloudClient)
+        let bigFolder = root.appendingPathComponent("Big", isDirectory: true)
+        try fm.createDirectory(at: bigFolder, withIntermediateDirectories: true)
+        let bigNames = (0..<3_000).map { String(format: "Big-%04d.png", $0) }
+        for name in bigNames { try png.write(to: bigFolder.appendingPathComponent(name)) }
+        let bigCloud = CloudProbe(syncedName: "Big")
+        let big = ExternalMediaLibrary(directory: root.appendingPathComponent("BigObserved"), systemFolders: { [bigFolder] },
+                                       cloud: bigCloud.source, screenshotPreferences: nil)
+        let bigClient = UUID(); big.activate(bigClient)
+        try await until { big.items.count == bigNames.count && !big.isLoading }
+        precondition(bigCloud.observations == 1 && bigCloud.presented == [bigFolder.path] && bigCloud.peak == 1,
+                     "A synced folder with thousands of files still registers a single presenter")
+        let bigTarget = bigFolder.appendingPathComponent(bigNames[1_234]).path, bigOthers = big.items.filter { $0.id != bigTarget }
+        var bigChanges = 0
+        let bigObserver = big.$items.dropFirst().sink { _ in bigChanges += 1 }
+        bigCloud.evict(bigTarget); bigCloud.report([bigTarget])
+        try await eventually({ big.items.first { $0.id == bigTarget }?.isLocal == false }, "An eviction deep in a large folder reaches its tile")
+        try await Task.sleep(nanoseconds: 200_000_000)
+        precondition(bigChanges == 1 && big.items.filter { $0.id != bigTarget } == bigOthers, "An eviction in a large folder rereads only that file")
+        bigObserver.cancel()
+        weak let bigWatching = bigCloud.current
+        big.deactivate(bigClient)
+        precondition(bigWatching == nil && big.items.isEmpty, "Closing Media releases the folder presenter")
+        let presentersBefore = NSFileCoordinator.filePresenters.count
+        let spelled = realpath(bigFolder.path, nil).map { real in defer { free(real) }; return String(cString: real) } ?? bigFolder.path
+        let spellings: Set<String> = [bigFolder.path, spelled]
+        let realReports = CloudReports()
+        var realStatus: ExternalMediaCloudStatus? = ExternalMediaCloudStatus { realReports.add($0) }
+        realStatus?.present(spellings)
+        try await eventually({ NSFileCoordinator.filePresenters.count == presentersBefore + spellings.count },
+                             "The real iCloud source registers one presenter per folder for a folder of thousands of files")
+        let nestedFolder = bigFolder.appendingPathComponent("Nested", isDirectory: true)
+        try fm.createDirectory(at: nestedFolder, withIntermediateDirectories: true)
+        let coordinated = [bigFolder.appendingPathComponent(bigNames[42]), nestedFolder.appendingPathComponent("Deep.png"),
+                           bigFolder.appendingPathComponent("Notes.txt"), bigFolder.appendingPathComponent(bigNames[43])]
+        for target in coordinated {
+            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                DispatchQueue.global().async {
+                    var failure: NSError?
+                    NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: target, options: [], error: &failure) { try? png.write(to: $0) }
+                    done.resume()
+                }
+            }
+        }
+        let expectedReports = Set(spellings.flatMap { folder in [bigNames[42], bigNames[43]].map { (folder as NSString).appendingPathComponent($0) } })
+        try await eventually({ realReports.all.isSuperset(of: expectedReports) }, "A change to a direct media child is reported under each spelling its folder was registered with")
+        precondition(realReports.all == expectedReports && NSFileCoordinator.filePresenters.count == presentersBefore + spellings.count,
+                     "Nested files, subfolders and non-media files are not reported, and the files written add no presenters")
+        if #available(macOS 14.4, *) {
+            let folderPresenter = NSFileCoordinator.filePresenters.first { $0.presentedItemURL?.path == spelled }
+            let evictionAllowed = CloudReports()
+            folderPresenter?.accommodatePresentedItemEviction?(completionHandler: { evictionAllowed.add($0 == nil ? ["allowed"] : ["refused"]) })
+            precondition(evictionAllowed.all == ["allowed"], "Evicting the presented folder is allowed instead of blocked")
+            try await eventually({ NSFileCoordinator.filePresenters.count == presentersBefore + spellings.count - 1 }, "Evicting the presented folder steps its presenter aside")
+            realStatus?.present(spellings)
+            try await eventually({ NSFileCoordinator.filePresenters.count == presentersBefore + spellings.count }, "The next present puts an evicted folder's presenter back")
+        }
+        realStatus?.present([])
+        try await eventually({ NSFileCoordinator.filePresenters.count == presentersBefore }, "A folder no longer shown releases its presenter")
+        realStatus?.present(spellings)
+        try await eventually({ NSFileCoordinator.filePresenters.count == presentersBefore + spellings.count }, "A folder shown again registers again")
+        realStatus = nil
+        try await eventually({ NSFileCoordinator.filePresenters.count == presentersBefore }, "Dropping the iCloud source when Media closes releases every presenter")
         let shotsSuite = "parc.media-screenshot-tests." + UUID().uuidString
         let shotsDefaults = UserDefaults(suiteName: shotsSuite)!
         defer { shotsDefaults.removePersistentDomain(forName: shotsSuite) }
@@ -413,6 +486,13 @@ import UniformTypeIdentifiers
 
 @MainActor private final class FinishedWork { var values: [Int] = []; var requests = 0 }
 
+private final class CloudReports: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reported = Set<String>()
+    var all: Set<String> { lock.lock(); defer { lock.unlock() }; return reported }
+    func add(_ paths: Set<String>) { lock.lock(); reported.formUnion(paths); lock.unlock() }
+}
+
 private final class WorkProbe: @unchecked Sendable {
     private let lock = NSLock()
     private var didStart = false, didCancel = false
@@ -429,11 +509,11 @@ private final class CloudProbe: @unchecked Sendable {
     private final class Observation: ExternalMediaCloudObservation, @unchecked Sendable {
         private let probe: CloudProbe
         init(_ probe: CloudProbe) { self.probe = probe }
-        func present(_ paths: Set<String>) { probe.record(paths) }
+        func present(_ folders: Set<String>) { probe.record(folders) }
     }
     private let lock = NSLock()
     private let syncedName: String
-    private var evicted = Set<String>(), watched = Set<String>(), count = 0
+    private var evicted = Set<String>(), watched = Set<String>(), count = 0, largest = 0, calls = 0
     private var reporter: (@Sendable (Set<String>) -> Void)?
     private weak var live: Observation?
     init(syncedName: String) { self.syncedName = syncedName }
@@ -448,12 +528,14 @@ private final class CloudProbe: @unchecked Sendable {
     }
     var observations: Int { locked { count } }
     var presented: Set<String> { locked { watched } }
+    var peak: Int { locked { largest } }
+    var presentations: Int { locked { calls } }
     var current: AnyObject? { locked { live } }
     var handler: (@Sendable (Set<String>) -> Void)? { locked { reporter } }
     func evict(_ path: String) { locked { _ = evicted.insert(path) } }
     func restore(_ path: String) { locked { _ = evicted.remove(path) } }
     func report(_ paths: Set<String>) { handler?(paths) }
-    fileprivate func record(_ paths: Set<String>) { locked { watched = paths } }
+    fileprivate func record(_ folders: Set<String>) { locked { watched = folders; largest = max(largest, folders.count); calls += 1 } }
     private func locked<T>(_ body: () -> T) -> T { lock.lock(); defer { lock.unlock() }; return body() }
 }
 

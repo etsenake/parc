@@ -98,14 +98,21 @@ clears results. Owned sheets, previews and thumbnail requests carry
 window/generation. Cancellation settles once even if Quick Look never answers, and
 late callbacks cannot restore retired work.
 
-iCloud download status has its own source. While Media is shown and a folder iCloud
-syncs (usually Desktop and Documents) is in scope, each of that folder's media files
-gets a file presenter that asks macOS for changes to its download status. An
-eviction or a finished download rereads just that file, and its tile changes at once
-without waiting to settle. Presenters follow arrivals and removals and are all
-released when Media closes or no iCloud folder remains. A Spotlight metadata query
-cannot do this for Parc: download status appears only in iCloud query scopes, which
-need an iCloud container entitlement Parc does not carry.
+iCloud download status has its own source. While Media is shown, each shown folder
+that iCloud syncs (usually Desktop and Documents) gets one folder-level file
+presenter, however many files it holds. macOS tells that presenter when a file
+inside is evicted or finishes downloading, and by then the file is already in its
+new state, so Media rereads just that file and its tile changes at once without
+waiting to settle. Reports for subfolders, non-media names and files Media isn't
+showing are dropped, and new arrivals are covered without registering anything.
+Presenters are released when Media closes or a folder stops being shown or synced.
+A presenter on a single file would make Remove Download fail for that file with
+"in use by an application", while a folder presenter lets both a file and the whole
+folder be evicted. If macOS ever asks the folder presenter to step aside for an
+eviction, it unregisters and returns with the next rescan or catalog change, while
+the folder's file events keep reporting its files. A Spotlight metadata query
+cannot do this for Parc: download status appears only in iCloud query scopes,
+which need an iCloud container entitlement Parc does not carry.
 
 Folder size never costs the main thread. The disk actor keeps the sorted list, a
 lookup index and a version; a rescan or event that changes nothing publishes
@@ -163,10 +170,17 @@ checks cover event-driven arrival, in-place writes, a later screenshot marker,
 renames and removals, a slowly copied file landing in at most two updates, shutdown,
 a quiet rescan that publishes nothing, a new file that publishes the list exactly
 once without a loading flip, and a screenshot location change picked up without
-activation. An injected iCloud source checks that download status is watched only
-for a shown iCloud folder's files, that evictions and downloads reread just that
-file and publish once, that watched files follow arrivals and removals, and that
-closing Media or hiding the folder stops watching and ignores late reports. The
+activation. An injected iCloud source checks that download status is watched with
+one presenter per shown iCloud folder, even for a folder of 3,000 files, that
+evictions and downloads reread just that file and publish once, that arrivals add no
+presenters and are still covered, that a rescan finding nothing new still
+re-presents the folder, that reports for files Media doesn't show change nothing,
+and that closing Media or hiding the folder stops watching and ignores late
+reports. The real presenter is checked with coordinated writes: it registers once
+per registered folder path however many files it holds, reports a direct media
+child under the spelling its folder was registered with, ignores nested and
+non-media files, and releases everything when the source is dropped; asked to make
+way for an eviction, it unregisters and comes back with the next present. The
 latest-wins planner checks that a newer or forced rebuild cancels the calculation
 in flight. Library view checks cover thumbnail geometry, hover, scrolling,
 selection, source rectangles, mixed capture/file navigation, a loading flip that
