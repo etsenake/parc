@@ -80,11 +80,6 @@ enum Action {
   kRememberPermission = 3000, kSystemPermission = 4000, kRevokeObject = 5000,
 };
 
-// Desktop PageInfo DCHECKs (ComputeUIInputs) on WebUI, DevTools, view-source
-// and extension URLs and on any about: URL but about:blank. Chromium sends
-// those, file and reader pages to its internal-page bubble with this test
-// (permission_dashboard_controller.cc) on the visible entry's virtual URL;
-// PageInfo itself is given the committed URL, so both must pass.
 bool HasPageInfo(content::WebContents* contents) {
   auto* entry = contents ? contents->GetController().GetVisibleEntry() : nullptr;
   if (!entry || entry->IsInitialEntry()) return false;
@@ -194,8 +189,6 @@ class SiteInfo final : public content::WebContentsObserver,
     safe_browsing_warning_ = false;
     focused_permission_.reset();
     browser_.reset(); window_ = nil; render_pending_ = false;
-    // The real presenter owns permission reload/infobar decisions. Cleanup
-    // precedes this callback, which can synchronously destroy the page owner.
     if (model) model->OnUIClosing(nullptr);
   }
 
@@ -271,7 +264,6 @@ class SiteInfo final : public content::WebContentsObserver,
       size_t index = command % 1000;
       if (index >= permissions_.size()) return;
       auto permission = permissions_[index];
-      // Refresh genuine policy/current settings before applying a saved row.
       model->UpdatePermissions();
       if (!weak || !Current()) return;
       auto found = std::find_if(permissions_.begin(), permissions_.end(), [&](const auto& current) {
@@ -310,9 +302,6 @@ class SiteInfo final : public content::WebContentsObserver,
       if (revoke_ssl_) { model->OnRevokeSSLErrorBypassButtonPressed(); if (weak) model->UpdateSecurityState(); }
       return;
     }
-    // Opening another surface can change the selected page and destroy this
-    // owner. Retain the presenter, close this popover, revalidate its document,
-    // then let Chromium dispatch the actual operation without further access.
     auto contents = web_contents()->GetWeakPtr();
     auto document = document_;
     auto browser = browser_;
@@ -376,8 +365,6 @@ class SiteInfo final : public content::WebContentsObserver,
       label(base::SysUTF16ToNSString(ui_delegate_->GetPermissionDetail(permission.type)));
       label(base::SysUTF16ToNSString(PermissionManagedTooltipToUIString(ui_delegate_.get(), permission)));
       bool mutable_permission = Mutable(permission);
-      // Compound permission settings (e.g. precise location) keep their real
-      // type-specific editor in Site Settings; never cast them to an enum.
       if (std::holds_alternative<ContentSetting>(permission.default_setting)) {
         bool enabled = PageInfoUI::IsToggleOn(permission);
         bool guard = permissions::PermissionUtil::IsGuardContentSetting(permission.type);
@@ -487,7 +474,6 @@ class SiteControls final : public content::WebContentsObserver,
     const auto wanted = permissions_[index];
     auto weak = callbacks_.GetWeakPtr();
     auto model = model_;
-    // Refresh genuine policy/current settings before applying a shown row.
     model->UpdatePermissions();
     if (!weak || !Current()) return false;
     auto found = std::find_if(permissions_.begin(), permissions_.end(), [&](const auto& current) {
@@ -501,6 +487,12 @@ class SiteControls final : public content::WebContentsObserver,
     return true;
   }
 
+  void Refresh() {
+    if (!Current()) return;
+    auto model = model_;
+    model->UpdatePermissions();
+  }
+
   void End() {
     if (!active_) return;
     active_ = false;
@@ -510,12 +502,10 @@ class SiteControls final : public content::WebContentsObserver,
     handler_ = nil;
     ui_delegate_.reset(); permissions_.clear(); document_ = {};
     publish_pending_ = false;
-    // Tell the shell once, after this owner has settled.
     if (handler) {
       base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
           base::BindOnce([](SiteControlsHandler handler) { handler(nil); }, handler));
     }
-    // The real presenter owns the permission reload infobar decision.
     if (model) model->OnUIClosing(nullptr);
   }
 
@@ -547,8 +537,6 @@ class SiteControls final : public content::WebContentsObserver,
       return permission.type == ContentSettingsType::AUTO_PICTURE_IN_PICTURE;
     });
   }
-  // The profile's effective Automatic Picture-in-Picture setting for this
-  // site; ASK counts as on, as PageInfoUI::IsToggleOn does for this type.
   std::optional<std::pair<bool, bool>> AutoPictureInPicture() const {
     auto* contents = web_contents();
     if (!contents) return std::nullopt;
@@ -580,8 +568,6 @@ class SiteControls final : public content::WebContentsObserver,
         !contents->IsCrashed() && page && !page.closed && !IsNativePageRetiring(page) &&
         document_.AsRenderFrameHostIfValid() == contents->GetPrimaryMainFrame();
   }
-  // The PageInfo popover's own user-owned, two-state rule; compound settings
-  // keep their type-specific editor in Site Settings.
   bool Changeable(const PageInfo::PermissionInfo& permission) const {
     int text = 0, link = 0;
     return std::holds_alternative<ContentSetting>(permission.default_setting) &&
@@ -639,14 +625,17 @@ class SiteControls final : public content::WebContentsObserver,
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
 WEB_CONTENTS_USER_DATA_KEY_IMPL(SiteControls);
-}  // namespace
+}
 bool ShowNativePageInfoPermission(content::WebContents* contents, ContentSettingsType type) {
   PCNativePage* page = ExistingNativePage(contents);
   if (!page || !page.canShowSiteInfo) return false;
   SiteInfo::CreateForWebContents(contents);
   return SiteInfo::FromWebContents(contents)->Show(page.nativeView, type);
 }
-}  // namespace parc
+void RefreshNativeSiteControls(content::WebContents* contents) {
+  if (auto* controls = contents ? SiteControls::FromWebContents(contents) : nullptr) controls->Refresh();
+}
+}
 
 @implementation PCNativePage (SiteInfo)
 - (BOOL)canShowSiteInfo {

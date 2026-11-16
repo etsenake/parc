@@ -64,6 +64,11 @@ With CEF gone, Parc owns Chromium's embedder classes and uses them before anythi
 - `ParcBrowserMainExtraParts` installs the native file-dialog factory and the licence WebUI.
 - Parc's BrowserWindow, Browser record and WebContentsDelegate serve each native window, so
   JavaScript dialogs and new pages reach Parc through Chromium's own interfaces.
+- Blocked pop-ups keep Chromium's own blocker. The browser client swaps the blocker's pop-up delegate
+  factory through Chrome's public static accessor (named for tests, but the only seam), and Parc's
+  WebContentsDelegate records renderer-link pop-ups with the same blocker before its own routing. A
+  released pop-up opens through the source window's delegate, like an allowed one; see
+  [web interactions](web-interactions.md#banners-and-blocked-pop-ups).
 
 ## The hook pattern
 

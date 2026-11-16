@@ -18,6 +18,7 @@
 #include "native_link_routing.h"
 #include "native_page_binding.h"
 #include "native_page_observers.h"
+#include "native_popup_blocking.h"
 #include "video_overlay_window.h"
 #include "content/public/browser/video_picture_in_picture_window_controller.h"
 #include "unload_transactions.h"
@@ -101,6 +102,9 @@ content::WebContents* NativeBrowserWebContentsDelegate::OpenURLFromTab(
   if (browser_->GetType() == BrowserWindowInterface::Type::TYPE_DEVTOOLS) {
     return BrowserWebContentsDelegate::OpenURLFromTab(
         source, params, std::move(navigation_handle_callback));
+  }
+  if (BlockNativeLinkPopup(source, params)) {
+    return nullptr;
   }
   const auto early_browser_weak = browser_->GetWeakPtr();
   const auto early_source_weak =
@@ -260,6 +264,24 @@ void NativeBrowserWebContentsDelegate::WebContentsCreated(
 
   if (source_contents && NativePageBinding::FromWebContents(source_contents)) {
     NativePageBinding::CreateForWebContents(new_contents);
+  }
+}
+
+void NativeBrowserWebContentsDelegate::OnDidBlockNavigation(
+    content::WebContents* web_contents,
+    const GURL& blocked_url,
+    const GURL& initiator_url,
+    const url::Origin& initiator_origin,
+    scoped_refptr<content::InitiatorNavigationState> initiator_navigation_state,
+    blink::mojom::NavigationBlockedReason reason) {
+  const auto contents =
+      web_contents ? web_contents->GetWeakPtr() : base::WeakPtr<content::WebContents>();
+  BrowserWebContentsDelegate::OnDidBlockNavigation(
+      web_contents, blocked_url, initiator_url, initiator_origin,
+      std::move(initiator_navigation_state), reason);
+  if (contents && reason == blink::mojom::NavigationBlockedReason::
+                                kRedirectWithNoUserGesture) {
+    NativeNavigationBlocked(*contents);
   }
 }
 

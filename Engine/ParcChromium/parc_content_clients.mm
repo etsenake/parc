@@ -45,6 +45,7 @@
 #include "parc/native/folder_upload.h"
 #include "parc/native/http_auth.h"
 #include "parc/native/native_appkit_host.h"
+#include "parc/native/native_blocked_popups.h"
 #include "parc/native/native_internal_urls.h"
 #include "parc/native/native_page_context_menu.h"
 #include "parc/native/native_tab_sharing.h"
@@ -161,6 +162,7 @@ ParcContentBrowserClient::ParcContentBrowserClient(
     : application_(application) {
   parc_hooks::SetFrameFocusNotifier(&NotifyFrameFocus);
   parc_hooks::SetWebPushFactory(&CreateWebPushClient);
+  InstallNativeBlockedPopups();
   parc_hooks::SetInternalExtensionInstaller([](extensions::ComponentLoader* loader) {
     loader->Add(kInternalExtensionManifest,
                 base::FilePath(FILE_PATH_LITERAL("parc_internal_extension")));
