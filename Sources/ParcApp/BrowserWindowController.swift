@@ -185,7 +185,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var archivePreviews: [UUID: ArchivePreviewLease] = [:]
     var queuedArchivePreview: (id: UUID, profileID: UUID)?
     var archivePreviewRemnants = Set<UUID>()
-    var peekRetirementParents = Set<UUID>()
+    var peekRetirementParents = Set<UUID>() { didSet { noteRetiringPeekParents(from: oldValue) } }
     var favoriteBadgeIcons: [UUID: (image: NSImage, data: Data)] = [:]
     var lastFavoriteOverlayFingerprint: String?
     var promotingPeek = false { didSet { noteReturnGate() } }
@@ -1188,6 +1188,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func nativeBrowserWindow() -> NSWindow { window! }
     func selectedNativePage() -> PCNativePage? {
+        if let peek = activePeek, peek.isLeaving { return peek.parentPage }
         if let page = currentBrowser?.nativePage { return page }
         guard let id = currentTabID else { return nil }
         return easelEditors[id]?.editor.pageObjects?.selectedPage

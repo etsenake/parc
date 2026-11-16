@@ -439,9 +439,9 @@ extension BrowserWindowController {
         }
         controller.onReturn = { [weak self, weak held, weak controller] in
             guard let self, let held, let controller, held.session.phase == .shown else { return }
-            let focusReturn = controller.takeFocusReturn()
             let effects = held.session.returnRequested()
             guard !effects.isEmpty else { controller.refuseClose(); return }
+            let focusReturn = controller.takeFocusReturn()
             self.applyTabPeek(effects, held)
             self.returnFocusAfterTabPeek(focusReturn, to: held)
         }

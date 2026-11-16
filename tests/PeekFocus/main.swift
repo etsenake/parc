@@ -96,6 +96,41 @@ import AppKit
         let unattached = FocusView(frame: .zero)
         expect(PeekFocusReturn(source: unattached) == nil, "Detached source has no focus ownership")
 
+        let parent = FocusView(frame: .zero); window.contentView!.addSubview(parent)
+        expect(window.makeFirstResponder(control), "Peek control holds focus as its close begins")
+        let lent = PeekFocusReturn(source: root)!
+        lent.lend(in: window) { window.makeFirstResponder(parent) }
+        expect(window.firstResponder === parent, "A leaving Peek hands typing to the surviving parent at once")
+        lent.lend(in: window) { window.makeFirstResponder(outside) }
+        expect(window.firstResponder === parent, "Focus is lent only once")
+        expect(lent.perform(in: window, ownerIsAvailable: { true }) { responder in
+            expect(responder === control, "A refused close returns to the Peek's own control")
+            delivered += 1
+        }, "Focus lent to the parent still returns when the card comes back")
+        expect(window.makeFirstResponder(control), "Peek control before a second close")
+        let movedOn = PeekFocusReturn(source: root)!
+        movedOn.lend(in: window) { window.makeFirstResponder(parent) }
+        expect(window.makeFirstResponder(outside), "The person picks another control during the fade")
+        expect(!movedOn.perform(in: window, ownerIsAvailable: { true }) { _ in delivered += 1 },
+               "A choice made during the fade is never overridden")
+        expect(window.makeFirstResponder(control), "Peek control before a refused handover")
+        let parked = PeekFocusReturn(source: root)!
+        parked.lend(in: window) { false }
+        expect(window.firstResponder === window, "When the parent can't take typing, the leaving page still lets go")
+        expect(parked.perform(in: window, ownerIsAvailable: { true }) { _ in delivered += 1 },
+               "A parked return still completes after the close")
+        expect(window.makeFirstResponder(control), "Peek control before focus leaves on its own")
+        let stale = PeekFocusReturn(source: root)!
+        expect(window.makeFirstResponder(outside), "Another control takes focus before the fade")
+        stale.lend(in: window) { window.makeFirstResponder(parent) }
+        expect(window.firstResponder === outside, "Focus that already left the Peek is not moved")
+        expect(window.makeFirstResponder(control), "Peek control before a hidden Peek's close")
+        let hidden = PeekFocusReturn(source: root)!
+        hidden.cancel()
+        hidden.lend(in: window) { window.makeFirstResponder(parent) }
+        expect(window.firstResponder === control, "A cancelled return lends nothing")
+        parent.removeFromSuperview()
+
         expect(window.makeFirstResponder(control), "Original control before deallocation check")
         weak var weakWindow: NSWindow?, weakView: NSView?
         var weakLease: PeekFocusReturn?
@@ -109,7 +144,7 @@ import AppKit
         }
         expect(weakWindow == nil && weakView == nil, "Lease does not retain closed window or responder")
         expect(!weakLease!.perform(in: window, ownerIsAvailable: { true }) { _ in delivered += 1 }, "Lost original owner cannot resolve to current window")
-        expect(delivered == 3, "Only exact original/temporary-vacancy/removal cases delivered")
+        expect(delivered == 5, "Only exact original/temporary-vacancy/removal/lent/parked cases delivered")
         window.close(); otherWindow.close()
         print("PASS: \(checks) original Peek-focus return assertions")
     }

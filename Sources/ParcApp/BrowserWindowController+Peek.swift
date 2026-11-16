@@ -128,8 +128,8 @@ extension BrowserWindowController {
         peek.onCloseRefused = { [weak self, weak peek] in
             guard let self, let peek else { return }
             if self.archivePreviews[peek.identity] != nil { self.queuedArchivePreview = nil }
-            guard let redo = self.peekRedo, redo.peek == peek.identity else { return }
-            self.peekRedo = nil; redo.done(nil)
+            if let redo = self.peekRedo, redo.peek == peek.identity { self.peekRedo = nil; redo.done(nil) }
+            if peek.parentPage.isClosed { self.promotePeek(peek, split: false, orphaned: true) }
         }
         peek.onPromote = { [weak self, weak peek] split in
             guard let self, let peek else { return }; self.promotePeek(peek, split: split)
@@ -161,6 +161,11 @@ extension BrowserWindowController {
 
     func wirePeekPresentation(_ peek: PeekController) {
         peek.view.adoptWindowTheme(rootView)
+        peek.onLeavingChange = { [weak self, weak peek] in
+            guard let self, let peek, self.activePeek === peek else { return }
+            self.requestNativeSelection()
+            if peek.isLeaving { self.handPeekFocusToParent(peek) }
+        }
         peek.view.onStep = { [weak self, weak peek] animated in
             guard let self, let peek, self.activePeek === peek else { return }
             self.syncPeekStepBack(animated: animated)
@@ -365,16 +370,7 @@ extension BrowserWindowController {
             layoutPeeks(); updateNavigation(); requestNativeSelection()
             if let window, let binding {
                 focusReturn?.perform(in: window, ownerIsAvailable: {
-                    self.currentTabID == peek.parentTabID && self.activePeek == nil
-                        && self.browsers[peek.parentTabID]?.nativePage === peek.parentPage
-                        && self.nativeBinding === binding && self.commandBar == nil
-                        && !self.closingTabIDs.contains(peek.parentTabID)
-                        && !self.modelRetirementIDs.contains(peek.parentTabID)
-                        && !self.peekRetirementParents.contains(peek.parentTabID)
-                        && !self.store.retiringTabIDs.contains(peek.parentTabID)
-                        && !self.transferringTabIDs.contains(peek.parentTabID)
-                        && !self.isClosing && !self.wholeWindowClose && !self.windowClosePending
-                        && PCNativeBrowserApplication.canUseWindowUndo(in: window)
+                    self.activePeek == nil && self.parentCanTakeFocus(from: peek, binding: binding, window: window)
                 }) { _ in _ = binding.requestFocus(for: peek.parentPage) }
             }
             if archive != nil, let next = queuedArchivePreview {
@@ -384,6 +380,36 @@ extension BrowserWindowController {
                     self.previewArchivedItem(next.id, profileID: next.profileID)
                 }
             }
+        }
+    }
+
+    private func parentCanTakeFocus(from peek: PeekController, binding: PCNativeBrowserWindow, window: NSWindow) -> Bool {
+        currentTabID == peek.parentTabID
+            && browsers[peek.parentTabID]?.nativePage === peek.parentPage
+            && nativeBinding === binding && commandBar == nil
+            && !closingTabIDs.contains(peek.parentTabID)
+            && !modelRetirementIDs.contains(peek.parentTabID)
+            && !peekRetirementParents.contains(peek.parentTabID)
+            && !store.retiringTabIDs.contains(peek.parentTabID)
+            && !transferringTabIDs.contains(peek.parentTabID)
+            && !isClosing && !wholeWindowClose && !windowClosePending
+            && PCNativeBrowserApplication.canUseWindowUndo(in: window)
+    }
+
+    private func handPeekFocusToParent(_ peek: PeekController) {
+        guard let window, let binding = nativeBinding else { return }
+        peek.lendFocus(in: window) {
+            self.activePeek === peek && self.selectedNativePage() === peek.parentPage
+                && self.parentCanTakeFocus(from: peek, binding: binding, window: window)
+                && binding.requestFocus(for: peek.parentPage)
+        }
+    }
+
+    func noteRetiringPeekParents(from old: Set<UUID>) {
+        let changed = old.symmetricDifference(peekRetirementParents)
+        guard !changed.isEmpty else { return }
+        for peek in Array(peeks.values) where changed.contains(peek.parentTabID) {
+            peek.parentClosingChanged(peekRetirementParents.contains(peek.parentTabID))
         }
     }
 
@@ -424,7 +450,8 @@ extension BrowserWindowController {
 
     func promotePeek(_ peek: PeekController, split: Bool, orphaned: Bool = false) {
         if peek.returnsPage { if tabPeeks.current?.shownController === peek, !orphaned { promoteTabPeek(split: split) }; return }
-        guard peeks[peek.page.identifier] === peek, !peek.page.isClosed, !peek.closePending,
+        guard peeks[peek.page.identifier] === peek, !peek.page.isClosed,
+              !peek.closePending || (orphaned && peek.waitsForParent),
               !isClosing, !wholeWindowClose, !promotingPeek,
               !split || peek.canSplit?() == true,
               let binding = nativeBinding else { return }

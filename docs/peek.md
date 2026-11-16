@@ -47,27 +47,44 @@ Every close Parc starts fades. A swipe slides the card on at its release speed
 while it fades over 0.22 seconds; Escape, a click outside, Close and Close Tab
 fade the card and wash together over 0.2 seconds. The page's genuine
 `requestClose` runs once the card is invisible, so a close starts about 0.2
-seconds after the request; meanwhile clicks pass through to the parent. If the
-page then asks "Leave site?", the card comes back under the question (a swiped
-card springs back, a faded one fades in), and a refusal without a question
-brings it back too; after Leave the card goes with the page, without a second
-fade. A page that closes itself, or a Peek closed while hidden, goes at once.
-During a call, a swipe past halfway springs the card back beside the red Hang
-up confirmation. Reduce Motion replaces the slide and springs with 0.15-second
-fades, and the drag dims the card instead of moving it. A new swipe can't grab
-the card until it has settled.
+seconds after the request. As the card starts to go, the parent becomes the
+window's selected page and, if the keyboard was in the Peek, takes it through
+the usual focus return, so clicks, typing and page commands reach the parent
+rather than the leaving page; when the parent can't take the keyboard, the
+leaving page still lets go of it. If the page then asks "Leave site?", the card
+comes back under the question (a swiped card springs back, a faded one fades
+in), and a refusal without a question brings it back too, each time with the
+selection and the keyboard; after Leave the card goes with the page, without a
+second fade. A page that closes itself, or a Peek closed while hidden, goes at
+once. During a call, a swipe past halfway springs the card back beside the red
+Hang up confirmation. Reduce Motion replaces the slide and springs with
+0.15-second fades, and the drag dims the card instead of moving it. A new swipe
+can't grab the card until it has settled.
 
-`PeekCloseTransition` orders the drag, exit, close request, refusal and sheet
-spring-back, and its exit timers are generation-checked. Hiding a Peek mid-exit
-for a tab or Space switch hides it at once and requests the close without
-waiting, and a retiring Peek goes invisible before its view is removed, so no
-fading card lingers over a newer Peek or tab and nothing flashes.
-`PeekDismissalMotion` is the pure spring, slide and fade model, and
-`PeekDismissalAnimator` applies it to any card stage and wash view for reuse by
-other Peek hosts; the host sets its geometry and resting wash and leaves the
+If the parent tab starts closing during the fade, the Peek's close joins the
+tab's: the card stays gone, through any "Leave site?" question the tab's close
+asks, and the page closes with the tab, with no return flash and no second close
+request. Should the tab stay open, the Peek's own close carries on, unless a
+question came up meanwhile, which counts as a refusal (the card comes back) so
+nobody is asked twice. If only the parent page closes, on its own, the waiting
+Peek becomes a Today tab as orphans do, and so does a Peek whose close is refused
+after its parent has gone. Open in Peek hands the keyboard over in the same way;
+its page goes back to its tab rather than closing, and a failed hand-back brings
+the card, the selection and the keyboard back as a refusal does.
+
+`PeekCloseTransition` orders the drag, exit, close request, refusal, sheet
+spring-back and the wait for a closing parent tab, and its exit timers are
+generation-checked. Its leaving state drives the selection and keyboard
+handover. Hiding a Peek mid-exit for a tab or Space switch hides it at once and
+requests the close without waiting, and a retiring Peek goes invisible before
+its view is removed, so no fading card lingers over a newer Peek or tab and
+nothing flashes. `PeekDismissalMotion` is the pure spring, slide and fade model,
+and `PeekDismissalAnimator` applies it to any card stage and wash view for reuse
+by other Peek hosts; the host sets its geometry and resting wash and leaves the
 stage's transform and opacity to it. `python3 tests/PeekSwipeDismissal/check.py`
 checks `PeekCloseTransition` and `PeekDismissalMotion` with the real recognizer
-and confirmation rules, plus the controller's close wiring.
+and confirmation rules, including the keyboard handover and the wait for a
+closing tab, plus the controller and window wiring.
 
 ## Promotion return ownership
 
@@ -103,8 +120,8 @@ its saved history, and moved into the card as soon as the engine hands it over.
 
 Closing it (Escape, a click outside, a swipe, Close or Close Tab) plays the
 usual close and then hands the page back to its tab, still loaded. The page is
-never asked to close, so there is no beforeunload; you stay on your page and
-focus returns to it. The Escape confirmation still applies, and during a call
+never asked to close, so there is no beforeunload; you stay on your page, which
+takes the keyboard as the card starts to go. The Escape confirmation still applies, and during a call
 the pill reads Close rather than Hang up, since the call carries on in its tab.
 Opening the tab normally (clicking it in the sidebar, Expand, Open in [Space],
 the tab switcher, its Mini Player or the page going fullscreen) moves the page
@@ -187,11 +204,13 @@ attached, visible page. The app must be active/key and free of sheets, security
 reservations or menus. Requesting focus does not select/activate the window or
 prove actual renderer focus.
 
-One-use weak return tokens protect asynchronous presentation. Refused close keeps
-the original control/editor; actual dismissal returns to the surviving parent;
-promotion returns to the same child after reparenting. Any newer concrete responder
-permanently cancels return. Temporary nil/window focus during teardown still needs
-fresh original-owner checks. Native traversal remains intact.
+One-use weak return tokens protect asynchronous presentation. A close lends the
+keyboard to the surviving parent as the card starts leaving; a refusal brings it
+back to the original control/editor, and actual dismissal leaves it with the
+parent; promotion returns to the same child after reparenting. Any newer
+concrete responder permanently cancels return. Temporary nil/window focus during
+teardown still needs fresh original-owner checks. Native traversal remains
+intact.
 
 ## Presentation and remaining scope
 

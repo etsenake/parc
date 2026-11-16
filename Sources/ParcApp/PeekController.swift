@@ -21,6 +21,8 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     private var exitTimer: Timer?
     private var sheetObserver: NSObjectProtocol?
     private var closeInFlight = false
+    private var announcedLeaving = false
+    private var parentNotice = 0
     private var finished = false
     private(set) var closePending = false
     private var lastPresentedFingerprint: String?
@@ -29,6 +31,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     var onClose: (() -> Void)?
     var onCloseRefused: (() -> Void)?
     var onReturn: (() -> Void)?
+    var onLeavingChange: (() -> Void)?
     var onPromote: ((Bool) -> Void)?
     var onUpdate: (() -> Void)?
     var onMediaChange: (() -> Void)?
@@ -131,6 +134,9 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         requestDismiss(.escape(prefersConfirmation: prefersConfirmation))
     }
 
+    var isLeaving: Bool { closeTransition.isLeaving }
+    var waitsForParent: Bool { closeTransition.waitsForParent }
+
     var canSwipeDismiss: Bool {
         guard let window = view.window else { return false }
         return !finished && !closePending && !view.isHidden && window.attachedSheet == nil
@@ -175,6 +181,11 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
                 RunLoop.main.add(timer, forMode: .common)
                 exitTimer = timer
             case .requestClose: requestPageClose()
+            case .cancelClose:
+                if !page.isClosed {
+                    dismissedURL = nil; dismissedNavigationState = nil
+                    refuseClose()
+                }
             case .vanish:
                 view.passesInput = true
                 view.vanish()
@@ -185,6 +196,10 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
                 view.passesInput = false
                 view.settleSwipe()
             }
+        }
+        if !finished, closeTransition.isLeaving != announcedLeaving {
+            announcedLeaving = closeTransition.isLeaving
+            onLeavingChange?()
         }
     }
 
@@ -243,6 +258,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
             if let onReturn { onReturn() } else { refuseClose() }
             return
         }
+        if closeTransition.holdForParent() { return }
         closeInFlight = true
         browser.requestClose { [weak self] result in
             guard let self, !self.finished else { return }
@@ -251,7 +267,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
                 self.closePending = false
                 self.stopObservingSheets()
                 self.onClose?()
-            } else {
+            } else if !self.closeTransition.holdForParent() {
                 self.dismissedURL = nil; self.dismissedNavigationState = nil
                 self.refuseClose()
             }
@@ -283,6 +299,17 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         return view.exit(.fade, velocity: 0)
     }
 
+    func parentClosingChanged(_ closing: Bool) {
+        guard !finished else { return }
+        parentNotice += 1
+        if closing { _ = closeTransition.parentClosingChanged(true); return }
+        let notice = parentNotice
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.finished, self.parentNotice == notice else { return }
+            self.apply(self.closeTransition.parentClosingChanged(false))
+        }
+    }
+
     private func observeSheets() {
         guard sheetObserver == nil, let window = view.window else { return }
         sheetObserver = NotificationCenter.default.addObserver(forName: NSWindow.willBeginSheetNotification, object: window,
@@ -297,6 +324,10 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     private func stopObservingSheets() {
         if let sheetObserver { NotificationCenter.default.removeObserver(sheetObserver) }
         sheetObserver = nil
+    }
+
+    func lendFocus(in window: NSWindow, to target: () -> Bool) {
+        closeFocusReturn?.lend(in: window, to: target)
     }
 
     func takeFocusReturn() -> PeekFocusReturn? {
@@ -416,7 +447,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         view.settleMotion(); view.removeFromSuperview()
         if browser.delegate === self { browser.delegate = nil }
         failure.pageView = nil
-        onClose = nil; onCloseRefused = nil; onReturn = nil; onPromote = nil; onUpdate = nil; onMediaChange = nil; onContextImage = nil; onMotionPreference = nil; canInteract = nil; canSplit = nil; canExpand = nil
+        onClose = nil; onCloseRefused = nil; onReturn = nil; onLeavingChange = nil; onPromote = nil; onUpdate = nil; onMediaChange = nil; onContextImage = nil; onMotionPreference = nil; canInteract = nil; canSplit = nil; canExpand = nil
     }
 
     private func installSwipeMonitor() {

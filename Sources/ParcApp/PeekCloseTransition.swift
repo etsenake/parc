@@ -15,6 +15,7 @@ struct PeekCloseTransition: Equatable {
         case springBack(velocity: Double)
         case exit(Exit, from: Double, velocity: Double, generation: Int)
         case requestClose
+        case cancelClose
         case vanish
         case reappear
         case settle
@@ -24,7 +25,12 @@ struct PeekCloseTransition: Equatable {
     private(set) var fraction = 0.0
     private(set) var cardHidden = false
     private(set) var generation = 0
+    private(set) var parentClosing = false
+    private(set) var waitsForParent = false
+    private var asked = false
     private var velocity = 0.0
+
+    var isLeaving: Bool { phase == .exiting || (phase == .closing && cardHidden) }
 
     mutating func beginDrag() -> Bool {
         guard phase == .resting, !cardHidden else { return false }
@@ -67,6 +73,8 @@ struct PeekCloseTransition: Equatable {
         let from = dragged ? fraction : 0, speed = dragged ? velocity : 0
         fraction = 0
         velocity = 0
+        asked = false
+        waitsForParent = false
         guard visible else {
             phase = .closing
             return dragged ? [.settle, .requestClose] : [.requestClose]
@@ -100,7 +108,8 @@ struct PeekCloseTransition: Equatable {
     }
 
     mutating func sheetBegan(visible: Bool) -> [Effect] {
-        guard phase == .closing, cardHidden, visible else { return [] }
+        if phase == .exiting || phase == .closing { asked = true }
+        guard phase == .closing, cardHidden, visible, !waitsForParent else { return [] }
         cardHidden = false
         return [.reappear]
     }
@@ -108,15 +117,34 @@ struct PeekCloseTransition: Equatable {
     mutating func refused(visible: Bool) -> [Effect] {
         guard phase == .closing else { return [] }
         phase = .resting
+        asked = false
+        waitsForParent = false
         guard cardHidden else { return [] }
         cardHidden = false
         return [visible ? .reappear : .settle]
+    }
+
+    mutating func holdForParent() -> Bool {
+        guard parentClosing, phase == .closing else { return false }
+        waitsForParent = true
+        return true
+    }
+
+    mutating func parentClosingChanged(_ closing: Bool) -> [Effect] {
+        guard closing != parentClosing else { return [] }
+        parentClosing = closing
+        guard !closing, waitsForParent, phase == .closing else { return [] }
+        waitsForParent = false
+        let wasAsked = asked
+        asked = false
+        return [wasAsked ? .cancelClose : .requestClose]
     }
 
     mutating func finish() -> [Effect] {
         guard phase != .finished else { return [] }
         let moved = phase != .resting || cardHidden
         phase = .finished
+        waitsForParent = false
         fraction = 0
         velocity = 0
         return moved ? [.vanish] : []
