@@ -32,6 +32,10 @@ or, with Reduce Motion on, only fade.
 | Floating ↔ hidden | Spring with 0.18-second response and 0.8 damping ratio |
 | Library width | 0.2-second cubic with the same control points |
 
+With Reduce Motion on, presentation and Library width changes apply at once
+without a group, and turning it on mid-transition settles both at their
+destination.
+
 A transition has three passes:
 
 1. Prepare presentation, floating surface and pointer tracking at the old

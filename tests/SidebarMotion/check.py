@@ -42,8 +42,14 @@ for use in ("        libraryView = view\n        libraryContentWidth = view.cont
             "        layoutChrome()\n",
             "        if sidebarMotionLayoutKey != layoutKey {\n"
             "            sidebarPreviews?.dismiss()\n"
-            "            if libraryMotion.isAnimating {\n"
-            "                libraryMotion.cancel(); pageHost.needsLayout = true; extensionSidePanel.needsLayout = true\n",
+            "            settleLibraryMotion()\n",
+            "    func settleLibraryMotion() {\n"
+            "        guard libraryMotion.isAnimating else { return }\n"
+            "        libraryMotion.cancel(); pageHost.needsLayout = true; extensionSidePanel.needsLayout = true\n",
+            "                guard let self, NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }\n"
+            "                self.settleSidebarMotion()\n"
+            "                self.settleLibraryMotion()\n"
+            "                self.layoutChrome()\n",
             "        settleSidebarMotion()\n        libraryMotion.cancel()\n",
             "libraryMotion.cancel(); libraryView?.removeFromSuperview(); libraryView = nil; libraryContentWidth = 0; ",
             "        sidebar.frame = sidebarContainer.bounds\n        libraryView?.frame = frames.library\n",
@@ -54,7 +60,7 @@ assert controller.index("libraryContentWidth = view.contentWidth") < controller.
     "the Library opens at its page's width without a group"
 setter = controller[controller.index("func setLibraryContentWidth("):controller.index("func openLibraryURLs(")]
 for use in ("guard libraryContentWidth != width else { return }",
-            "guard let libraryView, window?.isVisible == true, window?.isMiniaturized != true, !rootView.inLiveResize else {\n"
+            "guard let libraryView, SidebarMotionController.animatesLibraryWidth(in: window, layoutRoot: rootView) else {\n"
             "            libraryMotion.cancel(); layoutChrome(); return\n",
             "sidebarChromePass = .geometry\n"
             "        libraryMotion.animate(layoutRoot: rootView,\n"
@@ -65,7 +71,10 @@ for use in ("guard libraryContentWidth != width else { return }",
             "self.pageHost.needsLayout = true\n            self.extensionSidePanel.needsLayout = true\n            self.layoutChrome()",
             "sidebarChromePass = .full\n"):
     assert use in setter, f"setLibraryContentWidth no longer follows the expected width animation: {use}"
-assert "accessibilityDisplayShouldReduceMotion" not in setter, "the Library width group reads no Reduce Motion"
+assert ("    static func animatesLibraryWidth(in window: NSWindow?, layoutRoot: NSView) -> Bool {\n"
+        "        window?.isVisible == true && window?.isMiniaturized != true && !layoutRoot.inLiveResize\n"
+        "            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion\n") in motion, \
+    "a hidden, minimized or live-resizing window or Reduce Motion applies a Library width at once"
 shutdown = controller[controller.index("    func shutdownBrowsers() {"):controller.index("    func windowWillClose(")]
 assert "        settleSidebarMotion()\n        libraryMotion.cancel()\n" in shutdown, \
     "window disposal settles the Library width group with the sidebar's"

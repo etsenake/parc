@@ -150,6 +150,24 @@ import AppKit
         library.show(.spaces)
         check(reports.count == returned, "choosing the shown page again reports nothing")
         library.onContentWidthChange = nil
+
+        SystemOverrides.install()
+        defer { SystemOverrides.reduceMotion = nil }
+        let host = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: window.width, height: window.height), styleMask: [.borderless],
+                            backing: .buffered, defer: false)
+        host.isReleasedWhenClosed = false
+        let root = NSView(frame: window)
+        host.contentView = root
+        func animates() -> Bool { SidebarMotionController.animatesLibraryWidth(in: host, layoutRoot: root) }
+        SystemOverrides.reduceMotion = false
+        check(!animates(), "a window that isn't on screen applies a new Library width at once")
+        host.orderFront(nil)
+        check(host.isVisible && animates(), "with Reduce Motion off an on-screen window slides to a new Library width")
+        SystemOverrides.reduceMotion = true
+        check(!animates(), "with Reduce Motion on every Library width change applies at once")
+        SystemOverrides.reduceMotion = false
+        check(animates(), "turning Reduce Motion back off lets the Library width slide again")
+        host.orderOut(nil)
         print("LibraryWidth: \(count) assertions passed")
     }
 }

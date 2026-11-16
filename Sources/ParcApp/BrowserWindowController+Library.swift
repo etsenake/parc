@@ -141,7 +141,7 @@ extension BrowserWindowController {
     func setLibraryContentWidth(_ width: CGFloat) {
         guard libraryContentWidth != width else { return }
         libraryContentWidth = width
-        guard let libraryView, window?.isVisible == true, window?.isMiniaturized != true, !rootView.inLiveResize else {
+        guard let libraryView, SidebarMotionController.animatesLibraryWidth(in: window, layoutRoot: rootView) else {
             libraryMotion.cancel(); layoutChrome(); return
         }
         sidebarChromePass = .geometry
@@ -156,6 +156,10 @@ extension BrowserWindowController {
             self.layoutChrome()
         }
         sidebarChromePass = .full
+    }
+    func settleLibraryMotion() {
+        guard libraryMotion.isAnimating else { return }
+        libraryMotion.cancel(); pageHost.needsLayout = true; extensionSidePanel.needsLayout = true
     }
 
     func openLibraryURLs(_ inputs: [String], profileID: UUID) {

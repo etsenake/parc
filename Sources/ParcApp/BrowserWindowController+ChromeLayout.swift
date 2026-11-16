@@ -37,9 +37,7 @@ extension BrowserWindowController {
             extensionSidePanelVisible ? 1 : 0]
         if sidebarMotionLayoutKey != layoutKey {
             sidebarPreviews?.dismiss()
-            if libraryMotion.isAnimating {
-                libraryMotion.cancel(); pageHost.needsLayout = true; extensionSidePanel.needsLayout = true
-            }
+            settleLibraryMotion()
             if !preparingSidebarMotion, sidebarMotion.isAnimating {
                 settleSidebarMotion()
             }

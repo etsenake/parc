@@ -873,6 +873,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             MainActor.assumeIsolated {
                 guard let self, NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
                 self.settleSidebarMotion()
+                self.settleLibraryMotion()
                 self.layoutChrome()
             }
         }

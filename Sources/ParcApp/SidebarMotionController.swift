@@ -89,6 +89,11 @@ final class SidebarMotionController {
         for item in animations { item.removeIfCurrent() }
     }
 
+    static func animatesLibraryWidth(in window: NSWindow?, layoutRoot: NSView) -> Bool {
+        window?.isVisible == true && window?.isMiniaturized != true && !layoutRoot.inLiveResize
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
     static func shouldFlushPreviousLayout(of layoutRoot: NSView) -> Bool {
         subtreeNeedsLayout(layoutRoot) || subtreeHasUncommittedGeometry(layoutRoot)
     }
