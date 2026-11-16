@@ -6,7 +6,7 @@ extension BrowserWindowController {
                      ignoringCommandBar: Bool = false) -> Bool {
         windowAdmitsPeek(browser, overLibrary: overLibrary, ignoringCommandBar: ignoringCommandBar) && !page.isClosed
             && PCNativeBrowserApplication.owner(of: page) === browser
-            && !peeks.values.contains { $0.parentPage === page }
+            && !peeks.values.contains { $0.parentPage === page } && tabPeeks.current == nil
     }
 
     func windowAdmitsPeek(_ browser: PCNativeBrowserWindow, overLibrary: Bool = false,
@@ -148,6 +148,7 @@ extension BrowserWindowController {
             peek.setVisible(visible)
             peek.view.layoutSubtreeIfNeeded()
         }
+        reconcileTabPeek()
     }
 
     private func recordClosedPeek(_ peek: PeekController, url: URL) {
@@ -391,6 +392,7 @@ extension BrowserWindowController {
     }
 
     func promotePeek(_ peek: PeekController, split: Bool, orphaned: Bool = false) {
+        if peek.returnsPage { if tabPeeks.current?.shownController === peek, !orphaned { promoteTabPeek(split: split) }; return }
         guard peeks[peek.page.identifier] === peek, !peek.page.isClosed, !peek.closePending,
               !isClosing, !wholeWindowClose, !promotingPeek,
               !split || peek.canSplit?() == true,

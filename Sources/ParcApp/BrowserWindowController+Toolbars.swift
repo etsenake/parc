@@ -342,7 +342,7 @@ extension BrowserWindowController {
             }
         }
         refreshSplitPaneHighlights()
-        for peek in peeks.values {
+        for peek in presentedPeeks {
             configureDeveloperToolbar(peek.view.developerToolbar, browser: peek.browser,
                 visible: activePeek === peek)
             configureBrowserToolbar(peek.view.browserToolbar, browser: peek.browser,

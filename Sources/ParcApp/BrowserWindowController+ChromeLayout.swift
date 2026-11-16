@@ -360,7 +360,7 @@ extension BrowserWindowController {
         pageHost.layoutSubtreeIfNeeded()
         layoutFrameCrank(frames)
         refreshLoadingIndicators()
-        for peek in peeks.values { peek.view.frame = pageHost.bounds; peek.view.layoutSubtreeIfNeeded() }
+        for peek in presentedPeeks { peek.view.frame = pageHost.bounds; peek.view.layoutSubtreeIfNeeded() }
         layoutFindBar()
     }
 

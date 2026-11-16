@@ -178,6 +178,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var tabHistoryChanged = Set<UUID>()
     var cookieFlush: DispatchWorkItem?
     var peeks: [String: PeekController] = [:] { didSet { noteReturnGate() } }
+    let tabPeeks = TabPeekSlot()
     var archivePreviewRequest: (parent: String, lease: ArchivePreviewLease, token: UUID)?
     var archivePreviews: [UUID: ArchivePreviewLease] = [:]
     var queuedArchivePreview: (id: UUID, profileID: UUID)?
@@ -191,7 +192,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return peek(over: id)
     }
     func peek(over id: UUID) -> PeekController? {
-        peeks.values.first { $0.parentTabID == id && !$0.page.isClosed
+        if let held = tabPeeks.current?.shownController, held.parentTabID == id, !held.page.isClosed,
+           browsers[id]?.nativePage === held.parentPage { return held }
+        return peeks.values.first { $0.parentTabID == id && !$0.page.isClosed
             && browsers[id]?.nativePage === $0.parentPage }
     }
     var browserProfiles: [UUID: UUID] = [:]
@@ -543,7 +546,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         var shown = Set(renderedPaneIDs).union(selectedTabIDs)
         if let pending = pendingNativeSelection?.tabID { shown.insert(pending) }
         for (id, browser) in browsers where !shown.contains(id) && !closingTabIDs.contains(id)
-            && !transferringTabIDs.contains(id) && !peeks.values.contains(where: { $0.parentTabID == id }) {
+            && !transferringTabIDs.contains(id) && !peeks.values.contains(where: { $0.parentTabID == id })
+            && tabPeeks.current?.tabID != id {
             guard let tab = store.state.tab(id), tab.lastAccessed < cutoff,
                   let page = browser.nativePage, !page.isClosed,
                   page.responds(to: #selector(PCNativePage.discardIfIdle)) else { continue }
@@ -566,6 +570,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let pending = pendingNativeSelection?.tabID { protected.insert(pending) }
         protected.formUnion(transferringTabIDs)
         protected.formUnion(peeks.values.map(\.parentTabID))
+        if let held = tabPeeks.current { protected.formUnion([held.tabID, held.parentTabID]) }
         for (id, browser) in browsers {
             let state = browser.automaticArchiveProtectionState
             if state != .eligible { protected.insert(id) }
@@ -754,7 +759,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self?.sidebarResizeRegion.color = palette.foregroundPrimary
             self?.loadingIndicator.appearance = palette.contentAppearance
             if let self {
-                for peek in self.peeks.values { peek.view.adoptWindowTheme(self.rootView) }
+                for peek in self.presentedPeeks { peek.view.adoptWindowTheme(self.rootView) }
                 self.shortcutHint?.update(theme: self.rootView.theme, basicBackground: self.windowBasicBackground)
                 self.toasts.update(theme: self.rootView.theme)
                 self.commandBar?.theme = self.rootView.paletteTheme
@@ -1049,7 +1054,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, isPeekPage page: PCNativePage) -> Bool {
-        browser === nativeBinding && peeks[page.identifier]?.page === page
+        browser === nativeBinding && presentedPeek(for: page)?.page === page
     }
 
     private func linkClickPaneID(showing page: PCNativePage) -> UUID? {
@@ -1214,7 +1219,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, canHandlePeekEscapeFrom page: PCNativePage) -> Bool {
         guard browser === nativeBinding, let peek = activePeek,
-              peek.page === page, peeks[page.identifier] === peek,
+              peek.page === page, presentedPeek(for: page) === peek,
               selectedNativePage() === page, PCNativeBrowserApplication.owner(of: page) === browser,
               browser.window === window, commandBar == nil, libraryView == nil,
               findHost.isHidden, pageCapture == nil, nativeFullscreenTabID == nil,
@@ -1424,6 +1429,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if selectedNativePage() !== page { browser.synchronizeSelectionAndLayout() }
             return
         }
+        if browser === nativeBinding, handleTabPeekSelection(page, browser: browser) { return }
         if browser === nativeBinding, let peek = peeks[page.identifier], !page.isClosed {
             if undoHiddenPeek == peek.identity {
                 undoHiddenPeek = nil
@@ -1494,6 +1500,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func nativeBrowser(_ browser: PCNativeBrowserWindow, setTabFullscreenPage page: PCNativePage?) -> Bool {
         guard browser === nativeBinding, !wholeWindowClose, !isClosing else { return false }
         guard let page else { restoreNativeFullscreenPresentation(); render(store.state); return true }
+        if tabPeekHolds(page), !promoteTabPeekForFullscreen(page) { return false }
         if let peek = peeks[page.identifier] {
             guard activePeek === peek else { return false }
             promotePeek(peek, split: false)

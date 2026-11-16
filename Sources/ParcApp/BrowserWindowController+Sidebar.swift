@@ -13,7 +13,8 @@ extension BrowserWindowController {
                 && self.sidebarPresentation != .hidden && !self.sidebarMotion.isAnimating && !self.isSidebarResizing
                 && self.commandBar == nil && self.themePopover == nil && !self.siteControlCenterDefers && self.tabSwitcher == nil
                 && self.transferringTabIDs.isEmpty && self.resolvingTransfers.isEmpty
-                && self.activePeek == nil && PCNativeBrowserApplication.canPresentTabSwitcher(in: window)
+                && (self.activePeek?.modalPhase ?? .presented) == .presented
+                && PCNativeBrowserApplication.canPresentTabSwitcher(in: window)
         }
         previews.source = { [weak self] target in self?.sidebarPreviewSource(target) }
         previews.onPresentationChange = { [weak self] in self?.refreshSidebarPointer() }
@@ -23,6 +24,11 @@ extension BrowserWindowController {
             self.settings?.showPreviewSettings()
         }
         previews.perform = { [weak self] source, row, action in self?.performSidebarPreview(source, row: row, action: action) }
+        previews.offers = { [weak self] source, row, action in
+            guard let self, action == .peek, let id = row.tabID, source.rows.contains(row),
+                  self.sidebarPreviewSource(source.target) == source else { return false }
+            return self.offersTabInPeek(id)
+        }
         previews.requestRecent = { [weak self] domain, profileID, completion in
             guard let self, self.activeProfileID == profileID, !self.isClosing else { return nil }
             let path = self.store.independentEngineProfilePath(for: profileID)
@@ -117,6 +123,7 @@ extension BrowserWindowController {
             case .duplicate:
                 guard !SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID).contains(where: { $0.tabIDs.contains(id) }) else { return }
                 _ = prepareSidebarDuplicate([.tab(id)])?()
+            case .peek: openTabInPeek(id)
             case .copyURL, .copyIssueID, .create: break
             }
         } else {
@@ -126,7 +133,7 @@ extension BrowserWindowController {
             switch action {
             case .create: guard row.url == domain.createURL else { return }
             case .activate: guard SidebarRecentDomain.matching(row.url) == domain else { return }
-            case .split, .duplicate, .archive, .copyURL, .copyIssueID: return
+            case .split, .duplicate, .archive, .copyURL, .copyIssueID, .peek: return
             }
             openRecentPreviewURL(row.url, from: sourceTab, activation: activation)
         }

@@ -69,6 +69,7 @@ extension BrowserWindowController {
         let selected = presentation.displayedTabIDs.compactMap { id in state.tab(id, where: { $0.archivedAt == nil }) }
         let displayed = nativeFullscreenTabID.map { id in selected.filter { $0.id == id } } ?? selected
         let displayedIDs = displayed.map(\.id)
+        reconcileTabPeek(displaying: displayedIDs)
         shownSinceArrival.formIntersection(returnableIDs)
         shownSinceArrival.formUnion(displayedIDs.filter { !placeholderIDs.contains($0) })
         heldReturns.formIntersection(returnableIDs); heldReturns.subtract(displayedIDs)
@@ -278,7 +279,7 @@ extension BrowserWindowController {
                 configureDocumentToolbar(pane, tabID: id, visible: topBar, leading: id == leading)
             }
         }
-        for peek in peeks.values {
+        for peek in presentedPeeks {
             configureDeveloperToolbar(peek.view.developerToolbar, browser: peek.browser,
                 visible: activePeek === peek)
             configureBrowserToolbar(peek.view.browserToolbar, browser: peek.browser,

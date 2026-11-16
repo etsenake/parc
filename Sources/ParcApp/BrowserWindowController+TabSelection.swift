@@ -136,7 +136,7 @@ extension BrowserWindowController {
         } else if let peek = activePeek {
             available = { [weak self, weak peek] in
                 guard let self, let peek else { return false }
-                return common() && self.activePeek === peek && self.peeks[peek.page.identifier] === peek
+                return common() && self.activePeek === peek && self.presentedPeek(for: peek.page) === peek
                     && self.selectedNativePage() === peek.page && peek.canPrepareExit
             }
             execute = { [weak peek] in

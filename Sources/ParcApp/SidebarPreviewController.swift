@@ -112,14 +112,14 @@ struct SidebarPreviewSource: Equatable {
 enum SidebarPreviewAction: Equatable {
     case activate(SidebarPreviewModifiers)
     case create(SidebarPreviewModifiers)
-    case split, duplicate, archive, copyURL
+    case split, duplicate, archive, copyURL, peek
     case copyIssueID(String)
 
     func activation(for row: SidebarPreviewRow) -> SidebarPreviewActivation? {
         switch self {
         case .activate(let modifiers): return row.tabID == nil ? .recentPage(modifiers) : .folderItem(modifiers)
         case .create(let modifiers): return .recentPage(modifiers)
-        case .split, .duplicate, .archive, .copyURL, .copyIssueID: return nil
+        case .split, .duplicate, .archive, .copyURL, .copyIssueID, .peek: return nil
         }
     }
 }
@@ -145,6 +145,7 @@ final class SidebarPreviewController {
     var source: ((SidebarPreviewTarget) -> SidebarPreviewSource?)?
     var permitted: (() -> Bool)?
     var perform: ((SidebarPreviewSource, SidebarPreviewRow, SidebarPreviewAction) -> Void)?
+    var offers: ((SidebarPreviewSource, SidebarPreviewRow, SidebarPreviewAction) -> Bool)?
     var requestRecent: ((SidebarRecentDomain, UUID, @escaping ([SidebarPreviewRow]) -> Void) -> (() -> Void)?)?
     var requestPicture: ((UUID, @escaping (NSImage?) -> Void) -> (() -> Void)?)?
     var favicon: ((URL, UUID, @escaping (NSImage?) -> Void) -> Void)?
@@ -415,6 +416,10 @@ final class SidebarPreviewController {
                 if action.activation(for: row)?.dismissesPreview != false { self.dismiss() }
                 self.perform?(value, row, action)
             }
+        }
+        card.offersPeek = { [weak self] row in
+            guard let self, let value = live() else { return false }
+            return self.offers?(value, row, .peek) == true
         }
         card.onEscape = { [weak self] in self?.dismiss() }
         card.onSettings = { [weak self] in self?.showSettings(token: token, live: live) }

@@ -176,6 +176,7 @@ extension BrowserWindowController {
     func transferTab(_ id: UUID, to destination: BrowserWindowController, placement: (() -> Bool)? = nil,
                      untargeted: Bool = false) -> Bool {
         if untargeted { failedDuringReturn = nil }
+        settleTabPeek(before: id)
         if untargeted, holdsEmptyClaim(id) {
             guard handOverEmptyClaim(id, to: destination) else { return false }
             if !destination.rendering { destination.render(destination.store.state) }

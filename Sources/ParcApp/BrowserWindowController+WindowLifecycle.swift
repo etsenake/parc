@@ -67,6 +67,7 @@ extension BrowserWindowController {
         stopLibraryFlyoutFileQuery()
         archiveActivityScheduling.cancel()
         for peek in peeks.values { peek.finish() }; peeks.removeAll()
+        retireTabPeeks()
         archivePreviews.values.forEach(store.releaseArchivePreview); archivePreviews.removeAll()
         if let request = archivePreviewRequest { store.releaseArchivePreview(request.lease) }
         archivePreviewRequest = nil; queuedArchivePreview = nil; archivePreviewRemnants.removeAll()

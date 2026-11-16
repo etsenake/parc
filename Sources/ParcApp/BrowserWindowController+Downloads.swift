@@ -283,7 +283,8 @@ extension BrowserWindowController {
 
     func browserView(_ view: PCBrowserView, addContextImageToEasel image: PCNativeContextImage) {
         let embedded = view.nativePage.flatMap { embeddedEaselOwner($0) }
-        guard !isPrivateBrowsing, let id = id(for: view) ?? peeks.values.first(where: { $0.browser === view })?.parentTabID ?? embedded?.0,
+        let held = activePeek.flatMap { $0.returnsPage && $0.browser === view ? $0.parentTabID : nil }
+        guard !isPrivateBrowsing, let id = held ?? id(for: view) ?? peeks.values.first(where: { $0.browser === view })?.parentTabID ?? embedded?.0,
               let profileID = browserProfiles[id] ?? easelEditors[id]?.profileID,
               profileID == activeProfileID, selectedTabIDs.contains(id),
               let window, window.attachedSheet == nil, easelImageDestination == nil, !isClosing, image.isValid,

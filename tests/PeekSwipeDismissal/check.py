@@ -24,7 +24,9 @@ peek = "Sources/ParcApp/PeekController.swift"
 require(body(peek, "    private func closeConfirmed("), "the confirmed close",
         present=("closeTransition.close(", "observeSheets()"), absent=("browser.requestClose",))
 require(body(peek, "    private func requestPageClose() {"), "the page close request",
-        present=("browser.requestClose", "closeTransition.refused(", "stopObservingSheets()"))
+        present=("browser.requestClose", "self.refuseClose()", "stopObservingSheets()", "onReturn()"))
+require(body(peek, "    func refuseClose() {"), "a refused close or return",
+        present=("closeTransition.refused(", "stopObservingSheets()", "onCloseRefused?()"))
 require(body(peek, "    private func observeSheets() {"), "the Leave site? watch",
         present=("NSWindow.willBeginSheetNotification", "closeTransition.sheetBegan("))
 require(body(peek, "    func commitSwipeDismissal() -> Bool {"), "the swipe commit",

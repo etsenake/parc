@@ -16,7 +16,8 @@ local favicon database. No network fetch or page snapshot is needed.
 
 A folder card lists and searches its descendants. Activating a row follows the
 modifier routes below through the normal original-tab selection, split, duplicate
-and reveal owners. Its context menu copies the URL, opens the original tab in
+and reveal owners. Its context menu copies the URL, shows the original tab's
+live page in a Peek ([Peek](peek.md#peeking-at-an-existing-tab)), opens it in
 Split View, duplicates it in the same folder, or archives it through shared
 retirement and real beforeunload handling. Recent rows route from the previewed
 tab in its original profile and Space. The folder search row keeps focus while
@@ -38,7 +39,9 @@ requirement. Re-hovering the row queries again.
 
 Selection, source navigation/removal, profile/Space changes, a missing anchor,
 sidebar motion, drag, outside click, window deactivation/closure, sheets and
-actual native security reservations cancel the session. MRU activation dismisses
+actual native security reservations cancel the session; a Peek that is closing or
+waiting for close confirmation does too, while a resting Peek leaves cards
+available. MRU activation dismisses
 the card and prevents another hover session until the switcher closes. Asynchronous favicon and
 history deliveries also check that session. Row rebuilds with the same original
 identity retain the card and move it without animation. Its hit region prevents
@@ -137,8 +140,9 @@ Library, fullscreen, an inserting split), the tab opens or is
 selected ordinarily. Ancestors are revealed by the sidebar's existing disclosure
 transaction. The duplicate is the sidebar's own Duplicate (copied live
 destination, adjacent placement, eager open); a tab inside a split group is not
-duplicated from the preview. A folder row's context menu contains Copy URL, Open in Split View, Duplicate and
-Archive, with no Open row. A recent row builds its menu from the real URL: a Linear ticket offers Copy Issue ID and
+duplicated from the preview. A folder row's context menu contains Copy URL, Open in
+Peek, Open in Split View, Duplicate and Archive, with no Open row; Open in Peek
+appears only when that tab can open in a Peek right then. A recent row builds its menu from the real URL: a Linear ticket offers Copy Issue ID and
 Copy Issue URL, a recognized Notion page has no menu, and any other page
 offers Copy URL.
 

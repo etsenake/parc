@@ -763,7 +763,7 @@ extension BrowserWindowController {
         PCNativeBrowserApplication.resolveSearchInput(input, profilePath: peek.page.profilePath, page: peek.page) { [weak self, weak peek] navigation, error in
             MainActor.assumeIsolated {
                 guard let self, let peek, self.activePeek === peek,
-                      self.peeks[peek.page.identifier] === peek, !peek.page.isClosed,
+                      self.presentedPeek(for: peek.page) === peek, !peek.page.isClosed,
                       self.inputRevisions[peek.identity] == revision, peek.browser.url == originalURL else { return }
                 self.inputRevisions.removeValue(forKey: peek.identity)
                 if let navigation { peek.browser.loadSearchNavigation(navigation) }

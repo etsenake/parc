@@ -4,6 +4,7 @@ import AppKit
 final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
     static let searchMiss = "No tabs matching that search\n🤔"
     var onAction: ((SidebarPreviewRow, SidebarPreviewAction) -> Void)?
+    var offersPeek: ((SidebarPreviewRow) -> Bool)?
     var onEscape: (() -> Void)?
     var onSettings: (() -> Void)?
     var onHeightChange: (() -> Void)?
@@ -198,6 +199,7 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     override func retire() {
         super.retire()
         onAction = nil; onEscape = nil; onSettings = nil; onHeightChange = nil; requestFavicon = nil
+        offersPeek = nil
         trackedMenu?.cancelTracking(); trackedMenu = nil
         table.isRetired = true
     }
@@ -275,6 +277,7 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
         }
         if value.tabID != nil {
             add("Copy URL", .copyURL)
+            if offersPeek?(value) == true { add("Open in Peek", .peek) }
             add("Open in Split View", .split)
             add("Duplicate", .duplicate)
             menu.addItem(.separator()); add("Archive", .archive)
