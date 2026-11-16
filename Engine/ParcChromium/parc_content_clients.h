@@ -1,7 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Chrome's content clients with the few Parc behaviours CEF used to carry:
-// the parc: scheme, CDM and Alerts helper routing, startup registrations and
-// the website-theme agent, plus Parc's FairPlay media service.
 #ifndef PARC_PARC_CONTENT_CLIENTS_H_
 #define PARC_PARC_CONTENT_CLIENTS_H_
 
@@ -34,11 +31,8 @@ class ParcContentBrowserClient final : public ChromeContentBrowserClient {
   explicit ParcContentBrowserClient(NativeApplication& application);
   ~ParcContentBrowserClient() override;
 
-  // The browser process's client, which outlives every page and window.
   static ParcContentBrowserClient& Get();
 
-  // The profile Chrome's startup loaded; set once browser startup reaches
-  // PostProfileInit.
   Profile* initial_profile() const { return initial_profile_; }
 
   std::unique_ptr<content::BrowserMainParts> CreateBrowserMainParts(
@@ -86,6 +80,7 @@ class ParcContentGpuClient final : public ChromeContentGpuClient {
 class ParcContentRendererClient final : public ChromeContentRendererClient {
  public:
   void RenderFrameCreated(content::RenderFrame* render_frame) override;
+  void RunScriptsAtDocumentEnd(content::RenderFrame* render_frame) override;
   std::unique_ptr<media::KeySystemSupportRegistration> GetSupportedKeySystems(
       content::RenderFrame* render_frame,
       media::GetSupportedKeySystemsCB cb) override;

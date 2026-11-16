@@ -59,6 +59,7 @@
 #include "parc/parc_bundle_mac.h"
 #include "parc/parc_branding.h"
 #include "parc/parc_chrome_urls.h"
+#include "parc/renderer/error_page_history.h"
 #include "parc/renderer/website_theme_agent.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 #include "third_party/blink/public/mojom/parc/picture_in_picture_captions.mojom.h"
@@ -320,6 +321,12 @@ void ParcContentRendererClient::RenderFrameCreated(
     content::RenderFrame* render_frame) {
   ChromeContentRendererClient::RenderFrameCreated(render_frame);
   new WebsiteThemeAgent(render_frame);
+}
+
+void ParcContentRendererClient::RunScriptsAtDocumentEnd(
+    content::RenderFrame* render_frame) {
+  TellErrorPageAboutHistory(render_frame);
+  ChromeContentRendererClient::RunScriptsAtDocumentEnd(render_frame);
 }
 
 std::unique_ptr<media::KeySystemSupportRegistration>

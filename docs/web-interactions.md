@@ -353,6 +353,9 @@ the resource-bundle delegates Parc already installs in every process
   Parc's drawing and words; any other code shows Chromium's own localized
   heading and summary in Parc's layout. Details shows Chromium's exact
   sentence, suggestions and links. Return presses the primary button.
+  Go back appears only when there is history behind the page: when the page
+  finishes parsing, Parc's renderer client tells it, so one with only forward
+  history offers Try again.
 - Offline pages replace the dinosaur with a toy: Space tosses a spark from the
   plug to the bobbing socket, three misses end a round, and the best score is
   kept in the Profile, where Chromium kept the dinosaur's. The

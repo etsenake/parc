@@ -92,6 +92,7 @@
   let detailsOpen = false;
   let online = false;
   let primaryAction = null;
+  let canGoBack = null;
 
   function parc(value) {
     return String(value == null ? '' : value).split('chrome://').join('parc://');
@@ -260,7 +261,7 @@
 
   function renderButtons(d, copy) {
     const reloadable = canReload(d);
-    const backable = window.history.length > 1;
+    const backable = canGoBack === null ? window.history.length > 1 : canGoBack;
     const reloadLabel = WORDS.reload;
     const actions = [];
     if (copy && copy.primary === 'back' && backable) {
@@ -578,6 +579,12 @@
       const pageController = controller();
       if (pageController) {
         pageController.portalSigninButtonClick();
+      }
+    },
+    parcSetCanGoBack(value) {
+      canGoBack = !!value;
+      if (data && !subframe) {
+        renderButtons(data, copyFor(data));
       }
     },
     updateInitialInstruction() {},

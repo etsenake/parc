@@ -90,6 +90,14 @@ NET_JOBS = [
                 calls(r, "net", "reloadButtonClick") == 1, "An extension blocked this page" in r["text"]]),
     ("extension", {"name": "extension-new-tab"}, [step(note("primary", text("#primary"))), step(note("secondary", shown("#secondary")))],
      lambda r: [r["extra"]["primary"] == "Try again", not r["extra"]["secondary"]]),
+    ("extension", {"name": "extension-forward-only", "history": True},
+     [step("parcSetCanGoBack(false)"), step(note("primary", text("#primary"))), step(note("secondary", shown("#secondary"))),
+      step(js_click("#primary"))],
+     lambda r: [r["extra"]["primary"] == "Try again", not r["extra"]["secondary"], r["backs"] == 0,
+                calls(r, "net", "reloadButtonClick") == 1]),
+    ("extension", {"name": "extension-can-go-back"},
+     [step("parcSetCanGoBack(true)"), step(note("primary", text("#primary"))), step(js_click("#primary"))],
+     lambda r: [r["extra"]["primary"] == "Go back", r["backs"] == 1]),
     ("admin", {"history": True}, [step(js_click("#details-button")), step(note("details", text("#details")))],
      lambda r: ["parc://policy" in r["extra"]["details"], "Your organization blocked this site" in r["text"]]),
     ("framed", {"subframe": True}, [step(note("frame", shown("#frame-error")))],
@@ -200,13 +208,18 @@ SHEET = [("net", "refused"), ("net", "offline"), ("net", "dns"), ("net", "timed-
          ("warning", "blocked-interception"), ("warning", "billing")]
 
 
+def page_for(pieces, kind, key):
+    if kind == "net":
+        return pages.net_error_page(pieces, fixtures.NET[key])
+    return pages.interstitial_page(pieces, fixtures.INTERSTITIALS[key])
+
+
 def build_jobs(out, pieces, sheet_dir):
     jobs, checks = [], {}
     for kind, specs in (("net", NET_JOBS), ("warning", INTERSTITIAL_JOBS)):
         for key, options, steps, check in specs:
             name = options.get("name", f"{kind}-{key}")
-            data = fixtures.NET[key] if kind == "net" else fixtures.INTERSTITIALS[key]
-            html = pages.net_error_page(pieces, data) if kind == "net" else pages.interstitial_page(pieces, data)
+            html = page_for(pieces, kind, key)
             path = out / f"{name}.html"
             path.write_text(html, encoding="utf-8")
             for dark in (False, True):
@@ -218,8 +231,7 @@ def build_jobs(out, pieces, sheet_dir):
     if sheet_dir:
         sheet_dir.mkdir(parents=True, exist_ok=True)
         for kind, key in SHEET:
-            data = fixtures.NET[key] if kind == "net" else fixtures.INTERSTITIALS[key]
-            html = pages.net_error_page(pieces, data) if kind == "net" else pages.interstitial_page(pieces, data)
+            html = page_for(pieces, kind, key)
             path = out / f"sheet-{kind}-{key}.html"
             path.write_text(html, encoding="utf-8")
             for dark in (False, True):

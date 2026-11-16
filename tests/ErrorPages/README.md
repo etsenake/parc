@@ -26,7 +26,9 @@ python3 tests/ErrorPages/check.py --sheet-dir build/tests/error-pages/sheet
 Each page must load without script errors or Trusted Types violations and must
 not show `chrome://`. The scripted checks cover Reload and Go back, Details,
 links that open Details, DNS-check updates, the offline toy and its high score,
-the back-online line, subframe errors, the fallback to Chromium's words. For warnings they cover Parc's words on every type, the steady Details
+the back-online line, subframe errors, the fallback to Chromium's words, and
+Go back appearing only when the renderer says there is history behind the
+page. For warnings they cover Parc's words on every type, the steady Details
 label, the primary and proceed commands, the proceed click delay, the typed
 bypass, reporting and certificate details. The generated C++ is also
 syntax-checked with the system compiler.

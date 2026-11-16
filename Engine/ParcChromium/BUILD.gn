@@ -33,16 +33,20 @@ mojom("mojom") {
 
 source_set("renderer") {
   sources = [
+    "renderer/error_page_history.cc",
+    "renderer/error_page_history.h",
     "renderer/website_theme_agent.cc",
     "renderer/website_theme_agent.h",
   ]
   deps = [
     ":mojom",
     "//base",
+    "//content/public/common",
     "//content/public/renderer",
     "//mojo/public/cpp/bindings",
     "//third_party/blink/public:blink",
     "//third_party/blink/public/common",
+    "//url",
   ]
 }
 

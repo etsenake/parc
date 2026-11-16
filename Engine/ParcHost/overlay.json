@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 774,
+  "version": 775,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -2069,7 +2069,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "906fcd20a62f471552a54d67dce38bb4ff0636b922ebe68ccdc010561c4e76b2"
+      "sha256": "08e5327fd08c9d6c83f44f41d270239118cd54fbb831cd988f09a787a62fb88b"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
@@ -2124,7 +2124,17 @@
     {
       "source": "Engine/ParcChromium/error_pages/neterror.js",
       "target": "parc/error_pages/neterror.js",
-      "sha256": "eab24fe53f831bbdb296dcf0da430770c51bea1083331ba3c6794f28b825d3ff"
+      "sha256": "fa3aecb268d31626d6c29b2cf755c948991683e555d93ab10e384bbe3717706d"
+    },
+    {
+      "source": "Engine/ParcRenderer/error_page_history.h",
+      "target": "parc/renderer/error_page_history.h",
+      "sha256": "8a0b5715c30f4b7ab97e13f03ba33b0f2bd17b2a1de4d29122bd2776a72d2b33"
+    },
+    {
+      "source": "Engine/ParcRenderer/error_page_history.cc",
+      "target": "parc/renderer/error_page_history.cc",
+      "sha256": "7d0efa6aeec6d403d899673f388727d622a1e1d9a5e119402be8a77e114f8c6d"
     },
     {
       "source": "Engine/ParcChromium/error_pages/art/barricade.svg",
@@ -2204,12 +2214,12 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.h",
       "target": "parc/parc_content_clients.h",
-      "sha256": "9b3ae16ab65f1572ad1f07dd342eeeacc46d59b16685acb39f3d89e3ce2eeac9"
+      "sha256": "123937e81ec2b48fdac7bb85c0368aebc2b81eba66f620a67e3e95722ce09232"
     },
     {
       "source": "Engine/ParcChromium/parc_content_clients.mm",
       "target": "parc/parc_content_clients.mm",
-      "sha256": "6cf4b8d841fd8cb7a9e329dbf7b807cca9d0e7267c4e70423fd35d16bed56e86"
+      "sha256": "05bb7b47ba803b60ab57eb1c84363741d18dc24fe1a663a27c6c73fb02c24be2"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",

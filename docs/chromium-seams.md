@@ -59,7 +59,8 @@ With CEF gone, Parc owns Chromium's embedder classes and uses them before anythi
   binders, WebPreferences recomputation, the WebAuthn request delegate, the video picture-in-picture
   window, the web-contents view delegate and internal URLs.
 - `ParcContentGpuClient` exposes the FairPlay media service. `ParcContentRendererClient` adds the
-  FairPlay key systems, the ALAC answer and Parc's renderer observers. `ParcContentClient` adds the
+  FairPlay key systems, the ALAC answer and Parc's renderer observers, and at document end tells a
+  network error page whether there is history to go back to. `ParcContentClient` adds the
   internal scheme and the FairPlay CDM entry.
 - `ParcBrowserMainExtraParts` installs the native file-dialog factory and the licence WebUI, and
   in `PreBrowserStart` replaces Chromium's What's New and internal-page directory controllers.
