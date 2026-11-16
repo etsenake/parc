@@ -175,6 +175,12 @@ final class BrowserImportCoordinator {
     static let arcBundleIdentifier = "company.thebrowser.Browser"
     static func isArc(_ source: PCNativeImportSource) -> Bool { source.identifier == arcBundleIdentifier }
     var isArcSource: Bool { source.map(Self.isArc) == true }
+    static func passwordExport(for source: PCNativeImportSource) -> BrowserPasswordExport? {
+        if isSafari(source) { return .safari }
+        return source.identifier == "org.mozilla.firefox" ? .firefox : nil
+    }
+    var passwordExport: BrowserPasswordExport? { source.flatMap(Self.passwordExport) }
+    var offersICloudPasswordChoice: Bool { supportsICloudPasswords && passwordExport == .safari }
 
     func discover(resumingSourceBundleID: String? = nil) {
         guard isCurrent else { return }
@@ -315,7 +321,7 @@ final class BrowserImportCoordinator {
 
     private func continueSetupAfterSafariAccess() {
         if hasImportableSelection { startInOriginalDestination(); return }
-        if source.map(Self.isSafari) == true {
+        if passwordExport != nil {
             let keepsChoice = keepsPasswordChoice
             beginImport(); keepsPasswordChoice = keepsChoice
             passwordDestination = originalDestination; passwordsWithoutData = true
@@ -373,7 +379,7 @@ final class BrowserImportCoordinator {
         let chosen = chosenProfiles
         if isArcSource { startArc(chosen); return }
         beginImport()
-        passwordDestination = source.map(Self.isSafari) == true ? originalDestination : nil
+        passwordDestination = passwordExport == nil ? nil : originalDestination
         queueProfiles(chosen, primaryDestination: originalDestination)
         importNext()
     }
@@ -655,11 +661,13 @@ final class BrowserImportCoordinator {
         guard !passwordStageOffered, let destination = passwordDestination,
               destination.isCurrent(in: store.state) else { return false }
         passwordStageOffered = true
-        stage = onboarding && supportsICloudPasswords ? .passwordChoice : .safariPasswords
+        stage = onboarding && offersICloudPasswordChoice ? .passwordChoice : .safariPasswords
         if !keepsPasswordChoice { wantsICloudPasswords = stage == .passwordChoice }
-        message = stage == .passwordChoice ? "Choose how to bring your Safari passwords with you." : "Import your exported Safari passwords."
+        message = stage == .passwordChoice ? "Choose how to bring your Safari passwords with you." : passwordFileMessage
         return true
     }
+
+    private var passwordFileMessage: String { "Import your exported \((passwordExport ?? .safari).browserName) passwords." }
 
     var canChoosePasswordMethod: Bool {
         stage == .passwordChoice && isCurrent && passwordDestination?.isCurrent(in: store.state) == true
@@ -678,7 +686,7 @@ final class BrowserImportCoordinator {
             passwordDestination = nil; stage = .finished; startDeferredBackground()
             message = "Your import has finished."
         } else {
-            stage = .safariPasswords; message = "Import your exported Safari passwords."
+            stage = .safariPasswords; message = passwordFileMessage
         }
         onChange?()
     }
@@ -695,7 +703,7 @@ final class BrowserImportCoordinator {
     func importPasswordFile(_ url: URL) {
         guard canImportPasswordFile, let destination = passwordDestination, let window else { return }
         guard url.isFileURL, url.pathExtension.lowercased() == "csv" else {
-            passwordError = "Choose the CSV file exported by Safari or Passwords."; onChange?(); return
+            passwordError = (passwordExport ?? .safari).wrongFileMessage; onChange?(); return
         }
         passwordSession?.cancel(); passwordResult = nil; passwordFileRemoved = false; passwordError = nil
         passwordFileName = url.lastPathComponent; importingPasswords = true
@@ -897,7 +905,7 @@ final class BrowserImportCoordinator {
             stage = .profiles; message = "Bring your browsing with you."
         case .bookmarks:
             park()
-        case .safariPasswords where supportsICloudPasswords:
+        case .safariPasswords where offersICloudPasswordChoice:
             keepsPasswordChoice = true; stage = .passwordChoice
         case .passwordChoice, .safariPasswords:
             keepsPasswordChoice = true
@@ -930,7 +938,7 @@ final class BrowserImportCoordinator {
     var setupBackReturnsToSource: Bool {
         switch stage {
         case .safariAccess: return false
-        case .safariPasswords where supportsICloudPasswords: return false
+        case .safariPasswords where offersICloudPasswordChoice: return false
         case .passwordChoice, .safariPasswords: return bookmarkPages.isEmpty
         default: return true
         }
@@ -1068,5 +1076,21 @@ enum ArcSidebarSnapshot {
             return (arc, values)
         }
         throw CocoaError(.fileReadUnknown, userInfo: [NSLocalizedDescriptionKey: "Arc kept changing its sidebar. Try again in a moment."])
+    }
+}
+
+enum BrowserPasswordExport: Equatable {
+    case safari, firefox
+    var browserName: String {
+        switch self {
+        case .safari: return "Safari"
+        case .firefox: return "Firefox"
+        }
+    }
+    var wrongFileMessage: String {
+        switch self {
+        case .safari: return "Choose the CSV file exported by Safari or Passwords."
+        case .firefox: return "Choose the passwords.csv file exported by Firefox."
+        }
     }
 }

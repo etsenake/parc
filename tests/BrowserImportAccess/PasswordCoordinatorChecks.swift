@@ -179,6 +179,7 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     closing.cancel(); PCNativeBrowserApplication.acceptsBrowserImport = false
     checks += onboardingImportOrderChecks(store: store, destination: destination, window: window, safari: safari)
     checks += setupAccessChecks(store: store, destination: destination, window: window, safari: safari, other: other)
+    checks += firefoxPasswordChecks(store: store, destination: destination, window: window)
     return checks
 }
 

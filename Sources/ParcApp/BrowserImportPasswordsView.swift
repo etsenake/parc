@@ -18,6 +18,7 @@ final class BrowserImportPasswordsView: NSView {
     private let dropTarget = OnboardingPasswordDropTarget(frame: .zero)
     private let instructions = (1...3).map { OnboardingPasswordInstructionRow(number: $0) }
     var usesSetupCard = false { didSet { configurePresentation() } }
+    var export: BrowserPasswordExport = .safari { didSet { if export != oldValue { configureInstructions() } } }
     override var isFlipped: Bool { true }
 
     override init(frame: NSRect) {
@@ -38,21 +39,35 @@ final class BrowserImportPasswordsView: NSView {
         dropTarget.onDrop = { [weak self] in self?.onDropFile?($0) }
         addSubview(dropTarget)
         instructions.forEach(addSubview)
-        if #available(macOS 15, *) {
-            instructions[0].configure([.text("Open Apple’s "), .menu("Passwords"), .text(" app and unlock it.")])
-            instructions[1].configure([.text("Choose "), .menu("File"), .separator,
-                                       .menu("Export All Passwords to File"), .text(".")])
-        } else {
-            instructions[0].configure([.text("Open "), .menu("Safari"), .separator, .menu("Settings"), .text(".")])
-            instructions[1].configure([.text("Unlock "), .menu("Passwords"), .text(", then choose "),
-                                       .menu("Export All Passwords"), .text(".")])
-        }
-        instructions[2].configure([.text("Upload your Passwords.csv file to Parc.")])
+        configureInstructions()
         configurePresentation()
-        setAccessibilityLabel("Import exported Safari passwords")
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     @objc private func continueClicked() { onContinue?() }
+    private func configureInstructions() {
+        switch export {
+        case .safari:
+            if #available(macOS 15, *) {
+                instructions[0].configure([.text("Open Apple’s "), .menu("Passwords"), .text(" app and unlock it.")])
+                instructions[1].configure([.text("Choose "), .menu("File"), .separator,
+                                           .menu("Export All Passwords to File"), .text(".")])
+            } else {
+                instructions[0].configure([.text("Open "), .menu("Safari"), .separator, .menu("Settings"), .text(".")])
+                instructions[1].configure([.text("Unlock "), .menu("Passwords"), .text(", then choose "),
+                                           .menu("Export All Passwords"), .text(".")])
+            }
+            instructions[2].configure([.text("Upload your Passwords.csv file to Parc.")])
+            detail.stringValue = "To manually import passwords from Safari, you’ll have to export them."
+        case .firefox:
+            instructions[0].configure([.text("In Firefox, open the "), .symbol("☰", spoken: "application"),
+                                       .text(" menu and choose "), .menu("Passwords"), .text(".")])
+            instructions[1].configure([.text("Choose "), .symbol("⋯", spoken: "the Passwords page menu"), .separator,
+                                       .menu("Export Passwords…"), .text(".")])
+            instructions[2].configure([.text("Upload your passwords.csv file to Parc.")])
+            detail.stringValue = "To use your Firefox passwords in Parc, you’ll have to export them from Firefox."
+        }
+        setAccessibilityLabel("Import exported \(export.browserName) passwords")
+    }
     private var ink: NSColor { usesSetupCard ? OnboardingSetupPalette.title : ParcDialogStyle.popoverTitle }
     private func configurePresentation() {
         title.isHidden = usesSetupCard; detail.isHidden = usesSetupCard; continueButton.isHidden = usesSetupCard
@@ -111,7 +126,7 @@ final class BrowserImportPasswordsView: NSView {
 }
 @MainActor
 final class OnboardingPasswordInstructionRow: NSView {
-    enum Fragment { case text(String), menu(String), separator }
+    enum Fragment { case text(String), menu(String), symbol(String, spoken: String), separator }
     private let number: Int
     private let label = NSTextField(wrappingLabelWithString: "")
     private var fragments: [Fragment] = []
@@ -139,6 +154,10 @@ final class OnboardingPasswordInstructionRow: NSView {
             switch fragment {
             case .text(let string): value = string; weight = .light
             case .menu(let string): value = string; weight = .semibold
+            case .symbol(let string, let words):
+                spoken += words
+                text.append(NSAttributedString(string: string, attributes: [.font: NSFont.systemFont(ofSize: 14, weight: .semibold)]))
+                continue
             case .separator:
                 spoken += ", "
                 let font = NSFont.systemFont(ofSize: 14, weight: .light)

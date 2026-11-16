@@ -40,6 +40,7 @@ final class BrowserImportViewController: NSViewController {
     var isSafariAccess: Bool { coordinator.stage == .safariAccess }
     var isSafariPasswords: Bool { coordinator.stage == .safariPasswords }
     var canShowPasswordHelp: Bool { !closed && isSafariPasswords && !coordinator.importingPasswords }
+    var passwordExport: BrowserPasswordExport { coordinator.passwordExport ?? .safari }
     var usesFullSetupColumn: Bool { isSafariAccess || isSafariPasswords }
     var setupAccessory: NSView? { isSafariAccess ? onboardingAccess?.actions : nil }
     var headingText: String { heading.stringValue }
@@ -399,9 +400,11 @@ final class BrowserImportViewController: NSViewController {
             updatePasswordChoice()
         case .safariPasswords:
             heading.stringValue = "Stay logged in"
-            detail.stringValue = (coordinator.supportsICloudPasswords
+            let export = passwordExport
+            passwordsView.export = export
+            detail.stringValue = (coordinator.offersICloudPasswordChoice
                 ? "To manually import passwords from Safari, you’ll have to export them."
-                : "To use your Safari passwords in Parc, you’ll have to export them from Safari.")
+                : "To use your \(export.browserName) passwords in Parc, you’ll have to export them from \(export.browserName).")
                 + "\n\nOnce imported, your passwords will be encrypted locally on your computer and they’ll never be stored on our servers or shared with anyone else."
             next.isHidden = !embedded
             next.title = coordinator.passwordResult == nil ? "Skip Passwords" : "Continue"
@@ -483,6 +486,7 @@ final class BrowserImportViewController: NSViewController {
             passwordHelp = help
             root.addSubview(help, positioned: .above, relativeTo: nil)
         }
+        help.export = passwordExport
         help.present()
         coverContent(help.isPresented)
     }

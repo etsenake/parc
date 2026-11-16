@@ -8,6 +8,10 @@ final class OnboardingPasswordHelp: NSView {
     private weak var previousResponder: NSResponder?
     var onDismiss: (() -> Void)?
     var isPresented: Bool { presentation.isPresented }
+    var export: BrowserPasswordExport {
+        get { presentation.export }
+        set { presentation.export = newValue }
+    }
     override var acceptsFirstResponder: Bool { true }
 
     override init(frame: NSRect) {
@@ -54,6 +58,7 @@ final class OnboardingPasswordHelp: NSView {
 
     private final class Presentation: ObservableObject {
         @Published var isPresented = false
+        @Published var export = BrowserPasswordExport.safari
     }
 
     private struct Content: View {
@@ -118,6 +123,7 @@ final class OnboardingPasswordHelp: NSView {
         }
 
         private var title: String {
+            if presentation.export == .firefox { return "Exporting Firefox Passwords" }
             if #available(macOS 15, *) { return "Exporting Your Passwords" }
             return "Exporting Safari Passwords"
         }
@@ -132,7 +138,17 @@ final class OnboardingPasswordHelp: NSView {
         }
 
         @ViewBuilder private func instructions(width: CGFloat) -> some View {
-            if #available(macOS 15, *) {
+            if presentation.export == .firefox {
+                VStack(alignment: .leading, spacing: 32) {
+                    instruction(1, title: "Open Firefox’s passwords", detail: "In Firefox, open the ☰ menu and choose Passwords.",
+                                spoken: "In Firefox, open the application menu and choose Passwords.")
+                    instruction(2, title: "Export your passwords", detail: "Choose ⋯ → Export Passwords… and then Continue with export. If macOS asks for your Mac’s password, enter it, then save passwords.csv.",
+                                spoken: "From the Passwords page menu, choose Export Passwords, then Continue with export. If macOS asks for your Mac’s password, enter it, then save passwords.csv.")
+                    instruction(3, title: "Bring the file to Parc", detail: "Close this help and drop passwords.csv onto the password-import area, or click it to choose the file.")
+                }
+                .frame(width: width, alignment: .leading)
+                .padding(.top, 24)
+            } else if #available(macOS 15, *) {
                 VStack(alignment: .leading, spacing: 32) {
                     instruction(1, title: "Open Passwords", detail: "Open Apple’s Passwords app and unlock it yourself.")
                     instruction(2, title: "Export your passwords", detail: "Choose File → Export All Passwords to File, then save the CSV.")
@@ -145,7 +161,7 @@ final class OnboardingPasswordHelp: NSView {
             }
         }
 
-        private func instruction(_ number: Int, title: String, detail: String) -> some View {
+        private func instruction(_ number: Int, title: String, detail: String, spoken: String? = nil) -> some View {
             HStack(alignment: .top, spacing: 16) {
                 Text(String(number)).font(.system(size: 12, weight: .semibold))
                     .frame(width: 20, height: 20)
@@ -155,6 +171,7 @@ final class OnboardingPasswordHelp: NSView {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(title).font(.system(size: 20, weight: .semibold))
                     Text(detail).font(.system(size: 14, weight: .light)).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel(Text(spoken ?? detail))
                 }
             }
             .accessibilityElement(children: .combine)

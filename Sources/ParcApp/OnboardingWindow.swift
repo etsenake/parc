@@ -1021,6 +1021,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             root.addSubview(help, positioned: .above, relativeTo: nil)
         }
         setupCard.setAccessibilityHidden(true)
+        help.export = browserImport?.passwordExport ?? .safari
         help.present()
     }
 
