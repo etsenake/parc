@@ -1462,6 +1462,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             for view in [addressBackground, addressButton, pageActions, extensionToolbar] as [NSView] {
                 view.isHidden = usesContentToolbar
             }
+            updateBlockedSignVisibility(animated: false)
             updateSharedQuoteVisibility()
             needsLayout = true
         }
@@ -1527,6 +1528,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         for view in [addressBackground, addressButton, pageActions, paymentAction, extensionToolbar] as [NSView] {
             view.alphaValue = active ? 0 : 1
         }
+        updateBlockedSignVisibility(animated: false)
         if !active { updateAddressButtonsReveal(animated: false) }
     }
 
@@ -1755,6 +1757,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private let pageActions = ActionButton("Site Control Center", symbol: "slider.horizontal.3")
     private let paymentAction = ActionButton("Payment methods", symbol: "creditcard")
     private var paymentWidth: CGFloat = 0
+    private let blockedSign = ActionButton("Blocked")
+    private var blockedContent: BlockedPageContent?
+    private var blockedSignRevealPending = false
+    var onBlockedContent: ((NSView) -> Void)?
     private var paymentEntryTitle: String?
     private var paymentEntrySymbol = "creditcard"
     private var paymentEntryEnabled = false
@@ -1826,7 +1832,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         registerForDraggedTypes([SidebarMoveSession.pasteboardType])
         addSubview(spaceCreationFeedback)
         addSubview(contentSurface)
-        for view in [favoritesHost, addressBackground, addressButton, shareQuote, copyQuote, pageActions, paymentAction, extensionToolbar, pageStrip, miniPlayers] { contentSurface.addSubview(view) }
+        for view in [favoritesHost, addressBackground, addressButton, shareQuote, copyQuote, pageActions, paymentAction, blockedSign, extensionToolbar, pageStrip, miniPlayers] { contentSurface.addSubview(view) }
         contentSurface.addSubview(archiveEducationHost)
         archiveEducation.setInteractionEnabled(false)
         archiveEducation.onDismiss = { [weak self] in self?.onDismissAutoArchiveEducation?() }
@@ -1943,6 +1949,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         for button in [back, forward, reload, reloadOptions] { button.focusRingCornerRadius = 5 }
         addressButton.focusRingCornerRadius = SidebarAddressPillView.cornerRadius
         for button in [pageActions, paymentAction] { button.focusRingCornerRadius = 5 }
+        configureBlockedSign()
         creationSpaceButton.setAccessibilityLabel("Create Space")
         SidebarAccessibility.configureSpace(creationSpaceButton, name: "Create Space")
         extensionToolbar.onButtonsChange = { [weak self] in self?.setNeedsKeyViewLinking() }
@@ -2293,6 +2300,52 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         let kind: NavigationControlKind? = event.buttonNumber == 3 ? .back : event.buttonNumber == 4 ? .forward : nil
         guard let kind, window != nil, isPresented else { super.otherMouseUp(with: event); return }
         onNavigation?(kind)?.activate(false)
+    }
+
+    private var showsBlockedSign: Bool { blockedContent != nil && !usesContentToolbar }
+
+    private func configureBlockedSign() {
+        blockedSign.isHidden = true
+        blockedSign.imagePosition = .imageOnly
+        blockedSign.focusRingCornerRadius = 5
+        blockedSign.alphaValue = BlockedContentSign.restingAlpha
+        blockedSign.actionBlock = { [weak self] in
+            guard let self else { return }
+            self.onBlockedContent?(self.blockedSign)
+        }
+        blockedSign.onHover = { [weak self] hovered in
+            guard let self, !self.blockedSign.isHidden else { return }
+            BlockedContentSign.emphasize(self.blockedSign, hovered: hovered)
+        }
+    }
+
+    func updateBlockedContent(_ content: BlockedPageContent?) {
+        guard content != blockedContent else { return }
+        let appearing = blockedContent == nil && content != nil
+        let glyphChanged = content?.glyphName != blockedContent?.glyphName
+        blockedContent = content
+        if let content {
+            if glyphChanged { blockedSign.image = SiteControlCenterArtwork.image(content.glyphName) }
+            LiveShortcutToolTip.set(blockedSign, content.summary)
+            blockedSign.setAccessibilityLabel(content.summary)
+            blockedSign.setAccessibilityHelp(BlockedContentSign.help)
+        }
+        updateBlockedSignVisibility(animated: appearing)
+        needsLayout = true
+    }
+
+    private func updateBlockedSignVisibility(animated: Bool) {
+        let shown = showsBlockedSign && !keyboardSearchActive
+        guard shown != !blockedSign.isHidden else { return }
+        if shown {
+            BlockedContentSign.reveal(blockedSign, animated: animated)
+            blockedSignRevealPending = true
+            needsLayout = true
+        } else {
+            blockedSign.isHidden = true
+            blockedSign.refreshHover()
+        }
+        setNeedsKeyViewLinking()
     }
 
     var isPaymentEntryVisible: Bool {
@@ -3598,7 +3651,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             return
         }
         let leading: [NSView] = [keyViewGate] + headerControls + [addressButton] + extensionToolbar.orderedButtons
-            + [paymentAction, pageActions]
+            + [paymentAction, blockedSign, pageActions]
         var regions: [NSView] = [list, miniPlayers]
         if archiveEducationHost.isInteractive { regions += archiveEducation.keyViewControls }
         if updateCompleteHost.isInteractive { regions += updateComplete.keyViewControls }
@@ -3654,11 +3707,17 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         addressButton.frame = field.insetBy(dx: 1, dy: 0)
         pageActions.frame = NSRect(x: width - 38, y: 50, width: 25, height: 28)
         let quoteWidth: CGFloat = showsSharedQuote ? 28 : 0
-        let extensionWidth = min(extensionToolbar.desiredWidth, max(0, floor((width - 138 - quoteWidth - paymentWidth) / 28) * 28))
+        let blockedWidth: CGFloat = showsBlockedSign ? BlockedContentSign.pillSide : 0
+        let extensionWidth = min(extensionToolbar.desiredWidth, max(0, floor((width - 138 - quoteWidth - blockedWidth - paymentWidth) / 28) * 28))
         copyQuote.frame = NSRect(x: width - 66, y: 50, width: 25, height: 28)
-        paymentAction.frame = NSRect(x: width - 42 - quoteWidth - paymentWidth, y: 50, width: paymentWidth, height: 28)
-        extensionToolbar.frame = NSRect(x: width - 42 - quoteWidth - paymentWidth - extensionWidth, y: 50, width: extensionWidth, height: 28)
-        addressButton.frame.size.width = max(0, width - 54 - quoteWidth - paymentWidth - extensionWidth)
+        blockedSign.frame = NSRect(x: width - 42 - quoteWidth - blockedWidth, y: 50, width: blockedWidth, height: 28)
+        if blockedSignRevealPending, !blockedSign.isHidden {
+            blockedSignRevealPending = false
+            if window?.isKeyWindow == true { blockedSign.refreshHover() }
+        }
+        paymentAction.frame = NSRect(x: width - 42 - quoteWidth - blockedWidth - paymentWidth, y: 50, width: paymentWidth, height: 28)
+        extensionToolbar.frame = NSRect(x: width - 42 - quoteWidth - blockedWidth - paymentWidth - extensionWidth, y: 50, width: extensionWidth, height: 28)
+        addressButton.frame.size.width = max(0, width - 54 - quoteWidth - blockedWidth - paymentWidth - extensionWidth)
         applyAddressPillStyle()
         if showsSharedQuote {
             addressButton.frame.size.height = 18
@@ -3968,7 +4027,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         updateReady.applyPalette(palette)
         windowButtons.appearance = NSAppearance(named: palette.isDark ? .darkAqua : .aqua)
         libraryEntry.appearance = NSAppearance(named: palette.isDark ? .darkAqua : .aqua)
-        for button in [back, forward, reload, reloadOptions, toggle, pageActions, paymentAction, addressButton] as [NSButton] {
+        for button in [back, forward, reload, reloadOptions, toggle, pageActions, paymentAction, blockedSign, addressButton] as [NSButton] {
             button.contentTintColor = palette.title
         }
         let plusColors = TranslucentButtonColors.standard(dark: palette.isDark)

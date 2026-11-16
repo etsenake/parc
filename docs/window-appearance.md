@@ -42,8 +42,10 @@ Making it key temporarily uses level 24, then a weak queued callback restores
 normal level and removes `moveToActiveSpace`. The reset is idempotent and never
 activates another window.
 
-The 47-point popup strip contains conditional Back, address, Copy and Extensions
-controls. Back is 31 points with a 16-point glyph. The rounded address field has
+The 47-point popup strip contains conditional Back, address, Copy, Extensions
+and blocked pop-up controls; the last sits inside the field, left of Extensions,
+only while the page has blocked something
+([blocked pop-ups](web-interactions.md#banners-and-blocked-pop-ups)). Back is 31 points with a 16-point glyph. The rounded address field has
 a 31-point minimum height; its title changes from 13 to 11 points while loading.
 Copy uses the actual page URL. Existing commands remain available independently
 of which buttons fit in the strip.

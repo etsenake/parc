@@ -22,7 +22,9 @@ struct SiteControlCenterChecks {
 
         for (name, size) in [("icon-control-center", NSSize(width: 18, height: 18)),
                              ("copy-url", NSSize(width: 19, height: 19)),
-                             ("capture-full-page", NSSize(width: 19, height: 19))] {
+                             ("capture-full-page", NSSize(width: 19, height: 19)),
+                             ("popup-blocked", NSSize(width: 18, height: 18)),
+                             ("redirect-blocked", NSSize(width: 18, height: 18))] {
             let image = SiteControlCenterArtwork.image(name)
             expect(image?.size == size && image?.isTemplate == true, "\(name) loads as a \(size) template")
             expect(image?.representations.contains { $0.pixelsWide == Int(size.width) * 2 } == true,

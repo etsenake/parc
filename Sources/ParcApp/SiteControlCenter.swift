@@ -132,6 +132,8 @@ final class SiteControlCenterModel: ObservableObject {
     @Published var menuExtension: String?
     @Published var settings: [Setting] = []
     @Published var isSecure: Bool?
+    @Published var blocked: BlockedPageContent?
+    @Published var blockedExpanded = false
     @Published var colors = SiteControlCenterColors(theme: SpaceTheme())
     var buttonFrames: [Button: CGRect] = [:]
     var shortcuts: [Button: String] = [:]
@@ -146,6 +148,10 @@ final class SiteControlCenterModel: ObservableObject {
     var onSiteSettings: (() -> Void)?
     var onSecurity: (() -> Void)?
     var onMore: (() -> Void)?
+    var onBlockedOpen: ((BlockedPageContent.Item) -> Void)?
+    var onBlockedOpenAll: (() -> Void)?
+    var onBlockedAllow: (() -> Void)?
+    var onBlockedSettings: (() -> Void)?
 
     var buttons: [Button] {
         captureAvailable ? [.share, .captureVisiblePage, .capture, .captureFullPage]
@@ -172,10 +178,16 @@ final class SiteControlCenterModel: ObservableObject {
         focusedExtension = extensions[(index + step + extensions.count) % extensions.count].id
     }
 
+    func updateBlocked(_ content: BlockedPageContent?) {
+        if content?.revision != blocked?.revision { blockedExpanded = false }
+        if blocked != content { blocked = content }
+    }
+
     func invalidate() {
         onButton = nil; onExtension = nil; onExtensionContextMenu = nil; onExtensionPin = nil
         onManageExtensions = nil; onAddExtension = nil; onSetting = nil; onSiteSettings = nil
         onSecurity = nil; onMore = nil
+        onBlockedOpen = nil; onBlockedOpenAll = nil; onBlockedAllow = nil; onBlockedSettings = nil
     }
 }
 
@@ -199,6 +211,7 @@ struct SiteControlCenterView: View {
                 }
             }
             SiteControlCenterExtensionsView(model: model)
+            if let blocked = model.blocked { SiteControlCenterBlockedView(model: model, content: blocked) }
             if !model.settings.isEmpty { SiteControlCenterSettingsView(model: model) }
             if let isSecure = model.isSecure {
                 SiteControlCenterSeparator(colors: colors.menu)

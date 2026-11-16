@@ -3,6 +3,7 @@
 #import "VideoPiPWindow.h"
 #import "native_application_protocols.h"
 #import "native_appkit_bridge.h"
+#import "native_blocked_popups.h"
 #import "native_history_swipe.h"
 #import "page_host.h"
 #import "content_drop_router.h"

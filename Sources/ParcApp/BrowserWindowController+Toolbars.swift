@@ -34,6 +34,7 @@ extension BrowserWindowController {
             insecure: page.responds(to: #selector(getter: PCNativePage.secureContextState))
                 && page.secureContextState == .insecure,
             extensionItems: selected ? extensionControlItems() : [])
+        toolbar.updateBlockedContent(blockedContent(for: page))
         let original: () -> Bool = { [weak self, weak browser, weak page] in
             guard let self, let browser, let page else { return false }
             return self.activateDeveloperPage(browser, page: page, revision: revision)
@@ -58,7 +59,7 @@ extension BrowserWindowController {
             switch action {
             case .address: self.focusAddress()
             case .copy: self.copyCurrentURL()
-            case .siteInfo, .siteInsecure: self.showSiteControlCenter(from: anchor)
+            case .siteInfo, .siteInsecure, .blocked: self.showSiteControlCenter(from: anchor)
             case .pageMenu: self.showPageMenu(from: anchor)
             case .split: self.showDeveloperSplitMenu(from: anchor, browser: browser, page: page, revision: revision)
             case .closeSplit: break
@@ -111,7 +112,7 @@ extension BrowserWindowController {
             case .split: self.showSplitPaneMenu(tabID, from: anchor)
             case .closeSplit: break
             case .sidebar: self.toggleSidebar()
-            case .copy, .siteInfo, .siteInsecure, .pageMenu: break
+            case .copy, .siteInfo, .siteInsecure, .pageMenu, .blocked: break
             }
         }
     }

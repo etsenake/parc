@@ -13,7 +13,12 @@ for use in ('sidebar.onPageMenu = { [weak self] in self?.showSiteControlCenter()
             'popupChrome.prepareExtensions = { [weak self] in self?.preparePopupSiteControls(requireExtensions: true) }',
             'popupChrome.prepareSiteControls = { [weak self] in self?.preparePopupSiteControls(requireExtensions: false) }',
             'let openControls = preparePopupSiteControls(requireExtensions: false)',
-            'self.showSiteControlCenter(from: self.popupChrome.pageControlsAnchor)',
+            'self.showSiteControlCenter(from: anchor ?? self.popupChrome.pageControlsAnchor)',
+            'popupChrome.prepareBlocked = { [weak self] anchor in self?.preparePopupSiteControls(requireExtensions: false, from: anchor) }',
+            'sidebar.onBlockedContent = { [weak self] anchor in self?.showSiteControlCenter(from: anchor) }',
+            'case .siteInfo, .siteInsecure, .blocked: self.showSiteControlCenter(from: anchor)',
+            'let blocked = blockedContent(for: page)',
+            'wireBlockedContent(controller, page: page, current: currentPresentation, afterDismissal: afterDismissal)',
             'if browser.hasPageInfo, page.responds(to: #selector(PCNativePage.openSiteControls(handler:)))',
             'page.responds(to: #selector(PCNativePage.toggleSiteControlsPermission(_:revision:)))',
             'let internalPage = ["chrome", "parc"].contains(page.url?.scheme?.lowercased() ?? "parc")',
@@ -69,7 +74,8 @@ with tempfile.TemporaryDirectory(prefix="parc-site-control-center-") as director
                 *[app / name for name in ("ThemeRenderer.swift", "ParcMenuColors.swift", "SidebarPlusMenu.swift",
                                           "LibraryRailTile.swift", "LibraryRailIcon.swift", "DownloadActivityBadge.swift",
                                           "DownloadLibrarySelection.swift", "WindowStandardButtons.swift",
-                                          "ExtensionControls.swift", "SiteControlCenter.swift", "ParcContextMenu.swift")]]
+                                          "ExtensionControls.swift", "SiteControlCenter.swift", "ParcContextMenu.swift",
+                                          "BlockedPageContent.swift", "SiteControlCenterBlockedView.swift")]]
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
         "-import-objc-header", str(root / "Engine/ParcNative/native_appkit_bridge.h"),
         *map(str, compiled), *map(str, tooltip_sources(root, scratch, compiled)),

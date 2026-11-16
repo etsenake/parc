@@ -317,6 +317,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var navigationHistory: NavigationHistoryController?
     var menuTrackingDepth = 0
     var menuObservers: [NSObjectProtocol] = []
+    var blockedContentAnnouncements: [String: UInt] = [:]
     var isClosing = false
     var nativeBinding: PCNativeBrowserWindow?
     var closingTabIDs = Set<UUID>()
@@ -760,6 +761,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         popupChrome.prepareCopy = { [weak self] in self?.preparePopupCopyURL() }
         popupChrome.prepareExtensions = { [weak self] in self?.preparePopupSiteControls(requireExtensions: true) }
         popupChrome.prepareSiteControls = { [weak self] in self?.preparePopupSiteControls(requireExtensions: false) }
+        popupChrome.prepareBlocked = { [weak self] anchor in self?.preparePopupSiteControls(requireExtensions: false, from: anchor) }
+        sidebar.onBlockedContent = { [weak self] anchor in self?.showSiteControlCenter(from: anchor) }
         popupChrome.onAddress = { [weak self] in
             guard let self else { return }; self.focusAddress(anchor: self.popupChrome.addressAnchor)
         }
@@ -807,6 +810,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         splitView.constrain(to: pageHost)
         loadingIndicator.appearance = rootView.palette.contentAppearance
         setupFindBar()
+        setupBlockedContent()
         sidebar.isPrivateBrowsing = store.isEphemeral
         wireSidebar()
         sidebarHover.view = rootView

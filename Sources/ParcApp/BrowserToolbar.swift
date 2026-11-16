@@ -3,7 +3,7 @@ import QuartzCore
 
 @MainActor
 final class BrowserToolbarView: NSView {
-    enum Action { case address, copy, siteInfo, siteInsecure, pageMenu, split, closeSplit, sidebar }
+    enum Action { case address, copy, siteInfo, siteInsecure, pageMenu, split, closeSplit, sidebar, blocked }
     static let height = PaneTopBarLayout.height
     var onAction: ((Action, NSView) -> Void)?
     var onNavigation: ((NavigationControlKind) -> NavigationControlInteraction?)?
@@ -17,6 +17,8 @@ final class BrowserToolbarView: NSView {
     private let address = PaneTitleControl(frame: .zero)
     private let copy = BrowserToolbarActionButton("Copy Current URL", symbol: "link")
     private let siteInfo = BrowserToolbarActionButton("Site Control Center", symbol: "slider.horizontal.3")
+    private let blocked = BrowserToolbarActionButton("Blocked", symbol: "nosign")
+    private var blockedContent: BlockedPageContent?
     private let split = SplitPaneControl(.menu)
     private let closeSplit = SplitPaneControl(.close)
     private let insecure = SplitPaneControl(.insecure)
@@ -62,6 +64,12 @@ final class BrowserToolbarView: NSView {
         }
         addSubview(insecure)
         insecure.isHidden = true
+        blocked.focusRingType = .exterior
+        blocked.actionBlock = { [weak self] in
+            guard let self else { return }; self.onAction?(.blocked, self.blocked)
+        }
+        blocked.isHidden = true
+        addSubview(blocked)
         for button in [back, forward, reload] { addSubview(button) }
         back.prepareInteraction = { [weak self] in self?.onNavigation?(.back) }
         forward.prepareInteraction = { [weak self] in self?.onNavigation?(.forward) }
@@ -125,6 +133,19 @@ final class BrowserToolbarView: NSView {
         extensionToolbar.update(actionsEnabled && showsSiteControls ? items : [])
     }
     var siteControlCenterAnchor: NSView? { siteInfo.isHidden || siteInfo.isHiddenOrHasHiddenAncestor ? nil : siteInfo }
+    func updateBlockedContent(_ content: BlockedPageContent?) {
+        guard content != blockedContent else { return }
+        let appearing = blockedContent == nil && content != nil
+        if let content {
+            if content.glyphName != blockedContent?.glyphName { blocked.image = SiteControlCenterArtwork.image(content.glyphName) }
+            LiveShortcutToolTip.set(blocked, content.summary)
+            blocked.setAccessibilityLabel(content.summary)
+            blocked.setAccessibilityHelp(BlockedContentSign.help)
+        }
+        blockedContent = content
+        if appearing { BlockedContentSign.reveal(blocked, animated: true, alpha: 1) }
+        needsLayout = true
+    }
     func setObstructedByModal(_ obstructed: Bool, animated: Bool) {
         guard obstructed != obstructedByModal else { return }
         obstructedByModal = obstructed
@@ -157,8 +178,26 @@ final class BrowserToolbarView: NSView {
             let size = button === split ? splitSize : NSSize(width: unit, height: 28)
             right -= size.width; button.frame = PaneTopBarLayout.frame(x: right, width: size.width, height: size.height)
         }
+        var showsBlocked = showsSiteControls && blockedContent != nil
+        var collapsesSiteInfo = false
+        if showsBlocked {
+            let bar = PaneTopBarLayout.frame(x: 0, width: width, height: 28)
+            let closeEdge = showsClose ? closeSplit.frame.minX : width - PaneTopBarLayout.horizontalInset
+            let titleWidth = { (edge: CGFloat) -> CGFloat in
+                let leading = min(closeEdge, self.split.frame.minX, edge)
+                return PaneTitleLayout.slot(in: bar, leftEssential: left, rightEssential: leading,
+                    requiredLeft: self.forward.frame.maxX + 2, requiredRight: leading - 2,
+                    balancesCopy: true, balancesInsecure: self.showsInsecure).width
+            }
+            if titleWidth(right - unit) >= BlockedContentSign.toolbarTitleRoom {
+                right -= unit; blocked.frame = PaneTopBarLayout.frame(x: right, width: unit, height: 28)
+            } else if titleWidth(siteInfo.frame.minX) >= BlockedContentSign.toolbarTitleRoom {
+                collapsesSiteInfo = true; blocked.frame = siteInfo.frame
+            } else { showsBlocked = false }
+        }
+        blocked.isHidden = !showsBlocked
         let rightEssential = showsClose ? closeSplit.frame.minX : width - PaneTopBarLayout.horizontalInset
-        let splitLeading = min(rightEssential, split.frame.minX)
+        let splitLeading = min(rightEssential, split.frame.minX, showsBlocked ? blocked.frame.minX : .greatestFiniteMagnitude)
         let requiredLeft = forward.frame.maxX
         let slot = PaneTitleLayout.slot(in: PaneTopBarLayout.frame(x: 0, width: width, height: 28),
             leftEssential: left, rightEssential: splitLeading,
@@ -174,7 +213,7 @@ final class BrowserToolbarView: NSView {
         copy.isHidden = !copyAvailable || !(requiredLeft < copy.frame.minX) || !bounds.contains(copy.frame)
         let centerStart = !copy.isHidden ? copy.frame.minX : !insecure.isHidden ? insecure.frame.minX : address.frame.minX
         reload.isHidden = reload.frame.maxX >= centerStart
-        siteInfo.isHidden = !showsSiteControls || address.frame.maxX >= siteInfo.frame.minX
+        siteInfo.isHidden = !showsSiteControls || collapsesSiteInfo || address.frame.maxX >= siteInfo.frame.minX
         let pinSize = extensionToolbar.style.surfaceSize
         let pins = min(extensionToolbar.desiredWidth, max(0, floor((right - address.frame.maxX) / pinSize.width) * pinSize.width))
         extensionToolbar.frame = PaneTopBarLayout.frame(x: right - pins, width: pins, height: pinSize.height)
@@ -225,7 +264,7 @@ final class BrowserToolbarView: NSView {
         needsDisplay = true
     }
     override func cancelOperation(_ sender: Any?) { onEscape?() }
-    func invalidate() { onAction = nil; onNavigation = nil; onEscape = nil; onTitleMenu = nil; extensionToolbar.update([]) }
+    func invalidate() { onAction = nil; onNavigation = nil; onEscape = nil; onTitleMenu = nil; extensionToolbar.update([]); updateBlockedContent(nil) }
 }
 
 enum BrowserToolbarActionSurfaceLayoutSkip {

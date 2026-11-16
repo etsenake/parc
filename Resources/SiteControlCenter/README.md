@@ -8,6 +8,10 @@ Parc's Site Control Center template images:
   licences page), 19 × 19 points.
 - `capture-full-page`: full-page capture button, corner brackets around lines
   of text, 19 × 19 points.
+- `popup-blocked`: blocked pop-up sign and card row glyph, a window with a title
+  bar and a small "no" badge in its lower-right corner, 18 × 18 points.
+- `redirect-blocked`: blocked redirect sign and card row glyph, a turn-right
+  arrow with the same badge, 18 × 18 points.
 
 Each name has a vector `.pdf` plus `.png` and `@2x.png` renditions rendered from
 the same geometry with 8× supersampling.

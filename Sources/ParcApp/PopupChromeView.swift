@@ -5,6 +5,9 @@ final class PopupChromeView: NSView {
     var onAddress: (() -> Void)? { didSet { address.actionBlock = onAddress } }
     var prepareCopy: (() -> (() -> Bool)?)? { didSet { copy.prepareAction = prepareCopy } }
     var prepareExtensions: (() -> (() -> Bool)?)? { didSet { extensions.prepareAction = prepareExtensions } }
+    var prepareBlocked: ((NSView) -> (() -> Bool)?)? {
+        didSet { blocked.prepareAction = { [weak self] in self.flatMap { $0.prepareBlocked?($0.blocked) } } }
+    }
     var onPageMenu: (() -> Void)? { didSet { address.secondaryActionBlock = onPageMenu } }
     var prepareSiteControls: (() -> (() -> Bool)?)? {
         didSet {
@@ -22,6 +25,8 @@ final class PopupChromeView: NSView {
     private let addressBackground = PopupAddressBackground()
     private let copy = SidebarRowActionButton("Copy URL")
     private let extensions = SidebarRowActionButton("Extensions")
+    private let blocked = SidebarRowActionButton("Blocked")
+    private var blockedContent: BlockedPageContent?
     private var addressTracking: NSTrackingArea?
     private var addressHovered = false { didSet { updateAddressBackground() } }
     override var isFlipped: Bool { true }
@@ -30,7 +35,7 @@ final class PopupChromeView: NSView {
         back.prepareInteraction = { [weak self] in self?.onNavigation?(.back) }
         back.image = SidebarIconCatalog.featherImage(0xE92F, size: 16)
         addSubview(addressBackground)
-        for button in [back, address, extensions, copy] as [NSButton] { addSubview(button) }
+        for button in [back, address, blocked, extensions, copy] as [NSButton] { addSubview(button) }
         addSubview(addressLabel, positioned: .above, relativeTo: address)
         back.imagePosition = .imageOnly
         address.title = ""
@@ -44,6 +49,7 @@ final class PopupChromeView: NSView {
             .withSymbolConfiguration(.init(pointSize: 16, weight: .medium))
         extensions.isHidden = true
         LiveShortcutToolTip.set(extensions, "Extensions", anchor: .bottom)
+        blocked.isHidden = true
         updateCopyTooltip()
         applyPalette()
     }
@@ -56,7 +62,13 @@ final class PopupChromeView: NSView {
         let field = NSRect(x: next + 3, y: 8, width: max(0, bounds.width - next - 7), height: 31)
         address.frame = field
         addressBackground.frame = field
-        let labelInset: CGFloat = (copy.isHidden ? 0 : 31) + (extensions.isHidden ? 0 : 31)
+        let blockedOffset = 27 + (copy.isHidden ? 0 : 31) + (extensions.isHidden ? 0 : 31)
+        blocked.frame = NSRect(x: field.maxX - CGFloat(blockedOffset), y: field.minY + 4, width: 23, height: 23)
+        if blockedContent != nil {
+            blocked.isHidden = blocked.frame.minX < field.minX + 4
+                || field.width - 2 * CGFloat(blockedOffset + 4) < BlockedContentSign.toolbarTitleRoom
+        }
+        let labelInset: CGFloat = (copy.isHidden ? 0 : 31) + (extensions.isHidden ? 0 : 31) + (blocked.isHidden ? 0 : 31)
         let labelHeight = min(field.height, addressLabel.intrinsicContentSize.height)
         addressLabel.frame = NSRect(x: field.minX + min(labelInset, field.width / 2),
                                     y: field.midY - labelHeight / 2,
@@ -79,6 +91,20 @@ final class PopupChromeView: NSView {
         address.toolTip = url?.absoluteString
         address.setAccessibilityLabel(url.map { "Address: " + $0.absoluteString } ?? "Address")
     }
+    func updateBlockedContent(_ content: BlockedPageContent?) {
+        guard content != blockedContent else { return }
+        let appearing = blockedContent == nil && content != nil
+        if let content {
+            if content.glyphName != blockedContent?.glyphName { blocked.symbol = SiteControlCenterArtwork.image(content.glyphName) }
+            LiveShortcutToolTip.set(blocked, content.summary, anchor: .bottom)
+            blocked.setAccessibilityLabel(content.summary)
+            blocked.setAccessibilityHelp(BlockedContentSign.help)
+        }
+        blockedContent = content
+        if content == nil { blocked.isHidden = true } else if appearing { BlockedContentSign.reveal(blocked, animated: true, alpha: 1) }
+        blocked.refreshAvailability()
+        needsLayout = true
+    }
     func updateExtensions(available: Bool) {
         if extensions.isHidden == available { extensions.isHidden = !available; needsLayout = true }
         extensions.refreshAvailability()
@@ -91,6 +117,7 @@ final class PopupChromeView: NSView {
         addressLabel.textColor = palette?.title ?? .labelColor
         copy.dark = palette?.isDark ?? (effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
         extensions.dark = copy.dark
+        blocked.dark = copy.dark
         updateAddressBackground()
     }
     override func updateTrackingAreas() {

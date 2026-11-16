@@ -326,6 +326,7 @@ extension BrowserWindowController {
         synchronizeNativeLayout()
         refreshExtensionControls()
         refreshPaymentControls()
+        refreshBlockedContent()
         refreshCaptureIndicators()
         refreshMiniPlayers()
         let state = presentedState

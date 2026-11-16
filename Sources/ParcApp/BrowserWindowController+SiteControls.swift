@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 extension BrowserWindowController {
-    func preparePopupSiteControls(requireExtensions: Bool) -> (() -> Bool)? {
+    func preparePopupSiteControls(requireExtensions: Bool, from anchor: NSView? = nil) -> (() -> Bool)? {
         guard isPopupWindow, presentation.isReady, !isClosing, !wholeWindowClose, !windowClosePending,
               let window, window.isKeyWindow, windowCommandSecurityAvailable,
               let browser = currentBrowser, browser.window === window, let page = browser.nativePage, !page.isClosed,
@@ -11,7 +11,7 @@ extension BrowserWindowController {
             || !binding.hasEnabledExtensions(for: page)) { return nil }
         let revision = browser.readerRevision, profileID = activeProfileID, spaceID = activeSpaceID
         var used = false
-        return { [weak self, weak window, weak browser, weak page, weak binding] in
+        return { [weak self, weak window, weak browser, weak page, weak binding, weak anchor] in
             guard !used, let self, let window, let browser, let page, let binding,
                   self.presentation.isReady, !self.isClosing, !self.wholeWindowClose, !self.windowClosePending,
                   self.window === window, window.isKeyWindow, self.windowCommandSecurityAvailable,
@@ -21,7 +21,7 @@ extension BrowserWindowController {
             if requireExtensions && (!binding.responds(to: #selector(PCNativeBrowserWindow.hasEnabledExtensions(for:)))
                 || !binding.hasEnabledExtensions(for: page)) { return false }
             used = true
-            self.showSiteControlCenter(from: self.popupChrome.pageControlsAnchor)
+            self.showSiteControlCenter(from: anchor ?? self.popupChrome.pageControlsAnchor)
             return true
         }
     }
@@ -139,6 +139,7 @@ extension BrowserWindowController {
         model.isSecure = internalPage ? nil : page.developerModeSecure
         let settings = siteControlCenterSettings(page: page)
         if model.settings != settings { model.settings = settings }
+        model.updateBlocked(blockedContent(for: page))
     }
 
     func updateSiteControlCenterShortcuts() {
@@ -282,6 +283,7 @@ extension BrowserWindowController {
                                            openExtensionDestination: openExtensionDestination)
                 .popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
         }
+        wireBlockedContent(controller, page: page, current: currentPresentation, afterDismissal: afterDismissal)
     }
 
     private func toggleSiteControlCenterSetting(_ id: String, page: PCNativePage, afterDismissal: @escaping () -> Bool) {

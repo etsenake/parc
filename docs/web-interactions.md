@@ -23,6 +23,8 @@ live shortcuts and accessibility help. This is Parc's own presentation choice.
 ### Page actions and settings
 
 - Share uses the real page URL and native sharing picker.
+- **Blocked** lists the page's blocked pop-ups and redirects with Open, Open All
+  and Always Allow; see [blocked pop-ups](#banners-and-blocked-pop-ups).
 - Visible Area, Portion and Full Page enter the shared capture editor, with
   optional Portrait framing. Without capture, the Share/Copy URL pair remains.
 - Extensions use actual toolbar-action leases for run, pin and menu commands.
@@ -242,9 +244,59 @@ row through its actual `TabSharingInfoBarDelegate`. It appears before Close,
 not on split children, and keeps the real sharing callback. There is no in-page
 bar or fabricated stop/source-switch action; the capturing site owns stopping.
 
-Chromium's popup blocker remains active. Parc currently has no blocked-popup
-indicator, chooser or release command. This is existing product behavior, not
-permission to remove other working controls.
+Chromium's pop-up blocker still makes every decision; Parc shows its results.
+`Engine/ParcNative/native_popup_blocking.cc` stores each blocked `window.open`
+with Parc's own delegate (the browser client swaps the blocker's delegate
+factory) and records blocked link pop-ups with the same blocker before Parc's
+routing runs. Blocked redirects, where a cross-site frame without a user gesture
+tries to send the whole page elsewhere, come from Chromium's framebust helper.
+Both lists belong to the page's current document, and a new main document clears
+them, as the blocker itself does.
+
+**The sign.** A page that blocked something shows Parc's pop-up glyph, or a
+redirect glyph when only a redirect was blocked, just left of the site button:
+in the sidebar address pill, where it stays visible while the pill's other
+buttons wait for hover; in the page toolbar, each split pane's bar and Peek's
+bar; and inside a pop-up window's address field. A narrow pane gives it the site
+button's place, and hides it only when even that would crowd out the title. There
+is no count, badge or toast; the tooltip and VoiceOver label say what happened
+("3 pop-ups blocked").
+It fades in over 0.2 seconds. In the pill it rests at 60% of the theme's ink and
+reaches full strength over 0.18 seconds on hover; toolbar and pop-up buttons use
+their own hover and pressed fills. Reduce Motion removes the fades. VoiceOver
+announces the summary once per document while that page is current in the key
+window; later blocks on the same document stay silent. Clicking the sign opens
+the Site Control Center anchored to it.
+
+**The card.** A **Blocked** section sits between Extensions and Settings. Its
+hover link opens pop-up and redirect settings, like the other sections' links.
+Each item is a setting-style row with the destination host, truncated from the
+front, "Pop-up" or "Redirect", and an **Open** or **Go** capsule. Redirects list
+first, three rows show and "N more" expands the rest. **Open All** appears for
+two or more pop-ups. **Always Allow Pop-ups** writes the same per-site rule as
+Chromium's own "Always allow pop-ups and redirects", in the page's Profile, and
+is offered only while the user controls that setting. The card's Settings
+section then shows the revocable "Pop-ups and redirects" row. A hint steers
+sign-in and payment windows to allowing and trying again; afterwards an allowed
+row replaces the tile and the listed items stay openable.
+
+**Opening.** Open, Open All and Go close the card, then revalidate the page and
+its document. Chromium's stock replay would open a fresh window without
+`window.opener`, in a window chosen by Profile alone. Parc instead rebuilds the
+window as content's own `window.open` path does: it keeps the opener while the
+frame that asked still shows the same document and the request wasn't
+`noopener`, reapplies a sandboxed frame's propagating sandbox flags, and hands
+the page to the source window's delegate. Parc's pop-up windows, Peek, Space
+routing and tab provenance then apply exactly as for an allowed pop-up, and a
+private window's pop-up stays in its private Profile. The page's original
+`window.open` call already returned nothing, so a script polling that handle
+still fails; flows that wait for the pop-up to message `window.opener` can
+finish. Allowing the site and repeating the action gives a fully connected
+pop-up. Go navigates the page to the blocked redirect, as Chromium's list does.
+
+In a private window Always Allow writes to the private Profile, so the rule ends
+with the private session and never reaches the regular Profile; regular-Profile
+rules still apply in private windows, as in Chromium.
 
 ## Failure and recovery surfaces — WEB17
 
@@ -319,10 +371,11 @@ press feedback. Status-capsule style/side changes do not animate.
 Focused suites are `tests/SiteControlCenter`, `tests/NativeSitePermissions`,
 `tests/NativeJavaScriptDialogs`, `tests/NativeHTTPAuth`,
 `tests/NativeExternalProtocol`, `tests/NativeStatusText`,
-`tests/RendererCrashPresentation` and relevant extension/page-tool components.
+`tests/RendererCrashPresentation`, `scripts/test-blocked-popups.sh` (blocked-content
+wording and parsing) and relevant extension/page-tool components.
 Native changes need their appropriate compiler checks; app changes need the
 Swift checks in [the working contract](../AGENTS.md). Older test helpers may
 present windows: inspect them and follow current authorization.
 
-The [backlog](backlog.md) indexes the remaining blocked-popup controls and
-cross-family menu work described above.
+The [backlog](backlog.md) indexes the remaining cross-family menu work
+described above.

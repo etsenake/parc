@@ -288,6 +288,7 @@ extension BrowserWindowController {
                 failing: peek.showsFailure, themeBackground: nil)
         }
         applySidebarToolbarOwnership()
+        refreshBlockedContent()
         let state = presentedState
         refreshFavoriteOverlays(from: state)
         let published = publishedShareableAndAudio()
