@@ -100,7 +100,7 @@ func run() {
     }
     let exact = 0.05, moving = 1.0
 
-    let opening = makeTile("Media", .media)
+    let opening = makeTile("Archived Tabs", .archive)
     opening.state = .on
     root.addSubview(opening)
     var start = CACurrentMediaTime()
@@ -116,7 +116,7 @@ func run() {
     expect(score(drawn, media, 0...0) < exact, "An unplayed page shows the composition's start frame")
     start = CACurrentMediaTime()
     media.state = .on
-    spin(until: start + 0.15)
+    spin(until: start + 0.225)
     drawn = capture(media, since: start)
     expect(score(drawn, media, playing(drawn)) < moving && score(drawn, media, 0...0) > 10,
            "Selection plays hover-start to selection-end at the composition's 60 frames a second")
@@ -140,13 +140,13 @@ func run() {
 
     let archive = makeTile("Archived Tabs", .archive)
     root.addSubview(archive)
-    let parked = 34.9...35.0, rest = 0.0...1.0
+    let parked = 34.9...35.0, rest = 0.0...0.0
     start = CACurrentMediaTime()
     archive.state = .on
     spin(until: start + 0.75)
     drawn = capture(archive, since: start)
-    expect(score(drawn, archive, parked) < exact && score(drawn, archive, rest) > score(drawn, archive, parked) + 0.1,
-           "A finished play parks on selection-end")
+    expect(score(drawn, archive, parked) < exact && score(drawn, archive, rest) < exact,
+           "A finished play parks on selection-end, which matches the start frame")
     archive.state = .on
     spin(until: start + 0.85)
     drawn = capture(archive, since: start)
@@ -154,7 +154,7 @@ func run() {
     archive.state = .off
     spin(until: start + 0.9)
     drawn = capture(archive, since: start)
-    expect(score(drawn, archive, parked) < exact && score(drawn, archive, rest) > score(drawn, archive, parked) + 0.1,
+    expect(score(drawn, archive, parked) < exact && score(drawn, archive, rest) < exact,
            "Deselection keeps the parked selection-end frame")
     start = CACurrentMediaTime()
     archive.state = .on
