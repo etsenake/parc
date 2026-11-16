@@ -157,10 +157,10 @@ a.sky-btn,a.sky-btn:hover{color:var(--ink-inv)}
 .hero-cta{display:flex;flex-wrap:wrap;align-items:center;gap:14px 22px;margin-top:36px}
 .hero-meta{font-size:14px;font-weight:600;color:var(--ink-soft)}
 
-.film{position:relative;z-index:5;margin-top:-250px;padding-bottom:120px;background:linear-gradient(180deg,rgba(245,239,228,0) 0,rgba(245,239,228,0) 250px,var(--page) 620px)}
-.film-frame{--p:1;max-width:1200px;margin:0 auto;aspect-ratio:1280/840;border-radius:1.25%/1.905%;overflow:hidden;background:#DCE3F2;box-shadow:0 0 0 .5px rgba(24,32,58,.18),0 2px 4px rgba(24,32,58,.06),0 24px 40px rgba(24,32,58,.14),0 70px 120px rgba(24,32,58,.26);transform:translateY(calc((1 - var(--p)) * 70px)) scale(calc(.9 + .1 * var(--p)));transform-origin:50% 100%;will-change:transform}
-.film-frame video{display:block;width:100%;height:100%;object-fit:cover}
-@media (max-width:640px){.film{margin-top:-150px;padding-bottom:72px;background:linear-gradient(180deg,rgba(245,239,228,0) 0,rgba(245,239,228,0) 150px,var(--page) 380px)}}
+.showreel{position:relative;z-index:5;margin-top:-250px;padding-bottom:120px;background:linear-gradient(180deg,rgba(245,239,228,0) 0,rgba(245,239,228,0) 250px,var(--page) 620px)}
+.showreel-frame{--p:1;max-width:1200px;margin:0 auto;aspect-ratio:1280/840;border-radius:1.25%/1.905%;overflow:hidden;background:#DCE3F2;box-shadow:0 0 0 .5px rgba(24,32,58,.18),0 2px 4px rgba(24,32,58,.06),0 24px 40px rgba(24,32,58,.14),0 70px 120px rgba(24,32,58,.26);transform:translateY(calc((1 - var(--p)) * 70px)) scale(calc(.9 + .1 * var(--p)));transform-origin:50% 100%;will-change:transform}
+.showreel-frame video{display:block;width:100%;height:100%;object-fit:cover}
+@media (max-width:640px){.showreel{margin-top:-150px;padding-bottom:72px;background:linear-gradient(180deg,rgba(245,239,228,0) 0,rgba(245,239,228,0) 150px,var(--page) 380px)}}
 .stage.has-clip{aspect-ratio:auto;padding:14px;background:var(--paper-deep)}
 .stage-window{aspect-ratio:1280/840;border-radius:1.25%/1.905%;overflow:hidden;background:#DCE3F2;box-shadow:0 0 0 .5px rgba(24,32,58,.18),0 8px 22px rgba(24,32,58,.16)}
 .stage-window video{display:block;width:100%;height:100%;object-fit:cover;cursor:pointer}
