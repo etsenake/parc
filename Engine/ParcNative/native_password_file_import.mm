@@ -74,7 +74,6 @@ class Session final : public ProfileObserver, public password_manager::PasswordS
     cancelled_ = true; removable_ = false;
     if (!finished_ && !writing_) Finish(PCNativeImportOutcomeCancelled, nil);
     else if (finished_) Release();
-    // Accepted writes must drain and be verified. Cancellation is not rollback.
   }
   void OnProfileWillBeDestroyed(Profile* profile) override {
     profile->RemoveObserver(this); observing_ = false; profile_.reset();
@@ -193,6 +192,8 @@ class Session final : public ProfileObserver, public password_manager::PasswordS
     }
     for (const auto& row : sequence->csv_passwords) {
       using namespace password_manager;
+      if (row.GetParseStatus() == CSVPassword::Status::kOK && row.GetURL().has_value() &&
+          row.GetURL()->SchemeIs("chrome")) continue;
       if (row.GetParseStatus() != CSVPassword::Status::kOK || !row.GetURL().has_value() ||
           !row.GetURL()->SchemeIsHTTPOrHTTPS() || row.GetURL()->has_username() || row.GetURL()->has_password() ||
           row.GetURL()->spec().size() > constants::kMaxUrlLengthForImport || row.GetPassword().empty() ||
@@ -273,8 +274,8 @@ class Session final : public ProfileObserver, public password_manager::PasswordS
   base::OneShotTimer deadline_;
   base::WeakPtrFactory<Session> weak_factory_{this};
 };
-}  // namespace
-}  // namespace parc::password_file
+}
+}
 
 @interface PCNativePasswordFileImportSession ()
 - (instancetype)initWithSession:(std::shared_ptr<parc::password_file::Session>)session;

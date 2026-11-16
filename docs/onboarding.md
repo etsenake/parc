@@ -41,8 +41,8 @@ The account-free sequence is:
    guidance when the browser's files are protected.
 2. Favorites, shown the moment the chosen import starts.
 3. The rest of that import, when anything is left: its progress page while it
-   still reads, then bookmarks, Safari's password choice and the Safari or
-   Firefox password file.
+   still reads, then bookmarks, Safari's password choice and the Safari,
+   Firefox or Zen password file.
 4. Theme and Space name.
 5. **Find your frame**: window frame thickness.
 6. Ad blockers when applicable.
@@ -164,7 +164,7 @@ provide the selection/expansion routes.
 
 ### Import progression inside setup
 
-Bookmark selection precedes the optional Safari or Firefox password file.
+Bookmark selection precedes the optional Safari, Firefox or Zen password file.
 Empty bookmark results omit that page. Accepting bookmarks saves them once;
 skipping passwords does not reopen or duplicate the accepted results. Stop
 suppresses a later password offer even when native completion wins the
@@ -188,11 +188,12 @@ another source or changing a real system preference during a check.
 
 ### Password import inside setup
 
-Safari and Firefox password files use the actual CSV importer. Firefox has no
-iCloud Passwords choice, so it goes straight to the file page, whose steps and
-help panel follow Firefox's own export: the ☰ menu's Passwords page, then
-⋯ → Export Passwords…, saving `passwords.csv`. File selection and
-drop target the same owner, with source/destination and generation checks.
+Safari, Firefox and Zen password files use the actual CSV importer. Firefox
+and Zen have no iCloud Passwords choice, so they go straight to the file page,
+whose steps and help panel follow Firefox's own export: the ☰ menu's Passwords
+page (Zen: type `about:logins`), then ⋯ → Export Passwords…, saving
+`passwords.csv`. File selection and drop target the same owner, with
+source/destination and generation checks.
 Next stays disabled until the required file import succeeds. Native upload-state
 changes are immediate; the containing setup stage owns its transition.
 

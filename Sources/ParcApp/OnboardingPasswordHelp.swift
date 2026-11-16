@@ -123,7 +123,7 @@ final class OnboardingPasswordHelp: NSView {
         }
 
         private var title: String {
-            if presentation.export == .firefox { return "Exporting Firefox Passwords" }
+            if presentation.export != .safari { return "Exporting \(presentation.export.browserName) Passwords" }
             if #available(macOS 15, *) { return "Exporting Your Passwords" }
             return "Exporting Safari Passwords"
         }
@@ -138,13 +138,18 @@ final class OnboardingPasswordHelp: NSView {
         }
 
         @ViewBuilder private func instructions(width: CGFloat) -> some View {
-            if presentation.export == .firefox {
+            if presentation.export == .zen {
+                VStack(alignment: .leading, spacing: 32) {
+                    instruction(1, title: "Open Zen’s passwords", detail: "In Zen, type about:logins in the address bar and press Return.")
+                    firefoxExportSteps
+                }
+                .frame(width: width, alignment: .leading)
+                .padding(.top, 24)
+            } else if presentation.export == .firefox {
                 VStack(alignment: .leading, spacing: 32) {
                     instruction(1, title: "Open Firefox’s passwords", detail: "In Firefox, open the ☰ menu and choose Passwords.",
                                 spoken: "In Firefox, open the application menu and choose Passwords.")
-                    instruction(2, title: "Export your passwords", detail: "Choose ⋯ → Export Passwords… and then Continue with export. If macOS asks for your Mac’s password, enter it, then save passwords.csv.",
-                                spoken: "From the Passwords page menu, choose Export Passwords, then Continue with export. If macOS asks for your Mac’s password, enter it, then save passwords.csv.")
-                    instruction(3, title: "Bring the file to Parc", detail: "Close this help and drop passwords.csv onto the password-import area, or click it to choose the file.")
+                    firefoxExportSteps
                 }
                 .frame(width: width, alignment: .leading)
                 .padding(.top, 24)
@@ -159,6 +164,12 @@ final class OnboardingPasswordHelp: NSView {
             } else {
                 SafariIllustration().frame(width: width, height: width * 468 / Self.instructionsWidth)
             }
+        }
+
+        @ViewBuilder private var firefoxExportSteps: some View {
+            instruction(2, title: "Export your passwords", detail: "Choose ⋯ → Export Passwords… and then Continue with export. If macOS asks for your Mac’s password, enter it, then save passwords.csv.",
+                        spoken: "From the Passwords page menu, choose Export Passwords, then Continue with export. If macOS asks for your Mac’s password, enter it, then save passwords.csv.")
+            instruction(3, title: "Bring the file to Parc", detail: "Close this help and drop passwords.csv onto the password-import area, or click it to choose the file.")
         }
 
         private func instruction(_ number: Int, title: String, detail: String, spoken: String? = nil) -> some View {

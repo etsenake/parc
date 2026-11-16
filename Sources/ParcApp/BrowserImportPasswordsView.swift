@@ -58,13 +58,19 @@ final class BrowserImportPasswordsView: NSView {
             }
             instructions[2].configure([.text("Upload your Passwords.csv file to Parc.")])
             detail.stringValue = "To manually import passwords from Safari, you’ll have to export them."
-        case .firefox:
-            instructions[0].configure([.text("In Firefox, open the "), .symbol("☰", spoken: "application"),
-                                       .text(" menu and choose "), .menu("Passwords"), .text(".")])
+        case .firefox, .zen:
+            if export == .zen {
+                instructions[0].configure([.text("In Zen, type "), .menu("about:logins"),
+                                           .text(" in the address bar and press Return.")])
+            } else {
+                instructions[0].configure([.text("In Firefox, open the "), .symbol("☰", spoken: "application"),
+                                           .text(" menu and choose "), .menu("Passwords"), .text(".")])
+            }
             instructions[1].configure([.text("Choose "), .symbol("⋯", spoken: "the Passwords page menu"), .separator,
                                        .menu("Export Passwords…"), .text(".")])
             instructions[2].configure([.text("Upload your passwords.csv file to Parc.")])
-            detail.stringValue = "To use your Firefox passwords in Parc, you’ll have to export them from Firefox."
+            let name = export.browserName
+            detail.stringValue = "To use your \(name) passwords in Parc, you’ll have to export them from \(name)."
         }
         setAccessibilityLabel("Import exported \(export.browserName) passwords")
     }

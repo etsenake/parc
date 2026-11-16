@@ -9,6 +9,12 @@ func firefoxPasswordChecks(store: BrowserStore, destination: BrowserImportDestin
     let firefox = PCNativeImportSource("org.mozilla.firefox", URL(fileURLWithPath: "/fixture/Firefox.app"))
     expect(BrowserImportCoordinator.passwordExport(for: firefox) == .firefox,
            "Firefox is recognised by its bundle identifier for the password file step")
+    let zen = PCNativeImportSource("app.zen-browser.zen", URL(fileURLWithPath: "/fixture/Zen.app"))
+    expect(BrowserImportCoordinator.passwordExport(for: zen) == .zen
+           && BrowserPasswordExport.zen.wrongFileMessage == "Choose the passwords.csv file exported by Zen.",
+           "Zen, built on Firefox, gets the same password file step with its own name")
+    expect(BrowserImportCoordinator.keychainNote(for: zen) == nil && BrowserImportCoordinator.keychainNote(for: firefox) == nil,
+           "Firefox-family imports never mention a Chromium Keychain key")
     PCNativeBrowserApplication.acceptsBrowserImport = true
     defer { PCNativeBrowserApplication.acceptsBrowserImport = false }
     func start(onboarding: Bool) -> BrowserImportCoordinator {

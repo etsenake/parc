@@ -158,9 +158,10 @@ void AddProfile(ProfilesResult& result,
     if (can("formhistory.sqlite"))
       p->categories |= PCNativeImportCategoryAutofill;
     p->constraints.push_back(
-        "Firefox passwords require an explicit password export. Parc does not "
-        "load Firefox's external NSS libraries into its signed application. "
-        "Firefox add-ons and encrypted payment records are not imported.");
+        source->name + " passwords require an explicit password export. Parc "
+        "does not load Firefox's external NSS libraries into its signed "
+        "application. " + source->name + " add-ons and encrypted payment "
+        "records are not imported.");
   }
   if (p->restricted)
     p->constraints.push_back(
@@ -280,8 +281,8 @@ std::vector<Installation> Importable(std::vector<Installation> installed,
   }
   return importable;
 }
-}  // namespace
-}  // namespace parc::importer
+}
+}
 
 @implementation PCNativeImportSource {
   std::shared_ptr<const parc::importer::Installation> _installation;
@@ -456,6 +457,13 @@ std::vector<Installation> Importable(std::vector<Installation> installed,
          "org.mozilla.firefox",
          "Firefox",
          "Library/Application Support/Firefox",
+         "",
+         "",
+         {}},
+        {2,
+         "app.zen-browser.zen",
+         "Zen",
+         "Library/Application Support/zen",
          "",
          "",
          {}}};

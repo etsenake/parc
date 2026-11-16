@@ -42,7 +42,16 @@ the key is always the source browser's own, never Parc's.
 | --- | --- | --- |
 | Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Arc | History; ordered bookmarks/empty folders from the local and account stores, plain or encrypted; cookies; saved passwords, including those saved to the browser account; form entries, current and historical local addresses, local payment cards; explicitly selected Web Store extensions | Actual macOS `v10` AES-CBC formats only. Unknown encryption, absent authorization or invalid encrypted-cookie host binding refuses that category. A source's concrete readable files determine availability. |
 | Safari | Default-store history and XML/binary-plist bookmarks | This reader supports no direct password/cookie/payment/extension import. Modern separate Safari profile stores are not advertised. Passwords require an explicit OS/source export. |
-| Firefox | History, bookmark hierarchy and form entries | Pinned macOS excludes the external NSS reader; no direct Firefox passwords, cookies, encrypted payment records or add-on installation is advertised. |
+| Firefox, Zen | History, bookmark hierarchy and form entries | Pinned macOS excludes the external NSS reader; no direct passwords, cookies, encrypted payment records or add-on installation is advertised. Passwords come from the browser's own CSV export (below). |
+
+Zen is built on Firefox and uses the Firefox reader. Zen's own build sets its
+profile name to `zen`, so its `profiles.ini` and profiles live in
+`~/Library/Application Support/zen`; its bundle identifier is
+`app.zen-browser.zen`. Reading Firefox's encrypted password store
+(`logins.json` with `key4.db`) directly is decided against: it would rebuild
+Firefox's key handling for its older and its Firefox 144 formats, need a
+primary-password prompt, and chase future format changes, while the CSV export
+step covers the same people.
 
 Chrome-family source keys come from the browser's actual macOS Keychain service
 and account after that source is selected and an encrypted category requested,
@@ -185,7 +194,10 @@ Admission reads a nonempty regular nonsymlink file at most 1000 KiB and verifies
 its identity before/after reading. Parsing has a 30-second pre-write deadline
 and a 3000-row limit, consistent with the upstream import bounds. Only valid
 HTTP(S) credentials within upstream URL/username/password/note lengths are
-admitted. Existing realm/username snapshot entries and blocked realms are
+admitted. Firefox and Zen exports carry Firefox's own account entry under a
+`chrome://` address for anyone signed in to a Mozilla account; Firefox's
+Passwords page hides it, and the importer skips it rather than counting an
+invalid row. Existing realm/username snapshot entries and blocked realms are
 skipped; duplicate incoming keys keep the first. Conflicting values or notes
 remain partial outcomes. This is a snapshot policy, not an atomic
 compare-and-insert guarantee against other password-manager edits.

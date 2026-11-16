@@ -26,13 +26,13 @@ Native category capabilities and access failures determine what can be imported;
 Swift bookmark/progress models never receive native credential contents.
 Choosing a Chromium-family browser replaces the intro line with a note that
 macOS may ask for that browser's Safe Storage key, which unlocks the bookmarks,
-passwords and cookies it keeps encrypted; Safari and Firefox keep the intro.
+passwords and cookies it keeps encrypted; Safari, Firefox and Zen keep the intro.
 
 ## Sequencing and cancellation
 
 Bookmarks are collected first. Other browser data runs in background native
 sessions, then extension installation follows using each original destination.
-Safari and Firefox background data wait for the password-file session to
+Safari, Firefox and Zen background data wait for the password-file session to
 release the Profile. A detached presenter can retain accepted background work;
 later imports wait for earlier background work rather than racing the same
 owner. Failures are reported as partial or failed, preserving already committed
@@ -44,8 +44,8 @@ category data and returned bookmark results survive. Retrying bookmark insertion
 does not repeat native import or extension installation. A nil native session
 means admission was refused, not that an asynchronous completion will arrive.
 
-First launch accepts bookmark results before the optional Safari or Firefox
-password file; an empty result omits that screen. Menu import retains its
+First launch accepts bookmark results before the optional Safari, Firefox or
+Zen password file; an empty result omits that screen. Menu import retains its
 password-then-bookmark order.
 Accepted/discarded result pages cannot reappear later. A cancelled import keeps
 returned bookmarks but suppresses another optional import stage.
@@ -105,9 +105,11 @@ its background work.
 
 The user explicitly chooses or drops one exported CSV. Parc does not unlock
 Apple's credential applications, read their stores directly, or import passkeys
-and verification codes. Firefox imports offer the same step, with Firefox's own
-export steps; Chromium's CSV reader takes Firefox's `url`, `username` and
-`password` columns and ignores its realm, form, identifier and time columns.
+and verification codes. Firefox and Zen imports offer the same step, with
+their own export steps; Chromium's CSV reader takes Firefox's `url`, `username`
+and `password` columns and ignores its realm, form, identifier and time columns.
+The hidden Mozilla-account entry such exports carry is skipped, not counted as
+a failed row.
 The original import window and destination govern file selection, completion,
 Stop, retry and Continue/Skip.
 

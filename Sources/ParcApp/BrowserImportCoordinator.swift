@@ -168,16 +168,16 @@ final class BrowserImportCoordinator {
         Bundle(url: source.appURL)?.bundleIdentifier == "com.apple.Safari"
     }
     static func keychainNote(for source: PCNativeImportSource) -> String? {
-        guard !isSafari(source), source.identifier != "org.mozilla.firefox" else { return nil }
+        guard !isSafari(source), !firefoxFamily.keys.contains(source.identifier) else { return nil }
         let name = source.displayName
         return "macOS may ask to let Parc use \(name)’s Safe Storage key. It unlocks the bookmarks, passwords and cookies \(name) keeps encrypted."
     }
     static let arcBundleIdentifier = "company.thebrowser.Browser"
     static func isArc(_ source: PCNativeImportSource) -> Bool { source.identifier == arcBundleIdentifier }
     var isArcSource: Bool { source.map(Self.isArc) == true }
+    static let firefoxFamily: [String: BrowserPasswordExport] = ["org.mozilla.firefox": .firefox, "app.zen-browser.zen": .zen]
     static func passwordExport(for source: PCNativeImportSource) -> BrowserPasswordExport? {
-        if isSafari(source) { return .safari }
-        return source.identifier == "org.mozilla.firefox" ? .firefox : nil
+        isSafari(source) ? .safari : firefoxFamily[source.identifier]
     }
     var passwordExport: BrowserPasswordExport? { source.flatMap(Self.passwordExport) }
     var offersICloudPasswordChoice: Bool { supportsICloudPasswords && passwordExport == .safari }
@@ -1080,17 +1080,16 @@ enum ArcSidebarSnapshot {
 }
 
 enum BrowserPasswordExport: Equatable {
-    case safari, firefox
+    case safari, firefox, zen
     var browserName: String {
         switch self {
         case .safari: return "Safari"
         case .firefox: return "Firefox"
+        case .zen: return "Zen"
         }
     }
     var wrongFileMessage: String {
-        switch self {
-        case .safari: return "Choose the CSV file exported by Safari or Passwords."
-        case .firefox: return "Choose the passwords.csv file exported by Firefox."
-        }
+        self == .safari ? "Choose the CSV file exported by Safari or Passwords."
+            : "Choose the passwords.csv file exported by \(browserName)."
     }
 }
