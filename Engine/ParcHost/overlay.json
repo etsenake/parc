@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 773,
+  "version": 774,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -2104,12 +2104,12 @@
     {
       "source": "Engine/ParcChromium/error_pages/interstitial.css",
       "target": "parc/error_pages/interstitial.css",
-      "sha256": "b2c1d069777c2499b89d135960a6c46aa5f104c57a4df28b0714f161d1968e9d"
+      "sha256": "a18ff0f32615631310e94314d6c7deec46e513083dd641a1fc378a334f64ff7f"
     },
     {
       "source": "Engine/ParcChromium/error_pages/interstitial.js",
       "target": "parc/error_pages/interstitial.js",
-      "sha256": "870ef0adf9c361c4174cd58431893548cb7b40a64d70e132fdc5a91ad04c3ee8"
+      "sha256": "7b7d4cce817ace6eaeffa9797a7e8bde8af967f66623863f93ef21006c3b8447"
     },
     {
       "source": "Engine/ParcChromium/error_pages/neterror.css",

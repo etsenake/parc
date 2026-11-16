@@ -360,11 +360,15 @@ the resource-bundle delegates Parc already installs in every process
 - Security warnings keep Chromium's interstitial page and script, so every
   command, the proceed click delay, the typed bypass, reporting, the
   certificate details and the strict script policy stay as they were. Parc
-  adds its stylesheet, drawings and a small script that rewrites the headline
-  and lede for certificate errors and dangerous sites (moving Chromium's own
-  paragraph, with its links, into Details) and the headline for insecure
-  forms. Clock, captive-portal, lookalike, HTTPS-Only and enterprise warnings
-  keep Chromium's words in Parc's look.
+  adds its stylesheet, drawings and a small script that gives every warning
+  Parc's headline and lede and labels the details button Details. Chromium's
+  own paragraph keeps its links and specifics: it moves into Details (the date
+  on a clock warning, the app on a security-software warning) or stays as a
+  quieter note when a warning has no Details (the network on a captive
+  portal, the reason on HTTPS-Only, an organization's own message). Safe
+  Browsing says "this site" because Chromium doesn't give it the address. The
+  monitoring warning's Back to safety button does nothing in Chromium 157
+  either, so Parc leaves it as Chromium wired it.
 - Titles and visible text say `parc://` where Chromium's say `chrome://`;
   links still go to the real internal page.
 

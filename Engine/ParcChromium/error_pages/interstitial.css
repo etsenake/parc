@@ -161,6 +161,13 @@ html { font-size: 15px; }
   overflow-wrap: anywhere;
 }
 
+#body #main-message > p.parc-note {
+  margin-top: 12px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 21px;
+}
+
 #body strong { font-weight: 600; }
 #body a, #body #main-content a, #body #details a { color: var(--link); }
 
