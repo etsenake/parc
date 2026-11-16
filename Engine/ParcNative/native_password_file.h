@@ -9,10 +9,34 @@
 #include <cerrno>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 namespace parc::password_file {
-// The upstream CSV importer uses the same 1000 KiB limit. No credential bytes
-// leave native memory, and no destination is touched until parsing completes.
-constexpr size_t kMaximumBytes = 1000 * 1024;
+constexpr size_t kMaximumBytes = 32 * 1024 * 1024;
+constexpr size_t kChunkBytes = 1000 * 1024;
+constexpr size_t kChunkRows = 3000;
+struct Chunks {
+  size_t header = 0;
+  std::vector<std::pair<size_t, size_t>> ranges;
+};
+inline Chunks Split(std::string_view csv, size_t max_bytes = kChunkBytes, size_t max_rows = kChunkRows) {
+  Chunks chunks;
+  bool quoted = false, header = true;
+  size_t start = 0, rows = 0;
+  for (size_t i = 0; i < csv.size(); ++i) {
+    if (csv[i] == '"') { quoted = !quoted; continue; }
+    if (csv[i] != '\n' || quoted) continue;
+    if (header) { header = false; chunks.header = start = i + 1; continue; }
+    if (++rows >= max_rows || i + 1 - start >= max_bytes) {
+      chunks.ranges.emplace_back(start, i + 1);
+      start = i + 1; rows = 0;
+    }
+  }
+  if (header) chunks.header = csv.size();
+  else if (start < csv.size()) chunks.ranges.emplace_back(start, csv.size());
+  return chunks;
+}
 struct Identity {
   dev_t device; ino_t inode; off_t size;
   timespec modified;
@@ -34,7 +58,7 @@ inline ReadResult Read(const std::string& path) {
   struct stat before = {}, after = {};
   if (fstat(fd, &before) || !S_ISREG(before.st_mode) || before.st_size <= 0 ||
       before.st_size > static_cast<off_t>(kMaximumBytes)) {
-    close(fd); result.error = "Choose a nonempty CSV file no larger than 1000 KB."; return result;
+    close(fd); result.error = "Choose a nonempty CSV file no larger than 32 MB."; return result;
   }
   result.bytes.resize(before.st_size);
   size_t read_count = 0;
@@ -57,4 +81,4 @@ inline ReadResult Read(const std::string& path) {
   result.identity = identity;
   return result;
 }
-}  // namespace parc::password_file
+}

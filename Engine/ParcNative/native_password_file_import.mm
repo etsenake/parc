@@ -44,12 +44,24 @@ using Completion = void (^)(PCNativePasswordFileImportResult*);
 using Credential = password_manager::StoredCredential;
 using Key = std::pair<std::string, std::u16string>;
 struct Expected { password_manager::PasswordString password; std::u16string note; };
+struct Loaded { ReadResult read; Chunks chunks; };
+Loaded Load(const std::string& path) {
+  Loaded loaded{Read(path), {}};
+  if (loaded.read.identity) loaded.chunks = Split(loaded.read.bytes);
+  return loaded;
+}
+NSString* Unreadable() {
+  return @"Choose an exported password CSV with URL, username and password columns.";
+}
+void Wipe(std::string& bytes) {
+  std::fill(bytes.begin(), bytes.end(), 0); bytes.clear(); bytes.shrink_to_fit();
+}
 class Session final : public ProfileObserver, public password_manager::PasswordStoreConsumer,
                       public std::enable_shared_from_this<Session> {
  public:
   Session(NSURL* file, NSString* path, NSWindow* window, Completion completion)
       : file_([file copy]), path_([path copy]), window_(window), completion_([completion copy]) {}
-  ~Session() override { Release(); }
+  ~Session() override { Wipe(bytes_); Release(); }
   bool Reserve() {
     if (!importer::ReserveImportDestination(path_, this)) return false;
     reserved_ = true; lifetime_ = shared_from_this(); return true;
@@ -72,8 +84,10 @@ class Session final : public ProfileObserver, public password_manager::PasswordS
   }
   void Cancel() {
     cancelled_ = true; removable_ = false;
-    if (!finished_ && !writing_) Finish(PCNativeImportOutcomeCancelled, nil);
-    else if (finished_) Release();
+    if (finished_) { Release(); return; }
+    if (writing_ || verifying_) return;
+    if (wrote_) { Stop(nil); return; }
+    Finish(PCNativeImportOutcomeCancelled, nil);
   }
   void OnProfileWillBeDestroyed(Profile* profile) override {
     profile->RemoveObserver(this); observing_ = false; profile_.reset();
@@ -111,24 +125,129 @@ class Session final : public ProfileObserver, public password_manager::PasswordS
     if (finished_) return;
     if (store != store_.get() || !result.has_value()) {
       Finish(cancelled_ ? PCNativeImportOutcomeCancelled : PCNativeImportOutcomeFailed,
-          importer::ImportError(writing_ ? @"Password writes could not be confirmed. The exported file has been kept." : @"The destination password store could not be read.")); return;
+          importer::ImportError(verifying_ ? @"Password writes could not be confirmed. The exported file has been kept." : @"The destination password store could not be read.")); return;
     }
-    if (writing_) { Verify(result.value()); return; }
-    if (!ValidOwner() || cancelled_ || !PasswordSavingEnabled()) { Finish(PCNativeImportOutcomeCancelled, nil); return; }
-    std::map<Key, const Credential*> existing;
-    std::set<std::string> blocked;
+    if (verifying_) { Verify(result.value()); return; }
+    if (!Alive()) { Finish(PCNativeImportOutcomeCancelled, nil); return; }
+    if (!PasswordSavingEnabled()) { Finish(PCNativeImportOutcomeFailed, importer::ImportError(@"Password saving is disabled for this Profile.")); return; }
     for (const auto& credential : result.value()) {
-      if (credential.blocked_by_user) blocked.insert(credential.signon_realm);
-      else existing.try_emplace(Key(credential.signon_realm, credential.username_value), &credential);
+      if (credential.blocked_by_user) blocked_.insert(credential.signon_realm);
+      else existing_.try_emplace(Key(credential.signon_realm, credential.username_value),
+                                 Expected{credential.password_value, credential.GetPasswordNote()});
     }
+    snapshot_ = true;
+    Apply();
+  }
+ private:
+  bool Alive() const {
+    return !cancelled_ && window_ && profile_ && !profile_->IsOffTheRecord() &&
+        !profile_->ShutdownStarted() && context_ && context_->profile() == profile_.get();
+  }
+  bool ValidOwner() const { return Alive() && window_.visible; }
+  bool PasswordSavingEnabled() const {
+    return profile_ && profile_->GetPrefs()->GetBoolean(password_manager::prefs::kCredentialsEnableService);
+  }
+  void ReadFile() {
+    if (!ValidOwner()) { Finish(PCNativeImportOutcomeCancelled, nil); return; }
+    if (!PasswordSavingEnabled()) { Finish(PCNativeImportOutcomeFailed, importer::ImportError(@"Password saving is disabled for this Profile.")); return; }
+    StartDeadline();
+    base::ThreadPool::PostTaskAndReplyWithResult(FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&Load, base::SysNSStringToUTF8(file_.path)),
+        base::BindOnce([](std::weak_ptr<Session> weak, Loaded loaded) {
+          auto self = weak.lock();
+          if (!self || self->finished_ || !self->Alive()) {
+            Wipe(loaded.read.bytes);
+            if (self && !self->finished_) self->Finish(PCNativeImportOutcomeCancelled, nil);
+            return;
+          }
+          if (!loaded.read.identity) { self->Finish(PCNativeImportOutcomeFailed, importer::ImportError(base::SysUTF8ToNSString(loaded.read.error))); return; }
+          self->identity_ = loaded.read.identity;
+          self->bytes_ = std::move(loaded.read.bytes);
+          self->chunks_ = std::move(loaded.chunks);
+          if (self->chunks_.ranges.empty()) { self->Finish(PCNativeImportOutcomeFailed, importer::ImportError(Unreadable())); return; }
+          self->ParseNext();
+        }, weak_from_this()));
+  }
+  void StartDeadline() {
+    deadline_.Start(FROM_HERE, base::Seconds(30), base::BindOnce([](std::weak_ptr<Session> weak) {
+      if (auto self = weak.lock()) self->Fail(importer::ImportError(@"Reading the exported password file timed out."));
+    }, weak_from_this()));
+  }
+  void Fail(NSError* error) {
+    if (finished_ || writing_ || verifying_) return;
+    if (wrote_) Stop(error); else Finish(PCNativeImportOutcomeFailed, error);
+  }
+  void ParseNext() {
+    if (finished_) return;
+    if (!Alive()) { Cancel(); return; }
+    if (next_ == chunks_.ranges.size()) { Parsed(); return; }
+    if (!parser_.is_bound() || !parser_.is_connected()) {
+      parser_.reset();
+      parser_ = password_manager::LaunchCSVPasswordParser();
+      parser_.set_disconnect_handler(base::BindOnce([](std::weak_ptr<Session> weak) {
+        if (auto self = weak.lock()) {
+          self->parser_.reset();
+          if (self->parsing_) {
+            self->parsing_ = false;
+            self->Fail(importer::ImportError(self->wrote_ ? @"The CSV password reader stopped. Passwords saved before it stopped remain saved; the exported file has been kept." : @"The CSV password reader stopped. No passwords were imported."));
+          }
+        }
+      }, weak_from_this()));
+    }
+    const auto [begin, end] = chunks_.ranges[next_++];
+    std::string chunk;
+    chunk.reserve(chunks_.header + end - begin);
+    chunk.append(bytes_, 0, chunks_.header).append(bytes_, begin, end - begin);
+    StartDeadline();
+    parsing_ = true;
+    parser_->ParseCSV(chunk, base::BindOnce(&Session::ChunkParsed, weak_factory_.GetWeakPtr()));
+    Wipe(chunk);
+  }
+  void ChunkParsed(password_manager::mojom::CSVPasswordSequencePtr sequence) {
+    parsing_ = false;
+    if (finished_) return;
+    if (!Alive()) { Cancel(); return; }
+    if (!sequence) { Fail(importer::ImportError(Unreadable())); return; }
+    rows_ += sequence->csv_passwords.size();
+    for (const auto& row : sequence->csv_passwords) Admit(row);
+    sequence.reset();
+    if (incoming_.empty()) { ParseNext(); return; }
+    if (snapshot_) { Apply(); return; }
+    store_ = ProfilePasswordStoreFactory::GetForProfile(profile_.get(), ServiceAccessType::EXPLICIT_ACCESS);
+    if (!store_) { Finish(PCNativeImportOutcomeFailed, importer::ImportError(@"Password storage is unavailable.")); return; }
+    store_->GetAllLogins(weak_factory_.GetWeakPtr());
+  }
+  void Admit(const password_manager::CSVPassword& row) {
+    using namespace password_manager;
+    if (row.GetParseStatus() == CSVPassword::Status::kOK && row.GetURL().has_value() &&
+        row.GetURL()->SchemeIs("chrome")) return;
+    if (row.GetParseStatus() != CSVPassword::Status::kOK || !row.GetURL().has_value() ||
+        !row.GetURL()->SchemeIsHTTPOrHTTPS() || row.GetURL()->has_username() || row.GetURL()->has_password() ||
+        row.GetURL()->spec().size() > constants::kMaxUrlLengthForImport || row.GetPassword().empty() ||
+        row.GetPassword().size() > constants::kMaxPasswordLengthForImport ||
+        row.GetUsername().size() > constants::kMaxUsernameLengthForImport || row.GetNote().size() > constants::kMaxPasswordNoteLength) {
+      ++invalid_count_; return;
+    }
+    Credential credential;
+    credential.url = row.GetURL().value(); credential.signon_realm = credential.url.DeprecatedGetOriginAsURL().spec();
+    credential.username_value = base::UTF8ToUTF16(row.GetUsername());
+    credential.password_value = PasswordString(base::UTF8ToUTF16(row.GetPassword()));
+    credential.SetPasswordNote(base::UTF8ToUTF16(row.GetNote()));
+    credential.type = PasswordForm::Type::kImported; credential.in_store = PasswordForm::Store::kProfileStore;
+    credential.date_created = base::Time::Now();
+    ++admitted_;
+    incoming_.push_back(std::move(credential));
+  }
+  void Apply() {
     std::vector<Credential> additions;
     for (auto& credential : incoming_) {
       Key key(credential.signon_realm, credential.username_value);
-      auto found = existing.find(key);
-      if (blocked.contains(credential.signon_realm) || found != existing.end()) {
+      const bool blocked = blocked_.contains(credential.signon_realm);
+      auto found = existing_.find(key);
+      if (blocked || found != existing_.end()) {
         ++existing_count_;
-        if (blocked.contains(credential.signon_realm) || found->second->password_value != credential.password_value ||
-            found->second->GetPasswordNote() != credential.GetPasswordNote()) ++conflicts_;
+        if (blocked || found->second.password != credential.password_value ||
+            found->second.note != credential.GetPasswordNote()) ++conflicts_;
         continue;
       }
       auto [it, inserted] = expected_.try_emplace(key, Expected{credential.password_value, credential.GetPasswordNote()});
@@ -140,82 +259,41 @@ class Session final : public ProfileObserver, public password_manager::PasswordS
       additions.push_back(std::move(credential));
     }
     incoming_.clear();
-    if (additions.empty()) { Complete(); return; }
+    if (additions.empty()) { ParseNext(); return; }
+    if (!PasswordSavingEnabled()) {
+      Fail(importer::ImportError(@"Password saving was turned off during the import. Passwords saved before then remain saved; the exported file has been kept.")); return;
+    }
     writing_ = true; deadline_.Stop();
     store_->AddLogins(std::move(additions), base::BindOnce([](std::shared_ptr<Session> self) {
+      self->writing_ = false; self->wrote_ = true;
       if (self->finished_) return;
       if (!self->profile_ || self->profile_->ShutdownStarted()) {
         self->Finish(PCNativeImportOutcomeCancelled, importer::ImportError(@"The destination closed before password writes could be confirmed.")); return;
       }
-      self->store_->GetAllLogins(self->weak_factory_.GetWeakPtr());
+      if (!self->Alive()) { self->Cancel(); return; }
+      self->ParseNext();
     }, shared_from_this()));
   }
- private:
-  bool ValidOwner() const {
-    return !cancelled_ && window_ && window_.visible && profile_ && !profile_->IsOffTheRecord() &&
-        !profile_->ShutdownStarted() && context_ && context_->profile() == profile_.get();
+  void Parsed() {
+    parsed_all_ = true;
+    deadline_.Stop(); Wipe(bytes_); parser_.reset();
+    if (!rows_) { Finish(PCNativeImportOutcomeFailed, importer::ImportError(Unreadable())); return; }
+    if (!admitted_) { Finish(PCNativeImportOutcomeFailed, importer::ImportError(@"No supported website passwords were found. The file has been kept.")); return; }
+    if (!wrote_) { Complete(); return; }
+    verifying_ = true;
+    store_->GetAllLogins(weak_factory_.GetWeakPtr());
   }
-  bool PasswordSavingEnabled() const {
-    return profile_ && profile_->GetPrefs()->GetBoolean(password_manager::prefs::kCredentialsEnableService);
-  }
-  void ReadFile() {
-    if (!ValidOwner()) { Finish(PCNativeImportOutcomeCancelled, nil); return; }
-    if (!PasswordSavingEnabled()) { Finish(PCNativeImportOutcomeFailed, importer::ImportError(@"Password saving is disabled for this Profile.")); return; }
-    deadline_.Start(FROM_HERE, base::Seconds(30), base::BindOnce([](std::weak_ptr<Session> weak) {
-      if (auto self = weak.lock()) self->Finish(PCNativeImportOutcomeFailed, importer::ImportError(@"Reading the exported password file timed out."));
-    }, weak_from_this()));
-    base::ThreadPool::PostTaskAndReplyWithResult(FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-        base::BindOnce(&Read, base::SysNSStringToUTF8(file_.path)),
-        base::BindOnce([](std::weak_ptr<Session> weak, ReadResult read) {
-          auto self = weak.lock();
-          if (!self || self->finished_ || !self->ValidOwner()) {
-            std::fill(read.bytes.begin(), read.bytes.end(), 0);
-            if (self && !self->finished_) self->Finish(PCNativeImportOutcomeCancelled, nil);
-            return;
-          }
-          if (!read.identity) { self->Finish(PCNativeImportOutcomeFailed, importer::ImportError(base::SysUTF8ToNSString(read.error))); return; }
-          self->identity_ = read.identity;
-          self->parser_ = password_manager::LaunchCSVPasswordParser();
-          self->parser_.set_disconnect_handler(base::BindOnce([](std::weak_ptr<Session> weak) {
-            if (auto self = weak.lock()) self->Finish(PCNativeImportOutcomeFailed, importer::ImportError(@"The CSV password reader stopped. No passwords were imported."));
-          }, weak));
-          self->parser_->ParseCSV(read.bytes, base::BindOnce(&Session::Parsed, self->weak_factory_.GetWeakPtr()));
-          std::fill(read.bytes.begin(), read.bytes.end(), 0);
-        }, weak_from_this()));
-  }
-  void Parsed(password_manager::mojom::CSVPasswordSequencePtr sequence) {
-    parser_.reset();
-    if (finished_) return;
-    if (!ValidOwner()) { Finish(PCNativeImportOutcomeCancelled, nil); return; }
-    if (!sequence || sequence->csv_passwords.empty() || sequence->csv_passwords.size() > 3000) {
-      Finish(PCNativeImportOutcomeFailed, importer::ImportError(@"Choose an exported password CSV with URL, username and password columns, and no more than 3000 rows.")); return;
+  void Stop(NSError* error) {
+    deadline_.Stop(); Wipe(bytes_); parser_.reset(); parsing_ = false; incoming_.clear();
+    failure_ = error;
+    if (!wrote_ || !store_) {
+      Finish(error ? PCNativeImportOutcomeFailed : PCNativeImportOutcomeCancelled, error); return;
     }
-    for (const auto& row : sequence->csv_passwords) {
-      using namespace password_manager;
-      if (row.GetParseStatus() == CSVPassword::Status::kOK && row.GetURL().has_value() &&
-          row.GetURL()->SchemeIs("chrome")) continue;
-      if (row.GetParseStatus() != CSVPassword::Status::kOK || !row.GetURL().has_value() ||
-          !row.GetURL()->SchemeIsHTTPOrHTTPS() || row.GetURL()->has_username() || row.GetURL()->has_password() ||
-          row.GetURL()->spec().size() > constants::kMaxUrlLengthForImport || row.GetPassword().empty() ||
-          row.GetPassword().size() > constants::kMaxPasswordLengthForImport ||
-          row.GetUsername().size() > constants::kMaxUsernameLengthForImport || row.GetNote().size() > constants::kMaxPasswordNoteLength) {
-        ++invalid_count_; continue;
-      }
-      Credential credential;
-      credential.url = row.GetURL().value(); credential.signon_realm = credential.url.DeprecatedGetOriginAsURL().spec();
-      credential.username_value = base::UTF8ToUTF16(row.GetUsername());
-      credential.password_value = PasswordString(base::UTF8ToUTF16(row.GetPassword()));
-      credential.SetPasswordNote(base::UTF8ToUTF16(row.GetNote()));
-      credential.type = PasswordForm::Type::kImported; credential.in_store = PasswordForm::Store::kProfileStore;
-      credential.date_created = base::Time::Now();
-      incoming_.push_back(std::move(credential));
-    }
-    if (incoming_.empty()) { Finish(PCNativeImportOutcomeFailed, importer::ImportError(@"No supported website passwords were found. The file has been kept.")); return; }
-    store_ = ProfilePasswordStoreFactory::GetForProfile(profile_.get(), ServiceAccessType::EXPLICIT_ACCESS);
-    if (!store_) { Finish(PCNativeImportOutcomeFailed, importer::ImportError(@"Password storage is unavailable.")); return; }
+    verifying_ = true;
     store_->GetAllLogins(weak_factory_.GetWeakPtr());
   }
   void Verify(const std::vector<Credential>& stored) {
+    verifying_ = false;
     for (const auto& credential : stored) {
       if (credential.blocked_by_user) continue;
       auto found = expected_.find(Key(credential.signon_realm, credential.username_value));
@@ -224,21 +302,21 @@ class Session final : public ProfileObserver, public password_manager::PasswordS
       }
     }
     if (!expected_.empty()) {
-      Finish(cancelled_ ? PCNativeImportOutcomeCancelled : PCNativeImportOutcomeFailed,
+      Finish(cancelled_ ? PCNativeImportOutcomeCancelled : (imported_count_ ? PCNativeImportOutcomePartial : PCNativeImportOutcomeFailed),
           importer::ImportError(@"Some password writes could not be confirmed. Confirmed passwords remain saved; the exported file has been kept.")); return;
     }
     Complete();
   }
   void Complete() {
-    removable_ = !cancelled_ && invalid_count_ == 0 && conflicts_ == 0 && (imported_count_ || existing_count_);
+    removable_ = parsed_all_ && !cancelled_ && !failure_ && invalid_count_ == 0 && conflicts_ == 0 && (imported_count_ || existing_count_);
     Finish(cancelled_ ? PCNativeImportOutcomeCancelled :
-        (conflicts_ || invalid_count_ ? PCNativeImportOutcomePartial : PCNativeImportOutcomeCompleted),
-        conflicts_ ? importer::ImportError(@"Existing or duplicate entries were kept. Some rows differed; keep the exported file to review them.") : nil);
+        (!parsed_all_ || failure_ || conflicts_ || invalid_count_ ? PCNativeImportOutcomePartial : PCNativeImportOutcomeCompleted),
+        failure_ ?: (conflicts_ ? importer::ImportError(@"Existing or duplicate entries were kept. Some rows differed; keep the exported file to review them.") : nil));
   }
   void Finish(PCNativeImportOutcome outcome, NSError* error) {
     if (finished_) return;
     auto keep_alive = shared_from_this(); finished_ = true;
-    deadline_.Stop(); parser_.reset(); incoming_.clear(); expected_.clear(); store_.reset();
+    deadline_.Stop(); parser_.reset(); Wipe(bytes_); incoming_.clear(); expected_.clear(); existing_.clear(); blocked_.clear(); store_.reset();
     if (reserved_) { importer::ReleaseImportDestination(path_, this); reserved_ = false; }
     if (outcome != PCNativeImportOutcomeCompleted) removable_ = false;
     auto result = [[PCNativePasswordFileImportResult alloc] initWithOutcome:outcome imported:imported_count_
@@ -260,16 +338,22 @@ class Session final : public ProfileObserver, public password_manager::PasswordS
   NSWindow* __weak window_;
   Completion __strong completion_;
   id __strong close_observer_;
+  NSError* __strong failure_;
   std::shared_ptr<Session> lifetime_;
   base::WeakPtr<Profile> profile_;
   parc::NativeProfileLeasePtr context_;
   scoped_refptr<password_manager::PasswordStoreInterface> store_;
   mojo::Remote<password_manager::mojom::CSVPasswordParser> parser_;
+  std::string bytes_;
+  Chunks chunks_;
+  size_t next_ = 0, rows_ = 0, admitted_ = 0;
   std::vector<Credential> incoming_;
-  std::map<Key, Expected> expected_;
+  std::map<Key, Expected> existing_, expected_;
+  std::set<std::string> blocked_;
   std::optional<Identity> identity_;
   size_t imported_count_ = 0, existing_count_ = 0, invalid_count_ = 0, conflicts_ = 0;
-  bool reserved_ = false, observing_ = false, cancelled_ = false, finished_ = false, writing_ = false;
+  bool reserved_ = false, observing_ = false, cancelled_ = false, finished_ = false;
+  bool snapshot_ = false, parsing_ = false, writing_ = false, verifying_ = false, wrote_ = false, parsed_all_ = false;
   bool removable_ = false, removing_ = false;
   base::OneShotTimer deadline_;
   base::WeakPtrFactory<Session> weak_factory_{this};

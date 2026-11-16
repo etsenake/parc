@@ -186,7 +186,7 @@ private final class SafariExportZip {
     static let profileLimit = 64
     static let historyLimit: UInt64 = 256 << 20
     static let bookmarksLimit: UInt64 = 64 << 20
-    static let passwordsLimit: UInt64 = 1_000 << 10
+    static let passwordsLimit: UInt64 = 32 << 20
     static let classifyLimit: UInt64 = 256 << 20
     static let prefixLength = 64 << 10
     static let entryLimit: UInt64 = 10_000

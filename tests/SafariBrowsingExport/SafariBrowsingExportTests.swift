@@ -465,11 +465,12 @@ private func nested(_ folders: Int, leaf: Bool) -> Data {
         dashed.remove()
         expect(leftovers().isEmpty, "Failed imports leave no unpacked folders or passwords behind.")
 
-        let oversized = String(repeating: "a", count: 1_024_001)
+        let oversized = String(repeating: "a", count: 33_554_433)
         expect(failure(makeZip([FixtureEntry("Passwords.csv", oversized)])) == tooLarge,
-               "A passwords file over 1,000 KiB is refused as too large.")
-        let atLimit = try open([FixtureEntry("Passwords.csv", String(repeating: "a", count: 1_024_000))])
-        expect(atLimit.passwordsFile.flatMap(contents)?.count == 1_024_000, "A passwords file of exactly 1,000 KiB is unpacked.")
+               "A passwords file over 32 MiB is refused as too large.")
+        let atLimit = try open([FixtureEntry("Passwords.csv", String(repeating: "a", count: 33_554_432))])
+        expect(atLimit.passwordsFile.flatMap(contents)?.count == 33_554_432,
+               "A passwords file of exactly 32 MiB, far past the old 1,000 KiB cap, is unpacked.")
         atLimit.remove()
 
         let traversal = [

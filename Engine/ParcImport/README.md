@@ -221,28 +221,41 @@ its genuine utility process; ProfilePasswordStore receives actual imported
 credentials, original URL/realm, username, password and note. Credentials never
 cross the Swift bridge or enter progress messages.
 
-Admission reads a nonempty regular nonsymlink file at most 1000 KiB and verifies
-its identity before/after reading. Parsing has a 30-second pre-write deadline
-and a 3000-row limit, consistent with the upstream import bounds. Only valid
-HTTP(S) credentials within upstream URL/username/password/note lengths are
-admitted. Firefox and Zen exports carry Firefox's own account entry under a
+Admission reads a nonempty regular nonsymlink file at most 32 MiB and verifies
+its identity before/after reading. Chromium's parser service has no size limit
+of its own; its upstream importer stops at 1000 KiB and 3000 rows, so Parc
+feeds the parser chunks within those bounds instead. The file is cut only at a
+line break outside quotes, exactly where Chromium's parser ends a record, and
+each chunk repeats the header line, so every row parses as it would in one
+piece. Chunks are parsed and saved one at a time, each parse with its own
+30-second deadline: memory holds the file, one chunk's rows, a copy of the
+saved-password snapshot and the keys awaiting verification, never every parsed
+row. A file with no data rows or an unusable header fails before anything is
+saved. Only valid HTTP(S) credentials within upstream
+URL/username/password/note lengths are admitted. Firefox and Zen exports carry Firefox's own account entry under a
 `chrome://` address for anyone signed in to a Mozilla account; Firefox's
 Passwords page hides it, and the importer skips it rather than counting an
-invalid row. Existing realm/username snapshot entries and blocked realms are
-skipped; duplicate incoming keys keep the first. Conflicting values or notes
-remain partial outcomes. This is a snapshot policy, not an atomic
+invalid row. One snapshot of saved passwords, taken before the first write,
+serves every chunk: existing realm/username entries and blocked realms are
+skipped, and duplicate incoming keys keep the first even across chunks.
+Conflicting values or notes remain partial outcomes. This is a snapshot policy, not an atomic
 compare-and-insert guarantee against other password-manager edits.
 
-Actual AddLogins completion is followed by store readback matching expected
-key/password/note. Only confirmed rows count as imported. Accepted writes drain
-after cancellation, and Profile teardown distinguishes unconfirmed writes from
-rollback. A fully confirmed result retains only file identity and the original
+After the last chunk's AddLogins completes, one store readback matches every
+expected key/password/note. Only confirmed rows count as imported. Accepted
+writes drain after cancellation; Stop, a closed window, a parser failure or
+password saving being turned off after earlier chunks were saved starts no
+further chunk and verifies what was written, reporting a partial or cancelled
+import that never offers to remove the file. Minimising or hiding the window
+does not stop it. Profile teardown
+distinguishes unconfirmed writes from rollback. A fully confirmed result retains only file identity and the original
 owner for optional explicit removal consent. Native removal re-reads and checks
 device/inode/size/mtime/SHA-256, then uses recoverable macOS Trash; no automatic or
 secure deletion is claimed. The OS path operation follows the identity check,
 without claiming an atomic filesystem CAS. Closing the lease revokes removal.
 
-The synthetic file component exercises actual admission/hash helpers, and the
+The synthetic file component exercises actual admission/hash helpers and the
+chunk splitter, including quoted line breaks and chunk boundaries, and the
 coordinator fixture exercises original destination, cancellation, stale results
 and explicit removal dispatch. Both use disposable data. Application ownership
 and source mapping are described in [browser import](../../docs/browser-import.md).
