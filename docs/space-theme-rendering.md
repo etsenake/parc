@@ -57,8 +57,11 @@ straight-alpha upload changes both brightness and apparent noise strength.
 floating surfaces. During tracking it uses the floor/ceiling pages and fractional
 strip position, clamped to the swipe's reach. During settling, the retained
 `pagingSourceID` pairs source and target, so commit/rebase does not restart the
-theme. A locked sidebar draws no separate backdrop; the root shows through.
-Hidden sidebars begin swipes only once shown floating.
+theme. A swipe that catches the slide from a click more than one Space away
+keeps that pair while the strip stays on the departing page's side, and uses the
+real neighbor once pushed past the clicked Space. A locked sidebar draws no
+separate backdrop; the root shows through. Hidden sidebars begin swipes only
+once shown floating.
 
 One gradient pass mixes the two straight-color layers and then premultiplies.
 The display pass mixes their strength-scaled textures and composites them over

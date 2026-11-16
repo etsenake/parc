@@ -129,6 +129,18 @@ at most one Space away, and springs back from wherever the strip was stretched
 to. A brisk release that would overshoot the landed Space toward a Space
 outside the swipe stretches along the same curve.
 
+A click that jumps more than one Space slides the new page in beside the page
+it left, which stands in for the neighbor on that side. A swipe that catches the
+slide keeps that page and the color between the two, and treats its side as an
+edge the strip is already past: toward the page it left the strip only spends
+what is left of that tenth of a page, and a release on that side springs on to
+the clicked Space rather than landing next door on a Space that was never on
+screen. Pushed past the clicked Space, the strip shows the real neighbor on the
+other side, and a release lands there as usual; a swipe caught while the page it
+left is off screen is an ordinary swipe. After a click to the Space next door
+the page it left is the real neighbor, so a swipe that catches that slide can
+still land back on it.
+
 Dragging past the final Space presents the create-Space edge over 15 strip
 points, fills its ring over 22.5 points and creates after the ring stays full
 for more than 0.1 seconds before release. The gesture works when the sidebar
@@ -136,7 +148,13 @@ has one Space as well as when it has several; a release that does not create
 springs the current Space back into place. Past the last Space the strip follows
 the drag without resistance whenever the sidebar offers creation, so these
 distances are unchanged. Private and Space-management sidebars do not offer this
-creation gesture, and their last Space resists like any other edge.
+creation gesture, and their last Space resists like any other edge. The ring
+arms with a tap on the trackpad when it fills, and taps again as it empties, but
+it arms only while the fingers pull. When a release selects a Space, the sidebar
+sees the strip's position from the Space being selected rather than the one it
+is leaving, and the settle of a brisk swipe that swings past the last Space
+fills the ring without arming it, so landing on the last Space never taps. A ring
+the fingers armed stays armed through the release.
 
 The floating blur takes the side the Space resolves to: a forced Space's own
 light or dark, or the window's for an automatic Space, reusing the window's
@@ -299,5 +317,5 @@ require the budget to fail.
 | `tests/SidebarWindowButtons/check.py` | Native button layout and pointer-state reconciliation |
 | `tests/SidebarPlusMenu/check.py` | HUD geometry, palette and dismissal behavior |
 | `tests/SidebarPacing/check.py` | Bounded AppKit layout work and continuity |
-| `tests/SidebarSpacePaging/check.py` | Phased, discrete and legacy paging, edge resistance and the trailing create-Space gesture |
+| `tests/SidebarSpacePaging/check.py` | Phased, discrete and legacy paging, edge resistance, swipes that catch a click's slide and the trailing create-Space gesture and its haptics |
 | `tests/SidebarSpaceSwipe/check.py` | Space-switch lifecycle and frame-budget regressions |

@@ -2060,7 +2060,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         let progress = shown ? SidebarSpaceCreationGesture.progress(overscroll) : 0
         spaceCreationFeedback.presentation = shown ? SidebarSpaceCreationGesture.presentation(overscroll) : 0
         spaceCreationFeedback.progress = progress
-        if spaceCreationGesture.update(progress: progress, now: CACurrentMediaTime()) {
+        if spaceCreationGesture.update(progress: progress, pulling: spacePager.isTracking, now: CACurrentMediaTime()) {
             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
         }
         spaceCreationFeedback.isActivated = spaceCreationGesture.isActivated
@@ -2073,15 +2073,16 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         pageStrip.layer?.sublayerTransform = CATransform3DMakeTranslation(offset, 0, 0)
         CATransaction.commit()
         let index = spaces.firstIndex { $0.id == activeSpaceID }
-        if spacePager.isTracking { pagingSourceID = nil }
-        let source = pagingSourceID.flatMap { id in spaces.firstIndex { $0.id == id } }
+        if spacePager.isTracking, spacePager.standInSide == nil { pagingSourceID = nil }
+        let source = SidebarSpacePagingModel.shownSource(pagingSourceID.flatMap { id in spaces.firstIndex { $0.id == id } },
+                                                         selected: index, offset: offset)
         let reach = spacePager.reach
         let neighborIndex = source ?? index.map { offset < 0 ? $0 + 1 : $0 - 1 }.flatMap { reach?.contains($0) == false ? nil : $0 }
         guard offset != 0, width > 0, let index, let neighborIndex, spaces.indices.contains(neighborIndex),
               hierarchyState != nil,
               let pages = SidebarSpacePagingModel.themePages(selected: index, offset: offset, width: width, count: spaces.count,
                                                              within: reach) else {
-            pagingSourceID = nil
+            if spacePager.standInSide == nil { pagingSourceID = nil }
             if let revealed = revealedPageID, revealed != activeSpaceID { self.pages[revealed]?.resetPointer() }
             revealedPageID = nil
             placePages(side: nil)

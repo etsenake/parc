@@ -57,9 +57,14 @@ struct SidebarSpacePagingModel {
     static let stretchStiffness: CGFloat = 0.55
     static let stretchLimit: CGFloat = 0.1
 
-    static func reach(begin: Int, count: Int) -> ClosedRange<Int> {
-        let first = max(begin - 1, 0)
-        return first...max(min(begin + 1, count - 1), first)
+    static func reach(begin: Int, count: Int, without side: Int? = nil) -> ClosedRange<Int> {
+        let first = side == -1 ? begin : max(begin - 1, 0)
+        return first...max(side == 1 ? begin : min(begin + 1, count - 1), first)
+    }
+
+    static func shownSource(_ source: Int?, selected: Int?, offset: CGFloat) -> Int? {
+        guard let source, let selected, offset != 0, (source > selected) == (offset < 0) else { return nil }
+        return source
     }
 
     static func stretch(_ excess: CGFloat, width: CGFloat) -> CGFloat { stretch(excess, limit: width * stretchLimit) }
@@ -135,8 +140,8 @@ struct SidebarSpaceCreationGesture {
     private(set) var isActivated = false
     private var activatedAt: CFTimeInterval?
 
-    mutating func update(progress: CGFloat, now: CFTimeInterval) -> Bool {
-        let full = progress >= 1
+    mutating func update(progress: CGFloat, pulling: Bool, now: CFTimeInterval) -> Bool {
+        let full = progress >= 1 && (pulling || isActivated)
         if !full { activatedAt = nil } else if activatedAt == nil { activatedAt = now }
         defer { isActivated = full }
         return full != isActivated
@@ -229,14 +234,21 @@ enum SidebarSpacePagingPresentationSkip {
     private var model = SidebarSpacePagingModel()
     private struct Tracking {
         let begin: Int
+        let lands: ClosedRange<Int>
         let edges: SidebarSpacePagingModel.Edges
         var drag: CGFloat
         var samples: [(time: CFTimeInterval, position: CGFloat)]
     }
     private var tracking: Tracking?
     private var ownsMomentum = false
-    private(set) var offset: CGFloat = 0
+    private var placed: CGFloat = 0
+    private var arriving: (id: UUID, offset: CGFloat)?
+    var offset: CGFloat {
+        guard let arriving, selectedID() == arriving.id else { return placed }
+        return arriving.offset
+    }
     private(set) var reach: ClosedRange<Int>?
+    private(set) var standInSide: Int?
     private var presentedOffset: CGFloat?
     private var spring: (start: CFTimeInterval, from: CGFloat, velocity: CGFloat, guarded: (before: Bool, after: Bool))?
     private var timer: Timer?
@@ -244,8 +256,13 @@ enum SidebarSpacePagingPresentationSkip {
     var isTracking: Bool { tracking != nil }
     var isAnimating: Bool { spring != nil }
     private var selecting = false
-    private func choose(_ page: Page) {
+    private func choose(_ page: Page, placing rebased: CGFloat) -> Bool {
+        arriving = (page.id, rebased)
         selecting = true; select(page); selecting = false
+        arriving = nil
+        guard selectedID() == page.id else { return false }
+        placed = rebased; standInSide = nil
+        return true
     }
 
     @discardableResult
@@ -255,6 +272,7 @@ enum SidebarSpacePagingPresentationSkip {
               tracking == nil, !selecting, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return false }
         let base = spring != nil ? offset : 0
         reach = nil
+        standInSide = abs(current - previous) > 1 ? (current > previous ? -1 : 1) : nil
         place(min(width, max(-width, base + (current > previous ? width : -width))))
         animate(velocity: 0)
         return true
@@ -302,14 +320,15 @@ enum SidebarSpacePagingPresentationSkip {
                 place(offset)
                 return true
             }
+            if let side = standInSide, side == -1 ? offset <= 0 : offset >= 0 { standInSide = nil }
             let count = pages().count
             guard count > 1 || offersCreation() else { return false }
             let width = pageWidth(), position = CGFloat(index) * width - offset
-            let reach = SidebarSpacePagingModel.reach(begin: index, count: count)
+            let reach = SidebarSpacePagingModel.reach(begin: index, count: count, without: standInSide)
             let edges = SidebarSpacePagingModel.Edges(reach: reach, width: width,
                                                       opensPastEnd: reach.upperBound == count - 1 && offersCreation(), holding: position)
             self.reach = SidebarSpacePagingModel.widened(reach, toward: position, width: width, count: count)
-            tracking = Tracking(begin: index, edges: edges, drag: position, samples: [(time, position)])
+            tracking = Tracking(begin: index, lands: reach, edges: edges, drag: position, samples: [(time, position)])
             place(offset)
             return true
         }
@@ -327,8 +346,9 @@ enum SidebarSpacePagingPresentationSkip {
             let velocity = phase.contains(.cancelled) ? 0
                 : SidebarSpacePagingModel.velocity(current.samples, at: time)
             let target = phase.contains(.cancelled) ? current.begin
-                : SidebarSpacePagingModel.target(position: current.drag, velocity: velocity, width: pageWidth(),
-                                                 count: pages().count, begin: current.begin)
+                : min(max(SidebarSpacePagingModel.target(position: current.drag, velocity: velocity, width: pageWidth(),
+                                                         count: pages().count, begin: current.begin),
+                          current.lands.lowerBound), current.lands.upperBound)
             let shown = phase.contains(.cancelled) ? 0
                 : SidebarSpacePagingModel.velocity(current.samples.map { ($0.time, resisted($0.position, current)) }, at: time)
             settle(to: target, from: current, velocity: shown)
@@ -343,9 +363,9 @@ enum SidebarSpacePagingPresentationSkip {
     private func settle(to target: Int, from state: Tracking, velocity: CGFloat) {
         let width = pageWidth(), all = pages(), position = resisted(state.drag, state)
         var landed = state.begin
-        if target != state.begin, all.indices.contains(target), canSelect(all[target]) {
-            choose(all[target])
-            if selectedID() == all[target].id { landed = target }
+        if target != state.begin, all.indices.contains(target), canSelect(all[target]),
+           choose(all[target], placing: CGFloat(target) * width - position) {
+            landed = target
         }
         let origin = CGFloat(landed) * width
         let settle = SidebarSpacePagingModel.settleVelocity(velocity, position: position, targetOrigin: origin)
@@ -359,8 +379,7 @@ enum SidebarSpacePagingPresentationSkip {
         let all = pages()
         guard let index = selectedIndex, all.indices.contains(index + delta), canSelect(all[index + delta]) else { return }
         let start = CGFloat(index) * pageWidth() - offset
-        choose(all[index + delta])
-        guard selectedID() == all[index + delta].id else { return }
+        guard choose(all[index + delta], placing: CGFloat(index + delta) * pageWidth() - start) else { return }
         reach = nil
         place(CGFloat(index + delta) * pageWidth() - start)
         animate(velocity: 0)
@@ -373,12 +392,12 @@ enum SidebarSpacePagingPresentationSkip {
 
     private func place(_ value: CGFloat) {
         spring = nil; timer?.invalidate(); timer = nil
-        if value == 0, tracking == nil { reach = nil }
+        if value == 0, tracking == nil { reach = nil; standInSide = nil }
         present(value)
     }
 
     private func present(_ value: CGFloat) {
-        offset = value
+        placed = value
         guard !SidebarSpacePagingPresentationSkip.shouldSkip(previous: presentedOffset, next: value) else { return }
         presentedOffset = value
         setOffset(value)

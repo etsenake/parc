@@ -383,18 +383,27 @@ func run() {
     expect(G.presentation(7.5) == 0.5 && G.presentation(40) == 1 && G.presentation(-3) == 0, "the edge slides in over 15 points")
     expect(G.progress(11.25) == 0.5 && G.progress(22.5) == 1 && G.progress(-3) == 0, "the ring fills over 22.5 points")
     var gesture = G()
-    expect(!gesture.update(progress: 0.6, now: 10) && !gesture.isActivated, "a partial ring is not activated")
-    expect(gesture.update(progress: 1, now: 10.01) && gesture.isActivated, "filling the ring activates it, with a haptic")
-    expect(!gesture.update(progress: 1, now: 10.05), "staying full plays nothing more")
+    expect(!gesture.update(progress: 0.6, pulling: true, now: 10) && !gesture.isActivated, "a partial ring is not activated")
+    expect(gesture.update(progress: 1, pulling: true, now: 10.01) && gesture.isActivated, "filling the ring activates it, with a haptic")
+    expect(!gesture.update(progress: 1, pulling: true, now: 10.05), "staying full plays nothing more")
     expect(!gesture.release(now: 10.1), "a release within 0.1 s of filling creates nothing")
-    expect(gesture.update(progress: 0.4, now: 10.2) && !gesture.isActivated, "emptying the ring deactivates it, with a haptic")
-    _ = gesture.update(progress: 1, now: 11)
-    _ = gesture.update(progress: 0.9, now: 11.05)
-    _ = gesture.update(progress: 1, now: 11.1)
+    expect(gesture.update(progress: 0.4, pulling: true, now: 10.2) && !gesture.isActivated, "emptying the ring deactivates it, with a haptic")
+    _ = gesture.update(progress: 1, pulling: true, now: 11)
+    _ = gesture.update(progress: 0.9, pulling: true, now: 11.05)
+    _ = gesture.update(progress: 1, pulling: true, now: 11.1)
     expect(!gesture.release(now: 11.15), "dipping below full restarts the hold")
-    _ = gesture.update(progress: 1, now: 12)
+    _ = gesture.update(progress: 1, pulling: true, now: 12)
     expect(gesture.release(now: 12.2), "a release held full for over 0.1 s creates a Space")
     expect(!gesture.release(now: 12.3), "and only once")
+    var released = G()
+    expect(!released.update(progress: 1, pulling: false, now: 13) && !released.isActivated,
+           "a ring filled by the strip after the fingers let go never arms, so it plays no haptic")
+    expect(!released.update(progress: 0, pulling: false, now: 13.1) && !released.release(now: 13.2), "nor one on the way back")
+    _ = released.update(progress: 1, pulling: true, now: 14)
+    expect(!released.update(progress: 1, pulling: false, now: 14.2) && released.isActivated,
+           "a ring the fingers filled stays armed after they let go")
+    expect(released.update(progress: 0.5, pulling: false, now: 14.3) && !released.isActivated,
+           "and still plays its haptic as it empties")
 
     let only = SidebarSpacePager.Page(id: UUID(), profileID: UUID())
     var onlySelected = only.id
@@ -412,7 +421,7 @@ func run() {
     onlyPager.select = { onlySelected = $0.id }
     onlyPager.setOffset = { offset in
         let overscroll = G.overscroll(selected: 0, offset: offset, width: 240, count: 1)
-        _ = onlyFeedback.update(progress: G.progress(overscroll), now: onlyFeedbackTime)
+        _ = onlyFeedback.update(progress: G.progress(overscroll), pulling: onlyPager.isTracking, now: onlyFeedbackTime)
     }
     onlyPager.trackingEnded = {
         if onlyFeedback.release(now: onlyFeedbackTime) { onlyCreated += 1 }
@@ -499,6 +508,209 @@ func run() {
     clock += 2; pager.tick()
     offers = true
     pager.trackingEnded = {}
+
+    var ring = G(), eager = G(), ringClock: CFTimeInterval = 50
+    var taps: [Bool] = [], eagerTaps: [Bool] = [], seen: [CGFloat] = [], created = 0
+    func feel(_ offset: CGFloat) {
+        let index = ids.firstIndex { $0.id == selected }!
+        let progress = G.progress(G.overscroll(selected: index, offset: offset, width: 240, count: 3))
+        if ring.update(progress: progress, pulling: pager.isTracking, now: ringClock) { taps.append(ring.isActivated) }
+        if eager.update(progress: progress, pulling: true, now: ringClock) { eagerTaps.append(eager.isActivated) }
+    }
+    pager.setOffset = { feel($0) }
+    let feelSelect: (SidebarSpacePager.Page) -> Void = { page in
+        selections.append(page.id); selected = page.id
+        seen.append(G.overscroll(selected: ids.firstIndex { $0.id == page.id }!, offset: pager.offset, width: 240, count: 3))
+        feel(pager.offset)
+    }
+    pager.select = feelSelect
+    pager.trackingEnded = { if ring.release(now: ringClock) { created += 1 } }
+    func saw(_ expected: [CGFloat]) -> Bool { seen.count == expected.count && zip(seen, expected).allSatisfy { abs($0 - $1) < 1e-9 } }
+    func settleFeeling() {
+        let from = clock
+        for k in 1...120 { clock = from + Double(k) / 120; ringClock += 1.0 / 120; pager.tick() }
+    }
+
+    selected = ids[1].id; selections = []
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 50)
+    for k in 1...20 { _ = pager.gesture(phase: .changed, momentum: false, dx: -14.4, dy: 0, time: 50 + Double(k) * 0.01) }
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 50.4)
+    expect(selections == [ids[2].id] && saw([-96]),
+           "a swipe onto the last Space hands over the strip already measured from the last Space, 96 points short of its end")
+    settleFeeling()
+    expect(taps.isEmpty && eagerTaps.isEmpty && created == 0 && pager.offset == 0,
+           "so the create ring never fills and no haptic plays while the swipe lands")
+
+    selected = ids[1].id; selections = []; seen = []; taps = []; eagerTaps = []
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 52)
+    for k in 1...20 { _ = pager.gesture(phase: .changed, momentum: false, dx: -21.6, dy: 0, time: 52 + Double(k) * 0.005) }
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 52.1)
+    expect(selections == [ids[2].id] && saw([-24]), "a brisk flick lands on the last Space from just short of it")
+    var furthest: CGFloat = 0
+    let flickedAt = clock
+    for k in 1...120 {
+        clock = flickedAt + Double(k) / 120; ringClock += 1.0 / 120; pager.tick()
+        furthest = max(furthest, G.overscroll(selected: 2, offset: pager.offset, width: 240, count: 3))
+    }
+    expect(furthest >= G.progressDistance && eagerTaps == [true, false],
+           "its settle swings far enough past the end to fill the ring, which used to tap twice")
+    expect(taps.isEmpty && !ring.isActivated && created == 0 && pager.offset == 0, "yet a ring the fingers never filled stays quiet")
+
+    selected = ids[2].id; selections = []; seen = []; taps = []; eagerTaps = []
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 54)
+    for k in 1...6 { _ = pager.gesture(phase: .changed, momentum: false, dx: -15, dy: 0, time: 54 + Double(k) * 0.01) }
+    expect(taps == [true] && ring.isActivated, "a real pull past the last Space still taps as the ring fills")
+    ringClock += 0.2
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 54.3)
+    expect(created == 1 && selections.isEmpty, "and its release creates a Space")
+    settleFeeling()
+    expect(taps == [true, false] && taps == eagerTaps, "with the same haptics as before, the second as the ring empties")
+
+    selected = ids[1].id; selections = []; seen = []; created = 0; taps = []; eagerTaps = []
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 56)
+    for k in 1...36 { _ = pager.gesture(phase: .changed, momentum: false, dx: -15, dy: 0, time: 56 + Double(k) * 0.01) }
+    expect(taps == [true], "a pull from the Space before the last fills the ring past the end")
+    ringClock += 0.2
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 56.6)
+    expect(selections == [ids[2].id] && saw([30]) && created == 1 && taps == [true],
+           "its release selects the last Space at the same 30 points past the end, creates, and adds no stray haptic")
+    settleFeeling()
+    expect(taps == [true, false] && taps == eagerTaps, "then empties just as before")
+
+    pager.select = { page in
+        selections.append(page.id)
+        seen.append(G.overscroll(selected: ids.firstIndex { $0.id == selected }!, offset: pager.offset, width: 240, count: 3))
+        feel(pager.offset)
+    }
+    selected = ids[1].id; selections = []; seen = []; created = 0; taps = []; eagerTaps = []
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 57)
+    for k in 1...36 { _ = pager.gesture(phase: .changed, momentum: false, dx: -15, dy: 0, time: 57 + Double(k) * 0.01) }
+    ringClock += 0.2
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 57.6)
+    expect(selections == [ids[2].id] && saw([30]) && taps == [true] && ring.isActivated,
+           "a refused selection that redraws the sidebar still measures the strip from the Space it stays on, so the armed ring holds")
+    expect(created == 1 && abs(pager.offset + 270) < 1e-9, "and the strip and the pull carry on as if nothing was asked")
+    settleFeeling()
+    pager.select = feelSelect
+
+    selected = ids[1].id; selections = []; seen = []; taps = []; eagerTaps = []
+    expect(pager.swipe(deltaX: -1) && saw([-240]) && taps.isEmpty, "a page flip also hands over the strip measured from the new Space")
+    settleFeeling()
+    pager.trackingEnded = {}
+    pager.select = { selections.append($0.id); selected = $0.id }
+    pager.setOffset = { offsets.append($0) }
+
+    let row = (0..<4).map { _ in SidebarSpacePager.Page(id: UUID(), profileID: UUID()) }
+    var rowSelected = row[0].id, rowSelections: [UUID] = []
+    let rowPager = SidebarSpacePager()
+    rowPager.pages = { row }
+    rowPager.selectedID = { rowSelected }
+    rowPager.pageWidth = { 240 }
+    rowPager.canBegin = { true }
+    rowPager.offersCreation = { true }
+    rowPager.canSelect = { _ in true }
+    rowPager.select = { rowSelections.append($0.id); rowSelected = $0.id }
+    rowPager.now = { clock }
+    func rested() { clock += 2; rowPager.tick() }
+    expect(M.reach(begin: 2, count: 4, without: -1) == 2...3 && M.reach(begin: 1, count: 4, without: 1) == 0...1
+           && M.reach(begin: 3, count: 4, without: -1) == 3...3 && M.reach(begin: 0, count: 3, without: 1) == 0...0,
+           "a swipe leaves out the side where a page stands in")
+    expect(M.shownSource(0, selected: 2, offset: 100) == 0 && M.shownSource(3, selected: 1, offset: -50) == 3
+           && M.shownSource(0, selected: 2, offset: -100) == nil && M.shownSource(3, selected: 1, offset: 50) == nil
+           && M.shownSource(0, selected: 2, offset: 0) == nil && M.shownSource(nil, selected: 2, offset: 100) == nil,
+           "the page a click left shows only on its own side of the strip")
+
+    rowSelected = row[2].id
+    expect(rowPager.slideIn(from: 0, to: 2) && rowPager.standInSide == -1,
+           "a click two Spaces along slides in with the page it left standing in on the left")
+    clock += 0.08; rowPager.tick()
+    let caught = rowPager.offset
+    expect(caught > 120 && caught < 240 && M.shownSource(0, selected: 2, offset: caught) == 0, "still sliding, the page it left half on screen")
+    _ = rowPager.gesture(phase: .mayBegin, momentum: false, dx: 0, dy: 0, time: 60)
+    expect(rowPager.isTracking && rowPager.offset == caught && rowPager.standInSide == -1 && rowPager.reach == 1...3,
+           "touching the trackpad mid-slide holds the strip exactly where it is")
+    expect(M.shownSource(0, selected: 2, offset: rowPager.offset) == 0,
+           "and the page it left keeps its place beside the new one, colour pair and all")
+    _ = rowPager.gesture(phase: .began, momentum: false, dx: 2, dy: 0, time: 60.01)
+    _ = rowPager.gesture(phase: .changed, momentum: false, dx: 40, dy: 0, time: 60.02)
+    expect(abs(rowPager.offset - caught) < 1e-9, "pulling toward the page it left goes no further than the slide already showed")
+    _ = rowPager.gesture(phase: .changed, momentum: false, dx: -60, dy: 0, time: 60.03)
+    expect(abs(rowPager.offset - (caught - 30)) < 1e-9 && M.shownSource(0, selected: 2, offset: rowPager.offset) == 0,
+           "pushing back follows the fingers with the same page beside it")
+    let near = rowPager.offset
+    expect(M.target(position: 480 - near, velocity: 0, width: 240, count: 4, begin: 2) == 1,
+           "the unresisted drag alone would land next door, on a Space that was never on screen")
+    _ = rowPager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 60.3)
+    expect(rowSelections.isEmpty && rowPager.isAnimating && rowPager.offset == near && rowPager.standInSide == -1,
+           "so the release springs on home with the page it left still beside it")
+    clock += 0.05; rowPager.tick()
+    let settling = rowPager.offset
+    _ = rowPager.gesture(phase: .began, momentum: false, dx: 2, dy: 0, time: 60.4)
+    _ = rowPager.gesture(phase: .changed, momentum: false, dx: 30, dy: 0, time: 60.41)
+    expect(settling > 0 && settling < near && abs(rowPager.offset - settling) < 1e-9 && rowPager.standInSide == -1,
+           "caught again while it settles, that side still holds")
+    _ = rowPager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 60.6)
+    rested()
+    expect(rowPager.offset == 0 && rowPager.standInSide == nil && rowPager.reach == nil && rowSelected == row[2].id,
+           "at rest the stand-in is gone")
+
+    rowSelected = row[2].id; rowSelections = []
+    expect(rowPager.slideIn(from: 0, to: 2), "another long click")
+    clock += 0.08; rowPager.tick()
+    let pushed = rowPager.offset
+    _ = rowPager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 62)
+    _ = rowPager.gesture(phase: .changed, momentum: false, dx: -2 * (pushed + 72), dy: 0, time: 62.01)
+    expect(abs(rowPager.offset + 72) < 1e-9 && M.shownSource(0, selected: 2, offset: rowPager.offset) == nil
+           && rowPager.reach?.contains(3) == true, "pushed through home, the real neighbour on the other side follows the fingers")
+    _ = rowPager.gesture(phase: .changed, momentum: false, dx: -2 * 60, dy: 0, time: 62.02)
+    _ = rowPager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 62.3)
+    expect(rowSelections == [row[3].id] && rowPager.standInSide == nil, "and a release there lands on it as usual")
+    rested()
+
+    rowSelected = row[2].id; rowSelections = []
+    expect(rowPager.slideIn(from: 0, to: 2), "a long click caught and pushed past home")
+    clock += 0.08; rowPager.tick()
+    let crossing = rowPager.offset
+    _ = rowPager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 63)
+    _ = rowPager.gesture(phase: .changed, momentum: false, dx: -2 * (crossing + 60), dy: 0, time: 63.01)
+    _ = rowPager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 63.3)
+    expect(rowSelections.isEmpty && rowPager.offset < 0 && rowPager.standInSide == -1, "let go gently, it settles back from the far side")
+    clock += 0.05; rowPager.tick()
+    let far = rowPager.offset
+    _ = rowPager.gesture(phase: .began, momentum: false, dx: 2, dy: 0, time: 63.4)
+    expect(far < 0 && rowPager.standInSide == nil && rowPager.reach == 1...3,
+           "caught again while the page it left is off screen, the swipe is an ordinary one")
+    _ = rowPager.gesture(phase: .changed, momentum: false, dx: 2 * (150 - far), dy: 0, time: 63.41)
+    expect(abs(rowPager.offset - 150) < 1e-9, "so it follows the fingers toward the real neighbour on that side")
+    _ = rowPager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 63.7)
+    expect(rowSelections == [row[1].id], "and can land on it")
+    rested()
+
+    rowSelected = row[2].id; rowSelections = []
+    expect(rowPager.slideIn(from: 1, to: 2) && rowPager.standInSide == nil, "a click to the Space next door needs no stand-in")
+    clock += 0.08; rowPager.tick()
+    let adjacent = rowPager.offset
+    _ = rowPager.gesture(phase: .began, momentum: false, dx: 2, dy: 0, time: 64)
+    _ = rowPager.gesture(phase: .changed, momentum: false, dx: 40, dy: 0, time: 64.01)
+    expect(abs(rowPager.offset - (adjacent + 20)) < 1e-9, "a swipe that catches it still pulls toward the page it left")
+    _ = rowPager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 64.3)
+    expect(rowSelections == [row[1].id], "and still lands back on it")
+    rested()
+
+    rowSelected = row[2].id; rowSelections = []
+    expect(rowPager.slideIn(from: 0, to: 2) && rowPager.standInSide == -1, "a long click")
+    clock += 0.05; rowPager.tick()
+    expect(rowPager.slideIn(from: 2, to: 3) && rowPager.standInSide == nil, "followed mid-slide by one next door drops the stand-in")
+    rested()
+    rowSelected = row[1].id
+    expect(rowPager.slideIn(from: 3, to: 1) && rowPager.standInSide == 1, "a long click back leaves the stand-in on the right")
+    clock += 0.05; rowPager.tick()
+    expect(rowPager.swipe(deltaX: -1) && rowSelected == row[2].id && rowPager.standInSide == nil, "and a page flip clears it")
+    rested()
+    rowSelected = row[2].id
+    expect(rowPager.slideIn(from: 0, to: 2), "one more long click")
+    rowPager.cancel()
+    expect(rowPager.standInSide == nil && rowPager.offset == 0, "cancelling clears it too")
 
     _ = NSApplication.shared
     final class Sidebar: NSView {

@@ -35,6 +35,14 @@ strip = strip[:strip.index("\n    private func pageState(")]
 assert ".flatMap { reach?.contains($0) == false ? nil : $0 }" in strip \
     and "where spaces.indices.contains(index + direction) && reach?.contains(index + direction) != false" in strip, \
     "a swipe's strip places a Space outside the swipe's own two again"
+assert "        if spacePager.isTracking, spacePager.standInSide == nil { pagingSourceID = nil }\n" in strip \
+    and "SidebarSpacePagingModel.shownSource(pagingSourceID.flatMap { id in spaces.firstIndex { $0.id == id } }," in strip \
+    and "            if spacePager.standInSide == nil { pagingSourceID = nil }\n" in strip, \
+    "a swipe that catches a long click's slide swaps the page it left for the Space next door again"
+feedback = sidebar[sidebar.index("    private func updateSpaceCreationFeedback(offset: CGFloat) {"):]
+feedback = feedback[:feedback.index("\n    }\n")]
+assert "spaceCreationGesture.update(progress: progress, pulling: spacePager.isTracking, now: CACurrentMediaTime())" in feedback, \
+    "the create-Space ring can arm after the fingers let go again"
 assert "    private let scroll = SidebarPagingScrollView()\n" in (root / "Sources/ParcApp/MiniPlayerView.swift").read_text(), \
     "the Mini Player list keeps sideways swipes from the pager again"
 assert "if overflows || !offerScroll(event) { super.scrollWheel(with: event) }" in \
