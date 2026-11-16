@@ -471,6 +471,26 @@ extension BrowserWindowController {
         runPageTool(tool, in: browser)
     }
 
+    private var taskManagerRoute: TaskManagerRoute? {
+        guard presentation.isReady, !isClosing, !wholeWindowClose else { return nil }
+        return TaskManagerRoute.resolve(showsNativePage: currentBrowser?.nativePage != nil,
+                                        pageCanOpen: canPerformPageTool(.taskManager),
+                                        windowCanOpen: nativeBinding.map {
+                                            $0.responds(to: #selector(PCNativeBrowserWindow.openTaskManager))
+                                                && $0.canOpenTaskManager
+                                        } ?? false)
+    }
+
+    var canOpenTaskManager: Bool { taskManagerRoute != nil }
+
+    @discardableResult func openTaskManager() -> Bool {
+        switch taskManagerRoute {
+        case .page: return currentBrowser?.performPageTool(.taskManager) == true
+        case .window: return nativeBinding?.openTaskManager() == true
+        case nil: return false
+        }
+    }
+
     private func runPageTool(_ tool: PCNativePageTool, in browser: PCBrowserView) {
         if tool == .developerTools { toggleDeveloperTools(browser); return }
         let opens = browser.nativePage.map { Self.knowsDeveloperTools($0) && !$0.hasDeveloperTools } ?? false

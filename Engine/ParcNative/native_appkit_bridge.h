@@ -857,6 +857,12 @@ NS_SWIFT_UI_ACTOR
 @end
 
 NS_SWIFT_UI_ACTOR
+@interface PCNativeBrowserWindow (TaskManager)
+@property(nonatomic, readonly) BOOL canOpenTaskManager;
+- (BOOL)openTaskManager;
+@end
+
+NS_SWIFT_UI_ACTOR
 @interface PCNativeBrowserWindow (OpenAppActions)
 - (nullable PCNativeOpenAppAction*)openAppActionForPage:(PCNativePage*)page
     NS_SWIFT_NAME(openAppAction(for:));

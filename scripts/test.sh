@@ -261,6 +261,11 @@ step compile_and_run command-bar-typed-commands CommandBar/TypedCommandTests \
   "$repo_root/Sources/ParcCore/CommandBarTypedCommand.swift" \
   "$repo_root/Sources/ParcCore/CommandBarMenuItemInfo.swift" \
   "$repo_root/Sources/ParcCore/CommandBarCommandPresentation.swift"
+step swift_test command-bar-task-manager -warnings-as-errors -parse-as-library \
+  "$repo_root/Sources/ParcApp/TaskManagerCommand.swift" "$repo_root/Sources/ParcApp/KeyboardShortcuts.swift" \
+  "$repo_root/Sources/ParcCore/SettingsPrettyJSONPersistSkip.swift" \
+  "$repo_root/tests/KeyboardNavigation/NativeShortcutStub.swift" "$repo_root/tests/CommandBar/TaskManagerTests.swift"
+step python3 "$repo_root/tests/CommandBar/task_manager_check.py"
 
 step compile_and_run command-bar-reconcile-inputs CommandBar/ReconcileInputsTests \
   "$repo_root/Sources/ParcCore/CommandBarReconcileInputs.swift"

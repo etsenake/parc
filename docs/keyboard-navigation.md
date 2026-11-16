@@ -306,7 +306,7 @@ Keys on, macOS consumes the keypad before Parc sees it.
 
 The menu registry includes Blank/New/Private windows, local profiles, Duplicate,
 Reveal Tab, Library/Downloads/Media/Documents, Spaces, Extensions, native Window
-Zoom/Bring All to Front, Stay On Top, page tools, app updates and local What's
+Zoom/Bring All to Front, Stay On Top, Task Manager, page tools, app updates and local What's
 New. Manage Spaces is implemented. Notes and Easels keep their formatting bars
 beside the [Format menu](#text-formatting-menu). [Typed commands](command-bar.md#typed-type-travel-commands)
 add contextual operations without inventing menu command identities.
@@ -342,7 +342,7 @@ components. Full Swift typechecking is the iteration check; finished material
 Swift work also needs whole-module SIL under [the working contract](../AGENTS.md).
 
 The [command-bar guide](command-bar.md#checks-and-remaining-work)
-owns the remaining Task Manager, Restore Data and Pinned-section requests.
+owns the remaining Restore Data and Pinned-section requests.
 
 Frame-focus changes invalidate pending page shortcuts through a Parc-owned
 subscription registry, at the focused-frame change itself. Each page owns its

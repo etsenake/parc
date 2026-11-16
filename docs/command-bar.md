@@ -332,10 +332,20 @@ clone document bytes. One window Undo step takes the copy back; see
 ### MainMenu Type Travel data
 
 `CommandBarMenuItemInfo` supplies titles, trigger phrases, icons and ranking
-bumps. Local product additions include Copy Parc Info, Reveal Parc Data, Open
-Task Manager, Check for Updates and the bundled What's New page. Page tools
+bumps, including Check for Updates and the bundled What's New page. Copy Parc
+Info, Reveal Parc Data and Open Task Manager are local typed commands. Page tools
 validate against the real key window, including after dismissal. Task Manager
 can open for a crashed page because it does not require a live renderer.
+
+Open Task Manager is offered in every ordinary window, including Notes, Easels,
+the start page's bar and an empty window. With a web page showing it opens
+through that page and isn't offered if the page refuses. Otherwise the window
+opens Chromium's Task Manager with no page or Profile, as Chromium's own main
+menu does, while the window is key, visible, unminimized and free of sheets.
+Pop-ups list no typed commands. Window → Task Manager takes the same route, has
+no default shortcut and can be assigned in Settings → Shortcuts; it stays out of
+the bar's menu rows so the typed command is the bar's only Task Manager row. The
+app offers the window route only when the engine provides it.
 
 Settings destinations cover Membership, General, Spaces (Open Space Preferences;
 Profile stays a hidden keyword), Shortcuts, Links,
@@ -375,7 +385,7 @@ separate owner/lifecycle coverage. Follow [the working contract](../AGENTS.md)
 before running checks.
 
 Current source still has these separate limitations, tracked in [the backlog](backlog.md):
-Task Manager needs a native page; Restore Data needs a backup producer and restore
-flow; the Pinned section is not collapsible. Toolbar/pane/split/extension controls
-covered by the bar can still show hover feedback underneath it; their tracking
-does not use the same topmost-view check as sidebar rows.
+Restore Data needs a backup producer and restore flow; the Pinned section is not
+collapsible. Toolbar/pane/split/extension controls covered by the bar can still
+show hover feedback underneath it; their tracking does not use the same
+topmost-view check as sidebar rows.

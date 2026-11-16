@@ -105,6 +105,7 @@
 #include "native_page_binding.h"
 #include "native_host_route.h"
 #include "native_page_retirement.h"
+#include "native_profile_removal.h"
 #include "native_reader.h"
 #include "native_confirm_infobars.h"
 #include "net/base/net_errors.h"
@@ -2537,6 +2538,22 @@ constexpr int kMaxArchivedNavigationSize =
   }
   contents->Discard(base::DoNothing());
   return contents->WasDiscarded();
+}
+@end
+
+@implementation PCNativeBrowserWindow (TaskManager)
+- (BOOL)canOpenTaskManager {
+  CHECK(NSThread.isMainThread);
+  NSWindow* window = self.window;
+  return parc::NativeProfileRemovalApplicationReady() && window &&
+         [self.client nativeBrowserWindow] == window && window.keyWindow &&
+         window.visible && !window.miniaturized && !window.attachedSheet &&
+         chrome::CanOpenTaskManager();
+}
+- (BOOL)openTaskManager {
+  if (!self.canOpenTaskManager) return NO;
+  chrome::OpenTaskManager(nullptr, task_manager::StartAction::kMainMenu);
+  return YES;
 }
 @end
 

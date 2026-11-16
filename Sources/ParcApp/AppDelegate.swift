@@ -1952,6 +1952,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return SoftwareUpdateBanner.releaseNotesURL != nil && browserInputCommandWindow?.canOpenPageInNewTab == true
         }
         if item.action == #selector(captureLibrary) { return libraryCommandWindow?.canShowMedia ?? false }
+        if item.action == TaskManagerMenu.action { return front?.canOpenTaskManager ?? false }
         if item.action == #selector(archive) || item.action == #selector(clearArchive) {
             return libraryCommandWindow?.canShowLibrary ?? false
         }
@@ -2420,6 +2421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         browserInputCommandWindow?.performPageTool(from: item)
     }
     @objc private func viewSource(_ sender: Any?) { front?.performPageTool(.viewSource) }
+    @objc private func openTaskManager(_ sender: Any?) { front?.openTaskManager() }
     @objc private func developerTools(_ sender: Any?) {
         if let tools = devToolsWindows.first(where: { $0.window === NSApp.keyWindow }) {
             tools.toggleClosed(sender); return
@@ -2997,6 +2999,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         item("View Downloads", #selector(downloads), "j", in: window, modifiers: [.command, .shift])
         item("View Media", #selector(captureLibrary), in: window)
         item("View Easels & Notes", #selector(showDocuments), in: window)
+        TaskManagerMenu.add(to: window, target: self, shortcuts: .shared)
         window.addItem(.separator())
         window.addItem(NSMenuItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: ""))
         let help = menu("Help")

@@ -783,8 +783,8 @@ extension BrowserWindowController {
         }
         commands += CommandBarTypedCommand.SettingsPane.allCases.map { .init(kind: .settingsPane($0)) }
         commands += CommandBarTypedCommand.Appearance.allCases.map { .init(kind: .appearance($0)) }
-        commands += [.init(kind: .copyAppInfo), .init(kind: .revealAppData), .init(kind: .capturePortrait)]
-        if canPerformPageTool(.taskManager) { commands.append(.init(kind: .openTaskManager)) }
+        commands += [.init(kind: .copyAppInfo), .init(kind: .revealAppData), .init(kind: .capturePortrait),
+                     .init(kind: .openTaskManager)]
         return commands
     }
 
@@ -884,7 +884,7 @@ extension BrowserWindowController {
         case .capturePortrait:
             return canCapturePage
         case .openTaskManager:
-            return canPerformPageTool(.taskManager)
+            return canOpenTaskManager
         }
     }
 
@@ -964,11 +964,10 @@ extension BrowserWindowController {
                 return self.pageCapture != nil
             }
         case .openTaskManager:
-            guard let browser = currentBrowser else { return nil }
+            let browser = currentBrowser
             return { [weak self, weak browser] in
-                guard let self, let browser, self.currentBrowser === browser,
-                      self.canPerformPageTool(.taskManager) else { return false }
-                return browser.performPageTool(.taskManager)
+                guard let self, self.currentBrowser === browser else { return false }
+                return self.openTaskManager()
             }
         }
     }
