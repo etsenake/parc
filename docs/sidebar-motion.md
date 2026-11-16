@@ -89,10 +89,11 @@ image-view layout during docking. Its artwork remains documented with the
 [resource](../Resources/FloatingSidebar/README.md).
 
 During floating → locked, the popover blur and shadow fade out while a
-behind-window material fades in. Corners and the edge remain until settling.
-A full layout during that group preserves the material crossfade. Reversing
-back to floating clears the old fades and restores the floating shadow and
-blur. The dock material is created lazily and hidden after settling.
+behind-window material fades in; mid-swipe, the swipe's second blur fades out
+with the first. Corners and the edge remain until settling. A full layout
+during that group preserves the material crossfade. Reversing back to floating
+clears the old fades and restores the floating shadow, blur and swipe blend.
+The dock material is created lazily, above both blurs, and hidden after settling.
 
 A Space swipe updates one theme canvas with the two adjacent themes and their
 fractional position. It does not stack a translucent neighboring canvas over
@@ -107,12 +108,16 @@ has one Space as well as when it has several; a release that does not create
 springs the current Space back into place. Private and Space-management
 sidebars do not offer this creation gesture.
 
-For a colored floating Space, the blur follows the window's appearance while
-text follows the Space palette. Where material is the whole background, its
-appearance follows the palette's light/dark side. A saved forced-dark colored
-Space can therefore use light text over the light window's blur. Crossing
-between a forced uncolored Space and a colored Space changes that blur's
-appearance at the selection commit rather than blending both appearances.
+The floating blur takes the side the Space resolves to: a forced Space's own
+light or dark, or the window's for an automatic Space, reusing the window's
+appearance object when the sides match. Forced text and blur therefore agree.
+When a swipe joins Spaces on different sides, a second masked popover blur on
+the right page's side lies just above the first and under the canvas. It is
+fully shown at 90% of the swipe, and the first blur fades out beneath it over
+the rest. Stacked within-window blurs each blur what lies beneath them, so this
+keeps the page from showing through and makes the swipe's end and every page
+boundary match the settled single blur. The second blur shows only while the
+two sides differ; the commit leaves both blurs unchanged.
 
 ## Hidden-sidebar hover regions
 
@@ -243,6 +248,8 @@ in an offscreen AppKit harness. It checks bounded preparation/settle work,
 geometry continuity and reversals, renderer sizing, animation lifetime, and
 that hidden drawing views and the pinned canvas do not acquire per-frame
 layout work. Shown material views are measured separately from that budget.
+A dock during a swipe blend fades the shadow, both blurs and the window's
+material once each and keeps the same budget, continuity and reversal behavior.
 Negative controls remove the optimizations or introduce extra layout and
 require the budget to fail.
 

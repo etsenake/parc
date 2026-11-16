@@ -22,9 +22,8 @@ Finish assigned work first; explicit deferrals remain deferred.
   New Tab's pressed scale after a cancelled click, and prevent long Space drags
   from exposing blank strip content. [Sidebar motion](sidebar-motion.md),
   [previews](sidebar-previews.md), [theme rendering](space-theme-rendering.md).
-- Finish the documented theme-control hover/dot/tooltip details and floating
-  material transitions.
-  [Theme editor](space-theme-editor.md), [sidebar motion](sidebar-motion.md).
+- Finish the documented theme-control hover/dot/tooltip details.
+  [Theme editor](space-theme-editor.md).
 - Keep fallback window geometry and sidebar width associated with the same saved
   window.
   [Resizing](sidebar-resize.md), [Space management](space-management.md).

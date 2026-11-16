@@ -686,6 +686,60 @@ let budget = "Parc's budget: no per-frame main-thread work in its views"
     harness.until { empty.settled >= target }
     harness.settle(empty, at: .locked)
 
+    let swiping = Window()
+    var forcedLight = SpaceTheme.singleColor(ThemeColor(red: 0.8, green: 0.88, blue: 0.97)!); forcedLight.appearance = .light
+    var forcedDark = SpaceTheme(); forcedDark.appearance = .dark
+    swiping.sidebarContainer.theme = forcedDark
+    swiping.sidebarContainer.pagingTransition = ThemePagingTransition(from: forcedDark, theme: forcedLight, progress: 0.95)
+    let swipeName = "⌘S locks a floating sidebar mid-swipe"
+    let swipeDock = harness.measure(swipeName, swiping, from: .floating, to: .locked)
+    print("\n\(swipeName): \(String(format: "%.1f", swipeDock.frames)) display frames in flight")
+    print("  per frame:   " + (swipeDock.flight.isIdle ? "idle" : "\(swipeDock.flight)"))
+    if swipeDock.flight.exempt.total > 0 {
+        print("  outside budget: the floating materials, resized \(swipeDock.flight.exempt.byLabel) on frames AppKit drove")
+    }
+    c.expect(swipeDock.flight.isIdle && swipeDock.flight.viewSeconds == 0,
+             "\(swipeName): per-frame work in flight: \(swipeDock.flight), \(swipeDock.flight.viewSeconds * 1000) ms")
+    for (pass, work) in [("preparation", swipeDock.preparation), ("group", swipeDock.group)] {
+        c.expect(work.layouts.mostOutsideAppKit <= 1, "\(swipeName): a view laid out twice in the \(pass): \(work.layouts.byLabel)")
+    }
+    c.expect(swipeDock.group.animations.byKey["opacity FloatingSidebarShadowView"] == 1,
+             "\(swipeName): the floating shadow does not fade once inside the group: \(swipeDock.group.animations.byKey)")
+    let swipeContinuity = harness.continuity(swiping, from: .floating, to: .locked)
+    print("  continuity:  peak \(Int(swipeContinuity.peak)) pt/s against the recovered curve's \(Int(swipeContinuity.allowed));"
+          + String(format: " largest step beyond it %.1f pt", swipeContinuity.excess))
+    c.expect(swipeContinuity.excess <= snapTolerance, "\(swipeName): presentation jumped \(swipeContinuity.excess) points beyond the recovered curve")
+    func swipeMaterials() -> [NSVisualEffectView] { swiping.sidebarContainer.subviews.compactMap { $0 as? NSVisualEffectView } }
+    let blend = FloatingSidebarSurface.pagingBlend(progress: 0.95)
+    func blended() -> Bool {
+        let materials = swipeMaterials()
+        return materials.count == 3 && !materials[1].isHidden && abs(materials[0].alphaValue - blend.base) < 1e-6
+            && abs(materials[1].alphaValue - blend.incoming) < 1e-6 && materials[2].isHidden
+    }
+    harness.settle(swiping, at: .floating)
+    c.expect(blended(), "floating mid-swipe shows the blur, the crossfade at the swipe's blend and no dock material")
+    target = swiping.settled + 1
+    swiping.present(.locked); swiping.commit()
+    let swipeFades = fades(swiping)
+    c.expect(swipeFades.count == 4 && swipeFades.allSatisfy { $0.map { abs($0 - 0.08) < 1e-6 } == true },
+             "the mid-swipe dock fades the shadow, both blurs and the window's material once each on the group's 0.08 s timing: \(swipeFades)")
+    swiping.layoutChrome()
+    let midSwipeDock = swipeMaterials().map(\.alphaValue), midSwipeFades = fades(swiping)
+    c.expect(midSwipeDock == [0, 0, 1] && midSwipeFades.count == 4 && midSwipeFades.allSatisfy { $0.map { abs($0 - 0.08) < 1e-6 } == true },
+             "a full pass during the mid-swipe dock undid the fades: \(midSwipeDock), \(midSwipeFades)")
+    harness.until { swiping.settled >= target }
+    let settledSwipe = swipeMaterials()
+    c.expect(settledSwipe[1].isHidden && settledSwipe[0].alphaValue == 1 && settledSwipe[2].isHidden,
+             "the settled dock hides the crossfade and restores the window's material")
+    harness.settle(swiping, at: .floating)
+    target = swiping.settled + 1
+    swiping.present(.locked); swiping.commit()
+    swiping.present(.floating); swiping.commit()
+    c.expect(blended() && fades(swiping).allSatisfy { $0 == nil },
+             "a mid-swipe dock reversed into floating lost the swipe's blend or left a fade in flight: \(swipeMaterials().map(\.alphaValue))")
+    harness.until { swiping.settled >= target }
+    swiping.close()
+
     print("\nControls (each must violate the budget):")
     let unpinned = Window(pinsSurface: false)
     let surface = harness.measure("control: unpinned theme canvas", unpinned, from: .floating, to: .locked)

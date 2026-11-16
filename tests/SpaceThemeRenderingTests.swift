@@ -57,7 +57,7 @@ struct SpaceThemeRenderingTests {
         check(foreground.isHidden && !base.isHidden && base.material.rawValue == 2 && isDark(base), "at rest only the theme's own material shows")
         surface.pagingTransition = ThemePagingTransition(from: dark, theme: light, progress: 0.5)
         surface.floatingCornerRadius = 8
-        check(foreground.isHidden, "the floating surface shows no translucency of its own")
+        check(foreground.isHidden, "a floating surface never shows the window's behind-window crossfade")
         surface.floatingCornerRadius = nil
         check(!foreground.isHidden, "the window's surface shows it again")
         surface.drawsBackground = false
@@ -90,14 +90,19 @@ struct SpaceThemeRenderingTests {
         container.drawsBackground = false
         container.theme = light
         container.pagingTransition = ThemePagingTransition(from: light, theme: dark, progress: 0.4)
-        func containerMaterials() -> Int { container.subviews.filter { $0 is NSVisualEffectView }.count }
+        func containerMaterials() -> [NSVisualEffectView] {
+            container.subviews.compactMap { $0 as? NSVisualEffectView }.filter { !$0.isHidden }
+        }
         container.drawsBackground = true
-        check(containerMaterials() == 1, "a sidebar surface drawing again mid-swipe adds no second material")
+        check(containerMaterials().count == 1, "a docked sidebar surface drawing again mid-swipe adds no behind-window crossfade")
         container.floatingCornerRadius = 8
         container.pagingTransition = ThemePagingTransition(from: light, theme: dark, progress: 0.6)
-        check(containerMaterials() == 1, "floating mid-swipe it keeps its one blur")
+        let floating = containerMaterials()
+        check(floating.count == 2 && floating.allSatisfy { $0.blendingMode == .withinWindow && $0.material == .popover }
+              && floating.map(isDark) == [false, true] && abs(floating[1].alphaValue - 0.6 / 0.9) < 0.001,
+              "floating mid-swipe it blends into the dark page's blur through a within-window crossfade")
         container.floatingCornerRadius = nil
-        check(containerMaterials() == 1, "and docked again, still one")
+        check(containerMaterials().count == 1, "and docked again, only its own material")
         container.removeFromSuperview()
     }
 

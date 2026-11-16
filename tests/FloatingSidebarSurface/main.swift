@@ -120,6 +120,8 @@ import MetalKit
         checkSwipeCommit(floating: true)
         checkSwipeCommit(floating: false)
         checkSwipeMaterial()
+        checkPagingBlend()
+        checkSwipeDock()
 
         func materials() -> [NSVisualEffectView] { container.subviews.compactMap { $0 as? NSVisualEffectView } }
         check(materials().count == 1, "no dock material before the first dock")
@@ -298,6 +300,7 @@ import MetalKit
         let surface = ThemeRendererView(frame: NSRect(x: 5, y: 5, width: 200, height: 290))
         root.addSubview(surface)
         var light = SpaceTheme.singleColor(ThemeColor(red: 0.8, green: 0.88, blue: 0.97)!); light.appearance = .light
+        var alsoLight = SpaceTheme.singleColor(ThemeColor(red: 0.95, green: 0.8, blue: 0.6)!); alsoLight.appearance = .light
         var dark = SpaceTheme.singleColor(ThemeColor(red: 0.36, green: 0.22, blue: 0.62)!); dark.appearance = .dark
         var uncoloured = SpaceTheme(); uncoloured.appearance = .dark
         func side(_ appearance: NSAppearance) -> NSAppearance.Name? { appearance.bestMatch(from: [.aqua, .darkAqua]) }
@@ -310,9 +313,13 @@ import MetalKit
                          hidden: $0.isHidden, side: side($0.effectiveAppearance))
             }
         }
+        func shown() -> [Material] { materials().filter { !$0.hidden } }
         func until(_ done: () -> Bool) {
             let deadline = Date(timeIntervalSinceNow: 2)
             while !done(), Date() < deadline { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01)) }
+        }
+        func blur(_ alpha: CGFloat, _ side: NSAppearance.Name) -> Material {
+            Material(kind: .popover, withinWindow: true, alpha: alpha, hidden: false, side: side)
         }
         surface.floatingCornerRadius = FloatingSidebarSurface.cornerRadius
         surface.theme = uncoloured
@@ -320,51 +327,221 @@ import MetalKit
         guard surface.subviews.contains(where: { $0 is MTKView }) else {
             print("FloatingSidebarSurface: no Metal; the blur is the whole backdrop, so the swipe's blur is not checked"); return
         }
+        surface.theme = dark
+        check(materials() == [blur(1, .darkAqua)], "a coloured Space forced Dark keeps a dark blur in an Aqua window")
+        check(surface.palette.contentAppearance.flatMap(side) == .darkAqua, "and its text takes Dark Aqua, so text and blur agree")
         surface.theme = light
-        let rest = materials()
-        check(rest == [Material(kind: .popover, withinWindow: true, alpha: 1, hidden: false, side: .aqua)],
-              "one floating blur, in the window's appearance")
+        check(materials() == [blur(1, .aqua)], "one floating blur on the light side of a Space forced Light")
+
         func across(_ from: SpaceTheme, _ to: SpaceTheme, _ p: CGFloat) -> ThemePagingTransition {
             ThemePagingTransition(from: from, theme: to, progress: p)
         }
-        let swipe: [(SpaceTheme, ThemePagingTransition?)] = [
-            (light, across(light, dark, 0.25)), (light, across(light, dark, 0.6)),
-            (dark, across(light, dark, 0.6)), (dark, across(light, dark, 0.9)), (dark, nil),
-        ]
-        for (theme, transition) in swipe {
-            surface.theme = theme; surface.pagingTransition = transition
-            check(materials() == rest, "a light ↔ dark swipe leaves the floating blur as it was "
-                  + "(p \(transition?.progress ?? 1), \(theme == light ? "before" : "after") the commit)")
+        surface.pagingTransition = across(light, alsoLight, 0.5)
+        check(shown() == [blur(1, .aqua)], "a swipe between two light-side Spaces adds no second blur")
+        surface.pagingTransition = across(light, dark, 0.3)
+        let blurs = surface.subviews.compactMap { $0 as? NSVisualEffectView }
+        guard blurs.count == 2 else { fatalError("FloatingSidebarSurface: a light ↔ dark swipe adds the floating crossfade") }
+        let base = blurs[0], crossfade = blurs[1]
+        check(surface.subviews.firstIndex(of: crossfade) == surface.subviews.firstIndex(of: base).map { $0 + 1 }
+              && surface.subviews.firstIndex { $0 is MTKView }.map { $0 > surface.subviews.firstIndex(of: crossfade)! } == true,
+              "the crossfade blur lies just above the floating blur and under the theme")
+        check(crossfade.state == .followsWindowActiveState && crossfade.isEmphasized
+              && crossfade.maskImage.map { $0.size == NSSize(width: 17, height: 17) && $0.capInsets.left == 8 } == true,
+              "the crossfade is the floating blur's twin: emphasized, following the window's state, masked to radius 8")
+        check(crossfade.hitTest(NSPoint(x: 50, y: 50)) == nil, "the crossfade passes clicks through")
+        surface.setFrameSize(NSSize(width: 180, height: 270))
+        surface.layout()
+        check(crossfade.frame == surface.bounds && base.frame == surface.bounds, "it follows the surface's size")
+        surface.setFrameSize(NSSize(width: 200, height: 290))
+        surface.layout()
+        for progress: CGFloat in [0, 0.3, 0.6, 0.9, 0.95, 1] {
+            let blend = FloatingSidebarSurface.pagingBlend(progress: progress)
+            let expected = [blur(blend.base, .aqua), blur(blend.incoming, .darkAqua)]
+            surface.theme = light; surface.pagingTransition = across(light, dark, progress)
+            let before = materials()
+            surface.theme = dark
+            check(before == expected && materials() == expected,
+                  "light → dark at \(progress): the left page's blur under the right page's, \(blend), unchanged by the commit")
         }
-        check(surface.palette.contentAppearance.flatMap(side) == .darkAqua, "palette: the dark-style Space's text still takes Dark Aqua")
+        surface.pagingTransition = nil
+        check(shown() == [blur(1, .darkAqua)] && crossfade.isHidden, "at rest only the arrived Space's dark blur shows")
+        surface.pagingTransition = across(dark, light, 0.3)
+        check(materials() == [blur(1, .darkAqua), blur(FloatingSidebarSurface.pagingBlend(progress: 0.3).incoming, .aqua)],
+              "dark → light: the dark page's blur is the base")
+        func visible() -> [Material] {
+            materials().filter { !$0.hidden && $0.alpha > 0 }.map { var m = $0; m.alpha = 1; return m }.suffix(1)
+        }
+        surface.pagingTransition = across(light, dark, 1)
+        let leaving = visible()
+        surface.pagingTransition = across(dark, alsoLight, 0)
+        check(leaving == visible() && leaving == [blur(1, .darkAqua)],
+              "dragging on past a page boundary hands over from a fully shown crossfade to the same blur as the base")
+        surface.pagingTransition = across(uncoloured, light, 0.5)
+        check(shown().count == 2 && shown()[0].side == .darkAqua && shown()[1].side == .aqua,
+              "a forced uncoloured Space ↔ coloured Space swipe blends the two blurs")
+        surface.pagingTransition = across(light, alsoLight, 0.95)
+        check(shown() == [blur(1, .aqua)], "past 90% into a same-side Space the blur is whole again, with no crossfade")
+        surface.pagingTransition = across(uncoloured, light, 0.95)
+        let late = FloatingSidebarSurface.pagingBlend(progress: 0.95)
+        check(materials() == [blur(late.base, .darkAqua), blur(late.incoming, .aqua)], "late in the swipe the base fades beneath the crossfade")
+        surface.drawsMaterial = false
+        check(crossfade.isHidden && base.alphaValue == 1, "a surface without material draws no crossfade and resets the blur")
+        surface.drawsMaterial = true; surface.drawsBackground = false
+        check(crossfade.isHidden && base.alphaValue == 1, "nor does a surface that draws no background")
+        surface.drawsBackground = true; surface.incognito = true
+        check(crossfade.isHidden && base.alphaValue == 1, "nor does a private window's surface")
+        surface.incognito = false
+        check(materials() == [blur(late.base, .darkAqua), blur(late.incoming, .aqua)], "restored with the surface's background and blend")
+        surface.floatingCornerRadius = nil
+        check(crossfade.isHidden && base.alphaValue == 1 && materials().first?.withinWindow == false,
+              "a locked surface never shows the floating crossfade")
+        surface.floatingCornerRadius = 12
+        check(!crossfade.isHidden && crossfade.maskImage.map { $0.size == NSSize(width: 25, height: 25) && $0.capInsets.left == 12 } == true,
+              "floating again restores it with the surface's current mask")
+        surface.floatingCornerRadius = FloatingSidebarSurface.cornerRadius
+        check(crossfade.maskImage.map { $0.size == NSSize(width: 17, height: 17) } == true, "and follows the radius back")
+        surface.pagingTransition = nil
+
+        surface.theme = dark
         window.appearance = NSAppearance(named: .darkAqua)
-        check(materials().map(\.side) == [.darkAqua], "the floating blur follows the window's own appearance")
+        check(shown() == [blur(1, .darkAqua)], "a forced Dark Space's blur in a Dark Aqua window")
         surface.floatingCornerRadius = nil
         surface.theme = light
-        check(materials().map(\.side) == [.aqua] && materials().first?.kind.rawValue == 1,
+        check(shown().map(\.side) == [.aqua] && shown().first?.kind.rawValue == 1,
               "a locked surface's material keeps its light theme's side in a Dark Aqua window")
         surface.floatingCornerRadius = FloatingSidebarSurface.cornerRadius
-        check(materials().map(\.side) == [.darkAqua] && materials().first?.kind == .popover, "floating again resolves against the window")
+        check(shown() == [blur(1, .aqua)], "floating, a forced Light Space keeps a light blur in a Dark Aqua window")
+        let automatic = SpaceTheme.singleColor(ThemeColor(red: 0.42, green: 0.36, blue: 0.86)!)
+        surface.theme = automatic
+        check(shown().map(\.side) == [.darkAqua], "an automatic coloured Space's blur follows the Dark Aqua window")
         window.appearance = nil
         guard let inherited = side(window.effectiveAppearance) else { fatalError("FloatingSidebarSurface: an Aqua or Dark Aqua window") }
         let flipped: NSAppearance.Name = inherited == .darkAqua ? .aqua : .darkAqua
-        check(materials().map(\.side) == [inherited], "the floating blur takes the appearance the window inherits")
+        check(shown().map(\.side) == [inherited], "the floating blur takes the appearance the window inherits")
         NSApp.appearance = NSAppearance(named: flipped)
         until { side(window.effectiveAppearance) == flipped }
-        check(materials().map(\.side) == [flipped], "the floating blur follows an app appearance change the window inherits")
+        check(shown().map(\.side) == [flipped], "the floating blur follows an app appearance change the window inherits")
         NSApp.appearance = nil
         until { side(window.effectiveAppearance) == inherited }
-        check(materials().map(\.side) == [inherited], "and follows it back")
-        let automatic = SpaceTheme.singleColor(ThemeColor(red: 0.42, green: 0.36, blue: 0.86)!)
+        check(shown().map(\.side) == [inherited], "and follows it back")
         let names: [(SpaceTheme, ThemePagingTransition?)] = [
             (automatic, nil), (automatic, across(automatic, SpaceTheme(), 0.6)),
             (SpaceTheme(), across(automatic, SpaceTheme(), 0.6)), (SpaceTheme(), nil),
         ]
         for (theme, transition) in names {
             surface.theme = theme; surface.pagingTransition = transition
-            check(surface.subviews.compactMap { ($0 as? NSVisualEffectView)?.effectiveAppearance.name } == [window.effectiveAppearance.name],
-                  "a coloured ↔ uncoloured automatic swipe keeps the window's own appearance "
+            check(surface.subviews.compactMap { $0 as? NSVisualEffectView }.filter { !$0.isHidden }.map(\.effectiveAppearance.name)
+                    == [window.effectiveAppearance.name],
+                  "a coloured ↔ uncoloured automatic swipe keeps the window's own appearance and one blur "
                   + "(p \(transition?.progress ?? 1), \(theme == automatic ? "before" : "after") the commit)")
         }
+        window.appearance = NSAppearance(named: .aqua)
+        surface.theme = automatic
+        surface.pagingTransition = across(automatic, dark, 0.5)
+        check(shown().map(\.side) == [.aqua, .darkAqua], "automatic → forced Dark in an Aqua window blends the two blurs")
+        window.appearance = NSAppearance(named: .darkAqua)
+        check(shown() == [blur(1, .darkAqua)], "turning the window Dark Aqua mid-swipe leaves one dark blur, as both pages now agree")
+        window.appearance = NSAppearance(named: .aqua)
+        check(shown().map(\.side) == [.aqua, .darkAqua], "and back to Aqua blends them again")
+        surface.pagingTransition = nil
+    }
+
+    static func checkPagingBlend() {
+        func blend(_ p: CGFloat) -> (CGFloat, CGFloat) { let b = FloatingSidebarSurface.pagingBlend(progress: p); return (b.base, b.incoming) }
+        check(FloatingSidebarSurface.pagingOpaqueProgress == 0.9, "the crossfade is fully shown at 90% of the swipe")
+        check(blend(0) == (1, 0) && blend(-0.2) == (1, 0), "at the start only the left page's blur shows")
+        check(near(blend(0.45).0, 1) && near(blend(0.45).1, 0.5), "halfway to opaque the crossfade is at half")
+        check(near(blend(0.9).0, 1) && near(blend(0.9).1, 1), "at 90% both blurs are fully shown, so the page never shows through")
+        check(near(blend(0.95).0, 0.5) && near(blend(0.95).1, 1), "past it the base fades out beneath the opaque crossfade")
+        check(blend(1) == (0, 1) && blend(1.3) == (0, 1), "at the end only the right page's blur remains, as it rests")
+        var previous = blend(0)
+        for step in 1...100 {
+            let next = blend(CGFloat(step) / 100)
+            check(next.0 <= previous.0 + 1e-9 && next.1 >= previous.1 - 1e-9 && abs(next.0 - previous.0) <= 0.11 && abs(next.1 - previous.1) <= 0.012,
+                  "the blend moves steadily at \(step)%")
+            check(next.0 >= 1 - 1e-9 || next.1 >= 1 - 1e-9, "one of the two blurs is always fully shown at \(step)%")
+            previous = next
+        }
+    }
+
+    static func checkSwipeDock() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 300), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.appearance = NSAppearance(named: .aqua)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 300))
+        root.wantsLayer = true
+        window.contentView = root
+        defer { window.contentView = nil }
+        let surface = ThemeRendererView(frame: NSRect(x: 5, y: 5, width: 200, height: 290))
+        root.addSubview(surface)
+        guard surface.subviews.contains(where: { $0 is MTKView }) else { print("FloatingSidebarSurface: no Metal; the swipe's dock is not checked"); return }
+        var light = SpaceTheme.singleColor(ThemeColor(red: 0.8, green: 0.88, blue: 0.97)!); light.appearance = .light
+        var dark = SpaceTheme.singleColor(ThemeColor(red: 0.36, green: 0.22, blue: 0.62)!); dark.appearance = .dark
+        surface.floatingCornerRadius = FloatingSidebarSurface.cornerRadius
+        surface.drawsBackground = true
+        surface.theme = light
+        surface.pagingTransition = ThemePagingTransition(from: light, theme: dark, progress: 0.95)
+        let blend = FloatingSidebarSurface.pagingBlend(progress: 0.95)
+        func blurs() -> [NSVisualEffectView] { surface.subviews.compactMap { $0 as? NSVisualEffectView } }
+        guard blurs().count == 2 else { fatalError("FloatingSidebarSurface: the swipe's crossfade") }
+        let base = blurs()[0], crossfade = blurs()[1]
+        surface.preparesFloatingDock = true
+        guard blurs().count == 3, let dock = blurs().last else { fatalError("FloatingSidebarSurface: the dock's preparation adds its material") }
+        check(surface.subviews.firstIndex(of: dock) == surface.subviews.firstIndex(of: crossfade).map { $0 + 1 },
+              "the window's material, created mid-swipe, lies over the crossfade so it covers both blurs as it fades in")
+        check(dock.alphaValue == 0 && near(base.alphaValue, blend.base) && near(crossfade.alphaValue, blend.incoming),
+              "prepared: the swipe's blend is untouched")
+        root.layoutSubtreeIfNeeded(); root.display(); CATransaction.flush()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.08
+            context.allowsImplicitAnimation = true
+            surface.docksFloatingSurface = true
+        }
+        check(base.alphaValue == 0 && crossfade.alphaValue == 0 && dock.alphaValue == 1, "docking fades both blurs out and the window's material in")
+        for (view, name) in [(base, "blur"), (crossfade, "crossfade"), (dock, "dock material")] {
+            let fade = view.layer?.animation(forKey: "opacity") as? CABasicAnimation
+            check(fade.map { near($0.duration, 0.08, 1e-6) } == true, "the \(name) fades on the group's 0.08 s timing")
+        }
+        surface.pagingTransition = ThemePagingTransition(from: light, theme: dark, progress: 0.97)
+        check(base.alphaValue == 0 && crossfade.alphaValue == 0, "the swipe moving on mid-dock keeps both blurs faded")
+        surface.theme = dark
+        surface.preparesFloatingDock = false
+        check(base.alphaValue == 0 && crossfade.alphaValue == 0 && dock.alphaValue == 1,
+              "the swipe's commit and the full pass's end of preparation keep the fades mid-dock")
+        surface.docksFloatingSurface = false
+        let resumed = FloatingSidebarSurface.pagingBlend(progress: 0.97)
+        check(near(base.alphaValue, resumed.base) && near(crossfade.alphaValue, resumed.incoming) && dock.isHidden,
+              "a reversed dock restores the swipe's blend")
+        check([base, crossfade, dock].allSatisfy { $0.layer?.animation(forKey: "opacity") == nil }, "a reversed dock leaves no fade in flight")
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.08
+            context.allowsImplicitAnimation = true
+            surface.docksFloatingSurface = true
+        }
+        surface.pagingTransition = nil
+        check(!crossfade.isHidden && crossfade.alphaValue == 0 && crossfade.layer?.animation(forKey: "opacity") != nil,
+              "a swipe ending mid-dock lets the crossfade finish fading instead of vanishing")
+        surface.docksFloatingSurface = false
+        check(crossfade.isHidden && base.alphaValue == 1 && crossfade.layer?.animation(forKey: "opacity") == nil,
+              "reversing that dock hides the finished swipe's crossfade and shows the whole blur")
+        var alsoLight = SpaceTheme.singleColor(ThemeColor(red: 0.95, green: 0.8, blue: 0.6)!); alsoLight.appearance = .light
+        surface.pagingTransition = ThemePagingTransition(from: light, theme: dark, progress: 0.97)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.08
+            context.allowsImplicitAnimation = true
+            surface.docksFloatingSurface = true
+        }
+        surface.pagingTransition = ThemePagingTransition(from: light, theme: alsoLight, progress: 0.97)
+        check(!crossfade.isHidden && crossfade.alphaValue == 0 && crossfade.layer?.animation(forKey: "opacity") != nil,
+              "pages coming to agree mid-dock let the crossfade finish fading")
+        surface.docksFloatingSurface = false
+        check(crossfade.isHidden && base.alphaValue == 1, "and reversing that dock hides it and shows the whole blur")
+        surface.pagingTransition = ThemePagingTransition(from: light, theme: dark, progress: 0.97)
+        surface.docksFloatingSurface = true
+        surface.floatingCornerRadius = nil
+        surface.docksFloatingSurface = false
+        check(crossfade.isHidden && base.alphaValue == 1 && dock.isHidden,
+              "a dock settling mid-swipe hides the crossfade and restores the blur, though the swipe goes on")
+        surface.pagingTransition = nil
     }
 }

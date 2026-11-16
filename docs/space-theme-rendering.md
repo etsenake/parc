@@ -16,9 +16,8 @@ Unthemed automatic surfaces receive the window's complete appearance object;
 saved forced Light/Dark themes retain their explicit appearance.
 
 Only the physical window surface owns behind-window material. A floating sidebar
-uses popover blur: beneath a colored theme it follows the window appearance;
-when blur is the whole backdrop it follows the theme's content side. Forced
-content can therefore sit over the window's contrasting blur; see
+uses popover blur on the side its Space resolves to, the forced side or the
+window's when automatic, so forced text never sits over a contrasting blur; see
 [sidebar motion](sidebar-motion.md#floating-surface).
 
 Private-window surfaces use a static opaque incognito background and BrandBlue
@@ -56,9 +55,10 @@ layer mixing, not a crossfade of already-composited pictures.
 The window's base material takes the left page's style. If the right style or
 appearance differs, a second behind-window material takes that style at the
 transition alpha. At rest the base returns to its own style and the second is
-hidden. Nested/sidebar surfaces never create that second material. Each surface
-requires one canvas draw per frame; the transition does not allocate another
-gradient target.
+hidden. Nested and docked sidebar surfaces never create that second material; a
+floating sidebar blends through its own within-window blur, described in
+[sidebar motion](sidebar-motion.md#floating-surface). Each surface requires one
+canvas draw per frame; the transition does not allocate another gradient target.
 
 The strip positions the selected page and its immediate neighbors. Tracking
 beyond one page can expose empty strip space while the background advances to
