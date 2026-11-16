@@ -140,8 +140,8 @@ and extension isolated worlds do not.
   range beginning in the first second. State changes precede queued events.
 - The monitor checks media events, append/removal completions and once a second
   while open using a weak source reference. Without an observed media element,
-  including worker-owned buffering, streaming may start but never stop; players
-  must retain their own buffer limits.
+  including worker-owned buffering, streaming starts but never stops by design,
+  so a player that obeys it can't stall and keeps its own buffer limit.
 - Memory pressure empties inactive buffers and purges active data outside the
   retained playing/keyframe region. It preserves the earliest playing GOP across
   tracks and defers until active append/removal finishes. A purge does not repeat
@@ -234,15 +234,12 @@ list; the inverse menu restores Safari. Open pages update accordingly.
   header different from its eventual script identity; replaying one-time callback
   URLs would be unsafe. Prerender subframe redirects and fenced-frame redirect
   correction are not covered by the ordinary subframe correction path.
-- A running shared worker keeps its old identity until it ends. Service workers
-  are stopped when identity changes. Cross-site embedded learned sites remain
-  Chrome by design.
+- A running shared worker keeps its old identity until it ends, since ending it
+  early could break a page still reloading. Service workers are stopped when
+  identity changes. Cross-site embedded learned sites remain Chrome by design.
 - Script compatibility layers are observable through reflection. Isolated worlds
   retain their own prototype surface. Standard PiP/fullscreen changes initiated
   elsewhere update the compatibility state when Chromium's event arrives.
-- Worker ManagedMediaSource does not infer a playback position, so its streaming
-  state cannot enforce a player's buffer ceiling. This is a documented limit,
-  not an assertion of full WebKit engine policy.
 - FairPlay is advertised outside Safari identity too. A multi-DRM site offering
   FairPlay first may choose it even when it previously selected Widevine.
 - Learned identity persists across site-data clearing and is inherited initially

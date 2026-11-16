@@ -273,8 +273,9 @@ The demuxer protects cached timeline values for cross-thread queries.
 
 The identity-only getStartDate interface is installed with its context's media
 element interface object; a reused context whose earlier document already created
-that object may lack it. This retained context-installation limit needs a focused
-interface-lifecycle change if encountered.
+that object may lack it, along with the other identity-only media members. This
+limit stays: no affected site is known, and players that use getStartDate check
+for it and carry on without it.
 
 ## Threads
 

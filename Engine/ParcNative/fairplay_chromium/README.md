@@ -350,9 +350,9 @@ Seek, suspend, reverse playback, CDM replacement and track changes have explicit
 restart or cancellation paths. Where hand-off is impossible, restart can cause
 one rebuffer. This also affects casting, PiP and background tabs.
 
-The current core supports VP9 and Vorbis for Safari-identity media, but has no
-VP8 or MP3 renderer implementation. Transitions into Dolby Vision beside those
-codecs can fail, and late FairPlay attachment can require restart.
+The core plays neither VP8 nor MP3, so Dolby Vision transitions beside them can
+fail and late FairPlay attachment can require restart. This limit stays: FairPlay
+can't protect either, and a fallback would edit Chromium's protected-video routing.
 
 The MSE FairPlay client and GPU adapter also omit `SetPreservesPitch`, so a
 page cannot disable pitch preservation on this route. The core supports the

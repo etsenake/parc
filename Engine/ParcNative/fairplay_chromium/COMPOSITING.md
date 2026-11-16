@@ -256,7 +256,9 @@ fade ends, and a fading video at any point. Two translucent levels at once come
 out slightly off. So does content drawn over the video inside a translucent
 pass, such as captions or controls while a dialog fades: part of the video
 shows through them. Separate layers can't reproduce a group's flattening,
-which Safari's CALayer group opacity does. One case is exact anyway. Where the
+which Safari's CALayer group opacity does. This limit stays: it lasts only
+while a fade runs, and grouping would need new Chromium compositor work in the
+code that places protected video. One case is exact anyway. Where the
 pass draws something opaque over the video, the occlusion culler trims the
 hole there, and the layer and the root's copy leave that part out.
 

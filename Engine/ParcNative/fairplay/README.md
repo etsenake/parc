@@ -208,7 +208,10 @@ as they are:
   plus a dependent substream of Lrs/Rrs (the layout of Dolby's 7.1 streams,
   which Apple reads as 8 channels) and other 6.1/7.1 as the 5.1 core, and
   the bit rate written as 0 (CoreMedia decodes such boxes; checked with clear
-  AC-3 and E-AC-3).
+  AC-3 and E-AC-3). Only the count survives, so 7.0 also becomes the 5.1 core,
+  wide 7.1 becomes standard 7.1, three or four channels follow the count alone
+  and Atmos loses its marker. This limit stays: services send stereo and 5.1,
+  which come out exact, and a fix would touch the step that builds their box.
 - Buffers carry no decode timestamp (`mojom::DecoderBuffer` has none). The
   sample's decode time stays `kCMTimeInvalid` and AVFoundation decodes in
   enqueue order; on the reordered Axinom H.264 vector this plays exactly as

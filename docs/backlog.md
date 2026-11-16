@@ -33,18 +33,8 @@ The remaining work is specific to these paths:
 
 - The Mini Player's Cast button still needs speaker-only discovery.
   [Casting and media boundaries](safari-media-edges.md).
-- FairPlay needs MSE pitch-policy forwarding. VP8/MP3 and protected Opus/PCM
-  remain unsupported; codec eligibility and fallback behavior belong in
+- FairPlay needs MSE pitch-policy forwarding.
   [FairPlay integration](../Engine/ParcNative/fairplay_chromium/README.md).
-- Protected playback also retains reused-context start-date, nested translucent
-  video-layer and encrypted AC-3/E-AC-3 channel-layout limits.
-  [Native HLS](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md),
-  [composition](../Engine/ParcNative/fairplay_chromium/COMPOSITING.md),
-  [native audio](../Engine/ParcNative/fairplay/README.md).
-- Worker ManagedMediaSource lacks playback-position feedback for its high-water
-  stop. Existing shared workers keep their old identity until they end. The
-  [web surface](fairplay-safari-surface.md) and [identity](fairplay-identity.md)
-  guides own these limits and the output-protection/codec details.
 
 ## Engine architecture
 
