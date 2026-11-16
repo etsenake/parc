@@ -29,6 +29,7 @@
 #include "extension_side_panel.h"
 #include "extensions/common/extension.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "extensions/test/extension_test_message_listener.h"
 #include "extensions/test/test_extension_dir.h"
 #include "ui/base/base_window.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -333,6 +334,63 @@ IN_PROC_BROWSER_TEST_F(NativeExtensionContextMenuBrowserTest,
   EXPECT_FALSE(presenter_->Show(*model_));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(drain_count_, 2);
+}
+
+IN_PROC_BROWSER_TEST_F(NativeExtensionContextMenuBrowserTest,
+                       ExtensionAddedActionItemsShowAndRun) {
+  extensions::TestExtensionDir items;
+  items.WriteManifest(
+      R"({"name":"Parc action items", "version":"1.0",
+      "manifest_version":3,"action":{},"permissions":["contextMenus"],
+      "background":{"service_worker":"worker.js"}})");
+  items.WriteFile(FILE_PATH_LITERAL("worker.js"), R"(
+    chrome.contextMenus.onClicked.addListener(
+        (info) => chrome.test.sendMessage('clicked ' + info.menuItemId));
+    chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create(
+          {id: 'clip', title: 'Clip this page', contexts: ['action']});
+      chrome.contextMenus.create({id: 'reader', title: 'Reader view',
+                                  type: 'checkbox', checked: true,
+                                  contexts: ['action']});
+      chrome.contextMenus.create(
+          {id: 'more', title: 'More tools', contexts: ['action']});
+      chrome.contextMenus.create({id: 'later', parentId: 'more',
+                                  title: 'Save for later',
+                                  contexts: ['action']});
+      chrome.contextMenus.create(
+          {id: 'page', title: 'Page only item', contexts: ['page']},
+          () => chrome.test.sendMessage('ready'));
+    });
+  )");
+  ExtensionTestMessageListener ready("ready");
+  scoped_refptr<const extensions::Extension> extension =
+      LoadExtension(items.UnpackedPath());
+  ASSERT_TRUE(extension);
+  ASSERT_TRUE(ready.WaitUntilSatisfied());
+  auto* model = static_cast<ExtensionActionViewModel*>(
+      ExtensionsContainer::From(*browser())->GetActionForId(extension->id()));
+  ASSERT_TRUE(model);
+  ExtensionTestMessageListener clicked("clicked clip");
+  WhenTracking(^(NSMenu* menu) {
+    [menu update];
+    NSMenuItem* clip = [menu itemWithTitle:@"Clip this page"];
+    ASSERT_TRUE(clip);
+    EXPECT_TRUE(clip.enabled);
+    EXPECT_FALSE(clip.hidden);
+    NSMenuItem* reader = [menu itemWithTitle:@"Reader view"];
+    ASSERT_TRUE(reader);
+    EXPECT_EQ(reader.state, NSControlStateValueOn);
+    NSMenuItem* more = [menu itemWithTitle:@"More tools"];
+    ASSERT_TRUE(more);
+    ASSERT_TRUE(more.submenu);
+    EXPECT_TRUE([more.submenu itemWithTitle:@"Save for later"]);
+    EXPECT_FALSE([menu itemWithTitle:@"Page only item"]);
+    EXPECT_FALSE([more.submenu itemWithTitle:@"Page only item"]);
+    Dispatch(menu, clip);
+  });
+  ASSERT_TRUE(presenter_->Show(*model));
+  ASSERT_EQ(began_count_, 1);
+  EXPECT_TRUE(clicked.WaitUntilSatisfied());
 }
 
 class NativeSidePanelMenuBrowserTest

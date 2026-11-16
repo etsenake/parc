@@ -15,9 +15,12 @@ supplies decorated artwork, tooltip and accessible name.
 
 A disabled primary action can still open its genuine context menu. Pin/Unpin
 availability comes from `canChangePin`; the engine builds the menu and executes
-its commands while Parc draws the themed menu beside its button. Site Control
-Center stays open, except for the side-panel item. A disabled row can show its
-reason as a tooltip. See [Site Control Center](web-interactions.md).
+its commands while Parc draws the themed menu beside its button. Items an
+extension adds to its own button's menu, such as a clipper's Clip this page,
+appear right below its name with their checkmarks and submenus, and choosing
+one reaches the extension; items it adds only to page menus stay out. Site
+Control Center stays open, except for the side-panel item. A disabled row can
+show its reason as a tooltip. See [Site Control Center](web-interactions.md).
 
 An extension that declares a side panel, such as a web clipper whose button
 opens a popup, also lists Open Side Panel, or Close Side Panel from the moment
