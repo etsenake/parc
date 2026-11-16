@@ -61,6 +61,8 @@ function applySky() {
     '--hill-back': sky.hills[0], '--hill-mid': sky.hills[1], '--hill-front': sky.hills[2], '--tree': sky.tree, '--trunk': sky.trunk, '--lamp-head': sky.lampHead, '--lamp-glow': sky.lampGlow, '--reveal': sky.reveal
   };
   for (const k in v) hero.style.setProperty(k, v[k]);
+  document.documentElement.style.setProperty('--lawn', sky.hills[2]);
+  document.documentElement.style.setProperty('--haze', sky.night ? '#9C8AA3' : '');
   hero.classList.toggle('has-stars', sky.stars); hero.classList.toggle('has-flies', sky.flies); hero.classList.toggle('has-shoot', sky.shoot);
   sun.className = 'sun' + (sky.orb ? ' ' + sky.orb : '');
   trailEls.forEach((el) => el.classList.toggle('trail-night', sky.night));

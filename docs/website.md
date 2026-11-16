@@ -33,6 +33,12 @@ so visitors aren't sent to Google, and the page carries no analytics or embeds;
 its own rules card says nobody's counting visitors. A new external request,
 tracker or hosted font would make that line untrue.
 
+Each section hands over to the next in its own way, so don't add a shared
+divider. The lawn under the film takes the hero's hill colour from `--lawn` and
+`--haze`, which `applySky` sets with the time of day. Keep masks and filters off
+`#guide`, because the field-guide overlay is fixed inside it and would be
+clipped.
+
 Each field-guide card opens a plate. Its drawing is the matching
 `<template id="scene-N">` in `index.html`; its words are the matching entry
 in `site.js`. Add or remove all three together.
@@ -121,8 +127,10 @@ the feature guide that owns it, such as [Split View](split-groups.md),
 [keyboard shortcuts](keyboard-navigation.md), [onboarding](onboarding.md) and
 [browser import](browser-import.md).
 When a feature changes, update its guide first and the site to match; link to
-the guides rather than restating their details here. The footer says Parc is
-independent and not affiliated with The Browser Company; keep it.
+the guides rather than restating their details here. The FAQ says Parc is
+independent and not affiliated with The Browser Company; keep it. The font
+licence ships as `assets/fonts/OFL.txt` beside the fonts, so the page carries no
+credit line.
 
 ## Checks
 
