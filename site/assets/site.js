@@ -61,8 +61,6 @@ function applySky() {
     '--hill-back': sky.hills[0], '--hill-mid': sky.hills[1], '--hill-front': sky.hills[2], '--tree': sky.tree, '--trunk': sky.trunk, '--lamp-head': sky.lampHead, '--lamp-glow': sky.lampGlow, '--reveal': sky.reveal
   };
   for (const k in v) hero.style.setProperty(k, v[k]);
-  document.documentElement.style.setProperty('--lawn', sky.hills[2]);
-  document.documentElement.style.setProperty('--haze', sky.night ? '#9C8AA3' : '');
   hero.classList.toggle('has-stars', sky.stars); hero.classList.toggle('has-flies', sky.flies); hero.classList.toggle('has-shoot', sky.shoot);
   sun.className = 'sun' + (sky.orb ? ' ' + sky.orb : '');
   trailEls.forEach((el) => el.classList.toggle('trail-night', sky.night));
@@ -453,6 +451,11 @@ $$('.copy-btn').forEach((b) => b.addEventListener('click', () => {
   sfx(() => chime([1046.5, 1318.51], .06, .08));
 }));
 
+const scribble = $('.scribble');
+if (scribble && !reduced && 'IntersectionObserver' in window) {
+  scribble.classList.add('is-waiting');
+  new IntersectionObserver((entries, seen) => entries.forEach((e) => { if (e.isIntersecting) { scribble.classList.remove('is-waiting'); seen.disconnect(); } }), { threshold: .6 }).observe(scribble);
+}
 const filmFrame = $('#filmFrame'), filmVideo = $('#filmVideo');
 if (filmFrame && filmVideo) {
   if (reduced) {

@@ -33,11 +33,13 @@ so visitors aren't sent to Google, and the page carries no analytics or embeds;
 its own rules card says nobody's counting visitors. A new external request,
 tracker or hosted font would make that line untrue.
 
-Each section hands over to the next in its own way, so don't add a shared
-divider. The lawn under the film takes the hero's hill colour from `--lawn` and
-`--haze`, which `applySky` sets with the time of day. Keep masks and filters off
-`#guide`, because the field-guide overlay is fixed inside it and would be
-clipped.
+Each section hands over to the next with its own edge: the squiggle under the
+hills, the Spaces window, the kite-string scribble, the swell into movie night,
+the torn field-guide page, the cut-here line, the clouds over the rules and the
+sunset waves into the footer. Give a new section its own edge rather than
+reusing one. The edges are pseudo-elements, not masks on a section: keep masks
+and filters off `#guide`, because the field-guide overlay is fixed inside it and
+would be clipped.
 
 Each field-guide card opens a plate. Its drawing is the matching
 `<template id="scene-N">` in `index.html`; its words are the matching entry
