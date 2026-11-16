@@ -16,6 +16,12 @@ struct HistorySwipeParameters: Equatable {
     var edgeMargin = 0.03
     var edgeStepInterval: TimeInterval = 0.1
     var listCloseProgress = 0.85
+    var dismissDistance = 0.3
+    var dismissCommitProgress = 0.5
+    var dismissDisarmProgress = 0.45
+    var flickVelocity = 0.6
+    var flickProgress = 0.1
+    var velocityWindow: TimeInterval = 0.08
 
     static let dia = HistorySwipeParameters()
 }
@@ -43,6 +49,8 @@ struct HistorySwipeRecognizer {
     private(set) var selection: Int?
     private(set) var holdDeadline: TimeInterval?
     private(set) var entries = 0
+    private(set) var dismissing = false
+    private var samples: [(time: TimeInterval, x: Double)] = []
     private var inverted = false
     private var announced = false
     private var receivingTouches = false
@@ -119,6 +127,7 @@ struct HistorySwipeRecognizer {
             start = Self.average(points)
             current = start
             totalY = 0
+            samples = []
             firstScrollUnconsumed = false
             overscrollPropagatesX = false
             awaitingFirstScroll = false
@@ -144,6 +153,7 @@ struct HistorySwipeRecognizer {
             totalY += abs(point.y - current.y)
         }
         current = point
+        record(time)
         if listOpened && touchProgress <= 0 {
             cancel(&step)
             return false
@@ -165,7 +175,7 @@ struct HistorySwipeRecognizer {
         guard state != .waitingForPage else { return false }
         if state == .possible && (abs(current.x - start.x) > parameters.consumeDistance || touchProgress >= 1) {
             state = .tracking
-            if direction == .back { step.preloadsBack = true }
+            if direction == .back && !dismissing { step.preloadsBack = true }
         }
         advance(touchProgress, time: time, &step)
         return true
@@ -178,11 +188,39 @@ struct HistorySwipeRecognizer {
             || totalY > parameters.verticalCancelDistance
     }
 
+    private var travel: Double {
+        var travel = current.x - start.x
+        if direction == .back { travel = -travel }
+        if inverted { travel = -travel }
+        return travel
+    }
+
     private var touchProgress: Double {
-        var progress = (current.x - start.x) / parameters.commitDistance
-        if direction == .back { progress = -progress }
-        if inverted { progress = -progress }
-        return progress
+        travel / (dismissing ? parameters.dismissDistance * parameters.dismissCommitProgress : parameters.commitDistance)
+    }
+
+    private var disarmPoint: Double {
+        dismissing ? parameters.dismissDisarmProgress / parameters.dismissCommitProgress : 1
+    }
+
+    private mutating func record(_ time: TimeInterval) {
+        guard dismissing else { return }
+        samples.append((time, travel / parameters.dismissDistance))
+        let oldest = time - parameters.velocityWindow
+        if let keep = samples.firstIndex(where: { $0.time >= oldest }), keep > 0 { samples.removeFirst(keep) }
+    }
+
+    private var velocity: Double {
+        guard let last = samples.last else { return 0 }
+        var reference = last, sign = 0.0
+        for sample in samples.reversed().dropFirst() {
+            let way: Double = reference.x > sample.x ? 1 : reference.x < sample.x ? -1 : 0
+            if way != 0 && sign != 0 && way != sign { break }
+            if way != 0 { sign = way }
+            reference = sample
+        }
+        guard last.time - reference.time > 0.005 else { return 0 }
+        return (last.x - reference.x) / (last.time - reference.time)
     }
 
     private mutating func advance(_ progress: Double, time: TimeInterval?, _ step: inout HistorySwipeStep) {
@@ -192,11 +230,11 @@ struct HistorySwipeRecognizer {
             step.outputs.append(.armed(true))
             armedY = current.y
             armedTotalY = totalY
-            if source == .touches, parameters.holdDelay.isFinite, let time {
+            if source == .touches, !dismissing, parameters.holdDelay.isFinite, let time {
                 restingSince = time
                 holdDeadline = time + parameters.holdDelay
             }
-        } else if progress < 1 && state == .armed {
+        } else if progress < disarmPoint && state == .armed {
             state = .tracking
             holdDeadline = nil
             restingSince = nil
@@ -330,17 +368,25 @@ struct HistorySwipeRecognizer {
 
     private mutating func finish(_ step: inout HistorySwipeStep) {
         guard let direction, isLive else { return }
-        switch state {
-        case .armed:
-            step.outputs.append(.commit(.adjacent(direction)))
-        case .holding:
-            if let selection, selection > 0 {
-                step.outputs.append(.commit(.entry(direction, distance: selection)))
-            } else {
+        if dismissing {
+            let speed = velocity, flick = parameters.flickVelocity / parameters.dismissDistance
+            let card = travel / parameters.dismissDistance
+            let commits = state != .possible && ((state == .armed && speed > -flick)
+                || (speed >= flick && card >= parameters.flickProgress))
+            step.outputs += [.release(velocity: speed), commits ? .commit(.dismiss) : .cancel]
+        } else {
+            switch state {
+            case .armed:
+                step.outputs.append(.commit(.adjacent(direction)))
+            case .holding:
+                if let selection, selection > 0 {
+                    step.outputs.append(.commit(.entry(direction, distance: selection)))
+                } else {
+                    step.outputs.append(.cancel)
+                }
+            default:
                 step.outputs.append(.cancel)
             }
-        default:
-            step.outputs.append(.cancel)
         }
         state = .completed
         holdDeadline = nil
@@ -371,15 +417,18 @@ struct HistorySwipeRecognizer {
         let rightward = (deltaX > 0) != event.directionInverted
         let way: HistorySwipeDirection = rightward ? .forward : .back
         let count = environment.historyEntries(toward: way)
-        guard count > 0 else { return }
+        let dismisses = count == 0 && environment.dismisses(toward: way)
+        guard count > 0 || dismisses else { return }
         direction = way
         source = .touches
         entries = count
+        dismissing = dismisses
         inverted = event.directionInverted
         state = .possible
         announced = true
         lastProgress = HistorySwipeProgress(fraction: 0, stretch: 0)
-        step.outputs.append(.begin(way))
+        samples = []
+        step.outputs.append(dismisses ? .beginDismissal : .begin(way))
         step.consumesEvent = consumes(event)
     }
 
@@ -393,6 +442,8 @@ struct HistorySwipeRecognizer {
         edgeDeadline = nil
         listOpened = false
         entries = 0
+        dismissing = false
+        samples = []
         announced = false
         lastProgress = nil
         mouseScrollX = 0
@@ -419,12 +470,14 @@ struct HistorySwipeRecognizer {
         guard abs(mouseScrollX) > abs(mouseScrollY) else { return }
         let way: HistorySwipeDirection = event.deltaX < 0 ? .forward : .back
         let count = environment.historyEntries(toward: way)
-        guard count > 0 else { return }
+        let dismisses = count == 0 && environment.dismisses(toward: way)
+        guard count > 0 || dismisses else { return }
         trackingGeneration += 1
         liveTracking = trackingGeneration
         direction = way
         source = .trackedSwipe
         entries = count
+        dismissing = dismisses
         state = .possible
         step.startsTracking = HistorySwipeTrackingRequest(direction: way, generation: trackingGeneration)
         step.consumesEvent = true
@@ -442,24 +495,27 @@ struct HistorySwipeRecognizer {
             state = .tracking
             announced = true
             lastProgress = HistorySwipeProgress(fraction: 0, stretch: 0)
-            step.outputs.append(.begin(direction))
+            step.outputs.append(dismissing ? .beginDismissal : .begin(direction))
         }
         switch update.phase {
         case .began:
             break
         case .ended:
-            step.outputs.append(.commit(.adjacent(direction)))
+            step.outputs.append(.commit(dismissing ? .dismiss : .adjacent(direction)))
             state = .completed
         case .cancelled:
             step.outputs.append(.cancel)
             state = .cancelled
         default:
-            advance(abs(update.amount) / parameters.trackedArmAmount, time: nil, &step)
+            let arm = dismissing ? parameters.dismissCommitProgress : parameters.trackedArmAmount
+            advance(abs(update.amount) / arm, time: nil, &step)
         }
     }
 
     private mutating func emitProgress(_ progress: Double, _ step: inout HistorySwipeStep) {
-        let value = HistorySwipeProgress(fraction: min(max(progress, 0), 1), stretch: stretch(progress))
+        let card = min(max(progress * parameters.dismissCommitProgress, 0), 1)
+        let value = dismissing ? HistorySwipeProgress(fraction: card, stretch: card)
+            : HistorySwipeProgress(fraction: min(max(progress, 0), 1), stretch: stretch(progress))
         guard value != lastProgress else { return }
         lastProgress = value
         step.outputs.append(.progress(value))

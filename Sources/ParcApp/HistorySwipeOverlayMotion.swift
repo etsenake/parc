@@ -353,6 +353,8 @@ struct HistorySwipeOverlayModel {
         case .commit, .cancel:
             guard phase == .live else { return nil }
             phase = .collapsing(since: time)
+        case .beginDismissal, .release:
+            break
         }
         return nil
     }

@@ -4,7 +4,9 @@ protocol HistorySwipeTarget: AnyObject {
     var swipesBetweenPages: Bool { get }
     var allowsHistorySwipe: Bool { get }
     func historyEntries(toward direction: HistorySwipeDirection) -> Int
+    func dismisses(toward direction: HistorySwipeDirection) -> Bool
     func beginSwipe(_ direction: HistorySwipeDirection) -> Bool
+    func beginDismissal() -> Bool
     func navigate(_ commit: HistorySwipeCommit) -> Bool
     func endSwipe()
     func preloadBack()
@@ -26,6 +28,9 @@ final class HistorySwipeDriver: HistorySwipeShell {
         var allowsHistorySwipe: Bool { target.allowsHistorySwipe }
         func historyEntries(toward direction: HistorySwipeDirection) -> Int {
             target.historyEntries(toward: direction)
+        }
+        func dismisses(toward direction: HistorySwipeDirection) -> Bool {
+            target.dismisses(toward: direction)
         }
     }
 
@@ -78,6 +83,13 @@ final class HistorySwipeDriver: HistorySwipeShell {
         switch output {
         case let .begin(direction):
             guard target?.beginSwipe(direction) == true else {
+                refused = true
+                return
+            }
+            isActive = true
+            presenter?.present(output)
+        case .beginDismissal:
+            guard target?.beginDismissal() == true else {
                 refused = true
                 return
             }

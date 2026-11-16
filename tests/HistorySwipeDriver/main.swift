@@ -7,6 +7,9 @@ final class Page: HistorySwipeTarget, HistorySwipePresenter, HistorySwipeClock {
     var forward = 2
     var opens = true
     var lands = true
+    var peekFirstPage = false
+    var dismissalOpens = true
+    var dismissals = 0
     var begun: [HistorySwipeDirection] = []
     var commits: [HistorySwipeCommit] = []
     var ends = 0
@@ -17,6 +20,11 @@ final class Page: HistorySwipeTarget, HistorySwipePresenter, HistorySwipeClock {
     var duringNavigation: (() -> Void)?
 
     func historyEntries(toward direction: HistorySwipeDirection) -> Int { direction == .back ? back : forward }
+    func dismisses(toward direction: HistorySwipeDirection) -> Bool { peekFirstPage && direction == .back }
+    func beginDismissal() -> Bool {
+        dismissals += 1
+        return dismissalOpens
+    }
     func beginSwipe(_ direction: HistorySwipeDirection) -> Bool {
         begun.append(direction)
         return opens
@@ -32,6 +40,15 @@ final class Page: HistorySwipeTarget, HistorySwipePresenter, HistorySwipeClock {
     func schedule(at deadline: TimeInterval, _ tick: @escaping () -> Void) { ticks.append((deadline, tick)) }
 
     var gestures: [HistorySwipeOutput] { shown.filter { if case .progress = $0 { false } else { true } } }
+    var shape: [HistorySwipeOutput] { gestures.map { if case .release = $0 { .release(velocity: 0) } else { $0 } } }
+
+    static var peek: Page {
+        let page = Page()
+        page.back = 0
+        page.forward = 0
+        page.peekFirstPage = true
+        return page
+    }
 }
 
 let p = HistorySwipeParameters()
@@ -87,6 +104,11 @@ struct Hand {
         pageAnswers()
         touch(.moved, x: x + 0.003)
         scroll(.changed, dx: 3)
+    }
+
+    mutating func rest() {
+        time += 0.2
+        touch(.moved, x: x + 0.0005)
     }
 
     mutating func tick() {
@@ -259,6 +281,84 @@ do {
     expect(driver?.receive(.cancel).stopsTracking == true, "a driver whose page is gone stops tracking")
 }
 
+let released = HistorySwipeOutput.release(velocity: 0)
+
+do {
+    let page = Page.peek
+    var hand = Hand(page)
+    hand.openBack()
+    expect(page.begun.isEmpty && page.dismissals == 1 && page.gestures == [.beginDismissal],
+           "a Peek's first page opens a dismissal instead of a history session")
+    hand.touch(.moved, x: 0.5 + p.dismissDistance * 0.3)
+    hand.touch(.moved, x: 0.5 + p.dismissDistance * 0.6)
+    hand.rest()
+    hand.touch(.ended)
+    expect(page.commits == [.dismiss], "letting go past halfway asks the Peek to close once")
+    expect(page.shape == [.beginDismissal, .armed(true), released, .commit(.dismiss)],
+           "the Peek sees the drag, the halfway tap, the release speed and the close")
+    expect(page.ends == 1 && page.preloads == 0 && !hand.driver.isActive, "the dismissal ends without warming Back")
+}
+
+do {
+    let page = Page.peek
+    page.dismissalOpens = false
+    var hand = Hand(page)
+    hand.openBack()
+    expect(page.dismissals == 1 && page.shown.isEmpty && hand.steps.last?.stopsTracking == true,
+           "a Peek that can't be dragged shows nothing")
+    hand.touch(.moved, x: 0.5 + p.dismissDistance * 0.8)
+    hand.touch(.ended)
+    expect(page.commits.isEmpty && page.shown.isEmpty, "a refused drag never closes")
+}
+
+do {
+    let page = Page.peek
+    page.lands = false
+    var hand = Hand(page)
+    hand.openBack()
+    hand.touch(.moved, x: 0.5 + p.dismissDistance * 0.7)
+    hand.rest()
+    hand.touch(.ended)
+    expect(page.commits == [.dismiss] && page.gestures.last == .cancel, "a close the Peek refuses springs back")
+}
+
+do {
+    let page = Page.peek
+    var hand = Hand(page)
+    hand.openBack()
+    hand.touch(.moved, x: 0.5 + p.dismissDistance * 0.7)
+    hand.driver.cancel()
+    hand.touch(.ended)
+    expect(page.commits.isEmpty && page.gestures.filter { $0 == .cancel }.count == 1 && page.ends == 1,
+           "an engine cancel springs the card back once and never closes late")
+}
+
+do {
+    let page = Page.peek
+    var hand = Hand(page)
+    hand.scroll(.mayBegin)
+    hand.scroll(.began, dx: 1)
+    hand.pageAnswers()
+    hand.scroll(.changed, dx: 4)
+    let generation = hand.steps.last?.startsTracking?.generation ?? 0
+    func update(_ amount: Double, _ phase: NSEvent.Phase) -> Bool {
+        hand.driver.tracked(HistorySwipeTrackedUpdate(generation: generation, amount: amount,
+                                                      phase: HistorySwipeEvents.phase(phase)))
+    }
+    expect(generation > 0 && update(0, .began) && page.gestures == [.beginDismissal],
+           "a Magic Mouse swipe on a Peek's first page opens a dismissal")
+    expect(update(0.6, .changed) && update(0.7, .ended) && page.commits == [.dismiss],
+           "AppKit's end closes the Peek")
+}
+
+do {
+    let page = Page()
+    page.peekFirstPage = true
+    var hand = Hand(page)
+    hand.openBack()
+    expect(page.begun == [.back] && page.dismissals == 0, "a Peek with pages behind it still goes Back")
+}
+
 expect(HistorySwipeEvents.phase(.began) == .began && HistorySwipeEvents.phase(.changed) == .changed
        && HistorySwipeEvents.phase(.mayBegin) == .mayBegin && HistorySwipeEvents.phase(.stationary) == .stationary
        && HistorySwipeEvents.phase(.ended) == .ended && HistorySwipeEvents.phase(.cancelled) == .cancelled
@@ -272,5 +372,5 @@ let edge = HistorySwipeRows(entries: ["a"], currentIndex: 0)
 expect(edge.current == "a" && edge.back.isEmpty && edge.forward.isEmpty, "a single entry has no neighbours")
 expect(HistorySwipeRows(entries: ["a"], currentIndex: 4).current == nil, "an out-of-range index shows no rows")
 
-precondition(checks == 37, "HistorySwipeDriver: ran \(checks) checks")
+precondition(checks == 48, "HistorySwipeDriver: ran \(checks) checks")
 print("HistorySwipeDriver: \(checks) checks passed")

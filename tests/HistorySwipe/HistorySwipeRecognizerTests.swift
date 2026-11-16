@@ -5,15 +5,23 @@ final class Page: HistorySwipeEnvironment {
     var allowsHistorySwipe = true
     var back: Int
     var forward: Int
+    var peekFirstPage = false
 
-    init(back: Int = 3, forward: Int = 2) {
+    init(back: Int = 3, forward: Int = 2, peekFirstPage: Bool = false) {
         self.back = back
         self.forward = forward
+        self.peekFirstPage = peekFirstPage
     }
 
     func historyEntries(toward direction: HistorySwipeDirection) -> Int {
         direction == .back ? back : forward
     }
+
+    func dismisses(toward direction: HistorySwipeDirection) -> Bool {
+        peekFirstPage && direction == .back
+    }
+
+    static var peek: Page { Page(back: 0, forward: 0, peekFirstPage: true) }
 }
 
 final class Shell: HistorySwipeShell {
@@ -36,6 +44,10 @@ struct Trace {
         self.x = x
         self.y = y
         inputs.append(.touches(.began, fingers, time: time))
+    }
+
+    mutating func rest(_ duration: Double = 0.2) {
+        move(x + 0.0005, after: duration)
     }
 
     mutating func move(_ x: Double, _ y: Double? = nil, after delay: Double = 0.008) {
@@ -128,6 +140,14 @@ struct Run {
 
     var gestures: [HistorySwipeOutput] { steps.flatMap(\.gestures) }
 
+    var shape: [HistorySwipeOutput] {
+        gestures.map { if case .release = $0 { .release(velocity: 0) } else { $0 } }
+    }
+
+    var releases: [Double] {
+        outputs.compactMap { if case let .release(velocity) = $0 { velocity } else { nil } }
+    }
+
     var remainders: [Double] {
         outputs.compactMap { if case let .rowRemainder(value) = $0 { value } else { nil } }
     }
@@ -206,6 +226,15 @@ struct Run {
         interruptions()
         injectedParameters()
         controller()
+        peekDismissalValues()
+        peekDismissalTrackpad()
+        peekDismissalSpringsBack()
+        peekDismissalFlick()
+        peekDismissalReversal()
+        peekDismissalVerticalCancel()
+        peekDismissalMagicMouse()
+        peekDismissalNeedsFirstPage()
+        peekDismissalKeepsPageRules()
         print("HistorySwipeRecognizer: \(count) checks passed")
     }
 
@@ -1172,6 +1201,224 @@ struct Run {
         }
         check(last.recognizer.selection == 1 && beyond.allSatisfy { $0 <= 0 },
               "the last row leans toward nothing past the end of history")
+    }
+
+    static let release0 = HistorySwipeOutput.release(velocity: 0)
+
+    static func peekDismissalValues() {
+        let p = HistorySwipeParameters.dia
+        check(p.dismissDistance == 0.3 && p.dismissCommitProgress == 0.5 && p.dismissDisarmProgress == 0.45,
+              "a Peek card leaves over 30% of the trackpad, closes past halfway and disarms just below it")
+        check(p.flickVelocity == 0.6 && p.flickProgress == 0.1 && p.velocityWindow == 0.08,
+              "a flick is 60% of the trackpad a second after a tenth of the card's travel, measured over 80 ms")
+    }
+
+    static func peekDismissalTrackpad() {
+        var trace = Trace.opening(from: 0.30, toward: 1)
+        for x in [0.36, 0.42, 0.47, 0.50] { trace.move(x) }
+        trace.rest()
+        trace.lift()
+        trace.scroll(.none, dx: 4, momentum: .changed)
+        let run = Run(trace, Page.peek)
+        check(run.shape == [.beginDismissal, .armed(true), release0, .commit(.dismiss)],
+              "on a Peek's first page a natural rightward swipe drags the card and closes it past halfway")
+        check(near(run.fractions.prefix(4).map { ($0 * 1e6).rounded() / 1e6 }, [0.2, 0.4, 0.566667, 0.666667]),
+              "card progress is finger travel over 30% of the trackpad")
+        check(run.fractions == run.stretches, "the card follows the fingers with no rubber band")
+        check(run.releases.count == 1 && abs(run.releases[0]) < 0.05, "resting before the lift releases with no speed")
+        check(!run.steps.contains(where: \.preloadsBack), "a dismissal never warms a Back navigation")
+        check(run.steps.allSatisfy { $0.clockDeadline == nil }, "a dismissal never schedules the history list")
+        check(run.scrollConsumes.last == true, "the momentum after a dismissal stays off the page")
+        check(run.recognizer.dismissing && run.recognizer.state == .completed, "the lift finishes the dismissal")
+
+        var held = Trace.opening(from: 0.30, toward: 1)
+        held.move(0.48)
+        held.clock(held.time + 1)
+        held.move(0.4805, after: 1)
+        check(!Run(held, Page.peek).gestures.contains(.hold), "resting past halfway never opens a history list")
+
+        var unnatural = Trace.opening(from: 0.60, toward: -1, natural: false)
+        for x in [0.54, 0.48, 0.44] { unnatural.move(x) }
+        unnatural.rest()
+        unnatural.lift()
+        check(Run(unnatural, Page.peek).shape == [.beginDismissal, .armed(true), release0, .commit(.dismiss)],
+              "without natural scrolling the Back-direction swipe dismisses")
+    }
+
+    static func peekDismissalSpringsBack() {
+        var trace = Trace.opening(from: 0.30, toward: 1)
+        trace.move(0.36)
+        trace.move(0.40)
+        trace.rest()
+        trace.lift()
+        let run = Run(trace, Page.peek)
+        check(run.shape == [.beginDismissal, release0, .cancel], "letting go before halfway springs the card back")
+        var tiny = Trace.opening(from: 0.30, toward: 1)
+        tiny.lift()
+        check(Run(tiny, Page.peek).shape == [.beginDismissal, release0, .cancel],
+              "lifting before the card moves never closes")
+    }
+
+    static func peekDismissalFlick() {
+        var flick = Trace.opening(from: 0.30, toward: 1)
+        flick.move(0.31)
+        flick.move(0.34, after: 0.01)
+        flick.lift()
+        let fast = Run(flick, Page.peek)
+        check(fast.shape == [.beginDismissal, release0, .commit(.dismiss)],
+              "a quick flick closes the card even though it never reached halfway")
+        check(fast.releases.first.map { $0 > 2 } == true, "the flick's speed is reported in card lengths a second")
+
+        var short = Trace.opening(from: 0.30, toward: 1)
+        short.move(0.31)
+        short.move(0.325, after: 0.01)
+        short.lift()
+        check(Run(short, Page.peek).shape == [.beginDismissal, release0, .cancel],
+              "a flick needs a tenth of the card's travel before it can close")
+
+        var lazy = Trace.opening(from: 0.30, toward: 1)
+        lazy.move(0.31)
+        lazy.move(0.34, after: 0.2)
+        lazy.lift()
+        check(Run(lazy, Page.peek).shape == [.beginDismissal, release0, .cancel], "a slow short drag springs back")
+
+        var stale = Trace.opening(from: 0.30, toward: 1)
+        stale.move(0.31)
+        stale.move(0.34, after: 0.01)
+        stale.rest(0.15)
+        stale.lift()
+        check(Run(stale, Page.peek).shape == [.beginDismissal, release0, .cancel],
+              "speed from more than 80 ms before the lift doesn't count as a flick")
+    }
+
+    static func peekDismissalReversal() {
+        var trace = Trace.opening(from: 0.30, toward: 1)
+        for x in [0.40, 0.47, 0.44, 0.43, 0.38] { trace.move(x) }
+        trace.rest()
+        trace.lift()
+        let back = Run(trace, Page.peek)
+        check(back.shape == [.beginDismissal, .armed(true), .armed(false), release0, .cancel],
+              "pulling back below the disarm point silently disarms and letting go springs back")
+        check(back.fractions.suffix(3).allSatisfy { $0 < 0.5 }, "the card follows the fingers back")
+
+        var tremor = Trace.opening(from: 0.30, toward: 1)
+        for x in [0.46, 0.449, 0.456, 0.447, 0.455, 0.448] { tremor.move(x) }
+        tremor.rest()
+        tremor.lift()
+        let shaky = Run(tremor, Page.peek)
+        check(shaky.gestures.filter { $0 == .armed(true) }.count == 1 && !shaky.gestures.contains(.armed(false)),
+              "tremor around halfway arms once, so the tap plays once")
+        check(shaky.shape.last == .commit(.dismiss), "letting go while armed closes")
+
+        var again = Trace.opening(from: 0.30, toward: 1)
+        for x in [0.47, 0.42, 0.47] { again.move(x) }
+        again.rest()
+        again.lift()
+        check(Run(again, Page.peek).shape == [.beginDismissal, .armed(true), .armed(false), .armed(true), release0,
+                                               .commit(.dismiss)], "crossing halfway again taps again and closes")
+
+        var thrown = Trace.opening(from: 0.30, toward: 1)
+        for x in [0.40, 0.48, 0.52] { thrown.move(x) }
+        thrown.move(0.47, after: 0.01)
+        thrown.lift()
+        check(Run(thrown, Page.peek).shape == [.beginDismissal, .armed(true), release0, .cancel],
+              "flicking back toward the start keeps the card even past halfway")
+
+        var behind = Trace.opening(from: 0.30, toward: 1)
+        behind.move(0.36)
+        behind.move(0.25)
+        behind.rest()
+        behind.lift()
+        let past = Run(behind, Page.peek)
+        check(past.fractions.last == 0 && past.shape.last == .cancel, "pulling past the start holds the card at rest")
+    }
+
+    static func peekDismissalVerticalCancel() {
+        var drift = Trace.opening(from: 0.30, toward: 1)
+        drift.move(0.36)
+        drift.move(0.37, 0.56)
+        drift.move(0.50, 0.56)
+        drift.scroll(.changed, dx: 8)
+        drift.lift()
+        let run = Run(drift, Page.peek)
+        check(run.shape == [.beginDismissal, .cancel], "drifting mostly up or down springs the card back")
+        check(run.scrollConsumes.last == false, "a drift-cancelled drag hands its events back to the page")
+        var long = Trace.opening(from: 0.30, toward: 1)
+        long.move(0.50)
+        long.move(0.50, 0.38)
+        long.move(0.50, 0.24)
+        check(Run(long, Page.peek).shape == [.beginDismissal, .armed(true), .cancel],
+              "large vertical travel cancels even an armed dismissal")
+    }
+
+    static func peekDismissalMagicMouse() {
+        var trace = Trace.wheel(dx: 4)
+        trace.tracked(0, .began)
+        trace.tracked(0.3, .changed)
+        trace.tracked(0.55, .changed)
+        trace.tracked(0.47, .changed)
+        trace.tracked(0.6, .ended)
+        trace.tracked(1, .ended, complete: true)
+        let run = Run(trace, Page.peek)
+        check(run.steps.compactMap(\.startsTracking) == [HistorySwipeTrackingRequest(direction: .back, generation: 1)],
+              "a Magic Mouse swipe on a Peek's first page asks AppKit to track it")
+        check(run.gestures == [.beginDismissal, .armed(true), .commit(.dismiss)],
+              "AppKit's amount drags the card, arms at halfway and its end closes it")
+        check(near(run.fractions, [0.3, 0.55, 0.47]), "the card follows AppKit's gesture amount")
+
+        var early = Trace.wheel(dx: 4)
+        early.tracked(0, .began)
+        early.tracked(0.52, .changed)
+        early.tracked(0.4, .changed)
+        early.tracked(0.2, .cancelled)
+        early.tracked(0, .cancelled, complete: true)
+        check(Run(early, Page.peek).gestures == [.beginDismissal, .armed(true), .armed(false), .cancel],
+              "AppKit's cancel springs the card back")
+    }
+
+    static func peekDismissalNeedsFirstPage() {
+        var trace = Trace.opening(from: 0.30, toward: 1)
+        trace.move(0.42)
+        trace.lift()
+        check(Run(trace, Page(back: 2, forward: 0, peekFirstPage: true)).gestures
+              == [.begin(.back), .armed(true), .commit(.adjacent(.back))],
+              "with pages behind it a Peek's swipe still goes Back")
+        check(Run(trace, Page(back: 0)).outputs.isEmpty, "an ordinary first page keeps the gesture")
+
+        var forward = Trace.opening(from: 0.60, toward: -1)
+        forward.move(0.48)
+        forward.lift()
+        check(Run(forward, Page.peek).outputs.isEmpty, "swiping toward Forward never dismisses")
+        check(Run(forward, Page(back: 0, forward: 1, peekFirstPage: true)).gestures
+              == [.begin(.forward), .armed(true), .commit(.adjacent(.forward))],
+              "a Peek with pages ahead still goes Forward")
+    }
+
+    static func peekDismissalKeepsPageRules() {
+        var trace = Trace.opening(from: 0.30, toward: 1, consumed: true)
+        trace.move(0.50)
+        trace.lift()
+        check(Run(trace, Page.peek).outputs.isEmpty, "a carousel that takes the first scroll keeps the gesture")
+        var none = Trace.opening(from: 0.30, toward: 1, propagatesX: false)
+        none.move(0.50)
+        check(Run(none, Page.peek).outputs.isEmpty, "overscroll-behavior: none keeps the card still")
+        var plain = Trace.opening(from: 0.30, toward: 1)
+        plain.move(0.50)
+        let off = Page.peek
+        off.swipesBetweenPages = false
+        check(Run(plain, off).outputs.isEmpty, "the system swipe setting turns dismissal off too")
+        let page = Page.peek
+        var covered = Run(Trace.opening(from: 0.30, toward: 1), page)
+        page.allowsHistorySwipe = false
+        var more = Trace()
+        more.x = 0.305
+        more.move(0.40)
+        covered.play(more.inputs, page)
+        check(covered.gestures == [.beginDismissal, .cancel], "losing the page mid-drag springs the card back")
+        var touch = Trace.opening(from: 0.30, toward: 1)
+        touch.move(0.40)
+        touch.land(0.5)
+        check(Run(touch, Page.peek).gestures == [.beginDismissal, .cancel], "a new touch cancels the drag")
     }
 
     static func controller() {

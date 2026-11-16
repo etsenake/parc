@@ -65,16 +65,19 @@ struct HistorySwipeProgress: Equatable {
 enum HistorySwipeCommit: Equatable {
     case adjacent(HistorySwipeDirection)
     case entry(HistorySwipeDirection, distance: Int)
+    case dismiss
 }
 
 enum HistorySwipeOutput: Equatable {
     case begin(HistorySwipeDirection)
+    case beginDismissal
     case progress(HistorySwipeProgress)
     case armed(Bool)
     case hold
     case selection(Int)
     case rowRemainder(Double)
     case detent
+    case release(velocity: Double)
     case commit(HistorySwipeCommit)
     case cancel
 }
@@ -97,6 +100,11 @@ protocol HistorySwipeEnvironment {
     var swipesBetweenPages: Bool { get }
     var allowsHistorySwipe: Bool { get }
     func historyEntries(toward direction: HistorySwipeDirection) -> Int
+    func dismisses(toward direction: HistorySwipeDirection) -> Bool
+}
+
+extension HistorySwipeEnvironment {
+    func dismisses(toward direction: HistorySwipeDirection) -> Bool { false }
 }
 
 protocol HistorySwipeShell: AnyObject {

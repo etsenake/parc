@@ -74,6 +74,10 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
         source?.historyEntries(back: direction == .back) ?? 0
     }
 
+    func dismisses(toward direction: HistorySwipeDirection) -> Bool { false }
+
+    func beginDismissal() -> Bool { false }
+
     func beginSwipe(_ direction: HistorySwipeDirection) -> Bool {
         history = source?.beginSwipe(back: direction == .back)
         return history != nil
@@ -84,6 +88,7 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
         switch commit {
         case let .adjacent(direction): return source.navigate(back: direction == .back)
         case let .entry(direction, distance): return source.navigate(back: direction == .back, distance: distance)
+        case .dismiss: return false
         }
     }
 
