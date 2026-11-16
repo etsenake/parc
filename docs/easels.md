@@ -206,7 +206,8 @@ queue behind an existing sheet.
 exercise atomic saves, rich-text validation, native Undo, ownership, geometry,
 clipboard conversion and export bytes.
 
-[Private-window document limits](capture-library.md#private-media-ownership)
-remain. Local documents do not publish to cloud or collaboration services.
+Private windows deliberately offer no Easels or Notes and send no captures to
+Easels; the reason is in [capture Library](capture-library.md#private-media-ownership).
+Local documents do not publish to cloud or collaboration services.
 The [backlog](backlog.md) owns remaining product work; this guide owns the stable
 editing and data-safety contract.

@@ -149,6 +149,11 @@ changes belong in the owning guide and release notes, not an ever-growing log he
 - Split View deliberately offers no pane-handle drag, double-click separation,
   Option-click unsplit or sidebar drop-to-combine gesture; each duplicates an
   existing route. See [split groups](split-groups.md#split-gesture-and-context-inventory--sp33).
+- Private windows deliberately have no Notes or Easels: they don't create, open
+  or browse them, their Library shows no documents, and their captures copy,
+  share or save to the Library labelled Incognito but never go to an Easel. This
+  keeps private browsing from writing documents to disk or mixing sessions in an
+  Easel's pages. See [capture Library](capture-library.md#private-media-ownership).
 
 ## Scope boundaries
 

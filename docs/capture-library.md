@@ -166,9 +166,11 @@ writes its immutable PNG/source metadata into the original parent's Library,
 using neutral Space identity and Incognito label. The capture retains its original
 private native lease and the same removal reservation described above.
 
-Private windows cannot create or open Notes/Easels, browse the document Library,
-or send a capture to a new or existing Easel. Those commands are disabled; the
-backend’s off-the-record page support does not provide a private document store.
-This remaining document workflow is tracked under WIN11 in [the backlog](backlog.md).
+Private windows deliberately have no documents. They do not create, open or
+browse Notes and Easels, the private Library shows no documents, and a private
+capture is never sent to a new or existing Easel. A private document store could
+write private-browsing traces to disk, and an Easel's embedded pages could mix
+private and normal sessions. Private captures still copy, share and save to the
+Library, labelled Incognito, as described above.
 Library/document commands retain the exact focused browser and native security
 admission rather than redirecting auxiliary-window actions to another browser.

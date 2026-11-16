@@ -10,8 +10,10 @@ that navigated away unloads back to its saved document.
 Each normal Profile stores `Profiles/<profile UUID>/Notes/<document UUID>.json`.
 A shared `NoteSession` owns each document. `parc://note/<UUID>` resolves only in
 the current Profile; malformed addresses retain the reserved internal host.
-Notes are unavailable in private windows. Cloud sharing, collaboration and
-vendor services are excluded. There is no Notes ZIP/HTML import command.
+Private windows deliberately offer no Notes, as explained in
+[capture Library](capture-library.md#private-media-ownership). Cloud sharing,
+collaboration and vendor services are excluded. There is no Notes ZIP/HTML
+import command.
 
 ## Editing and lifetime
 

@@ -64,8 +64,9 @@ The native parent Profile may not yet be loaded when the front window shows no p
 Private browsing supports original-tab scripting and native page tools. Capture
 supports Copy, Save, Messages, editing and explicit Save to Library through the
 normal parent Profile. Private Media reads that parent's capture catalog and
-private Downloads reads its genuine OTR download owner. Archive, Documents and
-Spaces pages, capture-to-Easel, pinning and Space editing remain unavailable.
+private Downloads reads its genuine OTR download owner. Archive and Spaces
+pages, pinning and Space editing remain unavailable; the Documents page and
+capture-to-Easel are deliberately absent because private windows have no documents.
 Settings explicitly uses the normal parent Profile. Context-image-to-Easel and
 private download publication cannot write normal app storage; native download
 dialogs retain their actual window.

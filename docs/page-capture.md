@@ -89,8 +89,8 @@ preference generations reject stale gestures after selection or settings change.
 Private captures do not create a persistent private catalog. An explicit Save
 to Library can write into the parent Profile's normal catalog; that deliberate
 save is distinct from ordinary private browsing history. Private preferences
-remain in memory. Private document and Easel-destination availability is
-described in [capture Library](capture-library.md#private-media-ownership).
+remain in memory. Private captures deliberately offer no Easel destination; see
+[capture Library](capture-library.md#private-media-ownership).
 
 ## Checks and limits
 

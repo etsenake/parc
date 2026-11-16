@@ -40,9 +40,6 @@ Finish assigned work first; explicit deferrals remain deferred.
 
 ## Windows and lifecycle
 
-- **WIN11:** private windows cannot create/open Notes or Easels, browse document
-  Library, or send captures to Easels. Private Media and explicit capture saves
-  to the parent Profile's Library work. [Capture Library](capture-library.md).
 - **WIN12:** folder disclosure is shared across windows; move it into window
   presentation state. Whole pinned-section collapse also needs implementation.
   [Windows](windows-lifecycle.md), [sidebar resizing](sidebar-resize.md).

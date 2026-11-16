@@ -56,8 +56,8 @@ File rollback reverses every document move before cleaning copied assets. If
 any reverse move fails, preserve the copied assets for recovery. Refuse a move
 that would leave aliases in another Profile. Private sessions are not copied.
 
-The native backend can own an off-the-record page. The shell’s private document
-and capture-destination limits are described in
+Private windows deliberately host no Easels, so an embedded page never mixes a
+private session with a normal one. The decision is recorded in
 [capture Library](capture-library.md#private-media-ownership).
 
 ## Keyboard and accessibility ownership
