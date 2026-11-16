@@ -5,11 +5,11 @@ import SwiftUI
 final class UpdateCompleteCard: NSView {
     var onSeeWhatsNew: (() -> Void)?
     var onDismiss: (() -> Void)?
-    private let model = UpdateCompleteModel()
+    let model = UpdateCompleteModel()
     private var hosting: NSHostingController<UpdateCompleteBanner>!
     private var measured: (width: CGFloat, height: CGFloat)?
     private let close = UpdateBannerKeyStop(label: "Dismiss", cornerRadius: 12)
-    private let whatsNew = UpdateBannerKeyStop(label: "See What’s New", cornerRadius: 4)
+    private let whatsNew = UpdateBannerKeyStop(label: "See What’s New", cornerRadius: UpdateBannerRow.plateRadius)
     override var isFlipped: Bool { true }
     var keyViewControls: [NSView] { [close, whatsNew] }
 
@@ -29,6 +29,7 @@ final class UpdateCompleteCard: NSView {
     func applyPalette(_ palette: ThemeChromePalette) {
         model.dark = palette.isDark
         model.gradientBase = Color(nsColor: UpdateCompleteModel.gradientBase(palette))
+        model.hover = Color(nsColor: palette.hover)
     }
     func setInteractionEnabled(_ enabled: Bool) {
         model.interactive = enabled
@@ -92,7 +93,16 @@ final class UpdateBannerKeyStop: NSButton {
 
 extension View {
     func updateBannerKeyStop(_ stop: UpdateBannerKeyStop) -> some View {
-        accessibilityHidden(true).overlay { UpdateBannerKeyStop.Slot(stop: stop).allowsHitTesting(false) }
+        accessibilityHidden(true).updateBannerPointingHand()
+            .overlay { UpdateBannerKeyStop.Slot(stop: stop).allowsHitTesting(false) }
+    }
+    func updateBannerPointingHand(_ enabled: Bool = true) -> some View { modifier(UpdateBannerPointingHand(enabled: enabled)) }
+}
+
+struct UpdateBannerPointingHand: ViewModifier {
+    let enabled: Bool
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) { content.pointerStyle(enabled ? .link : nil) } else { content }
     }
 }
 
@@ -101,6 +111,7 @@ final class UpdateCompleteModel: ObservableObject {
     @Published var dark = false
     @Published var interactive = false
     @Published var gradientBase = Color.accentColor
+    @Published var hover = Color(nsColor: .quaternaryLabelColor)
 
     static func gradientBase(_ palette: ThemeChromePalette) -> NSColor {
         guard let color = (palette.isDark ? palette.maxContrastColor : palette.minContrastColor).usingColorSpace(.sRGB)
@@ -122,7 +133,8 @@ struct UpdateCompleteBanner: View {
         VStack(spacing: 8) {
             UpdateBannerHeader(title: "Update Complete!", dark: model.dark, sparkles: !reduceMotion, sparkleColor: model.gradientBase,
                                close: close)
-            UpdateBannerRow(title: "See What’s New", icon: "heart.circle.fill", dark: model.dark, stop: whatsNew)
+            UpdateBannerRow(title: "See What’s New", icon: "heart.circle.fill", dark: model.dark, plate: model.hover,
+                            interactive: model.interactive, stop: whatsNew)
                 .padding(.horizontal, 8)
         }
         .padding(.bottom, 8)
@@ -244,22 +256,43 @@ private struct CloseButtonPlate: Shape {
 }
 
 struct UpdateBannerRow: View {
+    static let plateHeight: CGFloat = 32
+    static let plateInset: CGFloat = 10
+    static let plateRadius: CGFloat = 8
     let title: String
     let icon: String
     let dark: Bool
     var alignment = Alignment.leading
+    var plate: Color?
+    var interactive = true
     let stop: UpdateBannerKeyStop
     @State private var hovered = false
 
     var body: some View {
         Button(action: stop.press) {
-            label.contentShape(Rectangle())
+            plated.contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .opacity(hovered ? 1 : 0.75)
         .animation(.easeOut(duration: 0.1), value: hovered)
         .onHover { hovered = $0 }
+        .task(id: interactive) { if !interactive { hovered = false } }
         .updateBannerKeyStop(stop)
+    }
+
+    @ViewBuilder private var plated: some View {
+        if let plate {
+            label
+                .padding(.horizontal, Self.plateInset)
+                .frame(minHeight: Self.plateHeight)
+                .background {
+                    RoundedRectangle(cornerRadius: Self.plateRadius, style: .continuous)
+                        .fill(plate)
+                        .opacity(hovered && interactive ? 1 : 0)
+                }
+        } else {
+            label
+        }
     }
 
     private var label: some View {

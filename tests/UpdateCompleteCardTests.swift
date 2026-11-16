@@ -20,12 +20,33 @@ struct UpdateCompleteCardTests {
         try expect(labels == ["Dismiss", "See What’s New"], "Close and See What’s New are the only controls: \(labels)")
         let properties = Mirror(reflecting: card).children.compactMap(\.label)
         try expect(!properties.contains { $0.localizedCaseInsensitiveContains("share") }, "No Share row is left behind: \(properties)")
+        let lilac = ThemeColor(hex: "B9B5D4")!, green = ThemeColor(hex: "2E7D32")!
         for dark in [false, true] {
-            card.applyPalette(ThemeChromePalette(theme: .singleColor(ThemeColor(hex: "B9B5D4")!), isDark: dark))
+            let palette = ThemeChromePalette(theme: .singleColor(lilac), isDark: dark)
+            let other = ThemeChromePalette(theme: .singleColor(green), isDark: dark)
+            card.applyPalette(other)
+            let otherPlate = card.model.hover
+            card.applyPalette(palette)
+            try expect(card.model.hover == Color(nsColor: palette.hover) && card.model.hover != otherPlate,
+                       "The row's hover plate takes the Space's own hover colour, like Parc's menu rows")
             let heights = [CGFloat(148), 212, 484].map { card.preferredHeight(for: $0) }
-            try expect(heights.allSatisfy { $0 == heights[0] } && heights[0] == 24 + 8 + 16 + 8,
-                       "One header and one single-line row at every sidebar width: \(heights)")
+            try expect(heights.allSatisfy { $0 == heights[0] }
+                       && heights[0] == 24 + 8 + UpdateBannerRow.plateHeight + 8,
+                       "One header and one plated row at every sidebar width: \(heights)")
         }
+        try expect(UpdateBannerRow.plateHeight == 32 && UpdateBannerRow.plateInset == 10 && UpdateBannerRow.plateRadius == 8,
+                   "The plate keeps the spacing of Parc's menu rows")
+        let stop = UpdateBannerKeyStop(label: "Probe", cornerRadius: 4)
+        let wired = String(reflecting: type(of: Color.clear.updateBannerKeyStop(stop)))
+        let bare = String(reflecting: type(of: Color.clear.accessibilityHidden(true).overlay { UpdateBannerKeyStop.Slot(stop: stop) }))
+        try expect(wired.contains("UpdateBannerPointingHand") && !bare.contains("UpdateBannerPointingHand"),
+                   "Every banner control asks SwiftUI for the pointing hand")
+        card.setInteractionEnabled(true)
+        try expect(card.model.interactive && card.keyViewControls.allSatisfy { ($0 as? NSControl)?.isEnabled == true },
+                   "A banner taking input turns on every control's stop and the row's hover")
+        card.setInteractionEnabled(false)
+        try expect(!card.model.interactive && card.keyViewControls.allSatisfy { ($0 as? NSControl)?.isEnabled == false },
+                   "A banner not taking input turns on neither")
         try expect(actions == 0, "Laying out never reaches the original owner")
         let grey = ThemeChromePalette(theme: .singleColor(ThemeColor(hex: "808080")!), isDark: false)
         let greyBase = UpdateCompleteModel.gradientBase(grey)
@@ -51,8 +72,9 @@ struct UpdateCompleteCardTests {
         let frames = stops.map { $0.convert($0.bounds, to: card) }
         try expect(stops.allSatisfy { $0.window === window } && frames.allSatisfy { !$0.isEmpty && card.bounds.contains($0) },
                    "SwiftUI places each stop over its control: \(frames)")
-        try expect(frames[0].maxX == card.bounds.maxX && frames[0].maxY <= frames[1].minY,
-                   "The loop runs in visual order: the trailing close button, then the row: \(frames)")
+        try expect(frames[0].maxX == card.bounds.maxX && frames[0].maxY <= frames[1].minY
+                   && frames[1].height == UpdateBannerRow.plateHeight && frames[1].minX == 8 && frames[1].maxX == card.bounds.maxX - 8,
+                   "The loop runs in visual order, the trailing close button and then the row, whose stop covers its plate: \(frames)")
         let before = NSButton(), after = NSButton()
         let chain = [before] + stops + [after]
         chain.forEach { if $0.window == nil { window.contentView!.addSubview($0) } }

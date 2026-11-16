@@ -123,8 +123,15 @@ from an update banner gave people nothing to act on.
 
 The card has radius 12, shared spring/fade motion, a close control and the See
 What's New row, with separate native key/accessibility stops for Close and the
-row, in that order. Notes text stays black/white, including hover, so pale Space
-themes remain readable. Decorative sparkles are bounded to 15 seconds.
+row, in that order. The row is spaced like Parc's context-menu rows: a plate at
+least 32 points tall with radius 8 and 10 points of inner spacing, set 8 points
+in from the card edges and filled with the Space theme's hover colour while the
+pointer is over it. Notes
+text stays black/white, including hover, so pale Space themes remain readable.
+Every banner control asks SwiftUI for the pointing hand from macOS 15 on,
+because the banner's SwiftUI hosting view answers cursor updates itself and can
+replace an AppKit cursor rect's hand with the arrow; earlier macOS versions keep
+the key stop's cursor rect. Decorative sparkles are bounded to 15 seconds.
 
 ## What's New page ownership
 

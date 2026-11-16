@@ -126,6 +126,7 @@ struct UpdateReadyBanner: View {
             .buttonStyle(Bare())
             .disabled(model.expanded)
             .accessibilityHidden(!model.expanded)
+            .updateBannerPointingHand(!model.expanded)
             .overlay { UpdateBannerKeyStop.Slot(stop: title).allowsHitTesting(false) }
             if model.expanded { controls.transition(.opacity) }
         }
@@ -146,7 +147,7 @@ struct UpdateReadyBanner: View {
     private var controls: some View {
         VStack(spacing: 8) {
             UpdateBannerRow(title: "Automatic Updates", icon: model.automaticUpdates ? "checkmark.square" : "square",
-                            dark: model.dark, alignment: .center, stop: automatic)
+                            dark: model.dark, alignment: .center, interactive: model.interactive, stop: automatic)
             UpdateBannerPrimaryButton(title: "Restart and Update", dark: model.dark, label: model.label,
                                       gradient: hovered && model.interactive && !reduceMotion, base: model.base,
                                       stop: restart)
