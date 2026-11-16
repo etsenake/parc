@@ -351,6 +351,10 @@ extension BrowserWindowController {
         window?.title = activePeek.map { "\($0.browser.title) — Peek — Parc" } ?? tab.map { "\($0.title) — Parc" } ?? "Parc"
         refreshLoadingIndicators()
         noteReturnGate()
+        if let window {
+            NotificationCenter.default.post(name: NSNotification.Name(PCNativeLinkOutcomeInputsDidChangeNotification),
+                                            object: window)
+        }
     }
 
     func refreshLoadingIndicators() {

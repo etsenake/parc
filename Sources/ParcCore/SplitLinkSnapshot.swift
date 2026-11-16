@@ -16,3 +16,10 @@ struct SplitLinkSnapshot: Equatable {
             selection.contains(self.focusedID)
     }
 }
+
+enum LinkClickPane {
+    static func id(selection: [UUID], current: UUID?, rendered: [UUID],
+                   covered: (UUID) -> Bool, shows: (UUID) -> Bool) -> UUID? {
+        selection.first { ($0 == current || rendered.contains($0)) && !covered($0) && shows($0) }
+    }
+}

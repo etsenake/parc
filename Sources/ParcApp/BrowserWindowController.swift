@@ -187,7 +187,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var promotingPeek = false { didSet { noteReturnGate() } }
     var activePeek: PeekController? {
         guard let id = currentTabID else { return nil }
-        return peeks.values.first { $0.parentTabID == id && !$0.page.isClosed
+        return peek(over: id)
+    }
+    func peek(over id: UUID) -> PeekController? {
+        peeks.values.first { $0.parentTabID == id && !$0.page.isClosed
             && browsers[id]?.nativePage === $0.parentPage }
     }
     var browserProfiles: [UUID: UUID] = [:]
@@ -246,6 +249,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var sidebarFloatingSurface = false
     var sidebarRevealsAnchored = false
     var fullscreenPhase: WindowFullscreenPhase?
+    var windowedFrame: SavedWindowFrame?
     var systemWindowButtons: [NSButton] = []
     let sidebarResizeRegion = SidebarResizeRegionView()
     var sidebarResize: SidebarResizeGesture?
@@ -282,7 +286,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         BrowserWindowRecord(sidebarWidth: windowSidebarWidth.width, itemLastActiveDates: closedItems.itemLastActiveDates,
                             id: sessionID, focusedSpaceID: activeSpaceID, selectedTabIDs: selectedTabIDs,
                             focusedTabID: currentTabID, sidebarHidden: sidebarPresentation != .locked,
-                            stayOnTop: stayOnTop, peekedFolders: savedFolderPeeks.isEmpty ? nil : savedFolderPeeks)
+                            stayOnTop: stayOnTop, peekedFolders: savedFolderPeeks.isEmpty ? nil : savedFolderPeeks,
+                            frame: savedFrame)
     }
     var onSessionRecordChange: (() -> Void)?
     var savedFolderPeeks: [UUID: [SidebarItemReference]] = [:]
@@ -593,7 +598,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         PCNativeBrowserWindow.nativeWindowDidFailToEnterFullscreen(window)
         setFullscreenPhase(window.styleMask.contains(.fullScreen) ? .expanded : nil)
     }
-    func windowWillEnterFullScreen(_ notification: Notification) { setFullscreenPhase(.entering) }
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        if fullscreenPhase == nil, let frame = window.flatMap({ SavedWindowFrame($0.frame) }) { windowedFrame = frame }
+        setFullscreenPhase(.entering)
+    }
     func windowDidEnterFullScreen(_ notification: Notification) {
         setFullscreenPhase(.expanded)
         guard !isPopupWindow,
@@ -624,7 +632,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     init(store: BrowserStore, ownership: NativePageOwnership, renderInitialSelection: Bool = true,
          preferredProfileID: UUID? = nil, nativeWindowRequest: PCNativeWindowRequest? = nil,
-         restoredRecord: BrowserWindowRecord? = nil) throws {
+         restoredRecord: BrowserWindowRecord? = nil, restoresSavedFrame: Bool = false) throws {
         self.nativeWindowRequest = nativeWindowRequest
         self.store = store
         self.ownership = ownership
@@ -637,6 +645,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         presentation = initialPresentation
         focusedTabID = initialPresentation.preferredFocusedTabID
         if restoredRecord?.sidebarHidden == true { sidebarPresentation = .hidden }
+        windowedFrame = restoredRecord?.frame
         let popup = nativeWindowRequest?.kind == .popup
         var style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
         if nativeWindowRequest?.canResize != false { style.insert(.resizable) }
@@ -681,7 +690,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         window.delegate = self
         window.contentView = rootView
-        if nativeWindowRequest == nil && restoredRecord == nil { Self.placeNewStandardWindow(window) }
+        if restoresSavedFrame, let frame = Self.restoredFrame(restoredRecord, minimumSize: window.minSize) {
+            window.setFrame(frame, display: false)
+        } else if nativeWindowRequest == nil && restoredRecord == nil { Self.placeNewStandardWindow(window) }
         else { window.center() }
         if let request = nativeWindowRequest {
             var frame = window.frame
@@ -1017,7 +1028,21 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, canSplitLinkFrom page: PCNativePage) -> Bool {
-        splitLinkSourceID(browser, page) != nil && selectedTabIDs.count < 4
+        guard linkRouteWindowAdmits(browser, page), let id = linkClickPaneID(showing: page),
+              let view = browsers[id], view.nativePage === page else { return false }
+        return canOpenLinkInSplitView(view, ignoringCommandBar: true) && selectedTabIDs.count < 4
+    }
+
+    func nativeBrowser(_ browser: PCNativeBrowserWindow, canPeekLinkFrom page: PCNativePage) -> Bool {
+        (linkClickPaneID(showing: page) != nil || peekUndoOpen?.parent == page.identifier)
+            && canHostPeek(browser, over: page, overLibrary: archivePreviewRequest?.parent == page.identifier,
+                           ignoringCommandBar: true)
+    }
+
+    private func linkClickPaneID(showing page: PCNativePage) -> UUID? {
+        guard activePeek == nil else { return nil }
+        return LinkClickPane.id(selection: selectedTabIDs, current: currentTabID, rendered: renderedPaneIDs,
+                                covered: { peek(over: $0) != nil }, shows: { paneNativePage($0) === page })
     }
 
     private func splitLinkSourceID(_ browser: PCNativeBrowserWindow, _ page: PCNativePage) -> UUID? {
@@ -1040,13 +1065,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, canRouteCurrentLinkFrom page: PCNativePage) -> Bool {
-        browser === nativeBinding && !isPopupWindow && activePeek == nil
+        linkRouteWindowAdmits(browser, page) && activePeek == nil && commandBar == nil
+            && selectedNativePage() === page
+    }
+
+    private func linkRouteWindowAdmits(_ browser: PCNativeBrowserWindow, _ page: PCNativePage) -> Bool {
+        browser === nativeBinding && !isPopupWindow
             && !isClosing && !wholeWindowClose && !windowClosePending && !windowCloseApproved
             && nativeFullscreenTabID == nil && closingTabIDs.isEmpty && modelRetirementIDs.isEmpty
-            && transferringTabIDs.isEmpty && resolvingTransfers.isEmpty && commandBar == nil
+            && transferringTabIDs.isEmpty && resolvingTransfers.isEmpty
             && libraryView == nil && window?.attachedSheet == nil && window?.isKeyWindow == true
-            && selectedNativePage() === page && !page.isClosed
-            && PCNativeBrowserApplication.owner(of: page) === browser
+            && !page.isClosed && PCNativeBrowserApplication.owner(of: page) === browser
             && !store.isProfileRemovalPending(activeProfileID)
     }
 
@@ -1141,6 +1170,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let page = currentBrowser?.nativePage { return page }
         guard let id = currentTabID else { return nil }
         return easelEditors[id]?.editor.pageObjects?.selectedPage
+    }
+    func paneNativePage(_ id: UUID) -> PCNativePage? {
+        paneBrowser(id)?.nativePage ?? easelEditors[id]?.editor.pageObjects?.selectedPage
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, allowsHistorySwipeFor page: PCNativePage) -> Bool {

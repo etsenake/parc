@@ -41,6 +41,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
 #include "base/pickle.h"
+#include "base/scoped_multi_source_observation.h"
 #include "base/scoped_observation.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/supports_user_data.h"
@@ -361,6 +362,82 @@ class NativePageInputDiagnostics final
       widget_observation_{this};
 };
 
+class FencedFramePointer final
+    : public content::WebContentsObserver,
+      public content::RenderWidgetHost::InputEventObserver,
+      public content::RenderWidgetHostObserver {
+ public:
+  FencedFramePointer(content::WebContents& contents,
+                     base::RepeatingClosure changed)
+      : content::WebContentsObserver(&contents), changed_(std::move(changed)) {
+    contents.ForEachRenderFrameHost([this](content::RenderFrameHost* frame) {
+      if (frame->IsRenderFrameLive()) {
+        Watch(frame);
+      }
+    });
+  }
+  bool inside() const { return inside_ != nullptr; }
+
+ private:
+  void Watch(content::RenderFrameHost* frame) {
+    const bool fenced = frame->IsFencedFrameRoot();
+    auto* widget = frame->GetRenderWidgetHost();
+    if ((!fenced && frame->GetParentOrOuterDocument()) || !widget ||
+        widgets_.IsObservingSource(widget)) {
+      return;
+    }
+    widgets_.AddObservation(widget);
+    inputs_.AddObservation(widget);
+    if (fenced) {
+      fenced_.insert(widget);
+    }
+  }
+  void Point(const content::RenderWidgetHost* widget) {
+    const bool was_inside = inside();
+    inside_ = widget;
+    if (was_inside != inside()) {
+      changed_.Run();
+    }
+  }
+  void RenderFrameCreated(content::RenderFrameHost* frame) override {
+    Watch(frame);
+  }
+  void OnInputEvent(const content::RenderWidgetHost& widget,
+                    const blink::WebInputEvent& event,
+                    InputEventSource) override {
+    const auto type = event.GetType();
+    if (type == blink::WebInputEvent::Type::kMouseLeave) {
+      if (inside_ == &widget) {
+        Point(nullptr);
+      }
+    } else if (blink::WebInputEvent::IsMouseEventType(type)) {
+      Point(fenced_.contains(&widget) ? &widget : nullptr);
+    }
+  }
+  void RenderWidgetHostDestroyed(content::RenderWidgetHost* widget) override {
+    if (inputs_.IsObservingSource(widget)) {
+      inputs_.RemoveObservation(widget);
+    }
+    if (widgets_.IsObservingSource(widget)) {
+      widgets_.RemoveObservation(widget);
+    }
+    fenced_.erase(widget);
+    if (inside_ == widget) {
+      Point(nullptr);
+    }
+  }
+  base::RepeatingClosure changed_;
+  raw_ptr<const content::RenderWidgetHost> inside_ = nullptr;
+  std::set<const content::RenderWidgetHost*> fenced_;
+  base::ScopedMultiSourceObservation<
+      content::RenderWidgetHost,
+      content::RenderWidgetHost::InputEventObserver>
+      inputs_{this};
+  base::ScopedMultiSourceObservation<content::RenderWidgetHost,
+                                     content::RenderWidgetHostObserver>
+      widgets_{this};
+};
+
 class TopBandColorSampler final : public mojom::TopBandColorObserver {
  public:
   explicit TopBandColorSampler(base::RepeatingClosure changed)
@@ -622,6 +699,9 @@ class NativePageState final
       input_diagnostics_ =
           std::make_unique<NativePageInputDiagnostics>(contents, page_view_);
     }
+    fenced_pointer_ = std::make_unique<FencedFramePointer>(
+        contents, base::BindRepeating(&NativePageState::FencedPointerChanged,
+                                      base::Unretained(this)));
     top_band_ = std::make_unique<TopBandColorSampler>(base::BindRepeating(
         &NativePageState::TopBandColorChanged, base::Unretained(this)));
     top_band_->Bind(contents.GetPrimaryMainFrame(), true);
@@ -714,22 +794,27 @@ class NativePageState final
       PCNativePage* source = state->page_;
       NSString* scheme = url.scheme.lowercaseString;
       const bool web = [scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"];
+      const bool page_link = source && !source.peekParentPage && web &&
+          !state->StatusLinkInFencedFrame();
       if (flags == option || flags == (option | command)) {
         auto* contents = state->contents();
-        return source && !source.peekParentPage && web && contents &&
+        return page_link && contents &&
                 NativeSplitLinkAvailable(*state->browser(), *contents)
             ? PCNativeStatusLinkOutcomeSplitView : PCNativeStatusLinkOutcomeNone;
       }
       if (flags != shift) return PCNativeStatusLinkOutcomeNone;
-      if (!source || source.peekParentPage) return PCNativeStatusLinkOutcomeNewWindow;
-      if (!web) return PCNativeStatusLinkOutcomeNewWindow;
+      if (!page_link) return PCNativeStatusLinkOutcomeNewWindow;
       PCNativeBrowserWindow* binding = AppKitBindingForBrowser(state->browser());
       id<PCNativeBrowserWindowClient> client = binding.client;
-      return [client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] &&
-              [client respondsToSelector:@selector(nativeBrowser:canPresentPeekFrom:)] &&
-              [client nativeBrowser:binding allowsPeekWithShift:YES] &&
-              [client nativeBrowser:binding canPresentPeekFrom:source]
-          ? PCNativeStatusLinkOutcomePeek : PCNativeStatusLinkOutcomeNewWindow;
+      if (![client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] ||
+          ![client nativeBrowser:binding allowsPeekWithShift:YES])
+        return PCNativeStatusLinkOutcomeNewWindow;
+      const bool peek =
+          [client respondsToSelector:@selector(nativeBrowser:canPeekLinkFromPage:)]
+              ? [client nativeBrowser:binding canPeekLinkFromPage:source]
+              : [client respondsToSelector:@selector(nativeBrowser:canPresentPeekFrom:)] &&
+                    [client nativeBrowser:binding canPresentPeekFrom:source];
+      return peek ? PCNativeStatusLinkOutcomePeek : PCNativeStatusLinkOutcomeNewWindow;
     };
   }
   void PrepareFind(NSString* text) {
@@ -760,7 +845,14 @@ class NativePageState final
         find_document_.AsRenderFrameHostIfValid() == contents->GetPrimaryMainFrame() &&
         reader_ && reader_->revision() == find_revision_ ? find_result_ : nil;
   }
-  void SetStatusText(NSString* text) { [status_text_ updateText:text]; }
+  void SetStatusText(NSString* text) {
+    ++status_text_updates_;
+    const bool fenced = PointerInFencedFrame();
+    const bool changed = fenced != status_text_fenced_;
+    status_text_fenced_ = fenced;
+    [status_text_ updateText:text];
+    if (changed) [status_text_ setNeedsLinkOutcomeRefresh];
+  }
   void SetStatusAttached(bool attached) { [status_text_ setAttached:attached]; }
   content::WebContents* contents() const { return contents_.get(); }
   Browser* browser() const {
@@ -1242,6 +1334,26 @@ class NativePageState final
       network_activity_->Bind(frame, true);
     }
   }
+  void FencedPointerChanged() {
+    if (PointerInFencedFrame()) {
+      if (!status_text_fenced_) {
+        fenced_entry_update_ = status_text_updates_;
+      }
+      status_text_fenced_ = true;
+    } else if (status_text_fenced_ &&
+               fenced_entry_update_ == status_text_updates_) {
+      status_text_fenced_ = false;
+    } else {
+      return;
+    }
+    [status_text_ setNeedsLinkOutcomeRefresh];
+  }
+  bool PointerInFencedFrame() const {
+    return fenced_pointer_ && fenced_pointer_->inside();
+  }
+  bool StatusLinkInFencedFrame() const {
+    return status_text_fenced_ || PointerInFencedFrame();
+  }
   void TopBandColorChanged() {
     if (!ShouldNotifyShellPayloadChange(last_shell_notify_,
                                         CurrentShellNotifyState())) {
@@ -1471,6 +1583,10 @@ class NativePageState final
                           MediaStreamCaptureIndicator::Observer>
       capture_observation_{this};
   std::unique_ptr<NativePageInputDiagnostics> input_diagnostics_;
+  std::unique_ptr<FencedFramePointer> fenced_pointer_;
+  bool status_text_fenced_ = false;
+  uint64_t status_text_updates_ = 0;
+  uint64_t fenced_entry_update_ = 0;
   std::unique_ptr<TopBandColorSampler> top_band_;
   std::unique_ptr<NativeReader> reader_;
   base::WeakPtr<content::WebContents> contents_;

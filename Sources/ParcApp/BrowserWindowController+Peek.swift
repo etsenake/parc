@@ -2,19 +2,21 @@ import AppKit
 import Combine
 
 extension BrowserWindowController {
-    func canHostPeek(_ browser: PCNativeBrowserWindow, over page: PCNativePage, overLibrary: Bool = false) -> Bool {
-        windowAdmitsPeek(browser, overLibrary: overLibrary) && !page.isClosed
+    func canHostPeek(_ browser: PCNativeBrowserWindow, over page: PCNativePage, overLibrary: Bool = false,
+                     ignoringCommandBar: Bool = false) -> Bool {
+        windowAdmitsPeek(browser, overLibrary: overLibrary, ignoringCommandBar: ignoringCommandBar) && !page.isClosed
             && PCNativeBrowserApplication.owner(of: page) === browser
             && !peeks.values.contains { $0.parentPage === page }
     }
 
-    private func windowAdmitsPeek(_ browser: PCNativeBrowserWindow, overLibrary: Bool = false) -> Bool {
+    private func windowAdmitsPeek(_ browser: PCNativeBrowserWindow, overLibrary: Bool = false,
+                                  ignoringCommandBar: Bool = false) -> Bool {
         browser === nativeBinding && !isPopupWindow
             && !isClosing && !wholeWindowClose && !windowClosePending && !windowCloseApproved && nativeFullscreenTabID == nil
             && closingTabIDs.isEmpty && modelRetirementIDs.isEmpty && peekRetirementParents.isEmpty
             && transferringTabIDs.isEmpty && resolvingTransfers.isEmpty
-            && commandBar == nil && (libraryView == nil || overLibrary) && window?.attachedSheet == nil
-            && window?.isKeyWindow == true
+            && (commandBar == nil || ignoringCommandBar) && (libraryView == nil || overLibrary)
+            && window?.attachedSheet == nil && window?.isKeyWindow == true
     }
 
     @discardableResult

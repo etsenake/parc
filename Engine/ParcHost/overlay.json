@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 750,
+  "version": 751,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -339,7 +339,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "parc/native/native_appkit_bridge.h",
-      "sha256": "dcf0f50cb20b109251db416d9e5df88f9dfdfa1810646d1d79c24cd299f900d3"
+      "sha256": "075538c8d86ae7e4da523a50608b9f0789d82c6088f4410eba7620661378249a"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -359,7 +359,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_page.mm",
       "target": "parc/native/native_appkit_page.mm",
-      "sha256": "951ba314437bf32126099548549a3d0e920519de229c2a9f4ac59aef8624cfa2"
+      "sha256": "f6ef61d94d809707356481ce86fa9218ea69881b643bea2aefef4f9b3220050d"
     },
     {
       "source": "Engine/ParcNative/native_page_shell_notify.h",
@@ -584,12 +584,12 @@
     {
       "source": "Engine/ParcNative/status_text.h",
       "target": "parc/native/status_text.h",
-      "sha256": "1c1326d28b373b81650f75498ec89bce70fc3c0118c98e7c1b56b67ee6c4e123"
+      "sha256": "f39f0d64856d31809c6e4098bbf8817cb226328b6a348e723f30356c870f11d1"
     },
     {
       "source": "Engine/ParcNative/status_text.mm",
       "target": "parc/native/status_text.mm",
-      "sha256": "c7a6f13d513e0441c2afa8400033365480188bcca6797330da16cdf9f73f9132"
+      "sha256": "ec1fa4fa45fc484131c2c645155b38a982e53f39dd8d3bcc3388392d06f33047"
     },
     {
       "source": "Engine/ParcNative/client_certificates.mm",

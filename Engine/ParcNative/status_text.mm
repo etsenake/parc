@@ -11,6 +11,7 @@
 - (void)updateModifierFlags:(NSEventModifierFlags)flags;
 - (void)appearanceChanged;
 - (void)windowThemeChanged:(NSNotification*)notification;
+- (void)linkOutcomeInputsChanged:(NSNotification*)notification;
 - (void)invalidateAvoidanceFingerprint;
 - (void)captureAvoidanceFingerprint;
 @end
@@ -50,6 +51,11 @@ constexpr CGFloat kCompactWidth = 400;
 constexpr NSEventModifierFlags kLinkModifiers = NSEventModifierFlagShift |
     NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand;
 NSNotificationName const kWindowThemeDidChange = @"PCNativeAirPlayThemeDidChange";
+NSNotificationName const kLinkOutcomeInputsDidChange = @"PCNativeLinkOutcomeInputsDidChange";
+NSArray<NSNotificationName>* LinkOutcomeInputNotifications() {
+  return @[NSWindowDidBecomeKeyNotification, NSWindowDidResignKeyNotification,
+           NSWindowDidEndSheetNotification, kLinkOutcomeInputsDidChange];
+}
 
 bool StatusTextAvoidanceNeedsLayout(NSRect bounds, NSRect pill, BOOL trailing,
                                     NSPoint point) {
@@ -210,6 +216,7 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
 @implementation PCNativeStatusTextController {
   __weak NSView* _page;
   __weak NSWindow* _attachedWindow;
+  __weak NSWindow* _outcomeInputsWindow;
   BOOL (^_validate)(void);
   PCStatusOverlay* _overlay;
   NSView* _pill;
@@ -222,6 +229,8 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   id _mouseMonitor;
   id _flagsMonitor;
   NSEventModifierFlags _modifiers;
+  PCNativeStatusLinkOutcome _outcome;
+  BOOL _refreshPending;
   NSUInteger _generation;
   NSUInteger _animationGeneration;
   BOOL _attached;
@@ -324,14 +333,21 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
       notification.object != _attachedWindow) { return; }
   [self applyTheme];
 }
+- (NSURL*)linkURL {
+  NSURL* url = _text.length && _linkOutcome ? [NSURL URLWithString:_text] : nil;
+  return url && url.scheme.length &&
+      (url.host.length || [url.scheme caseInsensitiveCompare:@"mailto"] == NSOrderedSame) ? url : nil;
+}
+- (PCNativeStatusLinkOutcome)outcomeForURL:(NSURL*)url {
+  return url ? _linkOutcome(_modifiers & kLinkModifiers, url) : PCNativeStatusLinkOutcomeNone;
+}
 - (void)rebuildContent {
+  NSURL* url = [self linkURL];
+  [self rebuildContentForURL:url outcome:[self outcomeForURL:url]];
+}
+- (void)rebuildContentForURL:(NSURL*)url outcome:(PCNativeStatusLinkOutcome)outcome {
   NSString* text = _text;
-  PCNativeStatusLinkOutcome outcome = PCNativeStatusLinkOutcomeNone;
-  NSURL* url = text.length && _linkOutcome ? [NSURL URLWithString:text] : nil;
-  if (url && url.scheme.length &&
-      (url.host.length || [url.scheme caseInsensitiveCompare:@"mailto"] == NSOrderedSame)) {
-    outcome = _linkOutcome(_modifiers & kLinkModifiers, url);
-  }
+  _outcome = outcome;
   NSString* format = OutcomeFormat(outcome);
   NSFont* font = [NSFont systemFontOfSize:12 weight:NSFontWeightMedium];
   NSMutableParagraphStyle* paragraph = [[NSMutableParagraphStyle alloc] init];
@@ -553,6 +569,35 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
         if (owner) [owner updateModifierFlags:event.modifierFlags];
         return event;
       }];
+  _outcomeInputsWindow = _attachedWindow;
+  for (NSNotificationName name in LinkOutcomeInputNotifications()) {
+    [NSNotificationCenter.defaultCenter addObserver:self
+                                           selector:@selector(linkOutcomeInputsChanged:)
+                                               name:name
+                                             object:_outcomeInputsWindow];
+  }
+}
+- (void)linkOutcomeInputsChanged:(NSNotification*)notification {
+  if (notification.object == _attachedWindow) [self setNeedsLinkOutcomeRefresh];
+}
+- (void)setNeedsLinkOutcomeRefresh {
+  NSAssert(NSThread.isMainThread, @"Status text requires the main thread");
+  if (_invalidated || _refreshPending || !_text.length) { return; }
+  _refreshPending = YES;
+  __weak PCNativeStatusTextController* weak = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    PCNativeStatusTextController* owner = weak;
+    if (!owner) { return; }
+    owner->_refreshPending = NO;
+    [owner refreshLinkOutcome];
+  });
+}
+- (void)refreshLinkOutcome {
+  if (_invalidated || !_text.length) { return; }
+  if (![self isValid]) { [self reset]; return; }
+  NSURL* url = [self linkURL];
+  const PCNativeStatusLinkOutcome outcome = [self outcomeForURL:url];
+  if (outcome != _outcome) { [self rebuildContentForURL:url outcome:outcome]; }
 }
 - (void)updateModifierFlags:(NSEventModifierFlags)flags {
   if (!_text.length || (flags & kLinkModifiers) == (_modifiers & kLinkModifiers)) { return; }
@@ -562,6 +607,10 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
 }
 - (void)stopFlagsMonitor {
   if (_flagsMonitor) { [NSEvent removeMonitor:_flagsMonitor]; _flagsMonitor = nil; }
+  for (NSNotificationName name in LinkOutcomeInputNotifications()) {
+    [NSNotificationCenter.defaultCenter removeObserver:self name:name object:_outcomeInputsWindow];
+  }
+  _outcomeInputsWindow = nil;
 }
 - (void)reset {
   ++_generation;
@@ -577,6 +626,7 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   _pill.hidden = YES;
   _expanded = NO;
   _explained = NO;
+  _outcome = PCNativeStatusLinkOutcomeNone;
   _text = @"";
   _label.stringValue = @"";
   _icon.image = nil;

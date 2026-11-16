@@ -190,12 +190,11 @@ popup owners do not offer this context-menu route.
 Option-click and Option–Command-click open an HTTP(S) link in Split View, in a
 pane after the clicked page, when the window can take a split right now: a real
 click in the selected page of a normal key window, with no Peek, pop-up, sheet,
-command bar or Library in the way and fewer than four panes. The app answers
-that from existing state without changing anything (`canSplitLinkFrom`: the
-split-link lease rules plus the pane limit). Links inside the page's embedded
-frames split the same way, except isolated fenced ad frames, which keep
-Chromium's behaviour for both modifiers even though the hover text can't tell
-them apart.
+command bar or Library in the way and fewer than four panes. The click's press
+comes first and focuses the pane it lands in and closes an open command bar, so
+a link in another pane of the split, or clicked while the command bar is open,
+still splits. Links inside the page's embedded frames split the same way, except
+isolated fenced ad frames, which keep Chromium's behaviour for both modifiers.
 
 Chromium's own policy turns a plain Option-click into a download. Parc's
 renderer link policy (`parc_native_link_policy.cc`) instead sends it through the
@@ -218,13 +217,29 @@ Compact width caps at 400 points; expansion stays inside the page.
 Plain display removes the scheme prefix/trailing slash for readability, with
 insecure/mail icons where appropriate. Modifier descriptions explain background
 or foreground tabs, Peek, new-window and Split View destinations without
-changing the link. **Open … in Split View** appears for Option and
-Option–Command only when the click will split: an HTTP(S) link outside Peek and
-the same `canSplitLinkFrom` answer the click uses. Otherwise those modifiers keep
-the plain address. Only actual links are explained; local transient messages
-share the capsule. Text truncates in the middle; explained text expands
-immediately. Ordinary hover uses a 0.5-second debounce and 1.5-second expansion
-delay, token-guarded alpha fade and immediate side changes.
+changing the link. **Open … in Split View** (Option, Option–Command) and **Open
+… in Peek** (Shift) appear only when the click would do that from the hovered
+page. The app answers read-only, for the pane under the pointer as the click's
+press leaves the window: that pane focused and the command bar closed
+(`canSplitLinkFrom`, `canPeekLinkFrom`). Links in Peek and in fenced ad frames
+never promise either; Parc's engine tells a fenced frame apart by which frame
+Chromium sends the pointer's events to, noted with each address the page
+reports, so an address still trailing the pointer out of an ad keeps its answer.
+An ad link the pointer only grazes can flash a promise for a moment, because
+Chromium doesn't say which frame an address came from. Otherwise Option keeps
+the plain address and Shift says a new window. Shift-click Peek opens only from
+the page's main frame, and the capsule can't tell an ordinary embedded frame's
+link apart, so Shift there can still promise Peek while the click opens a new
+window.
+
+While text shows, the answer is asked again once after the current event when
+the window gains or loses focus (a sheet opening takes it), a sheet ends, the
+window refreshes its navigation state (panes, selection, Peek, closing), or the
+pointer enters a fenced frame or leaves one without a new address. Only actual
+links are explained; local transient messages share the capsule. Text truncates
+in the middle; explained text expands immediately. Ordinary hover uses a
+0.5-second debounce and 1.5-second expansion delay, token-guarded alpha fade and
+immediate side changes.
 
 The capsule reads the Space's colours when it appears and on appearance change.
 While it shows, it also repaints when its window posts the palette notification

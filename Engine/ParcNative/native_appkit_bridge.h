@@ -302,6 +302,7 @@ NS_SWIFT_UI_ACTOR
 - (nullable NSColor*)airPlayThemeTintColorOnLightSurface;
 @end
 #define PCNativeAirPlayThemeDidChangeNotification @"PCNativeAirPlayThemeDidChange"
+#define PCNativeLinkOutcomeInputsDidChangeNotification @"PCNativeLinkOutcomeInputsDidChange"
 
 NS_SWIFT_UI_ACTOR
 @protocol PCNativePageObserver <NSObject>
@@ -663,6 +664,9 @@ NS_SWIFT_UI_ACTOR
 - (BOOL)nativeBrowser:(PCNativeBrowserWindow*)browser
   canPresentPeekFrom:(PCNativePage*)page
     NS_SWIFT_NAME(nativeBrowser(_:canPresentPeekFrom:));
+- (BOOL)nativeBrowser:(PCNativeBrowserWindow*)browser
+  canPeekLinkFromPage:(PCNativePage*)page
+    NS_SWIFT_NAME(nativeBrowser(_:canPeekLinkFrom:));
 - (BOOL)nativeBrowser:(PCNativeBrowserWindow*)browser
   shouldOpenNewPageInPeekFrom:(PCNativePage*)page targetURL:(NSURL*)url
     NS_SWIFT_NAME(nativeBrowser(_:shouldOpenNewPageInPeekFrom:targetURL:));

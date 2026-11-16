@@ -270,8 +270,13 @@ extension BrowserWindowController {
     }
 
     func browserViewCanOpenLinkInSplitView(_ view: PCBrowserView) -> Bool {
+        canOpenLinkInSplitView(view, ignoringCommandBar: false)
+    }
+
+    func canOpenLinkInSplitView(_ view: PCBrowserView, ignoringCommandBar: Bool) -> Bool {
         guard let id = id(for: view), selectedTabIDs.contains(id), browserProfiles[id] == activeProfileID,
-              let window, window.attachedSheet == nil, !isClosing, commandBar == nil else { return false }
+              let window, window.attachedSheet == nil, !isClosing,
+              ignoringCommandBar || commandBar == nil else { return false }
         return splitCommandsAvailable && splitInsertion == nil && !isPopupWindow
             && nativeFullscreenTabID == nil && selectedTabIDs.allSatisfy({ switcherCanUse($0) })
     }

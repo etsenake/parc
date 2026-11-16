@@ -614,7 +614,10 @@ extension BrowserWindowController {
     }
     var currentBrowser: PCBrowserView? {
         if let peek = activePeek { return peek.browser }
-        guard let id = currentTabID, !transferringTabIDs.contains(id), let tab = store.state.tab(id),
+        return currentTabID.flatMap(paneBrowser)
+    }
+    func paneBrowser(_ id: UUID) -> PCBrowserView? {
+        guard !transferringTabIDs.contains(id), let tab = store.state.tab(id),
               !InternalPage.isInternal(tab.url) else { return nil }
         return browsers[id]
     }

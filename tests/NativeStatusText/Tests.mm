@@ -350,6 +350,71 @@ static void LiveThemeColors() {
   [window close];
   [other close];
 }
+static void LiveLinkOutcomeRefresh() {
+  NSWindow* window = Window();
+  NSWindow* other = Window();
+  NSView* page = Page(window);
+  auto controller = Controller(page);
+  NSTextField* label = static_cast<NSTextField*>(Find(page, @"parc-status-label"));
+  __block bool splits = true;
+  __block int asked = 0;
+  controller.linkOutcome = ^PCNativeStatusLinkOutcome(NSEventModifierFlags flags, NSURL*) {
+    ++asked;
+    return flags == NSEventModifierFlagOption && splits ? PCNativeStatusLinkOutcomeSplitView
+                                                        : PCNativeStatusLinkOutcomeNone;
+  };
+  NSNotificationName name = PCNativeLinkOutcomeInputsDidChangeNotification;
+  NSNotificationCenter* center = NSNotificationCenter.defaultCenter;
+  [controller updateText:@"https://split.test/page"];
+  [controller updateModifierFlags:NSEventModifierFlagOption];
+  Pump(.1);
+  Check([label.stringValue isEqual:@"Open https://split.test/page in Split View"],
+        "a held Option explains the split");
+  splits = false;
+  [center postNotificationName:name object:other];
+  Pump(.05);
+  Check([label.stringValue isEqual:@"Open https://split.test/page in Split View"],
+        "another window's state change leaves this pill alone");
+  int before = asked;
+  [center postNotificationName:name object:window];
+  [center postNotificationName:name object:window];
+  Check(asked == before, "the refresh waits for the current event to finish");
+  Pump(.05);
+  Check(asked == before + 1, "repeated changes in one turn ask once");
+  Check([label.stringValue isEqual:@"split.test/page"],
+        "a window change that stops the split drops the promise while Option stays held");
+  splits = true;
+  [center postNotificationName:NSWindowDidResignKeyNotification object:window];
+  Pump(.05);
+  Check([label.stringValue isEqual:@"Open https://split.test/page in Split View"],
+        "a focus change re-asks and restores the promise");
+  splits = false;
+  [center postNotificationName:NSWindowDidEndSheetNotification object:window];
+  Pump(.05);
+  Check([label.stringValue isEqual:@"split.test/page"], "a closed sheet re-asks");
+  splits = true;
+  [controller setNeedsLinkOutcomeRefresh];
+  Pump(.05);
+  Check([label.stringValue isEqual:@"Open https://split.test/page in Split View"],
+        "an engine refresh request re-asks");
+  const NSRect frame = label.frame;
+  before = asked;
+  [controller setNeedsLinkOutcomeRefresh];
+  Pump(.05);
+  Check(asked == before + 1 && NSEqualRects(label.frame, frame),
+        "an unchanged answer keeps the pill as it is");
+  [controller updateModifierFlags:0];
+  [controller updateText:@""];
+  Pump(.9);
+  before = asked;
+  [center postNotificationName:name object:window];
+  [controller setNeedsLinkOutcomeRefresh];
+  Pump(.05);
+  Check(asked == before, "an empty pill never asks");
+  [controller invalidate];
+  [window close];
+  [other close];
+}
 int main() {
   @autoreleasepool {
     [NSApplication sharedApplication];
@@ -360,6 +425,7 @@ int main() {
     MouseMonitorIdleStopAndAvoidanceSkip();
     PresentationAndContent();
     LiveThemeColors();
+    LiveLinkOutcomeRefresh();
     printf("Native status text: %d AppKit assertions passed; no browser engine loaded.\n", checks);
   }
 }
