@@ -74,7 +74,8 @@ to another page, by the pages that turned up or dropped away. Pages already
 passed keep their numbers, so Back and Next step over a finished progress page,
 and theme keeps its number after a trip Back to Favorites. A page backed out of
 drops away unless it is still coming, and another import starts the count
-afresh. A setup resumed after the import keeps those pages in its count.
+afresh, counting its own pages even while it waits for the last one to finish.
+A setup resumed after the import keeps those pages in its count.
 
 Back follows the actual order. From Favorites it returns to the browser choice
 with the import kept: a running import keeps running there with **Stop Import**

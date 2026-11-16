@@ -116,6 +116,54 @@ func firefoxPasswordChecks(store: BrowserStore, destination: BrowserImportDestin
     locked.cancel()
     PCNativeBrowserApplication.browserCompletions.removeAll()
 
+    let chrome = PCNativeImportSource("com.google.Chrome", URL(fileURLWithPath: "/fixture/Chrome.app"))
+    let earlier = start(onboarding: true, source: chrome)
+    expect(earlier.setupPagesAhead == [.bookmarks], "Chrome expects its bookmarks and no password page")
+    complete([PCNativeImportedBookmark("chrome", title: "Chrome", url: URL(string: "https://example.org/chrome-kept")!)])
+    expect(earlier.stage == .bookmarks && earlier.hasBackgroundWork && PCNativeBrowserApplication.browserCompletions.count == 1,
+           "Chrome's history keeps importing behind its bookmarks page")
+    expect(earlier.returnToSourceInSetup() && earlier.parkedStage == .bookmarks,
+           "Back from Favorites leaves Chrome's bookmarks waiting behind the browser cards")
+    earlier.onChange = nil; earlier.detach(onAdBlockers: nil)
+    let switched = BrowserImportCoordinator(store: store, destination: destination, window: window,
+        onboarding: true, supportsICloudPasswords: true, ownerIsCurrent: { true })
+    switched.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([chrome, firefox])
+    switched.selectSourceInline(firefox)
+    PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [
+        PCNativeImportProfile("switched-release", [.history, .bookmarks], .complete, name: "Firefox")], access: .complete))
+    switched.continueSourceInline()
+    expect(switched.stage == .importing && switched.message == "Finishing your last import…"
+           && PCNativeBrowserApplication.browserCompletions.count == 1,
+           "Firefox waits while Chrome's history finishes")
+    expect(switched.setupPage == .progress && switched.setupPagesAhead == [.bookmarks, .passwordFile],
+           "While it waits, Favorites already counts Firefox's bookmarks and its password file")
+    complete([])
+    expect(!earlier.hasBackgroundWork && switched.stage == .importing && switched.message != "Finishing your last import…"
+           && PCNativeBrowserApplication.browserCompletions.count == 1,
+           "Once Chrome is done, Firefox starts reading by itself")
+    expect(switched.setupPage == .progress && switched.setupPagesAhead == [.bookmarks, .passwordFile],
+           "Firefox's real start expects exactly the pages Favorites already counted")
+    complete([PCNativeImportedBookmark("switched", title: "Switched", url: URL(string: "https://example.org/switched")!)])
+    expect(switched.setupPage == .bookmarks && switched.setupPagesAhead == [.passwordFile],
+           "Firefox's bookmarks come first and its password file stays ahead")
+    switched.cancel()
+    let blocking = start(onboarding: true, source: chrome)
+    complete([PCNativeImportedBookmark("blocking", title: "Blocking", url: URL(string: "https://example.org/blocking")!)])
+    _ = blocking.returnToSourceInSetup(); blocking.onChange = nil; blocking.detach(onAdBlockers: nil)
+    let stopped = BrowserImportCoordinator(store: store, destination: destination, window: window,
+        onboarding: true, supportsICloudPasswords: true, ownerIsCurrent: { true })
+    stopped.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([chrome, firefox])
+    stopped.selectSourceInline(firefox)
+    PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [
+        PCNativeImportProfile("stopped-release", [.history, .bookmarks], .complete, name: "Firefox")], access: .complete))
+    stopped.continueSourceInline(); stopped.stopImport()
+    expect(stopped.stage == .finished && stopped.setupPage == nil && stopped.setupPagesAhead.isEmpty,
+           "Stopping a waiting import drops the pages it expected")
+    complete([])
+    expect(!blocking.hasBackgroundWork && stopped.stage == .finished && PCNativeBrowserApplication.browserCompletions.isEmpty,
+           "A stopped waiting import never starts later")
+    stopped.cancel()
+
     let zenSetup = start(onboarding: true, source: zen)
     expect(zenSetup.setupPage == .progress && zenSetup.setupPagesAhead == [.bookmarks, .passwordFile],
            "Zen counts the same bookmarks and password file pages as Firefox")

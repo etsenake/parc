@@ -194,6 +194,47 @@ func safariExportChecks(window: NSWindow, safari: PCNativeImportSource) throws -
            "A file that isn't Safari's export returns to the browser choice with an explanation")
     broken.cancel()
 
+    let finishing = start()
+    finishing.importSafariExport(try save("Finishing.zip", storedZip([
+        ("Passwords.csv", "Title,URL,Username,Password,Notes,OTPAuth\nExample,https://finishing.example.test/,me,secret,,\n")])))
+    wait { !PCNativeBrowserApplication.passwordRequests.isEmpty }
+    let finishingPasswords = PCNativeBrowserApplication.passwordRequests.removeFirst()
+    finishing.detach(onAdBlockers: nil)
+    let queued = start()
+    queued.importSafariExport(archive)
+    wait { !PCNativeBrowserApplication.exportRequests.isEmpty }
+    PCNativeBrowserApplication.exportRequests.removeFirst().complete(.init(profiles: [
+        PCNativeImportProfile("queued-default", [.history], .complete, name: "Safari", directory: "profile-0"),
+        PCNativeImportProfile("queued-work", [.history], .complete, name: "Work", directory: "profile-1")], access: .complete))
+    expect(queued.stage == .importing && queued.message == "Finishing your last import…"
+           && queued.setupPage == .progress && queued.setupPagesAhead == [.bookmarks],
+           "An export waiting on the last import already counts its own bookmarks page")
+    finishingPasswords.complete(.init(outcome: .completed, importedCount: 1))
+    expect(!finishing.hasBackgroundWork && queued.stage == .bookmarks && queued.setupPagesAhead.isEmpty,
+           "Once the last import is done, the export starts on exactly that bookmarks page")
+    queued.cancel()
+    PCNativeBrowserApplication.passwordRequests.removeAll(); PCNativeBrowserApplication.browserCompletions.removeAll()
+    wait { leftovers().isEmpty }
+
+    let readable = BrowserImportCoordinator(store: store, destination: destination, window: window,
+        onboarding: true, safariExportRoot: root, ownerIsCurrent: { true })
+    readable.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([safari])
+    readable.selectSourceInline(safari)
+    PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [
+        PCNativeImportProfile("Safari", [.history, .bookmarks], .complete)], access: .complete))
+    var counted: [[OnboardingDraft.ImportPage]] = []
+    readable.onChange = { [unowned readable] in
+        if readable.stage == .importing { counted.append(readable.setupPagesAhead) }
+    }
+    readable.importSafariExport(try save("Readable.zip", storedZip([
+        ("Passwords.csv", "Title,URL,Username,Password,Notes,OTPAuth\nExample,https://readable.example.test/,me,secret,,\n")])))
+    wait { !PCNativeBrowserApplication.passwordRequests.isEmpty }
+    expect(!counted.isEmpty && counted.allSatisfy(\.isEmpty),
+           "An export of only passwords never counts the bookmarks the Safari app itself could have read")
+    PCNativeBrowserApplication.passwordRequests.removeFirst().complete(.init(outcome: .completed, importedCount: 1))
+    readable.cancel()
+    wait { leftovers().isEmpty }
+
     let abandonedImport = start()
     abandonedImport.importSafariExport(archive)
     abandonedImport.cancel()

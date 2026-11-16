@@ -57,6 +57,8 @@ final class BrowserImportCoordinator {
     private var passwordStageOffered = false
     private var keepsPasswordChoice = false
     private var passwordsWithoutData = false
+    private enum PendingStart { case source, safariExport([PCNativeImportProfile]) }
+    private var pendingStart: PendingStart?
     private(set) var parkedStage: Stage?
     private(set) var foundNoSources = false
     private var generation = UUID()
@@ -381,7 +383,7 @@ final class BrowserImportCoordinator {
     func startInOriginalDestination() {
         guard stage == .profiles, isCurrent, hasImportableSelection else { return }
         if Self.earlierImportRunning {
-            generation = UUID(); let token = generation
+            generation = UUID(); let token = generation; pendingStart = .source
             stage = .importing; error = nil; message = "Finishing your last import…"; onChange?()
             Self.waitingStarts.append { [weak self] in
                 guard let self, self.isCurrent, self.generation == token, self.stage == .importing else { return }
@@ -392,10 +394,12 @@ final class BrowserImportCoordinator {
         let chosen = chosenProfiles
         if isArcSource { startArc(chosen); return }
         beginImport()
-        passwordDestination = passwordExport == nil ? nil : originalDestination
+        passwordDestination = sourcePasswordDestination
         queueProfiles(chosen, primaryDestination: originalDestination)
         importNext()
     }
+
+    private var sourcePasswordDestination: BrowserImportDestination? { passwordExport == nil ? nil : originalDestination }
 
     private var chosenProfiles: [PCNativeImportProfile] {
         let chosen = profiles.filter { profile in
@@ -412,7 +416,7 @@ final class BrowserImportCoordinator {
         dataFailed = false; dataImported = false; dataFailureReported = false
         pendingExtensions = []; backgroundProfiles = []; extensionBatch = nil; passwordStageOffered = false
         announcedExtensions = []
-        keepsPasswordChoice = false; passwordsWithoutData = false; parkedStage = nil
+        keepsPasswordChoice = false; passwordsWithoutData = false; parkedStage = nil; pendingStart = nil
         queue = []; queuedDestinations = [:]; usedProfiles = []; activeDestination = nil
         generation = UUID()
     }
@@ -1007,6 +1011,7 @@ final class BrowserImportCoordinator {
     }
 
     var setupPagesAhead: [OnboardingDraft.ImportPage] {
+        if stage == .importing, let pendingStart { return pagesAhead(starting: pendingStart) }
         switch parkedStage ?? stage {
         case .importing: return (hasPendingBookmarks || readsBookmarks ? [.bookmarks] : []) + passwordPagesAhead
         case .bookmarks: return passwordPagesAhead
@@ -1015,11 +1020,25 @@ final class BrowserImportCoordinator {
         }
     }
 
+    private func pagesAhead(starting start: PendingStart) -> [OnboardingDraft.ImportPage] {
+        switch start {
+        case .safariExport(let chosen):
+            return safariExport?.bookmarks.isEmpty == false || Self.readBookmarks(chosen) ? [.bookmarks] : []
+        case .source:
+            let bookmarks: [OnboardingDraft.ImportPage] = Self.readBookmarks(chosenProfiles) ? [.bookmarks] : []
+            guard sourcePasswordDestination != nil else { return bookmarks }
+            return bookmarks + (onboarding && offersICloudPasswordChoice ? [.passwordChoice] : [.passwordFile])
+        }
+    }
+
     private var readsBookmarks: Bool {
         guard session == nil else { return true }
         guard finishAfterExportPasswords == nil else { return false }
-        let unread = queue.isEmpty && completed == 0 ? chosenProfiles : queue
-        return unread.contains { $0.supportedCategories.contains(.bookmarks) }
+        return Self.readBookmarks(queue.isEmpty && completed == 0 && safariExport == nil ? chosenProfiles : queue)
+    }
+
+    private static func readBookmarks(_ profiles: [PCNativeImportProfile]) -> Bool {
+        profiles.contains { $0.supportedCategories.contains(.bookmarks) }
     }
 
     private var passwordPagesAhead: [OnboardingDraft.ImportPage] {
@@ -1116,6 +1135,7 @@ final class BrowserImportCoordinator {
     private func startSafariExport(_ chosen: [PCNativeImportProfile], unreadable: Int, token: UUID) {
         guard let export = safariExport, isCurrent, generation == token else { return }
         if Self.earlierImportRunning {
+            pendingStart = .safariExport(chosen)
             stage = .importing; message = "Finishing your last import…"; onChange?()
             Self.waitingStarts.append { [weak self] in
                 guard let self, self.isCurrent, self.generation == token, self.stage == .importing else { return }
