@@ -2463,7 +2463,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
            !allowSelectionChange || !canApplySelectionOnly(state: state, previous: previous, focusedTabID: focusedTabID) {
             return false
         }
-        let visible = state.tabs.filter { $0.archivedAt == nil }
+        let visible = state.openTabs
         let splitGroups = SidebarSplitItems.groups(in: state, spaceID: state.activeSpaceID)
         for group in splitGroups where SidebarSplitCellLayout.usesCustomInfo(
             title: group.customTitle, hasIcon: group.customIcon != nil, editing: false) {
@@ -2664,7 +2664,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 }
             }
         }
-        let visible = hierarchyState?.tabs.filter { $0.archivedAt == nil } ?? []
+        let visible = hierarchyState?.openTabs ?? []
         let groups = hierarchyState.map { SidebarSplitItems.groups(in: $0, spaceID: $0.activeSpaceID) } ?? []
         for (tileID, button) in favoriteTiles {
             let group = groups.first { $0.sidebarAnchorID == tileID || $0.tabIDs.contains(tileID) }
@@ -2758,7 +2758,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         setAddressTitle(Self.address(of: state.tabs.first { $0.id == (focusedTabID ?? state.selectedTabIDs.first) }))
         favorites.removeAll(); favoriteItems.removeAll()
         var retainedFavoriteIDs = Set<UUID>()
-        let visible = state.tabs.filter { $0.archivedAt == nil }
+        let visible = state.openTabs
         todayOrder = SidebarTodayArchive.order(in: state, spaceID: state.activeSpaceID)
         let tray = SidebarContainerLocation(spaceID: state.activeSpaceID, folderID: nil, section: .favorite, profileID: space?.profileID)
         for item in SidebarHierarchy.children(in: tray, state: state) {
@@ -2908,7 +2908,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         page.key = nil; page.laidOut = false
         let pagePalette = page === shownPage ? palette : paletteForPage(state.activeSpaceID)
         let space = state.spaces.first { $0.id == state.activeSpaceID }
-        let visible = state.tabs.filter { $0.archivedAt == nil }
+        let visible = state.openTabs
         let splitGroups = SidebarSplitItems.groups(in: state, spaceID: state.activeSpaceID)
         let pageFolders = state.folders.filter { $0.spaceID == state.activeSpaceID }
         let headerContent = SidebarChromeLayout.SpaceHeader.content(
@@ -3387,7 +3387,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         page.renderedState = state
         let id = state.activeSpaceID
         var current: [UUID: BrowserTab] = [:], before: [UUID: BrowserTab] = [:]
-        for tab in state.tabs where tab.spaceID == id && tab.archivedAt == nil { current[tab.id] = tab }
+        for tab in state.openTabs where tab.spaceID == id { current[tab.id] = tab }
         for tab in rendered?.tabs ?? [] where tab.spaceID == id { before[tab.id] = tab }
         let splitTabs = Set(SidebarSplitItems.groups(in: state, spaceID: id).flatMap(\.tabIDs))
         for row in page.tabRows {

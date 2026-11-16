@@ -69,8 +69,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         store.state.spaces.first { $0.id == activeSpaceID } ?? store.state.spaces[0]
     }
     private var visibleTabs: [BrowserTab] {
-        store.state.tabs.filter { $0.archivedAt == nil && $0.profileID == activeSpace.profileID
-            && ($0.kind == .favorite || $0.spaceID == activeSpaceID) }
+        store.state.openTabs(where: { $0.profileID == activeSpace.profileID && ($0.kind == .favorite || $0.spaceID == activeSpaceID) })
     }
     private var activeSplitLayout: BrowserSplitLayout? {
         SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID).first { $0.tabIDs == selectedTabIDs }
@@ -3025,7 +3024,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let state = presentation.projected(sharedState)
         rendering = true
         defer { rendering = false }
-        let liveIDs = Set(state.tabs.filter { $0.archivedAt == nil }.map(\.id))
+        let liveIDs = Set(state.openTabs.map(\.id))
         for id in Array(browsers.keys) where !liveIDs.contains(id)
             || state.tab(id)?.profileID != browserProfiles[id]
             || state.tab(id).map({ InternalPage.isInternal($0.url) }) == true {
@@ -4289,8 +4288,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let splitIDs = Set(SidebarSplitItems.groups(in: state, spaceID: state.activeSpaceID).flatMap(\.tabIDs))
         let sessionStatus = #selector(getter: PCNativePage.mediaSessionStatus)
         var parts: [String] = []
-        for tab in state.tabs where tab.kind == .favorite && tab.archivedAt == nil
-            && tab.profileID == profileID && !splitIDs.contains(tab.id) {
+        for tab in state.openTabs where tab.kind == .favorite && tab.profileID == profileID && !splitIDs.contains(tab.id) {
             let id = tab.id
             guard let view = browsers[id], view.window === window, browserProfiles[id] == profileID,
                   ownership.canUse(id, owner: presentationID),
@@ -4340,8 +4338,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         var overlays: [UUID: FavoriteTileOverlayState] = [:]
         var badgeIcons: [UUID: (image: NSImage, data: Data)] = [:]
         defer { favoriteBadgeIcons = badgeIcons }
-        for tab in state.tabs where tab.kind == .favorite && tab.archivedAt == nil
-            && tab.profileID == profileID && !splitIDs.contains(tab.id) {
+        for tab in state.openTabs where tab.kind == .favorite && tab.profileID == profileID && !splitIDs.contains(tab.id) {
             let id = tab.id
             guard let view = browsers[id], view.window === window, browserProfiles[id] == profileID,
                   ownership.canUse(id, owner: presentationID),
@@ -4951,8 +4948,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func splitInsertionTabs(profileID: UUID) -> [BrowserTab] {
         let spaces = Set(store.state.spaces.filter { $0.profileID == profileID }.map(\.id))
-        return store.state.tabs.filter { $0.archivedAt == nil && $0.profileID == profileID
-            && ($0.kind == .favorite || spaces.contains($0.spaceID)) }
+        return store.state.openTabs(where: { $0.profileID == profileID && ($0.kind == .favorite || spaces.contains($0.spaceID)) })
     }
     private func commandBarDocuments(profileID: UUID) -> [CommandBarDocument] {
         guard !isPopupWindow, !isPrivateBrowsing, !store.isProfileRemovalPending(profileID),
@@ -4970,7 +4966,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 + (easelList ?? []).map { CommandBarDocument(kind: .easel, id: $0.id, title: $0.title) }
             commandBarDocumentCache = noteList != nil && easelList != nil ? (profileID, stamp, all) : nil
         }
-        let open = store.state.tabs.filter { $0.profileID == profileID && $0.archivedAt == nil }.compactMap { InternalPage(urlString: $0.url) }
+        let open = store.state.openTabs(where: { $0.profileID == profileID }).compactMap { InternalPage(urlString: $0.url) }
         return all.filter { !open.contains($0.kind == .note ? .note($0.id) : .easel($0.id)) }
     }
     private func deliverCommandBarTopDomains(to panel: CommandBar, profileID: UUID) {
@@ -7175,7 +7171,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                                      undo: CloseUndo = .register(.archive),
                                      shouldCommit: @escaping () -> Bool,
                                      completion: ((Bool) -> Void)? = nil) {
-        let originals = store.state.tabs.filter { ids.contains($0.id) && $0.archivedAt == nil }
+        let originals = store.state.openTabs(where: { ids.contains($0.id) })
         let sourceSpace = originals.first(where: { $0.kind != .favorite })?.spaceID ?? activeSpaceID
         let profile = originals.first?.profileID ?? activeProfileID
         let intent = isPrivateBrowsing ? nil : ClosedItemIntent(ids: ids, state: store.state,
@@ -11983,7 +11979,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let self, valid() else { throw CocoaError(.userCancelled) }
                 let documents = try EaselEditorViewController.sharedStore(directory:
                     self.store.easelsDirectory(for: profileID)).list()
-                let activity = self.store.state.tabs.filter { $0.archivedAt == nil }.flatMap { tab in
+                let activity = self.store.state.openTabs.flatMap { tab in
                     [InternalPage(urlString: tab.url)?.easelID, InternalPage(urlString: tab.savedURL)?.easelID]
                         .compactMap { $0 }.map {
                             CaptureEaselDestination.Activity(id: $0, profileID: tab.profileID, date: tab.lastAccessed)

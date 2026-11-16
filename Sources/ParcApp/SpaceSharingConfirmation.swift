@@ -7,7 +7,7 @@ import AppKit
         guard let space = store.state.spaces.first(where: { $0.id == spaceID }) else { completion(.success(false)); return }
         let target = sharing.partner.flatMap { id in store.state.spaces.first { $0.id == id } }
         func openTabs() -> Set<UUID> {
-            Set(store.state.tabs.filter { $0.spaceID == spaceID && $0.kind != .favorite && $0.archivedAt == nil }.map(\.id))
+            Set(store.state.openTabs(where: { $0.spaceID == spaceID && $0.kind != .favorite }).map(\.id))
         }
         let ids = openTabs()
         let valid: () -> Bool = {

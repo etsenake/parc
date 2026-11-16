@@ -12,6 +12,8 @@ final class BrowserTabLookup {
     private let lock = NSLock()
     private var table: Table?
     private var predecessor: BrowserTabLookup?
+    private var open: [BrowserTab]?
+    private var archived: [BrowserTab]?
 
     init(after previous: BrowserTabLookup?) {
         predecessor = previous?.reusableSource
@@ -21,6 +23,22 @@ final class BrowserTabLookup {
         let table = resolvedTable(for: tabs)
         if table.ambiguous { return .ambiguous }
         return table.positions[id].map(Match.found) ?? .absent
+    }
+
+    func openTabs(in tabs: [BrowserTab]) -> [BrowserTab] {
+        lock.lock(); defer { lock.unlock() }
+        if let open { return open }
+        let built = tabs.filter { $0.archivedAt == nil }
+        open = built
+        return built
+    }
+
+    func archivedTabs(in tabs: [BrowserTab]) -> [BrowserTab] {
+        lock.lock(); defer { lock.unlock() }
+        if let archived { return archived }
+        let built = tabs.filter { $0.archivedAt != nil }
+        archived = built
+        return built
     }
 
     private var reusableSource: BrowserTabLookup? {
@@ -101,5 +119,24 @@ extension BrowserState {
 
     func containsTab(_ id: UUID, where matches: (BrowserTab) -> Bool) -> Bool {
         tabIndex(id, where: matches) != nil
+    }
+
+    var openTabs: [BrowserTab] {
+        tabLookup.lookup?.openTabs(in: tabs) ?? tabs.filter { $0.archivedAt == nil }
+    }
+
+    func openTabs(where matches: (BrowserTab) -> Bool) -> [BrowserTab] {
+        guard let lookup = tabLookup.lookup else { return tabs.filter { $0.archivedAt == nil && matches($0) } }
+        return lookup.openTabs(in: tabs).filter(matches)
+    }
+
+    func containsOpenTab(where matches: (BrowserTab) -> Bool) -> Bool {
+        guard let lookup = tabLookup.lookup else { return tabs.contains { $0.archivedAt == nil && matches($0) } }
+        return lookup.openTabs(in: tabs).contains(where: matches)
+    }
+
+    func archivedTabs(where matches: (BrowserTab) -> Bool) -> [BrowserTab] {
+        guard let lookup = tabLookup.lookup else { return tabs.filter { $0.archivedAt != nil && matches($0) } }
+        return lookup.archivedTabs(in: tabs).filter(matches)
     }
 }

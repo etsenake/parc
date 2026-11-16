@@ -111,7 +111,7 @@ struct ClosedItemIntent {
     let completeSplits: [BrowserSplitLayout]
     let partialSplits: [BrowserSplitLayout]
     init?(ids: Set<UUID>, state: BrowserState, spaceID: UUID, profileID: UUID, focusedTabID: UUID?) {
-        let tabs = state.tabs.filter { ids.contains($0.id) && $0.archivedAt == nil }
+        let tabs = state.openTabs(where: { ids.contains($0.id) })
         guard !ids.isEmpty, tabs.count == ids.count,
               state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }),
               tabs.allSatisfy({ $0.profileID == profileID && ($0.kind == .favorite || $0.spaceID == spaceID) }) else { return nil }
@@ -182,7 +182,7 @@ struct WindowClosedItems {
 
     mutating func recordSelection(_ ids: [UUID], focusedTabID: UUID?, state: BrowserState,
                                   at date: Date = Date()) {
-        let available = Set(state.tabs.filter { $0.archivedAt == nil }.map(\.id))
+        let available = Set(state.openTabs.map(\.id))
         itemLastActiveDates = itemLastActiveDates.filter { available.contains($0.key) }
         guard !ids.isEmpty, Set(ids).isSubset(of: available),
               let focus = focusedTabID, ids.contains(focus) else { return }

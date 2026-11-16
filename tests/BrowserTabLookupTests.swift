@@ -31,6 +31,14 @@ struct BrowserTabLookupTests {
     static func verify(_ state: BrowserState, probes extra: [UUID], _ context: String) throws {
         let probes = state.tabs.map(\.id) + extra
         let predicates: [(BrowserTab) -> Bool] = [{ $0.archivedAt == nil }, { $0.archivedAt != nil }, { $0.kind == .pinned }, { _ in false }]
+        try check(state.openTabs == state.tabs.filter { $0.archivedAt == nil }, "\(context): open tabs")
+        for matches in predicates {
+            try check(state.openTabs(where: matches) == state.tabs.filter { $0.archivedAt == nil && matches($0) }, "\(context): filtered open tabs")
+            try check(state.containsOpenTab(where: matches) == state.tabs.contains { $0.archivedAt == nil && matches($0) },
+                      "\(context): contains open tab")
+            try check(state.archivedTabs(where: matches) == state.tabs.filter { $0.archivedAt != nil && matches($0) },
+                      "\(context): filtered archived tabs")
+        }
         for id in probes {
             try check(state.tabIndex(id) == state.tabs.firstIndex { $0.id == id }, "\(context): index of \(id)")
             try check(state.tab(id) == state.tabs.first { $0.id == id }, "\(context): tab \(id)")

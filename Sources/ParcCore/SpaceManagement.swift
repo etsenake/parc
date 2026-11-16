@@ -12,7 +12,7 @@ struct SpaceDeletionTarget: Equatable {
               let space = state.spaces.first(where: { $0.id == spaceID }),
               state.profiles.contains(where: { $0.id == space.profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == space.profileID }) else { return nil }
-        let tabs = state.tabs.filter { $0.spaceID == spaceID && $0.kind != .favorite && $0.archivedAt == nil }
+        let tabs = state.openTabs(where: { $0.spaceID == spaceID && $0.kind != .favorite })
         guard tabs.allSatisfy({ $0.profileID == space.profileID && FolderDuplicateTarget.validSource($0.savedURL) }) else { return nil }
         let folders = state.folders.filter { $0.spaceID == spaceID }
         let ids = Set(tabs.map(\.id)), folderIDs = Set(folders.map(\.id))

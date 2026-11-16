@@ -9,9 +9,7 @@ struct BrowserDataExport {
         state.spaces.enumerated().map { index, space in
             let title = space.name.isEmpty ? "Space \(index + 1)" : space.name
             var lines = ["# " + Self.heading(title)]
-            let favorites = state.tabs.filter {
-                $0.profileID == space.profileID && $0.kind == .favorite && $0.archivedAt == nil
-            }.compactMap(urlLine)
+            let favorites = state.openTabs(where: { $0.profileID == space.profileID && $0.kind == .favorite }).compactMap(urlLine)
             if !favorites.isEmpty { lines += ["", "## Favorites"] + favorites }
 
             let items = children(space: space.id, folder: nil, section: .pinned)

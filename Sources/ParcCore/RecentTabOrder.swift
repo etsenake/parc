@@ -21,9 +21,7 @@ struct RecentTabOrder {
 
     mutating func items(state: BrowserState, selected: [UUID], currentSpace: UUID,
                         available: (UUID) -> Bool) -> [Item] {
-        let tabs = Dictionary(uniqueKeysWithValues: state.tabs.filter {
-            $0.archivedAt == nil && available($0.id)
-        }.map { ($0.id, $0) })
+        let tabs = Dictionary(uniqueKeysWithValues: state.openTabs(where: { available($0.id) }).map { ($0.id, $0) })
         let spaces = Dictionary(uniqueKeysWithValues: state.spaces.map { ($0.id, $0) })
         var result: [Item] = [], assigned = Set<UUID>()
         func append(_ ids: [UUID], spaceID: UUID, orientation: SplitOrientation) {

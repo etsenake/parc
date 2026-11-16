@@ -57,8 +57,7 @@ enum PositionalTabNavigation {
                       focused: UUID?, includeFavorites: Bool = true,
                       available: (UUID) -> Bool) -> [RecentTabOrder.Item] {
         guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return [] }
-        let tabs = state.tabs.filter { $0.archivedAt == nil && $0.profileID == space.profileID
-            && ($0.kind == .favorite || $0.spaceID == spaceID) }
+        let tabs = state.openTabs(where: { $0.profileID == space.profileID && ($0.kind == .favorite || $0.spaceID == spaceID) })
         let folders = state.folders.filter { $0.spaceID == spaceID }
         let groups = SidebarSplitItems.groups(in: state, spaceID: spaceID)
         var ordered: [BrowserTab] = []

@@ -20,10 +20,7 @@ enum FolderLinks {
               state.profiles.contains(where: { $0.id == target.profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == target.profileID }),
               state.folders.contains(where: { $0.id == target.folderID && $0.spaceID == target.spaceID }) else { return nil }
-        let tabs = state.tabs.filter {
-            $0.spaceID == target.spaceID && $0.profileID == target.profileID
-                && $0.archivedAt == nil && $0.kind != .favorite
-        }
+        let tabs = state.openTabs(where: { $0.spaceID == target.spaceID && $0.profileID == target.profileID && $0.kind != .favorite })
         var seenFolders: Set<UUID> = [], seenTabs: Set<UUID> = [], result: [Link] = []
         func append(_ folderID: UUID) {
             guard seenFolders.insert(folderID).inserted else { return }

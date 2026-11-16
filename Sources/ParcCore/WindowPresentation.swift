@@ -241,7 +241,7 @@ struct WindowPresentation {
               state.spaces.contains(where: { $0.id == selection.spaceID && $0.profileID == selection.profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == selection.profileID }),
               state.spaces.contains(where: { $0.id == selection.replacementSpaceID && $0.profileID == selection.profileID }) else { return false }
-        let live = Set(state.tabs.filter { $0.archivedAt == nil }.map(\.id))
+        let live = Set(state.openTabs.map(\.id))
         let remaining = selection.original.filter { live.contains($0) && !selection.removed.contains($0) }
         guard selectedTabIDs == selection.original || selectedTabIDs == remaining,
               selection.tabIDs.count <= 4, Set(selection.tabIDs).count == selection.tabIDs.count,

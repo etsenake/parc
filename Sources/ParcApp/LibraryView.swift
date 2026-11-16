@@ -418,7 +418,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
             renderedKind = kind; needsLayout = true; return
         }
         capturesView.isHidden = true; capturesButton.state = .off
-        let archived = store.state.tabs.filter { $0.archivedAt != nil && $0.profileID == profileID }
+        let archived = store.state.archivedTabs(where: { $0.profileID == profileID })
         observedTabs = store.state.tabs
         observedArchivedTabs = archived
         let nextItems = store.archivedItems(profileID: profileID).map { item in
@@ -452,7 +452,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
             let spaceSignature = spaces.map { $0.id.uuidString + ":" + $0.name }
             if libraryArrayUnchanged(store.state.tabs, observedTabs),
                spaceSignature == filterSpaceSignature { return true }
-            let archived = store.state.tabs.filter { $0.archivedAt != nil && $0.profileID == profileID }
+            let archived = store.state.archivedTabs(where: { $0.profileID == profileID })
             if archived == observedArchivedTabs, spaceSignature == filterSpaceSignature {
                 observedTabs = store.state.tabs
                 return true

@@ -269,7 +269,7 @@ enum SplitMembership {
 
     static func resolvingSharedLegacyFavorites(_ state: BrowserState) -> BrowserState {
         var next = state
-        let favorites = state.tabs.filter { $0.kind == .favorite && $0.archivedAt == nil }.map(\.id)
+        let favorites = state.openTabs(where: { $0.kind == .favorite }).map(\.id)
         let visible = SidebarSplitItems.groups(in: state, spaceID: state.activeSpaceID).map(\.id)
         for favorite in favorites {
             let holders = next.splitLayouts.indices.filter { next.splitLayouts[$0].tabIDs.contains(favorite) }

@@ -407,7 +407,7 @@ extension ArcSidebarImport {
             return state.spaces.first { existing in
                 existing.profileID == profileID && !next.arcImportedSpaces.values.contains(existing.id)
                     && existing.title?.lowercased() == space.title?.lowercased()
-                    && state.tabs.filter { $0.spaceID == existing.id && $0.kind == .pinned && $0.archivedAt == nil }
+                    && state.openTabs(where: { $0.spaceID == existing.id && $0.kind == .pinned })
                         .map { SavedTabURLComparison.key($0.savedURL) }.sorted() == keys
             }
         }
@@ -455,7 +455,7 @@ extension ArcSidebarImport {
                 }
                 return item
             }
-            var existing = Set(next.tabs.filter { $0.profileID == profileID && $0.kind == .favorite && $0.archivedAt == nil }
+            var existing = Set(next.openTabs(where: { $0.profileID == profileID && $0.kind == .favorite })
                 .map { SavedTabURLComparison.key($0.savedURL) })
             for item in items {
                 if case .tab(let tab) = item, existing.contains(SavedTabURLComparison.key(tab.url)) { continue }

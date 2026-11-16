@@ -47,7 +47,7 @@ enum SpaceManagerReloadSkip {
 
 enum SpaceClearToday {
     static func ids(in state: BrowserState, spaceID: UUID, profileID: UUID) -> Set<UUID> {
-        Set(state.tabs.filter { $0.archivedAt == nil && $0.kind == .today && $0.spaceID == spaceID && $0.profileID == profileID }.map(\.id))
+        Set(state.openTabs(where: { $0.kind == .today && $0.spaceID == spaceID && $0.profileID == profileID }).map(\.id))
     }
 }
 

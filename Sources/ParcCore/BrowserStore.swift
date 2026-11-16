@@ -895,8 +895,8 @@ struct SidebarHierarchySnapshot: Equatable {
               state.profiles.contains(where: { $0.id == profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == profileID }) else { return nil }
         self.spaceID = spaceID; self.profileID = profileID; self.includesFavorites = includesFavorites
-        tabs = state.tabs.filter { $0.archivedAt == nil && ($0.kind == .favorite
-            ? includesFavorites && $0.profileID == profileID : $0.spaceID == spaceID) }
+        tabs = state.openTabs(where: { ($0.kind == .favorite
+            ? includesFavorites && $0.profileID == profileID : $0.spaceID == spaceID) })
             .map { Placement(id: $0.id, profileID: $0.profileID, spaceID: $0.spaceID, kind: $0.kind, folderID: $0.folderID) }
         folders = state.folders.filter { $0.spaceID == spaceID }
         groups = state.splitLayouts.filter { $0.spaceID == spaceID
@@ -954,8 +954,7 @@ enum SidebarHierarchy {
               location.section != .favorite || (location.folderID == nil && location.profileID == profileID) else { return [] }
         let groups = SidebarSplitItems.groups(in: state, spaceID: location.spaceID)
         var legacy: [SidebarItemReference] = []
-        for tab in state.tabs where tab.archivedAt == nil && tab.profileID == profileID
-            && (location.section == .favorite ? tab.kind == .favorite : tab.spaceID == location.spaceID && tab.kind != .favorite) {
+        for tab in state.openTabs where tab.profileID == profileID && (location.section == .favorite ? tab.kind == .favorite : tab.spaceID == location.spaceID && tab.kind != .favorite) {
             let item: SidebarItemReference
             if let group = groups.first(where: { $0.tabIDs.contains(tab.id) }) {
                 guard group.sidebarAnchorID == tab.id else { continue }
@@ -978,7 +977,7 @@ enum SidebarHierarchy {
         guard let profileID = state.spaces.first(where: { $0.id == spaceID })?.profileID else { return [:] }
         let groups = SidebarSplitItems.groups(in: state, spaceID: spaceID)
         var legacy: [String: [SidebarItemReference]] = [:]
-        for tab in state.tabs where tab.archivedAt == nil && tab.profileID == profileID && tab.spaceID == spaceID && tab.kind != .favorite {
+        for tab in state.openTabs where tab.profileID == profileID && tab.spaceID == spaceID && tab.kind != .favorite {
             let item: SidebarItemReference
             if let group = groups.first(where: { $0.tabIDs.contains(tab.id) }) {
                 guard group.sidebarAnchorID == tab.id else { continue }
@@ -1182,7 +1181,7 @@ struct SidebarDuplicateTarget: Equatable {
             return SidebarHierarchy.children(in: .init(spaceID: spaceID, folderID: id, section: .pinned), state: state).allSatisfy(collect)
         }
         guard source.roots.allSatisfy(collect),
-              Set(state.tabs.filter { $0.archivedAt == nil && $0.folderID.map(folders.contains) == true }.map(\.id)).isSubset(of: Set(source.tabIDs)) else { return nil }
+              Set(state.openTabs(where: { $0.folderID.map(folders.contains) == true }).map(\.id)).isSubset(of: Set(source.tabIDs)) else { return nil }
         let groups = groupIDs.compactMap { id in source.hierarchy.groups.first { $0.id == id } }
         guard groups.count == source.groupIDs.count, Set(groupIDs) == Set(source.groupIDs), groups.allSatisfy({ group in
             group.tabIDs.count > 1 && Set(group.tabIDs).count == group.tabIDs.count
@@ -1298,7 +1297,7 @@ struct FolderRemovalTarget: Equatable {
             $0.spaceID == spaceID && $0.profileID == profileID && $0.kind != .favorite && $0.archivedAt == nil
                 && ($0.folderID == nil || $0.kind == .pinned)
                 && FolderDuplicateTarget.validSource($0.savedURL)
-        }), Set(state.tabs.filter { $0.archivedAt == nil && $0.folderID.map(folders.contains) == true }.map(\.id)).isSubset(of: Set(tabIDs)) else { return nil }
+        }), Set(state.openTabs(where: { $0.folderID.map(folders.contains) == true }).map(\.id)).isSubset(of: Set(tabIDs)) else { return nil }
         let groups = hierarchy.groups.filter { !$0.tabIDs.allSatisfy { !tabIDs.contains($0) } }
         guard groups.allSatisfy({ split in
             Set(split.tabIDs).count == split.tabIDs.count && split.tabIDs.allSatisfy(tabIDs.contains)
@@ -1373,7 +1372,7 @@ struct FolderDeletionUndo: SidebarItemsRecord {
                 return item
             })
         })
-        detachedArchive = before.tabs.filter { $0.archivedAt != nil && $0.folderID.map(target.folderIDs.contains) == true }
+        detachedArchive = before.archivedTabs(where: { $0.folderID.map(target.folderIDs.contains) == true })
         focusedTabID = selection?.originalFocus.flatMap { focus in target.tabs.contains { $0.id == focus } ? focus : nil }
     }
 
@@ -1529,8 +1528,7 @@ struct ClosedTabsUndo {
 
     init?(prompt: Prompt, ids: Set<UUID>, spaceID: UUID, profileID: UUID, focusedTabID: UUID?,
           before: BrowserState, after: BrowserState) {
-        let candidates = before.tabs.filter { ids.contains($0.id) && $0.archivedAt == nil && $0.kind == .today
-            && $0.folderID == nil && $0.spaceID == spaceID && $0.profileID == profileID }
+        let candidates = before.openTabs(where: { ids.contains($0.id) && $0.kind == .today && $0.folderID == nil && $0.spaceID == spaceID && $0.profileID == profileID })
         let archived = candidates.compactMap { original in after.tab(original.id, where: { $0.archivedAt != nil }) }
         let originals = archived.isEmpty
             ? candidates.filter { original in !after.containsTab(original.id) }
@@ -1690,9 +1688,7 @@ struct FolderRemovalSelection: Equatable {
         let current = focused ?? selected.first
         struct Item { let ids: [UUID]; let accessed: Date }
         var ordered: [Item] = [], visited = Set<UUID>(), assigned = Set<UUID>()
-        let tabs = Dictionary(uniqueKeysWithValues: state.tabs.filter {
-            $0.archivedAt == nil && $0.spaceID == space && $0.profileID == profile && $0.kind != .favorite
-        }.map { ($0.id, $0) })
+        let tabs = Dictionary(uniqueKeysWithValues: state.openTabs(where: { $0.spaceID == space && $0.profileID == profile && $0.kind != .favorite }).map { ($0.id, $0) })
         func append(_ ids: [UUID]) {
             guard !ids.isEmpty, Set(ids).count == ids.count,
                   ids.allSatisfy({ tabs[$0] != nil && !assigned.contains($0) }) else { return }
@@ -2075,14 +2071,15 @@ final class BrowserStore: ObservableObject {
             guard decoded.version == 1, !decoded.spaces.isEmpty, !decoded.profiles.isEmpty else {
                 throw CocoaError(.fileReadCorruptFile)
             }
-            state = decoded
-            for i in state.tabs.indices {
-                state.tabs[i].url = BrowserInternalURL.publicString(WhatsNewPage.relocated(state.tabs[i].url))
-                state.tabs[i].savedURL = BrowserInternalURL.publicString(WhatsNewPage.relocated(state.tabs[i].savedURL))
+            var loaded = decoded
+            for i in loaded.tabs.indices {
+                loaded.tabs[i].url = BrowserInternalURL.publicString(WhatsNewPage.relocated(loaded.tabs[i].url))
+                loaded.tabs[i].savedURL = BrowserInternalURL.publicString(WhatsNewPage.relocated(loaded.tabs[i].savedURL))
             }
-            for i in state.history.indices {
-                state.history[i].url = BrowserInternalURL.publicString(state.history[i].url)
+            for i in loaded.history.indices {
+                loaded.history[i].url = BrowserInternalURL.publicString(loaded.history[i].url)
             }
+            state = loaded
             try validateState()
             _ = state.upgradeSpaceSharing()
             let legacyFallback = defaultProfileID
@@ -2127,15 +2124,15 @@ final class BrowserStore: ObservableObject {
     var activeSplitLayout: BrowserSplitLayout? {
         SidebarSplitItems.groups(in: state, spaceID: activeSpaceID).first { $0.tabIDs == state.selectedTabIDs }
     }
-    var visibleTabs: [BrowserTab] { state.tabs.filter { $0.archivedAt == nil && ($0.kind == .favorite ? $0.profileID == activeSpace.profileID : $0.spaceID == activeSpaceID) } }
+    var visibleTabs: [BrowserTab] { state.openTabs(where: { ($0.kind == .favorite ? $0.profileID == activeSpace.profileID : $0.spaceID == activeSpaceID) }) }
     var favorites: [BrowserTab] { visibleTabs.filter { $0.kind == .favorite } }
     var pinnedTabs: [BrowserTab] { visibleTabs.filter { $0.kind == .pinned } }
     var todayTabs: [BrowserTab] { visibleTabs.filter { $0.kind == .today } }
     var folders: [BrowserFolder] { state.folders.filter { $0.spaceID == activeSpaceID } }
-    var archivedTabs: [BrowserTab] { state.tabs.filter { $0.archivedAt != nil && $0.profileID == activeSpace.profileID }.sorted { $0.archivedAt! > $1.archivedAt! } }
+    var archivedTabs: [BrowserTab] { state.archivedTabs(where: { $0.profileID == activeSpace.profileID }).sorted { $0.archivedAt! > $1.archivedAt! } }
 
     func archivedItems(profileID: UUID) -> [BrowserArchivedItem] {
-        let tabs = state.tabs.filter { $0.archivedAt != nil && $0.profileID == profileID }
+        let tabs = state.archivedTabs(where: { $0.profileID == profileID })
             .sorted { $0.archivedAt! > $1.archivedAt! }
         var consumed = Set<UUID>()
         return tabs.compactMap { tab in
@@ -2158,7 +2155,7 @@ final class BrowserStore: ObservableObject {
 
     private func archiveProvenance(for ids: Set<UUID>, reason: ArchiveReason) -> [UUID: ArchiveProvenance] {
         var result: [UUID: ArchiveProvenance] = [:]
-        for tab in state.tabs where ids.contains(tab.id) && tab.archivedAt == nil {
+        for tab in state.openTabs where ids.contains(tab.id) {
             result[tab.id] = ArchiveProvenance(reason: reason, spaceID: tab.spaceID,
                 spaceName: state.spaces.first { $0.id == tab.spaceID }?.name ?? "Space")
         }
@@ -2216,8 +2213,7 @@ final class BrowserStore: ObservableObject {
     }
 
     func deleteArchivedTabs(_ ids: Set<UUID>, profileID: UUID? = nil) {
-        let originals = state.tabs.filter { ids.contains($0.id) && $0.archivedAt != nil
-            && (profileID == nil || $0.profileID == profileID) }
+        let originals = state.archivedTabs(where: { ids.contains($0.id) && (profileID == nil || $0.profileID == profileID) })
         guard !originals.isEmpty else { return }
         let removing = Set(originals.map(\.id))
         let groups = Set(originals.map(\.profileID)).flatMap { archivedItems(profileID: $0) }
@@ -2244,7 +2240,7 @@ final class BrowserStore: ObservableObject {
     }
 
     func clearArchive(profileID: UUID) {
-        deleteArchivedTabs(Set(state.tabs.filter { $0.profileID == profileID && $0.archivedAt != nil }.map(\.id)), profileID: profileID)
+        deleteArchivedTabs(Set(state.archivedTabs(where: { $0.profileID == profileID }).map(\.id)), profileID: profileID)
     }
 
     func profilePath(for tab: BrowserTab) -> String {
@@ -2723,8 +2719,7 @@ final class BrowserStore: ObservableObject {
     func setWindowPresentation(spaceID: UUID, selectedTabIDs: [UUID],
                                splitLayout: BrowserSplitLayout? = nil) -> Bool {
         guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return false }
-        let available = Set(state.tabs.filter { $0.archivedAt == nil && $0.profileID == space.profileID
-            && ($0.kind == .favorite || $0.spaceID == spaceID) }.map(\.id))
+        let available = Set(state.openTabs(where: { $0.profileID == space.profileID && ($0.kind == .favorite || $0.spaceID == spaceID) }).map(\.id))
         var seen = Set<UUID>()
         let selected = Array(selectedTabIDs.filter { available.contains($0) && seen.insert($0).inserted }.prefix(4))
         var next = state
@@ -2768,7 +2763,7 @@ final class BrowserStore: ObservableObject {
                    selection: FolderRemovalSelection? = nil,
                    didCommit: ((BrowserState) -> Void)? = nil,
                    shouldCommit: @escaping () -> Bool, completion: ((Bool) -> Void)? = nil) {
-        let liveIDs = Set(state.tabs.filter { ids.contains($0.id) && $0.archivedAt == nil }.map(\.id))
+        let liveIDs = Set(state.openTabs(where: { ids.contains($0.id) }).map(\.id))
         let valid: () -> Bool = { [weak self] in
             guard let self else { return false }
             guard let selection else { return true }
@@ -2789,7 +2784,7 @@ final class BrowserStore: ObservableObject {
     }
 
     private func finishClosingTabs(_ ids: Set<UUID>, reason: ArchiveReason, selection: FolderRemovalSelection? = nil) {
-        let closing = state.tabs.filter { ids.contains($0.id) && $0.archivedAt == nil }.map(\.id)
+        let closing = state.openTabs(where: { ids.contains($0.id) }).map(\.id)
         guard !closing.isEmpty else { return }
         let provenance = archiveProvenance(for: Set(closing), reason: reason)
         var next = state
@@ -2842,13 +2837,13 @@ final class BrowserStore: ObservableObject {
             next.selectedTabIDs = selection.tabIDs
         } else if selection == nil, next.selectedTabIDs.isEmpty, let position = oldVisible.firstIndex(where: { ids.contains($0) }) {
             let candidates = Array(oldVisible[..<position].reversed()) + Array(oldVisible.dropFirst(position + 1))
-            let available = Set(next.tabs.filter { $0.archivedAt == nil && ($0.kind == .favorite
-                ? $0.profileID == activeSpace.profileID : $0.spaceID == activeSpaceID) }.map(\.id))
+            let available = Set(next.openTabs(where: { ($0.kind == .favorite
+                ? $0.profileID == activeSpace.profileID : $0.spaceID == activeSpaceID) }).map(\.id))
             next.selectedTabIDs = Array(candidates.filter { available.contains($0) && !ids.contains($0) }.prefix(1))
         }
         let selectedProfile = next.spaces.first { $0.id == next.activeSpaceID }?.profileID
-        let available = Set(next.tabs.filter { $0.archivedAt == nil && ($0.kind == .favorite
-            ? $0.profileID == selectedProfile : $0.spaceID == next.activeSpaceID) }.map(\.id))
+        let available = Set(next.openTabs(where: { ($0.kind == .favorite
+            ? $0.profileID == selectedProfile : $0.spaceID == next.activeSpaceID) }).map(\.id))
         var seen = Set<UUID>()
         next.selectedTabIDs = Array(next.selectedTabIDs.filter { available.contains($0) && seen.insert($0).inserted }.prefix(4))
         for index in next.tabs.indices where next.selectedTabIDs.contains(next.tabs[index].id) {
@@ -3602,12 +3597,12 @@ final class BrowserStore: ObservableObject {
         }
         guard !isEphemeral, let space = state.spaces.first(where: { $0.id == spaceID }), let available = including(state),
               InterProfileMove.profilesAvailable(space.profileID, profileID, in: available) else { completion(.success(false)); return }
-        let ids = Set(state.tabs.filter { $0.spaceID == spaceID && $0.kind != .favorite && $0.archivedAt == nil }.map(\.id))
+        let ids = Set(state.openTabs(where: { $0.spaceID == spaceID && $0.kind != .favorite }).map(\.id))
         moveAcrossProfiles(ids, proposal: { original in
             guard shouldCommit(), let current = including(original),
                   InterProfileMove.profilesAvailable(space.profileID, profileID, in: current),
                   let index = current.spaces.firstIndex(where: { $0.id == spaceID && $0.profileID == space.profileID }),
-                  Set(current.tabs.filter { $0.spaceID == spaceID && $0.kind != .favorite && $0.archivedAt == nil }.map(\.id)) == ids else { return nil }
+                  Set(current.openTabs(where: { $0.spaceID == spaceID && $0.kind != .favorite }).map(\.id)) == ids else { return nil }
             var next = current
             if let keeper = next.spaces.first(where: { $0.id != spaceID && $0.profileID == space.profileID }) {
                 for i in next.splitLayouts.indices where next.splitLayouts[i].spaceID == spaceID
@@ -4993,12 +4988,8 @@ final class BrowserStore: ObservableObject {
         }
         state.spaces[index].theme = replay && draft.theme == (draft.replayBaseTheme ?? saved) ? saved : draft.theme
         if !replay { state.activeSpaceID = space.id }
-        var favorites = Set(state.tabs.filter {
-            $0.profileID == space.profileID && $0.kind == .favorite && $0.archivedAt == nil
-        }.map { SavedTabURLComparison.key(OnboardingDraft.favoriteKey($0.savedURL)) })
-        var pinned = Set(state.tabs.filter {
-            $0.spaceID == space.id && $0.kind == .pinned && $0.archivedAt == nil
-        }.map(\.savedURL))
+        var favorites = Set(state.openTabs(where: { $0.profileID == space.profileID && $0.kind == .favorite }).map { SavedTabURLComparison.key(OnboardingDraft.favoriteKey($0.savedURL)) })
+        var pinned = Set(state.openTabs(where: { $0.spaceID == space.id && $0.kind == .pinned }).map(\.savedURL))
         for item in draft.selectedFavorites where favorites.insert(SavedTabURLComparison.key(item.url)).inserted {
             state.tabs.append(BrowserTab(id: UUID(), spaceID: space.id, profileID: space.profileID,
                 url: item.url, title: item.title, kind: .favorite, createdAt: clock(), lastAccessed: clock(),
@@ -5208,22 +5199,24 @@ final class BrowserStore: ObservableObject {
 
     private func beginFreshSession() {
         let closedAt = clock()
-        let provenance = archiveProvenance(for: Set(state.tabs.filter { $0.kind == .today && $0.archivedAt == nil }.map(\.id)), reason: .session)
-        for index in state.tabs.indices where state.tabs[index].archivedAt == nil {
-            if state.tabs[index].kind == .today {
-                let id = state.tabs[index].id
-                state.tabs[index].archiveProvenance = provenance[id]
-                state.tabs[index].archivedAt = closedAt
-                state.recentlyClosedIDs.removeAll { $0 == id }
-                state.recentlyClosedIDs.append(id)
+        let provenance = archiveProvenance(for: Set(state.openTabs(where: { $0.kind == .today }).map(\.id)), reason: .session)
+        var next = state
+        for index in next.tabs.indices where next.tabs[index].archivedAt == nil {
+            if next.tabs[index].kind == .today {
+                let id = next.tabs[index].id
+                next.tabs[index].archiveProvenance = provenance[id]
+                next.tabs[index].archivedAt = closedAt
+                next.recentlyClosedIDs.removeAll { $0 == id }
+                next.recentlyClosedIDs.append(id)
             } else {
-                state.tabs[index].url = state.tabs[index].savedURL
-                state.tabs[index].title = state.tabs[index].savedTitle
+                next.tabs[index].url = next.tabs[index].savedURL
+                next.tabs[index].title = next.tabs[index].savedTitle
             }
         }
-        state.selectedTabIDs = []
-        state.selectionBySpace = [:]
-        state.splitLayouts = []
+        next.selectedTabIDs = []
+        next.selectionBySpace = [:]
+        next.splitLayouts = []
+        state = next
     }
 
     private func normalizeSelection(selectFallback: Bool = true) {
@@ -5235,9 +5228,7 @@ final class BrowserStore: ObservableObject {
     private func normalizeSelection(in next: inout BrowserState, selectFallback: Bool = true) {
         let spaceID = next.activeSpaceID
         let space = next.spaces.first { $0.id == spaceID } ?? next.spaces[0]
-        let visible = next.tabs.filter {
-            $0.archivedAt == nil && ($0.kind == .favorite ? $0.profileID == space.profileID : $0.spaceID == spaceID)
-        }
+        let visible = next.openTabs(where: { ($0.kind == .favorite ? $0.profileID == space.profileID : $0.spaceID == spaceID) })
         let available = Set(visible.map(\.id))
         var seen = Set<UUID>()
         next.selectedTabIDs = Array(next.selectedTabIDs.filter { available.contains($0) && seen.insert($0).inserted }.prefix(4))

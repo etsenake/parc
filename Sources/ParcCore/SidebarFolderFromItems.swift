@@ -67,7 +67,7 @@ struct SidebarFolderFromItems: Equatable {
         guard parts(of: state) == (undo ? after : before) else { return nil }
         if undo {
             let moved = Set(tabIDs)
-            guard !state.tabs.contains(where: { $0.archivedAt == nil && $0.folderID == folderID && !moved.contains($0.id) }),
+            guard !state.containsOpenTab(where: { $0.folderID == folderID && !moved.contains($0.id) }),
                   !state.folders.contains(where: { $0.parentID == folderID }) else { return nil }
         }
         let target = undo ? before : after
