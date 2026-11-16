@@ -538,7 +538,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let pending = pendingNativeSelection?.tabID { shown.insert(pending) }
         for (id, browser) in browsers where !shown.contains(id) && !closingTabIDs.contains(id)
             && !transferringTabIDs.contains(id) && !peeks.values.contains(where: { $0.parentTabID == id }) {
-            guard let tab = store.state.tabs.first(where: { $0.id == id }), tab.lastAccessed < cutoff,
+            guard let tab = store.state.tab(id), tab.lastAccessed < cutoff,
                   let page = browser.nativePage, !page.isClosed,
                   page.responds(to: #selector(PCNativePage.discardIfIdle)) else { continue }
             _ = page.discardIfIdle()
@@ -1006,7 +1006,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let spaceID = activeSpaceID
         let profileID = activeProfileID
         let originalPage = tabID.flatMap { browsers[$0]?.nativePage }
-        let originalURL = tabID.flatMap { id in store.state.tabs.first { $0.id == id }?.url }
+        let originalURL = tabID.flatMap { id in store.state.tab(id)?.url }
         let revision = UUID()
         if let tabID { inputRevisions[tabID] = revision }
         PCNativeBrowserApplication.resolveSearchInput(input,
@@ -1017,7 +1017,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 if let tabID {
                     guard self.currentTabID == tabID, self.inputRevisions[tabID] == revision,
                           self.browsers[tabID]?.nativePage === originalPage,
-                          self.store.state.tabs.first(where: { $0.id == tabID })?.url == originalURL else { return }
+                          self.store.state.tab(tabID)?.url == originalURL else { return }
                     self.inputRevisions.removeValue(forKey: tabID)
                 }
                 guard let navigation else {
@@ -1303,10 +1303,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             sidebar.prepareTabActivation = { [weak self] expected in
                 guard let self, targetValid(), expected.spaceID == id,
-                      self.store.state.tabs.contains(where: { $0.id == expected.id && $0.spaceID == id && $0.profileID == expected.profileID && $0.archivedAt == nil }),
+                      self.store.state.containsTab(expected.id, where: { $0.spaceID == id && $0.profileID == expected.profileID && $0.archivedAt == nil }),
                       self.canUseOrMoveHere(expected.id) else { return nil }
                 return { [weak self] in
-                    guard let self, targetValid(), self.store.state.tabs.contains(where: { $0.id == expected.id && $0.spaceID == id && $0.profileID == expected.profileID && $0.archivedAt == nil }),
+                    guard let self, targetValid(), self.store.state.containsTab(expected.id, where: { $0.spaceID == id && $0.profileID == expected.profileID && $0.archivedAt == nil }),
                           self.canUseOrMoveHere(expected.id), self.selectSpaceFromUser(id, profileID: expected.profileID) else { return false }
                     self.closeLibrary(restoreFocus: false); self.selectTab(expected.id); return true
                 }
@@ -1318,7 +1318,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let self, targetValid(), expected.spaceID == id, self.canCloseOrMoveHere(expected.id),
                       self.retirementUnavailableReason?([expected.id]) == nil else { return nil }
                 return { [weak self] in
-                    guard let self, targetValid(), self.store.state.tabs.contains(where: { $0.id == expected.id && $0.spaceID == id && $0.profileID == expected.profileID && $0.archivedAt == nil }),
+                    guard let self, targetValid(), self.store.state.containsTab(expected.id, where: { $0.spaceID == id && $0.profileID == expected.profileID && $0.archivedAt == nil }),
                           self.canCloseOrMoveHere(expected.id), self.retirementUnavailableReason?([expected.id]) == nil else { return false }
                     return self.closeTabMovingHere(expected.id)
                 }
@@ -1565,11 +1565,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 restored += store.restoreArchivedTab(item.id, profileID: profileID, destination: destination)
             }
         }
-        guard let first = restored.first, let tab = store.state.tabs.first(where: { $0.id == first }),
+        guard let first = restored.first, let tab = store.state.tab(first),
               let space = store.state.spaces.first(where: { $0.id == tab.spaceID }) else { return }
         showToast(.tabRestored(to: space.name, selected: selectedTabIDs.contains(first)), at: .window, onTap: { [weak self] in
             guard let self, self.activeProfileID == profileID,
-                  let tab = self.store.state.tabs.first(where: { $0.id == first && $0.archivedAt == nil }) else { return }
+                  let tab = self.store.state.tab(first, where: { $0.archivedAt == nil }) else { return }
             if tab.spaceID != self.activeSpaceID, !self.selectSpaceFromUser(tab.spaceID, profileID: profileID) { return }
             self.closeLibrary(restoreFocus: false)
             _ = self.selectTab(first)
@@ -1583,7 +1583,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func openSplitHomes(_ ids: [UUID: UUID], profileID: UUID, originatingSpaceID: UUID) {
         guard let window else { return }
         for homeID in ids.values {
-            guard let home = store.state.tabs.first(where: { $0.id == homeID }) else { continue }
+            guard let home = store.state.tab(homeID) else { continue }
             openDuplicatedChildren([homeID], spaceID: home.spaceID, profileID: profileID,
                 window: window, originatingSpaceID: originatingSpaceID)
         }
@@ -1596,7 +1596,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let retry = transferRecoveries[id] { retry(); return false }
         guard presentation.isReady else { return false }
         let members: [UUID] = {
-            guard !extendingSplit, let tab = store.state.tabs.first(where: { $0.id == id }) else { return [id] }
+            guard !extendingSplit, let tab = store.state.tab(id) else { return [id] }
             let space = tab.kind == .favorite ? activeSpaceID : tab.spaceID
             return SidebarSplitItems.groups(in: store.state, spaceID: space).first { $0.tabIDs.contains(id) }?.tabIDs ?? [id]
         }()
@@ -1619,7 +1619,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         } else {
             let previous = selectedTabIDs
             let expected: [UUID] = {
-                guard let tab = store.state.tabs.first(where: { $0.id == id }) else { return [id] }
+                guard let tab = store.state.tab(id) else { return [id] }
                 let space = tab.kind == .favorite ? activeSpaceID : tab.spaceID
                 return SidebarSplitItems.groups(in: store.state, spaceID: space)
                     .first { $0.tabIDs.contains(id) }?.tabIDs ?? [id]
@@ -2044,7 +2044,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let sourceWindow = window, browser.window === sourceWindow,
               let destinationWindow = destination.window, destinationWindow !== sourceWindow,
               let binding = destination.nativeBinding,
-              let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+              let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
               tab.profileID == browserProfiles[id], tab.profileID == destination.activeProfileID,
               page.profilePath == store.independentEngineProfilePath(for: tab.profileID),
               destination.browsers[id] == nil,
@@ -2171,7 +2171,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 if focusedTabID == id { focusedTabID = presentation.preferredFocusedTabID }
                 destination.browsers[id] = browser
                 destination.browserProfiles[id] = tab.profileID
-                destination.liveTabModels[id] = store.state.tabs.first { $0.id == id } ?? tab
+                destination.liveTabModels[id] = store.state.tab(id) ?? tab
                 destination.requestedURLs[id] = request ?? tab.url
                 destination.zoomLevels[id] = zoom
                 destination.failures.removeValue(forKey: id)
@@ -2263,7 +2263,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               PCNativeBrowserApplication.owner(of: peek.page) === sourceBinding,
               let destinationWindow = destination.window, destinationWindow !== sourceWindow,
               let binding = destination.nativeBinding,
-              let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+              let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
               tab.profileID == browserProfiles[id], tab.profileID == destination.activeProfileID,
               page.profilePath == store.independentEngineProfilePath(for: tab.profileID),
               peek.page.profilePath == page.profilePath, destination.browsers[id] == nil,
@@ -2374,7 +2374,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if !page.isClosed {
                 destination.browsers[id] = browser
                 destination.browserProfiles[id] = tab.profileID
-                destination.liveTabModels[id] = store.state.tabs.first { $0.id == id } ?? tab
+                destination.liveTabModels[id] = store.state.tab(id) ?? tab
                 destination.requestedURLs[id] = request ?? tab.url
                 destination.zoomLevels[id] = zoom
                 destination.failures.removeValue(forKey: id)
@@ -2462,7 +2462,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private var currentBrowser: PCBrowserView? {
         if let peek = activePeek { return peek.browser }
-        guard let id = currentTabID, !transferringTabIDs.contains(id), let tab = store.state.tabs.first(where: { $0.id == id }),
+        guard let id = currentTabID, !transferringTabIDs.contains(id), let tab = store.state.tab(id),
               !InternalPage.isInternal(tab.url) else { return nil }
         return browsers[id]
     }
@@ -2701,7 +2701,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   let folder = store.state.folders.first(where: { $0.id == id && $0.spaceID == activeSpaceID }) else { return nil }
             let orderedIDs = SidebarHierarchy.tabIDs(in: .folder(id), state: store.state, spaceID: activeSpaceID)
             let rows = orderedIDs.compactMap { tabID -> SidebarPreviewRow? in
-                guard let tab = store.state.tabs.first(where: { $0.id == tabID }) else { return nil }
+                guard let tab = store.state.tab(tabID) else { return nil }
                 guard tab.archivedAt == nil, tab.spaceID == activeSpaceID, tab.profileID == profileID,
                       tab.kind != .favorite, !store.retiringTabIDs.contains(tab.id), !closingTabIDs.contains(tab.id),
                       !transferringTabIDs.contains(tab.id),
@@ -3029,16 +3029,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         defer { rendering = false }
         let liveIDs = Set(state.tabs.filter { $0.archivedAt == nil }.map(\.id))
         for id in Array(browsers.keys) where !liveIDs.contains(id)
-            || state.tabs.first(where: { $0.id == id })?.profileID != browserProfiles[id]
-            || state.tabs.first(where: { $0.id == id }).map({ InternalPage.isInternal($0.url) }) == true {
+            || state.tab(id)?.profileID != browserProfiles[id]
+            || state.tab(id).map({ InternalPage.isInternal($0.url) }) == true {
             retireBrowserAfterModelChange(id)
         }
         for id in Array(noteEditors.keys) {
             guard let cached = noteEditors[id] else { continue }
-            let tab = state.tabs.first { $0.id == id && $0.archivedAt == nil }
+            let tab = state.tab(id, where: { $0.archivedAt == nil })
             if tab?.profileID != cached.profileID || tab.flatMap({ InternalPage(urlString: $0.url)?.noteID }) != cached.documentID {
                 guard cached.editor.prepareToClose() else {
-                    _ = store.restoreLiveTab(cached.originalTab, replacing: store.state.tabs.first { $0.id == id })
+                    _ = store.restoreLiveTab(cached.originalTab, replacing: store.state.tab(id))
                     continue
                 }
                 cached.editor.view.removeFromSuperview(); noteEditors.removeValue(forKey: id)
@@ -3049,7 +3049,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         for id in Array(easelEditors.keys) {
             guard let cached = easelEditors[id] else { continue }
-            let tab = state.tabs.first { $0.id == id && $0.archivedAt == nil }
+            let tab = state.tab(id, where: { $0.archivedAt == nil })
             if tab?.profileID != cached.profileID || tab.flatMap({ InternalPage(urlString: $0.url)?.easelID }) != cached.documentID {
                 if !embeddedEaselPages(forTabID: id).isEmpty {
                     retireEaselAfterModelChange(id, cached: cached); continue
@@ -3072,7 +3072,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             pane.removeFromSuperview(); panes.removeValue(forKey: id)
             if renderedPaneIDs.contains(id) { renderedPaneIDs = [] }
         }
-        let selected = presentation.displayedTabIDs.compactMap { id in state.tabs.first { $0.id == id && $0.archivedAt == nil } }
+        let selected = presentation.displayedTabIDs.compactMap { id in state.tab(id, where: { $0.archivedAt == nil }) }
         let displayed = nativeFullscreenTabID.map { id in selected.filter { $0.id == id } } ?? selected
         let displayedIDs = displayed.map(\.id)
         shownSinceArrival.formIntersection(returnableIDs)
@@ -3135,7 +3135,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         }
         for (id, browser) in browsers where !closingTabIDs.contains(id) {
-            if let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+            if let tab = state.tab(id, where: { $0.archivedAt == nil }),
                tab.profileID == browserProfiles[id], !InternalPage.isInternal(tab.url) {
                 liveTabModels[id] = tab
                 if browser.nativePage?.isClosed == true { releaseClosedTab(id, updateSavedTab: false) }
@@ -3188,7 +3188,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func panesMissingTheirPage() -> Bool {
         let placeholderIDs = presentation.displayedPlaceholders
         for id in presentation.displayedTabIDs {
-            guard let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+            guard let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
                   !placeholderIDs.contains(id), !(closingTabIDs.contains(id) && easelEditors[id] != nil),
                   ownership.canUse(id, owner: presentationID), let pane = panes[id],
                   !InternalPage.isInternal(tab.url), !rendersBlank(tab) else { continue }
@@ -3247,7 +3247,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let presentedRevision = store.stateRevision
         let state = presentation.projected(sharedState)
         for (id, browser) in browsers where !closingTabIDs.contains(id) {
-            if let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+            if let tab = state.tab(id, where: { $0.archivedAt == nil }),
                tab.profileID == browserProfiles[id], !InternalPage.isInternal(tab.url) {
                 liveTabModels[id] = tab
                 if browser.nativePage?.isClosed == true { releaseClosedTab(id, updateSavedTab: false) }
@@ -3374,7 +3374,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         guard let self, let editor, let binding,
                               self.easelEditors[tab.id]?.editor === editor,
                               binding === self.nativeBinding, editor.view.window === self.window,
-                              let actual = self.store.state.tabs.first(where: { $0.id == tab.id && $0.archivedAt == nil }),
+                              let actual = self.store.state.tab(tab.id, where: { $0.archivedAt == nil }),
                               actual.profileID == tab.profileID,
                               InternalPage(urlString: actual.url)?.easelID == documentID,
                               !self.store.isProfileRemovalPending(tab.profileID),
@@ -3545,7 +3545,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private func reloadTab(_ id: UUID) {
         failures.removeValue(forKey: id); easelFailures.removeValue(forKey: id)
-        if let tab = store.state.tabs.first(where: { $0.id == id }), InternalPage.isInternal(tab.url) {
+        if let tab = store.state.tab(id), InternalPage.isInternal(tab.url) {
             if let cached = easelEditors[id] {
                 cached.editor.refreshPageVisibility(); render(store.state); return
             }
@@ -3782,14 +3782,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private func isSidebarFaviconTabVisible(_ id: UUID) -> Bool {
         let spaceID = activeSpaceID, profileID = activeProfileID
-        return store.state.tabs.contains { $0.id == id && $0.archivedAt == nil && $0.profileID == profileID
-            && ($0.kind == .favorite || $0.spaceID == spaceID) }
+        return store.state.containsTab(id, where: { $0.archivedAt == nil && $0.profileID == profileID
+            && ($0.kind == .favorite || $0.spaceID == spaceID) })
     }
     private func sidebarFaviconTabMatches(_ expected: BrowserTab) -> Bool {
-        store.state.tabs.contains {
-            $0.id == expected.id && $0.url == expected.url && $0.profileID == expected.profileID
-                && $0.archivedAt == nil
-        }
+        store.state.containsTab(expected.id, where: { $0.url == expected.url && $0.profileID == expected.profileID
+                && $0.archivedAt == nil })
     }
     private func sidebarSavedFaviconIsCurrent(_ expected: BrowserTab, spaceID: UUID) -> Bool {
         !isClosing && !wholeWindowClose && presentation.isReady && activeSpaceID == spaceID
@@ -5186,7 +5184,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if let id = commandTab {
                 return !self.closingTabIDs.contains(id) && !self.modelRetirementIDs.contains(id)
                     && !self.store.retiringTabIDs.contains(id)
-                    && self.store.state.tabs.contains { $0.id == id && $0.profileID == commandProfile && $0.archivedAt == nil }
+                    && self.store.state.containsTab(id, where: { $0.profileID == commandProfile && $0.archivedAt == nil })
             }
             return true
         }
@@ -5295,7 +5293,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         let copyDestinations: (CommandBarFolderMove) -> SidebarCopySources? = { [weak self] move in
             guard canMoveToFolder(move), let self else { return nil }
-            let originals = move.tabIDs.compactMap { id in self.store.state.tabs.first { $0.id == id } }
+            let originals = move.tabIDs.compactMap { id in self.store.state.tab(id) }
             guard originals.count == move.tabIDs.count,
                   let urls = self.resolveSidebarCopyDestinations?(originals), urls.validates(originals) else { return nil }
             return urls
@@ -5607,7 +5605,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 spaceID: spaceID, profileID: profileID, expectedSelection: selection, creation: creation)
             if inserted { presentation.recordCreation(id, state: store.state) }
         }
-        guard inserted, let tab = store.state.tabs.first(where: { $0.id == id }),
+        guard inserted, let tab = store.state.tab(id),
               ownership.claim(id, owner: presentationID) else {
             pendingSearchNavigations.removeValue(forKey: id)
             completion("The original destination changed."); return
@@ -5626,7 +5624,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   self.selectedTabIDs == selection, self.ownership.canUse(id, owner: self.presentationID),
                   !self.closingTabIDs.contains(id), !self.store.retiringTabIDs.contains(id),
                   !self.modelRetirementIDs.contains(id), !self.transferringTabIDs.contains(id) else { return false }
-            return self.store.state.tabs.contains { $0.id == id && $0.spaceID == spaceID && $0.profileID == profileID && $0.archivedAt == nil }
+            return self.store.state.containsTab(id, where: { $0.spaceID == spaceID && $0.profileID == profileID && $0.archivedAt == nil })
         }) { [weak self, weak browser] success, error in
             MainActor.assumeIsolated {
                 guard let self, let browser, self.browsers[id] === browser else { completion("The background page owner closed."); return }
@@ -5832,7 +5830,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let page = navigationPage { return page.canPerformNavigation(action) }
         return action == .reload && !isClosing && !wholeWindowClose && !windowClosePending &&
             libraryView == nil && activePeek == nil && window?.attachedSheet == nil &&
-            currentTabID.flatMap { id in store.state.tabs.first { $0.id == id } }
+            currentTabID.flatMap { id in store.state.tab(id) }
                 .map { InternalPage.isInternal($0.url) } == true
     }
     private func performNavigation(_ action: PCNativeNavigationAction) {
@@ -6762,7 +6760,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               !destination.isClosing, !destination.wholeWindowClose, destination.transferringTabIDs.isEmpty,
               destination.collectionTransfer == nil, destination.nativeFullscreenTabID == nil,
               let destinationWindow = destination.window, destinationWindow !== window, destination.nativeBinding != nil,
-              let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+              let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
               tab.profileID == destination.activeProfileID, destination.browsers[id] == nil else { return false }
         if browsers[id] == nil, noteEditors[id] != nil || easelEditors[id] != nil {
             return !destination.isPrivateBrowsing && !destination.store.isEphemeral && destination.presentation.isReady
@@ -7021,8 +7019,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let id = UUID()
         prepareStoreContext()
         guard store.separateFromPinnedTab(expected, todayID: id, title: browser.title),
-              let tab = store.state.tabs.first(where: { $0.id == id }),
-              let reset = store.state.tabs.first(where: { $0.id == expected.id }) else { return false }
+              let tab = store.state.tab(id),
+              let reset = store.state.tab(expected.id) else { return false }
         let source = panes[expected.id]
         binding.pageWillDetach(page)
         source?.browser = nil
@@ -7054,7 +7052,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         panes[id] = pane; attachedPageIDs.insert(page.identifier)
         render(store.state); requestNativeSelection()
         DispatchQueue.main.async { [weak self] in
-            guard let self, !self.isClosing, let tab = self.store.state.tabs.first(where: { $0.id == id }) else { return }
+            guard let self, !self.isClosing, let tab = self.store.state.tab(id) else { return }
             let other = tab.spaceID != self.activeSpaceID ? self.store.state.spaces.first { $0.id == tab.spaceID }?.name : nil
             self.showToast(.backgroundTabCreated(inSpace: other, document: InternalPage.isInternal(tab.url)),
                            onTap: { [weak self] in _ = self?.selectTab(id) })
@@ -7121,10 +7119,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         closeTabsWithReopen(ids, reason: reason, undo: undo, shouldCommit: { [weak self] in
             guard let self, !self.isClosing, !self.wholeWindowClose,
                   self.activeSpaceID == originSpace, self.activeProfileID == originProfile else { return false }
-            return ids.allSatisfy { id in self.store.state.tabs.contains {
-                $0.id == id && $0.archivedAt == nil && $0.kind == .today
-                    && $0.spaceID == spaceID && $0.profileID == profileID
-            } }
+            return ids.allSatisfy { id in self.store.state.containsTab(id, where: { $0.archivedAt == nil && $0.kind == .today
+                    && $0.spaceID == spaceID && $0.profileID == profileID }) }
         }) { [weak self] allowed in
             guard let self, allowed, !self.isClosing else { return }
             for id in ids { self.presentation.remove(id) }
@@ -7158,7 +7154,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }, didUndo: { [weak self] undone in
             guard let self else { return }
             self.store.closedPageHistory.restore(undone.tabs.map(\.id).filter { id in
-                self.store.state.tabs.contains { $0.id == id && $0.archivedAt == nil }
+                self.store.state.containsTab(id, where: { $0.archivedAt == nil })
             })
             let focused = self.presentation.finishClosedTabsUndo(undone, state: self.store.state,
                 available: { self.switcherCanUse($0) })
@@ -7226,7 +7222,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     available: { self.switcherCanUse($0) })
                 if applied { self.focusedTabID = nextSelection.focusedTabID }
                 for id in ids where !self.selectedTabIDs.contains(id)
-                    && self.store.state.tabs.contains(where: { $0.id == id && $0.archivedAt == nil }) {
+                    && self.store.state.containsTab(id, where: { $0.archivedAt == nil }) {
                     if let note = self.noteEditors[id], note.editor.prepareToClose() {
                         note.editor.view.removeFromSuperview(); self.noteEditors.removeValue(forKey: id)
                     }
@@ -7309,7 +7305,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               PCNativePage.instancesRespond(to: #selector(PCNativePage.archivedNavigationState)) else { return }
         for id in ids where !closingTabIDs.contains(id) {
             guard let page = browsers[id]?.nativePage, !page.isClosed,
-                  let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+                  let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
                   tab.profileID == browserProfiles[id],
                   let navigation = page.archivedNavigationState() else { continue }
             archive.store(.init(url: tab.url, profileID: tab.profileID, navigation: navigation), for: id)
@@ -7390,7 +7386,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         pendingSearchNavigations.removeValue(forKey: id)
         inputRevisions.removeValue(forKey: id)
         if let retry = transferRecoveries[id] { retry(); return }
-        guard browsers[id] != nil || panes[id] != nil || store.state.tabs.contains(where: { $0.id == id }) else { return }
+        guard browsers[id] != nil || panes[id] != nil || store.state.containsTab(id) else { return }
         if pendingNativeSelection?.tabID == id { pendingNativeSelection = nil }
         if let browser = browsers.removeValue(forKey: id) {
             if let page = browser.nativePage { attachedPageIDs.remove(page.identifier) }
@@ -7417,7 +7413,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         guard !closingTabIDs.contains(id), !transferringTabIDs.contains(id), let browser = browsers[id] else { return }
         let original = liveTabModels[id]
-        let expected = store.state.tabs.first { $0.id == id }
+        let expected = store.state.tab(id)
         closingTabIDs.insert(id); modelRetirementIDs.insert(id)
         browser.requestClose { [weak self, weak browser] result in
             guard let self, let browser, self.browsers[id] === browser else { return }
@@ -7593,13 +7589,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private func retireEaselAfterModelChange(_ id: UUID, cached: EaselPane) {
         guard !closingTabIDs.contains(id), let objects = cached.editor.pageObjects else { return }
-        let pages = objects.pages, expected = store.state.tabs.first { $0.id == id }
+        let pages = objects.pages, expected = store.state.tab(id)
         closingTabIDs.insert(id); modelRetirementIDs.insert(id)
         PCNativeBrowserApplication.requestClosePages(pages, shouldCommit: { [weak self, weak objects] in
             MainActor.assumeIsolated {
                 guard let self, let objects else { return false }
                 return !self.isClosing && self.easelEditors[id]?.editor.pageObjects === objects
-                    && self.store.state.tabs.first(where: { $0.id == id }) == expected
+                    && self.store.state.tab(id) == expected
             }
         }, completion: { [weak self, weak objects] allowed in
             MainActor.assumeIsolated {
@@ -7672,7 +7668,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard nativeBrowser(browser, canRouteCurrentLinkFrom: page),
               ["http", "https"].contains(targetURL.scheme?.lowercased() ?? ""),
               let id = browsers.first(where: { $0.value.nativePage === page })?.key,
-              let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+              let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
               tab.profileID == activeProfileID else { return nil }
         if selectedTabIDs.count == 1 && (tab.kind == .favorite || tab.kind == .pinned) {
             guard let targetHost = targetURL.host,
@@ -7693,7 +7689,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func nativeBrowser(_ browser: PCNativeBrowserWindow, authenticationReturnURLFor page: PCNativePage) -> URL? {
         guard browser === nativeBinding,
               let id = browsers.first(where: { $0.value.nativePage === page })?.key,
-              let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+              let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
               tab.kind == .favorite || tab.kind == .pinned else { return nil }
         return URL(string: tab.savedURL)
     }
@@ -7736,7 +7732,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let targetHost = targetURL.host,
               let currentHost = page.url?.host,
               let id = browsers.first(where: { $0.value.nativePage === page })?.key,
-              let tab = store.state.tabs.first(where: { $0.id == id }),
+              let tab = store.state.tab(id),
               let savedHost = URL(string: tab.savedURL)?.host else { return false }
         return targetHost != currentHost && targetHost != savedHost
     }
@@ -7751,7 +7747,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard nativeBrowser(browser, canPresentPeekFrom: page), selectedTabIDs.count == 1,
               ["http", "https"].contains(targetURL.scheme?.lowercased() ?? ""),
               let id = browsers.first(where: { $0.value.nativePage === page })?.key,
-              let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+              let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
               tab.profileID == activeProfileID else { return false }
         return tab.kind == .favorite || tab.kind == .pinned
     }
@@ -7787,7 +7783,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return true
         }
         guard archivePreviewRequest == nil, peekUndoOpen == nil, activePeek == nil, let binding = nativeBinding,
-              let current = currentTabID, store.state.tabs.contains(where: { $0.id == current && $0.archivedAt == nil }),
+              let current = currentTabID, store.state.containsTab(current, where: { $0.archivedAt == nil }),
               let parent = browsers[current]?.nativePage, selectedNativePage() === parent,
               PCNativePage.instancesRespond(to: #selector(PCNativePage.openPeek(url:))),
               canHostPeek(binding, over: parent, overLibrary: true),
@@ -7827,7 +7823,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard admitted, request == nil || archive != nil,
               let id = browsers.first(where: { $0.value.nativePage === parent })?.key,
               let profile = browserProfiles[id],
-              let parentTab = store.state.tabs.first(where: { $0.id == id }),
+              let parentTab = store.state.tab(id),
               page.profilePath == parent.profilePath,
               parent.profilePath == store.independentEngineProfilePath(for: profile),
               archive.map({ $0.profileID == profile && store.archivePreviewIsValid($0) }) ?? true,
@@ -7914,7 +7910,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard peeks[peek.page.identifier] === peek, !isPopupWindow,
               !isClosing, !wholeWindowClose,
               PCNativePage.instancesRespond(to: #selector(PCNativePage.openPeek(url:))),
-              let parent = store.state.tabs.first(where: { $0.id == peek.parentTabID && $0.archivedAt == nil })
+              let parent = store.state.tab(peek.parentTabID, where: { $0.archivedAt == nil })
         else { redo?.done(nil); return }
         let record = ClosedPeekRecord(id: UUID(), url: url, parentTabID: parent.id, profileID: parent.profileID)
         if let history = peek.dismissedNavigationState { store.closedPageHistory.closed(record.id, state: history) }
@@ -8074,7 +8070,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func peekPromotionDestination(_ peek: PeekController) -> BrowserSpace? {
         guard activePeek === peek, peek.canInteract?() == true,
-              let parent = store.state.tabs.first(where: { $0.id == peek.parentTabID && $0.archivedAt == nil }),
+              let parent = store.state.tab(peek.parentTabID, where: { $0.archivedAt == nil }),
               let space = store.state.spaces.first(where: { $0.id == activeSpaceID }),
               space.profileID == parent.profileID, space.profileID == activeProfileID,
               peek.page.profilePath == store.independentEngineProfilePath(for: space.profileID) else { return nil }
@@ -8123,9 +8119,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             destinationID = peek.sourceSpaceID
         } else {
             guard let destination = peekPromotionDestination(peek),
-                  let parent = store.state.tabs.first(where: {
-                      $0.id == peek.parentTabID && $0.archivedAt == nil
-                  }), browsers[parent.id]?.nativePage === peek.parentPage,
+                  let parent = store.state.tab(peek.parentTabID, where: { $0.archivedAt == nil }), browsers[parent.id]?.nativePage === peek.parentPage,
                   !peek.parentPage.isClosed,
                   PCNativeBrowserApplication.owner(of: peek.parentPage) === binding,
                   PCNativeBrowserApplication.owner(of: peek.page) === binding,
@@ -8147,7 +8141,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard let id = restored?.first ?? store.adoptNativePage(url: peek.browser.url, title: peek.browser.title,
               profilePath: peek.page.profilePath, preferredSpaceID: destinationID, select: false,
               creation: creation),
-              let tab = store.state.tabs.first(where: { $0.id == id }) else { return }
+              let tab = store.state.tab(id) else { return }
         binding.pageWillDetach(peek.page)
         let pane = makePane(tab)
         let view = peek.browser
@@ -8215,7 +8209,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func closePageAndPeeks(_ id: UUID, page: PCNativePage, updateSavedTab: Bool) {
         guard !closingTabIDs.contains(id), !wholeWindowClose, !isClosing,
               !transferringTabIDs.contains(id) else { return }
-        let original = liveTabModels[id], expected = store.state.tabs.first { $0.id == id }
+        let original = liveTabModels[id], expected = store.state.tab(id)
         let children = peekPages(forTabID: id)
         peekRetirementParents.insert(id)
         closingTabIDs.insert(id)
@@ -8268,7 +8262,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var historySwipePages: [PCNativePage] {
         let peek = activePeek
         let panes = renderedPaneIDs.map { id in
-            let tab = store.state.tabs.first(where: { $0.id == id })
+            let tab = store.state.tab(id)
             let browser = tab == nil ? nil : browsers[id]
             return HistorySwipeTargets.Pane(easelPage: easelEditors[id]?.editor.pageObjects?.selectedPage,
                                             page: browser?.nativePage,
@@ -8445,7 +8439,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard ownership.canAdopt(page.identifier), let id = store.adoptNativePage(url: page.url, title: page.title, profilePath: page.profilePath,
                                             preferredSpaceID: routedSpaceID ?? activeSpaceID,
                                             select: false, creation: creation, insertion: insertion),
-              let tab = store.state.tabs.first(where: { $0.id == id }),
+              let tab = store.state.tab(id),
               ownership.claim(id, owner: presentationID, page: page.identifier) else { return nil }
         let pane = makePane(tab)
         let view = PCBrowserView(frame: pageHost.bounds, adoptingNativePage: page)
@@ -8563,7 +8557,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               ownership.isClaimed(id), ownership.canUse(id, owner: presentationID),
               !closingTabIDs.contains(id), !modelRetirementIDs.contains(id),
               !store.retiringTabIDs.contains(id), page.observer === view, view.delegate === self,
-              let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+              let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
               browserProfiles[id] == tab.profileID,
               page.profilePath == store.independentEngineProfilePath(for: tab.profileID),
               let window, binding.window === window, view.window === window else { return nil }
@@ -8583,7 +8577,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard browser === nativeBinding else { return }
         if let peek = activePeek, peek.browser.url == url { promotePeek(peek, split: false) }
         if let id = currentTabID, activePeek == nil, currentBrowser?.url == url {
-            if store.state.tabs.first(where: { $0.id == id })?.kind == .favorite { _ = moveFavoriteToPinned(id) }
+            if store.state.tab(id)?.kind == .favorite { _ = moveFavoriteToPinned(id) }
             else { store.setKind(id, .pinned) }
         }
         else { performWindowCommand { store.importBookmarks([(title: url.host ?? url.absoluteString, url: url.absoluteString)]) } }
@@ -8644,7 +8638,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func togglePinFocusedTab() {
         guard !isPrivateBrowsing else { return }
         if let peek = activePeek { promotePeek(peek, split: false); guard activePeek == nil else { return } }
-        guard let id = currentTabID, let tab = store.state.tabs.first(where: { $0.id == id }) else { return }
+        guard let id = currentTabID, let tab = store.state.tab(id) else { return }
         if tab.kind == .favorite { _ = moveFavoriteToPinned(id) }
         else { store.setKind(id, tab.kind == .pinned ? .today : .pinned) }
     }
@@ -9375,7 +9369,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   source.ownership.isCurrent(reservation, closed: closed) else { presentRecovery(); return }
             for id in plan.tabIDs {
                 guard let page = pages[id], !page.isClosed, let browser = wrappers[id],
-                      let tab = source.store.state.tabs.first(where: { $0.id == id }) else { continue }
+                      let tab = source.store.state.tab(id) else { continue }
                 let pane = target.panes[id] ?? target.makePane(tab)
                 target.panes[id] = pane
                 if pane.superview == nil { target.parkedPages.addSubview(pane) }
@@ -9387,7 +9381,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                       PCNativeBrowserApplication.owner(of: page) === target.nativeBinding else { presentRecovery(); return }
             }
             for id in plan.tabIDs {
-                guard let easel = easels[id], let tab = source.store.state.tabs.first(where: { $0.id == id }) else { continue }
+                guard let easel = easels[id], let tab = source.store.state.tab(id) else { continue }
                 let pane = target.panes[id] ?? target.makePane(tab); target.panes[id] = pane
                 if pane.superview == nil { target.parkedPages.addSubview(pane) }
                 pane.showNativeContent(easel.editor.view)
@@ -9411,7 +9405,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             if committed {
                 for id in plan.tabIDs {
-                    guard let tab = source.store.state.tabs.first(where: { $0.id == id }) else { continue }
+                    guard let tab = source.store.state.tab(id) else { continue }
                     if let browser = wrappers[id], let page = pages[id], !page.isClosed {
                         destination.browsers[id] = browser; browser.delegate = destination
                         destination.browserProfiles[id] = tab.profileID; destination.liveTabModels[id] = tab
@@ -9562,7 +9556,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard self.browsers[id] === browser, browser.nativePage === page else { return false }
                 if let page {
                     guard !page.isClosed, PCNativeBrowserApplication.owner(of: page) === self.nativeBinding,
-                          browser.window === window, let tab = self.store.state.tabs.first(where: { $0.id == id }),
+                          browser.window === window, let tab = self.store.state.tab(id),
                           tab.profileID == self.browserProfiles[id],
                           page.profilePath == self.store.independentEngineProfilePath(for: tab.profileID) else { return false }
                 }
@@ -10096,7 +10090,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   !store.isProfileRemovalPending(profileID), !store.retiringTabIDs.contains(id),
                   !closingTabIDs.contains(id), !transferringTabIDs.contains(id),
                   browsers[id] == nil,
-                  let tab = store.state.tabs.first(where: { $0.id == id && ($0.spaceID == spaceID || $0.kind == .favorite)
+                  let tab = store.state.tab(id, where: { ($0.spaceID == spaceID || $0.kind == .favorite)
                       && $0.profileID == profileID && $0.archivedAt == nil }),
                   FolderDuplicateTarget.validDestination(tab.url), let url = URL(string: tab.url),
                   ownership.claim(id, owner: presentationID) else { continue }
@@ -10133,7 +10127,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let self, let editor, self.noteEditors[id]?.editor === editor,
                       self.noteEditors[id]?.documentID == documentID,
                       self.noteEditors[id]?.profileID == profileID,
-                      let tab = self.store.state.tabs.first(where: { $0.id == id }),
+                      let tab = self.store.state.tab(id),
                       tab.profileID == profileID, InternalPage(urlString: tab.url)?.noteID == documentID else { return false }
                 return editor.canAcceptExternalSplitDrop
             })
@@ -10144,7 +10138,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let self, let editor, self.easelEditors[id]?.editor === editor,
                       self.easelEditors[id]?.documentID == documentID,
                       self.easelEditors[id]?.profileID == profileID,
-                      let tab = self.store.state.tabs.first(where: { $0.id == id }),
+                      let tab = self.store.state.tab(id),
                       tab.profileID == profileID, InternalPage(urlString: tab.url)?.easelID == documentID else { return false }
                 return editor.canAcceptExternalSplitDrop
             })
@@ -10159,7 +10153,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let window, window.isKeyWindow || otherWindow,
               let url = ExternalSplitDropSession.readURL(info.draggingPasteboard),
               selectedTabIDs.allSatisfy({ id in
-                  store.state.tabs.contains { $0.id == id && $0.archivedAt == nil } &&
+                  store.state.containsTab(id, where: { $0.archivedAt == nil }) &&
                   peekPages(forTabID: id).isEmpty
               }) else { return nil }
         let selection = selectedTabIDs, layout = activeSplitLayout
@@ -10178,7 +10172,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let bounds = pageHost.bounds, hostFrame = pageHost.frame, windowFrame = window.frame
         let identities = selection.compactMap { splitPaneIdentity($0) }
         let frames = selection.compactMap { panes[$0].map { $0.content.convert($0.content.bounds, to: pageHost) } }
-        let originalTabs = selection.compactMap { id in store.state.tabs.first { $0.id == id } }
+        let originalTabs = selection.compactMap { id in store.state.tab(id) }
         let tabID = UUID(), savedHomeID = UUID()
         let hierarchy = SidebarHierarchySnapshot(state: store.state, spaceID: spaceID, profileID: profileID, includesFavorites: true)
         let possibleHome = ExternalSplitDrop.savedHomeSource(state: store.state, selection: selection, layout: layout, target: .insert(0))
@@ -10200,7 +10194,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   nativeView.window === window, nativeView.isDescendant(of: self.pageHost),
                   selection.enumerated().allSatisfy({ item in
                       guard self.splitPaneIdentity(item.element) == identities[item.offset],
-                            let tab = self.store.state.tabs.first(where: { $0.id == item.element }),
+                            let tab = self.store.state.tab(item.element),
                             tab.archivedAt == nil, tab.spaceID == originalTabs[item.offset].spaceID,
                             tab.profileID == profileID, tab.kind == originalTabs[item.offset].kind,
                             tab.folderID == originalTabs[item.offset].folderID,
@@ -10246,7 +10240,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 }
                 if committed {
                     self.focusedTabID = tabID; self.updateNavigation(); self.requestNativeSelection()
-                    if let home = self.store.state.tabs.first(where: { $0.id == savedHomeID }) {
+                    if let home = self.store.state.tab(savedHomeID) {
                         self.openDuplicatedChildren([savedHomeID], spaceID: home.spaceID, profileID: profileID,
                             window: window, originatingSpaceID: spaceID)
                     }
@@ -10261,7 +10255,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func beginSplitDrag(_ sourceID: UUID) -> SidebarSplitDrag? {
         guard splitCommandsAvailable, splitDropView == nil,
               let window, window.isKeyWindow, commandBar == nil,
-              let source = store.state.tabs.first(where: { $0.id == sourceID && $0.archivedAt == nil }),
+              let source = store.state.tab(sourceID, where: { $0.archivedAt == nil }),
               source.profileID == activeProfileID, source.spaceID == activeSpaceID, source.kind != .favorite,
               switcherCanUse(sourceID) || canMovePageHere(sourceID), peekPages(forTabID: sourceID).isEmpty else { return nil }
         let sourceElsewhere = !switcherCanUse(sourceID)
@@ -10276,7 +10270,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let sourcePageIdentity = sourcePage?.identifier
         let groups = store.state.splitLayouts.filter { $0.spaceID == spaceID }
         let allIDs = Set(selection + [sourceID])
-        let originals = allIDs.compactMap { id in store.state.tabs.first { $0.id == id } }
+        let originals = allIDs.compactMap { id in store.state.tab(id) }
         let hierarchy = SidebarHierarchySnapshot(state: store.state, spaceID: spaceID, profileID: profileID, includesFavorites: true)
         let homes = originals.filter { ($0.kind == .pinned || $0.kind == .favorite) && !(layout?.tabIDs.contains($0.id) ?? false) }
         let savedHomeIDs = Dictionary(uniqueKeysWithValues: homes.map { ($0.id, UUID()) })
@@ -10311,7 +10305,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   Set(allIDs.flatMap { self.embeddedEaselPages(forTabID: $0) }.map(ObjectIdentifier.init)) == Set(embedded.map(ObjectIdentifier.init)),
                   embedded.allSatisfy({ !$0.isClosed && $0.embeddedOwnerValid && PCNativeBrowserApplication.owner(of: $0) === self.nativeBinding }),
                   self.store.state.splitLayouts.filter({ $0.spaceID == spaceID }) == groups,
-                  let actual = self.store.state.tabs.first(where: { $0.id == sourceID }),
+                  let actual = self.store.state.tab(sourceID),
                   actual.archivedAt == nil, actual.profileID == source.profileID,
                   actual.spaceID == source.spaceID, actual.kind == source.kind, actual.folderID == source.folderID,
                   self.browsers[sourceID].map(ObjectIdentifier.init) == sourceBrowserIdentity,
@@ -10341,7 +10335,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     if sourceElsewhere { _ = self.selectTab(sourceID) }
                     self.focusedTabID = sourceID; self.updateNavigation(); self.requestNativeSelection()
                     for original in required {
-                        if let homeID = savedHomeIDs[original.id], let home = self.store.state.tabs.first(where: { $0.id == homeID }) {
+                        if let homeID = savedHomeIDs[original.id], let home = self.store.state.tab(homeID) {
                             self.openDuplicatedChildren([homeID], spaceID: home.spaceID, profileID: profileID,
                                 window: window, originatingSpaceID: spaceID)
                         }
@@ -10376,13 +10370,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func beginForeignOnlySplitDrag(_ sourceID: UUID) -> SidebarSplitDrag? {
         guard let window, window.isKeyWindow, !isPopupWindow, !isPrivateBrowsing, !store.isEphemeral,
-              let source = store.state.tabs.first(where: { $0.id == sourceID }),
+              let source = store.state.tab(sourceID),
               source.profileID == activeProfileID, source.spaceID == activeSpaceID,
               source.kind == .pinned || source.kind == .today, InterProfileMove.admits(source),
               switcherCanUse(sourceID), peekPages(forTabID: sourceID).isEmpty else { return nil }
         return SidebarSplitDrag(tabID: sourceID, window: window, validate: { [weak self, weak window] in
             guard let self, let window, self.window === window, window.isKeyWindow,
-                  let actual = self.store.state.tabs.first(where: { $0.id == sourceID }),
+                  let actual = self.store.state.tab(sourceID),
                   InterProfileMove.samePlacement(actual, source),
                   self.switcherCanUse(sourceID), self.peekPages(forTabID: sourceID).isEmpty else { return false }
             return true
@@ -10407,7 +10401,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard source !== self, source.store === store, source.ownership === ownership,
               foreignSplitDropView == nil, interProfileDropAvailable, drag.isValid,
               let dragWindow = drag.window, dragWindow === source.window, let window,
-              let original = store.state.tabs.first(where: { $0.id == drag.tabID }),
+              let original = store.state.tab(drag.tabID),
               original.kind == .pinned || original.kind == .today, InterProfileMove.admits(original),
               original.profileID == activeProfileID
                 || InterProfileMove.profilesAvailable(original.profileID, activeProfileID, in: store.state) else { return }
@@ -10416,7 +10410,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let frame = pageHost.bounds, windowFrame = window.frame
         let hierarchy = SidebarHierarchySnapshot(state: store.state, spaceID: spaceID, profileID: profileID, includesFavorites: true)
         let identities = selection.compactMap { splitPaneIdentity($0) }
-        let members = selection.compactMap { id in store.state.tabs.first { $0.id == id } }
+        let members = selection.compactMap { id in store.state.tab(id) }
         let homes = members.filter { ($0.kind == .pinned || $0.kind == .favorite) && !(layout?.tabIDs.contains($0.id) ?? false) }
         let homeIDs = Dictionary(uniqueKeysWithValues: homes.map { ($0.id, UUID()) })
         let typed = (homes + (original.kind == .pinned ? [original] : [])).filter { InternalPage(urlString: $0.savedURL) != nil }
@@ -10432,7 +10426,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   self.selectedTabIDs == selection, self.currentTabID == focusID, self.activeSplitLayout == layout,
                   SidebarHierarchySnapshot(state: self.store.state, spaceID: spaceID, profileID: profileID, includesFavorites: true) == hierarchy,
                   selection.enumerated().allSatisfy({ self.splitPaneIdentity($0.element) == identities[$0.offset] }),
-                  let actual = self.store.state.tabs.first(where: { $0.id == original.id }),
+                  let actual = self.store.state.tab(original.id),
                   InterProfileMove.samePlacement(actual, original), !self.store.retiringTabIDs.contains(original.id) else { return false }
             return true
         }
@@ -10473,7 +10467,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                             self.finishInterProfileArrival(original.id)
                             source?.openSavedHomeInBackground(sourceHomeID)
                             if let window = self.window {
-                                for homeID in homeIDs.values where self.store.state.tabs.contains(where: { $0.id == homeID }) {
+                                for homeID in homeIDs.values where self.store.state.containsTab(homeID) {
                                     self.openDuplicatedChildren([homeID], spaceID: spaceID, profileID: profileID,
                                         window: window, originatingSpaceID: spaceID)
                                 }
@@ -10511,7 +10505,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         transaction.onFinish = { [weak self, weak source, weak window] committed in
             guard committed, let self, let window else { return }
             source?.openSavedHomeInBackground(sourceHomeID)
-            for homeID in homeIDs where self.store.state.tabs.contains(where: { $0.id == homeID }) {
+            for homeID in homeIDs where self.store.state.containsTab(homeID) {
                 self.openDuplicatedChildren([homeID], spaceID: spaceID, profileID: profileID, window: window, originatingSpaceID: spaceID)
             }
         }
@@ -10573,7 +10567,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func openSavedHomeInBackground(_ id: UUID) {
-        guard let window, let home = store.state.tabs.first(where: { $0.id == id }) else { return }
+        guard let window, let home = store.state.tab(id) else { return }
         openDuplicatedChildren([id], spaceID: home.spaceID, profileID: home.profileID, window: window)
     }
 
@@ -10757,7 +10751,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 }
             } else if let existing {
                 guard let expected = originalCandidates[existing], validItem(existing),
-                      self.store.state.tabs.first(where: { $0.id == existing }) == expected,
+                      self.store.state.tab(existing) == expected,
                       self.splitInsertionTabs(profileID: request.profileID).contains(where: { $0.id == existing }) else {
                     self.cancelSplitInsertion(restoreFocus: true); return
                 }
@@ -10942,7 +10936,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func splitPaneIdentity(_ id: UUID) -> SplitPaneIdentity? {
         guard selectedTabIDs.contains(id), switcherCanUse(id),
-              let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+              let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
               tab.profileID == activeProfileID, tab.kind == .favorite || tab.spaceID == activeSpaceID,
               let pane = panes[id], pane.window === window else { return nil }
         if let browser = browsers[id] {
@@ -11134,10 +11128,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         item.spaceID == activeSpaceID && item.profileID == activeProfileID
             && item.tabIDs != selectedTabIDs && !item.tabIDs.isEmpty
             && item.tabIDs.allSatisfy { id in
-                canUseOrMoveHere(id) && store.state.tabs.contains {
-                    $0.id == id && $0.archivedAt == nil && $0.profileID == item.profileID
-                        && ($0.kind == .favorite || $0.spaceID == item.spaceID)
-                }
+                canUseOrMoveHere(id) && store.state.containsTab(id, where: { $0.archivedAt == nil && $0.profileID == item.profileID
+                        && ($0.kind == .favorite || $0.spaceID == item.spaceID) })
             }
     }
 
@@ -11235,9 +11227,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 return self.store.state.spaces.contains { $0.id == item.selection.spaceID && $0.profileID == item.selection.profileID }
                     && item.components.allSatisfy { component in
                         self.canUseOrMoveHere(component.id)
-                            && self.store.state.tabs.contains { $0.id == component.id && $0.archivedAt == nil
+                            && self.store.state.containsTab(component.id, where: { $0.archivedAt == nil
                                 && $0.profileID == item.selection.profileID
-                                && ($0.kind == .favorite || $0.spaceID == item.selection.spaceID) }
+                                && ($0.kind == .favorite || $0.spaceID == item.selection.spaceID) })
                             && self.browsers[component.id]?.nativePage === component.page
                     }
             }
@@ -11296,7 +11288,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let privateWindow = store.isEphemeral
         return selections.map { selection in
             let components = selection.tabIDs.compactMap { id -> RecentTabSwitcher.Component? in
-                guard let tab = store.state.tabs.first(where: { $0.id == id }) else { return nil }
+                guard let tab = store.state.tab(id) else { return nil }
                 var preview: NSImage? = store.placeholderImages.image(for: id, in: presentationID).map { NSImage(cgImage: $0, size: .zero) }
                 if preview == nil, InternalPage(urlString: tab.url) == nil, browsers[id] == nil, let pane = panes[id], pane.window === window,
                    !pane.isHiddenOrHasHiddenAncestor,
@@ -11324,7 +11316,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         PCNativeBrowserApplication.favicon(for: url, profilePath: path) { [weak self] image in
                             MainActor.assumeIsolated {
                                 guard let self, !self.isClosing,
-                                      self.store.state.tabs.contains(where: { $0.id == id && $0.url == tab.url
+                                      self.store.state.containsTab(id, where: { $0.url == tab.url
                                           && $0.profileID == tab.profileID && $0.archivedAt == nil }) else { completion(nil); return }
                                 completion(image)
                             }
@@ -11362,10 +11354,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     @discardableResult
     private func selectRecentItem(_ item: RecentTabOrder.Item) -> Bool {
         guard store.state.spaces.contains(where: { $0.id == item.spaceID && $0.profileID == item.profileID }),
-              item.tabIDs.allSatisfy({ id in store.state.tabs.contains {
-                  $0.id == id && $0.archivedAt == nil && $0.profileID == item.profileID
-                      && ($0.kind == .favorite || $0.spaceID == item.spaceID)
-              } }),
+              item.tabIDs.allSatisfy({ id in store.state.containsTab(id, where: { $0.archivedAt == nil && $0.profileID == item.profileID
+                      && ($0.kind == .favorite || $0.spaceID == item.spaceID) }) }),
               let elsewhere = PageReparenting.pagesToMove(item.tabIDs, usableHere: switcherCanUse, movable: canMovePageHere)
         else { return false }
         if !elsewhere.isEmpty { return movePagesHere(elsewhere[...]) { [weak self] in self?.selectRecentItem(item) ?? false } }
@@ -11468,7 +11458,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard presentation.isReady, !isClosing, !wholeWindowClose else { return nil }
         let url: String?
         if let commandBar { url = commandBar.selectedURL?.absoluteString }
-        else { url = currentBrowser?.url?.absoluteString ?? currentTabID.flatMap { id in store.state.tabs.first { $0.id == id }?.url } }
+        else { url = currentBrowser?.url?.absoluteString ?? currentTabID.flatMap { id in store.state.tab(id)?.url } }
         return url.map(WhatsNewPage.presented).flatMap { $0.isEmpty ? nil : $0 }
     }
     var canCopyCurrentURL: Bool {
@@ -11541,7 +11531,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func splitShareURLs() -> [URL] {
         selectedTabIDs.compactMap { id in
             if let url = browsers[id]?.url, !url.absoluteString.isEmpty { return WhatsNewPage.matches(url.absoluteString) ? nil : url }
-            guard let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+            guard let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
                   let url = URL(string: WhatsNewPage.presented(tab.url)), tab.url != "about:blank" else { return nil }
             return url
         }
@@ -11749,7 +11739,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 createdID = id
             }
             guard let createdID, selectedTabIDs.contains(createdID),
-                  store.state.tabs.contains(where: { $0.id == createdID && $0.spaceID == spaceID && $0.profileID == profileID }) else { return false }
+                  store.state.containsTab(createdID, where: { $0.spaceID == spaceID && $0.profileID == profileID }) else { return false }
         }
         window.makeKeyAndOrderFront(nil)
         return true
@@ -11784,7 +11774,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 createdID = id
             }
             guard let createdID, selectedTabIDs.contains(createdID),
-                  store.state.tabs.contains(where: { $0.id == createdID && $0.spaceID == spaceID && $0.profileID == profileID }) else { return false }
+                  store.state.containsTab(createdID, where: { $0.spaceID == spaceID && $0.profileID == profileID }) else { return false }
         }
         window.makeKeyAndOrderFront(nil)
         return true
@@ -11818,9 +11808,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         window?.makeKeyAndOrderFront(nil)
         guard let createdID else { return false }
-        return selectedTabIDs.contains(createdID) && store.state.tabs.contains {
-            $0.id == createdID && $0.spaceID == spaceID && $0.profileID == profileID
-        }
+        return selectedTabIDs.contains(createdID) && store.state.containsTab(createdID, where: { $0.spaceID == spaceID && $0.profileID == profileID })
     }
     var canChangePageZoom: Bool {
         PageZoomAvailability.canChange(
@@ -12109,7 +12097,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func configureDocumentToolbar(_ pane: BrowserPane, tabID: UUID, visible: Bool, leading: Bool) {
         let toolbar = pane.browserToolbar
         guard visible, !isPopupWindow, libraryView == nil,
-              let tab = store.state.tabs.first(where: { $0.id == tabID && $0.archivedAt == nil }) else {
+              let tab = store.state.tab(tabID, where: { $0.archivedAt == nil }) else {
             if toolbar.ownsFocus, window?.isKeyWindow == true, commandBar == nil { focusSelectedLocalContent() }
             toolbar.isHidden = true; toolbar.setPageColor(nil, for: nil); toolbar.invalidate(); return
         }
@@ -12135,7 +12123,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         toolbar.onEscape = { [weak self] in guard admit() else { return }; self?.focusSelectedLocalContent() }
         toolbar.onTitleMenu = { [weak self] in
             guard let self else { return nil }
-            let model = self.store.state.tabs.first { $0.id == tabID && $0.archivedAt == nil }
+            let model = self.store.state.tab(tabID, where: { $0.archivedAt == nil })
             return self.paneTitleMenu(browser: nil, tab: model, admit: admit)
         }
         toolbar.onAction = { [weak self] action, anchor in
@@ -12759,7 +12747,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                       let note = self.noteEditors[id], note.editor === editor,
                       self.renderedPaneIDs.contains(id), note.profileID == self.activeProfileID,
                       self.switcherCanUse(id), !editor.session.document.deleted,
-                      let tab = self.store.state.tabs.first(where: { $0.id == id && $0.profileID == note.profileID }),
+                      let tab = self.store.state.tab(id, where: { $0.profileID == note.profileID }),
                       InternalPage(urlString: tab.url)?.noteID == note.documentID,
                       !editor.text.hasMarkedText(), !editor.titleText.hasMarkedText(),
                       let current = window.firstResponder as? NSView else { return false }
@@ -12777,7 +12765,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             })
         } else if activePeek == nil, let id = currentTabID, renderedPaneIDs.contains(id),
                   let note = noteEditors[id], note.profileID == activeProfileID,
-                  let tab = store.state.tabs.first(where: { $0.id == id && $0.profileID == note.profileID }),
+                  let tab = store.state.tab(id, where: { $0.profileID == note.profileID }),
                   InternalPage(urlString: tab.url)?.noteID == note.documentID {
             let editor = note.editor
             let sender = NSMenuItem(title: action.title, action: #selector(NSTextView.performTextFinderAction(_:)), keyEquivalent: "")
@@ -15379,7 +15367,7 @@ extension BrowserWindowController: BrowserScriptOwner {
     }
     private func scriptingTab(_ id: UUID, profile: UUID) throws -> BrowserTab {
         try scriptingCheck()
-        guard let tab = store.state.tabs.first(where: { $0.id == id && $0.profileID == profile && $0.archivedAt == nil }),
+        guard let tab = store.state.tab(id, where: { $0.profileID == profile && $0.archivedAt == nil }),
               !store.isProfileRemovalPending(profile), ownership.canUse(id, owner: presentationID) else { throw BrowserScriptError.missing }
         guard !closingTabIDs.contains(id), !transferringTabIDs.contains(id),
               !modelRetirementIDs.contains(id), !store.retiringTabIDs.contains(id),
@@ -15475,7 +15463,7 @@ extension BrowserWindowController: BrowserScriptOwner {
             closeTabsWithReopen([tab], shouldCommit: { [weak self] in
                 guard let self, !self.isClosing, !self.wholeWindowClose,
                       self.ownership.canUse(tab, owner: self.presentationID) else { return false }
-                return self.store.state.tabs.contains { $0.id == tab && $0.profileID == profile && $0.archivedAt == nil }
+                return self.store.state.containsTab(tab, where: { $0.profileID == profile && $0.archivedAt == nil })
             }, completion: completion)
         } else {
             guard let window, window.styleMask.contains(.closable), nativeBinding != nil else { throw BrowserScriptError.busy }

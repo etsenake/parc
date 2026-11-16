@@ -47,7 +47,7 @@ enum FolderLinks {
         var seen = Set<UUID>()
         return roots.flatMap { SidebarHierarchy.tabIDs(in: $0, state: state, spaceID: spaceID) }.compactMap { id in
             guard seen.insert(id).inserted,
-                  let tab = state.tabs.first(where: { $0.id == id && $0.profileID == profileID && $0.spaceID == spaceID && $0.archivedAt == nil }),
+                  let tab = state.tab(id, where: { $0.profileID == profileID && $0.spaceID == spaceID && $0.archivedAt == nil }),
                   !InternalPage.isInternal(tab.url), let url = URL(string: WhatsNewPage.presented(tab.url)), url.scheme != nil else { return nil }
             return Link(tabID: id, title: tab.title, url: url.absoluteString)
         }

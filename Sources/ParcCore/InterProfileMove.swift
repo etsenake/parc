@@ -71,7 +71,7 @@ enum InterProfileMove {
     static func documents(moving ids: Set<UUID>, after state: BrowserState) -> [InternalPage]? {
         var pages: [InternalPage] = []
         for id in ids.sorted(by: { $0.uuidString < $1.uuidString }) {
-            guard let tab = state.tabs.first(where: { $0.id == id }) else { return nil }
+            guard let tab = state.tab(id) else { return nil }
             for value in [tab.url, tab.savedURL] {
                 guard InternalPage.isInternal(value) else { continue }
                 guard let page = InternalPage(urlString: value) else { return nil }
@@ -94,8 +94,8 @@ enum InterProfileMove {
     }
 
     static func sourceProfile(of ids: [UUID], in state: BrowserState) -> UUID? {
-        let profiles = Set(ids.compactMap { id in state.tabs.first { $0.id == id }?.profileID })
-        guard profiles.count == 1, ids.allSatisfy({ id in state.tabs.contains { $0.id == id } }) else { return nil }
+        let profiles = Set(ids.compactMap { id in state.tab(id)?.profileID })
+        guard profiles.count == 1, ids.allSatisfy({ id in state.containsTab(id) }) else { return nil }
         return profiles.first
     }
 
@@ -122,7 +122,7 @@ enum ForeignSplitDrop {
     static func proposal(_ request: Request, state: BrowserState, now: Date,
                          creation: TabCreationProvenance?) -> BrowserState? {
         let original = request.source
-        guard let tab = state.tabs.first(where: { $0.id == original.id }), InterProfileMove.samePlacement(tab, original),
+        guard let tab = state.tab(original.id), InterProfileMove.samePlacement(tab, original),
               InterProfileMove.admits(tab), tab.kind == .pinned || tab.kind == .today,
               tab.profileID == request.profileID
                 || InterProfileMove.profilesAvailable(tab.profileID, request.profileID, in: state),
@@ -154,7 +154,7 @@ enum ForeignSplitDrop {
 
     private static func detach(_ tab: BrowserTab, homeID: UUID, spaceID destination: UUID, profileID: UUID,
                                state: BrowserState, now: Date) -> BrowserState? {
-        guard !state.tabs.contains(where: { $0.id == homeID }) else { return nil }
+        guard !state.containsTab(homeID) else { return nil }
         var next = state
         let spaceID = tab.spaceID, prefix = spaceID.uuidString + ":"
         let parents = state.splitLayouts.filter { $0.tabIDs.contains(tab.id) }
@@ -215,7 +215,7 @@ enum ForeignSplitDrop {
                 id == tab.id ? (saved && key == spaceID.uuidString ? homeID : nil) : id
             }
         }
-        guard let index = next.tabs.firstIndex(where: { $0.id == tab.id }) else { return nil }
+        guard let index = next.tabIndex(tab.id) else { return nil }
         next.tabs[index].kind = .today; next.tabs[index].folderID = nil
         next.tabs[index].spaceID = destination; next.tabs[index].profileID = profileID
         return next

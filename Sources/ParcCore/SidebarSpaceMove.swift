@@ -48,7 +48,7 @@ struct SidebarSpaceMove: Equatable {
               source.tabs.filter({ $0.folderID.map(folders.contains) == true }).allSatisfy({ tabs.contains($0.id) }),
               source.groups.filter({ !$0.tabIDs.allSatisfy { !tabs.contains($0) } }).count == groups.count else { return nil }
         if source.profileID != destination.profileID {
-            guard tabs.allSatisfy({ id in state.tabs.first { $0.id == id }.map(InterProfileMove.admits) == true }) else { return nil }
+            guard tabs.allSatisfy({ id in state.tab(id).map(InterProfileMove.admits) == true }) else { return nil }
         }
         self.source = source; self.destination = destination; self.roots = roots
         tabIDs = tabs; folderIDs = folders; groupIDs = groups
@@ -93,7 +93,7 @@ struct SidebarSpaceMove: Equatable {
                 next.folders[next.folders.firstIndex(where: { $0.id == id })!].parentID = nil
             case .tab, .split:
                 for id in SidebarHierarchy.tabIDs(in: root, state: state, spaceID: source.spaceID) {
-                    next.tabs[next.tabs.firstIndex(where: { $0.id == id })!].folderID = nil
+                    next.tabs[next.tabIndex(id)!].folderID = nil
                 }
             }
         }

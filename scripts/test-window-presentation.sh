@@ -23,6 +23,7 @@ source_path() {
 }
 
 store_source="$(source_path Sources/ParcCore/BrowserStore.swift)"
+tab_lookup_source="$(source_path Sources/ParcCore/BrowserTabLookup.swift)"
 space_sharing_source="$(source_path Sources/ParcCore/SpaceSharing.swift)"
 window_frame_source="$(source_path Sources/ParcCore/WindowFrame.swift)"
 space_management_source="$(source_path Sources/ParcCore/SpaceManagement.swift)"
@@ -55,6 +56,6 @@ restoration_launch_source="$(source_path Sources/ParcCore/WindowRestorationLaunc
 test_source="$(source_path tests/WindowPresentationTests.swift)"
 mkdir -p -- "$build_root"
 xcrun swiftc -warnings-as-errors -whole-module-optimization -parse-as-library \
-  "$store_source" "$space_sharing_source" "$window_frame_source" "$space_management_source" "$import_source" "$arc_sidebar_import_source" "$favorite_split_source" "$original_split_source" "$inter_profile_source" "$space_move_source" "$window_move_source" "$closed_items_source" "$placeholder_images_source" "$favorite_action_source" "$folder_move_source" "$folder_action_source" "$theme_source" "$onboarding_source" "$routing_source" "$pretty_json_source" "$removal_source" "$split_controls_source" "$split_cross_space_source" "$folder_creation_source" "$tab_history_source" "$note_source" "$easel_source" "$easel_text_source" "$presentation_source" "$restoration_launch_source" "$test_source" \
+  "$store_source" "$tab_lookup_source" "$space_sharing_source" "$window_frame_source" "$space_management_source" "$import_source" "$arc_sidebar_import_source" "$favorite_split_source" "$original_split_source" "$inter_profile_source" "$space_move_source" "$window_move_source" "$closed_items_source" "$placeholder_images_source" "$favorite_action_source" "$folder_move_source" "$folder_action_source" "$theme_source" "$onboarding_source" "$routing_source" "$pretty_json_source" "$removal_source" "$split_controls_source" "$split_cross_space_source" "$folder_creation_source" "$tab_history_source" "$note_source" "$easel_source" "$easel_text_source" "$presentation_source" "$restoration_launch_source" "$test_source" \
   -o "$build_root/window-presentation"
 exec "$build_root/window-presentation"

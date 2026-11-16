@@ -36,7 +36,7 @@ struct CommandBarFavoriteAction: Equatable, Identifiable {
         var tabs: [BrowserTab] = []
         for item in items {
             guard case .tab(let id) = item,
-                  let tab = state.tabs.first(where: { $0.id == id && $0.profileID == profileID && $0.archivedAt == nil }),
+                  let tab = state.tab(id, where: { $0.profileID == profileID && $0.archivedAt == nil }),
                   tab.kind == .favorite || tab.spaceID == spaceID,
                   !state.splitLayouts.contains(where: { $0.tabIDs.contains(id) }) else { return nil }
             if let folderID = tab.folderID {
@@ -75,7 +75,7 @@ struct CommandBarFavoriteAction: Equatable, Identifiable {
                     return item
                 }
         }
-        var moved = tabIDs.compactMap { id in state.tabs.first { $0.id == id } }
+        var moved = tabIDs.compactMap { id in state.tab(id) }
         for i in moved.indices {
             let previousKind = moved[i].kind
             moved[i].kind = operation == .favorite ? .favorite : .today

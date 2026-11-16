@@ -36,14 +36,14 @@ struct FavoriteSplitRequest {
               state.tabs.contains(favorite), !selection.isEmpty,
               Set(selection).count == selection.count, selection.contains(focusedID),
               state.spaces.contains(where: { $0.id == spaceID && $0.profileID == favorite.profileID }) else { return nil }
-        let members = selection.compactMap { id in state.tabs.first { $0.id == id && $0.archivedAt == nil
-            && $0.profileID == favorite.profileID && ($0.kind == .favorite || $0.spaceID == spaceID) } }
+        let members = selection.compactMap { id in state.tab(id, where: { $0.archivedAt == nil
+            && $0.profileID == favorite.profileID && ($0.kind == .favorite || $0.spaceID == spaceID) }) }
         let layout = SidebarSplitItems.groups(in: state, spaceID: spaceID).first { $0.tabIDs == selection }
         guard members.count == selection.count, selection.count == 1 || layout != nil,
               (selection.contains(favorite.id) && focusedID != favorite.id) || selection.count < 4 else { return nil }
         if favorite.id == focusedID {
             guard let duplicateURL, let url = URL(string: duplicateURL), url.scheme != nil,
-                  !InternalPage.isInternal(duplicateURL), !state.tabs.contains(where: { $0.id == newID }) else { return nil }
+                  !InternalPage.isInternal(duplicateURL), !state.containsTab(newID) else { return nil }
         }
         self.favorite = favorite; self.spaceID = spaceID; self.selection = selection
         self.focusedID = focusedID; self.members = members; self.layout = layout
@@ -76,7 +76,7 @@ struct FavoriteSplitRequest {
               state.splitLayouts == layouts else { return nil }
         var next = state
         if favorite.id == focusedID {
-            guard let url = duplicateURL, !state.tabs.contains(where: { $0.id == newID }) else { return nil }
+            guard let url = duplicateURL, !state.containsTab(newID) else { return nil }
             let away = SavedTabURLComparison.isAway(current: URL(string: url), saved: URL(string: favorite.savedURL))
             let title = away ? (duplicateTitle?.isEmpty == false ? duplicateTitle! : favorite.title) : favorite.savedTitle
             next.tabs.append(BrowserTab(id: newID, spaceID: spaceID, profileID: favorite.profileID,
@@ -104,7 +104,7 @@ struct FavoriteSplitRequest {
             next = admitted
         }
         next.selectedTabIDs = ids; next.selectionBySpace[spaceID.uuidString] = ids
-        if let index = next.tabs.firstIndex(where: { $0.id == targetID }) {
+        if let index = next.tabIndex(targetID) {
             next.tabs[index].lastAccessed = now; next.tabs[index].isUnread = false
         }
         return next

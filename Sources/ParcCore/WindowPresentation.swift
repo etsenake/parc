@@ -13,7 +13,7 @@ struct WindowPresentation {
     private(set) var previouslySelectedItemID: UUID?
 
     mutating func recordCreation(_ id: UUID, state: BrowserState) {
-        guard let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }) else { return }
+        guard let tab = state.tab(id, where: { $0.archivedAt == nil }) else { return }
         if let referrer = tab.referrerID {
             referrerPool.formUnion([referrer, id])
         } else if let previous = tab.activeTabBeforeCreationID {
@@ -23,14 +23,12 @@ struct WindowPresentation {
 
     @discardableResult
     mutating func recordPeekPromotion(_ id: UUID, state: BrowserState) -> Bool {
-        guard let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+        guard let tab = state.tab(id, where: { $0.archivedAt == nil }),
               state.spaces.contains(where: { $0.id == activeSpaceID && $0.profileID == tab.profileID }),
               state.spaces.contains(where: { $0.id == tab.spaceID && $0.profileID == tab.profileID }) else { return false }
         var replacement: Set<UUID> = [id]
         if let source = tab.referrerID {
-            guard source != id, state.tabs.contains(where: {
-                $0.id == source && $0.archivedAt == nil && $0.profileID == tab.profileID
-            }) else { return false }
+            guard source != id, state.containsTab(source, where: { $0.archivedAt == nil && $0.profileID == tab.profileID }) else { return false }
             replacement.insert(source)
         }
         referrerPool = replacement
@@ -39,13 +37,13 @@ struct WindowPresentation {
 
     mutating func recordSelectionForReturn(_ id: UUID?, state: BrowserState) {
         guard id != poolFocusedID else { return }
-        if let id, !state.tabs.contains(where: { $0.id == id && $0.archivedAt == nil }) { return }
+        if let id, !state.containsTab(id, where: { $0.archivedAt == nil }) { return }
         let outgoing = poolFocusedID
         poolFocusedID = id
         guard let id else { return }
         previouslySelectedItemID = outgoing
         guard referrerPool.contains(id) else { referrerPool.removeAll(); return }
-        if let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+        if let tab = state.tab(id, where: { $0.archivedAt == nil }),
            tab.kind != .today { referrerPool = [id] }
     }
 
@@ -151,7 +149,7 @@ struct WindowPresentation {
         var seen = Set<UUID>()
         selectedTabIDs = Array(selectedTabIDs.filter { id in
             guard seen.insert(id).inserted, available(id),
-                  let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }) else { return false }
+                  let tab = state.tab(id, where: { $0.archivedAt == nil }) else { return false }
             return tab.profileID == space.profileID && (tab.kind == .favorite || tab.spaceID == space.id)
         }.prefix(4))
         selectionBySpace[activeSpaceID.uuidString] = selectedTabIDs
@@ -191,7 +189,7 @@ struct WindowPresentation {
         guard isReady else { return false }
         guard let id else { return selectedTabIDs.isEmpty && !hasNativeWrapper }
         guard selectedTabIDs.contains(id),
-              let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }) else { return false }
+              let tab = state.tab(id, where: { $0.archivedAt == nil }) else { return false }
         return InternalPage.isInternal(tab.url)
             || (!hasNativeWrapper && (tab.url.isEmpty || tab.url == "about:blank"))
     }
@@ -200,7 +198,7 @@ struct WindowPresentation {
     mutating func selectExistingTab(_ id: UUID, state: BrowserState,
                                     available: (UUID) -> Bool) -> Bool {
         guard isReady, available(id),
-              let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
+              let tab = state.tab(id, where: { $0.archivedAt == nil }),
               state.spaces.contains(where: { $0.id == tab.spaceID && $0.profileID == tab.profileID }) else { return false }
         var next = self
         next.reconcile(state, available: available)
@@ -222,7 +220,7 @@ struct WindowPresentation {
     }
 
     mutating func adopt(_ id: UUID, state: BrowserState, foreground: Bool) {
-        guard let tab = state.tabs.first(where: { $0.id == id }) else { return }
+        guard let tab = state.tab(id) else { return }
         let currentProfile = state.spaces.first { $0.id == activeSpaceID }?.profileID
         let spaceID = isReady && tab.kind == .favorite && currentProfile == tab.profileID ? activeSpaceID : tab.spaceID
         guard state.spaces.contains(where: { $0.id == spaceID && $0.profileID == tab.profileID }) else { return }
@@ -248,9 +246,9 @@ struct WindowPresentation {
         guard selectedTabIDs == selection.original || selectedTabIDs == remaining,
               selection.tabIDs.count <= 4, Set(selection.tabIDs).count == selection.tabIDs.count,
               selection.tabIDs.allSatisfy({ id in
-                  available(id) && state.tabs.contains { $0.id == id && $0.archivedAt == nil
+                  available(id) && state.containsTab(id, where: { $0.archivedAt == nil
                       && $0.profileID == selection.profileID
-                      && ($0.spaceID == selection.replacementSpaceID || $0.kind == .favorite) }
+                      && ($0.spaceID == selection.replacementSpaceID || $0.kind == .favorite) })
               }), selection.focusedTabID == nil || selection.tabIDs.contains(selection.focusedTabID!) else { return false }
         if selection.tabIDs.count > 1 {
             guard SidebarSplitItems.groups(in: state, spaceID: selection.replacementSpaceID).contains(where: { $0.tabIDs == selection.tabIDs })
@@ -369,8 +367,8 @@ struct WindowPresentation {
                 placeholdersBySpace.removeValue(forKey: spaceID); continue
             }
             func belongs(_ id: UUID) -> Bool {
-                state.tabs.contains { $0.id == id && $0.archivedAt == nil && $0.profileID == space.profileID
-                    && ($0.kind == .favorite || $0.spaceID == space.id) }
+                state.containsTab(id, where: { $0.archivedAt == nil && $0.profileID == space.profileID
+                    && ($0.kind == .favorite || $0.spaceID == space.id) })
             }
             var slot = original
             let returning = slot.placeholders.filter { belongs($0) && available($0) }

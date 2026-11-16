@@ -46,9 +46,7 @@ struct BrowserDataExport {
         for item in items {
             if case .folder = item { continue }
             for id in SidebarHierarchy.tabIDs(in: item, state: state, spaceID: space.id) {
-                guard let tab = state.tabs.first(where: {
-                    $0.id == id && $0.profileID == space.profileID && $0.archivedAt == nil
-                }), let line = urlLine(tab) else { continue }
+                guard let tab = state.tab(id, where: { $0.profileID == space.profileID && $0.archivedAt == nil }), let line = urlLine(tab) else { continue }
                 lines.append(line)
             }
         }

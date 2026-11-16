@@ -809,7 +809,7 @@ final class BrowserImportCoordinator {
                 var accepted = bookmarkPages[index].selection
                 let spaceID = bookmarkPages[index].destination.spaceID
                 for (sourceID, written) in placement.tabs where !accepted.selected.contains(sourceID)
-                    && store.state.tabs.contains(where: { $0.id == written.id && $0.archivedAt == nil && $0.spaceID == spaceID }) {
+                    && store.state.containsTab(written.id, where: { $0.archivedAt == nil && $0.spaceID == spaceID }) {
                     accepted.toggle(sourceID)
                 }
                 bookmarkPages[index].accepted = accepted; bookmarkPages[index].selection = accepted

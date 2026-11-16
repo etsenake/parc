@@ -54,7 +54,7 @@ struct SidebarFolderFromItems: Equatable {
     }
 
     func parts(of state: BrowserState) -> Parts {
-        let tabs = tabIDs.compactMap { id in state.tabs.first { $0.id == id && $0.archivedAt == nil } }
+        let tabs = tabIDs.compactMap { id in state.tab(id, where: { $0.archivedAt == nil }) }
             .map { Placement(id: $0.id, spaceID: $0.spaceID, kind: $0.kind, folderID: $0.folderID) }
         let folder = state.folders.first { $0.id == folderID }
             .map { Placement(id: $0.id, spaceID: $0.spaceID, kind: .pinned, folderID: $0.parentID) }
@@ -73,7 +73,7 @@ struct SidebarFolderFromItems: Equatable {
         let target = undo ? before : after
         var next = state
         for placement in target.tabs {
-            guard let index = next.tabs.firstIndex(where: { $0.id == placement.id }) else { return nil }
+            guard let index = next.tabIndex(placement.id) else { return nil }
             next.tabs[index].spaceID = placement.spaceID; next.tabs[index].kind = placement.kind
             next.tabs[index].folderID = placement.folderID
         }
@@ -93,7 +93,7 @@ enum SidebarTodayArchive {
     static func admits(anchorID: UUID, order: [UUID], ids: Set<UUID>, state: BrowserState,
                        spaceID: UUID, profileID: UUID) -> Bool {
         guard !ids.isEmpty, ids.isSubset(of: Set(order)), order.contains(anchorID),
-              let anchor = state.tabs.first(where: { $0.id == anchorID && $0.archivedAt == nil }),
+              let anchor = state.tab(anchorID, where: { $0.archivedAt == nil }),
               anchor.kind == .today, anchor.folderID == nil, anchor.spaceID == spaceID, anchor.profileID == profileID
         else { return false }
         return self.order(in: state, spaceID: spaceID) == order

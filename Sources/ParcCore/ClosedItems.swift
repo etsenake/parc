@@ -62,8 +62,8 @@ struct ClosedSplitMembership: Equatable {
         guard let position = layout.tabIDs.firstIndex(of: id),
               let profileID = state.spaces.first(where: { $0.id == layout.spaceID })?.profileID else { return nil }
         func live(_ member: UUID) -> Bool {
-            state.tabs.contains { $0.id == member && $0.archivedAt == nil && $0.profileID == profileID
-                && ($0.kind == .favorite || $0.spaceID == layout.spaceID) } && available(member)
+            state.containsTab(member, where: { $0.archivedAt == nil && $0.profileID == profileID
+                && ($0.kind == .favorite || $0.spaceID == layout.spaceID) }) && available(member)
         }
         func grouped(_ member: UUID) -> Bool {
             SidebarSplitItems.groups(in: state, spaceID: layout.spaceID).contains { $0.tabIDs.contains(member) }
@@ -153,7 +153,7 @@ struct ClosedPeekRecord: Equatable {
         ["http", "https"].contains(url.scheme?.lowercased() ?? "")
             && state.profiles.contains(where: { $0.id == profileID })
             && !state.profileRemovals.contains(where: { $0.profileID == profileID })
-            && state.tabs.contains { $0.id == parentTabID && $0.archivedAt == nil && $0.profileID == profileID }
+            && state.containsTab(parentTabID, where: { $0.archivedAt == nil && $0.profileID == profileID })
     }
 }
 
@@ -192,7 +192,7 @@ struct WindowClosedItems {
     mutating func record(_ intent: ClosedItemIntent, in state: BrowserState) {
         var after: [BrowserTab] = []
         for before in intent.tabs {
-            guard let tab = state.tabs.first(where: { $0.id == before.id }),
+            guard let tab = state.tab(before.id),
                   tab.profileID == before.profileID, tab.spaceID == before.spaceID,
                   tab.kind == before.kind, tab.folderID == before.folderID,
                   tab.savedURL == before.savedURL, tab.savedTitle == before.savedTitle,

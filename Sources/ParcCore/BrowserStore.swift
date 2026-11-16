@@ -235,9 +235,7 @@ struct TabCreationProvenance: Equatable {
     let activeTabBeforeCreationID: UUID?
     init(referrerID: UUID?, activeTabID: UUID?, profileID: UUID, state: BrowserState) {
         func original(_ id: UUID?) -> UUID? {
-            id.flatMap { value in state.tabs.contains {
-                $0.id == value && $0.profileID == profileID && $0.archivedAt == nil
-            } ? value : nil }
+            id.flatMap { value in state.containsTab(value, where: { $0.profileID == profileID && $0.archivedAt == nil }) ? value : nil }
         }
         self.referrerID = original(referrerID)
         activeTabBeforeCreationID = self.referrerID ?? original(activeTabID)
@@ -667,7 +665,7 @@ struct BrowserState: Codable, Equatable {
     var version: Int = 1
     var profiles: [BrowserProfile]
     var spaces: [BrowserSpace]
-    var tabs: [BrowserTab] = []
+    var tabs: [BrowserTab] = [] { didSet { tabLookup = BrowserTabLookupSlot() } }
     var folders: [BrowserFolder] = []
     var activeSpaceID: UUID
     var selectedTabIDs: [UUID] = []
@@ -685,6 +683,7 @@ struct BrowserState: Codable, Equatable {
     var arcImportedSpaces: [String: UUID] = [:]
     var windows: [BrowserWindowRecord] = []
     var spaceSharingVersion = SpaceSharing.version
+    var tabLookup = BrowserTabLookupSlot()
 
     static func initial() -> Self {
         let profile = BrowserProfile(id: UUID(), name: "Default")
@@ -939,7 +938,7 @@ enum SidebarHierarchy {
     }
     private static func tabLocation(_ id: UUID, state: BrowserState, spaceID: UUID) -> SidebarContainerLocation? {
         guard let profileID = state.spaces.first(where: { $0.id == spaceID })?.profileID,
-              let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil && $0.profileID == profileID
+              let tab = state.tab(id, where: { $0.archivedAt == nil && $0.profileID == profileID
                   && ($0.kind == .favorite || $0.spaceID == spaceID) }) else { return nil }
         return tabLocation(of: tab, spaceID: spaceID, profileID: profileID)
     }
@@ -1004,7 +1003,7 @@ enum SidebarHierarchy {
         return result
     }
     static func placingCreatedTab(_ id: UUID, insertion: TodayInsertion, in state: inout BrowserState) {
-        guard let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil
+        guard let tab = state.tab(id, where: { $0.archivedAt == nil
                   && $0.kind == .today && $0.folderID == nil }) else { return }
         let location = SidebarContainerLocation(spaceID: tab.spaceID, folderID: nil, section: .today)
         var items = children(in: location, state: state)
@@ -1020,7 +1019,7 @@ enum SidebarHierarchy {
             index = items[start...].firstIndex { item in
                 if holdsReferrer(item) { return false }
                 guard case .tab(let other) = item else { return true }
-                return snapshot.tabs.first { $0.id == other }?.referrerID != referrer
+                return snapshot.tab(other)?.referrerID != referrer
             } ?? items.endIndex
         }
         items.insert(.tab(id), at: index)
@@ -1168,7 +1167,7 @@ struct SidebarDuplicateTarget: Equatable {
     init?(items: [SidebarItemReference], spaceID: UUID, profileID: UUID, state: BrowserState) {
         guard items.allSatisfy({ SidebarHierarchy.location(of: $0, state: state, spaceID: spaceID) != nil }),
               let source = CommandBarFolderMoveSource(items: items, spaceID: spaceID, profileID: profileID, state: state) else { return nil }
-        let tabs = source.tabIDs.compactMap { id in state.tabs.first { $0.id == id } }
+        let tabs = source.tabIDs.compactMap { id in state.tab(id) }
         guard tabs.count == source.tabIDs.count, tabs.allSatisfy({
             $0.kind != .favorite && $0.spaceID == spaceID && $0.profileID == profileID
                 && $0.archivedAt == nil && ($0.folderID == nil || $0.kind == .pinned)
@@ -1294,7 +1293,7 @@ struct FolderRemovalTarget: Equatable {
             return true
         }
         guard roots.allSatisfy(collect), Set(tabIDs).count == tabIDs.count else { return nil }
-        let tabs = tabIDs.compactMap { id in state.tabs.first { $0.id == id } }
+        let tabs = tabIDs.compactMap { id in state.tab(id) }
         guard tabs.count == tabIDs.count, tabs.allSatisfy({
             $0.spaceID == spaceID && $0.profileID == profileID && $0.kind != .favorite && $0.archivedAt == nil
                 && ($0.folderID == nil || $0.kind == .pinned)
@@ -1360,7 +1359,7 @@ struct FolderDeletionUndo {
         spaceID = target.hierarchy.spaceID; profileID = target.hierarchy.profileID
         folders = target.hierarchy.folders.filter { target.folderIDs.contains($0.id) }
         tabs = target.tabs; groups = target.groups
-        archivedTabs = target.tabs.compactMap { original in after.tabs.first { $0.id == original.id } }
+        archivedTabs = target.tabs.compactMap { original in after.tab(original.id) }
         var seen = Set<String>()
         locations = target.roots.compactMap { root in
             guard let container = SidebarHierarchy.location(of: root, state: before, spaceID: target.hierarchy.spaceID),
@@ -1436,9 +1435,9 @@ struct ClosedTabsUndo {
           before: BrowserState, after: BrowserState) {
         let candidates = before.tabs.filter { ids.contains($0.id) && $0.archivedAt == nil && $0.kind == .today
             && $0.folderID == nil && $0.spaceID == spaceID && $0.profileID == profileID }
-        let archived = candidates.compactMap { original in after.tabs.first { $0.id == original.id && $0.archivedAt != nil } }
+        let archived = candidates.compactMap { original in after.tab(original.id, where: { $0.archivedAt != nil }) }
         let originals = archived.isEmpty
-            ? candidates.filter { original in !after.tabs.contains { $0.id == original.id } }
+            ? candidates.filter { original in !after.containsTab(original.id) }
             : candidates.filter { original in archived.contains { $0.id == original.id } }
         guard !originals.isEmpty else { return nil }
         let closed = Set(originals.map(\.id))
@@ -1454,7 +1453,7 @@ struct ClosedTabsUndo {
     }
 
     func restorableIDs(in state: BrowserState) -> Set<UUID> {
-        if removesTabs { return Set(tabs.filter { original in !state.tabs.contains { $0.id == original.id } }.map(\.id)) }
+        if removesTabs { return Set(tabs.filter { original in !state.containsTab(original.id) }.map(\.id)) }
         return Set(archivedTabs.filter { recorded in state.tabs.contains { current in
             current.id == recorded.id && current.profileID == recorded.profileID
                 && current.spaceID == recorded.spaceID && current.createdAt == recorded.createdAt
@@ -1463,10 +1462,8 @@ struct ClosedTabsUndo {
     }
 
     func redoIDs(in state: BrowserState) -> Set<UUID> {
-        Set(tabs.filter { original in state.tabs.contains {
-            $0.id == original.id && $0.archivedAt == nil && $0.kind == .today && $0.folderID == nil
-                && $0.spaceID == spaceID && $0.profileID == profileID
-        } }.map(\.id))
+        Set(tabs.filter { original in state.containsTab(original.id, where: { $0.archivedAt == nil && $0.kind == .today && $0.folderID == nil
+                && $0.spaceID == spaceID && $0.profileID == profileID }) }.map(\.id))
     }
 
     func restoring(_ state: BrowserState, regroupable: (UUID) -> Bool = { _ in true }) -> BrowserState? {
@@ -1474,7 +1471,7 @@ struct ClosedTabsUndo {
         guard !ids.isEmpty else { return nil }
         var next = state
         for original in tabs where ids.contains(original.id) {
-            guard let index = next.tabs.firstIndex(where: { $0.id == original.id }) else {
+            guard let index = next.tabIndex(original.id) else {
                 next.tabs.append(original); continue
             }
             next.tabs[index].archivedAt = original.archivedAt
@@ -1581,10 +1578,8 @@ struct FolderRemovalSelection: Equatable {
                         previouslySelectedItemID: UUID? = nil, available: (UUID) -> Bool) -> Self? {
         guard state.spaces.contains(where: { $0.id == space && $0.profileID == profile }),
               selected.count <= 4, Set(selected).count == selected.count,
-              selected.allSatisfy({ id in state.tabs.contains {
-                  $0.id == id && $0.archivedAt == nil && $0.profileID == profile
-                      && ($0.spaceID == space || $0.kind == .favorite)
-              } }), focused == nil || selected.contains(focused!) else { return nil }
+              selected.allSatisfy({ id in state.containsTab(id, where: { $0.archivedAt == nil && $0.profileID == profile
+                      && ($0.spaceID == space || $0.kind == .favorite) }) }), focused == nil || selected.contains(focused!) else { return nil }
         let survivors = selected.filter { !removed.contains($0) }
         func decision(_ ids: [UUID], focus: UUID?, replacementSpaceID: UUID? = nil) -> Self {
             .init(spaceID: space, profileID: profile, original: selected,
@@ -1643,9 +1638,9 @@ struct FolderRemovalSelection: Equatable {
                 }
             }
         }
-        if let current, let previous = state.tabs.first(where: { $0.id == current })?.activeTabBeforeCreationID,
+        if let current, let previous = state.tab(current)?.activeTabBeforeCreationID,
            referrerPool.contains(previous), !removed.contains(previous), available(previous),
-           let tab = state.tabs.first(where: { $0.id == previous && $0.archivedAt == nil
+           let tab = state.tab(previous, where: { $0.archivedAt == nil
                && $0.profileID == profile && ($0.kind == .favorite || $0.spaceID == space) }) {
             if tab.kind == .favorite { return decision([previous], focus: previous) }
             if let item = ordered.first(where: { $0.ids.contains(previous) }), eligible(item) {
@@ -1653,8 +1648,8 @@ struct FolderRemovalSelection: Equatable {
             }
         }
         if let current, let previous = previouslySelectedItemID, previous != current,
-           let source = state.tabs.first(where: { $0.id == current && $0.archivedAt == nil && $0.profileID == profile }),
-           let tab = state.tabs.first(where: { $0.id == previous && $0.archivedAt == nil && $0.profileID == profile }),
+           let source = state.tab(current, where: { $0.archivedAt == nil && $0.profileID == profile }),
+           let tab = state.tab(previous, where: { $0.archivedAt == nil && $0.profileID == profile }),
            !removed.contains(previous), available(previous),
            source.kind == .favorite || tab.kind == .favorite || source.spaceID == tab.spaceID,
            state.spaces.contains(where: { $0.id == tab.spaceID && $0.profileID == profile }) {
@@ -1667,10 +1662,8 @@ struct FolderRemovalSelection: Equatable {
                (2...4).contains(group.tabIDs.count), Set(group.tabIDs).count == group.tabIDs.count,
                BrowserSplitLayout.normalized(group.widthFactors, count: group.tabIDs.count) != nil,
                group.tabIDs.allSatisfy({ id in
-                   !removed.contains(id) && available(id) && state.tabs.contains {
-                       $0.id == id && $0.archivedAt == nil && $0.profileID == profile
-                           && $0.spaceID == destination && $0.kind == tab.kind && $0.folderID == tab.folderID
-                   }
+                   !removed.contains(id) && available(id) && state.containsTab(id, where: { $0.archivedAt == nil && $0.profileID == profile
+                           && $0.spaceID == destination && $0.kind == tab.kind && $0.folderID == tab.folderID })
                }) {
                 return decision(group.tabIDs, focus: previous, replacementSpaceID: destination)
             }
@@ -1906,7 +1899,7 @@ final class BrowserStore: ObservableObject {
             let current = activityOnlyState ?? publishedState
             guard newValue != current else { return }
             activityOnlyState = nil
-            publishedState = newValue
+            publishedState = newValue.attachingTabLookup(after: current)
             if !themePreviews.isEmpty {
                 themePreviews = themePreviews.filter { id, entry in
                     newValue.spaces.contains { $0.id == id && $0.theme == entry.preview }
@@ -2080,7 +2073,7 @@ final class BrowserStore: ObservableObject {
                 spaceName: state.spaces.first { $0.id == tab.spaceID }?.name ?? "Space")
         }
         for layout in state.splitLayouts where layout.tabIDs.allSatisfy({ ids.contains($0) }) {
-            guard layout.tabIDs.allSatisfy({ id in state.tabs.contains { $0.id == id && $0.kind == .today && $0.archivedAt == nil } }),
+            guard layout.tabIDs.allSatisfy({ id in state.containsTab(id, where: { $0.kind == .today && $0.archivedAt == nil }) }),
                   layout.tabIDs.allSatisfy({ result[$0]?.groupID == nil }) else { continue }
             let group = UUID()
             for id in layout.tabIDs { result[id]?.groupID = group; result[id]?.split = layout }
@@ -2218,11 +2211,11 @@ final class BrowserStore: ObservableObject {
 
     @discardableResult
     func restoreLiveTab(_ original: BrowserTab, replacing expected: BrowserTab?) -> Bool {
-        guard state.tabs.first(where: { $0.id == original.id }) == expected,
+        guard state.tab(original.id) == expected,
               original.archivedAt == nil,
               state.profiles.contains(where: { $0.id == original.profileID }),
               state.spaces.contains(where: { $0.id == original.spaceID && $0.profileID == original.profileID }) else { return false }
-        if let index = state.tabs.firstIndex(where: { $0.id == original.id }) { state.tabs[index] = original }
+        if let index = state.tabIndex(original.id) { state.tabs[index] = original }
         else { state.tabs.append(original) }
         state.recentlyClosedIDs.removeAll { $0 == original.id }
         reconcileSplitLayouts()
@@ -2439,7 +2432,7 @@ final class BrowserStore: ObservableObject {
                                     profileID: UUID, expectedSelection: [UUID], creation: TabCreationProvenance? = nil) -> Bool {
         guard activeSpaceID == spaceID, activeSpace.profileID == profileID,
               state.selectedTabIDs == expectedSelection, !isProfileRemovalPending(profileID),
-              !state.tabs.contains(where: { $0.id == tabID }),
+              !state.containsTab(tabID),
               !retiringTabIDs.contains(tabID), expectedSelection.allSatisfy({ id in
                   visibleTabs.contains { $0.id == id } && !retiringTabIDs.contains(id)
               }), !InternalPage.isInternal(url.absoluteString) else { return false }
@@ -2478,7 +2471,7 @@ final class BrowserStore: ObservableObject {
         var next = state
         let creation = creation?.validated(profileID: activeSpace.profileID, state: state)
         var savedHomeIDs = savedHomeIDs, validatedBeforeMove = false
-        if newURL == nil, let foreign = state.tabs.first(where: { $0.id == tabID && $0.archivedAt == nil
+        if newURL == nil, let foreign = state.tab(tabID, where: { $0.archivedAt == nil
             && $0.kind != .favorite && $0.profileID == activeSpace.profileID && $0.spaceID != activeSpaceID }) {
             if let documents {
                 var planned = expectedSelection; planned.insert(tabID, at: index + 1)
@@ -2493,7 +2486,7 @@ final class BrowserStore: ObservableObject {
             next = moved
         }
         if let url = newURL {
-            guard !state.tabs.contains(where: { $0.id == tabID }) else { return false }
+            guard !state.containsTab(tabID) else { return false }
             let title = url.host ?? "New Tab", resolved = BrowserInternalURL.publicString(url.absoluteString)
             next.tabs.append(BrowserTab(id: tabID, spaceID: activeSpaceID,
                 profileID: activeSpace.profileID, url: resolved, title: title, kind: .today,
@@ -2501,7 +2494,7 @@ final class BrowserStore: ObservableObject {
                 referrerID: creation?.referrerID, activeTabBeforeCreationID: creation?.activeTabBeforeCreationID))
             SidebarHierarchy.placingCreatedTab(tabID, insertion: .automatic, in: &next)
         } else {
-            guard next.tabs.contains(where: { $0.id == tabID && $0.archivedAt == nil
+            guard next.containsTab(tabID, where: { $0.archivedAt == nil
                 && ($0.kind == .favorite ? $0.profileID == activeSpace.profileID : $0.spaceID == activeSpaceID) }) else { return false }
         }
         var ids = expectedSelection
@@ -2543,14 +2536,14 @@ final class BrowserStore: ObservableObject {
 
     func navigate(_ id: UUID, input: String) {
         guard let url = NavigationInput.resolve(input, searchEngine: state.settings.searchEngine) else { return }
-        guard let tab = state.tabs.first(where: { $0.id == id }) else { return }
+        guard let tab = state.tab(id) else { return }
         if !InternalPage.isInternal(tab.url), InternalPage.isInternal(url.absoluteString) {
             withRetiredPages([id]) { [weak self] in self?.updateTab(id, url: url.absoluteString) }
         } else { updateTab(id, url: url.absoluteString) }
     }
 
     func updateTab(_ id: UUID, title: String? = nil, url: String? = nil) {
-        guard let index = state.tabs.firstIndex(where: { $0.id == id }) else { return }
+        guard let index = state.tabIndex(id) else { return }
         let current = state.tabs[index]
         let nextTitle = title.flatMap { $0.isEmpty ? nil : $0 } ?? current.title
         let nextURL = url.map(BrowserInternalURL.publicString) ?? current.url
@@ -2600,7 +2593,7 @@ final class BrowserStore: ObservableObject {
 
     func selectTab(_ id: UUID, extendingSplit: Bool = false, savedHomeIDs: [UUID: UUID] = [:],
                    documents: [UUID: SidebarDocumentReference]? = nil) {
-        guard let index = state.tabs.firstIndex(where: { $0.id == id && $0.archivedAt == nil }) else { return }
+        guard let index = state.tabIndex(id, where: { $0.archivedAt == nil }) else { return }
         if extendingSplit, let documents, !SidebarDocumentReference.validates(splitExtensionHomes(id), references: documents) { return }
         let tab = state.tabs[index]
         if tab.kind != .favorite && tab.spaceID != activeSpaceID { selectSpace(tab.spaceID) }
@@ -2608,7 +2601,7 @@ final class BrowserStore: ObservableObject {
             guard let compatible = state.spaces.first(where: { $0.profileID == tab.profileID }) else { return }
             selectSpace(compatible.id)
         }
-        guard let index = state.tabs.firstIndex(where: { $0.id == id && $0.archivedAt == nil }) else { return }
+        guard let index = state.tabIndex(id, where: { $0.archivedAt == nil }) else { return }
         var next = state
         next.tabs[index].lastAccessed = clock()
         next.tabs[index].isUnread = false
@@ -2714,14 +2707,14 @@ final class BrowserStore: ObservableObject {
         let now = clock()
         let retainedSavedGroups = Set(state.splitLayouts.filter { group in
             !isEphemeral && group.tabIDs.allSatisfy { id in
-                ids.contains(id) && state.tabs.contains { $0.id == id && $0.kind != .today && $0.archivedAt == nil }
+                ids.contains(id) && state.containsTab(id, where: { $0.kind != .today && $0.archivedAt == nil })
             }
         }.map(\.id))
         let displayedGroupID = SidebarSplitItems.groups(in: state, spaceID: activeSpaceID)
             .first { $0.tabIDs == state.selectedTabIDs }?.id
         for id in closing {
             tabHistory?.remove(id)
-            guard let index = next.tabs.firstIndex(where: { $0.id == id }) else { continue }
+            guard let index = next.tabIndex(id) else { continue }
             if let layoutIndex = next.splitLayouts.firstIndex(where: { $0.id == displayedGroupID && $0.tabIDs == next.selectedTabIDs && !retainedSavedGroups.contains($0.id) }),
                let pane = next.splitLayouts[layoutIndex].tabIDs.firstIndex(of: id) {
                 var layout = next.splitLayouts.remove(at: layoutIndex)
@@ -2747,7 +2740,7 @@ final class BrowserStore: ObservableObject {
             guard state.splitLayouts.contains(where: { $0.id == layout.id && !Set($0.tabIDs).isDisjoint(with: closing) }) else { continue }
             if layout.widthFactors.count == layout.tabIDs.count {
                 for pane in layout.tabIDs.indices.reversed() where closing.contains(layout.tabIDs[pane])
-                    && !next.tabs.contains(where: { $0.id == layout.tabIDs[pane] && $0.archivedAt == nil }) {
+                    && !next.containsTab(layout.tabIDs[pane], where: { $0.archivedAt == nil }) {
                     layout.tabIDs.remove(at: pane); layout.widthFactors.remove(at: pane)
                 }
             }
@@ -2852,7 +2845,7 @@ final class BrowserStore: ObservableObject {
 
     private func restoreArchivedTab(_ id: UUID, profileID requestedProfile: UUID?,
                                     destination target: ArchiveRestoreDestination, preview: ArchivePreviewLease?) -> [UUID] {
-        guard let original = state.tabs.first(where: { $0.id == id && $0.archivedAt != nil }),
+        guard let original = state.tab(id, where: { $0.archivedAt != nil }),
               requestedProfile == nil || original.profileID == requestedProfile,
               let item = archivedItems(profileID: original.profileID).first(where: { $0.tabs.contains { $0.id == id } }) else { return [] }
         let preferred: UUID?, fallback: UUID?
@@ -2904,7 +2897,7 @@ final class BrowserStore: ObservableObject {
     }
 
     func resetDormantSavedTab(_ expected: BrowserTab) {
-        guard let index = state.tabs.firstIndex(where: { $0.id == expected.id }),
+        guard let index = state.tabIndex(expected.id),
               state.tabs[index] == expected, expected.resetDestination != nil,
               !retiringTabIDs.contains(expected.id) else { return }
         tabHistory?.remove(expected.id)
@@ -2916,7 +2909,7 @@ final class BrowserStore: ObservableObject {
     @discardableResult
     func replaceSavedHome(_ expected: BrowserTab, url: String, title: String) -> Bool {
         let url = BrowserInternalURL.publicString(url)
-        guard let index = state.tabs.firstIndex(where: { $0.id == expected.id }),
+        guard let index = state.tabIndex(expected.id),
               state.tabs[index] == expected, expected.resetDestination != nil,
               !retiringTabIDs.contains(expected.id), !isProfileRemovalPending(expected.profileID),
               !InternalPage.isInternal(url), let page = URL(string: url), page.scheme != nil else { return false }
@@ -2928,9 +2921,9 @@ final class BrowserStore: ObservableObject {
 
     @discardableResult
     func separateFromPinnedTab(_ expected: BrowserTab, todayID: UUID, title: String) -> Bool {
-        guard let index = state.tabs.firstIndex(where: { $0.id == expected.id }),
+        guard let index = state.tabIndex(expected.id),
               state.tabs[index] == expected, expected.kind == .pinned, expected.resetDestination != nil,
-              !retiringTabIDs.contains(expected.id), !state.tabs.contains(where: { $0.id == todayID }),
+              !retiringTabIDs.contains(expected.id), !state.containsTab(todayID),
               !isProfileRemovalPending(expected.profileID),
               state.spaces.contains(where: { $0.id == expected.spaceID && $0.profileID == expected.profileID }),
               !SidebarSplitItems.groups(in: state, spaceID: expected.spaceID)
@@ -2958,7 +2951,7 @@ final class BrowserStore: ObservableObject {
     }
 
     func setKind(_ id: UUID, _ kind: TabKind) {
-        guard !retiringTabIDs.contains(id), let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }) else { return }
+        guard !retiringTabIDs.contains(id), let tab = state.tab(id, where: { $0.archivedAt == nil }) else { return }
         let group = SidebarSplitItems.groups(in: state, spaceID: tab.kind == .favorite ? activeSpaceID : tab.spaceID)
             .first { $0.tabIDs.contains(id) }
         let ids = group?.tabIDs ?? [id]
@@ -2970,7 +2963,7 @@ final class BrowserStore: ObservableObject {
             destination = space.id
         }
         for member in ids {
-            guard let index = state.tabs.firstIndex(where: { $0.id == member && $0.archivedAt == nil }) else { continue }
+            guard let index = state.tabIndex(member, where: { $0.archivedAt == nil }) else { continue }
             let previousKind = state.tabs[index].kind
             if let destination { state.tabs[index].spaceID = destination }
             state.tabs[index].kind = kind
@@ -2989,13 +2982,13 @@ final class BrowserStore: ObservableObject {
     }
 
     func moveTab(_ id: UUID, toSpace spaceID: UUID, folderID: UUID? = nil) {
-        guard let tab = state.tabs.first(where: { $0.id == id }),
+        guard let tab = state.tab(id),
               let space = state.spaces.first(where: { $0.id == spaceID }) else { return }
         if let folderID, !state.folders.contains(where: { $0.id == folderID && $0.spaceID == spaceID }) { return }
         if tab.profileID != space.profileID {
             withRetiredPages([id], shouldCommit: { [weak self] in
                 guard let self,
-                      let current = self.state.tabs.first(where: { $0.id == id }),
+                      let current = self.state.tab(id),
                       current.profileID == tab.profileID, current.spaceID == tab.spaceID,
                       self.state.spaces.first(where: { $0.id == spaceID })?.profileID == space.profileID else { return false }
                 return folderID == nil || self.state.folders.contains { $0.id == folderID && $0.spaceID == spaceID }
@@ -3004,7 +2997,7 @@ final class BrowserStore: ObservableObject {
     }
 
     private func finishMovingTab(_ id: UUID, toSpace spaceID: UUID, folderID: UUID?) {
-        guard let index = state.tabs.firstIndex(where: { $0.id == id }),
+        guard let index = state.tabIndex(id),
               let space = state.spaces.first(where: { $0.id == spaceID }) else { return }
         if let folderID, !state.folders.contains(where: { $0.id == folderID && $0.spaceID == spaceID }) { return }
         var next = state
@@ -3019,12 +3012,12 @@ final class BrowserStore: ObservableObject {
     }
 
     func reorderTab(_ id: UUID, before otherID: UUID?) {
-        guard id != otherID, let index = state.tabs.firstIndex(where: { $0.id == id }) else { return }
+        guard id != otherID, let index = state.tabIndex(id) else { return }
         let item = state.tabs[index]
-        if let otherID, let target = state.tabs.first(where: { $0.id == otherID }),
+        if let otherID, let target = state.tab(otherID),
            (target.kind != item.kind || target.spaceID != item.spaceID || target.folderID != item.folderID) { return }
         state.tabs.remove(at: index)
-        let position = otherID.flatMap { id in state.tabs.firstIndex { $0.id == id } } ?? state.tabs.count
+        let position = otherID.flatMap { id in state.tabIndex(id) } ?? state.tabs.count
         state.tabs.insert(item, at: position)
         changed()
     }
@@ -3219,7 +3212,7 @@ final class BrowserStore: ObservableObject {
     @discardableResult
     func saveSidebarTitle(_ expected: BrowserTab, title: String) throws -> SidebarTabTitleChange? {
         guard !isProfileRemovalPending(expected.profileID), !retiringTabIDs.contains(expected.id),
-              let index = state.tabs.firstIndex(where: { $0.id == expected.id }),
+              let index = state.tabIndex(expected.id),
               SidebarTabTitle.sameItemForEditing(state.tabs[index], expected) else {
             throw SidebarTabTitle.EditError.unavailable
         }
@@ -3238,7 +3231,7 @@ final class BrowserStore: ObservableObject {
         guard !title.isEmpty, !isEphemeral, expected.kind == .favorite,
               state.profiles.contains(where: { $0.id == expected.profileID }),
               !isProfileRemovalPending(expected.profileID), !retiringTabIDs.contains(expected.id),
-              let index = state.tabs.firstIndex(where: { $0.id == expected.id }),
+              let index = state.tabIndex(expected.id),
               SidebarTabTitle.sameItemForEditing(state.tabs[index], expected) else {
             throw SidebarTabTitle.EditError.unavailable
         }
@@ -3259,7 +3252,7 @@ final class BrowserStore: ObservableObject {
     @discardableResult
     func applyTabTitleChange(_ change: SidebarTabTitleChange, undo: Bool) throws -> Bool {
         guard canApplyTabTitleChange(change, undo: undo),
-              let index = state.tabs.firstIndex(where: { $0.id == change.tabID }) else { return false }
+              let index = state.tabIndex(change.tabID) else { return false }
         var next = state
         next.tabs[index].customTitle = undo ? change.previousTitle : change.title
         try commitProfileSettings(next)
@@ -3778,7 +3771,7 @@ final class BrowserStore: ObservableObject {
             return
         }
         guard !isEphemeral, ids.isDisjoint(with: retiringTabIDs),
-              ids.allSatisfy({ id in state.tabs.first { $0.id == id }.map(InterProfileMove.admits) == true }),
+              ids.allSatisfy({ id in state.tab(id).map(InterProfileMove.admits) == true }),
               admitted(state) != nil else { completion(.success(false)); return }
         let validateEditors: () -> Bool
         if let prepare = prepareLocalDocumentRelocation {
@@ -3810,7 +3803,7 @@ final class BrowserStore: ObservableObject {
     @discardableResult
     func commitForeignSplitDrop(_ ids: Set<UUID>, proposal: (BrowserState) -> BrowserState?) throws -> Bool {
         guard !isEphemeral, !ids.isEmpty, ids.isDisjoint(with: retiringTabIDs), let next = proposal(state),
-              ids.allSatisfy({ id in state.tabs.first { $0.id == id }?.profileID == next.tabs.first { $0.id == id }?.profileID }) else { return false }
+              ids.allSatisfy({ id in state.tab(id)?.profileID == next.tabs.first { $0.id == id }?.profileID }) else { return false }
         try commitProfileSettings(next)
         return true
     }
@@ -4138,7 +4131,7 @@ final class BrowserStore: ObservableObject {
               state.splitLayouts.allSatisfy({ group in !undo.groups.contains { $0.id == group.id }
                   && group.tabIDs.allSatisfy { !ids.contains($0) } }),
               undo.archivedTabs.allSatisfy({ archived in archived.archivedAt != nil
-                  && state.tabs.first(where: { $0.id == archived.id }) == archived }),
+                  && state.tab(archived.id) == archived }),
               undo.locations.allSatisfy({ location in
                   location.container.folderID == nil || state.folders.contains(where: {
                       $0.id == location.container.folderID && $0.spaceID == undo.spaceID
@@ -4156,12 +4149,12 @@ final class BrowserStore: ObservableObject {
         var next = state
         next.folders += undo.folders
         for original in undo.tabs {
-            guard let index = next.tabs.firstIndex(where: { $0.id == original.id }) else { return false }
+            guard let index = next.tabIndex(original.id) else { return false }
             next.tabs[index] = original
         }
         for original in undo.detachedArchive {
             var expected = original; expected.folderID = nil
-            if let index = next.tabs.firstIndex(where: { $0.id == original.id && $0 == expected }) {
+            if let index = next.tabIndex(original.id, where: { $0 == expected }) {
                 next.tabs[index].folderID = original.folderID
             }
         }
@@ -4285,7 +4278,7 @@ final class BrowserStore: ObservableObject {
             let kept = focusedID.flatMap { expected.tabIDs.contains($0) ? $0 : nil } ?? first
             next.selectedTabIDs = [kept]
             next.selectionBySpace[activeSpaceID.uuidString] = [kept]
-            if let tab = next.tabs.firstIndex(where: { $0.id == kept }) {
+            if let tab = next.tabIndex(kept) {
                 next.tabs[tab].lastAccessed = clock(); next.tabs[tab].isUnread = false
             }
         }
@@ -4332,7 +4325,7 @@ final class BrowserStore: ObservableObject {
                          documents: [UUID: SidebarDocumentReference],
                          localPage: InternalPage? = nil, localTitle: String? = nil) -> Bool {
         var savedHomeIDs = savedHomeIDs
-        let foreign = state.tabs.contains { $0.id == tabID && $0.spaceID != request.spaceID && $0.kind != .favorite }
+        let foreign = state.containsTab(tabID, where: { $0.spaceID != request.spaceID && $0.kind != .favorite })
         let foreignHomeID = foreign ? savedHomeIDs.removeValue(forKey: tabID) : nil
         guard (request.selection + [tabID] + Array(savedHomeIDs.values) + [foreignHomeID].compactMap { $0 })
                 .allSatisfy({ !retiringTabIDs.contains($0) }),
@@ -4486,13 +4479,13 @@ final class BrowserStore: ObservableObject {
         for var layout in candidates.reversed() {
             guard let space = state.spaces.first(where: { $0.id == layout.spaceID }),
                   layout.widthFactors.count == layout.tabIDs.count else { continue }
-            let favoriteProfile = layout.tabIDs.first.flatMap { id in state.tabs.first { $0.id == id }?.profileID }
+            let favoriteProfile = layout.tabIDs.first.flatMap { id in state.tab(id)?.profileID }
                 .flatMap { id in SidebarSplitItems.isFavorite(layout, in: state, profileID: id) ? id : nil }
             let ownerProfile = favoriteProfile ?? space.profileID
             var seen = Set<UUID>()
             let positions = layout.tabIDs.indices.filter { index in
                 let id = layout.tabIDs[index]
-                guard seen.insert(id).inserted, let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil
+                guard seen.insert(id).inserted, let tab = state.tab(id, where: { $0.archivedAt == nil
                     && $0.profileID == ownerProfile && ($0.kind == .favorite || $0.spaceID == space.id) }) else { return false }
                 return tab.kind == .favorite ? !(favorites[ownerProfile] ?? []).contains(id) : !(assigned[space.id] ?? []).contains(id)
             }
@@ -4506,7 +4499,7 @@ final class BrowserStore: ObservableObject {
             }
             if layouts.contains(where: { $0.id == layout.id }) { layout.id = UUID() }
             for id in ids {
-                if state.tabs.contains(where: { $0.id == id && $0.kind == .favorite }) {
+                if state.containsTab(id, where: { $0.kind == .favorite }) {
                     favorites[ownerProfile, default: []].insert(id)
                 } else { assigned[space.id, default: []].insert(id) }
             }
@@ -4636,7 +4629,7 @@ final class BrowserStore: ObservableObject {
             }
         }
         guard didChange else { return }
-        activityOnlyState = next
+        activityOnlyState = next.attachingTabLookup(after: state)
         scheduleSave()
     }
 
@@ -4718,7 +4711,7 @@ final class BrowserStore: ObservableObject {
             let location = SidebarContainerLocation(spaceID: space.id, folderID: nil, section: .today)
             for item in SidebarHierarchy.children(in: location, state: state) {
                 let ids = SidebarHierarchy.tabIDs(in: item, state: state, spaceID: space.id)
-                let tabs = ids.compactMap { id in state.tabs.first { $0.id == id } }
+                let tabs = ids.compactMap { id in state.tab(id) }
                 guard !ids.isEmpty, tabs.count == ids.count, tabs.allSatisfy({ tab in
                     tab.kind == .today && tab.folderID == nil && tab.archivedAt == nil
                         && tab.profileID == space.profileID && tab.spaceID == space.id
@@ -5137,9 +5130,9 @@ final class BrowserStore: ObservableObject {
                   BrowserSplitLayout.normalized(layout.widthFactors, count: layout.tabIDs.count) != nil,
                   abs(layout.widthFactors.reduce(0, +) - 1) < 1e-9,
                   splitKeys.insert(layout.spaceID.uuidString + layout.tabIDs.map(\.uuidString).joined()).inserted,
-                  layout.tabIDs.allSatisfy({ id in state.tabs.contains { $0.id == id && $0.archivedAt == nil
+                  layout.tabIDs.allSatisfy({ id in state.containsTab(id, where: { $0.archivedAt == nil
                       && (($0.profileID == space.profileID && ($0.kind == .favorite || $0.spaceID == space.id))
-                          || SidebarSplitItems.isFavorite(layout, in: state, profileID: $0.profileID)) } })
+                          || SidebarSplitItems.isFavorite(layout, in: state, profileID: $0.profileID)) }) })
             else { throw CocoaError(.fileReadCorruptFile) }
         }
         for folder in state.folders {
@@ -5190,7 +5183,7 @@ enum ExternalSplitDrop {
     static func savedHomeSource(state: BrowserState, selection: [UUID],
                                 layout: BrowserSplitLayout?, target: SplitDropTarget) -> BrowserTab? {
         guard layout == nil, selection.count == 1, case .insert = target else { return nil }
-        return state.tabs.first { $0.id == selection[0] && ($0.kind == .favorite || $0.kind == .pinned) }
+        return state.tab(selection[0], where: { ($0.kind == .favorite || $0.kind == .pinned) })
     }
 
     static func proposal(url: URL, tabID: UUID, state: BrowserState,
@@ -5202,10 +5195,10 @@ enum ExternalSplitDrop {
               state.profiles.contains(where: { $0.id == profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == profileID }),
               state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }),
-              state.selectedTabIDs == selection, !state.tabs.contains(where: { $0.id == tabID }),
+              state.selectedTabIDs == selection, !state.containsTab(tabID),
               !selection.isEmpty else { return nil }
-        let originals = selection.compactMap { id in state.tabs.first { $0.id == id && $0.archivedAt == nil
-            && $0.profileID == profileID && ($0.kind == .favorite || $0.spaceID == spaceID) } }
+        let originals = selection.compactMap { id in state.tab(id, where: { $0.archivedAt == nil
+            && $0.profileID == profileID && ($0.kind == .favorite || $0.spaceID == spaceID) }) }
         guard originals.count == selection.count,
               originals.allSatisfy({ tab in tab.kind != .favorite || (tab.folderID == nil && state.spaces.contains {
                   $0.id == tab.spaceID && $0.profileID == profileID
@@ -5281,15 +5274,15 @@ enum SplitDropTransaction {
 enum SidebarSplitItems {
     static func isFavorite(_ group: BrowserSplitLayout, in state: BrowserState, profileID: UUID) -> Bool {
         group.tabIDs.count > 1 && group.tabIDs.allSatisfy { id in
-            state.tabs.contains { $0.id == id && $0.archivedAt == nil && $0.profileID == profileID && $0.kind == .favorite && $0.folderID == nil }
+            state.containsTab(id, where: { $0.archivedAt == nil && $0.profileID == profileID && $0.kind == .favorite && $0.folderID == nil })
         }
     }
     static func groups(in state: BrowserState, spaceID: UUID) -> [BrowserSplitLayout] {
         guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return [] }
         return state.splitLayouts.filter { group in
             (group.spaceID == spaceID || isFavorite(group, in: state, profileID: space.profileID)) && group.tabIDs.count > 1 && group.tabIDs.allSatisfy { id in
-                state.tabs.contains { $0.id == id && $0.archivedAt == nil && $0.profileID == space.profileID
-                    && ($0.kind == .favorite || $0.spaceID == spaceID) }
+                state.containsTab(id, where: { $0.archivedAt == nil && $0.profileID == space.profileID
+                    && ($0.kind == .favorite || $0.spaceID == spaceID) })
             }
         }
     }
@@ -5320,7 +5313,7 @@ enum SidebarTabTitle {
         guard selectedTabIDs.count == 1, let id = selectedTabIDs.first,
               state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }),
               !state.splitLayouts.contains(where: { $0.spaceID == spaceID && $0.tabIDs.contains(id) }),
-              let tab = state.tabs.first(where: { $0.id == id && $0.spaceID == spaceID
+              let tab = state.tab(id, where: { $0.spaceID == spaceID
                   && $0.profileID == profileID && $0.archivedAt == nil }),
               tab.kind != .favorite, !InternalPage.isInternal(tab.url) else { return nil }
         return tab
@@ -5364,7 +5357,7 @@ struct SidebarTabTitleChange: Equatable {
 
     func target(in state: BrowserState, undo: Bool) -> BrowserTab? {
         guard previousTitle != title, state.profiles.contains(where: { $0.id == profileID }),
-              let tab = state.tabs.first(where: { $0.id == tabID && $0.profileID == profileID }),
+              let tab = state.tab(tabID, where: { $0.profileID == profileID }),
               tab.archivedAt == nil, tab.customTitle == (undo ? title : previousTitle) else { return nil }
         return tab
     }
@@ -5379,7 +5372,7 @@ struct SidebarSplitTitleEdit: Equatable {
         guard state.spaces.contains(where: { $0.id == group.spaceID && $0.profileID == profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == profileID }),
               SidebarSplitItems.groups(in: state, spaceID: group.spaceID).contains(group) else { return nil }
-        let children = group.tabIDs.compactMap { id in state.tabs.first { $0.id == id } }
+        let children = group.tabIDs.compactMap { id in state.tab(id) }
         guard children.count == group.tabIDs.count,
               ((children.allSatisfy({ $0.profileID == profileID && $0.spaceID == group.spaceID
                   && $0.kind != .favorite && $0.archivedAt == nil })) || SidebarSplitItems.isFavorite(group, in: state, profileID: profileID)) else { return nil }

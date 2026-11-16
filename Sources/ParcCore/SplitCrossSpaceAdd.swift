@@ -3,19 +3,19 @@ import Foundation
 enum SplitCrossSpaceAdd {
     static func relocated(_ state: BrowserState, source: UUID, into spaceID: UUID, profileID: UUID,
                           pane: UUID?, homeID: UUID?, now: Date) -> BrowserState? {
-        guard let tab = state.tabs.first(where: { $0.id == source && $0.archivedAt == nil }),
+        guard let tab = state.tab(source, where: { $0.archivedAt == nil }),
               tab.profileID == profileID,
               state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }) else { return nil }
         guard tab.kind != .favorite, tab.spaceID != spaceID else { return state }
         let origin = tab.spaceID
         guard state.spaces.contains(where: { $0.id == origin && $0.profileID == profileID }),
-              let index = state.tabs.firstIndex(where: { $0.id == source }) else { return nil }
+              let index = state.tabIndex(source) else { return nil }
         let parents = state.splitLayouts.filter { $0.tabIDs.contains(source) }
         guard parents.count <= 1, parents.allSatisfy({ $0.spaceID == origin }) else { return nil }
         var next = state
         var replacement: UUID?
         if SplitMembership.isSaved(tab) {
-            guard let homeID, homeID != source, !state.tabs.contains(where: { $0.id == homeID }),
+            guard let homeID, homeID != source, !state.containsTab(homeID),
                   FolderDuplicateTarget.validSource(tab.savedURL) else { return nil }
             let home = SplitMembership.makeHome(of: tab, id: homeID, now: now, activeTabBeforeCreationID: nil)
             if let parent = parents.first, let stored = next.splitLayouts.firstIndex(where: { $0.id == parent.id }),

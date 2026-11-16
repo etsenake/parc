@@ -18,10 +18,10 @@ enum OriginalSplitDrop {
               state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == profileID }),
               SidebarHierarchySnapshot(state: state, spaceID: spaceID, profileID: profileID, includesFavorites: true) != nil,
-              state.tabs.contains(where: { $0.id == source && $0.archivedAt == nil && $0.profileID == profileID
+              state.containsTab(source, where: { $0.archivedAt == nil && $0.profileID == profileID
                   && ($0.kind == .favorite || $0.spaceID == spaceID) }) else { return nil }
-        let originals = selection.compactMap { id in state.tabs.first { $0.id == id && $0.archivedAt == nil
-            && $0.profileID == profileID && ($0.kind == .favorite || $0.spaceID == spaceID) } }
+        let originals = selection.compactMap { id in state.tab(id, where: { $0.archivedAt == nil
+            && $0.profileID == profileID && ($0.kind == .favorite || $0.spaceID == spaceID) }) }
         let actual = SidebarSplitItems.groups(in: state, spaceID: spaceID).first { $0.tabIDs == selection }
         guard originals.count == selection.count, actual == layout,
               layout != nil || !state.splitLayouts.contains(where: { !$0.tabIDs.allSatisfy { !selection.contains($0) } }),
@@ -44,7 +44,7 @@ enum SplitMembership {
 
     static func container(of group: BrowserSplitLayout, in state: BrowserState) -> SidebarContainerLocation? {
         guard let anchorID = group.sidebarAnchorID ?? group.tabIDs.first, group.tabIDs.contains(anchorID),
-              let anchor = state.tabs.first(where: { $0.id == anchorID && $0.archivedAt == nil }) else { return nil }
+              let anchor = state.tab(anchorID, where: { $0.archivedAt == nil }) else { return nil }
         return placement(of: anchor, groupSpaceID: group.spaceID)
     }
 
@@ -79,7 +79,7 @@ enum SplitMembership {
         let kept = Set(existing?.tabIDs ?? [])
         return ids.compactMap { id in
             guard !kept.contains(id), id != added else { return nil }
-            return state.tabs.first { $0.id == id && $0.archivedAt == nil && isSaved($0) }
+            return state.tab(id, where: { $0.archivedAt == nil && isSaved($0) })
         }
     }
 
@@ -108,14 +108,14 @@ enum SplitMembership {
         let ids = group.tabIDs
         guard (1...4).contains(ids.count), Set(ids).count == ids.count,
               let space = state.spaces.first(where: { $0.id == spaceID }),
-              ids.allSatisfy({ id in state.tabs.contains { $0.id == id && $0.archivedAt == nil
-                  && $0.profileID == space.profileID && ($0.kind == .favorite || $0.spaceID == spaceID) } }) else { return nil }
+              ids.allSatisfy({ id in state.containsTab(id, where: { $0.archivedAt == nil
+                  && $0.profileID == space.profileID && ($0.kind == .favorite || $0.spaceID == spaceID) }) }) else { return nil }
         let visible = SidebarSplitItems.groups(in: state, spaceID: spaceID)
         let target: SidebarContainerLocation
         if let existing {
             guard existing.id == group.id, visible.contains(existing),
                   let found = container(of: existing, in: state),
-                  existing.tabIDs.allSatisfy({ id in state.tabs.first { $0.id == id }.map { conforms($0, to: found) } ?? false })
+                  existing.tabIDs.allSatisfy({ id in state.tab(id).map { conforms($0, to: found) } ?? false })
             else { return nil }
             guard found.folderID.map({ id in state.folders.contains { $0.id == id && $0.spaceID == found.spaceID } }) ?? true
             else { return nil }
@@ -127,13 +127,13 @@ enum SplitMembership {
         let homes = savedHomeSources(joining: ids, existing: existing, added: added, state: state)
         let newIDs = homes.compactMap { homeIDs[$0.id] }
         guard newIDs.count == homes.count, Set(newIDs).count == newIDs.count,
-              newIDs.allSatisfy({ id in !ids.contains(id) && !state.tabs.contains { $0.id == id } }) else { return nil }
+              newIDs.allSatisfy({ id in !ids.contains(id) && !state.containsTab(id) }) else { return nil }
         for id in joining {
             let parents = state.splitLayouts.filter { $0.id != existing?.id && $0.tabIDs.contains(id) }
             guard parents.count <= 1, parents.allSatisfy({ visible.contains($0) }) else { return nil }
         }
         let ordinary = existing == nil ? ids.first { id in
-            state.tabs.contains { $0.id == id && $0.kind == .today && $0.folderID == nil && $0.spaceID == spaceID }
+            state.containsTab(id, where: { $0.kind == .today && $0.folderID == nil && $0.spaceID == spaceID })
                 && !state.splitLayouts.contains { $0.tabIDs.contains(id) }
         } : nil
         var next = state
@@ -175,7 +175,7 @@ enum SplitMembership {
         }
         if ids.count > 1 {
             for id in joining {
-                guard let index = next.tabs.firstIndex(where: { $0.id == id }) else { return nil }
+                guard let index = next.tabIndex(id) else { return nil }
                 convert(&next.tabs[index], to: target)
             }
             var result = group
@@ -242,7 +242,7 @@ enum SplitMembership {
         for group in state.splitLayouts where group.tabIDs.count > 1 {
             guard let target = container(of: group, in: next) else { continue }
             for id in group.tabIDs {
-                guard let index = next.tabs.firstIndex(where: { $0.id == id }),
+                guard let index = next.tabIndex(id),
                       next.tabs[index].archivedAt == nil, !conforms(next.tabs[index], to: target) else { continue }
                 let original = next.tabs[index]
                 if isSaved(original) {

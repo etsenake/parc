@@ -1488,7 +1488,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                   controller.store === self.store, self.windows.contains(where: { $0 === controller }) else { return nil }
             var result = SidebarCopySources()
             for original in originals {
-                guard self.store.state.tabs.first(where: { $0.id == original.id }) == original,
+                guard self.store.state.tab(original.id) == original,
                       !self.store.isProfileRemovalPending(original.profileID) else { return nil }
                 if let page = InternalPage(urlString: original.savedURL) {
                     do {

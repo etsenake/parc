@@ -13,7 +13,7 @@ struct CommandBarFavoriteRenameAction: Equatable, Identifiable {
               state.profiles.contains(where: { $0.id == profileID }),
               !state.profileRemovals.contains(where: { $0.profileID == profileID }),
               !state.splitLayouts.contains(where: { $0.tabIDs.contains(id) }),
-              let tab = state.tabs.first(where: { $0.id == id && $0.profileID == profileID
+              let tab = state.tab(id, where: { $0.profileID == profileID
                   && $0.kind == .favorite && $0.archivedAt == nil }) else { return nil }
         self.tab = tab; self.spaceID = spaceID; self.profileID = profileID
     }

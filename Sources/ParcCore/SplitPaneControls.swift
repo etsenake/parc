@@ -47,10 +47,8 @@ struct SplitPaneInsertion: Equatable {
             && state.profiles.contains { $0.id == profileID }
             && !state.profileRemovals.contains { $0.profileID == profileID }
             && SidebarSplitItems.groups(in: state, spaceID: spaceID).first { $0.tabIDs == selection } == layout
-            && selection.allSatisfy { id in state.tabs.contains {
-                $0.id == id && $0.archivedAt == nil && $0.profileID == profileID
-                    && ($0.spaceID == spaceID || $0.kind == .favorite)
-            } }
+            && selection.allSatisfy { id in state.containsTab(id, where: { $0.archivedAt == nil && $0.profileID == profileID
+                    && ($0.spaceID == spaceID || $0.kind == .favorite) }) }
     }
 
     var previewFactors: [Double] {
@@ -66,7 +64,7 @@ struct SplitPaneInsertion: Equatable {
         let address: String
         let title: String
         if let localPage {
-            guard navigationURL == nil, !state.tabs.contains(where: { $0.id == tabID }),
+            guard navigationURL == nil, !state.containsTab(tabID),
                   !state.tabs.contains(where: {
                       InternalPage(urlString: $0.url) == localPage || InternalPage(urlString: $0.savedURL) == localPage
                   }) else { return nil }
@@ -74,7 +72,7 @@ struct SplitPaneInsertion: Equatable {
             title = name.isEmpty ? localPage.untitledTitle : name
             address = localPage.urlString
         } else if let navigationURL {
-            guard navigationURL.scheme != nil, !state.tabs.contains(where: { $0.id == tabID }) else { return nil }
+            guard navigationURL.scheme != nil, !state.containsTab(tabID) else { return nil }
             address = BrowserInternalURL.publicString(navigationURL.absoluteString)
             title = navigationURL.host ?? "New Tab"
         } else {

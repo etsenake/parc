@@ -24,7 +24,7 @@ struct SpaceDeletionTarget: Equatable {
     }
     var tabIDs: Set<UUID> { Set(tabs.map(\.id)) }
     static func isProfileFavorite(_ group: BrowserSplitLayout, in state: BrowserState) -> Bool {
-        guard let first = group.tabIDs.first.flatMap({ id in state.tabs.first { $0.id == id } }) else { return false }
+        guard let first = group.tabIDs.first.flatMap({ id in state.tab(id) }) else { return false }
         return SidebarSplitItems.isFavorite(group, in: state, profileID: first.profileID)
     }
 }
@@ -94,7 +94,7 @@ struct SpaceDeletionUndo {
         } else { next.selectedTabIDs.removeAll { ids.contains($0) } }
         next.recentlyClosedIDs.removeAll { ids.contains($0) }
         next.recentlyClosedIDs += target.tabs.map(\.id)
-        let afterimages = originals.compactMap { original in next.tabs.first { $0.id == original.id } }
+        let afterimages = originals.compactMap { original in next.tab(original.id) }
         let undo = Self(target: target, index: index, neighboringSpaces: state.spaces.map(\.id), originals: originals,
             afterimages: afterimages, favoriteMoves: moves, favoriteGroups: favoriteGroups,
             sourceSelection: state.selectionBySpace[target.space.id.uuidString] ?? [], replacementSpaceID: fallback.id, documents: documents)
@@ -109,7 +109,7 @@ struct SpaceDeletionUndo {
               target.folders.allSatisfy({ original in !state.folders.contains { $0.id == original.id } }),
               target.groups.allSatisfy({ original in !state.splitLayouts.contains { $0.id == original.id || !$0.tabIDs.allSatisfy { !ids.contains($0) } } }),
               afterimages.count == originals.count,
-              afterimages.allSatisfy({ expected in state.tabs.first { $0.id == expected.id } == expected }),
+              afterimages.allSatisfy({ expected in state.tab(expected.id) == expected }),
               favoriteGroups.allSatisfy({ pair in state.splitLayouts.first { $0.id == pair.after.id } == pair.after }),
               target.order.keys.allSatisfy({ state.sidebarItemOrder[$0] == nil }) else { return nil }
         var next = state
@@ -118,11 +118,11 @@ struct SpaceDeletionUndo {
         next.spaces.insert(space, at: position)
         for i in next.spaces.indices { next.spaces[i].updateDisplayName(position: i) }
         for original in originals {
-            guard let i = next.tabs.firstIndex(where: { $0.id == original.id }) else { return nil }
+            guard let i = next.tabIndex(original.id) else { return nil }
             next.tabs[i] = original
         }
         for move in favoriteMoves {
-            if let i = next.tabs.firstIndex(where: { $0.id == move.id && $0.profileID == move.profile && $0.kind == .favorite && $0.spaceID == move.after }) {
+            if let i = next.tabIndex(move.id, where: { $0.profileID == move.profile && $0.kind == .favorite && $0.spaceID == move.after }) {
                 next.tabs[i].spaceID = move.before
             }
         }
@@ -248,7 +248,7 @@ struct SpaceFolderUndo {
         let target = conversion.target, ids = conversion.tabIDs, folders = Set(afterFolders.map(\.id))
         guard !conversion.crossesProfiles,
               state.spaces.contains(where: { $0.id == conversion.destination.spaceID && $0.profileID == conversion.destination.profileID }),
-              afterTabs.allSatisfy({ expected in state.tabs.first { $0.id == expected.id }.map {
+              afterTabs.allSatisfy({ expected in state.tab(expected.id).map {
                   $0.spaceID == expected.spaceID && $0.profileID == expected.profileID && $0.folderID == expected.folderID
                     && $0.kind == expected.kind && $0.archivedAt == nil
               } == true }),
@@ -259,7 +259,7 @@ struct SpaceFolderUndo {
               afterOrders.allSatisfy({ state.sidebarItemOrder[$0.key] == $0.value }),
               var next = deletion.restoring(in: state) else { return nil }
         for original in target.tabs {
-            guard let i = next.tabs.firstIndex(where: { $0.id == original.id }) else { return nil }
+            guard let i = next.tabIndex(original.id) else { return nil }
             next.tabs[i].spaceID = original.spaceID; next.tabs[i].profileID = original.profileID
             next.tabs[i].kind = original.kind; next.tabs[i].folderID = original.folderID
         }

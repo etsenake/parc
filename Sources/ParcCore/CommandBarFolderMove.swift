@@ -18,7 +18,7 @@ struct CommandBarFolderMoveSource: Equatable {
         guard Set(ids).count == ids.count else { return nil }
         var tabs: [BrowserTab] = []
         for id in ids {
-            guard let tab = state.tabs.first(where: { $0.id == id && $0.profileID == profileID && $0.archivedAt == nil }) else { return nil }
+            guard let tab = state.tab(id, where: { $0.profileID == profileID && $0.archivedAt == nil }) else { return nil }
             tabs.append(tab)
         }
         let groups = state.splitLayouts.filter { !$0.tabIDs.allSatisfy { !ids.contains($0) } }
@@ -46,7 +46,7 @@ struct CommandBarFolderMoveSource: Equatable {
         var next = state
         for item in items {
             guard case .tab(let id) = item else { continue }
-            guard let index = next.tabs.firstIndex(where: { $0.id == id && $0.profileID == profileID && $0.archivedAt == nil }) else { return nil }
+            guard let index = next.tabIndex(id, where: { $0.profileID == profileID && $0.archivedAt == nil }) else { return nil }
             if next.tabs[index].kind == .favorite {
                 guard next.tabs[index].folderID == nil, !state.splitLayouts.contains(where: { $0.tabIDs.contains(id) }) else { return nil }
                 next.tabs[index].spaceID = spaceID; next.tabs[index].kind = .pinned
@@ -131,7 +131,7 @@ struct CommandBarFolderCopy {
           documents: [UUID: SidebarDocumentReference] = [:], creation: TabCreationProvenance? = nil,
           state: BrowserState, now: Date) {
         let sources = SidebarCopySources(destinations: destinations, documents: documents)
-        let originals = move.tabIDs.compactMap { id in state.tabs.first { $0.id == id } }
+        let originals = move.tabIDs.compactMap { id in state.tab(id) }
         guard move.isCurrent(in: state), originals.count == move.tabIDs.count, sources.validates(originals),
               let projected = move.source.projected(state) else { return nil }
         self.move = move; self.sources = sources
@@ -141,7 +141,7 @@ struct CommandBarFolderCopy {
         let spaceID = move.folder.spaceID, profileID = move.source.profileID
         let previous = creation?.validated(profileID: profileID, state: state).activeTabBeforeCreationID
         func copyTab(_ id: UUID, parent: UUID, shouldOpen: Bool) -> UUID? {
-            guard let original = state.tabs.first(where: { $0.id == id && $0.profileID == profileID && $0.archivedAt == nil }),
+            guard let original = state.tab(id, where: { $0.profileID == profileID && $0.archivedAt == nil }),
                   let url = destinations[id] else { return nil }
             var copy = original
             copy.id = UUID(); copy.spaceID = spaceID; copy.folderID = parent; copy.kind = .pinned
@@ -199,9 +199,9 @@ struct CommandBarFolderCopy {
     }
 
     func applying(to state: BrowserState) -> BrowserState? {
-        let originals = move.tabIDs.compactMap { id in state.tabs.first { $0.id == id } }
+        let originals = move.tabIDs.compactMap { id in state.tab(id) }
         guard move.isCurrent(in: state), originals.count == move.tabIDs.count, sources.validates(originals),
-              tabs.allSatisfy({ copy in !state.tabs.contains { $0.id == copy.id } }),
+              tabs.allSatisfy({ copy in !state.containsTab(copy.id) }),
               folders.allSatisfy({ copy in !state.folders.contains { $0.id == copy.id } }),
               groups.allSatisfy({ copy in !state.splitLayouts.contains { $0.id == copy.id } }) else { return nil }
         var next = state

@@ -45,6 +45,17 @@ Downloads refreshes only changed rows when item identities and section positions
 are unchanged, preserving other thumbnails, selection and preview ownership.
 See [Downloads](download-library.md) for its separate deferred investigation.
 
+## Tab lookups
+
+`BrowserState.tab(_:)`, `tabIndex(_:)` and `containsTab(_:)`, with optional
+`where:` filters, answer exactly as a first-match scan of `tabs` would. States
+the store publishes carry a lookup from tab identity to position, built on first
+use and reused while the order of identities is unchanged. Any write to `tabs`
+drops it, so edited copies, states without one and lists with repeated
+identities fall back to the scan. The lookup is never saved or compared.
+`tests/BrowserTabLookupTests.swift` checks it against the scan through random
+edits.
+
 ## Checks and measurement
 
 `tests/BrowserStoreTests.swift` covers coherent metadata publication, history

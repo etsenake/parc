@@ -39,7 +39,7 @@ struct SidebarMoveCollection: Equatable {
               hierarchy.tabs.filter({ $0.folderID.map(folders.contains) == true }).allSatisfy({ ids.contains($0.id) }),
               hierarchy.groups.filter({ !$0.tabIDs.allSatisfy { !ids.contains($0) } }).count == groups.count else { return nil }
         self.hierarchy = hierarchy; self.roots = roots; tabIDs = ids; folderIDs = folders
-        tabs = ids.compactMap { id in state.tabs.first { $0.id == id } }
+        tabs = ids.compactMap { id in state.tab(id) }
     }
 }
 

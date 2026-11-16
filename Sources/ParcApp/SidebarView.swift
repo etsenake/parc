@@ -1094,7 +1094,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         onManagementCancel = onCancel
         onSelectTab = { [weak self] id in
             guard let self, ownerValid(), let state = self.hierarchyState,
-                  let tab = state.tabs.first(where: { $0.id == id && $0.spaceID == self.activeSpaceID && $0.archivedAt == nil }),
+                  let tab = state.tab(id, where: { $0.spaceID == self.activeSpaceID && $0.archivedAt == nil }),
                   let activate = self.prepareTabActivation?(tab) else { return }
             _ = activate()
         }
@@ -1336,7 +1336,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         menu.addTab = prepareSplitCellCommand?(group.id, .addTab)
         menu.convert = prepareSplitCellCommand?(group.id, .convertOrientation)
         menu.children = group.tabIDs.compactMap { id in
-            guard let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }) else { return nil }
+            guard let tab = state.tab(id, where: { $0.archivedAt == nil }) else { return nil }
             let submenu = SidebarSplitCellMenu.childSubmenu(separate: prepareSeparateSplitTab?(id),
                 tabMenu: tabMenu(tab, allowsRename: false), replacing: ["Separate Tab from Split View", "Open in Split View"])
             return (SidebarTabTitle.display(tab), submenu)
@@ -1357,7 +1357,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         menu.archive = isPrivateBrowsing ? nil : prepareSplitCellClose?(group.id, true)
         if SidebarHierarchy.location(of: .split(group.id), state: state, spaceID: state.activeSpaceID)?.section == .today,
            let anchorID = group.sidebarAnchorID ?? group.tabIDs.first,
-           let anchor = state.tabs.first(where: { $0.id == anchorID && $0.archivedAt == nil }),
+           let anchor = state.tab(anchorID, where: { $0.archivedAt == nil }),
            let sets = SidebarSplitCellMenu.archiveGroupIDs(order: todayOrder, children: Set(group.tabIDs)) {
             let order = todayOrder
             menu.archiveGroup = zip(SidebarSplitCellMenu.archiveGroupTitles, sets).map { title, ids in
@@ -2388,7 +2388,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         let involved = Set(state.selectedTabIDs + previous.selectedTabIDs + [focusedTabID, latestFocusedTabID].compactMap { $0 })
         let splitGroups = SidebarSplitItems.groups(in: state, spaceID: state.activeSpaceID)
         return involved.allSatisfy { id in
-            state.tabs.first(where: { $0.id == id })?.kind != .favorite
+            state.tab(id)?.kind != .favorite
                 && !splitGroups.contains(where: { $0.tabIDs.contains(id) })
                 && shownPage.contains(.tab(id))
         }
@@ -2416,7 +2416,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         }
         if applyShareableAudio { tabAudio = audio }
         if let edit = titleEdit {
-            let current = state.tabs.first { $0.id == edit.tab.id }
+            let current = state.tab(edit.tab.id)
             let sameGroup = state.splitLayouts.first { $0.tabIDs.contains(edit.tab.id) }
                 == previous.splitLayouts.first { $0.tabIDs.contains(edit.tab.id) }
             if state.activeSpaceID == activeSpaceID, state.selectedTabIDs == edit.selected,
@@ -2527,8 +2527,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 return String(host.prefix(1)).uppercased()
             }
             let pages = group.map { $0.tabIDs.compactMap { id in visible.first { $0.id == id } } } ?? [tab]
-            let previousPages = group.map { $0.tabIDs.compactMap { id in previous.tabs.first { $0.id == id } } }
-                ?? previous.tabs.first { $0.id == id }.map { [$0] } ?? []
+            let previousPages = group.map { $0.tabIDs.compactMap { id in previous.tab(id) } }
+                ?? previous.tab(id).map { [$0] } ?? []
             let urlsChanged = !pages.elementsEqual(previousPages) { $0.url == $1.url }
             button.update(title: spokenTitle, monogram: monogram(tab), url: WhatsNewPage.presented(tab.url),
                 owner: .init(tabID: tab.id, profileID: tab.profileID,
@@ -2692,7 +2692,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 shareable: Set<UUID> = [], audio: [UUID: SidebarTabAudio] = [:]) {
         tabAudio = audio
         if let edit = titleEdit {
-            let current = state.tabs.first { $0.id == edit.tab.id }
+            let current = state.tab(edit.tab.id)
             let sameGroup = state.splitLayouts.first { $0.tabIDs.contains(edit.tab.id) }
                 == hierarchyState?.splitLayouts.first { $0.tabIDs.contains(edit.tab.id) }
             if state.activeSpaceID == activeSpaceID, state.selectedTabIDs == edit.selected,
@@ -3373,7 +3373,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         for split in splits where SidebarSplitCellLayout.usesCustomInfo(title: split.customTitle, hasIcon: split.customIcon != nil, editing: false) {
             for tab in split.tabIDs { splitCaptures[tab] = renderedCaptures[tab] }
         }
-        let dragged = [keyDraggedTabID.flatMap { tab in state.tabs.contains { $0.id == tab && $0.spaceID == id } ? tab : nil },
+        let dragged = [keyDraggedTabID.flatMap { tab in state.containsTab(tab, where: { $0.spaceID == id }) ? tab : nil },
                        keyDraggedSplitID.flatMap { split in splits.contains { $0.id == split } ? split : nil }]
         return SidebarSpacePageKey(state: state, spaceID: id, focused: focused, placeholder: placeholder, peeks: folderPeeks,
             speakers: speakers, presented: presented, splitCaptures: splitCaptures, keyDragged: dragged,
@@ -3427,8 +3427,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         guard let key = page.key, let current = page.renderedState else { return }
         let standalone = view as? SidebarTabRow
         for row in standalone.map({ [$0] }) ?? (view as? SidebarSplitGroupView)?.rows ?? [] {
-            guard let tab = current.tabs.first(where: { $0.id == row.tabID && $0.archivedAt == nil }) else { continue }
-            patchLiveRow(row, tab: tab, before: state.tabs.first { $0.id == row.tabID }, inGroup: standalone == nil, page: page)
+            guard let tab = current.tab(row.tabID, where: { $0.archivedAt == nil }) else { continue }
+            patchLiveRow(row, tab: tab, before: state.tab(row.tabID), inGroup: standalone == nil, page: page)
             if standalone != nil {
                 let selected = !key.placeholder && key.selected.contains(tab.id)
                 if row.selected != selected { row.selected = selected }
@@ -4530,18 +4530,18 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         func kind(_ item: SidebarItemReference) -> TabKind? {
             switch item {
             case .folder: return .pinned
-            case .tab(let id): return state.tabs.first { $0.id == id }?.kind
+            case .tab(let id): return state.tab(id)?.kind
             case .split(let id):
-                return state.splitLayouts.first { $0.id == id }?.tabIDs.first.flatMap { child in state.tabs.first { $0.id == child }?.kind }
+                return state.splitLayouts.first { $0.id == id }?.tabIDs.first.flatMap { child in state.tab(child)?.kind }
             }
         }
         func space(of item: SidebarItemReference) -> UUID? {
             switch item {
             case .folder(let id): return state.folders.first { $0.id == id }?.spaceID
-            case .tab(let id): return state.tabs.first { $0.id == id && $0.kind != .favorite }?.spaceID
+            case .tab(let id): return state.tab(id, where: { $0.kind != .favorite })?.spaceID
             case .split(let id):
                 return state.splitLayouts.first { $0.id == id }?.tabIDs.first.flatMap { child in
-                    state.tabs.first { $0.id == child && $0.kind != .favorite }?.spaceID
+                    state.tab(child, where: { $0.kind != .favorite })?.spaceID
                 }
             }
         }

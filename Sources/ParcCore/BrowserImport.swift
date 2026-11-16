@@ -89,7 +89,7 @@ struct BrowserImportDestination: Equatable {
         var removedTabs = Set<UUID>(), removedFolders = Set<UUID>()
         let selected = Set(state.selectedTabIDs + state.selectionBySpace.values.flatMap { $0 })
         for (sourceID, written) in placed.tabs where !included.contains(sourceID) {
-            guard let current = next.tabs.first(where: { $0.id == written.id }) else { placement.tabs[sourceID] = nil; continue }
+            guard let current = next.tab(written.id) else { placement.tabs[sourceID] = nil; continue }
             guard current == written, !selected.contains(current.id),
                   !next.splitLayouts.contains(where: { $0.tabIDs.contains(current.id) }) else { continue }
             removedTabs.insert(current.id); placement.tabs[sourceID] = nil
@@ -131,7 +131,7 @@ struct BrowserImportDestination: Equatable {
             func existing(_ item: BrowserImportBookmark) -> SidebarItemReference? {
                 if item.url != nil {
                     guard let id = placement.tabs[item.id]?.id,
-                          next.tabs.contains(where: { $0.id == id && $0.archivedAt == nil }) else { return nil }
+                          next.containsTab(id, where: { $0.archivedAt == nil }) else { return nil }
                     let group = next.splitLayouts.first { $0.tabIDs.contains(id) }
                     return group.map { .split($0.id) } ?? .tab(id)
                 }
