@@ -73,7 +73,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
     for use, count in (("final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, OffscreenPresenting {", 1),
                        ("private func focusSelectionList() { focusIfPresented(); refreshItemSelection() }", 1),
                        ("makeFirstResponder(self)", 0),
-                       ("focusSelectionList()", 3)):
+                       ("focusSelectionList()", 2)):
         assert sidebar.count(use) == count, f"SidebarView no longer keeps focus out while hidden: {use}"
     app = root / "Sources/ParcApp"
     owners = sorted(p.name for p in app.glob("*.swift")

@@ -62,6 +62,47 @@ final class AreaEvent: NSEvent {
         check(selected.count == 3, "expired manager owner cannot activate by keyboard")
         available = true; sidebar.keyDown(with: key(53))
         check(cancelled == 1, "Escape on the unselected list reaches manager close")
+        let outline = descendants(sidebar).compactMap { $0 as? SidebarOutlineView }
+            .first { $0.rows.contains { $0.key == AnyHashable(SidebarItemReference.tab(one.id)) } }!
+        func outlineRow(_ id: UUID) -> SidebarOutlineRow { outline.rows.first { $0.key == AnyHashable(SidebarItemReference.tab(id)) }! }
+        let rowOne = outlineRow(one.id), rowTwo = outlineRow(two.id), activations = selected.count
+        check(window.makeFirstResponder(nil) && !rowTwo.isAccessibilitySelected()
+              && rowTwo.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilitySelected(_:)))
+              && !outline.rows.contains { !($0.key.base is SidebarItemReference) && $0.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilitySelected(_:))) },
+              "the real list takes accessibility selection on item rows only")
+        rowTwo.setAccessibilitySelected(true)
+        check(selected.count == activations && rowTwo.isAccessibilitySelected() && (outline.accessibilitySelectedRows() ?? []).count == 1,
+              "selecting one row through accessibility selects it without activating its tab")
+        outline.setAccessibilitySelectedRows([rowOne, rowTwo])
+        check(selected.count == activations && rowOne.isAccessibilitySelected() && rowTwo.isAccessibilitySelected(),
+              "an accessibility multi-selection never activates")
+        rowOne.setAccessibilitySelected(false)
+        check(selected.count == activations && !rowOne.isAccessibilitySelected() && rowTwo.isAccessibilitySelected(),
+              "deselecting down to one row leaves it selected without activating it")
+        let tabRowOne = descendants(sidebar).compactMap { $0 as? SidebarTabRow }.first { $0.tabID == one.id }
+        let toggle = tabRowOne?.accessibilityCustomActions()?.first { $0.name == "Add or Remove from Selection" }
+        check(toggle?.handler?() == true && rowOne.isAccessibilitySelected() && toggle?.handler?() == true && !rowOne.isAccessibilitySelected()
+              && selected.count == activations, "Add or Remove from Selection toggles a row without activating anything")
+        check(window.firstResponder === window, "accessibility selection leaves keyboard focus where it was")
+        outline.setAccessibilitySelectedRows([rowOne, rowTwo])
+        var grown = state
+        let three = tab("three")
+        grown.tabs.append(three)
+        manager.reload(grown); manager.layoutSubtreeIfNeeded()
+        func liveRow(_ id: UUID) -> SidebarOutlineRow? {
+            descendants(manager.sidebar(for: space.id)!).compactMap { $0 as? SidebarOutlineView }
+                .lazy.compactMap { $0.rows.first { $0.key == AnyHashable(SidebarItemReference.tab(id)) } }.first
+        }
+        check(liveRow(three.id) != nil && liveRow(one.id)?.isAccessibilitySelected() == true
+              && liveRow(two.id)?.isAccessibilitySelected() == true && liveRow(three.id)?.isAccessibilitySelected() == false
+              && selected.count == activations, "a tab arriving in the background keeps the accessibility multi-selection")
+        manager.reload(state); manager.layoutSubtreeIfNeeded()
+        let liveOutline = descendants(manager.sidebar(for: space.id)!).compactMap { $0 as? SidebarOutlineView }
+            .first { $0.rows.contains { $0.key == AnyHashable(SidebarItemReference.tab(one.id)) } }
+        liveOutline?.setAccessibilitySelectedRows([])
+        check((liveOutline?.accessibilitySelectedRows() ?? [0]).isEmpty && liveRow(one.id)?.isAccessibilitySelected() == false
+              && liveRow(two.id)?.isAccessibilitySelected() == false, "an empty AXSelectedRows clears the real list's selection")
+        check(window.makeFirstResponder(sidebar), "focus returns to the list")
         let first = BrowserFolder(id: UUID(), spaceID: space.id, name: "A")
         let second = BrowserFolder(id: UUID(), spaceID: space.id, name: "B")
         state.folders = [first, second]

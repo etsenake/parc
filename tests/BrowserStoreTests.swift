@@ -3247,6 +3247,82 @@ struct BrowserStoreTests {
         }
     }
 
+    static func testSidebarAccessibilitySelection() throws {
+        let a = SidebarItemReference.tab(UUID()), b = SidebarItemReference.tab(UUID())
+        let c = SidebarItemReference.folder(UUID()), d = SidebarItemReference.split(UUID())
+        let order = [a, b, c, d]
+        var selection = SidebarItemSelection()
+        try expect(selection.shown(active: a) == [a], "With nothing chosen the current item is the shown selection")
+        try expect(selection.assign([b], order: order, active: a), "One requested row is accepted")
+        try expect(selection.items.isEmpty && selection.singleItem == b && selection.focus == b && selection.anchor == b,
+                   "One requested row becomes the single selection without forming a multi-set")
+        try expect(selection.shown(active: a) == [b], "A single selection is shown alone, without the current item")
+        try expect(selection.assign([b, d], order: order, active: a), "Two requested rows are accepted")
+        try expect(selection.items == [a, b, d] && selection.singleItem == nil && selection.focus == d && selection.anchor == d,
+                   "A requested multi-set keeps the current item, in display order, focused on the newcomer")
+        try expect(selection.shown(active: a) == [a, b, d], "A multi-set is shown exactly")
+        try expect(selection.assign([a, b, c, d], order: order, active: a) && selection.items == [a, b, c, d] && selection.focus == c,
+                   "Adding one row grows the multi-set and focuses the added row")
+        try expect(selection.assign([b, c, d], order: order, active: a) && selection.items == [a, b, c, d],
+                   "Leaving the current item out of a multi-set keeps it, as Command-click does")
+        try expect(selection.assign([b, c], order: order, active: a) && selection.items == [a, b, c],
+                   "Dropping another row shrinks the multi-set")
+        let kept = selection
+        try expect(!selection.assign([.tab(UUID())], order: order, active: a) && selection == kept,
+                   "Rows outside the displayed order are refused and change nothing")
+        try expect(selection.assign([a], order: order, active: a) && selection.items.isEmpty && selection.singleItem == a
+                   && selection.shown(active: a) == [a], "Choosing only the current item returns to it")
+        try expect(selection.assign([], order: order, active: a) && selection.singleItem == a && selection.focus == a,
+                   "Deselecting the current item while it is all that's chosen keeps keyboard focus")
+        try expect(selection.assign([b, c], order: order, active: a) && selection.assign([], order: order, active: a)
+                   && selection == SidebarItemSelection(), "An empty request clears a multi-set")
+        try expect(selection.assign([c, .tab(UUID())], order: order, active: a) && selection.singleItem == c && selection.items.isEmpty,
+                   "Unknown rows in a request are ignored")
+        try expect(selection.assign([b, c], order: order, active: .tab(UUID())) && selection.items == [b, c],
+                   "A current page outside the sidebar never joins a multi-set")
+
+        selection.clear()
+        selection.assign([c], order: order, active: a)
+        selection.select(d, order: order, active: a, extending: true, toggling: false)
+        try expect(selection.items == [a, c, d], "Shift-click ranges from an accessibility single selection's anchor")
+        selection.clear()
+        selection.assign([b], order: order, active: a)
+        selection.select(d, order: order, active: a, extending: false, toggling: true)
+        try expect(selection.items == [a, d], "Command-click after a single selection builds the usual multi-set from the current item")
+        try expect(selection.assign([d], order: order, active: a) && selection.items.isEmpty && selection.singleItem == d,
+                   "Taking the current item out of a two-row set leaves the other row as the single selection")
+        selection.select(d, order: order, active: a, extending: false, toggling: true)
+        try expect(selection.items == [a, d], "Command-click on that row starts again from the current item")
+        selection.assign([a, d, b], order: order, active: a)
+        try expect(selection.items == [a, b, d] && selection.focus == b, "Accessibility adds to a Command-click multi-set")
+        selection.select(c, order: order, active: a, extending: false, toggling: true)
+        try expect(selection.items == [a, b, c, d], "Command-click adds to an accessibility multi-set")
+        selection.select(b, order: order, active: a, extending: true, toggling: false)
+        try expect(selection.items == [a, b, c], "Shift-click ranges from the last Command-clicked anchor")
+        selection.clear()
+        selection.assign([d], order: order, active: a)
+        selection.select(c, order: order, active: a, extending: true, toggling: false)
+        try expect(selection.items == [a, c, d], "Extending upward from an accessibility single selection keeps its anchor")
+        selection.select(b, order: order, active: a, extending: false, toggling: false)
+        try expect(selection.items.isEmpty && selection.singleItem == b && selection.shown(active: a) == [b],
+                   "A plain keyboard move replaces an accessibility selection")
+        selection.assign([b, c], order: order, active: a)
+        selection.reconcile(order: [a, d])
+        try expect(selection.items.isEmpty && selection.shown(active: a) == [a],
+                   "Rows collapsed away from an accessibility multi-set leave it like any other")
+        selection.assign([b, c], order: order, active: .tab(UUID()))
+        selection.reconcile(order: order, active: a)
+        try expect(selection.items == [a, b, c], "A multi-set picks up the current item once its row appears")
+        selection.reconcile(order: [a, b, d], active: a)
+        try expect(selection.items == [a, b], "Trimming keeps the current item and the rows still shown")
+        selection.assign([b, c], order: order, active: .tab(UUID()))
+        selection.reconcile(order: [b, c, d], active: a)
+        try expect(selection.items == [b, c], "A current item without a row is never added")
+        selection.clear()
+        selection.reconcile(order: order, active: a)
+        try expect(selection.items.isEmpty, "Reconciling never invents a multi-set")
+    }
+
     static func testSidebarSelectionCommands() throws {
         let a = SidebarItemReference.tab(UUID()), b = SidebarItemReference.folder(UUID()), c = SidebarItemReference.split(UUID())
         var selection = SidebarItemSelection()
@@ -3747,6 +3823,7 @@ struct BrowserStoreTests {
         try testCopiedLinksUseSavedPinnedTitle()
         try testMarkdownLinkLabels()
         try testSidebarMultiSelection()
+        try testSidebarAccessibilitySelection()
         try testTypedSplitDropTransactions()
         try testNativePageAdoption()
         try testCancelledNativeRetirement()

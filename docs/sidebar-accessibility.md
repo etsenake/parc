@@ -86,17 +86,46 @@ long lists would put all those views into AppKit's layout engine.
   and setting disclosure folds or unfolds it. Pinned rows stay its siblings at
   level 0, and the header itself is a pressable disclosure triangle.
 - The outline exposes rows, visible rows, selected rows and one column.
-  Selection includes the appropriate multi-selection or single selection and
-  active item, filtered to visible model entries.
+  Selected rows are Parc's real sidebar selection, filtered to visible rows:
+  the multi-selection if there is one, else the single selection, else the
+  current item.
 - Changes post `rowCountChanged`, `selectedRowsChanged`, and folder
   `rowExpanded`/`rowCollapsed` notifications.
 - The outline is the focused accessibility element only when the sidebar's
   list stop holds keyboard focus, is presented and can become key, and at
   least one item row is visible.
 
-Rows and the outline expose selection as read-only. Selection changes use
-items' press and custom actions; direct accessibility assignment of selected
-rows is not implemented. VoiceOver selection uses the existing item actions.
+### Selecting rows from accessibility
+
+VoiceOver selects a list item with VO-Return and adds items one at a time with
+VO-Command-Return. The outline's selected rows and each item row's selected
+state are settable and behave like AppKit's own outline: selecting a row
+chooses it alone, deselecting it removes it, and setting the selected rows
+applies that set, with an empty set clearing it. Header, divider, New Tab and
+other non-item rows refuse selection, as do rows of a neighbouring Space's
+list. A window that isn't key, an open command bar or the Library refuses too.
+
+VoiceOver may set selection as its cursor moves, so an accessibility selection
+never opens or activates an item, never changes the page or the focused split
+pane, and never moves keyboard focus. One item becomes the single sidebar
+selection, as a folder reached with the arrow keys does. Several build the
+multi-selection Command-click builds, so the selected-rows menu and row
+actions work on it. Like Command-click, it always holds the current item while
+that row is visible, so a request for several rows that leaves it out keeps
+it; taking it out of a two-row set leaves the other row as the single
+selection. The rows' Add or Remove from Selection action toggles its row in
+the reported selection through the same path. Opening an item still takes its
+press action.
+
+The current item therefore reads as selected when nothing else is chosen and
+inside every multi-selection, while a single selection elsewhere reads as one
+row; the current tab's own button still reports itself selected. Each real
+change posts one `selectedRowsChanged`; repeating a selection or refreshing the
+list with the same rows posts nothing, and the outline never writes selection
+in response to a notification, so VoiceOver's writes cannot echo into a loop.
+Background changes treat an accessibility selection exactly like a pointer
+one; [selection](sidebar-selection.md#ownership-and-cancellation) owns when
+either expires.
 
 ## Window key-view loop
 
@@ -230,7 +259,7 @@ neither focus nor selection, and only a running screen reader speaks them.
 |---|---|
 | `tests/SidebarAccessibility/check.py` | Exposed labels, chain ordering, focus guards, saved responder rules and source wiring, including Control-Space entry and silent list refreshes |
 | `scripts/test-keyboard-navigation.sh` | Control-Space announcement text, one per arrow press, list ends and folder state |
-| `tests/SidebarOutline/check.py` | Row/cell hierarchy, geometry, stable identities, disclosure and selection |
+| `tests/SidebarOutline/check.py` | Row/cell hierarchy, geometry, stable identities, disclosure, selection and accessibility selection, including source checks that it never activates |
 | `tests/SidebarWindowKeyLoop/check.py` | Bidirectional traversal, renderer replacement, hidden sidebar, Peek and closed-loop exclusions |
 | `tests/SidebarMiniPlayerFocus/check.py` | Mini-player keyboard actions and visible rings |
 | `tests/SidebarChrome/check.py` | Dock order, Space identifiers and header controls |

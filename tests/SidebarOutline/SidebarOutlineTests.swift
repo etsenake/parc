@@ -1,5 +1,7 @@
 import AppKit
 
+@MainActor enum Presses { static var count = 0 }
+
 @MainActor final class TabItem: NSView {
     init(_ title: String) {
         super.init(frame: .zero)
@@ -7,6 +9,7 @@ import AppKit
         setAccessibilityRoleDescription("Tab"); setAccessibilityTitle(title)
     }
     required init?(coder: NSCoder) { fatalError() }
+    override func accessibilityPerformPress() -> Bool { Presses.count += 1; return true }
 }
 
 @MainActor final class FolderItem: NSView {
@@ -18,6 +21,7 @@ import AppKit
     }
     required init?(coder: NSCoder) { fatalError() }
     func activate() { toggles += 1 }
+    override func accessibilityPerformPress() -> Bool { Presses.count += 1; activate(); return true }
 }
 
 @MainActor final class SplitItem: NSView {
@@ -28,6 +32,7 @@ import AppKit
         setAccessibilityElement(true); setAccessibilityRole(.group); setAccessibilityLabel("Split View, 2 tabs")
     }
     required init?(coder: NSCoder) { fatalError() }
+    override func accessibilityPerformPress() -> Bool { Presses.count += 1; return true }
     override func layout() {
         super.layout()
         for (index, tab) in tabs.enumerated() { tab.frame = NSRect(x: CGFloat(index) * bounds.width / 2, y: 0, width: bounds.width / 2, height: bounds.height) }
@@ -176,7 +181,7 @@ enum Control: Hashable { case header, divider, heading, newTab }
         check(dividerChildren.count == 1 && same(dividerChildren.first, clear.cell), "Clear sits in the divider's row")
 
         let workRow = byKey[workKey]!, archiveRow = byKey[archiveKey]!, childRow = byKey[childID]!, dividerRow = byKey[Control.divider]!
-        let pinnedRow = byKey[pinnedID]!, splitRow = byKey[splitID]!, todayRow = byKey[todayID]!, newTabRow = byKey[Control.newTab]!
+        let pinnedRow = byKey[pinnedID]!, todayRow = byKey[todayID]!, newTabRow = byKey[Control.newTab]!
         func inRow(_ view: NSView, _ row: SidebarOutlineRow) -> NSRect { row.convert(view.bounds, from: view) }
         let rowWidth = outline.bounds.width
         check(close(inRow(pinned, pinnedRow), NSRect(x: 0, y: 2, width: rowWidth, height: 36)), "an item is its visible row, centred in its 40-point cell")
@@ -205,7 +210,9 @@ enum Control: Hashable { case header, divider, heading, newTab }
               "a root tab row has no disclosure")
         check(workRow.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilityDisclosed(_:))), "a folder row takes AXDisclosing")
         check(!pinnedRow.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilityDisclosed(_:))), "a tab row does not")
-        check(!workRow.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilitySelected(_:))), "selection stays with the items' actions")
+        check(!workRow.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilitySelected(_:)))
+              && !outline.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilitySelectedRows(_:))),
+              "without an owner to take it, accessibility cannot set the selection")
         let headerRow = byKey[Control.header]!
         check(!headerRow.isAccessibilityDisclosed() && headerRow.accessibilityDisclosureLevel() == 0
               && ((headerRow.accessibilityDisclosedRows() as? [Any]) ?? []).isEmpty && headerRow.accessibilityDisclosedByRow() == nil,
@@ -215,18 +222,17 @@ enum Control: Hashable { case header, divider, heading, newTab }
               "the pinned items are the header's siblings")
 
         func selectedRows() -> [Any] { outline.accessibilitySelectedRows() ?? [] }
-        outline.select([pinnedID, todayID], single: nil, active: nil)
-        check(selectedRows().count == 2 && same(selectedRows()[0], pinnedRow) && same(selectedRows()[1], todayRow), "AXSelectedRows are the multi-selection")
+        func selected(_ expected: [SidebarOutlineRow]) -> Bool {
+            let rows = selectedRows()
+            return rows.count == expected.count && zip(rows, expected).allSatisfy { same($0, $1) }
+        }
+        outline.select([pinnedID, todayID])
+        check(selected([pinnedRow, todayRow]), "AXSelectedRows are the chosen rows")
         check(pinnedRow.isAccessibilitySelected() && pinnedRow.cell.isAccessibilitySelected() && !workRow.isAccessibilitySelected(),
               "rows and cells report selection")
-        outline.select([pinnedID, todayID], single: nil, active: splitID)
-        check(selectedRows().count == 3 && same(selectedRows()[1], splitRow), "the active item's row joins a multi-selection")
-        outline.select([], single: childID, active: splitID)
-        check(selectedRows().count == 2 && same(selectedRows()[0], childRow) && same(selectedRows()[1], splitRow), "a single selection plus the active item")
-        outline.select([], single: nil, active: todayID)
-        check(selectedRows().count == 1 && same(selectedRows()[0], todayRow), "with no selection the active item's row is selected")
-        outline.select([pinnedID, .tab(UUID())], single: nil, active: .folder(UUID()))
-        check(selectedRows().count == 1 && same(selectedRows()[0], pinnedRow), "items without a visible row are not selected")
+        outline.select([pinnedID, .tab(UUID()), .folder(UUID())])
+        check(selected([pinnedRow]), "items without a visible row are not selected")
+        accessibilitySelection(outline, entries: entries(), folders: [folder, subfolder]) { outline.reload($0); layout() }
 
         workRow.setAccessibilityDisclosed(true)
         check(folder.toggles == 0, "setting the current disclosure does nothing")
@@ -279,7 +285,7 @@ enum Control: Hashable { case header, divider, heading, newTab }
         check(!workRow.isAccessibilityDisclosed() && ((workRow.accessibilityDisclosedRows() as? [Any]) ?? []).isEmpty, "the collapsed folder discloses nothing")
         check(collapsed.enumerated().allSatisfy { $0.element.accessibilityIndex() == $0.offset }, "indices follow the rebuilt order")
         check(selectedRows().count == 1 && pinnedRow.isAccessibilitySelected(), "selection carries over to kept rows")
-        outline.select([], single: nil, active: nil)
+        outline.select([])
         check(selectedRows().isEmpty && !collapsed[1].isAccessibilitySelected(), "clearing the selection clears every row")
 
         let heading = NSTextField(labelWithString: "Incognito Tabs"); heading.isHidden = true
@@ -337,7 +343,7 @@ enum Control: Hashable { case header, divider, heading, newTab }
         check(folderRow.superview == nil && !folderRow.isAccessibilityDisclosed()
               && folderRow.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilityDisclosed(_:))),
               "a collapsed folder's row without a view is listed collapsed, its disclosure settable")
-        outline.select([farKey.base as! SidebarItemReference], single: nil, active: nil)
+        outline.select([farKey.base as! SidebarItemReference])
         check(far.isAccessibilitySelected() && (outline.accessibilitySelectedRows() ?? []).count == 1, "a row without a view is selected like any other")
         let farContent = (far.accessibilityChildren()?.first as? NSView)?.accessibilityChildren()?.first as? TabItem
         check(farContent?.accessibilityTitle() == "Row 51" && farContent?.accessibilityCustomActions()?.first?.name == "Close Tab"
@@ -355,6 +361,137 @@ enum Control: Hashable { case header, divider, heading, newTab }
         window.close()
         stockHeader()
         print("SidebarOutline: \(count) checks passed")
+    }
+
+    static func accessibilitySelection(_ outline: SidebarOutlineView, entries: [SidebarOutlineEntry], folders: [FolderItem],
+                                       reload: ([SidebarOutlineEntry]) -> Void) {
+        let rows = outline.rows
+        let original = rows.compactMap { $0.key.base as? SidebarItemReference }
+        var order = original
+        let items = rows.filter { $0.key.base is SidebarItemReference }, controls = rows.filter { !($0.key.base is SidebarItemReference) }
+        check(order.count == 6 && controls.count == 3, "six item rows and three control rows")
+        let presses = Presses.count, toggles = folders.map(\.toggles)
+        let pinned = items[0], work = items[1], child = items[2], archive = items[3], split = items[4], today = items[5]
+        let active = order[4]
+        var selection = SidebarItemSelection(), requests: [[SidebarItemReference]] = [], accepts = true
+        var notes: [NSAccessibility.Notification] = []
+        let post = outline.postAccessibilityNotification
+        outline.postAccessibilityNotification = { _, name in notes.append(name) }
+        outline.selectsFromAccessibility = { [unowned outline] wanted in
+            requests.append(wanted)
+            guard accepts, selection.assign(wanted, order: order, active: active) else { return false }
+            outline.select(selection.shown(active: active))
+            return true
+        }
+        func shown() -> [SidebarOutlineRow] { (outline.accessibilitySelectedRows() ?? []).compactMap { $0 as? SidebarOutlineRow } }
+        func selected(_ expected: [SidebarOutlineRow]) -> Bool { shown().map(ObjectIdentifier.init) == expected.map(ObjectIdentifier.init) }
+        let setRows = #selector(NSView.setAccessibilitySelectedRows(_:)), setRow = #selector(NSView.setAccessibilitySelected(_:))
+        check(outline.isAccessibilitySelectorAllowed(setRows), "with an owner, AXSelectedRows is settable")
+        check(items.allSatisfy { $0.isAccessibilitySelectorAllowed(setRow) }, "every item row's AXSelected is settable")
+        check(controls.allSatisfy { !$0.isAccessibilitySelectorAllowed(setRow) }, "header, divider and New Tab rows cannot be selected")
+        outline.allowsAccessibilitySelection = { false }
+        check(!outline.isAccessibilitySelectorAllowed(setRows) && !items.contains { $0.isAccessibilitySelectorAllowed(setRow) },
+              "an owner that cannot select now, such as a neighbouring Space's list, offers nothing settable")
+        outline.allowsAccessibilitySelection = { true }
+
+        outline.select(selection.shown(active: active))
+        check(selected([split]), "with nothing chosen the current item's row is the selection")
+        notes = []
+        today.setAccessibilitySelected(true)
+        check(requests.last == [order[5]] && selection.singleItem == order[5] && selection.items.isEmpty,
+              "selecting one row asks for that item alone, without a multi-set")
+        check(selected([today]), "one selected row is reported alone, without the current item")
+        check(notes == [.selectedRowsChanged], "one selection change posts one notification")
+        today.setAccessibilitySelected(true)
+        outline.setAccessibilitySelectedRows([today])
+        check(notes == [.selectedRowsChanged] && selected([today]), "repeating the same selection posts nothing more")
+        outline.setAccessibilitySelectedRows([child])
+        check(selected([child]) && selection.singleItem == order[2], "AXSelectedRows with one row moves the single selection")
+
+        notes = []
+        outline.setAccessibilitySelectedRows(shown() + [pinned])
+        check(selection.items == [order[0], order[2], order[4]] && selected([pinned, child, split]),
+              "adding a row builds a multi-set that keeps the current item")
+        check(notes == [.selectedRowsChanged], "building the multi-set posts once")
+        outline.setAccessibilitySelectedRows(shown() + [work])
+        check(selected([pinned, work, child, split]) && selection.focus == order[1], "each added row joins the multi-set and takes its focus")
+        outline.setAccessibilitySelectedRows([pinned, work, child])
+        check(selected([pinned, work, child, split]), "a multi-set that leaves out the current item keeps it")
+        work.setAccessibilitySelected(false)
+        check(requests.last == [order[0], order[2], order[4]] && selected([pinned, child, split]), "deselecting a row removes it from the multi-set")
+        let posted = notes.count
+        split.setAccessibilitySelected(false)
+        check(selected([pinned, child, split]) && notes.count == posted,
+              "the current item stays in a multi-set of three and nothing is posted")
+        outline.setAccessibilitySelectedRows([child, split])
+        split.setAccessibilitySelected(false)
+        check(selected([child]) && selection.singleItem == order[2],
+              "taking the current item out of a two-row set leaves the other row alone, as Command-click does")
+        let beforeUnselected = requests.count
+        split.setAccessibilitySelected(false)
+        check(selected([child]) && requests.count == beforeUnselected, "deselecting the current item's row while it is unselected asks for nothing")
+        outline.setAccessibilitySelectedRows([pinned, child])
+        let asked = requests.count
+        archive.setAccessibilitySelected(false)
+        check(requests.count == asked, "deselecting an unselected row asks for nothing")
+
+        for control in controls { control.setAccessibilitySelected(true); control.setAccessibilitySelected(false) }
+        outline.setAccessibilitySelectedRows(controls)
+        outline.setAccessibilitySelectedRows([NSObject(), "row"])
+        check(requests.count == asked && selected([pinned, child, split]),
+              "header, divider, New Tab and foreign elements are refused before reaching the owner")
+        outline.setAccessibilitySelectedRows(controls + [today])
+        check(requests.last == [order[5]] && selected([today]), "control rows mixed into a request are dropped")
+        today.setAccessibilitySelected(false)
+        check(requests.last == [] && selected([split]) && selection == SidebarItemSelection(),
+              "deselecting the single row returns the selection to the current item")
+        outline.setAccessibilitySelectedRows(shown() + [today])
+        outline.setAccessibilitySelectedRows([])
+        check(selected([split]) && selection.items.isEmpty, "an empty AXSelectedRows clears a multi-set")
+
+        accepts = false; notes = []
+        today.setAccessibilitySelected(true)
+        outline.setAccessibilitySelectedRows([pinned, today])
+        check(selected([split]) && notes.isEmpty, "a refusing owner, such as a window that is not key, keeps the selection and posts nothing")
+        accepts = true
+
+        outline.setAccessibilitySelectedRows([pinned, child])
+        notes = []
+        reload(entries)
+        outline.select(selection.shown(active: active))
+        check(selected([pinned, child, split]) && notes.isEmpty, "a background refresh keeps an accessibility multi-set and posts nothing")
+        let hidden = TabItem("Hidden"); hidden.isHidden = true
+        reload(entries + [.item(.tab(UUID()), content: TabItem("Background"), depth: 0, in: nil),
+                          .item(.tab(UUID()), content: hidden, depth: 0, in: nil)])
+        order = outline.rows.compactMap { $0.key.base as? SidebarItemReference }
+        outline.select(selection.shown(active: active))
+        check(selected([pinned, child, split]) && notes == [.rowCountChanged], "a background row arriving announces only the row count")
+        guard let extra = outline.rows.last,
+              let hiddenRow = outline.arrangedSubviews.compactMap({ $0 as? SidebarOutlineRow }).first(where: \.isHidden) else {
+            return check(false, "the background and hidden rows exist")
+        }
+        let beforeHidden = requests.count
+        hiddenRow.setAccessibilitySelected(true)
+        outline.setAccessibilitySelectedRows([hiddenRow])
+        check(requests.count == beforeHidden, "a hidden row is refused")
+        outline.setAccessibilitySelectedRows(shown() + [extra])
+        check(selected([pinned, child, split, extra]), "a background row can join the multi-set")
+        notes = []
+        reload(entries)
+        order = original
+        selection.reconcile(order: order)
+        outline.select(selection.shown(active: active))
+        check(selected([pinned, child, split]) && notes == [.rowCountChanged, .selectedRowsChanged],
+              "a selected row leaving posts the row count and one selection change")
+        let beforeStale = requests.count
+        extra.setAccessibilitySelected(true)
+        outline.setAccessibilitySelectedRows([extra])
+        check(requests.count == beforeStale && selected([pinned, child, split]), "a row that left the list is refused")
+        check(Presses.count == presses && folders.map(\.toggles) == toggles, "no accessibility selection presses, opens or toggles an item")
+
+        outline.selectsFromAccessibility = nil
+        outline.postAccessibilityNotification = post
+        outline.select([order[0]])
     }
 
     static func stockHeader() {

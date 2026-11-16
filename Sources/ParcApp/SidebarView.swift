@@ -1107,7 +1107,6 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         didSet { if itemSelection != oldValue { selectionRevision &+= 1 } }
     }
     private var selectionContext: SidebarHierarchySnapshot?
-    private var selectionStructure: SidebarHierarchySnapshot?
     private var selectionActive: SidebarItemReference?
     private var selectionWindowObserver: NSObjectProtocol?
     private var clearKeyObserver: NSObjectProtocol?
@@ -1830,6 +1829,14 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         page.list.keepsContent = { [weak self] key in
             guard let self, let item = key.base as? SidebarItemReference else { return false }
             return self.keepsRowView(item)
+        }
+        page.list.allowsAccessibilitySelection = { [weak self, weak page] in
+            guard let self, let page else { return false }
+            return page === self.shownPage && self.canSelectItems != nil
+        }
+        page.list.selectsFromAccessibility = { [weak self, weak page] items in
+            guard let self, let page, page === self.shownPage else { return false }
+            return self.selectFromAccessibility(items)
         }
         page.view.passesThrough = true
         page.view.frame = NSRect(x: 3 * bounds.width, y: 0, width: bounds.width, height: bounds.height)
@@ -2814,11 +2821,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             splitGroups.first { $0.tabIDs.contains(id) }
                 .map { SidebarItemReference.split($0.id) } ?? .tab(id)
         }
-        var disclosed = state
-        for index in disclosed.folders.indices { disclosed.folders[index].isExpanded = true }
-        let structure = context.flatMap { SidebarHierarchySnapshot(state: disclosed, spaceID: $0.spaceID, profileID: $0.profileID) }
-        if structure != selectionStructure || activeItem != selectionActive { itemSelection.clear() }
-        selectionContext = context; selectionStructure = structure; selectionActive = activeItem
+        if activeItem != selectionActive { itemSelection.clear() }
+        selectionContext = context; selectionActive = activeItem
         favoriteAnchors.removeAll()
         if state.activeSpaceID != activeSpaceID { newTabRow.dropHeldPress() }
         let departing = activeSpaceID, afterCreation = creationEnded
@@ -2923,11 +2927,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             buildPage(page, state: state, focusedTabID: focusedTabID, placeholder: renderedNewTabPlaceholder, key: key, animated: !swapsPage)
         }
         page.checkedGeneration = stateGeneration
-        if swapsPage {
-            NSAccessibility.post(element: list, notification: .rowCountChanged)
-            NSAccessibility.post(element: list, notification: .selectedRowsChanged)
-        }
-        itemSelection.reconcile(order: selectionOrder)
+        if swapsPage { NSAccessibility.post(element: list, notification: .rowCountChanged) }
+        itemSelection.reconcile(order: selectionOrder, active: selectionActive)
         refreshItemSelection()
         let previousSpaceButtons = spaceButtonsByID, previousSpaceMenus = spaceMenusByID
         spaceButtonsByID = [:]; spaceMenusByID = [:]
@@ -3388,10 +3389,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private func finishRow(_ item: SidebarItemReference, _ view: NSView, page: SidebarSpacePage, build: RowBuild) {
         page.add(item, view)
         let select = NSAccessibilityCustomAction(name: "Add or Remove from Selection") { [weak self] in
-            guard let self, self.window?.isKeyWindow == true, self.canSelectItems?() == true else { return false }
-            self.itemSelection.select(item, order: self.selectionOrder, active: self.selectionActive, extending: false, toggling: true)
-            if self.activateSingleSelection() { return true }
-            self.focusSelectionList(); return true
+            guard let self, self.selectionOrder.contains(item) else { return false }
+            let shown = self.itemSelection.shown(active: self.selectionActive)
+            return self.selectFromAccessibility(shown.contains(item) ? shown.filter { $0 != item } : shown + [item])
         }
         let actions = (view as? SidebarDeferredAccessibilityActions)?.storedAccessibilityActions
             ?? view.accessibilityCustomActions() ?? []
@@ -4301,11 +4301,19 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private func refreshItemSelection(listFocused: Bool? = nil) {
         let listFocused = listFocused ?? (window?.firstResponder === self)
         for (item, view) in hierarchyRows { applySelectionMarks(item, view, listFocused: listFocused) }
-        list.select(itemSelection.items, single: itemSelection.singleItem, active: selectionActive)
+        list.select(itemSelection.shown(active: selectionActive))
+    }
+    private func selectFromAccessibility(_ items: [SidebarItemReference]) -> Bool {
+        guard window?.isKeyWindow == true, canSelectItems?() == true else { return false }
+        var next = itemSelection
+        guard next.assign(items, order: selectionOrder, active: selectionActive) else { return false }
+        itemSelection = next
+        refreshItemSelection()
+        return true
     }
     private func applySelectionMarks(_ item: SidebarItemReference, _ view: NSView, listFocused: Bool) {
         let selected = itemSelection.items.contains(item)
-        view.setAccessibilitySelected(selected)
+        view.setAccessibilitySelected(itemSelection.shown(active: selectionActive).contains(item))
         let focused = listFocused && itemSelection.focus == item
         if let row = view as? SidebarTabRow {
             if row.multiSelected != selected { row.multiSelected = selected }
@@ -4938,10 +4946,13 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         guard !updateDrop(sender).isEmpty, let (session, destination, before) = dropProposal else { return false }
         let external = windowDropAction, copy = copyDropAction, dock = dockDropAction
         clearDrop(); updateSpringLoading(nil); updatePinnedSpringLoading(nil); sprungFolders = []; sprungPinned = nil
-        if let copy { return session.copy(copy) }
-        if let dock { return session.transferThenEnd(dock) }
-        if let external { return session.moveToAnotherWindow(external) }
-        return session.move(to: destination, before: before)
+        let dropped: Bool
+        if let copy { dropped = session.copy(copy) }
+        else if let dock { dropped = session.transferThenEnd(dock) }
+        else if let external { dropped = session.moveToAnotherWindow(external) }
+        else { dropped = session.move(to: destination, before: before) }
+        if dropped { clearItemSelection() }
+        return dropped
     }
 
 }

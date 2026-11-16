@@ -1837,6 +1837,43 @@ struct SidebarItemSelection: Equatable {
         if items.count < 2 { items = [] }
         focus = item
     }
+    mutating func reconcile(order: [SidebarItemReference], active: SidebarItemReference?) {
+        reconcile(order: order)
+        guard !items.isEmpty, let active, order.contains(active), !items.contains(active) else { return }
+        var seen = Set<SidebarItemReference>()
+        let chosen = Set(items + [active])
+        items = order.filter { chosen.contains($0) && seen.insert($0).inserted }
+    }
+    func shown(active: SidebarItemReference?) -> [SidebarItemReference] {
+        if !items.isEmpty { return items }
+        return [singleItem ?? active].compactMap { $0 }
+    }
+    @discardableResult
+    mutating func assign(_ requested: [SidebarItemReference], order: [SidebarItemReference],
+                         active: SidebarItemReference?) -> Bool {
+        var seen = Set<SidebarItemReference>()
+        let visible = order.filter { seen.insert($0).inserted }
+        let wanted = Set(requested)
+        let picked = visible.filter(wanted.contains)
+        guard !picked.isEmpty || requested.isEmpty else { return false }
+        let visibleActive = active.flatMap { visible.contains($0) ? $0 : nil }
+        let previous = Set(items.isEmpty ? [singleItem ?? visibleActive].compactMap { $0 } : items)
+        reconcile(order: visible)
+        guard picked.count > 1 else {
+            guard let item = picked.first else {
+                if !items.isEmpty || (singleItem != nil && singleItem != visibleActive) { clear() }
+                return true
+            }
+            items = []; singleItem = item; anchor = item; focus = item
+            return true
+        }
+        let chosen = wanted.union([visibleActive].compactMap { $0 })
+        items = visible.filter(chosen.contains)
+        singleItem = nil
+        focus = picked.last { !previous.contains($0) } ?? focus.flatMap { chosen.contains($0) ? $0 : nil } ?? picked.last
+        anchor = focus
+        return true
+    }
 }
 
 extension SidebarHierarchy {

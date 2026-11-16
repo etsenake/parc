@@ -144,10 +144,10 @@ final class SidebarOutlineView: NSView {
         let done = updateRows(budget: budget)
         let ordered = arrangedSubviews.filter { $0.superview === self }
         if subviews.count != ordered.count || zip(subviews, ordered).contains(where: { $0 !== $1 }) { subviews = ordered }
-        if rows.map(\.key) != previousKeys { NSAccessibility.post(element: self, notification: .rowCountChanged) }
+        if rows.map(\.key) != previousKeys { postAccessibilityNotification(self, .rowCountChanged) }
         for row in rows {
             guard let expanded = row.expanded, let previous = previousExpanded[row.key], previous != expanded else { continue }
-            NSAccessibility.post(element: row, notification: expanded ? .rowExpanded : .rowCollapsed)
+            postAccessibilityNotification(row, expanded ? .rowExpanded : .rowCollapsed)
         }
         return done
     }
@@ -351,16 +351,31 @@ final class SidebarOutlineView: NSView {
         }
     }
 
-    func select(_ items: [SidebarItemReference], single: SidebarItemReference?, active: SidebarItemReference?) {
-        select(Set((items + [single, active].compactMap { $0 }).map(AnyHashable.init)))
+    var selectsFromAccessibility: (([SidebarItemReference]) -> Bool)?
+    var allowsAccessibilitySelection: () -> Bool = { true }
+    fileprivate var takesAccessibilitySelection: Bool { selectsFromAccessibility != nil && allowsAccessibilitySelection() }
+    var postAccessibilityNotification: (Any, NSAccessibility.Notification) -> Void = {
+        NSAccessibility.post(element: $0, notification: $1)
     }
 
-    private func select(_ keys: Set<AnyHashable>) {
-        let selected = keys.intersection(rows.map(\.key))
+    func select(_ items: [SidebarItemReference]) {
+        let selected = Set(items.map(AnyHashable.init)).intersection(rows.map(\.key))
         for row in rows { row.selected = selected.contains(row.key) }
         guard selected != selectedKeys else { return }
         selectedKeys = selected
-        NSAccessibility.post(element: self, notification: .selectedRowsChanged)
+        postAccessibilityNotification(self, .selectedRowsChanged)
+    }
+
+    private func ownRow(_ element: Any) -> SidebarOutlineRow? {
+        guard let row = element as? SidebarOutlineRow, row.outline === self, rowsByKey[row.key] === row else { return nil }
+        return row.isHidden ? nil : row
+    }
+
+    fileprivate func requestSelection(of row: SidebarOutlineRow, _ selected: Bool) {
+        guard let item = ownRow(row)?.selectableItem else { return }
+        if selected { _ = selectsFromAccessibility?([item]); return }
+        guard row.selected else { return }
+        _ = selectsFromAccessibility?(rows.filter { $0.selected && $0 !== row }.compactMap(\.selectableItem))
     }
 
     fileprivate func buildForAccessibility(_ row: SidebarOutlineRow) {
@@ -374,6 +389,16 @@ final class SidebarOutlineView: NSView {
     override func accessibilityRows() -> [Any]? { rows }
     override func accessibilityVisibleRows() -> [Any]? { rows.filter { visibleRect.intersects($0.frame) } }
     override func accessibilitySelectedRows() -> [Any]? { rows.filter(\.selected) }
+    override func setAccessibilitySelectedRows(_ selectedRows: [Any]?) {
+        let requested = selectedRows ?? []
+        let items = requested.compactMap { ownRow($0)?.selectableItem }
+        guard requested.isEmpty || !items.isEmpty else { return }
+        _ = selectsFromAccessibility?(items)
+    }
+    override func isAccessibilitySelectorAllowed(_ selector: Selector) -> Bool {
+        if selector == #selector(setAccessibilitySelectedRows(_:)) { return takesAccessibilitySelection }
+        return super.isAccessibilitySelectorAllowed(selector)
+    }
     override func accessibilityColumns() -> [Any]? { [column] }
     override func accessibilityVisibleColumns() -> [Any]? { [column] }
     override func isAccessibilityFocused() -> Bool {
@@ -496,11 +521,15 @@ final class SidebarOutlineRow: NSView {
     }
     override func accessibilityDisclosedRows() -> Any? { disclosedRows }
     override func accessibilityDisclosedByRow() -> Any? { disclosingRow }
+    fileprivate var selectableItem: SidebarItemReference? { isItem ? key.base as? SidebarItemReference : nil }
     override func isAccessibilitySelected() -> Bool { selected }
+    override func setAccessibilitySelected(_ accessibilitySelected: Bool) {
+        outline?.requestSelection(of: self, accessibilitySelected)
+    }
     override func isAccessibilitySelectorAllowed(_ selector: Selector) -> Bool {
         switch selector {
         case #selector(setAccessibilityDisclosed(_:)): return expanded != nil && (toggle != nil || disclosesNothing)
-        case #selector(setAccessibilitySelected(_:)): return false
+        case #selector(setAccessibilitySelected(_:)): return selectableItem != nil && outline?.takesAccessibilitySelection == true
         case #selector(setAccessibilityFocused(_:)): return !isHidden
         default: return super.isAccessibilitySelectorAllowed(selector)
         }

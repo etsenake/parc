@@ -6,15 +6,19 @@ split containers in one Space. Favorite pointer selection has a separate owner.
 
 Command-click toggles; Shift-click ranges from the original anchor through visible
 order; Command-Shift adds the range. A multi-set retains the visible active item
-without changing page selection or focused split pane. A singleton follows normal
-activation. Plain activation/Escape clear the set, and Option does not alter it.
-With sidebar focus, arrows move/extend selection and Delete uses the guarded
-Close Tabs in Selection operation. Renderer/native text editing keeps its keys.
+without changing page selection or focused split pane. A pointer or keyboard
+singleton follows normal activation. Plain activation/Escape clear the set, and
+Option does not alter it. With sidebar focus, arrows move/extend selection and
+Delete uses the guarded Close Tabs in Selection operation. Renderer/native text
+editing keeps its keys.
 
 Rows expose selected state and real accessibility actions separately from active
-page highlighting. Selected-row context menus offer Copy Links, eligible moves,
-Close/Delete/Archive and Clear Selection. Folders include original descendants;
-whole splits remain one item. Explicit row buttons retain their own target.
+page highlighting. Assistive technology can set the selection through the list
+without activating anything: one item stays a single selection and several form
+the same multi-set; see [accessibility](sidebar-accessibility.md#selecting-rows-from-accessibility).
+Selected-row context menus offer Copy Links, eligible moves, Close/Delete/Archive
+and Clear Selection. Folders include original descendants; whole splits remain
+one item. Explicit row buttons retain their own target.
 
 ## Select All and plural commands
 
@@ -68,9 +72,13 @@ once. No page is cloned or closed for a move.
 
 The selection is ephemeral, not session-persisted. Moving keyboard focus within
 the same window retains it, but its commands require focus in the sidebar list.
-Losing the window's key status clears it, except for the owning close-consent
-sheet. Hierarchy disclosure preserves still-visible selected rows;
-collapsed/removed rows cannot remain selected.
+Losing the window's key status clears it, except for the owning command's
+consent sheet, and so does a new current item. Other hierarchy changes, such as
+a background tab opening or closing, or folder disclosure, keep still-visible
+selected rows; collapsed/removed rows cannot remain selected, a multi-set left
+with one row ends, and a multi-set picks the current item up once its row
+appears. Any drop into the sidebar ends its selection, as the selected-rows
+moves do.
 Dragging an unselected row clears the multi-set and takes its single-item lease.
 The pane split-creation path never consumes a multi-set.
 
@@ -118,4 +126,5 @@ remains available. Favorite tiles do not join range or multi-selection.
 
 Model, copy-command and ownership checks cover visible Select All, export
 identity/order, single-row copy targets, the rich-text flavor, stale grants,
-save failure and saved/mixed close semantics.
+save failure, saved/mixed close semantics, and accessibility selection mixed
+with pointer and keyboard selection.
