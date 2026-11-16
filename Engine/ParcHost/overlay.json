@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 766,
+  "version": 767,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -2474,7 +2474,7 @@
     {
       "source": "Engine/ParcChromium/tests/media/audio_renderer_impl_test.cc",
       "target": "media/parc_tests/audio_renderer_impl_test.cc",
-      "sha256": "4bb4125c3196754af919f7b85e6a0319f67df8ba924c9bd5a7dbcd309261cdb9"
+      "sha256": "832e6d31682c144b09e61992c22929238d56731f058972cd0f52fdf1c633df6f"
     },
     {
       "source": "Engine/ParcChromium/tests/media/box_definitions_test.cc",
@@ -2519,7 +2519,7 @@
     {
       "source": "Engine/ParcChromium/tests/media/renderer_impl_test.cc",
       "target": "media/parc_tests/renderer_impl_test.cc",
-      "sha256": "0d1f7df19dcd742b18691b3721fd67667fd01c6ad8fe5c4c2c5cc3116c8d6064"
+      "sha256": "5487e52593ee851868494887a536cd790153ee11759f5d0d7c8effff529f1d10"
     },
     {
       "source": "Engine/ParcChromium/tests/media/source_buffer_state_test.cc",

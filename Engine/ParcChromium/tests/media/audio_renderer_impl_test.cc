@@ -24,6 +24,7 @@
 #include "media/base/audio_bus.h"
 #include "media/base/audio_timestamp_helper.h"
 #include "media/base/fake_audio_renderer_sink.h"
+#include "media/base/media_util.h"
 #include "media/base/mock_filters.h"
 #include "media/base/mock_media_log.h"
 #include "media/base/test_helpers.h"
@@ -59,7 +60,7 @@ constexpr int kInputSamplesPerSecond = 5000;
 constexpr int kOutputSamplesPerSecond = 10000;
 constexpr int kInputFramesChunk = 256;
 
-}  // namespace
+}
 
 class ParcAudioRendererImplTest : public testing::Test,
                                   public RendererClient {
@@ -252,9 +253,6 @@ class ParcAudioRendererImplTest : public testing::Test,
   base::OnceClosure wait_for_pending_decode_cb_;
 };
 
-// Parc: a renderer for another enabled audio track plays in this one's
-// output, added to its audio, as WebKit's renderers on one synchronizer play
-// together; silencing this one's own track leaves the other's.
 TEST_F(ParcAudioRendererImplTest, ParcMixedRendererPlaysInTheOutput) {
   Initialize();
   Preroll();
@@ -265,7 +263,6 @@ TEST_F(ParcAudioRendererImplTest, ParcMixedRendererPlaysInTheOutput) {
 
   std::unique_ptr<AudioBus> bus = AudioBus::Create(hardware_params_);
   int frames_read = 0;
-  // The first buffer holds the resamplers' start.
   for (int i = 0; i < 2; ++i) {
     EXPECT_TRUE(sink_->Render(bus.get(), base::TimeDelta(), &frames_read));
   }
@@ -282,9 +279,6 @@ TEST_F(ParcAudioRendererImplTest, ParcMixedRendererPlaysInTheOutput) {
   }
 }
 
-// Parc: a mixed renderer keeps to this one's timeline: one that starts
-// playing behind it, as a track joining playback does, skips what this one
-// already played.
 TEST_F(ParcAudioRendererImplTest, ParcMixedRendererKeepsToTheTimeline) {
   Initialize();
   Preroll();
@@ -306,4 +300,4 @@ TEST_F(ParcAudioRendererImplTest, ParcMixedRendererKeepsToTheTimeline) {
   EXPECT_GT(ParcWrittenUpTo(mixed.get()), base::Milliseconds(100));
 }
 
-}  // namespace media
+}

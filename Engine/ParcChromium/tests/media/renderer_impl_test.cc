@@ -51,7 +51,6 @@ class ParcRendererImplTest : public ::testing::Test {
 
     virtual ~CallbackHelper() = default;
 
-    // Completion callbacks.
     MOCK_METHOD1(OnInitialize, void(PipelineStatus));
     MOCK_METHOD0(OnFlushed, void());
     MOCK_METHOD1(OnCdmAttached, void(bool));
@@ -70,8 +69,6 @@ class ParcRendererImplTest : public ::testing::Test {
         demuxer_(new StrictMock<MockDemuxer>()),
         video_renderer_client_(nullptr),
         audio_renderer_client_(nullptr) {
-    // CreateAudioStream() and CreateVideoStream() overrides expectations for
-    // expected non-NULL streams.
     EXPECT_CALL(*demuxer_, GetAllStreams()).WillRepeatedly(Return(streams_));
 
     SetMediaClient(&media_client_);
@@ -100,14 +97,12 @@ class ParcRendererImplTest : public ::testing::Test {
     return stream;
   }
 
-  // Sets up expectations to allow the audio renderer to initialize.
   void SetAudioRendererInitializeExpectations(PipelineStatus status) {
     EXPECT_CALL(*audio_renderer_, OnInitialize(audio_stream_.get(), _, _, _))
         .WillOnce(DoAll(SaveArg<2>(&audio_renderer_client_),
                         RunOnceCallback<3>(status)));
   }
 
-  // Sets up expectations to allow the video renderer to initialize.
   void SetVideoRendererInitializeExpectations(PipelineStatus status) {
     EXPECT_CALL(*video_renderer_, OnInitialize(video_stream_.get(), _, _, _, _))
         .WillOnce(DoAll(SaveArg<2>(&video_renderer_client_),
@@ -115,7 +110,7 @@ class ParcRendererImplTest : public ::testing::Test {
   }
 
   void InitializeAndExpect() {
-    EXPECT_CALL(callbacks_, OnInitialize(PIPELINE_OK));
+    EXPECT_CALL(callbacks_, OnInitialize(HasStatusCode(PIPELINE_OK)));
     EXPECT_CALL(*audio_renderer_, GetTimeSource())
         .WillOnce(Return(&time_source_));
 
@@ -231,7 +226,6 @@ class ParcRendererImplTest : public ::testing::Test {
     base::RunLoop().RunUntilIdle();
   }
 
-  // Fixture members.
   base::test::SingleThreadTaskEnvironment task_environment_;
   StrictMock<CallbackHelper> callbacks_;
 
@@ -250,10 +244,6 @@ class ParcRendererImplTest : public ::testing::Test {
   StrictMock<MockMediaClient> media_client_;
 };
 
-// Parc: playing backward (Safari's AVPlayer rewinding a file), audio stays
-// flushed and silent, time waits for the video renderer's earlier frames
-// without the page hearing it, and the start ends playback, as WebKit hears
-// AVPlayerItemDidPlayToEndTime there (MediaPlayerPrivateAVFoundation::didEnd).
 TEST_F(ParcRendererImplTest, ParcPlaysBackwardSilentlyAndEndsAtTheStart) {
   InitializeWithAudioAndVideo();
   Play();
@@ -279,7 +269,6 @@ TEST_F(ParcRendererImplTest, ParcPlaysBackwardSilentlyAndEndsAtTheStart) {
   video_renderer_client_->OnBufferingStateChange(
       BUFFERING_HAVE_ENOUGH, BUFFERING_CHANGE_REASON_UNKNOWN);
 
-  // A flush gives the audio clock the time backward playback reached.
   EXPECT_CALL(time_source_, SetMediaTime(testing::Le(base::Milliseconds(50))));
   EXPECT_CALL(*video_renderer_, Flush(_));
   EXPECT_CALL(callbacks_, OnFlushed());
@@ -287,7 +276,6 @@ TEST_F(ParcRendererImplTest, ParcPlaysBackwardSilentlyAndEndsAtTheStart) {
                                        base::Unretained(&callbacks_)));
   base::RunLoop().RunUntilIdle();
 
-  // Time goes back to 0, where playback ends once.
   EXPECT_CALL(*video_renderer_,
               ParcStartPlayingBackwardFrom(base::Milliseconds(10), _));
   renderer_impl_->ParcStartPlayingBackwardFrom(base::Milliseconds(10), -1,
@@ -302,17 +290,11 @@ TEST_F(ParcRendererImplTest, ParcPlaysBackwardSilentlyAndEndsAtTheStart) {
   base::RunLoop().RunUntilIdle();
 }
 
-// Parc: a demuxer whose streams may join a playing renderer (Safari's Media
-// Source, MediaResource::ParcMayAddStreams()).
 class ParcLateStreamsDemuxer : public MockDemuxer {
  public:
   bool ParcMayAddStreams() override { return true; }
 };
 
-// Parc: a SourceBuffer's audio added while video plays joins this renderer,
-// as WebKit adds an audio renderer to its synchronizer: the video renderer
-// stays, the clock waits at the current time (HAVE_NOTHING) for the audio,
-// whose renderer then drives it.
 TEST_F(ParcRendererImplTest, ParcAudioJoinsPlayingVideo) {
   StrictMock<ParcLateStreamsDemuxer> demuxer;
   CreateVideoStream();
@@ -377,8 +359,6 @@ TEST_F(ParcRendererImplTest, ParcAudioJoinsPlayingVideo) {
   Destroy();
 }
 
-// Parc: so does video added while audio plays, as WebKit adds a display
-// layer; it starts at the current time and the clock waits for its frame.
 TEST_F(ParcRendererImplTest, ParcVideoJoinsPlayingAudio) {
   StrictMock<ParcLateStreamsDemuxer> demuxer;
   CreateAudioStream();
@@ -432,8 +412,6 @@ TEST_F(ParcRendererImplTest, ParcVideoJoinsPlayingAudio) {
   Destroy();
 }
 
-// Parc: a Media Source stream the page can turn off
-// (ChunkDemuxerStream::ParcIsEnabled()).
 class ParcTogglableStream : public MockDemuxerStream,
                             public ParcDemuxerStreamExtension {
  public:
@@ -448,11 +426,6 @@ class ParcTogglableStream : public MockDemuxerStream,
   bool enabled = true;
 };
 
-// Parc: every enabled audio stream of Safari's Media Source plays, as WebKit
-// keeps a renderer per enabled audio track: the second one mixed into the
-// first's output, its time started with the first's and only once both have
-// enough. Turning tracks off removes the second and silences the first, which
-// stays the clock; turning the first on again restarts it where playback is.
 TEST_F(ParcRendererImplTest, ParcEveryEnabledAudioStreamPlaysMixed) {
   StrictMock<ParcLateStreamsDemuxer> demuxer;
   ParcTogglableStream first(TestAudioConfig::Normal());
@@ -549,7 +522,6 @@ TEST_F(ParcRendererImplTest, ParcEveryEnabledAudioStreamPlaysMixed) {
   Destroy();
 }
 
-// Parc: Chrome's identity keeps Chromium's one audio stream.
 TEST_F(ParcRendererImplTest, ParcChromePlaysFirstEnabledAudioStreamOnly) {
   ParcTogglableStream first(TestAudioConfig::Normal());
   ParcTogglableStream second(TestAudioConfig::Normal());
@@ -581,9 +553,6 @@ TEST_F(ParcRendererImplTest, ParcChromePlaysFirstEnabledAudioStreamOnly) {
   Destroy();
 }
 
-// Parc: an encrypted audio stream enabled before any CDM is set waits for
-// one, time held as WebKit's synchronizer holds it for samples it can't
-// decrypt yet; it then joins the playing renderer with that CDM, no restart.
 TEST_F(ParcRendererImplTest, ParcEncryptedAudioJoinsOnceCdmIsSet) {
   StrictMock<ParcLateStreamsDemuxer> demuxer;
   ParcTogglableStream first(TestAudioConfig::Normal());
@@ -660,7 +629,6 @@ TEST_F(ParcRendererImplTest, ParcEncryptedAudioJoinsOnceCdmIsSet) {
   Destroy();
 }
 
-// Parc: so does encrypted video joining playing audio.
 TEST_F(ParcRendererImplTest, ParcEncryptedVideoJoinsOnceCdmIsSet) {
   StrictMock<ParcLateStreamsDemuxer> demuxer;
   CreateAudioStream();
@@ -719,4 +687,4 @@ TEST_F(ParcRendererImplTest, ParcEncryptedVideoJoinsOnceCdmIsSet) {
   Destroy();
 }
 
-}  // namespace media
+}
