@@ -1,4 +1,5 @@
 import CoreGraphics
+import QuartzCore
 
 enum CommandBarCompactLayout {
     static let sidebarWidth: CGFloat = 450
@@ -8,12 +9,13 @@ enum CommandBarCompactLayout {
     static let listInset: CGFloat = 9
     static let iconSize: CGFloat = 14
     static let inputHeight: CGFloat = 22
+    static let textLineHeight: CGFloat = 16
+    static let fieldTextInset: CGFloat = 2
     static let iconX = listInset + CommandResultCell.iconX
     static let textX = listInset + CommandResultCell.titleX
     static let trailing = listInset + CommandResultCell.trailingInset
     static let headerCentre: CGFloat = 24
-    static let restingCentre: CGFloat = 18
-    static let sessionLift = headerCentre - restingCentre
+    static let glideDuration: CFTimeInterval = 0.15
 
     static func width(popup: Bool, window: CGRect, screen: CGRect) -> CGFloat {
         let preferred = popup ? popupWidth : sidebarWidth
@@ -26,6 +28,8 @@ enum CommandBarCompactLayout {
         return max(lower, min(anchor, upper))
     }
 
+    static func lift(anchorHeight: CGFloat) -> CGFloat { headerCentre - anchorHeight / 2 }
+
     static func originY(anchor: CGRect, height: CGFloat, lift: CGFloat, screen: CGRect) -> CGFloat {
         min(max(anchor.maxY + lift - height, screen.minY + screenMargin), screen.maxY - height - screenMargin)
     }
@@ -37,12 +41,15 @@ enum CommandBarCompactLayout {
                       width: width, height: anchor.height)
     }
 
-    static func iconFrame(resting: Bool) -> CGRect {
-        CGRect(x: iconX, y: (resting ? restingCentre : headerCentre) - iconSize / 2, width: iconSize, height: iconSize)
+    static func iconFrame(centre: CGFloat) -> CGRect {
+        CGRect(x: iconX, y: centre - iconSize / 2, width: iconSize, height: iconSize)
     }
 
-    static func inputFrame(width: CGFloat, resting: Bool) -> CGRect {
-        CGRect(x: textX, y: (resting ? restingCentre : headerCentre) - inputHeight / 2,
-               width: max(0, width - textX - trailing), height: inputHeight)
+    static func inputFrame(width: CGFloat, centre: CGFloat) -> CGRect {
+        CGRect(x: textX, y: centre - textLineHeight / 2, width: max(0, width - textX - trailing), height: inputHeight)
+    }
+
+    static func glideOffsets(pillIconX: CGFloat, pillTextX: CGFloat, iconX: CGFloat, inputX: CGFloat) -> (icon: CGFloat, text: CGFloat) {
+        (pillIconX - iconX, pillTextX - fieldTextInset - inputX)
     }
 }

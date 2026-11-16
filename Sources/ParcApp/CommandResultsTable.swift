@@ -9,6 +9,7 @@ final class CommandResultsTable: NSTableView {
         column.width = scroll.contentSize.width
         frame = NSRect(x: 0, y: 0, width: scroll.contentSize.width, height: height)
         scroll.layoutSubtreeIfNeeded()
+        if frame.width != scroll.contentSize.width { frame.size.width = scroll.contentSize.width }
         let extraWidth = max(0, frame.width - column.width)
         column.width = max(0, scroll.contentSize.width - extraWidth)
         let origin = scroll.contentView.bounds.origin
@@ -35,6 +36,11 @@ final class CommandResultsScrollView: NSScrollView {
 
     override func tile() {
         super.tile()
+        if scrollerStyle == .legacy, hasVerticalScroller {
+            let reserve = NSScroller.scrollerWidth(for: verticalScroller?.controlSize ?? .regular, scrollerStyle: .legacy)
+            let width = max(0, bounds.width - reserve - contentView.frame.minX)
+            if contentView.frame.width > width { contentView.frame.size.width = width }
+        }
         onTile?()
     }
 }

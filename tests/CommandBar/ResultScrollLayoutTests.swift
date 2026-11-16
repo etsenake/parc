@@ -13,7 +13,7 @@ import AppKit
         var checks = 0
         for style in [NSTableView.Style.automatic, .plain, .inset, .fullWidth] {
             for scrollerStyle in [NSScroller.Style.legacy, .overlay] {
-                let table = CommandResultsTable(), scroll = NSScrollView()
+                let table = CommandResultsTable(), scroll = CommandResultsScrollView()
                 table.style = style
                 table.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("suggestion")))
                 table.headerView = nil; table.rowHeight = 50; table.intercellSpacing = .zero; table.dataSource = rows
@@ -29,7 +29,10 @@ import AppKit
                         precondition(abs(table.frame.width - scroll.contentSize.width) < 0.01,
                                      "Table must fit its viewport, style \(style.rawValue), count \(count)")
                         precondition(scroll.contentView.bounds.origin.x == 0, "Clip must not retain a sideways offset")
-                        checks += 2
+                        let reserve = scrollerStyle == .legacy ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
+                        precondition(scroll.contentView.frame.width == width - reserve && scroll.scrollerReserve == reserve,
+                                     "Permanent scroll bars keep their width reserved whatever the row count, count \(count), width \(width)")
+                        checks += 3
                         if count == 25 {
                             precondition(table.frame.height > scroll.contentSize.height, "Long lists remain vertically scrollable")
                             scroll.contentView.scroll(to: NSPoint(x: 30, y: 100))

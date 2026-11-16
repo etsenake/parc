@@ -253,9 +253,9 @@ import SwiftUI
         container.setAccessibilityElement(true)
         container.setAccessibilityRole(.group)
         container.setAccessibilityLabel(addressOnly ? "Current Tab Address" : "Command Bar")
-        inputIcon.imageScaling = .scaleProportionallyDown
+        inputIcon.imageScaling = .scaleProportionallyDown; inputIcon.wantsLayer = true
         container.addSubview(inputIcon)
-        input.isBordered = false; input.drawsBackground = false
+        input.isBordered = false; input.drawsBackground = false; input.wantsLayer = true
         input.font = CommandBarTypography.field
         input.placeholderString = "Search or Enter URL…"
         input.usesSingleLineMode = true; input.cell?.wraps = false
@@ -366,6 +366,29 @@ import SwiftUI
         }
         if let editor = input.currentEditor() as? NSTextView { observeEditing(of: editor) }
         observeLifetime(of: parent)
+        glideFromPill()
+    }
+    private func glideFromPill() {
+        guard let anchor = sidebarAnchor, anchor.window === parent, !anchor.isHiddenOrHasHiddenAncestor,
+              input.stringValue.isEmpty, !isScoped, !scopeInvalidated,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              let pillIcon = anchor.subviews.first(where: { $0 is SidebarAddressSearchIcon && !$0.isHidden }) else { return }
+        container.layoutSubtreeIfNeeded()
+        let offsets = CommandBarCompactLayout.glideOffsets(
+            pillIconX: container.convert(pillIcon.frame, from: anchor).minX,
+            pillTextX: container.convert(NSPoint(x: SidebarAddressSearchIcon.textIndent, y: 0), from: anchor).x,
+            iconX: inputIcon.frame.minX, inputX: input.frame.minX)
+        Self.glide(inputIcon, from: offsets.icon)
+        Self.glide(input, from: offsets.text)
+    }
+    private static func glide(_ view: NSView, from offset: CGFloat) {
+        guard abs(offset) >= 0.5, let layer = view.layer else { return }
+        let animation = CABasicAnimation(keyPath: "transform.translation.x")
+        animation.fromValue = offset
+        animation.toValue = 0
+        animation.duration = CommandBarCompactLayout.glideDuration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(animation, forKey: "pillGlide")
     }
     func presentResident(in slot: NSView) {
         guard resident, !presented, !dismissed, let parent, slot.window == nil || slot.window === parent else { return }
@@ -525,7 +548,7 @@ import SwiftUI
             } else {
                 let width = CommandBarCompactLayout.width(popup: popup, window: parent.frame, screen: available)
                 let height = min(isScoped || scopeInvalidated ? compactScopeHeight : 309, available.height - 32)
-                let lift = addressOnly ? 0 : CommandBarCompactLayout.sessionLift
+                let lift = CommandBarCompactLayout.lift(anchorHeight: anchorRect.height)
                 surface = NSRect(x: CommandBarCompactLayout.originX(anchor: anchorRect.minX, width: width, window: parent.frame, screen: available),
                                  y: CommandBarCompactLayout.originY(anchor: anchorRect, height: height, lift: lift, screen: available),
                                  width: width, height: height)
@@ -635,8 +658,9 @@ import SwiftUI
         let width = container.bounds.width
         if sidebarAnchor != nil || addressOnly {
             typealias Compact = CommandBarCompactLayout
-            inputIcon.frame = Compact.iconFrame(resting: sidebarBrowsing)
-            input.frame = Compact.inputFrame(width: width, resting: sidebarBrowsing)
+            let centre = sidebarBrowsing ? container.bounds.height / 2 : Compact.headerCentre
+            inputIcon.frame = Compact.iconFrame(centre: centre)
+            input.frame = Compact.inputFrame(width: width, centre: centre)
             divider.isHidden = true
             scroll.isHidden = sidebarBrowsing; emptyLabel.isHidden = sidebarBrowsing || !results.isEmpty
             scroll.frame = NSRect(x: Compact.listInset, y: 50, width: max(0, width - 2 * Compact.listInset),
@@ -1287,7 +1311,9 @@ import SwiftUI
     private func updateInputIcon() {
         guard (isScoped || scopeInvalidated || !input.stringValue.isEmpty),
               results.indices.contains(table.selectedRow) else {
-            inputIcon.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil); return
+            inputIcon.image = sidebarAnchor != nil || addressOnly ? SidebarAddressSearchIcon.glyph
+                : NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
+            return
         }
         let result = results[table.selectedRow]
         inputIcon.image = result.extensionLaunch?.icon ?? result.url.flatMap { icons[$0] } ?? Self.iconImage(result.symbol)

@@ -77,12 +77,13 @@ assert position.count("CommandBarCompactLayout.width(popup: popup, window: paren
     "the compact editor is no longer capped to its window"
 for use in ("CommandBarCompactLayout.originX(anchor: anchorRect.minX, width: width, window: parent.frame, screen: available)",
             "CommandBarCompactLayout.restingFrame(anchor: anchorRect, sidebar: anchor.superview?.bounds.width ?? anchorRect.width,",
-            "let lift = addressOnly ? 0 : CommandBarCompactLayout.sessionLift",
+            "let lift = CommandBarCompactLayout.lift(anchorHeight: anchorRect.height)",
             "CommandBarCompactLayout.originY(anchor: anchorRect, height: height, lift: lift, screen: available)"):
-    assert use in position, f"the Control-Space field no longer keeps its text in place as results open: {use}"
+    assert use in position, f"the compact editors no longer keep their row on the address's line: {use}"
 contents = source[source.index("    private func layoutContents()"):source.index("    func reconcile(tabs:")]
-for use in ("inputIcon.frame = Compact.iconFrame(resting: sidebarBrowsing)",
-            "input.frame = Compact.inputFrame(width: width, resting: sidebarBrowsing)",
+for use in ("let centre = sidebarBrowsing ? container.bounds.height / 2 : Compact.headerCentre",
+            "inputIcon.frame = Compact.iconFrame(centre: centre)",
+            "input.frame = Compact.inputFrame(width: width, centre: centre)",
             "scroll.frame = NSRect(x: Compact.listInset, y: 50, width: max(0, width - 2 * Compact.listInset),"):
     assert use in contents, f"the compact address row no longer lines up with its results: {use}"
 header = source[source.index("    private func layoutScopeHeader()"):source.index("    private func setScopeInput(")]
@@ -96,6 +97,19 @@ for use in ("private let scroll = CommandResultsScrollView()",
             "observe(NSScroller.preferredScrollerStyleDidChangeNotification, object: nil) { $0.adoptScrollerStyle() }",
             "guard !dismissed, !layingOutContents, scroll.scrollerReserve != headerScrollerReserve else { return }"):
     assert use in source, f"the header no longer follows scroll bar changes live: {use}"
+present = source[source.index("    func present()"):source.index("    func presentResident(in slot: NSView)")]
+assert "        observeLifetime(of: parent)\n        glideFromPill()\n    }\n    private func glideFromPill()" in present, \
+    "opening from the pill no longer glides its icon and text into place"
+glide = present[present.index("    private func glideFromPill()"):]
+for use in ("!NSWorkspace.shared.accessibilityDisplayShouldReduceMotion",
+            "let pillIcon = anchor.subviews.first(where: { $0 is SidebarAddressSearchIcon && !$0.isHidden })",
+            "input.stringValue.isEmpty",
+            "pillTextX: container.convert(NSPoint(x: SidebarAddressSearchIcon.textIndent, y: 0), from: anchor).x",
+            "animation.duration = CommandBarCompactLayout.glideDuration",
+            "CABasicAnimation(keyPath: \"transform.translation.x\")"):
+    assert use in glide, f"the pill glide lost a guard or its sideways-only motion: {use}"
+assert "inputIcon.image = sidebarAnchor != nil || addressOnly ? SidebarAddressSearchIcon.glyph" in source, \
+    "the compact editor no longer draws the pill's own magnifying glass"
 start = window.index("    private func commandBarTabs(")
 end = window.index("    func commandBarTabCaption(", start)
 (output / "TabCandidates.swift").write_text("import Foundation\nextension TabCandidatesFixture {\n" +

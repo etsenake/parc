@@ -122,11 +122,19 @@ address, capped to its window and screen with 8-point margins so a narrow
 sign-in pop-up never cuts it off. It opens at its control's left edge and slides
 back inside the window when it would overhang. Its address row's icon, text,
 scope label and trailing edge sit on the result rows' icon, title and badge
-columns. The resting Control–Space field covers the sidebar's address field with
-its icon and text already on those columns and centred on the field, and the
-results panel it opens rises six points, so the first keystroke leaves the text
-and caret exactly where they were. `CommandBarCompactLayout.swift` holds these
-numbers.
+columns, with the text line centred on the icon. The resting Control–Space field
+covers the sidebar's address field with its icon and text already on those
+columns and centred on the field. The typing panel and the editor a click opens
+rise until their address row is centred on the address they came from, six
+points for the sidebar's, so icon, text and baseline stay on the sidebar pill's
+line and the first keystroke moves nothing; a pop-up's editor centres on the
+pop-up's address the same way. Opening from an empty pill, the editor's
+magnifying glass, which is the pill's own glyph, and its placeholder start where
+the pill drew them and glide sideways onto the columns in 0.15 seconds. Reduce Motion
+skips the glide, and a pill showing a page's address has none, since its text
+changes anyway. The pill keeps its own spacing: moved onto the editor's columns,
+its placeholder would be cut off at the default sidebar width.
+`CommandBarCompactLayout.swift` holds these numbers.
 
 Floating panels and the resident card follow the window's appearance, which
 View → Appearance sets; the empty inline sidebar input takes the Space's content
@@ -147,10 +155,11 @@ selected favicons and command glyphs use their accessory tiles. Shortcut badges
 read the live registry. The table fits its complete document to the clip width,
 including native style margins, resets horizontal offset and preserves vertical
 scroll position. With permanent scroll bars, set to always show or shown for a
-connected mouse, a visible scroller narrows the rows. Both bars then end their
-address row that much further in, so its trailing edge, site-search hint and
-info button stay on the badge column and move with it when typing takes the
-list past five rows. The header follows each re-tiling of the list, including a
+connected mouse, both bars keep the scroller's width reserved whenever their
+list shows, so rows, badges and highlights stay put when typing takes the list
+past five rows and the scroller appears. Both bars end their address row that
+much further in, so its trailing edge, site-search hint and info button stay on
+the badge column. The header follows each re-tiling of the list, including a
 change to the system's scroll bar setting while the bar is open.
 
 ## Result row content
@@ -404,8 +413,10 @@ native. This uses `SidebarTablistBackground`, not another input monitor.
 
 `tests/CommandBar` covers real app decisions for editing, scope, publication
 identity, default ranking, row diffs, submission, menus, typed targets and the
-compact editor's width, caps and column alignment, including the resting
-Control–Space field and permanent scroll bars. The
+compact editor's width, caps and column alignment, the resting Control–Space
+field and permanent scroll bars. Drawn without a window, the pill's and the
+editor's text and icon must start at the same spot and on the same baseline,
+then glide only sideways, for Control–Space, typing and a click. The
 command-bar scripts build focused production components; native search has
 separate owner/lifecycle coverage. Follow [the working contract](../AGENTS.md)
 before running checks.

@@ -101,11 +101,12 @@ import QuartzCore
     static let centerX: CGFloat = 16
     static let textIndent: CGFloat = 32
     static let side: CGFloat = 14
+    static let glyph = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
+        image = Self.glyph
         imageScaling = .scaleNone
         setAccessibilityElement(false)
     }

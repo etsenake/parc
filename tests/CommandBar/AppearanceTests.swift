@@ -244,13 +244,17 @@ import AppKit
         expect(scroll.scrollerReserve == 0, "overlay scroll bars leave the big bar's header where it was")
         expect(abs(scroll.frame.width - overlayEdge - CommandResultCell.trailingInset) < 0.01,
                "with overlay scroll bars the badge column ends at the list's own trailing inset")
-        for (total, moves) in [(8, true), (3, false)] {
+        expect(abs(badgeEdge(3, style: .overlay) - overlayEdge) < 0.01, "overlay scroll bars never move the big bar's badges")
+        let legacy = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
+        var legacyEdges: [CGFloat] = []
+        for total in [3, 8] {
             let edge = badgeEdge(total, style: .legacy)
-            let legacy = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
-            expect(scroll.scrollerReserve == (moves ? legacy : 0), "a permanent scroller is reserved only while it shows")
+            expect(scroll.scrollerReserve == legacy, "a permanent scroller keeps its width reserved with \(total) rows")
             expect(abs(overlayEdge - edge - scroll.scrollerReserve) < 0.01,
-                   "the reserve the big bar adds to its header is exactly how far the badge column moved, \(total) rows")
+                   "the reserve the big bar adds to its header is exactly how far in the badge column sits, \(total) rows")
+            legacyEdges.append(edge)
         }
+        expect(abs(legacyEdges[0] - legacyEdges[1]) < 0.01, "the big bar's badges stay put as a permanent scroller appears")
 
         window.orderOut(nil)
         print("Command bar appearance checks passed (\(count) assertions).")

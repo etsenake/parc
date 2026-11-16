@@ -239,6 +239,8 @@ step compile_and_run command-bar-compact-layout CommandBar/CompactLayoutTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandBarCompactLayout.swift" \
   "$repo_root/Sources/ParcApp/CommandResultsTable.swift" \
+  "$repo_root/Sources/ParcApp/SidebarAddressPill.swift" \
+  "$repo_root/Sources/ParcApp/SidebarChromeLayout.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
