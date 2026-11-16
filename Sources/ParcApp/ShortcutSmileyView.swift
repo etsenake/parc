@@ -202,6 +202,7 @@ struct ShortcutSmileyArtwork {
     private static let artwork: ShortcutSmileyArtwork? = Bundle.main.url(forResource: "smiley", withExtension: "json", subdirectory: "Shortcuts")
         .flatMap { try? Data(contentsOf: $0) }.flatMap(ShortcutSmileyArtwork.init)
     private var timer: Timer?
+    var now: () -> CFTimeInterval = { CACurrentMediaTime() }
     private var startedAt = 0.0
     private var elapsed = 0.0
     private var lastDisplayFingerprint: Int?
@@ -230,14 +231,14 @@ struct ShortcutSmileyArtwork {
         invalidateDisplay()
         guard window != nil, !isHidden, Self.artwork != nil,
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        startedAt = CACurrentMediaTime()
+        startedAt = now()
         startFrames()
     }
     private func tick(_ timer: Timer) {
         guard window != nil, !isHidden, self.timer === timer, let artwork = Self.artwork else {
             stopFrames(); return
         }
-        elapsed = min(artwork.duration, CACurrentMediaTime() - startedAt)
+        elapsed = min(artwork.duration, now() - startedAt)
         let fingerprint = artwork.presentationFingerprint(seconds: elapsed, size: bounds.size)
         let endFingerprint = artwork.presentationFingerprint(seconds: artwork.duration, size: bounds.size)
         if fingerprint != endFingerprint { leftRestingPose = true }

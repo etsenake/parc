@@ -38,14 +38,24 @@ struct ShortcutSmileyTimerIdleTests {
         let resized = artwork.presentationFingerprint(seconds: 0, size: CGSize(width: 64, height: 64))
         check(resized != earlyA, "bounds size remains part of the presentation fingerprint")
 
+        var clock: CFTimeInterval = 0
+        let frame = 1.0 / 60
+        func advance(_ timers: [FrameSource], until time: CFTimeInterval) {
+            while clock < time, armed(timers) {
+                clock += frame
+                timers.forEach { $0.fire() }
+            }
+        }
         let view = ShortcutSmileyView(frame: NSRect(x: 0, y: 0, width: 50, height: 50))
+        view.now = { clock }
         let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let attached = cueTimers { window.contentView = view }
         check(armed(attached) != reduceMotion, "attaching arms the 60 Hz cue timer only while motion is allowed")
-        RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
+        advance(attached, until: 0.05)
         let beforeRestart = Redraws.count(view)
+        let restartedAt = clock
         let cue = cueTimers {
             NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
         }
@@ -55,43 +65,41 @@ struct ShortcutSmileyTimerIdleTests {
         view.cacheDisplay(in: view.bounds, to: drawn)
         check((0..<drawn.pixelsHigh).contains { y in (0..<drawn.pixelsWide).contains { x in (drawn.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0 } },
               "the view draws its artwork from the bundle's Shortcuts resources")
+        let holdStart = Redraws.count(view)
 
         if reduceMotion {
             check(!armed(cue), "Reduce Motion never arms the 60 Hz cue timer")
         } else {
             check(armed(cue), "visible cue arms the 60 Hz timer while motion is allowed")
-            let earlyDeadline = Date(timeIntervalSinceNow: 0.55)
-            while Date() < earlyDeadline {
-                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))
-            }
+            advance(cue, until: restartedAt + 0.55)
             check(armed(cue), "early hold keeps the timer armed until motion starts")
-            check(Redraws.count(view) == afterAttach,
+            check(Redraws.count(view) == holdStart,
                   "identical early-hold ticks skip needsDisplay")
 
-            let deadline = Date(timeIntervalSinceNow: 5.5)
-            while armed(cue), Date() < deadline {
-                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
-            }
-            check(!armed(cue), "returning to the resting pose idle-stops the cue timer")
+            let replacements = cueTimers { advance(cue, until: restartedAt + artwork.duration + 1) }
+            check(!armed(cue) && !armed(replacements) && clock - restartedAt < artwork.duration,
+                  "returning to the resting pose idle-stops the cue timer before the composition ends")
             let settledInvalidations = Redraws.count(view)
-            check(settledInvalidations > afterAttach, "active keyframes still dirty while showing")
-            for _ in 0..<30 {
-                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))
+            check(settledInvalidations > holdStart, "active keyframes still dirty while showing")
+            let rearmed = cueTimers {
+                for _ in 0..<30 {
+                    clock += frame
+                    (cue + replacements).forEach { $0.fire() }
+                }
             }
-            check(Redraws.count(view) == settledInvalidations && !armed(cue),
+            check(Redraws.count(view) == settledInvalidations && !armed(cue + replacements) && rearmed.isEmpty,
                   "post-settle idle stays stopped with no further dirties")
 
             let driving = ShortcutSmileyView(frame: NSRect(x: 0, y: 0, width: 50, height: 50))
+            driving.now = { clock }
             let host = NSWindow(contentRect: driving.frame, styleMask: [.titled], backing: .buffered, defer: true)
             host.isReleasedWhenClosed = false
             let drivingCue = cueTimers { host.contentView = driving }
             check(armed(drivingCue), "fresh visible cue arms the timer")
             driving.isHidden = true
-            let hideDeadline = Date(timeIntervalSinceNow: 0.25)
-            while armed(drivingCue), Date() < hideDeadline {
-                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))
-            }
-            check(!armed(drivingCue), "hidden cue idle-stops the 60 Hz timer")
+            clock += frame
+            drivingCue.forEach { $0.fire() }
+            check(!armed(drivingCue), "hidden cue idle-stops the 60 Hz timer on its next tick")
             host.close()
         }
 
