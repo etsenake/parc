@@ -5,6 +5,7 @@
 #include "base/functional/bind.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/common/chrome_isolated_world_ids.h"
@@ -34,11 +35,16 @@ NSMapTable<PCNativeBrowserWindow*, PCNativeDownloadArrival*>* PendingArrivals() 
       [NSMapTable weakToWeakObjectsMapTable];
   return value;
 }
-}  // namespace
+content::WeakDocumentPtr ArrivalDocument(content::WeakDocumentPtr document) {
+  auto* frame = document.AsRenderFrameHostIfValid();
+  auto* contents = frame ? content::WebContents::FromRenderFrameHost(frame) : nullptr;
+  auto* devtools = contents ? DevToolsWindow::AsDevToolsWindow(contents) : nullptr;
+  auto* inspected = devtools ? devtools->GetInspectedWebContents() : nullptr;
+  return inspected ? inspected->GetPrimaryMainFrame()->GetWeakDocumentPtr()
+                   : document;
+}
+}
 
-// Ownership: the pending renderer callback retains the receipt until it
-// resolves (or the frame dies and drops the callback); afterwards only a client
-// that keeps it does. Main thread only. No page, window or Profile is retained.
 @implementation PCNativeDownloadArrival {
   base::WeakPtr<Profile> _profile;
   base::WeakPtr<BrowserWindowInterface> _browser;
@@ -82,7 +88,6 @@ NSMapTable<PCNativeBrowserWindow*, PCNativeDownloadArrival*>* PendingArrivals() 
   return self;
 }
 
-// Identity only: no key, visibility, zoom or layout state, and no client call.
 - (BOOL)isValid {
   CHECK(NSThread.isMainThread);
   auto* frame = _document.AsRenderFrameHostIfValid();
@@ -163,7 +168,8 @@ namespace parc {
 void PresentNativeDownloadArrival(Profile& profile, NativeDownloadSnapshot snapshot,
                                   content::WeakDocumentPtr document, NSString* context_id) {
   PCNativeDownloadArrival* receipt = [[PCNativeDownloadArrival alloc]
-      initWithProfile:profile snapshot:snapshot document:std::move(document) context:context_id];
+      initWithProfile:profile snapshot:snapshot
+             document:ArrivalDocument(std::move(document)) context:context_id];
   [receipt start];
 }
-}  // namespace parc
+}

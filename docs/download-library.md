@@ -229,7 +229,9 @@ Arrival is driven once by genuine `OnDownloadCreated` for a live initiating
 page; restored/imported records and manager enumeration never replay it. The
 original page must be visible in its key window, without a security reservation.
 The receipt retains page, primary document, Profile, private context, item and
-window identity. Popup windows are excluded.
+window identity. Popup windows are excluded. A download started from Developer
+Tools arrives in the inspected page's window, as Chrome sends it, so screenshots
+and saved traces show the same cue; tools with no inspected page show none.
 
 The source point comes from the original hovered-link rectangle, adjusted for
 visual viewport and zoom, or the pointer when unavailable. A newer creation
