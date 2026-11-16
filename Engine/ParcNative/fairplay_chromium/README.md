@@ -249,6 +249,10 @@ EME's false, when there are none), other types reject with NotSupported.
     never sees one, and the core puts every audio renderer, later and mixed
     ones too, on it (`AVPlayer` for native HLS), as WebKit's
     `setOutputDeviceId` does.
+  - Pitch (`preservesPitch`): the render-process client keeps the page's
+    choice and sends each change over `FairPlayRendererExtension`; a false
+    set before the extension arrives goes as soon as it does. The core picks
+    the audio renderers' pitch algorithm from it, as for native HLS.
   - The layer token (`OnLayerRegistered`) goes through that proxy on the
     browser's UI thread, so a busy UI thread delays the first video frame's
     hole; the render-process client paints the hole whenever it arrives.
@@ -353,11 +357,6 @@ one rebuffer. This also affects casting, PiP and background tabs.
 The core plays neither VP8 nor MP3, so Dolby Vision transitions beside them can
 fail and late FairPlay attachment can require restart. This limit stays: FairPlay
 can't protect either, and a fallback would edit Chromium's protected-video routing.
-
-The MSE FairPlay client and GPU adapter also omit `SetPreservesPitch`, so a
-page cannot disable pitch preservation on this route. The core supports the
-choice, and native HLS forwards it. Connect that choice through the FairPlay
-client/adapter boundary.
 
 ## Widevine request hook
 

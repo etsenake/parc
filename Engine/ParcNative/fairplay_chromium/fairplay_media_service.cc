@@ -114,6 +114,10 @@ class FairPlayRendererStreams final : public mojom::FairPlayRendererExtension {
     renderer_->SetPlaybackRateAt(rate, time, host_time);
   }
 
+  void SetPreservesPitch(bool preserves_pitch) final {
+    renderer_->SetPreservesPitch(preserves_pitch);
+  }
+
  private:
   void OnStreamReady(uint32_t id, AddStreamCallback callback) {
     renderer_->AddStream(id, streams_[id].get());

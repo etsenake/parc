@@ -66,7 +66,7 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
 | `DecoderBuffer` + `DecryptConfig` | `EncodedSample` + `DecryptInfo` |
 | `StartPlayingFrom` / `SetPlaybackRate` / `SetVolume` / `Flush` / `GetMediaTime` | same names (plus `SetMuted`); the rate picks the audio renderer's pitch algorithm as WebKit's `AudioVideoRendererAVFObjC` does (Spectral off 1x, else Varispeed) |
 | `ParcRendererExtension::ParcSetPlaybackRateAt` (Parc) | `SetPlaybackRateAt`: the rate on another renderer's clock (a time at a host time), as WebKit's `setRateAtHostTime`, so a hand-off from Chromium's renderer has no gap |
-| `Renderer::SetPreservesPitch` | `SetPreservesPitch` (true until set in the core; the Chromium FairPlay client and adapter do not forward page changes, so this route keeps pitch preservation enabled) |
+| `Renderer::SetPreservesPitch` | `SetPreservesPitch` (true until set; the Chromium FairPlay client forwards the page's choice through the adapter, including a false set before the GPU renderer connected) |
 | `RendererClient::OnWaiting(kNoDecryptionKey)` | `OnWaitingForKey` |
 | `OnEnded` / `OnError` / `OnVideoNaturalSizeChange` / `OnBufferingStateChange` | same names; a later natural size is reported when the clock reaches its first sample (WebKit's `sizeWillChangeAtTime`) |
 | compositing (`ca_renderer_layer_tree.mm`) | `display_layer()` (a `CALayer` host filled by the `AVSampleBufferDisplayLayer`) |

@@ -14,6 +14,7 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
+#include "content/renderer/media/fairplay/fairplay_renderer_client.h"
 #include "content/renderer/media/fairplay/native_hls_demuxer.h"
 #include "content/renderer/media/fairplay/native_hls_renderer.h"
 #include "media/base/audio_renderer_sink.h"
@@ -27,6 +28,8 @@
 #include "media/base/test_helpers.h"
 #include "media/base/timestamp_constants.h"
 #include "media/base/video_frame.h"
+#include "media/mojo/clients/mojo_renderer.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -1082,6 +1085,81 @@ TEST_F(NativeHlsTest, CdmSetBeforeInitializeReachesThePlayer) {
   task_environment_.RunUntilIdle();
   EXPECT_EQ(player_.cdm_ids_,
             (std::vector<std::optional<base::UnguessableToken>>{cdm_id}));
+}
+
+class FakeRendererExtension : public media::mojom::FairPlayRendererExtension {
+ public:
+  void AddStream(uint32_t id,
+                 mojo::PendingRemote<media::mojom::DemuxerStream> stream,
+                 AddStreamCallback callback) override {
+    std::move(callback).Run();
+  }
+  void RemoveStream(uint32_t id) override {}
+  void FollowMuteStateHandoff(const base::UnguessableToken& handoff) override {}
+  void SetAudioOutputDevice(const std::string& sink_id) override {}
+  void SetPlaybackRateAt(double rate,
+                         base::TimeDelta time,
+                         base::TimeTicks host_time) override {}
+  void SetPreservesPitch(bool preserves_pitch) override {
+    preserves_pitch_.push_back(preserves_pitch);
+  }
+
+  std::vector<bool> preserves_pitch_;
+  mojo::Receiver<media::mojom::FairPlayRendererExtension> receiver_{this};
+};
+
+class FairPlayRendererClientPitchTest : public testing::Test {
+ protected:
+  void SetPreservesPitch(bool preserves_pitch) {
+    client_.SetPreservesPitch(preserves_pitch);
+    task_environment_.RunUntilIdle();
+  }
+
+  void SendExtension() {
+    client_.OnRendererExtension(extension_.receiver_.BindNewPipeAndPassRemote());
+    task_environment_.RunUntilIdle();
+  }
+
+  base::test::TaskEnvironment task_environment_;
+  FakeRendererExtension extension_;
+  media::FairPlayRendererClient client_{
+      task_environment_.GetMainThreadTaskRunner(),
+      std::unique_ptr<media::MojoRenderer>(), mojo::NullReceiver(), nullptr,
+      nullptr};
+};
+
+TEST_F(FairPlayRendererClientPitchTest, PitchStaysPreservedWithoutAPageChoice) {
+  SetPreservesPitch(true);
+  SendExtension();
+  SetPreservesPitch(true);
+  EXPECT_TRUE(extension_.preserves_pitch_.empty());
+}
+
+TEST_F(FairPlayRendererClientPitchTest,
+       PitchOffSetBeforeTheExtensionReachesTheGpuRenderer) {
+  SetPreservesPitch(true);
+  SetPreservesPitch(false);
+  EXPECT_TRUE(extension_.preserves_pitch_.empty());
+  SendExtension();
+  EXPECT_EQ(extension_.preserves_pitch_, (std::vector<bool>{false}));
+}
+
+TEST_F(FairPlayRendererClientPitchTest,
+       PitchTurnedBackOnBeforeTheExtensionSendsNothing) {
+  SetPreservesPitch(false);
+  SetPreservesPitch(true);
+  SendExtension();
+  EXPECT_TRUE(extension_.preserves_pitch_.empty());
+}
+
+TEST_F(FairPlayRendererClientPitchTest,
+       PitchChangesDuringPlaybackReachTheGpuRenderer) {
+  SetPreservesPitch(true);
+  SendExtension();
+  SetPreservesPitch(false);
+  SetPreservesPitch(false);
+  SetPreservesPitch(true);
+  EXPECT_EQ(extension_.preserves_pitch_, (std::vector<bool>{false, true}));
 }
 
 }

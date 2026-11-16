@@ -19,7 +19,7 @@ limitations and explicit product decisions.
 | Keys and renderer handoff | Late keys, replacement and detach are supported. The normal Chromium-to-FairPlay transition prerolls on the existing clock rather than restarting the page's media element. |
 | Native HLS | Live/DVR timeline, start dates, track changes, key requests, clear data playlists, private asset policy and native error/readiness propagation are implemented. AirPlay changes the existing player's output context. |
 | Casting | Connecting and short-played casts survive eligible background/cache transitions. Mini Player retains its admitted casting episode across navigation, keeps route state after its media session ends and offers Stop casting for the original route. |
-| Audio | Ordinary playback and native HLS apply pitch policy; output-device selection/fallback and added supported tracks reach their renderers. Added clear audio tracks share the output's timeline and playback rate. The FairPlay Media Source pitch-control gap is described below. |
+| Audio | Ordinary playback, native HLS and the FairPlay Media Source route apply pitch policy; output-device selection/fallback and added supported tracks reach their renderers. Added clear audio tracks share the output's timeline and playback rate. |
 | Reverse playback | Plain files support silent negative rates inline and in background; time advances continuously while frames may drop. Native HLS retains AVPlayer's route. |
 | Media Source | Buffer admission, ranges, duration, eviction, worker lifetime, track switching and managed-buffer event timing use actual parser/player state. |
 | Transport streams | Multiple audio tracks, PMT-declared audio types, MPEG-1/2 video and SAMPLE-AES support are present. MPEG pixel aspect ratios feed the natural display dimensions. |
@@ -93,8 +93,7 @@ in a frameless document likewise reports an unsupported source.
 Reverse playback, an in-progress resume or a CDM change can take the renderer's
 restart path instead of the seamless handoff. Unsupported VP8/MP3 cannot enter
 the FairPlay renderer; the [integration guide](../Engine/ParcNative/fairplay_chromium/README.md)
-owns its codec boundary and missing pitch-control forwarding: pages cannot disable
-pitch preservation on the FairPlay Media Source route. A disabled first clear-audio track is silenced after
+owns its codec boundary. A disabled first clear-audio track is silenced after
 decoding while its clock drives the mixed tracks, so it still consumes decode work.
 
 ## Native HLS alternatives and format boundaries

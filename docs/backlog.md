@@ -18,14 +18,6 @@ For otherwise unassigned work, retain the requested order: Routing, Windows,
 Data, Folders, Archive, Command bar, Tab switcher, Peek and Onboarding.
 Finish assigned work first.
 
-## Media
-
-Casting continuity across navigation and picture in picture are implemented.
-The remaining work is specific to these paths:
-
-- FairPlay needs MSE pitch-policy forwarding.
-  [FairPlay integration](../Engine/ParcNative/fairplay_chromium/README.md).
-
 ## Engine architecture
 
 These shrink what each Chromium upgrade must refit, or what an engine build costs. None changes

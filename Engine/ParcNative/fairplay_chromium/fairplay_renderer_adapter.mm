@@ -33,18 +33,9 @@ namespace {
 
 namespace fp = parc::fairplay;
 
-// Safari's GPU process refreshes the counts a page reads at the interval the
-// page reads them, checked every 250 ms while playing
-// (RemoteAudioVideoRendererProxyManager::setVideoPlaybackMetricsUpdateInterval,
-// RemoteMediaPlayerProxy::maybeUpdateCachedVideoMetrics); a 250 ms poll is as
-// fresh.
 constexpr base::TimeDelta kStatisticsInterval = base::Milliseconds(250);
-// A metrics request AVFoundation hasn't answered by then is given up, so a
-// lost answer can't stop the counts.
 constexpr base::TimeDelta kVideoMetricsTimeout = base::Seconds(1);
 
-// How far |total| moved past |*reported|, which follows it. Totals never go
-// back, and a smaller one (the other source, or a late answer) adds nothing.
 uint32_t AdvanceTotal(int64_t total, int64_t* reported) {
   if (total <= *reported) {
     return 0;
@@ -114,9 +105,6 @@ std::optional<fp::AudioCodec> ToAudioCodec(AudioCodec codec) {
   }
 }
 
-// The single-layer profiles the core plays: HEVC-based 5 and 8 (dvh1 with an
-// hvcC base layer) and AV1-based 10 (dav1 with av1C); -1 for the rest
-// (AVC-based 0 and 9, dual-layer 7).
 int DolbyVisionProfileNumber(VideoCodecProfile profile) {
   switch (profile) {
     case DOLBYVISION_PROFILE5:
@@ -130,10 +118,6 @@ int DolbyVisionProfileNumber(VideoCodecProfile profile) {
   }
 }
 
-// MP4StreamParser keeps a Dolby Vision track's
-// dv_bl_signal_compatibility_id only as its color space
-// (mp4::ParseDolbyVisionColorSpace). Safari MSE also marks SDR (2)
-// explicitly, so Chrome-identity pages keep their existing answer.
 int DolbyVisionCompatibilityId(const VideoDecoderConfig& config) {
   if (config.parc_dolby_vision_sdr()) {
     return 2;
@@ -146,15 +130,6 @@ int DolbyVisionCompatibilityId(const VideoDecoderConfig& config) {
   return -1;
 }
 
-// Chromium's configs as they are. MP4StreamParser leaves video extra_data
-// empty and hands H.264, HEVC and Dolby Vision over as Annex B with parameter
-// sets before keyframes, AV1 as stored, and AAC with ADTS headers; it keeps
-// only the profile and level of Dolby Vision's dvcC/dvvC and no dac3/dec3.
-// WebM hands VP9 over as stored with the container's color (BT.709 without a
-// Colour element), which the core's 'vpcC' takes, and Vorbis with its
-// CodecPrivate.
-// Encryption is the scheme only: the core takes key IDs, patterns and IVs
-// from each sample's DecryptInfo.
 fp::VideoConfig ToCoreConfig(const VideoDecoderConfig& config) {
   fp::VideoConfig video;
   video.codec = *ToVideoCodec(config.codec());
@@ -165,7 +140,7 @@ fp::VideoConfig ToCoreConfig(const VideoDecoderConfig& config) {
     video.dolby_vision_compatibility_id = DolbyVisionCompatibilityId(config);
     if (config.profile() == DOLBYVISION_PROFILE10) {
       video.codec = fp::VideoCodec::kAV1;
-      video.sample_entry = 0x64617631;  // 'dav1'
+      video.sample_entry = 0x64617631;
     }
   }
   if (video.codec == fp::VideoCodec::kVP9) {
@@ -186,9 +161,6 @@ fp::VideoConfig ToCoreConfig(const VideoDecoderConfig& config) {
   return video;
 }
 
-// The core's config for what it plays: H.264, HEVC, AV1, the Dolby Vision
-// profiles above and VP9 profiles 0 and 2, the ones VideoToolbox decodes
-// (WebKit's isVP9CodecConfigurationRecordSupported).
 std::optional<fp::VideoConfig> CoreConfigIfPlayable(
     const VideoDecoderConfig& config) {
   if (!ToVideoCodec(config.codec()) ||
@@ -207,14 +179,11 @@ fp::AudioConfig ToCoreConfig(const AudioDecoderConfig& config) {
   audio.codec = *ToAudioCodec(config.codec());
   audio.extra_data = config.extra_data();
   audio.ts_audio_type = config.parc_ts_audio_type();
-  // The core strips an ADTS header when one is present.
   audio.framing = audio.codec == fp::AudioCodec::kAAC ? fp::AudioFraming::kADTS
                                                       : fp::AudioFraming::kRaw;
   audio.sample_rate = config.samples_per_second();
   audio.channels = config.channels();
   if (audio.codec == fp::AudioCodec::kPCM) {
-    // Chromium's S24 PCM buffers are packed 3-byte samples (FFmpeg's
-    // pcm_s24le), though SampleFormatToBitsPerChannel() counts 32.
     audio.pcm_bits = config.sample_format() == kSampleFormatS16   ? 16
                      : config.sample_format() == kSampleFormatS24 ? 24
                                                                   : 32;
@@ -224,7 +193,6 @@ fp::AudioConfig ToCoreConfig(const AudioDecoderConfig& config) {
   return audio;
 }
 
-// PCM as Chromium's MP4 parser gives 'ipcm' and 'fpcm'.
 std::optional<fp::AudioConfig> CoreConfigIfPlayable(
     const AudioDecoderConfig& config) {
   if (!ToAudioCodec(config.codec()) ||
@@ -238,7 +206,7 @@ std::optional<fp::AudioConfig> CoreConfigIfPlayable(
   return ToCoreConfig(config);
 }
 
-}  // namespace
+}
 
 FairPlayRendererAdapter::FairPlayRendererAdapter(
     scoped_refptr<base::SequencedTaskRunner> task_runner,
@@ -253,12 +221,9 @@ FairPlayRendererAdapter::~FairPlayRendererAdapter() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   weak_factory_.InvalidateWeakPtrs();
   if (!layer_token_.is_empty()) {
-    // The compositor may still hold the layer until its next commit: remove
-    // the displayed image first so nothing stale shows, then unregister.
     core_->RemoveDisplayedImage();
     ui::ProtectedLayerRegistry::Unregister(layer_token_);
   }
-  // Detaches the CDM, which MojoRendererService keeps alive until after this.
   core_.reset();
 }
 
@@ -269,7 +234,6 @@ void FairPlayRendererAdapter::Initialize(MediaResource* media_resource,
   DCHECK(client);
   client_ = client;
 
-  // FairPlayRendererClient gives the streams to play.
   const std::vector<raw_ptr<DemuxerStream>> given =
       media_resource->GetAllStreams();
   PipelineStatus status = PIPELINE_OK;
@@ -303,8 +267,6 @@ void FairPlayRendererAdapter::Initialize(MediaResource* media_resource,
   }
 
   if (status.is_ok()) {
-    // The display layer is created on this thread, which has no run loop, so
-    // commit its creation explicitly.
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     fp::Result result = core_->Initialize(
@@ -341,7 +303,6 @@ void FairPlayRendererAdapter::Initialize(MediaResource* media_resource,
       }
     }
   }
-  // |init_cb| must not run before this method returns.
   task_runner_->PostTask(FROM_HERE,
                          base::BindOnce(std::move(init_cb), std::move(status)));
 }
@@ -381,9 +342,6 @@ void FairPlayRendererAdapter::AddStream(uint32_t id, DemuxerStream* stream) {
       ReportError(DECODER_ERROR_NOT_SUPPORTED);
       return;
     }
-    // The pipeline enables one video stream at a time: a video track switch,
-    // or the track the page turned off coming back. It replaces the one
-    // playing in the same display layer, from the current time.
     if (core_has_video_) {
       std::erase_if(streams_, [](const auto& entry) {
         return entry.second.core.type == fp::StreamType::kVideo;
@@ -411,7 +369,6 @@ void FairPlayRendererAdapter::AddStream(uint32_t id, DemuxerStream* stream) {
         ReportError(PIPELINE_ERROR_DECODE);
         return;
       }
-      // The pipeline reported its metadata long ago.
       if (!natural_size_.IsEmpty()) {
         natural_size_reported_ = true;
         client_->OnVideoNaturalSizeChange(natural_size_);
@@ -436,7 +393,6 @@ void FairPlayRendererAdapter::AddStream(uint32_t id, DemuxerStream* stream) {
     ReportError(PIPELINE_ERROR_DECODE);
     return;
   }
-  // The core asks for its data (OnNeedData) once it's playing.
   Stream& added = streams_[id];
   added.demuxer_stream = stream;
   added.core = core;
@@ -448,8 +404,6 @@ bool FairPlayRendererAdapter::RemoveStream(uint32_t id) {
   if (it == streams_.end()) {
     return true;
   }
-  // Video stops being read at once, before the track that replaces it comes
-  // (AddStream); its stream stays, as the display layer does.
   const bool audio = it->second.core.type == fp::StreamType::kAudio;
   if (audio) {
     core_->RemoveAudio(it->second.core.audio_track);
@@ -465,28 +419,17 @@ void FairPlayRendererAdapter::SetCdm(CdmContext* cdm_context,
   bool success = false;
   fp::FairPlayCdm* cdm = FairPlayCdmAdapter::GetFairPlayCdm(cdm_context);
   if (!cdm_context) {
-    // setMediaKeys(null) on a Safari-identity page (PipelineImpl's
-    // SetCdm(nullptr)): protected samples wait from now on, as WebKit's
-    // renderer without a CDM holds them.
     core_->DetachCdm();
     success = true;
   } else if (cdm && cdm == attached_cdm_) {
-    // The same MediaKeys again: the held samples go on with its keys.
     success = core_->SetCdm(cdm).ok();
   } else if (cdm) {
-    // The core accepts the CDM before Initialize and joins its key session
-    // once the renderers exist. After it played without keys (a clear start,
-    // or clear Dolby Vision), or with other MediaKeys, new renderers join the
-    // key session and take over on the same clock, as Safari takes keys at
-    // any time; MojoRendererService keeps a replaced CDM for those they
-    // replace.
     fp::Result result = core_->SetCdm(cdm);
     success = result.ok();
     if (success) {
       attached_cdm_ = cdm;
     } else {
       LOG(ERROR) << "FairPlay SetCdm: " << result.message;
-      // A failed hand-off leaves renderers that can't decrypt.
       if (core_initialized_) {
         ReportError(PIPELINE_ERROR_DECODE);
       }
@@ -498,7 +441,6 @@ void FairPlayRendererAdapter::SetCdm(CdmContext* cdm_context,
 
 void FairPlayRendererAdapter::SetLatencyHint(
     std::optional<base::TimeDelta> latency_hint) {
-  // The synchronizer decides its own preroll.
 }
 
 void FairPlayRendererAdapter::Flush(base::OnceClosure flush_cb) {
@@ -522,8 +464,6 @@ void FairPlayRendererAdapter::Flush(base::OnceClosure flush_cb) {
     });
     return;
   }
-  // Reads outstanding when the pipeline flushes have been aborted by the
-  // demuxer; finish once they have returned.
   MaybeFinishFlush();
 }
 
@@ -534,8 +474,6 @@ void FairPlayRendererAdapter::StartPlayingFrom(base::TimeDelta time) {
   if (errored_ || !core_initialized_) {
     return;
   }
-  // The pipeline has reported metadata by now, so the player accepts sizes.
-  // Report the config's size once, before any HAVE_ENOUGH.
   if (!natural_size_reported_ && !natural_size_.IsEmpty()) {
     natural_size_reported_ = true;
     client_->OnVideoNaturalSizeChange(natural_size_);
@@ -560,7 +498,6 @@ void FairPlayRendererAdapter::SetPlaybackRateAt(double playback_rate,
                                                 base::TimeDelta time,
                                                 base::TimeTicks host_time) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // base::TimeTicks counts mach absolute time on macOS.
   if (core_initialized_ &&
       core_->SetPlaybackRateAt(playback_rate, ToMediaTime(time),
                                host_time.since_origin().InMicroseconds())) {
@@ -569,10 +506,13 @@ void FairPlayRendererAdapter::SetPlaybackRateAt(double playback_rate,
   }
 }
 
+void FairPlayRendererAdapter::SetPreservesPitch(bool preserves_pitch) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  core_->SetPreservesPitch(preserves_pitch);
+}
+
 void FairPlayRendererAdapter::SetVolume(float volume) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // The pipeline sets the volume before Initialize, when the core has no
-  // audio renderer yet; Initialize applies the kept value.
   volume_ = volume;
   if (core_initialized_) {
     core_->SetVolume(volume);
@@ -580,7 +520,6 @@ void FairPlayRendererAdapter::SetVolume(float volume) {
 }
 
 base::TimeDelta FairPlayRendererAdapter::GetMediaTime() {
-  // MojoRendererService polls this on the media service sequence.
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!core_initialized_) {
     return start_time_;
@@ -607,8 +546,6 @@ FairPlayRendererAdapter::GetAudioOutputDeviceCallback() {
 void FairPlayRendererAdapter::SetAudioOutputDevice(
     const std::string& unique_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // The core keeps it for audio renderers it makes later, before Initialize
-  // too.
   if (fp::Result result = core_->SetAudioOutputDevice(unique_id);
       !result.ok()) {
     LOG(ERROR) << "FairPlay audio output device: " << result.message;
@@ -676,7 +613,6 @@ void FairPlayRendererAdapter::OnError(fp::RendererError error,
 void FairPlayRendererAdapter::OnVideoNaturalSizeChange(int32_t width,
                                                        int32_t height) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // The core reports the natural size of the config it was given.
   const gfx::Size size(width, height);
   if (size.IsEmpty() || size == natural_size_) {
     return;
@@ -711,13 +647,11 @@ void FairPlayRendererAdapter::OnBuffersRead(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   auto it = streams_.find(id);
   if (it == streams_.end()) {
-    return;  // Removed.
+    return;
   }
   Stream& stream = it->second;
   stream.read_pending = false;
   if (generation != generation_ || flush_cb_) {
-    // The stream reports a config change once; apply it even to a read the
-    // Flush made stale, or later buffers would run on the old config.
     if (status == DemuxerStream::kConfigChanged && !errored_) {
       HandleConfigChange(stream);
     }
@@ -729,7 +663,6 @@ void FairPlayRendererAdapter::OnBuffersRead(
   }
   switch (status) {
     case DemuxerStream::kAborted:
-      // The demuxer aborts reads ahead of a seek; the Flush follows.
       return;
     case DemuxerStream::kError:
       ReportError(PIPELINE_ERROR_READ);
@@ -758,9 +691,6 @@ void FairPlayRendererAdapter::OnBuffersRead(
 
 void FairPlayRendererAdapter::HandleConfigChange(Stream& stream) {
   fp::Result result;
-  // A new config, possibly a new codec (MSE changeType, e.g. an audio
-  // language switch from E-AC-3 to AAC): the core builds formats for the
-  // samples that follow, protected ones per key ID as they arrive.
   if (stream.core.type == fp::StreamType::kVideo) {
     VideoDecoderConfig config = stream.demuxer_stream->video_decoder_config();
     std::optional<fp::VideoConfig> core_config = CoreConfigIfPlayable(config);
@@ -797,7 +727,6 @@ void FairPlayRendererAdapter::EnqueueToCore(fp::StreamId stream,
   sample.data = data.data();
   sample.size = data.size();
   sample.pts = ToMediaTime(buffer.timestamp());
-  // DecoderBuffers carry presentation times only; invalid means "as pts".
   sample.dts = fp::MediaTime::Invalid();
   sample.duration = (buffer.duration() == kNoTimestamp ||
                      buffer.duration() <= base::TimeDelta())
@@ -805,8 +734,6 @@ void FairPlayRendererAdapter::EnqueueToCore(fp::StreamId stream,
                         : ToMediaTime(buffer.duration());
   sample.is_keyframe = buffer.is_key_frame();
   if (const DecryptConfig* config = buffer.decrypt_config()) {
-    // MP4's track run iterator gives every sample a 16-byte IV (a constant IV
-    // copied in, 8-byte IVs zero-padded), as the core expects.
     fp::DecryptInfo decrypt;
     decrypt.scheme = ToScheme(config->encryption_scheme());
     decrypt.key_id = ToBytes(config->key_id());
@@ -827,7 +754,6 @@ void FairPlayRendererAdapter::EnqueueToCore(fp::StreamId stream,
     ReportError(PIPELINE_ERROR_DECODE);
     return;
   }
-  // A sample held for its key is decoded once the key arrives.
   (stream.type == fp::StreamType::kVideo ? unreported_video_bytes_
                                          : unreported_audio_bytes_) +=
       data.size();
@@ -855,8 +781,6 @@ void FairPlayRendererAdapter::ReportError(PipelineStatus status) {
 }
 
 void FairPlayRendererAdapter::UpdateStatisticsTimer() {
-  // Polled while the clock may run. Stopping (pause, seek) counts once more,
-  // so the frames decoded until then don't wait for playback to resume.
   const bool run =
       playing_ && playback_rate_ > 0 && core_initialized_ && !errored_;
   if (run == statistics_timer_.IsRunning()) {
@@ -870,8 +794,6 @@ void FairPlayRendererAdapter::UpdateStatisticsTimer() {
     return;
   }
   statistics_timer_.Stop();
-  // Even with an answer outstanding: before macOS 14.4 that answer carries
-  // the core's count from when it was asked.
   RequestVideoMetrics();
 }
 
@@ -892,7 +814,6 @@ void FairPlayRendererAdapter::RequestVideoMetrics() {
   }
   video_metrics_requested_ = base::TimeTicks::Now();
   base::WeakPtr<FairPlayRendererAdapter> weak = weak_factory_.GetWeakPtr();
-  // Answers on this sequence.
   core_->LoadVideoMetrics([weak](const fp::VideoMetrics& metrics) {
     if (weak) {
       weak->OnVideoMetrics(metrics);
@@ -902,15 +823,10 @@ void FairPlayRendererAdapter::RequestVideoMetrics() {
 
 void FairPlayRendererAdapter::OnVideoMetrics(const fp::VideoMetrics& metrics) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // Clears the wait even when a newer request is outstanding; a second
-  // answer adds only what it counts beyond the first.
   video_metrics_requested_ = base::TimeTicks();
   if (errored_) {
     return;
   }
-  // AVFoundation's own counts (macOS 14.4+) are the decoder's: frames decoded
-  // ahead of the clock, like RendererImpl's, and real drops. Before them, the
-  // core's count of samples the clock has reached, with no drops known.
   if (metrics.available) {
     ReportStatistics(metrics.total_frames, metrics.dropped_frames);
   } else {
@@ -920,7 +836,6 @@ void FairPlayRendererAdapter::OnVideoMetrics(const fp::VideoMetrics& metrics) {
 
 void FairPlayRendererAdapter::ReportStatistics(int64_t frames_decoded,
                                                int64_t frames_dropped) {
-  // PipelineImpl adds up deltas.
   PipelineStatistics stats;
   stats.video_frames_decoded =
       AdvanceTotal(frames_decoded, &reported_frames_decoded_);
@@ -935,4 +850,4 @@ void FairPlayRendererAdapter::ReportStatistics(int64_t frames_decoded,
   client_->OnStatisticsUpdate(stats);
 }
 
-}  // namespace media
+}

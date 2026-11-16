@@ -65,8 +65,9 @@ clock date; media without a date returns Invalid Date.
 Under Safari identity, assigning positive infinity seeks to the live end;
 negative infinity and NaN target zero. `fastSeek` follows keyframe/native
 AVPlayer tolerance where available. `preservesPitch`, including false, reaches
-both native HLS and the FairPlay renderer; rate zero and non-unit rates retain
-their appropriate audio algorithm.
+both native HLS and the Media Source FairPlay renderer, even when the page sets
+it before the protected renderer has connected; rate zero and non-unit rates
+retain their appropriate audio algorithm.
 
 ## Legacy prefixed EME (`WebKitMediaKeys`)
 
