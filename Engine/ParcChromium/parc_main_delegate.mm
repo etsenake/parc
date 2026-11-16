@@ -177,6 +177,7 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
       &UpdateAppKitDevtools, &SetAppKitDevtoolsScrim, &TearDownAppKitDevtools);
   parc_hooks::SetNativeDevtoolsFrontend(&PrepareNativeDevtoolsContents,
                                         &HandleNativeDevtoolsKey);
+  parc_hooks::SetDevToolsLinkOpener(&OpenNativeDevtoolsLink);
   parc_hooks::SetUnloadControllerLifetime(&OnUnloadControllerCreated,
                                           &OnUnloadControllerDestroyed);
   parc_hooks::SetUnloadControllerTabEvents(

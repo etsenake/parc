@@ -122,6 +122,10 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
   and its keys reach Parc's shortcuts. Defined in `devtools_window.cc`; the key handler is also
   called from `devtools_window_views.cc`. Answered by `PrepareNativeDevtoolsContents` and
   `HandleNativeDevtoolsKey` in `native_browser.mm`.
+- **`SetDevToolsLinkOpener`**: links from Developer Tools with no inspected page, such as a worker's,
+  open as a front tab. `DevToolsWindow::OpenInNewTab` in `devtools_window.cc` calls it only then;
+  page tools keep the page's own routing. Answered by `OpenNativeDevtoolsLink` in
+  `native_browser.mm`, which navigates in the profile's most recent window or a new one.
 - **`SetUnloadControllerLifetime`, `SetUnloadControllerTabEvents`, `SetUnloadControllerCloseGates`,
   `SetUnloadControllerPageGates`**: closing a window or moving tabs runs each page's leave-page check
   once and rolls back cleanly. `chrome/browser/ui/unload_controller.cc` keeps its close state and
@@ -148,10 +152,10 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
   `chrome_resource_bundle_helper.cc`, `pref_service_builder_utils.cc`, `startup_browser_creator.cc`,
   `chrome_paths_mac.mm`, `content/app/content_main.cc` and the `chrome/common` and
   `components/os_crypt/common` build files.
-- **`native-browser-overlay`**: the Browser, manager, window, navigator, tab-strip and DevTools
-  creator hooks, the DevTools page-command body and the windows API's native window-state check
-  (`windows_api.cc`, where Chromium 157 moved `windows.update`), across 11 files in
-  `chrome/browser/ui`, `chrome/browser/devtools` and `chrome/browser/extensions/api/tabs`.
+- **`native-browser-overlay`**: the Browser, manager, window, navigator, tab-strip, DevTools
+  creator and DevTools link hooks, the DevTools page-command body and the windows API's native
+  window-state check (`windows_api.cc`, where Chromium 157 moved `windows.update`), across 11 files
+  in `chrome/browser/ui`, `chrome/browser/devtools` and `chrome/browser/extensions/api/tabs`.
   The gates sit at Chromium's private construction, deletion and navigation points.
 - **`native-page-retirement`**: only the unload-controller hooks, in `unload_controller.cc`.
 - **`native-embedded-pages`**: only the three restore-omission hooks, in the three sessions files.

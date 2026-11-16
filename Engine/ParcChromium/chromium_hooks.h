@@ -340,6 +340,7 @@ void SetNativeDevtoolsFrontend(
     std::optional<bool> (*key)(content::WebContents* inspected,
                                content::WebContents* tools,
                                const input::NativeWebKeyboardEvent&));
+void SetDevToolsLinkOpener(void (*opener)(Profile&, const GURL&));
 
 void SetSessionTabRestoreOmission(bool (*omitted)(SessionID));
 void SetTabRestoreOmission(bool (*omitted)(SessionID));

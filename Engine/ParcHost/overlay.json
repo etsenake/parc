@@ -2024,12 +2024,12 @@
     {
       "source": "Engine/ParcNative/native_browser.h",
       "target": "parc/native/native_browser.h",
-      "sha256": "9ac001f9e9452fe178c00887e6a4ec2de0291edf96e617a0e8499130c1c7f0b5"
+      "sha256": "096f26a500a1b18e5c4487dd0183c9993fbf3f7141683cbc06adedb927a1059f"
     },
     {
       "source": "Engine/ParcNative/native_browser.mm",
       "target": "parc/native/native_browser.mm",
-      "sha256": "bc602fb05fefe0d63515ea369cc762c5a7b415d3e426daab7db499241be38c7e"
+      "sha256": "14329b38a5e6adf3294188507768fad1cdf30fe22a303958e6683c5b7c597b10"
     },
     {
       "source": "Engine/ParcNative/private_session_ledger.h",
@@ -2179,7 +2179,7 @@
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "c2114f4591a67ff0be13df9b01a14226281065bf38aa23394d353334c870cd69"
+      "sha256": "77cab96e18c78081042a0576d18f79e200fe2188176f64ec927870951a558a27"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2234,7 +2234,7 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.mm",
       "target": "parc/parc_main_delegate.mm",
-      "sha256": "a2580f7d1745d78164e831ff30bb4535971c2555223879bd0ef5cbe3e7e5f805"
+      "sha256": "873d5576f1364da9fd8bae67232c6586fa92532050e14866ae74b7037dd59bc1"
     },
     {
       "source": "Engine/ParcNative/native_application.mm",
@@ -6688,7 +6688,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-browser-overlay.patch",
-      "sha256": "d3722e890144e86e3040e041b51ccdecf55e2ad798d3e2de8413c0cc49a9a5b1",
+      "sha256": "e726f0e40c99d1b4ab0f82716f90c5b6937fbb6c53e2ba904501a99939660a58",
       "files": [
         {
           "target": "chrome/browser/ui/browser.cc",
@@ -6723,7 +6723,7 @@
         {
           "target": "chrome/browser/devtools/devtools_window.cc",
           "before_sha256": "0ec97f462fab727d46f778d7ce87e0b100488a68f8456f6f1a2c6139a321aa8f",
-          "after_sha256": "767f40690faf62d16fe2d7e44f707f29cb407edfd8c99996f44c24304623637a"
+          "after_sha256": "0664768d8ac1c2544b011f8c9585953c786710cfb93a01d81b966ddc79b8d4d3"
         },
         {
           "target": "chrome/browser/ui/browser_tabstrip.cc",

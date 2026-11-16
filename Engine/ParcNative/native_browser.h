@@ -21,6 +21,7 @@ class BrowserWindowInterface;
 class DesktopBrowserWindowCapabilities;
 class Profile;
 class ExclusiveAccessManager;
+class GURL;
 class UnloadController;
 struct BrowserWindowCreateParams;
 struct BrowserWindowDeleter;
@@ -161,6 +162,7 @@ std::optional<bool> HandleNativeDevtoolsKey(
     content::WebContents* inspected,
     content::WebContents* tools,
     const input::NativeWebKeyboardEvent& event);
+void OpenNativeDevtoolsLink(Profile& profile, const GURL& url);
 }
 
 #endif

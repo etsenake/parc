@@ -76,6 +76,13 @@ page itself, opening tools for the tools as Chrome does, and F12 closes the
 window. Full Screen, Close Window and View's zoom items work there too, zooming
 the tools rather than a page.
 
+Tools for a target with no page, such as a service worker, shared worker,
+extension service worker, Node or remote target from `parc://inspect` or
+`parc://extensions`, open their links (Open in new tab, console links, Learn
+more and search results) as a front tab in the most recent window of the tools'
+profile, or in a new window when it has none; a private profile uses its own
+private window. Page tools leave links to the page's own routing.
+
 ## Automation profiles
 
 Puppeteer, Playwright and ChromeDriver launch with `--user-data-dir=<dir>`. Parc

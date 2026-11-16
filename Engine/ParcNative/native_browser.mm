@@ -19,12 +19,16 @@
 #include "chrome/browser/ui/browser_window_deleter.h"
 #include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
+#include "chrome/browser/ui/navigator/browser_navigator.h"
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
+#include "url/gurl.h"
 #include "native_appkit_host.h"
 #include "native_auxiliary_services.h"
 #include "native_browser_web_contents_delegate.h"
@@ -557,5 +561,17 @@ std::optional<bool> HandleNativeDevtoolsKey(
     return std::nullopt;
   }
   return HandleAppKitDevtoolsKey(inspected, *tools, event);
+}
+
+void OpenNativeDevtoolsLink(Profile& profile, const GURL& url) {
+  if (!GetNativeRoute(profile) &&
+      !(profile.IsOffTheRecord() &&
+        GetNativeRoute(*profile.GetOriginalProfile()))) {
+    return;
+  }
+  NavigateParams params(&profile, url, ui::PAGE_TRANSITION_LINK);
+  params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+  params.window_action = NavigateParams::WindowAction::kShowWindow;
+  Navigate(&params);
 }
 }
