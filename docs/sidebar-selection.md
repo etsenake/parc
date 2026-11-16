@@ -8,8 +8,10 @@ Command-click toggles; Shift-click ranges from the original anchor through visib
 order; Command-Shift adds the range. A multi-set retains the visible active item
 without changing page selection or focused split pane. A pointer or keyboard
 singleton follows normal activation. Plain activation/Escape clear the set, and
-Option does not alter it. With sidebar focus, arrows move/extend selection and
-Delete uses the guarded Close Tabs in Selection operation. Renderer/native text
+Option does not alter it. With sidebar focus, arrows move/extend selection.
+Delete or Forward Delete deletes a lone selected folder or a set of only empty
+folders and otherwise uses the guarded Close Tabs in Selection operation; see
+[keyboard Close](#saved-versus-mixed-keyboard-close). Renderer/native text
 editing keeps its keys.
 
 Rows expose selected state and real accessibility actions separately from active
