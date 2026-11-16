@@ -9,6 +9,7 @@
 #include "base/memory/weak_ptr.h"
 #import "certificate_viewer_presenter.h"
 #include "base/supports_user_data.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.h"
@@ -30,8 +31,6 @@ namespace parc {
 namespace {
 class Request;
 constexpr char kContextKey[] = "native-server-certificate-viewer";
-// An installed page handles even a refusal. It must never fall back to an
-// unrelated Views window when its page is detached or stale.
 class Context final : public base::SupportsUserData::Data {
  public:
   ~Context() override;
@@ -44,6 +43,13 @@ Context* GetContext(content::WebContents* contents) {
   return contents ? static_cast<Context*>(contents->GetUserData(kContextKey))
                   : nullptr;
 }
+bool ShownForDevTools(content::WebContents& contents) {
+  if (auto* tools = DevToolsWindow::AsDevToolsWindow(&contents)) {
+    return !tools->IsDocked();
+  }
+  auto* tools = DevToolsWindow::GetInstanceForInspectedWebContents(&contents);
+  return tools && tools->IsDocked();
+}
 class Request final : public content::WebContentsObserver,
                       public std::enable_shared_from_this<Request> {
  public:
@@ -54,6 +60,7 @@ class Request final : public content::WebContentsObserver,
       : WebContentsObserver(&contents),
         certificate_(std::move(certificate)),
         epoch_(epoch),
+        devtools_(ShownForDevTools(contents)),
         window_(supplied.GetNativeNSWindow()),
         page_(contents.GetNativeView().GetNativeNSView()),
         document_(contents.GetPrimaryMainFrame()->GetWeakDocumentPtr()) {
@@ -90,10 +97,15 @@ class Request final : public content::WebContentsObserver,
     }
     auto* tab = tabs::TabInterface::MaybeGetFromContents(contents);
     auto* entry = contents->GetController().GetVisibleEntry();
-    return tab && tab->IsActivated() &&
-           tab->GetBrowserWindowInterface() == browser_.get() && entry &&
-           entry->GetUniqueID() == entry_id_ && entry->GetSSL().certificate &&
-           certificate_ &&
+    if (!tab || !tab->IsActivated() ||
+        tab->GetBrowserWindowInterface() != browser_.get() || !entry ||
+        entry->GetUniqueID() != entry_id_ || !certificate_) {
+      return false;
+    }
+    if (devtools_) {
+      return ShownForDevTools(*contents);
+    }
+    return entry->GetSSL().certificate &&
            certificate_->EqualsIncludingChain(
                entry->GetSSL().certificate.get());
   }
@@ -192,6 +204,7 @@ class Request final : public content::WebContentsObserver,
  private:
   const scoped_refptr<net::X509Certificate> certificate_;
   const uint64_t epoch_;
+  const bool devtools_;
   __weak NSWindow* window_;
   __weak NSView* page_;
   content::WeakDocumentPtr document_;
@@ -214,7 +227,6 @@ void Context::Show(content::WebContents& contents,
                    gfx::NativeWindow parent,
                    net::X509Certificate* certificate) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  // A second click does not replace a valid OS sheet or its exact certificate.
   if (request || !attached || !certificate) {
     return;
   }
@@ -223,7 +235,7 @@ void Context::Show(content::WebContents& contents,
   request = next;
   next->Start();
 }
-}  // namespace
+}
 void InstallNativeServerCertificateViewer(content::WebContents& contents) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!GetContext(&contents)) {
@@ -256,4 +268,4 @@ void SetNativeServerCertificateViewerAttached(content::WebContents& contents,
     }
   }
 }
-}  // namespace parc
+}

@@ -115,7 +115,7 @@ unrelated page or answered after its original owner retires.
 | HTTP authentication | Page-owned Parc dialog, original authority/trust text, labelled rounded username/secure password fields and Cancel/Sign in |
 | External protocol | Origin/application-aware Parc dialog with the app's icon, Open, policy-eligible Always open and Cancel |
 | Site permission | Original request popover anchored to that page's controls, with Not Now/Allow |
-| Server certificate | Chromium's certificate viewer sheet for the visible certificate |
+| Server certificate | Chromium's certificate viewer sheet for the visible certificate; while Developer Tools are open on the page (or in their own window), any certificate the Security or Network panel asks for |
 | Client certificate | Genuine Chromium `SSLClientCertificateSelector` |
 | Screen/window/tab sharing | Genuine Chromium/system picker under its original request lease |
 
