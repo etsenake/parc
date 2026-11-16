@@ -542,9 +542,10 @@ struct ThemeButtonMotion {
     private weak var view: NSView?
     private var timer: Timer?
     private var frameTime: CFTimeInterval = 0
+    private let now: () -> CFTimeInterval
     private var reduceMotionObserver: NSObjectProtocol?
-    init(view: NSView) {
-        self.view = view
+    init(view: NSView, now: @escaping () -> CFTimeInterval = { CACurrentMediaTime() }) {
+        self.view = view; self.now = now
         reduceMotionObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -569,7 +570,7 @@ struct ThemeButtonMotion {
         motion.setPressed(pressed, animated: allowsMotion)
         view?.needsDisplay = true
         guard !motion.isSettled, timer == nil else { return }
-        frameTime = CACurrentMediaTime()
+        frameTime = now()
         let timer = Timer(timeInterval: 1 / 60, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated { self?.frame(timer) }
         }
@@ -583,8 +584,8 @@ struct ThemeButtonMotion {
     }
     private func frame(_ timer: Timer) {
         guard self.timer === timer else { return }
-        let now = CACurrentMediaTime()
-        motion.advance(now - frameTime); frameTime = now
+        let time = now()
+        motion.advance(time - frameTime); frameTime = time
         view?.needsDisplay = true
         if motion.isSettled { timer.invalidate(); self.timer = nil }
     }
@@ -1244,7 +1245,8 @@ final class ThemeAppearanceButton: NSButton {
     }
     private let animation: ThemeAppearanceAnimation?
     private var timer: Timer?
-    private var startedAt = CACurrentMediaTime()
+    var now: () -> CFTimeInterval = { CACurrentMediaTime() }
+    private var startedAt = 0.0
     private var frozenAt = 0.0
     private var lastDisplayFingerprint: Int?
     private var hovered = false
@@ -1278,7 +1280,7 @@ final class ThemeAppearanceButton: NSButton {
     }
     private func updatePlayback() {
         if shouldPlay && timer == nil {
-            startedAt = CACurrentMediaTime() - frozenAt
+            startedAt = now() - frozenAt
             let artworkSize = bounds.insetBy(dx: 6, dy: 6).size
             if let animation {
                 lastDisplayFingerprint = animation.presentationFingerprint(
@@ -1288,18 +1290,18 @@ final class ThemeAppearanceButton: NSButton {
             }
             startFrames()
         } else if !shouldPlay, timer != nil {
-            frozenAt = CACurrentMediaTime() - startedAt
+            frozenAt = now() - startedAt
             stopFrames()
         }
     }
     private func tick(_ timer: Timer) {
         guard self.timer === timer else { return }
         guard shouldPlay else {
-            frozenAt = CACurrentMediaTime() - startedAt
+            frozenAt = now() - startedAt
             stopFrames()
             return
         }
-        let seconds = CACurrentMediaTime() - startedAt
+        let seconds = now() - startedAt
         let artworkSize = bounds.insetBy(dx: 6, dy: 6).size
         if let animation {
             let fingerprint = animation.presentationFingerprint(seconds: seconds, size: artworkSize)
@@ -1333,7 +1335,7 @@ final class ThemeAppearanceButton: NSButton {
     override var isEnabled: Bool {
         didSet { if isEnabled != oldValue { updateHover(animated: false); invalidateDisplay() } }
     }
-    private lazy var motion = ThemeButtonMotionDriver(view: self)
+    private lazy var motion = ThemeButtonMotionDriver(view: self, now: { [weak self] in self?.now() ?? CACurrentMediaTime() })
     override func mouseEntered(with event: NSEvent) { hovered = true; updateHover(animated: true) }
     override func mouseExited(with event: NSEvent) { hovered = false; updateHover(animated: true) }
     override func highlight(_ flag: Bool) {
@@ -1349,7 +1351,7 @@ final class ThemeAppearanceButton: NSButton {
             if isSelected, let context = NSGraphicsContext.current?.cgContext {
                 ThemeButtonStyle.fill().setFill(); context.addPath(ThemeButtonStyle.shape(bounds)); context.fillPath()
             }
-            let seconds = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : timer == nil ? frozenAt : CACurrentMediaTime() - startedAt
+            let seconds = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : timer == nil ? frozenAt : now() - startedAt
             animation?.draw(in: bounds.insetBy(dx: 6, dy: 6), seconds: seconds, color: .secondaryLabelColor)
         }
     }

@@ -38,16 +38,29 @@ struct ThemeAppearanceTimerIdleTests {
         check(sunA != sunB, "sun rotation motion changes the presentation fingerprint")
 
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        var clock: CFTimeInterval = 0
+        let frame = 1.0 / 60
+        var seen: [FrameSource] = []
+        func tick(_ timers: [FrameSource]) {
+            clock += frame
+            timers.forEach { $0.fire() }
+        }
+        func record(_ body: () -> Void) -> [FrameSource] {
+            let timers = cueTimers(body)
+            seen += timers
+            return timers
+        }
         let button = ThemeAppearanceButton(appearance: .dark)
+        button.now = { clock }
         button.setFrameSize(NSSize(width: 40, height: 40))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 40, height: 40),
                               styleMask: [.titled], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         window.contentView = button
         let beforeSelect = Redraws.count(button)
-        let selectedAt = CACurrentMediaTime()
-        let cue = cueTimers { button.isSelected = true }
-        func playbackSeconds() -> Double { CACurrentMediaTime() - selectedAt }
+        let selectedAt = clock
+        let cue = record { button.isSelected = true }
+        func playbackSeconds() -> Double { clock - selectedAt }
         let afterSelect = Redraws.count(button)
         check(afterSelect > beforeSelect, "selecting dirties the first appearance frame")
 
@@ -58,60 +71,36 @@ struct ThemeAppearanceTimerIdleTests {
 
             let artworkSize = button.bounds.insetBy(dx: 6, dy: 6).size
             let holdFingerprint = moon.presentationFingerprint(seconds: 82.0 / 60.0, size: artworkSize)
-            let enterHold = Date(timeIntervalSinceNow: 2.5)
-            var inHold = false
-            while Date() < enterHold {
-                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
-                let current = moon.presentationFingerprint(seconds: playbackSeconds(), size: artworkSize)
-                if current == holdFingerprint {
-                    inHold = true
-                    break
-                }
-            }
-            check(inHold && armed(cue),
+            func inHold() -> Bool { moon.presentationFingerprint(seconds: playbackSeconds(), size: artworkSize) == holdFingerprint }
+            _ = record { while !inHold(), playbackSeconds() < 2.5, armed(cue) { tick(cue) } }
+            check(inHold() && armed(cue),
                   "looping moon reaches a hold region with the timer still armed")
-            let catchUp = Date(timeIntervalSinceNow: 0.05)
-            while Date() < catchUp {
-                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
-                if moon.presentationFingerprint(seconds: playbackSeconds(), size: artworkSize) != holdFingerprint {
-                    inHold = false
-                    break
-                }
-            }
-            check(inHold && armed(cue),
-                  "still in moon hold after fingerprint latch")
             let beforeHoldProbe = Redraws.count(button)
             var holdSkipTicks = 0
-            let probeDeadline = Date(timeIntervalSinceNow: 0.2)
-            while Date() < probeDeadline {
-                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
-                let current = moon.presentationFingerprint(seconds: playbackSeconds(), size: artworkSize)
-                if current != holdFingerprint { break }
-                check(Redraws.count(button) == beforeHoldProbe,
-                      "identical moon hold ticks skip needsDisplay")
-                holdSkipTicks += 1
-                if holdSkipTicks >= 3 { break }
+            _ = record {
+                for _ in 0..<3 {
+                    tick(cue)
+                    guard inHold() else { break }
+                    check(Redraws.count(button) == beforeHoldProbe,
+                          "identical moon hold ticks skip needsDisplay")
+                    holdSkipTicks += 1
+                }
             }
-            check(holdSkipTicks >= 3, "observed at least three in-hold ticks that skipped needsDisplay")
+            check(holdSkipTicks >= 3 && armed(cue) && seen.count == 1, "observed at least three in-hold ticks that skipped needsDisplay")
             check(beforeHoldProbe > afterSelect, "active keyframes still dirty while selected")
-            let wrapDeadline = Date(timeIntervalSinceNow: 0.5)
-            while Redraws.count(button) == beforeHoldProbe, Date() < wrapDeadline {
-                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
-            }
-            check(Redraws.count(button) > beforeHoldProbe && armed(cue),
+            let leaveBy = clock + 0.5
+            _ = record { while Redraws.count(button) == beforeHoldProbe, clock < leaveBy, armed(cue) { tick(cue) } }
+            check(Redraws.count(button) > beforeHoldProbe && !inHold() && armed(cue) && seen.count == 1,
                   "the armed timer resumes dirtying when the loop leaves the hold")
 
-            button.isHidden = true
-            let hideDeadline = Date(timeIntervalSinceNow: 0.25)
-            while armed(cue), Date() < hideDeadline {
-                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))
+            _ = record {
+                button.isHidden = true
+                if armed(seen) { tick(seen) }
             }
-            check(!armed(cue), "hidden appearance cue idle-stops the 60 Hz timer")
+            check(!armed(seen), "hidden appearance cue idle-stops the 60 Hz timer")
             let hiddenInvalidations = Redraws.count(button)
-            for _ in 0..<20 {
-                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))
-            }
-            check(Redraws.count(button) == hiddenInvalidations && !armed(cue),
+            let hiddenRearms = cueTimers { for _ in 0..<20 { tick(seen) } }
+            check(Redraws.count(button) == hiddenInvalidations && !armed(seen) && hiddenRearms.isEmpty,
                   "post-hide idle stays stopped with no further dirties")
 
             let unhidden = cueTimers { button.isHidden = false }
@@ -126,10 +115,7 @@ struct ThemeAppearanceTimerIdleTests {
             }
             check(armed(nested) && !armed(unhidden), "nested selected cue arms the timer")
             nest.isHidden = true
-            let ancestorDeadline = Date(timeIntervalSinceNow: 0.25)
-            while armed(nested), Date() < ancestorDeadline {
-                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))
-            }
+            if armed(nested) { tick(nested) }
             check(!armed(nested), "ancestor-hidden appearance cue idle-stops the 60 Hz timer")
             let reshown = cueTimers { nest.isHidden = false }
             check(armed(reshown), "ancestor unhide re-arms a selected cue")
@@ -138,6 +124,7 @@ struct ThemeAppearanceTimerIdleTests {
             check(!armed(cue + unhidden + nested + reshown), "unselected appearance cue idle-stops the 60 Hz timer")
 
             let driving = ThemeAppearanceButton(appearance: .light)
+            driving.now = { clock }
             driving.setFrameSize(NSSize(width: 40, height: 40))
             let host = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 40, height: 40),
                                 styleMask: [.titled], backing: .buffered, defer: true)
@@ -163,15 +150,26 @@ struct ThemeAppearanceTimerIdleTests {
         window.contentView = view
         return window
     }
-    static func run(while condition: () -> Bool, for seconds: Double) {
-        let deadline = Date(timeIntervalSinceNow: seconds)
-        while condition(), Date() < deadline { RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01)) }
-    }
 
     static func buttonMotionTimers() {
         SystemOverrides.install(); SystemOverrides.reduceMotion = false
         defer { SystemOverrides.reduceMotion = nil }
+        var clock: CFTimeInterval = 0
+        func run(_ timers: [FrameSource], while condition: () -> Bool, for seconds: Double) {
+            let end = clock + seconds
+            while condition(), clock < end {
+                clock += 1.0 / 60
+                timers.forEach { $0.fire() }
+            }
+        }
+        var seen: [FrameSource] = []
+        func record(_ body: () -> Void) -> [FrameSource] {
+            let timers = cueTimers(body)
+            seen += timers
+            return timers
+        }
         let button = ThemeAppearanceButton(appearance: .light)
+        button.now = { clock }
         button.setFrameSize(NSSize(width: 32, height: 32))
         let window = offscreenWindow(button)
         defer { window.close() }
@@ -179,27 +177,26 @@ struct ThemeAppearanceTimerIdleTests {
             NSEvent.enterExitEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
                                    context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)!
         }
-        let hover = cueTimers { button.mouseEntered(with: event(.mouseEntered)) }
+        let hover = record { button.mouseEntered(with: event(.mouseEntered)) }
         check(armed(hover), "hover arms the button style's 60 Hz motion timer")
-        run(while: { armed(hover) }, for: 0.5)
-        check(!armed(hover), "the motion timer stops once the hover settles")
+        _ = record { run(hover, while: { armed(hover) }, for: 0.5) }
+        check(!armed(seen), "the motion timer stops once the hover settles")
         let settled = Redraws.count(button)
-        run(while: { true }, for: 0.1)
-        check(Redraws.count(button) == settled, "a settled button makes no further redraws")
-        let press = cueTimers { button.highlight(true) }
+        let rearmed = cueTimers { run(seen, while: { true }, for: 0.1) }
+        check(Redraws.count(button) == settled && rearmed.isEmpty, "a settled button makes no further redraws")
+        let press = record { button.highlight(true) }
         check(armed(press), "a press arms the motion timer for its spring")
-        run(while: { armed(press) }, for: 1.5)
-        check(!armed(press), "the motion timer stops once the press spring settles")
-        let release = cueTimers { button.highlight(false) }
-        run(while: { armed(release) }, for: 1.5)
-        check(!armed(release), "the motion timer stops once the release settles")
+        _ = record { run(press, while: { armed(press) }, for: 1.5) }
+        check(!armed(seen), "the motion timer stops once the press spring settles")
+        _ = record { button.highlight(false) }
+        _ = record { run(seen, while: { armed(seen) }, for: 1.5) }
+        check(!armed(seen), "the motion timer stops once the release settles")
 
         let again = cueTimers { button.mouseEntered(with: event(.mouseEntered)) }
         check(armed(again), "a new hover arms the motion timer")
         SystemOverrides.reduceMotion = true
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
                                                    object: NSWorkspace.shared)
-        RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.005))
         check(!armed(again), "Reduce Motion switched on mid-animation settles the motion at once")
         let reduced = cueTimers { button.mouseExited(with: event(.mouseExited)) }
         check(!armed(reduced), "under Reduce Motion a hover change arms no timer")
