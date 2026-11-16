@@ -49,6 +49,7 @@ final class LibraryRailTile: PointingHandButton {
     fileprivate private(set) var showsProgress = false
     private let animationName: LibraryRailAnimation.Name
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    var now: () -> CFTimeInterval = { CACurrentMediaTime() }
     private let fill = NSView()
     private let art = LibraryRailTileArt()
     private var hovered = false { didSet { if hovered != oldValue { refreshFill() } } }
@@ -96,7 +97,7 @@ final class LibraryRailTile: PointingHandButton {
     fileprivate var currentFrame: Double {
         guard let animation else { return 0 }
         guard let playback else { return parkedFrame ?? animation.startFrame }
-        return min(playback.end, playback.from + (CACurrentMediaTime() - playback.start) * animation.frameRate)
+        return min(playback.end, playback.from + (now() - playback.start) * animation.frameRate)
     }
     private func playSelection() {
         guard window != nil, !reduceMotion, let animation,
@@ -104,11 +105,11 @@ final class LibraryRailTile: PointingHandButton {
               let end = animation.frame(forMarker: "selection-end") else { return }
         finishPlayback()
         let duration = max(0, end - from) / animation.frameRate
-        let start = CACurrentMediaTime()
+        let start = now()
         let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated {
                 guard let self, self.playback?.timer === timer else { return timer.invalidate() }
-                if CACurrentMediaTime() - start >= duration { self.finishPlayback() }
+                if self.now() - start >= duration { self.finishPlayback() }
                 self.art.needsDisplay = true
             }
         }

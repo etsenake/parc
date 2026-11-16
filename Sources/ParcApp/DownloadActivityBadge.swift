@@ -146,10 +146,12 @@ private struct DownloadBadgeContent: View {
 @MainActor final class DownloadActivityBadge: NSView {
     var onChange: ((DownloadActivity?) -> Void)?
     var colors = DownloadBadgeColors.standard { didSet { if colors != oldValue { updateContent() } } }
+    var after: (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { body() } }
+    }
     private var state = DownloadActivityState()
     private(set) var activity: DownloadActivity?
     private var content: DownloadBadgeHostingView?
-    private var retirement: DispatchWorkItem?
     private var generation: UInt64 = 0
     private var settled = false
     private var motionObserver: NSObjectProtocol?
@@ -227,7 +229,7 @@ private struct DownloadBadgeContent: View {
         if hadActivity { onChange?(nil) }
     }
     private func cancelRetirement() {
-        generation &+= 1; retirement?.cancel(); retirement = nil
+        generation &+= 1
     }
     private func retireContent() {
         content?.removeFromSuperview(); content = nil
@@ -247,13 +249,10 @@ private struct DownloadBadgeContent: View {
     private func complete(keepingSlot: Bool = false) {
         cancelRetirement()
         let token = generation
-        let task = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, self.generation == token, self.activity?.completed == true else { return }
-                if keepingSlot { self.settled = true; self.retireContent() } else { self.reset() }
-            }
+        after(1.45) { [weak self] in
+            guard let self, self.generation == token, self.activity?.completed == true else { return }
+            if keepingSlot { self.settled = true; self.retireContent() } else { self.reset() }
         }
-        retirement = task; DispatchQueue.main.asyncAfter(deadline: .now() + 1.45, execute: task)
     }
     private func motionChanged() {
         retireContent(); updateContent()

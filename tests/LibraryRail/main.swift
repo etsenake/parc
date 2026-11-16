@@ -10,6 +10,8 @@ struct LibraryRailChecks {
 func run() {
     NSApplication.shared.setActivationPolicy(.prohibited)
     SystemOverrides.install()
+    FrameSources.install()
+    Redraws.install()
     SystemOverrides.reduceMotion = false
     defer { SystemOverrides.reduceMotion = nil }
     var count = 0
@@ -60,18 +62,13 @@ func run() {
         candidates[key] = result
         return result
     }
-    struct Drawn {
-        let pixels: [UInt8]
-        let elapsed: CFTimeInterval
-    }
-    func capture(_ tile: LibraryRailTile, since start: CFTimeInterval) -> Drawn {
+    func capture(_ tile: LibraryRailTile) -> [UInt8] {
         let art = tile.progress!.superview!
         let rep = bitmap(art.bounds.size)
-        let before = CACurrentMediaTime()
         art.cacheDisplay(in: art.bounds, to: rep)
-        return Drawn(pixels: bytes(rep), elapsed: (before + CACurrentMediaTime()) / 2 - start)
+        return bytes(rep)
     }
-    func score(_ drawn: Drawn, _ tile: LibraryRailTile, _ frames: ClosedRange<Double>) -> Double {
+    func score(_ drawn: [UInt8], _ tile: LibraryRailTile, _ frames: ClosedRange<Double>) -> Double {
         let rect = tile.progress!.frame, stride = Int(tile.progress!.superview!.bounds.width * 2) * 4
         let x0 = Int(rect.minX * 2) * 4, x1 = Int(rect.maxX * 2) * 4, y0 = Int(rect.minY * 2), y1 = Int(rect.maxY * 2)
         var best = Double.infinity
@@ -79,7 +76,7 @@ func run() {
         while frame <= frames.upperBound {
             let expected = candidate(tile, frame: frame)
             var sum = 0
-            drawn.pixels.withUnsafeBufferPointer { a in
+            drawn.withUnsafeBufferPointer { a in
                 expected.withUnsafeBufferPointer { b in
                     for y in y0..<y1 { for x in (y * stride + x0)..<(y * stride + x1) { sum &+= abs(Int(a[x]) &- Int(b[x])) } }
                 }
@@ -89,148 +86,168 @@ func run() {
         }
         return best
     }
-    func spin(until target: CFTimeInterval) {
-        while CACurrentMediaTime() < target {
-            RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: min(0.002, max(0, target - CACurrentMediaTime()))))
-        }
+    func matches(_ drawn: [UInt8], _ tile: LibraryRailTile, frame: Double) -> Bool { score(drawn, tile, frame...frame) < 0.05 }
+    func playTimers(_ body: () -> Void) -> [FrameSource] { FrameSources.scheduled(during: body) }
+    var clock: CFTimeInterval = 0
+    func makeClockedTile(_ title: String, _ name: LibraryRailAnimation.Name) -> LibraryRailTile {
+        let tile = makeTile(title, name)
+        tile.now = { clock }
+        return tile
     }
-    func playing(_ drawn: Drawn) -> ClosedRange<Double> {
-        let frame = min(35, 1 + 60 * drawn.elapsed)
-        return (frame - 1.5)...(frame + 1.5)
-    }
-    let exact = 0.05, moving = 1.0
 
-    let opening = makeTile("Archived Tabs", .archive)
-    opening.state = .on
+    let composition = LibraryRailAnimation.named(.archive)!
+    expect(composition.frameRate == 60 && composition.startFrame == 0 && composition.frame(forMarker: "hover-start") == 1
+           && composition.frame(forMarker: "selection-end") == 35,
+           "Selection plays frames 1 to 35 of a 60-frames-a-second composition that rests on frame 0")
+
+    let opening = makeClockedTile("Archived Tabs", .archive)
+    expect(playTimers { opening.state = .on }.isEmpty, "A page selected before its window schedules no play")
     root.addSubview(opening)
-    var start = CACurrentMediaTime()
-    spin(until: start + 0.3)
-    var drawn = capture(opening, since: start)
-    expect(score(drawn, opening, 0...0) < exact && score(drawn, opening, 15...23) > 10,
+    clock += 0.3
+    var drawn = capture(opening)
+    expect(matches(drawn, opening, frame: 0) && score(drawn, opening, 15...23) > 10,
            "A page selected before its window rests on the start frame instead of playing")
     opening.removeFromSuperview()
 
-    let media = makeTile("Media", .media)
+    let media = makeClockedTile("Media", .media)
     root.addSubview(media)
-    drawn = capture(media, since: CACurrentMediaTime())
-    expect(score(drawn, media, 0...0) < exact, "An unplayed page shows the composition's start frame")
-    start = CACurrentMediaTime()
-    media.state = .on
-    spin(until: start + 0.225)
-    drawn = capture(media, since: start)
-    expect(score(drawn, media, playing(drawn)) < moving && score(drawn, media, 0...0) > 10,
+    let art = media.progress!.superview!
+    expect(matches(capture(media), media, frame: 0), "An unplayed page shows the composition's start frame")
+    var start = clock
+    let play = playTimers { media.state = .on }
+    expect(play.count == 1 && play[0].timer?.timeInterval == 1.0 / 60 && play[0].isLive,
+           "Selection drives its frames from one 60-a-second timer")
+    clock = start + 0.25
+    let redraws = Redraws.count(art)
+    play[0].fire()
+    expect(play[0].isLive && Redraws.count(art) > redraws, "A tick mid-play redraws the art and keeps playing")
+    drawn = capture(media)
+    expect(matches(drawn, media, frame: 16) && score(drawn, media, 0...0) > 10,
            "Selection plays hover-start to selection-end at the composition's 60 frames a second")
-    expect(CACurrentMediaTime() - start < 0.5, "The deselection happens mid-play")
     media.state = .off
-    spin(until: start + 0.3)
-    drawn = capture(media, since: start)
-    expect(score(drawn, media, playing(drawn)) < moving && score(drawn, media, 0...1) > 10,
+    clock = start + 0.375
+    play[0].fire()
+    drawn = capture(media)
+    expect(play[0].isLive && matches(drawn, media, frame: 23.5) && score(drawn, media, 0...1) > 10,
            "Deselection does not stop a play that is still running")
-    expect(CACurrentMediaTime() - start < 0.4, "The reselection happens mid-play")
-    let restart = CACurrentMediaTime()
-    media.state = .on
-    drawn = capture(media, since: restart)
-    let previous = capture(media, since: start)
-    expect(score(drawn, media, playing(drawn)) < moving && score(previous, media, playing(previous)) > 10,
+    let restart = clock
+    let replay = playTimers { media.state = .on }
+    drawn = capture(media)
+    expect(replay.count == 1 && !play[0].isLive && matches(drawn, media, frame: 1) && score(drawn, media, 23.5...23.5) > 10,
            "Reselection mid-play restarts from hover-start")
-    spin(until: restart + 0.1)
-    drawn = capture(media, since: restart)
-    expect(score(drawn, media, playing(drawn)) < moving, "The restarted play runs at 60 frames a second")
+    clock = restart + 0.125
+    expect(matches(capture(media), media, frame: 8.5), "The restarted play runs at 60 frames a second")
+    clock = restart + 0.5
+    replay[0].fire()
+    expect(replay[0].isLive && matches(capture(media), media, frame: 31), "The play keeps ticking until selection-end")
+    clock = restart + 0.625
+    replay[0].fire()
+    expect(!replay[0].isLive && matches(capture(media), media, frame: 35), "The tick that passes selection-end parks the play there")
     media.removeFromSuperview()
 
-    let archive = makeTile("Archived Tabs", .archive)
+    let archive = makeClockedTile("Archived Tabs", .archive)
     root.addSubview(archive)
-    let parked = 34.9...35.0, rest = 0.0...0.0
-    start = CACurrentMediaTime()
-    archive.state = .on
-    spin(until: start + 0.75)
-    drawn = capture(archive, since: start)
-    expect(score(drawn, archive, parked) < exact && score(drawn, archive, rest) < exact,
+    start = clock
+    let finished = playTimers { archive.state = .on }
+    clock = start + 0.75
+    drawn = capture(archive)
+    expect(finished.count == 1 && matches(drawn, archive, frame: 35) && matches(drawn, archive, frame: 0),
            "A finished play parks on selection-end, which matches the start frame")
-    archive.state = .on
-    spin(until: start + 0.85)
-    drawn = capture(archive, since: start)
-    expect(score(drawn, archive, parked) < exact, "Reselecting the selected page does not replay")
+    finished[0].fire()
+    expect(!finished[0].isLive, "A finished play stops ticking")
+    expect(playTimers { archive.state = .on }.isEmpty, "Reselecting the selected page does not replay")
+    clock = start + 0.85
+    expect(matches(capture(archive), archive, frame: 35), "Reselecting the selected page keeps the parked frame")
     archive.state = .off
-    spin(until: start + 0.9)
-    drawn = capture(archive, since: start)
-    expect(score(drawn, archive, parked) < exact && score(drawn, archive, rest) < exact,
+    clock = start + 0.9
+    drawn = capture(archive)
+    expect(matches(drawn, archive, frame: 35) && matches(drawn, archive, frame: 0),
            "Deselection keeps the parked selection-end frame")
-    start = CACurrentMediaTime()
-    archive.state = .on
-    spin(until: start + 0.1)
-    drawn = capture(archive, since: start)
-    expect(score(drawn, archive, playing(drawn)) < moving && score(drawn, archive, parked) > 10,
+    start = clock
+    let again = playTimers { archive.state = .on }
+    clock = start + 0.125
+    again.first?.fire()
+    drawn = capture(archive)
+    expect(again.count == 1 && again[0].isLive && matches(drawn, archive, frame: 8.5) && score(drawn, archive, 35...35) > 10,
            "Selecting again replays from hover-start")
-
-    expect(CACurrentMediaTime() - start < 0.5, "Leaving the window happens mid-play")
     archive.removeFromSuperview()
+    expect(!again[0].isLive, "Leaving the window mid-play stops the play")
     root.addSubview(archive)
-    let returned = CACurrentMediaTime()
-    drawn = capture(archive, since: returned)
-    spin(until: returned + 0.2)
-    let later = capture(archive, since: returned)
-    expect(score(drawn, archive, parked) < exact && score(later, archive, parked) < exact,
+    drawn = capture(archive)
+    clock += 0.25
+    let later = capture(archive)
+    expect(matches(drawn, archive, frame: 35) && matches(later, archive, frame: 35),
            "Leaving the window parks a running play on selection-end")
     archive.removeFromSuperview()
 
-    let still = makeTile("Archived Tabs", .archive)
+    let still = makeClockedTile("Archived Tabs", .archive)
     root.addSubview(still)
     SystemOverrides.reduceMotion = true
-    start = CACurrentMediaTime()
-    still.state = .on
-    spin(until: start + 0.3)
-    drawn = capture(still, since: start)
-    expect(score(drawn, still, 0...0) < exact && score(drawn, still, 15...23) > 10, "Reduce Motion keeps the start frame")
+    expect(playTimers { still.state = .on }.isEmpty, "Reduce Motion schedules no play")
+    clock += 0.3
+    drawn = capture(still)
+    expect(matches(drawn, still, frame: 0) && score(drawn, still, 15...23) > 10, "Reduce Motion keeps the start frame")
     SystemOverrides.reduceMotion = false
     still.removeFromSuperview()
 
     let downloads = makeTile("Downloads", .downloads)
     root.addSubview(downloads)
     let badge = downloads.progress!, profile = UUID()
+    var retirements: [(delay: TimeInterval, body: @MainActor () -> Void)] = []
+    badge.after = { delay, body in retirements.append((delay, body)) }
     func flight(_ id: String, received: Int64, total: Int64 = 100, started: Double) -> BrowserDownload {
         var item = BrowserDownload(id: id, name: id, path: "/nonexistent/" + id, receivedBytes: received, totalBytes: total, status: .downloading)
         item.profileID = profile; item.nativeID = id; item.nativeIdentity = id + "-1"; item.startedAt = Date(timeIntervalSince1970: started)
         return item
     }
     badge.updateInFlight([flight("full", received: 100, started: 1)], profiles: [profile], enabled: true)
-    expect(!badge.isHidden && badge.activity?.progress == 1 && badge.activity?.completed == false,
+    expect(!badge.isHidden && badge.activity?.progress == 1 && badge.activity?.completed == false && retirements.isEmpty,
            "A badge that first appears at full progress does not play its completion")
     badge.updateInFlight([], profiles: [profile], enabled: true)
     expect(badge.isHidden && badge.subviews.isEmpty, "Nothing in flight retires the renderer")
     badge.updateInFlight([flight("a", received: 40, started: 1)], profiles: [profile], enabled: true)
     let renderer = badge.subviews.first
     badge.updateInFlight([flight("a", received: 100, started: 1)], profiles: [profile], enabled: true)
-    start = CACurrentMediaTime()
     expect(renderer != nil && badge.subviews.first === renderer && badge.activity?.completed == true,
            "Progress changing to 1 plays the completion on the same renderer")
+    expect(retirements.count == 1 && retirements[0].delay == 1.45, "The completion settles at a 1.45-second deadline")
     badge.updateInFlight([flight("a", received: 100, started: 1), flight("b", received: 10, started: 2)], profiles: [profile], enabled: true)
     expect(badge.activity?.identity == DownloadLibraryIdentity(flight("b", received: 10, started: 2)) && badge.activity?.progress == 0.1
-           && badge.activity?.completed == true && badge.subviews.first === renderer,
+           && badge.activity?.completed == true && badge.subviews.first === renderer && retirements.count == 1,
            "A newer download in flight keeps the renderer, and its completion is not replayed or undone")
-    func inked(_ drawn: Drawn) -> Bool {
+    func inked(_ drawn: [UInt8]) -> Bool {
         let rect = badge.frame, stride = Int(badge.superview!.bounds.width * 2) * 4
         for y in Int(rect.minY * 2)..<Int(rect.maxY * 2) {
-            for x in Int(rect.minX * 2)..<Int(rect.maxX * 2) where drawn.pixels[y * stride + x * 4 + 3] > 0 { return true }
+            for x in Int(rect.minX * 2)..<Int(rect.maxX * 2) where drawn[y * stride + x * 4 + 3] > 0 { return true }
         }
         return false
     }
-    spin(until: start + 0.5)
-    expect(inked(capture(downloads, since: start)), "The played checkmark draws before its deadline")
-    spin(until: start + 1.6)
-    expect(!badge.isHidden && badge.activity?.completed == true && badge.subviews.isEmpty && !inked(capture(downloads, since: start)),
+    expect(inked(capture(downloads)), "The played checkmark draws before its deadline")
+    retirements[0].body()
+    expect(!badge.isHidden && badge.activity?.completed == true && badge.subviews.isEmpty && !inked(capture(downloads)),
            "At the 1.45-second deadline the completion settles: nothing draws, and the slot persists without the icon")
     badge.updateInFlight([flight("b", received: 20, started: 2)], profiles: [profile], enabled: true)
     NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: NSWorkspace.shared)
-    spin(until: CACurrentMediaTime() + 0.1)
-    expect(badge.activity?.progress == 0.2 && badge.activity?.completed == true && badge.subviews.isEmpty,
+    expect(badge.activity?.progress == 0.2 && badge.activity?.completed == true && badge.subviews.isEmpty && retirements.count == 1,
            "Neither a progress tick nor an accessibility display change brings a settled completion back")
     badge.updateInFlight([flight("b", received: 10, started: 2)], profiles: [profile], enabled: false)
     expect(badge.isHidden && badge.activity == nil, "The badge leaves when the window cannot badge")
     badge.updateInFlight([flight("c", received: 5, total: 0, started: 3)], profiles: [profile], enabled: true)
+    let fresh = badge.subviews.first
     expect(!badge.isHidden && badge.activity?.progress == nil && badge.activity?.completed == false
-           && badge.subviews.first != nil && badge.subviews.first !== renderer,
+           && fresh != nil && fresh !== renderer,
            "An unknown total gets a fresh renderer with no completion")
+    NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: NSWorkspace.shared)
+    let rebuilt = badge.subviews.first
+    expect(badge.subviews.count == 1 && rebuilt !== fresh, "An accessibility display change rebuilds a live badge's renderer")
+    badge.updateInFlight([flight("d", received: 40, started: 4)], profiles: [profile], enabled: true)
+    badge.updateInFlight([flight("d", received: 100, started: 4)], profiles: [profile], enabled: true)
+    expect(badge.activity?.completed == true && retirements.count == 2 && retirements[1].delay == 1.45,
+           "A newer download reaching 1 plays its own completion")
+    retirements[0].body()
+    expect(badge.activity?.completed == true && badge.subviews.first === rebuilt, "A stale completion deadline leaves a newer completion playing")
+    retirements[1].body()
+    expect(!badge.isHidden && badge.subviews.isEmpty, "The newer completion settles at its own deadline")
     downloads.removeFromSuperview()
     expect(badge.isHidden && badge.activity == nil, "Leaving the window retires the badge")
 
