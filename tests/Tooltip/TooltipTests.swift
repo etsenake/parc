@@ -1,6 +1,59 @@
 import AppKit
 import SwiftUI
 
+@MainActor final class TooltipClock {
+    private(set) var now = Date(timeIntervalSinceReferenceDate: 50_000)
+    private var timers: [(timer: Timer, interval: TimeInterval, repeats: Bool)] = []
+    private var fades: [(at: Date, order: Int, body: @MainActor () -> Void)] = []
+    private var order = 0
+    private let saved = (TooltipController.now, TooltipController.timer, TooltipController.fadeEnded)
+
+    func install() {
+        TooltipController.now = { [unowned self] in self.now }
+        TooltipController.timer = { [unowned self] interval, repeats, body in
+            let timer = Timer(fire: self.now.addingTimeInterval(interval), interval: interval, repeats: repeats) { _ in
+                MainActor.assumeIsolated { body() }
+            }
+            self.timers.append((timer, interval, repeats))
+            return timer
+        }
+        TooltipController.fadeEnded = { [unowned self] duration, body in
+            self.order += 1
+            self.fades.append((self.now.addingTimeInterval(duration), self.order, body))
+        }
+    }
+
+    func uninstall() {
+        (TooltipController.now, TooltipController.timer, TooltipController.fadeEnded) = saved
+    }
+
+    func advance(_ seconds: TimeInterval) {
+        let target = now.addingTimeInterval(seconds + 1e-9)
+        var fired = 0
+        while true {
+            timers.removeAll { !$0.timer.isValid }
+            let timer = timers.filter { $0.timer.fireDate <= target }.min { $0.timer.fireDate < $1.timer.fireDate }
+            let fade = fades.filter { $0.at <= target }.min { ($0.at, $0.order) < ($1.at, $1.order) }
+            guard timer != nil || fade != nil else { break }
+            fired += 1
+            guard fired < 1_000 else { fatalError("Tooltip: a timer keeps firing without time passing") }
+            if let timer, fade.map({ timer.timer.fireDate <= $0.at }) ?? true {
+                let due = timer.timer.fireDate
+                now = max(now, due)
+                timer.timer.fire()
+                if timer.repeats, timer.timer.isValid, timer.timer.fireDate == due {
+                    timer.timer.fireDate = due.addingTimeInterval(timer.interval)
+                }
+            } else if let fade {
+                fades.removeAll { $0.order == fade.order }
+                now = max(now, fade.at)
+                fade.body()
+            }
+        }
+        now = max(now, target.addingTimeInterval(-1e-9))
+    }
+}
+
 @MainActor @main struct TooltipChecks {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
@@ -527,7 +580,9 @@ import SwiftUI
     static func routing() {
         InputOverrides.install()
         InputOverrides.pressedMouseButtons = 0; InputOverrides.modifierFlags = []
-        defer { InputOverrides.pressedMouseButtons = nil; InputOverrides.modifierFlags = nil }
+        let clock = TooltipClock()
+        clock.install()
+        defer { InputOverrides.pressedMouseButtons = nil; InputOverrides.modifierFlags = nil; clock.uninstall() }
         func scene() -> (window: NSWindow, owner: NSResponder, anchor: NSView) {
             let window = KeyStandInWindow(contentRect: NSRect(x: 200, y: 200, width: 300, height: 200), styleMask: .borderless,
                                           backing: .buffered, defer: false)
@@ -546,16 +601,16 @@ import SwiftUI
             return NSEvent.enterExitEvent(with: type, location: point, modifierFlags: [], timestamp: time, windowNumber: window.windowNumber,
                                           context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)!
         }
-        func wait(_ seconds: TimeInterval) { RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds)) }
+        func wait(_ seconds: TimeInterval) { clock.advance(seconds) }
         func tooltip(of window: NSWindow) -> NSWindow? { window.childWindows?.first }
 
         let shown = scene()
         shown.owner.mouseEntered(with: event(.mouseEntered, in: shown.window))
-        wait(0.3)
-        check(tooltip(of: shown.window) == nil, "nothing before the idle delay")
-        wait(0.25)
+        wait(0.449)
+        check(tooltip(of: shown.window) == nil, "nothing before the 0.45 s idle delay")
+        wait(0.001)
         let child = tooltip(of: shown.window)
-        check(child != nil, "entering shows the tooltip after 0.45 s")
+        check(child != nil, "entering shows the tooltip at 0.45 s")
         if let child {
             check(!child.canBecomeKey && !child.canBecomeMain && child.ignoresMouseEvents, "the tooltip window never takes key, main or the mouse")
             check(!child.isAccessibilityElement(), "the tooltip window is hidden from accessibility")
@@ -564,10 +619,12 @@ import SwiftUI
         NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: shown.window)
         wait(0.05)
         NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: shown.window)
-        wait(0.1)
-        check(tooltip(of: shown.window) != nil, "a second dismissal during a fade keeps fading rather than closing at once")
-        wait(0.6)
-        check(tooltip(of: shown.window) == nil, "the latest fade closes the window")
+        wait(0.27)
+        check(tooltip(of: shown.window) != nil, "a second dismissal during a fade keeps fading: the first fade's end closes nothing")
+        wait(0.029)
+        check(tooltip(of: shown.window) != nil, "the latest fade runs its full 0.3 s")
+        wait(0.001)
+        check(tooltip(of: shown.window) == nil, "the latest fade closes the window when it ends")
         shown.window.close()
 
         let moved = scene()
@@ -654,9 +711,9 @@ import SwiftUI
                 eventNumber: 0, clickCount: 0, pressure: 0)!)
         }
         move(to: NSPoint(x: 140, y: 80))
-        wait(0.3)
-        check(tooltip(of: stopping) == nil, "the stop's idle delay is still running")
-        wait(0.6)
+        wait(0.529)
+        check(tooltip(of: stopping) == nil, "the 0.08 s stop and the 0.45 s idle delay are still running")
+        wait(0.001)
         check(tooltip(of: stopping) != nil, "the pointer stopping on the part shows the tooltip of the view it entered elsewhere")
         move(to: NSPoint(x: 60, y: 120))
         wait(0.9)
@@ -715,8 +772,10 @@ import SwiftUI
     static func bridge() {
         InputOverrides.install()
         InputOverrides.pressedMouseButtons = 0; InputOverrides.modifierFlags = []
-        defer { InputOverrides.pressedMouseButtons = nil; InputOverrides.modifierFlags = nil }
-        func wait(_ seconds: TimeInterval) { RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds)) }
+        let clock = TooltipClock()
+        clock.install()
+        defer { InputOverrides.pressedMouseButtons = nil; InputOverrides.modifierFlags = nil; clock.uninstall() }
+        func wait(_ seconds: TimeInterval) { clock.advance(seconds) }
         func anchors(_ view: NSView) -> [TooltipAnchorView] { ((view as? TooltipAnchorView).map { [$0] } ?? []) + view.subviews.flatMap(anchors) }
 
         let window = PointerStandInWindow(contentRect: NSRect(x: 200, y: 200, width: 120, height: 80), styleMask: .borderless,
