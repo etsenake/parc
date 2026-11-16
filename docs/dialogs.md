@@ -32,6 +32,18 @@ the page or DevTools pane blocked until it closes, closes with its page or windo
 and hands focus back to it. A window's dialog sits along the top of the page area.
 Each holds the window's security reservation and waits while another prompt has it.
 
+Device pickers for Web Bluetooth (the device chooser and the scanning prompt),
+WebUSB, WebHID and Web Serial never reach Chromium's Views chooser bubble, which
+needs a Views browser window to anchor to. Parc's content browser client returns
+Chrome's Bluetooth, USB, HID and Serial delegates with only their chooser step
+replaced (`Engine/ParcNative/native_device_delegates.cc`): each builds the same
+chooser controller Chrome builds and shows it with Parc's native device chooser
+(`Engine/ParcNative/device_chooser.mm`), attached to the requesting page's window.
+Permissions, policy, blocklists and device lists stay Chrome's. Closing the
+request, the page or the frame closes the picker; when no picker can be shown the
+request is refused as if the person cancelled. Extension pages and HID requests
+from a `<webview>` guest (after its embedder allows them) use the same picker.
+
 The response says which button ended it: confirm, the checkbox-ticked confirm,
 secondary (the second action, left of confirm), auxiliary (leftmost, for example
 Keep Open) or cancel. Buttons keep the order a system alert had. A choice between

@@ -47,6 +47,7 @@
 #include "parc/native/http_auth.h"
 #include "parc/native/native_appkit_host.h"
 #include "parc/native/native_blocked_popups.h"
+#include "parc/native/native_device_delegates.h"
 #include "parc/native/native_internal_urls.h"
 #include "parc/native/native_page_context_menu.h"
 #include "parc/native/native_tab_sharing.h"
@@ -307,6 +308,34 @@ std::unique_ptr<content::AuthenticatorRequestClientDelegate>
 ParcContentBrowserClient::GetWebAuthenticationRequestDelegate(
     content::RenderFrameHost* render_frame_host) {
   return CreateWebAuthenticationRequestDelegate(render_frame_host);
+}
+
+content::BluetoothDelegate* ParcContentBrowserClient::GetBluetoothDelegate() {
+  if (!bluetooth_delegate_) {
+    bluetooth_delegate_ = CreateNativeBluetoothDelegate();
+  }
+  return bluetooth_delegate_.get();
+}
+
+content::UsbDelegate* ParcContentBrowserClient::GetUsbDelegate() {
+  if (!usb_delegate_) {
+    usb_delegate_ = CreateNativeUsbDelegate();
+  }
+  return usb_delegate_.get();
+}
+
+content::SerialDelegate* ParcContentBrowserClient::GetSerialDelegate() {
+  if (!serial_delegate_) {
+    serial_delegate_ = CreateNativeSerialDelegate();
+  }
+  return serial_delegate_.get();
+}
+
+content::HidDelegate* ParcContentBrowserClient::GetHidDelegate() {
+  if (!hid_delegate_) {
+    hid_delegate_ = CreateNativeHidDelegate();
+  }
+  return hid_delegate_.get();
 }
 
 void ParcContentGpuClient::ExposeInterfacesToBrowser(

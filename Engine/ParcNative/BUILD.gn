@@ -390,6 +390,53 @@ source_set("native_permissions") {
   ]
 }
 
+source_set("native_device_delegates") {
+  public = [ "native_device_delegates.h" ]
+  sources = [
+    "native_device_delegates.cc",
+    "native_device_delegates.h",
+  ]
+  public_deps = [ "//content/public/browser" ]
+  deps = [
+    ":native_device_chooser",
+    "//base",
+    "//chrome/browser/bluetooth",
+    "//chrome/browser/chooser_controller",
+    "//chrome/browser/hid",
+    "//chrome/browser/serial",
+    "//chrome/browser/ui/bluetooth",
+    "//chrome/browser/ui/hid",
+    "//chrome/browser/ui/serial",
+    "//chrome/browser/usb",
+    "//components/permissions",
+    "//components/strings:components_strings",
+    "//extensions/browser",
+    "//extensions/common:extension_features",
+  ]
+}
+
+source_set("native_device_chooser") {
+  public = [ "device_chooser.h" ]
+  sources = [
+    "device_chooser.h",
+    "device_chooser.mm",
+  ]
+  frameworks = [ "AppKit.framework" ]
+  public_deps = [ "//base" ]
+  deps = [
+    ":native_auxiliary_page",
+    ":native_components",
+    "//chrome/app:generated_resources",
+    "//chrome/browser/ui/browser_window",
+    "//components/permissions",
+    "//components/strings:components_strings",
+    "//components/tabs:public",
+    "//content/public/browser",
+    "//ui/base",
+    "//ui/display/types",
+  ]
+}
+
 source_set("native_popup_blocking") {
   public = [ "native_popup_blocking.h" ]
   sources = [

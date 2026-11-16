@@ -14,7 +14,7 @@
     {
       "source": "Engine/ParcNative/BUILD.gn",
       "target": "parc/native/BUILD.gn",
-      "sha256": "7de1c92ff29fa45d63b61e682f7bb608c3644336cace595bedf97d973107135b"
+      "sha256": "aea74938c7cd65e4b85b3dad77ecc6869ac9cdbe1e6ee2c775b26173b62acf1a"
     },
     {
       "source": "Engine/ParcNative/page_host.h",
@@ -865,6 +865,26 @@
       "source": "Engine/ParcNative/constrained_dialog.mm",
       "target": "parc/native/constrained_dialog.mm",
       "sha256": "e56332541fe9f4a9db241386227915b2661fb0eee07602308a378b7f339b9234"
+    },
+    {
+      "source": "Engine/ParcNative/device_chooser.h",
+      "target": "parc/native/device_chooser.h",
+      "sha256": "efa5effd7422f7012785fbac0bc968f4f9e779dd50a36bdbdfb87137fab7f595"
+    },
+    {
+      "source": "Engine/ParcNative/device_chooser.mm",
+      "target": "parc/native/device_chooser.mm",
+      "sha256": "6fc214e44e3cf53dbc10c61bdb91ca4f8fa3a0c755cf183be5daad6cf1a7aed8"
+    },
+    {
+      "source": "Engine/ParcNative/native_device_delegates.h",
+      "target": "parc/native/native_device_delegates.h",
+      "sha256": "a7e3bc617eb1cdea0d6e90201526da83a50f5671d326c6b24cb54932cf2f571c"
+    },
+    {
+      "source": "Engine/ParcNative/native_device_delegates.cc",
+      "target": "parc/native/native_device_delegates.cc",
+      "sha256": "4511223f06863f167b122bc266f0d6f07e7bc4e1280e0cc41fa619af1b936c71"
     },
     {
       "source": "tests/NativeDownloads/folder_upload_browsertest.mm",
@@ -2079,7 +2099,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "c9a7aee4b29fa17e572a6dd86677ffb132a756280181c48ba5aae1cb8e97fb88"
+      "sha256": "0603d6fb2949b72581784c5a15f219c1940101ba959a66c3b82918f56457b00f"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
@@ -2229,12 +2249,12 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.h",
       "target": "parc/parc_content_clients.h",
-      "sha256": "123937e81ec2b48fdac7bb85c0368aebc2b81eba66f620a67e3e95722ce09232"
+      "sha256": "e3d62833754ad3b23bed56be1d2505a9831ec6c39943add8e0d16f469b330a6a"
     },
     {
       "source": "Engine/ParcChromium/parc_content_clients.mm",
       "target": "parc/parc_content_clients.mm",
-      "sha256": "e5b83e3d56d57b998dfebb2f6a959c99589dc5065b50841030cdb17bceb3aa61"
+      "sha256": "3ecf1e10508897b87b6d023843bd3db7c36fdc694a8fadb17edbc84cc0f731e9"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",

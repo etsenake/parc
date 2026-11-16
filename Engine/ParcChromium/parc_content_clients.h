@@ -60,12 +60,20 @@ class ParcContentBrowserClient final : public ChromeContentBrowserClient {
   std::unique_ptr<content::AuthenticatorRequestClientDelegate>
   GetWebAuthenticationRequestDelegate(
       content::RenderFrameHost* render_frame_host) override;
+  content::BluetoothDelegate* GetBluetoothDelegate() override;
+  content::UsbDelegate* GetUsbDelegate() override;
+  content::SerialDelegate* GetSerialDelegate() override;
+  content::HidDelegate* GetHidDelegate() override;
 
  private:
   friend class ParcBrowserMainExtraParts;
 
   const raw_ref<NativeApplication> application_;
   raw_ptr<Profile> initial_profile_ = nullptr;
+  std::unique_ptr<content::BluetoothDelegate> bluetooth_delegate_;
+  std::unique_ptr<content::UsbDelegate> usb_delegate_;
+  std::unique_ptr<content::SerialDelegate> serial_delegate_;
+  std::unique_ptr<content::HidDelegate> hid_delegate_;
 };
 
 class ParcContentGpuClient final : public ChromeContentGpuClient {
