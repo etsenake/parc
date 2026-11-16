@@ -585,32 +585,10 @@
    // includes one buffer slot, so we need to construct our own multichannel one.
 --- a/media/renderers/audio_renderer_impl.cc
 +++ b/media/renderers/audio_renderer_impl.cc
-@@ -8,8 +8,10 @@
- #include <stddef.h>
--
-+
- #include <algorithm>
-+#include <array>
- #include <memory>
- #include <utility>
-+#include <vector>
--
-+
- #include "base/command_line.h"
- #include "base/functional/bind.h"
-@@ -17,6 +19,7 @@
- #include "base/functional/callback_helpers.h"
- #include "base/logging.h"
- #include "base/metrics/histogram_macros.h"
-+#include "base/numerics/safe_conversions.h"
- #include "base/power_monitor/power_monitor.h"
- #include "base/task/bind_post_task.h"
- #include "base/task/sequenced_task_runner.h"
-@@ -38,8 +41,11 @@
+@@ -38,8 +38,10 @@
  #include "media/base/media_util.h"
  #include "media/base/renderer_client.h"
  #include "media/base/timestamp_constants.h"
-+#include "media/base/vector_math.h"
  #include "media/filters/audio_clock.h"
  #include "media/filters/decrypting_demuxer_stream.h"
 +#include "media/renderers/parc_audio_renderer_aac.h"
@@ -619,45 +597,7 @@
 -
 +
  namespace media {
-@@ -209,6 +215,35 @@
-   return result;
- }
--
-+
-+#if BUILDFLAG(IS_MAC)
-+bool MayDoubleAacRate(const AudioDecoderConfig& config) {
-+  if (config.codec() != AudioCodec::kAAC ||
-+      config.profile() == AudioCodecProfile::kXHE_AAC ||
-+      config.samples_per_second() > 24000) {
-+    return false;
-+  }
-+  const std::vector<uint8_t>& audio_specific_config = config.extra_data();
-+  if (audio_specific_config.empty()) {
-+    return true;
-+  }
-+  if (audio_specific_config.size() != 2) {
-+    return false;
-+  }
-+  constexpr auto kCoreRates =
-+      std::to_array<int>({24000, 22050, 16000, 12000, 11025, 8000});
-+  const uint32_t object_type = audio_specific_config[0] >> 3;
-+  const uint32_t frequency_index = ((audio_specific_config[0] & 0x07) << 1) |
-+                                   (audio_specific_config[1] >> 7);
-+  const uint32_t channel_config = (audio_specific_config[1] >> 3) & 0x0f;
-+  return object_type == 2 && frequency_index >= 6 && frequency_index <= 11 &&
-+         channel_config >= 1 && channel_config <= 7 &&
-+         (audio_specific_config[1] & 0x07) == 0 &&
-+         kCoreRates[frequency_index - 6] == config.samples_per_second();
-+}
-+#endif
-+
-+constexpr base::TimeDelta kParcMixedDriftTolerance = base::Milliseconds(30);
-+
- }  // namespace
--
-+
- AudioRendererImpl::AudioRendererImpl(
-@@ -277,6 +312,9 @@
+@@ -277,6 +279,9 @@
    sink_->Stop();
    if (null_sink_)
      null_sink_->Stop();
@@ -668,12 +608,12 @@
 +
    if (init_cb_)
      FinishInitialization(PIPELINE_ERROR_ABORT);
-@@ -682,6 +720,11 @@
+@@ -682,6 +687,11 @@
      expecting_config_changes_ = true;
    }
  #endif  // BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO) && BUILDFLAG(IS_WIN)
 +#if BUILDFLAG(IS_MAC)
-+  if (MayDoubleAacRate(current_decoder_config_)) {
++  if (ParcMayDoubleAacRate(current_decoder_config_)) {
 +    expecting_config_changes_ = true;
 +  }
 +#endif
@@ -681,7 +621,7 @@
 +
    bool use_stream_params =
        !expecting_config_changes_ || !hw_params.IsValid() ||
-@@ -708,7 +751,12 @@
+@@ -708,7 +718,12 @@
                 hw_params.IsValid() ? hw_params.frames_per_buffer() : 0);
 -
 +
@@ -696,101 +636,7 @@
      output_config =
          ComputeBitstreamOutputConfig(stream->audio_decoder_config(), hw_params);
      buffer_converter_.reset();
-@@ -981,6 +1029,92 @@
-       was_played_with_user_activation_and_high_media_engagement;
- }
--
-+
-+int AudioRendererImpl::ParcMix_Locked(base::TimeDelta start,
-+                                      int own_frames,
-+                                      int frames,
-+                                      base::TimeDelta delay,
-+                                      base::TimeTicks delay_timestamp,
-+                                      AudioBus* audio_bus) {
-+  lock_.AssertAcquired();
-+  if (!frames) {
-+    return 0;
-+  }
-+  const int channels = audio_bus->channels();
-+  if (!parc_mix_bus_ || parc_mix_bus_->channels() != channels ||
-+      parc_mix_bus_->frames() < frames) {
-+    parc_mix_bus_ = AudioBus::Create(channels, audio_bus->frames());
-+  }
-+  if (!parc_mix_wrapper_ || parc_mix_wrapper_->channels() != channels) {
-+    parc_mix_wrapper_ = AudioBus::CreateWrapper(channels);
-+  }
-+  parc_mix_wrapper_->set_frames(frames);
-+  for (int ch = 0; ch < channels; ++ch) {
-+    parc_mix_wrapper_->SetChannelData(
-+        ch, parc_mix_bus_->channel(ch).first(static_cast<size_t>(frames)));
-+  }
-+  audio_bus->ZeroFramesPartial(own_frames, frames - own_frames);
-+  int mixed_frames = 0;
-+  for (const scoped_refptr<ParcMixedSink>& sink : parc_mixed_sinks_) {
-+    if (sink->params().channels() != channels ||
-+        sink->params().sample_rate() != audio_parameters_.sample_rate()) {
-+      continue;
-+    }
-+    const int rendered =
-+        sink->Render(start, delay, delay_timestamp, parc_mix_wrapper_.get());
-+    for (int ch = 0; ch < channels; ++ch) {
-+      vector_math::FMAC(
-+          parc_mix_wrapper_->channel(ch).first(static_cast<size_t>(rendered)),
-+          1.0f, audio_bus->channel(ch).first(static_cast<size_t>(rendered)));
-+    }
-+    mixed_frames = std::max(mixed_frames, rendered);
-+  }
-+  return mixed_frames;
-+}
-+
-+int AudioRendererImpl::ParcRenderMixed(base::TimeDelta start,
-+                                       base::TimeDelta delay,
-+                                       base::TimeTicks delay_timestamp,
-+                                       AudioBus* audio_bus) {
-+  {
-+    base::AutoLock auto_lock(lock_);
-+    if (state_ == kPlaying && algorithm_ && playback_rate_ > 0) {
-+      const base::TimeDelta back = audio_clock_->back_timestamp();
-+      if (back - start > kParcMixedDriftTolerance) {
-+        return 0;
-+      }
-+      base::TimeDelta behind;
-+      if (start - back > kParcMixedDriftTolerance) {
-+        behind = start - back;
-+      }
-+      auto to_frames = [this](base::TimeDelta time) {
-+        return base::ClampFloor(time.InSecondsF() *
-+                                audio_parameters_.sample_rate() /
-+                                playback_rate_);
-+      };
-+      if (first_packet_timestamp_ != kNoTimestamp &&
-+          first_packet_timestamp_ > back && behind.is_positive()) {
-+        const int silent =
-+            to_frames(std::min(behind, first_packet_timestamp_ - back));
-+        audio_clock_->WroteAudio(silent, silent, 0, playback_rate_);
-+        behind = start - audio_clock_->back_timestamp();
-+      }
-+      int behind_frames = behind.is_positive() ? to_frames(behind) : 0;
-+      while (behind_frames > 0) {
-+        const int dropped = algorithm_->FillBuffer(
-+            audio_bus, 0, std::min(behind_frames, audio_bus->frames()),
-+            playback_rate_);
-+        if (!dropped) {
-+          break;
-+        }
-+        audio_clock_->WroteAudio(dropped, dropped, 0,
-+                                 algorithm_->effective_playback_rate());
-+        behind_frames -= dropped;
-+      }
-+    }
-+  }
-+  return Render(delay, delay_timestamp, AudioGlitchInfo(), audio_bus);
-+}
-+
- void AudioRendererImpl::OnSuspend() {
-   base::AutoLock auto_lock(lock_);
-   is_suspending_ = true;
-@@ -1031,7 +1165,7 @@
+@@ -1031,7 +1046,7 @@
 -
 +
    bool allow_config_changes = expecting_config_changes_;
@@ -800,7 +646,7 @@
        ((audio_parameters_.channels() != buffer->channel_count()) ||
         (audio_parameters_.sample_rate() != buffer->sample_rate()))) {
      // If the incoming buffer's channel count or sample rate has changed,
-@@ -1383,6 +1517,7 @@
+@@ -1383,6 +1398,7 @@
    }
 -
 +
@@ -809,7 +655,7 @@
    {
      base::AutoLock auto_lock(lock_);
      DCHECK_NE(state_, kReinitializingSink);
-@@ -1409,6 +1544,7 @@
+@@ -1409,6 +1425,7 @@
                                 playback_rate_);
        return 0;
      }
@@ -818,7 +664,7 @@
 +
      if (playback_rate_ == 0 || is_suspending_) {
        audio_clock_->WroteAudio(0, frames_requested, frames_delayed,
-@@ -1482,6 +1618,9 @@
+@@ -1482,6 +1499,9 @@
              playback_rate_);
          frames_written += frames_filled;
          effective_playback_rate = algorithm_->effective_playback_rate();
@@ -829,7 +675,7 @@
 +
          DVLOG(4) << __func__ << ": frames_filled=" << frames_filled
                   << ", playback_rate_=" << playback_rate_
-@@ -1541,6 +1680,13 @@
+@@ -1541,6 +1561,13 @@
        SetBufferingState_Locked(BUFFERING_HAVE_NOTHING);
      }
 -
@@ -844,7 +690,7 @@
      // Note: effective_playback_rate() is used here because WSOLA is a
      // non-linear operation. E.g., for a `playback_rate_` of 2.0 WSOLA may end
      // up with effective rates between 1 and 3 and a/v sync drift of +/- 20ms.
-@@ -1570,7 +1716,7 @@
+@@ -1570,7 +1597,7 @@
    }
 -
 +

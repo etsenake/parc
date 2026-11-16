@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 765,
+  "version": 766,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -3039,7 +3039,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/parc_audio_renderer_impl.cc",
       "target": "media/renderers/parc_audio_renderer_impl.cc",
-      "sha256": "c1acffc5f432c9b2ac10e2893b0ae3ee9007a5ece0c585b465ff61c673855847"
+      "sha256": "21d6398fc485021a4bacd074db234d5d85a4820ac69d21ee4b85595ecb759fde"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/parc_audio_renderer_mixed_sink.h",
@@ -3094,7 +3094,7 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/parc_video_renderer_impl.cc",
       "target": "media/renderers/parc_video_renderer_impl.cc",
-      "sha256": "ab2f7070333f5d66f2aadf80ec0f73f33c9cd9bd3ea6be2e30ce6bc95969804d"
+      "sha256": "bd13a5762c33dfa1370b569ae4a38e782db6a273366e4e2414001c1c6d6de620"
     }
   ],
   "patches": [
@@ -4012,7 +4012,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/platform-codecs.patch",
-      "sha256": "ae8626adb068e714eb18af41f88cdc0e16f0b879d33d468579c9bad253250878",
+      "sha256": "a1a4be4a3aebc9d90da9aa65898693ef3bf9097feea27780d6766cbe1450858f",
       "files": [
         {
           "target": "media/BUILD.gn",
@@ -4037,7 +4037,7 @@
         {
           "target": "media/renderers/audio_renderer_impl.cc",
           "before_sha256": "b70b095f1133099344147614dac182ce13347227360a2966117632a79b2925d8",
-          "after_sha256": "0755bfefc50bc48da08ba2c44c0ca3d6513ae906e11b7df66b14e246ad3c70b8"
+          "after_sha256": "62dff0a4aa57b7e5480ef136b4ee1c7c83d3c847f0ea353a8045a2743678d7d4"
         },
         {
           "target": "third_party/blink/renderer/platform/peerconnection/rtc_video_decoder_adapter.cc",
@@ -4389,7 +4389,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "3651e6860a8ba37717e3ff74304d655cd3b4b8b28a7ad794ece882abc0ade3fc",
+      "sha256": "fec4fa8b0a8b14ff07c570bf759291b3919952445ddc273af6aac4b7a8bd5906",
       "files": [
         {
           "target": "components/cdm/renderer/external_clear_key_key_system_info.cc",
@@ -4879,7 +4879,7 @@
         {
           "target": "media/renderers/video_renderer_impl.cc",
           "before_sha256": "075c429d49eae6f1d5c79be4a176dbf46571d9c1a03d268ea409a313d47dbb2c",
-          "after_sha256": "959f58fee6995375958a6f76a8e4e984f2b480f7ce26c91cfd9b4d7c69ca2a45"
+          "after_sha256": "6ee78d09879bbd4d8d2bbe039804bb4afdce700705221761879cb196619b6340"
         },
         {
           "target": "third_party/blink/public/platform/media/web_media_player_builder.h",

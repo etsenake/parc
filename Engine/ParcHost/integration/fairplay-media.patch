@@ -7823,47 +7823,6 @@
    sink_started_ = true;
    was_background_rendering_ = false;
    sink_->Start(this);
-@@ -1121,4 +1179,39 @@
-   paint_first_frame_cb_.Cancel();
- }
--
-+
-+scoped_refptr<VideoFrame> VideoRendererImpl::ParcRender_Locked(
-+    base::TimeTicks deadline_min) {
-+  lock_.AssertAcquired();
-+  DCHECK(!parc_shown_.empty());
-+
-+  std::vector<base::TimeDelta> timestamps;
-+  timestamps.reserve(parc_shown_.size() + 1);
-+  for (const auto& frame : parc_shown_) {
-+    timestamps.push_back(frame->timestamp());
-+  }
-+  timestamps.push_back(parc_window_end_);
-+  std::vector<base::TimeTicks> wall_clock_times;
-+  wall_clock_time_cb_.Run(timestamps, &wall_clock_times);
-+
-+  size_t current = parc_shown_.size();
-+  while (current > 0 && wall_clock_times[current - 1] < deadline_min) {
-+    --current;
-+  }
-+  if (current == 0) {
-+    current = 1;
-+    const bool window_passed =
-+        parc_decoding_ && wall_clock_times.back() < deadline_min;
-+    if (!parc_shown_passed_ || window_passed != parc_window_passed_) {
-+      parc_shown_passed_ = true;
-+      parc_window_passed_ = window_passed;
-+      task_runner_->PostTask(FROM_HERE,
-+                             base::BindOnce(&VideoRendererImpl::ParcStall,
-+                                            weak_factory_.GetWeakPtr()));
-+    }
-+  }
-+
-+  parc_shown_.resize(current);
-+  return parc_shown_.back();
-+}
-+
- }  // namespace media
 --- a/third_party/blink/public/platform/media/web_media_player_builder.h
 +++ b/third_party/blink/public/platform/media/web_media_player_builder.h
 @@ -116,6 +116,8 @@

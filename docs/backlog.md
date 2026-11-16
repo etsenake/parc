@@ -18,17 +18,6 @@ For otherwise unassigned work, retain the requested order: Routing, Windows,
 Data, Folders, Archive, Command bar, Tab switcher, Peek and Onboarding.
 Finish assigned work first.
 
-## Engine architecture
-
-These shrink what each Chromium upgrade must refit, or what an engine build costs. None changes
-what users see or hear today, and each must keep it that way.
-[How Parc changes Chromium](chromium-seams.md) owns the details.
-
-- Reverse playback's window planning and Safari's multi-track audio mixing still sit inside
-  Chromium's renderers, so every upgrade must refit them there. Moving them into Parc files ships
-  only with a real playback check that backward playback still shows frames and Safari-identity
-  pages with two audio tracks still mix them.
-
 Keep details in the linked guide and current ownership only while a task is
 active. Follow [the documentation policy](documentation.md); this index should
 stay below 400 lines.

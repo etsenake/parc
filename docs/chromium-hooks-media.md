@@ -84,8 +84,8 @@ immediately after the cue box receives its default CSS; cue mutation notificatio
 
 - **`cdm-helper`**: only the CDM child-flags hook, in `service_factory.cc`.
 - **`fairplay-media`**: the Parc accessor on each media interface, player orchestration, the
-  CreateCdm and renderer-registration calls, Media Source gap bridging, late SourceBuffers, reverse
-  playback and mixing in the renderers, plus the FairPlay, Safari-identity and AirPlay hook
+  CreateCdm and renderer-registration calls, Media Source gap bridging, late SourceBuffers, the
+  renderers' reverse-playback and mixing calls, plus the FairPlay, Safari-identity and AirPlay hook
   definitions and the GPU sandbox rule. It spans 154 files across `media/base`, `media/filters`,
   `media/formats`, `media/mojo`, `media/renderers`, content's media code and Blink's platform media
   and loader. Each change sits where Chromium's private player, demuxer and renderer state lives.

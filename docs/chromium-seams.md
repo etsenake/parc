@@ -288,8 +288,13 @@ in the same media targets, inline where they sit on a per-sample or per-buffer p
 The nested protected-video render-pass planner and the CALayer claim and hand-on policy live in owned
 Viz and accelerated-widget files. Chromium keeps one planner call and one claim hook; candidate
 construction, the rounded mask, root-pass processing and the parked-compositor flag stay at their
-call sites. Renderer window planning and mixing arithmetic stay patched for now
-([backlog](backlog.md#engine-architecture)).
+call sites.
+
+Reverse playback's window planning and frame choice, and Safari's multi-track audio mixing, live in
+owned files compiled in Chromium's renderer target. The video and audio renderers keep only short
+gates and calls at their original points, plus the members those files use. The pipeline renderer
+also keeps the backward clock's rate and buffering handling, and passes each setting on to the mixed
+tracks where it applies.
 
 ## Parc-owned test targets
 
@@ -378,5 +383,5 @@ every miss compiled locally ([cache setup](../tests/EngineSource/README.md#share
 proves byte-for-byte equivalence with the current one
 ([export](../tests/EngineSource/README.md#branch-export-and-equivalence)); the release pipeline still
 materializes pinned Chromium plus the overlay once. The step-by-step procedure for minor and major
-Chromium bumps is in [Upgrading Chromium](../Engine/README.md#upgrading-chromium). Open engine work is
-in the [backlog](backlog.md#engine-architecture).
+Chromium bumps is in [Upgrading Chromium](../Engine/README.md#upgrading-chromium). The
+[backlog](backlog.md) lists any open engine work.
