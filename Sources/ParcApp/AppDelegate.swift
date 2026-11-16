@@ -69,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var pictureInPictureWindows: [PictureInPictureWindowController] = []
     private weak var lastActiveWindow: BrowserWindowController?
     private let pageOwnership = NativePageOwnership()
+    private let popupTabHandoff = PopupTabHandoffCoordinator()
     private var started = false
     private var historyDeletionObserver: NSObjectProtocol?
     private var terminationInProgress = false
@@ -1475,14 +1476,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         controller.onRequestBrowserTab = { [weak self, weak controller] input in
             guard let self, let controller, !self.terminationInProgress else { return }
-            do {
-                let destination = try self.windows.last(where: {
-                    $0.canAcceptBrowserTab(for: controller.activeProfileID)
-                }) ?? self.makeBrowserWindow(renderInitialSelection: true, preferredProfileID: controller.activeProfileID, privateParentProfileID: controller.store.privateParentProfileID)
-                destination.showWindow(nil)
-                destination.window?.makeKeyAndOrderFront(nil)
-                if let input { destination.openInput(input) } else { destination.newTab() }
-            } catch { self.presentWindowCreationError(error) }
+            let profileID = controller.activeProfileID, privateParentID = controller.store.privateParentProfileID
+            self.popupTabHandoff.request(input, from: controller, windows: { [weak self] in
+                guard let self, !self.terminationInProgress else { return [] }
+                return self.windows
+            }, freshWindow: { [weak self] in
+                guard let self, !self.terminationInProgress else { return nil }
+                do {
+                    return try self.makeBrowserWindow(renderInitialSelection: true, preferredProfileID: profileID,
+                                                      privateParentProfileID: privateParentID)
+                } catch { self.presentWindowCreationError(error); return nil }
+            })
         }
         controller.resolveSidebarCopyDestinations = { [weak self, weak controller] originals in
             guard let self, let controller, !self.terminationInProgress,

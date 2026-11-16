@@ -42,9 +42,6 @@ Finish assigned work first; explicit deferrals remain deferred.
 - **WIN12:** folder disclosure is shared across windows; move it into window
   presentation state. Whole pinned-section collapse also needs implementation.
   [Windows](windows-lifecycle.md), [sidebar resizing](sidebar-resize.md).
-- **WIN13:** wire shortcut-education Copy availability to native admission, and
-  retain/revalidate the original page and hidden destination before popup handoff.
-  [Window activation](window-activation.md).
 
 ## Data and credentials
 

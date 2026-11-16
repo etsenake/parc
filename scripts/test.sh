@@ -331,6 +331,8 @@ step python3 "$repo_root/tests/DocumentsLibraryCatalogSkip/check.py"
 step compile_and_run sidebar-new-space SidebarNewSpaceTests
 step compile_and_run new-space-window-choice NewSpaceWindowChoiceTests \
   "$repo_root/Sources/ParcCore/NewSpaceWindowChoice.swift"
+step python3 "$repo_root/tests/PopupTabHandoff/check.py"
+step bash "$repo_root/scripts/test-shortcut-essentials.sh"
 step compile_and_run new-space-blocker-wait NewSpaceBlockerWaitTests \
   "$repo_root/Sources/ParcCore/NewSpaceBlockerWait.swift"
 step compile_and_run sidebar-space-moves SidebarSpaceMoveTests \

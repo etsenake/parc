@@ -39,8 +39,8 @@ foreground lookup.
 
 Manage/Add Extensions and delayed Site Control Center presentation retain the
 original window, page revision, Space and Profile through dismissal and input
-resolution. Popup requests still need the original-page and hidden-destination
-admission described in [the native handoff](#native-admission-handoff-for-win13).
+resolution. Popup requests use the original-page and hidden-destination
+admission described in [the native handoff](#native-admission-handoff).
 
 ## Existing interruption owners
 
@@ -57,7 +57,7 @@ See [navigation](navigation.md), [keyboard navigation](keyboard-navigation.md),
 [windows lifecycle](windows-lifecycle.md) for their contracts. Key/main/app
 notifications remain distinct from a request to move a responder.
 
-## Native admission handoff for WIN13
+## Native admission handoff
 
 The facade exposes two read-only main-thread queries:
 
@@ -67,20 +67,40 @@ The facade exposes two read-only main-thread queries:
   registration, close state, sheets, security reservation and miniaturization
   without requiring visibility/key status or performing a transfer.
 
-Both are momentary checks, not retained leases. The app consumer must capture
-source and destination page/Profile/Space/window identities, validate before
-first show and revalidate across every callback.
+Both are momentary checks, not retained leases, so each consumer asks again at
+every decision point.
 
-The shortcut-education Copy action uses the native copy operation, but its
-availability check still uses view visibility instead of the command-window
-query. A command can therefore remain offered when native admission will refuse
-it. Popup New Tab/address requests select or create a destination and show it
-before delivering the input; this handoff does not yet retain the original page
-and hidden destination through native admission. These two consumers are the
-remaining WIN13 work in [the backlog](backlog.md).
+**Shortcut-education Copy.** The Essential Keyboard Shortcuts window offers and
+performs Copy through one route. A web page uses the command-window query to
+decide availability and the matching native copy to perform it, so a crashed
+page, dead renderer, owner sheet, minimized or invisible browser, security
+reservation or retiring page greys out Edit → Copy URL instead of reporting an
+unavailable link. An open command bar or a tab without a web page keeps the
+plain URL copy. Availability is asked live at each menu validation and shortcut
+press; nothing is cached while the window stays open.
+
+**Popup New Tab and addresses.** Command-T or a submitted address in a popup
+hands off through `PopupTabHandoffCoordinator`. It captures the popup, its
+window, its selected page and browsing session, then picks the most recent
+window that shares that session, accepts tabs for its Profile and passes the
+hidden-destination query. An ordinary minimized window is eligible when no sheet
+holds it; it is restored first and admitted afterwards. Each step that brings the
+destination forward rechecks the original page and the destination's window,
+binding, Space and Profile. After it comes forward the full query runs again; a
+window still restoring is awaited briefly, each request on its own wait, so a
+second request never drops the first. A destination that is blocked, closed or
+never restores yields a fresh window, the same fallback as having no window, and
+a vanished original page delivers nothing. The app sees a minimized window's
+security reservation only through that later query, so such a window is restored
+and then refused in favour of a fresh window. A private popup never hands off:
+its session belongs to it alone, so it always opens a new private window.
+[`PopupTabHandoff`](../Sources/ParcCore/PopupTabHandoff.swift) holds the choice.
 
 ## Checks
 
 Import-focus and original-owner sequence components cover background, minimized
 and obstructed parents, inactive app, key changes during cleanup and refusal.
 `WindowOwnerSequence` exercises revalidation between callback-capable steps.
+`tests/PopupTabHandoff/check.py` covers admitted, blocked, minimized, fresh and
+private popup handoffs; `scripts/test-shortcut-essentials.sh` covers the Copy
+routes and their native admission wiring.

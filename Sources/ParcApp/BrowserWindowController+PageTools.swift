@@ -154,6 +154,10 @@ extension BrowserWindowController {
         return toast
     }
 
+    private var essentialsCopyRoute: EssentialsCopyRoute {
+        EssentialsCopyRoute(hasURL: currentURLForCopy != nil, commandBarOpen: commandBar != nil,
+                            hasNativePage: selectedNativePage() != nil)
+    }
     func showEssentialShortcuts() {
         guard presentation.isReady, !isClosing, !wholeWindowClose else { return }
         if shortcutEssentials == nil {
@@ -168,15 +172,17 @@ extension BrowserWindowController {
                 return self.presentation.isReady && !self.isClosing && !self.wholeWindowClose
                     && !self.windowClosePending && self.windowCommandSecurityAvailable
             }
-            controller.canPerformCommand = { [weak self] id in
+            controller.canPerformCommand = { [weak self, weak controller] id in
                 guard let self else { return false }
                 guard id == "copyCurrentURL:" else { return true }
-                guard self.currentURLForCopy != nil else { return false }
-                guard self.commandBar == nil, let page = self.selectedNativePage() else {
-                    return self.canCopyCurrentURL
+                switch self.essentialsCopyRoute {
+                case .unavailable: return false
+                case .currentURL: return self.canCopyCurrentURL
+                case .commandWindow:
+                    guard let page = self.selectedNativePage(), let binding = self.nativeBinding,
+                          let commandWindow = controller?.window else { return false }
+                    return page.canCopyURL(fromCommandWindow: commandWindow, browser: binding)
                 }
-                return !page.isClosed && page.nativeView.window === self.window
-                    && !page.nativeView.isHiddenOrHasHiddenAncestor && self.nativeBinding != nil
             }
             controller.onEscape = { [weak self, weak controller] in
                 guard controller?.isOwnerAvailable?() == true else { return }
@@ -192,12 +198,16 @@ extension BrowserWindowController {
                 case "newTab:": self.newTab()
                 case "cycleToNextRecentTab:": self.cycleRecentTab(forward: true)
                 case "copyCurrentURL:":
-                    if self.commandBar == nil, let page = self.selectedNativePage(),
-                       let binding = self.nativeBinding, let commandWindow = controller?.window {
+                    switch self.essentialsCopyRoute {
+                    case .unavailable: break
+                    case .currentURL: self.copyCurrentURL()
+                    case .commandWindow:
+                        guard let page = self.selectedNativePage(), let binding = self.nativeBinding,
+                              let commandWindow = controller?.window else { break }
                         self.performLinkCopy(page: page, format: .plain) { completion in
                             page.copyURL(fromCommandWindow: commandWindow, browser: binding, completion: completion)
                         }
-                    } else { self.copyCurrentURL() }
+                    }
                 case "split:": self.toggleSplit()
                 default: break
                 }

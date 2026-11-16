@@ -139,6 +139,14 @@ import CoreText
         controller!.isOwnerAvailable = { false }
         expect(!controller!.canActivateCommand("newTab:"), "Lost original owner refuses command availability")
         expect(!controller!.activateCommand("unknown:"), "Unrelated commands cannot enter education dispatch")
+        expect(EssentialsCopyRoute(hasURL: false, commandBarOpen: false, hasNativePage: true) == .unavailable,
+               "Without an address Copy stays greyed out")
+        expect(EssentialsCopyRoute(hasURL: true, commandBarOpen: false, hasNativePage: true) == .commandWindow,
+               "A page's Copy is offered and performed through the engine's command-window admission")
+        expect(EssentialsCopyRoute(hasURL: true, commandBarOpen: true, hasNativePage: true) == .currentURL,
+               "An open command bar copies its highlighted result")
+        expect(EssentialsCopyRoute(hasURL: true, commandBarOpen: false, hasNativePage: false) == .currentURL,
+               "A tab without a web page copies its saved address")
         let target = EssentialsMenuTarget(), copyItem = menu.items[2]
         copyItem.target = target
         func copyEvent(repeating: Bool, flags: NSEvent.ModifierFlags = [.command, .shift],

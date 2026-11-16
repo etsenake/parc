@@ -3,6 +3,14 @@ import Combine
 import CoreText
 import SwiftUI
 
+enum EssentialsCopyRoute: Equatable {
+    case unavailable, currentURL, commandWindow
+
+    init(hasURL: Bool, commandBarOpen: Bool, hasNativePage: Bool) {
+        if !hasURL { self = .unavailable } else if commandBarOpen || !hasNativePage { self = .currentURL } else { self = .commandWindow }
+    }
+}
+
 @MainActor
 final class ShortcutEssentialsWindow: NSWindowController {
     static let commandIDs = ["newTab:", "cycleToNextRecentTab:", "copyCurrentURL:", "split:"]

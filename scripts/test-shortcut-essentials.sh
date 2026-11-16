@@ -13,3 +13,4 @@ xcrun swiftc -whole-module-optimization -warnings-as-errors -parse-as-library -t
   "$repo_root/tests/KeyboardNavigation/EssentialsTests.swift" \
   -o "$check_dir/essentials"
 "$check_dir/essentials" "$repo_root/Resources/NoteFonts/Nunito-ExtraBold.ttf"
+python3 "$repo_root/tests/KeyboardNavigation/essentials_copy_check.py"
