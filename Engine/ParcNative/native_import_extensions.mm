@@ -11,6 +11,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/extensions/extension_management.h"
 #include "chrome/browser/extensions/webstore_install_with_prompt.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
@@ -27,6 +28,7 @@
 #include "extensions/browser/install_prompt_data.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/uninstall_reason.h"
+#include "extensions/common/extension_urls.h"
 #include "extensions/common/manifest.h"
 
 @interface PCNativeImportExtensionRequest ()
@@ -48,25 +50,47 @@
   return self;
 }
 @end
+@interface PCNativeImportExtensionFailure ()
+- (instancetype)initWithIdentifier:(NSString*)identifier
+                              name:(NSString*)name
+                       profilePath:(NSString*)profilePath
+                       restriction:(PCNativeExtensionRestriction)restriction;
+@end
+@implementation PCNativeImportExtensionFailure
+@synthesize identifier = _identifier, name = _name, profilePath = _profilePath,
+            restriction = _restriction;
+- (instancetype)initWithIdentifier:(NSString*)identifier
+                              name:(NSString*)name
+                       profilePath:(NSString*)profilePath
+                       restriction:(PCNativeExtensionRestriction)restriction {
+  if ((self = [super init])) {
+    _identifier = [identifier copy];
+    _name = [name copy];
+    _profilePath = [profilePath copy];
+    _restriction = restriction;
+  }
+  return self;
+}
+@end
 @interface PCNativeImportExtensionResult ()
 - (instancetype)initWithOutcome:(PCNativeImportOutcome)outcome
                       installed:(NSSet<NSString*>*)installed
                      installing:(NSSet<NSString*>*)installing
-                         failed:(NSArray<NSString*>*)failed;
+                       failures:(NSArray<PCNativeImportExtensionFailure*>*)failures;
 @end
 @implementation PCNativeImportExtensionResult
 @synthesize outcome = _outcome, installedIdentifiers = _installedIdentifiers,
             installingIdentifiers = _installingIdentifiers,
-            failedNames = _failedNames;
+            failures = _failures;
 - (instancetype)initWithOutcome:(PCNativeImportOutcome)outcome
                       installed:(NSSet<NSString*>*)installed
                      installing:(NSSet<NSString*>*)installing
-                         failed:(NSArray<NSString*>*)failed {
+                       failures:(NSArray<PCNativeImportExtensionFailure*>*)failures {
   if ((self = [super init])) {
     _outcome = outcome;
     _installedIdentifiers = [installed copy];
     _installingIdentifiers = [installing copy];
-    _failedNames = [failed copy];
+    _failures = [failures copy];
   }
   return self;
 }
@@ -75,6 +99,37 @@
 namespace parc::importer {
 namespace {
 constexpr uint32_t kExtensionCategory = PCNativeImportCategoryExtensions;
+NSString* const kRestrictionKey = @"PCNativeExtensionRestriction";
+NSError* RestrictedError(NSString* message,
+                         PCNativeExtensionRestriction restriction) {
+  NSError* error = ImportError(message);
+  if (restriction == PCNativeExtensionRestrictionNone)
+    return error;
+  NSMutableDictionary* info = [error.userInfo mutableCopy];
+  info[kRestrictionKey] = @(restriction);
+  return [NSError errorWithDomain:error.domain code:error.code userInfo:info];
+}
+PCNativeExtensionRestriction InstallRestriction(
+    Profile* profile,
+    const std::string& id,
+    extensions::webstore_install::Result result) {
+  if (result == extensions::webstore_install::BLOCKLISTED)
+    return PCNativeExtensionRestrictionBlocklisted;
+  if (!profile || profile->ShutdownStarted())
+    return PCNativeExtensionRestrictionNone;
+  if (profile->IsChild())
+    return PCNativeExtensionRestrictionParentalApproval;
+  auto* management =
+      extensions::ExtensionManagementFactory::GetForBrowserContext(profile);
+  if (!management)
+    return PCNativeExtensionRestrictionNone;
+  const auto mode = management->GetInstallationMode(
+      id, extension_urls::GetWebstoreUpdateUrl().spec());
+  return mode == extensions::ManagedInstallationMode::kBlocked ||
+                 mode == extensions::ManagedInstallationMode::kRemoved
+             ? PCNativeExtensionRestrictionAdministrator
+             : PCNativeExtensionRestrictionNone;
+}
 class Batch;
 std::vector<std::weak_ptr<Batch>>& LiveBatches() {
   static base::NoDestructor<std::vector<std::weak_ptr<Batch>>> batches;
@@ -122,7 +177,7 @@ class Batch final : public ProfileObserver,
                     public std::enable_shared_from_this<Batch> {
  public:
   using Completion = void (^)(PCNativeImportExtensionResult*);
-  using Failures = void (^)(NSArray<NSString*>*);
+  using Failures = void (^)(NSArray<PCNativeImportExtensionFailure*>*);
   struct Group {
     std::shared_ptr<const ProfileData> source;
     NSString* __strong path;
@@ -237,6 +292,7 @@ class Batch final : public ProfileObserver,
     size_t group;
     std::string id, name;
     State state = kQueued;
+    PCNativeExtensionRestriction restriction = PCNativeExtensionRestrictionNone;
     scoped_refptr<Installer> installer;
     base::TimeTicks started;
     bool background = false, elsewhere = false;
@@ -340,6 +396,8 @@ class Batch final : public ProfileObserver,
       } else if (!confirmed.contains(id) || !group.profile ||
                  group.profile->ShutdownStarted() || group.profile->IsChild()) {
         item.state = Item::kFailed;
+        item.restriction = InstallRestriction(
+            group.profile.get(), id, extensions::webstore_install::OTHER_ERROR);
       } else if (extensions::ExtensionRegistry::Get(group.profile.get())
                      ->enabled_extensions()
                      .Contains(id)) {
@@ -406,6 +464,9 @@ class Batch final : public ProfileObserver,
       item.state = success          ? Item::kInstalled
                    : item.elsewhere ? Item::kDeclined
                                     : Item::kFailed;
+      if (item.state == Item::kFailed)
+        item.restriction = InstallRestriction(
+            groups_[item.group].profile.get(), item.id, result);
       --pending_;
     }
     item.installer = nullptr;
@@ -440,15 +501,14 @@ class Batch final : public ProfileObserver,
     ReleaseDestinations();
     NSMutableSet<NSString*>* installed = [NSMutableSet set];
     NSMutableSet<NSString*>* installing = [NSMutableSet set];
-    NSMutableArray<NSString*>* failed = [NSMutableArray array];
+    NSMutableArray<PCNativeImportExtensionFailure*>* failed = [NSMutableArray array];
     for (auto& item : items_) {
-      NSString* name = base::SysUTF8ToNSString(item.name);
       if (item.state == Item::kInstalled)
         [installed addObject:base::SysUTF8ToNSString(item.id)];
       else if (item.state == Item::kInstalling || item.elsewhere)
         [installing addObject:base::SysUTF8ToNSString(item.id)];
-      else if (item.state == Item::kFailed && ![failed containsObject:name])
-        [failed addObject:name];
+      else if (item.state == Item::kFailed)
+        [failed addObject:Failure(item)];
       item.background = item.state == Item::kInstalling;
     }
     if (cancelled_)
@@ -462,7 +522,7 @@ class Batch final : public ProfileObserver,
         [[PCNativeImportExtensionResult alloc] initWithOutcome:outcome
                                                      installed:installed
                                                     installing:installing
-                                                        failed:failed];
+                                                      failures:failed];
     auto completion = completion_;
     completion_ = nil;
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
@@ -477,13 +537,10 @@ class Batch final : public ProfileObserver,
   void Finish() {
     auto keep = shared_from_this();
     finished_ = true;
-    NSMutableArray<NSString*>* failed = [NSMutableArray array];
-    for (const auto& item : items_) {
-      NSString* name = base::SysUTF8ToNSString(item.name);
-      if (item.background && item.state == Item::kFailed &&
-          ![failed containsObject:name])
-        [failed addObject:name];
-    }
+    NSMutableArray<PCNativeImportExtensionFailure*>* failed = [NSMutableArray array];
+    for (const auto& item : items_)
+      if (item.background && item.state == Item::kFailed)
+        [failed addObject:Failure(item)];
     Failures background = nil;
     if (failed.count)
       background = background_;
@@ -491,13 +548,21 @@ class Batch final : public ProfileObserver,
     Stop();
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(
-                       [](std::shared_ptr<Batch> self, NSArray<NSString*>* failed,
+                       [](std::shared_ptr<Batch> self,
+                          NSArray<PCNativeImportExtensionFailure*>* failed,
                           Failures background) {
                          self->lifetime_.reset();
                          if (background)
                            background(failed);
                        },
                        keep, failed, background));
+  }
+  PCNativeImportExtensionFailure* Failure(const Item& item) const {
+    return [[PCNativeImportExtensionFailure alloc]
+        initWithIdentifier:base::SysUTF8ToNSString(item.id)
+                      name:base::SysUTF8ToNSString(item.name)
+               profilePath:groups_[item.group].path
+               restriction:item.restriction];
   }
   void ReleaseDestinations() {
     for (NSString* path in reserved_)
@@ -548,8 +613,8 @@ bool ImportMayInstall(NSString* path, const std::string& id) {
                        return batch && batch->MayInstall(path, id);
                      });
 }
-}  // namespace
-}  // namespace parc::importer
+}
+}
 
 @implementation PCNativeBrowserApplication (ImportedExtensions)
 + (PCNativeImportSession*)installImportedExtensions:
@@ -558,7 +623,8 @@ bool ImportMayInstall(NSString* path, const std::string& id) {
                                              (void (^)(PCNativeImportExtensionResult*))
                                                  completion
                                  backgroundFailures:
-                                     (void (^)(NSArray<NSString*>*))backgroundFailures {
+                                     (void (^)(NSArray<PCNativeImportExtensionFailure*>*))
+                                         backgroundFailures {
   CHECK(NSThread.isMainThread);
   if (!requests.count || !completion || !backgroundFailures)
     return nil;
@@ -664,7 +730,9 @@ class Session final : public std::enable_shared_from_this<Session> {
             return;
           }
           if (profile->IsChild()) {
-            self->Finish(importer::ImportError(@"This Profile requires parental approval to install extensions."));
+            self->Finish(importer::RestrictedError(
+                @"This Profile requires parental approval to install extensions.",
+                PCNativeExtensionRestrictionParentalApproval));
             return;
           }
           self->context_ = context;
@@ -693,7 +761,7 @@ class Session final : public std::enable_shared_from_this<Session> {
       return;
     }
     if (next_ == candidates_.size()) {
-      Finish(error_ ?: importer::ImportError(failure_));
+      Finish(importer::RestrictedError(error_.localizedDescription ?: failure_, restriction_));
       return;
     }
     error_ = nil;
@@ -701,7 +769,7 @@ class Session final : public std::enable_shared_from_this<Session> {
     const bool existed = registry->GetInstalledExtension(id) != nullptr;
     installer_ = base::MakeRefCounted<Installer>(id, *profile_,
         base::BindOnce([](std::weak_ptr<Session> weak, std::string id, bool existed, bool success,
-                          const std::string& message, extensions::webstore_install::Result) {
+                          const std::string& message, extensions::webstore_install::Result result) {
           auto self = weak.lock();
           if (!self) return;
           if (success && !existed && self->profile_ &&
@@ -709,6 +777,12 @@ class Session final : public std::enable_shared_from_this<Session> {
             self->disabled_.push_back(id);
           if (!success && !message.empty())
             self->error_ = importer::ImportError(base::SysUTF8ToNSString(message));
+          if (!success) {
+            const auto restriction = importer::InstallRestriction(self->profile_.get(), id, result);
+            self->restriction_ = self->failures_++ == 0 || self->restriction_ == restriction
+                                     ? restriction
+                                     : PCNativeExtensionRestrictionNone;
+          }
           base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
               base::BindOnce([](std::shared_ptr<Session> self) {
                 self->installer_ = nullptr;
@@ -733,6 +807,8 @@ class Session final : public std::enable_shared_from_this<Session> {
   size_t next_ = 0;
   NSString* __strong failure_;
   NSError* __strong error_;
+  PCNativeExtensionRestriction restriction_ = PCNativeExtensionRestrictionNone;
+  size_t failures_ = 0;
   void (^completion_)(NSError*);
   parc::NativeProfileLeasePtr context_;
   base::WeakPtr<Profile> profile_;
@@ -814,19 +890,27 @@ class Removal final : public extensions::ExtensionRegistryObserver,
     const extensions::Extension* extension =
         extensions::ExtensionRegistry::Get(profile_.get())->GetInstalledExtension(id);
     if (!extension) return;
+    if (extensions::Manifest::IsPolicyLocation(extension->location())) {
+      error_ = importer::RestrictedError(@"Your administrator keeps this ad blocker installed.",
+                                         PCNativeExtensionRestrictionAdministrator);
+      return;
+    }
     if (extensions::Manifest::IsExternalLocation(extension->location())) {
-      error_ = importer::ImportError(@"An ad blocker installed by another app can't be removed here.");
+      error_ = importer::RestrictedError(@"An ad blocker installed by another app can't be removed here.",
+                                         PCNativeExtensionRestrictionOtherApp);
       return;
     }
     auto* policy = extensions::ExtensionSystem::Get(profile_.get())->management_policy();
     std::u16string message;
+    NSString* fallback = @"An imported ad blocker could not be removed.";
     if (!policy->UserMayModifySettings(extension, &message) ||
-        policy->MustRemainInstalled(extension, &message) ||
-        !extensions::ExtensionRegistrar::Get(profile_.get())->UninstallExtension(
-            id, extensions::UNINSTALL_REASON_INTERNAL_MANAGEMENT, &message)) {
-      error_ = importer::ImportError(message.empty()
-          ? @"An imported ad blocker could not be removed."
-          : base::SysUTF16ToNSString(message));
+        policy->MustRemainInstalled(extension, &message)) {
+      error_ = importer::RestrictedError(
+          message.empty() ? fallback : base::SysUTF16ToNSString(message),
+          PCNativeExtensionRestrictionAdministrator);
+    } else if (!extensions::ExtensionRegistrar::Get(profile_.get())->UninstallExtension(
+                   id, extensions::UNINSTALL_REASON_INTERNAL_MANAGEMENT, &message)) {
+      error_ = importer::ImportError(message.empty() ? fallback : base::SysUTF16ToNSString(message));
     }
   }
   void Expire() {
@@ -866,8 +950,8 @@ class Removal final : public extensions::ExtensionRegistryObserver,
   std::shared_ptr<Removal> lifetime_;
   bool finished_ = false;
 };
-}  // namespace
-}  // namespace parc::setup_extension
+}
+}
 
 @implementation PCNativeBrowserApplication (SetupPasswordExtension)
 + (void)installICloudPasswordsExtensionToProfilePath:(NSString*)profilePath
@@ -902,5 +986,13 @@ class Removal final : public extensions::ExtensionRegistryObserver,
   auto removal = std::make_shared<parc::setup_extension::Removal>(profilePath, std::move(ids), completion);
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
       base::BindOnce(&parc::setup_extension::Removal::Start, std::move(removal)));
+}
++ (PCNativeExtensionRestriction)extensionRestrictionForError:(NSError*)error {
+  id raw = error.userInfo[parc::importer::kRestrictionKey];
+  NSNumber* value = [raw isKindOfClass:[NSNumber class]] ? raw : nil;
+  if (!value || value.integerValue <= PCNativeExtensionRestrictionNone ||
+      value.integerValue > PCNativeExtensionRestrictionBlocklisted)
+    return PCNativeExtensionRestrictionNone;
+  return static_cast<PCNativeExtensionRestriction>(value.integerValue);
 }
 @end

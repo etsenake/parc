@@ -111,11 +111,22 @@ extension BrowserWindowController {
         }
         guard let notice = ImportedExtensionFailures.take() else { return }
         func failed(_ change: ImportedExtensionFailures.Failure.Change) -> [ParcToastContent.FailedExtension] {
-            notice.failures.filter { $0.change == change }.map { .init(name: $0.name, profile: $0.profile) }
+            notice.failures.filter { $0.change == change }.map {
+                .init(name: $0.name, profile: $0.profile, reason: $0.reason.map(Self.explained))
+            }
         }
         importFailureNotice = showToast(.extensionsNotApplied(added: failed(.add), removed: failed(.removal), retry: notice.canRetry),
                                         at: .window, onRetry: notice.canRetry ? { notice.retry() } : nil)
         if importFailureNotice == nil { ImportedExtensionFailures.restore(notice) }
+    }
+
+    private static func explained(_ reason: ImportedExtensionFailures.Failure.Reason) -> ParcToastContent.FailedExtension.Reason {
+        switch reason {
+        case .administrator: return .administrator
+        case .otherApp: return .otherApp
+        case .parentalApproval: return .parentalApproval
+        case .blocklisted: return .blocklisted
+        }
     }
 
     func showImportFailuresWhenIdle() {

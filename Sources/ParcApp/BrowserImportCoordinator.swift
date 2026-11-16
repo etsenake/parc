@@ -124,6 +124,7 @@ final class BrowserImportCoordinator {
     private var pendingExtensions: [(profile: PCNativeImportProfile, destination: BrowserImportDestination, ids: Set<String>)] = []
     private var extensionInstall: PCNativeImportSession?
     private var extensionBatch: UUID?
+    private var announcedExtensions = Set<String>()
     private let arcSidebarURL: URL
     private let arcPreferencesURL: URL
     private let safariExportRoot: URL
@@ -410,6 +411,7 @@ final class BrowserImportCoordinator {
         stage = .importing; completed = 0; bookmarkPages = []; importedAdBlockers = []; error = nil
         dataFailed = false; dataImported = false; dataFailureReported = false
         pendingExtensions = []; backgroundProfiles = []; extensionBatch = nil; passwordStageOffered = false
+        announcedExtensions = []
         keepsPasswordChoice = false; passwordsWithoutData = false; parkedStage = nil
         queue = []; queuedDestinations = [:]; usedProfiles = []; activeDestination = nil
         generation = UUID()
@@ -595,9 +597,12 @@ final class BrowserImportCoordinator {
         guard let host = (window?.isVisible == true ? window : nil) ?? NSApp.windows.first(where: { $0.isVisible }) ?? window else {
             if !backgroundProfiles.isEmpty { dataFailed = true }
             reportBackgroundWarnings(backgroundProfiles.map { "\($0.profile.displayName) could not be imported." })
-            backgroundProfiles = []; reportFailedExtensions(pendingExtensions.flatMap { item in
-                item.profile.extensions.filter { item.ids.contains($0.identifier) }.map(\.displayName) },
-                announcing: !dataFailed)
+            let naming = namesExtensionProfiles(pendingExtensions)
+            backgroundProfiles = []
+            for entry in pendingExtensions {
+                reportFailedExtensions(extensionItems(entry, namingProfile: naming),
+                                       retryable: entry.destination.isCurrent(in: store.state), announcing: !dataFailed)
+            }
             pendingExtensions = []; finishBackground(); return
         }
         startBackground(in: host)
@@ -610,12 +615,15 @@ final class BrowserImportCoordinator {
 
     private func installExtensions() {
         let pending = pendingExtensions; pendingExtensions = []
+        let naming = namesExtensionProfiles(pending)
         var requests: [PCNativeImportExtensionRequest] = [], requested: [String: Set<String>] = [:]
         var items: [PCNativeImportExtension] = [], destinations: [String: [UUID]] = [:]
+        var attempts: [ImportedExtensionRetries.Item] = [], attempted: [String: ImportedExtensionRetries.Item] = [:]
         for item in pending {
             let chosen = item.profile.extensions.filter { item.ids.contains($0.identifier) }
+            let retries = extensionItems(item, namingProfile: naming)
             guard item.destination.isCurrent(in: store.state) else {
-                reportFailedExtensions(chosen.map(\.displayName), announcing: !dataFailed); continue
+                reportFailedExtensions(retries, retryable: false, announcing: !dataFailed); continue
             }
             let path = store.independentEngineProfilePath(for: item.destination.profileID)
             let ids = item.ids.subtracting(requested[path] ?? [])
@@ -623,6 +631,9 @@ final class BrowserImportCoordinator {
             requested[path, default: []].formUnion(ids)
             requests.append(PCNativeImportExtensionRequest(source: item.profile, profilePath: path, extensionIDs: ids))
             items += chosen.filter { ids.contains($0.identifier) }
+            for retry in retries where ids.contains(retry.identifier) {
+                attempts.append(retry); attempted[path + "\n" + retry.identifier] = retry
+            }
             for id in ids where !(destinations[id]?.contains(item.destination.profileID) ?? false) {
                 destinations[id, default: []].append(item.destination.profileID)
             }
@@ -630,11 +641,18 @@ final class BrowserImportCoordinator {
         guard !requests.isEmpty else { finishBackground(); return }
         let token = backgroundToken, batch = UUID()
         extensionBatch = batch
+        let failed = { (failures: [PCNativeImportExtensionFailure]) in
+            failures.compactMap { failure in
+                attempted[failure.profilePath + "\n" + failure.identifier].map {
+                    var item = $0; item.reason = .init(failure.restriction); return item
+                }
+            }
+        }
 
         extensionInstall = PCNativeBrowserApplication.installImportedExtensions(requests, completion: { [weak self] result in
             guard let self, self.backgroundToken == token, !self.cancelled else { return }
             self.extensionInstall = nil
-            self.reportFailedExtensions(result.failedNames, announcing: !self.dataFailed)
+            self.reportFailedExtensions(failed(result.failures), announcing: !self.dataFailed)
             ImportedExtensionFailures.clearFailed(result.installedIdentifiers)
             let added = result.installedIdentifiers.union(result.installingIdentifiers)
                 .subtracting(ImportedExtensionFailures.failedIdentifiers)
@@ -651,21 +669,40 @@ final class BrowserImportCoordinator {
             }
             self.onChange?()
             self.finishBackground()
-        }, backgroundFailures: { [weak self] names in
-            ImportedExtensionFailures.recordFailed(items.filter { names.contains($0.displayName) }.map(\.identifier))
+        }, backgroundFailures: { [weak self, weak store] failures in
+            ImportedExtensionFailures.recordFailed(failures.map(\.identifier))
             self?.importedAdBlockers.removeAll { ImportedExtensionFailures.failedIdentifiers.contains($0.identifier) }
             if let self, !self.detached, self.isCurrent, self.extensionBatch == batch {
-                self.reportFailedExtensions(names, announcing: !self.dataFailed); self.onChange?()
-            } else { ImportedExtensionFailures.add(names) }
+                self.reportFailedExtensions(failed(failures), announcing: !self.dataFailed); self.onChange?()
+            } else if let store {
+                for item in failed(failures) { ImportedExtensionRetries.record(item, store: store) }
+            }
         })
-        if extensionInstall == nil { reportFailedExtensions(items.map(\.displayName), announcing: !dataFailed); finishBackground() }
+        if extensionInstall == nil { reportFailedExtensions(attempts, announcing: !dataFailed); finishBackground() }
     }
 
-    private func reportFailedExtensions(_ names: [String], announcing: Bool = true) {
+    private func namesExtensionProfiles(_ pending: [(profile: PCNativeImportProfile, destination: BrowserImportDestination,
+                                                     ids: Set<String>)]) -> Bool {
+        Set(pending.map(\.destination.profileID)).count > 1
+    }
+
+    private func extensionItems(_ entry: (profile: PCNativeImportProfile, destination: BrowserImportDestination, ids: Set<String>),
+                                namingProfile: Bool) -> [ImportedExtensionRetries.Item] {
+        let profile = namingProfile ? store.state.profiles.first { $0.id == entry.destination.profileID }?.name : nil
+        return entry.profile.extensions.filter { entry.ids.contains($0.identifier) }.map {
+            .init(source: entry.profile, identifier: $0.identifier, name: $0.displayName,
+                  destination: entry.destination, profile: profile)
+        }
+    }
+
+    private func reportFailedExtensions(_ items: [ImportedExtensionRetries.Item], retryable: Bool = true,
+                                        announcing: Bool = true) {
         var seen = Set(warnings)
-        let fresh = names.filter { seen.insert("\($0) couldn’t be added.").inserted }
-        if announcing, !fresh.isEmpty { ImportedExtensionFailures.add(fresh) }
-        warnings += fresh.map { "\($0) couldn’t be added." }
+        warnings += items.map { "\($0.name) couldn’t be added." }.filter { seen.insert($0).inserted }
+        guard announcing else { return }
+        for item in items where announcedExtensions.insert(item.target).inserted {
+            ImportedExtensionRetries.record(item, retryable: retryable, store: store)
+        }
     }
 
     private var hasPendingBookmarks: Bool {
@@ -1192,10 +1229,23 @@ enum ImportedBrowserDataFailures {
 enum ImportedExtensionFailures {
     struct Failure: Hashable {
         enum Change: Hashable { case add, removal }
+        enum Reason: Hashable {
+            case administrator, otherApp, parentalApproval, blocklisted
+            init?(_ restriction: PCNativeExtensionRestriction) {
+                switch restriction {
+                case .administrator: self = .administrator
+                case .otherApp: self = .otherApp
+                case .parentalApproval: self = .parentalApproval
+                case .blocklisted: self = .blocklisted
+                default: return nil
+                }
+            }
+        }
         var change: Change = .add
         var name: String
         var profile: String? = nil
         var target: String? = nil
+        var reason: Reason? = nil
     }
     struct Notice {
         let failures: [Failure]
@@ -1213,18 +1263,19 @@ enum ImportedExtensionFailures {
         failedIdentifiers.formUnion(identifiers)
         NotificationCenter.default.post(name: didFail, object: nil)
     }
-    static func add(_ names: [String]) {
-        for name in names { insert(Failure(name: name), retry: nil) }
-        present?()
-    }
     static func record(_ failure: Failure, retry: (@MainActor () -> Void)? = nil) {
-        insert(failure, retry: retry)
+        if !pending.contains(failure) { pending.append(failure) }
+        if let retry, failure.reason == nil { retries[failure] = retry }
         present?()
     }
     static func take() -> Notice? {
-        let plain = pending.filter { retries[$0] == nil }
-        let shown = plain.isEmpty ? pending : plain
-        guard !shown.isEmpty else { return nil }
+        guard let first = pending.first(where: { retries[$0] == nil && $0.reason == nil })
+                ?? pending.first(where: { retries[$0] == nil }) ?? pending.first else { return nil }
+        let shown = pending.filter { failure in
+            guard retries[first] == nil else { return retries[failure] != nil }
+            return retries[failure] == nil && failure.reason == first.reason
+                && (first.reason == nil || failure.change == first.change)
+        }
         pending.removeAll { shown.contains($0) }
         var taken: [Failure: @MainActor () -> Void] = [:]
         for failure in shown { taken[failure] = retries.removeValue(forKey: failure) }
@@ -1233,10 +1284,6 @@ enum ImportedExtensionFailures {
     static func restore(_ notice: Notice) {
         pending = notice.failures + pending.filter { !notice.failures.contains($0) }
         retries.merge(notice.retries) { current, _ in current }
-    }
-    private static func insert(_ failure: Failure, retry: (@MainActor () -> Void)?) {
-        if !pending.contains(failure) { pending.append(failure) }
-        if let retry { retries[failure] = retry }
     }
 }
 

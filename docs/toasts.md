@@ -79,7 +79,7 @@ stay separate named buttons.
 | Clear Archive | Archive Cleared |
 | Put Back | Tab restored to the named Space; click to view |
 | Clear Today | Cleared Tabs! Use Command-Z to undo |
-| Import or setup failure | Import-data result, then extensions Parc can't retry, then setup's own Couldn’t add/remove with Retry |
+| Import or setup failure | Import-data result, then extension changes Parc can't retry (saying why when it's known), then Couldn’t add/remove with Retry |
 | Copy/drop failures | Actual Parc error wording |
 
 Copy feedback uses the actual copied URL when it retains the page's scheme,

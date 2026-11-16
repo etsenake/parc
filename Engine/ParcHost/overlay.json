@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 751,
+  "version": 752,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -339,7 +339,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "parc/native/native_appkit_bridge.h",
-      "sha256": "075538c8d86ae7e4da523a50608b9f0789d82c6088f4410eba7620661378249a"
+      "sha256": "e92ab84a5f2037cdce7bb135da9f33db2fca366d980b119d2a2822a41fc682fc"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -1319,7 +1319,7 @@
     {
       "source": "Engine/ParcNative/native_import_extensions.mm",
       "target": "parc/native/native_import_extensions.mm",
-      "sha256": "07b59a718263ca4fc37677ae203b2de0282f0bdb97b5e50b7517890646b75de6"
+      "sha256": "cb841ff1e4a64e393a08fcb1d18e5b5888f5092fe7e0510673943a2a5ca35004"
     },
     {
       "source": "Engine/ParcNative/native_import_internal.h",

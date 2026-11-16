@@ -100,21 +100,30 @@ The accepted choice applies once after setup completes. Keeping one removes
 other imported blockers from their recorded destination Profiles; keeping all
 changes none. Yes requests uBlock Origin and falls back to uBlock Origin Lite
 when Manifest V2 is refused. Native removal is restricted to known blocker IDs,
-refuses external installs and can wait up to ten minutes for an outstanding
-download; a blocker still downloading then counts as not removed. Each blocker is
-removed separately, so a failure is attributed to the right one. The browser
-window shows **Couldn’t add uBlock Origin Lite** or **Couldn’t remove** with the
-blocker's name; when that blocker was being removed from more than one Profile,
-the notice says which, as in “from Work and School” (beyond three, “and 2 more”).
-Failures that arrive together share one notice: a single failure is named and
-several are counted, and a failed add sits above a failed removal. Its **Retry**
-runs every listed install or removal again; one that fails again brings the
-notice back. Failures Parc can't retry, such as the import's own extensions or
-iCloud Passwords refused by Apple's helper, get an earlier notice without Retry,
-and an import-data failure notice goes before both. Each waiting notice appears
-once the one before it finishes on its own (time, a click, Retry or a scroll)
-while the window stays in front, otherwise when the window next comes forward.
-These are actual engine operations, not consequences of simply selecting a row.
+leaves blockers that an administrator's policy or another app installed, and
+can wait up to ten minutes for an outstanding download; a blocker still
+downloading then counts as not removed. Each blocker is removed separately, so a
+failure is attributed to the right one. The browser window shows **Couldn’t add
+uBlock Origin Lite** or **Couldn’t remove** with the blocker's name; when that
+blocker was being removed from more than one Profile, the notice says which, as
+in “from Work and School” (beyond three, “and 2 more”). Failures that arrive
+together share one notice: a single failure is named and several are counted,
+and a failed add sits above a failed removal. Its **Retry** runs every listed
+install or removal again; one that fails again brings the notice back. The
+import's own extension failures work the same way (see
+[browser import](browser-import.md#sequencing-and-cancellation)), and their
+retries stay with the import's installs, never setup's.
+
+When the engine knows a change can never work, the notice says why instead of
+offering Retry: “Kept installed by your administrator” or “by another app” for a
+removal, “Blocked by your administrator”, “Needs a parent’s approval” or
+“Flagged as unsafe” for an add. Those, and failures Parc can't retry at all,
+such as iCloud Passwords refused by Apple's helper, get earlier notices without
+Retry, one per reason, and an import-data failure notice goes before them all.
+Each waiting notice appears once the one before it finishes on its own (time, a
+click, Retry or a scroll) while the window stays in front, otherwise when
+the window next comes forward. These are actual engine operations, not
+consequences of simply selecting a row.
 
 ## Welcome presentation
 

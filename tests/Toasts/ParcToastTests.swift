@@ -95,6 +95,26 @@ import AppKit
               == "Couldn’t remove 2 ad blockers", "several blockers are counted, not listed with their Profiles")
         check(label(.extensionsNotApplied(added: failed("uBlock Origin Lite", in: "Work"), removed: []))
               == "Couldn’t add uBlock Origin Lite to Work", "an add names its Profile with “to”")
+        func kept(_ reason: ParcToastContent.FailedExtension.Reason, _ names: String...,
+                  removing: Bool = true) -> ParcToastContent.Body {
+            let failures = names.map { ParcToastContent.FailedExtension(name: $0, profile: "Work", reason: reason) }
+            return ParcToastContent.extensionsNotApplied(added: removing ? [] : failures, removed: removing ? failures : []).body
+        }
+        check(kept(.otherApp, "AdBlock") == .standard(icon: nil, label: "Couldn’t remove AdBlock from Work",
+                                                      subLabel: "Kept installed by another app", buttons: [])
+              && kept(.administrator, "AdBlock", "Ghostery") == .standard(icon: nil, label: "Couldn’t remove 2 ad blockers",
+                                                                         subLabel: "Kept installed by your administrator", buttons: [])
+              && kept(.administrator, "Grammarly", removing: false) == .standard(icon: nil, label: "Couldn’t add Grammarly to Work",
+                                                                                subLabel: "Blocked by your administrator", buttons: [])
+              && kept(.parentalApproval, "Grammarly", removing: false) == .standard(icon: nil, label: "Couldn’t add Grammarly to Work",
+                                                                                   subLabel: "Needs a parent’s approval", buttons: [])
+              && kept(.blocklisted, "Grammarly", removing: false) == .standard(icon: nil, label: "Couldn’t add Grammarly to Work",
+                                                                              subLabel: "Flagged as unsafe", buttons: []),
+              "a change that can never work says why instead of inviting a retry")
+        let mixed = ParcToastContent.extensionsNotApplied(added: [.init(name: "Grammarly")],
+                                                          removed: [.init(name: "AdBlock", reason: .otherApp)])
+        check(mixed.body == .standard(icon: nil, label: "Couldn’t add Grammarly", subLabel: "Couldn’t remove AdBlock", buttons: []),
+              "a reason only replaces the second line when it covers the whole notice")
         check(label(.tabRestored(to: "Work", selected: false)) == "Tab restored to Work. Click to view."
               && label(.tabRestored(to: "Work", selected: true)) == "Tab restored to Work", "tabUnarchived wording")
         check(label(.pinnedToFolder("Reading")) == "Pinned to “Reading”", "tabPinnedToFolder")

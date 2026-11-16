@@ -4,8 +4,20 @@ import SwiftUI
 struct ParcToastContent: Equatable {
     enum Button: Equatable { case share([URL]), retry }
     struct FailedExtension: Equatable {
+        enum Reason: Equatable {
+            case administrator, otherApp, parentalApproval, blocklisted
+            func explanation(removing: Bool) -> String {
+                switch self {
+                case .administrator: return removing ? "Kept installed by your administrator" : "Blocked by your administrator"
+                case .otherApp: return removing ? "Kept installed by another app" : "Managed by another app"
+                case .parentalApproval: return "Needs a parent’s approval"
+                case .blocklisted: return "Flagged as unsafe"
+                }
+            }
+        }
         var name: String
         var profile: String? = nil
+        var reason: Reason? = nil
     }
     enum Body: Equatable {
         case standard(icon: String?, label: String, subLabel: String?, buttons: [Button])
@@ -52,7 +64,10 @@ struct ParcToastContent: Equatable {
             return "Couldn’t \(verb) " + name + (profiles.isEmpty ? "" : " \(place) " + listed(profiles))
         }
         let lines = [line("add", "to", added, "extensions"), line("remove", "from", removed, "ad blockers")].compactMap { $0 }
-        return standard(lines.first ?? "", subLabel: lines.dropFirst().first, buttons: retry ? [.retry] : [])
+        let reason = (added + removed).first?.reason
+        let explained = lines.count == 1 && (added + removed).allSatisfy { $0.reason == reason }
+        let subLabel = explained ? reason?.explanation(removing: !removed.isEmpty) : lines.dropFirst().first
+        return standard(lines.first ?? "", subLabel: subLabel, buttons: retry ? [.retry] : [])
     }
     private static func listed(_ names: [String]) -> String {
         switch names.count {

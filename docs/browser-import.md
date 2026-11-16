@@ -39,6 +39,16 @@ later imports wait for earlier background work rather than racing the same
 owner. Failures are reported as partial or failed, preserving already committed
 data.
 
+The engine reports each extension it couldn't add with its destination Profile
+and the reason when one is known. Each failure reaches the browser window's
+[notice](onboarding.md#included-setup-order-and-ad-blocker-branch), except those
+known when the import ends with failed data, whose single notice covers them. It
+names the Profile when the import was adding extensions to more than one, as in
+“Couldn’t add Grammarly to Work”, and **Retry** installs just that extension
+again from the same source Profile into the same Parc Profile. An extension whose
+destination went away before installing has no Retry, and a policy, parental or
+safety block says so instead of offering one.
+
 All callbacks check generation, source lease and original/current destination.
 Stop waits for the actual native result. Cancellation is not rollback: confirmed
 category data and returned bookmark results survive. Retrying bookmark insertion

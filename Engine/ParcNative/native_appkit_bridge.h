@@ -1679,13 +1679,30 @@ __attribute__((visibility("default")))
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
 @end
+typedef NS_ENUM(NSInteger, PCNativeExtensionRestriction) {
+  PCNativeExtensionRestrictionNone,
+  PCNativeExtensionRestrictionAdministrator,
+  PCNativeExtensionRestrictionOtherApp,
+  PCNativeExtensionRestrictionParentalApproval,
+  PCNativeExtensionRestrictionBlocklisted,
+};
+NS_SWIFT_UI_ACTOR
+__attribute__((visibility("default")))
+@interface PCNativeImportExtensionFailure : NSObject
+@property(nonatomic, readonly, copy) NSString* identifier;
+@property(nonatomic, readonly, copy) NSString* name;
+@property(nonatomic, readonly, copy) NSString* profilePath;
+@property(nonatomic, readonly) PCNativeExtensionRestriction restriction;
+- (instancetype)init NS_UNAVAILABLE;
++ (instancetype)new NS_UNAVAILABLE;
+@end
 NS_SWIFT_UI_ACTOR
 __attribute__((visibility("default")))
 @interface PCNativeImportExtensionResult : NSObject
 @property(nonatomic, readonly) PCNativeImportOutcome outcome;
 @property(nonatomic, readonly, copy) NSSet<NSString*>* installedIdentifiers;
 @property(nonatomic, readonly, copy) NSSet<NSString*>* installingIdentifiers;
-@property(nonatomic, readonly, copy) NSArray<NSString*>* failedNames;
+@property(nonatomic, readonly, copy) NSArray<PCNativeImportExtensionFailure*>* failures;
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
 @end
@@ -1694,7 +1711,7 @@ NS_SWIFT_UI_ACTOR
 + (nullable PCNativeImportSession*)installImportedExtensions:
     (NSArray<PCNativeImportExtensionRequest*>*)requests
     completion:(void (^)(PCNativeImportExtensionResult*))completion
-    backgroundFailures:(void (^)(NSArray<NSString*>*))backgroundFailures
+    backgroundFailures:(void (^)(NSArray<PCNativeImportExtensionFailure*>*))backgroundFailures
     NS_SWIFT_NAME(installImportedExtensions(_:completion:backgroundFailures:));
 @end
 
@@ -1739,6 +1756,8 @@ NS_SWIFT_UI_ACTOR
     fromProfilePath:(NSString*)profilePath
     completion:(void (^)(NSError* _Nullable))completion
     NS_SWIFT_NAME(removeSetupAdBlockers(_:fromProfilePath:completion:));
++ (PCNativeExtensionRestriction)extensionRestrictionForError:(nullable NSError*)error
+    NS_SWIFT_NAME(extensionRestriction(for:));
 @end
 
 NS_SWIFT_UI_ACTOR

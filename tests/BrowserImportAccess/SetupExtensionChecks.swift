@@ -7,7 +7,7 @@ func setupExtensionChecks(directory: URL) throws -> Int {
         checks += 1; precondition(condition(), message)
     }
     struct Refusal: Error {}
-    _ = ImportedExtensionFailures.take(); _ = ImportedExtensionFailures.take()
+    while ImportedExtensionFailures.take() != nil {}
     PCNativeBrowserApplication.setupChanges = []
     func next() -> PCNativeBrowserApplication.SetupChange { PCNativeBrowserApplication.setupChanges.removeFirst() }
     let store = try BrowserStore(directory: directory.appendingPathComponent("SetupExtensions"))
@@ -48,7 +48,7 @@ func setupExtensionChecks(directory: URL) throws -> Int {
     expect(PCNativeBrowserApplication.setupChanges.isEmpty && shown(refusedNow) == ["iCloud Passwords"] && refusedNow?.canRetry == false,
            "If Apple's helper starts refusing Parc, Retry installs nothing and the notice drops Retry")
 
-    ImportedExtensionFailures.add(["uBlock Origin Lite"])
+    ImportedExtensionFailures.record(.init(name: "uBlock Origin Lite"))
     SetupExtensionChanges.addAdBlocker(to: destination, store: store)
     next().complete(Refusal())
     let imported = ImportedExtensionFailures.take(), blocker = ImportedExtensionFailures.take()
@@ -87,6 +87,18 @@ func setupExtensionChecks(directory: URL) throws -> Int {
     PCNativeBrowserApplication.setupChanges = []
     expect(shown(ImportedExtensionFailures.take()) == ["AdBlock", "AdBlock"],
            "Two copies of one blocker in a single Profile don't name it")
+    SetupExtensionChanges.removeAdBlockers([work: [ghostery]], names: names, store: store)
+    next().complete(PCNativeRestrictedExtensionError(restriction: .otherApp))
+    SetupExtensionChanges.addAdBlocker(to: destination, store: store)
+    next().complete(PCNativeRestrictedExtensionError(restriction: .administrator))
+    SetupExtensionChanges.addAdBlocker(to: destination, store: store)
+    next().complete(Refusal())
+    let kept = ImportedExtensionFailures.take(), blocked = ImportedExtensionFailures.take()
+    let retryable = ImportedExtensionFailures.take()
+    expect(kept?.failures.map(\.reason) == [.otherApp] && kept?.failures.map(\.change) == [.removal] && kept?.canRetry == false
+           && blocked?.failures.map(\.reason) == [.administrator] && blocked?.canRetry == false
+           && shown(retryable) == ["uBlock Origin Lite"] && retryable?.canRetry == true && ImportedExtensionFailures.take() == nil,
+           "Changes another app or the administrator rules out get notices of their own that say so, without Retry")
 
     let lab = store.createProfile(name: "Lab")
     SetupExtensionChanges.removeAdBlocker(adBlock, named: "AdBlock", from: lab, namingProfile: false, store: store)

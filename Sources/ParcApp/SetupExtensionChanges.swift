@@ -11,6 +11,8 @@ enum SetupExtensionChanges {
                 guard let error else { return }
                 NSLog("Parc could not install the selected iCloud Passwords extension: %@", error.localizedDescription)
                 MainActor.assumeIsolated {
+                    var failure = failure
+                    failure.reason = .init(PCNativeBrowserApplication.extensionRestriction(for: error))
                     ImportedExtensionFailures.record(failure) { [weak store] in
                         guard let store, !removableProfiles([destination.profileID], in: store.state).isEmpty else { return }
                         addICloudPasswords(to: destination, store: store, connects: connects)
@@ -26,7 +28,8 @@ enum SetupExtensionChanges {
                 NSLog("Parc could not install uBlock Origin: %@", error.localizedDescription)
                 MainActor.assumeIsolated {
                     let target = "setup " + destination.profileID.uuidString
-                    ImportedExtensionFailures.record(.init(name: "uBlock Origin Lite", target: target)) { [weak store] in
+                    let reason = ImportedExtensionFailures.Failure.Reason(PCNativeBrowserApplication.extensionRestriction(for: error))
+                    ImportedExtensionFailures.record(.init(name: "uBlock Origin Lite", target: target, reason: reason)) { [weak store] in
                         guard let store, !removableProfiles([destination.profileID], in: store.state).isEmpty else { return }
                         addAdBlocker(to: destination, store: store)
                     }
@@ -65,7 +68,8 @@ enum SetupExtensionChanges {
                 MainActor.assumeIsolated {
                     let profile = namingProfile ? store?.state.profiles.first { $0.id == profileID }?.name : nil
                     let failure = ImportedExtensionFailures.Failure(change: .removal, name: name, profile: profile,
-                                                                    target: identifier + " " + profileID.uuidString)
+                        target: identifier + " " + profileID.uuidString,
+                        reason: .init(PCNativeBrowserApplication.extensionRestriction(for: error)))
                     ImportedExtensionFailures.record(failure) { [weak store] in
                         guard let store else { return }
                         removeAdBlocker(identifier, named: name, from: profileID, namingProfile: namingProfile, store: store)
