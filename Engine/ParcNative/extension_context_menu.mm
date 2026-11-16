@@ -19,8 +19,10 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/extensions/extension_action_view_model.h"
 #include "chrome/browser/ui/extensions/extensions_container.h"
+#include "chrome/browser/ui/side_panel/side_panel_entry_key.h"
 #include "chrome/browser/ui/side_panel/side_panel_ui.h"
 #include "chrome/browser/ui/views/extensions/security_dialog_tracker.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_handle.h"
@@ -34,6 +36,7 @@
 #include "extensions/common/extension.h"
 #import "native_appkit_bridge.h"
 #include "ui/base/base_window.h"
+#include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/models/image_model.h"
 #include "ui/base/models/menu_model.h"
 #import "ui/menus/cocoa/menu_controller.h"
@@ -141,6 +144,17 @@ NSString* SidePanelUnavailableReason(BrowserWindowInterface* browser) {
     return @"Side panels are not available in pop-up windows.";
   }
   return nil;
+}
+
+bool SidePanelLoading(BrowserWindowInterface* browser,
+                      const std::string& extension_id) {
+  auto* panel = browser ? SidePanelUI::From(browser) : nullptr;
+  if (!panel || !panel->UsesNativeExtensionContent()) {
+    return false;
+  }
+  const SidePanelEntryKey key(SidePanelEntryId::kExtension, extension_id);
+  return panel->IsSidePanelEntryPending(key, false) ||
+         panel->IsSidePanelEntryPending(key, true);
 }
 
 bool SupportedMenu(ui::MenuModel& model) {
@@ -352,6 +366,10 @@ class NativeExtensionContextMenu::Session final
     if (command ==
         extensions::ExtensionContextMenuModel::TOGGLE_SIDE_PANEL_VISIBILITY) {
       item.identifier = @"extension-menu:side-panel";
+      if (SidePanelLoading(browser_.get(), id_)) {
+        item.title = l10n_util::GetNSString(
+            IDS_EXTENSIONS_SUBMENU_CLOSE_SIDE_PANEL_ITEM);
+      }
     }
     items_.push_back({item, model->AsWeakPtr(), index, command});
   }
