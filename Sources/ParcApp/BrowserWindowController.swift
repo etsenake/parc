@@ -2125,8 +2125,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 privateContextLive: context.map { id in PCNativeBrowserApplication.privateDownloadContexts().contains {
                     $0.identifier == id && $0.isValid && $0.profilePath == arrival.profilePath } } ?? false,
                 profileKnown: profile.map { !downloadStore.isProfileRemovalPending($0) } ?? false) else { return }
-        downloadArrival.arrive(at: arrival.sourceScreenPoint, in: parent,
-                               showsBin: sidebarPresentation == .hidden, palette: rootView.palette)
+        let library = sidebar.convert(SidebarChromeLayout.dockLeadingButton(height: sidebar.bounds.height), to: nil)
+        downloadArrival.arrive(at: arrival.sourceScreenPoint, in: parent, showsBin: sidebarPresentation == .hidden,
+                               library: CGPoint(x: library.midX, y: library.midY), palette: rootView.palette)
     }
     func nativeBrowserPrivateDownloadsDidInvalidate(_ browser: PCNativeBrowserWindow) {
         guard isPrivateBrowsing, browser === nativeBinding, browser.window === window else { return }

@@ -98,6 +98,9 @@ import SwiftUI
     private let glyph = CALayer()
     private let palette: ThemeChromePalette
     private(set) var started = false
+    private(set) var still = false
+    private var built = false
+    private var flightEnd: CFTimeInterval = 0
 
     init(flight: DownloadArrivalFlight, size: CGSize, palette: ThemeChromePalette) {
         self.flight = flight; self.palette = palette
@@ -105,11 +108,18 @@ import SwiftUI
         wantsLayer = true
         content.wantsLayer = true
         addSubview(content)
-        guard flight.isRenderable, let layer = content.layer, let position = flight.positions.last,
-              let scale = flight.scales.last else { return }
+        guard flight.isRenderable, let position = flight.positions.last, let scale = flight.scales.last else { return }
+        place(at: position, scale: scale)
+    }
+    required init?(coder: NSCoder) { nil }
+
+    private func place(at position: CGPoint, scale: CGPoint) {
+        guard let layer = content.layer else { return }
         content.setFrameOrigin(position)
         layer.masksToBounds = false
         layer.transform = CATransform3DMakeScale(scale.x, scale.y, 1)
+        guard !built else { return }
+        built = true
         let side = DownloadArrivalFlight.iconSize
         icon.frame = CGRect(x: -side / 2, y: -side / 2, width: side, height: side)
         icon.shadowRadius = 8; icon.shadowOffset = CGSize(width: 0, height: -4); icon.shadowOpacity = 1
@@ -121,7 +131,6 @@ import SwiftUI
         face.addSublayer(circle); face.addSublayer(glyph); icon.addSublayer(face)
         layer.addSublayer(icon)
     }
-    required init?(coder: NSCoder) { nil }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); if started { updateShadow() } }
     private func updateShadow() {
         CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -137,15 +146,9 @@ import SwiftUI
         guard !started, flight.isRenderable, let layer = content.layer else { return }
         started = true
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        let scale = (window?.backingScaleFactor ?? 2) * max(1, flight.scales.map { max($0.x, $0.y) }.max() ?? 1)
-        let appearance = palette.isDark ? NSAppearance(named: .darkAqua) : NSAppearance(named: .aqua)
-        (appearance ?? effectiveAppearance).performAsCurrentDrawingAppearance {
-            circle.backgroundColor = palette.backgroundExtra.cgColor
-            glyph.contents = Self.glyph(color: palette.maxContrastColor, scale: scale)
-        }
-        glyph.contentsScale = scale; glyph.minificationFilter = .trilinear
-        updateShadow()
+        paint(scale: (window?.backingScaleFactor ?? 2) * max(1, flight.scales.map { max($0.x, $0.y) }.max() ?? 1))
         let begin = layer.convertTime(CACurrentMediaTime(), from: nil)
+        flightEnd = CACurrentMediaTime() + flight.duration
         let position = CAKeyframeAnimation(keyPath: "position")
         position.values = flight.positions.map { NSValue(point: $0) }
         let transform = CAKeyframeAnimation(keyPath: "transform")
@@ -162,6 +165,44 @@ import SwiftUI
         face.add(Self.spring("transform.rotation.z", from: Self.radians(35), to: Self.radians(-5), response: 1.2, begin: begin),
                  forKey: "parc.arrival.rotation")
         CATransaction.commit()
+    }
+
+    func startStill(at position: CGPoint) {
+        guard !started, let layer = content.layer else { return }
+        started = true; still = true
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        place(at: position, scale: CGPoint(x: DownloadArrivalController.stillScale, y: DownloadArrivalController.stillScale))
+        paint(scale: window?.backingScaleFactor ?? 2)
+        face.opacity = 1
+        face.transform = CATransform3DMakeRotation(Self.radians(-5), 0, 0, 1)
+        face.add(Self.spring("opacity", from: 0, to: 1, response: 0.3, begin: layer.convertTime(CACurrentMediaTime(), from: nil)),
+                 forKey: "parc.arrival.alpha")
+        CATransaction.commit()
+    }
+
+    func settle(at position: CGPoint) {
+        guard !still else { return }
+        guard started else { startStill(at: position); return }
+        still = true
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        for key in ["parc.arrival.position", "parc.arrival.transform"] { content.layer?.removeAnimation(forKey: key) }
+        face.removeAnimation(forKey: "parc.arrival.rotation")
+        if CACurrentMediaTime() < flightEnd {
+            place(at: position, scale: CGPoint(x: DownloadArrivalController.stillScale, y: DownloadArrivalController.stillScale))
+        }
+        CATransaction.commit()
+    }
+
+    func fadeOut() { DownloadArrivalController.fade(self, to: 0) }
+
+    private func paint(scale: CGFloat) {
+        let appearance = palette.isDark ? NSAppearance(named: .darkAqua) : NSAppearance(named: .aqua)
+        (appearance ?? effectiveAppearance).performAsCurrentDrawingAppearance {
+            circle.backgroundColor = palette.backgroundExtra.cgColor
+            glyph.contents = Self.glyph(color: palette.maxContrastColor, scale: scale)
+        }
+        glyph.contentsScale = scale; glyph.minificationFilter = .trilinear
+        updateShadow()
     }
 
     private static func spring(_ keyPath: String, from: CGFloat, to: CGFloat, response: Double, begin: CFTimeInterval) -> CASpringAnimation {
@@ -183,6 +224,7 @@ import SwiftUI
 }
 
 @MainActor final class DownloadArrivalView: NSView {
+    static let binRest = CGPoint(x: 53, y: 53)
     let bin: DownloadArrivalBinView
     init(size: CGSize, palette: ThemeChromePalette) {
         bin = DownloadArrivalBinView(palette: palette)
@@ -193,7 +235,7 @@ import SwiftUI
     required init?(coder: NSCoder) { nil }
     func placeBin(x: CGFloat) {
         let half = DownloadArrivalBinView.side / 2
-        bin.setFrameOrigin(NSPoint(x: x - half, y: 53 - half))
+        bin.setFrameOrigin(NSPoint(x: x - half, y: Self.binRest.y - half))
     }
 }
 
@@ -205,6 +247,7 @@ import SwiftUI
         let view: DownloadArrivalPathView
         var offset = DownloadArrivalSpring()
         var offsetRunning = false
+        var finished = false
         private(set) var iconOffsetX: CGFloat = 0
         init(flight: DownloadArrivalFlight, view: DownloadArrivalPathView) {
             self.flight = flight; self.view = view
@@ -213,10 +256,15 @@ import SwiftUI
         func setIconOffsetX(_ x: CGFloat) { iconOffsetX = x; view.setFrameOrigin(NSPoint(x: x, y: 0)) }
     }
 
+    static let stillScale: CGFloat = 0.7
+    static let stillFade: CFTimeInterval = 0.2
+
     let window: NSWindow
     let root: DownloadArrivalView
     let showsBin: Bool
     let windowSize: CGSize
+    let stillPosition: CGPoint
+    private(set) var still: Bool
     private(set) var status = Status.preparing
     private(set) var isAnimating = false
     private(set) var downloads: [Download] = []
@@ -233,6 +281,7 @@ import SwiftUI
     private let schedule: DownloadArrivalSchedule
     private var onRetire: ((DownloadArrivalController) -> Void)?
     private var securityObserver: NSObjectProtocol?
+    private var motionObserver: NSObjectProtocol?
     private lazy var driver = DownloadArrivalFrameDriver { [weak self] dt in self?.advance(dt) ?? false }
 
     static func source(screenPoint: NSPoint, in parent: NSWindow) -> CGPoint {
@@ -242,10 +291,30 @@ import SwiftUI
         return CGPoint(x: point.x + half, y: point.y - half)
     }
 
-    init(parent: NSWindow, screenPoint: NSPoint, showsBin: Bool, palette: ThemeChromePalette,
+    static func stillPosition(showsBin: Bool, library: CGPoint) -> CGPoint {
+        let anchor = showsBin ? DownloadArrivalView.binRest : library
+        let rest = DownloadArrivalFlight.destinationArgument, bin = DownloadArrivalView.binRest
+        return CGPoint(x: anchor.x + rest.x - bin.x, y: anchor.y + rest.y - bin.y)
+    }
+
+    static func fade(_ view: NSView, from start: CGFloat? = nil, to alpha: CGFloat) {
+        guard let layer = view.layer else { return }
+        let from = start.map { Float($0) } ?? (layer.presentation()?.opacity ?? layer.opacity)
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        view.alphaValue = alpha
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = from; fade.toValue = Float(alpha); fade.duration = stillFade
+        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(fade, forKey: "parc.arrival.fade")
+        CATransaction.commit()
+    }
+
+    init(parent: NSWindow, screenPoint: NSPoint, showsBin: Bool, library: CGPoint, palette: ThemeChromePalette,
          schedule: DownloadArrivalSchedule? = nil, onRetire: @escaping (DownloadArrivalController) -> Void) {
         self.parent = parent; self.showsBin = showsBin; self.palette = palette
         self.schedule = schedule ?? .main; self.onRetire = onRetire
+        still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        stillPosition = Self.stillPosition(showsBin: showsBin, library: library)
         let frame = parent.frame
         windowSize = frame.size
         root = DownloadArrivalView(size: frame.size, palette: palette)
@@ -273,7 +342,11 @@ import SwiftUI
                                                                   object: parent, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.dismiss(force: true) }
         }
-        for download in downloads { download.view.start() }
+        motionObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.reduceMotionChanged() }
+            }
+        for download in downloads { present(download) }
     }
 
     func animate(fromScreenPoint screenPoint: NSPoint) {
@@ -293,13 +366,20 @@ import SwiftUI
         scheduleCompletion(download)
         if status == .preparing { notifyRegistered = true }
         status = .animating
-        if presented { download.view.start() }
+        if presented { present(download) }
+    }
+
+    private func present(_ download: Download) {
+        if still { download.view.startStill(at: stillPosition) } else { download.view.start() }
     }
 
     private func scheduleCompletion(_ download: Download) {
         schedule.after(download.flight.projectileDuration + 1.0) { [weak self, weak download] in
             guard let download else { return }
-            if download.flight.showsBin {
+            download.finished = true
+            if self?.still == true {
+                if self?.retired == false { download.view.fadeOut() }
+            } else if download.flight.showsBin {
                 download.offset.value = .zero
                 download.offset.toValue = SIMD2(-133, 0)
                 self?.start(download)
@@ -323,14 +403,54 @@ import SwiftUI
     private func groupDidDrain() {
         guard !retired else { return }
         status = .ending
-        if showsBin { setBin(show: false) { [weak self] in self?.complete() } } else { complete() }
+        if showsBin {
+            setBin(show: false) { [weak self] in self?.complete() }
+        } else if still {
+            schedule.after(Self.stillFade) { [weak self] in if self?.retired == false { self?.complete() } }
+        } else {
+            complete()
+        }
     }
 
     private func setBin(show: Bool, completion: (() -> Void)?) {
-        bin.toValue = SIMD2(show ? 53 : -80, 0)
+        if still { fadeBin(show: show, completion: completion); return }
+        bin.toValue = SIMD2(show ? Double(DownloadArrivalView.binRest.x) : -80, 0)
         binCompletion = completion
         guard !bin.hasResolved else { return }
         binRunning = true; startFrames()
+    }
+
+    private func fadeBin(show: Bool, completion: (() -> Void)?) {
+        binRunning = false; binCompletion = nil
+        if show { binPositionX = DownloadArrivalView.binRest.x; root.placeBin(x: binPositionX) }
+        Self.fade(root.bin, from: show ? 0 : nil, to: show ? 1 : 0)
+        guard let completion else { return }
+        schedule.after(Self.stillFade) { [weak self] in if self?.retired == false { completion() } }
+    }
+
+    private func reduceMotionChanged() {
+        guard !retired, !still, NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        still = true
+        driver.stop()
+        for download in downloads {
+            if download.offsetRunning {
+                download.offsetRunning = false
+                download.view.fadeOut()
+            } else if !download.finished {
+                download.view.settle(at: stillPosition)
+            }
+        }
+        guard binRunning else { return }
+        binRunning = false
+        if status == .ending {
+            let completion = binCompletion
+            binCompletion = nil
+            Self.fade(root.bin, to: 0)
+            schedule.after(Self.stillFade) { [weak self] in if self?.retired == false { completion?() } }
+        } else {
+            binPositionX = DownloadArrivalView.binRest.x
+            root.placeBin(x: binPositionX)
+        }
     }
 
     private func startFrames() {
@@ -374,6 +494,8 @@ import SwiftUI
         for download in downloads { download.offsetRunning = false }
         if let securityObserver { NotificationCenter.default.removeObserver(securityObserver) }
         securityObserver = nil
+        if let motionObserver { NSWorkspace.shared.notificationCenter.removeObserver(motionObserver) }
+        motionObserver = nil
         window.orderOut(nil)
         let owner = onRetire; onRetire = nil
         owner?(self)
@@ -394,9 +516,9 @@ import SwiftUI
     }
 
     func arrive(at screenPoint: NSPoint, in parent: NSWindow, showsBin: @autoclosure () -> Bool,
-                palette: @autoclosure () -> ThemeChromePalette) {
+                library: @autoclosure () -> CGPoint, palette: @autoclosure () -> ThemeChromePalette) {
         if let controller { controller.animate(fromScreenPoint: screenPoint); return }
-        controller = DownloadArrivalController(parent: parent, screenPoint: screenPoint, showsBin: showsBin(),
+        controller = DownloadArrivalController(parent: parent, screenPoint: screenPoint, showsBin: showsBin(), library: library(),
                                                palette: palette(), schedule: schedule) { [weak self] retired in
             if self?.controller === retired { self?.controller = nil }
         }

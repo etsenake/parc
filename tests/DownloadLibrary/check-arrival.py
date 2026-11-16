@@ -15,6 +15,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-arrival-") as directory:
         root / "Sources/ParcApp/BoxOfThingsIcon.swift",
         root / "Sources/ParcApp/TranslucentButtonFace.swift",
         root / "Sources/ParcApp/ReloadControl.swift",
+        root / "tests/Support/AppKitObservation.swift",
         root / "tests/DownloadLibrary/ArrivalTests.swift",
     ]
     subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",

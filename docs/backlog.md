@@ -46,10 +46,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 - **CMD25:** Restore Data needs a backup producer and restore flow.
   [Command bar](command-bar.md).
 
-## Other input and surface limits
-
-- Download arrival needs a Reduce Motion path. [Downloads](download-library.md).
-
 ## Planned interface work
 
 Visual work in each item follows the [interface review](visual-review.md)

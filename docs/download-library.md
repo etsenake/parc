@@ -235,14 +235,26 @@ The source point comes from the original hovered-link rectangle, adjusted for
 visual viewport and zoom, or the pointer when unavailable. A newer creation
 supersedes a pending source query; navigation or retirement invalidates it.
 `DownloadArrivalOwner` keeps one temporary child per window and captures the
-sidebar-hidden/bin choice and palette at creation. It never becomes key or main.
+sidebar-hidden/bin choice, Library button position and palette at creation. It
+never becomes key or main.
 Drawn arrival pixels swallow clicks; transparent regions pass them through.
 
 Flights use `DownloadArrivalMotion`; concurrent arrivals share the bin. A drained
 group ends once and drops later arrivals. Window/security retirement forces
-cleanup; completion updates do not replay the flight. This arrival path currently
-has no sound, haptic or Reduce Motion gate; the separate entry, flyout and progress
-surfaces apply their own accessibility motion behavior.
+cleanup; completion updates do not replay the flight. The arrival has no sound
+or haptic.
+
+With Reduce Motion on, the arrival keeps its signal without movement. Each icon
+fades in at 0.7 scale and its resting tilt, 17 points up and right of the bin's
+centre, where the flight lands, or of the Library button's centre when the
+sidebar shows. The bin appears at its resting place and fades in over 0.2
+seconds. Each icon fades out in place at its usual completion time, a drained
+group fades the bin out, and the arrival retires when that fade ends. Grouping,
+joining, dropping while ending, forced retirement and cleanup are unchanged.
+Turning Reduce Motion on mid-arrival removes the flight, twist and slides:
+flying icons settle at that resting place, a bin sliding in stops at its resting
+place, and leaving icons or a leaving bin fade out where they are. Turning it
+off leaves the current arrival still; the next arrival flies.
 
 ## Original download prompt default and Download Location
 
@@ -268,4 +280,4 @@ before running a suite; older helpers may create windows.
 
 Documents, Desktop and Screenshots are filesystem sources in the entry flyout;
 they have no dedicated Library pages. Library's Easels & Notes category opens
-Parc documents. Download arrival still needs a Reduce Motion presentation path.
+Parc documents.

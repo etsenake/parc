@@ -23,6 +23,7 @@ import AppKit
 @main @MainActor struct ArrivalChecks {
     static var count = 0
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) { count += 1; precondition(value(), message) }
+    static let library = CGPoint(x: 24, y: 25)
     static func near(_ a: Double, _ b: Double, _ tolerance: Double = 1e-9) -> Bool { abs(a - b) <= tolerance }
     static func near(_ a: CGPoint, _ x: Double, _ y: Double, _ tolerance: Double = 1e-9) -> Bool {
         near(Double(a.x), x, tolerance) && near(Double(a.y), y, tolerance)
@@ -31,10 +32,14 @@ import AppKit
     static func main() { exitOnFailure(runChecks) }
     static func runChecks() throws {
         _ = NSApplication.shared
+        SystemOverrides.install()
+        SystemOverrides.reduceMotion = false
         expect(LibraryArtwork.directory == Bundle.main.resourceURL?.appendingPathComponent("Library", isDirectory: true)
                && LibraryArtwork.boxOfThings("box") != nil, "the bin item's artwork loads from the bundle's Library resources")
         springs(); flights(); admission()
         try controllers()
+        stillArrivals()
+        motionToggles()
         liveFrames()
         if let directory = ProcessInfo.processInfo.environment["PARC_ARRIVAL_ACCEPTANCE"] { try acceptance(URL(fileURLWithPath: directory)) }
         print("Download arrival: \(count) assertions passed")
@@ -171,7 +176,7 @@ import AppKit
         let schedule = ManualArrivalSchedule()
         let owner = DownloadArrivalOwner(schedule: schedule)
         var showsBinReads = 0
-        owner.arrive(at: screen(parent, 600, 500), in: parent, showsBin: { showsBinReads += 1; return true }(), palette: palette(dark: false))
+        owner.arrive(at: screen(parent, 600, 500), in: parent, showsBin: { showsBinReads += 1; return true }(), library: library, palette: palette(dark: false))
         guard let controller = owner.controller else { preconditionFailure("Controller created") }
         let child = controller.window
         expect(child.styleMask == [] && !child.isOpaque && child.backgroundColor.alphaComponent == 0 && !child.hasShadow,
@@ -207,8 +212,8 @@ import AppKit
                 && ($0.toValue as? CGFloat) == DownloadArrivalPathView.radians(-5) } == true,
                "Rotation spring −35° → 5° (SwiftUI clockwise), response 1.2")
         expect(alpha?.beginTime == position?.beginTime && rotation?.beginTime == position?.beginTime, "On-appear springs start with the keyframes")
-        expect(position != nil && alpha != nil && rotation != nil,
-               "No Reduce Motion gate: the flight animates whatever the setting (now \(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion))")
+        expect(position != nil && alpha != nil && rotation != nil && !controller.still && !first.view.still,
+               "With Reduce Motion off the icon flies, grows and twists as before")
         expect(first.view.icon.bounds.size == CGSize(width: 30, height: 30) && first.view.icon.shadowRadius == 8
                && first.view.icon.shadowOffset == CGSize(width: 0, height: -4), "30-point icon with the recovered shadow")
         expect(glyphInk(DownloadArrivalPathView.glyph(color: .black, scale: 4)).map { $0.minX <= 4 && $0.maxX >= 115 && $0.minY <= 4 && $0.maxY >= 115 } == true,
@@ -216,7 +221,7 @@ import AppKit
 
         schedule.run(until: 0.5) { [owner.controller].compactMap { $0 } }
         expect(controller.binPositionX > -80 && controller.binPositionX < 60, "Bin slides in with the first flight")
-        owner.arrive(at: screen(parent, 900, 300), in: parent, showsBin: { showsBinReads += 1; return false }(), palette: palette(dark: true))
+        owner.arrive(at: screen(parent, 900, 300), in: parent, showsBin: { showsBinReads += 1; return false }(), library: library, palette: palette(dark: true))
         expect(owner.controller === controller && controller.downloads.count == 2 && showsBinReads == 1,
                "A second arrival appends; the bin decision is not re-read")
         let second = controller.downloads[1]
@@ -237,7 +242,7 @@ import AppKit
         let secondSlide = 0.5 + second.flight.projectileDuration + 1
         schedule.run(until: secondSlide + 0.05) { [owner.controller].compactMap { $0 } }
         expect(controller.status == .ending && controller.binPositionX < 53, "Drained group: ending, bin hides with the last slide")
-        owner.arrive(at: screen(parent, 300, 300), in: parent, showsBin: true, palette: palette(dark: false))
+        owner.arrive(at: screen(parent, 300, 300), in: parent, showsBin: true, library: library, palette: palette(dark: false))
         expect(controller.downloads.count == 2 && owner.controller === controller, "An arrival while ending is dropped, not queued")
         controller.dismiss(force: false)
         expect(!controller.retired && child.isVisible, "Non-forced dismissal is a no-op while animating")
@@ -251,7 +256,7 @@ import AppKit
 
         let plain = DownloadArrivalOwner(schedule: schedule)
         let start = schedule.now
-        plain.arrive(at: screen(parent, 400, 600), in: parent, showsBin: false, palette: palette(dark: false))
+        plain.arrive(at: screen(parent, 400, 600), in: parent, showsBin: false, library: library, palette: palette(dark: false))
         let unbinned = plain.controller!
         expect(unbinned.binPositionX == -80 && unbinned.root.bin.frame.maxX < 0, "Hidden bin stays off the leading edge")
         schedule.run(until: start + unbinned.downloads[0].flight.projectileDuration + 0.99) { [plain.controller].compactMap { $0 } }
@@ -260,14 +265,14 @@ import AppKit
         expect(unbinned.retired && plain.controller == nil && !unbinned.window.isVisible, "Without the bin completion is immediate at T + 1")
 
         let combined = DownloadArrivalOwner(schedule: schedule)
-        combined.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, palette: palette(dark: false))
+        combined.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, library: library, palette: palette(dark: false))
         let other = NSWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
         other.isReleasedWhenClosed = false
         NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: other)
         expect(combined.controller != nil, "CombineLatest waits for both resign key and resign main")
         NotificationCenter.default.post(name: NSWindow.didResignMainNotification, object: other)
         expect(combined.controller == nil, "Any window resigning key/main force-dismisses")
-        combined.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, palette: palette(dark: false))
+        combined.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, library: library, palette: palette(dark: false))
         let forced = combined.controller!
         NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: other)
         expect(combined.controller == nil && forced.retired && !forced.window.isVisible, "After both have emitted, each resignation dismisses")
@@ -275,14 +280,14 @@ import AppKit
         expect(forced.retired && combined.controller == nil, "Timers after a forced dismissal do nothing")
 
         let secure = DownloadArrivalOwner(schedule: schedule)
-        secure.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, palette: palette(dark: false))
+        secure.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, library: library, palette: palette(dark: false))
         NotificationCenter.default.post(name: Notification.Name("PCNativeWindowSecurityStateChanged"), object: other)
         expect(secure.controller != nil, "Another window's security state is ignored")
         NotificationCenter.default.post(name: Notification.Name("PCNativeWindowSecurityStateChanged"), object: parent)
         expect(secure.controller == nil, "A security surface on the parent retires the arrival (Parc adaptation)")
 
         let closing = DownloadArrivalOwner(schedule: schedule)
-        closing.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, palette: palette(dark: false))
+        closing.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, library: library, palette: palette(dark: false))
         let tracked = closing.controller!
         let original = tracked.window.frame
         parent.setFrame(NSRect(origin: parent.frame.origin, size: NSSize(width: 1400, height: 900)), display: false)
@@ -296,7 +301,7 @@ import AppKit
 
         let probe = DownloadArrivalOwner(schedule: schedule)
         let base = schedule.now
-        probe.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, palette: palette(dark: false))
+        probe.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, library: library, palette: palette(dark: false))
         let shown = probe.controller!
         schedule.run(until: base + 1.2) { [probe.controller].compactMap { $0 } }
         let image = render(shown, at: 0.35, scale: 1, background: nil)
@@ -306,6 +311,151 @@ import AppKit
         let apex = shown.downloads[0].flight.positions[21]
         expect(coverage(Int(apex.x), Int(apex.y)) > 0.5, "The flying icon is drawn at its keyframe")
         probe.dismiss(force: true)
+    }
+
+    static func stillArrivals() {
+        let parent = makeParent()
+        defer { parent.orderOut(nil); SystemOverrides.reduceMotion = false }
+        SystemOverrides.reduceMotion = true
+        let schedule = ManualArrivalSchedule()
+        let owner = DownloadArrivalOwner(schedule: schedule)
+        owner.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, library: library, palette: palette(dark: false))
+        guard let still = owner.controller else { preconditionFailure("Still controller created") }
+        let tray = still.root.bin
+        expect(still.still && still.status == .animating && still.isAnimating && still.window.isVisible
+               && parent.childWindows?.contains(still.window) == true,
+               "With Reduce Motion on the arrival still opens its one child window")
+        expect(still.binPositionX == 53 && tray.frame == NSRect(x: 22, y: 22, width: 62, height: 62) && tray.alphaValue == 1,
+               "The tray appears at its resting place instead of sliding in")
+        let trayIn = tray.layer?.animation(forKey: "parc.arrival.fade") as? CABasicAnimation
+        expect(trayIn?.keyPath == "opacity" && (trayIn?.fromValue as? Float) == 0 && (trayIn?.toValue as? Float) == 1
+               && trayIn?.duration == DownloadArrivalController.stillFade, "The tray fades in")
+        let first = still.downloads[0], content = first.view.content.layer!
+        expect(first.view.still && content.animation(forKey: "parc.arrival.position") == nil
+               && content.animation(forKey: "parc.arrival.transform") == nil
+               && first.view.face.animation(forKey: "parc.arrival.rotation") == nil,
+               "The icon neither flies, grows nor twists")
+        expect(content.position == CGPoint(x: 70, y: 70) && CATransform3DEqualToTransform(content.transform, CATransform3DMakeScale(0.7, 0.7, 1)),
+               "The icon rests where the flight lands, on the tray's corner")
+        let iconIn = first.view.face.animation(forKey: "parc.arrival.alpha") as? CASpringAnimation
+        expect(iconIn.map { ($0.fromValue as? CGFloat) == 0 && ($0.toValue as? CGFloat) == 1 } == true && first.view.face.opacity == 1
+               && CATransform3DEqualToTransform(first.view.face.transform, CATransform3DMakeRotation(DownloadArrivalPathView.radians(-5), 0, 0, 1)),
+               "The icon fades in with the flight's own fade, already at its resting tilt")
+
+        schedule.run(until: 0.5) { [owner.controller].compactMap { $0 } }
+        owner.arrive(at: screen(parent, 900, 300), in: parent, showsBin: false, library: CGPoint(x: 400, y: 400), palette: palette(dark: true))
+        let second = still.downloads[still.downloads.count - 1]
+        expect(owner.controller === still && still.downloads.count == 2 && second.view.still
+               && second.view.content.layer?.position == CGPoint(x: 70, y: 70)
+               && second.view.content.layer?.animation(forKey: "parc.arrival.position") == nil,
+               "A later download joins the still arrival at the same resting place")
+        let firstEnd = first.flight.projectileDuration + 1
+        schedule.run(until: firstEnd + 0.05) { [owner.controller].compactMap { $0 } }
+        let iconOut = first.view.layer?.animation(forKey: "parc.arrival.fade") as? CABasicAnimation
+        expect(first.view.alphaValue == 0 && (iconOut?.toValue as? Float) == 0 && first.iconOffsetX == 0 && !first.offsetRunning,
+               "Each icon fades away in place when its time is up")
+        expect(still.status == .animating && still.binPositionX == 53 && tray.alphaValue == 1 && second.view.alphaValue == 1,
+               "The tray and later icons wait for the whole group")
+        let secondEnd = 0.5 + second.flight.projectileDuration + 1
+        schedule.run(until: secondEnd + 0.05) { [owner.controller].compactMap { $0 } }
+        expect(still.status == .ending && !still.retired && still.binPositionX == 53 && tray.alphaValue == 0 && second.view.alphaValue == 0,
+               "A drained group fades the tray out in place")
+        owner.arrive(at: screen(parent, 300, 300), in: parent, showsBin: true, library: library, palette: palette(dark: false))
+        expect(still.downloads.count == 2 && owner.controller === still, "A download while the still arrival ends is dropped")
+        still.dismiss(force: false)
+        expect(!still.retired && still.window.isVisible, "Non-forced dismissal still waits for the fade")
+        schedule.run(until: secondEnd + 0.35) { [owner.controller].compactMap { $0 } }
+        expect(still.retired && !still.isAnimating && !still.window.isVisible && owner.controller == nil
+               && parent.childWindows?.contains(still.window) != true, "The still arrival retires once its fade ends")
+        expect(still.binPositionX == 53 && first.iconOffsetX == 0 && second.iconOffsetX == 0, "Nothing ever moved")
+
+        let plain = DownloadArrivalOwner(schedule: schedule)
+        let start = schedule.now
+        plain.arrive(at: screen(parent, 400, 600), in: parent, showsBin: false, library: library, palette: palette(dark: false))
+        let corner = plain.controller!
+        let rest = corner.downloads[0].view.content.layer!
+        expect(corner.still && corner.binPositionX == -80 && corner.root.bin.frame.maxX < 0
+               && corner.root.bin.layer?.animation(forKey: "parc.arrival.fade") == nil, "With the sidebar showing there is no tray")
+        expect(rest.position == CGPoint(x: 41, y: 42) && CATransform3DEqualToTransform(rest.transform, CATransform3DMakeScale(0.7, 0.7, 1))
+               && rest.animation(forKey: "parc.arrival.position") == nil,
+               "The icon fades in on the Library button's corner, just as it sits on the tray's")
+        let end = start + corner.downloads[0].flight.projectileDuration + 1
+        schedule.run(until: end + 0.05) { [plain.controller].compactMap { $0 } }
+        expect(!corner.retired && corner.status == .ending && corner.downloads[0].view.alphaValue == 0,
+               "Without the tray the icon fades out before the arrival ends")
+        schedule.run(until: end + 0.35) { [plain.controller].compactMap { $0 } }
+        expect(corner.retired && plain.controller == nil && !corner.window.isVisible, "Then the arrival retires")
+
+        let other = NSWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
+        other.isReleasedWhenClosed = false
+        let focused = DownloadArrivalOwner(schedule: schedule)
+        focused.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, library: library, palette: palette(dark: false))
+        let resigned = focused.controller!
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: other)
+        NotificationCenter.default.post(name: NSWindow.didResignMainNotification, object: other)
+        expect(focused.controller == nil && resigned.retired && !resigned.window.isVisible, "Losing focus ends a still arrival at once")
+        let secure = DownloadArrivalOwner(schedule: schedule)
+        secure.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, library: library, palette: palette(dark: false))
+        let guarded = secure.controller!
+        NotificationCenter.default.post(name: Notification.Name("PCNativeWindowSecurityStateChanged"), object: parent)
+        expect(secure.controller == nil && guarded.retired && !guarded.window.isVisible, "A security prompt ends a still arrival at once")
+        schedule.run(until: schedule.now + 3) { [resigned, guarded] }
+        expect(resigned.retired && guarded.retired && focused.controller == nil && secure.controller == nil
+               && !resigned.window.isVisible && !guarded.window.isVisible, "Timers after a forced end do nothing")
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+        expect(!resigned.window.isVisible && !guarded.window.isVisible && !still.window.isVisible, "A retired arrival ignores the setting")
+    }
+
+    static func motionToggles() {
+        let parent = makeParent()
+        defer { parent.orderOut(nil); SystemOverrides.reduceMotion = false }
+        func toggle(_ on: Bool) {
+            SystemOverrides.reduceMotion = on
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+        }
+        SystemOverrides.reduceMotion = false
+        let schedule = ManualArrivalSchedule()
+        let owner = DownloadArrivalOwner(schedule: schedule)
+        owner.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, library: library, palette: palette(dark: false))
+        let flying = owner.controller!
+        schedule.run(until: 0.3) { [owner.controller].compactMap { $0 } }
+        let first = flying.downloads[0], content = first.view.content.layer!
+        expect(!flying.still && flying.binPositionX > -80 && flying.binPositionX < 53 && content.animation(forKey: "parc.arrival.position") != nil,
+               "Mid-arrival the tray slides in and the icon flies")
+        toggle(true)
+        expect(flying.still && flying.binPositionX == 53 && flying.root.bin.frame == NSRect(x: 22, y: 22, width: 62, height: 62),
+               "Turning Reduce Motion on mid-arrival stops the tray at its resting place")
+        expect(first.view.still && content.animation(forKey: "parc.arrival.position") == nil && content.animation(forKey: "parc.arrival.transform") == nil
+               && first.view.face.animation(forKey: "parc.arrival.rotation") == nil && content.position == CGPoint(x: 70, y: 70),
+               "It settles the flying icon where it lands")
+        expect(!flying.advance(1 / 60) && flying.binPositionX == 53, "No spring keeps running after the switch")
+        toggle(false)
+        owner.arrive(at: screen(parent, 900, 300), in: parent, showsBin: true, library: library, palette: palette(dark: false))
+        let joined = flying.downloads[flying.downloads.count - 1]
+        expect(flying.still && flying.downloads.count == 2 && joined.view.still
+               && joined.view.content.layer?.animation(forKey: "parc.arrival.position") == nil,
+               "Turning Reduce Motion back off leaves the arrival still, and later downloads join it still")
+        let joinedEnd = 0.3 + joined.flight.projectileDuration + 1
+        schedule.run(until: joinedEnd + 0.35) { [owner.controller].compactMap { $0 } }
+        expect(flying.retired && owner.controller == nil && !flying.window.isVisible && flying.binPositionX == 53 && first.iconOffsetX == 0,
+               "The settled arrival fades out and retires without sliding away")
+
+        let leaving = DownloadArrivalOwner(schedule: schedule)
+        let begin = schedule.now
+        leaving.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, library: library, palette: palette(dark: false))
+        let ending = leaving.controller!
+        let slideStart = begin + ending.downloads[0].flight.projectileDuration + 1
+        schedule.run(until: slideStart + 0.1) { [leaving.controller].compactMap { $0 } }
+        expect(!ending.still && ending.status == .ending && ending.binPositionX < 53 && ending.downloads[0].offsetRunning,
+               "The tray and icon slide away")
+        let stopped = ending.binPositionX, slid = ending.downloads[0].iconOffsetX
+        toggle(true)
+        expect(ending.still && !ending.downloads[0].offsetRunning && ending.downloads[0].view.alphaValue == 0 && ending.root.bin.alphaValue == 0,
+               "Turning Reduce Motion on while the tray leaves fades it and the icon out where they are")
+        schedule.run(until: schedule.now + 0.1) { [leaving.controller].compactMap { $0 } }
+        expect(ending.binPositionX == stopped && ending.downloads[0].iconOffsetX == slid && !ending.retired, "Nothing slides any further")
+        schedule.run(until: schedule.now + 0.2) { [leaving.controller].compactMap { $0 } }
+        expect(ending.retired && leaving.controller == nil && !ending.window.isVisible, "The arrival retires when that fade ends")
     }
 
     static func liveFrames() {
@@ -358,7 +508,7 @@ import AppKit
             for shows in [true, false] {
                 let schedule = ManualArrivalSchedule()
                 let owner = DownloadArrivalOwner(schedule: schedule)
-                owner.arrive(at: screen(parent, 600, 500), in: parent, showsBin: shows, palette: palette(dark: dark))
+                owner.arrive(at: screen(parent, 600, 500), in: parent, showsBin: shows, library: library, palette: palette(dark: dark))
                 let controller = owner.controller!
                 controller.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
                 let flight = controller.downloads[0].flight
