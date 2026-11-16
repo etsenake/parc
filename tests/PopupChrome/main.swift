@@ -39,7 +39,8 @@ enum SidebarIconCatalog {
 }
 
 @main struct PopupChromeChecks {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         let view = PopupChromeView(frame: NSRect(x: 0, y: 0, width: 400, height: 47))
         let buttons = view.subviews.compactMap { $0 as? NSButton }
         let back = buttons.first { $0.title == "Back" }!

@@ -10,7 +10,8 @@ final class Recorder: NSObject, NSMenuDelegate {
 
 @main
 struct ParcContextMenuChecks {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         NSApplication.shared.setActivationPolicy(.prohibited)
         var assertions = 0
