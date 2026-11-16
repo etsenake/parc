@@ -41,29 +41,10 @@ import UniformTypeIdentifiers
         preferenceSuites.append(suite)
         return LibraryEntryPreferences(defaults: defaults)
     }
-    struct CellMotion {
-        let samples: [(time: TimeInterval, y: CGFloat, progress: CGFloat)]
-        let start: TimeInterval
-        func progress(at time: TimeInterval) -> CGFloat { samples.last { $0.time <= start + time }?.progress ?? 0 }
-        var peak: CGFloat { samples.map(\.progress).max() ?? 0 }
-        func rests(after time: TimeInterval) -> Bool {
-            let late = samples.filter { $0.time >= start + time }
-            return !late.isEmpty && late.allSatisfy { abs($0.progress - 1) < 0.02 }
-        }
-        var still: Bool { samples.allSatisfy { abs($0.y - samples[0].y) < 0.01 } }
-        var trace: [(Double, Double)] { samples.map { (Double($0.time - start), Double($0.progress)) } }
-    }
-    static func cellMotion(_ entry: SidebarLibraryEntry, travel: CGFloat, for seconds: TimeInterval) -> CellMotion {
-        func y() -> CGFloat { entry.badge.convert(entry.badge.bounds, to: entry).midY }
-        let clock = CACurrentMediaTime()
-        var raw: [(TimeInterval, CGFloat)] = [(0, y())]
-        repeat {
-            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.004))
-            raw.append((CACurrentMediaTime() - clock, y()))
-        } while CACurrentMediaTime() - clock < seconds
-        let from = raw.last!.1 - travel
-        let start = raw.first { abs($0.1 - raw[0].1) > 0.01 }?.0 ?? 0
-        return CellMotion(samples: raw.map { ($0.0, $0.1, travel == 0 ? 1 : ($0.1 - from) / travel) }, start: start)
+    struct CellChange {
+        let animation: Animation?
+        let from: LibraryEntryCellPose, to: LibraryEntryCellPose
+        let buttonFrom: CGFloat, buttonTo: CGFloat
     }
 
     static func main() { exitOnFailure(runChecks) }
@@ -170,6 +151,19 @@ import UniformTypeIdentifiers
         let entry = SidebarLibraryEntry()
         entry.preferences = preferences
         entry.model.after = clock.schedule
+        var changes: [CellChange] = []
+        entry.model.animate = { [unowned model = entry.model] animation, body in
+            let from = model.cell, buttonFrom = model.buttonYOffset
+            body()
+            changes.append(CellChange(animation: animation, from: from, to: model.cell, buttonFrom: buttonFrom, buttonTo: model.buttonYOffset))
+        }
+        func recorded(_ body: () -> Void) -> [CellChange] {
+            let start = changes.count
+            body()
+            return Array(changes[start...])
+        }
+        var badgeDelays: [TimeInterval] = []
+        entry.badge.after = { delay, body in badgeDelays.append(delay); clock.schedule(delay, body) }
         var lifecycleDelays: [TimeInterval] = []
         entry.lifecycle.after = { delay, body in lifecycleDelays.append(delay); clock.schedule(delay, body) }
         var now = Date(timeIntervalSinceReferenceDate: 1000)
@@ -274,7 +268,8 @@ import UniformTypeIdentifiers
         let running = publish("report.pdf")
         let runningID = "download:" + running.id
         expect(entry.badge.isDescendant(of: entry.host), "The progress renderer sits in the entry's cell, not over the icon")
-        let runningDismissals = dismissals { feed([running]) }
+        var landing: [CellChange] = []
+        let runningDismissals = dismissals { landing = recorded { feed([running]) } }
         expect(entry.lifecycle.visibleID == runningID && entry.badge.activity?.progress == 0.4 && !entry.badge.isHidden
                && entry.model.ringActive, "A new live download becomes the visible item; its cell draws the renderer at its real progress")
         expect(runningDismissals.isEmpty, "A running download is never dismissed: no timer runs")
@@ -286,19 +281,21 @@ import UniformTypeIdentifiers
         expect(entry.accessibilityChildren()?.count == 2 && badgeElement?.accessibilityLabel() == "Download \u{2014} report.pdf"
                && badgeElement?.accessibilityRole() == .button && badgeElement?.accessibilityValue() == nil && home.accessibilityValue() == nil,
                "The visible badge cell: a button labelled Download — file, no progress value anywhere")
-        let landing = cellMotion(entry, travel: entry.model.cell.y - (LibraryEntryModel.base - 8), for: 0.3)
-        expect(abs(landing.progress(at: 0)) < 0.1 && landing.progress(at: 0.1) < 0.35 && landing.progress(at: 0.17) > 0.6
-               && landing.rests(after: 0.23) && landing.peak < 1.02,
-               "Landing draws the 0.2 s timing curve from the seed: \(landing.trace)")
-        clock.advance(0.219)
-        expect(entry.model.phase == .landing, "Nothing before 0.22 s")
-        let landed = entry.model.cell.y
-        clock.advance(0.001)
-        expect(entry.model.phase == .shown && entry.model.cell.y == 30 && entry.model.buttonYOffset == 0,
+        let seedPose = LibraryEntryCellPose(x: 10, y: 22, opacity: 0, scale: 0.8, rotation: 0)
+        let landingPose = LibraryEntryCellPose(x: 10, y: 42, opacity: 1, scale: 0.8, rotation: 0)
+        let restingPose = LibraryEntryCellPose(x: 10, y: 30, opacity: 1, scale: 0.8, rotation: 0)
+        expect(landing.count == 2 && landing[0].animation == nil && landing[0].to == seedPose && landing[0].buttonTo == 0
+               && landing[1].animation == .timingCurve(0.78, 0, 0.7, 1, duration: 0.2) && landing[1].from == seedPose
+               && landing[1].to == landingPose && landing[1].buttonFrom == 0 && landing[1].buttonTo == 6,
+               "Landing jumps to the seed at b − 8, then rides the 0.2 s timing curve to b + 12 while the button dips 6")
+        expect(recorded { clock.advance(0.219) }.isEmpty && entry.model.phase == .landing, "Nothing before 0.22 s")
+        let settling = recorded { clock.advance(0.001) }
+        expect(entry.model.phase == .shown && entry.model.cell == restingPose && entry.model.buttonYOffset == 0,
                "At 0.22 s the cell settles to b and the button to rest")
-        let settling = cellMotion(entry, travel: entry.model.cell.y - landed, for: 0.8)
-        expect(settling.progress(at: 0.08) > 0.6 && settling.peak > 1.05 && settling.rests(after: 0.6),
-               "The settle draws the 500/25/10 spring: \(settling.trace)")
+        expect(settling.count == 1 && settling[0].animation == .interpolatingSpring(mass: 1, stiffness: 500, damping: 25, initialVelocity: 10)
+               && settling[0].from == landingPose && settling[0].to == restingPose && settling[0].buttonFrom == 6 && settling[0].buttonTo == 0,
+               "The settle rides the 500/25/10 spring from b + 12 back to b")
+        settle()
         let cell = entry.badge.convert(entry.badge.bounds, to: entry)
         expect(entry.model.presentedSlot(in: entry.flyout.rows, reduceMotion: false) == 0
                && near(cell, NSRect(x: 34 - 16, y: 324 - 16, width: 32, height: 32), 0.5),
@@ -312,9 +309,8 @@ import UniformTypeIdentifiers
         _ = home.accessibilityPerformPress()
         expect(opened.last! == nil, "The Library opening by any route read it: the next click names no page")
         var progressed = running; progressed.receivedBytes = 70
-        feed([progressed])
-        expect(entry.model.phase == .shown && entry.badge.activity?.progress == 0.7
-               && cellMotion(entry, travel: 0, for: 0.15).still,
+        let progressing = recorded { feed([progressed]) }
+        expect(entry.model.phase == .shown && entry.badge.activity?.progress == 0.7 && progressing.isEmpty && entry.model.cell == restingPose,
                "Progress moves the same renderer and does not replay the show: the cell stays put")
         clock.advance(600)
         expect(entry.lifecycle.visibleID == runningID && entry.model.phase == .shown, "Still visible ten minutes on: never dismissed while it runs")
@@ -324,24 +320,26 @@ import UniformTypeIdentifiers
         expect(entry.badge.activity?.completed == true && entry.badge.subviews.first === firstRenderer && entry.model.ringActive
                && entry.model.phase == .shown && entry.model.cell.scale == 0.8,
                "Completion plays DL27's transaction on the same renderer; the seeded 0.8 stays")
-        expect(finishedDismissals == [30], "A completed download stays 30 s")
-        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        expect(finishedDismissals == [30] && badgeDelays == [1.45], "A completed download stays 30 s; its completion settles at 1.45 s")
+        clock.advance(1.449)
+        expect(entry.badge.activity?.completed == true && entry.badge.subviews.first === firstRenderer && entry.model.ringActive,
+               "The completion keeps playing until its 1.45-second deadline")
+        clock.advance(0.001)
         expect(entry.badge.activity == nil && entry.badge.subviews.isEmpty && !entry.model.ringActive
                && entry.model.visibleItem?.downloadStatus == .completed && entry.model.visibleItem?.showsImage == true,
                "After 1.45 s the renderer retires; the cell shows the completed file's image (BadgingIcon .completed → IconImage)")
         feed([finished])
         expect(entry.badge.activity == nil && entry.badge.subviews.isEmpty, "Republishing the completed item never replays completion")
-        clock.advance(29.99)
+        clock.advance(28.54)
         expect(entry.model.visibleBadge == runningID, "Not before 30 s")
-        let shownY = entry.model.cell.y
-        clock.advance(0.01)
-        expect(entry.model.visibleBadge == nil && entry.model.phase == .hiding
-               && entry.model.cell == LibraryEntryCellPose(x: -4, y: 50, opacity: 0, scale: 0.2, rotation: -45),
+        let hiddenPose = LibraryEntryCellPose(x: -4, y: 50, opacity: 0, scale: 0.2, rotation: -45)
+        let leaving = recorded { clock.advance(0.01) }
+        expect(entry.model.visibleBadge == nil && entry.model.phase == .hiding && entry.model.cell == hiddenPose,
                "At 30 s: hide to x − 14, b + 20, 0, 0.2, −45°")
         expect(entry.hostRect == entry.buttonRect && entry.accessibilityChildren()?.count == 1, "The host is back to 32 × 32; only Home remains")
-        let leaving = cellMotion(entry, travel: entry.model.cell.y - shownY, for: 0.25)
-        expect((0.3...0.7).contains(leaving.progress(at: 0.07)) && leaving.rests(after: 0.17) && leaving.peak < 1.02,
-               "The hide draws the 0.14 s linear leave: \(leaving.trace)")
+        expect(leaving.map(\.animation) == [nil, .linear(duration: 0.14)] && leaving[0].to == restingPose
+               && leaving[1].from == restingPose && leaving[1].to == hiddenPose,
+               "The hide rides the 0.14 s linear leave from the resting pose")
         clock.advance(0.16)
         expect(entry.model.phase == .hidden && entry.model.cell == LibraryEntryCellPose(), "Cleared after 0.16 s")
         feed([finished])
@@ -659,11 +657,11 @@ import UniformTypeIdentifiers
         expect(entry.badge.subviews.isEmpty && entry.badge.activity == nil && entry.model.visibleBadge == movieID
                && entry.model.phase == .shown && cancelDismissals == [5], "Cancel: no renderer, the empty cell stays 5 s")
         settle(0.8)
-        let cancelledY = entry.model.cell.y
-        clock.advance(5)
-        let cancelLeaving = cellMotion(entry, travel: entry.model.cell.y - cancelledY, for: 0.25)
-        expect(entry.model.phase == .hiding && (0.3...0.7).contains(cancelLeaving.progress(at: 0.07)) && cancelLeaving.rests(after: 0.17),
-               "…then the leaving pose animates on the empty cell: \(cancelLeaving.trace)")
+        let cancelledPose = entry.model.cell
+        let cancelLeaving = recorded { clock.advance(5) }
+        expect(entry.model.phase == .hiding && cancelledPose.opacity == 1 && cancelLeaving.map(\.animation) == [nil, .linear(duration: 0.14)]
+               && cancelLeaving[1].from == cancelledPose && cancelLeaving[1].to == hiddenPose,
+               "…then the leaving pose animates on the empty cell on the 0.14 s linear leave")
         clock.advance(1)
 
         var song = publish("song.mp3", date: 6_000)

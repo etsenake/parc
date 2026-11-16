@@ -190,6 +190,9 @@ struct LibraryEntryCellPose: Equatable {
     var after: (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { body() } }
     }
+    var animate: (Animation?, () -> Void) -> Void = { animation, body in
+        if let animation { withAnimation(animation, body) } else { body() }
+    }
     private var generation = 0
 
     private static let landing = Animation.timingCurve(0.78, 0, 0.7, 1, duration: 0.2)
@@ -197,9 +200,7 @@ struct LibraryEntryCellPose: Equatable {
     private static let leaving = Animation.linear(duration: 0.14)
     static let base = LibraryEntryLayout.collapsedCellY
 
-    private func change(_ animation: Animation?, _ body: () -> Void) {
-        if let animation { withAnimation(animation, body) } else { body() }
-    }
+    private func change(_ animation: Animation?, _ body: () -> Void) { animate(animation, body) }
 
     static func scale(compact: Bool) -> CGFloat { compact ? 0.55 : 0.8 }
 
