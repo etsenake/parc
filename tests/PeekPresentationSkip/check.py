@@ -62,7 +62,7 @@ for selector in (
 assert "self?.view.confirmationTitle = nil\n                self?.onUpdate?()" in controller, \
     "dismissal confirmation expiry must still call onUpdate ungated"
 assert re.search(
-    r'view\.confirmationTitle = mediaConfirmation \? "Hang up" : "Close"\n'
+    r'view\.confirmationTitle = hangUp \? "Hang up" : "Close"\n'
     r'.*?\n\s+onUpdate\?\(\)',
     controller, re.S), \
     "dismissal confirmation request must still call onUpdate ungated"

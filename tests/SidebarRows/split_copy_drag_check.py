@@ -96,7 +96,7 @@ expect("guard session.allowsCopy, let action = prepareCopyDrop?(session, items, 
        "a dock Option drop copies the whole splits not already there to the top of the list")
 expect("prepareDockDrop?(session, items, destination, top)" in dock, "a dock move runs the window's dock transaction")
 perform_dock = body(sidebar, "override func performDragOperation(_ sender: NSDraggingInfo) -> Bool")
-expect("if let dock { return session.transferThenEnd(dock) }" in perform_dock,
+expect("else if let dock { dropped = session.transferThenEnd(dock) }" in perform_dock,
        "a dock drop finishes its transfer under the live session, then ends the drag")
 
 dockc = body(controller, "func prepareSidebarDockDrop(")
@@ -131,7 +131,7 @@ expect(update.index("headerOrDockDrop(") < update.index("guard scroll.frame.cont
 expect(update.count("admitDrop(session, to: destination, before: before, copying: copying)") == 2, "tray and outline drops share the admission")
 expect(update.count("return operation") == 2 and "return .move" not in update, "the drop reports copy or move")
 perform = body(sidebar, "override func performDragOperation(_ sender: NSDraggingInfo) -> Bool")
-expect(perform.index("if let copy { return session.copy(copy) }") < perform.index("if let external"), "a prepared copy runs instead of a move")
+expect(perform.index("if let copy { dropped = session.copy(copy) }") < perform.index("else if let external"), "a prepared copy runs instead of a move")
 
 place = body(store, "private func placedSplitCopy(")
 expect(place.index("next.splitLayouts.append(") < place.index("SidebarWindowMove(items: roots"),
