@@ -36,9 +36,9 @@ what users see or hear today, and each must keep it that way.
   Chromium's renderers, so every upgrade must refit them there. Moving them into Parc files ships
   only with a real playback check that backward playback still shows frames and Safari-identity
   pages with two audio tracks still mix them.
-- Optional experiments that could remove more patched media code, each needing its own measurement
+- An optional experiment that could remove more patched media code, needing its own measurement
   and approval because a regression would show as stalled or mis-composited protected video: a
-  composite renderer and a separate FairPlay process with `CALayerHost`.
+  separate FairPlay process with `CALayerHost`.
 
 Keep details in the linked guide and current ownership only while a task is
 active. Follow [the documentation policy](documentation.md); this index should
