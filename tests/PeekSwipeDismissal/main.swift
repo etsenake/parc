@@ -33,11 +33,11 @@ final class Peek {
 
     func apply(_ list: [Effect]) {
         effects += list
-        for effect in list where effect == .requestClose && !transition.holdForParent() { closeRequests += 1 }
+        for effect in list where effect == .requestClose && !transition.holdForParent(visible: visible) { closeRequests += 1 }
     }
 
     func cancelled() {
-        if !transition.holdForParent() { apply(transition.refused(visible: visible)) }
+        if !transition.holdForParent(visible: visible) { apply(transition.refused(visible: visible)) }
     }
 
     var reappeared: Bool { effects.contains(.reappear) }
@@ -279,6 +279,7 @@ func run() {
 
     keyboard()
     parentClosing()
+    ownerClosing()
     motion()
     print("PeekSwipeDismissal: \(checks) checks passed")
 }
@@ -382,24 +383,24 @@ func parentClosing() {
     do {
         var transition = PeekCloseTransition()
         _ = transition.parentClosingChanged(true)
-        expect(transition.close(visible: false, exit: .fade) == [.requestClose] && transition.holdForParent(),
+        expect(transition.close(visible: false, exit: .fade) == [.requestClose] && transition.holdForParent(visible: false),
                "a hidden Peek closed while its tab is closing waits too")
         expect(transition.hide().isEmpty && transition.waitsForParent, "hiding a waiting Peek changes nothing")
         expect(transition.parentClosingChanged(false) == [.requestClose] && !transition.waitsForParent,
                "it closes once the tab is done, so it is never left stranded")
-        expect(!transition.holdForParent(), "with the tab done nothing holds the close")
+        expect(!transition.holdForParent(visible: true), "with the tab done nothing holds the close")
     }
 
     do {
         var transition = PeekCloseTransition()
         _ = transition.parentClosingChanged(true)
-        expect(!transition.holdForParent() && transition.parentClosingChanged(false).isEmpty,
+        expect(!transition.holdForParent(visible: true) && transition.parentClosingChanged(false).isEmpty,
                "a resting Peek has nothing to hold or resume")
         _ = transition.close(visible: true, exit: .fade)
         _ = transition.parentClosingChanged(true)
-        expect(!transition.holdForParent(), "a card still fading isn't held; the fade's end decides")
+        expect(!transition.holdForParent(visible: true), "a card still fading isn't held; the fade's end decides")
         expect(transition.parentClosingChanged(false).isEmpty, "a tab close that ends during the fade resumes nothing")
-        expect(transition.exitFinished(transition.generation) == [.requestClose] && !transition.holdForParent(),
+        expect(transition.exitFinished(transition.generation) == [.requestClose] && !transition.holdForParent(visible: true),
                "and the Peek's own close then goes ahead normally")
     }
 
@@ -423,12 +424,12 @@ func parentClosing() {
         _ = transition.close(visible: true, exit: .fade)
         _ = transition.parentClosingChanged(true)
         _ = transition.exitFinished(transition.generation)
-        _ = transition.holdForParent()
+        _ = transition.holdForParent(visible: true)
         expect(transition.parentClosingChanged(false) == [.requestClose],
                "a Peek whose tab close ended by either route carries on as soon as it hears the all-clear")
         expect(transition.parentClosingChanged(true).isEmpty && !transition.waitsForParent,
                "a second tab close starting before that request is sent only holds it again when the request is made")
-        expect(transition.holdForParent() && transition.parentClosingChanged(false) == [.requestClose],
+        expect(transition.holdForParent(visible: true) && transition.parentClosingChanged(false) == [.requestClose],
                "and the second all-clear resumes it the same way")
     }
 
@@ -437,10 +438,105 @@ func parentClosing() {
         _ = transition.close(visible: true, exit: .slide)
         _ = transition.parentClosingChanged(true)
         _ = transition.exitFinished(transition.generation)
-        expect(transition.holdForParent(), "the Peek waits for its tab")
+        expect(transition.holdForParent(visible: true), "the Peek waits for its tab")
         expect(transition.refused(visible: true) == [.reappear] && !transition.waitsForParent,
                "a refusal that still arrives clears the wait, so a later tab notice can't close the Peek")
         expect(transition.parentClosingChanged(false).isEmpty, "the tab finishing afterwards does nothing")
+    }
+}
+
+@MainActor
+func ownerClosing() {
+    do {
+        let peek = Peek()
+        peek.requestDismiss(.closeButton)
+        peek.apply(peek.transition.exitFinished(peek.transition.generation))
+        expect(peek.closeRequests == 1 && peek.transition.cardHidden, "the fade's end has already asked the page to close")
+        peek.apply(peek.transition.parentClosingChanged(true))
+        peek.apply(peek.transition.sheetBegan(visible: true))
+        expect(!peek.reappeared && peek.transition.cardHidden && peek.transition.isLeaving,
+               "a Leave site? from the closing window keeps the faded card gone while the Peek's own close is still out")
+        peek.cancelled()
+        expect(peek.transition.waitsForParent && !peek.reappeared,
+               "the Peek's close that comes back unanswered waits for the window instead of springing the card back")
+        peek.apply(peek.transition.finish())
+        expect(peek.effects.last == .vanish && !peek.reappeared && peek.closeRequests == 1,
+               "the card goes with the window: no return flash and no second close request")
+    }
+
+    do {
+        let peek = Peek()
+        peek.requestDismiss(.closeButton)
+        peek.apply(peek.transition.exitFinished(peek.transition.generation))
+        peek.apply(peek.transition.sheetBegan(visible: true))
+        expect(peek.reappeared && !peek.transition.isLeaving,
+               "without a closing window or tab the page's own Leave site? still brings the card back with the keyboard")
+    }
+
+    do {
+        let peek = Peek()
+        peek.requestDismiss(.escape(prefersConfirmation: false))
+        peek.apply(peek.transition.parentClosingChanged(true))
+        peek.apply(peek.transition.exitFinished(peek.transition.generation))
+        peek.apply(peek.transition.sheetBegan(visible: true))
+        let refused = peek.transition.parentClosingChanged(false)
+        expect(refused == [.cancelClose], "a window close refused after a question counts as the Peek's refusal too")
+        peek.apply(peek.transition.refused(visible: true))
+        expect(peek.effects.filter { $0 == .reappear }.count == 1 && peek.transition.phase == .resting,
+               "so the card comes back once, cleanly")
+    }
+
+    do {
+        let peek = Peek()
+        peek.requestDismiss(.background)
+        peek.apply(peek.transition.parentClosingChanged(true))
+        peek.apply(peek.transition.exitFinished(peek.transition.generation))
+        let resumed = peek.transition.parentClosingChanged(false)
+        expect(resumed == [.requestClose], "a window close refused without asking anything lets the Peek's own close carry on")
+        peek.apply(resumed)
+        expect(peek.closeRequests == 1 && !peek.reappeared, "it asks the page once, still invisible")
+    }
+
+    do {
+        let peek = Peek()
+        peek.requestDismiss(.closeButton)
+        peek.apply(peek.transition.exitFinished(peek.transition.generation))
+        peek.apply(peek.transition.sheetBegan(visible: true))
+        expect(peek.reappeared, "the page's own Leave site? brings the card back")
+        peek.apply(peek.transition.parentClosingChanged(true))
+        peek.cancelled()
+        expect(!peek.transition.waitsForParent && peek.transition.phase == .resting && !peek.transition.cardHidden,
+               "choosing Stay while the tab starts closing settles the Peek's close at once instead of leaving a busy card")
+        expect(peek.transition.parentClosingChanged(false).isEmpty && peek.closeRequests == 1,
+               "the tab's close ending afterwards neither asks again nor touches the card")
+        expect(peek.transition.close(visible: true, exit: .fade).count == 1, "the Peek can be closed again normally")
+    }
+
+    do {
+        let peek = Peek()
+        peek.visible = false
+        peek.requestDismiss(.closeButton)
+        expect(peek.closeRequests == 1 && !peek.transition.cardHidden, "a Peek closed in the background asks at once")
+        peek.apply(peek.transition.parentClosingChanged(true))
+        peek.cancelled()
+        expect(peek.transition.waitsForParent, "a background Peek whose close comes back while its tab closes still waits")
+    }
+
+    do {
+        let peek = Peek()
+        peek.requestDismiss(.closeButton)
+        peek.apply(peek.transition.exitFinished(peek.transition.generation))
+        peek.apply(peek.transition.parentClosingChanged(true))
+        peek.apply(peek.transition.sheetBegan(visible: true))
+        expect(!peek.reappeared, "the page's question during the window close leaves the card gone")
+        expect(peek.transition.parentClosingChanged(false).isEmpty && !peek.transition.waitsForParent,
+               "a window close refused while the page's own question is still up resumes nothing")
+        peek.apply(peek.transition.sheetBegan(visible: true))
+        expect(peek.effects.last == .reappear && !peek.transition.isLeaving,
+               "the card then comes back under the question still showing, with the keyboard")
+        peek.cancelled()
+        expect(peek.transition.phase == .resting && peek.effects.filter { $0 == .reappear }.count == 1,
+               "choosing Stay afterwards settles it without a second return")
     }
 }
 

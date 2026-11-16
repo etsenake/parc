@@ -261,8 +261,11 @@ extension BrowserWindowController {
             peek.view.layoutSubtreeIfNeeded()
         }
         reconcileTabPeek()
+        for card in leavingTabPeekCards { placePeek(card); card.view.layoutSubtreeIfNeeded() }
         syncPeekStepBack()
     }
+
+    var leavingTabPeekCards: [PeekController] { tabPeeks.leaving.compactMap(\.controller) }
 
     func placePeek(_ peek: PeekController) {
         if peekLayer.frame != rootView.bounds { peekLayer.frame = rootView.bounds }
@@ -274,9 +277,8 @@ extension BrowserWindowController {
     func wirePeekPresentation(_ peek: PeekController) {
         peek.view.adoptWindowTheme(rootView)
         peek.onLeavingChange = { [weak self, weak peek] in
-            guard let self, let peek, self.activePeek === peek else { return }
-            self.requestNativeSelection()
-            if peek.isLeaving { self.handPeekFocusToParent(peek) }
+            guard let self, let peek else { return }
+            self.followLeavingPeek(peek)
         }
         peek.view.onStep = { [weak self, weak peek] animated in
             guard let self, let peek, self.steppingPeek === peek else { return }
@@ -516,6 +518,19 @@ extension BrowserWindowController {
             && PCNativeBrowserApplication.canUseWindowUndo(in: window)
     }
 
+    private func followLeavingPeek(_ peek: PeekController) {
+        guard activePeek === peek else { return }
+        guard !applyingNativeSelection, !rendering else {
+            DispatchQueue.main.async { [weak self, weak peek] in
+                guard let self, let peek else { return }
+                self.followLeavingPeek(peek)
+            }
+            return
+        }
+        requestNativeSelection()
+        if peek.isLeaving { handPeekFocusToParent(peek) }
+    }
+
     private func handPeekFocusToParent(_ peek: PeekController) {
         guard let window, let binding = nativeBinding else { return }
         peek.lendFocus(in: window) {
@@ -529,8 +544,12 @@ extension BrowserWindowController {
     func noteRetiringPeekParents(from old: Set<UUID>) {
         let changed = old.symmetricDifference(peekRetirementParents)
         guard !changed.isEmpty else { return }
-        for peek in Array(peeks.values) where changed.contains(peek.parentTabID) {
-            peek.parentClosingChanged(peekRetirementParents.contains(peek.parentTabID))
+        notePeekOwnersClosing { changed.contains($0.parentTabID) }
+    }
+
+    func notePeekOwnersClosing(where affected: (PeekController) -> Bool = { _ in true }) {
+        for peek in Array(peeks.values) where affected(peek) {
+            peek.parentClosingChanged(wholeWindowClose || peekRetirementParents.contains(peek.parentTabID))
         }
     }
 

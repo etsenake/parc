@@ -43,6 +43,14 @@ for token in ("loadingIndicator.alphaValue = (shown?.view.stepProgress ?? 0) > 0
     assert token in step, f"the step-back sync lost {token!r}"
 stepping = body(window, "    private var steppingPeek: PeekController? {")
 assert "tabPeeks.leaving" in stepping, "a tab-backed Peek that is fading out still eases the page forward"
+laid = body(window, "    func layoutPeeks() {")
+assert laid.index("reconcileTabPeek()") < laid.index("for card in leavingTabPeekCards { placePeek(card); card.view.layoutSubtreeIfNeeded() }") \
+    < laid.index("syncPeekStepBack()"), "a tab-backed Peek fading out after its tab opens follows the window's new layout"
+assert "var leavingTabPeekCards: [PeekController] { tabPeeks.leaving.compactMap(\\.controller) }" in window, \
+    "the fading tab-backed cards are the ones still leaving"
+geometry = body(window, "    private func layoutChromeGeometry() {")
+assert "for peek in presentedPeeks + leavingTabPeekCards { placePeek(peek); peek.view.layoutSubtreeIfNeeded() }" in geometry, \
+    "the geometry-only layout pass moves fading tab-backed cards too"
 place = body(window, "    func placePeek(_ peek: PeekController) {")
 assert "peek.view.pageFrame = pageHost.frame" in place and "accessibilityDisplayShouldReduceMotion" in place, \
     "a Peek measures its card from the window and skips the step-back under Reduce Motion"
@@ -59,6 +67,7 @@ assert "PeekWindowLayout.pageAcceptsHit(at: convert(point, from: superview), in:
 
 sources = [root / "tests/Support/TestFailure.swift",
            root / "Sources/ParcApp/PeekWindowLayout.swift",
+           root / "Sources/ParcApp/PeekStepBack.swift",
            Path(__file__).with_name("main.swift")]
 with tempfile.TemporaryDirectory(prefix="parc-peek-window-host-") as directory:
     executable = Path(directory) / "checks"

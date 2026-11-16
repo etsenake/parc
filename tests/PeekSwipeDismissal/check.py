@@ -26,9 +26,12 @@ require(body(peek, "    private func closeConfirmed("), "the confirmed close",
 request = body(peek, "    private func requestPageClose() {")
 require(request, "the page close request",
         present=("browser.requestClose", "self.refuseClose()", "stopObservingSheets()", "onReturn()"))
-assert request.count("closeTransition.holdForParent()") == 2 \
-    and request.index("closeTransition.holdForParent()") < request.index("browser.requestClose"), \
-    "a Peek whose tab is closing must wait instead of asking or springing back"
+assert request.count("closeTransition.holdForParent(visible: !") == 2 \
+    and request.index("closeTransition.holdForParent(visible: !view.isHidden)") < request.index("browser.requestClose") \
+    and "closeTransition.holdForParent(visible: !self.view.isHidden)" in request, \
+    "a Peek whose tab or window is closing must wait instead of asking or springing back, unless its card is showing"
+assert request.index("if returnsPage {") < request.index("closeTransition.holdForParent("), \
+    "Open in Peek hands its page back before any wait, so its hand-back never waits on a closing owner"
 require(body(peek, "    func refuseClose() {"), "a refused close or return",
         present=("closeTransition.refused(", "stopObservingSheets()", "restoreFocusAfterRefusal(", "onCloseRefused?()"))
 require(body(peek, "    func parentClosingChanged("), "the tab-close notice",
@@ -39,17 +42,32 @@ require(body(peek, "    private func observeSheets() {"), "the Leave site? watch
         present=("NSWindow.willBeginSheetNotification", "closeTransition.sheetBegan("))
 require(body(peek, "    func commitSwipeDismissal() -> Bool {"), "the swipe commit",
         present=("requestDismiss(.swipe)", "closeTransition.springBack()"))
-require(body(peek, "    func setVisible("), "hiding a Peek", present=("closeTransition.hide()", "DispatchQueue.main.async"))
-require(body(peek, "    func lendFocus("), "the keyboard handover", present=("closeFocusReturn?.lend(",))
+shown = body(peek, "    func setVisible(")
+require(shown, "hiding a Peek", present=("closeTransition.hide()", "DispatchQueue.main.async"))
+assert shown.index("closeTransition.sheetBegan(visible: true)") < shown.index("if changed, closeTransition.isLeaving { onLeavingChange?() }"), \
+    "a Peek shown again while still leaving tells the window so the parent gets the selection and the keyboard"
+lend = body(peek, "    func lendFocus(")
+require(lend, "the keyboard handover", present=("closeFocusReturn?.lend(in: window, to: target) == true", "focusIsAdrift(in: window)",
+                                                "closeFocusReturn?.isActive != true",
+                                                "window.attachedSheet == nil", "_ = target()"))
+require(body(peek, "    private func focusIsAdrift("), "the unclaimed keyboard test",
+        present=("responder !== window", "isHiddenOrHasHiddenAncestor", "isDescendant(of: view)", "current.window !== window"))
 focus = "Sources/ParcApp/PeekFocusReturn.swift"
 require(body(focus, "    func lend("), "lending the keyboard to the parent",
-        present=("original.firstResponder === responder", "makeFirstResponder(nil)", "borrower = current", "lending = true"))
+        present=("current === responder || (released && (current == nil || current === original))",
+                 "makeFirstResponder(nil); released = true", "borrower = current", "lending = true", "return true"))
 require(body(focus, "    func perform("), "the focus return", present=("current === borrower",))
 window = "Sources/ParcApp/BrowserWindowController+Peek.swift"
 require(body(window, "    func wirePeek("), "the Peek's window wiring",
         present=("promotePeek(peek, split: false, orphaned: true)",), absent=("onLeavingChange",))
 require(body(window, "    func wirePeekPresentation("), "the wiring every Peek, Open in Peek included, shares",
-        present=("peek.onLeavingChange", "self.requestNativeSelection()", "self.handPeekFocusToParent(peek)"))
+        present=("peek.onLeavingChange", "self.followLeavingPeek(peek)"))
+follow = body(window, "    private func followLeavingPeek(")
+require(follow, "the selection switch and keyboard handover",
+        present=("activePeek === peek", "!applyingNativeSelection, !rendering", "DispatchQueue.main.async",
+                 "self.followLeavingPeek(peek)", "requestNativeSelection()", "if peek.isLeaving { handPeekFocusToParent(peek) }"))
+assert follow.index("DispatchQueue.main.async") < follow.index("requestNativeSelection()"), \
+    "a leave that starts while a selection is being applied waits a turn instead of skipping the switch to the parent"
 tab = "Sources/ParcApp/BrowserWindowController+TabPeek.swift"
 require(body(tab, "    private func wireTabPeek("), "Open in Peek's wiring", present=("controller.onReturn",))
 returned = body(tab, "        controller.onReturn = {", "\n        }\n")
@@ -62,6 +80,9 @@ notice = body(peek, "    func parentClosingChanged(")
 assert notice.index("DispatchQueue.main.async") < notice.index("closeTransition.parentClosingChanged(false)") \
     and "self.parentNotice == notice" in notice, \
     "the all-clear must wait a turn so orphan promotion takes a waiting Peek first, and a newer tab close cancels it"
+assert notice.index("closeTransition.parentClosingChanged(false)") < notice.index("self.view.window?.attachedSheet != nil") \
+    < notice.index("self.closeTransition.sheetBegan(visible: !self.view.isHidden)"), \
+    "a card kept away during the owner's close comes back under the page's own question if that question is still up"
 mutations = {}
 for source in sorted((root / "Sources").rglob("*.swift")):
     for number, line in enumerate(source.read_text().splitlines(), 1):
@@ -86,10 +107,26 @@ require(body(window, "    private func handPeekFocusToParent("), "the keyboard h
 require(body(window, "    func removePeek("), "the focus return after a close",
         present=("self.activePeek == nil && self.parentCanTakeFocus(", "if let parent = peek.parentPage { _ = binding.requestFocus(for: parent) }"))
 require(body(window, "    func noteRetiringPeekParents("), "the tab-close notice to Peeks",
-        present=("symmetricDifference", "parentClosingChanged(peekRetirementParents.contains("))
+        present=("symmetricDifference", "notePeekOwnersClosing { changed.contains($0.parentTabID) }"))
+owners = body(window, "    func notePeekOwnersClosing(")
+require(owners, "the owner-close notice to Peeks",
+        present=("for peek in Array(peeks.values)", "parentClosingChanged(wholeWindowClose || peekRetirementParents.contains(peek.parentTabID))"),
+        absent=("tabPeeks",))
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
 require(controller, "the window controller",
         present=("var peekRetirementParents = Set<UUID>() { didSet { noteRetiringPeekParents(from: oldValue) } }",))
+whole = controller[controller.index("    var wholeWindowClose = false {"):]
+whole = whole[:whole.index("\n    }\n") + 6]
+require(whole, "the whole-window close flag",
+        present=("if wholeWindowClose != oldValue { notePeekOwnersClosing() }", "onReturnUnblocked?()"))
+handoff = body(peek, "    func playHandoffExit() -> TimeInterval {")
+assert handoff.index("exitTimer?.invalidate(); exitTimer = nil") < handoff.index("view.exit(.fade"), \
+    "a card handing its page to an opened tab cancels its close fade's end, so no hand-back runs after the session moved on"
+relay = body(tab, "    func browserView(_ view: PCBrowserView, didFailWithError error: Error) {")
+require(relay, "Open in Peek's load failure", present=("view.nativePage == nil, let onFailure",))
+arrived = body(tab, "    private func tabPeekPageArrived(")
+assert arrived.index("held.relay.onFailure = nil") < arrived.index("applyTabPeek(held.session.pageReady("), \
+    "once the tab's page has arrived, a late load failure can't abandon a card that is already showing"
 selected = body("Sources/ParcApp/BrowserWindowController.swift", "    func selectedNativePage() -> PCNativePage? {")
 assert selected.index("peek.isLeaving { return peek.parentPage }") < selected.index("currentBrowser"), \
     "a leaving Peek must hand the selected page to its parent so the parent can take the keyboard"

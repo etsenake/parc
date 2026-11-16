@@ -50,31 +50,37 @@ fade the card and wash together over 0.2 seconds. The page's genuine
 seconds after the request. As the card starts to go, the parent becomes the
 window's selected page and, if the keyboard was in the Peek, takes it through
 the usual focus return, so clicks, typing and page commands reach the parent
-rather than the leaving page; when the parent can't take the keyboard, the
-leaving page still lets go of it. If the page then asks "Leave site?", the card
-comes back under the question (a swiped card springs back, a faded one fades
-in), and a refusal without a question brings it back too, each time with the
-selection and the keyboard; after Leave the card goes with the page, without a
-second fade. A page that closes itself, or a Peek closed while hidden, goes at
-once. During a call, a swipe past halfway springs the card back beside the red
-Hang up confirmation. Reduce Motion replaces the slide and springs with
-0.15-second fades, and the drag dims the card instead of moving it. A new swipe
-can't grab the card until it has settled.
+rather than the leaving page; when the parent can't take the keyboard yet, the
+leaving page still lets go of it and the parent takes it as soon as it can,
+which also covers coming back to a tab whose Peek is still leaving. If the page
+then asks "Leave site?", the card comes back under the question (a swiped card
+springs back, a faded one fades in), and a refusal without a question brings it
+back too, each time with the selection and the keyboard; after Leave the card
+goes with the page, without a second fade. A page that closes itself, or a Peek
+closed while hidden, goes at once. During a call, a swipe past halfway springs
+the card back beside the red Hang up confirmation. Reduce Motion replaces the
+slide and springs with 0.15-second fades, and the drag dims the card instead of
+moving it. A new swipe can't grab the card until it has settled.
 
-If the parent tab starts closing during the fade, the Peek's close joins the
-tab's: the card stays gone, through any "Leave site?" question the tab's close
-asks, and the page closes with the tab, with no return flash and no second close
-request. Should the tab stay open, the Peek's own close carries on, unless a
-question came up meanwhile, which counts as a refusal (the card comes back) so
-nobody is asked twice. If only the parent page closes, on its own, the waiting
-Peek becomes a Today tab as orphans do, and so does a Peek whose close is refused
-after its parent has gone. Open in Peek hands the keyboard over in the same way;
-its page goes back to its tab rather than closing, and a failed hand-back brings
-the card, the selection and the keyboard back as a refusal does.
+If the parent tab or the whole window starts closing during the fade, the Peek's
+close joins it: the card stays gone through any "Leave site?" question that
+close asks, the page's own included, and the page closes with the tab or window,
+with no return flash and no second close request. Should the tab or window stay
+open, the Peek's own close carries on, unless a question came up meanwhile,
+which counts as a refusal (the card comes back, under the page's question if
+that is still showing) so nobody is asked twice. If the card is already back
+under its own "Leave site?" when a tab close starts, its answer settles the Peek
+at once: Leave closes it, Stay keeps it as it was, and the tab's close then
+takes it along or leaves it. If only the parent page closes, on its own, the
+waiting Peek becomes a Today tab as orphans do, and so does a Peek whose close
+is refused after its parent has gone. Open in Peek hands the keyboard over in
+the same way; its page goes back to its tab rather than closing, and a failed
+hand-back brings the card, the selection and the keyboard back as a refusal
+does.
 
 `PeekCloseTransition` orders the drag, exit, close request, refusal, sheet
-spring-back and the wait for a closing parent tab, and its exit timers are
-generation-checked. Its leaving state drives the selection and keyboard
+spring-back and the wait for a closing parent tab or window, and its exit timers
+are generation-checked. Its leaving state drives the selection and keyboard
 handover. Hiding a Peek mid-exit for a tab or Space switch hides it at once and
 requests the close without waiting, and a retiring Peek goes invisible before
 its view is removed, so no fading card lingers over a newer Peek or tab and
@@ -84,7 +90,7 @@ by other Peek hosts; the host sets its geometry and resting wash and leaves the
 stage's transform and opacity to it. `python3 tests/PeekSwipeDismissal/check.py`
 checks `PeekCloseTransition` and `PeekDismissalMotion` with the real recognizer
 and confirmation rules, including the keyboard handover and the wait for a
-closing tab, plus the controller and window wiring.
+closing tab or window, plus the controller and window wiring.
 
 ## Promotion return ownership
 
@@ -121,15 +127,17 @@ its saved history, and moved into the card as soon as the engine hands it over.
 Closing it (Escape, a click outside, a swipe, Close or Close Tab) plays the
 usual close and then hands the page back to its tab, still loaded. The page is
 never asked to close, so there is no beforeunload; you stay on your page, which
-takes the keyboard as the card starts to go. The Escape confirmation still applies, and during a call
-the pill reads Close rather than Hang up, since the call carries on in its tab.
-Opening the tab normally (clicking it in the sidebar, Expand, Open in [Space],
-the tab switcher, its Mini Player or the page going fullscreen) moves the page
-back into its pane first, where the page-switch hold keeps the old page up until
-it draws, then fades the emptied card with the close fade. Add to Split joins
-the tab to the current split the same way. Switching tabs or Spaces, or
-closing, archiving or moving the tab, puts the page back at once without a
-motion; closing the window closes it with the window's other pages.
+takes the keyboard as the card starts to go. The Escape confirmation still
+applies, and during a call the pill reads Close rather than Hang up, since the
+call carries on in its tab. Opening the tab normally (clicking it in the
+sidebar, Expand, Open in [Space], the tab switcher, its Mini Player or the page
+going fullscreen) moves the page back into its pane first, where the page-switch
+hold keeps the old page up until it draws, then fades the emptied card with the
+close fade, which follows the window's layout if the window is resized
+meanwhile. Add to Split joins the tab to the current split the same way.
+Switching tabs or Spaces, or closing, archiving or moving the tab, puts the page
+back at once without a motion; closing the window closes it with the window's
+other pages.
 
 The item is offered only for a web tab in the current Space and Profile that
 isn't on screen, closing, moving or failed, over a live web page in this window
@@ -139,8 +147,9 @@ showing, it closes through its own close and consent, confirmation pill
 included, and the tab opens once it is gone; a refused close or an expired
 confirmation drops the request. While in Peek the tab neither
 sleeps nor auto-archives. `tests/TabPeekTests.swift` covers admission, refusals,
-replacement and the round trips, checking that the same page comes back and
-that only a tab with no page loads.
+replacement and the round trips, checking that the same page comes back, that
+only a tab with no page loads, and that every way out of the card removes it or
+plays its exit in the same step, so a hand-back never finds a stranded card.
 
 ## Open in current Space command
 
@@ -228,13 +237,14 @@ sidebar, side panel and split grip stay bright and keep working.
 While a Peek shows, the parent steps back: the page card and its shadow, or a
 split's whole group with each pane's card and shadow, shrink evenly about their
 centre by 9 points at the sides and a little less at the top and bottom.
-`PeekStepBack` applies this as a Core Animation transform on those layers, so the
-page never relays out, resizes its renderer or redraws. The step rides with the
-0.3-second entry fade, follows the swipe and closing fade through the wash, and
-drops at once when the tab changes or the Peek is promoted. The frame crank's
-shudder adds to it while the Peek card stays still. Reduce Motion keeps the page
-where it is. The page's own loading bar hides while a Peek shows; the Peek's bar
-takes the gap above its card.
+`PeekStepBack` applies this as a Core Animation transform on those layers, so
+the page never relays out, resizes its renderer or redraws. The step rides with
+the 0.3-second entry fade, follows the swipe and closing fade through the wash,
+and drops at once when the tab changes or the Peek is promoted. When the sidebar
+or Library slides, the step rides the slide's own animation, so the page stays
+centred throughout. The frame crank's shudder adds to it while the Peek card
+stays still. Reduce Motion keeps the page where it is. The page's own loading
+bar hides while a Peek shows; the Peek's bar takes the gap above its card.
 
 Clicks follow what you see (`PeekWindowLayout`). The card and its buttons are the
 Peek and the faded page closes it. Everything else belongs to the window, including
@@ -263,9 +273,9 @@ Parent transfer, orphan preservation, promotion and new-tab provenance already
 use the original page and parent identity. Model/native components cover those
 transactions, confirmation timers, renderer acknowledgments and focus
 cancellation; window key-loop checks cover forward and backward traversal.
-`tests/PeekWindowHost` checks the card and step geometry, the click regions, and
-real view hit-testing for the top edge, the revealed frame band, the split grip
-and the floating sidebar.
+`tests/PeekWindowHost` checks the card and step geometry, the step following a
+slide, the click regions, and real view hit-testing for the top edge, the
+revealed frame band, the split grip and the floating sidebar.
 
 ## Links inside a Peek
 

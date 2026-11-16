@@ -362,7 +362,7 @@ extension BrowserWindowController {
         pageHost.layoutSubtreeIfNeeded()
         layoutFrameCrank(frames)
         refreshLoadingIndicators()
-        for peek in presentedPeeks { placePeek(peek); peek.view.layoutSubtreeIfNeeded() }
+        for peek in presentedPeeks + leavingTabPeekCards { placePeek(peek); peek.view.layoutSubtreeIfNeeded() }
         syncPeekStepBack()
         layoutFindBar()
     }

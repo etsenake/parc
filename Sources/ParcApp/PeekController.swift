@@ -101,6 +101,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
             refresh()
             if changed { if animate { view.animatePresentation() } else { view.presentWithoutAnimation() } }
             if view.window?.attachedSheet != nil { apply(closeTransition.sheetBegan(visible: true)) }
+            if changed, closeTransition.isLeaving { onLeavingChange?() }
         } else {
             removeSwipeMonitor()
             clearDismissConfirmation()
@@ -258,7 +259,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
             if let onReturn { onReturn() } else { refuseClose() }
             return
         }
-        if closeTransition.holdForParent() { return }
+        if closeTransition.holdForParent(visible: !view.isHidden) { return }
         closeInFlight = true
         browser.requestClose { [weak self] result in
             guard let self, !self.finished else { return }
@@ -267,7 +268,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
                 self.closePending = false
                 self.stopObservingSheets()
                 self.onClose?()
-            } else if !self.closeTransition.holdForParent() {
+            } else if !self.closeTransition.holdForParent(visible: !self.view.isHidden) {
                 self.dismissedURL = nil; self.dismissedNavigationState = nil
                 self.refuseClose()
             }
@@ -311,6 +312,9 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.finished, self.parentNotice == notice else { return }
             self.apply(self.closeTransition.parentClosingChanged(false))
+            if !self.finished, self.view.window?.attachedSheet != nil {
+                self.apply(self.closeTransition.sheetBegan(visible: !self.view.isHidden))
+            }
         }
     }
 
@@ -331,7 +335,15 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     }
 
     func lendFocus(in window: NSWindow, to target: () -> Bool) {
-        closeFocusReturn?.lend(in: window, to: target)
+        if closeFocusReturn?.lend(in: window, to: target) == true { return }
+        guard closeFocusReturn?.isActive != true, window.attachedSheet == nil, focusIsAdrift(in: window) else { return }
+        _ = target()
+    }
+
+    private func focusIsAdrift(in window: NSWindow) -> Bool {
+        guard let responder = window.firstResponder, responder !== window else { return true }
+        guard let current = responder as? NSView else { return false }
+        return current.window !== window || current.isHiddenOrHasHiddenAncestor || current.isDescendant(of: view)
     }
 
     func takeFocusReturn() -> PeekFocusReturn? {

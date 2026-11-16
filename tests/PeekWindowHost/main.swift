@@ -20,6 +20,7 @@ struct PeekWindowHostChecks {
         cardIsMeasuredFromTheWindow()
         pageStepsBackEvenly()
         stepTransformKeepsTheCenter()
+        stepFollowsASlidingPage()
         regionsRouteClicks()
         steppedPageRejectsTheRevealedBand()
         hitTestingThroughTheViewTree()
@@ -145,6 +146,108 @@ struct PeekWindowHostChecks {
             }
             return super.hitTest(point)
         }
+    }
+
+    static func transform(_ value: Any?) -> CATransform3D? { (value as? NSValue)?.caTransform3DValue }
+
+    static func centreOffset(of transform: CATransform3D, width: CGFloat) -> CGFloat {
+        transform.m41 + transform.m11 * width / 2 - width / 2
+    }
+
+    static func midway(_ from: CATransform3D, _ to: CATransform3D, _ fraction: CGFloat) -> CATransform3D {
+        var result = to
+        result.m41 = from.m41 + (to.m41 - from.m41) * fraction
+        result.m42 = from.m42 + (to.m42 - from.m42) * fraction
+        return result
+    }
+
+    static func stepFollowsASlidingPage() {
+        let narrow = CGRect(x: 0, y: 0, width: 1042, height: 780)
+        let wide = CGRect(x: 0, y: 0, width: 1042 + sidebarWidth, height: 780)
+        let scale = PeekWindowLayout(bounds: window, page: wide, stepsBack: true).scale
+        func page() -> (NSView, CALayer) {
+            let view = NSView(frame: wide)
+            view.wantsLayer = true
+            guard let layer = view.layer else { fatalError("a windowless view still gets its layer") }
+            return (view, layer)
+        }
+
+        let (still, stillLayer) = page()
+        let resting = PeekStepBack([still])
+        resting.set(1, scale: scale)
+        let held = stillLayer.animation(forKey: PeekStepBack.key) as? CABasicAnimation
+        assert(held.flatMap { transform($0.fromValue) }.map { CATransform3DEqualToTransform($0, transform(held?.toValue)!) } == true,
+               "without a slide the step simply holds")
+        let heldTransform = transform(held?.toValue)!
+        assert(close(centreOffset(of: heldTransform, width: wide.width), 0), "a held step is centred on the page")
+        assert(abs(centreOffset(of: heldTransform, width: narrow.width)) > 1,
+               "a step held for the final width sits off-centre on a page still sliding from the old width")
+
+        let (view, layer) = page()
+        let slide = CABasicAnimation(keyPath: PeekStepBack.slideKey)
+        slide.fromValue = NSValue(rect: narrow)
+        slide.toValue = NSValue(rect: wide)
+        slide.duration = 0.2
+        slide.beginTime = 500
+        slide.isRemovedOnCompletion = false
+        slide.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.46, 0.45, 0.94)
+        layer.add(slide, forKey: PeekStepBack.slideKey)
+        let step = PeekStepBack([view])
+        step.set(1, scale: scale)
+        guard let follow = layer.animation(forKey: PeekStepBack.key) as? CABasicAnimation,
+              let from = transform(follow.fromValue), let to = transform(follow.toValue) else {
+            return assert(false, "a sliding page gets a step that follows the slide")
+        }
+        assert(follow.keyPath == "transform" && follow.isAdditive && !follow.isRemovedOnCompletion && follow.fillMode == .both,
+               "the following step is an additive transform that stays once the slide ends")
+        assert(follow.duration == slide.duration && follow.beginTime == 500 && follow.timingFunction == slide.timingFunction,
+               "the step rides the slide's own clock and curve")
+        assert(CATransform3DEqualToTransform(to, PeekWindowLayout.stepTransform(bounds: wide, anchor: layer.anchorPoint, scale: scale)),
+               "the step ends centred on the final page")
+        for fraction: CGFloat in [0, 0.25, 0.5, 0.75, 1] {
+            let width = narrow.width + (wide.width - narrow.width) * fraction
+            assert(close(centreOffset(of: midway(from, to, fraction), width: width), 0),
+                   "the step stays centred on the page at \(fraction) of the slide")
+        }
+
+        step.set(0.5, scale: scale)
+        let fading = layer.animation(forKey: PeekStepBack.key) as? CABasicAnimation
+        let factor = 1 - 0.5 * (1 - scale)
+        assert(fading?.beginTime == 500 && transform(fading?.fromValue).map {
+            CATransform3DEqualToTransform($0, PeekWindowLayout.stepTransform(bounds: narrow, anchor: layer.anchorPoint, scale: factor))
+        } == true, "a fade during the slide keeps following it from the same start")
+
+        step.set(1, scale: scale)
+        layer.removeAnimation(forKey: PeekStepBack.slideKey)
+        step.refresh()
+        let after = layer.animation(forKey: PeekStepBack.key) as? CABasicAnimation
+        assert(after.flatMap { transform($0.fromValue) }.map { CATransform3DEqualToTransform($0, transform(after?.toValue)!) } == true
+               && after?.duration == 1, "a slide cut short snaps the step to the final page at the next layout, centred")
+        step.refresh()
+        assert(layer.animation(forKey: PeekStepBack.key) === after, "a settled step isn't re-applied on every layout")
+
+        let (springing, springLayer) = page()
+        let spring = CASpringAnimation(keyPath: PeekStepBack.slideKey)
+        spring.isAdditive = true
+        spring.fromValue = NSValue(rect: CGRect(x: 0, y: 0, width: narrow.width - wide.width, height: 0))
+        spring.toValue = NSValue(rect: .zero)
+        spring.stiffness = 1218; spring.damping = 55.8
+        spring.duration = spring.settlingDuration
+        springLayer.add(spring, forKey: PeekStepBack.slideKey)
+        PeekStepBack([springing]).set(1, scale: scale)
+        let sprung = springLayer.animation(forKey: PeekStepBack.key) as? CASpringAnimation
+        assert(sprung?.stiffness == 1218 && sprung?.damping == 55.8 && transform(sprung?.fromValue).map {
+            CATransform3DEqualToTransform($0, PeekWindowLayout.stepTransform(bounds: narrow, anchor: springLayer.anchorPoint, scale: scale))
+        } == true, "a floating sidebar's spring slide is followed with the same spring from the page's old width")
+
+        let (moving, movingLayer) = page()
+        let move = CABasicAnimation(keyPath: PeekStepBack.slideKey)
+        move.fromValue = NSValue(rect: wide.offsetBy(dx: 40, dy: 0))
+        movingLayer.add(move, forKey: PeekStepBack.slideKey)
+        PeekStepBack([moving]).set(1, scale: scale)
+        let moved = movingLayer.animation(forKey: PeekStepBack.key) as? CABasicAnimation
+        assert(moved.flatMap { transform($0.fromValue) }.map { CATransform3DEqualToTransform($0, transform(moved?.toValue)!) } == true,
+               "a slide that doesn't change the page's size keeps the plain hold")
     }
 
     final class Flipped: NSView { override var isFlipped: Bool { true } }

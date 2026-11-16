@@ -52,6 +52,7 @@ struct FakeWindow {
         unloadedLoad()
         forcedReturns()
         replacement()
+        handBackNeedsAShownCard()
         print("TabPeek: \(checks) checks passed")
     }
 
@@ -198,6 +199,38 @@ struct FakeWindow {
         closing.apply(closed.resolve(.drop))
         expect(!closing.cardShown && closing.pane == nil, "a page that closed in the card just removes the card")
         expect(closed.pageClosed().isEmpty, "a second close signal is ignored")
+    }
+
+    static func handBackNeedsAShownCard() {
+        func shown() -> (TabPeekSession, FakeWindow)? {
+            var window = FakeWindow(pane: FakePage("page-a"))
+            guard let session = TabPeekSession(tabID: UUID(), plan: .present("page-a")) else { return nil }
+            window.apply(session.opening)
+            return (session, window)
+        }
+        guard var control = shown() else { return expect(false, "a live plan starts a session") }
+        expect(!control.0.returnRequested().isEmpty, "a shown card's hand-back returns the page")
+
+        let ways: [(String, (inout TabPeekSession) -> [TabPeekSession.Effect])] = [
+            ("its hand-back", { $0.returnRequested() }),
+            ("a forced return", { $0.resolve(.putBack) }),
+            ("its page closing", { $0.pageClosed() }),
+            ("its page dropping out of the card", { $0.resolve(.drop) }),
+            ("opening its tab", { $0.resolve(.promote) }),
+        ]
+        for (way, leave) in ways {
+            guard var (session, window) = shown() else { return expect(false, "a live plan starts a session") }
+            if way == "its page dropping out of the card" || way == "its page closing" { window.card = nil }
+            let effects = leave(&session)
+            window.apply(effects)
+            expect(!session.holdsPage, "\(way) ends the shown session")
+            expect(effects.contains(.finish) || effects.contains(.exit),
+                   "\(way) removes the card or plays its exit in the same step, so no card outlives its session")
+            expect(window.card == nil, "\(way) never leaves the page in the card")
+            expect(session.returnRequested().isEmpty, "a late hand-back after \(way) has nothing to return")
+            window.apply(session.exitFinished())
+            expect(!window.cardShown, "after \(way) the card is gone once any exit ends")
+        }
     }
 
     static func replacement() {

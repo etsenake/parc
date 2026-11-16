@@ -109,7 +109,7 @@ struct PeekCloseTransition: Equatable {
 
     mutating func sheetBegan(visible: Bool) -> [Effect] {
         if phase == .exiting || phase == .closing { asked = true }
-        guard phase == .closing, cardHidden, visible, !waitsForParent else { return [] }
+        guard phase == .closing, cardHidden, visible, !waitsForParent, !parentClosing else { return [] }
         cardHidden = false
         return [.reappear]
     }
@@ -124,8 +124,8 @@ struct PeekCloseTransition: Equatable {
         return [visible ? .reappear : .settle]
     }
 
-    mutating func holdForParent() -> Bool {
-        guard parentClosing, phase == .closing else { return false }
+    mutating func holdForParent(visible: Bool) -> Bool {
+        guard parentClosing, phase == .closing, cardHidden || !visible else { return false }
         waitsForParent = true
         return true
     }

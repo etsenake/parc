@@ -367,7 +367,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var onboardingCloseRequested = false
     var onboardingCloseNotes: [(editor: NoteEditorViewController, bodyEditable: Bool, titleEditable: Bool)]?
     var wholeWindowClose = false {
-        didSet { if !wholeWindowClose, oldValue { onReturnUnblocked?() } }
+        didSet {
+            if !wholeWindowClose, oldValue { onReturnUnblocked?() }
+            if wholeWindowClose != oldValue { notePeekOwnersClosing() }
+        }
     }
     var pendingApprovedWindowClose = false
     var restoreSettingsAfterCancelledTermination = false

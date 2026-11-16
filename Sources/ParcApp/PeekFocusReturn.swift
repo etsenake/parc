@@ -9,6 +9,7 @@ final class PeekFocusReturn {
     private var invalidated = false
     private var consumed = false
     private var lending = false
+    private var released = false
 
     init?(source: NSView) {
         guard let window = source.window, let responder = window.firstResponder,
@@ -26,17 +27,23 @@ final class PeekFocusReturn {
         }
     }
 
+    var isActive: Bool { !consumed && !invalidated && responder != nil }
+
     func cancel() { consumed = true; observation = nil }
 
-    func lend(in original: NSWindow, to target: () -> Bool) {
+    @discardableResult
+    func lend(in original: NSWindow, to target: () -> Bool) -> Bool {
         guard !consumed, !invalidated, borrower == nil, window === original, original.attachedSheet == nil,
-              let responder, original.firstResponder === responder else { return }
+              let responder else { return false }
+        let current = original.firstResponder
+        guard current === responder || (released && (current == nil || current === original)) else { return false }
         lending = true
-        if !target() || original.firstResponder === responder { original.makeFirstResponder(nil) }
+        if !target() || original.firstResponder === responder { original.makeFirstResponder(nil); released = true }
         lending = false
         if let current = original.firstResponder, current !== original, current !== responder {
             borrower = current
         }
+        return true
     }
 
     @discardableResult

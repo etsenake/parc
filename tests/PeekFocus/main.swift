@@ -119,6 +119,32 @@ import AppKit
         expect(window.firstResponder === window, "When the parent can't take typing, the leaving page still lets go")
         expect(parked.perform(in: window, ownerIsAvailable: { true }) { _ in delivered += 1 },
                "A parked return still completes after the close")
+        expect(window.makeFirstResponder(control), "Peek control before a handover the selection isn't ready for")
+        let late = PeekFocusReturn(source: root)!
+        expect(late.lend(in: window) { false } && window.firstResponder === window,
+               "The leaving page lets go when the parent can't take typing yet")
+        expect(late.lend(in: window) { window.makeFirstResponder(parent) } && window.firstResponder === parent,
+               "Once the parent's page is selected, a later handover gives it the keyboard")
+        expect(!late.lend(in: window) { window.makeFirstResponder(outside) } && window.firstResponder === parent,
+               "A completed late handover is not repeated")
+        expect(late.perform(in: window, ownerIsAvailable: { true }) { responder in
+            expect(responder === control, "A refusal after a late handover returns to the Peek's control")
+            delivered += 1
+        }, "A late handover still returns when the card comes back")
+        expect(window.makeFirstResponder(control), "Peek control before a choice made while the keyboard is parked")
+        let chosen = PeekFocusReturn(source: root)!
+        chosen.lend(in: window) { false }
+        expect(window.makeFirstResponder(outside), "The person picks another control while nobody holds the keyboard")
+        expect(!chosen.lend(in: window) { window.makeFirstResponder(parent) } && window.firstResponder === outside,
+               "A later handover never takes the keyboard from a control the person picked")
+        expect(window.makeFirstResponder(control), "Peek control before an unparked vacancy")
+        let unparked = PeekFocusReturn(source: root)!
+        window.vacate()
+        expect(!unparked.lend(in: window) { window.makeFirstResponder(parent) } && window.firstResponder == nil,
+               "Only a keyboard the leaving page itself let go can be handed over later")
+        expect(unparked.isActive, "A return that couldn't lend stays live, so a refusal can still bring typing back")
+        expect(!chosen.isActive, "A return the person overrode is spent")
+        expect(window.makeFirstResponder(control), "Peek control after the vacancy check")
         expect(window.makeFirstResponder(control), "Peek control before focus leaves on its own")
         let stale = PeekFocusReturn(source: root)!
         expect(window.makeFirstResponder(outside), "Another control takes focus before the fade")
@@ -128,7 +154,7 @@ import AppKit
         let hidden = PeekFocusReturn(source: root)!
         hidden.cancel()
         hidden.lend(in: window) { window.makeFirstResponder(parent) }
-        expect(window.firstResponder === control, "A cancelled return lends nothing")
+        expect(window.firstResponder === control && !hidden.isActive, "A cancelled return lends nothing and is spent")
         parent.removeFromSuperview()
 
         expect(window.makeFirstResponder(control), "Original control before deallocation check")
@@ -144,7 +170,7 @@ import AppKit
         }
         expect(weakWindow == nil && weakView == nil, "Lease does not retain closed window or responder")
         expect(!weakLease!.perform(in: window, ownerIsAvailable: { true }) { _ in delivered += 1 }, "Lost original owner cannot resolve to current window")
-        expect(delivered == 5, "Only exact original/temporary-vacancy/removal/lent/parked cases delivered")
+        expect(delivered == 6, "Only exact original/temporary-vacancy/removal/lent/parked/late cases delivered")
         window.close(); otherWindow.close()
         print("PASS: \(checks) original Peek-focus return assertions")
     }

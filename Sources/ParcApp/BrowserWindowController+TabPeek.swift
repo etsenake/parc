@@ -262,6 +262,7 @@ extension BrowserWindowController {
     private func tabPeekPageArrived(_ held: TabPeekPresentation) {
         guard tabPeeks.current === held, held.session.phase == .loading else { return }
         held.loadTimeout?.cancel(); held.loadTimeout = nil
+        held.relay.onFailure = nil
         guard let page = held.browser.nativePage, !page.isClosed,
               TabPeekHold.resolve(tabPeekFacts(held, displayed: nil)) == .keep else {
             abandonTabPeek(held); return
