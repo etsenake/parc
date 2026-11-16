@@ -26,12 +26,6 @@ Finish assigned work first.
   [Folder moves](folder-moves.md#notes-and-easels-still-used-in-the-source-space),
   [Space management](space-management.md).
 
-## Archive and history
-
-- **HIST14:** Library Put Back cannot reconstruct deleted nested folder roots.
-  Existing window Undo restores the tree; persisted Archive restoration needs
-  folder provenance. [Archive](archive.md).
-
 ## Media
 
 Casting continuity across navigation and picture in picture are implemented.

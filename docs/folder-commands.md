@@ -101,7 +101,8 @@ archived, or that a folder without tabs archives none. The original subtree,
 mixed order, native pages, splits and typed aliases remain bound through
 confirmation and whole-set retirement, including owners in other windows, Peek
 children and embedded Easel pages. Cancellation, stale ownership, pending
-creation or invalid typed data refuses the operation.
+creation, invalid typed data or a pending Archive deletion of one of the folders'
+archived tabs refuses the operation.
 
 After consent, one save deletes folder records and archives original sidebar
 records as manual entries in their original Profile/Space. Complete splits keep
@@ -203,9 +204,9 @@ BrowserStore, document-alias, copy-to-folder, close/Undo, duplicate Undo and win
 components cover atomic persistence, genuine asynchronous refusal, exact IDs,
 shared edits/assets and stale-owner cancellation using disposable data.
 
-Folder deletion keeps its nested restoration data in the window's Undo/Reopen
-record. Library Put Back restores archived tabs and splits, including their
-original folder when it still exists; it cannot recreate a deleted folder.
-See [archive restoration](archive.md).
+Folder deletion keeps its exact restoration data in the window's Undo/Reopen
+record. Each archived tab also records its deleted folder path, so Library Put
+Back rebuilds missing folders around it one tab or split at a time; see
+[deleted folder paths](archive.md#deleted-folder-paths).
 Collection Duplicate stays within the source Profile; whole-split cross-Profile
 copies have the separate [copy contract](split-groups.md#whole-split-copy-and-external-drags--sp23).

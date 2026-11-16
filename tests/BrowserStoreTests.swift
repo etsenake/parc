@@ -960,7 +960,8 @@ struct BrowserStoreTests {
             try expect(deleted && (try tab(first, in: store)).archivedAt != nil && !store.state.folders.contains { $0.id == child },
                        "Deleting a nested folder archives its tabs instead of reparenting live pages")
             _ = store.restoreArchivedTab(first, profileID: store.activeSpace.profileID, destination: .previousSpace(fallbackSpaceID: firstSpace))
-            try expect(try tab(first, in: store).folderID == nil, "Put Back does not invent a deleted folder")
+            try expect(try tab(first, in: store).folderID == child && store.state.folders.first { $0.id == child }?.parentID == parent,
+                       "Put Back rebuilds a deleted nested folder inside its surviving parent")
             let kept = store.open("https://kept.example.org")
             store.moveTab(kept, toSpace: firstSpace, folderID: parent)
             let archiveKept = FolderRemovalTarget(items: [.tab(kept)], spaceID: firstSpace, profileID: store.activeSpace.profileID, state: store.state)!
@@ -3618,7 +3619,13 @@ struct BrowserStoreTests {
             try expect(loaded.state.tabs == store.state.tabs && loaded.state.folders == store.state.folders && loaded.state.sidebarItemOrder == store.state.sidebarItemOrder, "Durable reload contains the complete archive and hierarchy result")
             _ = store.restoreArchivedTab(a, profileID: profile, destination: .previousSpace(fallbackSpaceID: space))
             try expect(store.state.selectedTabIDs == split.tabIDs && store.activeSplitLayout?.orientation == .vertical && store.activeSplitLayout?.widthFactors == [0.3, 0.7], "Restoring the archived split preserves original page IDs/order and geometry")
-            try expect(!store.state.folders.contains { $0.id == parent }, "Restoring tabs does not invent a deleted folder")
+            try expect(store.state.folders.first { $0.id == parent }?.parentID == nil
+                && store.state.folders.first { $0.id == nested }?.parentID == parent
+                && !store.state.folders.contains { $0.id == empty }, "Restoring the split rebuilds only the deleted folders on its path")
+            try expect(split.tabIDs.allSatisfy { id in store.state.tabs.first { $0.id == id }?.folderID == nested }
+                && SidebarHierarchy.children(in: .init(spaceID: space, folderID: nested, section: .pinned), state: store.state) == [.split(split.id)],
+                "The restored split sits inside its rebuilt folder")
+            try expect(SidebarHierarchy.children(in: root, state: store.state) == rootBefore, "The rebuilt folder returns to its original Pinned position")
             _ = observation
         }
         try withDirectory { directory in

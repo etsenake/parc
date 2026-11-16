@@ -115,7 +115,8 @@ Restoring a closed record preserves its original creation/referrer identities
 and marks selected items read. [Folder commands](folder-commands.md#selection-after-ordinary-delete)
 describe close-time successor selection and the window's referrer pool.
 Library Put Back has its own [archive restoration](archive.md) path; it does
-not consume this window's nested-folder Undo/Reopen record.
+not consume this window's nested-folder Undo/Reopen record, but rebuilding one
+of that record's deleted folders retires it.
 
 ## Validation
 

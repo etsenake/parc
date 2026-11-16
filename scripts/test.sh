@@ -156,6 +156,7 @@ step compile_and_run sidebar-plural-removal SidebarPluralRemovalTests \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift"
 
+step compile_and_run archived-folder-paths ArchivedFolderPathTests
 step python3 "$repo_root/tests/FolderDeletion/check.py"
 
 step compile_and_run sidebar-keyboard-close SidebarKeyboardCloseTests \

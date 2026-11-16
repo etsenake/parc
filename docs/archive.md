@@ -18,15 +18,45 @@ shown, it uses the initiating window's current Space. A removed or reassigned
 Space falls back only to a current Space in the record's original Profile;
 without one, the archive remains unchanged. An explicit Put Back in Space action
 supplies its own destination. A saved tab restored to its original Space returns
-to its original folder if that folder still exists. Other destinations, removed
-folders and Today items restore at top level. Archive records do not retain a
-deleted folder tree: Put Back restores its tabs or complete split, while the
-original nested folders are available only through the deletion's window Undo.
-Persisted folder-root restoration remains in [the backlog](backlog.md).
+to its original folder if that folder still exists. Other destinations and Today
+items restore at top level.
 
 The native retirement/ownership gate validates the whole item before model
 mutation. Complete splits restore atomically. Reopen Closed Tab has a separate
 previous-Space policy; see [closed-item restoration](reopen-closed-tabs.md).
+
+### Deleted folder paths
+
+Deleting a folder records an `ArchivedFolderPath` in each archived tab's or
+split's provenance: every deleted folder around it, outermost first, with its
+identity, name, icon, expansion and recorded sibling order, the surviving parent
+it sat in, and the tab's own place inside the innermost folder. Older archived
+tabs from those folders gain the same path, and deleting a surviving parent later
+extends existing paths outward. Archived tabs never keep a link to a missing
+folder; saved-data validation rejects one.
+
+Put Back into the original Space reuses the deepest folder on the path that still
+exists, matched by original identity, and recreates the missing folders below it
+inside the surviving parent or at Pinned top level. Each rebuilt folder and the
+tab go between their recorded neighbours that are present, so siblings put back
+in any order share one rebuilt folder in their original order. Only folders on a
+restored tab's own path come back. A folder identity now used in another Space
+stops the rebuild one level up. Records without a path, including legacy records
+without provenance, restore at top level. Archive still lists a deleted folder's
+tabs as separate rows.
+
+The path is optional saved data. Older files load without it, an unreadable path
+is dropped without losing its record, and older Parc versions ignore it. It lives
+inside the archive record, so Put Back, deletion, expiry and Clear Archive remove
+it with the record. A rebuilt folder retires the deletion's window Undo and Reopen,
+which refuse while any of their folders exist; Undo before any Put Back restores
+older archived tabs to their exact earlier records. Deletion refuses while an
+archived tab still linked to one of its folders is being deleted from Archive.
+Deletion and Undo leave alone an older archived tab that is open in an archive
+preview or being deleted from Archive: after deletion its record misses the newly
+deleted folders, so Put Back cannot rebuild them; after Undo it keeps its path and
+reuses the restored folder. Undo waits while one of the deleted tabs is open in
+an archive preview.
 
 ## Archive filter presentation increment
 
@@ -158,7 +188,8 @@ already published model state.
 ## Checks
 
 Model suites cover typed items, split atomicity, settings snapshots and original
-consent. `tests/ArchiveScheduling/run.sh` covers clock ownership/coalescing;
+consent. `ArchivedFolderPathTests` covers deleted-folder paths, rebuild order,
+saved-data compatibility, clearing and Undo refusal. `tests/ArchiveScheduling/run.sh` covers clock ownership/coalescing;
 `tests/AutoArchiveEducation/check.sh` covers inert card focus and lifecycle.
 Library components cover filtering, original-row menus and stale leases.
 Current open product work belongs in [the backlog](backlog.md).

@@ -126,6 +126,112 @@ struct ArchiveProvenance: Codable, Equatable {
     var spaceName: String
     var groupID: UUID?
     var split: BrowserSplitLayout?
+    var folderPath: ArchivedFolderPath?
+}
+
+extension ArchiveProvenance {
+    private enum CodingKeys: String, CodingKey { case reason, spaceID, spaceName, groupID, split, folderPath }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        reason = try c.decode(ArchiveReason.self, forKey: .reason)
+        spaceID = try c.decode(UUID.self, forKey: .spaceID)
+        spaceName = try c.decode(String.self, forKey: .spaceName)
+        groupID = try c.decodeIfPresent(UUID.self, forKey: .groupID)
+        split = try c.decodeIfPresent(BrowserSplitLayout.self, forKey: .split)
+        folderPath = ((try? c.decodeIfPresent(ArchivedFolderPath.self, forKey: .folderPath)) ?? nil).flatMap { $0.isValid ? $0 : nil }
+    }
+}
+
+struct ArchivedFolder: Codable, Equatable {
+    var id: UUID
+    var name: String
+    var isExpanded: Bool
+    var customIcon: SidebarGroupIcon?
+    var siblings: [SidebarItemReference]
+}
+
+extension ArchivedFolder {
+    private enum CodingKeys: String, CodingKey { case id, name, isExpanded, customIcon, siblings }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        isExpanded = try c.decodeIfPresent(Bool.self, forKey: .isExpanded) ?? true
+        customIcon = SidebarGroupIcon.decodeIfValid(c, forKey: .customIcon)
+        siblings = try c.decodeIfPresent([SidebarItemReference].self, forKey: .siblings) ?? []
+    }
+}
+
+struct ArchivedFolderPath: Codable, Equatable {
+    var parentID: UUID?
+    var folders: [ArchivedFolder]
+    var siblings: [SidebarItemReference]
+
+    var isValid: Bool {
+        let ids = folders.map(\.id)
+        return !ids.isEmpty && Set(ids).count == ids.count && parentID.map { !ids.contains($0) } ?? true
+    }
+
+    func rebuilding(in state: inout BrowserState, spaceID: UUID) -> UUID? {
+        func exists(_ id: UUID) -> Bool { state.folders.contains { $0.id == id && $0.spaceID == spaceID } }
+        let reused = folders.lastIndex { exists($0.id) }
+        var parent = reused.map { folders[$0].id } ?? parentID.flatMap { exists($0) ? $0 : nil }
+        for folder in folders[(reused.map { $0 + 1 } ?? 0)...] {
+            guard !state.folders.contains(where: { $0.id == folder.id }) else { break }
+            state.folders.append(BrowserFolder(id: folder.id, spaceID: spaceID, name: folder.name, parentID: parent,
+                                               isExpanded: folder.isExpanded, customIcon: folder.customIcon))
+            SidebarHierarchy.placing(.folder(folder.id), in: .init(spaceID: spaceID, folderID: parent, section: .pinned),
+                                     following: folder.siblings, state: &state)
+            parent = folder.id
+        }
+        return parent
+    }
+}
+
+struct ArchivedFolderPathRecorder {
+    let state: BrowserState
+    let deleted: Set<UUID>
+    private var chains: [UUID: ArchivedFolderPath?] = [:]
+    private var orders: [String: [SidebarItemReference]] = [:]
+
+    init(state: BrowserState, deleted: Set<UUID>) {
+        self.state = state; self.deleted = deleted
+    }
+
+    mutating func path(for tab: BrowserTab) -> ArchivedFolderPath? {
+        if let folderID = tab.folderID {
+            guard deleted.contains(folderID), var path = chain(to: folderID),
+                  let folder = state.folders.first(where: { $0.id == folderID }) else { return nil }
+            path.siblings = order(in: .init(spaceID: folder.spaceID, folderID: folderID, section: .pinned))
+            return path
+        }
+        guard let existing = tab.archiveProvenance?.folderPath, let anchor = existing.parentID,
+              deleted.contains(anchor), let outer = chain(to: anchor) else { return nil }
+        let path = ArchivedFolderPath(parentID: outer.parentID, folders: outer.folders + existing.folders, siblings: existing.siblings)
+        return path.isValid ? path : nil
+    }
+
+    private mutating func chain(to folderID: UUID) -> ArchivedFolderPath? {
+        if let known = chains[folderID] { return known }
+        var folders: [ArchivedFolder] = [], current: UUID? = folderID, visited = Set<UUID>(), valid = true
+        while let id = current, deleted.contains(id) {
+            guard visited.insert(id).inserted, let folder = state.folders.first(where: { $0.id == id }) else { valid = false; break }
+            let container = SidebarContainerLocation(spaceID: folder.spaceID, folderID: folder.parentID, section: .pinned)
+            folders.insert(ArchivedFolder(id: id, name: folder.name, isExpanded: folder.isExpanded,
+                                          customIcon: folder.customIcon, siblings: order(in: container)), at: 0)
+            current = folder.parentID
+        }
+        let path = valid && !folders.isEmpty ? ArchivedFolderPath(parentID: current, folders: folders, siblings: []) : nil
+        chains.updateValue(path, forKey: folderID)
+        return path
+    }
+
+    private mutating func order(in location: SidebarContainerLocation) -> [SidebarItemReference] {
+        if let known = orders[location.key] { return known }
+        let items = SidebarHierarchy.children(in: location, state: state).map { SidebarHierarchy.storedReference($0, state: state) }
+        orders[location.key] = items
+        return items
+    }
 }
 
 struct BrowserArchivedItem: Identifiable {
@@ -1032,9 +1138,24 @@ enum SidebarHierarchy {
         items.insert(.tab(id), at: index)
         state.sidebarItemOrder[location.key] = items.map { storedReference($0, state: state) }
     }
-    private static func storedReference(_ item: SidebarItemReference, state: BrowserState) -> SidebarItemReference {
+    static func storedReference(_ item: SidebarItemReference, state: BrowserState) -> SidebarItemReference {
         if case .split(let id) = item, let anchor = state.splitLayouts.first(where: { $0.id == id })?.sidebarAnchorID { return .tab(anchor) }
         return item
+    }
+    static func placing(_ item: SidebarItemReference, in location: SidebarContainerLocation,
+                        following recorded: [SidebarItemReference], state: inout BrowserState) {
+        let snapshot = state
+        var siblings = children(in: location, state: snapshot).map { storedReference($0, state: snapshot) }.filter { $0 != item }
+        var index = siblings.count
+        if let position = recorded.firstIndex(of: item) {
+            let following = recorded[(position + 1)...].first(where: siblings.contains)
+            let preceding = recorded[..<position].last(where: siblings.contains)
+            index = following.flatMap { siblings.firstIndex(of: $0) }
+                ?? preceding.flatMap { siblings.firstIndex(of: $0).map { $0 + 1 } }
+                ?? min(position, siblings.count)
+        }
+        siblings.insert(item, at: index)
+        state.sidebarItemOrder[location.key] = siblings
     }
     static func tabIDs(in item: SidebarItemReference, state: BrowserState, spaceID: UUID) -> [UUID] {
         switch item {
@@ -1367,7 +1488,11 @@ struct FolderDeletionUndo: SidebarItemsRecord {
     }
     let locations: [Location]
     let childOrder: [String: [SidebarItemReference]]
-    let detachedArchive: [BrowserTab]
+    struct Detached {
+        let original: BrowserTab
+        let archived: BrowserTab
+    }
+    let detachedArchive: [Detached]
     let focusedTabID: UUID?
 
     var actionName: String { tabs.count == 1 ? "Archive Tab" : "Archive Tabs" }
@@ -1397,7 +1522,11 @@ struct FolderDeletionUndo: SidebarItemsRecord {
                 return item
             })
         })
-        detachedArchive = before.archivedTabs(where: { $0.folderID.map(target.folderIDs.contains) == true })
+        let targetIDs = Set(target.tabs.map(\.id))
+        let changed = Dictionary(after.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        detachedArchive = before.archivedTabs(where: { !targetIDs.contains($0.id) }).compactMap { original in
+            changed[original.id].flatMap { $0 == original ? nil : Detached(original: original, archived: $0) }
+        }
         focusedTabID = selection?.originalFocus.flatMap { focus in target.tabs.contains { $0.id == focus } ? focus : nil }
     }
 
@@ -3036,9 +3165,12 @@ final class BrowserStore: ObservableObject {
         next.activeSpaceID = destination.id
         next.selectedTabIDs = ids
         next.recentlyClosedIDs.removeAll { ids.contains($0) }
-        let folderID = original.kind == .pinned && (item.provenance?.spaceID ?? original.spaceID) == destination.id
+        let originalSpace = original.kind == .pinned && (item.provenance?.spaceID ?? original.spaceID) == destination.id
+        var folderID = originalSpace
             ? original.folderID.flatMap { id in next.folders.contains { $0.id == id && $0.spaceID == destination.id } ? id : nil }
             : nil
+        let path = originalSpace && folderID == nil ? item.provenance?.folderPath : nil
+        if let path { folderID = path.rebuilding(in: &next, spaceID: destination.id) }
         for index in next.tabs.indices where ids.contains(next.tabs[index].id) {
             next.tabs[index].archivedAt = nil
             next.tabs[index].archiveProvenance = nil
@@ -3052,6 +3184,11 @@ final class BrowserStore: ObservableObject {
             split.widthFactors = BrowserSplitLayout.normalized(split.widthFactors, count: ids.count)!
             next.splitLayouts.removeAll { $0.spaceID == destination.id && $0.tabIDs == ids }
             next.splitLayouts.append(split)
+        }
+        if let path, let folderID, folderID == path.folders.last?.id {
+            let anchor = ids.count > 1 ? item.provenance?.split?.sidebarAnchorID ?? ids[0] : ids[0]
+            SidebarHierarchy.placing(.tab(anchor), in: .init(spaceID: destination.id, folderID: folderID, section: .pinned),
+                                     following: path.siblings, state: &next)
         }
         if let preview {
             exclusiveRetirementIDs.formUnion(ids)
@@ -4201,7 +4338,9 @@ final class BrowserStore: ObservableObject {
             guard let self else { return false }
             guard FolderRemovalTarget(items: target.roots, spaceID: expected.spaceID,
                 profileID: expected.profileID, state: self.state) == target,
-                  SidebarDocumentReference.validates(target.tabs, references: documents) else { return false }
+                  SidebarDocumentReference.validates(target.tabs, references: documents),
+                  self.retiringTabIDs.isDisjoint(with: self.state.archivedTabs(where: {
+                      $0.folderID.map(target.folderIDs.contains) == true }).map(\.id)) else { return false }
             return selection?.isCurrent(for: target, in: self.state) ?? true
         }
         guard current(), ids.isDisjoint(with: retiringTabIDs) else { completion(.success(false)); return }
@@ -4220,9 +4359,18 @@ final class BrowserStore: ObservableObject {
                 let group = UUID()
                 for id in split.tabIDs { provenance[id]?.groupID = group; provenance[id]?.split = split }
             }
-            for index in next.tabs.indices where ids.contains(next.tabs[index].id) {
-                next.tabs[index].archivedAt = now
-                next.tabs[index].archiveProvenance = provenance[next.tabs[index].id]
+            var paths = ArchivedFolderPathRecorder(state: self.state, deleted: Set(target.folderIDs))
+            let busy = self.retiringTabIDs
+            for index in next.tabs.indices {
+                let tab = next.tabs[index]
+                if ids.contains(tab.id) {
+                    next.tabs[index].archivedAt = now
+                    next.tabs[index].archiveProvenance = provenance[tab.id]
+                    next.tabs[index].archiveProvenance?.folderPath = paths.path(for: tab)
+                } else if tab.archivedAt != nil, tab.archiveProvenance != nil, !busy.contains(tab.id),
+                          !self.archivePreviewOverlaps([tab.id]), let path = paths.path(for: tab) {
+                    next.tabs[index].archiveProvenance?.folderPath = path
+                }
             }
             next.recentlyClosedIDs.removeAll { ids.contains($0) }
             next.recentlyClosedIDs += target.tabs.map(\.id)
@@ -4259,20 +4407,17 @@ final class BrowserStore: ObservableObject {
     @discardableResult
     func undoFolderDeletion(_ undo: FolderDeletionUndo, shouldCommit: () -> Bool) throws -> Bool {
         let ids = Set(undo.tabs.map(\.id))
-        guard canUndoFolderDeletion(undo), undo.documentsAreAvailable, ids.isDisjoint(with: retiringTabIDs),
+        guard canUndoFolderDeletion(undo), undo.documentsAreAvailable, ids.isDisjoint(with: retiringTabIDs), !archivePreviewOverlaps(ids),
               shouldCommit(), canUndoFolderDeletion(undo), undo.documentsAreAvailable,
-              ids.isDisjoint(with: retiringTabIDs) else { return false }
+              ids.isDisjoint(with: retiringTabIDs), !archivePreviewOverlaps(ids) else { return false }
         var next = state
         next.folders += undo.folders
         for original in undo.tabs {
             guard let index = next.tabIndex(original.id) else { return false }
             next.tabs[index] = original
         }
-        for original in undo.detachedArchive {
-            var expected = original; expected.folderID = nil
-            if let index = next.tabIndex(original.id, where: { $0 == expected }) {
-                next.tabs[index].folderID = original.folderID
-            }
+        for entry in undo.detachedArchive where !retiringTabIDs.contains(entry.archived.id) && !archivePreviewOverlaps([entry.archived.id]) {
+            if let index = next.tabIndex(entry.archived.id, where: { $0 == entry.archived }) { next.tabs[index] = entry.original }
         }
         next.splitLayouts += undo.groups
         next.recentlyClosedIDs.removeAll { ids.contains($0) }
