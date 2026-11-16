@@ -36,13 +36,15 @@ Quote is unavailable for a multi-set because no plural quote contract exists.
 Exports use original records and the link formatter the split pane menu's
 Copy Links shares. Plain copies put one address per line as text plus a
 rich-text version linking each tab's name to its address; Markdown copies stay
-Markdown only. Rich-text and Markdown links use the name the tab was given in
-the sidebar, else its page title, else its address. Ancestors suppress
-duplicate descendants; splits keep child order. Deduplication uses tab ID, so
-distinct tabs with one URL stay distinct lines. Only web and local file
-addresses are copied: Notes, Easels, Parc's own pages, blank tabs and malformed
-destinations are skipped. A Copied Link or Copied Links notice confirms the
-copy. These exports do not impersonate live-page clipboard policy.
+Markdown only. Rich-text and Markdown links use exactly the title the tab's
+sidebar row shows: its given name, else its saved title, which is the title a
+pinned tab or Favorite was saved with or a Today tab's current page title, else
+its saved address. Ancestors suppress duplicate descendants; splits keep child
+order. Deduplication uses tab ID, so distinct tabs with one URL stay distinct
+lines. Only web and local file addresses are copied: Notes, Easels, Parc's own
+pages, blank tabs and malformed destinations are skipped. A Copied Link or
+Copied Links notice confirms the copy. These exports do not impersonate
+live-page clipboard policy.
 Fresh/default Close bindings prefer Parc; migration preserves existing implicit
 website priority and explicit custom/disabled choices.
 

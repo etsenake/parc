@@ -57,7 +57,7 @@ enum FolderLinks {
 
     private static func link(for tab: BrowserTab) -> Link? {
         guard let url = URL(string: tab.url), ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else { return nil }
-        return Link(tabID: tab.id, title: tab.customTitle.flatMap(SidebarTabTitle.customValue) ?? tab.title, url: url.absoluteString)
+        return Link(tabID: tab.id, title: SidebarTabTitle.display(tab), url: url.absoluteString)
     }
 
     static func text(for links: [Link], format: FolderLinkFormat) -> String? {
@@ -66,7 +66,7 @@ enum FolderLinks {
             switch format {
             case .plain: return link.url
             case .markdown:
-                let title = link.title.isEmpty ? link.url : link.title
+                let title = link.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? link.url : link.title
                 let label = title.replacingOccurrences(of: "\\", with: "\\\\")
                     .replacingOccurrences(of: "[", with: "\\[")
                     .replacingOccurrences(of: "]", with: "\\]")

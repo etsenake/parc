@@ -3270,7 +3270,7 @@ struct BrowserStoreTests {
         try withDirectory { directory in
             let store = try BrowserStore(directory: directory), space = store.activeSpaceID, profile = store.activeSpace.profileID
             let folder = store.createFolder(name: "Folder")
-            let a = store.open("https://example.com/a(b)", kind: .pinned)
+            let a = store.open("https://example.com/a(b)", kind: .today)
             let b = store.open("https://example.com/a(b)", kind: .pinned)
             let c = store.open("https://example.com/c", kind: .today)
             store.updateTab(a, title: "A [label]\nnext")
@@ -3281,7 +3281,7 @@ struct BrowserStoreTests {
             let links = FolderLinks.links(in: original, items: [.folder(folder), .tab(a), .tab(c)], spaceID: space, profileID: profile)!
             try expect(links.map(\.tabID) == [a, b, c], "Plural copy includes collapsed folder originals once and preserves distinct same-URL tabs")
             try expect(FolderLinks.text(for: links, format: .plain) == links.map(\.url).joined(separator: "\n"), "Plain plural copy exports one original URL per line")
-            try expect(FolderLinks.text(for: links, format: .markdown)?.hasPrefix("[A \\[label\\] next](<https://example.com/a(b)>)") == true, "Plural Markdown uses actual title and safe folder serialization")
+            try expect(FolderLinks.text(for: links, format: .markdown)?.hasPrefix("[A \\[label\\] next](<https://example.com/a(b)>)") == true, "Plural Markdown uses the sidebar title and safe folder serialization")
             try expect(FolderLinks.links(in: original, items: [.folder(UUID()), .tab(c)], spaceID: space, profileID: profile) == nil, "A stale selected item refuses the whole copy proposal")
             try expect(FolderLinks.links(in: original, items: [.tab(c)], spaceID: space, profileID: UUID()) == nil, "Foreign profile cannot export the original Space")
             try expect(store.state == original, "Preparing copy never mutates original page/model selection")
@@ -3310,6 +3310,8 @@ struct BrowserStoreTests {
             try expect(FolderLinks.html(for: rich) == "<meta charset=\"utf-8\"><a href=\"https://example.com/a?x=1&amp;y=2\">A [label] next</a><br>\n"
                        + "<a href=\"https://example.com/&quot;c&quot;\">https://example.com/&quot;c&quot;</a>",
                        "Rich copy links each page title to its address, escaped, falling back to the address")
+            try expect(FolderLinks.text(for: rich, format: .markdown)?.hasSuffix("\n[https://example.com/\"c\"](<https://example.com/\"c\">)") == true,
+                       "Markdown falls back to the address for a blank title too")
             try expect(FolderLinks.html(for: []) == nil, "Nothing to copy has no rich flavor")
             let renamed = store.open("https://example.com/renamed", kind: .pinned)
             let named = store.createFolder(name: "Named")
@@ -3327,8 +3329,34 @@ struct BrowserStoreTests {
                        "The split menu and a folder's Copy All Links use the same sidebar name")
             try store.saveSidebarTitle(store.state.tab(renamed)!, title: "")
             let unnamed = FolderLinks.links(in: store.state, items: [.tab(renamed)], spaceID: space, profileID: profile)!
-            try expect(FolderLinks.text(for: unnamed, format: .markdown) == "[Page Title](<https://example.com/renamed>)",
-                       "Clearing the sidebar name falls back to the page title")
+            try expect(FolderLinks.text(for: unnamed, format: .markdown) == "[example.com](<https://example.com/renamed>)",
+                       "Clearing the sidebar name falls back to the title saved when the tab was pinned")
+        }
+    }
+
+    static func testCopiedLinksUseSavedPinnedTitle() throws {
+        try withDirectory { directory in
+            let store = try BrowserStore(directory: directory), space = store.activeSpaceID, profile = store.activeSpace.profileID
+            let id = store.open("https://example.com/pinned", kind: .today)
+            store.updateTab(id, title: "Saved <Title>")
+            store.setKind(id, .pinned)
+            let folder = store.createFolder(name: "Saved")
+            store.moveTab(id, toSpace: space, folderID: folder)
+            store.updateTab(id, title: "Live Title")
+            let tab = store.state.tab(id)!
+            try expect(tab.kind == .pinned && tab.customTitle == nil && tab.title == "Live Title"
+                       && SidebarTabTitle.display(tab) == "Saved <Title>",
+                       "A pinned tab's sidebar row keeps the title saved when it was pinned")
+            let links = FolderLinks.links(in: store.state, items: [.tab(id)], spaceID: space, profileID: profile)!
+            try expect(links.map(\.title) == [SidebarTabTitle.display(tab)], "Copied links take the title the sidebar row shows")
+            try expect(FolderLinks.text(for: links, format: .markdown) == "[Saved <Title>](<https://example.com/pinned>)",
+                       "Markdown copies a pinned tab under its saved title, not the live one")
+            try expect(FolderLinks.html(for: links) == "<meta charset=\"utf-8\"><a href=\"https://example.com/pinned\">Saved &lt;Title&gt;</a>",
+                       "Rich copy links a pinned tab's saved title to its address")
+            try expect(FolderLinks.text(for: links, format: .plain) == "https://example.com/pinned", "Plain copies stay a bare address")
+            try expect(FolderLinks.links(in: store.state, tabIDs: [id], spaceID: space, profileID: profile) == links
+                       && FolderLinks.links(in: store.state, target: FolderLinkTarget(folderID: folder, spaceID: space, profileID: profile)) == links,
+                       "The split menu and a folder's Copy All Links use the same saved title")
         }
     }
 
@@ -3687,6 +3715,7 @@ struct BrowserStoreTests {
         try testFolderDeletion()
         try testFolderDuplication()
         try testSidebarSelectionCommands()
+        try testCopiedLinksUseSavedPinnedTitle()
         try testSidebarMultiSelection()
         try testTypedSplitDropTransactions()
         try testNativePageAdoption()
