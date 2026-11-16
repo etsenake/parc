@@ -2055,6 +2055,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         extensionPopupAtSidebar = extensionPopupsAnchorToSidebar
         if extensionPopupAtSidebar {
             followExtensionPopupsForAddressHold()
+            holdAddressButtonsForLoadingExtensionPopups()
             return .sidebar(width: sidebarContainer.bounds.width)
         }
         if let peek = activePeek, peek.view.content.window === window {

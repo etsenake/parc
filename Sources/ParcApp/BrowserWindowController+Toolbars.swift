@@ -731,13 +731,31 @@ extension BrowserWindowController {
     private func holdAddressButtons(forExtensionPopup popup: NSWindow?) {
         addressPromptHolds.values.forEach { $0.endIfWindowClosed() }
         guard let popup, let window, !isClosing, addressPromptHolds[ObjectIdentifier(popup)] == nil,
-              SidebarAddressButtonsReveal.holdsExtensionPopup(popup, of: window, showsPage: popup.contentView is PCNativePageHost,
+              SidebarAddressButtonsReveal.holdsExtensionPopup(popup, of: window, showsPage: Self.showsExtensionPage(popup),
                                                               atSidebar: extensionPopupAtSidebar && extensionPopupsAnchorToSidebar)
         else { return }
-        holdAddressButtons(owner: popup) { [weak window] onEnd in
-            AddressPopoverRevealHold(window: popup, isOpen: { SidebarAddressButtonsReveal.extensionPopupOpen($0, of: window) },
-                                     onEnd: onEnd)
+        holdAddressButtons(forExtensionPopup: popup, of: window)
+    }
+    func holdAddressButtonsForLoadingExtensionPopups() {
+        guard let window, !isClosing else { return }
+        for popup in NSApp.windows where addressPromptHolds[ObjectIdentifier(popup)] == nil && Self.extensionPopupLoading(popup) {
+            holdAddressButtons(forExtensionPopup: popup, of: window)
         }
+    }
+    private func holdAddressButtons(forExtensionPopup popup: NSWindow, of window: NSWindow) {
+        holdAddressButtons(owner: popup) { [weak window] onEnd in
+            AddressPopoverRevealHold(window: popup, isOpen: {
+                SidebarAddressButtonsReveal.extensionPopupOpen($0, of: window) || Self.extensionPopupLoading($0)
+            }, onEnd: onEnd)
+        }
+    }
+    private static func showsExtensionPage(_ popup: NSWindow) -> Bool {
+        guard let page = popup.contentView as? PCNativePageHost else { return false }
+        return page.window === popup
+    }
+    private static func extensionPopupLoading(_ popup: NSWindow) -> Bool {
+        SidebarAddressButtonsReveal.extensionPopupLoading(attached: popup.parent != nil, visible: popup.isVisible,
+                                                          showsPage: showsExtensionPage(popup))
     }
     func endAddressButtonHolds() {
         extensionPopupKeyObserver.map(NotificationCenter.default.removeObserver)

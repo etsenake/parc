@@ -189,6 +189,9 @@ enum SidebarAddressButtonsReveal {
     @MainActor static func extensionPopupOpen(_ popup: NSWindow, of window: NSWindow?) -> Bool {
         window.map { popup.parent === $0 } == true
     }
+    static func extensionPopupLoading(attached: Bool, visible: Bool, showsPage: Bool) -> Bool {
+        showsPage && !attached && !visible
+    }
 
     @MainActor static func apply(_ shown: Bool, to view: NSView, animated: Bool) {
         let alpha: CGFloat = shown ? 1 : 0

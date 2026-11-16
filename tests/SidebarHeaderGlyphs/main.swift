@@ -151,6 +151,14 @@ import SwiftUI
         } } } }
         check(SidebarAddressButtonsReveal.revealed(sidebarHovered: false, showingMenu: false, anchored: true, voiceOverRunning: true),
               "VoiceOver keeps the docked sidebar's buttons revealed with the pointer elsewhere")
+        check(SidebarAddressButtonsReveal.extensionPopupLoading(attached: false, visible: false, showsPage: true),
+              "a popup window still loading its page, unattached and unseen, counts as open")
+        check(!SidebarAddressButtonsReveal.extensionPopupLoading(attached: true, visible: false, showsPage: true),
+              "a popup attached to its browser window is open, not loading")
+        check(!SidebarAddressButtonsReveal.extensionPopupLoading(attached: false, visible: true, showsPage: true),
+              "a visible window detached from its browser window is not loading")
+        check(!SidebarAddressButtonsReveal.extensionPopupLoading(attached: false, visible: false, showsPage: false),
+              "a hidden window without an attached popup page, such as a closed popup, is not loading")
         check(!SidebarAddressButtonsReveal.showsSiteControlCenter(revealed: false, copyQuoteLink: false), "idle hides Site Control Center")
         check(SidebarAddressButtonsReveal.showsSiteControlCenter(revealed: false, copyQuoteLink: true), "a quote link keeps it")
         check(SidebarAddressButtonsReveal.showsSiteControlCenter(revealed: true, copyQuoteLink: false), "revealed shows it")

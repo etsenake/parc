@@ -79,16 +79,27 @@ assert 'static let placeholder = "Search or Enter URL…"' in pill and '"magnify
     "the empty URL bar's glyph no longer matches or lets clicks through to the URL bar"
 assert "var extensionPopupsAnchorToSidebar: Bool { sidebar.isPresented && sidebarShowsAddressBar }" in controller \
     and "extensionPopupAtSidebar = extensionPopupsAnchorToSidebar\n        if extensionPopupAtSidebar {\n" \
-        "            followExtensionPopupsForAddressHold()\n            return .sidebar(" \
-    in controller, "extension popups no longer anchor at, and hold, the visible sidebar URL bar"
+        "            followExtensionPopupsForAddressHold()\n            holdAddressButtonsForLoadingExtensionPopups()\n" \
+        "            return .sidebar(" \
+    in controller, "extension popups no longer anchor at, and hold from their first load, the visible sidebar URL bar"
+loading = controller[controller.index("func holdAddressButtonsForLoadingExtensionPopups() {"):]
+loading = loading[:loading.index("\n    }\n")]
+assert "for popup in NSApp.windows where addressPromptHolds[ObjectIdentifier(popup)] == nil && Self.extensionPopupLoading(popup) {" \
+    in loading and "holdAddressButtons(forExtensionPopup: popup, of: window)" in loading, \
+    "a sidebar popup still loading its page no longer holds the URL row's buttons"
+assert "guard let page = popup.contentView as? PCNativePageHost else { return false }\n        return page.window === popup" \
+    in controller and "SidebarAddressButtonsReveal.extensionPopupLoading(attached: popup.parent != nil, visible: popup.isVisible," \
+    in controller, "a loading popup must be an unattached, unseen window still holding its own popup page"
 follow = controller[controller.index("private func holdAddressButtons(forExtensionPopup popup: NSWindow?) {"):]
 follow = follow[:follow.index("\n    }\n")]
 for use in ("addressPromptHolds.values.forEach { $0.endIfWindowClosed() }",
             "guard let popup, let window, !isClosing, addressPromptHolds[ObjectIdentifier(popup)] == nil,",
-            "SidebarAddressButtonsReveal.holdsExtensionPopup(popup, of: window, showsPage: popup.contentView is PCNativePageHost,",
+            "SidebarAddressButtonsReveal.holdsExtensionPopup(popup, of: window, showsPage: Self.showsExtensionPage(popup),",
             "atSidebar: extensionPopupAtSidebar && extensionPopupsAnchorToSidebar)",
-            "isOpen: { SidebarAddressButtonsReveal.extensionPopupOpen($0, of: window) },"):
+            "holdAddressButtons(forExtensionPopup: popup, of: window)"):
     assert use in follow, f"an extension popup at the sidebar URL bar no longer holds its buttons revealed: {use}"
+assert "SidebarAddressButtonsReveal.extensionPopupOpen($0, of: window) || Self.extensionPopupLoading($0)" in controller, \
+    "a popup hold must last from its first load until the popup leaves its browser window"
 assert "forName: NSWindow.didBecomeKeyNotification," in controller \
     and "self?.holdAddressButtons(forExtensionPopup: note.object as? NSWindow)" in controller, \
     "extension popups are no longer noticed as they open"

@@ -99,11 +99,15 @@ opened at that row hold it revealed for their lifetime, so the pointer can move
 into them without the buttons fading.
 
 An extension popup is a child window of the browser window, whether the
-sidebar, the command bar or the extension opened it. When one becomes key while
-popups anchor at the sidebar's URL row, Parc holds the buttons until the popup
-closes, whatever closed it: focus returning to the browser, Escape, navigation,
-the extension or the browser window closing. A popup detached from its browser
-window also releases when it loses focus or another window takes focus.
+sidebar, the command bar or the extension opened it. When popups anchor at the
+sidebar's URL row, Parc holds the buttons from the moment the engine places a
+new popup, while its page is still loading, so the button can't fade between
+the click and the popup appearing. A popup noticed only when it becomes key
+takes the same hold. The hold lasts until the popup closes, whatever closed it:
+the extension closing it before it ever appears, focus returning to the
+browser, Escape, navigation, the extension or the browser window closing. A
+popup detached from its browser window also releases when it loses focus or
+another window takes focus.
 Site Settings and Security follows its own popover's close.
 While VoiceOver is running the buttons stay revealed, so its cursor never
 outlines empty space. Parc follows VoiceOver turning on and off, not its cursor.
