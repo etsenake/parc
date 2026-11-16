@@ -105,6 +105,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         window.collectionBehavior = [.fullScreenNone]
         window.animationBehavior = .none
         super.init(window: window)
+        SetupExtensionChanges.beginSetupRun()
         window.delegate = self
         window.contentView = root
         themePreview.drawsMaterial = false

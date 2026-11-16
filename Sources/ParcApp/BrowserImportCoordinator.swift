@@ -20,6 +20,7 @@ final class BrowserImportCoordinator {
     private weak var window: NSWindow?
     private let ownerIsCurrent: () -> Bool
     private let onboarding: Bool
+    private let setupRun: UUID?
     let supportsICloudPasswords: Bool
     var onChange: (() -> Void)?
     private(set) var stage: Stage = .loading {
@@ -152,6 +153,7 @@ final class BrowserImportCoordinator {
         let live = Self.liveExports
         DispatchQueue.global(qos: .utility).async { Self.removeAbandonedExports(in: safariExportRoot, keeping: live) }
         self.onboarding = onboarding
+        setupRun = onboarding ? SetupExtensionChanges.setupRun : nil
         self.supportsICloudPasswords = supportsICloudPasswords
         self.ownerIsCurrent = ownerIsCurrent
         subscription = store.statePublisher.dropFirst().sink { [weak self] _ in
@@ -420,7 +422,6 @@ final class BrowserImportCoordinator {
         dataFailed = false; dataImported = false; dataFailureReported = false
         pendingExtensions = []; backgroundProfiles = []; extensionBatch = nil; passwordStageOffered = false
         announcedExtensions = []; heldExtensionFailures = []
-        if onboarding { SetupExtensionChanges.forgetAdBlockerChoice() }
         keepsPasswordChoice = false; passwordsWithoutData = false; parkedStage = nil; pendingStart = nil
         queue = []; queuedDestinations = [:]; usedProfiles = []; activeDestination = nil
         generation = UUID()
@@ -707,7 +708,7 @@ final class BrowserImportCoordinator {
         let profile = namingProfile ? store.state.profiles.first { $0.id == entry.destination.profileID }?.name : nil
         return entry.profile.extensions.filter { entry.ids.contains($0.identifier) }.map {
             .init(source: entry.profile, identifier: $0.identifier, name: $0.displayName,
-                  destination: entry.destination, profile: profile, setup: onboarding)
+                  destination: entry.destination, profile: profile, setupRun: setupRun)
         }
     }
 

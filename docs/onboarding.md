@@ -118,7 +118,9 @@ ad-blocker choice: after keeping just one, adding uBlock Origin or choosing not
 to block ads, the setup import's other known blockers get no notice and Retry
 never re-adds them, so a retry that works still leaves only the chosen one; Use
 all imported ad blockers keeps every Retry. Imports from the File menu keep
-theirs.
+theirs. Each setup and Replay keeps its own choice, so a download from an
+earlier setup that fails after a Replay begins still follows that setup's
+choice.
 
 When the engine knows a change can never work, the notice says why instead of
 offering Retry: “Kept installed by your administrator” or “by another app” for a

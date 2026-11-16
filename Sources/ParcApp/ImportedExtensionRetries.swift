@@ -10,7 +10,7 @@ enum ImportedExtensionRetries {
         var profile: String? = nil
         var reason: ImportedExtensionFailures.Failure.Reason? = nil
         var retryable = true
-        var setup = false
+        var setupRun: UUID? = nil
         var target: String { "import " + destination.profileID.uuidString + " " + identifier }
         var failure: ImportedExtensionFailures.Failure {
             .init(name: name, profile: profile, target: target, reason: reason)
@@ -23,19 +23,21 @@ enum ImportedExtensionRetries {
         }
     }
     private static var installs: [UUID: PCNativeImportSession] = [:]
-    private static var setupBlockers: [String: String] = [:]
+    private static var setupBlockers: [String: (identifier: String, run: UUID)] = [:]
 
-    private static func declined(_ item: Item) -> Bool { item.setup && SetupExtensionChanges.declines(item.identifier) }
+    private static func declined(_ item: Item) -> Bool {
+        item.setupRun.map { SetupExtensionChanges.declines(item.identifier, in: $0) } ?? false
+    }
 
     static func discardDeclined() {
         ImportedExtensionFailures.discard { failure in
-            failure.target.flatMap { setupBlockers[$0] }.map(SetupExtensionChanges.declines) ?? false
+            failure.target.flatMap { setupBlockers[$0] }.map { SetupExtensionChanges.declines($0.identifier, in: $0.run) } ?? false
         }
     }
 
     static func record(_ item: Item, store: BrowserStore) {
         guard !declined(item) else { return }
-        setupBlockers[item.target] = item.setup && OnboardingAdBlocker.isKnown(item.identifier) ? item.identifier : nil
+        setupBlockers[item.target] = item.setupRun.flatMap { OnboardingAdBlocker.isKnown(item.identifier) ? (identifier: item.identifier, run: $0) : nil }
         guard item.retryable else { ImportedExtensionFailures.record(item.failure); return }
         ImportedExtensionFailures.record(item.failure) { [weak store] in
             guard let store else { return }

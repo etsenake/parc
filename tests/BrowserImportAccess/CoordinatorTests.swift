@@ -549,6 +549,15 @@ import AppKit
         PCNativeBrowserApplication.rejectsExtensionInstall = false
         expect(ImportedExtensionFailures.take()?.failures == [imported(known)],
                "A retry the engine can't begin comes straight back")
+        while ImportedExtensionFailures.take() != nil {}
+        SetupExtensionChanges.apply(.none, to: [], in: destination, store: store)
+        SetupExtensionChanges.beginSetupRun()
+        downloading.background([failure(known), failure(unknown)])
+        let afterReplay = ImportedExtensionFailures.take()
+        expect(afterReplay?.failures == [imported(unknown)] && afterReplay?.canRetry == true
+               && ImportedExtensionFailures.take() == nil,
+               "A setup import still finishing after a Replay begins follows its own setup's choice: its declined blocker stays quiet, other extensions keep Retry")
+        SetupExtensionChanges.beginSetupRun()
         ImportedExtensionFailures.present = nil
         return checks
     }
