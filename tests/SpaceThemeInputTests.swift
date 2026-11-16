@@ -496,6 +496,9 @@ private final class ThemeInputEvent: NSEvent {
         NSEvent.enterExitEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
                                eventNumber: 0, trackingNumber: 0, userData: nil)!
     }
+    static func markerLayer(_ view: NSView) -> NSView {
+        view.subviews.first { $0.identifier?.rawValue == "ThemeNoiseMarker" }!
+    }
     static func handlesSwellAndDotsFill() {
         var hovered = ThemeButtonMotion()
         hovered.setHovered(true, animated: false)
@@ -532,20 +535,37 @@ private final class ThemeInputEvent: NSEvent {
         slider.mouseUp(with: mouse(.leftMouseUp, slider, NSPoint(x: middle.x, y: 2)))
         expect(pixels(slider) == restingSlider, "releasing outside the band settles the thumb")
 
-        let marker = NSRect(x: 61, y: 33, width: 19, height: 14), centre = NSPoint(x: dial.bounds.midX, y: dial.bounds.midY)
-        let restingMarker = patch(snapshot(dial), dial, marker)
+        let layer = markerLayer(view), marker = NSRect(x: 69, y: 39, width: 26, height: 18)
+        let centre = NSPoint(x: dial.bounds.midX, y: dial.bounds.midY)
+        expect(layer.frame == dial.frame.insetBy(dx: -8, dy: -8) && !layer.isAccessibilityElement()
+               && layer.hitTest(NSPoint(x: layer.frame.midX, y: layer.frame.midY)) == nil,
+               "the marker draws in its own layer eight points beyond the dial, which neither clicks nor speaks")
+        func hit(_ x: CGFloat) -> NSView? { view.hitTest(view.convert(NSPoint(x: x, y: dial.frame.midY), to: nil)) }
+        expect(hit(dial.frame.minX + 70) === dial && hit(dial.frame.maxX + 4) !== dial && hit(dial.frame.maxX + 4) !== layer,
+               "clicks still reach the dial only inside its own frame")
+        let restingMarker = patch(snapshot(layer), layer, marker)
         dial.mouseMoved(with: mouse(.mouseMoved, dial, NSPoint(x: centre.x - 30, y: centre.y)))
-        let swollenMarker = patch(snapshot(dial), dial, marker)
+        let swollenMarker = patch(snapshot(layer), layer, marker)
         expect(swollenMarker != restingMarker, "hovering the ring swells the position marker")
         dial.mouseMoved(with: mouse(.mouseMoved, dial, centre))
-        expect(patch(snapshot(dial), dial, marker) == restingMarker, "the centre knob grows its texture, not the marker")
+        expect(patch(snapshot(layer), layer, marker) == restingMarker, "the centre knob grows its texture, not the marker")
         dial.mouseDown(with: mouse(.leftMouseDown, dial, NSPoint(x: centre.x + 24, y: centre.y)))
         dial.mouseDragged(with: mouse(.leftMouseDragged, dial, NSPoint(x: centre.x + 38, y: centre.y)))
         dial.mouseDragged(with: mouse(.leftMouseDragged, dial, NSPoint(x: centre.x + 5, y: centre.y)))
-        expect(view.theme.noise == 0.25 && patch(snapshot(dial), dial, marker) == swollenMarker,
+        expect(view.theme.noise == 0.25 && patch(snapshot(layer), layer, marker) == swollenMarker,
                "a dial drag keeps the marker swollen even over the knob")
         dial.mouseUp(with: mouse(.leftMouseUp, dial, NSPoint(x: centre.x + 5, y: centre.y)))
-        expect(patch(snapshot(dial), dial, marker) == restingMarker, "releasing over the knob settles the marker")
+        expect(patch(snapshot(layer), layer, marker) == restingMarker, "releasing over the knob settles the marker")
+
+        func shadowBeyondTopTip(hovered: Bool) -> CGFloat {
+            var theme = SpaceTheme(); theme.noise = 0
+            let view = make(theme), dial = control("Theme texture and noise", view), layer = markerLayer(view)
+            if hovered { dial.mouseMoved(with: mouse(.mouseMoved, dial, NSPoint(x: dial.bounds.midX - 30, y: dial.bounds.midY))) }
+            return ink(snapshot(layer), layer, NSPoint(x: layer.bounds.midX, y: 8 - 1.5))
+        }
+        let restingShadow = shadowBeyondTopTip(hovered: false), swollenShadow = shadowBeyondTopTip(hovered: true)
+        expect(restingShadow > 0.005 && swollenShadow > restingShadow,
+               "with the marker at the top, its shadow draws past the dial's edge, at rest and deeper when swollen")
 
         func dotInk(_ value: Double, step: Int) -> CGFloat {
             var theme = SpaceTheme(); theme.noise = value

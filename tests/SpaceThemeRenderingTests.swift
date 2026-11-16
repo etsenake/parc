@@ -211,9 +211,14 @@ struct SpaceThemeRenderingTests {
               "lit dots draw the foreground over the separator dot")
         check((Array(1...9) + Array(16...19)).allSatisfy { slot($0).alphaComponent > 0.1 && slot($0).alphaComponent < 0.2 },
               "remaining dots use the separator color")
-        let indicator = pixel(dialImage, center.x + 38, center.y)
+        let marker = editor.subviews.first { $0.identifier?.rawValue == "ThemeNoiseMarker" }!, markerImage = snapshot(marker)
+        check(marker.frame == dial.frame.insetBy(dx: -8, dy: -8) && marker.hitTest(NSPoint(x: marker.frame.midX, y: marker.frame.midY)) == nil,
+              "the indicator draws in its own non-interactive layer eight points beyond the dial")
+        let markerCenter = NSPoint(x: marker.bounds.midX, y: marker.bounds.midY)
+        let indicator = pixel(markerImage, markerCenter.x + 38, markerCenter.y)
         check(indicator.alphaComponent > 0.95 && indicator.redComponent > 0.95, "white indicator capsule extends radially")
-        check(pixel(dialImage, center.x + 32, center.y + 6).alphaComponent < 0.3, "indicator capsule is eight points wide")
+        check(pixel(markerImage, markerCenter.x + 32, markerCenter.y + 6).alphaComponent < 0.3, "indicator capsule is eight points wide")
+        check(pixel(dialImage, center.x + 38, center.y).alphaComponent < 0.02, "the dial itself no longer draws the indicator")
         let disc = pixel(dialImage, center.x + 12, center.y).alphaComponent
         check(disc > 0.15 && disc < 0.45, "knob texture draws at the reduced opacity")
         check(pixel(dialImage, center.x, center.y - 24).alphaComponent < 0.02, "knob disc is 40 points across")
@@ -225,7 +230,7 @@ struct SpaceThemeRenderingTests {
         let lightLit = pixel(lightImage, center.x, center.y - 32).usingColorSpace(.deviceRGB)!
         check(lightLit.alphaComponent > 0.39 && lightLit.alphaComponent < 0.42 && lightLit.redComponent < 0.1,
               "Aqua lit dots compose black 0.30 over 0.15")
-        let lightIndicator = pixel(lightImage, center.x + 38, center.y).usingColorSpace(.deviceRGB)!
+        let lightIndicator = pixel(snapshot(marker, NSAppearance(named: .aqua)!), markerCenter.x + 38, markerCenter.y).usingColorSpace(.deviceRGB)!
         check(lightIndicator.alphaComponent > 0.95 && lightIndicator.redComponent > 0.95, "Aqua keeps the white indicator")
 
         var still = ThemeButtonMotion()

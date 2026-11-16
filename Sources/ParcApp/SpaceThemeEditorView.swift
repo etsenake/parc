@@ -118,6 +118,7 @@ final class SpaceThemeEditorView: NSView {
         noise.onEnd = { [weak self] in self?.completeGesture() }
         noise.onClick = { [weak self] in guard let self else { return }; self.discrete { self.editor.cycleTexture() } }
         addSubview(noise)
+        addSubview(noise.marker)
         setAccessibilityLabel("Space theme editor")
         appearanceObservation = NSApplication.shared.observe(\.appearance, options: [.new]) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.refreshAppearance() }
@@ -144,6 +145,7 @@ final class SpaceThemeEditorView: NSView {
         }
         intensity.frame = NSRect(x: 6, y: rowY + 46, width: bounds.width - 108, height: 80)
         noise.frame = NSRect(x: bounds.width - 98, y: rowY + 46, width: 80, height: 80)
+        noise.marker.frame = noise.frame.insetBy(dx: -ThemeNoiseMarker.outset, dy: -ThemeNoiseMarker.outset)
     }
     var firstKeyView: NSView { pad }
     func chainKeyViews(to following: NSView) {
@@ -933,8 +935,35 @@ private final class ThemeIntensityControl: NSControl {
     override func accessibilityPerformDecrement() -> Bool { onDiscreteBegin?(); onChange?(value - 0.05); onEnd?(); return true }
 }
 
+private final class ThemeNoiseMarker: NSView {
+    static let outset: CGFloat = 8
+    var value: Double = 0 { didSet { if value != oldValue { needsDisplay = true } } }
+    private(set) lazy var motion = ThemeButtonMotionDriver(view: self)
+    override var isFlipped: Bool { true }
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        identifier = NSUserInterfaceItemIdentifier("ThemeNoiseMarker")
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        let center = NSPoint(x: bounds.midX, y: bounds.midY), angle = (-90 + value * 360) * .pi / 180
+        let hover = motion.motion.hover, scale = motion.motion.hoverScale, radius = 32 - 8 * (scale - 1)
+        NSGraphicsContext.saveGraphicsState()
+        let transform = NSAffineTransform()
+        transform.translateX(by: center.x + cos(angle) * radius, yBy: center.y + sin(angle) * radius)
+        transform.rotate(byRadians: angle + .pi / 2); transform.concat()
+        ThemeEditorColors.thumbShadow(hover: hover).set()
+        NSColor.white.setFill()
+        NSBezierPath(roundedRect: NSRect(x: -4 * scale, y: -8 * scale, width: 8 * scale, height: 16 * scale),
+                     xRadius: 4 * scale, yRadius: 4 * scale).fill()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+}
+
 private final class ThemeNoiseControl: NSControl {
-    var value: Double = 0 { didSet { needsDisplay = true; setAccessibilityValue(Int(value * 100)) } }
+    var value: Double = 0 { didSet { needsDisplay = true; marker.value = value; setAccessibilityValue(Int(value * 100)) } }
+    let marker = ThemeNoiseMarker()
     var texture: SpaceTheme.Texture = .grain { didSet { needsDisplay = true } }
     var onBegin: (() -> Void)?
     var onDiscreteBegin: (() -> Void)?
@@ -947,7 +976,6 @@ private final class ThemeNoiseControl: NSControl {
     private var pointerInsideCenter = false
     private var pointerOnRing = false
     private lazy var knobMotion = ThemeButtonMotionDriver(view: self)
-    private lazy var markerMotion = ThemeButtonMotionDriver(view: self)
     private var tracking: NSTrackingArea?
     private var rotationActive = false
     private var rotationSequenceActive = false
@@ -987,7 +1015,7 @@ private final class ThemeNoiseControl: NSControl {
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil { pointerInsideCenter = false; pointerOnRing = false; knobMotion.reset(); markerMotion.reset() }
+        if window == nil { pointerInsideCenter = false; pointerOnRing = false; knobMotion.reset(); marker.motion.reset(); marker.needsDisplay = true }
     }
     override func draw(_ dirtyRect: NSRect) {
         let center = NSPoint(x: bounds.midX, y: bounds.midY)
@@ -1014,17 +1042,6 @@ private final class ThemeNoiseControl: NSControl {
         NSGraphicsContext.restoreGraphicsState()
         ThemeEditorColors.separator.setStroke()
         NSBezierPath(ovalIn: knob).stroke()
-        let angle = (-90 + value * 360) * .pi / 180
-        let hover = markerMotion.motion.hover, scale = markerMotion.motion.hoverScale, radius = 32 - 8 * (scale - 1)
-        NSGraphicsContext.saveGraphicsState()
-        let transform = NSAffineTransform()
-        transform.translateX(by: center.x + cos(angle) * radius, yBy: center.y + sin(angle) * radius)
-        transform.rotate(byRadians: angle + .pi / 2); transform.concat()
-        ThemeEditorColors.thumbShadow(hover: hover).set()
-        NSColor.white.setFill()
-        NSBezierPath(roundedRect: NSRect(x: -4 * scale, y: -8 * scale, width: 8 * scale, height: 16 * scale),
-                     xRadius: 4 * scale, yRadius: 4 * scale).fill()
-        NSGraphicsContext.restoreGraphicsState()
     }
     private func angleValue(_ point: NSPoint) -> Double {
         var angle = atan2(point.y - bounds.midY, point.x - bounds.midX) + .pi / 2
@@ -1056,7 +1073,7 @@ private final class ThemeNoiseControl: NSControl {
         point.map { bounds.contains($0) && !knobRect.contains($0) } ?? false
     }
     private func updateMarkerHover() {
-        markerMotion.update(hovered: didDrag || rotationActive || (pointerOnRing && !pressedKnob))
+        marker.motion.update(hovered: didDrag || rotationActive || (pointerOnRing && !pressedKnob))
     }
 
     private func observeScroll() {

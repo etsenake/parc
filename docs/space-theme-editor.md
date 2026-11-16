@@ -74,9 +74,10 @@ covers the dot it sits on, so the filling shows on the dot just behind it.
 The marker is an 8 × 16 white radial capsule. Over the ring, where the open hand
 shows, and while a drag or rotation is turning the dial, it swells and deepens
 its shadow exactly like the slider thumb, moving inward so its tip stays inside
-the dial. With the marker at the bottom, the dial's frame cuts off the shadow
-below its tip, as it already did for the resting shadow. Hovering the centre
-knob grows only the texture. Gesture admission and
+the dial. It draws in its own non-interactive layer beside the dial, 8 points
+larger on every side, so its shadow draws in full at every angle while the dial
+keeps its frame, clicks, hover and VoiceOver outline. Hovering the centre knob
+grows only the texture. Gesture admission and
 wheel/rotation cancellation are in [theme input](space-theme-input.md).
 
 ## Preset start page
