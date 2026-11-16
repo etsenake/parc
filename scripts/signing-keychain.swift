@@ -33,12 +33,9 @@ if CommandLine.arguments[1] == "export" {
     print(data.base64EncodedString())
 } else if CommandLine.arguments[1] == "import" {
     guard let encoded = request["pkcs12"], let data = Data(base64Encoded: encoded) else { fail("Missing encrypted PKCS12") }
-    var keychain: SecKeychain?
-    let status = SecKeychainCopyDefault(&keychain)
-    guard status == errSecSuccess else { fail("Default login Keychain unavailable: \(status)") }
-    var format = SecExternalFormat.formatPKCS12
-    var kind = SecExternalItemType.itemTypeAggregate
-    let result = SecItemImport(data as CFData, nil, &format, &kind, [], &parameters, keychain, nil)
+    var items: CFArray?
+    let result = SecPKCS12Import(data as CFData, [kSecImportExportPassphrase: passphrase] as CFDictionary, &items)
+    guard result != errSecNoDefaultKeychain else { fail("Default login Keychain unavailable: \(result)") }
     guard result == errSecSuccess || result == errSecDuplicateItem else { fail("Selected key import failed: \(result)") }
     print("Imported selected production identity")
 } else { fail("Use export or import") }
