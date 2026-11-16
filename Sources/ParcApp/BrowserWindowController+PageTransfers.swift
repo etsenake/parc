@@ -182,7 +182,7 @@ extension BrowserWindowController {
             if !destination.rendering { destination.render(destination.store.state) }
             return true
         }
-        if let peek = peeks.values.first(where: { $0.parentTabID == id && !$0.page.isClosed }) {
+        if let peek = peeks.values.first(where: { $0.parentTabID == id && $0.parentPage != nil && !$0.page.isClosed }) {
             return transferTabWithPeek(id, peek: peek, to: destination, placement: placement, untargeted: untargeted)
         }
         if browsers[id] == nil, noteEditors[id] != nil || easelEditors[id] != nil {

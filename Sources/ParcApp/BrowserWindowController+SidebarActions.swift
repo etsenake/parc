@@ -497,7 +497,7 @@ extension BrowserWindowController {
             return !destination.isPrivateBrowsing && !destination.store.isEphemeral && destination.presentation.isReady
                 && !destination.windowClosePending && !destination.windowCloseApproved && destination.activePeek == nil
         }
-        if peeks.values.contains(where: { $0.parentTabID == id && !$0.page.isClosed }) { return destination.activePeek == nil }
+        if peeks.values.contains(where: { $0.parentTabID == id && $0.parentPage != nil && !$0.page.isClosed }) { return destination.activePeek == nil }
         return true
     }
     func claimsTab(_ id: UUID) -> Bool { ownership.owner(of: id) == presentationID }

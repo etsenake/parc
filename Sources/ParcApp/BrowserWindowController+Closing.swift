@@ -263,7 +263,7 @@ extension BrowserWindowController {
 
     func beginPageRetirement(_ id: UUID) {
         settleTabPeek(before: id)
-        if peeks.values.contains(where: { $0.parentTabID == id }) { peekRetirementParents.insert(id) }
+        if peeks.values.contains(where: { $0.parentTabID == id && $0.parentPage != nil }) { peekRetirementParents.insert(id) }
         if let page = nativePage(forTabID: id), page.responds(to: #selector(PCNativePage.captureNavigationState)) {
             retiringPageHistory[id] = page.captureNavigationState()
         }
@@ -285,7 +285,7 @@ extension BrowserWindowController {
         }
         if let peek = peeks[page.identifier] {
             if closed || page.isClosed { removePeek(peek) }
-            else if peek.parentPage.isClosed { promotePeek(peek, split: false, orphaned: true) }
+            else if peek.parentPage?.isClosed == true { promotePeek(peek, split: false, orphaned: true) }
             return
         }
         peekRetirementParents.remove(id)

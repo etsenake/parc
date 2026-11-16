@@ -1,24 +1,36 @@
 # Archive previews
 
 Selecting an eligible archived web tab opens its live page over the Library as
-a Peek. Closing the preview leaves the archive record intact. Expand restores
-the original archived item into the current Space and transfers the preview's
-existing native page into that tab. The Library remains visible until a
-successful expansion.
+a Peek, whatever the window shows behind it: a web page, a Note, an Easel, a
+split whose focused pane is a document, or the start page of an empty Space or
+empty window. Closing the preview leaves the archive record intact. Expand
+restores the original archived item into the current Space and transfers the
+preview's existing native page into that tab. The Library remains visible until
+a successful expansion.
 
-## Engine dependency
+## Opening the preview
 
-The current implementation is in `BrowserWindowController.previewArchivedItem`,
-`adoptPeek` and the Peek promotion path. It uses the existing native `openPeek`
-route and the reopened-Peek identity flag; the former separate-engine handoff is
-obsolete. A pending request captures the exact parent page, archive lease and
-one-shot token. A missing native callback releases the reservation after two
-seconds. Adoption rechecks the exact window, Profile, parent page and archive
-lease before accepting the new page.
+`BrowserWindowController.previewArchivedItem` picks a route from
+`PeekBackdrop`, which describes what the window shows. Over a live web page it
+uses the native `openPeek` route from that page and the reopened-Peek identity
+flag, and `adoptPeek` accepts the new page. Over a Note, an Easel or the start
+page there is no page to open from, so the window creates the preview's page
+itself, hidden among its parked pages, and wraps it in a Peek with no parent
+page. That Peek belongs to the current tab, or to the Space while its start
+page shows, so like any Peek it hides when you switch away and returns with
+you. A web tab whose page isn't live yet can't host a preview, because its page
+would later cover it.
 
-The preview is admitted only for a single HTTP(S) web item over an eligible
-current page. Notes, Easels, splits and folders are restored with Put Back
-instead; see [product decisions](#product-decisions).
+A pending request holds the parent page (none for the window route), archive
+lease and one-shot token, and keeps any second Peek out. A missing callback
+releases the reservation after two seconds. Adoption rechecks the window,
+Profile, backdrop and archive lease before accepting the new page; a refused or
+late page is closed. `PeekBackdropTests` covers each backdrop's route and that
+the window then shows the preview.
+
+The preview is admitted only for a single HTTP(S) web item. Notes, Easels,
+splits and folders are restored with Put Back instead; see
+[product decisions](#product-decisions).
 
 ## App responsibilities
 
@@ -33,6 +45,14 @@ model identity before handing off the live wrapper and page. Native attachment
 and saved-item ownership must both succeed. Failed attachment reattaches the
 preview wrapper; if the archive item was already restored, it stays restored and
 loads its own page rather than being silently removed.
+
+A window-hosted preview returns focus to the Note, Easel or start page behind
+it when it closes, and its sound gets a Mini Player that brings that host back.
+It never holds up closing, archiving, moving or splitting its Note or Easel. If
+that Note, Easel or Space goes away or moves to another window while the
+preview is hidden, or a tab takes the start page's place, the preview closes so
+it can't hide out of reach holding its archive item. If its page refuses to
+close, it stays open as a Today tab, as any Peek does when its parent goes.
 
 Selection, focus, capture, authentication, downloads, popups and external routes
 retain the actual preview page and its original native security owner. They must

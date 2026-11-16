@@ -113,10 +113,10 @@ extension BrowserWindowController {
     }
 
     private func peekSource(of page: PCNativePage) -> UUID? {
-        guard let peek = peeks[page.identifier], peek.page === page, !page.isClosed,
-              !peek.parentPage.isClosed, browsers[peek.parentTabID]?.nativePage === peek.parentPage,
-              PCNativeBrowserApplication.owner(of: peek.parentPage) === nativeBinding,
-              peek.parentPage.profilePath == page.profilePath,
+        guard let peek = peeks[page.identifier], peek.page === page, !page.isClosed, let parentPage = peek.parentPage,
+              !parentPage.isClosed, browsers[peek.parentTabID]?.nativePage === parentPage,
+              PCNativeBrowserApplication.owner(of: parentPage) === nativeBinding,
+              parentPage.profilePath == page.profilePath,
               !peekRetirementParents.contains(peek.parentTabID) else { return nil }
         return peek.parentTabID
     }

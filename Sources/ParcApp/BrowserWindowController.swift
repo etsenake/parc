@@ -181,7 +181,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var cookieFlush: DispatchWorkItem?
     var peeks: [String: PeekController] = [:] { didSet { noteReturnGate() } }
     let tabPeeks = TabPeekSlot()
-    var archivePreviewRequest: (parent: String, lease: ArchivePreviewLease, token: UUID)?
+    var archivePreviewRequest: (parent: String?, lease: ArchivePreviewLease, token: UUID)?
     var archivePreviews: [UUID: ArchivePreviewLease] = [:]
     var queuedArchivePreview: (id: UUID, profileID: UUID)?
     var archivePreviewRemnants = Set<UUID>()
@@ -190,8 +190,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var lastFavoriteOverlayFingerprint: String?
     var promotingPeek = false { didSet { noteReturnGate() } }
     var activePeek: PeekController? {
-        guard let id = currentTabID else { return nil }
+        guard let id = peekHostID else { return nil }
         return peek(over: id)
+    }
+    var peekHostID: UUID? {
+        PeekBackdrop.hostID(currentTabID: currentTabID, showsStartPage: showsStartPage, activeSpaceID: activeSpaceID)
     }
     func peek(over id: UUID) -> PeekController? {
         if let held = tabPeeks.current?.shownController, held.parentTabID == id, !held.page.isClosed,
@@ -1441,8 +1444,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 if peek.view.isHidden { browser.synchronizeSelectionAndLayout(); return }
             }
             guard !applyingNativeSelection, !isClosing, !wholeWindowClose else { return }
+            let hostTab = store.state.tab(peek.parentTabID) != nil
+            if !hostTab, peekHostID != peek.parentTabID { browser.synchronizeSelectionAndLayout(); return }
             applyingNativeSelection = true
-            _ = selectTab(peek.parentTabID)
+            if hostTab { _ = selectTab(peek.parentTabID) }
             applyingNativeSelection = false
             layoutPeeks(); peek.focus(); return
         }

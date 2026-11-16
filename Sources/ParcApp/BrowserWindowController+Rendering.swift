@@ -70,6 +70,7 @@ extension BrowserWindowController {
         let displayed = nativeFullscreenTabID.map { id in selected.filter { $0.id == id } } ?? selected
         let displayedIDs = displayed.map(\.id)
         reconcileTabPeek(displaying: displayedIDs)
+        preserveHostlessPeeks()
         shownSinceArrival.formIntersection(returnableIDs)
         shownSinceArrival.formUnion(displayedIDs.filter { !placeholderIDs.contains($0) })
         heldReturns.formIntersection(returnableIDs); heldReturns.subtract(displayedIDs)

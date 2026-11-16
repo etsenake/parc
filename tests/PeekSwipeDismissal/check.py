@@ -81,10 +81,10 @@ group = body(window, "    func closePageAndPeeks(", "\n    }\n\n")
 assert group.index("self.peekRetirementParents.remove(id)") < group.index("orphaned: true"), \
     "the window's own tab close must clear the parent mark and still promote orphans"
 require(body(window, "    private func handPeekFocusToParent("), "the keyboard handover to the parent",
-        present=("peek.lendFocus(", "selectedNativePage() === peek.parentPage", "parentCanTakeFocus(",
-                 "binding.requestFocus(for: peek.parentPage)"))
+        present=("peek.lendFocus(", "guard let parent = peek.parentPage", "selectedNativePage() === parent",
+                 "parentCanTakeFocus(", "binding.requestFocus(for: parent)"))
 require(body(window, "    func removePeek("), "the focus return after a close",
-        present=("self.activePeek == nil && self.parentCanTakeFocus(", "binding.requestFocus(for: peek.parentPage)"))
+        present=("self.activePeek == nil && self.parentCanTakeFocus(", "if let parent = peek.parentPage { _ = binding.requestFocus(for: parent) }"))
 require(body(window, "    func noteRetiringPeekParents("), "the tab-close notice to Peeks",
         present=("symmetricDifference", "parentClosingChanged(peekRetirementParents.contains("))
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()

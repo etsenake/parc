@@ -51,7 +51,7 @@ extension BrowserWindowController {
         }
         for peek in peeks.values.sorted(by: { $0.identity.uuidString < $1.identity.uuidString }) {
             guard peek.browser.window === window, !peek.page.isClosed,
-                  let profileID = browserProfiles[peek.parentTabID] else { continue }
+                  let profileID = peekProfileID(peek) else { continue }
             let parentPage = browsers[peek.parentTabID]?.nativePage
             let pageSig = miniPlayerPageSignature(kind: "p", id: peek.identity, profileID: profileID,
                                                   page: peek.page, statusSel: statusSel,
@@ -181,7 +181,7 @@ extension BrowserWindowController {
                 }))
         }
         for peek in peeks.values.sorted(by: { $0.identity.uuidString < $1.identity.uuidString }) {
-            guard let profileID = browserProfiles[peek.parentTabID],
+            guard let profileID = peekProfileID(peek),
                   peek.browser.window === window, !peek.closePending, !peek.page.isClosed,
                   peeks[peek.page.identifier] === peek,
                   browsers[peek.parentTabID]?.nativePage === peek.parentPage,
@@ -202,7 +202,7 @@ extension BrowserWindowController {
                       !peek.closePending, !peek.page.isClosed,
                       self.peeks[peek.page.identifier] === peek,
                       self.browsers[peek.parentTabID]?.nativePage === peek.parentPage,
-                      self.browserProfiles[peek.parentTabID] == profileID,
+                      self.peekProfileID(peek) == profileID,
                       peek.browser.window === self.window,
                       self.ownership.canUse(peek.parentTabID, owner: self.presentationID),
                       !self.closingTabIDs.contains(peek.parentTabID),
@@ -226,7 +226,7 @@ extension BrowserWindowController {
                     self.closeLibrary(restoreFocus: false)
                     guard valid(), peek.page.canContinueMediaReveal(state, in: hostWindow), window.isKeyWindow,
                           PCNativeBrowserApplication.canPresentTabSwitcher(in: window) else { return }
-                    if self.selectTab(peek.parentTabID), valid(),
+                    if self.revealPeekHost(peek), valid(),
                        peek.page.canContinueMediaReveal(state, in: hostWindow) { peek.focus() }
                 }))
         }

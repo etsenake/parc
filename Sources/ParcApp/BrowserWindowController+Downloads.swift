@@ -284,9 +284,10 @@ extension BrowserWindowController {
     func browserView(_ view: PCBrowserView, addContextImageToEasel image: PCNativeContextImage) {
         let embedded = view.nativePage.flatMap { embeddedEaselOwner($0) }
         let held = activePeek.flatMap { $0.returnsPage && $0.browser === view ? $0.parentTabID : nil }
+        let hosted = activePeek.flatMap { $0.parentPage == nil && $0.browser === view ? $0 : nil }
         guard !isPrivateBrowsing, let id = held ?? id(for: view) ?? peeks.values.first(where: { $0.browser === view })?.parentTabID ?? embedded?.0,
-              let profileID = browserProfiles[id] ?? easelEditors[id]?.profileID,
-              profileID == activeProfileID, selectedTabIDs.contains(id),
+              let profileID = browserProfiles[id] ?? easelEditors[id]?.profileID ?? hosted.flatMap(peekProfileID),
+              profileID == activeProfileID, selectedTabIDs.contains(id) || hosted != nil,
               let window, window.attachedSheet == nil, easelImageDestination == nil, !isClosing, image.isValid,
               let page = view.nativePage,
               page.profilePath == store.independentEngineProfilePath(for: profileID) else { return }
@@ -297,7 +298,8 @@ extension BrowserWindowController {
                     guard let self, let view, let page else { return false }
                     return !self.isClosing && self.activeProfileID == profileID
                         && self.selectedNativePage() === page && view.nativePage === page
-                        && (self.browserProfiles[id] ?? self.easelEditors[id]?.profileID) == profileID && self.selectedTabIDs.contains(id)
+                        && ((self.browserProfiles[id] ?? self.easelEditors[id]?.profileID) == profileID && self.selectedTabIDs.contains(id)
+                            || self.activePeek.map { $0.parentPage == nil && $0.browser === view } == true)
                         && !self.transferringTabIDs.contains(id) && image.isValid
                 }, saved: { [weak self] documentID, title in
                     guard let self, self.activeProfileID == profileID, !self.isClosing else { return }

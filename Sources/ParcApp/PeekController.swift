@@ -6,7 +6,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     let identity = UUID()
     let parentTabID: UUID
     let sourceSpaceID: UUID
-    let parentPage: PCNativePage
+    let parentPage: PCNativePage?
     let page: PCNativePage
     let browser: PCBrowserView
     let returnsPage: Bool
@@ -41,7 +41,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     var canSplit: (() -> Bool)?
     var canExpand: (() -> Bool)?
 
-    init(page: PCNativePage, parent: PCNativePage, parentTabID: UUID, sourceSpaceID: UUID, holding held: PCBrowserView? = nil) {
+    init(page: PCNativePage, parent: PCNativePage?, parentTabID: UUID, sourceSpaceID: UUID, holding held: PCBrowserView? = nil) {
         self.page = page; parentPage = parent; self.parentTabID = parentTabID; self.sourceSpaceID = sourceSpaceID
         browser = held ?? PCBrowserView(frame: .zero, adoptingNativePage: page)
         returnsPage = held != nil

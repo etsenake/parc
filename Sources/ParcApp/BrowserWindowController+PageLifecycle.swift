@@ -261,7 +261,7 @@ extension BrowserWindowController {
     }
 
     func peekPages(forTabID id: UUID) -> [PCNativePage] {
-        peeks.values.filter { $0.parentTabID == id && !$0.page.isClosed }.map(\.page)
+        peeks.values.filter { $0.parentTabID == id && $0.parentPage != nil && !$0.page.isClosed }.map(\.page)
     }
 
     func canAcceptNativeLinkRoute(profileID: UUID) -> Bool {
