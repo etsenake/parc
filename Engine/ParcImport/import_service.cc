@@ -21,7 +21,7 @@ Batch Read(ReadOptions options, uint32_t category, Cancellation cancelled) {
   std::fill(options.source_key.begin(), options.source_key.end(), '\0');
   return result;
 }
-}  // namespace
+}
 ImportService::ImportService(mojo::PendingReceiver<mojom::Reader> receiver)
     : receiver_(this, std::move(receiver)),
       cancelled_(std::make_shared<std::atomic_bool>(false)) {}
@@ -48,6 +48,7 @@ void ImportService::ReadCategory(mojom::SourcePtr source,
   options.family = static_cast<Family>(source->family);
   options.profile_path = base::FilePath(source->profile_path);
   options.app_path = base::FilePath(source->app_path);
+  options.source_name = std::move(source->source_name);
   options.source_key.assign(source->source_key.begin(),
                             source->source_key.end());
   std::fill(source->source_key.begin(), source->source_key.end(), 0);
@@ -100,4 +101,4 @@ void ImportService::Complete(ReadCategoryCallback callback, Batch batch) {
         mojom::Extension::New(std::move(x.id), base::UTF16ToUTF8(x.name)));
   std::move(callback).Run(std::move(out));
 }
-}  // namespace parc::importer
+}

@@ -34,6 +34,7 @@ struct Extension { std::string id; std::u16string name; };
 struct ReadOptions {
   Family family = Family::kChromium;
   base::FilePath profile_path, app_path;
+  std::string source_name;
   std::string source_key;
   std::vector<std::string> extension_ids;
 };
@@ -61,4 +62,4 @@ bool ChromiumBookmarksNeedKey(const base::FilePath& profile);
 Batch ReadChromiumCategory(const ReadOptions&, uint32_t, const Cancellation&);
 Batch ReadSafariCategory(const ReadOptions&, uint32_t, const Cancellation&);
 Batch ReadFirefoxCategory(const ReadOptions&, uint32_t, const Cancellation&);
-}  // namespace parc::importer
+}

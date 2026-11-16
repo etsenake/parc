@@ -6,6 +6,7 @@ struct Source {
   Family family;
   string profile_path;
   string app_path;
+  string source_name;
   array<uint8> source_key;
   array<string> extension_ids;
 };
@@ -33,9 +34,6 @@ struct Batch {
   array<History> history; array<Bookmark> bookmarks; array<Cookie> cookies;
   array<Password> passwords; array<Autofill> autofill; array<Extension> extensions;
 };
-// Like Chromium's existing ProfileImport service, reading an explicitly chosen
-// external browser profile requires OS file/Keychain authorization. This service
-// receives only the native snapshot, never paths supplied by a webpage.
 [ServiceSandbox=sandbox.mojom.Sandbox.kNoSandbox]
 interface Reader {
   ReadCategory(Source source, uint32 category) => (Batch batch);

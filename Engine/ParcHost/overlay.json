@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 747,
+  "version": 748,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -1269,12 +1269,12 @@
     {
       "source": "Engine/ParcImport/import_service.cc",
       "target": "parc/importer/import_service.cc",
-      "sha256": "4eea9cbd52837ab6831595acbaf3aac7a2ed55338c8ab3c01d398561e8d6d3e7"
+      "sha256": "6fb5ad6090bf246d306161819d23494eda7708769cbeedf50094fea70fc43afa"
     },
     {
       "source": "Engine/ParcImport/import_reader.h",
       "target": "parc/importer/import_reader.h",
-      "sha256": "1699a0c9745add751d358238eb310657c9bbb1985b57d5d0ce35e0e1847d9efe"
+      "sha256": "7ab9ffa993a0f9d0310ff3474e29dd1ae49ca9845f266fd214f77247070bf12c"
     },
     {
       "source": "Engine/ParcImport/chromium_reader.cc",
@@ -1294,17 +1294,17 @@
     {
       "source": "Engine/ParcImport/parc_import.mojom",
       "target": "parc/importer/parc_import.mojom",
-      "sha256": "67f5f00f8467d516b49dafcad6350634b35dc553766b581746162fba53ab8791"
+      "sha256": "4d2240e363ac860938b6afe17ce952089494380ea15a0b07822658da70d50811"
     },
     {
       "source": "Engine/ParcImport/firefox_reader.cc",
       "target": "parc/importer/firefox_reader.cc",
-      "sha256": "aaa68c7f3d9eccc3594c75474c31f94a14a89d48e0860c57fb16c6da622efd84"
+      "sha256": "d300139f78acc5b46d2c8e6ad685141f07dbb16d9a7262411804f9fc000d4a07"
     },
     {
       "source": "Engine/ParcNative/native_import_session.mm",
       "target": "parc/native/native_import_session.mm",
-      "sha256": "e5b93f359e9a4e23169616a897571a3f54687b54b0abf5e3d14cd4e8023a6dd5"
+      "sha256": "54850ed9e9cc74a7f7feafb47d693e7da86e6e4f465a4a6604d9bb76b08a39ee"
     },
     {
       "source": "Engine/ParcNative/native_import_writer.mm",
@@ -1314,7 +1314,7 @@
     {
       "source": "Engine/ParcNative/native_import_discovery.mm",
       "target": "parc/native/native_import_discovery.mm",
-      "sha256": "d6e9f9ea10aaee5eaad67c8670f2217ae623a5ae5bf97ece34f2cea0dd7747b3"
+      "sha256": "ffe10a8ca9e0b50a2e5ea9ceaec283756fb3ef7a79222217a0adfab71c2c50ec"
     },
     {
       "source": "Engine/ParcNative/native_import_extensions.mm",

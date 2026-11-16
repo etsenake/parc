@@ -159,9 +159,9 @@ void AddProfile(ProfilesResult& result,
       p->categories |= PCNativeImportCategoryAutofill;
     p->constraints.push_back(
         source->name + " passwords require an explicit password export. Parc "
-        "does not load Firefox's external NSS libraries into its signed "
-        "application. " + source->name + " add-ons and encrypted payment "
-        "records are not imported.");
+        "does not load " + source->name + "'s external NSS libraries into "
+        "its signed application. " + source->name + " add-ons and encrypted "
+        "payment records are not imported.");
   }
   if (p->restricted)
     p->constraints.push_back(

@@ -168,6 +168,13 @@ void Firefox(const base::FilePath& path) {
   db = Database(places); SQL(db, "DROP TABLE moz_historyvisits;"); sqlite3_close(db);
   auto malformed = ReadFirefoxCategory(options, kHistory, cancel);
   Require(!malformed.success && malformed.history.empty(), "Firefox schema failure does not publish history");
+  Require(malformed.error == "Firefox history has an unsupported database schema.",
+          "An unnamed Firefox-family source is described as Firefox");
+  options.source_name = "Zen";
+  auto zen = ReadFirefoxCategory(options, kHistory, cancel);
+  Require(!zen.success && zen.error == "Zen history has an unsupported database schema.",
+          "A damaged Zen profile is described as Zen, not Firefox");
+  options.source_name.clear();
   options.profile_path = base::FilePath("relative");
   Require(!ReadFirefoxCategory(options, kHistory, cancel).success, "Firefox relative path rejected");
   options.profile_path = path.AppendASCII("missing");

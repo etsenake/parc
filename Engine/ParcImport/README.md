@@ -60,9 +60,10 @@ already moved once, it still needs Full Disk Access and a private Safari
 database for Profile names, and Safari's export file covers the same need in a
 format Apple documents.
 
-Zen is built on Firefox and uses the Firefox reader. Zen's own build sets its
-profile name to `zen`, so its `profiles.ini` and profiles live in
-`~/Library/Application Support/zen`; its bundle identifier is
+Zen is built on Firefox and uses the Firefox reader, which names the source
+browser in its messages, so a damaged Zen profile is reported as Zen's. Zen's
+own build sets its profile name to `zen`, so its `profiles.ini` and profiles
+live in `~/Library/Application Support/zen`; its bundle identifier is
 `app.zen-browser.zen`. Reading Firefox's encrypted password store
 (`logins.json` with `key4.db`) directly is decided against: it would rebuild
 Firefox's key handling for its older and its Firefox 144 formats, need a

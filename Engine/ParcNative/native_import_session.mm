@@ -456,6 +456,7 @@ class Session final : public ProfileObserver,
     source->family = static_cast<mojom::Family>(source_->source->family);
     source->profile_path = source_->path.value();
     source->app_path = source_->source->app_path.value();
+    source->source_name = source_->source->name;
     source->source_key = key_;
     deadline_.Start(FROM_HERE, base::Minutes(5),
                     base::BindOnce(
