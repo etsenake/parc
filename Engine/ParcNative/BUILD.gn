@@ -285,6 +285,7 @@ source_set("native_extensions") {
     "//ui/views",
   ]
   deps = [
+    ":native_auxiliary_page",
     ":native_components",
     "//chrome/browser/devtools",
     "//chrome/browser/picture_in_picture",

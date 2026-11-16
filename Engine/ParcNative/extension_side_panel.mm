@@ -34,6 +34,7 @@
 #include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
+#include "native_auxiliary_page.h"
 #import "page_host.h"
 
 @interface PCSidePanelPageObserver : NSObject <PCNativePageHostObserver>
@@ -320,6 +321,8 @@ class NativeExtensionSidePanel::State::Session final
       return;
     suspending_ = true;
     CallScope call(*this);
+    if (auto lease = std::move(page_lease_))
+      lease->Revoke();
     const bool was_shown = std::exchange(shown_, false);
     NSWindow* exact_window = page_.window;
     NSResponder* prior = exact_window.firstResponder;
@@ -545,6 +548,7 @@ class NativeExtensionSidePanel::State::Session final
   __weak NSResponder* restore_focus_ = nil;
   PCNativePageHost* __strong page_ = nil;
   PCSidePanelPageObserver* __strong observer_ = nil;
+  std::shared_ptr<NativeExtensionPage> page_lease_;
 };
 
 bool NativeExtensionSidePanel::State::ContextValid() const {
@@ -684,6 +688,18 @@ void NativeExtensionSidePanel::State::Ready(
   if (!SessionValid(*session, true)) {
     Cancel(session);
     return;
+  }
+  if (!session->page_lease_) {
+    session->page_lease_ = NativeExtensionPage::Bind(
+        *session->host_->host_contents(), session->page_,
+        host_->SidePanelWindow(),
+        base::BindRepeating(
+            [](std::weak_ptr<Session> weak) {
+              auto self = weak.lock();
+              auto owner = self ? self->owner_.lock() : nullptr;
+              return owner && owner->SessionValid(*self, true);
+            },
+            std::weak_ptr<Session>(session)));
   }
   session->host_->host_contents()->WasShown();
   if (!SessionValid(*session, true)) {

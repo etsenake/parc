@@ -7,9 +7,11 @@
 #include <memory>
 
 #include "base/callback_list.h"
+#include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/web_contents_observer.h"
 
+@class PCNativePageHost;
 class BrowserWindowInterface;
 namespace tabs {
 class TabInterface;
@@ -29,8 +31,6 @@ class NativeAuxiliaryPage final
   bool IsActive() const;
   BrowserWindowInterface* browser() const;
   NSWindow* window() const;
-  // Revoke BEFORE hierarchy/modal-owner changes. Requests retain this lease;
-  // acquiring a later lease cannot make an old request valid again.
   void Revoke();
   base::CallbackListSubscription OnInvalidated(base::RepeatingClosure);
 
@@ -55,8 +55,35 @@ class NativeAuxiliaryPage final
   base::RepeatingClosureList invalidated_;
   bool revoked_ = false;
 };
-// The route marker survives a temporary detach. Factories must cancel a routed
-// but currently unbound page rather than choose another window/focused browser.
+class NativeExtensionPage final
+    : public content::WebContentsObserver,
+      public std::enable_shared_from_this<NativeExtensionPage> {
+ public:
+  static std::shared_ptr<NativeExtensionPage> Bind(
+      content::WebContents& contents,
+      PCNativePageHost* hosted,
+      NSWindow* owner,
+      base::RepeatingCallback<bool()> owner_valid);
+  ~NativeExtensionPage() override;
+  bool IsValid() const;
+  NSWindow* window() const;
+  void Revoke();
+  base::CallbackListSubscription OnInvalidated(base::RepeatingClosure);
+
+ private:
+  NativeExtensionPage(content::WebContents&,
+                      PCNativePageHost*,
+                      NSWindow*,
+                      base::RepeatingCallback<bool()>);
+  void WebContentsDestroyed() override;
+  PCNativePageHost* __weak hosted_;
+  NSWindow* __weak window_;
+  NSWindow* __weak owner_;
+  base::RepeatingCallback<bool()> owner_valid_;
+  id __strong window_close_;
+  base::RepeatingClosureList invalidated_;
+  bool revoked_ = false;
+};
 void MarkNativeAuxiliaryRoute(content::WebContents&);
 bool HasNativeAuxiliaryRoute(content::WebContents&);
 std::shared_ptr<NativeAuxiliaryPage> GetNativeAuxiliaryPage(
@@ -64,5 +91,7 @@ std::shared_ptr<NativeAuxiliaryPage> GetNativeAuxiliaryPage(
 base::CallbackListSubscription ObserveNativeAuxiliaryPage(
     content::WebContents&,
     base::RepeatingClosure);
-}  // namespace parc
+std::shared_ptr<NativeExtensionPage> GetNativeExtensionPage(
+    content::WebContents&);
+}
 #endif

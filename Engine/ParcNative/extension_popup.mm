@@ -20,7 +20,9 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "native_auxiliary_page.h"
 #import "page_host.h"
+#import "window_security_reservation.h"
 
 @interface PCExtensionPageObserver : NSObject <PCNativePageHostObserver>
 @property(copy) void (^detached)(void);
@@ -48,10 +50,8 @@ bool PopupDiagnosticsEnabled() {
          command->HasSwitch("parc-native-runtime-controller-tests");
 }
 std::atomic<uint64_t> next_diagnostic_session{0};
-}  // namespace
+}
 
-// Visibility/focus can notify observers. A close request must not delete their
-// WebContents while the engine is still executing the originating operation.
 class NativeExtensionPopup::Operation {
  public:
   explicit Operation(NativeExtensionPopup& owner, bool external = false)
@@ -87,8 +87,6 @@ class NativeExtensionPopup::View final : public extensions::ExtensionView {
         popup->RequestHide("page-detached");
       }
     };
-    // Popup contents are supplied once and cannot steal another host's
-    // observer.
     CHECK(![native_.superview isMemberOfClass:PCNativePageHost.class]);
     page_ = [PCNativePageHost hostWithContentView:native_ observer:observer_];
   }
@@ -98,6 +96,17 @@ class NativeExtensionPopup::View final : public extensions::ExtensionView {
   }
   PCNativePageHost* page() const { return page_; }
   void HostWillClose() { contents_ = nullptr; }
+  void BindPage(NSWindow* owner, base::RepeatingCallback<bool()> valid) {
+    if (contents_ && !lease_) {
+      lease_ = NativeExtensionPage::Bind(*contents_, page_, owner,
+                                         std::move(valid));
+    }
+  }
+  void RevokePage() {
+    if (auto lease = std::move(lease_)) {
+      lease->Revoke();
+    }
+  }
   gfx::NativeView GetNativeView() override { return gfx::NativeView(native_); }
   void ResizeDueToAutoResize(content::WebContents* source,
                              const gfx::Size& size) override {
@@ -154,7 +163,6 @@ class NativeExtensionPopup::View final : public extensions::ExtensionView {
     if (auto owner = owner_.lock()) {
       owner->Trace("load-callback", "did-stop-first-load");
     }
-    // DidStopLoading continues using its host after OnLoaded returns.
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(
                        [](std::weak_ptr<NativeExtensionPopup> weak) {
@@ -171,6 +179,7 @@ class NativeExtensionPopup::View final : public extensions::ExtensionView {
   NSView* __strong native_ = nil;
   PCNativePageHost* __strong page_ = nil;
   PCExtensionPageObserver* __strong observer_ = nil;
+  std::shared_ptr<NativeExtensionPage> lease_;
 };
 
 NativeExtensionPopup::NativeExtensionPopup(
@@ -195,7 +204,6 @@ NativeExtensionPopup::NativeExtensionPopup(
         callbacks_.closed);
 }
 NativeExtensionPopup::~NativeExtensionPopup() {
-  // Browser teardown must call Close while its dependencies still exist.
   CHECK(closing_);
   CHECK(!host_);
   Trace("destroyed", "session-release");
@@ -204,8 +212,6 @@ void NativeExtensionPopup::Trace(const char* phase, const char* reason) const {
   if (!diagnostic_id_) {
     return;
   }
-  // Fixed phase/reason tokens and the extension ID only. Never log a URL,
-  // page content, origin, profile path, credential, or raw object address.
   std::fprintf(stderr,
                "PARC_POPUP session=%llu extension=%s phase=%s reason=%s "
                "started=%d closing=%d hide=%d shown=%d calls=%d "
@@ -239,8 +245,6 @@ bool NativeExtensionPopup::Start() {
     return false;
   }
   std::weak_ptr<NativeExtensionPopup> weak = alive;
-  // Install before CreateRendererSoon, which may start the renderer
-  // immediately.
   host_->SetCloseHandler(base::BindOnce(
       [](std::weak_ptr<NativeExtensionPopup> weak, extensions::ExtensionHost*) {
         if (auto self = weak.lock()) {
@@ -271,9 +275,6 @@ bool NativeExtensionPopup::Start() {
     Close();
     return false;
   }
-  // Load visible, as Chrome does inside its not-yet-shown bubble. Hiding the
-  // page until it loaded put the extension's renderer at background priority
-  // with rendering paused, so on a busy Mac popups took seconds to appear.
   Trace("prepared", "visible-before-show");
   view_->RenderFrameCreated(host_->host_contents()->GetPrimaryMainFrame());
   if (closing_ || hide_queued_ || !host_) {
@@ -308,6 +309,17 @@ void NativeExtensionPopup::Loaded() {
   }
   shown_ = true;
   Trace("shown", "presenter-visible");
+  view_->BindPage(
+      parent_,
+      base::BindRepeating(
+          [](std::weak_ptr<NativeExtensionPopup> weak) {
+            auto self = weak.lock();
+            return self && !self->closing_ && !self->hide_queued_ &&
+                   self->shown_ && self->host_ &&
+                   self->presenter_.presenting &&
+                   !self->callbacks_.security_ui_visible.Run();
+          },
+          std::weak_ptr<NativeExtensionPopup>(alive)));
   host_->host_contents()->WasShown();
   if (closing_ || hide_queued_ || !host_) {
     return;
@@ -351,8 +363,9 @@ void NativeExtensionPopup::RequestHide(const char* reason) {
     return;
   }
   hide_queued_ = true;
-  // Don't destroy a host from an AppKit close/menu event stack. The owner still
-  // closes synchronously during Browser teardown, canceling this weak request.
+  if (view_) {
+    view_->RevokePage();
+  }
   std::weak_ptr<NativeExtensionPopup> weak = alive;
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(
@@ -375,11 +388,13 @@ bool NativeExtensionPopup::MayDismissForParentKey() {
   if (closing_) {
     return false;
   }
+  NSWindow* popup = presenter_.popupWindow;
   return !javascript_dialogs::AppModalDialogQueue::GetInstance()
               ->HasActiveDialog() &&
          !web_modal::WebContentsHasActiveWebModal(host_->host_contents()) &&
          !DevToolsWindow::GetInstanceForInspectedWebContents(
-             host_->host_contents());
+             host_->host_contents()) &&
+         !popup.attachedSheet && !PCNativeWindowHasSecurityReservation(popup);
 }
 void NativeExtensionPopup::SecurityUIChanged() {
   auto alive = shared_from_this();
@@ -419,6 +434,9 @@ void NativeExtensionPopup::Close() {
   if (!closing_) {
     closing_ = true;
     callbacks_.request_hide.Reset();
+    if (view_) {
+      view_->RevokePage();
+    }
     [presenter_ invalidate];
   }
   MaybeFinalizeClose();
@@ -436,11 +454,7 @@ void NativeExtensionPopup::MaybeFinalizeClose() {
       return;
     }
     close_task_queued_ = true;
-    // Retain only this terminal session until the native/engine callback stack
-    // unwinds. Browser ownership must survive an in-flight engine callback.
     auto self = shared_from_this();
-    // Match Chromium156's Mac popup close protection: a generic posted task
-    // can run inside a nested native event loop while sendEvent is on stack.
     CFRunLoopPerformBlock(CFRunLoopGetMain(), kCFRunLoopDefaultMode, ^{
       self->deferred_close_ = false;
       self->close_task_queued_ = false;
@@ -458,7 +472,6 @@ void NativeExtensionPopup::FinalizeClose() {
     return;
   }
   Trace("finalize", "before-host-destruction");
-  // Keep ExtensionView and native view alive through modal-handler teardown.
   if (view_) {
     view_->HostWillClose();
   }
@@ -487,4 +500,4 @@ extensions::ExtensionViewHost* NativeExtensionPopup::host() const {
 gfx::NativeView NativeExtensionPopup::native_view() const {
   return !closing_ && view_ ? view_->GetNativeView() : gfx::NativeView();
 }
-}  // namespace parc
+}

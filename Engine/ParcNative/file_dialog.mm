@@ -122,6 +122,8 @@ class NativeFileDialog final : public ui::SelectFileDialog,
       auxiliary_ = GetNativeAuxiliaryPage(contents);
       if (auxiliary_) {
         browser_ = auxiliary_->browser()->GetWeakPtr();
+      } else {
+        extension_page_ = GetNativeExtensionPage(contents);
       }
     }
     Dialogs()[&contents].insert(this);
@@ -174,6 +176,15 @@ class NativeFileDialog final : public ui::SelectFileDialog,
       }
       auxiliary_cancel_ = auxiliary_->OnInvalidated(base::BindRepeating(
           &NativeFileDialog::Cancel, weak_factory_.GetWeakPtr()));
+    }
+    if (extension_page_) {
+      if (!extension_page_->IsValid()) {
+        Cancel();
+        return;
+      }
+      extension_page_cancel_ = extension_page_->OnInvalidated(
+          base::BindRepeating(&NativeFileDialog::Cancel,
+                              weak_factory_.GetWeakPtr()));
     }
     parent_ = window.GetNativeNSWindow();
     if (!Valid() || !parent_.visible || parent_.attachedSheet ||
@@ -353,6 +364,13 @@ class NativeFileDialog final : public ui::SelectFileDialog,
              download_parent_callbacks.owns_parent(*profile_,
                                                    gfx::NativeWindow(parent_));
     }
+    if (extension_page_) {
+      return !done_ && web_contents() && parent_ &&
+             extension_page_->IsValid() &&
+             extension_page_->window() == parent_ &&
+             web_contents()->GetNativeView().GetNativeNSView().window ==
+                 parent_;
+    }
     const bool owner =
         auxiliary_
             ? auxiliary_->IsValid() && auxiliary_->browser() == browser_.get()
@@ -425,6 +443,8 @@ class NativeFileDialog final : public ui::SelectFileDialog,
   raw_ptr<ui::SelectFileDialog::Listener> external_listener_;
   std::shared_ptr<NativeAuxiliaryPage> auxiliary_;
   base::CallbackListSubscription auxiliary_cancel_;
+  std::shared_ptr<NativeExtensionPage> extension_page_;
+  base::CallbackListSubscription extension_page_cancel_;
   base::WeakPtr<tabs::TabInterface> tab_;
   base::WeakPtr<BrowserWindowInterface> browser_;
   base::WeakPtr<Profile> profile_;

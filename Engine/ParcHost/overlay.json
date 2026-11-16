@@ -14,7 +14,7 @@
     {
       "source": "Engine/ParcNative/BUILD.gn",
       "target": "parc/native/BUILD.gn",
-      "sha256": "51c111b920f3b0a7ad0652b075bf975335fdf3d38f988157785a342143bb4a97"
+      "sha256": "4cc65dd760f6914d5849151235a7fe2dfd6d43473efcc57c43aebb75541f4a55"
     },
     {
       "source": "Engine/ParcNative/page_host.h",
@@ -194,7 +194,7 @@
     {
       "source": "Engine/ParcNative/extension_popup.mm",
       "target": "parc/native/extension_popup.mm",
-      "sha256": "d753d90068fc67cae843a91ae9db16e76dda73f6cb1039d9e4b9b312c81de33f"
+      "sha256": "9ae4b8d4ad3813f6cc9488c4a9c6a88f204f8979f1754fd9fa687e4e43ff6c52"
     },
     {
       "source": "Engine/ParcNative/extension_popup_presenter.h",
@@ -319,7 +319,7 @@
     {
       "source": "Engine/ParcNative/extension_side_panel.mm",
       "target": "parc/native/extension_side_panel.mm",
-      "sha256": "1db6b93278507f199098460875828793cbf6d54ae21f4ae6b38855daa52022c8"
+      "sha256": "2bba7af5be2e2515265f79af4a403764bb435f19f90f106878f3a24178411b71"
     },
     {
       "source": "tests/NativeExtensionSidePanel/BUILD.gn",
@@ -554,7 +554,7 @@
     {
       "source": "Engine/ParcNative/file_dialog.mm",
       "target": "parc/native/file_dialog.mm",
-      "sha256": "1bdd4230cadc174daa78e0455ea839089422d5687739928ae438057b5e22013f"
+      "sha256": "b3709dabb5ae593d2c9fdd6ae737ba648a721e989c7a6a543ada8f4ef3cb2167"
     },
     {
       "source": "tests/NativeDownloads/downloads_unittest.cc",
@@ -729,12 +729,12 @@
     {
       "source": "Engine/ParcNative/native_auxiliary_page.h",
       "target": "parc/native/native_auxiliary_page.h",
-      "sha256": "678bd7507ab3bb51f488726c63e725f75dfab4ea0bfe2f9497e0acc81573afeb"
+      "sha256": "e1b7407e3e02ded68ddc55485dd719592f45a6d5b96b0bbf925114a140e9160a"
     },
     {
       "source": "Engine/ParcNative/native_auxiliary_page.mm",
       "target": "parc/native/native_auxiliary_page.mm",
-      "sha256": "6cb1a15993c71199b7850b2343a324a6abc397a76b7c4691715dcc25aee00195"
+      "sha256": "0c00145509562e6a2848bb41fd0cc63accf0d17bb22fdf4dfaa442806be76b4d"
     },
     {
       "source": "Engine/ParcNative/native_auxiliary_services.h",

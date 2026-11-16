@@ -23,7 +23,15 @@ struct State : base::SupportsUserData::Data {
 State* GetState(content::WebContents& contents) {
   return static_cast<State*>(contents.GetUserData(kAuxiliaryPage));
 }
-}  // namespace
+constexpr char kExtensionPage[] = "parc-native-extension-page";
+struct ExtensionPageState : base::SupportsUserData::Data {
+  std::weak_ptr<NativeExtensionPage> current;
+};
+ExtensionPageState* GetExtensionPageState(content::WebContents& contents) {
+  return static_cast<ExtensionPageState*>(
+      contents.GetUserData(kExtensionPage));
+}
+}
 class NativeAuxiliaryPage::InspectedObserver final
     : public content::WebContentsObserver {
  public:
@@ -62,8 +70,6 @@ std::shared_ptr<NativeAuxiliaryPage> NativeAuxiliaryPage::BindDevTools(
   auto* devtools =
       DevToolsWindow::GetInstanceForInspectedWebContents(&inspected);
   DevToolsContentsResizingStrategy strategy;
-  // The real engine supplies identity. A URL or matching Profile alone never
-  // authorizes an arbitrary non-tab WebContents.
   if (!browser || browser->IsDeleteScheduled() || !devtools ||
       devtools->GetDevToolsWebContents() != &tools ||
       DevToolsWindow::GetInTabWebContents(&inspected, &strategy) != &tools ||
@@ -174,8 +180,6 @@ void NativeAuxiliaryPage::Revoke() {
       state->current.reset();
     }
   }
-  // Callbacks can destroy the owner, rebind the tools or run another sheet.
-  // Commit rejection before any callback; no raw state survives notification.
   if (contents && web_contents() == contents) {
     if (auto* state = GetState(*contents)) {
       state->changed.Notify();
@@ -222,4 +226,109 @@ base::CallbackListSubscription ObserveNativeAuxiliaryPage(
   }
   return GetState(contents)->changed.Add(std::move(callback));
 }
-}  // namespace parc
+NativeExtensionPage::NativeExtensionPage(
+    content::WebContents& contents,
+    PCNativePageHost* hosted,
+    NSWindow* owner,
+    base::RepeatingCallback<bool()> owner_valid)
+    : WebContentsObserver(&contents),
+      hosted_(hosted),
+      window_(hosted.window),
+      owner_(owner),
+      owner_valid_(std::move(owner_valid)) {}
+std::shared_ptr<NativeExtensionPage> NativeExtensionPage::Bind(
+    content::WebContents& contents,
+    PCNativePageHost* hosted,
+    NSWindow* owner,
+    base::RepeatingCallback<bool()> owner_valid) {
+  CHECK(NSThread.isMainThread);
+  if (!hosted || !owner || !owner_valid || contents.IsBeingDestroyed() ||
+      tabs::TabInterface::MaybeGetFromContents(&contents) ||
+      HasNativeAuxiliaryRoute(contents)) {
+    return {};
+  }
+  auto lease = std::shared_ptr<NativeExtensionPage>(new NativeExtensionPage(
+      contents, hosted, owner, std::move(owner_valid)));
+  if (!lease->IsValid()) {
+    return {};
+  }
+  if (!GetExtensionPageState(contents)) {
+    contents.SetUserData(kExtensionPage,
+                         std::make_unique<ExtensionPageState>());
+  }
+  if (auto old = GetExtensionPageState(contents)->current.lock()) {
+    old->Revoke();
+  }
+  auto* state = GetExtensionPageState(contents);
+  if (!state || !lease->IsValid() || state->current.lock()) {
+    return {};
+  }
+  state->current = lease;
+  std::weak_ptr<NativeExtensionPage> weak = lease;
+  lease->window_close_ = [NSNotificationCenter.defaultCenter
+      addObserverForName:NSWindowWillCloseNotification
+                  object:lease->window_
+                   queue:nil
+              usingBlock:^(NSNotification*) {
+                if (auto current = weak.lock()) {
+                  current->Revoke();
+                }
+              }];
+  return lease->IsValid() && GetExtensionPageState(contents)->current.lock() ==
+                                 lease
+             ? lease
+             : nullptr;
+}
+bool NativeExtensionPage::IsValid() const {
+  auto* contents = web_contents();
+  if (revoked_ || !contents || contents->IsBeingDestroyed() ||
+      tabs::TabInterface::MaybeGetFromContents(contents) || !hosted_ ||
+      !window_ || !owner_ || hosted_.window != window_ ||
+      (window_ != owner_ && window_.parentWindow != owner_)) {
+    return false;
+  }
+  NSView* actual = contents->GetNativeView().GetNativeNSView();
+  return actual && actual.window == window_ &&
+         hosted_.contentView == actual && actual.superview == hosted_ &&
+         owner_valid_.Run();
+}
+NSWindow* NativeExtensionPage::window() const {
+  return IsValid() ? window_ : nil;
+}
+void NativeExtensionPage::Revoke() {
+  CHECK(NSThread.isMainThread);
+  if (revoked_) {
+    return;
+  }
+  auto keep = weak_from_this().lock();
+  revoked_ = true;
+  if (auto* contents = web_contents()) {
+    if (auto* state = GetExtensionPageState(*contents);
+        state && state->current.lock().get() == this) {
+      state->current.reset();
+    }
+  }
+  invalidated_.Notify();
+}
+base::CallbackListSubscription NativeExtensionPage::OnInvalidated(
+    base::RepeatingClosure callback) {
+  CHECK(!revoked_);
+  return invalidated_.Add(std::move(callback));
+}
+void NativeExtensionPage::WebContentsDestroyed() {
+  Revoke();
+  Observe(nullptr);
+}
+NativeExtensionPage::~NativeExtensionPage() {
+  Revoke();
+  if (window_close_) {
+    [NSNotificationCenter.defaultCenter removeObserver:window_close_];
+  }
+}
+std::shared_ptr<NativeExtensionPage> GetNativeExtensionPage(
+    content::WebContents& contents) {
+  auto* state = GetExtensionPageState(contents);
+  auto lease = state ? state->current.lock() : nullptr;
+  return lease && lease->IsValid() ? lease : nullptr;
+}
+}

@@ -16,7 +16,11 @@ Terminal requests suppress posted load/resize work, retain the view through
 modal-handler teardown, defer host deletion beyond engine/AppKit event stacks
 and resolve the show callback exactly once. Parent close, page detachment and
 engine close share cleanup. Load-before-show, explicit renderer focus,
-modal/DevTools holds and security-UI refusal remain enforced.
+modal/DevTools holds and security-UI refusal remain enforced. A file chooser
+from a popup is a sheet on the popup's own window and holds the popup open like
+a JavaScript dialog; one from a side panel is a sheet on the browser window.
+Both use a page lease the popup or side panel hands out while its page is shown,
+so a chooser cancels when that page hides, closes or moves.
 
 Popups use native window presentation and terminal detachment. Becoming key in
 the popup's own parent dismisses it; another app or window becoming active does
