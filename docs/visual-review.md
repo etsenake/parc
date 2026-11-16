@@ -10,6 +10,10 @@ explicit Parc additions. A comparison image is not permission to remove a contro
 including test/headless copies, and taking app screenshots. Use supplied images,
 retained artifacts, source inspection, compiler checks and model/unit tests.
 This guide does not authorize a render harness that launches an app or window.
+The website videos come from [scripts/site-film](../scripts/site-film/README.md),
+which compiles Parc's interface code and draws it offscreen without an app,
+window or screen recording; it serves only those videos, as the
+[website guide](website.md#product-scenes) describes.
 Live appearance and interaction checks need explicit renewed user authorization.
 For slow or blank transitions, follow
 [collaboration](collaboration.md#runtime-investigations) to connect what the user
