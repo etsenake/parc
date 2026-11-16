@@ -1,3 +1,4 @@
+#include "../Support/TestFailure.h"
 #include <cstdio>
 #include <cstdlib>
 #import "../../Engine/ParcNative/native_import_discovery.mm"
@@ -173,6 +174,7 @@ void ChromeIgnoresSideFolder(const base::FilePath& home) {
 }
 
 int main() {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     base::ScopedTempDir temporary;
     Require(temporary.CreateUniqueTempDir(), "create disposable fixture root");

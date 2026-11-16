@@ -1,3 +1,4 @@
+#include "../../Support/TestFailure.h"
 #import <Foundation/Foundation.h>
 
 #include <unistd.h>
@@ -57,6 +58,7 @@ uint64_t RangeLength(const std::string& range) {
 }
 
 int main(int argc, char** argv) {
+  ParcExitOnUncaughtExceptions();
   if (argc != 3) return 2;
   const int fd = std::atoi(argv[1]);
   NSString* cache_dir = @(argv[2]);

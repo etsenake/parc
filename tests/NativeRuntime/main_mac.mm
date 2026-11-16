@@ -1,3 +1,4 @@
+#include "../Support/TestFailure.h"
 #import <AppKit/AppKit.h>
 #include <dlfcn.h>
 #include <sys/stat.h>
@@ -561,6 +562,7 @@ bool ValidateRoot(NSString* root) {
 }
 }
 int main(int argc, char** argv) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     const bool extension_suite =
         argc == 5 && std::strcmp(argv[3], "--extension-actions") == 0;
