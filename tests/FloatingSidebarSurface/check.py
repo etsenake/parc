@@ -31,7 +31,7 @@ assert "sidebar.layer?.cornerRadius = 0" not in controller, "a docking sidebar k
 sidebar_view = (app / "SidebarView.swift").read_text()
 strip = sidebar_view[sidebar_view.index("    private func showPageStrip(at offset: CGFloat) {"):]
 strip = strip[:strip.index("\n    }\n")]
-assert "SidebarSpacePagingModel.themePages(selected: index, offset: offset, width: width, count: spaces.count)" in strip \
+assert re.search(r"SidebarSpacePagingModel\.themePages\(selected: index, offset: offset, width: width, count: spaces\.count,\s+within: reach\)", strip) \
     and re.search(r"onPagingTheme\?\(ThemePagingTransition\(from: spaces\[pages\.left\]\.theme, theme: spaces\[pages\.left \+ 1\]\.theme,\s+progress: pages\.progress\)\)", strip) \
     and "ThemePagingTransition(from: spaces[source].theme, theme: spaces[index].theme, progress: 1 - fraction)" in strip \
     and "onPagingTheme?(nil)" in strip, "SidebarView no longer gives every swipe's pages to the window's surfaces"

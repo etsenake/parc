@@ -108,15 +108,35 @@ settles, even while the swipe is still settling.
 A Space swipe updates one theme canvas with the two adjacent themes and their
 fractional position. It does not stack a translucent neighboring canvas over
 the current canvas. Re-basing the selected Space preserves the strip position
-and therefore the rendered mix, including drags through multiple pages.
-Locked and floating surfaces use the same transition input.
+and therefore the rendered mix, including a second page started during the
+first one's spring. Locked and floating surfaces use the same transition input.
+
+A two-finger swipe follows at half the finger's distance between its starting
+Space and the Space either side. Past that neighbor, or backward from the first
+Space, the strip stretches by `0.55·L·x / (0.55·x + L)`, where `x` is how far
+the unresisted strip would have gone past the edge and `L` is a tenth of the
+sidebar's width. At the edge the strip slows to 0.55 of its pace rather than
+stopping dead, grows stiffer the further it is pulled, and never shows more
+than a tenth of a page of empty strip. A swipe picked up while the strip is
+still past an edge, settling or springing from a click or wheel switch, starts
+from where the strip and color already are: pushing back follows the fingers,
+and pulling further out only spends what is left of that tenth of a page, so
+nothing jumps and repeated pulls never stretch it further. Pull beyond
+nineteen-twentieths of an edge's give is not banked, so even an edge with no
+give left answers as soon as the fingers turn back. The release still
+chooses its target from the unresisted drag, so it lands where it always did,
+at most one Space away, and springs back from wherever the strip was stretched
+to. A brisk release that would overshoot the landed Space toward a Space
+outside the swipe stretches along the same curve.
 
 Dragging past the final Space presents the create-Space edge over 15 strip
 points, fills its ring over 22.5 points and creates after the ring stays full
 for more than 0.1 seconds before release. The gesture works when the sidebar
 has one Space as well as when it has several; a release that does not create
-springs the current Space back into place. Private and Space-management
-sidebars do not offer this creation gesture.
+springs the current Space back into place. Past the last Space the strip follows
+the drag without resistance whenever the sidebar offers creation, so these
+distances are unchanged. Private and Space-management sidebars do not offer this
+creation gesture, and their last Space resists like any other edge.
 
 The floating blur takes the side the Space resolves to: a forced Space's own
 light or dark, or the window's for an automatic Space, reusing the window's
@@ -279,5 +299,5 @@ require the budget to fail.
 | `tests/SidebarWindowButtons/check.py` | Native button layout and pointer-state reconciliation |
 | `tests/SidebarPlusMenu/check.py` | HUD geometry, palette and dismissal behavior |
 | `tests/SidebarPacing/check.py` | Bounded AppKit layout work and continuity |
-| `tests/SidebarSpacePaging/check.py` | Phased, discrete and legacy paging plus the trailing create-Space gesture |
+| `tests/SidebarSpacePaging/check.py` | Phased, discrete and legacy paging, edge resistance and the trailing create-Space gesture |
 | `tests/SidebarSpaceSwipe/check.py` | Space-switch lifecycle and frame-budget regressions |

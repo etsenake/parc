@@ -55,10 +55,10 @@ straight-alpha upload changes both brightness and apparent noise strength.
 
 `SidebarView.showPageStrip` publishes `ThemePagingTransition` to the root and
 floating surfaces. During tracking it uses the floor/ceiling pages and fractional
-strip position. During settling, the retained `pagingSourceID` pairs source and
-target, so commit/rebase does not restart the theme. A locked sidebar draws no
-separate backdrop; the root shows through. Hidden sidebars begin swipes only
-once shown floating.
+strip position, clamped to the swipe's reach. During settling, the retained
+`pagingSourceID` pairs source and target, so commit/rebase does not restart the
+theme. A locked sidebar draws no separate backdrop; the root shows through.
+Hidden sidebars begin swipes only once shown floating.
 
 One gradient pass mixes the two straight-color layers and then premultiplies.
 The display pass mixes their strength-scaled textures and composites them over
@@ -73,9 +73,15 @@ floating sidebar blends through its own within-window blur, described in
 [sidebar motion](sidebar-motion.md#floating-surface). Each surface requires one
 canvas draw per frame; the transition does not allocate another gradient target.
 
-The strip positions the selected page and its immediate neighbors. Tracking
-beyond one page can expose empty strip space while the background advances to
-a later pair. Release selection remains bounded to one page from the starting
+The strip positions the selected page and its immediate neighbors. A two-finger
+swipe reaches only its starting Space and the Space either side, and the pager
+publishes that reach until the strip comes to rest. Past the neighbor, or
+backward from the first Space, the strip stretches with
+[edge resistance](sidebar-motion.md#floating-surface) instead of exposing empty
+strip. The theme position is clamped to the reach, so the background blends only
+between the two Spaces the release can land on, including while the re-based
+strip settles, and the strip parks any page outside the reach rather than
+building it. Release selection remains bounded to one page from the starting
 Space.
 
 ## Color-pad motion
@@ -99,5 +105,5 @@ alpha readback and spring interruption. Theme input/appearance/Undo and website-
 palette components cover their shared boundaries. The appearance check also
 verifies text and accent contrast for Automatic and forced Spaces across colors,
 intensities and both appearances, and the docked material rule. Sidebar paging
-and floating-surface components check pair/progress continuity and material
-layering.
+and floating-surface components check pair/progress continuity, a swipe's color
+staying within its two Spaces, and material layering.

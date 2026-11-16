@@ -25,11 +25,16 @@ for use in ("    let scroll = SidebarPagingScrollView()\n",
             "        miniPlayers.offerScroll = offer\n"):
     assert use in sidebar, f"SidebarView no longer routes a sidebar scroll view to the pager: {use}"
 assert re.search(
-    r"spacePager\.canTrackSinglePageCreation = \{ \[weak self\] in\s+"
+    r"spacePager\.offersCreation = \{ \[weak self\] in\s+"
     r"guard let self else \{ return false \}\s+"
     r"return !self\.isPrivateBrowsing && !self\.isSpaceManagement && self\.onNewSpace != nil\s+\}",
     sidebar,
-), "single-Space creation must remain unavailable in private and Space-management sidebars"
+), "the create-Space pull must remain unavailable in private and Space-management sidebars"
+strip = sidebar[sidebar.index("    private func showPageStrip(at offset: CGFloat) {"):]
+strip = strip[:strip.index("\n    private func pageState(")]
+assert ".flatMap { reach?.contains($0) == false ? nil : $0 }" in strip \
+    and "where spaces.indices.contains(index + direction) && reach?.contains(index + direction) != false" in strip, \
+    "a swipe's strip places a Space outside the swipe's own two again"
 assert "    private let scroll = SidebarPagingScrollView()\n" in (root / "Sources/ParcApp/MiniPlayerView.swift").read_text(), \
     "the Mini Player list keeps sideways swipes from the pager again"
 assert "if overflows || !offerScroll(event) { super.scrollWheel(with: event) }" in \

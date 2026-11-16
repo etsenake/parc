@@ -46,11 +46,13 @@ func run() {
     var accepts = true
     var offsets: [CGFloat] = []
     var clock: CFTimeInterval = 100
+    var offers = true
     let pager = SidebarSpacePager()
     pager.pages = { ids }
     pager.selectedID = { selected }
     pager.pageWidth = { 240 }
     pager.canBegin = { true }
+    pager.offersCreation = { offers }
     pager.canSelect = { _ in available }
     pager.select = { selections.append($0.id); if accepts { selected = $0.id } }
     pager.setOffset = { offsets.append($0) }
@@ -138,15 +140,209 @@ func run() {
     expect(same(pages(0, 72), (0, 0)) && same(pages(2, -72), (1, 1)), "beyond the strip's ends its end page alone")
     expect(M.themePages(selected: 0, offset: 10, width: 240, count: 1) == nil
            && M.themePages(selected: 0, offset: 10, width: 0, count: 3) == nil, "no pair without two pages and a width")
+    func swiped(_ selectedIndex: Int, _ offset: CGFloat) -> (left: Int, progress: CGFloat)? {
+        M.themePages(selected: selectedIndex, offset: offset, width: 240, count: 3, within: pager.reach)
+    }
+    expect(M.reach(begin: 0, count: 3) == 0...1 && M.reach(begin: 1, count: 3) == 0...2 && M.reach(begin: 2, count: 3) == 1...2
+           && M.reach(begin: 0, count: 1) == 0...0, "a swipe reaches its own Space and the Spaces either side")
+    expect(same(M.themePages(selected: 0, offset: -312, width: 240, count: 3, within: 0...1), (0, 1))
+           && same(M.themePages(selected: 2, offset: 312, width: 240, count: 3, within: 1...2), (1, 0)),
+           "within a swipe's reach a drag past the neighbour rests on its colour instead of blending toward the next")
+    expect(same(M.themePages(selected: 1, offset: -40, width: 240, count: 3, within: 0...1), (0, 1)),
+           "re-based onto the neighbour, the colour stays the swipe's two Spaces")
+    expect(same(M.themePages(selected: 1, offset: 96, width: 240, count: 3, within: 0...2), pages(1, 96))
+           && same(M.themePages(selected: 1, offset: -96, width: 240, count: 3, within: 0...2), pages(1, -96)),
+           "inside the reach the colour is unchanged")
+
+    expect(M.stretch(0, width: 240) == 0 && M.stretch(-5, width: 240) == 0 && M.stretch(30, width: 0) == 0,
+           "nothing stretches at or inside an edge")
+    expect(abs(M.stretch(0.01, width: 240) / 0.01 - 0.55) < 0.001,
+           "the stretch starts at 0.55 of the drag, so the strip slows at the edge without stopping dead")
+    let stretches = stride(from: 10, through: 4000, by: 10).map { M.stretch(CGFloat($0), width: 240) }
+    let gains = zip(stretches.dropFirst(), stretches).map { $0 - $1 }
+    expect(zip(gains.dropFirst(), gains).allSatisfy { $0 > 0 && $0 < $1 } && stretches.last! < 24,
+           "it keeps giving, ever more stiffly, and never reaches a tenth of the page")
+    expect(abs(M.stretch(100, width: 480) - 2 * M.stretch(50, width: 240)) < 1e-9, "the stretch scales with the sidebar's width")
+    let middle = M.Edges(reach: 0...1, width: 240, opensPastEnd: false, holding: 120)
+    expect(middle.resisted(315) == 240 + M.stretch(75, width: 240) && middle.resisted(-60) == -M.stretch(60, width: 240)
+           && middle.resisted(130) == 130, "the strip follows the drag between its ends and stretches past them")
+    let pastEnd = M.Edges(reach: 1...2, width: 240, opensPastEnd: true, holding: 360)
+    expect(pastEnd.last == nil && pastEnd.resisted(525) == 525 && pastEnd.resisted(200) == 240 - M.stretch(40, width: 240),
+           "past the last Space the create-Space pull still follows the drag")
+    let edgeHeld = M.Edges(reach: 0...1, width: 240, opensPastEnd: false, holding: -10)
+    expect(edgeHeld.first == -10 && edgeHeld.resisted(-10) == -10 && edgeHeld.resisted(30) == 30
+           && edgeHeld.resisted(-400) > -24 && edgeHeld.resisted(-400) < -10,
+           "picked up past an edge, the strip starts where it is and only spends what is left of the give")
+    let edgeSpent = M.Edges(reach: 1...2, width: 240, opensPastEnd: false, holding: 197)
+    expect(edgeSpent.first == 197 && edgeSpent.firstGive == 0 && edgeSpent.resisted(100) == 197 && edgeSpent.resisted(230) == 230,
+           "beyond the whole give it goes no further out, yet follows the fingers back")
+    expect(edgeSpent.held(100) == 197 && edgeSpent.held(230) == 230 && abs(edgeHeld.held(-9000) - (-10 - 14 * 19 / 0.55)) < 1e-9
+           && middle.held(-5000) < -800 && middle.held(5000) > 1000 && abs(M.stretch(-middle.held(-5000), width: 240) - 0.95 * 24) < 1e-9,
+           "pull past nineteen-twentieths of the give is not banked, so a spent edge answers as soon as the fingers turn")
+    expect(M.widened(1...2, toward: 197, width: 240, count: 3) == 0...2 && M.widened(0...1, toward: 120, width: 240, count: 3) == 0...1
+           && M.widened(1...2, toward: 600, width: 240, count: 3) == 1...2 && M.widened(0...1, toward: -30, width: 240, count: 3) == 0...1,
+           "a reach widens only toward Spaces that exist")
 
     selected = ids[0].id; accepts = true; available = true; selections = []
     _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 20)
-    for k in 0..<30 { _ = pager.gesture(phase: .changed, momentum: false, dx: -21, dy: 0, time: 20.02 + Double(k) * 0.02) }
-    let dragged = pages(0, pager.offset)
-    expect(pager.offset < -240 && dragged.map { $0.left == 1 } == true, "a long drag's theme pairs the two pages beyond the first")
+    var strip: [CGFloat] = []
+    for k in 0..<30 {
+        _ = pager.gesture(phase: .changed, momentum: false, dx: -21, dy: 0, time: 20.02 + Double(k) * 0.02)
+        strip.append(-pager.offset)
+    }
+    let advances = zip(strip.dropFirst(), strip).map { $0 - $1 }
+    expect(Array(strip.prefix(22)) == (1...22).map { CGFloat($0) * 10.5 },
+           "up to the neighbouring Space the strip follows at half the finger distance")
+    expect(strip.last! > 240 && strip.allSatisfy { $0 < 240 + 24 },
+           "a long drag stops at the neighbour, never showing more than a tenth of a page of empty strip past it")
+    expect(advances.suffix(7).allSatisfy { $0 > 0 && $0 < 10.5 * 0.55 } && zip(advances.suffix(6), advances.suffix(7)).allSatisfy { $0 < $1 },
+           "past it each step meets more resistance")
+    expect(pager.reach == 0...1 && same(swiped(0, pager.offset), (0, 1)),
+           "the colour rests on the neighbouring Space instead of blending toward the one after it")
+    let held = pager.offset
     _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 20.61)
-    expect(selections == [ids[1].id] && same(pages(1, pager.offset), dragged), "its release keeps the same pair and progress")
+    expect(selections == [ids[1].id], "the release still moves exactly one Space")
+    expect(abs(pager.offset - (240 + held)) < 1e-9 && pager.reach == 0...1 && pager.isAnimating,
+           "the strip re-bases from where it was let go and keeps the swipe's two Spaces")
+    expect(same(swiped(1, pager.offset), (0, 1)) && pager.reach?.contains(2) == false,
+           "settling back, neither the strip nor the colour reaches the Space beyond")
+    clock += 0.1; pager.tick()
+    expect(pager.offset < 0 && pager.offset > 240 + held && pager.reach == 0...1, "it springs back out of the stretch")
     clock += 2; pager.tick()
+    expect(pager.offset == 0 && !pager.isAnimating && pager.reach == nil, "the reach ends at rest")
+
+    selected = ids[2].id; selections = []
+    _ = pager.gesture(phase: .began, momentum: false, dx: 2, dy: 0, time: 22)
+    for k in 0..<40 { _ = pager.gesture(phase: .changed, momentum: false, dx: 15, dy: 0, time: 22.01 + Double(k) * 0.01) }
+    expect(pager.offset > 240 && pager.offset < 264 && pager.reach == 1...2,
+           "a long backward drag stops at the previous Space the same way")
+    expect(same(swiped(2, pager.offset), (1, 0)), "keeping only those two Spaces' colours")
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 22.45)
+    expect(selections == [ids[1].id], "and its release moves one Space back")
+    clock += 2; pager.tick()
+
+    selected = ids[0].id; selections = []
+    _ = pager.gesture(phase: .began, momentum: false, dx: 2, dy: 0, time: 24)
+    var edge: [CGFloat] = []
+    for k in 0..<20 {
+        _ = pager.gesture(phase: .changed, momentum: false, dx: 12, dy: 0, time: 24.01 + Double(k) * 0.01)
+        edge.append(pager.offset)
+    }
+    expect(edge.first! > 0 && edge.first! < 6 * 0.55 && edge.last! < 24 && zip(edge.dropFirst(), edge).allSatisfy { $0 > $1 },
+           "at the first Space a backward drag meets the rubber band from its first step")
+    expect(same(swiped(0, edge.last!), (0, 0)), "and keeps the first Space's colour alone")
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 24.25)
+    expect(selections.isEmpty && pager.isAnimating && pager.offset == edge.last!, "letting go stays put and springs back")
+    clock += 2; pager.tick()
+    expect(pager.offset == 0 && pager.reach == nil, "at rest on the first Space")
+
+    selected = ids[0].id; selections = []
+    _ = pager.gesture(phase: .began, momentum: false, dx: 2, dy: 0, time: 25)
+    _ = pager.gesture(phase: .changed, momentum: false, dx: 120, dy: 0, time: 25.01)
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 25.3)
+    clock += 0.05; pager.tick()
+    let relaxing = pager.offset
+    expect(relaxing > 0 && relaxing < M.stretch(60, width: 240) && pager.reach == 0...1, "the stretch springs back")
+    _ = pager.gesture(phase: .began, momentum: false, dx: 2, dy: 0, time: 25.4)
+    expect(pager.offset == relaxing, "picking the strip up mid-settle leaves it in place")
+    _ = pager.gesture(phase: .changed, momentum: false, dx: 4, dy: 0, time: 25.41)
+    expect(abs(pager.offset - (relaxing + M.stretch(2, limit: 24 - relaxing))) < 1e-9 && pager.offset - relaxing < 2 * 0.55,
+           "pulling further only spends what is left of the give, without a jump")
+    _ = pager.gesture(phase: .changed, momentum: false, dx: -24, dy: 0, time: 25.42)
+    expect(abs(pager.offset - (relaxing - 10)) < 1e-9, "and pushing back follows the fingers from where it was picked up")
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 25.7)
+    clock += 2; pager.tick()
+    expect(selections.isEmpty && pager.offset == 0, "still on the first Space")
+    var widest: CGFloat = 0
+    for round in 0..<6 {
+        let at = 25.8 + Double(round) * 0.1
+        _ = pager.gesture(phase: .began, momentum: false, dx: 2, dy: 0, time: at)
+        _ = pager.gesture(phase: .changed, momentum: false, dx: 600, dy: 0, time: at + 0.01)
+        widest = max(widest, pager.offset)
+        _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: at + 0.05)
+        clock += 0.01; pager.tick()
+    }
+    expect(widest > 0 && widest < 24 && selections.isEmpty, "quick repeated pulls at the first Space never stretch past a tenth of a page")
+    clock += 2; pager.tick()
+
+    selected = ids[0].id
+    expect(pager.swipe(deltaX: -1), "a page flip")
+    clock += 0.2; pager.tick()
+    expect(pager.swipe(deltaX: -1) && selected == ids[2].id && pager.offset > 264, "a second flip mid-spring overshoots the previous Space")
+    let flipped = pager.offset, flippedTheme = pages(2, flipped)
+    selections = []
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 27)
+    expect(pager.offset == flipped && same(swiped(2, flipped), flippedTheme),
+           "a swipe started while the flip still springs takes the strip and colour from where they are")
+    _ = pager.gesture(phase: .changed, momentum: false, dx: -40, dy: 0, time: 27.01)
+    expect(abs(pager.offset - (flipped - 20)) < 1e-9, "and follows the fingers at the usual pace rather than treating the overshoot as a stretch")
+    _ = pager.gesture(phase: .changed, momentum: false, dx: 80, dy: 0, time: 27.02)
+    expect(abs(pager.offset - flipped) < 1e-9, "going back past where it started goes no further than the flip already showed")
+    _ = pager.gesture(phase: .changed, momentum: false, dx: -10, dy: 0, time: 27.03)
+    expect(abs(pager.offset - (flipped - 5)) < 1e-9, "and answers at once when the fingers turn back")
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 27.3)
+    expect(selections == [ids[1].id], "its release lands where the unresisted drag says")
+    clock += 2; pager.tick()
+    expect(pager.offset == 0 && pager.reach == nil, "and settles")
+
+    selected = ids[1].id
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 28)
+    _ = pager.gesture(phase: .changed, momentum: false, dx: -20, dy: 0, time: 28.01)
+    expect(pager.reach == 0...2, "a swipe holds its reach")
+    pager.cancel()
+    expect(pager.reach == nil && pager.offset == 0, "cancelling ends it")
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 28.1)
+    _ = pager.gesture(phase: .changed, momentum: false, dx: -300, dy: 0, time: 28.11)
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 28.12)
+    expect(selected == ids[2].id && pager.isAnimating && pager.reach == 0...2, "the reach lasts through the settle")
+    expect(pager.slideIn(from: 2, to: 0) && pager.reach == nil, "a Space switch from elsewhere ends it")
+    clock += 2; pager.tick()
+    selected = ids[0].id
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 29)
+    _ = pager.gesture(phase: .changed, momentum: false, dx: -300, dy: 0, time: 29.01)
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 29.02)
+    expect(selected == ids[1].id && pager.reach == 0...1, "settling onto the next Space")
+    expect(pager.swipe(deltaX: -1) && selected == ids[2].id && pager.reach == nil, "a page flip ends it too")
+    clock += 2; pager.tick()
+
+    selected = ids[0].id; selections = []
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 29.5)
+    for k in 1...20 { _ = pager.gesture(phase: .changed, momentum: false, dx: -21.6, dy: 0, time: 29.5 + Double(k) * 0.005) }
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 29.6)
+    expect(selections == [ids[1].id] && abs(pager.offset - 24) < 1e-9, "a brisk flick lands on the next Space from just short of it")
+    let flicked = clock
+    var deepest: CGFloat = 0, unguarded: CGFloat = 0, deepestRaw: CGFloat = 0
+    for k in 1...60 {
+        clock = flicked + Double(k) * 0.005; pager.tick()
+        let raw = M.springValue(from: 24, velocity: -2160, time: CGFloat(k) * 0.005)
+        if pager.offset < deepest { deepest = pager.offset; deepestRaw = raw }
+        unguarded = min(unguarded, raw)
+    }
+    expect(unguarded < -24 && deepest < 0 && deepest > -24 && abs(deepest + M.stretch(-deepestRaw, width: 240)) < 0.01,
+           "its overshoot toward the Space outside the swipe stretches like the edge instead of sliding into empty strip")
+    expect(pager.reach == 0...1 && same(swiped(1, deepest), (0, 1)), "with the colour still on the two Spaces")
+    clock += 2; pager.tick()
+    expect(pager.offset == 0 && pager.reach == nil, "and it settles")
+
+    for begin in 0..<3 {
+        for finger: CGFloat in [-1400, -900, -500, -250, -60, 60, 250, 500, 900, 1400] {
+            for pause in [false, true] {
+                selected = ids[begin].id; selections = []
+                let start: CFTimeInterval = 26
+                _ = pager.gesture(phase: .began, momentum: false, dx: finger > 0 ? -2 : 2, dy: 0, time: start)
+                for k in 1...20 {
+                    _ = pager.gesture(phase: .changed, momentum: false, dx: -finger / 20, dy: 0, time: start + Double(k) * 0.01)
+                }
+                let drag = CGFloat(begin) * 240 + 0.5 * finger
+                let expected = M.target(position: drag, velocity: pause ? 0 : 0.5 * finger / 20 / 0.01, width: 240, count: 3, begin: begin)
+                _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: start + 0.2 + (pause ? 0.2 : 0))
+                let landed = ids.firstIndex { $0.id == selected }!
+                expect(landed == expected && abs(landed - begin) <= 1,
+                       "release targets follow the unresisted drag: from \(begin), \(finger) points\(pause ? " after a pause" : "")")
+                clock += 2; pager.tick()
+            }
+        }
+    }
     selected = ids[0].id
     expect(pager.swipe(deltaX: -1), "a first page")
     clock += 0.2; pager.tick()
@@ -211,7 +407,7 @@ func run() {
     onlyPager.selectedID = { onlySelected }
     onlyPager.pageWidth = { 240 }
     onlyPager.canBegin = { true }
-    onlyPager.canTrackSinglePageCreation = { true }
+    onlyPager.offersCreation = { true }
     onlyPager.canSelect = { _ in true }
     onlyPager.select = { onlySelected = $0.id }
     onlyPager.setOffset = { offset in
@@ -243,6 +439,12 @@ func run() {
     expect(onlyCreated == 1 && onlyPager.isAnimating, "a short lone-Space swipe creates nothing and springs back")
     onlyClock += 2; onlyPager.tick()
     expect(onlyPager.offset == 0 && onlySelected == only.id, "the short swipe settles on the only Space")
+    _ = onlyPager.gesture(phase: .began, momentum: false, dx: 2, dy: 0, time: 15)
+    _ = onlyPager.gesture(phase: .changed, momentum: false, dx: 120, dy: 0, time: 15.01)
+    expect(onlyPager.offset > 0 && onlyPager.offset < 24, "a lone Space resists a backward drag like the first Space")
+    _ = onlyPager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 15.2)
+    onlyClock += 2; onlyPager.tick()
+    expect(onlyPager.offset == 0 && onlyCreated == 1, "and springs back without creating")
 
     var spring = SidebarSpring(response: 0.4, damping: 0.8)
     spring.retarget(1, now: 0)
@@ -287,6 +489,15 @@ func run() {
     _ = pager.gesture(phase: .mayBegin, momentum: false, dx: 0, dy: 0, time: 34)
     _ = pager.gesture(phase: .began, momentum: false, dx: 0, dy: 5, time: 34.01)
     expect(ends.count == 2, "a gesture that turns vertical reports no end")
+    offers = false; selected = ids[2].id
+    _ = pager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 35)
+    for k in 0..<6 { _ = pager.gesture(phase: .changed, momentum: false, dx: -15, dy: 0, time: 35.01 + Double(k) * 0.01) }
+    let unoffered = G.overscroll(selected: 2, offset: pager.offset, width: 240, count: 3)
+    expect(unoffered > 0 && unoffered < 45 * 0.55 && G.progress(unoffered) < 1,
+           "where no new Space is offered, the last Space resists like any other end")
+    _ = pager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 35.2)
+    clock += 2; pager.tick()
+    offers = true
     pager.trackingEnded = {}
 
     _ = NSApplication.shared

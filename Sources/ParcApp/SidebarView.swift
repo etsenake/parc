@@ -2032,7 +2032,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             return self.window != nil && self.isPresented && self.creationView == nil && !self.isEditingTitle
                 && !self.contentSurface.isHidden && self.hierarchyState != nil
         }
-        spacePager.canTrackSinglePageCreation = { [weak self] in
+        spacePager.offersCreation = { [weak self] in
             guard let self else { return false }
             return !self.isPrivateBrowsing && !self.isSpaceManagement && self.onNewSpace != nil
         }
@@ -2072,10 +2072,12 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         let index = spaces.firstIndex { $0.id == activeSpaceID }
         if spacePager.isTracking { pagingSourceID = nil }
         let source = pagingSourceID.flatMap { id in spaces.firstIndex { $0.id == id } }
-        let neighborIndex = source ?? index.map { offset < 0 ? $0 + 1 : $0 - 1 }
+        let reach = spacePager.reach
+        let neighborIndex = source ?? index.map { offset < 0 ? $0 + 1 : $0 - 1 }.flatMap { reach?.contains($0) == false ? nil : $0 }
         guard offset != 0, width > 0, let index, let neighborIndex, spaces.indices.contains(neighborIndex),
               hierarchyState != nil,
-              let pages = SidebarSpacePagingModel.themePages(selected: index, offset: offset, width: width, count: spaces.count) else {
+              let pages = SidebarSpacePagingModel.themePages(selected: index, offset: offset, width: width, count: spaces.count,
+                                                             within: reach) else {
             pagingSourceID = nil
             if let revealed = revealedPageID, revealed != activeSpaceID { self.pages[revealed]?.resetPointer() }
             revealedPageID = nil
@@ -2101,7 +2103,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         guard !isSpaceManagement, let state = hierarchyState else { return }
         var beside: [UUID: Int] = [:]
         if let index = spaces.firstIndex(where: { $0.id == activeSpaceID }) {
-            for direction in [-1, 1] where spaces.indices.contains(index + direction) { beside[spaces[index + direction].id] = direction }
+            let reach = spacePager.reach
+            for direction in [-1, 1] where spaces.indices.contains(index + direction) && reach?.contains(index + direction) != false {
+                beside[spaces[index + direction].id] = direction
+            }
         }
         if let side {
             for (id, direction) in beside where direction == side.direction { beside[id] = nil }

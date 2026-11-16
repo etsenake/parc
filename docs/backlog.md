@@ -20,8 +20,6 @@ Finish assigned work first.
 
 ## Sidebar accessibility and presentation
 
-- Prevent long Space drags from exposing blank strip content.
-  [Theme rendering](space-theme-rendering.md).
 - Finish the documented theme-control hover/dot details.
   [Theme editor](space-theme-editor.md).
 
