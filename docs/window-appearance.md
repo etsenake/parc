@@ -51,9 +51,10 @@ of which buttons fit in the strip.
 The address context menu and accessibility action retain Site Control Center
 access when Extensions is absent. Both revalidate the original key window,
 security admission, native page binding, document revision and lifetime.
-Site Control Center still lists extension actions only. Enabled extensions
-without an action are absent from its content even though the native catalog
-includes them; the shell needs to consume that catalog.
+Site Control Center builds its extension tiles from the toolbar actions.
+Chromium gives every ordinary extension that declares no button a greyed
+stand-in action, so those extensions get tiles too. The few kinds with no
+action are listed in [extensions](extensions.md#popup-extension-menu-metadata-carrier).
 
 ## A window with no tab
 

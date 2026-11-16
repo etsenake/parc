@@ -41,11 +41,16 @@ lifetimes across synchronous model callbacks and nested menus.
 The AppKit shell, model snapshots and bridge have component and compiler
 coverage. The Chromium test fixture requires valid Chromium initialization.
 
-Nine genuine Browser/TabList/model cases cover copied metadata and pin order,
-navigation, selection/detachment epochs, unload/reload under the same ID,
+Genuine Browser/TabList/model cases cover copied metadata, badge colors and pin
+order, navigation, selection/detachment epochs, unload/reload under the same ID,
 disabled-action fallback, actual activeTab target, security refusal, nested pin
 observer shutdown and change coalescing. They use the upstream test profile and
 real native container/controller.
+
+Chromium gives an ordinary extension that declares no action a disabled stand-in,
+so it appears in snapshots and a click opens its context menu. The enabled-extension
+catalog cases build an installed-by-default extension, which gets no stand-in, to
+cover the availability gate, refused dispatch, staleness and manifest icons.
 
 `check-chromium.py SOURCE_TREE` requires the complete current applied source/hash
 cohort and exact generated object membership, then runs only syntax checks using

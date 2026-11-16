@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 734,
+  "version": 735,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -814,7 +814,7 @@
     {
       "source": "tests/NativeExtensionActions/action_bridge_unittest.mm",
       "target": "parc/tests/parc_native_extension_actions/action_bridge_unittest.mm",
-      "sha256": "9fec6b616110dda3b347710298a77071d722621aece4728c03b19bf459cb1850"
+      "sha256": "a2744f098e8de51978cc7a092119a6e7a45b08acc684771b99b4c1227f6bd243"
     },
     {
       "source": "Engine/ParcNative/sad_tab.h",

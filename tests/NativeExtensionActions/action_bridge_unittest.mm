@@ -34,6 +34,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/permissions/active_tab_permission_granter.h"
 #include "extensions/browser/unloaded_extension_reason.h"
+#include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
 #include "parc/tests/parc_native_test_support/browser_window_test.h"
 #include "testing/gtest_mac.h"
@@ -129,6 +130,17 @@ class NativeExtensionActionsTest : public ParcBrowserWindowTest,
                      .SetAction(extensions::ActionInfo::Type::kAction)
                      .AddAPIPermission("activeTab")
                      .Build();
+    extensions::ExtensionRegistrar::Get(profile())->AddExtension(value);
+    return value;
+  }
+  scoped_refptr<const extensions::Extension> AddPreinstalledExtension(
+      const std::string& name) {
+    auto value =
+        extensions::ExtensionBuilder(name)
+            .SetManifestVersion(3)
+            .SetLocation(extensions::mojom::ManifestLocation::kInternal)
+            .AddFlags(extensions::Extension::WAS_INSTALLED_BY_DEFAULT)
+            .Build();
     extensions::ExtensionRegistrar::Get(profile())->AddExtension(value);
     return value;
   }
@@ -267,15 +279,38 @@ TEST_F(NativeExtensionActionsTest, UnloadReloadSameIDCannotReviveSnapshot) {
   EXPECT_TRUE(bridge_->SetPinned(Value(*extension_), *contents_, true));
 }
 TEST_F(NativeExtensionActionsTest, DisabledActionUsesActualContextFallback) {
-  Action()->SetIsVisible(sessions::SessionTabHelper::IdForTab(contents_).id(),
-                         false);
-  NotifyAction();
-  PCNativeExtensionAction* value = Value(*extension_);
+  auto hidden = extensions::ExtensionBuilder("Hidden action")
+                    .SetManifestVersion(3)
+                    .SetAction(extensions::ActionInfo::Type::kAction)
+                    .Build();
+  extensions::ExtensionRegistrar::Get(profile())->AddExtension(hidden);
+  auto* action = extensions::ExtensionActionManager::Get(profile())
+                     ->GetExtensionAction(*hidden);
+  ASSERT_TRUE(action);
+  action->SetIsVisible(sessions::SessionTabHelper::IdForTab(contents_).id(),
+                       false);
+  extensions::ExtensionActionDispatcher::Get(profile())->NotifyChange(
+      action, contents_, profile());
+  PCNativeExtensionAction* value = Value(*hidden);
   ASSERT_TRUE(value);
   EXPECT_FALSE(value.enabled);
   EXPECT_TRUE(bridge_->Execute(value, *contents_));
   EXPECT_EQ(1, host_.context_calls);
-  EXPECT_EQ(extension_->id(), host_.last_context);
+  EXPECT_EQ(hidden->id(), host_.last_context);
+}
+TEST_F(NativeExtensionActionsTest, UndeclaredActionGetsDisabledStandIn) {
+  auto undeclared = extensions::ExtensionBuilder("Undeclared action")
+                        .SetManifestVersion(3)
+                        .Build();
+  extensions::ExtensionRegistrar::Get(profile())->AddExtension(undeclared);
+  EXPECT_EQ(2u, Snapshot().count);
+  PCNativeExtensionAction* value = Value(*undeclared);
+  ASSERT_TRUE(value);
+  EXPECT_NSEQ(@"Undeclared action", value.name);
+  EXPECT_FALSE(value.enabled);
+  EXPECT_TRUE(bridge_->Execute(value, *contents_));
+  EXPECT_EQ(1, host_.context_calls);
+  EXPECT_EQ(undeclared->id(), host_.last_context);
 }
 TEST_F(NativeExtensionActionsTest, UserActionGrantsOnlyActualSelectedTab) {
   auto* first = contents_;
@@ -361,11 +396,8 @@ TEST_F(NativeExtensionActionsTest, EnabledExtensionWithoutActionInvalidatesGate)
   registrar->AddExtension(component);
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(bridge_->HasEnabledExtensions(*contents_));
-  auto no_action = extensions::ExtensionBuilder("No action")
-                       .SetManifestVersion(3)
-                       .Build();
   const int previous = notifications_;
-  registrar->AddExtension(no_action);
+  auto no_action = AddPreinstalledExtension("No action");
   EXPECT_TRUE(bridge_->HasEnabledExtensions(*contents_));
   EXPECT_EQ(0u, Snapshot().count);
   EXPECT_EQ(previous, notifications_);
@@ -382,10 +414,7 @@ TEST_F(NativeExtensionActionsTest, EnabledExtensionWithoutActionInvalidatesGate)
 }
 TEST_F(NativeExtensionActionsTest, EnabledMetadataDoesNotInventActionsOrIcons) {
   auto* registrar = extensions::ExtensionRegistrar::Get(profile());
-  auto no_action = extensions::ExtensionBuilder("No action")
-                       .SetManifestVersion(3)
-                       .Build();
-  registrar->AddExtension(no_action);
+  auto no_action = AddPreinstalledExtension("No action");
   NSArray<PCNativeEnabledExtension*>* values = bridge_->EnabledSnapshot(*contents_);
   PCNativeEnabledExtension* absent_action = nil;
   PCNativeEnabledExtension* action = nil;
@@ -398,6 +427,7 @@ TEST_F(NativeExtensionActionsTest, EnabledMetadataDoesNotInventActionsOrIcons) {
   ASSERT_TRUE(absent_action);
   ASSERT_TRUE(action);
   EXPECT_NSEQ(@"No action", absent_action.name);
+  EXPECT_FALSE(Value(*no_action));
   EXPECT_FALSE(bridge_->ExecuteEnabled(absent_action, *contents_));
   EXPECT_FALSE(bridge_->ShowEnabledContextMenu(absent_action, *contents_));
   host_.security = true;
@@ -435,7 +465,9 @@ TEST_F(NativeExtensionActionsTest, EnabledMetadataLoadsSmallManifestIconAndDispa
         small_value = value;
     return small_value.icon != nil;
   }));
-  EXPECT_FALSE(bridge_->ExecuteEnabled(small_value, *contents_));
+  EXPECT_TRUE(bridge_->ExecuteEnabled(small_value, *contents_));
+  EXPECT_EQ(1, host_.context_calls);
+  EXPECT_EQ(small->id(), host_.last_context);
   PCNativeEnabledExtension* action = nil;
   for (PCNativeEnabledExtension* value in bridge_->EnabledSnapshot(*contents_))
     if ([value.identifier isEqualToString:base::SysUTF8ToNSString(extension_->id())])

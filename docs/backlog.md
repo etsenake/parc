@@ -49,9 +49,6 @@ Finish assigned work first; explicit deferrals remain deferred.
 - **WIN13:** wire shortcut-education Copy availability to native admission, and
   retain/revalidate the original page and hidden destination before popup handoff.
   [Window activation](window-activation.md).
-- **WIN15:** Site Control Center omits enabled extensions without actions despite
-  an available native catalog. Consume that catalog without inventing actions.
-  [Window appearance](window-appearance.md).
 
 ## Data and credentials
 

@@ -65,9 +65,12 @@ owns popup/side-panel replacement, closure and saved-focus restoration.
 `hasEnabledExtensions(for:)` validates the selected attached page and its
 Browser-owned Profile, then reads Chromium's enabled registry. It uses the
 extension-settings visibility predicate, excluding normal internal components.
-Availability includes extensions without toolbar actions. Off-the-record
+Availability also counts the rare extensions without an action. Off-the-record
 registry lookup uses Chromium's original Profile; that count does not grant
-incognito access. Every action applies its own page/permission checks.
+incognito access. So in a pop-up from a private window, Extensions can appear
+when no extension is allowed in private windows; its Site Control Center then
+shows no extension tiles, only Manage and Add Extension. Every action applies
+its own page/permission checks.
 
 Registry load/unload notifications feed a coalesced window callback. Shutdown
 removes observation and invalidates pending deliveries.
@@ -75,12 +78,16 @@ removes observation and invalidates pending deliveries.
 ### Popup extension-menu metadata carrier
 
 The native `enabledExtensions(for:)` API snapshots the same registry, including
-extensions without actions. Manifest artwork loads asynchronously at 32 logical
+extensions without an action. Manifest artwork loads asynchronously at 32 logical
 points with available scale representations; missing or failed images stay nil.
-The shell currently reads action snapshots for the Site Control Center and does
-not consume this broader metadata. A no-action extension can therefore make the
-popup's Extensions control available without appearing as a tile. See the
-remaining consumer connection in [window appearance](window-appearance.md).
+The Site Control Center reads action snapshots and does not need this metadata.
+Chromium's manifest handler gives every ordinary extension that declares no
+action a stand-in: a disabled-by-default action in Manifest V3 and a page action
+in Manifest V2. Clicking a disabled action opens the extension's context menu.
+Only component and installed-by-default extensions, Chrome Apps and unpacked
+hosted apps have no action, so they never get a tile. Parc's importer skips
+installed-by-default extensions. In a private window the toolbar model leaves
+out extensions not allowed there, because they cannot run there.
 
 Each snapshot binds the original Browser, tab, document, generation and enabled
 extension identity. Navigation, selection, registry changes and shutdown retire
@@ -106,7 +113,8 @@ URL; no `tabs` permission or unrelated Slack/Notion page styling is included.
 Native consent components exercise cancellation, once-only decisions, input
 delay, obstruction, permission layout and invalidation. Command Bar integration
 receives Swift compiler checks; native owners use their pinned Chromium targets.
-Metadata tests cover no-action entries, staleness and security admission.
+Bridge tests cover the stand-in action, installed-by-default entries without
+one, staleness and security admission.
 
 The [native runtime fixture](../tests/NativeRuntime/README.md) exercises real
 action snapshots, pin state, stale selection refusal and selected-tab grants.
