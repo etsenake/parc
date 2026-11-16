@@ -69,6 +69,52 @@ final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
         window?.performClose(sender)
     }
 
+    func canInspectTools(_ tool: PCNativePageTool) -> Bool {
+        guard canToggleClosed, let page else { return false }
+        return page.canPerform(tool)
+    }
+
+    func inspectTools(_ tool: PCNativePageTool) {
+        guard canInspectTools(tool), let page else { return }
+        _ = page.perform(tool)
+    }
+
+    private var ownsWindowCommands: Bool {
+        guard !closed, !closePending, !closeApproved, NSApp.isActive, let window,
+              window.isVisible, !window.isMiniaturized else { return false }
+        return window.isKeyWindow
+    }
+
+    func prepareFullscreenMenuItem(_ item: NSMenuItem) -> Bool {
+        guard let original = window else { item.representedObject = nil; return false }
+        let command = BrowserWindowFullscreenCommand(window: original,
+            ownerIsAvailable: { [weak self, weak original] in
+                guard let self, let original, self.window === original else { return false }
+                return self.ownsWindowCommands
+            })
+        let available = command.validate(item)
+        item.representedObject = available ? command : nil
+        return available
+    }
+
+    func prepareCloseWindowMenuItem(_ item: NSMenuItem) -> Bool {
+        guard let original = window else { item.representedObject = nil; return false }
+        let command = BrowserWindowCloseCommand(window: original,
+            ownerIsAvailable: { [weak self, weak original] in
+                guard let self, let original, self.window === original else { return false }
+                return self.ownsWindowCommands
+            })
+        item.representedObject = command.isAvailable ? command : nil
+        return command.isAvailable
+    }
+
+    private func updateTitle() {
+        guard !closed, let window else { return }
+        let pageTitle = page.flatMap { $0.isClosed ? nil : $0.title } ?? ""
+        let title = pageTitle.isEmpty ? DevToolsWindowGeometry.defaultTitle : pageTitle
+        if window.title != title { window.title = title }
+    }
+
     func nativeBrowserWindow() -> NSWindow { window! }
     func selectedNativePage() -> PCNativePage? { page?.isClosed == false ? page : nil }
     func visibleNativePages() -> [PCNativePage] {
@@ -87,6 +133,7 @@ final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
         guard incoming.observer == nil || incoming.observer === self else { return nil }
         page = incoming
         incoming.observer = self
+        updateTitle()
         presentToolsIfReady()
         return root.pageContainer
     }
@@ -137,6 +184,7 @@ final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
     }
     func nativePageDidChange(_ incoming: PCNativePage) {
         guard page === incoming, !closed else { return }
+        updateTitle()
         synchronizeLayout()
         showToolsWindowIfHidden()
     }
@@ -151,6 +199,7 @@ final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
     private func releasePage(_ incoming: PCNativePage) {
         if incoming.observer === self { incoming.observer = nil }
         page = nil
+        updateTitle()
     }
 
     @objc func nativeBrowserDidReleaseLastBrowser(_ browser: PCNativeBrowserWindow) {

@@ -1840,14 +1840,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if item.action == #selector(toggleFullScreen) {
             item.representedObject = nil
             item.title = "Enter Full Screen"
-            guard !terminationInProgress, !requiresOnboarding, onboarding == nil,
-                  let owner = windows.first(where: { $0.ownsSpaceCommandFocus }) else { return false }
+            guard !terminationInProgress, !requiresOnboarding, onboarding == nil else { return false }
+            if let tools = keyDevToolsWindow { return tools.prepareFullscreenMenuItem(item) }
+            guard let owner = windows.first(where: { $0.ownsSpaceCommandFocus }) else { return false }
             return owner.prepareFullscreenMenuItem(item)
         }
         if item.action == #selector(closeWindow) {
             item.representedObject = nil
-            guard !terminationInProgress, !requiresOnboarding, onboarding == nil,
-                  let owner = windows.first(where: { $0.ownsSpaceCommandFocus }) else { return false }
+            guard !terminationInProgress, !requiresOnboarding, onboarding == nil else { return false }
+            if let tools = keyDevToolsWindow { return tools.prepareCloseWindowMenuItem(item) }
+            guard let owner = windows.first(where: { $0.ownsSpaceCommandFocus }) else { return false }
             return owner.prepareCloseWindowMenuItem(item)
         }
         if let importer = BrowserImportWindow.owning(NSApp.keyWindow) {
@@ -2018,9 +2020,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if item.action == #selector(toggleShowToolbar) { return spaceCommandWindow?.prepareToolbarMenuItem(item) ?? false }
         if item.action == #selector(toggleDeveloperMode) { return front?.prepareDeveloperModeMenuItem(item) ?? false }
         if item.action == #selector(developerTools) {
-            if let tools = devToolsWindows.first(where: { $0.window === NSApp.keyWindow }) {
+            if let tools = keyDevToolsWindow {
                 item.representedObject = nil
-                return tools.canToggleClosed
+                return item.isHidden ? tools.canToggleClosed : tools.canInspectTools(.developerTools)
             }
             return front?.preparePageToolMenuItem(item, tool: .developerTools) ?? false
         }
@@ -2031,6 +2033,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if item.action == #selector(castPage) {
             guard let owner = browserInputCommandWindow else { item.representedObject = nil; return false }
             return owner.preparePageToolMenuItem(item, tool: .cast)
+        }
+        if let tool = Self.toolsInspectionTool(item.action), let tools = keyDevToolsWindow {
+            item.representedObject = nil
+            return tools.canInspectTools(tool)
         }
         if item.action == #selector(inspectElements) { return front?.preparePageToolMenuItem(item, tool: .inspectElements) ?? false }
         if item.action == #selector(javaScriptConsole) { return front?.preparePageToolMenuItem(item, tool: .javaScriptConsole) ?? false }
@@ -2477,16 +2483,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
     @objc private func viewSource(_ sender: Any?) { front?.performPageTool(.viewSource) }
     @objc private func openTaskManager(_ sender: Any?) { front?.openTaskManager() }
+    private var keyDevToolsWindow: DevToolsWindowController? {
+        devToolsWindows.first { $0.window === NSApp.keyWindow }
+    }
+    private static func toolsInspectionTool(_ action: Selector?) -> PCNativePageTool? {
+        switch action {
+        case #selector(inspectElements): return .inspectElements
+        case #selector(javaScriptConsole): return .javaScriptConsole
+        case #selector(networkInspector): return .networkInspector
+        default: return nil
+        }
+    }
     @objc private func developerTools(_ sender: Any?) {
-        if let tools = devToolsWindows.first(where: { $0.window === NSApp.keyWindow }) {
-            tools.toggleClosed(sender); return
+        if let tools = keyDevToolsWindow {
+            if (sender as? NSMenuItem)?.isHidden == true { tools.toggleClosed(sender) }
+            else { tools.inspectTools(.developerTools) }
+            return
         }
         if let item = sender as? NSMenuItem { front?.performPageTool(from: item) }
         else { front?.performPageTool(.developerTools) }
     }
-    @objc private func inspectElements(_ sender: NSMenuItem) { front?.performPageTool(from: sender) }
-    @objc private func javaScriptConsole(_ sender: NSMenuItem) { front?.performPageTool(from: sender) }
-    @objc private func networkInspector(_ sender: NSMenuItem) { front?.performPageTool(from: sender) }
+    private func performInspectionTool(from sender: NSMenuItem) {
+        if let tool = Self.toolsInspectionTool(sender.action), let tools = keyDevToolsWindow {
+            tools.inspectTools(tool); return
+        }
+        front?.performPageTool(from: sender)
+    }
+    @objc private func inspectElements(_ sender: NSMenuItem) { performInspectionTool(from: sender) }
+    @objc private func javaScriptConsole(_ sender: NSMenuItem) { performInspectionTool(from: sender) }
+    @objc private func networkInspector(_ sender: NSMenuItem) { performInspectionTool(from: sender) }
     @objc private func toggleScriptPermission(_ sender: NSMenuItem) { front?.toggleScriptPermission(from: sender) }
     @objc private func toggleDeveloperMode(_ sender: NSMenuItem) { front?.toggleDeveloperMode(from: sender) }
     @objc private func captureRenderingMetrics(_ sender: Any?) { front?.captureRenderingMetrics() }

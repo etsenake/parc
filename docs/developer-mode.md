@@ -70,6 +70,11 @@ Pending frontend close uses genuine beforeunload. Focus returns to inspected
 content only if departing tools owned it. Native page/frame ownership remains
 valid throughout asynchronous loading and close completion.
 
+An undocked tools window is titled by its tools page ("DevTools - <address>").
+While it is key, Command-Option-I, Console, Inspect and Network act on the tools
+page itself, opening tools for the tools as Chrome does, and F12 closes the
+window. Full Screen and Close Window in the menu bar work there too.
+
 ## Automation profiles
 
 Puppeteer, Playwright and ChromeDriver launch with `--user-data-dir=<dir>`. Parc

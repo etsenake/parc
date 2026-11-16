@@ -7,6 +7,7 @@ enum DevToolsWindowGeometry {
     ]
     static let collectionBehavior: NSWindow.CollectionBehavior = .fullScreenPrimary
     static let emptyRestoreFallbackSize = NSSize(width: 840, height: 640)
+    static let defaultTitle = "Developer Tools"
 
     static func frameAutosaveName(bundleIdentifier: String?) -> String {
         (bundleIdentifier ?? "") + autosaveSuffix
@@ -17,7 +18,7 @@ enum DevToolsWindowGeometry {
         window.collectionBehavior = collectionBehavior
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
-        window.title = "Developer Tools"
+        window.title = defaultTitle
     }
 
     @discardableResult
