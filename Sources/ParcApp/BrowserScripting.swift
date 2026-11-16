@@ -15,6 +15,25 @@ struct ScriptSpaceRecord {
 }
 enum ScriptTabAction { case select, back, forward, reload, stop }
 
+extension BrowserState {
+    func scriptListsTab(_ tab: BrowserTab, where usable: (BrowserTab) -> Bool) -> Bool {
+        tab.archivedAt == nil && !profileRemovals.contains { $0.profileID == tab.profileID } && usable(tab)
+            && spaces.contains { $0.id == tab.spaceID && $0.profileID == tab.profileID }
+    }
+    func scriptListedTabs(where usable: (BrowserTab) -> Bool) -> [BrowserTab] {
+        openTabs(where: { scriptListsTab($0, where: usable) })
+    }
+    func scriptListedTab(_ id: UUID, profile: UUID?, where usable: (BrowserTab) -> Bool) -> BrowserTab? {
+        tab(id, where: { (profile == nil || $0.profileID == profile) && scriptListsTab($0, where: usable) })
+    }
+    func scriptListedTabs(inSpace space: UUID, profile: UUID, where usable: (BrowserTab) -> Bool) -> [BrowserTab] {
+        openTabs(where: { tab in
+            scriptListsTab(tab, where: usable)
+                && containsTab(tab.id, where: { $0.profileID == profile && ($0.spaceID == space || $0.kind == .favorite) })
+        })
+    }
+}
+
 func scriptWindowCreationIsIncognito(_ properties: [String: Any]) throws -> Bool {
     guard Set(properties.keys).isSubset(of: ["mode", "isIncognito"]) else {
         throw BrowserScriptError.unsupported("Only mode and incognito may be set when creating a window.")
@@ -109,6 +128,7 @@ protocol BrowserScriptOwner: AnyObject {
     var scriptingAvailable: Bool { get }
     var scriptingWindow: NSWindow? { get }
     var scriptingTabs: [ScriptTabRecord] { get }
+    func scriptingTabRecord(_ id: UUID, profile: UUID?) -> ScriptTabRecord?
     var scriptingSpaces: [ScriptSpaceRecord] { get }
     var scriptingActiveTabID: UUID? { get }
     var scriptingActiveSpaceID: UUID { get }
@@ -277,7 +297,7 @@ final class ParcScriptWindow: NSObject {
     @objc dynamic var activeTab: ParcScriptTab? {
         scriptResult {
             let owner = try resolve()
-            return owner.scriptingTabs.first { $0.id == owner.scriptingActiveTabID }.map { ParcScriptTab(owner: owner, record: $0) }
+            return owner.scriptingActiveTabID.flatMap { owner.scriptingTabRecord($0, profile: nil) }.map { ParcScriptTab(owner: owner, record: $0) }
         } ?? nil
     }
     @objc dynamic var activeSpace: ParcScriptSpace? {
@@ -290,6 +310,17 @@ final class ParcScriptWindow: NSObject {
         guard let description = NSClassDescription(for: NSApplication.self) as? NSScriptClassDescription else { return nil }
         return NSUniqueIDSpecifier(containerClassDescription: description, containerSpecifier: nil,
                                    key: "appleScriptWindows", uniqueID: identifier)
+    }
+    @objc(valueInAppleScriptTabsWithUniqueID:) func valueInAppleScriptTabs(withUniqueID uniqueID: Any) -> ParcScriptTab? {
+        scriptResult {
+            let owner = try resolve()
+            guard let text = uniqueID as? String, let id = UUID(uuidString: text) else {
+                return appleScriptTabs.first { ($0.identifier as NSString).scriptingIsEqual(to: uniqueID) }
+            }
+            return owner.scriptingTabRecord(id, profile: nil).flatMap { record in
+                (record.id.uuidString as NSString).scriptingIsEqual(to: uniqueID) ? ParcScriptTab(owner: owner, record: record) : nil
+            }
+        } ?? nil
     }
     override func newScriptingObject(of objectClass: AnyClass, forValueForKey key: String,
                                      withContentsValue contentsValue: Any?, properties: [String: Any]) -> Any? {
@@ -318,32 +349,43 @@ final class ParcScriptTab: NSObject {
     private let tabID: UUID
     private let profileID: UUID
     private var pendingInsertion: Bool
+    private var reading: ScriptTabRecord?
     init(owner: any BrowserScriptOwner, record: ScriptTabRecord, pendingInsertion: Bool = false) {
         self.owner = owner; windowID = owner.scriptingID; tabID = record.id
         profileID = record.profileID; self.pendingInsertion = pendingInsertion; super.init()
     }
     private func resolve() throws -> (any BrowserScriptOwner, ScriptTabRecord) {
         guard let owner, owner.scriptingID == windowID, owner.scriptingAvailable,
-              let tab = owner.scriptingTabs.first(where: { $0.id == tabID && $0.profileID == profileID }) else { throw BrowserScriptError.missing }
+              let tab = owner.scriptingTabRecord(tabID, profile: profileID) else { throw BrowserScriptError.missing }
         return (owner, tab)
+    }
+    private func record() throws -> ScriptTabRecord {
+        if let reading { return reading }
+        return try resolve().1
     }
     var isPendingInsertion: Bool { pendingInsertion }
     func belongs(to candidate: any BrowserScriptOwner) -> Bool {
         owner === candidate && windowID == candidate.scriptingID
-            && candidate.scriptingTabs.contains { $0.id == tabID && $0.profileID == profileID }
+            && candidate.scriptingTabRecord(tabID, profile: profileID) != nil
     }
     func acceptInsertion(in window: UUID) -> Bool {
         guard windowID == window, pendingInsertion, (try? resolve()) != nil else { return false }
         pendingInsertion = false; return true
     }
     @objc(id) dynamic var identifier: String { tabID.uuidString }
-    @objc dynamic var title: String { scriptResult { try resolve().1.title } ?? "" }
+    @objc dynamic var title: String { scriptResult { try record().title } ?? "" }
     @objc dynamic var URL: String {
-        get { scriptResult { try resolve().1.url } ?? "" }
+        get { scriptResult { try record().url } ?? "" }
         set { _ = scriptResult { try resolve().0.scriptingNavigate(BrowserScriptError.url(newValue), tab: tabID, profile: profileID) } }
     }
-    @objc dynamic var loading: Bool { scriptResult { try resolve().1.loading } ?? false }
-    @objc dynamic var location: String { scriptResult { try resolve().1.location } ?? "unknown" }
+    @objc dynamic var loading: Bool { scriptResult { try record().loading } ?? false }
+    @objc dynamic var location: String { scriptResult { try record().location } ?? "unknown" }
+    override func value(forKey key: String) -> Any? {
+        guard key == "scriptingProperties", reading == nil, let record = try? resolve().1 else { return super.value(forKey: key) }
+        reading = record
+        defer { reading = nil }
+        return super.value(forKey: key)
+    }
     override var objectSpecifier: NSScriptObjectSpecifier? {
         guard let owner, let description = NSClassDescription(for: ParcScriptWindow.self) as? NSScriptClassDescription else { return nil }
         return NSUniqueIDSpecifier(containerClassDescription: description,

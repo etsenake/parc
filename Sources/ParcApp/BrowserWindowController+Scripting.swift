@@ -47,20 +47,18 @@ extension BrowserWindowController: BrowserScriptOwner {
             url: browser?.url?.absoluteString ?? tab.url,
             loading: browser?.isLoading ?? false, location: location)
     }
+    private func scriptingUsable(_ tab: BrowserTab) -> Bool { ownership.canUse(tab.id, owner: presentationID) }
     var scriptingTabs: [ScriptTabRecord] {
         guard scriptingAvailable else { return [] }
-        return store.state.tabs.filter { tab in
-            tab.archivedAt == nil && !store.isProfileRemovalPending(tab.profileID)
-                && ownership.canUse(tab.id, owner: presentationID)
-                && store.state.spaces.contains { $0.id == tab.spaceID && $0.profileID == tab.profileID }
-        }.map(scriptingRecord)
+        return store.state.scriptListedTabs(where: scriptingUsable).map(scriptingRecord)
+    }
+    func scriptingTabRecord(_ id: UUID, profile: UUID?) -> ScriptTabRecord? {
+        guard scriptingAvailable else { return nil }
+        return store.state.scriptListedTab(id, profile: profile, where: scriptingUsable).map(scriptingRecord)
     }
     func scriptingTabs(in space: UUID, profile: UUID) -> [ScriptTabRecord] {
         guard scriptingSpaces.contains(where: { $0.id == space && $0.profileID == profile }) else { return [] }
-        let ids = Set(store.state.tabs.filter {
-            $0.profileID == profile && ($0.spaceID == space || $0.kind == .favorite)
-        }.map(\.id))
-        return scriptingTabs.filter { ids.contains($0.id) }
+        return store.state.scriptListedTabs(inSpace: space, profile: profile, where: scriptingUsable).map(scriptingRecord)
     }
     private func scriptingCheck() throws {
         guard scriptingAvailable else { throw BrowserScriptError.missing }
@@ -147,7 +145,7 @@ extension BrowserWindowController: BrowserScriptOwner {
             store.openResolvedURL(url, id: id, creation: creation)
             presentation.recordCreation(id, state: store.state)
         }
-        guard let result = scriptingTabs.first(where: { $0.id == id && $0.profileID == target.profileID }) else { throw BrowserScriptError.busy }
+        guard let result = scriptingTabRecord(id, profile: target.profileID) else { throw BrowserScriptError.busy }
         return result
     }
     func scriptingFocus(space: UUID, profile: UUID) throws {
