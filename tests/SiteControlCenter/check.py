@@ -9,7 +9,6 @@ from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
 controller = browser_window_controller_source(root / "Sources/ParcApp")
 for use in ('sidebar.onPageMenu = { [weak self] in self?.showSiteControlCenter() }',
-            'case .siteInfo, .siteInsecure: self.showSiteControlCenter(from: anchor)',
             'popupChrome.prepareExtensions = { [weak self] in self?.preparePopupSiteControls(requireExtensions: true) }',
             'popupChrome.prepareSiteControls = { [weak self] in self?.preparePopupSiteControls(requireExtensions: false) }',
             'let openControls = preparePopupSiteControls(requireExtensions: false)',
@@ -17,7 +16,7 @@ for use in ('sidebar.onPageMenu = { [weak self] in self?.showSiteControlCenter()
             'popupChrome.prepareBlocked = { [weak self] anchor in self?.preparePopupSiteControls(requireExtensions: false, from: anchor) }',
             'sidebar.onBlockedContent = { [weak self] anchor in self?.showSiteControlCenter(from: anchor) }',
             'case .siteInfo, .siteInsecure, .blocked: self.showSiteControlCenter(from: anchor)',
-            'let blocked = blockedContent(for: page)',
+            'model.updateBlocked(blockedContent(for: page))',
             'wireBlockedContent(controller, page: page, current: currentPresentation, afterDismissal: afterDismissal)',
             'if browser.hasPageInfo, page.responds(to: #selector(PCNativePage.openSiteControls(handler:)))',
             'page.responds(to: #selector(PCNativePage.toggleSiteControlsPermission(_:revision:)))',
