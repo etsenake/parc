@@ -1219,7 +1219,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard activePeek == nil, spaceCreation == nil, phase == .expanded else { return false }
         }
         let commandID = KeyboardShortcuts.shared.settingsCommandID(for: command)
-        let shortcut = KeyboardShortcut(key: item.keyEquivalent, flags: item.keyEquivalentModifierMask)
+        let shortcut = KeyboardShortcuts.shared.boundShortcut(for: command)
+            ?? KeyboardShortcut(key: item.keyEquivalent, flags: item.keyEquivalentModifierMask)
         let hint = ShortcutPriorityHintView(title: item.title, shortcut: shortcut.display,
                                            canEdit: commandID != nil, theme: rootView.theme, basicBackground: windowBasicBackground)
         hint.onEdit = { [weak self, weak hint, weak page] in

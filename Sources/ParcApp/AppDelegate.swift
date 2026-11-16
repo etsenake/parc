@@ -245,6 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             }
             LiveShortcutToolTip.resolver = { title, id in KeyboardShortcuts.shared.toolTip(title, for: id) }
             TooltipController.commandShortcut = { KeyboardShortcuts.shared.activeShortcut(for: $0) }
+            TooltipController.eventChord = { KeyboardShortcuts.shared.chord(for: $0) }
             KeyboardShortcuts.shared.onDiscoveryChange = {
                 NotificationCenter.default.post(name: LiveShortcutToolTip.didChange, object: nil)
             }
@@ -2711,7 +2712,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func buildMenus() {
-        let main = NSMenu()
+        let main = ShortcutMainMenu()
         func menu(_ title: String) -> NSMenu {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             let submenu = NSMenu(title: title)

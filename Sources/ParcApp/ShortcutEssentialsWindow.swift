@@ -86,7 +86,7 @@ private final class EssentialsNativeWindow: NSWindow {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard isKeyWindow, event.type == .keyDown else { return super.performKeyEquivalent(with: event) }
         if event.keyCode == 53 { escapeAction?(); return true }
-        if let chord = KeyboardShortcut.capture(event), let shortcuts {
+        if let shortcuts, let chord = shortcuts.chord(for: event) {
             if chord == shortcuts.activeShortcut(for: "closeTab:") { performClose(nil); return true }
             if let id = ShortcutEssentialsWindow.commandIDs.first(where: { shortcuts.activeShortcut(for: $0) == chord }) {
                 shortcutAction?(id, event); return true
@@ -217,7 +217,7 @@ private final class EssentialsSurface: NSView {
             cap.symbols = shortcut?.keycapSymbols ?? []
             cap.bindingDescription = shortcut?.spokenDisplay ?? "No shortcut"
             let y = 102 + CGFloat(visibleIndex) * 73
-            let width = max(27, ShortcutKeycapView.smallWidth(count: cap.symbols.count))
+            let width = max(27, ShortcutKeycapView.smallWidth(symbols: cap.symbols))
             cap.frame = NSRect(x: 445 - width, y: y + 4, width: width, height: 30)
             name.frame = NSRect(x: 30, y: y, width: min(290, cap.frame.minX - 42), height: 20)
             detail.frame = NSRect(x: 30, y: y + 22, width: min(308, cap.frame.minX - 42), height: 31)

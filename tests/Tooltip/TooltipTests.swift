@@ -101,7 +101,7 @@ import SwiftUI
               "an uppercase binding shows its implied Shift")
         let glyphs: [(String, String)] = [(" ", "⎵"), ("\t", "TAB"), ("\u{F704}", "F1"), ("\u{F70D}", "F10"), ("\u{F717}", "F20"),
                                           ("s", "S"), ("1", "1"), ("[", "["), ("é", "É"),
-                                          ("\u{F718}", "F21"), ("\r", "↩"), ("\u{7f}", "⌫"), ("\u{1b}", "⎋"), ("\u{f700}", "↑"), ("\u{f728}", "⌦")]
+                                          ("\r", "↩"), ("\u{7f}", "⌫"), ("\u{1b}", "⎋"), ("\u{f700}", "↑"), ("\u{f728}", "⌦")]
         for (key, glyph) in glyphs { check(TooltipKeycap.glyph(forKey: key) == glyph, "key \(key.debugDescription) shows \(glyph)") }
         let command = commandS[0], key = commandS[1]
         check(command.isPressed(modifiers: [.command, .shift], characters: nil) && !command.isPressed(modifiers: .shift, characters: "s"),

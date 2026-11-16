@@ -28,22 +28,32 @@ final class ShortcutKeycapView: NSView {
     static func spacing(count: Int) -> CGFloat {
         switch count { case 2, 3: return 4; case 4, 5: return 3; default: return 0 }
     }
-    static func smallWidth(count: Int) -> CGFloat {
-        CGFloat(count) * 27 + CGFloat(max(0, count - 1)) * spacing(count: count)
+    static func smallWidth(symbols: [String]) -> CGFloat {
+        symbols.reduce(0) { $0 + compactWidth($1) } + CGFloat(max(0, symbols.count - 1)) * spacing(count: symbols.count)
+    }
+    static func compactWidth(_ symbol: String) -> CGFloat {
+        let base = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        let font = base.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 11) } ?? base
+        let width = ceil((symbol as NSString).size(withAttributes: [.font: font]).width)
+        return width > 31 ? width + 8 : 27
     }
     static func largeSide(width: CGFloat, count: Int) -> CGFloat {
         min(64, max(0, (width - CGFloat(max(0, count - 1)) * spacing(count: count)) / CGFloat(max(1, count))))
     }
+    private var displayedSymbols: [String] {
+        presentation == .binding ? symbols : presentation == .unassigned ? ["", ""] : ["⌘", ""]
+    }
     var keycapBounds: NSRect {
-        let count = presentation == .binding ? symbols.count : 2
+        let displayed = displayedSymbols, count = displayed.count
         guard count > 0 else { return .zero }
         let side: CGFloat = size == .small ? 27 : Self.largeSide(width: bounds.width, count: count)
-        let width = side * CGFloat(count) + Self.spacing(count: count) * CGFloat(max(0, count - 1))
+        let width = size == .small ? Self.smallWidth(symbols: displayed)
+            : side * CGFloat(count) + Self.spacing(count: count) * CGFloat(max(0, count - 1))
         let x = alignment == .leading ? bounds.minX : alignment == .trailing ? bounds.maxX - width : bounds.midX - width / 2
         return NSRect(x: x, y: bounds.midY - side / 2, width: width, height: side)
     }
     private func refresh() {
-        let displayed = presentation == .binding ? symbols : presentation == .unassigned ? ["", ""] : ["⌘", ""]
+        let displayed = displayedSymbols
         let side: CGFloat = size == .small ? 27 : Self.largeSide(width: bounds.width, count: displayed.count)
         host.rootView = KeycapContent(symbols: displayed, size: size, side: side,
             isInConflict: isInConflict, alignment: alignment, presentation: presentation)
@@ -66,6 +76,7 @@ private struct KeycapContent: View {
                 ForEach(Array(symbols.enumerated()), id: \.offset) { index, symbol in
                     KeycapFace(symbol: symbol,
                         compact: size == .small, count: symbols.count, side: side,
+                        width: size == .small ? ShortcutKeycapView.compactWidth(symbol) : side,
                         wordKey: symbols.contains(where: { $0.count > 1 }),
                         isInConflict: isInConflict)
                         .overlay {
@@ -89,6 +100,7 @@ private struct KeycapFace: View {
     let compact: Bool
     let count: Int
     let side: CGFloat
+    let width: CGFloat
     let wordKey: Bool
     let isInConflict: Bool
     private var accent: Color { isInConflict ? Color(nsColor: .systemRed) : .accentColor }
@@ -124,6 +136,6 @@ private struct KeycapFace: View {
             .clipShape(RoundedRectangle(cornerRadius: innerRadius, style: .continuous))
             .padding(EdgeInsets(top: inset, leading: inset, bottom: bottomInset, trailing: inset))
         }
-        .frame(width: side, height: side)
+        .frame(width: width, height: side)
     }
 }

@@ -55,6 +55,7 @@ final class TooltipAnchorView: NSView {
 
 @MainActor final class TooltipController {
     static var commandShortcut: ((String) -> KeyboardShortcut?)?
+    static var eventChord: ((NSEvent) -> KeyboardShortcut?)?
 
     private typealias State = TooltipPresentationState<ObjectIdentifier>
 
@@ -333,7 +334,8 @@ final class TooltipAnchorView: NSView {
             apply(state.hide(State.Fade(duration: TooltipTiming.interruptionDuration), scrolled: true, now: now))
         case .keyDown:
             pressedModifiers = event.modifierFlags.intersection(KeyboardShortcut.modifierMask)
-            pressedCharacters = event.charactersIgnoringModifiers
+            let chord = KeyboardShortcut.keypadKey(forPhysicalCode: event.keyCode) == nil ? nil : Self.eventChord?(event)
+            pressedCharacters = chord?.matchesPhysicalKey == true ? chord?.key : event.charactersIgnoringModifiers
             presenter?.setPressed(modifiers: pressedModifiers, characters: pressedCharacters)
             apply(state.keyDown(escape: event.keyCode == UInt16(kVK_Escape), modifiers: pressedModifiers,
                                 characters: pressedCharacters, shortcut: presentedShortcut, now: now))

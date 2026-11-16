@@ -104,9 +104,8 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 
 ## Other input and surface limits
 
-- Add the generic Edit → Format → Font menu route, distinct keypad identities
-  and recording mappings beyond F20. Existing document formatting works.
-  [Keyboard](keyboard-navigation.md).
+- Add the generic Edit → Format → Font menu route. Existing document
+  formatting works. [Keyboard](keyboard-navigation.md).
 - Split dividers lack keyboard/accessibility resizing. Pane-handle drag,
   double-click separation, Option-close unsplit and sidebar drop-to-combine are
   absent. [Split groups](split-groups.md).

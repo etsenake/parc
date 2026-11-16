@@ -242,15 +242,35 @@ identities while activation refreshes registrations.
 ## Shortcut key text
 
 `display` and `keyLabel` supply text labels; `symbols` supplies Settings caps;
-`keycapSymbols` spells TAB for Essentials and tooltips. Space displays as ⎵ but
-`spokenDisplay` says Space. Named keys, function keys and menu equivalents share
-one formatter, so recording and default display agree. Passive keycaps do not
-add interactive accessibility elements or change storage/matching.
+`keycapSymbols` spells TAB for Essentials and tooltips. Space displays as ⎵,
+Enter as ⌤ and Clear as ⌧, while `spokenDisplay` says Space, Enter and Clear.
+Named keys, function keys and menu equivalents share one formatter, so recording
+and default display agree. Passive keycaps do not add interactive accessibility
+elements or change storage/matching. macOS doesn't deliver function keys past
+F20, so the recorder and its labels stop at F20 by design.
 
-Storage retains active-layout characters rather than a separate keypad identity.
-Keypad Clear/Escape and keypad multiplication/`*` cannot have independent bindings.
-F21–F35 have display names, while physical recording's function-key table stops
-at F20.
+### Keypad keys
+
+Keypad 0–9, `.`, `,`, `+`, `-`, `*`, `/`, `=`, Clear and Enter are keys of their
+own. The recorder reads the physical key: a keypad digit or operator is saved as
+its character plus the combining keycap mark (Control–keypad 1 is `1⃣`, shown
+as ⌃Keypad 1), Clear as AppKit's Clear character, and Enter keeps its existing
+character. Digits and operators need Command, Control or Option like the number
+row; Clear, like Home, may stand alone. Compact Essentials caps widen to fit the
+keypad name. Saved records keep their exact fields; an older Parc loads a keypad
+digit or operator as a valid key it can never press, so the binding stays inert
+there, never clashes and survives its saves. Clear is an ordinary special key
+there.
+
+AppKit menus match key equivalents by typed character, with no keypad flag or
+key code, so keypad bindings stay off menu items (Clear's character stays) and
+Parc matches them itself: pages through the pre-renderer arbitration, other focus
+in the main menu's key-equivalent pass before AppKit's search. A keypad press
+takes a keypad binding first, even an unavailable or conflicted one that then
+does nothing; otherwise it falls back to the character match, so older bindings
+answer both keys. A number-row press never reaches a keypad binding, and an
+app-modal dialog blocks keypad bindings as AppKit blocks menu items. With Mouse
+Keys on, macOS consumes the keypad before Parc sees it.
 
 ## Complete command inventory reconciliation — KB03
 

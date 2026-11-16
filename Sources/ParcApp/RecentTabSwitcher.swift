@@ -115,7 +115,7 @@ final class RecentTabSwitcher {
     private var holding: Bool { input.isHolding(NSEvent.modifierFlags.rawValue) }
 
     private func handle(_ event: NSEvent) -> NSEvent? {
-        let shortcut = event.type == .keyDown ? KeyboardShortcut.capture(event) : nil
+        let shortcut = event.type == .keyDown ? KeyboardShortcuts.shared.chord(for: event) : nil
         let action = event.type == .keyDown ? input.keyDown(
             matchesNext: next != nil && shortcut == next, matchesPrevious: previous != nil && shortcut == previous,
             keyCode: event.keyCode, flags: event.modifierFlags.rawValue) : nil

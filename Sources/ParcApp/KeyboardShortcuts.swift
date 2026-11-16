@@ -19,7 +19,18 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
     let key: String
     let modifiers: UInt
     static let modifierMask: NSEvent.ModifierFlags = [.control, .option, .shift, .command]
+    static let clearKey = "\u{f739}"
+    private static let keypadMark: Unicode.Scalar = "\u{20e3}"
+    private static let keypadCharacters: [UInt16: String] = [
+        65: ".", 67: "*", 69: "+", 75: "/", 78: "-", 81: "=", 82: "0", 83: "1", 84: "2",
+        85: "3", 86: "4", 87: "5", 88: "6", 89: "7", 91: "8", 92: "9", 95: ","
+    ]
     var flags: NSEvent.ModifierFlags { .init(rawValue: modifiers) }
+    var isKeypadKey: Bool {
+        let scalars = Array(key.unicodeScalars)
+        return scalars.count == 2 && scalars[1] == Self.keypadMark
+    }
+    var matchesPhysicalKey: Bool { isKeypadKey || key == Self.clearKey }
 
     init(key: String, flags: NSEvent.ModifierFlags) {
         var flags = flags.intersection(Self.modifierMask)
@@ -45,7 +56,8 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
         switch key {
         case "\t": return "⇥"
         case "\r", "\n": return "↩"
-        case "\u{3}": return "↩︎"
+        case "\u{3}": return "⌤"
+        case Self.clearKey: return "⌧"
         case " ": return "⎵"
         case "\u{1b}": return "⎋"
         case "\u{7f}", "\u{8}": return "⌫"
@@ -60,8 +72,17 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
         case "\u{f72d}": return "⇟"
         case "\u{5}": return "?⃝"
         default:
-            guard let value = key.unicodeScalars.first?.value, (0xF704...0xF726).contains(value) else { return nil }
+            if isKeypadKey, let character = key.unicodeScalars.first { return "Keypad \(character)" }
+            guard let value = key.unicodeScalars.first?.value, (0xF704...0xF717).contains(value) else { return nil }
             return "F\(value - 0xF703)"
+        }
+    }
+    private var spokenKey: String? {
+        switch key {
+        case " ": return "Space"
+        case "\u{3}": return "Enter"
+        case Self.clearKey: return "Clear"
+        default: return nil
         }
     }
     var keyLabel: String { namedKey ?? key.uppercased() }
@@ -72,10 +93,10 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
     var symbols: [String] { modifierSymbols + [namedKey ?? key.localizedUppercase] }
     var keycapSymbols: [String] { modifierSymbols + [key == "\t" ? "TAB" : namedKey ?? key.localizedUppercase] }
     var display: String { (modifierSymbols + [keyLabel]).joined() }
-    var spokenDisplay: String { key == " " ? (modifierSymbols + ["Space"]).joined() : display }
+    var spokenDisplay: String { spokenKey.map { (modifierSymbols + [$0]).joined() } ?? display }
     var searchText: String {
         var names = [display, keyLabel]
-        if key == " " { names.append("space") }
+        if let spokenKey { names.append(spokenKey) }
         for (flag, label) in [(NSEvent.ModifierFlags.control, "control ctrl"), (.option, "option alt"), (.shift, "shift"), (.command, "command cmd")] {
             if flags.contains(flag) { names.append(label) }
         }
@@ -102,9 +123,18 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
     }
 
     static func capture(_ event: NSEvent) -> KeyboardShortcut? {
+        guard let key = keypadKey(forPhysicalCode: event.keyCode) else { return characterCapture(event) }
+        let value = KeyboardShortcut(key: key, flags: event.modifierFlags)
+        return value.isValid ? value : nil
+    }
+    static func characterCapture(_ event: NSEvent) -> KeyboardShortcut? {
         guard let key = keyForPhysicalCode(event.keyCode) else { return nil }
         let value = KeyboardShortcut(key: key, flags: event.modifierFlags)
         return value.isValid ? value : nil
+    }
+    static func keypadKey(forPhysicalCode keyCode: UInt16) -> String? {
+        if keyCode == 71 { return clearKey }
+        return keypadCharacters[keyCode].map { $0 + String(keypadMark) }
     }
 
     private static let functionKeyNumbers: [UInt16: UInt32] = [
@@ -152,7 +182,8 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
                   let code = (record[kHISymbolicHotKeyCode as String] as? NSNumber)?.intValue,
                   (0...Int(UInt16.max)).contains(code),
                   let modifiers = (record[kHISymbolicHotKeyModifiers as String] as? NSNumber)?.uintValue,
-                  let key = keyForPhysicalCode(UInt16(code)), !key.isEmpty else { return nil }
+                  let key = keypadKey(forPhysicalCode: UInt16(code)) ?? keyForPhysicalCode(UInt16(code)),
+                  !key.isEmpty else { return nil }
             var flags: NSEvent.ModifierFlags = []
             for (carbon, native) in [(controlKey, NSEvent.ModifierFlags.control),
                                      (optionKey, .option), (shiftKey, .shift), (cmdKey, .command)] {
@@ -747,7 +778,7 @@ final class KeyboardShortcuts: ObservableObject {
     }
     private func applyDiscoveryBinding(_ reference: MenuReference) {
         guard let item = reference.item else { return }
-        let shortcut = activeShortcut(for: reference.id)
+        let shortcut = activeShortcut(for: reference.id).flatMap { $0.isKeypadKey ? nil : $0 }
         item.keyEquivalent = shortcut?.key ?? ""
         item.keyEquivalentModifierMask = shortcut?.flags ?? []
     }
@@ -756,9 +787,35 @@ final class KeyboardShortcuts: ObservableObject {
         guard let characters = event.characters, characters.count == 1 else { return false }
         return KeyboardShortcut(key: characters, flags: event.modifierFlags).isReserved
     }
+    func chord(for event: NSEvent) -> KeyboardShortcut? {
+        if let key = KeyboardShortcut.keypadKey(forPhysicalCode: event.keyCode) {
+            let physical = KeyboardShortcut(key: key, flags: event.modifierFlags)
+            if assignedPhysicalChords.contains(physical) { return physical }
+        }
+        return KeyboardShortcut.characterCapture(event)
+    }
+    func performKeypadEquivalent(_ event: NSEvent) -> Bool? {
+        guard event.type == .keyDown, let key = KeyboardShortcut.keypadKey(forPhysicalCode: event.keyCode) else { return nil }
+        let physical = KeyboardShortcut(key: key, flags: event.modifierFlags)
+        guard assignedPhysicalChords.contains(physical) else { return nil }
+        guard NSApp.modalWindow == nil else { return false }
+        for reference in nativeChords[physical] ?? [] {
+            guard let item = reference.item, let target = validatedTarget(item), let action = item.action else { continue }
+            guard NSApp.sendAction(action, to: target, from: item) else { return false }
+            if let menu = item.menu {
+                NotificationCenter.default.post(name: NSMenu.didSendActionNotification, object: menu, userInfo: ["MenuItem": item])
+            }
+            return true
+        }
+        return false
+    }
+    func boundShortcut(for command: PCNativeShortcutCommand) -> KeyboardShortcut? {
+        guard let item = command.item, let reference = references.first(where: { $0.item === item }) else { return nil }
+        return shortcut(for: reference)
+    }
     private func eligibleShortcut(_ event: NSEvent) -> KeyboardShortcut? {
         guard event.type == .keyDown, !event.isARepeat, KeyboardShortcut.canBeNativeShortcut(event),
-              let shortcut = KeyboardShortcut.capture(event),
+              let shortcut = chord(for: event),
               !shortcut.isReserved, !Self.typesReservedCharacters(event) else { return nil }
         let preferredExit = shortcut == Self.exitShortcut && self.shortcut(for: "exit:") == shortcut
             && priority(for: "exit:") == .preferParc
@@ -942,10 +999,18 @@ final class KeyboardShortcuts: ObservableObject {
             guard let item = reference.item else { continue }
             let value = shortcut(for: reference)
             let suppressed = (suppressedSymbolic.contains(reference.id) && reference.equivalent == nil)
-                || (reference.id == "exit:" && value == Self.exitShortcut)
+                || (reference.id == "exit:" && value == Self.exitShortcut) || value?.isKeypadKey == true
             item.keyEquivalent = suppressed ? "" : value?.key ?? ""
             item.keyEquivalentModifierMask = suppressed ? [] : value?.flags ?? []
         }
     }
 
+}
+
+final class ShortcutMainMenu: NSMenu {
+    weak var shortcuts: KeyboardShortcuts?
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let handled = MainActor.assumeIsolated { (shortcuts ?? .shared).performKeypadEquivalent(event) }
+        return handled ?? super.performKeyEquivalent(with: event)
+    }
 }
