@@ -31,12 +31,16 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
     private var history: PCNativeHistorySwipeHistory?
     private var overlay: HistorySwipeOverlayView?
     private var reducesMotion = false
+    private weak var dismissal: PeekController?
+    private weak var lookedUpPeek: PeekController?
+    private var peekLookedUp = false
 
     init(source: PCNativeHistorySwipeSource) {
         self.source = source
     }
 
     func historySwipeSource(_ source: PCNativeHistorySwipeSource, scroll event: NSEvent) -> Bool {
+        if event.phase == .began { peekLookedUp = false }
         let step = driver.receive(HistorySwipeEvents.scroll(
             phase: event.phase, momentumPhase: event.momentumPhase, deltaX: Double(event.scrollingDeltaX),
             deltaY: Double(event.scrollingDeltaY), directionInverted: event.isDirectionInvertedFromDevice))
@@ -74,9 +78,27 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
         source?.historyEntries(back: direction == .back) ?? 0
     }
 
-    func dismisses(toward direction: HistorySwipeDirection) -> Bool { false }
+    func dismisses(toward direction: HistorySwipeDirection) -> Bool {
+        direction == .back && swipePeek?.canSwipeDismiss == true
+    }
 
-    func beginDismissal() -> Bool { false }
+    func beginDismissal() -> Bool {
+        guard let peek = swipePeek, peek.canSwipeDismiss, peek.beginSwipeDismissal() else { return false }
+        dismissal = peek
+        return true
+    }
+
+    private var swipePeek: PeekController? {
+        if peekLookedUp { return lookedUpPeek }
+        var view = source?.overlayContainer
+        while let current = view, !(current is PCBrowserView) { view = current.superview }
+        let browser = view as? PCBrowserView
+        let controller = browser?.window?.windowController as? BrowserWindowController
+        let peek = browser?.nativePage.flatMap { controller?.activePeek(showing: $0) }
+        lookedUpPeek = peek
+        peekLookedUp = true
+        return peek
+    }
 
     func beginSwipe(_ direction: HistorySwipeDirection) -> Bool {
         history = source?.beginSwipe(back: direction == .back)
@@ -88,7 +110,7 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
         switch commit {
         case let .adjacent(direction): return source.navigate(back: direction == .back)
         case let .entry(direction, distance): return source.navigate(back: direction == .back, distance: distance)
-        case .dismiss: return false
+        case .dismiss: return dismissal?.commitSwipeDismissal() ?? false
         }
     }
 
@@ -101,6 +123,19 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
     }
 
     func present(_ output: HistorySwipeOutput) {
+        if let peek = dismissal {
+            switch output {
+            case .commit:
+                dismissal = nil
+            case .cancel:
+                dismissal = nil
+                peek.followSwipeDismissal(output)
+            default:
+                peek.followSwipeDismissal(output)
+            }
+            return
+        }
+        if case .beginDismissal = output { return }
         if case .begin = output { showOverlay() }
         guard let overlay else { return }
         overlay.handle(output)

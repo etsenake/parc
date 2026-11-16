@@ -527,6 +527,11 @@ extension BrowserWindowController {
         })
     }
 
+    func activePeek(showing page: PCNativePage) -> PeekController? {
+        guard let peek = activePeek, peek.page === page else { return nil }
+        return peek
+    }
+
     var historySwipePalette: ThemeChromePalette { rootView.palette }
     var historySwipePages: [PCNativePage] {
         let peek = activePeek

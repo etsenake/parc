@@ -31,6 +31,44 @@ child to Today. Original parent-page adoption by another window uses the existin
 collection transfer and rebinds the same child; no replacement page is created.
 See [windows lifecycle](windows-lifecycle.md).
 
+## Swiping and closing
+
+On a Peek's first page, the two-finger swipe that would go Back grabs the card
+instead; with pages behind it, the same swipe still goes Back. The card and its
+side buttons follow the fingers, and the wash over the parent fades as the card
+moves away. Letting go past halfway closes it, with one trackpad tap as the
+swipe crosses that point, and a quick flick closes it sooner. Letting go
+earlier, pulling back, flicking back toward the start or drifting mostly up or
+down springs it back. A Magic Mouse follows AppKit's tracked swipe, and the
+three-finger swipe some settings send closes with the same slide.
+[Swipe navigation](swipe-navigation.md#peek-dismissal) covers the recognizer.
+
+Every close Parc starts fades. A swipe slides the card on at its release speed
+while it fades over 0.22 seconds; Escape, a click outside, Close and Close Tab
+fade the card and wash together over 0.2 seconds. The page's genuine
+`requestClose` runs once the card is invisible, so a close starts about 0.2
+seconds after the request; meanwhile clicks pass through to the parent. If the
+page then asks "Leave site?", the card comes back under the question (a swiped
+card springs back, a faded one fades in), and a refusal without a question
+brings it back too; after Leave the card goes with the page, without a second
+fade. A page that closes itself, or a Peek closed while hidden, goes at once.
+During a call, a swipe past halfway springs the card back beside the red Hang
+up confirmation. Reduce Motion replaces the slide and springs with 0.15-second
+fades, and the drag dims the card instead of moving it. A new swipe can't grab
+the card until it has settled.
+
+`PeekCloseTransition` orders the drag, exit, close request, refusal and sheet
+spring-back, and its exit timers are generation-checked. Hiding a Peek mid-exit
+for a tab or Space switch hides it at once and requests the close without
+waiting, and a retiring Peek goes invisible before its view is removed, so no
+fading card lingers over a newer Peek or tab and nothing flashes.
+`PeekDismissalMotion` is the pure spring, slide and fade model, and
+`PeekDismissalAnimator` applies it to any card stage and wash view for reuse by
+other Peek hosts; the host sets its geometry and resting wash and leaves the
+stage's transform and opacity to it. `python3 tests/PeekSwipeDismissal/check.py`
+checks `PeekCloseTransition` and `PeekDismissalMotion` with the real recognizer
+and confirmation rules, plus the controller's close wiring.
+
 ## Promotion return ownership
 
 Expand creates a Today record and reparents the same wrapper; Add to Split uses
@@ -125,15 +163,14 @@ Round Close, Expand and Split controls sit 13 points right of the card, filled
 with the Space theme's background-extra colour and drawn in its primary ink (kept
 dark enough on light themes). They lift on hover, shrink when pressed and show
 tooltips to their right. Close confirmation widens Close into a red Close or Hang
-up pill on a 0.25/0.8 spring; entry fades over 0.3 seconds. Reduce Motion settles
-owned animation. Tab and Shift-Tab follow the window key-view loop through the
-Peek's renderer and controls, excluding the dimmed parent. Controls have
+up pill on a 0.25/0.8 spring; entry fades over 0.3 seconds. Reduce Motion
+settles the entry and confirmation animations. Tab and Shift-Tab follow the
+window key-view loop through the Peek's renderer and controls, excluding the
+dimmed parent. Controls have
 accessible names and the close-confirmation state announces its instruction.
 
-Dismissal handles a completed right swipe. Continuous drag progress, velocity,
-reversal and cancellation are absent. Teardown removes the view immediately;
-there is no exit fade, transition snapshot or Peek-specific haptic feedback.
-These are concrete remaining presentation items in [the backlog](backlog.md).
+The remaining presentation item, measuring the card from the window edge, is in
+[the backlog](backlog.md#peek).
 
 Automatic Peek for links to other sites and Shift-click Peek are both on by
 default for new users; this is a settled product decision. Either can be

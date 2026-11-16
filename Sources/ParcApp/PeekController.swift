@@ -16,6 +16,10 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     private var reduceMotionObserver: NSObjectProtocol?
     private let dismissConfirmation = PeekDismissalConfirmation()
     private var closeFocusReturn: PeekFocusReturn?
+    private var closeTransition = PeekCloseTransition()
+    private var exitTimer: Timer?
+    private var sheetObserver: NSObjectProtocol?
+    private var closeInFlight = false
     private var finished = false
     private(set) var closePending = false
     private var lastPresentedFingerprint: String?
@@ -89,11 +93,17 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
             installSwipeMonitor()
             refresh()
             if changed && animate { view.animatePresentation() }
+            if view.window?.attachedSheet != nil { apply(closeTransition.sheetBegan(visible: true)) }
         } else {
             removeSwipeMonitor()
             clearDismissConfirmation()
             closeFocusReturn?.cancel()
             view.settleMotion()
+            let hidden = closeTransition.hide()
+            apply(hidden.filter { $0 != .requestClose })
+            if hidden.contains(.requestClose) {
+                DispatchQueue.main.async { [weak self] in self?.requestPageClose() }
+            }
         }
     }
 
@@ -117,6 +127,63 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         requestDismiss(.escape(prefersConfirmation: prefersConfirmation))
     }
 
+    var canSwipeDismiss: Bool {
+        guard let window = view.window else { return false }
+        return !finished && !closePending && !view.isHidden && window.attachedSheet == nil
+            && canInteract?() == true && closeTransition.phase == .resting && view.swipeIsAtRest
+    }
+
+    func beginSwipeDismissal() -> Bool {
+        guard canSwipeDismiss, closeTransition.beginDrag() else { return false }
+        view.beginSwipe()
+        return true
+    }
+
+    func followSwipeDismissal(_ output: HistorySwipeOutput) {
+        apply(closeTransition.drag(output))
+    }
+
+    func commitSwipeDismissal() -> Bool {
+        guard closeTransition.phase == .dragging else { return false }
+        requestDismiss(.swipe)
+        if closeTransition.phase == .dragging { apply(closeTransition.springBack()) }
+        return true
+    }
+
+    private func apply(_ effects: [PeekCloseTransition.Effect]) {
+        for effect in effects {
+            switch effect {
+            case let .follow(fraction): view.followSwipe(fraction)
+            case .haptic: NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .default)
+            case let .springBack(velocity):
+                view.passesInput = false
+                view.springBack(velocity: velocity)
+            case let .exit(kind, _, velocity, generation):
+                view.passesInput = true
+                let duration = view.exit(kind, velocity: velocity)
+                exitTimer?.invalidate()
+                let timer = Timer(timeInterval: duration, repeats: false) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        self.apply(self.closeTransition.exitFinished(generation))
+                    }
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                exitTimer = timer
+            case .requestClose: requestPageClose()
+            case .vanish:
+                view.passesInput = true
+                view.vanish()
+            case .reappear:
+                view.passesInput = false
+                view.reappear()
+            case .settle:
+                view.passesInput = false
+                view.settleSwipe()
+            }
+        }
+    }
+
     func requestDismiss(_ mechanism: Dismissal) {
         guard !finished, !closePending, canInteract?() == true,
               let window = view.window, window.attachedSheet == nil else { return }
@@ -133,7 +200,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
             onUpdate?()
             return
         }
-        closeAfterConfirmation()
+        closeAfterConfirmation(exit: mechanism == .swipe ? .slide : .fade)
     }
 
     private func clearDismissConfirmation() {
@@ -146,23 +213,36 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         closeConfirmed()
     }
 
-    private func closeAfterConfirmation() {
+    private func closeAfterConfirmation(exit: PeekCloseTransition.Exit) {
         guard !finished, !closePending, canInteract?() == true, !page.isClosed else { return }
         clearDismissConfirmation()
         closeFocusReturn = PeekFocusReturn(source: view)
-        closeConfirmed()
+        closeConfirmed(exit: exit)
     }
 
-    private func closeConfirmed() {
+    private func closeConfirmed(exit: PeekCloseTransition.Exit = .fade) {
         closePending = true; dismissedURL = browser.url
         dismissedNavigationState = page.responds(to: #selector(PCNativePage.captureNavigationState))
             ? page.captureNavigationState() : nil
         refresh()
+        observeSheets()
+        let effects = closeTransition.close(visible: !view.isHidden && view.window != nil, exit: exit)
+        if effects.isEmpty { requestPageClose() } else { apply(effects) }
+        if closePending { onUpdate?() }
+    }
+
+    private func requestPageClose() {
+        exitTimer?.invalidate(); exitTimer = nil
+        guard !finished, closePending, !closeInFlight, !page.isClosed else { return }
+        closeInFlight = true
         browser.requestClose { [weak self] result in
             guard let self, !self.finished else { return }
+            self.closeInFlight = false
             self.closePending = false
+            self.stopObservingSheets()
             if result == .closed { self.onClose?() }
             else {
+                self.apply(self.closeTransition.refused(visible: !self.view.isHidden))
                 self.dismissedURL = nil; self.dismissedNavigationState = nil
                 let focusReturn = self.takeFocusReturn()
                 self.publishPresentationIfChanged()
@@ -170,7 +250,22 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
                 self.onCloseRefused?()
             }
         }
-        if closePending { onUpdate?() }
+    }
+
+    private func observeSheets() {
+        guard sheetObserver == nil, let window = view.window else { return }
+        sheetObserver = NotificationCenter.default.addObserver(forName: NSWindow.willBeginSheetNotification, object: window,
+                                                               queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.finished else { return }
+                self.apply(self.closeTransition.sheetBegan(visible: !self.view.isHidden))
+            }
+        }
+    }
+
+    private func stopObservingSheets() {
+        if let sheetObserver { NotificationCenter.default.removeObserver(sheetObserver) }
+        sheetObserver = nil
     }
 
     func takeFocusReturn() -> PeekFocusReturn? {
@@ -278,6 +373,9 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         guard !finished else { return }
         finished = true
         closeFocusReturn?.cancel(); closeFocusReturn = nil
+        exitTimer?.invalidate(); exitTimer = nil
+        stopObservingSheets()
+        apply(closeTransition.finish())
         removeSwipeMonitor()
         if let reduceMotionObserver { NSWorkspace.shared.notificationCenter.removeObserver(reduceMotionObserver) }
         reduceMotionObserver = nil
@@ -359,6 +457,8 @@ final class PeekHostView: NSView {
     let browserToolbar = BrowserToolbarView()
     let loadingIndicator = PageLoadingIndicator()
     private let backdrop = ThemeRendererView()
+    private let stage = LayoutView()
+    private lazy var swipe = PeekDismissalAnimator(stage: stage, wash: backdrop, restingWash: PeekCardAppearance.backdropOpacity)
     private let cardEdge = LayoutView()
     private let edgeLayer = CALayer()
     private let card = LayoutView()
@@ -389,6 +489,7 @@ final class PeekHostView: NSView {
     var onBackground: (() -> Void)?
     var onLayout: (() -> Void)?
     var title = "Peek" { didSet { setAccessibilityLabel("Peek: " + title) } }
+    var passesInput = false
     var isBusy = false { didSet { closeButton.isEnabled = !isBusy; expandButton.isEnabled = canExpand && !isBusy } }
     var canExpand = false { didSet { expandButton.isEnabled = canExpand && !isBusy } }
     var canSplit = false { didSet { splitButton.isEnabled = canSplit } }
@@ -412,7 +513,9 @@ final class PeekHostView: NSView {
         closeButton.actionBlock = { [weak self] in self?.onClose?() }
         expandButton.actionBlock = { [weak self] in self?.onExpand?() }
         splitButton.actionBlock = { [weak self] in self?.onSplit?() }
-        addSubview(backdrop); addSubview(cardEdge); addSubview(card); addSubview(controls); addSubview(loadingIndicator)
+        stage.wantsLayer = true
+        addSubview(backdrop); addSubview(stage)
+        stage.addSubview(cardEdge); stage.addSubview(card); stage.addSubview(controls); stage.addSubview(loadingIndicator)
         card.addSubview(content)
         developerToolbar.isHidden = true; card.addSubview(developerToolbar)
         browserToolbar.isHidden = true; card.addSubview(browserToolbar)
@@ -445,16 +548,19 @@ final class PeekHostView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let hit = super.hitTest(point) else { return nil }
-        return hit === cardEdge || hit === backdrop || hit.isDescendant(of: backdrop) ? self : hit
+        guard !passesInput, let hit = super.hitTest(point) else { return nil }
+        return hit === cardEdge || hit === stage || hit === backdrop || hit.isDescendant(of: backdrop) ? self : hit
     }
 
     override func layout() {
         super.layout()
         backdrop.frame = bounds
+        stage.frame = bounds
         let origin = convert(bounds.origin, to: nil)
         if backdropOrigin != origin { backdropOrigin = origin; backdrop.invalidateCoordinates() }
         let frame = DeveloperChromeGeometry.peekCard(in: bounds)
+        swipe.geometry = PeekDismissalMotion.Geometry(paneWidth: bounds.width, cardMinX: frame.minX)
+        swipe.apply()
         card.frame = frame
         cardEdge.frame = frame.insetBy(dx: -0.5, dy: -0.5)
         layoutCardEdge()
@@ -516,7 +622,16 @@ final class PeekHostView: NSView {
     func settleMotion() {
         layer?.removeAnimation(forKey: "parc.peek.opacity")
         [closeButton, expandButton, splitButton].forEach { $0.settleMotion() }
+        swipe.complete()
     }
+    var swipeIsAtRest: Bool { swipe.isAtRest }
+    func beginSwipe() { swipe.begin() }
+    func followSwipe(_ fraction: Double) { swipe.follow(fraction) }
+    func springBack(velocity: Double) { swipe.springBack(velocity: velocity) }
+    func exit(_ kind: PeekCloseTransition.Exit, velocity: Double) -> TimeInterval { swipe.exit(kind, velocity: velocity) }
+    func reappear() { swipe.reappear() }
+    func vanish() { swipe.vanish() }
+    func settleSwipe() { swipe.settle() }
 }
 
 extension PeekHostView: ParcToastAnchoring {}

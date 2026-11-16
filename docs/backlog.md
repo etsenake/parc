@@ -67,8 +67,6 @@ workflow, renders first.
 
 ## Peek
 
-- Continuous swipe tracking, reversal/cancellation, exit fade/snapshots and
-  haptics are absent; dismissal currently handles completed right swipes.
 - The Peek card should be measured from the window edge, with the parent page
   shrinking by 9 points per side as it fades. Parc's Peek sits inside the page
   card's clip, so its card is measured from the page card and the parent only

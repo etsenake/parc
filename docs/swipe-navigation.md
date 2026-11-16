@@ -3,7 +3,7 @@
 A two-finger horizontal swipe on a trackpad, or a one-finger swipe on a Magic
 Mouse, moves a page Back or Forward. Parc recognizes the gesture itself. This
 guide covers how that works, including in windows that aren't in focus, the
-indicator's look and the swipe-and-hold history list.
+indicator's look, the swipe-and-hold history list and swiping a Peek away.
 
 ## How it works today
 
@@ -126,7 +126,7 @@ with its inputs, outputs and protocols in
 - Finger positions drive progress, reversal and hold selection. A gesture
   without touches (a Magic Mouse, or a swipe that arrives without them) asks
   the forwarder to start AppKit's tracked swipe and follows its progress for
-  adjacent Back/Forward only.
+  adjacent Back/Forward or a Peek dismissal only.
 - Armed, the fingers must rest: every position update restarts the hold
   delay, so the list opens only once they stay put that long past the commit
   point. It opens on the current page. Vertical travel steps the selection one
@@ -139,7 +139,8 @@ with its inputs, outputs and protocols in
   selected entry; lifting on the current page, or sliding back past where the
   swipe began once the list has opened, cancels.
 - Its environment answers only the system setting, whether anything covers the
-  page and how many entries lie each way. Focus, the key window and the active
+  page, how many entries lie each way and whether Back on a Peek's first page
+  dismisses it. Focus, the key window and the active
   app never enter it.
 
 Each input (touches, scroll events, the page's scroll answers, its overscroll
@@ -149,9 +150,10 @@ navigation, and when the next clock tick is due, for the hold and for edge
 stepping. The hold's tick is a wake-up, not a deadline that moves with every
 touch: a tick that finds the fingers moved since only books the next one, so
 the forwarder doesn't reschedule a timer per touch. The outputs are begin with
-the direction, progress (clamped and rubber-banded), armed, hold, selection,
-the row remainder (how far the fingers sit past the selected row, in rows),
-detent, commit (the adjacent page or an entry some rows away) and cancel.
+the direction or begin dismissal, progress (clamped and rubber-banded), armed,
+hold, selection, the row remainder (how far the fingers sit past the selected
+row, in rows), detent, a dismissal's release speed, commit (the adjacent page,
+an entry some rows away or a Peek dismissal) and cancel.
 
 Distances are fractions of the trackpad. Chromium's history swiper sets the
 gesture rules: commit at 0.08, take the events at 0.01, and cancel when
@@ -260,6 +262,34 @@ Reduce Motion, narrow panes, long lists and runs through the real recognizer,
 then compiles the view itself to check its pane clip, click-through,
 accessibility, material, shadow and ring.
 
+## Peek dismissal
+
+On a Peek's first page the recognizer has a third outcome. When Back has no
+entries and the forwarder finds that the swipe's page is the window's shown,
+interactive Peek (`activePeek(showing:)`, reached from the page's own view,
+then the Peek's live `canSwipeDismiss`), the swipe begins a dismissal instead
+of a history session. Forward, and
+Back with history, keep their usual outcomes. The page-first rule, overscroll
+behavior, the system setting and every refusal in
+[windows that aren't in focus](#windows-that-arent-in-focus) apply unchanged;
+the engine half needs no session for it.
+
+- Progress is finger travel over 30% of the trackpad width, the card's whole
+  way off, with no rubber band, history list or Back preload.
+- It arms at half that travel and disarms below 45%, so tremor at the point
+  taps once. The Peek plays the armed circle's level-change haptic and stays
+  silent when backing off.
+- On lift it reports the release speed, taken over the last 80 ms of motion in
+  one direction. It closes when armed, unless flicking back faster than 60% of
+  the trackpad a second, or when flicking forward that fast after a tenth of
+  the travel; otherwise it cancels. Vertical drift, a new touch or the page
+  becoming ineligible cancel as they do for Back.
+- A gesture without touches (a Magic Mouse) follows AppKit's tracked amount and
+  lets AppKit's end decide.
+
+The Peek owns the card's motion and the close; see
+[Peek](peek.md#swiping-and-closing).
+
 ## Review and checks
 
 Changes to the look follow the [interface review](visual-review.md) workflow:
@@ -271,11 +301,14 @@ boundary.
 - `python3 tests/HistorySwipe/check.py` runs the recognizer over recorded event
   sequences: trackpad, Magic Mouse, page-consumed scroll,
   `overscroll-behavior: none`, vertical cancel, reversal, hold and selection,
-  and background windows.
+  background windows, and a Peek's first-page dismissal with spring-back,
+  flicks, reversal and the single tap.
 - `python3 tests/HistorySwipeDriver/check.py` drives the forwarder's Swift half:
   sessions, commits and list picks, refused and late navigation, engine
-  cancels, clock ticks and AppKit tracking.
+  cancels, clock ticks, AppKit tracking and Peek dismissals.
 - `python3 tests/HistorySwipeTargets/check.py` covers which panes can swipe and
   the focus-free rules above.
+- `python3 tests/PeekSwipeDismissal/check.py` covers the Peek's drag, close,
+  refusal, Hang up and motion on the real recognizer.
 - Swift typecheck and whole-module SIL cover the app; the engine build compiles
   the forwarder's engine half.
