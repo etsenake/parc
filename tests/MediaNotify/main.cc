@@ -1,6 +1,6 @@
 #include "native_media_notify.h"
 
-#include <cassert>
+#include "../Support/TestFailure.h"
 #include <iostream>
 
 int main() {
@@ -33,74 +33,74 @@ int main() {
   NativeMediaNotifyState same = published;
   same.published = false;
 
-  assert(ShouldNotifyMediaPayloadChange(unpublished, published));
-  assert(ShouldNotifyMediaPayloadChange(unpublished, same));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(unpublished, published));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(unpublished, same));
 
-  assert(!ShouldNotifyMediaPayloadChange(published, same));
-  assert(!MediaNotifyPayloadChanged(published, same));
+  PARC_EXPECT(!ShouldNotifyMediaPayloadChange(published, same));
+  PARC_EXPECT(!MediaNotifyPayloadChanged(published, same));
 
   NativeMediaNotifyState paused = same;
   paused.playing = false;
-  assert(ShouldNotifyMediaPayloadChange(published, paused));
-  assert(MediaNotifyPayloadChanged(published, paused));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, paused));
+  PARC_EXPECT(MediaNotifyPayloadChanged(published, paused));
 
   NativeMediaNotifyState muted = same;
   muted.muted = true;
   muted.can_admit = false;
   muted.mute_revision = 1;
-  assert(ShouldNotifyMediaPayloadChange(published, muted));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, muted));
   NativeMediaNotifyState silent = same;
   silent.audible = false;
-  assert(ShouldNotifyMediaPayloadChange(published, silent));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, silent));
   NativeMediaNotifyState mute_rev = same;
   mute_rev.mute_revision = 2;
-  assert(ShouldNotifyMediaPayloadChange(published, mute_rev));
-  assert(MediaNotifyPayloadChanged(published, mute_rev));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, mute_rev));
+  PARC_EXPECT(MediaNotifyPayloadChanged(published, mute_rev));
 
   NativeMediaNotifyState retitled = same;
   retitled.title = u"Other";
-  assert(ShouldNotifyMediaPayloadChange(published, retitled));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, retitled));
   NativeMediaNotifyState art = same;
   art.artwork_url = "https://music.example/other.png";
-  assert(ShouldNotifyMediaPayloadChange(published, art));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, art));
   NativeMediaNotifyState missing_art = same;
   missing_art.artwork_present = false;
-  assert(ShouldNotifyMediaPayloadChange(published, missing_art));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, missing_art));
 
   NativeMediaNotifyState ineligible = same;
   ineligible.eligible = false;
   ineligible.active = false;
   ineligible.can_admit = false;
-  assert(ShouldNotifyMediaPayloadChange(published, ineligible));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, ineligible));
   NativeMediaNotifyState status = same;
   status.session_status = 3;
   status.session_state_active = false;
   status.can_admit = false;
-  assert(ShouldNotifyMediaPayloadChange(published, status));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, status));
   NativeMediaNotifyState admit = same;
   admit.can_admit = false;
-  assert(ShouldNotifyMediaPayloadChange(published, admit));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, admit));
   NativeMediaNotifyState actions = same;
   actions.has_next_track = true;
-  assert(ShouldNotifyMediaPayloadChange(published, actions));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, actions));
   NativeMediaNotifyState volume = same;
   volume.volume_hundredths = 50;
-  assert(ShouldNotifyMediaPayloadChange(published, volume));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, volume));
 
   NativeMediaNotifyState mic = same;
   mic.can_toggle_microphone = true;
   mic.microphone_on = true;
-  assert(ShouldNotifyMediaPayloadChange(published, mic));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, mic));
 
   NativeMediaNotifyState pip = same;
   pip.can_enter_picture_in_picture = true;
-  assert(ShouldNotifyMediaPayloadChange(published, pip));
+  PARC_EXPECT(ShouldNotifyMediaPayloadChange(published, pip));
 
   NativeMediaNotifyState published_paused = paused;
   published_paused.published = true;
   NativeMediaNotifyState same_paused = paused;
   same_paused.published = false;
-  assert(!ShouldNotifyMediaPayloadChange(published_paused, same_paused));
+  PARC_EXPECT(!ShouldNotifyMediaPayloadChange(published_paused, same_paused));
 
   std::cout << "Passed native media notify payload filters; no browser "
                "execution.\n";

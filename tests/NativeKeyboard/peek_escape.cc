@@ -1,4 +1,4 @@
-#include <cassert>
+#include "../Support/TestFailure.h"
 #include <iostream>
 #include "../../Engine/ParcNative/native_escape_state.h"
 
@@ -8,7 +8,7 @@ int main() {
   int checks = 0;
   auto expect = [&](bool condition) {
     ++checks;
-    assert(condition);
+    PARC_EXPECT(condition);
   };
   for (bool consumed : {false, true}) {
     for (bool editable : {false, true}) {

@@ -10,7 +10,7 @@ static int assertions;
     ++assertions;                                          \
     if (!(x)) {                                            \
       std::fprintf(stderr, "line %d: %s\n", __LINE__, #x); \
-      std::abort();                                        \
+      std::exit(1);                                        \
     }                                                      \
   } while (0)
 @interface KeyWindow : NSWindow

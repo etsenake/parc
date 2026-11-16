@@ -13,7 +13,7 @@ static int assertions;
     ++assertions;                                    \
     if (!(x)) {                                      \
       fprintf(stderr, "FAIL %d %s\n", __LINE__, #x); \
-      abort();                                       \
+      exit(1);                                       \
     }                                                \
   } while (0)
 static void Pump(double seconds = .12) {

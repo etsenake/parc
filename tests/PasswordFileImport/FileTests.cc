@@ -1,5 +1,5 @@
 #include "native_password_file.h"
-#include <cassert>
+#include "../Support/TestFailure.h"
 #include <fstream>
 #include <iostream>
 #include <filesystem>
@@ -11,7 +11,7 @@ int main() {
   char name[] = "/tmp/parc-password-file.XXXXXX";
   const auto root = fs::path(mkdtemp(name));
   int checks = 0;
-  auto expect = [&](bool value) { ++checks; assert(value); };
+  auto expect = [&](bool value) { ++checks; PARC_EXPECT(value); };
   auto write = [&](const fs::path& p, const std::string& value) { std::ofstream f(p); f << value; };
   const auto p = root / "Passwords.csv";
   expect(!Read(p.string()).identity);
@@ -31,7 +31,7 @@ int main() {
   expect(Read(p.string()).identity != original.identity);
   fs::create_symlink(p, root / "alias.csv"); expect(!Read((root / "alias.csv").string()).identity);
   expect(!Read(root.string()).identity);
-  auto pipe = root / "pipe.csv"; assert(!mkfifo(pipe.c_str(), 0600)); expect(!Read(pipe.string()).identity);
+  auto pipe = root / "pipe.csv"; PARC_EXPECT(!mkfifo(pipe.c_str(), 0600)); expect(!Read(pipe.string()).identity);
   write(p, std::string(kMaximumBytes + 1, 'x')); expect(!Read(p.string()).identity);
   write(p, std::string(kMaximumBytes, 'x')); expect(Read(p.string()).identity.has_value());
   expect(kMaximumBytes > 1000 * 1024 && kChunkBytes == 1000 * 1024 && kChunkRows == 3000);

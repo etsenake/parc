@@ -1,6 +1,6 @@
 #import "ParcEngine.h"
 
-#include <assert.h>
+#include "../Support/TestFailure.h"
 #include <stdio.h>
 
 @interface PCNativePage (Test)
@@ -56,24 +56,24 @@ int main(void) {
     PCBrowserView* view = [[PCBrowserView alloc] initWithFrame:NSZeroRect adoptingNativePage:page];
     Delegate* delegate = [Delegate new];
     view.delegate = delegate;
-    assert(delegate.media == 1 && delegate.titles == 1);
+    PARC_EXPECT(delegate.media == 1 && delegate.titles == 1);
 
     [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    assert(delegate.media == 1 && delegate.titles == 1);
+    PARC_EXPECT(delegate.media == 1 && delegate.titles == 1);
 
     page.testMediaRevision = 1;
     [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    assert(delegate.media == 2 && delegate.titles == 1);
+    PARC_EXPECT(delegate.media == 2 && delegate.titles == 1);
     [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    assert(delegate.media == 2);
+    PARC_EXPECT(delegate.media == 2);
 
     page.testTitle = @"Next Track";
     [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    assert(delegate.media == 2 && delegate.titles == 2);
+    PARC_EXPECT(delegate.media == 2 && delegate.titles == 2);
 
     Delegate* next = [Delegate new];
     view.delegate = next;
-    assert(next.media == 1);
+    PARC_EXPECT(next.media == 1);
   }
   printf("Browser view media delivery: checks passed\n");
   return 0;
