@@ -70,6 +70,18 @@ Pending frontend close uses genuine beforeunload. Focus returns to inspected
 content only if departing tools owned it. Native page/frame ownership remains
 valid throughout asynchronous loading and close completion.
 
+## Automation profiles
+
+Puppeteer, Playwright and ChromeDriver launch with `--user-data-dir=<dir>`. Parc
+opens that as an isolated profile, like `--parc-profile <dir>`, which wins if
+both are given. Its Chromium data lives in `<dir>/Chromium-v1`, and a link there
+makes `DevToolsActivePort` appear at `<dir>/DevToolsActivePort`, where those
+tools look. The profile has its own single-instance lock, so it runs beside your
+everyday Parc. A path that is a profile's own `Chromium-v1` folder, as
+Chromium's relaunch passes it, maps back to that profile; the everyday one stays
+an ordinary launch. With `--no-first-run`, an isolated profile skips onboarding.
+`--remote-debugging-port` and `--remote-debugging-pipe` work as in Chrome.
+
 ## Checks
 
 Toolbar, command-admission and preference checks live in

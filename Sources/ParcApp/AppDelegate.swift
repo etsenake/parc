@@ -62,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var launchWindowID: UUID?
     private var requiresOnboarding: Bool {
         store != nil && !arguments.contains("--parc-smoke") && !store.state.settings.onboardingComplete
+            && !(arguments.contains("--no-first-run") && isolatedProfilePath != nil)
     }
     private var windows: [BrowserWindowController] = []
     private var miniPlayerRefreshPending = false
@@ -205,18 +206,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         return arguments[index + 1]
     }
 
+    private var automationDataDirectory: String? {
+        let prefix = "--user-data-dir="
+        guard let value = arguments.dropFirst().prefix(while: { $0 != "--" }).last(where: { $0.hasPrefix(prefix) })?
+            .dropFirst(prefix.count), !value.isEmpty else { return nil }
+        let directory = URL(fileURLWithPath: String(value), isDirectory: true).standardizedFileURL
+        guard directory.lastPathComponent == "Chromium-v1" else { return directory.path }
+        let store = directory.deletingLastPathComponent()
+        let standard = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                   appropriateFor: nil, create: true).appendingPathComponent("Parc", isDirectory: true)
+        if let standard, store.resolvingSymlinksInPath().path == standard.resolvingSymlinksInPath().path { return nil }
+        return store.path
+    }
+
+    private var isolatedProfilePath: String? { argument("--parc-profile") ?? automationDataDirectory }
+
+    private static func linkDevToolsActivePort(engineRoot: URL) {
+        let files = FileManager.default
+        let link = engineRoot.appendingPathComponent("DevToolsActivePort").path
+        let target = "../DevToolsActivePort"
+        guard (try? files.destinationOfSymbolicLink(atPath: link)) != target else { return }
+        try? files.removeItem(atPath: link)
+        try? files.createSymbolicLink(atPath: link, withDestinationPath: target)
+    }
+
     enum StartupResult { case ready, exit(Int32) }
 
     func prepare() -> StartupResult {
         var failureExitCode: Int32 = 1
         do {
             let root: URL
-            if let path = argument("--parc-profile") { root = URL(fileURLWithPath: path, isDirectory: true) }
+            if let path = isolatedProfilePath { root = URL(fileURLWithPath: path, isDirectory: true) }
             else {
                 root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                   appropriateFor: nil, create: true).appendingPathComponent("Parc", isDirectory: true)
             }
-            guard let opened = try SidebarRescue.openStore(at: root, keepsBackups: argument("--parc-profile") == nil,
+            guard let opened = try SidebarRescue.openStore(at: root, keepsBackups: isolatedProfilePath == nil,
                                                            interactive: !arguments.contains("--parc-smoke")) else {
                 cancelPendingAppKitRestorations()
                 return .exit(failureExitCode)
@@ -278,6 +303,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             PCNativeBrowserApplication.setApplicationClient(self)
             NativeMessagingHosts.link(engineRoot: store.independentEngineRoot,
                                       sources: NativeMessagingHosts.sourceDirectories(home: FileManager.default.homeDirectoryForCurrentUser))
+            if argument("--parc-profile") == nil, automationDataDirectory != nil {
+                Self.linkDevToolsActivePort(engineRoot: store.independentEngineRoot)
+            }
             let startup = PCBrowserEngine.start(frameworkPath: frameworks + "/Chromium Embedded Framework.framework", cachePath: store.independentEngineRoot.path)
             switch startup.status {
             case .earlyExit:
@@ -355,10 +383,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     func openInitialWindow() {
         NSApp.finishLaunching()
-        SoftwareUpdater.shared.start(disabled: argument("--parc-profile") != nil
+        SoftwareUpdater.shared.start(disabled: isolatedProfilePath != nil
                                      || arguments.contains("--disable-software-updater"))
         SoftwareUpdater.shared.activity = { [weak self] in self?.automaticUpdateActivity }
-        AppIconController.shared.configure(directory: store.directory, updatesSystemIdentity: argument("--parc-profile") == nil)
+        AppIconController.shared.configure(directory: store.directory, updatesSystemIdentity: isolatedProfilePath == nil)
         restorationLaunch.finishLaunch()
         finishInitialLaunchIfReady()
     }
@@ -2138,7 +2166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let restart = ApplicationRestart()
         applicationRestart = restart; restartCompletion = completion
         restartOwner = owner; armedReplayRestart = false
-        restart.prepare(profileDirectory: argument("--parc-profile").map {
+        restart.prepare(profileDirectory: isolatedProfilePath.map {
             URL(fileURLWithPath: $0, isDirectory: true)
         }) { [weak self, weak restart] failure in
             guard let self, let restart, self.applicationRestart === restart else { return }
