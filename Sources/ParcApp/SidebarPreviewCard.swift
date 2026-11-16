@@ -114,31 +114,36 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
         button.focusRingCornerRadius = 5
     }
 
-    override var preferredHeight: CGFloat {
-        if showsPicture { return SidebarPreviewMetrics.header + pictureHeight + 8 }
-        let body = filtered.isEmpty ? messageHeight + 24 : CGFloat(filtered.count) * (table.rowHeight + 1) + 4
-        return SidebarPreviewMetrics.header + min(SidebarPreviewMetrics.maximumHeight - SidebarPreviewMetrics.header, body)
+    override func preferredHeight(width: CGFloat) -> CGFloat {
+        let header = SidebarPreviewMetrics.header
+        if showsPicture { return header + pictureHeight(width: width) + SidebarPreviewMetrics.pictureInset }
+        let body = filtered.isEmpty ? messageHeight(width: width) + 24
+            : CGFloat(filtered.count) * (table.rowHeight + 1) + SidebarPreviewMetrics.listInset
+        return header + min(SidebarPreviewMetrics.maximumHeight - header, body)
     }
-    private var pictureHeight: CGFloat {
+    private func pictureHeight(width: CGFloat) -> CGFloat {
         let size = picture.image?.size ?? .zero
         guard size.width > 0 else { return 0 }
-        let fitted = ((SidebarPreviewMetrics.width - 16) * size.height / size.width).rounded()
-        return min(SidebarPreviewMetrics.maximumHeight - SidebarPreviewMetrics.header - 8, fitted)
+        let inset = SidebarPreviewMetrics.pictureInset
+        let fitted = ((width - 2 * inset) * size.height / size.width).rounded()
+        return min(SidebarPreviewMetrics.maximumHeight - SidebarPreviewMetrics.header - inset, fitted)
     }
-    private var messageHeight: CGFloat {
-        let bounds = NSRect(x: 0, y: 0, width: SidebarPreviewMetrics.width - 32, height: 1000)
+    private func messageHeight(width: CGFloat) -> CGFloat {
+        let bounds = NSRect(x: 0, y: 0, width: max(0, width - 32), height: 1000)
         return ceil(message.cell?.cellSize(forBounds: bounds).height ?? 16)
     }
     override func layout() {
         super.layout()
         let header = SidebarPreviewMetrics.header, width = bounds.width
         if showsPicture {
+            let inset = SidebarPreviewMetrics.pictureInset, top = ((header - 31) / 2).rounded(.down)
             icon.frame = NSRect(x: 13, y: (header - 16) / 2, width: 16, height: 16)
             split.frame = NSRect(x: width - 32, y: (header - 24) / 2, width: 24, height: 24)
             let textX = icon.frame.maxX + 8, textWidth = max(0, split.frame.minX - textX - 8)
-            heading.frame = NSRect(x: textX, y: 8, width: textWidth, height: 17)
-            site.frame = NSRect(x: textX, y: 25, width: textWidth, height: 14)
-            picture.frame = NSRect(x: 8, y: header, width: max(0, width - 16), height: max(0, bounds.height - header - 8))
+            heading.frame = NSRect(x: textX, y: top, width: textWidth, height: 17)
+            site.frame = NSRect(x: textX, y: top + 17, width: textWidth, height: 14)
+            picture.frame = NSRect(x: inset, y: header, width: max(0, width - 2 * inset),
+                                   height: max(0, bounds.height - header - inset))
             return
         }
         if domain != nil {
@@ -153,9 +158,10 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
                                   width: max(0, width - icon.frame.maxX - 17), height: 20)
             divider.frame = NSRect(x: 1, y: header - 1, width: max(0, width - 2), height: 1)
         }
-        scroll.frame = NSRect(x: 4, y: header, width: max(0, width - 8), height: max(0, bounds.height - header - 4))
+        let list = SidebarPreviewMetrics.listInset
+        scroll.frame = NSRect(x: list, y: header, width: max(0, width - 2 * list), height: max(0, bounds.height - header - list))
         table.tableColumns.first?.width = scroll.contentSize.width
-        let height = min(messageHeight, max(0, bounds.height - header - 24))
+        let height = min(messageHeight(width: width), max(0, bounds.height - header - 24))
         message.frame = NSRect(x: 16, y: header + max(12, (bounds.height - header - height) / 2),
                                width: max(0, width - 32), height: height)
     }
@@ -368,7 +374,7 @@ private final class SidebarPreviewPicture: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = 4; layer?.cornerCurve = .continuous; layer?.masksToBounds = true
+        layer?.cornerRadius = 5; layer?.cornerCurve = .continuous; layer?.masksToBounds = true
         layer?.borderWidth = 0.5; layer?.contentsGravity = .resizeAspectFill
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }

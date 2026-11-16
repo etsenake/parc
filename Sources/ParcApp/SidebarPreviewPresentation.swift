@@ -2,9 +2,9 @@ import AppKit
 import QuartzCore
 
 enum SidebarPreviewMetrics {
-    static let width: CGFloat = 240, maximumHeight: CGFloat = 320, header: CGFloat = 48
+    static let width: CGFloat = 288, minimumWidth: CGFloat = 240, maximumHeight: CGFloat = 384, header: CGFloat = 56
     static let windowInset: CGFloat = 18, gap: CGFloat = 4, hoverExtension: CGFloat = 40
-    static let cornerRadius: CGFloat = 12, scale: CGFloat = 0.8
+    static let cornerRadius: CGFloat = 14, pictureInset: CGFloat = 10, listInset: CGFloat = 5, scale: CGFloat = 0.8
     static let duration: CFTimeInterval = 0.1
 }
 
@@ -14,13 +14,15 @@ struct SidebarPreviewPlacement: Equatable {
     var row: NSRect
     var location: SidebarPreviewLocation
 
-    func frame(height: CGFloat, hostHeight: CGFloat) -> NSRect {
-        let inset = SidebarPreviewMetrics.windowInset, gap = SidebarPreviewMetrics.gap
+    private var x: CGFloat { location == .right ? row.maxX + SidebarPreviewMetrics.gap : row.maxX - SidebarPreviewMetrics.gap }
+    func width(hostWidth: CGFloat) -> CGFloat {
+        max(SidebarPreviewMetrics.minimumWidth, min(SidebarPreviewMetrics.width, hostWidth - SidebarPreviewMetrics.windowInset - x))
+    }
+    func frame(width: CGFloat, height: CGFloat, hostHeight: CGFloat) -> NSRect {
+        let inset = SidebarPreviewMetrics.windowInset
         let height = min(height, SidebarPreviewMetrics.maximumHeight, max(0, hostHeight - 2 * inset))
-        let x = location == .right ? row.maxX + gap : row.maxX - gap
-        let y = location == .right ? row.midY - height / 2 : row.maxY - gap
-        return NSRect(x: x, y: min(max(inset, y), max(inset, hostHeight - inset - height)),
-                      width: SidebarPreviewMetrics.width, height: height)
+        let y = location == .right ? row.midY - height / 2 : row.maxY - SidebarPreviewMetrics.gap
+        return NSRect(x: x, y: min(max(inset, y), max(inset, hostHeight - inset - height)), width: width, height: height)
     }
     var anchor: NSPoint { NSPoint(x: row.maxX, y: location == .right ? row.midY : row.maxY) }
 }
@@ -57,7 +59,7 @@ class SidebarPreviewSurface: NSView {
     private var hoverArea: NSTrackingArea?
     private var motionAnchor: NSPoint?
     override var isFlipped: Bool { true }
-    var preferredHeight: CGFloat { SidebarPreviewMetrics.maximumHeight }
+    func preferredHeight(width: CGFloat) -> CGFloat { SidebarPreviewMetrics.maximumHeight }
     var hoverFrame: NSRect {
         NSRect(x: frame.minX - SidebarPreviewMetrics.hoverExtension, y: frame.minY,
                width: frame.width + SidebarPreviewMetrics.hoverExtension, height: frame.height)
@@ -68,8 +70,8 @@ class SidebarPreviewSurface: NSView {
         wantsLayer = true
         layer?.masksToBounds = false
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.4); shadow.shadowBlurRadius = 16
-        shadow.shadowOffset = NSSize(width: 0, height: 5)
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.4); shadow.shadowBlurRadius = 19
+        shadow.shadowOffset = NSSize(width: 0, height: 6)
         self.shadow = shadow
         content.wantsLayer = true
         content.layer?.cornerRadius = SidebarPreviewMetrics.cornerRadius; content.layer?.cornerCurve = .continuous
@@ -96,7 +98,8 @@ class SidebarPreviewSurface: NSView {
     }
     func place() {
         guard let host = superview else { return }
-        frame = placement.frame(height: preferredHeight, hostHeight: host.bounds.height)
+        let width = placement.width(hostWidth: host.bounds.width)
+        frame = placement.frame(width: width, height: preferredHeight(width: width), hostHeight: host.bounds.height)
     }
 
     override func updateTrackingAreas() {
@@ -184,8 +187,8 @@ private final class SidebarPreviewClipView: NSView {
 
 final class SidebarPreviewItemView: NSTableCellView {
     static let titleFont = NSFont.systemFont(ofSize: 13), subtitleFont = NSFont.systemFont(ofSize: 11)
-    static let iconSize: CGFloat = 16
-    static let height = 5 + line(titleFont) + line(subtitleFont) + 7
+    static let iconSize: CGFloat = 16, top: CGFloat = 6, bottom: CGFloat = 8, leading: CGFloat = 10, trailing: CGFloat = 8
+    static let height = top + line(titleFont) + line(subtitleFont) + bottom
     private static func line(_ font: NSFont) -> CGFloat { ceil(NSLayoutManager().defaultLineHeight(for: font)) }
     private let icon = NSImageView()
     private let hasIcon: Bool
@@ -212,11 +215,12 @@ final class SidebarPreviewItemView: NSTableCellView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func layout() {
         super.layout()
-        let titleHeight = Self.line(Self.titleFont), text = hasIcon ? 8 + Self.iconSize + 8 : 8
-        let width = max(0, bounds.width - text - 8)
-        icon.frame = NSRect(x: 8, y: 5 + (bounds.height - 12 - Self.iconSize) / 2, width: Self.iconSize, height: Self.iconSize)
-        titleLabel.frame = NSRect(x: text, y: 5, width: width, height: titleHeight)
-        subtitle.frame = NSRect(x: text, y: 5 + titleHeight, width: width, height: Self.line(Self.subtitleFont))
+        let titleHeight = Self.line(Self.titleFont), text = hasIcon ? Self.leading + Self.iconSize + 8 : Self.leading
+        let width = max(0, bounds.width - text - Self.trailing)
+        icon.frame = NSRect(x: Self.leading, y: Self.top + (bounds.height - Self.top - Self.bottom - Self.iconSize) / 2,
+                            width: Self.iconSize, height: Self.iconSize)
+        titleLabel.frame = NSRect(x: text, y: Self.top, width: width, height: titleHeight)
+        subtitle.frame = NSRect(x: text, y: Self.top + titleHeight, width: width, height: Self.line(Self.subtitleFont))
     }
 }
 

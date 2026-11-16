@@ -29,23 +29,30 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     _ = NSApplication.shared
     SystemOverrides.install(); SystemOverrides.reduceMotion = false
 
+    func solved(_ placement: SidebarPreviewPlacement, height: CGFloat, host: NSSize = NSSize(width: 1000, height: 700)) -> NSRect {
+        placement.frame(width: placement.width(hostWidth: host.width), height: height, hostHeight: host.height)
+    }
     let row = NSRect(x: 8, y: 300, width: 212, height: 32)
     let right = SidebarPreviewPlacement(row: row, location: .right)
-    c.expect(right.frame(height: 200, hostHeight: 700) == NSRect(x: 224, y: 216, width: 240, height: 200),
-             "right: leading row.maxX + 4, centred on the row")
+    c.expect(solved(right, height: 200) == NSRect(x: 224, y: 216, width: 288, height: 200),
+             "right: leading row.maxX + 4, centred on the row, 288 pt wide")
+    c.expect(right.width(hostWidth: 530) == 288 && right.width(hostWidth: 500) == 258,
+             "the card narrows to stay 18 pt inside the window's right edge")
+    c.expect(right.width(hostWidth: 400) == 240 && right.width(hostWidth: 100) == 240, "never narrower than 240 pt")
     c.expect(right.anchor == NSPoint(x: 220, y: 316), "right anchor is the row's trailing midpoint")
     let nearTop = SidebarPreviewPlacement(row: NSRect(x: 8, y: 20, width: 212, height: 32), location: .right)
-    c.expect(nearTop.frame(height: 200, hostHeight: 700).minY == 18, "required top inset beats centring")
+    c.expect(solved(nearTop, height: 200).minY == 18, "required top inset beats centring")
     let nearBottom = SidebarPreviewPlacement(row: NSRect(x: 8, y: 660, width: 212, height: 32), location: .right)
-    c.expect(nearBottom.frame(height: 200, hostHeight: 700).maxY == 682, "required bottom inset beats centring")
-    c.expect(right.frame(height: 320, hostHeight: 300) == NSRect(x: 224, y: 18, width: 240, height: 264),
+    c.expect(solved(nearBottom, height: 200).maxY == 682, "required bottom inset beats centring")
+    c.expect(solved(right, height: 384, host: NSSize(width: 1000, height: 300)) == NSRect(x: 224, y: 18, width: 288, height: 264),
              "content height yields only to both window insets")
-    c.expect(right.frame(height: 500, hostHeight: 900).height == 320, "320 pt soft maximum")
-    c.expect(SidebarPreviewPlacement(row: NSRect(x: 900, y: 300, width: 80, height: 32), location: .right)
-        .frame(height: 200, hostHeight: 700).minX == 984, "no leading-side flip")
+    c.expect(solved(right, height: 500, host: NSSize(width: 1000, height: 900)).height == 384, "384 pt soft maximum")
+    c.expect(solved(SidebarPreviewPlacement(row: NSRect(x: 900, y: 300, width: 80, height: 32), location: .right), height: 200)
+        == NSRect(x: 984, y: 216, width: 240, height: 200), "no leading-side flip")
     let tile = SidebarPreviewPlacement(row: NSRect(x: 172, y: 60, width: 47, height: 47), location: .diagonal)
-    c.expect(tile.frame(height: 200, hostHeight: 700) == NSRect(x: 215, y: 103, width: 240, height: 200),
+    c.expect(solved(tile, height: 200) == NSRect(x: 215, y: 103, width: 288, height: 200),
              "diagonal: row.maxX - 4, top at row bottom - 4")
+    c.expect(tile.width(hostWidth: 500) == 267, "the diagonal card narrows from its own leading edge")
     c.expect(tile.anchor == NSPoint(x: 219, y: 107), "diagonal anchor is the tile's trailing bottom corner")
 
     func aim(_ last: (CGFloat, CGFloat), _ point: (CGFloat, CGFloat), _ location: SidebarPreviewLocation) -> Bool {
@@ -108,24 +115,26 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     folder.onEscape = { escapes += 1 }
     let item = SidebarPreviewItemView.height
     folder.setRows(Array(rows.prefix(3)))
-    c.expect(folder.preferredHeight == 48 + 3 * (item + 1) + 4, "48 pt header plus content height")
+    func line(_ size: CGFloat) -> CGFloat { ceil(NSLayoutManager().defaultLineHeight(for: .systemFont(ofSize: size))) }
+    c.expect(item == 6 + line(13) + line(11) + 8, "6/8 pt row padding around 13/11 pt lines")
+    c.expect(folder.preferredHeight(width: 288) == 56 + 3 * (item + 1) + 5, "56 pt header plus content height")
     folder.setRows(rows)
-    c.expect(folder.preferredHeight == 320, "list is capped at 272 pt")
+    c.expect(folder.preferredHeight(width: 288) == 384, "list is capped at 328 pt")
     folder.placement = right
     host.addSubview(folder); folder.place()
-    c.expect(folder.frame == right.frame(height: 320, hostHeight: 700), "card uses the solved placement")
+    c.expect(folder.frame == solved(right, height: 384), "card uses the solved placement")
     host.layoutSubtreeIfNeeded(); folder.layoutSubtreeIfNeeded(); CATransaction.flush()
 
     let effect = all(folder, NSVisualEffectView.self).first
     c.expect(effect?.material == .popover && effect?.blendingMode == .withinWindow
              && effect?.state == .followsWindowActiveState, "popover material within the window")
-    c.expect(folder.frame.width == 240 && folder.content.frame == folder.bounds, "240 pt content")
-    c.expect(folder.content.layer?.cornerRadius == 12 && folder.content.layer?.masksToBounds == true, "content clipped at 12")
+    c.expect(folder.frame.width == 288 && folder.content.frame == folder.bounds, "288 pt content")
+    c.expect(folder.content.layer?.cornerRadius == 14 && folder.content.layer?.masksToBounds == true, "content clipped at 14")
     let shadow = folder.layer.map { ($0.shadowColor?.alpha ?? 0) * CGFloat($0.shadowOpacity) }
-    c.expect(folder.layer?.masksToBounds == false && near(shadow ?? 0, 0.4) && folder.layer?.shadowRadius == 16
-             && folder.layer?.shadowOffset == CGSize(width: 0, height: 5) && folder.layer?.shadowPath != nil,
-             "unclipped black 0.4 / 16 pt shadow owner")
-    c.expect(folder.layer?.superlayer?.isGeometryFlipped == true, "shadow falls 5 pt downward in the flipped root")
+    c.expect(folder.layer?.masksToBounds == false && near(shadow ?? 0, 0.4) && folder.layer?.shadowRadius == 19
+             && folder.layer?.shadowOffset == CGSize(width: 0, height: 6) && folder.layer?.shadowPath != nil,
+             "unclipped black 0.4 / 19 pt shadow owner")
+    c.expect(folder.layer?.superlayer?.isGeometryFlipped == true, "shadow falls 6 pt downward in the flipped root")
     c.expect(folder.fill == nil, "folder card is material only")
     c.expect(folder.appearance == nil, "the card follows the window's appearance")
     let popover = all(folder, PopoverBackgroundView.self).first
@@ -145,9 +154,9 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
 
     folder.updateTrackingAreas()
     let area = folder.trackingAreas.first { $0.owner === folder }
-    c.expect(area?.rect == NSRect(x: -40, y: 0, width: 280, height: 320), "tracking area widened 40 pt left")
+    c.expect(area?.rect == NSRect(x: -40, y: 0, width: 328, height: 384), "tracking area widened 40 pt left")
     c.expect(area?.options.contains([.mouseEnteredAndExited, .activeInKeyWindow]) == true, "options 0x21")
-    c.expect(folder.hoverFrame == NSRect(x: 184, y: folder.frame.minY, width: 280, height: 320), "hover frame")
+    c.expect(folder.hoverFrame == NSRect(x: 184, y: folder.frame.minY, width: 328, height: 384), "hover frame")
 
     let anchor = folder.convert(right.anchor, from: host)
     folder.animateIn(from: anchor)
@@ -168,6 +177,7 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
              "card grows out of the row edge")
 
     let table = all(folder, NSTableView.self).first!
+    c.expect(table.enclosingScrollView?.frame == NSRect(x: 5, y: 56, width: 278, height: 323), "list inset 5 pt under the header")
     c.expect(table.selectionHighlightStyle == .none && table.intercellSpacing.height == 1 && table.rowHeight == item,
              "no system selection; 1 pt row spacing")
     c.expect(table.accessibilityLabel() == "Folder pages", "list accessibility retained")
@@ -175,8 +185,9 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     cell?.layoutSubtreeIfNeeded()
     c.expect(cell?.titleLabel.font == .systemFont(ofSize: 13) && cell?.subtitle.font == .systemFont(ofSize: 11), "13/11 pt text")
     c.expect(cell?.titleLabel.maximumNumberOfLines == 1 && cell?.subtitle.maximumNumberOfLines == 1, "one line each")
-    c.expect(cell?.titleLabel.frame.minX == 32 && cell?.titleLabel.frame.minY == 5
-             && cell?.subtitle.frame.maxY == (cell?.bounds.height ?? 0) - 7, "5/7/8 padding and 8 pt spacing")
+    c.expect(cell?.titleLabel.frame.minX == 34 && cell?.titleLabel.frame.minY == 6
+             && cell?.subtitle.frame.maxY == (cell?.bounds.height ?? 0) - 8
+             && cell?.titleLabel.frame.maxX == (cell?.bounds.width ?? 0) - 8, "6/8/10 padding and 8 pt spacing")
     let rowView = table.rowView(atRow: 0, makeIfNecessary: true) as? SidebarPreviewRowView
     c.expect(rowView?.highlightOpacity == 0, "hover-only presentation focuses nothing")
     let hoverPoint = table.convert(NSPoint(x: table.rect(ofRow: 0).midX, y: table.rect(ofRow: 0).midY), to: nil)
@@ -210,7 +221,7 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     field.stringValue = "zzz"; folder.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
     let miss = all(folder, NSTextField.self).first { $0.stringValue == "No tabs matching that search\n🤔" }
     c.expect(miss?.isHidden == false && table.enclosingScrollView?.isHidden == true, "recovered search miss")
-    c.expect(folder.preferredHeight < 320, "card height follows its content")
+    c.expect(folder.preferredHeight(width: 288) < 384, "card height follows its content")
     field.stringValue = "Page 3"; folder.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
     c.expect(table.numberOfRows == 1 && table.selectedRow == 0, "typed search focuses the first match")
     field.stringValue = "EXAMPLE.COM/7"; folder.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
@@ -264,12 +275,31 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     c.expect(pageButtons.map { $0.toolTip ?? "" } == ["Open in Split View"], "split is the picture card's only control")
     pageButtons.forEach { $0.performClick(nil) }
     c.expect(pageActions == [.split], "split opens the tab in Split View")
-    c.expect(pictured.fill != nil && pictured.preferredHeight == 48 + 140 + 8, "picture keeps its aspect at 224 pt")
+    c.expect(pictured.fill != nil && pictured.preferredHeight(width: 288) == 56 + 168 + 10, "a 288 × 234 card, picture 268 pt wide")
+    c.expect(pictured.preferredHeight(width: 240) == 56 + 138 + 10, "a narrowed card keeps the picture's aspect")
+    pictured.frame = NSRect(x: 0, y: 0, width: 288, height: 234); pictured.layout()
+    let pageText = all(pictured, NSTextField.self)
+    c.expect(pageText.first { $0.stringValue == "Example" }?.frame.minY == 12 && pageText.first { $0.stringValue == "example.com" }?.frame.minY == 29,
+             "title and site centred in the 56 pt header")
     pictured.setPicture(NSImage(size: NSSize(width: 100, height: 400)))
-    c.expect(pictured.preferredHeight == 320 && resized == 1, "a taller picture is capped and resizes the card")
-    pictured.frame = NSRect(x: 0, y: 0, width: 240, height: 320); pictured.layout()
-    c.expect(pictured.content.subviews.contains { $0.frame == NSRect(x: 8, y: 48, width: 224, height: 264) },
-             "picture sits under the header, inset 8 pt")
+    c.expect(pictured.preferredHeight(width: 288) == 384 && resized == 1, "a taller picture is capped and resizes the card")
+    pictured.frame = NSRect(x: 0, y: 0, width: 288, height: 384); pictured.layout()
+    c.expect(pictured.content.subviews.contains { $0.frame == NSRect(x: 10, y: 56, width: 268, height: 318) && $0.layer?.cornerRadius == 5 },
+             "picture sits under the header, inset 10 pt, with 5 pt corners")
+    let narrowHost = FlippedHost(frame: NSRect(x: 0, y: 0, width: 500, height: 700))
+    let narrowFolder = SidebarPreviewCard(title: "Docs", domain: nil, providerURL: nil)
+    narrowFolder.setRows(rows); narrowFolder.placement = right
+    narrowHost.addSubview(narrowFolder); narrowFolder.place()
+    c.expect(narrowFolder.frame == NSRect(x: 224, y: 124, width: 258, height: 384), "a narrow window narrows the list card")
+    let narrowPicture = SidebarPreviewCard(title: "Example", domain: nil, providerURL: pageURL,
+                                           picture: NSImage(size: NSSize(width: 320, height: 200)), site: "example.com")
+    narrowPicture.placement = right
+    narrowHost.addSubview(narrowPicture); narrowPicture.place(); narrowPicture.layoutSubtreeIfNeeded()
+    c.expect(narrowPicture.frame.size == NSSize(width: 258, height: 56 + 149 + 10)
+             && narrowPicture.content.subviews.contains { $0.frame == NSRect(x: 10, y: 56, width: 238, height: 149) },
+             "a narrowed picture card keeps the picture's aspect")
+    narrowHost.frame.size.width = 1000; narrowFolder.place()
+    c.expect(narrowFolder.frame.width == 288, "widening the window restores 288 pt")
     func pageSource(_ target: SidebarPreviewTarget, _ domain: SidebarRecentDomain?) -> SidebarPreviewSource {
         SidebarPreviewSource(target: target, profileID: UUID(), spaceID: UUID(), selectedTabIDs: [], focusedTabID: nil,
                              theme: SpaceTheme(), title: "Example", domain: domain, originalURL: pageURL, rows: [])
@@ -318,8 +348,8 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     recents.setRows(pages)
     let recentTable = all(recents, NSTableView.self).first!
     let recentCell = recentTable.view(atColumn: 0, row: 0, makeIfNecessary: true) as? SidebarPreviewItemView
-    recentCell?.frame = NSRect(x: 0, y: 0, width: 232, height: item); recentCell?.layoutSubtreeIfNeeded()
-    c.expect(recentCell.map { all($0, NSImageView.self).isEmpty } == true && recentCell?.titleLabel.frame.minX == 8
+    recentCell?.frame = NSRect(x: 0, y: 0, width: 278, height: item); recentCell?.layoutSubtreeIfNeeded()
+    c.expect(recentCell.map { all($0, NSImageView.self).isEmpty } == true && recentCell?.titleLabel.frame.minX == 10
              && recentCell?.subtitle.stringValue == "Just now", "recent rows have no icon")
     c.expect(requested == [provider], "no favicon is requested for recent rows")
     recentTable.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
@@ -399,7 +429,7 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     let settled = Set(folder.layer?.animationKeys() ?? [])
     folder.placement.row.origin.y += 40; folder.place()
     c.expect(Set(folder.layer?.animationKeys() ?? []) == settled
-             && folder.frame.minY == right.frame(height: folder.preferredHeight, hostHeight: 700).minY + 40,
+             && folder.frame.minY == solved(right, height: folder.preferredHeight(width: 288)).minY + 40,
              "reposition is immediate and adds no animation")
 
     folder.retire()
@@ -429,7 +459,7 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     c.expect(hiddenRemoved && hidden.superview == nil, "invisible card is removed immediately")
 
     SystemOverrides.reduceMotion = true
-    let still = SidebarPreviewSurface(frame: NSRect(x: 224, y: 216, width: 240, height: 200))
+    let still = SidebarPreviewSurface(frame: NSRect(x: 224, y: 216, width: 288, height: 200))
     host.addSubview(still); CATransaction.flush()
     still.animateIn(from: still.convert(right.anchor, from: host))
     let stillFade = basic(still, "opacity")
@@ -437,7 +467,7 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     c.expect(number(stillFade?.fromValue) == 0 && number(stillFade?.toValue) == 1 && stillFade?.duration == 0.1
              && controlPoints(stillFade?.timingFunction) == [0.42, 0, 0.58, 1], "Reduce Motion: the same 0.1 s fade in")
     c.expect(still.layer.map { CATransform3DIsIdentity($0.transform) } == true
-             && still.frame == NSRect(x: 224, y: 216, width: 240, height: 200), "Reduce Motion: fades where it stands")
+             && still.frame == NSRect(x: 224, y: 216, width: 288, height: 200), "Reduce Motion: fades where it stands")
     RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5)); CATransaction.flush()
     still.retire()
     c.expect(still.hitTest(NSPoint(x: still.frame.midX, y: still.frame.midY)) == nil, "Reduce Motion: exiting card takes no clicks")

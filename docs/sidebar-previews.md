@@ -61,9 +61,12 @@ is off, shows the
 Recents card's chrome and header with the tab's favicon, its folder-row title
 and its site (the address bar's host without "www."), an Open in Split View
 button (the sidebar's own Split View action, `rectangle.split.2x1`), and the
-tab's last picture below, 224 pt wide at its own aspect, inset 8 pt with 4 pt
-corners and a hairline, the card still capped at 320 pt. The dwell, placement,
-motion, hover region, aim and dismissal are the other cards'.
+tab's last picture below at its own aspect, inset 10 pt (268 pt wide in a full-width
+card) with 5 pt corners and a hairline, the card still capped at 384 pt. Chromium
+captures the thumbnail at about 530–560 pixels wide, close to the 536 a 268 pt
+picture needs on a Retina display, so it stays sharp; a wider picture would need a
+larger engine capture. The dwell, placement, motion, hover region, aim and
+dismissal are the other cards'.
 
 The picture is the one the tab switcher uses: the page's thumbnail
 subscription, for a page loaded in this window. There is no card for a tab on
@@ -141,17 +144,20 @@ offers Copy URL.
 
 ## Presentation
 
-The card is a child of the window's flipped root, above page content. It is 240 pt
-wide; its height is the 48 pt header plus content, capped at 320. Sidebar rows place
+The card is a child of the window's flipped root, above page content. It is 288 pt
+wide; its height is the 56 pt header plus content, capped at 384, so a 16:10 tab
+picture makes a 288 × 234 card and lists grow to 288 × 384. Sidebar rows place
 its leading edge at row.maxX + 4, centred on the row; favorites tiles use the
 diagonal location, row.maxX − 4 with its top 4 pt above the tile's bottom. The
 card never comes within 18 pt of the window's top or bottom, which wins over the
-row alignment; only a shorter window reduces its height. There is no leading-side
-flip. A window resize keeps that clamp.
+row alignment; only a shorter window reduces its height. It narrows to stay 18 pt
+inside the window's right edge, but never below 240 pt, and a narrowed picture
+card keeps the picture's aspect. There is no leading-side flip. A window resize
+keeps both clamps.
 
 The chrome is `.popover` material, `.withinWindow` blending and
-`.followsWindowActiveState`, clipped at 12 pt, inside an unclipped owner with a
-black 0.4-opacity, 16 pt shadow 5 pt downward and a hairline border. It appears
+`.followsWindowActiveState`, clipped at 14 pt, inside an unclipped owner with a
+black 0.4-opacity, 19 pt shadow 6 pt downward and a hairline border. It appears
 over 0.1 s ease-in-ease-out, scaling 0.8 → 1 about the row edge while fading in.
 Dismissal animates from the presented transform/opacity to 0.8 and 0 over 0.1 s
 times that opacity, holds the end state and removes the view on completion.
@@ -167,17 +173,19 @@ right-and-down moves for the diagonal one, left of 478 pt in window coordinates.
 The card goes as soon as neither its row nor its region is hovered; there is no
 exit timer.
 
-Rows have 5/7/8 pt padding, 8 pt icon/text spacing, a one-line 13 pt title and an
-11 pt secondary subtitle, separated by 1 pt. Hover and keyboard focus are separate:
-either one draws the full-opacity title colour at 0.08 in a 4 pt rounded rect, both
-draw 0.16; there is no system selection highlight. The recents header shows the
-provider's favicon (a symbol until it loads), **Recents**, a plus button and a gear.
+The list sits 5 pt inside the card. Rows have 6 pt top, 8 pt bottom, 10 pt leading
+and 8 pt trailing padding, 8 pt icon/text spacing, a one-line 13 pt title and an
+11 pt secondary subtitle directly below; rows are 1 pt apart. Hover and keyboard
+focus are separate: either one draws the full-opacity title colour at 0.08 in a
+4 pt rounded rect, both draw 0.16; there is no system selection highlight. The
+recents header shows the provider's favicon (a symbol until it loads), **Recents**,
+a plus button and a gear.
 The plus button's tooltip and link are New Page `https://notion.so/new`, New File
 `https://figma.com/new`, New Issue `https://linear.app/new` or New Page
 `https://confluence.new`; it routes like a recent row, modifiers included. The gear opens Previews
 Settings in Settings → General. Empty recents read "Recent Notion docs appear here.",
 "Recent Figma files appear here.", "Recent Linear projects and issues appear
-here." or "Recent Confluence pages appear here." The folder header is a 48 pt search
+here." or "Recent Confluence pages appear here." The folder header is a 56 pt search
 row with a 12 pt heavy magnifying glass and the placeholder "Search" plus the
 folder name. An empty search result, or an empty folder, reads "No tabs matching
 that search" followed by 🤔. There is no loading card and no close or refresh
