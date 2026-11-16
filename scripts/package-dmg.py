@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Create, sign, notarize and verify Parc's drag-to-Applications disk image."""
 import argparse
+import contextlib
 import datetime
 import fcntl
 import importlib.util
@@ -9,6 +10,7 @@ import os
 from pathlib import Path
 import plistlib
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -17,6 +19,9 @@ spec = importlib.util.spec_from_file_location("parc_dmg_notary", Path(__file__).
 notary = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(notary)
 Refusal = notary.Refusal
+spec = importlib.util.spec_from_file_location("parc_dmg_layout", Path(__file__).with_name("dmg_layout.py"))
+layout = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(layout)
 
 
 def require_report(report, team):
@@ -53,7 +58,71 @@ def verify_app(app, report, folder):
     notary.command(["spctl", "--assess", "--type", "execute", "--verbose=4", app], folder / "app-gatekeeper.log")
 
 
-def verify_dmg(dmg, report, folder, *, notarized=True):
+def detach(mount, log, attempts=5, pause=2):
+    output = []
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(pause)
+            if not os.path.ismount(mount):
+                log.write_text("".join(output))
+                return
+        result = subprocess.run(["hdiutil", "detach", str(mount)], capture_output=True, text=True)
+        output.append(result.stdout + result.stderr)
+        if not result.returncode:
+            log.write_text("".join(output))
+            return
+    log.write_text("".join(output))
+    if os.path.ismount(mount):
+        notary.command(["hdiutil", "detach", "-force", mount], log.with_name(log.stem + "-force.log"))
+
+
+def verify_layout(volume, folder):
+    result = subprocess.run(["xattr", "-px", "com.apple.FinderInfo", str(volume)], capture_output=True, text=True)
+    (folder / "volume-info.log").write_text(result.stdout + result.stderr)
+    try:
+        finder_info = b"" if result.returncode else bytes.fromhex("".join(result.stdout.split()))
+        layout.verify(volume, finder_info, (volume / "Parc.app/Contents/Resources/Parc.icns").read_bytes())
+    except (OSError, ValueError) as error:
+        raise Refusal("DMG install window is missing or wrong: " + str(error)) from error
+
+
+def build_image(app, output, folder):
+    work = Path(tempfile.mkdtemp(prefix=".parc-dmg-", dir=output.parent))
+    volume = work / "volume"
+    try:
+        stage = work / "stage"
+        stage.mkdir()
+        notary.command(["ditto", app, stage / "Parc.app"], folder / "copy.log")
+        (stage / "Applications").symlink_to("/Applications")
+        background = layout.stage_extras(stage, app / "Contents/Resources/Parc.icns")
+        notary.command(["tiffutil", "-cathidpicheck", *(layout.ART / name for name in layout.ARTWORK),
+                        "-out", background], folder / "background.log")
+        layout.hide(background.parent)
+        writable = work / "layout.dmg"
+        notary.command(["hdiutil", "create", "-volname", layout.VOLUME, "-srcfolder", stage,
+                        "-format", "UDRW", "-fs", "HFS+", writable], folder / "create.log")
+        volume.mkdir()
+        notary.command(["hdiutil", "attach", writable, "-nobrowse", "-noautoopen", "-owners", "off",
+                        "-mountpoint", volume], folder / "layout-attach.log")
+        try:
+            layout.write(volume)
+            notary.command(["xattr", "-wx", "com.apple.FinderInfo", layout.CUSTOM_ICON.hex(), volume],
+                           folder / "volume-icon.log")
+            verify_layout(volume, folder)
+        except BaseException:
+            with contextlib.suppress(Refusal):
+                detach(volume, folder / "layout-detach.log")
+            raise
+        detach(volume, folder / "layout-detach.log")
+        compressed = work / output.name
+        notary.command(["hdiutil", "convert", writable, "-format", "UDZO", "-o", compressed], folder / "convert.log")
+        os.link(compressed, output)
+    finally:
+        if not os.path.ismount(volume):
+            shutil.rmtree(work, ignore_errors=True)
+
+
+def verify_dmg(dmg, report, folder, *, notarized=True, layout_expected=True):
     notary.command(["hdiutil", "verify", dmg], folder / "image-verify.log")
     notary.command(["codesign", "--verify", "--strict", dmg], folder / "image-codesign.log")
     notary.command(["codesign", "-dv", "--verbose=4", dmg], folder / "image-identity.log")
@@ -70,8 +139,10 @@ def verify_dmg(dmg, report, folder, *, notarized=True):
             if not (mount / "Applications").is_symlink() or os.readlink(mount / "Applications") != "/Applications":
                 raise Refusal("DMG lacks the Applications shortcut")
             verify_app(mount / "Parc.app", report, folder)
+            if layout_expected:
+                verify_layout(mount, folder)
         finally:
-            notary.command(["hdiutil", "detach", mount], folder / "image-detach.log")
+            detach(mount, folder / "image-detach.log")
     if notarized:
         notary.command(["xcrun", "stapler", "validate", dmg], folder / "image-staple.log")
         notary.command(["spctl", "--assess", "--type", "open", "--context", "context:primary-signature",
@@ -104,29 +175,25 @@ def package_dmg(package, output, identity, profile, team, poll_seconds=20):
         if not output.exists():
             if receipt:
                 raise Refusal("The submitted DMG is missing; do not create a second notarization input")
-            with tempfile.TemporaryDirectory(prefix=".parc-dmg-", dir=output.parent) as temporary:
-                stage = Path(temporary)
-                notary.command(["ditto", package / "Parc.app", stage / "Parc.app"], folder / "copy.log")
-                (stage / "Applications").symlink_to("/Applications")
-                notary.command(["hdiutil", "create", "-volname", "Parc", "-srcfolder", stage,
-                                "-format", "UDZO", "-fs", "HFS+", output], folder / "create.log")
+            build_image(package / "Parc.app", output, folder)
             notary.command(["codesign", "--sign", identity, "--timestamp", "--identifier",
                             "org.parc.Browser.diskimage", output], folder / "sign.log")
             code_hash = verify_dmg(output, report, folder, notarized=False)
             receipt = {"team": team, "app_version": report["app_version"], "phase": "prepared",
                        "app_report_sha256": notary.digest(package / "package-report.json"),
                        "archive_sha256": notary.digest(output),
-                       "cdhash": code_hash,
+                       "cdhash": code_hash, "install_window": True,
                        "started_utc": datetime.datetime.now(datetime.timezone.utc).isoformat()}
             notary.save(receipt_path, receipt)
         elif receipt is None:
             raise Refusal("DMG destination already exists without its receipt; refusing to overwrite it")
-        if verify_dmg(output, report, folder, notarized=False) != receipt["cdhash"]:
+        window = receipt.get("install_window") is True
+        if verify_dmg(output, report, folder, notarized=False, layout_expected=window) != receipt["cdhash"]:
             raise Refusal("DMG payload signature changed since notarization submission")
         if receipt["phase"] == "complete":
             if notary.digest(output) != receipt["stapled_sha256"]:
                 raise Refusal("Completed DMG differs from its receipt")
-            verify_dmg(output, report, folder)
+            verify_dmg(output, report, folder, layout_expected=window)
             return receipt
         if receipt["phase"] != "stapling" and notary.digest(output) != receipt["archive_sha256"]:
             raise Refusal("DMG changed since its notarization input was recorded")
@@ -167,7 +234,7 @@ def package_dmg(package, output, identity, profile, team, poll_seconds=20):
         receipt.update(phase="stapling", status="Accepted")
         notary.save(receipt_path, receipt)
         notary.command(["xcrun", "stapler", "staple", output], folder / "staple.log")
-        verify_dmg(output, report, folder)
+        verify_dmg(output, report, folder, layout_expected=window)
         receipt.update(phase="complete", stapled=True, gatekeeper_verified=True,
                        stapled_sha256=notary.digest(output), apple_log_issues=apple_log.get("issues") or [],
                        completed_utc=datetime.datetime.now(datetime.timezone.utc).isoformat())

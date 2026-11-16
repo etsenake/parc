@@ -94,9 +94,11 @@ Versioned candidate mode keeps the same distribution, signing, notarization and 
 gates. It publishes `Parc-<version>-arm64.dmg` and a ZIP in the etsenake/parc
 `v<version>` pre-release (not latest), titled with the bare version and holding
 only that version's release notes, and refuses an existing tag. The DMG contains the stapled
-app and an Applications shortcut. It is separately Developer ID signed,
+app and an Applications shortcut and opens as Parc's
+[install window](../../Sources/DiskImage/README.md). It is separately Developer ID signed,
 notarized, stapled and assessed by Gatekeeper; mounting it read-only also checks
-the app's signature, ticket, identity, version and every signed-image hash.
+the app's signature, ticket, identity, version, every signed-image hash and the
+install window's layout.
 Its immutable submission receipt and Apple log stay in `dmg-notarization/`
 beside the package. Interrupted status/stapling work resumes that same
 submission with `scripts/package-dmg.py`; an ambiguous upload must be reconciled

@@ -19,8 +19,9 @@ already sealed compatible engine. `--stable` creates an immutable versioned
 candidate; normal production orchestration completes publication through the
 master command. Packaging verifies release optimization, standalone engine
 inputs, timestamped Developer ID signing, Apple acceptance and stapling. The
-signed/notarized DMG contains Parc and an Applications shortcut; its mounted app
-must match every signed-image hash. The ZIP preserves the package report.
+signed/notarized DMG contains Parc and an Applications shortcut and opens as
+Parc's [install window](../Sources/DiskImage/README.md); its mounted app must
+match every signed-image hash. The ZIP preserves the package report.
 
 ```sh
 bash scripts/package-app.sh --stable /absolute/sealed/engine-artifacts.json

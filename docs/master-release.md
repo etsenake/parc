@@ -107,9 +107,10 @@ published tag still refuses.
    public ZIP URL, its length and signature, and this version's release notes as
    HTML from the frozen `release-notes.json`.
 6. Download/verify the published ZIP and DMG, including the mounted app's actual
-   signatures and ticket. Mirror the DMG, ZIP and `appcast.xml` together to the
-   public `etsenake/parc-releases` release and make it latest, so Sparkle's feed
-   `releases/latest/download/appcast.xml` offers it. Promote stable/latest and
+   signatures and ticket and the DMG's install window. Mirror the DMG, ZIP and
+   `appcast.xml` together to the public `etsenake/parc-releases` release and
+   make it latest, so Sparkle's feed `releases/latest/download/appcast.xml`
+   offers it. Promote stable/latest and
    update/push the cask's version, URL and checksum in `~/homebrew-tap`; the cask
    says `auto_updates true`, so `brew upgrade` leaves Sparkle-updated installs
    alone. Refresh the local tap metadata, trust the tap (Homebrew 7 loads no
