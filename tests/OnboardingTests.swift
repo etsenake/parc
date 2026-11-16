@@ -557,6 +557,7 @@ struct OnboardingTests {
         precondition(legacy?.replay == false, "An intent written before replay restarts is never a replay intent")
 
         try Self.checkReplayDedupe(root: root)
+        try Self.checkFavoritesDuringImport(root: root, store: store)
 
         let failureRoot = root.appendingPathComponent("replay-write-failure")
         let failureStore = try BrowserStore(directory: failureRoot)
@@ -658,5 +659,87 @@ struct OnboardingTests {
                      && OnboardingExperience.focusTarget(entering: .introAnimation, from: .introAnimation) == .unchanged
                      && OnboardingExperience.focusTarget(entering: .introAnimation, from: .sellCompleted) == .unchanged,
                      "Focus returns to space name, Next, or welcome rather than rerendering the same control")
+    }
+
+    static func checkFavoritesDuringImport(root: URL, store: BrowserStore) throws {
+        typealias Stage = OnboardingDraft.Stage
+        precondition(Stage.continuedImport.rawValue == 11 && !Stage.continuedImport.isWelcome
+            && Stage.theme.rawValue == 4 && Stage.favorites.rawValue == 5 && Stage.bookmarks.rawValue == 6,
+            "The continued import appends a new persisted tag without renumbering saved drafts")
+        precondition(Stage.setupOrder(includingAdBlockers: false, continuingImport: true)
+                == [.bookmarks, .favorites, .continuedImport, .theme, .windowFrame, .defaultBrowser, .ready]
+            && Stage.setupOrder == [.bookmarks, .favorites, .theme, .windowFrame, .defaultBrowser, .ready],
+            "Favorites follows the browser choice, and the rest of a running import follows Favorites")
+        var draft = OnboardingDraft(spaceID: store.activeSpace.id, spaceName: "Setup", theme: store.activeSpace.theme)
+        draft.stage = .bookmarks
+        precondition(draft.nextStage() == .favorites && draft.nextStage(continuingImport: true) == .favorites
+            && draft.previousStage() == nil && draft.displayedStepNumber() == 1 && draft.displayedSetupCount() == 6,
+            "Choosing a browser is the first counted step and leads straight to Favorites")
+        draft.stage = .favorites
+        precondition(draft.nextStage(continuingImport: true) == .continuedImport && draft.nextStage() == .theme
+            && draft.previousStage() == .bookmarks && draft.displayedStepNumber() == 2,
+            "Favorites goes on to a running import's remaining pages, or straight to theme once nothing is left")
+        draft.stage = .continuedImport
+        precondition(draft.nextStage() == .theme && draft.nextStage(continuingImport: true) == .theme
+            && draft.previousStage() == .favorites
+            && draft.displayedStepNumber() == 2 && draft.displayedSetupCount() == 6
+            && draft.visibleSetupOrder().firstIndex(of: .continuedImport) == 2,
+            "The import's remaining pages sit between Favorites and theme, keep Favorites' number and add no step")
+        draft.importedAdBlockers = [.init(identifier: OnboardingAdBlocker.uBlockOrigin, displayName: "uBlock Origin")]
+        precondition(draft.displayedStepNumber() == 2 && draft.displayedSetupCount() == 5,
+            "Without the ad-blocker step the import's remaining pages still share Favorites' number")
+        draft.importedAdBlockers = []
+        draft.stage = .theme
+        precondition(draft.previousStage() == .favorites && draft.displayedStepNumber() == 3,
+            "Once the import is done, Back from theme returns to Favorites")
+        let direction = OnboardingExperience.direction
+        precondition(direction(.bookmarks, .favorites) == .forward && direction(.favorites, .bookmarks) == .back
+            && direction(.favorites, .continuedImport) == .forward && direction(.continuedImport, .favorites) == .back
+            && direction(.continuedImport, .theme) == .forward && direction(.theme, .favorites) == .back,
+            "Every move along the new order slides the right way")
+
+        draft.stage = .favorites
+        precondition(draft.savedForResume(importInProgress: true).stage == .bookmarks
+            && draft.savedForResume(importInProgress: false).stage == .favorites,
+            "Leaving Favorites while an import still has pages resumes at the import, not past it")
+        draft.stage = .continuedImport
+        precondition(draft.savedForResume(importInProgress: false).stage == .bookmarks,
+            "The import's remaining pages always resume from the import")
+        draft.stage = .theme
+        precondition(draft.savedForResume(importInProgress: true).stage == .theme,
+            "Later steps resume where they were")
+        draft.stage = .continuedImport
+        let resumeRoot = root.appendingPathComponent("resume-\(UUID())")
+        try FileManager.default.createDirectory(at: resumeRoot, withIntermediateDirectories: true)
+        try draft.save(directory: resumeRoot)
+        let reopened = try OnboardingDraft.load(directory: resumeRoot, space: store.activeSpace)
+        precondition(reopened.stage == .bookmarks, "A saved continued-import stage reopens at the import")
+
+        let change = OnboardingExperience.importChange
+        precondition(change(.bookmarks, false, false, false) == .show
+            && change(.bookmarks, true, false, false) == .showFavorites
+            && change(.bookmarks, true, false, true) == .showFavorites,
+            "Starting the import moves on to Favorites at once, even when it finishes reading straight away")
+        precondition(change(.bookmarks, true, true, false) == .showInPlace
+            && change(.bookmarks, true, true, true) == .returnToSource,
+            "After Back from Favorites the browser choice stays put, and finished results wait behind it")
+        precondition(change(.favorites, true, true, true) == .hold && change(.favorites, true, false, false) == .hold
+            && change(.continuedImport, true, true, true) == .show && change(.theme, false, true, false) == .hold,
+            "The import runs out of sight during Favorites and shows its pages again afterwards")
+
+        let back = OnboardingExperience.importBack
+        precondition(back(.bookmarks, true, true) == .importPage && back(.favorites, true, true) == .importSource
+            && back(.continuedImport, true, true) == .favorites && back(.continuedImport, true, false) == .importPage,
+            "Back follows the new order: Favorites returns to the browser choice, and the import's next pages to Favorites")
+        precondition(back(.favorites, false, true) == .previousStage && back(.theme, false, true) == .previousStage,
+            "Without a running import, Back uses the ordinary step order")
+
+        let next = OnboardingExperience.importNext
+        precondition(next(.bookmarks, true, false, false) == .importPage && next(.bookmarks, true, true, false) == .favorites
+            && next(.bookmarks, true, true, true) == .importPage,
+            "Next on the browser choice starts the import, returns to Favorites once started, or skips the import")
+        precondition(next(.continuedImport, true, true, false) == .importPage && next(.favorites, true, true, false) == .nextStage
+            && next(.bookmarks, false, false, false) == .nextStage,
+            "The import's own pages keep their Next; Favorites always uses the step order")
     }
 }

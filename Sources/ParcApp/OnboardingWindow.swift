@@ -36,6 +36,8 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private let store: BrowserStore
     private var browserImport: BrowserImportViewController?
     private var importFoundNoSources = false
+    private var importHadStarted = false
+    private var importInterrupted = false
     private var passwordHelp: OnboardingPasswordHelp?
     var onCancelImportRestart: (() -> Void)?
     var hasActiveBrowserImport: Bool { browserImport != nil && !isClosed && !isFinishing }
@@ -145,9 +147,17 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         back.actionBlock = { [weak self] in
             guard let self, !self.isFinishing,
                   self.window?.attachedSheet == nil, self.passwordHelp?.isPresented != true else { return }
-            if let browserImport = self.browserImport { browserImport.goBack(); return }
-            self.captureWindowFrame()
-            if let stage = self.draft.previousStage() { self.transition(to: stage) }
+            switch OnboardingExperience.importBack(on: self.draft.stage, holdingImport: self.browserImport != nil,
+                                                   returnsToSource: self.browserImport?.backReturnsToSource ?? true) {
+            case .importPage: self.browserImport?.goBack()
+            case .importSource:
+                self.browserImport?.returnToSource()
+                self.transition(to: .bookmarks)
+            case .favorites: self.transition(to: .favorites)
+            case .previousStage:
+                self.captureWindowFrame()
+                if let stage = self.draft.previousStage() { self.transition(to: stage) }
+            }
         }
         skip.actionBlock = { [weak self] in self?.skipStep() }
         progress.font = .systemFont(ofSize: 10, weight: .medium); progress.textColor = OnboardingSetupPalette.message; progress.alignment = .center
@@ -200,7 +210,12 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         }
     }
 
-    func resume() { window?.deminiaturize(nil); window?.makeKeyAndOrderFront(nil) }
+    func resume() {
+        window?.deminiaturize(nil); window?.makeKeyAndOrderFront(nil)
+        guard !isClosed, !isFinishing, browserImport == nil, !draft.stage.isWelcome,
+              importInterrupted || draft.stage == .bookmarks else { return }
+        if draft.stage == .bookmarks { beginBrowserImport(); render() } else { transition(to: .bookmarks) }
+    }
     func suspend() {
         guard !isClosed else { return }
         captureDraft(); persistDraft()
@@ -276,7 +291,8 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private func persistDraft() {
         guard !isReplay else { return }
         do {
-            try draft.save(directory: store.directory)
+            try draft.savedForResume(importInProgress: browserImport != nil || importInterrupted)
+                .save(directory: store.directory)
             persistenceStatus.stringValue = ""
         } catch {
             persistenceStatus.stringValue = "Setup couldn’t be saved. Keep this window open and try again."
@@ -299,9 +315,10 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     }
 
     private func transition(to stage: OnboardingDraft.Stage) {
-        guard !isFinishing, !isClosed, browserImport == nil else { return }
+        guard !isFinishing, !isClosed, browserImport == nil || stage.holdsImport else { return }
         scheduledAdvance?.cancel(); scheduledAdvance = nil
         captureDraft()
+        if stage != .favorites { importInterrupted = false }
         let previous = draft.stage
         transitionDirection = OnboardingExperience.direction(from: previous, to: stage)
         draft.stage = stage; persistDraft()
@@ -385,14 +402,14 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         progress.isHidden = false
         next.isHidden = false
         let themeWasVisible = themeChrome.superview === body
-        let retainedImport = draft.stage == .bookmarks ? browserImport?.view : nil
+        let retainedImport = draft.stage.showsImport ? browserImport?.view : nil
         let retainedFrame = draft.stage == .windowFrame ? windowFrameStep : nil
         if retainedFrame == nil { windowFrameStep?.end() }
         body.subviews.filter { $0 !== retainedImport && $0 !== retainedFrame }.forEach { $0.removeFromSuperview() }
         defaultChoice = nil
         adBlockerHost = nil
         body.onLayout = nil
-        if let browserImport, draft.stage == .bookmarks {
+        if let browserImport, draft.stage.showsImport {
             renderBrowserImport(browserImport)
             animateStepChange(from: outgoingText)
             confetti.stop(); confetti.isHidden = true
@@ -401,15 +418,13 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             lastStage = draft.stage
             return
         }
-        let order = draft.visibleSetupOrder()
-        let ordinal = order.firstIndex(of: draft.stage.current) ?? 0
         let isReady = draft.stage == .ready
-        progress.stringValue = (isReady ? "Ready" : "\(ordinal + 1) of \(draft.displayedSetupCount())")
+        progress.stringValue = isReady ? "Ready" : "\(draft.displayedStepNumber()) of \(draft.displayedSetupCount())"
         back.isHidden = isReady || draft.previousStage() == nil
             || (importFoundNoSources && draft.previousStage()?.current == .bookmarks)
         skip.title = "Skip for now"
         skip.isHidden = ![.theme, .windowFrame, .favorites, .bookmarks, .adBlockers].contains(draft.stage.current)
-        let canAdvance = browserImport == nil
+        let canAdvance = browserImport == nil || draft.stage == .favorites
         next.isEnabled = canAdvance; next.isLoading = false; back.isEnabled = canAdvance; skip.isEnabled = canAdvance
         next.title = isReady ? "Get Started" : "Next"
         if isReady {
@@ -658,10 +673,10 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             ? palette.backgroundExtra : nil
         setupCard.grainTheme = nil
         setupCard.grainIsActive = ThemeWindowActivity.isActive(window)
-        let backdrop = draft.stage == .bookmarks ? browserImport?.backdrop : nil
+        let backdrop = draft.stage.showsImport ? browserImport?.backdrop : nil
         setupCard.backdrop.show(backdrop?.pages ?? [], selected: backdrop?.selected)
         setupCard.importInk = backdrop != nil
-        setupCard.textSpansCard = browserImport?.isSafariPasswords == true
+        setupCard.textSpansCard = draft.stage.showsImport && browserImport?.isSafariPasswords == true
         progress.textColor = setupCard.chromeColor
         persistenceStatus.textColor = draft.stage.isWelcome ? .white : .systemRed
         next.configure(background: hasTheme ? palette.maxContrastColor : OnboardingSetupPalette.action,
@@ -686,11 +701,23 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             if let target = OnboardingExperience.welcomeContinueTarget(from: draft.stage) { transition(to: target) }
             return
         }
-        if let browserImport { browserImport.advance(); return }
+        switch OnboardingExperience.importNext(on: draft.stage, holdingImport: browserImport != nil,
+                                               started: browserImport?.hasStartedImport == true,
+                                               skippingImport: browserImport?.skipIsSelected == true) {
+        case .importPage: browserImport?.advance(); return
+        case .favorites: transition(to: .favorites); return
+        case .nextStage: break
+        }
         if draft.stage == .ready { finish(); return }
         captureWindowFrame()
         if draft.stage == .defaultBrowser, draft.wantsDefaultBrowser { defaultBrowser.makeDefault() }
-        if let next = draft.nextStage() { transition(to: next) }
+        advanceStage()
+    }
+
+    private func advanceStage() {
+        guard let next = draft.nextStage(continuingImport: browserImport != nil) else { return }
+        if next == .continuedImport { browserImport?.resumeAfterFavorites() }
+        transition(to: next)
     }
 
     private func defaultBrowserChoices() -> OnboardingDefaultBrowserChoice {
@@ -874,6 +901,12 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     }
 
     func closeBrowserImport() {
+        if browserImport != nil && draft.stage == .favorites { importInterrupted = true }
+        releaseBrowserImport()
+        if draft.stage == .continuedImport { draft.stage = .bookmarks }
+    }
+
+    private func releaseBrowserImport() {
         dismissPasswordHelp(remove: true)
         let importer = browserImport; browserImport = nil
         importer?.cancel(); importer?.view.removeFromSuperview()
@@ -884,7 +917,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private func skipStep() {
         guard !isClosed, !isFinishing,
               window?.attachedSheet == nil, passwordHelp?.isPresented != true else { return }
-        if let browserImport {
+        if let browserImport, draft.stage.showsImport {
             if browserImport.isImporting { browserImport.stopImport() } else { browserImport.skip() }
             return
         }
@@ -906,7 +939,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         } else if draft.stage == .adBlockers {
             draft.adBlockerChoice = .keepAll
         }
-        if let next = draft.nextStage() { transition(to: next) }
+        advanceStage()
     }
 
     func resumeSafariImport(destination: BrowserImportDestination,
@@ -922,22 +955,34 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
               browserImport == nil, let window,
               let space = store.state.spaces.first(where: { $0.id == draft.spaceID }) else { return }
         let destination = BrowserImportDestination(spaceID: space.id, profileID: space.profileID)
+        importHadStarted = false; importInterrupted = false
         draft.iCloudPasswordsProfileID = nil; persistDraft()
         let controller = BrowserImportViewController(store: store, destination: destination, window: window,
             onboarding: true, ownerIsCurrent: { [weak self] in
                 guard let self else { return false }
-                return !self.isClosed && !self.isFinishing && self.draft.stage == .bookmarks
+                return !self.isClosed && !self.isFinishing && self.draft.stage.holdsImport
             })
         controller.onClose = { [weak self, weak controller] in
             guard let self, !self.isClosed, !self.isFinishing else { return }
             if controller?.foundNoSources == true { self.importFoundNoSources = true }
             self.captureBrowserImportResults()
-            self.closeBrowserImport()
-            if let next = self.draft.nextStage() { self.transition(to: next) }
+            self.releaseBrowserImport()
+            if self.draft.stage == .favorites { self.persistDraft(); self.render() } else { self.advanceStage() }
         }
         controller.onChange = { [weak self, weak controller] in
-            guard let self else { return }
-            if let direction = controller?.pageDirection { self.transitionDirection = direction }
+            guard let self, let controller else { return }
+            let started = controller.hasStartedImport, wasStarted = self.importHadStarted
+            self.importHadStarted = started
+            switch OnboardingExperience.importChange(on: self.draft.stage, started: started,
+                                                     wasStarted: wasStarted, resting: controller.isResting) {
+            case .showFavorites: self.transition(to: .favorites); return
+            case .returnToSource:
+                if controller.returnToSource() { return }
+            case .show:
+                if let direction = controller.pageDirection { self.transitionDirection = direction }
+            case .showInPlace: break
+            case .hold: return
+            }
             self.render()
         }
         controller.onShowPasswordHelp = { [weak self] in self?.showPasswordHelp() }
@@ -980,12 +1025,17 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private func renderBrowserImport(_ importer: BrowserImportViewController) {
         let palette = ThemeChromePalette(theme: selectedTheme, appearance: NSApp.effectiveAppearance)
         importer.selectionColor = selectedTheme.primaryColor == nil ? OnboardingSetupPalette.action : palette.maxContrastColor
-        next.title = importer.nextTitle; next.isEnabled = importer.canAdvance; next.isLoading = importer.isLoading
-        back.isHidden = !importer.canGoBack; back.isEnabled = true
+        let startedBeforeFavorites = draft.stage == .bookmarks && importer.hasStartedImport
+        next.title = importer.nextTitle
+        next.isEnabled = startedBeforeFavorites || importer.canAdvance
+        next.isLoading = !startedBeforeFavorites && importer.isLoading
+        let leavesForFavorites = draft.stage == .continuedImport && importer.backReturnsToSource
+        back.isHidden = leavesForFavorites ? importer.isSafariPasswords && !importer.canGoBack : !importer.canGoBack
+        back.isEnabled = true
         skip.title = importer.isImporting ? "Stop Import" : importer.skipTitle ?? ""
         skip.isHidden = !importer.isImporting && importer.skipTitle == nil
         skip.isEnabled = importer.isImporting || importer.canSkip
-        progress.stringValue = "1 of \(draft.displayedSetupCount())"
+        progress.stringValue = "\(draft.displayedStepNumber()) of \(draft.displayedSetupCount())"
         progress.isHidden = false; next.isHidden = false
         setupCard.isHidden = false
         setupCard.configure(title: importer.showsSourceCards ? "Get us up\nto speed." : importer.headingText,

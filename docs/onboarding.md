@@ -18,6 +18,8 @@ Leaving welcome allows an already-running backdrop dim to finish.
 the application profile directory. Persisted stage tags remain stable; explicit
 stage ordering maps the former introduction card to import. A resumed setup
 continues its saved stage; an interrupted welcome starts from the beginning.
+Setup left on Favorites while the import still has pages, or on those pages,
+resumes at the import so none of them is skipped.
 A corrupt draft offers an explicit restart without erasing the browser session.
 Closing setup never marks it complete; Dock reopen presents it again.
 
@@ -35,21 +37,39 @@ accepted import or a system change already confirmed by the user.
 
 The account-free sequence is:
 
-1. Browser or HTML bookmark import, including conditional access/password pages.
-2. Favorites.
-3. Theme and Space name.
-4. **Find your frame**: window frame thickness.
-5. Ad blockers when applicable.
-6. Default browser.
-7. The finished card and **Get Started**.
+1. Browser import: choosing a browser or skipping, plus Full Disk Access
+   guidance when the browser's files are protected.
+2. Favorites, shown the moment the chosen import starts.
+3. The rest of that import, when anything is left: its progress page while it
+   still reads, then bookmarks, Safari password choice and manual export.
+4. Theme and Space name.
+5. **Find your frame**: window frame thickness.
+6. Ad blockers when applicable.
+7. Default browser.
+8. The finished card and **Get Started**.
 
 Account, cloud and AI steps are excluded. No starter folder is seeded. Import
 is skipped if no browser is found; HTML selection remains available through its
-own action. Favorites follow the complete import. That position remains the
-existing default pending the product ordering decision (OB17).
+own action.
 
-Back follows the actual conditional order. Import pages use **Do this later**
-or **Skip for now** as appropriate. Theme Skip clears the first-launch color;
+Favorites sits right after the browser choice so people pick sites while the
+import reads. Access guidance comes first because the import cannot start
+without it; pages that need imported results follow Favorites in their usual
+order. If the import is still reading when Favorites is done, its progress page
+with **Stop Import** stays until the next page or the end. When it finished with
+nothing left, or failed, Favorites goes straight to theme; failures still show
+the import notice in the browser. A skipped import, or no browser found, goes
+straight to Favorites and then theme. The import's later pages keep Favorites'
+counter number and add no step to the total.
+
+Back follows the actual order. From Favorites it returns to the browser choice
+with the import kept: a running import keeps running there with **Stop Import**
+and Next returns to Favorites; finished results wait behind the browser cards,
+and choosing another browser starts over. Safari's passwords-only path returns
+to its access page instead. The import's later pages go Back to Favorites unless
+the import's own Back leads to another of them, such as password choice to
+bookmarks; theme goes Back to Favorites. Import pages use **Do this later** or
+**Skip for now** as appropriate. Theme Skip clears the first-launch color;
 replay instead restores its starting theme. Frame Skip keeps the saved thickness.
 Favorites Skip selects no new
 Favorites, preserving existing ones in replay. Back is hidden on the finished
@@ -374,6 +394,6 @@ Relevant existing checks include:
 - The whole-module Swift check for material application changes.
 
 Read check entry points and follow [AGENTS.md](../AGENTS.md); this guide grants
-no permission to open apps or run browser fixtures. Favorites after import is the
-remaining ordering decision in the [backlog](backlog.md#onboarding). Reduce Motion,
-the Lite blocker fallback and no seeded starter folder retain the behavior above.
+no permission to open apps or run browser fixtures. Remaining onboarding work is in
+the [backlog](backlog.md#onboarding). Reduce Motion, the Lite blocker fallback and
+no seeded starter folder retain the behavior above.

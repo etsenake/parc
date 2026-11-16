@@ -133,8 +133,8 @@ changes belong in the owning guide and release notes, not an ever-growing log he
 - Keep theme-derived Site Control Center/extension menus and top-right pinned
   extension badges with the extension's own badge colors.
 - Keep deterministic, locally authored title-cleanup rules; AI renaming remains
-  excluded. Keep the Space-name field in onboarding and the current Favorites
-  position until the [remaining decision](backlog.md#onboarding) changes it.
+  excluded. Keep the Space-name field in onboarding, and Favorites right after the
+  browser choice so it runs alongside the [import](onboarding.md#included-setup-order-and-ad-blocker-branch).
 - Both Peek triggers, links to other sites and Shift-click, stay on by default
   for new users and remain switchable in Settings → Links.
   See [Peek](peek.md#presentation-and-remaining-scope).

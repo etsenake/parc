@@ -150,8 +150,6 @@ workflow, renders first.
 
 ## Onboarding
 
-- **OB17:** Favorites follows the complete import. Keep that ordering pending a
-  decision about moving it immediately after source selection.
 - Failed iCloud Passwords installation and imported ad-blocker removal are only
   logged. Show failure/retry feedback so setup does not silently leave a choice
   unapplied. [Onboarding](onboarding.md).

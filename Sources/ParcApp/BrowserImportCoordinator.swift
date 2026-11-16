@@ -902,15 +902,54 @@ final class BrowserImportCoordinator {
                 for index in bookmarkPages.indices { bookmarkPages[index].skipped = false }
                 stage = .bookmarks
             } else if passwordsWithoutData {
-                passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
-                passwordStageOffered = false; passwordDestination = nil
-                requiresSafariAccess = true; stage = .safariAccess
+                returnToSafariAccess()
             } else {
                 park()
             }
         default: return
         }
         error = nil; onChange?()
+    }
+
+    var hasStartedImportInSetup: Bool {
+        if parkedStage != nil { return true }
+        switch stage {
+        case .importing, .passwordChoice, .safariPasswords, .bookmarks: return true
+        default: return false
+        }
+    }
+
+    var isRestingInSetup: Bool {
+        parkedStage == nil && (stage == .bookmarks || stage == .passwordChoice || stage == .safariPasswords)
+    }
+
+    var setupBackReturnsToSource: Bool {
+        switch stage {
+        case .safariAccess: return false
+        case .safariPasswords where supportsICloudPasswords: return false
+        case .passwordChoice, .safariPasswords: return bookmarkPages.isEmpty
+        default: return true
+        }
+    }
+
+    @discardableResult
+    func returnToSourceInSetup() -> Bool {
+        guard onboarding, isCurrent, parkedStage == nil, !importingPasswords, !removingPasswordFile else { return false }
+        switch stage {
+        case .bookmarks: park()
+        case .passwordChoice, .safariPasswords:
+            keepsPasswordChoice = true
+            if passwordsWithoutData && bookmarkPages.isEmpty { returnToSafariAccess() } else { park() }
+        default: return false
+        }
+        error = nil; onChange?()
+        return true
+    }
+
+    private func returnToSafariAccess() {
+        passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
+        passwordStageOffered = false; passwordDestination = nil
+        requiresSafariAccess = true; stage = .safariAccess
     }
 
     private func park() {

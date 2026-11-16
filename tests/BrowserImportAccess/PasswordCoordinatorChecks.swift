@@ -415,6 +415,51 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
     expect(returning.stage == .bookmarks && returning.bookmarkPages.count == 1 && PCNativeBrowserApplication.imports == importsBefore,
            "Next on the same browser returns to its bookmarks without importing again")
     returning.cancel()
+
+    let favorites = start(iCloudSupported: true)
+    expect(favorites.hasStartedImportInSetup && !favorites.isRestingInSetup && favorites.setupBackReturnsToSource,
+           "A running import has started, waits on no page yet and has no import page behind it")
+    expect(!favorites.returnToSourceInSetup() && favorites.stage == .importing,
+           "Stepping back to the browser choice leaves a running import running")
+    complete([selected])
+    expect(favorites.stage == .bookmarks && favorites.isRestingInSetup && favorites.setupBackReturnsToSource,
+           "Once read, the import waits on its bookmarks, whose Back leaves the import's pages")
+    let importsBeforeReturn = PCNativeBrowserApplication.imports
+    expect(favorites.returnToSourceInSetup() && favorites.stage == .profiles && favorites.parkedStage == .bookmarks
+               && favorites.source === safari && favorites.hasStartedImportInSetup && !favorites.isRestingInSetup,
+           "Back from Favorites shows the browser choice with Safari still chosen and its results kept")
+    favorites.continueSourceInline()
+    expect(favorites.stage == .bookmarks && favorites.bookmarkPages.count == 1
+               && PCNativeBrowserApplication.imports == importsBeforeReturn,
+           "Coming forward through Favorites again shows the same bookmarks without importing twice")
+    favorites.commitBookmarks()
+    expect(favorites.stage == .passwordChoice && !favorites.setupBackReturnsToSource,
+           "With bookmarks behind it, Back from the password choice stays on the import's pages")
+    favorites.choosePasswordMethod(installExtension: false)
+    expect(favorites.returnToSourceInSetup() && favorites.parkedStage == .passwordChoice,
+           "Returning to the browser choice from the password choice keeps that page waiting")
+    favorites.continueSourceInline()
+    expect(favorites.stage == .passwordChoice && !favorites.wantsICloudPasswords,
+           "The waiting password choice comes back as it was left")
+    favorites.continuePasswordChoice()
+    expect(favorites.stage == .safariPasswords && !favorites.setupBackReturnsToSource,
+           "Back from Stay logged in returns to the password choice")
+    favorites.cancel()
+
+    let unmarked = start(); complete([])
+    expect(unmarked.stage == .safariPasswords && unmarked.setupBackReturnsToSource && unmarked.isRestingInSetup,
+           "Without bookmarks or the iCloud choice, Back from Stay logged in leaves the import's pages")
+    unmarked.importPasswordFile(URL(fileURLWithPath: "/fixture/Passwords.csv"))
+    let unmarkedFile = PCNativeBrowserApplication.passwordRequests.removeFirst()
+    expect(!unmarked.returnToSourceInSetup() && unmarked.stage == .safariPasswords && unmarked.parkedStage == nil,
+           "A password file still importing keeps Stay logged in in place")
+    unmarkedFile.complete(.init(outcome: .completed, importedCount: 1))
+    expect(unmarked.returnToSourceInSetup() && unmarked.parkedStage == .safariPasswords && unmarked.passwordImportCompleted,
+           "Once the file is in, Stay logged in waits behind the browser choice with its result kept")
+    unmarked.continueSourceInline()
+    expect(unmarked.stage == .safariPasswords && unmarked.canContinueSetupPasswords,
+           "Coming back through Favorites shows the imported file, ready for Next")
+    unmarked.cancel()
     return checks
 }
 
@@ -458,6 +503,16 @@ func setupAccessChecks(store: BrowserStore, destination: BrowserImportDestinatio
     expect(safariLater.stage == .safariAccess && safariLater.passwordDestination == nil,
            "Back from Stay logged in returns to the access page that was put off")
     safariLater.cancel()
+
+    let returning = access(safari)
+    returning.skipInSetup()
+    PCNativeBrowserApplication.profiles.removeFirst().complete(restricted)
+    expect(returning.hasStartedImportInSetup && returning.setupBackReturnsToSource,
+           "Safari's password page after Do this later counts as a started import")
+    expect(returning.returnToSourceInSetup() && returning.stage == .safariAccess
+               && !returning.hasStartedImportInSetup && returning.passwordDestination == nil,
+           "Back from Favorites returns to the access page that came before it")
+    returning.cancel()
 
     let otherLater = access(other)
     otherLater.skipInSetup()

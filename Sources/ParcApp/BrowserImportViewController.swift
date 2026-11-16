@@ -50,6 +50,10 @@ final class BrowserImportViewController: NSViewController {
     var canSkip: Bool { !closed && coordinator.canSkipInSetup }
     var canGoBack: Bool { !closed && coordinator.canGoBackInSetup }
     var foundNoSources: Bool { coordinator.foundNoSources }
+    var hasStartedImport: Bool { !closed && coordinator.hasStartedImportInSetup }
+    var isResting: Bool { !closed && coordinator.isRestingInSetup }
+    var backReturnsToSource: Bool { closed || coordinator.setupBackReturnsToSource }
+    var skipIsSelected: Bool { skipSelected }
     var isImporting: Bool { coordinator.stage == .importing }
     var isLoading: Bool {
         switch coordinator.stage {
@@ -171,6 +175,20 @@ final class BrowserImportViewController: NSViewController {
         guard coordinator.canGoBackInSetup else { return }
         pendingBack = true
         coordinator.goBackInSetup()
+    }
+
+    @discardableResult
+    func returnToSource() -> Bool {
+        guard !closed else { return false }
+        pendingBack = true
+        guard coordinator.returnToSourceInSetup() else { pendingBack = false; return false }
+        return true
+    }
+
+    func resumeAfterFavorites() {
+        guard !closed else { return }
+        pendingBack = false
+        if coordinator.parkedStage != nil { coordinator.continueSourceInline() } else { schedulePasswordFileConsent() }
     }
 
     private func startOver(with source: PCNativeImportSource) {
@@ -494,8 +512,12 @@ final class BrowserImportViewController: NSViewController {
               promptedPasswordRequest != token else { return }
         promptedPasswordRequest = token
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-            guard let self, !self.closed, self.coordinator.passwordRequestID == token,
-                  self.coordinator.canRemovePasswordFile else { return }
+            guard let self, !self.closed else { return }
+            guard self.view.window != nil else {
+                if self.promptedPasswordRequest == token { self.promptedPasswordRequest = nil }
+                return
+            }
+            guard self.coordinator.passwordRequestID == token, self.coordinator.canRemovePasswordFile else { return }
             self.confirmPasswordFileRemoval()
         }
     }

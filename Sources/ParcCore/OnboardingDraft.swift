@@ -6,24 +6,31 @@ struct OnboardingDraft: Codable, Equatable {
         case defaultBrowser
         case adBlockers
         case windowFrame
+        case continuedImport
         var isWelcome: Bool { rawValue <= Self.sellCompleted.rawValue }
+        var holdsImport: Bool { self == .bookmarks || self == .favorites || self == .continuedImport }
+        var showsImport: Bool { self == .bookmarks || self == .continuedImport }
 
         static var setupOrder: [Self] { setupOrder(includingAdBlockers: false) }
-        static func setupOrder(includingAdBlockers: Bool, retaining current: Self? = nil) -> [Self] {
-            var order: [Self] = [.bookmarks, .favorites, .theme, .windowFrame]
+        static func setupOrder(includingAdBlockers: Bool, continuingImport: Bool = false,
+                               retaining current: Self? = nil) -> [Self] {
+            var order: [Self] = [.bookmarks, .favorites]
+            if continuingImport || current == .continuedImport { order.append(.continuedImport) }
+            order.append(contentsOf: [.theme, .windowFrame])
             if includingAdBlockers || current == .adBlockers { order.append(.adBlockers) }
             order.append(contentsOf: [.defaultBrowser, .ready])
             return order
         }
         var current: Self { self == .introduction ? .bookmarks : self }
         var next: Self? { next(includingAdBlockers: false) }
-        func next(includingAdBlockers: Bool) -> Self? {
+        func next(includingAdBlockers: Bool, continuingImport: Bool = false) -> Self? {
             switch self {
             case .introAnimation: return .sellIntro
             case .sellIntro: return .sellCompleted
             case .sellCompleted, .introduction: return .bookmarks
             default:
-                let order = Self.setupOrder(includingAdBlockers: includingAdBlockers, retaining: self)
+                let order = Self.setupOrder(includingAdBlockers: includingAdBlockers,
+                    continuingImport: continuingImport, retaining: self)
                 guard let index = order.firstIndex(of: self), index + 1 < order.count else { return nil }
                 return order[index + 1]
             }
@@ -60,13 +67,25 @@ struct OnboardingDraft: Codable, Equatable {
     var showsAdBlockers: Bool {
         Set(importedAdBlockers.map(\.identifier)) != [OnboardingAdBlocker.uBlockOrigin] || stage.current == .adBlockers
     }
-    func nextStage() -> Stage? { stage.next(includingAdBlockers: showsAdBlockers) }
+    func nextStage(continuingImport: Bool = false) -> Stage? {
+        stage.next(includingAdBlockers: showsAdBlockers, continuingImport: continuingImport)
+    }
     func previousStage() -> Stage? { stage.previous(includingAdBlockers: showsAdBlockers) }
     func visibleSetupOrder() -> [Stage] {
         Stage.setupOrder(includingAdBlockers: showsAdBlockers, retaining: stage.current)
     }
     func displayedSetupCount() -> Int {
-        visibleSetupOrder().filter { $0 != .ready }.count
+        visibleSetupOrder().filter { $0 != .ready && $0 != .continuedImport }.count
+    }
+    func displayedStepNumber() -> Int {
+        let counted = visibleSetupOrder().filter { $0 != .continuedImport }
+        let shown = stage.current == .continuedImport ? .favorites : stage.current
+        return (counted.firstIndex(of: shown) ?? 0) + 1
+    }
+    func savedForResume(importInProgress: Bool) -> Self {
+        var saved = self
+        if stage == .continuedImport || (importInProgress && stage == .favorites) { saved.stage = .bookmarks }
+        return saved
     }
     func windowFrameValue(saved: Int) -> Int {
         WindowFrameThickness.clamped(windowFrameThickness ?? saved)
@@ -253,6 +272,7 @@ struct OnboardingDraft: Codable, Equatable {
         guard draft.version == 1, draft.spaceID == space.id, draft.theme.isValid,
               draft.bookmarks.count <= 50_000,
               draft.importedAdBlockers.count <= 64 else { throw CocoaError(.fileReadCorruptFile) }
+        if draft.stage == .continuedImport { draft.stage = .bookmarks }
         draft.importedAdBlockers = draft.importedAdBlockers.filter {
             OnboardingAdBlocker.isKnown($0.identifier) && !$0.identifier.isEmpty && !$0.displayName.isEmpty
         }
