@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 754,
+  "version": 755,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -454,12 +454,17 @@
     {
       "source": "tests/NativeSitePermissions/BUILD.gn",
       "target": "parc/tests/parc_native_permissions/BUILD.gn",
-      "sha256": "faa4f95bc643c74a022ed638e684626fb38db4c00782013c761bd7f471f44099"
+      "sha256": "213ad6c837d1eeddd53c2cba3b6be0e3943a4351581b3a7d8d278bcd1c2ea576"
     },
     {
       "source": "tests/NativeSitePermissions/permission_prompt_unittest.mm",
       "target": "parc/tests/parc_native_permissions/permission_prompt_unittest.mm",
       "sha256": "f44c3297a26244049c982bf0d873cd66c6490b048193ff23cdfa592108649981"
+    },
+    {
+      "source": "tests/NativeSitePermissions/blocked_popups_unittest.cc",
+      "target": "parc/tests/parc_native_permissions/blocked_popups_unittest.cc",
+      "sha256": "6cba2e8f5633d216ba4fdee35582e451869385eed9b6a5b34d68ace59115ddb0"
     },
     {
       "source": "tests/NativeExtensionInstall/install_browsertest.mm",

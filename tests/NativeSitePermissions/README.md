@@ -12,6 +12,19 @@ camera/microphone requests, Not Now, navigation, hiding, replacement,
 exact host-detach cancellation and competing reservations during release.
 The registered Chromium filter is `NativeSitePermissionTest.*`.
 
+`blocked_popups_unittest.cc` (`NativeBlockedPopupTest.*`) covers the engine
+side of [blocked pop-ups](../../docs/web-interactions.md#banners-and-blocked-pop-ups).
+It blocks `window.open` through the browser client's real window check, with
+Parc's blocker installed, and records link pop-ups and redirects the way the
+native delegate does. A fake stands in for the source window's delegate and
+keeps every page it is handed. Cases cover release with the opener kept while
+the asking frame still shows the same document, release with the opener dropped
+once that frame shows another document, Open All, a link pop-up's trusted
+gesture, Go to a blocked redirect, and a new main document retiring the list.
+Each case clears Parc's change callback and restores Chrome's pop-up delegate
+factory. The sandbox carry-over has no case: Chromium's public test helpers
+cannot sandbox a frame.
+
 ## Production ownership
 
 Parc replaces Chrome's prompt factory at startup. It returns the manager-owned

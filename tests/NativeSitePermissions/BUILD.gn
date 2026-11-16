@@ -1,10 +1,11 @@
-# Installed at //parc/tests/parc_native_permissions and linked into genuine
-# //chrome/test:unit_tests on macOS CEF builds. No libcef_static dependency.
 assert(is_mac)
 
 source_set("unit_tests") {
   testonly = true
-  sources = [ "permission_prompt_unittest.mm" ]
+  sources = [
+    "blocked_popups_unittest.cc",
+    "permission_prompt_unittest.mm",
+  ]
   include_dirs = [ "//parc/native" ]
   frameworks = [ "AppKit.framework" ]
   deps = [
@@ -12,16 +13,26 @@ source_set("unit_tests") {
     "//base/test:test_support",
     "//parc/native:native_components",
     "//parc/native:native_permissions",
+    "//parc/native:native_popup_blocking",
+    "//chrome/browser:chrome_content_browser_client",
     "//chrome/browser/content_settings:content_settings_factory",
     "//chrome/browser/content_settings:content_settings_factory_impl",
+    "//chrome/browser/ui/blocked_content",
     "//chrome/browser/ui/tabs:tab_strip",
     "//chrome/test/base:browser_with_test_window_test",
     "//chrome/test/base:chrome_render_view_host_test_harness",
+    "//components/blocked_content",
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
     "//components/permissions",
+    "//components/tabs:public",
     "//content/public/browser",
+    "//content/public/common",
     "//content/test:test_support",
     "//testing/gtest",
+    "//third_party/blink/public/common",
+    "//ui/base",
+    "//ui/base:types",
+    "//url",
   ]
 }
