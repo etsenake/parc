@@ -56,6 +56,21 @@ final class TooltipAnchorView: NSView {
 @MainActor final class TooltipController {
     static var commandShortcut: ((String) -> KeyboardShortcut?)?
     static var eventChord: ((NSEvent) -> KeyboardShortcut?)?
+    static var symbolicChord: ((NSEvent) -> KeyboardShortcut?)?
+
+    static func keyPress(for event: NSEvent, showing shortcut: KeyboardShortcut?) -> TooltipKeyPress {
+        let modifiers = event.modifierFlags.intersection(KeyboardShortcut.modifierMask)
+        if let symbolic = symbolicChord?(event), symbolic.key == shortcut?.key {
+            return TooltipKeyPress(modifiers: symbolic.flags, key: symbolic.key)
+        }
+        let chord = eventChord?(event), typed = event.charactersIgnoringModifiers
+        if KeyboardShortcut.keypadKey(forPhysicalCode: event.keyCode) != nil {
+            return TooltipKeyPress(modifiers: modifiers, key: chord?.matchesPhysicalKey == true ? chord?.key : typed)
+        }
+        if let chord { return TooltipKeyPress(modifiers: modifiers, key: chord.key) }
+        let shown = typed.map { shortcut?.key == $0.lowercased() } ?? false
+        return TooltipKeyPress(modifiers: modifiers, key: shown ? typed : KeyboardShortcut.keyForPhysicalCode(event.keyCode))
+    }
 
     private typealias State = TooltipPresentationState<ObjectIdentifier>
 
@@ -337,12 +352,12 @@ final class TooltipAnchorView: NSView {
         case .scrollWheel:
             apply(state.hide(State.Fade(duration: TooltipTiming.interruptionDuration), scrolled: true, now: now))
         case .keyDown:
+            let press = Self.keyPress(for: event, showing: presentedShortcut)
             pressedModifiers = event.modifierFlags.intersection(KeyboardShortcut.modifierMask)
-            let chord = KeyboardShortcut.keypadKey(forPhysicalCode: event.keyCode) == nil ? nil : Self.eventChord?(event)
-            pressedCharacters = chord?.matchesPhysicalKey == true ? chord?.key : event.charactersIgnoringModifiers
+            pressedCharacters = press.key
             presenter?.setPressed(modifiers: pressedModifiers, characters: pressedCharacters)
-            apply(state.keyDown(escape: event.keyCode == UInt16(kVK_Escape), modifiers: pressedModifiers,
-                                characters: pressedCharacters, shortcut: presentedShortcut, now: now))
+            apply(state.keyDown(escape: event.keyCode == UInt16(kVK_Escape), modifiers: press.modifiers,
+                                characters: press.key, shortcut: presentedShortcut, now: now))
         case .keyUp:
             pressedCharacters = nil
             presenter?.setPressed(modifiers: pressedModifiers, characters: pressedCharacters)

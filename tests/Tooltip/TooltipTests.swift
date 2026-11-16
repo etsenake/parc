@@ -25,6 +25,7 @@ import SwiftUI
         configuration()
         palette()
         keycaps()
+        keyPresses()
         corners()
         placement()
         layout()
@@ -109,6 +110,78 @@ import SwiftUI
         check(key.isPressed(modifiers: [], characters: "S") && key.isPressed(modifiers: .command, characters: "s")
               && !key.isPressed(modifiers: .command, characters: nil) && !key.isPressed(modifiers: [], characters: "d"),
               "the key keycap is held while its character is, case-insensitively")
+    }
+
+    static func keyPresses() {
+        typealias State = TooltipPresentationState<String>
+        let t0 = Date(timeIntervalSinceReferenceDate: 1000)
+        func key(_ code: UInt16, _ typed: String, _ flags: NSEvent.ModifierFlags) -> NSEvent {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+                             characters: typed, charactersIgnoringModifiers: typed, isARepeat: false, keyCode: code)!
+        }
+        func pressed(_ event: NSEvent, _ shortcut: KeyboardShortcut) -> [Bool] {
+            let press = TooltipController.keyPress(for: event, showing: shortcut)
+            let held = event.modifierFlags.intersection(KeyboardShortcut.modifierMask)
+            return TooltipKeycap.keycaps(for: shortcut).map { $0.isPressed(modifiers: held, characters: press.key) }
+        }
+        func holds(_ event: NSEvent, _ shortcut: KeyboardShortcut) -> Bool { pressed(event, shortcut).allSatisfy { $0 } }
+        func performs(_ event: NSEvent, _ shortcut: KeyboardShortcut) -> Bool {
+            let press = TooltipController.keyPress(for: event, showing: shortcut)
+            var state = State()
+            state.didPresent("tooltip")
+            return state.keyDown(escape: event.keyCode == 53, modifiers: press.modifiers, characters: press.key,
+                                 shortcut: shortcut, now: t0) != nil
+        }
+        defer { TooltipController.eventChord = nil; TooltipController.symbolicChord = nil }
+        TooltipController.eventChord = { KeyboardShortcut.characterCapture($0) }
+
+        let two = KeyboardShortcut.keyForPhysicalCode(19)!, s = KeyboardShortcut.keyForPhysicalCode(1)!
+        let bracket = KeyboardShortcut.keyForPhysicalCode(30)!
+        let capture = KeyboardShortcut(key: two, flags: [.command, .shift]), commandShift2 = key(19, "@", [.command, .shift])
+        check(two != "@" && TooltipController.keyPress(for: commandShift2, showing: capture) == TooltipKeyPress(modifiers: [.command, .shift], key: two),
+              "Command-Shift-2 is the 2 key read through the layout without Shift, as dispatch reads it, not the @ it types")
+        check(holds(commandShift2, capture) && performs(commandShift2, capture), "so Capture's 2 keycap presses and the shortcut fades its tooltip")
+        let save = KeyboardShortcut(key: s, flags: .command), commandShiftS = key(1, s.uppercased(), [.command, .shift])
+        check(holds(commandShiftS, save) && !performs(commandShiftS, save), "Command-Shift-S still is not Command-S")
+        check(pressed(key(1, s, []), save) == [false, true], "a key no command takes alone still presses its own keycap")
+        check(pressed(key(19, "@", .shift), capture) == [true, false, true] && !performs(key(19, "@", .shift), capture),
+              "Shift-2 alone presses Capture's Shift and 2 keycaps from the physical key, not the @ it types")
+        let shiftSave = KeyboardShortcut(key: s, flags: [.command, .shift])
+        check(pressed(key(1, s.uppercased(), .shift), shiftSave) == [true, false, true], "a lone Shift-letter presses its letter keycap")
+
+        let nextTab = KeyboardShortcut(key: "}", flags: .command), zoomIn = KeyboardShortcut(key: "+", flags: .command)
+        TooltipController.symbolicChord = { event in
+            guard let chord = KeyboardShortcut.characterCapture(event), chord.flags.contains(.shift),
+                  let symbol = event.charactersIgnoringModifiers, ["}", "{", "+"].contains(symbol) else { return nil }
+            return KeyboardShortcut(key: symbol, flags: chord.flags.subtracting(.shift))
+        }
+        let commandBrace = key(30, "}", [.command, .shift])
+        check(TooltipController.keyPress(for: commandBrace, showing: nextTab) == TooltipKeyPress(modifiers: .command, key: "}")
+              && holds(commandBrace, nextTab) && performs(commandBrace, nextTab),
+              "a shortcut stored as its shifted symbol folds Shift into the symbol, as dispatch's fallback does")
+        let commandPlus = key(24, "+", [.command, .shift])
+        check(holds(commandPlus, zoomIn) && performs(commandPlus, zoomIn), "Command-plus counts from the key that types plus with Shift")
+        check(TooltipController.keyPress(for: commandBrace, showing: save) == TooltipKeyPress(modifiers: [.command, .shift], key: bracket),
+              "other tooltips keep the physical key")
+        check(pressed(key(30, "}", .shift), nextTab) == [false, true] && !performs(key(30, "}", .shift), nextTab),
+              "holding Shift-] alone presses the } keycap it types without performing the shortcut")
+        TooltipController.symbolicChord = { _ in nil }
+        check(!holds(commandBrace, nextTab) && !performs(commandBrace, nextTab),
+              "when dispatch gives that physical chord to another command, the symbol is not this tooltip's shortcut")
+
+        let keypadOne = KeyboardShortcut.keypadKey(forPhysicalCode: 83)!
+        let keypad = KeyboardShortcut(key: keypadOne, flags: .control), controlOne = KeyboardShortcut(key: "1", flags: .control)
+        TooltipController.eventChord = { $0.keyCode == 83 ? KeyboardShortcut(key: keypadOne, flags: $0.modifierFlags) : KeyboardShortcut.characterCapture($0) }
+        check(TooltipController.keyPress(for: key(83, "1", .control), showing: keypad).key == keypadOne
+              && performs(key(83, "1", .control), keypad) && !performs(key(83, "1", .control), controlOne),
+              "an assigned keypad chord keeps its own key, as dispatch does")
+        TooltipController.eventChord = { KeyboardShortcut.characterCapture($0) }
+        check(TooltipController.keyPress(for: key(83, "1", .control), showing: controlOne).key == "1"
+              && performs(key(83, "1", .control), controlOne) && !performs(key(83, "1", .control), keypad),
+              "an unassigned keypad key falls back to its character, as dispatch does")
+        let clear = key(71, KeyboardShortcut.clearKey, []), exit = KeyboardShortcut(key: "\u{1b}", flags: [])
+        check(TooltipController.keyPress(for: clear, showing: exit).key == KeyboardShortcut.clearKey && !performs(clear, exit),
+              "an unassigned Clear stays Clear and never performs Escape")
     }
 
     static func corners() {

@@ -947,13 +947,17 @@ final class KeyboardShortcuts: ObservableObject {
     func nativeCommand(for event: NSEvent, editable: Bool) -> PCNativeShortcutCommand? {
         guard let shortcut = eligibleShortcut(event) else { return nil }
         if let command = firstValidNativeCommand(from: nativeChords[shortcut] ?? []) { return command }
-        if shortcut.flags.contains(.shift), let symbol = event.charactersIgnoringModifiers,
-           Self.symbolicShiftedKeys.contains(symbol),
-           !assignedPhysicalChords.contains(shortcut) {
-            let symbolic = KeyboardShortcut(key: symbol, flags: shortcut.flags.subtracting(.shift))
-            return firstValidNativeCommand(from: symbolicDefaults[symbolic] ?? [])
-        }
-        return nil
+        guard let symbolic = symbolicChord(for: event, physical: shortcut) else { return nil }
+        return firstValidNativeCommand(from: symbolicDefaults[symbolic] ?? [])
+    }
+    func symbolicChord(for event: NSEvent) -> KeyboardShortcut? {
+        guard let physical = chord(for: event), firstValidNativeCommand(from: nativeChords[physical] ?? []) == nil else { return nil }
+        return symbolicChord(for: event, physical: physical)
+    }
+    private func symbolicChord(for event: NSEvent, physical shortcut: KeyboardShortcut) -> KeyboardShortcut? {
+        guard shortcut.flags.contains(.shift), let symbol = event.charactersIgnoringModifiers,
+              Self.symbolicShiftedKeys.contains(symbol), !assignedPhysicalChords.contains(shortcut) else { return nil }
+        return KeyboardShortcut(key: symbol, flags: shortcut.flags.subtracting(.shift))
     }
     private func firstValidNativeCommand(from candidates: [MenuReference]) -> PCNativeShortcutCommand? {
         for reference in candidates {

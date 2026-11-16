@@ -70,8 +70,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 
 ## Other input and surface limits
 
-- Tooltip shortcut feedback needs the same shifted-symbol matching as command
-  dispatch. [Tooltips](tooltips.md).
 - Download arrival needs a Reduce Motion path. [Downloads](download-library.md).
 
 ## Planned interface work

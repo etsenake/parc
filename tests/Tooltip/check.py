@@ -81,9 +81,16 @@ assert "TooltipController.controller(for: window).palette = TooltipColorPalette(
 delegate = (app / "AppDelegate.swift").read_text()
 assert "TooltipController.commandShortcut = { KeyboardShortcuts.shared.activeShortcut(for: $0) }" in delegate, \
     "the app no longer resolves tooltip shortcuts through the live registry"
+assert "TooltipController.eventChord = { KeyboardShortcuts.shared.chord(for: $0) }" in delegate \
+    and "TooltipController.symbolicChord = { KeyboardShortcuts.shared.symbolicChord(for: $0) }" in delegate, \
+    "tooltip keycaps no longer identify keys through command dispatch's own chord and symbolic fallback"
 assert "KeyboardShortcuts.shared.bindHelp(view, title: title, commandID: id, requiresBinding: requiresBinding)" in delegate, \
     "the app no longer keeps tooltipped controls' accessibility help on the live binding"
 shortcuts = source("KeyboardShortcuts.swift")
+assert "guard let symbolic = symbolicChord(for: event, physical: shortcut) else { return nil }" in shortcuts \
+    and "guard let physical = chord(for: event), firstValidNativeCommand(from: nativeChords[physical] ?? []) == nil else { return nil }" in shortcuts \
+    and "return symbolicChord(for: event, physical: physical)" in shortcuts, \
+    "command dispatch and tooltip keycaps no longer share one symbolic-shortcut fallback"
 assert "view.toolTip" not in shortcuts and "(view as? NSControl)?.cell?.setAccessibilityHelp(help)" in shortcuts, \
     "the registry must bind accessibility help, not help tags"
 

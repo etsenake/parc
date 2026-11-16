@@ -247,6 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             LiveShortcutToolTip.resolver = { title, id in KeyboardShortcuts.shared.toolTip(title, for: id) }
             TooltipController.commandShortcut = { KeyboardShortcuts.shared.activeShortcut(for: $0) }
             TooltipController.eventChord = { KeyboardShortcuts.shared.chord(for: $0) }
+            TooltipController.symbolicChord = { KeyboardShortcuts.shared.symbolicChord(for: $0) }
             KeyboardShortcuts.shared.onDiscoveryChange = {
                 NotificationCenter.default.post(name: LiveShortcutToolTip.didChange, object: nil)
             }

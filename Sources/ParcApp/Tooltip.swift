@@ -109,6 +109,11 @@ struct TooltipKeycap: Equatable {
     }
 }
 
+struct TooltipKeyPress: Equatable {
+    var modifiers: NSEvent.ModifierFlags
+    var key: String?
+}
+
 struct TooltipCorners: Equatable {
     var topLeft: CGFloat, topRight: CGFloat, bottomRight: CGFloat, bottomLeft: CGFloat
 

@@ -62,8 +62,15 @@ Pressed state reduces the bottom inset to one with a 0.12-second ease. Glyphs
 are ten-point bold with two-point padding.
 
 Space displays `⎵` and speaks “Space”. Named keys and function keys retain their
-proper labels. Matching uses `charactersIgnoringModifiers`; Shift-transformed
-punctuation remains a known matching limitation.
+proper labels. A key press is identified the way command dispatch identifies it:
+by the registry's chord for the event, which reads the physical key through the
+layout without Shift. Command-Shift-2 therefore presses Capture's 2 keycap, and
+Command-Shift-S never counts as Command-S. A keypad press keeps an assigned
+keypad key and otherwise uses the character it types, so Clear never stands in
+for Escape. A press no command could take, such as a lone key, lights the keycap
+of the key it is or of the shown symbol it types. A shortcut stored as its
+shifted symbol (⌘}, ⌘{, ⌘+) uses dispatch's own symbolic fallback: Shift folds
+into the symbol unless another command owns that physical chord.
 
 ## Colours
 
