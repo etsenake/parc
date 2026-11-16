@@ -811,19 +811,22 @@ struct BrowserWindowRecord: Codable, Equatable {
     var sidebarHidden: Bool?
     var stayOnTop: Bool
     var peekedFolders: [UUID: [SidebarItemReference]]?
+    var frame: SavedWindowFrame?
     private enum CodingKeys: String, CodingKey {
-        case sidebarWidth, itemLastActiveDates, id, focusedSpaceID, selectedTabIDs, focusedTabID, sidebarHidden, stayOnTop, peekedFolders
+        case sidebarWidth, itemLastActiveDates, id, focusedSpaceID, selectedTabIDs, focusedTabID, sidebarHidden, stayOnTop, peekedFolders, frame
     }
 
     init(sidebarWidth: Double, itemLastActiveDates: [UUID: Date] = [:], id: UUID? = nil,
          focusedSpaceID: UUID? = nil, selectedTabIDs: [UUID]? = nil, focusedTabID: UUID? = nil,
-         sidebarHidden: Bool? = nil, stayOnTop: Bool = false, peekedFolders: [UUID: [SidebarItemReference]]? = nil) {
+         sidebarHidden: Bool? = nil, stayOnTop: Bool = false, peekedFolders: [UUID: [SidebarItemReference]]? = nil,
+         frame: SavedWindowFrame? = nil) {
         self.sidebarWidth = sidebarWidth
         self.itemLastActiveDates = itemLastActiveDates
         self.id = id; self.focusedSpaceID = focusedSpaceID; self.selectedTabIDs = selectedTabIDs
         self.focusedTabID = focusedTabID; self.sidebarHidden = sidebarHidden
         self.stayOnTop = stayOnTop
         self.peekedFolders = peekedFolders
+        self.frame = frame
     }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -835,6 +838,7 @@ struct BrowserWindowRecord: Codable, Equatable {
         sidebarHidden = try values.decodeIfPresent(Bool.self, forKey: .sidebarHidden)
         stayOnTop = try values.decodeIfPresent(Bool.self, forKey: .stayOnTop) ?? false
         peekedFolders = try? values.decodeIfPresent([UUID: [SidebarItemReference]].self, forKey: .peekedFolders)
+        frame = (try? values.decodeIfPresent(SavedWindowFrame.self, forKey: .frame)) ?? nil
         if let intervals = try? values.decode([UUID: Double].self, forKey: .itemLastActiveDates) {
             itemLastActiveDates = intervals.mapValues { Date(timeIntervalSinceReferenceDate: $0) }
         } else {
@@ -851,6 +855,7 @@ struct BrowserWindowRecord: Codable, Equatable {
         try values.encodeIfPresent(sidebarHidden, forKey: .sidebarHidden)
         try values.encode(stayOnTop, forKey: .stayOnTop)
         try values.encodeIfPresent(peekedFolders, forKey: .peekedFolders)
+        try values.encodeIfPresent(frame, forKey: .frame)
         try values.encode(itemLastActiveDates.mapValues(\.timeIntervalSinceReferenceDate), forKey: .itemLastActiveDates)
     }
 

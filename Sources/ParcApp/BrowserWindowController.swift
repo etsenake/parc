@@ -250,6 +250,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var sidebarFloatingSurface = false
     var sidebarRevealsAnchored = false
     var fullscreenPhase: WindowFullscreenPhase?
+    var windowedFrame: SavedWindowFrame?
     var systemWindowButtons: [NSButton] = []
     let sidebarResizeRegion = SidebarResizeRegionView()
     var sidebarResize: SidebarResizeGesture?
@@ -286,7 +287,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         BrowserWindowRecord(sidebarWidth: windowSidebarWidth.width, itemLastActiveDates: closedItems.itemLastActiveDates,
                             id: sessionID, focusedSpaceID: activeSpaceID, selectedTabIDs: selectedTabIDs,
                             focusedTabID: currentTabID, sidebarHidden: sidebarPresentation != .locked,
-                            stayOnTop: stayOnTop, peekedFolders: savedFolderPeeks.isEmpty ? nil : savedFolderPeeks)
+                            stayOnTop: stayOnTop, peekedFolders: savedFolderPeeks.isEmpty ? nil : savedFolderPeeks,
+                            frame: savedFrame)
     }
     var onSessionRecordChange: (() -> Void)?
     var savedFolderPeeks: [UUID: [SidebarItemReference]] = [:]
@@ -597,7 +599,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         PCNativeBrowserWindow.nativeWindowDidFailToEnterFullscreen(window)
         setFullscreenPhase(window.styleMask.contains(.fullScreen) ? .expanded : nil)
     }
-    func windowWillEnterFullScreen(_ notification: Notification) { setFullscreenPhase(.entering) }
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        if fullscreenPhase == nil, let frame = window.flatMap({ SavedWindowFrame($0.frame) }) { windowedFrame = frame }
+        setFullscreenPhase(.entering)
+    }
     func windowDidEnterFullScreen(_ notification: Notification) {
         setFullscreenPhase(.expanded)
         guard !isPopupWindow,
@@ -628,7 +633,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     init(store: BrowserStore, ownership: NativePageOwnership, renderInitialSelection: Bool = true,
          preferredProfileID: UUID? = nil, nativeWindowRequest: PCNativeWindowRequest? = nil,
-         restoredRecord: BrowserWindowRecord? = nil) throws {
+         restoredRecord: BrowserWindowRecord? = nil, restoresSavedFrame: Bool = false) throws {
         self.nativeWindowRequest = nativeWindowRequest
         self.store = store
         self.ownership = ownership
@@ -641,6 +646,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         presentation = initialPresentation
         focusedTabID = initialPresentation.preferredFocusedTabID
         if restoredRecord?.sidebarHidden == true { sidebarPresentation = .hidden }
+        windowedFrame = restoredRecord?.frame
         let popup = nativeWindowRequest?.kind == .popup
         var style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
         if nativeWindowRequest?.canResize != false { style.insert(.resizable) }
@@ -685,7 +691,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         window.delegate = self
         window.contentView = rootView
-        if nativeWindowRequest == nil && restoredRecord == nil { Self.placeNewStandardWindow(window) }
+        if restoresSavedFrame, let frame = Self.restoredFrame(restoredRecord, minimumSize: window.minSize) {
+            window.setFrame(frame, display: false)
+        } else if nativeWindowRequest == nil && restoredRecord == nil { Self.placeNewStandardWindow(window) }
         else { window.center() }
         if let request = nativeWindowRequest {
             var frame = window.frame

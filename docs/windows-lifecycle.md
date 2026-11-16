@@ -18,9 +18,11 @@ the same rule through [embedded page retirement](easel-embedded-pages.md#admissi
 ## Restoration and launch continuity
 
 AppKit restores regular windows by stable ID and owns frame, minimized and
-fullscreen restoration ordering. Restoration does not bring every window to
-the front. If a saved Space no longer exists, that window falls back to the
-first available Space without changing another window's selection.
+fullscreen restoration ordering. When AppKit reopens nothing, Parc reopens the
+first saved window itself at that window's own frame, fitted to today's screens
+([window frames](sidebar-resize.md#window-frames)). Restoration does not bring
+every window to the front. If a saved Space no longer exists, that window falls
+back to the first available Space without changing another window's selection.
 
 Unrequested or failed restoration records remain available rather than being
 discarded. Legacy records have a fallback path. Disabling restoration does not

@@ -11,6 +11,7 @@ final class NoteEditorViewController {
 }
 struct Note { let editor: NoteEditorViewController }
 struct BrowserWindowRecord { let id: UUID }
+struct SavedWindowFrame { let rect: NSRect }
 final class BrowserStore { var state = 0; func save() throws {} }
 enum NoteStore { static func flushAllSharedDelayedDiskSaves() throws {} }
 final class Settings {
@@ -62,6 +63,7 @@ final class Transfer { func retry() {} }
 final class BrowserWindowController {
     let store: BrowserStore; var sessionID = UUID()
     var sessionRecord: BrowserWindowRecord { BrowserWindowRecord(id: sessionID) }
+    var savedFrame: SavedWindowFrame?
     var window: NSWindow? = NSWindow(), nativeBinding: Binding? = Binding()
     var isPopupWindow = false, isPrivateBrowsing = false, hasReadyPresentation = true
     var isClosing = false, wholeWindowClose = false, windowClosePending = false, windowCloseApproved = false

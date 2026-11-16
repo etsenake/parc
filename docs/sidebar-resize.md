@@ -67,7 +67,7 @@ Settings' width control deliberately broadcasts to every window of the same
 store. If Settings changes during a drag, the active drag's final commit wins.
 
 `BrowserWindowRecord` stores a window's width alongside its explicit identity,
-selection and presentation. Older records without a width decode as 228;
+selection, presentation and frame. Older records without a width decode as 228;
 restored and default widths are clamped to the supported range.
 
 `BrowserStore.windowRecords` is separate from published UI state. Updating
@@ -86,9 +86,31 @@ fallback can use the first unrestored record. With session restoration off,
 startup uses the app-wide default instead. A cancelled drag or collapse changes
 neither the last-used width nor the record's width.
 
-The fallback still uses AppKit's shared frame autosave. If its former holder
-closed before quit, that saved frame and the first remaining width record can
-come from different windows. Broader restoration belongs to
+### Window frames
+
+Each record keeps its own window's frame (`SavedWindowFrame`), refreshed when
+the window moves or resizes. A full-screen window keeps the frame it had before
+entering full screen. The frame is an optional extra key: older records load
+without one, an older Parc ignores it, and a damaged frame is dropped without
+failing the session.
+
+AppKit's own restoration places the windows it reopens and ignores this frame.
+When AppKit reopens nothing, for example when Parc is opened with Shift held or
+the system's saved window state is gone, the fallback window takes the frame of
+the record it restores, so its position, size and sidebar width all come from
+the same window. The frame is fitted to today's screens: one that still fits a
+screen's visible area is kept; otherwise the window moves to the screen holding
+most of it, or the nearest one, shrinks to fit and slides the shortest way back
+on screen. A window saved in full screen returns at its windowed frame, and a
+record without a frame is centered as before.
+
+New windows start from AppKit's shared frame autosave, then step down and right
+from the front browser window. AppKit gives that slot to the first window to
+open and never passes it on when that window closes, so whenever no open window
+holds it, recording the windows writes the leading record's frame into it,
+unless that window is full screen. A window opened with none open, or the first
+window of a launch with restoration off, appears where the latest front window
+was rather than where a long-closed one sat. Broader restoration belongs to
 [Windows and lifecycle](windows-lifecycle.md).
 
 ## Page size during a width drag
@@ -269,7 +291,7 @@ components; inspect a check before running it under the current work contract:
 
 | Check | Coverage |
 |---|---|
-| `tests/SidebarResize/check.py` | Gesture thresholds, snapping, cancellation, per-window persistence, renderer holds and native-host sizing |
+| `tests/SidebarResize/check.py` | Gesture thresholds, snapping, cancellation, per-window persistence and frames, screen fitting, renderer holds and native-host sizing |
 | `tests/SidebarResize/engine_report.py` | Required reporting symbols in a sealed framework, without launching it |
 | `tests/SidebarChrome/check.py` | Header/list/dock geometry, Space header and settings wiring |
 | `tests/SidebarFavoritesEmptyState/check.py` | Card layout, persistence, drag state and keyboard dismissal |

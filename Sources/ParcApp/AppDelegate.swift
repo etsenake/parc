@@ -526,7 +526,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         persistTabHistory()
         try store.save()
         if closesOriginal, let original, let window = original.window {
-            replayWindow = ReplayWindow(record: original.sessionRecord, frame: window.frame,
+            replayWindow = ReplayWindow(record: original.sessionRecord, frame: original.savedFrame?.rect ?? window.frame,
                                         wasVisible: window.isVisible, wasMiniaturized: window.isMiniaturized,
                                         wasFullScreen: window.styleMask.contains(.fullScreen))
         }
@@ -1095,6 +1095,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             frontToBack: standard.map { controller in controller.window.flatMap { order.firstIndex(of: $0) } })
         let live = indices.map { standard[$0].sessionRecord }
         store.updateWindowRecords(BrowserWindowRecord.preservingUnrestored(live: live, unrestored: unrestoredWindowRecords))
+        if let first = indices.first,
+           !windows.contains(where: { $0.window?.frameAutosaveName == BrowserWindowController.sharedFrameAutosaveName }) {
+            standard[first].keepSharedFrame()
+        }
     }
 
     func requestApplicationTermination(_ sender: Any?) {
@@ -1399,7 +1403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 preferredProfileID = context.profileID
             } else { preferredProfileID = nil }
             let controller = try makeBrowserWindow(renderInitialSelection: true, preferredProfileID: preferredProfileID,
-                                                   restoredRecord: record)
+                                                   restoredRecord: record, restoresSavedFrame: record != nil)
             if !initialBrowserOpened, record == nil { finishInitialBrowserPresentation() }
             if showCommandBar { controller.newTab() }
             return controller
@@ -1409,7 +1413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
-    private func makeBrowserWindow(renderInitialSelection: Bool, showImmediately: Bool = true, preferredProfileID: UUID? = nil, nativeRequest: PCNativeWindowRequest? = nil, privateParentProfileID: UUID? = nil, restoredRecord: BrowserWindowRecord? = nil) throws -> BrowserWindowController {
+    private func makeBrowserWindow(renderInitialSelection: Bool, showImmediately: Bool = true, preferredProfileID: UUID? = nil, nativeRequest: PCNativeWindowRequest? = nil, privateParentProfileID: UUID? = nil, restoredRecord: BrowserWindowRecord? = nil, restoresSavedFrame: Bool = false) throws -> BrowserWindowController {
         let ownerStore: BrowserStore
         if let parentID = privateParentProfileID ?? (nativeRequest?.isOffTheRecord == true ? preferredProfileID : nil) {
             guard store.state.profiles.contains(where: { $0.id == parentID }), !store.isProfileRemovalPending(parentID) else { throw BrowserScriptError.missing }
@@ -1423,7 +1427,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         } else { ownerStore = store }
         let controller = try BrowserWindowController(store: ownerStore, ownership: pageOwnership, renderInitialSelection: renderInitialSelection,
                                                      preferredProfileID: preferredProfileID, nativeWindowRequest: nativeRequest,
-                                                     restoredRecord: restoredRecord)
+                                                     restoredRecord: restoredRecord, restoresSavedFrame: restoresSavedFrame)
         controller.onMiniPlayerSourceChange = { [weak self] in self?.scheduleMiniPlayerRefresh() }
         controller.downloadCatalog = store
         controller.onSessionRecordChange = { [weak self] in self?.scheduleWindowSessionRecord() }

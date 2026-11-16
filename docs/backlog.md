@@ -22,9 +22,6 @@ Finish assigned work first; explicit deferrals remain deferred.
   [Sidebar motion](sidebar-motion.md), [theme rendering](space-theme-rendering.md).
 - Finish the documented theme-control hover/dot/tooltip details.
   [Theme editor](space-theme-editor.md).
-- Keep fallback window geometry and sidebar width associated with the same saved
-  window.
-  [Resizing](sidebar-resize.md), [Space management](space-management.md).
 
 ## Performance
 

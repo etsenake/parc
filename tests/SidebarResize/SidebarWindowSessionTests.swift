@@ -6,6 +6,19 @@ import Foundation
         let sidebarWidth: Double
         let itemLastActiveDates: [UUID: Date]
     }
+    private struct OlderParcWindowRecord: Decodable {
+        let sidebarWidth: Double?
+        let id: UUID?
+        let focusedSpaceID: UUID?
+        let selectedTabIDs: [UUID]?
+        let focusedTabID: UUID?
+        let sidebarHidden: Bool?
+        let stayOnTop: Bool?
+    }
+    static func frame(_ x: Double, _ y: Double, _ width: Double, _ height: Double) -> SavedWindowFrame {
+        guard let frame = SavedWindowFrame(x: x, y: y, width: width, height: height) else { fatalError("bad fixture") }
+        return frame
+    }
     static var count = 0
     static func check(_ value: @autoclosure () throws -> Bool, _ message: String) rethrows {
         count += 1
@@ -35,6 +48,41 @@ import Foundation
         check(order([false, false, false], [nil, 1, 0]) == [2, 1, 0] && order([false, false], [nil, nil]) == [0, 1],
               "then front to back, then opening order")
         check(order([], []).isEmpty && order([true], [nil]) == [0], "no windows, or only the holder off screen")
+
+        let ownFrame = frame(120, 80, 1100, 760)
+        let framedRecord = BrowserWindowRecord(sidebarWidth: 300, id: UUID(), stayOnTop: true, frame: ownFrame)
+        let framedJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(framedRecord)) as! [String: Any]
+        var frameless = framedRecord; frameless.frame = nil
+        let framelessJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(frameless)) as! [String: Any]
+        var strippedJSON = framedJSON; strippedJSON.removeValue(forKey: "frame")
+        check(framedJSON["frame"] as? [String: Double] == ["x": 120, "y": 80, "width": 1100, "height": 760]
+              && NSDictionary(dictionary: strippedJSON).isEqual(to: framelessJSON),
+              "a frame adds one key to the record and leaves every older key as it was")
+        try check(try JSONDecoder().decode(BrowserWindowRecord.self, from: JSONEncoder().encode(framedRecord)) == framedRecord,
+                  "the record round-trips its frame")
+        try check(try JSONDecoder().decode(BrowserWindowRecord.self, from: Data(#"{"sidebarWidth":300}"#.utf8)).frame == nil,
+                  "an older record without a frame decodes with none")
+        let older = try JSONDecoder().decode(OlderParcWindowRecord.self, from: JSONEncoder().encode(framedRecord))
+        check(older.sidebarWidth == 300 && older.id == framedRecord.id && older.stayOnTop == true,
+              "an older Parc's record decoding reads the newer record and ignores the frame")
+        for damaged in [#""frame":"wide""#, #""frame":null"#, #""frame":[1,2,3,4]"#, #""frame":{"x":1,"y":2,"width":5}"#,
+                        #""frame":{"x":1,"y":2,"width":-5,"height":9}"#, #""frame":{"x":1,"y":2,"width":5,"height":0}"#,
+                        #""frame":{"x":1e400,"y":2,"width":5,"height":9}"#, #""frame":{"x":1e300,"y":2,"width":5,"height":9}"#,
+                        #""frame":{"x":"1","y":2,"width":5,"height":9}"#] {
+            let decoded = try JSONDecoder().decode(BrowserWindowRecord.self,
+                                                   from: Data((#"{"sidebarWidth":300,"stayOnTop":true,"# + damaged + "}").utf8))
+            check(decoded.frame == nil && decoded.sidebarWidth == 300 && decoded.stayOnTop,
+                  "an unusable frame is dropped without losing the rest of the record: \(damaged)")
+        }
+
+        let frames = [frame(0, 90, 1200, 800), frame(1600, -100, 1400, 900), frame(300, 200, 900, 700)]
+        let widths = [228.0, 310, 260]
+        let liveAfterHolderClosed = [1, 2]
+        let fallbackOrder = order(liveAfterHolderClosed.map { _ in false }, [1, 0])
+        let fallbackRecords = fallbackOrder.map { liveAfterHolderClosed[$0] }
+            .map { BrowserWindowRecord(sidebarWidth: widths[$0], id: UUID(), frame: frames[$0]) }
+        check(fallbackRecords.first?.frame == frames[2] && fallbackRecords.first?.sidebarWidth == 260,
+              "once the first window closes, the front window's record leads with its own frame and width")
 
         try withDirectory { directory in
             let file = directory.appendingPathComponent("session.json")
@@ -122,6 +170,34 @@ import Foundation
             try relaunched.save()
             try check(try BrowserStore(directory: directory).windowRecords == dated,
                       "a later session write keeps the records")
+
+            let framed = [BrowserWindowRecord(sidebarWidth: 310, id: UUID(), frame: frame(1600, -100, 1400, 900)),
+                          BrowserWindowRecord(sidebarWidth: 240, id: UUID(), sidebarHidden: true, frame: frame(40, 60, 1200, 800))]
+            relaunched.updateWindowRecords(framed)
+            try relaunched.save()
+            let reopened = try BrowserStore(directory: directory)
+            check(reopened.windowRecords == framed, "each window's frame survives a relaunch beside its own width")
+            check(reopened.windowRecords.first?.frame == framed[0].frame && reopened.windowRecords.first?.sidebarWidth == 310,
+                  "the fallback window's frame and width come from the same saved window")
+            json = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+            var rewritten = json
+            rewritten["windows"] = (json["windows"] as! [[String: Any]]).map { record -> [String: Any] in
+                var older = record; older.removeValue(forKey: "frame"); return older
+            }
+            try JSONSerialization.data(withJSONObject: rewritten).write(to: file)
+            let downgraded = try BrowserStore(directory: directory)
+            check(downgraded.windowRecords.allSatisfy { $0.frame == nil }
+                  && downgraded.windowRecords.map(\.sidebarWidth) == [310, 240]
+                  && downgraded.windowRecords.map(\.id) == framed.map(\.id) && downgraded.windowRecords[1].sidebarHidden == true,
+                  "a file an older Parc saved back loads without frames and keeps everything else")
+            var damaged = json
+            damaged["windows"] = [["sidebarWidth": 310, "frame": ["x": 1, "y": 2, "width": 0, "height": 5]],
+                                  ["sidebarWidth": 240, "frame": "tall"]] as [[String: Any]]
+            try JSONSerialization.data(withJSONObject: damaged).write(to: file)
+            try check(try BrowserStore(directory: directory).windowRecords
+                      == [BrowserWindowRecord(sidebarWidth: 310), BrowserWindowRecord(sidebarWidth: 240)],
+                      "a damaged frame never makes the saved session unreadable")
+            try JSONSerialization.data(withJSONObject: json).write(to: file)
 
             json = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
             json["windows"] = [["sidebarWidth": 40], [:]] as [[String: Any]]

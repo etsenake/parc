@@ -47,6 +47,7 @@ core_sources=(
   "$repo_root/Sources/ParcCore/SpaceTheme.swift"
   "$repo_root/Sources/ParcCore/OnboardingDraft.swift"
   "$repo_root/Sources/ParcCore/WindowFrame.swift"
+  "$repo_root/Sources/ParcCore/SavedWindowFrame.swift"
   "$repo_root/Sources/ParcCore/LinkRouting.swift"
   "$repo_root/Sources/ParcCore/SettingsPrettyJSONPersistSkip.swift"
   "$repo_root/Sources/ParcCore/ProfileRemoval.swift"
