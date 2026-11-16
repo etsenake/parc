@@ -156,7 +156,8 @@ over 0.1 s ease-in-ease-out, scaling 0.8 → 1 about the row edge while fading i
 Dismissal animates from the presented transform/opacity to 0.8 and 0 over 0.1 s
 times that opacity, holds the end state and removes the view on completion.
 Changing item plays the old card's exit while the new one enters; nothing moves one
-card between rows. The preview-card transition currently has no Reduce Motion override.
+card between rows. With Reduce Motion on, the card only fades in and out where it
+stands: no scaling, with the same timing, retirement and removal.
 
 The card appears after the 200 ms dwell; scheduling another item un-commits the
 previous one immediately. Its hover region extends 40 pt toward the sidebar. While a
@@ -193,3 +194,5 @@ picture preference is enabled. These are local preferences, not service accounts
 
 Focused preview components exercise original-identity query/thumbnail leases,
 modifier routes, title rules, geometry, invalidation and focus return.
+`tests/SidebarPreview/check.py` also plays the entrance and exit with Reduce
+Motion simulated off and on.

@@ -18,10 +18,10 @@ Finish assigned work first; explicit deferrals remain deferred.
 - Add direct accessibility row-selection setters and spoken Control-Space
   highlight changes. Existing press/custom selection actions work.
   [Sidebar accessibility](sidebar-accessibility.md).
-- Honor Reduce Motion in preview-card and Library-width transitions. Restore
-  New Tab's pressed scale after a cancelled click, and prevent long Space drags
-  from exposing blank strip content. [Sidebar motion](sidebar-motion.md),
-  [previews](sidebar-previews.md), [theme rendering](space-theme-rendering.md).
+- Honor Reduce Motion in Library-width transitions. Restore New Tab's pressed
+  scale after a cancelled click, and prevent long Space drags from exposing
+  blank strip content. [Sidebar motion](sidebar-motion.md),
+  [theme rendering](space-theme-rendering.md).
 - Finish the documented theme-control hover/dot/tooltip details.
   [Theme editor](space-theme-editor.md).
 - Keep fallback window geometry and sidebar width associated with the same saved

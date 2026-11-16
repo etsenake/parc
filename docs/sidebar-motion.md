@@ -7,8 +7,10 @@ second browser window.
 
 Related guides: [resizing and geometry](sidebar-resize.md),
 [accessibility and focus](sidebar-accessibility.md),
-[Space theme rendering](space-theme-rendering.md), and
-[window appearance](window-appearance.md).
+[Space theme rendering](space-theme-rendering.md),
+[window appearance](window-appearance.md), and
+[preview cards](sidebar-previews.md#presentation), which grow out of their row
+or, with Reduce Motion on, only fade.
 
 ## Source map
 

@@ -128,12 +128,16 @@ class SidebarPreviewSurface: NSView {
     func animateIn(from anchor: NSPoint, duration: CFTimeInterval = SidebarPreviewMetrics.duration) {
         motionAnchor = anchor
         guard let layer else { return }
-        let transform = CABasicAnimation(keyPath: "transform")
-        transform.fromValue = NSValue(caTransform3D: scaled(about: anchor))
-        transform.toValue = NSValue(caTransform3D: CATransform3DIdentity)
         let opacity = CABasicAnimation(keyPath: "opacity")
         opacity.fromValue = 0; opacity.toValue = 1
-        for animation in [transform, opacity] {
+        var animations = [opacity]
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let transform = CABasicAnimation(keyPath: "transform")
+            transform.fromValue = NSValue(caTransform3D: scaled(about: anchor))
+            transform.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+            animations.append(transform)
+        }
+        for animation in animations {
             animation.duration = duration
             animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             layer.add(animation, forKey: animation.keyPath)
@@ -144,16 +148,20 @@ class SidebarPreviewSurface: NSView {
         let presented = layer?.presentation()
         let opacity = presented?.opacity ?? layer?.opacity ?? 0
         guard let layer, opacity > 0 else { removeFromSuperview(); completion(); return }
-        let transform = CABasicAnimation(keyPath: "transform")
-        transform.fromValue = NSValue(caTransform3D: presented?.transform ?? layer.transform)
-        transform.toValue = NSValue(caTransform3D: scaled(about: motionAnchor ?? NSPoint(x: 0, y: bounds.height / 2)))
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = opacity; fade.toValue = 0
+        var animations = [fade]
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let transform = CABasicAnimation(keyPath: "transform")
+            transform.fromValue = NSValue(caTransform3D: presented?.transform ?? layer.transform)
+            transform.toValue = NSValue(caTransform3D: scaled(about: motionAnchor ?? NSPoint(x: 0, y: bounds.height / 2)))
+            animations.append(transform)
+        }
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self] in
             MainActor.assumeIsolated { self?.removeFromSuperview(); completion() }
         }
-        for animation in [transform, fade] {
+        for animation in animations {
             animation.duration = duration * CFTimeInterval(opacity)
             animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             animation.fillMode = .forwards; animation.isRemovedOnCompletion = false

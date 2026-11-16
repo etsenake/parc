@@ -27,6 +27,7 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
 @MainActor func run() {
     let c = Checks()
     _ = NSApplication.shared
+    SystemOverrides.install(); SystemOverrides.reduceMotion = false
 
     let row = NSRect(x: 8, y: 300, width: 212, height: 32)
     let right = SidebarPreviewPlacement(row: row, location: .right)
@@ -426,6 +427,34 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     var hiddenRemoved = false
     hidden.animateOut { hiddenRemoved = true }
     c.expect(hiddenRemoved && hidden.superview == nil, "invisible card is removed immediately")
+
+    SystemOverrides.reduceMotion = true
+    let still = SidebarPreviewSurface(frame: NSRect(x: 224, y: 216, width: 240, height: 200))
+    host.addSubview(still); CATransaction.flush()
+    still.animateIn(from: still.convert(right.anchor, from: host))
+    let stillFade = basic(still, "opacity")
+    c.expect(Set(still.layer?.animationKeys() ?? []) == ["opacity"], "Reduce Motion: no grow on entry")
+    c.expect(number(stillFade?.fromValue) == 0 && number(stillFade?.toValue) == 1 && stillFade?.duration == 0.1
+             && controlPoints(stillFade?.timingFunction) == [0.42, 0, 0.58, 1], "Reduce Motion: the same 0.1 s fade in")
+    c.expect(still.layer.map { CATransform3DIsIdentity($0.transform) } == true
+             && still.frame == NSRect(x: 224, y: 216, width: 240, height: 200), "Reduce Motion: fades where it stands")
+    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5)); CATransaction.flush()
+    still.retire()
+    c.expect(still.hitTest(NSPoint(x: still.frame.midX, y: still.frame.midY)) == nil, "Reduce Motion: exiting card takes no clicks")
+    var stillRemoved = false
+    let stillOpacity = Double(still.layer?.presentation()?.opacity ?? still.layer?.opacity ?? 0)
+    still.animateOut { stillRemoved = true }
+    let stillExit = basic(still, "opacity")
+    c.expect(Set(still.layer?.animationKeys() ?? []) == ["opacity"], "Reduce Motion: no shrink on exit")
+    c.expect(stillOpacity > 0 && near(CGFloat(number(stillExit?.fromValue) ?? -1), CGFloat(stillOpacity))
+             && number(stillExit?.toValue) == 0 && stillExit?.fillMode == .forwards
+             && controlPoints(stillExit?.timingFunction) == [0.42, 0, 0.58, 1]
+             && stillExit?.isRemovedOnCompletion == false
+             && near(CGFloat(stillExit?.duration ?? 0), CGFloat(0.1 * stillOpacity)), "Reduce Motion: the same fade out")
+    c.expect(still.superview === host && !stillRemoved, "Reduce Motion: card stays while fading")
+    RunLoop.main.run(until: Date(timeIntervalSinceNow: 1.0)); CATransaction.flush()
+    c.expect(stillRemoved && still.superview == nil, "Reduce Motion: card removed after its fade")
+    SystemOverrides.reduceMotion = nil
     window.orderOut(nil)
     print("SidebarPreview: \(c.count) assertions passed")
 }
