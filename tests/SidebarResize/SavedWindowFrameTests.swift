@@ -10,7 +10,8 @@ import Foundation
         guard let frame = SavedWindowFrame(x: x, y: y, width: width, height: height) else { fatalError("bad fixture") }
         return frame
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let minimum = CGSize(width: 760, height: 540)
         let laptop = CGRect(x: 0, y: 90, width: 1512, height: 858)
         let external = CGRect(x: 1512, y: -200, width: 2560, height: 1415)

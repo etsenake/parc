@@ -27,7 +27,8 @@ import QuartzCore
     static func fade(_ region: SidebarResizeRegionView) -> CABasicAnimation? {
         region.indicatorLayer.animation(forKey: "opacity") as? CABasicAnimation
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         typealias R = SidebarResizeRegionView
         check(R.frame(trailing: NSRect(x: 0, y: 0, width: 228, height: 700), in: NSRect(x: 0, y: 0, width: 1000, height: 700))
               == NSRect(x: 224, y: 11, width: 8, height: 678), "locked strip straddles the trailing edge")

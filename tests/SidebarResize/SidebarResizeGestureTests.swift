@@ -6,7 +6,8 @@ import Foundation
         count += 1
         guard value() else { fatalError("SidebarResizeGesture: \(message)") }
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         typealias G = SidebarResizeGesture
         check(G.minimumWidth == 164 && G.maximumWidth == 500 && G.collapseThreshold == 82, "recovered limits")
         check(G.defaultWidth == 8 + 8 + 4 * 47 + 3 * 8 && G.snapBand == 14 && G.snapMaximumVelocity == 50, "recovered detent")

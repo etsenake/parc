@@ -81,7 +81,8 @@ private final class ThemeInputEvent: NSEvent {
                                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0, context: nil,
                                eventNumber: 0, trackingNumber: 0, userData: nil)!
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         padCoordinatesAndTransactions()

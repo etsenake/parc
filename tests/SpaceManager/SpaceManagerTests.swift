@@ -20,7 +20,8 @@ final class AreaEvent: NSEvent {
         count += 1; precondition(value(), message)
     }
     static func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         precondition(ManagerTestApplication.shared is ManagerTestApplication, "the checks' application is the first")
         let manager = SpaceManagerView(frame: NSRect(x: 0, y: 0, width: 900, height: 650))
         let window = ManagerTestWindow(contentRect: manager.frame, styleMask: [.borderless], backing: .buffered, defer: true)

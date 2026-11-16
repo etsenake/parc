@@ -3,7 +3,9 @@ import Foundation
 @main
 struct WindowPresentationTests {
     @MainActor
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    @MainActor
+    static func runChecks() throws {
         var assertions = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {
             assertions += 1

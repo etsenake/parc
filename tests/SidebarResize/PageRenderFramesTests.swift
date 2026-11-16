@@ -13,7 +13,8 @@ import AppKit
         guard value() else { fatalError("PageRenderFrames: \(message)") }
     }
     static func size(_ width: CGFloat, _ height: CGFloat = 600) -> CGSize { CGSize(width: width, height: height) }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 1200, height: 700),
                               styleMask: [.borderless], backing: .buffered, defer: false)

@@ -59,7 +59,8 @@ enum Control: Hashable { case header, divider, heading, newTab }
         abs(a.minX - b.minX) < 0.5 && abs(a.minY - b.minY) < 0.5 && abs(a.width - b.width) < 0.5 && abs(a.height - b.height) < 0.5
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 240, height: 200),
                               styleMask: [.titled], backing: .buffered, defer: true)

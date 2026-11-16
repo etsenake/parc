@@ -14,7 +14,8 @@ import Foundation
         if let written { lastUsed = written }
         return written
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         var lastUsed = SidebarResizeGesture.defaultWidth
         var first = SidebarWindowWidth(lastUsed: lastUsed), second = SidebarWindowWidth(lastUsed: lastUsed)
         check(first.width == 228 && second.width == 228, "new windows take the last-used width")

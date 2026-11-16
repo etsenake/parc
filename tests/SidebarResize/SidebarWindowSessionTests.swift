@@ -32,7 +32,8 @@ import Foundation
         defer { try? FileManager.default.removeItem(at: directory) }
         try body(directory)
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let encoded = try JSONEncoder().encode(BrowserWindowRecord(sidebarWidth: 312))
         try check((try JSONSerialization.jsonObject(with: encoded) as? [String: Any])?["sidebarWidth"] as? Double == 312, "the record encodes its width")
         try check(try JSONDecoder().decode(BrowserWindowRecord.self, from: encoded).sidebarWidth == 312, "the record round-trips")
