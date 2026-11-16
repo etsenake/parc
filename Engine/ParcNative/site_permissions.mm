@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,11 +20,13 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "base/values.h"
 #include "chrome/browser/notifications/notification_display_service.h"
 #include "chrome/browser/notifications/notification_display_service_factory.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/common/webui_url_constants.h"
 #include "components/custom_handlers/register_protocol_handler_permission_request.h"
 #include "components/permissions/embedded_permission_prompt_flow_model.h"
 #include "components/permissions/permission_request.h"
@@ -37,6 +40,9 @@
 #include "content/public/browser/notification_database_data.h"
 #include "content/public/browser/platform_notification_context.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host.h"
+#include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/visibility.h"
 #include "content/public/browser/weak_document_ptr.h"
@@ -44,6 +50,8 @@
 #include "content/public/browser/web_contents_capability_type.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/common/url_constants.h"
 #import "dialog_style.h"
 #include "native_auxiliary_page.h"
 #import "site_permission_presenter.h"
@@ -1186,12 +1194,55 @@ void RefreshSystemPermissions() {
   FetchSystemNotifications(nil);
 }
 
+std::string_view SettingsPermissionGroup(ContentSettingsType type) {
+  switch (type) {
+    case ContentSettingsType::GEOLOCATION:
+      return "location";
+    case ContentSettingsType::MEDIASTREAM_CAMERA:
+      return "media-stream-camera";
+    case ContentSettingsType::MEDIASTREAM_MIC:
+      return "media-stream-mic";
+    case ContentSettingsType::NOTIFICATIONS:
+      return "notifications";
+    default:
+      return {};
+  }
+}
+
+void RefreshSettingsSystemPermissionWarnings() {
+  base::ListValue denied;
+  for (ContentSettingsType type : SystemDeniedPermissions()) {
+    denied.Append(SettingsPermissionGroup(type));
+  }
+  std::set<content::WebContents*> refreshed;
+  auto widgets = content::RenderWidgetHost::GetRenderWidgetHosts();
+  while (content::RenderWidgetHost* widget = widgets->GetNextHost()) {
+    auto* view = content::RenderViewHost::From(widget);
+    auto* contents =
+        view ? content::WebContents::FromRenderViewHost(view) : nullptr;
+    if (!contents || !refreshed.insert(contents).second) {
+      continue;
+    }
+    const GURL& url = contents->GetLastCommittedURL();
+    content::WebUI* web_ui = contents->GetWebUI();
+    if (web_ui && url.SchemeIs(content::kChromeUIScheme) &&
+        url.host() == chrome::kChromeUISettingsHost) {
+      web_ui->CallJavascriptFunctionUnsafe(
+          "cr.webUIListenerCallback", base::Value("osGlobalPermissionChanged"),
+          denied);
+    }
+  }
+}
+
 void WatchSystemPermissions() {
   static bool watching = false;
   if (watching) {
     return;
   }
   watching = true;
+  static base::NoDestructor<base::CallbackListSubscription> settings_refresh(
+      SystemPermissionObservers().Add(
+          base::BindRepeating(&RefreshSettingsSystemPermissionWarnings)));
   FetchSystemNotifications(nil);
   [NSNotificationCenter.defaultCenter
       addObserverForName:NSApplicationDidBecomeActiveNotification

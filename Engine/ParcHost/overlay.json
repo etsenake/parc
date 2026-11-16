@@ -14,7 +14,7 @@
     {
       "source": "Engine/ParcNative/BUILD.gn",
       "target": "parc/native/BUILD.gn",
-      "sha256": "9745fc2b5953716a002fcfeaf03b8fbab958093104a01f36715535bee145d068"
+      "sha256": "7de1c92ff29fa45d63b61e682f7bb608c3644336cace595bedf97d973107135b"
     },
     {
       "source": "Engine/ParcNative/page_host.h",
@@ -459,7 +459,7 @@
     {
       "source": "Engine/ParcNative/site_permissions.mm",
       "target": "parc/native/site_permissions.mm",
-      "sha256": "f51bd6a91f9db8b9f5ca0fd28f694345110ebaf1aa8c507afb09c75fe7b62168"
+      "sha256": "b93c13da14a2eb934252c62060acaf6389180a28d720f0d369b74fa28400b343"
     },
     {
       "source": "tests/NativeSitePermissions/BUILD.gn",

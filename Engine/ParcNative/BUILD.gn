@@ -378,6 +378,7 @@ source_set("native_permissions") {
     "//chrome/browser/permissions/system",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui/browser_window",
+    "//chrome/common",
     "//components/custom_handlers",
     "//components/strings:components_strings",
     "//components/tabs:public",

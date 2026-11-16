@@ -39,8 +39,8 @@ live shortcuts and accessibility help. This is Parc's own presentation choice.
   is allowed but macOS blocks it for Parc, its row reads **Off in macOS** with a
   **Settings** capsule for that System Settings pane; the row still toggles the
   site. The card rechecks macOS as it opens and when Parc becomes active. The
-  security popover adds **Open System Settings…**; Settings' per-site page shows
-  its macOS warning for location, camera and microphone.
+  security popover adds **Open System Settings…**; Settings' site pages update
+  their macOS warning live (Chromium words it only for location, camera, mic).
 - Automatic Picture-in-Picture uses PageInfo's item or the Profile's real content
   setting, with ASK treated as on. Managed/compound permissions display without
   exposing an unsupported toggle.
@@ -168,9 +168,8 @@ revealed until the prompt and any successor popover close. Escape/outside click
 means Not Now. A second prompt in the same window refuses rather than stacks;
 a competing sheet ends it neutrally.
 
-Ordinary permissions use the two-action card; permission-element stages retain
-their native titles and choices. During a handoff to macOS, the card stays open
-with progress.
+Ordinary permissions use the two-action card; permission-element stages keep
+their native titles and choices. During a macOS handoff the card shows progress.
 
 While macOS hasn't decided whether Parc may use location, the engine waits
 silently. Chrome asks macOS from its location-bar icon, which Parc lacks, so the
@@ -180,10 +179,11 @@ active window: one request at a time, none after macOS decides. Allowing hands
 the waiting `getCurrentPosition`/`watchPosition` its position; refusing gives
 the page a permission error. Location retains the engine's initial accuracy.
 Notifications ask macOS after Allow on the card or at an allowed site's first
-notification, which macOS may drop while asking; Chromium's media handler asks
+notification; one macOS drops meanwhile reappears within a minute of Allow unless
+closed or replaced (a page's own close is unseen). Chromium's media handler asks
 for camera and microphone as capture starts. Request type supplies the title and
-symbol, including protocol-handler and combined camera/microphone wording. Security warnings are Chromium's interstitials under
-Parc's skin; see [failure and recovery](#failure-and-recovery-surfaces--web17).
+symbol, including protocol-handler and combined camera/microphone wording.
+Security warnings are Chromium's interstitials under Parc's skin; see [failure and recovery](#failure-and-recovery-surfaces--web17).
 
 ## Context menus, hovered status and banners — WEB16
 
