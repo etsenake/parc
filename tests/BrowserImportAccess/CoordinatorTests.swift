@@ -25,6 +25,11 @@ import AppKit
         let chromium = PCNativeImportSource("com.google.Chrome", try app("Fixture Chrome", "com.google.Chrome"))
         expect(BrowserImportCoordinator.keychainNote(for: chromium)?.contains("Safe Storage key") == true,
                "Chromium-family sources explain the Keychain prompt before importing")
+        expect(BrowserImportCoordinator.keychainNote(for: PCNativeImportSource("com.openai.atlas", otherURL)) == nil,
+               "ChatGPT Atlas keeps its key where Parc can't read it, so no Keychain prompt is promised")
+        expect(BrowserImportCoordinator.keychainNote(for: PCNativeImportSource("net.imput.helium", otherURL))?
+                   .contains("net.imput.helium’s Storage Key") == true,
+               "Helium's note names its Keychain item the way Helium names it")
         expect(BrowserImportCoordinator.keychainNote(for: safari) == nil, "Safari import never mentions the Keychain")
         expect(BrowserImportCoordinator.keychainNote(for: PCNativeImportSource("org.mozilla.firefox", otherURL)) == nil,
                "Firefox import never mentions the Keychain")

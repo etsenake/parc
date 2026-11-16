@@ -40,7 +40,8 @@ the key is always the source browser's own, never Parc's.
 
 | Source | Directly supported data | Deliberate restriction |
 | --- | --- | --- |
-| Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Arc | History; ordered bookmarks/empty folders from the local and account stores, plain or encrypted; cookies; saved passwords, including those saved to the browser account; form entries, current and historical local addresses, local payment cards; explicitly selected Web Store extensions | Actual macOS `v10` AES-CBC formats only, including Chromium's fallback key (below). Unknown encryption, absent authorization or invalid encrypted-cookie host binding refuses that category. A source's concrete readable files determine availability. |
+| Chrome (including Beta, Dev and Canary), Chromium, Brave, Edge, Vivaldi, Opera, Opera GX, Arc, Dia, Comet, Helium | History; ordered bookmarks/empty folders from the local and account stores, plain or encrypted; cookies; saved passwords, including those saved to the browser account; form entries, current and historical local addresses, local payment cards; explicitly selected Web Store extensions | Actual macOS `v10` AES-CBC formats only, including Chromium's fallback key (below). Unknown encryption, absent authorization or invalid encrypted-cookie host binding refuses that category. A source's concrete readable files determine availability. |
+| ChatGPT Atlas | History; ordered bookmarks/empty folders; explicitly selected Web Store extensions | Its encryption key sits where other apps cannot read it, so cookies, passwords and form/address/card data are not offered and the Keychain is never queried; an encrypted-only bookmark store cannot be read. |
 | Safari | Default-store history and XML/binary-plist bookmarks; each Profile's history and the payment cards from Safari's export file | This reader supports no direct password/cookie/payment/extension import; payment cards come only from the export file. Separate Safari Profile stores are not read directly. Passwords require an explicit OS/source export. |
 | Firefox, Zen | History, bookmark hierarchy and form entries | Pinned macOS excludes the external NSS reader; no direct passwords, cookies, encrypted payment records or add-on installation is advertised. Passwords come from the browser's own CSV export (below). |
 
@@ -80,6 +81,25 @@ live in `~/Library/Application Support/zen`; its bundle identifier is
 Firefox's key handling for its older and its Firefox 144 formats, need a
 primary-password prompt, and chase future format changes, while the CSV export
 step covers the same people.
+
+Each Chromium-family source's data folder, bundle identifier and Keychain item
+come from the browser's own source or build files where they are public, and
+otherwise from importers in other shipping browsers that read the same files.
+Chrome's Beta, Dev and Canary folders and bundle identifiers are Chromium's own:
+its user-data-directory guide and code-signing requirement name them, and its
+Keychain code picks `Chrome Safe Storage`/`Chrome` by branding alone, so every
+channel shares it. Helium's patches set its folder to `net.imput.helium` and
+its item to `Helium Storage Key`/`Helium`. Dia (`Dia/User Data`,
+`Dia Safe Storage`/`Dia`) matches the importers Zen and Helium ship; Comet's
+folder (`Comet`) matches Helium's importer and its item
+(`Comet Safe Storage`/`Comet`) matches tools tested on real installs. Opera GX
+keeps its single profile in its data folder, like Opera; importers disagree on
+its Keychain item, so Parc asks for `Opera GX Safe Storage`/`Opera GX` and, only
+when that item does not exist, `Opera Safe Storage`/`Opera`; a wrong key almost
+always fails the reader's padding check, and that category is then refused. ChatGPT Atlas keeps its
+profiles in `com.openai.atlas/browser-data/host`, as OpenAI's own tooling reads
+them, and its key in an OpenAI-only Keychain group; its `login-staging-` profile
+is the app's sign-in scratch space and is not offered.
 
 Chrome-family source keys come from the browser's actual macOS Keychain service
 and account after that source is selected and an encrypted category requested,

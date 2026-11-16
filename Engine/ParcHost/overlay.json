@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 756,
+  "version": 757,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -1309,7 +1309,7 @@
     {
       "source": "Engine/ParcNative/native_import_session.mm",
       "target": "parc/native/native_import_session.mm",
-      "sha256": "45d8e7e9f6ac25b9fa30f50a90c6a4a57464e69e503e7311e321cfe662154ae3"
+      "sha256": "be800a8006f3be56d4d2e1582f4af8999386d21fae1d739d99b44c4efd00a6c7"
     },
     {
       "source": "Engine/ParcNative/native_import_writer.mm",
@@ -1319,7 +1319,7 @@
     {
       "source": "Engine/ParcNative/native_import_discovery.mm",
       "target": "parc/native/native_import_discovery.mm",
-      "sha256": "b4be520349aa3f5b0baa925852c601eadb08eb2acc21a7243486a93bd8d8f778"
+      "sha256": "c3924909cc23eda9d1f6f4f7d560a03e6e23f782ccfbb451aa5d520dc50272f2"
     },
     {
       "source": "Engine/ParcNative/native_import_extensions.mm",
@@ -1329,7 +1329,7 @@
     {
       "source": "Engine/ParcNative/native_import_internal.h",
       "target": "parc/native/native_import_internal.h",
-      "sha256": "c77137865b24856306723898f517d5fa6a7bff639a9bb1ee347b289451c0c1c4"
+      "sha256": "e2c43ddb1322c682dc1d7ee035ceed855ff826ab7faec46d031c6b2989ec99e9"
     },
     {
       "source": "Engine/ParcNative/native_import_writer.h",

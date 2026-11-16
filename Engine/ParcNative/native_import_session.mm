@@ -104,15 +104,14 @@ struct KeyResult {
   std::vector<uint8_t> bytes;
   std::string error;
   bool refused = false;
+  bool missing = false;
 };
-KeyResult ReadKey(const Installation& source) {
+KeyResult ReadKeyItem(const std::string& service, const std::string& account) {
   @autoreleasepool {
     NSDictionary* query = @{
       (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
-      (__bridge id)
-      kSecAttrService : base::SysUTF8ToNSString(source.key_service),
-      (__bridge id)
-      kSecAttrAccount : base::SysUTF8ToNSString(source.key_account),
+      (__bridge id)kSecAttrService : base::SysUTF8ToNSString(service),
+      (__bridge id)kSecAttrAccount : base::SysUTF8ToNSString(account),
       (__bridge id)kSecReturnData : @YES,
       (__bridge id)kSecMatchLimit : (__bridge id)kSecMatchLimitOne
     };
@@ -125,7 +124,7 @@ KeyResult ReadKey(const Installation& source) {
       return {{},
               refused ? kKeychainRefused
                       : "The source browser's encryption key is unavailable.",
-              refused};
+              refused, status == errSecItemNotFound};
     if (CFGetTypeID(value) != CFDataGetTypeID()) {
       CFRelease(value);
       return {{}, "The source encryption key has an unsupported format."};
@@ -144,6 +143,17 @@ KeyResult ReadKey(const Installation& source) {
     }
     return {std::move(key), {}};
   }
+}
+KeyResult ReadKey(const Installation& source) {
+  if (source.key_service.empty())
+    return {{}, "The source browser keeps its encryption key where other apps cannot read it."};
+  KeyResult result = ReadKeyItem(source.key_service, source.key_account);
+  for (const auto& [service, account] : source.key_fallbacks) {
+    if (!result.missing)
+      break;
+    result = ReadKeyItem(service, account);
+  }
+  return result;
 }
 NSArray<PCNativeImportedBookmark*>* Tree(
     const std::vector<mojom::BookmarkPtr>& rows,

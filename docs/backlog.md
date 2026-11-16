@@ -37,12 +37,6 @@ Finish assigned work first; explicit deferrals remain deferred.
   Ordinary disposition and missing-destination fallback are implemented.
   [Private lifecycle](private-route-lifecycle.md).
 
-## Data and credentials
-
-- **DATA15:** Dia, Comet, ChatGPT Atlas, Helium, Opera GX and Chrome Beta are
-  not offered as sources until their data folders and Keychain names are
-  confirmed on a real install. [Import capabilities](../Engine/ParcImport/README.md#reader-and-writer-boundary).
-
 ## Performance
 
 The specifically deferred Downloads investigation is [below](#deferred).

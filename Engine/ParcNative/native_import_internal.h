@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 #include "base/files/file_path.h"
 #import "native_appkit_bridge.h"
@@ -27,6 +28,7 @@ struct Installation {
   std::string bundle_id, name, root_relative, key_service, key_account;
   base::FilePath app_path;
   mutable SourceKey key;
+  std::vector<std::pair<std::string, std::string>> key_fallbacks;
 };
 struct ProfileData {
   std::shared_ptr<const Installation> source;
@@ -42,7 +44,7 @@ NSError* ImportError(NSString* message);
 bool ReserveImportDestination(NSString* path, const void* owner);
 void ReleaseImportDestination(NSString* path, const void* owner);
 bool SourceReady(const ProfileData& source, std::string& error);
-}  // namespace parc::importer
+}
 @interface PCNativeImportSource (Private)
 - (instancetype)initWithInstallation:
     (std::shared_ptr<const parc::importer::Installation>)source;

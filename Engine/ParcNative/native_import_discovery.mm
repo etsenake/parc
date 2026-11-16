@@ -41,6 +41,7 @@ bool SourceReady(const ProfileData& profile, std::string& error) {
 namespace {
 constexpr char kArcBundleID[] = "company.thebrowser.Browser";
 constexpr char kArcData[] = "Library/Application Support/Arc";
+constexpr char kAtlasBundleID[] = "com.openai.atlas";
 bool ArcDataExists(const base::FilePath& home) {
   struct stat info{};
   const auto sidebar =
@@ -101,6 +102,7 @@ void AddProfile(ProfilesResult& result,
     return Readable(normalized.AppendASCII(relative), &p->restricted);
   };
   if (source->family == 0) {
+    const bool keyed = !source->key_service.empty();
     if (can("History"))
       p->categories |= PCNativeImportCategoryHistory;
     for (const auto& files :
@@ -108,11 +110,11 @@ void AddProfile(ProfilesResult& result,
       if (can(files.plain) || can(files.encrypted))
         p->categories |= PCNativeImportCategoryBookmarks;
     }
-    if (can("Network/Cookies") || can("Cookies"))
+    if (keyed && (can("Network/Cookies") || can("Cookies")))
       p->categories |= PCNativeImportCategoryCookies;
-    if (can(kChromiumLogins) || can(kChromiumAccountLogins))
+    if (keyed && (can(kChromiumLogins) || can(kChromiumAccountLogins)))
       p->categories |= PCNativeImportCategoryPasswords;
-    if (can("Web Data"))
+    if (keyed && can("Web Data"))
       p->categories |= PCNativeImportCategoryAutofill;
     std::optional<base::DictValue> prefs;
     if (!listing || p->categories == 0) {
@@ -139,9 +141,12 @@ void AddProfile(ProfilesResult& result,
     if (!p->extensions.empty())
       p->categories |= PCNativeImportCategoryExtensions;
     p->constraints.push_back(
-        "Encrypted bookmarks, cookies, passwords and local payment data may "
-        "require macOS Keychain authorization. Unsupported encryption is "
-        "reported without importing those records.");
+        keyed ? "Encrypted bookmarks, cookies, passwords and local payment "
+                "data may require macOS Keychain authorization. Unsupported "
+                "encryption is reported without importing those records."
+              : source->name + " keeps its encryption key where other apps "
+                "cannot read it, so its cookies, passwords and form data are "
+                "not imported.");
   } else if (source->family == 1) {
     if (can("History.db") || can("History.json"))
       p->categories |= PCNativeImportCategoryHistory;
@@ -185,7 +190,9 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
     if (cache)
       for (const auto [directory, value] : *cache) {
         if (directory.empty() || directory == "." || directory == ".." ||
-            directory.find('/') != std::string::npos || !value.is_dict())
+            directory.find('/') != std::string::npos || !value.is_dict() ||
+            (source->bundle_id == kAtlasBundleID &&
+             directory.starts_with("login-staging-")))
           continue;
         const auto* name = value.GetDict().FindString("name");
         AddProfile(result, source, root.AppendASCII(directory),
@@ -197,9 +204,10 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
       AddProfile(result, source, root.AppendASCII(directory), directory,
                  listing);
     if (result.profiles.empty() &&
-        source->bundle_id == "com.operasoftware.Opera" &&
+        (source->bundle_id == "com.operasoftware.Opera" ||
+         source->bundle_id == "com.operasoftware.OperaGX") &&
         base::PathExists(root.AppendASCII("Preferences")))
-      AddProfile(result, source, root, "Opera", listing);
+      AddProfile(result, source, root, source->name, listing);
     auto blocked = [](const base::FilePath& path) {
       return access(path.value().c_str(), R_OK) != 0 &&
              (errno == EACCES || errno == EPERM);
@@ -413,6 +421,27 @@ std::vector<Installation> Importable(std::vector<Installation> installed,
          "Chrome",
          {}},
         {0,
+         "com.google.Chrome.beta",
+         "Google Chrome Beta",
+         "Library/Application Support/Google/Chrome Beta",
+         "Chrome Safe Storage",
+         "Chrome",
+         {}},
+        {0,
+         "com.google.Chrome.dev",
+         "Google Chrome Dev",
+         "Library/Application Support/Google/Chrome Dev",
+         "Chrome Safe Storage",
+         "Chrome",
+         {}},
+        {0,
+         "com.google.Chrome.canary",
+         "Google Chrome Canary",
+         "Library/Application Support/Google/Chrome Canary",
+         "Chrome Safe Storage",
+         "Chrome",
+         {}},
+        {0,
          "com.brave.Browser",
          "Brave",
          "Library/Application Support/BraveSoftware/Brave-Browser",
@@ -446,6 +475,43 @@ std::vector<Installation> Importable(std::vector<Installation> installed,
          "Library/Application Support/com.operasoftware.Opera",
          "Opera Safe Storage",
          "Opera",
+         {}},
+        {0,
+         "com.operasoftware.OperaGX",
+         "Opera GX",
+         "Library/Application Support/com.operasoftware.OperaGX",
+         "Opera GX Safe Storage",
+         "Opera GX",
+         {},
+         {},
+         {{"Opera Safe Storage", "Opera"}}},
+        {0,
+         "company.thebrowser.dia",
+         "Dia",
+         "Library/Application Support/Dia/User Data",
+         "Dia Safe Storage",
+         "Dia",
+         {}},
+        {0,
+         "ai.perplexity.comet",
+         "Comet",
+         "Library/Application Support/Comet",
+         "Comet Safe Storage",
+         "Comet",
+         {}},
+        {0,
+         "net.imput.helium",
+         "Helium",
+         "Library/Application Support/net.imput.helium",
+         "Helium Storage Key",
+         "Helium",
+         {}},
+        {0,
+         parc::importer::kAtlasBundleID,
+         "ChatGPT Atlas",
+         "Library/Application Support/com.openai.atlas/browser-data/host",
+         "",
+         "",
          {}},
         {0,
          parc::importer::kArcBundleID,

@@ -181,9 +181,10 @@ final class BrowserImportCoordinator {
         Bundle(url: source.appURL)?.bundleIdentifier == "com.apple.Safari"
     }
     static func keychainNote(for source: PCNativeImportSource) -> String? {
-        guard !isSafari(source), !firefoxFamily.keys.contains(source.identifier) else { return nil }
-        let name = source.displayName
-        return "macOS may ask to let Parc use \(name)’s Safe Storage key. It unlocks the bookmarks, passwords and cookies \(name) keeps encrypted."
+        guard !isSafari(source), !firefoxFamily.keys.contains(source.identifier),
+              source.identifier != "com.openai.atlas" else { return nil }
+        let name = source.displayName, key = source.identifier == "net.imput.helium" ? "Storage Key" : "Safe Storage key"
+        return "macOS may ask to let Parc use \(name)’s \(key). It unlocks the bookmarks, passwords and cookies \(name) keeps encrypted."
     }
     static let arcBundleIdentifier = "company.thebrowser.Browser"
     static func isArc(_ source: PCNativeImportSource) -> Bool { source.identifier == arcBundleIdentifier }

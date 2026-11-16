@@ -27,7 +27,9 @@ Native category capabilities and access failures determine what can be imported;
 Swift bookmark/progress models never receive native credential contents.
 Choosing a Chromium-family browser replaces the intro line with a note that
 macOS may ask for that browser's Safe Storage key, which unlocks the bookmarks,
-passwords and cookies it keeps encrypted; Safari, Firefox and Zen keep the intro.
+passwords and cookies it keeps encrypted (Helium calls it its Storage Key);
+Safari, Firefox, Zen and ChatGPT Atlas, whose key Parc cannot read, keep the
+intro.
 
 ## Sequencing and cancellation
 
