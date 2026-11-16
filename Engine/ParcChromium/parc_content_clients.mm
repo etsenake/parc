@@ -91,6 +91,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
       client_->initial_profile_ = profile;
     }
   }
+  void PreBrowserStart() override { RegisterWhatsNewWebUI(); }
   void PostBrowserStart() override {
     parc_hooks::SetAlreadyRunningCommandLineHandler(
         [](const base::CommandLine& command_line, const base::FilePath& cwd,

@@ -593,7 +593,7 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         if InternalPage(urlString: tab.url) == nil { setAccessibilityRoleDescription("Tab") }
-        setAccessibilityHelp(WhatsNewPage.presented(tab.url))
+        setAccessibilityHelp(tab.url)
         closeButton.makeMenu = { [weak self] in self?.context?() }
     }
     private static var fallbackSymbols: [String: NSImage] = [:]
@@ -648,7 +648,7 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         let urlChanged = shownURL != tab.url
         if urlChanged {
             shownURL = tab.url
-            setAccessibilityHelp(WhatsNewPage.presented(tab.url))
+            setAccessibilityHelp(tab.url)
             let allows = InternalPage(urlString: tab.url) == nil
             if allows != allowsFavicon {
                 allowsFavicon = allows
@@ -1540,7 +1540,6 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private static func address(of tab: BrowserTab?) -> String {
         guard let tab else { return SidebarAddressSearchIcon.placeholder }
         if InternalPage(urlString: tab.url) != nil { return "Easel" }
-        if WhatsNewPage.matches(tab.url) { return tab.title }
         guard let url = URL(string: tab.url) else { return SidebarAddressSearchIcon.placeholder }
         return url.isFileURL ? url.lastPathComponent : SidebarAddressSearchIcon.host(of: url) ?? SidebarAddressSearchIcon.placeholder
     }
@@ -2530,7 +2529,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             let previousPages = group.map { $0.tabIDs.compactMap { id in previous.tab(id) } }
                 ?? previous.tab(id).map { [$0] } ?? []
             let urlsChanged = !pages.elementsEqual(previousPages) { $0.url == $1.url }
-            button.update(title: spokenTitle, monogram: monogram(tab), url: WhatsNewPage.presented(tab.url),
+            button.update(title: spokenTitle, monogram: monogram(tab), url: tab.url,
                 owner: .init(tabID: tab.id, profileID: tab.profileID,
                              spaceID: state.activeSpaceID, createdAt: tab.createdAt))
             let item: SidebarItemReference = group.map { .split($0.id) } ?? .tab(tab.id)
@@ -2773,9 +2772,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 let host = URL(string: page.url)?.host?.replacingOccurrences(of: "www.", with: "") ?? "New tab"
                 return String(host.prefix(1)).uppercased()
             }
-            let button = favoriteTiles[tab.id] ?? FavoriteTile(title: spokenTitle, monogram: monogram(tab), url: WhatsNewPage.presented(tab.url))
+            let button = favoriteTiles[tab.id] ?? FavoriteTile(title: spokenTitle, monogram: monogram(tab), url: tab.url)
             favoriteTiles[tab.id] = button; retainedFavoriteIDs.insert(tab.id)
-            button.update(title: spokenTitle, monogram: monogram(tab), url: WhatsNewPage.presented(tab.url),
+            button.update(title: spokenTitle, monogram: monogram(tab), url: tab.url,
                 owner: .init(tabID: tab.id, profileID: tab.profileID,
                              spaceID: state.activeSpaceID, createdAt: tab.createdAt))
             bindFavoriteTile(button, tab: tab, group: group, item: item, state: state)
@@ -3834,7 +3833,6 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         menu.addItem(.separator())
         let copyURL = MenuAction.item("Copy Link") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(tab.url, forType: .string) }
         KeyboardShortcuts.shared.showBinding(on: copyURL, for: "copyCurrentURL:")
-        copyURL.isEnabled = !WhatsNewPage.matches(tab.url)
         menu.addItem(copyURL)
         if tab.kind != .today && !InternalPage.isInternal(tab.savedURL) {
             let action = prepareResetTab?(tab)

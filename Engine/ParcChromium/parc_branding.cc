@@ -2,9 +2,15 @@
 #include "parc/parc_branding.h"
 
 #include <memory>
+#include <string>
 #include <utility>
 
+#include "base/apple/bundle_locations.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/functional/bind.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/task/thread_pool.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -12,6 +18,8 @@
 #include "content/public/browser/webui_config.h"
 #include "content/public/browser/webui_config_map.h"
 #include "content/public/common/url_constants.h"
+#include "services/network/public/mojom/content_security_policy.mojom.h"
+#include "url/gurl.h"
 
 namespace parc {
 namespace {
@@ -1006,10 +1014,58 @@ class LicenseUI final : public content::WebUIController {
                               std::make_unique<LicenseSource>());
   }
 };
+constexpr char kWhatsNewHost[] = "whats-new";
+scoped_refptr<base::RefCountedMemory> ReadWhatsNewPage(base::FilePath path) {
+  std::string page;
+  if (!base::ReadFileToString(path, &page)) {
+    return nullptr;
+  }
+  return base::MakeRefCounted<base::RefCountedString>(std::move(page));
+}
+class WhatsNewPageSource final : public content::URLDataSource {
+ public:
+  std::string GetSource() override { return kWhatsNewHost; }
+  std::string GetMimeType(const GURL&) override { return "text/html"; }
+  std::string GetContentSecurityPolicy(
+      network::mojom::CSPDirectiveName directive) override {
+    return directive == network::mojom::CSPDirectiveName::ScriptSrc
+               ? std::string()
+               : URLDataSource::GetContentSecurityPolicy(directive);
+  }
+  void StartDataRequest(const GURL& url, const content::WebContents::Getter&,
+                        GotDataCallback callback) override {
+    if (!URLDataSource::URLToRequestPath(url).empty()) {
+      std::move(callback).Run(nullptr);
+      return;
+    }
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&ReadWhatsNewPage, base::apple::OuterBundlePath()
+                                              .Append("Contents")
+                                              .Append("Resources")
+                                              .Append("WhatsNew.html")),
+        std::move(callback));
+  }
+};
+class WhatsNewPageUI final : public content::WebUIController {
+ public:
+  explicit WhatsNewPageUI(content::WebUI* web_ui) : WebUIController(web_ui) {
+    content::URLDataSource::Add(web_ui->GetWebContents()->GetBrowserContext(),
+                                std::make_unique<WhatsNewPageSource>());
+  }
+};
 }  // namespace
 void RegisterLicenseWebUI() {
   content::WebUIConfigMap::GetInstance().AddWebUIConfig(
       std::make_unique<content::DefaultWebUIConfig<LicenseUI>>(
           content::kChromeUIScheme, "license"));
+}
+void RegisterWhatsNewWebUI() {
+  auto& configs = content::WebUIConfigMap::GetInstance();
+  configs.RemoveConfig(
+      GURL(std::string(content::kChromeUIScheme) + "://" + kWhatsNewHost));
+  configs.AddWebUIConfig(
+      std::make_unique<content::DefaultWebUIConfig<WhatsNewPageUI>>(
+          content::kChromeUIScheme, kWhatsNewHost));
 }
 }  // namespace parc

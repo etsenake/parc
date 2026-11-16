@@ -19,8 +19,9 @@ packages carry the pinned Sparkle framework, feed and verification key. Without
 Check for Updates appears in the Parc menu and command bar. Its title becomes
 Update Available when an update is available/ready, and Updating while downloading,
 preparing or installing. Help → Release Notes and the corresponding command open
-the bundled What's New page in a new tab through `openExactAddress`, without
-search-engine initialization or an intermediate blank-page route.
+the bundled What's New page at `parc://whats-new` in a new tab through
+`openExactAddress`, without search-engine initialization or an intermediate
+blank-page route.
 
 ## Updater windows
 
@@ -114,7 +115,7 @@ disposable profiles do not share it. Fresh installs show nothing. Setup/hidden
 sidebar can defer display until a later launch. Recorded shown versions prevent
 repeat banners after downgrade/re-upgrade. Missing bundled notes suppress it.
 
-See What's New opens the bundled page with `#from=<replaced>&to=<installed>` and
+See What's New opens `parc://whats-new/#from=<replaced>&to=<installed>` and
 retires the banner only after admission to open succeeds. The page marks skipped
 releases only when `to` matches its own version. Share Parc copies the public
 release URL and leaves the banner open; Close retires it. There is no referral
@@ -128,12 +129,30 @@ Decorative sparkles are bounded to 15 seconds.
 ## What's New page ownership
 
 `scripts/build.py` creates self-contained `WhatsNew.html` from
-`release-notes.json`, including release history. Only the running app's exact
-page is recognized by `WhatsNewPage`; unrelated files keep their normal address.
-The native address displays the title. App-owned copy/share, command edit,
-bookmarks, archive/folder previews and capture attribution omit its bundle path.
-A recognized older install path restores to this build's page. Captures share
-image-only metadata and enter Easels as images, not live web cards.
+`release-notes.json`, including release history, and bundles it in the app's
+resources. The page has its own internal address, `parc://whats-new`, so the
+bundle path never reaches the address field, Chromium History, Copy URL, share,
+bookmarks, exports or capture attribution. It behaves like Parc's other internal
+pages: the toolbar shows the address, Copy URL copies it, and History skips it
+because Chromium never records `chrome://` visits.
+
+The engine owns the address. `RegisterWhatsNewWebUI` in
+[parc_branding.cc](../Engine/ParcChromium/parc_branding.cc) runs from the
+browser-main `PreBrowserStart` callback, after Chromium registers its own
+`chrome://whats-new` controller and before any window opens, and replaces that
+controller with one that reads the outer app bundle's `WhatsNew.html` off the
+main thread. Paths other than the page itself return nothing. The data source
+keeps Chromium's WebUI header policy (no frames, plugins or framing, Trusted
+Types) except its script rule, so the page's own policy, which allows only its
+inline script by hash and no network, governs scripts.
+
+Tabs saved with a Parc bundle's page file, from this install or an earlier one
+whose bundle still carries Parc's identifier, restore at `parc://whats-new` and
+keep a saved update range. Their earlier back/forward list is not restored,
+because it was saved under the file address, and other tabs' restored
+back/forward lists drop this install's page file. Earlier visits Chromium History
+recorded under the file address stay out of command-bar suggestions until History
+expires them.
 
 ### Page presentation
 
@@ -141,13 +160,6 @@ What's New uses the shared native page host. It settles changed page dimensions
 before showing content and retains the display connection across reuse and
 suspension, so a rendered static page does not depend on later input to appear.
 See [page compositing](page-compositing.md) for the handoff and presentation rules.
-
-### Remaining address exposure
-
-App suppression does not yet cover Chromium History recording the file visit or
-native Copy URL reading the committed bundle URL while a different typed address
-is loading. These require engine-side exact-URL history/copy guards; hiding the
-visible address alone is insufficient. This is retained in [the backlog](backlog.md).
 
 ### Updater API
 

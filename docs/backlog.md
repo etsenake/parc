@@ -13,12 +13,6 @@ For otherwise unassigned work, retain the requested order: Routing, Windows,
 Data, Performance, Folders, Archive, Command bar, Tab switcher, Peek and Onboarding.
 Finish assigned work first; explicit deferrals remain deferred.
 
-## Reported behavior
-
-- **What's New address leakage:** native History can record the bundled file URL,
-  and Copy URL can expose it while a new typed destination is loading. Add exact
-  engine history/copy guards. [Software updates](software-update.md).
-
 ## Sidebar accessibility and presentation
 
 - Add direct accessibility row-selection setters and spoken Control-Space

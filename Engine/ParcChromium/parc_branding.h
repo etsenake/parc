@@ -3,5 +3,6 @@
 #define PARC_BRANDING_H_
 namespace parc {
 void RegisterLicenseWebUI();
+void RegisterWhatsNewWebUI();
 }
 #endif

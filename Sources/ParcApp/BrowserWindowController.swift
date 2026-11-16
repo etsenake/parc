@@ -461,8 +461,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }, display: { [weak self] selection in
         guard let self else { return }
         guard let selection, let page = self.selectedNativePage(), self.commandBar == nil,
-              self.libraryView == nil, self.pageCapture == nil, !self.isClosing, !self.wholeWindowClose,
-              !WhatsNewPage.matches(page.url?.absoluteString ?? "") else {
+              self.libraryView == nil, self.pageCapture == nil, !self.isClosing, !self.wholeWindowClose else {
             self.sidebar.updateSharedQuote(action: nil); return
         }
         self.sidebar.updateSharedQuote { [weak self, weak page] in
@@ -2689,12 +2688,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     selectedTabIDs: selectedTabIDs, focusedTabID: focusedTabID, theme: activeSpace.theme, title: domain.title, domain: domain, originalURL: url, rows: [])
             }
             guard SidebarPreviewPreference.tabPictures.isEnabled, !selectedTabIDs.contains(id),
-                  let page = browsers[id]?.nativePage, !page.isClosed,
-                  let presented = URL(string: WhatsNewPage.presented(tab.url)) else { return nil }
-            let title = SidebarPreviewRow.folderTitle(custom: tab.customTitle, url: presented, title: tab.title)
+                  let page = browsers[id]?.nativePage, !page.isClosed else { return nil }
+            let title = SidebarPreviewRow.folderTitle(custom: tab.customTitle, url: url, title: tab.title)
             return SidebarPreviewSource(target: target, profileID: profileID, spaceID: activeSpaceID,
                 selectedTabIDs: selectedTabIDs, focusedTabID: focusedTabID, theme: activeSpace.theme, title: title,
-                domain: nil, originalURL: presented,
+                domain: nil, originalURL: url,
                 rows: [SidebarPreviewRow(id: id.uuidString, tabID: id, title: title, url: url, visitedAt: nil)])
         case .folder(let id):
             guard SidebarPreviewPreference.folders.isEnabled,
@@ -2705,7 +2703,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard tab.archivedAt == nil, tab.spaceID == activeSpaceID, tab.profileID == profileID,
                       tab.kind != .favorite, !store.retiringTabIDs.contains(tab.id), !closingTabIDs.contains(tab.id),
                       !transferringTabIDs.contains(tab.id),
-                      let url = URL(string: WhatsNewPage.presented(tab.url)) else { return nil }
+                      let url = URL(string: tab.url) else { return nil }
                 return SidebarPreviewRow(id: tab.id.uuidString, tabID: tab.id,
                     title: SidebarPreviewRow.folderTitle(custom: tab.customTitle, url: url, title: tab.title),
                     url: url, visitedAt: tab.lastAccessed)
@@ -5190,7 +5188,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         let historyExcludedURL = currentBrowser?.url?.absoluteString
             ?? store.state.tabs.first(where: { $0.id == commandTab })?.url
-        let seedURL = newTab || WhatsNewPage.matches(historyExcludedURL ?? "") ? nil : historyExcludedURL
+        let seedURL = newTab ? nil : historyExcludedURL
         let typedItems = currentSidebarMenuItems
         let typedCommands = commandBarTypedCommands(items: typedItems, profileID: commandProfile)
         if resident { residentTypedCommands = (typedItems, typedCommands) }
@@ -5917,7 +5915,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 let history = NavigationHistoryController(page: page, snapshot: snapshot, window: window,
                     theme: self.windowPaletteTheme)
                 history.stillSelected = isOriginal
-                history.address = { WhatsNewPage.matches($0.absoluteString) ? nil : $0.absoluteString }
                 history.onNavigate = { [weak self, weak page] in
                     if let page { self?.navigationRequested(on: page) }
                 }
@@ -10966,7 +10963,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         if case .copyLink = command {
             if let page = browsers[target]?.nativePage, !page.canCopyLink(as: .plain) { return nil }
-            if WhatsNewPage.matches(browsers[target]?.url?.absoluteString ?? visibleTabs.first { $0.id == target }?.url ?? "") { return nil }
         }
         var identities: [UUID: SplitPaneIdentity] = [:]
         for id in selectedTabIDs {
@@ -11459,7 +11455,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let url: String?
         if let commandBar { url = commandBar.selectedURL?.absoluteString }
         else { url = currentBrowser?.url?.absoluteString ?? currentTabID.flatMap { id in store.state.tab(id)?.url } }
-        return url.map(WhatsNewPage.presented).flatMap { $0.isEmpty ? nil : $0 }
+        return url.flatMap { $0.isEmpty ? nil : $0 }
     }
     var canCopyCurrentURL: Bool {
         guard currentURLForCopy != nil else { return false }
@@ -11516,7 +11512,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               libraryView == nil, window?.attachedSheet == nil,
               let browser = currentBrowser, browser.window === window, !browser.isHiddenOrHasHiddenAncestor,
               let page = browser.nativePage, !page.isClosed,
-              let url = browser.url, !url.absoluteString.isEmpty, !WhatsNewPage.matches(url.absoluteString) else { return nil }
+              let url = browser.url, !url.absoluteString.isEmpty else { return nil }
         return (browser, url)
     }
     var canSharePage: Bool { sharePageTarget != nil }
@@ -11530,9 +11526,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private func splitShareURLs() -> [URL] {
         selectedTabIDs.compactMap { id in
-            if let url = browsers[id]?.url, !url.absoluteString.isEmpty { return WhatsNewPage.matches(url.absoluteString) ? nil : url }
+            if let url = browsers[id]?.url, !url.absoluteString.isEmpty { return url }
             guard let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
-                  let url = URL(string: WhatsNewPage.presented(tab.url)), tab.url != "about:blank" else { return nil }
+                  let url = URL(string: tab.url), tab.url != "about:blank" else { return nil }
             return url
         }
     }
@@ -12048,12 +12044,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let enabled = !isClosing && !wholeWindowClose && !windowClosePending && commandBar == nil
             && window?.isKeyWindow == true
             && window.map { PCNativeBrowserApplication.canPresentTabSwitcher(in: $0) } == true
-        let whatsNew = WhatsNewPage.matches(browser.url?.absoluteString ?? "")
-        toolbar.update(url: browser.url, documentTitle: whatsNew ? browser.title : nil,
+        toolbar.update(url: browser.url,
             fullURL: BrowserToolbarPreferences.shared.state.showsFullURL,
             enabled: enabled, canBack: page.canShowBackHistory, canForward: page.canShowForwardHistory,
             loading: page.loading, canReload: page.canPerformNavigation(page.loading ? .stop : .reload),
-            canCopy: !whatsNew && (selected ? canCopyCurrentURL : browser.url != nil && page.canCopyLink(as: .plain)),
+            canCopy: selected ? canCopyCurrentURL : browser.url != nil && page.canCopyLink(as: .plain),
             canShowSiteInfo: true,
             canSplit: activePeek?.canSplit?() ?? true,
             close: activePeek?.browser !== browser && activeSplitLayout != nil,
@@ -12151,8 +12146,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                                       localDocument: tab.map { InternalPage.isInternal($0.url) } == true)
         guard content != .none else { return nil }
         let isWeb = content == .web
-        let shareURL = (browser?.url ?? tab.flatMap { URL(string: $0.url) })
-            .flatMap { WhatsNewPage.matches($0.absoluteString) ? nil : $0 }
+        let shareURL = browser?.url ?? tab.flatMap { URL(string: $0.url) }
         let menu = NSMenu(); menu.autoenablesItems = false
         func page(_ title: String, enabled: Bool = true, _ perform: @escaping (BrowserWindowController) -> Void) -> NSMenuItem {
             let item = MenuAction.item(title) { [weak self] in
@@ -12447,7 +12441,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             && commandBar == nil && window?.isKeyWindow == true
             && window.map { PCNativeBrowserApplication.canPresentTabSwitcher(in: $0) } == true
         let enabled = editing && selected && browser.canPerformPageTool(.developerTools)
-        toolbar.update(url: WhatsNewPage.presented(browser.url?.absoluteString ?? ""), tint: page.developerModeTint,
+        toolbar.update(url: browser.url?.absoluteString ?? "", tint: page.developerModeTint,
             editing: editing, enabled: enabled, secure: page.developerModeSecure, siteInfo: browser.canShowSiteInfo,
             copy: selected && canCopyCurrentURL, capture: selected && canCapturePage,
             split: !isPopupWindow && (activePeek?.canSplit?() ?? true))
@@ -13262,7 +13256,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         }
         let internalPage = ["chrome", "parc"].contains(page.url?.scheme?.lowercased() ?? "parc")
-            || WhatsNewPage.matches(page.url?.absoluteString ?? "")
         model.isSecure = internalPage ? nil : page.developerModeSecure
         let settings = siteControlCenterSettings(page: page)
         if model.settings != settings { model.settings = settings }

@@ -2365,9 +2365,24 @@ constexpr int kMaxArchivedNavigationSize =
   content::WebContents::CreateParams params(profile);
   params.initially_hidden = hidden;
   auto contents = content::WebContents::Create(params);
+  NSURL* bundled = [NSBundle.mainBundle URLForResource:@"WhatsNew"
+                                         withExtension:@"html"];
+  const GURL bundled_whats_new(
+      base::SysNSStringToUTF8(bundled.absoluteString ?: @""));
+  std::vector<sessions::SerializedNavigationEntry> navigations;
+  int index = -1;
+  for (int i = 0; i < static_cast<int>(_navigations.size()); ++i) {
+    if (i != _index && bundled_whats_new.is_valid() &&
+        _navigations[i].virtual_url().GetWithoutRef() == bundled_whats_new) {
+      continue;
+    }
+    if (i == _index) index = static_cast<int>(navigations.size());
+    navigations.push_back(_navigations[i]);
+    navigations.back().set_index(static_cast<int>(navigations.size()) - 1);
+  }
   auto entries = sessions::ContentSerializedNavigationBuilder::ToNavigationEntries(
-      _navigations, profile);
-  contents->GetController().Restore(_index, content::RestoreType::kRestored,
+      navigations, profile);
+  contents->GetController().Restore(index, content::RestoreType::kRestored,
                                     &entries);
   return contents;
 }

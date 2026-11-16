@@ -3,7 +3,9 @@ import Foundation
 @MainActor
 final class SoftwareUpdateBanner: ObservableObject {
     static let shared = SoftwareUpdateBanner()
-    static var releaseNotesURL: URL? { Bundle.main.url(forResource: "WhatsNew", withExtension: "html") }
+    static var releaseNotesURL: URL? {
+        Bundle.main.url(forResource: "WhatsNew", withExtension: "html") == nil ? nil : URL(string: WhatsNewPage.address)
+    }
     static let shareURL = URL(string: "https://github.com/etsenake/parc-releases")!
 
     @Published private(set) var completedUpdate: AppVersion?

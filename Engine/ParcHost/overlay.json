@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 733,
+  "version": 734,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -359,7 +359,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_page.mm",
       "target": "parc/native/native_appkit_page.mm",
-      "sha256": "a59f7b0185912c96d415691f87d8fc0ef96e342690becdfb113c0d58b6cd7777"
+      "sha256": "c4a2632c2f437994e7cfb93f6f47846b2958d7c824335bf563c9e177f7644719"
     },
     {
       "source": "Engine/ParcNative/native_page_shell_notify.h",
@@ -2059,12 +2059,12 @@
     {
       "source": "Engine/ParcChromium/parc_branding.h",
       "target": "parc/parc_branding.h",
-      "sha256": "c9b328aafa1207fb44b0f98213f3130eb11e98811534706f5c71d69245fe396f"
+      "sha256": "28c1f5cf78424f364173ba1b6f1fad2a62401b01aeef10e1799e01825d892373"
     },
     {
       "source": "Engine/ParcChromium/parc_branding.cc",
       "target": "parc/parc_branding.cc",
-      "sha256": "3ee1624b40fd206adafca2c68752891529e6518e975d8d259bd786b551dc73f5"
+      "sha256": "5d4c7782fd39f0b64882b30108b1df6214fdb971e4c197c9af3d03e35eaa24b8"
     },
     {
       "source": "Engine/ParcChromium/parc_content_clients.h",
@@ -2074,7 +2074,7 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.mm",
       "target": "parc/parc_content_clients.mm",
-      "sha256": "92db76d9a7e0019cf28a4558055eda8977828d0459b8f6f9bc5ed7b61834910d"
+      "sha256": "93db9025b6ba8564d64c92b507ea6c9b3d0934007e9f63735a02e37ab3c88bbe"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",

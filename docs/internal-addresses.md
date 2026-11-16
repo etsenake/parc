@@ -4,7 +4,10 @@ Parc accepts `parc://` for Chromium-backed internal destinations, including Sett
 passwords, extensions, flags, version and the internal-page directory. The native
 omnibox uses Chromium’s genuine built-in provider and controller inventory; Parc does
 not maintain a replacement list of fake pages. Unknown hosts receive Chromium’s normal
-controller/error behavior. `arc://` is not a registered or translated alias.
+controller/error behavior. `arc://` is not a registered or translated alias. Two hosts
+are Parc's own pages behind real controllers: `parc://license`, and `parc://whats-new`,
+which replaces Chromium's What's New controller with the bundled release notes
+([software updates](software-update.md#whats-new-page-ownership)).
 
 `parc://easel/<UUID>` and `parc://note/<UUID>` remain app-owned document addresses.
 Malformed document addresses stay in those typed app routes; they cannot acquire WebUI

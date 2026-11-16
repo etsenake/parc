@@ -130,8 +130,8 @@ struct BrowserArchivedItem: Identifiable {
     var id: UUID { tabs[0].id }
     var archivedAt: Date { tabs[0].archivedAt! }
     var provenance: ArchiveProvenance? { tabs[0].archiveProvenance }
-    var title: String { tabs.map { $0.title.isEmpty ? WhatsNewPage.presented($0.url) : $0.title }.joined(separator: " · ") }
-    var urls: [String] { tabs.map { WhatsNewPage.presented($0.url) } }
+    var title: String { tabs.map { $0.title.isEmpty ? $0.url : $0.title }.joined(separator: " · ") }
+    var urls: [String] { tabs.map(\.url) }
 }
 
 struct ArchivePreviewLease: Equatable {
@@ -1815,25 +1815,19 @@ enum InternalPage: Equatable {
 }
 
 enum WhatsNewPage {
-    static let current = Bundle.main.url(forResource: "WhatsNew", withExtension: "html")
-    private static let path = Bundle.main.bundleURL
-        .appendingPathComponent("Contents/Resources/WhatsNew.html").standardizedFileURL.path
+    static let address = "parc://whats-new/"
 
-    static func matches(_ address: String) -> Bool {
+    static func isBundledFile(_ address: String, running: URL = Bundle.main.bundleURL) -> Bool {
         guard let url = URL(string: address), url.isFileURL else { return false }
-        return url.standardizedFileURL.path == path
+        let file = url.standardizedFileURL
+        guard file.pathComponents.suffix(3) == ["Contents", "Resources", "WhatsNew.html"] else { return false }
+        let app = file.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return app.path == running.standardizedFileURL.path || Bundle(url: app)?.bundleIdentifier == "org.parc.Browser"
     }
 
-    static func presented(_ address: String) -> String { matches(address) ? "" : address }
-
-    static func relocated(_ address: String, to page: URL? = current) -> String {
-        guard let page, let url = URL(string: address), url.isFileURL else { return address }
-        let file = url.standardizedFileURL
-        guard file.path != page.standardizedFileURL.path,
-              file.pathComponents.suffix(3) == ["Contents", "Resources", "WhatsNew.html"],
-              Bundle(url: file.deletingLastPathComponent().deletingLastPathComponent()
-                  .deletingLastPathComponent())?.bundleIdentifier == "org.parc.Browser" else { return address }
-        return page.absoluteString
+    static func relocated(_ address: String, running: URL = Bundle.main.bundleURL) -> String {
+        guard isBundledFile(address, running: running), let url = URL(string: address) else { return address }
+        return Self.address + (url.fragment.map { "#" + $0 } ?? "")
     }
 }
 

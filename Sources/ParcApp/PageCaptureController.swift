@@ -19,7 +19,7 @@ final class PageCaptureController: NSObject {
     private var savedCapture: SavedCapture?
     private var libraryWriteInProgress = false
     private let lease: PCNativePageCapture
-    private var sourceURL: String { WhatsNewPage.presented(lease.sourceURL) }
+    private var sourceURL: String { lease.sourceURL }
     private let valid: () -> Bool
     private let finished: (Bool) -> Void
     private let easelDestinations: () throws -> [CaptureEaselDestination]

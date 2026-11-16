@@ -36,7 +36,7 @@ struct BrowserDataExport {
     }
 
     private func urlLine(_ tab: BrowserTab) -> String? {
-        guard !InternalPage.isInternal(tab.savedURL), !WhatsNewPage.matches(tab.savedURL) else { return nil }
+        guard !InternalPage.isInternal(tab.savedURL) else { return nil }
         return "- " + (URL(string: tab.savedURL)?.absoluteString ?? "")
     }
 
