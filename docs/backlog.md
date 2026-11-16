@@ -31,8 +31,6 @@ Finish assigned work first.
 Casting continuity across navigation and picture in picture are implemented.
 The remaining work is specific to these paths:
 
-- The Mini Player's Cast button still needs speaker-only discovery.
-  [Casting and media boundaries](safari-media-edges.md).
 - FairPlay needs MSE pitch-policy forwarding.
   [FairPlay integration](../Engine/ParcNative/fairplay_chromium/README.md).
 

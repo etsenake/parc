@@ -38,13 +38,27 @@ A page with a default presentation request, as Cast SDK sites such as
 YouTube set, casts that presentation, as Chrome's media controls and toolbar
 do (`CreateWithDefaultMediaSource`), so the site's own receiver app plays it.
 The button shows once a receiver answers one of the request's presentation
-URLs. Choosing a device starts the presentation, and the page receives its
+URLs or a speaker can take the tab's sound (below). Choosing a device that
+runs the site's receiver starts the presentation, and the page receives its
 connection (`OnPresentationResponse`). The state follows the router's route:
 Connecting while a local route for one of those URLs launches (the page only
 learns its route once it connects, so a second tab of the same site shows
 Connecting for that moment too), then Casting while the route the page started
 lives, and back to available when the TV, the site or Stop casting ends it.
 While it casts, the dialog shows the page's Cast item with Stop casting.
+
+Such a page also shows the button in a home with only Cast speakers or speaker
+groups, such as a Nest Mini, Nest Audio or Google Home, that don't run the
+site's receiver app. On those pages Parc also watches the tab's mirroring
+source and counts only speakers that answer it
+(`CastSpeakerSourceForWebContents`, `HasCastSpeaker`): the speakers the dialog
+offers for the tab's sound while Chromium's audio fallback is on
+(`kFallbackToAudioTabMirroring`). Choosing one starts Chromium's tab-audio
+mirroring route, shown as Connecting and then Casting to <speaker>. A TV that
+could mirror the whole tab doesn't count. Pages without a default presentation
+request keep their receiver-based rule below and never watch for speakers, so
+nothing changes where casting already works; their dialog can still list
+speakers once a receiver shows the button.
 
 Any other page casts its media session's remote playback source. The button
 shows once a receiver answers that source and the media can be cast: one

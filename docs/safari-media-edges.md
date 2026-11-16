@@ -74,8 +74,9 @@ chooser instead of the direct Stop menu. Both stay, like the same-site Connectin
 label in [Mini Player](media-mini-player.md#cast): the first matches Chrome and
 would need a Chromium change, and the others last only a moment.
 
-Availability observes the default presentation's sources; a speaker that only
-supports tab-audio mirroring does not make the Mini Player's Cast button appear.
+Availability observes the default presentation's sources and, on those pages,
+Cast speakers that can take the tab's sound, so a home with only speakers still
+gets the Mini Player's Cast button ([Mini Player](media-mini-player.md#cast)).
 
 ## Moved elements and renderer boundaries
 

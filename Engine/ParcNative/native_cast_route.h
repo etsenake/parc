@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "components/media_router/common/media_route.h"
+#include "components/media_router/common/media_sink.h"
+#include "components/media_router/common/media_source.h"
 
 namespace content {
 class WebContents;
@@ -16,6 +18,11 @@ namespace parc {
 std::optional<media_router::MediaRoute> CastRouteForWebContents(
     content::WebContents* web_contents,
     const std::vector<media_router::MediaRoute>& routes);
+
+std::optional<media_router::MediaSource> CastSpeakerSourceForWebContents(
+    content::WebContents* web_contents);
+
+bool HasCastSpeaker(const std::vector<media_router::MediaSink>& sinks);
 
 }
 

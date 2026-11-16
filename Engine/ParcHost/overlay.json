@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 763,
+  "version": 764,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -1419,7 +1419,7 @@
     {
       "source": "Engine/ParcNative/native_gmc_presentation.mm",
       "target": "parc/native/native_gmc_presentation.mm",
-      "sha256": "9d3d39d7a4737fac4a97d40baad70e479ba66fc5da553295fa0a4fae0f7a8d3f"
+      "sha256": "6d99b051b85563fb79ed5eadc1d45f73cb0dfe98c558e8a9c499429c1fc31555"
     },
     {
       "source": "Engine/ParcNative/native_repost_form_warning_api.h",
@@ -2794,7 +2794,7 @@
     {
       "source": "Engine/ParcChromium/tests/cast/gmc/media_notification_service_test.cc",
       "target": "chrome/browser/ui/global_media_controls/parc_tests/media_notification_service_test.cc",
-      "sha256": "899ad7230b0f514ae56653f40ebc47f03f9eac81530203ac8cf83d6c0f17bb84"
+      "sha256": "7211783b433e793e01ccef2d757e88391c366ee3e509511a8b1cb54c238a2084"
     },
     {
       "source": "Engine/ParcChromium/tests/cast/dialog/BUILD.gn",
@@ -2854,12 +2854,12 @@
     {
       "source": "Engine/ParcNative/native_cast_route.cc",
       "target": "parc/native/native_cast_route.cc",
-      "sha256": "f4770391ec719f7b92b58b218716ab53e3dee9ac199b54c692d07b78ce03074a"
+      "sha256": "0ca47de7982939683ce318b0d440f4cf2f80e3ccb9e47e45423aada1f0b8042c"
     },
     {
       "source": "Engine/ParcNative/native_cast_route.h",
       "target": "parc/native/native_cast_route.h",
-      "sha256": "94828cc27e986266a155a074815c51f2e6e82c25448d6c32e66c2d01e4c18e7e"
+      "sha256": "0dfd21e3d27e5e62c0b7075eefa0b6e488b41422ad61d6fc01778a17c6d52d27"
     },
     {
       "source": "Engine/ParcNative/native_file_types.cc",

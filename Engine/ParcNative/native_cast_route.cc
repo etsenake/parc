@@ -57,4 +57,26 @@ std::optional<media_router::MediaRoute> CastRouteForWebContents(
   return std::nullopt;
 }
 
+std::optional<media_router::MediaSource> CastSpeakerSourceForWebContents(
+    content::WebContents* web_contents) {
+  auto presentation_manager =
+      media_router::WebContentsPresentationManager::Get(web_contents);
+  const SessionID tab_id = sessions::SessionTabHelper::IdForTab(web_contents);
+  if (!base::FeatureList::IsEnabled(
+          media_router::kFallbackToAudioTabMirroring) ||
+      !presentation_manager ||
+      !presentation_manager->HasDefaultPresentationRequest() ||
+      !tab_id.is_valid()) {
+    return std::nullopt;
+  }
+  return media_router::MediaSource::ForTab(tab_id.id());
+}
+
+bool HasCastSpeaker(const std::vector<media_router::MediaSink>& sinks) {
+  return std::ranges::any_of(sinks, [](const media_router::MediaSink& sink) {
+    return sink.icon_type() == media_router::SinkIconType::CAST_AUDIO ||
+           sink.icon_type() == media_router::SinkIconType::CAST_AUDIO_GROUP;
+  });
+}
+
 }

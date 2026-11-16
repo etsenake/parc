@@ -558,7 +558,8 @@ class MediaCastWatcher final
         service &&
         (service->HasActiveNotificationsForWebContents(&GetWebContents()) ||
          service->ParcHasFrozenSessionForWebContents(&GetWebContents())) &&
-        std::ranges::any_of(sinks_, [](const auto& sinks) { return sinks->available(); });
+        (std::ranges::any_of(sinks_, [](const auto& sinks) { return sinks->available(); }) ||
+         (speakers_ && speakers_->available()));
     return {static_cast<int>(available ? PCNativeCastStateAvailable
                                        : PCNativeCastStateUnavailable), {}};
   }
@@ -568,15 +569,16 @@ class MediaCastWatcher final
   class Sinks final : public media_router::MediaSinksObserver {
    public:
     Sinks(media_router::MediaRouter* router, const media_router::MediaSource& source,
-          const url::Origin& origin, MediaCastWatcher* owner)
-        : MediaSinksObserver(router, source, origin), owner_(owner) {}
+          const url::Origin& origin, MediaCastWatcher* owner, bool speakers_only = false)
+        : MediaSinksObserver(router, source, origin), owner_(owner), speakers_only_(speakers_only) {}
     bool available() const { return available_; }
    private:
     void OnSinksReceived(const std::vector<media_router::MediaSink>& sinks) override {
-      available_ = !sinks.empty();
+      available_ = speakers_only_ ? parc::HasCastSpeaker(sinks) : !sinks.empty();
       NativeMediaCastChanged(&owner_->GetWebContents());
     }
     const raw_ptr<MediaCastWatcher> owner_;
+    const bool speakers_only_;
     bool available_ = false;
   };
   class Routes final : public media_router::MediaRoutesObserver {
@@ -615,16 +617,14 @@ class MediaCastWatcher final
         ? media_router::MediaRouterFactory::GetApiForBrowserContextIfExists(profile)
         : nullptr;
     if (!routes_ || routes_->router() != router) {
-      sinks_.clear();
-      sources_.clear();
+      ClearSinks();
       routes_.reset();
       if (!router)
         return;
       routes_ = std::make_unique<Routes>(router, this);
     }
     if (!CastsAsChrome(contents)) {
-      sinks_.clear();
-      sources_.clear();
+      ClearSinks();
       items_.Reset();
       return;
     }
@@ -640,14 +640,24 @@ class MediaCastWatcher final
     }
     std::vector<media_router::MediaSource> sources;
     url::Origin origin;
+    std::optional<media_router::MediaSource> speaker_source;
     if (presentations_ && presentations_->HasDefaultPresentationRequest()) {
       const auto& request = presentations_->GetDefaultPresentationRequest();
       for (const auto& url : request.presentation_urls)
         sources.push_back(media_router::MediaSource::ForPresentationUrl(url));
       origin = request.frame_origin;
+      speaker_source = parc::CastSpeakerSourceForWebContents(contents);
     } else if (const auto source = CastSource(contents)) {
       sources.push_back(*source);
       origin = contents->GetPrimaryMainFrame()->GetLastCommittedOrigin();
+    }
+    if (speaker_source != speaker_source_) {
+      speakers_.reset();
+      speaker_source_ = speaker_source;
+      if (speaker_source_) {
+        speakers_ = std::make_unique<Sinks>(router, *speaker_source_, url::Origin(), this, true);
+        speakers_->Init();
+      }
     }
     if (sources == sources_ && origin == origin_)
       return;
@@ -659,11 +669,19 @@ class MediaCastWatcher final
       sinks_.back()->Init();
     }
   }
+  void ClearSinks() {
+    sinks_.clear();
+    sources_.clear();
+    speakers_.reset();
+    speaker_source_.reset();
+  }
   base::WeakPtr<media_router::WebContentsPresentationManager> presentations_;
   std::unique_ptr<Routes> routes_;
   std::vector<media_router::MediaSource> sources_;
   url::Origin origin_;
   std::vector<std::unique_ptr<Sinks>> sinks_;
+  std::optional<media_router::MediaSource> speaker_source_;
+  std::unique_ptr<Sinks> speakers_;
   base::ScopedObservation<global_media_controls::MediaItemManager,
                           global_media_controls::MediaItemManagerObserver>
       items_{this};

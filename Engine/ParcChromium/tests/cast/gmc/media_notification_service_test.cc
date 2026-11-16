@@ -11,9 +11,11 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/run_loop.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
 #include "chrome/browser/media/router/chrome_media_router_factory.h"
+#include "chrome/browser/media/router/media_router_feature.h"
 #include "chrome/browser/sessions/session_tab_helper_factory.h"
 #include "chrome/browser/ui/global_media_controls/test_helper.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
@@ -24,6 +26,7 @@
 #include "components/media_router/browser/presentation/start_presentation_context.h"
 #include "components/media_router/browser/test/mock_media_router.h"
 #include "components/media_router/common/media_route.h"
+#include "components/media_router/common/media_sink.h"
 #include "components/media_router/common/media_source.h"
 #include "components/sessions/content/session_tab_helper.h"
 #include "content/public/browser/back_forward_cache.h"
@@ -237,6 +240,71 @@ TEST_F(ParcMediaNotificationServiceCastTest, ParcCastRouteForWebContents) {
       web_contents(), {connected, remote});
   ASSERT_TRUE(route);
   EXPECT_EQ("remote", route->media_route_id());
+}
+
+namespace {
+media_router::MediaSink ParcCastSink(media_router::SinkIconType icon) {
+  return media_router::MediaSink(
+      "sink_id", "sink", icon, media_router::mojom::MediaRouteProviderId::CAST);
+}
+}
+
+TEST_F(ParcMediaNotificationServiceCastTest, ParcCastSpeakerAvailability) {
+  CreateSessionServiceTabHelper(web_contents());
+  const auto tv = ParcCastSink(media_router::SinkIconType::CAST);
+  const auto speaker = ParcCastSink(media_router::SinkIconType::CAST_AUDIO);
+  const auto group = ParcCastSink(media_router::SinkIconType::CAST_AUDIO_GROUP);
+
+  EXPECT_FALSE(parc::CastSpeakerSourceForWebContents(web_contents()));
+  EXPECT_FALSE(parc::HasCastSpeaker({}));
+  EXPECT_FALSE(parc::HasCastSpeaker({tv}));
+  EXPECT_FALSE(parc::HasCastSpeaker(
+      {ParcCastSink(media_router::SinkIconType::GENERIC),
+       ParcCastSink(media_router::SinkIconType::WIRED_DISPLAY)}));
+  EXPECT_TRUE(parc::HasCastSpeaker({speaker}));
+  EXPECT_TRUE(parc::HasCastSpeaker({group}));
+  EXPECT_TRUE(parc::HasCastSpeaker({tv, speaker}));
+
+  SetDefaultPresentationRequest(content::PresentationRequest(
+      main_rfh()->GetGlobalId(), {GURL("cast:233637DE")},
+      url::Origin::Create(GURL("https://example.test"))));
+  const auto source = parc::CastSpeakerSourceForWebContents(web_contents());
+  ASSERT_TRUE(source);
+  EXPECT_TRUE(source->IsTabMirroringSource());
+  EXPECT_EQ(sessions::SessionTabHelper::IdForTab(web_contents()).id(),
+            source->TabId());
+  EXPECT_FALSE(parc::HasCastSpeaker({tv}));
+}
+
+TEST_F(ParcMediaNotificationServiceCastTest,
+       ParcCastSpeakerNeedsTabIdentity) {
+  SetDefaultPresentationRequest(content::PresentationRequest(
+      main_rfh()->GetGlobalId(), {GURL("cast:233637DE")},
+      url::Origin::Create(GURL("https://example.test"))));
+  EXPECT_FALSE(parc::CastSpeakerSourceForWebContents(web_contents()));
+}
+
+class ParcWithoutAudioTabMirroring {
+ protected:
+  ParcWithoutAudioTabMirroring() {
+    features_.InitAndDisableFeature(media_router::kFallbackToAudioTabMirroring);
+  }
+
+ private:
+  base::test::ScopedFeatureList features_;
+};
+
+class ParcMediaNotificationServiceNoSpeakerFallbackTest
+    : private ParcWithoutAudioTabMirroring,
+      public ParcMediaNotificationServiceCastTest {};
+
+TEST_F(ParcMediaNotificationServiceNoSpeakerFallbackTest,
+       ParcCastSpeakerFollowsDeviceListFallback) {
+  CreateSessionServiceTabHelper(web_contents());
+  SetDefaultPresentationRequest(content::PresentationRequest(
+      main_rfh()->GetGlobalId(), {GURL("cast:233637DE")},
+      url::Origin::Create(GURL("https://example.test"))));
+  EXPECT_FALSE(parc::CastSpeakerSourceForWebContents(web_contents()));
 }
 
 TEST_F(ParcMediaNotificationServiceCastTest,
