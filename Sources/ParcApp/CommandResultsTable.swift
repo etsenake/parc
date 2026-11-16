@@ -28,3 +28,13 @@ final class CommandResultsTable: NSTableView {
     }
     override func keyDown(with event: NSEvent) { if onKey?(event) != true { super.keyDown(with: event) } }
 }
+
+final class CommandResultsScrollView: NSScrollView {
+    var onTile: (() -> Void)?
+    var scrollerReserve: CGFloat { isHidden ? 0 : max(0, bounds.width - contentView.frame.maxX) }
+
+    override func tile() {
+        super.tile()
+        onTile?()
+    }
+}

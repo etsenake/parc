@@ -212,6 +212,7 @@ step compile_and_run command-bar-pointer CommandBar/PointerSelectionTests \
 
 step compile_and_run command-bar-appearance CommandBar/AppearanceTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
+  "$repo_root/Sources/ParcApp/CommandResultsTable.swift" \
   "$repo_root/Sources/ParcApp/CommandResultRowView.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" \
@@ -233,6 +234,7 @@ step compile_and_run command-bar-result-row CommandBar/ResultRowTests \
 step compile_and_run command-bar-compact-layout CommandBar/CompactLayoutTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandBarCompactLayout.swift" \
+  "$repo_root/Sources/ParcApp/CommandResultsTable.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 

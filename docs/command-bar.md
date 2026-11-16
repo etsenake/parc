@@ -112,8 +112,11 @@ address, capped to its window and screen with 8-point margins so a narrow
 sign-in pop-up never cuts it off. It opens at its control's left edge and slides
 back inside the window when it would overhang. Its address row's icon, text,
 scope label and trailing edge sit on the result rows' icon, title and badge
-columns; the resting Control–Space field keeps the sidebar address field's own
-geometry. `CommandBarCompactLayout.swift` holds these numbers.
+columns. The resting Control–Space field covers the sidebar's address field with
+its icon and text already on those columns and centred on the field, and the
+results panel it opens rises six points, so the first keystroke leaves the text
+and caret exactly where they were. `CommandBarCompactLayout.swift` holds these
+numbers.
 
 Floating panels and the resident card follow the window's appearance, which
 View → Appearance sets; the empty inline sidebar input takes the Space's content
@@ -133,7 +136,12 @@ fade without moving rows. Selected text is white, secondary text half-opacity;
 selected favicons and command glyphs use their accessory tiles. Shortcut badges
 read the live registry. The table fits its complete document to the clip width,
 including native style margins, resets horizontal offset and preserves vertical
-scroll position.
+scroll position. With permanent scroll bars, set to always show or shown for a
+connected mouse, a visible scroller narrows the rows. Both bars then end their
+address row that much further in, so its trailing edge, site-search hint and
+info button stay on the badge column and move with it when typing takes the
+list past five rows. The header follows each re-tiling of the list, including a
+change to the system's scroll bar setting while the bar is open.
 
 ## Result row content
 
@@ -386,7 +394,8 @@ native. This uses `SidebarTablistBackground`, not another input monitor.
 
 `tests/CommandBar` covers real app decisions for editing, scope, publication
 identity, default ranking, row diffs, submission, menus, typed targets and the
-compact editor's width, caps and column alignment. The
+compact editor's width, caps and column alignment, including the resting
+Control–Space field and permanent scroll bars. The
 command-bar scripts build focused production components; native search has
 separate owner/lifecycle coverage. Follow [the working contract](../AGENTS.md)
 before running checks.

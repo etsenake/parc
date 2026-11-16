@@ -222,7 +222,45 @@ import AppKit
         window.appearance = dark
         expect(near(rgba(tile(command)?.layer?.backgroundColor), SIMD4(1, 1, 1, 0.05)), "dark tile after switching back")
 
+        let rows = WideResultRows()
+        let scroll = CommandResultsScrollView(frame: NSRect(x: 8, y: 68, width: 749, height: 250))
+        let table = CommandResultsTable()
+        table.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("suggestion")))
+        table.style = .plain; table.headerView = nil; table.rowHeight = 50; table.intercellSpacing = .zero
+        table.dataSource = rows; table.delegate = rows
+        scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
+        scroll.hasHorizontalScroller = false; scroll.horizontalScrollElasticity = .none
+        scroll.documentView = table; surface.addSubview(scroll)
+        func badgeEdge(_ total: Int, style: NSScroller.Style) -> CGFloat {
+            scroll.scrollerStyle = style
+            rows.count = total; table.reloadData()
+            table.fit(in: scroll, rowCount: total); table.layoutSubtreeIfNeeded()
+            let cell = table.view(atColumn: 0, row: 0, makeIfNecessary: true) as! CommandResultCell
+            cell.layoutSubtreeIfNeeded()
+            let badge = labels(cell).first { $0.stringValue == "→" }!.superview!
+            return badge.convert(badge.bounds, to: scroll).maxX
+        }
+        let overlayEdge = badgeEdge(8, style: .overlay)
+        expect(scroll.scrollerReserve == 0, "overlay scroll bars leave the big bar's header where it was")
+        expect(abs(scroll.frame.width - overlayEdge - CommandResultCell.trailingInset) < 0.01,
+               "with overlay scroll bars the badge column ends at the list's own trailing inset")
+        for (total, moves) in [(8, true), (3, false)] {
+            let edge = badgeEdge(total, style: .legacy)
+            let legacy = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy)
+            expect(scroll.scrollerReserve == (moves ? legacy : 0), "a permanent scroller is reserved only while it shows")
+            expect(abs(overlayEdge - edge - scroll.scrollerReserve) < 0.01,
+                   "the reserve the big bar adds to its header is exactly how far the badge column moved, \(total) rows")
+        }
+
         window.orderOut(nil)
         print("Command bar appearance checks passed (\(count) assertions).")
+    }
+}
+
+@MainActor private final class WideResultRows: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    var count = 0
+    func numberOfRows(in tableView: NSTableView) -> Int { count }
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        CommandResultCell(title: "Docs \(row)", detail: "docs.example.com", accessory: "Switch to Tab", isTab: true, icon: nil, enabled: true)
     }
 }

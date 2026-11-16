@@ -75,16 +75,27 @@ assert "if self.focusedTabID != tabID { self.focusedTabID = tabID; self.requestN
 position = source[source.index("    private func position()"):source.index("    private func setSurfaceFrame(")]
 assert position.count("CommandBarCompactLayout.width(popup: popup, window: parent.frame, screen: available)") == 2, \
     "the compact editor is no longer capped to its window"
-assert "CommandBarCompactLayout.originX(anchor: anchorRect.minX, width: width, window: parent.frame, screen: available)" in position
+for use in ("CommandBarCompactLayout.originX(anchor: anchorRect.minX, width: width, window: parent.frame, screen: available)",
+            "CommandBarCompactLayout.restingFrame(anchor: anchorRect, sidebar: anchor.superview?.bounds.width ?? anchorRect.width,",
+            "let lift = addressOnly ? 0 : CommandBarCompactLayout.sessionLift",
+            "CommandBarCompactLayout.originY(anchor: anchorRect, height: height, lift: lift, screen: available)"):
+    assert use in position, f"the Control-Space field no longer keeps its text in place as results open: {use}"
 contents = source[source.index("    private func layoutContents()"):source.index("    func reconcile(tabs:")]
-for use in ("let iconX = sidebarBrowsing ? Compact.browsingIconX : Compact.iconX",
-            "let textX = sidebarBrowsing ? Compact.browsingTextX : Compact.textX",
-            "let trailing = sidebarBrowsing ? Compact.browsingTrailing : Compact.trailing",
+for use in ("inputIcon.frame = Compact.iconFrame(resting: sidebarBrowsing)",
+            "input.frame = Compact.inputFrame(width: width, resting: sidebarBrowsing)",
             "scroll.frame = NSRect(x: Compact.listInset, y: 50, width: max(0, width - 2 * Compact.listInset),"):
     assert use in contents, f"the compact address row no longer lines up with its results: {use}"
 header = source[source.index("    private func layoutScopeHeader()"):source.index("    private func setScopeInput(")]
-assert "let baseX = large ? 49 : sidebarBrowsing ? CommandBarCompactLayout.browsingTextX : CommandBarCompactLayout.textX" in header, \
+assert "let baseX = large ? 49 : CommandBarCompactLayout.textX" in header, \
     "the compact scope label no longer starts at the result title column"
+fit = header.index("table.fit(in: scroll, rowCount: results.count)\n        headerScrollerReserve = scroll.scrollerReserve\n")
+assert fit < header.index("let right = (large ? 22 : CommandBarCompactLayout.trailing) + headerScrollerReserve"), \
+    "the address row no longer ends where the fitted list's columns end"
+for use in ("private let scroll = CommandResultsScrollView()",
+            "scroll.onTile = { [weak self] in self?.scrollDidTile() }",
+            "observe(NSScroller.preferredScrollerStyleDidChangeNotification, object: nil) { $0.adoptScrollerStyle() }",
+            "guard !dismissed, !layingOutContents, scroll.scrollerReserve != headerScrollerReserve else { return }"):
+    assert use in source, f"the header no longer follows scroll bar changes live: {use}"
 start = window.index("    private func commandBarTabs(")
 end = window.index("    func commandBarTabCaption(", start)
 (output / "TabCandidates.swift").write_text("import Foundation\nextension TabCandidatesFixture {\n" +

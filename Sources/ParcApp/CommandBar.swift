@@ -141,7 +141,8 @@ import SwiftUI
         return 76 + CGFloat(max(1, min(5, results.count))) * 50
     }
     private let table = CommandResultsTable()
-    private let scroll = NSScrollView()
+    private let scroll = CommandResultsScrollView()
+    private var headerScrollerReserve: CGFloat = 0
     private let emptyLabel = NSTextField(labelWithString: "Search or Enter URL…")
     private let host = CommandBarHost()
     private let container = PopoverBackgroundView(blending: .withinWindow)
@@ -286,6 +287,7 @@ import SwiftUI
         scroll.drawsBackground = false; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         scroll.hasHorizontalScroller = false; scroll.horizontalScrollElasticity = .none
         scroll.documentView = table; container.addSubview(scroll)
+        scroll.onTile = { [weak self] in self?.scrollDidTile() }
         emptyLabel.textColor = .secondaryLabelColor; emptyLabel.font = .systemFont(ofSize: 13)
         emptyLabel.alignment = .center; container.addSubview(emptyLabel)
         privacyBanner.isHidden = true; container.addSubview(privacyBanner)
@@ -471,6 +473,16 @@ import SwiftUI
         observe(NSApplication.didResignActiveNotification, object: NSApp) { $0.respond(to: .appDeactivated) }
         observe(NSWindow.didResizeNotification, object: parent) { $0.respond(to: .resized) }
         observe(NSWindow.didMoveNotification, object: parent) { $0.respond(to: .moved) }
+        observe(NSScroller.preferredScrollerStyleDidChangeNotification, object: nil) { $0.adoptScrollerStyle() }
+    }
+    private func adoptScrollerStyle() {
+        guard !dismissed else { return }
+        scroll.scrollerStyle = NSScroller.preferredScrollerStyle
+        container.needsLayout = true
+    }
+    private func scrollDidTile() {
+        guard !dismissed, !layingOutContents, scroll.scrollerReserve != headerScrollerReserve else { return }
+        container.needsLayout = true
     }
     private var holdsFirstResponder: Bool {
         (parent?.firstResponder as? NSView)?.isDescendant(of: host) == true
@@ -484,7 +496,7 @@ import SwiftUI
     func fieldEditor(for client: Any?) -> Any? {
         (client as? NSTextField) === input ? fieldEditor : nil
     }
-    private func observe(_ name: Notification.Name, object: AnyObject, action: @escaping @MainActor @Sendable (CommandBar) -> Void) {
+    private func observe(_ name: Notification.Name, object: AnyObject?, action: @escaping @MainActor @Sendable (CommandBar) -> Void) {
         observers.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { if let self { action(self) } }
         })
@@ -506,16 +518,22 @@ import SwiftUI
         let available = parent.screen?.visibleFrame ?? parent.frame
         if let anchor = sidebarAnchor, anchor.window === parent, !anchor.isHiddenOrHasHiddenAncestor {
             let anchorRect = parent.convertToScreen(anchor.convert(anchor.bounds, to: nil))
-            let width = sidebarBrowsing ? min(max(180, anchor.superview?.bounds.width ?? anchorRect.width) - 18, available.width - 24)
-                : CommandBarCompactLayout.width(popup: popup, window: parent.frame, screen: available)
-            let height = sidebarBrowsing ? anchorRect.height : min(isScoped || scopeInvalidated ? compactScopeHeight : 309, available.height - 32)
-            let x = sidebarBrowsing ? min(max(anchorRect.minX, available.minX + 8), available.maxX - width - 8)
-                : CommandBarCompactLayout.originX(anchor: anchorRect.minX, width: width, window: parent.frame, screen: available)
-            let y = min(max(anchorRect.maxY - height, available.minY + 8), available.maxY - height - 8)
+            let surface: NSRect
+            if sidebarBrowsing {
+                surface = CommandBarCompactLayout.restingFrame(anchor: anchorRect, sidebar: anchor.superview?.bounds.width ?? anchorRect.width,
+                                                               screen: available)
+            } else {
+                let width = CommandBarCompactLayout.width(popup: popup, window: parent.frame, screen: available)
+                let height = min(isScoped || scopeInvalidated ? compactScopeHeight : 309, available.height - 32)
+                let lift = addressOnly ? 0 : CommandBarCompactLayout.sessionLift
+                surface = NSRect(x: CommandBarCompactLayout.originX(anchor: anchorRect.minX, width: width, window: parent.frame, screen: available),
+                                 y: CommandBarCompactLayout.originY(anchor: anchorRect, height: height, lift: lift, screen: available),
+                                 width: width, height: height)
+            }
             showsShadow = !sidebarBrowsing
             container.flatFill = sidebarBrowsing
             container.cornerRadius = sidebarBrowsing ? 7 : 12
-            setSurfaceFrame(NSRect(x: x, y: y, width: width, height: height))
+            setSurfaceFrame(surface)
             input.placeholderString = sidebarBrowsing || isScoped ? "Search…" : "Search or Enter URL…"
             input.font = CommandBarTypography.label
             return
@@ -617,11 +635,8 @@ import SwiftUI
         let width = container.bounds.width
         if sidebarAnchor != nil || addressOnly {
             typealias Compact = CommandBarCompactLayout
-            let iconX = sidebarBrowsing ? Compact.browsingIconX : Compact.iconX
-            let textX = sidebarBrowsing ? Compact.browsingTextX : Compact.textX
-            let trailing = sidebarBrowsing ? Compact.browsingTrailing : Compact.trailing
-            inputIcon.frame = NSRect(x: iconX, y: sidebarBrowsing ? 10 : 17, width: Compact.iconSize, height: Compact.iconSize)
-            input.frame = NSRect(x: textX, y: sidebarBrowsing ? 7 : 13, width: max(0, width - textX - trailing), height: 22)
+            inputIcon.frame = Compact.iconFrame(resting: sidebarBrowsing)
+            input.frame = Compact.inputFrame(width: width, resting: sidebarBrowsing)
             divider.isHidden = true
             scroll.isHidden = sidebarBrowsing; emptyLabel.isHidden = sidebarBrowsing || !results.isEmpty
             scroll.frame = NSRect(x: Compact.listInset, y: 50, width: max(0, width - 2 * Compact.listInset),
@@ -1457,9 +1472,23 @@ import SwiftUI
         else { scopePill.showSite(name: displayedName, unavailable: scopeInvalidated) }
         scopePill.isEnabled = actionsScope || (activeScope != nil && !scopeInvalidated)
         input.placeholderString = isScoped ? "Search…" : (sidebarBrowsing ? "Search…" : "Search or Enter URL…")
+        if (isWebsiteScoped && input.stringValue.isEmpty && results.isEmpty && nativeError == nil) || (resident && !residentExpanded) {
+            emptyLabel.isHidden = true; scroll.isHidden = true; divider.isHidden = true
+        } else {
+            scroll.isHidden = sidebarBrowsing; divider.isHidden = sidebarAnchor != nil || addressOnly
+        }
+        if isScoped || scopeInvalidated {
+            emptyLabel.frame = NSRect(x: 24, y: 77, width: max(0, container.bounds.width - 48), height: 40)
+            if sidebarAnchor == nil && !addressOnly {
+                scroll.frame.origin.y = 68
+                scroll.frame.size.height = max(0, container.bounds.height - 76 - privacyBannerHeight)
+            }
+        }
+        table.fit(in: scroll, rowCount: results.count)
+        headerScrollerReserve = scroll.scrollerReserve
         let large = sidebarAnchor == nil && !addressOnly
-        let baseX = large ? 49 : sidebarBrowsing ? CommandBarCompactLayout.browsingTextX : CommandBarCompactLayout.textX
-        let right = large ? 22 : sidebarBrowsing ? CommandBarCompactLayout.browsingTrailing : CommandBarCompactLayout.trailing
+        let baseX = large ? 49 : CommandBarCompactLayout.textX
+        let right = (large ? 22 : CommandBarCompactLayout.trailing) + headerScrollerReserve
         let headerCentre = large ? 32 : CommandBarCompactLayout.headerCentre
         var left = baseX
         if showsScope {
@@ -1492,19 +1521,6 @@ import SwiftUI
         }
         input.frame.origin.x = left
         input.frame.size.width = max(24, container.bounds.width - left - trailing)
-        if (isWebsiteScoped && input.stringValue.isEmpty && results.isEmpty && nativeError == nil) || (resident && !residentExpanded) {
-            emptyLabel.isHidden = true; scroll.isHidden = true; divider.isHidden = true
-        } else {
-            scroll.isHidden = sidebarBrowsing; divider.isHidden = sidebarAnchor != nil || addressOnly
-        }
-        if isScoped || scopeInvalidated {
-            emptyLabel.frame = NSRect(x: 24, y: 77, width: max(0, container.bounds.width - 48), height: 40)
-            if sidebarAnchor == nil && !addressOnly {
-                scroll.frame.origin.y = 68
-                scroll.frame.size.height = max(0, container.bounds.height - 76 - privacyBannerHeight)
-            }
-        }
-        table.fit(in: scroll, rowCount: results.count)
     }
     private func setScopeInput(_ value: String, selectAll: Bool) {
         backgroundGeneration &+= 1
