@@ -3311,6 +3311,24 @@ struct BrowserStoreTests {
                        + "<a href=\"https://example.com/&quot;c&quot;\">https://example.com/&quot;c&quot;</a>",
                        "Rich copy links each page title to its address, escaped, falling back to the address")
             try expect(FolderLinks.html(for: []) == nil, "Nothing to copy has no rich flavor")
+            let renamed = store.open("https://example.com/renamed", kind: .pinned)
+            let named = store.createFolder(name: "Named")
+            store.moveTab(renamed, toSpace: space, folderID: named)
+            store.updateTab(renamed, title: "Page Title")
+            try store.saveSidebarTitle(store.state.tab(renamed)!, title: "  My <Name> & Co  ")
+            let renamedLinks = FolderLinks.links(in: store.state, items: [.tab(renamed)], spaceID: space, profileID: profile)!
+            try expect(FolderLinks.text(for: renamedLinks, format: .markdown) == "[My <Name> & Co](<https://example.com/renamed>)",
+                       "Markdown copies a renamed tab under the name the sidebar shows")
+            try expect(FolderLinks.html(for: renamedLinks) == "<meta charset=\"utf-8\"><a href=\"https://example.com/renamed\">My &lt;Name&gt; &amp; Co</a>",
+                       "Rich copy links a renamed tab's sidebar name to its address")
+            try expect(FolderLinks.text(for: renamedLinks, format: .plain) == "https://example.com/renamed", "Plain copies of a renamed tab stay a bare address")
+            try expect(FolderLinks.links(in: store.state, tabIDs: [renamed], spaceID: space, profileID: profile) == renamedLinks
+                       && FolderLinks.links(in: store.state, target: FolderLinkTarget(folderID: named, spaceID: space, profileID: profile)) == renamedLinks,
+                       "The split menu and a folder's Copy All Links use the same sidebar name")
+            try store.saveSidebarTitle(store.state.tab(renamed)!, title: "")
+            let unnamed = FolderLinks.links(in: store.state, items: [.tab(renamed)], spaceID: space, profileID: profile)!
+            try expect(FolderLinks.text(for: unnamed, format: .markdown) == "[Page Title](<https://example.com/renamed>)",
+                       "Clearing the sidebar name falls back to the page title")
         }
     }
 

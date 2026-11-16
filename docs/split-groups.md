@@ -117,10 +117,11 @@ original IDs and proportions without navigating.
 Copy Links copies every web page in the split in pane order, through the link
 formatter the sidebar's [link copies](sidebar-selection.md#select-all-and-plural-commands)
 use: one address per line as plain text, plus a rich-text version that links
-each page's title, so Notes, Mail or a document paste titled links. Notes,
-Easels, Parc's own pages and blank tabs are skipped, a page appears once, and
-the item is disabled when no pane has a web address. A Copied Links notice with
-Share confirms it. Each pane's page menu keeps its own Copy URL and Share.
+each page's sidebar name, or its title when it has none, so Notes, Mail or a
+document paste titled links. Notes, Easels, Parc's own pages and blank tabs are
+skipped, a page appears once, and the item is disabled when no pane has a web
+address. A Copied Links notice with Share confirms it. Each pane's page menu
+keeps its own Copy URL and Share.
 
 Add creates a window-owned pending pane and opens the command bar; it does not
 load an empty webpage. Cancel removes only the pending pane and restores the
