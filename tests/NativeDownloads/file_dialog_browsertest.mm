@@ -1,6 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Genuine Browser/TabInterface/native chooser tests. Source checks do not run
-// these cases; final acceptance also needs the supplied Parc NSWindow route.
 #include "parc/native/file_dialog.h"
 
 #import <AppKit/AppKit.h>
@@ -15,6 +13,9 @@
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
+#include "content/public/test/browser_test_utils.h"
+#include "native_auxiliary_page.h"
+#import "page_host.h"
 #include "ui/base/base_window.h"
 #include "ui/shell_dialogs/select_file_policy.h"
 #include "ui/shell_dialogs/selected_file_info.h"
@@ -64,8 +65,6 @@ class NativeFileDialogTest : public InProcessBrowserTest,
     if (nested_callback_) {
       nested_callback_ = false;
       dialog_.reset();
-      // Spin a genuine nested loop while the platform FileWasSelected callback
-      // is on stack and the external owner has released its wrapper reference.
       base::RunLoop nested(base::RunLoop::Type::kNestableTasksAllowed);
       base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, nested.QuitClosure());
@@ -160,7 +159,7 @@ IN_PROC_BROWSER_TEST_F(NativeFileDialogTest,
   EXPECT_EQ(accepted_, 0);
   EXPECT_FALSE(PCNativeWindowHasSecurityReservation(window_));
 }
-}  // namespace parc
+}
 
 namespace parc {
 IN_PROC_BROWSER_TEST_F(NativeFileDialogTest,
@@ -186,7 +185,7 @@ IN_PROC_BROWSER_TEST_F(NativeFileDialogTest,
   EXPECT_EQ(cancelled_, 1);
   EXPECT_EQ(accepted_, 0);
 }
-}  // namespace parc
+}
 
 namespace parc {
 IN_PROC_BROWSER_TEST_F(NativeFileDialogTest,
@@ -256,7 +255,7 @@ IN_PROC_BROWSER_TEST_F(NativeFileDialogTest,
   EXPECT_FALSE(dialog_);
   EXPECT_FALSE(PCNativeWindowHasSecurityReservation(window_));
 }
-}  // namespace parc
+}
 
 namespace parc {
 IN_PROC_BROWSER_TEST_F(NativeFileDialogTest,
@@ -264,8 +263,6 @@ IN_PROC_BROWSER_TEST_F(NativeFileDialogTest,
   auto auxiliary = content::WebContents::Create(
       content::WebContents::CreateParams(browser()->GetProfile()));
   ASSERT_FALSE(tabs::TabInterface::MaybeGetFromContents(auxiliary.get()));
-  // A retained CEF host can request a chooser after its actual tools contents
-  // redock and cease to be a tab. No Browser/window owner may be fabricated.
   dialog_ = CreateNativeFileDialog(*auxiliary, this, nullptr);
   Open(window_);
   EXPECT_EQ(cancelled_, 1);
@@ -278,4 +275,144 @@ IN_PROC_BROWSER_TEST_F(NativeFileDialogTest,
   EXPECT_EQ(cancelled_, 1);
   EXPECT_EQ(accepted_, 0);
 }
-}  // namespace parc
+}
+
+namespace parc {
+class NativeExtensionFileDialogTest : public NativeFileDialogTest {
+ protected:
+  void SetUpOnMainThread() override {
+    NativeFileDialogTest::SetUpOnMainThread();
+    extension_ = content::WebContents::Create(
+        content::WebContents::CreateParams(browser()->GetProfile()));
+    ASSERT_TRUE(content::NavigateToURL(extension_.get(), GURL("about:blank")));
+    page_ = [PCNativePageHost
+        hostWithContentView:extension_->GetNativeView().GetNativeNSView()
+                   observer:nil];
+  }
+  void TearDownOnMainThread() override {
+    if (dialog_) {
+      dialog_->ListenerDestroyed();
+    }
+    dialog_.reset();
+    CancelNativeFileDialogs(*extension_);
+    if (lease_) {
+      lease_->Revoke();
+    }
+    lease_.reset();
+    base::RunLoop().RunUntilIdle();
+    [page_ invalidate];
+    page_ = nil;
+    if (popup_) {
+      [window_ removeChildWindow:popup_];
+      [popup_ close];
+      popup_ = nil;
+    }
+    extension_.reset();
+    NativeFileDialogTest::TearDownOnMainThread();
+  }
+  NSWindow* Host(bool popup) {
+    NSWindow* page_window = window_;
+    if (popup) {
+      popup_ = [[NSWindow alloc]
+          initWithContentRect:NSMakeRect(200, 200, 320, 240)
+                    styleMask:NSWindowStyleMaskTitled
+                      backing:NSBackingStoreBuffered
+                        defer:NO];
+      popup_.releasedWhenClosed = NO;
+      popup_.contentView = page_;
+      [window_ addChildWindow:popup_ ordered:NSWindowAbove];
+      [popup_ orderFront:nil];
+      page_window = popup_;
+    } else {
+      page_.frame = NSMakeRect(0, 0, 320, 240);
+      [window_.contentView addSubview:page_];
+    }
+    extension_->WasShown();
+    lease_ = NativeExtensionPage::Bind(
+        *extension_, page_, window_,
+        base::BindRepeating([](bool* valid) { return *valid; }, &owner_valid_));
+    EXPECT_TRUE(lease_);
+    EXPECT_EQ(lease_ ? lease_->window() : nil, page_window);
+    return page_window;
+  }
+  void CreateForExtension() {
+    dialog_ = CreateNativeFileDialog(*extension_, this, nullptr);
+  }
+  std::unique_ptr<content::WebContents> extension_;
+  std::shared_ptr<NativeExtensionPage> lease_;
+  PCNativePageHost* __strong page_ = nil;
+  NSWindow* __strong popup_ = nil;
+  bool owner_valid_ = true;
+};
+IN_PROC_BROWSER_TEST_F(NativeExtensionFileDialogTest,
+                       PopupChooserIsSheetOnPopupWindow) {
+  NSWindow* popup = Host(true);
+  CreateForExtension();
+  Open(popup);
+  ASSERT_TRUE(dialog_->IsRunning(gfx::NativeWindow(popup)));
+  ASSERT_TRUE(
+      base::test::RunUntil([popup] { return popup.attachedSheet != nil; }));
+  EXPECT_EQ(window_.attachedSheet, nil);
+  EXPECT_TRUE(PCNativeWindowHasSecurityReservation(popup));
+  EXPECT_FALSE(PCNativeWindowHasSecurityReservation(window_));
+  CancelNativeFileDialogs(*extension_);
+  EXPECT_EQ(cancelled_, 1);
+  EXPECT_EQ(accepted_, 0);
+  EXPECT_FALSE(PCNativeWindowHasSecurityReservation(popup));
+  ASSERT_TRUE(
+      base::test::RunUntil([popup] { return popup.attachedSheet == nil; }));
+}
+IN_PROC_BROWSER_TEST_F(NativeExtensionFileDialogTest,
+                       PopupChooserRefusesBrowserWindowParent) {
+  Host(true);
+  CreateForExtension();
+  Open(window_);
+  EXPECT_EQ(cancelled_, 1);
+  EXPECT_EQ(accepted_, 0);
+  EXPECT_FALSE(dialog_->IsRunning(gfx::NativeWindow(window_)));
+  EXPECT_EQ(window_.attachedSheet, nil);
+  EXPECT_FALSE(PCNativeWindowHasSecurityReservation(window_));
+}
+IN_PROC_BROWSER_TEST_F(NativeExtensionFileDialogTest,
+                       SidePanelChooserIsSheetOnBrowserWindow) {
+  Host(false);
+  CreateForExtension();
+  Open(window_);
+  ASSERT_TRUE(dialog_->IsRunning(gfx::NativeWindow(window_)));
+  ASSERT_TRUE(
+      base::test::RunUntil([this] { return window_.attachedSheet != nil; }));
+  EXPECT_TRUE(PCNativeWindowHasSecurityReservation(window_));
+  CancelNativeFileDialogs(*extension_);
+  EXPECT_EQ(cancelled_, 1);
+  EXPECT_EQ(accepted_, 0);
+  EXPECT_FALSE(PCNativeWindowHasSecurityReservation(window_));
+  ASSERT_TRUE(
+      base::test::RunUntil([this] { return window_.attachedSheet == nil; }));
+}
+IN_PROC_BROWSER_TEST_F(NativeExtensionFileDialogTest,
+                       RevokedPopupLeaseCancelsPresentedChooser) {
+  NSWindow* popup = Host(true);
+  CreateForExtension();
+  Open(popup);
+  ASSERT_TRUE(
+      base::test::RunUntil([popup] { return popup.attachedSheet != nil; }));
+  lease_->Revoke();
+  EXPECT_EQ(cancelled_, 1);
+  EXPECT_EQ(accepted_, 0);
+  EXPECT_FALSE(dialog_->IsRunning(gfx::NativeWindow(popup)));
+  EXPECT_FALSE(PCNativeWindowHasSecurityReservation(popup));
+  ASSERT_TRUE(
+      base::test::RunUntil([popup] { return popup.attachedSheet == nil; }));
+}
+IN_PROC_BROWSER_TEST_F(NativeExtensionFileDialogTest,
+                       StaleSidePanelOwnerRefusesChooser) {
+  Host(false);
+  owner_valid_ = false;
+  CreateForExtension();
+  Open(window_);
+  EXPECT_EQ(cancelled_, 1);
+  EXPECT_EQ(accepted_, 0);
+  EXPECT_EQ(window_.attachedSheet, nil);
+  EXPECT_FALSE(PCNativeWindowHasSecurityReservation(window_));
+}
+}

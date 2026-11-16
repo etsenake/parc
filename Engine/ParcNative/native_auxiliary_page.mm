@@ -331,4 +331,7 @@ std::shared_ptr<NativeExtensionPage> GetNativeExtensionPage(
   auto lease = state ? state->current.lock() : nullptr;
   return lease && lease->IsValid() ? lease : nullptr;
 }
+bool HasNativeExtensionRoute(content::WebContents& contents) {
+  return GetExtensionPageState(contents) != nullptr;
+}
 }

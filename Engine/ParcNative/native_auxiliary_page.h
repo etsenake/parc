@@ -93,5 +93,6 @@ base::CallbackListSubscription ObserveNativeAuxiliaryPage(
     base::RepeatingClosure);
 std::shared_ptr<NativeExtensionPage> GetNativeExtensionPage(
     content::WebContents&);
+bool HasNativeExtensionRoute(content::WebContents&);
 }
 #endif

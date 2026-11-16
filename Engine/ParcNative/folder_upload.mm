@@ -51,9 +51,6 @@ PageState* State(content::WebContents* contents) {
                   : nullptr;
 }
 
-// The actual Chromium dialog owns its Views/native window. Only its external
-// parent is adapted: a supplied AppKit window is not a NativeWidgetMac parent.
-// The real WebContentsModalDialogManager below owns page input blocking.
 class FolderWidget final : public views::NativeWidgetMac {
  public:
   explicit FolderWidget(views::Widget* widget) : NativeWidgetMac(widget) {}
@@ -92,6 +89,13 @@ class Request final : public content::WebContentsObserver,
     document_ = frame->GetWeakDocumentPtr();
     auto* tab = tabs::TabInterface::MaybeGetFromContents(contents);
     auxiliary_ = tab ? nullptr : GetNativeAuxiliaryPage(*contents);
+    extension_page_ =
+        tab || auxiliary_ ? nullptr : GetNativeExtensionPage(*contents);
+    if (extension_page_) {
+      window_ = extension_page_->window();
+      page_ = contents->GetNativeView().GetNativeNSView();
+      return;
+    }
     auto* browser = tab          ? tab->GetBrowserWindowInterface()
                     : auxiliary_ ? auxiliary_->browser()
                                  : nullptr;
@@ -111,9 +115,6 @@ class Request final : public content::WebContentsObserver,
   }
   void Build(std::unique_ptr<ui::DialogModel> model) {
     auto keep = shared_from_this();
-    // Keep the original model, all controls, Cancel default, initially focused
-    // field and input-activation protection. Even refusal closes this real
-    // model so FileSelectHelper receives its original empty-list continuation.
     auto host = views::BubbleDialogModelHost::CreateModal(
         std::move(model), ui::mojom::ModalType::kChild);
     std::weak_ptr<Request> weak = keep;
@@ -136,14 +137,16 @@ class Request final : public content::WebContentsObserver,
       CancelSoon();
       return;
     }
-    if (auxiliary_) {
-      auxiliary_cancel_ = auxiliary_->OnInvalidated(base::BindRepeating(
-          [](std::weak_ptr<Request> weak) {
-            if (auto self = weak.lock())
-              self->CancelSoon();
-          },
-          weak));
-    }
+    const auto cancel = base::BindRepeating(
+        [](std::weak_ptr<Request> weak) {
+          if (auto self = weak.lock())
+            self->CancelSoon();
+        },
+        weak);
+    if (auxiliary_)
+      auxiliary_cancel_ = auxiliary_->OnInvalidated(cancel);
+    if (extension_page_)
+      extension_page_cancel_ = extension_page_->OnInvalidated(cancel);
     window_observer_ = [NSNotificationCenter.defaultCenter
         addObserverForName:NSWindowWillCloseNotification
                     object:window_
@@ -189,21 +192,23 @@ class Request final : public content::WebContentsObserver,
     auto* state = State(contents);
     auto* frame = document_.AsRenderFrameHostIfValid();
     if (cancelled_ || !contents || !state ||
-        (!auxiliary_ && !state->attached) || !frame || !frame->IsActive() ||
-        !frame->IsRenderFrameLive() ||
+        (!auxiliary_ && !extension_page_ && !state->attached) || !frame ||
+        !frame->IsActive() || !frame->IsRenderFrameLive() ||
         content::WebContents::FromRenderFrameHost(frame) != contents ||
-        !browser_ || !profile_ || browser_->IsDeleteScheduled() ||
-        !browser_->GetWindow() ||
-        contents->GetBrowserContext() != profile_.get() ||
-        browser_->GetProfile() != profile_.get() || !window_ || !page_ ||
-        page_.window != window_ || !window_.visible || window_.miniaturized ||
-        page_.hiddenOrHasHiddenAncestor ||
+        !window_ || !page_ || page_.window != window_ || !window_.visible ||
+        window_.miniaturized || page_.hiddenOrHasHiddenAncestor ||
         contents->GetVisibility() == content::Visibility::HIDDEN ||
-        browser_->GetWindow()->GetNativeWindow().GetNativeNSWindow() !=
-            window_ ||
         window_.attachedSheet ||
         (reservation_ ? !reservation_.isOnlyReservation
                       : PCNativeWindowHasSecurityReservation(window_)))
+      return false;
+    if (extension_page_)
+      return extension_page_->IsValid() && extension_page_->window() == window_;
+    if (!browser_ || !profile_ || browser_->IsDeleteScheduled() ||
+        !browser_->GetWindow() ||
+        contents->GetBrowserContext() != profile_.get() ||
+        browser_->GetProfile() != profile_.get() ||
+        browser_->GetWindow()->GetNativeWindow().GetNativeNSWindow() != window_)
       return false;
     if (auxiliary_)
       return auxiliary_->IsActive() && auxiliary_->browser() == browser_.get();
@@ -219,13 +224,12 @@ class Request final : public content::WebContentsObserver,
       return false;
     }
     EndPresentation();
-    // Lease release can synchronously install a competing security prompt.
     if (!Valid()) {
       CancelSoon();
       return false;
     }
     decided_ = true;
-    return true;  // The genuine model immediately runs its original OK action.
+    return true;
   }
   void Show() {
     auto keep = shared_from_this();
@@ -280,15 +284,12 @@ class Request final : public content::WebContentsObserver,
   }
   void ModalDestroyed() { registered_ = false; }
   void Inserted() {
-    // Show/Close can only come from an entry already in the real manager list.
-    // CloseAllDialogs must remove that entry synchronously even while the
-    // outer ShowDialogWithManager call is still on the stack.
     registering_ = false;
   }
   void CancelSoon() {
     if (decided_ || cancelled_)
       return;
-    cancelled_ = true;  // Old request never revives after detach/reattach.
+    cancelled_ = true;
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostNonNestableTask(
         FROM_HERE, base::BindOnce(&Request::Cancel, shared_from_this()));
   }
@@ -351,6 +352,15 @@ class Request final : public content::WebContentsObserver,
                                                                   size.width(),
                                                                   size.height())
                                                 toView:nil]];
+    if (NSScreen* screen = window_.screen) {
+      const NSRect visible = screen.visibleFrame;
+      rect.origin.x = std::clamp(
+          rect.origin.x, NSMinX(visible),
+          std::max(NSMinX(visible), NSMaxX(visible) - NSWidth(rect)));
+      rect.origin.y = std::clamp(
+          rect.origin.y, NSMinY(visible),
+          std::max(NSMinY(visible), NSMaxY(visible) - NSHeight(rect)));
+    }
     [dialog_.GetNativeNSWindow() setFrame:rect display:NO];
   }
   void ClearHost() {
@@ -390,6 +400,8 @@ class Request final : public content::WebContentsObserver,
   std::shared_ptr<Request> keep_alive_;
   std::shared_ptr<NativeAuxiliaryPage> auxiliary_;
   base::CallbackListSubscription auxiliary_cancel_;
+  std::shared_ptr<NativeExtensionPage> extension_page_;
+  base::CallbackListSubscription extension_page_cancel_;
   base::WeakPtr<BrowserWindowInterface> browser_;
   base::WeakPtr<Profile> profile_;
   content::WeakDocumentPtr document_;
@@ -435,11 +447,15 @@ gfx::NativeWindow NativeModal::dialog() {
 bool NativeModal::IsActive() const {
   return request_->IsActive();
 }
-}  // namespace
+}
 void ShowFolderUploadConfirmation(std::unique_ptr<ui::DialogModel> model,
                                   content::WebContents* contents,
                                   content::RenderFrameHost* frame) {
   auto* state = State(contents);
+  if (!state && contents && HasNativeExtensionRoute(*contents)) {
+    InstallNativeFolderUpload(*contents);
+    state = State(contents);
+  }
   if (!state) {
     chrome::ShowTabModal(std::move(model), contents);
     return;
@@ -468,4 +484,4 @@ void SetNativeFolderUploadAttached(content::WebContents& contents,
     if (auto request = weak.lock())
       request->CancelSoon();
 }
-}  // namespace parc
+}

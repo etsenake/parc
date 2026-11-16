@@ -1,4 +1,3 @@
-# Installed at //parc/tests/parc_native_downloads.
 assert(is_mac)
 
 source_set("download_unit_tests") {
@@ -31,8 +30,10 @@ source_set("file_dialog_browser_tests") {
   frameworks = [ "AppKit.framework" ]
   deps = [
     "//base/test:test_support",
+    "//parc/native:native_auxiliary_page",
     "//parc/native:native_components",
     "//parc/native:native_downloads",
+    "//chrome/browser/extensions",
     "//chrome/browser/tab_list",
     "//components/web_modal",
     "//ui/views",

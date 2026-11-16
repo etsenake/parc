@@ -564,12 +564,12 @@
     {
       "source": "tests/NativeDownloads/file_dialog_browsertest.mm",
       "target": "parc/tests/parc_native_downloads/file_dialog_browsertest.mm",
-      "sha256": "dae8cb940c7dae792eae825b2cf269412a760a632cb5fe281ee729bcf53ea7bb"
+      "sha256": "d7ad9383727b009f5184f4182f48bd224bc1bd15333cb86c78b82501cec1a738"
     },
     {
       "source": "tests/NativeDownloads/BUILD.gn",
       "target": "parc/tests/parc_native_downloads/BUILD.gn",
-      "sha256": "86df34876c8727282b4b3a1f8df63678f06b6dd2490760848e046e8ccade8c3d"
+      "sha256": "feadb4940f4af4baafc92cfac8e62e16a5ca041e8e368208403490d6b6822250"
     },
     {
       "source": "Engine/ParcNative/http_auth.h",
@@ -729,12 +729,12 @@
     {
       "source": "Engine/ParcNative/native_auxiliary_page.h",
       "target": "parc/native/native_auxiliary_page.h",
-      "sha256": "e1b7407e3e02ded68ddc55485dd719592f45a6d5b96b0bbf925114a140e9160a"
+      "sha256": "b29d33a9ecc3956debaddeb1ad2cc0e4881236a24d6df5bd9119e0c4b7514f1d"
     },
     {
       "source": "Engine/ParcNative/native_auxiliary_page.mm",
       "target": "parc/native/native_auxiliary_page.mm",
-      "sha256": "0c00145509562e6a2848bb41fd0cc63accf0d17bb22fdf4dfaa442806be76b4d"
+      "sha256": "cb7eed0c40af5c76a162347c6067f072e1b3d8dff05a3e4aac2c22d13e7d44ef"
     },
     {
       "source": "Engine/ParcNative/native_auxiliary_services.h",
@@ -854,12 +854,12 @@
     {
       "source": "Engine/ParcNative/folder_upload.mm",
       "target": "parc/native/folder_upload.mm",
-      "sha256": "98b604be9a82488928b27b188f3d1bdbe3db6e751cd1ddae7ccb61f96f74f4cc"
+      "sha256": "3ca5c8d0e32ca9359c9197431fc06b3c4b008b1d05c6cc9a9601f5ba0a33b78e"
     },
     {
       "source": "tests/NativeDownloads/folder_upload_browsertest.mm",
       "target": "parc/tests/parc_native_downloads/folder_upload_browsertest.mm",
-      "sha256": "ebea82920c0908fcb0f5370c6f7dcd3cbe21cac0ddbdd2b5ccbe283baed03223"
+      "sha256": "b4a8942386fabe3d22fb7a6be65311db53d65683849d275a3dbe9efb8442a37b"
     },
     {
       "source": "Engine/ParcNative/download_file_dialog.h",

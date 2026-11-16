@@ -4,7 +4,10 @@
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
 #include "base/test/run_until.h"
+#include "chrome/browser/extensions/extension_view_host_web_modal_handler.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -13,7 +16,11 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
+#include "content/public/test/browser_test_utils.h"
 #include "folder_upload.h"
+#include "native_auxiliary_page.h"
+#import "page_host.h"
+#include "ui/base/base_window.h"
 #include "ui/base/models/dialog_model.h"
 #include "ui/views/bubble/bubble_dialog_model_host.h"
 #include "ui/views/widget/widget.h"
@@ -82,9 +89,6 @@ class NativeFolderUploadTest : public InProcessBrowserTest {
     InProcessBrowserTest::TearDownOnMainThread();
   }
   void Open() {
-    // This genuine DialogModel drives the production folder adapter. The
-    // existing FileSelectHelperTest.ConfirmationDialog separately verifies
-    // the actual enumerated-files/title/default/input-protection schema.
     ShowFolderUploadConfirmation(
         ui::DialogModel::Builder()
             .SetTitle(u"Upload test folder?")
@@ -150,7 +154,6 @@ IN_PROC_BROWSER_TEST_F(NativeFolderUploadTest,
   auto widget = Dialog()->GetWeakPtr();
   SetNativeFolderUploadAttached(*contents_, false);
   SetNativeFolderUploadAttached(*contents_, true);
-  // Acceptance before the deferred cancellation task must still use Cancel.
   ASSERT_TRUE(widget);
   widget->widget_delegate()->AsDialogDelegate()->AcceptDialog();
   base::RunLoop().RunUntilIdle();
@@ -264,4 +267,186 @@ IN_PROC_BROWSER_TEST_F(NativeFolderUploadTest,
   EXPECT_EQ(closed_, 1);
   EXPECT_FALSE(PCNativeWindowHasSecurityReservation(window_));
 }
-}  // namespace parc
+class NativeExtensionFolderUploadTest : public InProcessBrowserTest {
+ protected:
+  void SetUpOnMainThread() override {
+    InProcessBrowserTest::SetUpOnMainThread();
+    browser_window_ =
+        browser()->GetWindow()->GetNativeWindow().GetNativeNSWindow();
+    [browser_window_ orderFront:nil];
+    contents_ = content::WebContents::Create(
+        content::WebContents::CreateParams(browser()->GetProfile()));
+    ASSERT_TRUE(content::NavigateToURL(contents_.get(), GURL("about:blank")));
+    NSView* native = contents_->GetNativeView().GetNativeNSView();
+    modal_ = std::make_unique<extensions::ExtensionViewHostWebModalHandler>(
+        contents_.get(), gfx::NativeView(native));
+    page_ = [PCNativePageHost hostWithContentView:native observer:nil];
+  }
+  void TearDownOnMainThread() override {
+    if (lease_)
+      lease_->Revoke();
+    lease_.reset();
+    base::RunLoop().RunUntilIdle();
+    modal_.reset();
+    [page_ invalidate];
+    page_ = nil;
+    if (popup_) {
+      [browser_window_ removeChildWindow:popup_];
+      [popup_ close];
+      popup_ = nil;
+    }
+    contents_.reset();
+    base::RunLoop().RunUntilIdle();
+    InProcessBrowserTest::TearDownOnMainThread();
+  }
+  void Host(bool popup) {
+    if (popup) {
+      popup_ = [[NSWindow alloc]
+          initWithContentRect:NSMakeRect(200, 200, 320, 240)
+                    styleMask:NSWindowStyleMaskTitled
+                      backing:NSBackingStoreBuffered
+                        defer:NO];
+      popup_.releasedWhenClosed = NO;
+      popup_.contentView = page_;
+      [browser_window_ addChildWindow:popup_ ordered:NSWindowAbove];
+      [popup_ orderFront:nil];
+      window_ = popup_;
+    } else {
+      page_.frame = NSMakeRect(0, 0, 320, 240);
+      [browser_window_.contentView addSubview:page_];
+      window_ = browser_window_;
+    }
+    contents_->WasShown();
+    lease_ = NativeExtensionPage::Bind(
+        *contents_, page_, browser_window_,
+        base::BindRepeating([](bool* valid) { return *valid; }, &owner_valid_));
+    ASSERT_TRUE(lease_);
+    ASSERT_EQ(lease_->window(), window_);
+  }
+  void Open() {
+    ShowFolderUploadConfirmation(
+        ui::DialogModel::Builder()
+            .SetTitle(u"Upload test folder?")
+            .AddParagraph(ui::DialogModelLabel(u"Two files"))
+            .AddOkButton(base::BindOnce([](int* n) { ++*n; }, &accepted_))
+            .AddCancelButton(base::BindOnce([](int* n) { ++*n; }, &cancelled_))
+            .SetCloseActionCallback(
+                base::BindOnce([](int* n) { ++*n; }, &closed_))
+            .OverrideDefaultButton(ui::mojom::DialogButton::kCancel)
+            .SetEnableInputProtection(true)
+            .Build(),
+        contents_.get(), contents_->GetPrimaryMainFrame());
+  }
+  views::Widget* Dialog() {
+    for (NSWindow* child in window_.childWindows) {
+      if (auto* widget = views::Widget::GetWidgetForNativeWindow(
+              gfx::NativeWindow(child))) {
+        if (widget->widget_delegate()->AsDialogDelegate())
+          return widget;
+      }
+    }
+    return nullptr;
+  }
+  bool ModalActive() {
+    return web_modal::WebContentsModalDialogManager::FromWebContents(
+               contents_.get())
+        ->IsDialogActive();
+  }
+  std::unique_ptr<content::WebContents> contents_;
+  std::unique_ptr<extensions::ExtensionViewHostWebModalHandler> modal_;
+  std::shared_ptr<NativeExtensionPage> lease_;
+  PCNativePageHost* __strong page_ = nil;
+  NSWindow* __strong popup_ = nil;
+  NSWindow* __weak browser_window_;
+  NSWindow* __weak window_;
+  bool owner_valid_ = true;
+  int accepted_ = 0, cancelled_ = 0, closed_ = 0;
+};
+IN_PROC_BROWSER_TEST_F(NativeExtensionFolderUploadTest,
+                       PopupPresentsOnItsOwnWindow) {
+  Host(true);
+  Open();
+  ASSERT_TRUE(base::test::RunUntil(
+      [this] { return Dialog() && Dialog()->IsVisible(); }));
+  EXPECT_EQ(Dialog()->GetNativeWindow().GetNativeNSWindow().parentWindow,
+            popup_);
+  EXPECT_TRUE(ModalActive());
+  EXPECT_TRUE(PCNativeWindowHasSecurityReservation(popup_));
+  EXPECT_FALSE(PCNativeWindowHasSecurityReservation(browser_window_));
+  Dialog()->widget_delegate()->AsDialogDelegate()->AcceptDialog();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(accepted_, 1);
+  EXPECT_EQ(cancelled_, 0);
+  EXPECT_FALSE(ModalActive());
+  EXPECT_FALSE(PCNativeWindowHasSecurityReservation(popup_));
+}
+IN_PROC_BROWSER_TEST_F(NativeExtensionFolderUploadTest,
+                       SidePanelPresentsOnBrowserWindow) {
+  Host(false);
+  Open();
+  ASSERT_TRUE(base::test::RunUntil(
+      [this] { return Dialog() && Dialog()->IsVisible(); }));
+  EXPECT_EQ(Dialog()->GetNativeWindow().GetNativeNSWindow().parentWindow,
+            browser_window_);
+  EXPECT_TRUE(ModalActive());
+  EXPECT_TRUE(PCNativeWindowHasSecurityReservation(browser_window_));
+  Dialog()->widget_delegate()->AsDialogDelegate()->CancelDialog();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(cancelled_, 1);
+  EXPECT_EQ(accepted_, 0);
+  EXPECT_FALSE(ModalActive());
+  EXPECT_FALSE(PCNativeWindowHasSecurityReservation(browser_window_));
+}
+IN_PROC_BROWSER_TEST_F(NativeExtensionFolderUploadTest,
+                       RevokedPopupLeaseCannotAccept) {
+  Host(true);
+  Open();
+  ASSERT_TRUE(Dialog());
+  auto widget = Dialog()->GetWeakPtr();
+  lease_->Revoke();
+  ASSERT_TRUE(widget);
+  widget->widget_delegate()->AsDialogDelegate()->AcceptDialog();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(accepted_, 0);
+  EXPECT_EQ(cancelled_, 1);
+  EXPECT_FALSE(ModalActive());
+  EXPECT_FALSE(PCNativeWindowHasSecurityReservation(popup_));
+}
+IN_PROC_BROWSER_TEST_F(NativeExtensionFolderUploadTest,
+                       StaleSidePanelOwnerCannotAccept) {
+  Host(false);
+  Open();
+  ASSERT_TRUE(Dialog());
+  owner_valid_ = false;
+  Dialog()->widget_delegate()->AsDialogDelegate()->AcceptDialog();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(accepted_, 0);
+  EXPECT_EQ(cancelled_, 1);
+  EXPECT_FALSE(ModalActive());
+  EXPECT_FALSE(PCNativeWindowHasSecurityReservation(browser_window_));
+}
+IN_PROC_BROWSER_TEST_F(NativeExtensionFolderUploadTest,
+                       HiddenPopupRefusesInsteadOfUnparentedDialog) {
+  Host(true);
+  lease_->Revoke();
+  Open();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(accepted_, 0);
+  EXPECT_EQ(closed_, 1);
+  EXPECT_FALSE(ModalActive());
+  EXPECT_FALSE(Dialog());
+  EXPECT_FALSE(PCNativeWindowHasSecurityReservation(popup_));
+}
+IN_PROC_BROWSER_TEST_F(NativeExtensionFolderUploadTest,
+                       ExistingPopupReservationRefuses) {
+  Host(true);
+  auto reservation = [PCNativeWindowSecurityReservation acquireForWindow:popup_];
+  Open();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(accepted_, 0);
+  EXPECT_EQ(closed_, 1);
+  EXPECT_FALSE(ModalActive());
+  EXPECT_TRUE(reservation.active);
+  [reservation invalidate];
+}
+}
