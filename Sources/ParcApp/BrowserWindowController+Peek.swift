@@ -407,7 +407,7 @@ extension BrowserWindowController {
     }
 
     @discardableResult
-    func movePeekParentHere(_ parent: UUID, then open: @escaping () -> Void, failed: @escaping () -> Void = {}) -> Bool {
+    func movePeekParentHere(_ parent: UUID, then open: @escaping @MainActor () -> Void, failed: @escaping () -> Void = {}) -> Bool {
         var settled = false
         let fail = { if !settled { settled = true; failed() } }
         let arrival = PendingArrival(abandoned: fail)
@@ -415,7 +415,7 @@ extension BrowserWindowController {
             arrival.ran = true
             guard let self, self.selectTab(parent) else { fail(); return false }
             settled = true
-            DispatchQueue.main.async(execute: open)
+            DispatchQueue.main.async { open() }
             return true
         }
         if !started { arrival.ran = true; fail() }
