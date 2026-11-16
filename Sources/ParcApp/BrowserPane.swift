@@ -48,9 +48,10 @@ final class BrowserPane: NSView {
             HeldPaneLayout.apply(heldOverSwitch, to: self)
         }
     }
-    override func hitTest(_ point: NSPoint) -> NSView? { heldOverSwitch ? nil : super.hitTest(point) }
+    var passesInput = false
+    override func hitTest(_ point: NSPoint) -> NSView? { heldOverSwitch || passesInput ? nil : super.hitTest(point) }
     override func viewWillMove(toSuperview newSuperview: NSView?) {
-        heldOverSwitch = false; super.viewWillMove(toSuperview: newSuperview)
+        heldOverSwitch = false; passesInput = false; alphaValue = 1; super.viewWillMove(toSuperview: newSuperview)
     }
     func showPageBacking(of page: PCNativePage?) {
         let color = page.flatMap { page -> NSColor? in

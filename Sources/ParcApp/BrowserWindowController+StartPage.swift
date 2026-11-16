@@ -95,7 +95,21 @@ extension BrowserWindowController {
     }
     private func playStartPageArrival() {
         startPage.isDeparting = false
-        guard window?.isVisible == true, window?.isMiniaturized != true, presentation.isReady else { return }
+        let faded = takeCloseFadeArrival()
+        let shown = window?.isVisible == true && window?.isMiniaturized != true && presentation.isReady
+        if faded {
+            startPage.alphaValue = 1
+            guard shown else { return }
+            let slot = startPage.commandBarSlot
+            slot.alphaValue = 0
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                slot.animator().alphaValue = 1
+            }
+            return
+        }
+        guard shown else { return }
         startPage.alphaValue = 0
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2

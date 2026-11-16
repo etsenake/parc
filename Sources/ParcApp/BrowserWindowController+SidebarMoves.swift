@@ -940,7 +940,7 @@ extension BrowserWindowController {
     }
 
     var windowUndoContextAvailable: Bool {
-        windowUndoOwnerAvailable && window?.attachedSheet == nil
+        windowUndoOwnerAvailable && window?.attachedSheet == nil && closeFade?.isClosing != true
     }
 
     var windowUndoOwnerAvailable: Bool {

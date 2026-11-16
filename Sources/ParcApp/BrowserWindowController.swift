@@ -428,6 +428,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var startPagePresented = false
     var startPageRefreshScheduled = false
     var startPageDeparting = false
+    var closeFade: TabCloseFade?
     var residentTypedCommands: (items: [SidebarItemReference]?, commands: [CommandBarTypedCommand]) = (nil, [])
     private var residentTopDomainRevision: UInt64?
     var residentCommandInputs: ResidentCommandBarInputs?

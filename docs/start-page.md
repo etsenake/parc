@@ -3,8 +3,7 @@
 A Space with no open tab shows a start page: the multi-colour Parc mark above a
 resident command bar, on solid paper tinted from the Space's own colors. It
 replaced the "No tab open" placeholder, and the sidebar no longer refuses to hide in an empty window, so
-Command-S works there like anywhere else. Open review decisions are in the
-[backlog](backlog.md#planned-interface-work).
+Command-S works there like anywhere else.
 
 ## When it shows
 
@@ -137,9 +136,34 @@ Rules they share:
 ## Transitions
 
 The start page fades in over 0.2 seconds when it arrives and fades out over 0.2
-seconds above the new page when a tab opens. Both are opacity only, so Reduce
-Motion needs no separate path. The closing tab's page is removed at once rather
-than fading out first.
+seconds above the new page when a tab opens.
+
+Closing the last open tab in a Space with Command-W, its close button or Close
+Tab crossfades: the page fades out while the start page fades in beneath it,
+both over the Space's own color, so a wash of that color glows through mid-way.
+
+- The fade reuses the [Peek close fade's](peek.md#swiping-and-closing) order,
+  timing and curve: 0.2 seconds, eased out. The start page's opacity is locked
+  to the page's, so the two move as one.
+- The engine destroys a page's picture before Parc learns its close went
+  through, so the live page fades first and the real close starts once it is
+  invisible, about 0.2 seconds after the request. The tab's sidebar row leaves
+  then.
+- During the fade the page takes no clicks or typing. When the close lands the
+  start page is already showing, so only its command bar fades in, over 0.15
+  seconds, and takes focus by the usual rule.
+- If the page asks "Leave site?", it fades back in under the question. Stay
+  brings it back with its focus; Leave removes it at once.
+- Undo and Reopen Closed Tab wait until the close lands, so they bring back
+  this tab rather than an older one.
+- Switching tab or Space mid-fade hides the page at once and still closes it.
+  Closing several tabs together, such as clearing Today, and a page closing
+  itself still swap at once.
+
+Every transition here is opacity only, so Reduce Motion keeps them; a refused
+close comes back in Peek's 0.15-second Reduce Motion fade. `TabCloseFade` runs
+the close fade, and `BrowserWindowController+CloseFade.swift` places the start
+page beneath the closing page and hands it over when the close lands.
 
 ## Visual review
 
@@ -151,8 +175,10 @@ the Easter egg candidates; the card and the three Easter eggs were approved.
 The second replaced the lifted card with the flat soft-fill bar. Image renders
 of the theme's own blend made solid, a frosted panel and tinted paper with
 glows then settled the background on tinted paper, the multi-colour mark, and a
-page and bar that follow View → Appearance. The render scripts and images live
-in ignored `work/start-page/review/`.
+page and bar that follow View → Appearance. A later round compared ways to close
+the last tab (a cut, fade out then in, a crossfade over the start page, and
+both fading over the Space color) and chose both fading. The render scripts and
+images live in ignored `work/start-page/`.
 
 ## Source and checks
 
@@ -165,6 +191,8 @@ in ignored `work/start-page/review/`.
 - `Sources/ParcApp/StartPagePaper.swift`: the tinted paper and its glows.
 - `Sources/ParcApp/CommandBarResidentLayout.swift` and
   `CommandBarResidentLifetime.swift`: the resident bar.
+- `Sources/ParcApp/TabCloseFade.swift` and
+  `BrowserWindowController+CloseFade.swift`: the close fade.
 
 ```sh
 python3 tests/StartPage/check.py
@@ -173,6 +201,8 @@ python3 tests/CommandBar/resident_check.py
 python3 tests/EmptyWindow/check.py
 ```
 
-The first checks the paper's tint, glows, appearance and swipe hand-off. The
-empty-window check covers the sidebar rule, Command-T and
-Command-L routing and the start page's focus conditions.
+The first checks the paper's tint, glows, appearance and swipe hand-off, and
+runs the close fade on a pretend clock: its curve and lock, when the real close
+starts, "Leave site?", refusal, interruption and Reduce Motion. The
+empty-window check covers the sidebar rule, Command-T and Command-L routing,
+the start page's focus conditions and how the window wires the close fade.

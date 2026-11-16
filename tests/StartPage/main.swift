@@ -29,6 +29,7 @@ import AppKit
         paperView()
         forwarding()
         livePalette()
+        closeFade()
         print("StartPage: \(count) assertions passed")
     }
 
@@ -272,5 +273,113 @@ import AppKit
         page.appearance = NSAppearance(named: .aqua)
         page.viewDidChangeEffectiveAppearance()
         check(page.sidebarButton.contentTintColor == ThemeChromePalette(theme: violet, isDark: false).title, "light: switching appearance refreshes live")
+    }
+
+    @MainActor final class FadeHarness {
+        var time: TimeInterval = 100
+        var pending: [(at: TimeInterval, body: @MainActor () -> Void)] = []
+        var requests = 0, restored = 0
+        var input: [Bool] = []
+        let page = NSView(), start = NSView()
+        let fade: TabCloseFade
+
+        init(reducesMotion: Bool = false) {
+            fade = TabCloseFade(tabID: UUID(), page: page, startPage: start)
+            fade.now = { [unowned self] in self.time }
+            fade.reducesMotion = { reducesMotion }
+            fade.schedule = { [unowned self] delay, body in self.pending.append((self.time + delay, body)) }
+            fade.onRequestClose = { [unowned self] in self.requests += 1 }
+            fade.onRestored = { [unowned self] in self.restored += 1 }
+            fade.passesInput = { [unowned self] in self.input.append($0) }
+        }
+        func advance(_ seconds: TimeInterval) {
+            time += seconds
+            let due = pending.filter { $0.at <= time }
+            pending.removeAll { $0.at <= time }
+            for item in due { item.body() }
+            fade.paint()
+        }
+        var locked: Bool { abs(page.alphaValue + start.alphaValue - 1) < 1e-6 }
+    }
+
+    static func closeFade() {
+        let fade = PeekDismissalTiming.fade
+        let h = FadeHarness()
+        h.fade.begin()
+        check(h.page.alphaValue == 1 && h.start.alphaValue == 0, "the close fade starts from the page with the start page unseen")
+        check(h.input == [true], "the closing page stops taking input as the fade starts")
+        check(h.pending.count == 1 && abs(h.pending[0].at - h.time - fade) < 1e-9 && h.requests == 0,
+              "the real close waits for the Peek close fade's 0.2 seconds")
+        for step in [0.05, 0.05, 0.05] {
+            h.advance(step)
+            let u = (h.time - 100) / fade
+            check(near(h.page.alphaValue, CGFloat((1 - u) * (1 - u)), 0.001), "the page follows the Peek fade's quad-out curve at \(u)")
+            check(h.locked, "the start page fades in exactly as the page fades out, both over the Space colour, at \(u)")
+        }
+        check(h.start.alphaValue > 0.4 && h.start.alphaValue < 1 && h.page.alphaValue > 0, "the fades overlap mid-way")
+        h.advance(0.06)
+        check(h.requests == 1 && h.fade.phase == .closing, "the close starts once the page is invisible")
+        check(h.page.alphaValue == 0 && h.start.alphaValue == 1, "the start page is fully shown when the close starts")
+        h.fade.begin()
+        check(h.pending.isEmpty && h.requests == 1, "a second close request during the fade changes nothing")
+        h.fade.sheetBegan()
+        h.advance(0.1)
+        check(h.page.alphaValue > 0.5 && h.locked && h.requests == 1, "Leave site? brings the page back under the question")
+        h.advance(0.11)
+        check(h.page.alphaValue == 1 && h.start.alphaValue == 0, "the page is fully back behind the question")
+        h.fade.finish()
+        check(h.page.alphaValue == 0 && h.start.alphaValue == 1, "after Leave the page goes at once")
+        check(h.input.last == false && h.restored == 0, "a landed close hands input back without a restore")
+
+        let refused = FadeHarness()
+        refused.fade.begin(); refused.advance(fade + 0.01)
+        refused.fade.refused()
+        check(refused.input.last == false, "a refused page takes input again straight away")
+        refused.advance(0.1)
+        check(refused.locked && refused.page.alphaValue > 0 && refused.page.alphaValue < 1 && refused.restored == 0,
+              "a refused close fades the page back over the start page")
+        refused.advance(0.11)
+        refused.fade.settled()
+        check(refused.page.alphaValue == 1 && refused.start.alphaValue == 0 && refused.restored == 1,
+              "once a refused page is fully back, the start page underneath can go")
+
+        let interrupted = FadeHarness()
+        interrupted.fade.begin(); interrupted.advance(0.08)
+        interrupted.fade.interrupt()
+        check(interrupted.page.alphaValue == 0 && interrupted.start.alphaValue == 1, "switching away mid-fade hides the page at once")
+        check(interrupted.requests == 0, "the interrupted close is requested after the current render")
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        interrupted.advance(fade)
+        check(interrupted.requests == 1, "an interrupted fade still closes the tab, exactly once")
+
+        let landed = FadeHarness()
+        landed.fade.begin(); landed.advance(fade + 0.01)
+        landed.fade.handOff()
+        check(landed.fade.phase == .finished && landed.page.alphaValue == 0 && landed.start.alphaValue == 1 && landed.requests == 1,
+              "when the start page takes over during the close, the fade hands it over finished without a second close")
+        let early = FadeHarness()
+        early.fade.begin(); early.advance(0.08)
+        early.fade.handOff()
+        check(early.fade.phase == .finished && early.page.alphaValue == 0 && early.start.alphaValue == 1,
+              "a start page that takes over mid-fade is shown in full at once")
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        check(early.requests == 1, "a fade handed over early still closes the tab, exactly once")
+
+        let reduced = FadeHarness(reducesMotion: true)
+        reduced.fade.begin()
+        check(abs(reduced.pending[0].at - reduced.time - fade) < 1e-9, "Reduce Motion keeps the opacity-only fade")
+        reduced.advance(0.1)
+        check(reduced.locked && reduced.page.alphaValue > 0 && reduced.page.alphaValue < 1, "Reduce Motion still crossfades in place")
+        reduced.advance(fade)
+        reduced.fade.refused()
+        reduced.advance(PeekDismissalTiming.reduced + 0.01)
+        check(reduced.page.alphaValue == 1, "with Reduce Motion a refused page returns in the Peek's 0.15-second fade")
+
+        let ended = FadeHarness()
+        ended.fade.begin(); ended.advance(fade + 0.01)
+        ended.fade.refused(); ended.advance(0.05)
+        ended.fade.end()
+        check(ended.page.alphaValue == 1 && ended.start.alphaValue == 0 && ended.input.last == false,
+              "ending a fade while the page returns snaps it fully back")
     }
 }

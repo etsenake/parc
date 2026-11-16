@@ -505,7 +505,7 @@ extension BrowserWindowController {
     var reopenClosedStep: ClosedItemStep? {
         guard !isPopupWindow, !isPrivateBrowsing, presentation.isReady,
               !isClosing, !wholeWindowClose, !windowClosePending,
-              window?.attachedSheet == nil, activePeek == nil,
+              window?.attachedSheet == nil, activePeek == nil, closeFade?.isClosing != true,
               transferringTabIDs.isEmpty, resolvingTransfers.isEmpty,
               let step = closedItems.nextStep(in: store.state, restorable: { store.canUndoFolderDeletion($0) })
         else { return nil }

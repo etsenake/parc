@@ -32,14 +32,6 @@ Finish assigned work first.
   Existing window Undo restores the tree; persisted Archive restoration needs
   folder provenance. [Archive](archive.md).
 
-## Planned interface work
-
-Visual work in each item follows the [interface review](visual-review.md)
-workflow, renders first.
-
-- Closing the last tab removes its page at once instead of fading it out
-  before the start page fades in. [Start page](start-page.md#transitions).
-
 ## Media
 
 Casting continuity across navigation and picture in picture are implemented.

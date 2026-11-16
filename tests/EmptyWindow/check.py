@@ -94,6 +94,41 @@ assert "if residentCommandInputs != stamp {" in controller, "the start page redo
 assert "if let bar = residentCommandBar { residentCommandBar = nil; bar.dismiss(restoreFocus: false) }; shutdownBrowsers();" in controller, \
     "closing the window leaves the resident command bar behind"
 
+close = body("startTabClose")
+assert close.index("fade.isClosing { return .started }") < close.index("prepareNotesToClose([id])") \
+    < close.index("tabCloseAvailable(id)") < close.index("beginCloseFade(id)") < close.index("commitTabClose(id)"), \
+    "closing the last tab no longer fades the page before the real close"
+commit = body("commitTabClose")
+assert commit.index("self.closeFadeLanded(id, approved: approved)") < commit.index("self.render(self.store.state)"), \
+    "the close fade no longer hears that the close landed before the start page renders"
+fade = body("beginCloseFade")
+for use in ("closeEmptiesSpace(id)", "splitView.arrangedSubviews.count == 1, splitView.arrangedSubviews.first === pane",
+            "peek(over: id) == nil", "!startPageDeparting", "!switchHold.isHolding", "window.attachedSheet == nil",
+            "page.alphaValue = 0", "pageHost.addSubview(page, positioned: .below, relativeTo: splitView)",
+            "refreshPageHostBacking()", "fade.begin()"):
+    assert use in fade, f"the close fade lost a condition or step: {use}"
+assert fade.index("closeFade = fade") < fade.index("refreshPageHostBacking()") < fade.index("fade.begin()"), \
+    "the Space colour must be uncovered before the close fade starts"
+assert "reconcileCloseFade()\n        refreshPageHostBacking()" in render, "render no longer settles the close fade before the page backing"
+assert "let translucentPane = closeFade != nil ||" in body("refreshPageHostBacking"), \
+    "the Space colour no longer shows through the close fade"
+ended = body("endCloseFade")
+assert "page.superview === pageHost, !startPageDeparting" in ended and "page.alphaValue = 1" in ended, \
+    "an ended close fade leaves its start page behind"
+assert "if let pane = panes[fade.tabID], pane.superview === splitView { pane.alphaValue = 1 }" in ended, \
+    "a close fade cut short can leave a still-shown or held page invisible"
+handoff = body("reconcileCloseFade")
+assert handoff.index("if fade.phase == .finished, startPagePresented { endCloseFade(); return }") \
+    < handoff.index("fade.handOff(); return") < handoff.rindex("endCloseFade()"), \
+    "the start page blinks when it takes over from the close fade, or a spent fade lingers"
+assert "windowUndoOwnerAvailable && window?.attachedSheet == nil && closeFade?.isClosing != true" in controller, \
+    "Undo during the close fade would act on an older change while the tab still closes"
+assert "activePeek == nil, closeFade?.isClosing != true," in controller, \
+    "Reopen Closed Tab during the close fade would reopen an older tab"
+assert "heldOverSwitch || passesInput ? nil : super.hitTest(point)" in controller, "a fading page still takes clicks"
+assert "heldOverSwitch = false; passesInput = false; alphaValue = 1; super.viewWillMove(toSuperview: newSuperview)" in controller, \
+    "a faded page could come back invisible"
+
 sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [app / name for name in (
     "SidebarMotionController.swift", "SidebarChromeLayout.swift", "WindowStandardButtons.swift", "ParcSplitView.swift",
     "SplitMarginHandle.swift", "SplitDropGeometry.swift", "PageCardShadow.swift", "SplitPaneMenu.swift", "MenuItemImage.swift",

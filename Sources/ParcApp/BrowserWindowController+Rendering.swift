@@ -137,6 +137,7 @@ extension BrowserWindowController {
                 if browser.nativePage?.isClosed == true { releaseClosedTab(id, updateSavedTab: false) }
             }
         }
+        reconcileCloseFade()
         refreshPageHostBacking()
         if let context = themeEditingContextSpaceID, context != activeSpaceID { themePopover?.performClose(nil) }
         synchronizeThemeEditor()
@@ -609,8 +610,8 @@ extension BrowserWindowController {
         panes[id]?.focusRendererFailure(expected)
     }
 
-    private func refreshPageHostBacking() {
-        let translucentPane = splitView.arrangedSubviews.contains {
+    func refreshPageHostBacking() {
+        let translucentPane = closeFade != nil || splitView.arrangedSubviews.contains {
             guard let pane = $0 as? BrowserPane else { return false }
             return pane.showsNoteCanvas || pane.showsTopBar || pane.showsPlaceholder
         }

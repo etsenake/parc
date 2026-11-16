@@ -147,20 +147,33 @@ extension BrowserWindowController {
     func closeTab(_ id: UUID) -> Bool { startTabClose(id) == .started }
 
     func startTabClose(_ id: UUID) -> TabCloseStart {
+        if let fade = closeFade, fade.tabID == id, fade.isClosing { return .started }
         guard prepareNotesToClose([id]) else { return .unsavedNotes }
-        guard !wholeWindowClose, !isClosing, !windowClosePending,
-              !closingTabIDs.contains(id), !transferringTabIDs.contains(id),
-              ownership.canUse(id, owner: presentationID),
-              retirementUnavailableReason?([id]) == nil else { return .unavailable }
+        guard tabCloseAvailable(id) else { return .unavailable }
+        if closeFade?.phase == .resting { endCloseFade() }
+        if beginCloseFade(id) { return .started }
+        commitTabClose(id)
+        return .started
+    }
+
+    func tabCloseAvailable(_ id: UUID) -> Bool {
+        !wholeWindowClose && !isClosing && !windowClosePending
+            && !closingTabIDs.contains(id) && !transferringTabIDs.contains(id)
+            && ownership.canUse(id, owner: presentationID)
+            && retirementUnavailableReason?([id]) == nil
+    }
+
+    func commitTabClose(_ id: UUID) {
         prepareStoreContext()
         closeTabsWithReopen([id]) { [weak self] approved in
-            guard let self, !self.isClosing else { return }
+            guard let self else { return }
+            guard !self.isClosing else { if self.closeFade?.tabID == id { self.endCloseFade() }; return }
+            self.closeFadeLanded(id, approved: approved)
             guard approved else { self.returnIfUnshown(id); return }
             self.presentation.remove(id)
             if self.focusedTabID == id { self.focusedTabID = self.presentation.preferredFocusedTabID }
             self.render(self.store.state); self.requestNativeSelection()
         }
-        return .started
     }
 
     func reportRefusedClose(_ ids: Set<UUID>, unsavedNotes: Bool) {

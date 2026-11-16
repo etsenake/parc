@@ -58,10 +58,26 @@ final class StartPageMarkView: NSView {
 }
 """
 
-sources = [root / "Sources/ParcCore/SpaceTheme.swift"] + [app / name for name in (
+sources = [root / "Sources/ParcCore/SpaceTheme.swift", root / "Sources/ParcCore/HistorySwipeInterface.swift",
+           root / "Sources/ParcCore/HistorySwipeRecognizer.swift"] + [app / name for name in (
     "ThemeRenderer.swift", "WindowStandardButtons.swift", "SidebarChromeLayout.swift", "SidebarTablistBackground.swift",
     "SidebarAccessibility.swift", "SidebarMotionController.swift", "TranslucentButtonFace.swift", "ReloadControl.swift",
-    "PointingHand.swift", "PointerCover.swift", "StartPagePaper.swift", "StartPageView.swift")]
+    "PointingHand.swift", "PointerCover.swift", "StartPagePaper.swift", "StartPageView.swift",
+    "PeekCloseTransition.swift", "PeekDismissalMotion.swift", "PeekFocusReturn.swift", "TabCloseFade.swift")]
+
+arrival = slice_between((app / "BrowserWindowController+StartPage.swift").read_text(),
+                        "    private func playStartPageArrival() {", "\n    }\n}", "BrowserWindowController+StartPage.swift")
+for use in ("let faded = takeCloseFadeArrival()", "startPage.alphaValue = 1", "context.duration = 0.15",
+            "slot.animator().alphaValue = 1"):
+    assert use in arrival, f"a start page the close fade already showed no longer just brings in its bar: {use}"
+assert arrival.index("let faded = takeCloseFadeArrival()") < arrival.index("startPage.alphaValue = 0"), \
+    "the arrival fade restarts a start page the close fade already showed"
+fade_source = (app / "TabCloseFade.swift").read_text()
+assert "guard restoring, phase == .resting, sheetEndObserver == nil, !motion.isAnimating(at: now()) else { return }" in fade_source, \
+    "a refused close fade can be torn down before focus returns from a dialog"
+assert "NSWindow.didEndSheetNotification" in slice_between(fade_source, "    private func returnFocusWhenClear() {",
+                                                           "    private func stopWaitingForSheetEnd() {", "TabCloseFade.swift"), \
+    "a refused page no longer waits for a dialog to close before taking focus back"
 
 
 
@@ -90,6 +106,12 @@ controls = {
                       "a Space swipe prepares the incoming Space's paper"),
     "slot swallows clicks": (("StartPageView.swift", "        return hit === self ? nil : hit\n", "        return hit\n"),
                              "the slot below the bar card falls through to the page background"),
+    "unlocked close fade": (("TabCloseFade.swift", "startPage?.alphaValue = 1 - card", "startPage?.alphaValue = (1 - card) * (1 - card)"),
+                            "the start page fades in exactly as the page fades out"),
+    "early close": (("TabCloseFade.swift", "                schedule(duration) { [weak self] in", "                schedule(duration * 0) { [weak self] in"),
+                    "the real close waits for the Peek close fade's 0.2 seconds"),
+    "Leave lingers": (("TabCloseFade.swift", "        apply(transition.finish())\n        paint()\n", "        transition = PeekCloseTransition()\n"),
+                      "after Leave the page goes at once"),
     "chrome never shows": (("StartPageView.swift", "if sidebarButton.isHidden == showsWindowChrome { sidebarButton.isHidden = !showsWindowChrome }",
                             "sidebarButton.isHidden = true"), "a hidden sidebar shows the window buttons and the sidebar button"),
 }
