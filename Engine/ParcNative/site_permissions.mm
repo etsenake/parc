@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,8 +15,11 @@
 #include "base/mac/mac_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
+#include "base/scoped_multi_source_observation.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
+#include "chrome/browser/notifications/notification_display_service.h"
+#include "chrome/browser/notifications/notification_display_service_factory.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -41,6 +45,7 @@
 #import "site_permission_presenter.h"
 #include "ui/base/base_window.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/message_center/public/cpp/notification.h"
 #include "url/origin.h"
 #import "window_security_reservation.h"
 
@@ -171,6 +176,112 @@ NSString* PermissionTitle(NSString* site,
                                                    : @"unknown"];
 }
 
+base::RepeatingClosureList& SystemPermissionObservers() {
+  static base::NoDestructor<base::RepeatingClosureList> observers;
+  return *observers;
+}
+
+std::optional<UNAuthorizationStatus> g_system_notifications;
+bool g_system_notifications_requested = false;
+
+bool HasNotificationCenter() {
+  return [NSBundle.mainBundle.bundlePath hasSuffix:@".app"];
+}
+
+void FetchSystemNotifications(void (^done)(UNAuthorizationStatus)) {
+  if (!HasNotificationCenter()) {
+    return;
+  }
+  [UNUserNotificationCenter.currentNotificationCenter
+      getNotificationSettingsWithCompletionHandler:^(
+          UNNotificationSettings* settings) {
+        const UNAuthorizationStatus status = settings.authorizationStatus;
+        dispatch_async(dispatch_get_main_queue(), ^{
+          const bool changed = g_system_notifications != status;
+          g_system_notifications = status;
+          if (changed) {
+            SystemPermissionObservers().Notify();
+          }
+          if (done) {
+            done(status);
+          }
+        });
+      }];
+}
+
+void RequestSystemNotifications(void (^denied)(void)) {
+  g_system_notifications_requested = true;
+  [UNUserNotificationCenter.currentNotificationCenter
+      requestAuthorizationWithOptions:UNAuthorizationOptionAlert |
+                                      UNAuthorizationOptionSound |
+                                      UNAuthorizationOptionBadge
+                    completionHandler:^(BOOL granted, NSError*) {
+                      dispatch_async(dispatch_get_main_queue(), ^{
+                        g_system_notifications_requested = false;
+                        FetchSystemNotifications(nil);
+                        if (!granted && denied) {
+                          denied();
+                        }
+                      });
+                    }];
+}
+
+void RequestSystemNotificationsIfUndetermined() {
+  if (g_system_notifications_requested) {
+    return;
+  }
+  FetchSystemNotifications(^(UNAuthorizationStatus status) {
+    if (status == UNAuthorizationStatusNotDetermined &&
+        !g_system_notifications_requested) {
+      RequestSystemNotifications(nil);
+    }
+  });
+}
+
+void OpenSystemNotificationSettings() {
+  base::mac::OpenSystemSettingsPane(
+      base::mac::SystemSettingsPane::kNotifications,
+      base::SysNSStringToUTF8(NSBundle.mainBundle.bundleIdentifier ?: @""));
+}
+
+class SystemNotificationRequests final
+    : public NotificationDisplayService::Observer {
+ public:
+  static SystemNotificationRequests& Get() {
+    static base::NoDestructor<SystemNotificationRequests> requests;
+    return *requests;
+  }
+
+  void Watch(Profile* profile) {
+    if (!profile || profile->IsOffTheRecord()) {
+      return;
+    }
+    auto* service = NotificationDisplayServiceFactory::GetForProfile(profile);
+    if (service && !observations_.IsObservingSource(service)) {
+      observations_.AddObservation(service);
+    }
+  }
+
+ private:
+  void OnNotificationDisplayed(
+      const message_center::Notification& notification,
+      const NotificationCommon::Metadata* const) override {
+    if (notification.notifier_id().type ==
+        message_center::NotifierType::WEB_PAGE) {
+      RequestSystemNotificationsIfUndetermined();
+    }
+  }
+  void OnNotificationClosed(const std::string&) override {}
+  void OnNotificationDisplayServiceDestroyed(
+      NotificationDisplayService* service) override {
+    observations_.RemoveObservation(service);
+  }
+
+  base::ScopedMultiSourceObservation<NotificationDisplayService,
+                                     NotificationDisplayService::Observer>
+      observations_{this};
+};
+
 void ShowSystemNotificationsDeniedSheet(NSWindow* window) {
   if (!window || !window.visible || window.attachedSheet ||
       PCNativeWindowHasSecurityReservation(window)) {
@@ -186,48 +297,27 @@ void ShowSystemNotificationsDeniedSheet(NSWindow* window) {
   [alert addButtonWithTitle:@"Never Mind"
                        role:PCDialogPromptCancel
                    response:NSAlertSecondButtonReturn];
-  NSString* bundle = NSBundle.mainBundle.bundleIdentifier ?: @"";
   [alert beginSheetModalForWindow:window
                 completionHandler:^(NSModalResponse response) {
                   if (response == NSAlertFirstButtonReturn) {
-                    base::mac::OpenSystemSettingsPane(
-                        base::mac::SystemSettingsPane::kNotifications,
-                        base::SysNSStringToUTF8(bundle));
+                    OpenSystemNotificationSettings();
                   }
                 }];
 }
 
 void EnsureSystemNotificationsAllowed(NSWindow* window) {
-  if (![NSBundle.mainBundle.bundlePath hasSuffix:@".app"]) {
-    return;
-  }
   __weak NSWindow* weak = window;
   void (^denied)(void) = ^{
     ShowSystemNotificationsDeniedSheet(weak);
   };
-  UNUserNotificationCenter* center =
-      UNUserNotificationCenter.currentNotificationCenter;
-  void (^decide)(UNAuthorizationStatus) = ^(UNAuthorizationStatus status) {
+  FetchSystemNotifications(^(UNAuthorizationStatus status) {
     if (status == UNAuthorizationStatusDenied) {
       denied();
-    } else if (status == UNAuthorizationStatusNotDetermined) {
-      [center requestAuthorizationWithOptions:UNAuthorizationOptionAlert |
-                                              UNAuthorizationOptionSound |
-                                              UNAuthorizationOptionBadge
-                            completionHandler:^(BOOL granted, NSError*) {
-                              if (!granted) {
-                                dispatch_async(dispatch_get_main_queue(), denied);
-                              }
-                            }];
+    } else if (status == UNAuthorizationStatusNotDetermined &&
+               !g_system_notifications_requested) {
+      RequestSystemNotifications(denied);
     }
-  };
-  [center getNotificationSettingsWithCompletionHandler:^(
-              UNNotificationSettings* settings) {
-    const UNAuthorizationStatus status = settings.authorizationStatus;
-    dispatch_async(dispatch_get_main_queue(), ^{
-      decide(status);
-    });
-  }];
+  });
 }
 
 class Request final : public content::WebContentsObserver,
@@ -657,7 +747,7 @@ class Request final : public content::WebContentsObserver,
     presenter_ = nil;
     [reservation_ invalidate];
     reservation_ = nil;
-    if (Valid(/*completing=*/true)) {
+    if (Valid(true)) {
       delegate->AdvanceOrFinalizeEmbeddedPromptFlow();
     } else if (IsCurrent()) {
       delegate->Ignore(std::monostate{});
@@ -716,7 +806,7 @@ class Request final : public content::WebContentsObserver,
     presenter_ = nil;
     [reservation_ invalidate];
     reservation_ = nil;
-    valid = valid && Valid(/*completing=*/true);
+    valid = valid && Valid(true);
     if (choice == PCSitePermissionAllowOnce) {
       valid &= offers_one_time_ && (variant_ == Variant::kAsk ||
                                     variant_ == Variant::kPreviouslyDenied);
@@ -823,7 +913,7 @@ class NativePrompt final : public permissions::PermissionPrompt {
   }
   ~NativePrompt() override {
     weak_factory_.InvalidateWeakPtrs();
-    request_->Cancel(/*silently=*/true);
+    request_->Cancel(true);
   }
   base::RepeatingClosure DetachCallback() {
     return base::BindRepeating(&NativePrompt::PageWillDetach,
@@ -920,9 +1010,46 @@ void RequestSystemLocation() {
       base::BindOnce([] { g_system_location_requested = false; }));
 }
 
-base::RepeatingClosureList& SystemLocationObservers() {
-  static base::NoDestructor<base::RepeatingClosureList> observers;
-  return *observers;
+ContentSettingsType SystemPermissionType(ContentSettingsType type) {
+  switch (type) {
+    case ContentSettingsType::GEOLOCATION_WITH_OPTIONS:
+      return ContentSettingsType::GEOLOCATION;
+    case ContentSettingsType::CAMERA_PAN_TILT_ZOOM:
+      return ContentSettingsType::MEDIASTREAM_CAMERA;
+    default:
+      return type;
+  }
+}
+
+void RefreshSystemPermissions() {
+  for (auto type : {ContentSettingsType::MEDIASTREAM_CAMERA,
+                    ContentSettingsType::MEDIASTREAM_MIC}) {
+    system_permission_settings::IsDeniedFresh(
+        type, base::BindOnce(
+                  [](ContentSettingsType type, bool was_off, bool) {
+                    if (IsSystemPermissionOff(type) != was_off) {
+                      SystemPermissionObservers().Notify();
+                    }
+                  },
+                  type, IsSystemPermissionOff(type)));
+  }
+  FetchSystemNotifications(nil);
+}
+
+void WatchSystemPermissions() {
+  static bool watching = false;
+  if (watching) {
+    return;
+  }
+  watching = true;
+  FetchSystemNotifications(nil);
+  [NSNotificationCenter.defaultCenter
+      addObserverForName:NSApplicationDidBecomeActiveNotification
+                  object:nil
+                   queue:nil
+              usingBlock:^(NSNotification*) {
+                RefreshSystemPermissions();
+              }];
 }
 
 class NativeSitePermissions final
@@ -959,7 +1086,11 @@ class NativeSitePermissions final
   friend WebContentsUserData;
   explicit NativeSitePermissions(content::WebContents* contents)
       : content::WebContentsObserver(contents),
-        content::WebContentsUserData<NativeSitePermissions>(*contents) {}
+        content::WebContentsUserData<NativeSitePermissions>(*contents) {
+    WatchSystemPermissions();
+    SystemNotificationRequests::Get().Watch(
+        Profile::FromBrowserContext(contents->GetBrowserContext()));
+  }
 
   void OnCapabilityTypesChanged(content::WebContentsCapabilityType type,
                                 bool used) override {
@@ -1080,21 +1211,52 @@ void SetNativeSitePermissionsAttached(content::WebContents& contents,
   }
 }
 
-bool IsSystemLocationOff() {
+bool IsSystemPermissionOff(ContentSettingsType type) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  return !system_permission_settings::IsAllowed(
-             ContentSettingsType::GEOLOCATION) &&
-         !system_permission_settings::CanPrompt(
-             ContentSettingsType::GEOLOCATION);
+  type = SystemPermissionType(type);
+  switch (type) {
+    case ContentSettingsType::GEOLOCATION:
+    case ContentSettingsType::MEDIASTREAM_CAMERA:
+    case ContentSettingsType::MEDIASTREAM_MIC:
+    case ContentSettingsType::CLIPBOARD_READ_WRITE:
+      return !system_permission_settings::IsAllowed(type) &&
+             !system_permission_settings::CanPrompt(type);
+    case ContentSettingsType::NOTIFICATIONS:
+      return g_system_notifications == UNAuthorizationStatusDenied;
+    default:
+      return false;
+  }
 }
 
-void OpenSystemLocationSettings(content::WebContents& contents) {
+std::vector<ContentSettingsType> SystemDeniedPermissions() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  system_permission_settings::OpenSystemSettings(
-      &contents, ContentSettingsType::GEOLOCATION);
+  std::vector<ContentSettingsType> denied;
+  for (auto type : {ContentSettingsType::GEOLOCATION,
+                    ContentSettingsType::MEDIASTREAM_CAMERA,
+                    ContentSettingsType::MEDIASTREAM_MIC,
+                    ContentSettingsType::NOTIFICATIONS}) {
+    if (IsSystemPermissionOff(type)) {
+      denied.push_back(type);
+    }
+  }
+  return denied;
 }
 
-base::CallbackListSubscription ObserveSystemLocation(
+void OpenSystemPermissionSettings(content::WebContents& contents,
+                                  ContentSettingsType type) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!IsSystemPermissionOff(type)) {
+    return;
+  }
+  type = SystemPermissionType(type);
+  if (type == ContentSettingsType::NOTIFICATIONS) {
+    OpenSystemNotificationSettings();
+    return;
+  }
+  system_permission_settings::OpenSystemSettings(&contents, type);
+}
+
+base::CallbackListSubscription ObserveSystemPermissions(
     base::RepeatingClosure changed) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   static base::NoDestructor<
@@ -1102,8 +1264,11 @@ base::CallbackListSubscription ObserveSystemLocation(
       observation;
   if (!*observation) {
     *observation = system_permission_settings::Observe(base::BindRepeating(
-        [](ContentSettingsType, bool) { SystemLocationObservers().Notify(); }));
+        [](ContentSettingsType, bool) { SystemPermissionObservers().Notify(); }));
   }
-  return SystemLocationObservers().Add(std::move(changed));
+  WatchSystemPermissions();
+  auto subscription = SystemPermissionObservers().Add(std::move(changed));
+  RefreshSystemPermissions();
+  return subscription;
 }
 }

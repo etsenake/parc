@@ -11,6 +11,7 @@
 #include "base/functional/callback.h"
 #include "chrome/browser/ui/sad_tab_types.h"
 #include "chrome/browser/ui/tab_sharing/tab_sharing_infobar_delegate.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 #include "components/permissions/permission_prompt.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "media/base/cdm_factory.h"
@@ -148,6 +149,9 @@ using PermissionPromptFactory =
         content::WebContents* web_contents,
         permissions::PermissionPrompt::Delegate* delegate);
 void SetPermissionPromptFactory(PermissionPromptFactory factory);
+
+using SystemDeniedPermissionsProvider = std::vector<ContentSettingsType> (*)();
+void SetSystemDeniedPermissions(SystemDeniedPermissionsProvider provider);
 
 void SetInternalExtensionInstaller(void (*installer)(extensions::ComponentLoader*));
 

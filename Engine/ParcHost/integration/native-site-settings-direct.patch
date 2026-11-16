@@ -1,0 +1,31 @@
+--- a/chrome/browser/ui/webui/settings/site_settings_handler.cc
++++ b/chrome/browser/ui/webui/settings/site_settings_handler.cc
+@@ -155,4 +155,15 @@
+ using extensions::mojom::APIPermissionID;
+ 
++namespace parc_hooks {
++using SystemDeniedPermissionsProvider = std::vector<ContentSettingsType> (*)();
++void SetSystemDeniedPermissions(SystemDeniedPermissionsProvider provider);
++namespace {
++SystemDeniedPermissionsProvider g_system_denied_permissions = nullptr;
++}  // namespace
++void SetSystemDeniedPermissions(SystemDeniedPermissionsProvider provider) {
++  g_system_denied_permissions = provider;
++}
++}  // namespace parc_hooks
++
+ namespace settings {
+ 
+@@ -2872,4 +2883,12 @@
+   base::ListValue blocked_permissions;
+ 
++  if (parc_hooks::g_system_denied_permissions) {
++    for (ContentSettingsType type : parc_hooks::g_system_denied_permissions()) {
++      blocked_permissions.Append(
++          site_settings::ContentSettingsTypeToGroupName(type));
++    }
++    return base::Value(std::move(blocked_permissions));
++  }
++
+ #if BUILDFLAG(IS_CHROMEOS)
+   // This is used to display warning messages in the UI in case that

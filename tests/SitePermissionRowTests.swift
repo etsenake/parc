@@ -9,13 +9,14 @@ struct SitePermissionRowTests {
             checks += 1
             precondition(condition(), message)
         }
-        func row(_ title: String, allowed: Bool, systemSettings: Bool? = nil, pip: Bool = false,
-                 index: Int = 0) -> [String: Any] {
+        func row(_ title: String, allowed: Bool, systemSettings: Bool? = nil, systemPermission: String? = nil,
+                 pip: Bool = false, index: Int = 0) -> [String: Any] {
             var row: [String: Any] = ["title": title, "key": "\(index) https://www.bestbuy.com",
                                       "index": NSNumber(value: index), "revision": NSNumber(value: UInt(4)),
                                       "allowed": NSNumber(value: allowed), "changeable": NSNumber(value: true),
                                       "autoPictureInPicture": NSNumber(value: pip)]
             if let systemSettings { row["systemSettings"] = NSNumber(value: systemSettings) }
+            if let systemPermission { row["systemPermission"] = systemPermission }
             return row
         }
 
@@ -30,6 +31,26 @@ struct SitePermissionRowTests {
                "an allowed site with location off for Parc in macOS says so instead of Allowed")
         expect(off?.accessibilityValue.contains("System Settings") == true,
                "VoiceOver hears that the site is allowed but macOS has location off")
+        expect(off?.systemSettingsHelp.hasPrefix("Location is off for Parc in macOS") == true,
+               "an engine that names no system permission is describing location")
+
+        for (name, help) in [("location", "Location is off"), ("camera", "Camera is off"),
+                             ("microphone", "Microphone is off"), ("notifications", "Notifications are off"),
+                             ("clipboard", "Pasting from other apps is off")] {
+            let systemOff = SitePermissionRow(row(name.capitalized, allowed: true, systemSettings: true,
+                                                  systemPermission: name))
+            expect(systemOff?.subtitle == "Off in macOS" && systemOff?.systemPermission == name,
+                   "an allowed \(name) row with macOS blocking Parc reads Off in macOS")
+            expect(systemOff?.systemSettingsHelp == help + " for Parc in macOS. Open System Settings to turn it on.",
+                   "the \(name) Settings button explains which macOS permission is off")
+            let systemOn = SitePermissionRow(row(name.capitalized, allowed: true, systemSettings: false,
+                                                 systemPermission: name))
+            expect(systemOn?.subtitle == "Allowed", "an allowed \(name) row with macOS allowing Parc reads Allowed")
+            let blockedSite = SitePermissionRow(row(name.capitalized, allowed: false, systemSettings: true,
+                                                    systemPermission: name))
+            expect(blockedSite?.systemSettings == false && blockedSite?.subtitle == "Blocked",
+                   "a blocked \(name) row stays Blocked even while macOS blocks Parc")
+        }
 
         let blocked = SitePermissionRow(row("Location", allowed: false, systemSettings: true))
         expect(blocked?.systemSettings == false && blocked?.subtitle == "Blocked",

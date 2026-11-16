@@ -113,6 +113,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
         &SupportsAutofillUiPresentation);
     parc_hooks::SetEditAddressDialog(&ShowNativeAddressEditor);
     parc_hooks::SetPermissionPromptFactory(&CreateSitePermissionPrompt);
+    parc_hooks::SetSystemDeniedPermissions(&SystemDeniedPermissions);
     parc_hooks::SetLoginHandlerAuthValidator(&ValidateNativeLoginHandlerAuth);
     parc_hooks::SetExtensionInstallCapture(
         &NativeExtensionInstallService::CaptureFor);

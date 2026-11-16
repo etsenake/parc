@@ -92,10 +92,28 @@ bool HasPageInfo(content::WebContents* contents) {
   return true;
 }
 
-bool SystemLocationOff(const PageInfo::PermissionInfo& permission) {
-  return (permission.type == ContentSettingsType::GEOLOCATION ||
-          permission.type == ContentSettingsType::GEOLOCATION_WITH_OPTIONS) &&
-      PageInfoUI::IsToggleOn(permission) && IsSystemLocationOff();
+bool SystemPermissionOff(const PageInfo::PermissionInfo& permission) {
+  return PageInfoUI::IsToggleOn(permission) && IsSystemPermissionOff(permission.type);
+}
+
+NSString* SystemPermissionName(ContentSettingsType type) {
+  switch (type) {
+    case ContentSettingsType::GEOLOCATION:
+    case ContentSettingsType::GEOLOCATION_WITH_OPTIONS: return @"location";
+    case ContentSettingsType::MEDIASTREAM_CAMERA:
+    case ContentSettingsType::CAMERA_PAN_TILT_ZOOM: return @"camera";
+    case ContentSettingsType::MEDIASTREAM_MIC: return @"microphone";
+    case ContentSettingsType::NOTIFICATIONS: return @"notifications";
+    case ContentSettingsType::CLIPBOARD_READ_WRITE: return @"clipboard";
+    default: return @"";
+  }
+}
+
+NSString* SystemPermissionNotice(ContentSettingsType type) {
+  NSString* name = SystemPermissionName(type);
+  if ([name isEqualToString:@"notifications"]) return @"Notifications are off for Parc in macOS System Settings.";
+  if ([name isEqualToString:@"clipboard"]) return @"Pasting from other apps is off for Parc in macOS System Settings.";
+  return [NSString stringWithFormat:@"%@ is off for Parc in macOS System Settings.", name.capitalizedString];
 }
 
 class SiteInfo final : public content::WebContentsObserver,
@@ -280,10 +298,10 @@ class SiteInfo final : public content::WebContentsObserver,
       permission = *found;
       if (command >= kSystemPermission) {
         int text = 0, link = 0;
-        if (ui_delegate_->ShouldShowSettingsLinkForPermission(permission.type, &text, &link))
+        if (SystemPermissionOff(permission))
+          OpenSystemPermissionSettings(*web_contents(), permission.type);
+        else if (ui_delegate_->ShouldShowSettingsLinkForPermission(permission.type, &text, &link))
           ui_delegate_->SettingsLinkClicked(permission.type);
-        else if (SystemLocationOff(permission))
-          OpenSystemLocationSettings(*web_contents());
         return;
       }
       if (!Mutable(permission)) return;
@@ -387,10 +405,10 @@ class SiteInfo final : public content::WebContentsObserver,
       }
       if (permission.setting) button(@"Reset to default", kResetPermission + i, mutable_permission);
       int text = 0, link = 0;
-      if (ui_delegate_->ShouldShowSettingsLinkForPermission(permission.type, &text, &link)) {
+      if (SystemPermissionOff(permission)) {
+        label(SystemPermissionNotice(permission.type), false, true);
         button(@"Open System Settings…", kSystemPermission + i);
-      } else if (SystemLocationOff(permission)) {
-        label(@"Location is off for Parc in macOS System Settings.", false, true);
+      } else if (ui_delegate_->ShouldShowSettingsLinkForPermission(permission.type, &text, &link)) {
         button(@"Open System Settings…", kSystemPermission + i);
       }
     }
@@ -473,7 +491,7 @@ class SiteControls final : public content::WebContentsObserver,
     handler_ = [handler copy];
     active_ = true;
     if (!HasPageInfo(contents)) return true;
-    system_location_ = ObserveSystemLocation(
+    system_permissions_ = ObserveSystemPermissions(
         base::BindRepeating(&SiteControls::Refresh, callbacks_.GetWeakPtr()));
     model_ = std::make_shared<PageInfo>(std::make_unique<ChromePageInfoDelegate>(contents), contents, url);
     ui_delegate_ = std::make_unique<ChromePageInfoUiDelegate>(contents, url);
@@ -511,8 +529,8 @@ class SiteControls final : public content::WebContentsObserver,
   bool OpenSystemSettings(NSInteger index, NSUInteger revision) {
     if (!Current() || revision != revision_ || index < 0 ||
         static_cast<size_t>(index) >= permissions_.size() ||
-        !SystemLocationOff(permissions_[index])) return false;
-    OpenSystemLocationSettings(*web_contents());
+        !SystemPermissionOff(permissions_[index])) return false;
+    OpenSystemPermissionSettings(*web_contents(), permissions_[index].type);
     return true;
   }
 
@@ -520,7 +538,7 @@ class SiteControls final : public content::WebContentsObserver,
     if (!active_) return;
     active_ = false;
     callbacks_.InvalidateWeakPtrs();
-    system_location_ = {};
+    system_permissions_ = {};
     auto model = std::move(model_);
     SiteControlsHandler handler = handler_;
     handler_ = nil;
@@ -596,7 +614,8 @@ class SiteControls final : public content::WebContentsObserver,
     int text = 0, link = 0;
     return std::holds_alternative<ContentSetting>(permission.default_setting) &&
         permission.source == content_settings::SettingSource::kUser &&
-        !ui_delegate_->ShouldShowSettingsLinkForPermission(permission.type, &text, &link) &&
+        (SystemPermissionOff(permission) ||
+         !ui_delegate_->ShouldShowSettingsLinkForPermission(permission.type, &text, &link)) &&
         (ui_delegate_->ShouldShowAllow(permission.type) || ui_delegate_->ShouldShowAsk(permission.type));
   }
   void Publish() {
@@ -626,7 +645,8 @@ class SiteControls final : public content::WebContentsObserver,
         @"title" : title,
         @"allowed" : @(PageInfoUI::IsToggleOn(permission)),
         @"changeable" : @(Changeable(permission)),
-        @"systemSettings" : @(SystemLocationOff(permission)),
+        @"systemSettings" : @(SystemPermissionOff(permission)),
+        @"systemPermission" : SystemPermissionName(permission.type),
         @"autoPictureInPicture" : @(permission.type == ContentSettingsType::AUTO_PICTURE_IN_PICTURE),
         @"key" : [NSString stringWithFormat:@"%d %@", static_cast<int>(permission.type),
             permission.requesting_origin ? base::SysUTF8ToNSString(permission.requesting_origin->Serialize()) : @""],
@@ -645,7 +665,7 @@ class SiteControls final : public content::WebContentsObserver,
   PermissionInfoList permissions_;
   content::WeakDocumentPtr document_;
   SiteControlsHandler __strong handler_;
-  base::CallbackListSubscription system_location_;
+  base::CallbackListSubscription system_permissions_;
   base::WeakPtrFactory<SiteControls> callbacks_{this};
   base::WeakPtrFactory<SiteControls> lifetime_{this};
   WEB_CONTENTS_USER_DATA_KEY_DECL();

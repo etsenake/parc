@@ -374,6 +374,7 @@ source_set("native_permissions") {
   deps = [
     ":native_auxiliary_page",
     ":native_components",
+    "//chrome/browser/notifications",
     "//chrome/browser/permissions/system",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui/browser_window",
@@ -383,6 +384,7 @@ source_set("native_permissions") {
     "//components/url_formatter",
     "//content/public/browser",
     "//ui/base",
+    "//ui/message_center/public/cpp",
     "//url",
   ]
 }

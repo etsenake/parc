@@ -16,6 +16,11 @@ which an embedder cannot override without replacing that file.
   appear as Parc's sheet, and Parc may answer "no prompt". The factory in
   `chrome/browser/ui/views/permissions/permission_prompt_factory.cc` runs before any Chrome prompt
   logic. Answered by `CreateSitePermissionPrompt` in `site_permissions.mm`.
+- **`SetSystemDeniedPermissions`**: Settings' per-site page warns, with its System Settings link,
+  when macOS blocks location, camera or microphone for Parc; upstream reports this only on ChromeOS.
+  The point is `SiteSettingsHandler::GetSystemDeniedPermissions` in
+  `chrome/browser/ui/webui/settings/site_settings_handler.cc`, a member no embedder can override.
+  Answered by `SystemDeniedPermissions` in `site_permissions.mm`, which also reports notifications.
 - **`SetSadTabFactory`**: a crashed page shows Parc's crash view. The factory is in
   `chrome/browser/ui/sad_tab_controller.cc`. Answered by `CreateSadTab` in `sad_tab.mm`.
 - **`SetCertificateViewer`**: viewing a site's certificate opens Parc's viewer instead of the WebUI
@@ -82,8 +87,8 @@ which an embedder cannot override without replacing that file.
 
 ## Interface patches
 
-- **`native-site-permissions-direct`**, **`native-sad-tab`**, **`native-http-auth`**,
-  **`native-tab-sharing-direct`**: each only its hooks, in the files above.
+- **`native-site-permissions-direct`**, **`native-site-settings-direct`**, **`native-sad-tab`**,
+  **`native-http-auth`**, **`native-tab-sharing-direct`**: each only its hooks, in the files above.
 - **`native-server-certificate-viewer-direct`**: the viewer hook, plus the main `chrome/browser`
   target's build edit adding Parc's build flags and, on Mac, the native picture-in-picture API.
 - **`extension_context_menu_native`**: the uninstall hook, plus a pin action that skips its optional

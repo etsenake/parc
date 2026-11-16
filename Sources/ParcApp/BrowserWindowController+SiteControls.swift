@@ -183,7 +183,7 @@ extension BrowserWindowController {
         for row in SitePermissionRow.ordered(siteControlCenterPermissions) {
             siteControlCenterPermissionTargets[row.id] = (row.index, row.revision)
             let accessory = systemSettings && row.systemSettings
-                ? Setting.Accessory(title: SitePermissionRow.systemSettingsTitle, help: SitePermissionRow.systemSettingsHelp)
+                ? Setting.Accessory(title: SitePermissionRow.systemSettingsTitle, help: row.systemSettingsHelp)
                 : nil
             rows.append(Setting(id: row.id, symbol: "gearshape.fill", symbolSize: 13,
                                 symbolWeight: .medium, title: row.title,

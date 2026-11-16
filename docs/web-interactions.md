@@ -35,11 +35,12 @@ live shortcuts and accessibility help. This is Parc's own presentation choice.
 - Secure HTTP(S) permissions come from the genuine headless PageInfo session in
   `Engine/ParcNative/native_page_info.mm`. Changes go through its presenter and
   `OnUIClosing` lifecycle, including reload consequences.
-- When a site's location is allowed but macOS has Location Services off or
-  denied for Parc, its row reads **Off in macOS** instead of Allowed and adds a
-  **Settings** capsule that opens Location Services in System Settings; the row
-  still toggles the site. The card refreshes when macOS's answer changes. The
-  security popover shows the same notice with **Open System Settings…**.
+- When a site's location, camera, microphone, notifications or clipboard access
+  is allowed but macOS blocks it for Parc, its row reads **Off in macOS** with a
+  **Settings** capsule for that System Settings pane; the row still toggles the
+  site. The card rechecks macOS as it opens and when Parc becomes active. The
+  security popover adds **Open System Settings…**; Settings' per-site page shows
+  its macOS warning for location, camera and microphone.
 - Automatic Picture-in-Picture uses PageInfo's item or the Profile's real content
   setting, with ASK treated as on. Managed/compound permissions display without
   exposing an unsupported toggle.
@@ -177,9 +178,11 @@ page observer in `site_permissions.mm` asks when a page starts using location
 (after Allow on the card or on an allowed site), once the page is visible in the
 active window: one request at a time, none after macOS decides. Allowing hands
 the waiting `getCurrentPosition`/`watchPosition` its position; refusing gives
-the page a permission error. Location retains the engine's initial accuracy. Request type
-supplies the title and symbol, including protocol-handler and combined
-camera/microphone wording. Security warnings are Chromium's interstitials under
+the page a permission error. Location retains the engine's initial accuracy.
+Notifications ask macOS after Allow on the card or at an allowed site's first
+notification, which macOS may drop while asking; Chromium's media handler asks
+for camera and microphone as capture starts. Request type supplies the title and
+symbol, including protocol-handler and combined camera/microphone wording. Security warnings are Chromium's interstitials under
 Parc's skin; see [failure and recovery](#failure-and-recovery-surfaces--web17).
 
 ## Context menus, hovered status and banners — WEB16
