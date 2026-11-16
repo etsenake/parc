@@ -139,6 +139,7 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
     private var errorUpdateScheduled = false
     private var openMenus: Set<ObjectIdentifier> = []
     private var finished = false
+    private var endingEditForClose = false
     var onClose: (() -> Void)?
 
     init(store: BrowserStore) {
@@ -220,10 +221,8 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
         guard let window else { return true }
         guard window.attachedSheet == nil else { return false }
         let focus = LinkRoutingInteraction.captureFocus(in: window, fields: conditionFields.map { (LinkRoutingInteraction.FieldID(ruleID: $0.ruleID, conditionID: $0.conditionID), $0.field) })
-        window.makeFirstResponder(nil); captureEditor()
-        guard routing.commitEditor(workingRules, basedOn: originalRules) else {
-            discardButton.isHidden = false
-            updateKeyViews()
+        endingEditForClose = true; window.makeFirstResponder(nil); endingEditForClose = false
+        guard persist() else {
             if focus == nil { LinkRoutingInteraction.focus(closeButton, in: window) }
             else { LinkRoutingInteraction.restoreFocus(focus, in: window, fields: conditionFields.map { (LinkRoutingInteraction.FieldID(ruleID: $0.ruleID, conditionID: $0.conditionID), $0.field) }) }
             return false
@@ -231,6 +230,18 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
         endSheet(); return true
     }
     private func discardChanges() { endSheet() }
+    @discardableResult
+    private func persist() -> Bool {
+        guard !finished else { return true }
+        captureEditor()
+        let editing = Set(conditionFields.filter { $0.field.currentEditor() != nil }.map(\.conditionID))
+        let rules = LinkRoutingDraft.savable(workingRules, editing: editing, saved: originalRules)
+        let saved = routing.commitEditor(rules, basedOn: originalRules)
+        if saved { originalRules = rules }
+        if discardButton.isHidden != saved { discardButton.isHidden = saved; updateKeyViews() }
+        return saved
+    }
+    @objc private func editorChoiceChanged(_ sender: NSPopUpButton) { persist() }
     func windowShouldClose(_ sender: NSWindow) -> Bool { dismiss(); return false }
 
     private func style(_ button: NSButton) {
@@ -358,6 +369,7 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
                     let popup = PointingHandPopUpButton(frame: NSRect(x: 92, y: cy, width: 110, height: 26))
                     popup.addItems(withTitles: ["Is equal to", "Contains"]); popup.selectItem(at: condition.style == .matches ? 0 : 1)
                     popup.menu?.delegate = self
+                    popup.target = self; popup.action = #selector(editorChoiceChanged(_:))
                     popup.setAccessibilityLabel("Matching style for route \(index + 1), condition \(conditionIndex + 1)")
                     row.addSubview(popup); keyViews.append(popup)
                     rowControls[RowControlID(ruleID: rule.id, conditionID: condition.id, role: .style)] = popup
@@ -379,6 +391,7 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
                 let popup = PointingHandPopUpButton(frame: NSRect(x: 187, y: cy, width: 165, height: 26))
                 popup.menu?.autoenablesItems = false; popup.setAccessibilityLabel("Destination for route \(index + 1)")
                 popup.menu?.delegate = self
+                popup.target = self; popup.action = #selector(editorChoiceChanged(_:))
                 var choices: [LinkRouteDestination] = []
                 func addChoice(_ title: String, _ destination: LinkRouteDestination) {
                     popup.menu?.addItem(NSMenuItem(title: title, action: nil, keyEquivalent: "")); choices.append(destination)
@@ -425,12 +438,14 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
         captureEditor(); let rule = LinkRoute(); workingRules.append(rule); render()
         LinkRoutingInteraction.focus(conditionFields.first(where: { $0.ruleID == rule.id })?.field, in: window)
         if let row = rowViews[rule.id] { LinkRoutingInteraction.revealAddedRule(row, in: scroll) }
+        persist()
     }
     private func addCondition(_ ruleID: UUID) {
         guard !finished else { return }
         captureEditor(); guard let index = workingRules.firstIndex(where: { $0.id == ruleID }) else { return }
         let condition = LinkRouteCondition(); workingRules[index].conditions.append(condition); render()
         LinkRoutingInteraction.focus(conditionFields.first(where: { $0.ruleID == ruleID && $0.conditionID == condition.id })?.field, in: window)
+        persist()
     }
     private func removeCondition(_ ruleID: UUID, _ conditionID: UUID) {
         let responder = window?.firstResponder as? NSView
@@ -449,12 +464,13 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
                 ?? conditionFields.first?.field ?? newRoute as NSView
             LinkRoutingInteraction.focus(next, in: window)
         }
+        persist()
     }
     private func moveRule(_ id: UUID, by offset: Int) {
         guard !finished else { return }
         captureEditor(); guard let from = workingRules.firstIndex(where: { $0.id == id }),
               workingRules.indices.contains(from + offset) else { return }
-        workingRules.swapAt(from, from + offset); render()
+        workingRules.swapAt(from, from + offset); render(); persist()
     }
     private func menuRuleID(_ sender: NSMenuItem) -> UUID? {
         (sender.representedObject as? String).flatMap(UUID.init(uuidString:))
@@ -487,11 +503,13 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
             let next: NSView = conditionFields.first?.field ?? newRoute as NSView
             LinkRoutingInteraction.focus(next, in: window)
         }
+        persist()
     }
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         LinkRoutingTextEditing.handle(commandSelector, in: textView) { _ = window?.makeFirstResponder(nil) }
     }
     func controlTextDidEndEditing(_ notification: Notification) {
+        if !endingEditForClose { persist() }
         guard pendingDestinationRefresh else { return }
         scheduleDestinationRefresh()
     }

@@ -11,7 +11,17 @@ struct LinkRoutingEditorTests {
         var incomplete = LinkRoute(); incomplete.conditions.append(LinkRouteCondition(pattern: "other.example"))
         var last = LinkRoute(); last.conditions[0].pattern = "last.example"
         precondition(store.commitEditor([first, incomplete, last], basedOn: []))
-        precondition(store.state.rules == [first, last])
+        var completed = incomplete; completed.conditions.removeFirst()
+        precondition(store.state.rules == [first, completed, last])
+        var savedRoute = LinkRoute(); savedRoute.conditions[0].pattern = "youtube.com"
+        var typing = savedRoute; typing.conditions[0].pattern = "you"; typing.destination = .space(UUID())
+        let added = LinkRouteCondition(pattern: "watch"), blank = LinkRouteCondition(pattern: "  ")
+        typing.conditions += [added, blank]
+        var held = typing; held.conditions = [savedRoute.conditions[0]]
+        precondition(LinkRoutingDraft.savable([typing, LinkRoute()], editing: [typing.conditions[0].id, added.id],
+                                              saved: [savedRoute]) == [held])
+        var finished = typing; finished.conditions.removeLast()
+        precondition(LinkRoutingDraft.savable([typing], saved: [savedRoute]) == [finished])
         let baseline = store.state.rules
         var peer = LinkRoute(); peer.conditions[0].pattern = "peer.example"
         precondition(store.save(peer))
@@ -39,6 +49,6 @@ struct LinkRoutingEditorTests {
         precondition(broken.reset(basedOn: []))
         let recovered = LinkRoutingStore(directory: brokenDirectory)
         precondition(recovered.errorMessage == nil && recovered.state.rules.isEmpty)
-        print("LinkRouting editor close and conflict preservation passed")
+        print("LinkRouting editor saving and conflict preservation passed")
     }
 }

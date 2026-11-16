@@ -162,10 +162,15 @@ Space or the most recent Space overall; the menu lists Spaces by name. A rule st
 with a Profile destination shows as the first Space that uses it. A separate
 mini browser window is not a destination; the default is Most Recent Space.
 
-`LinkRoutingStore` atomically stores `link-routing.json`. The editor owns a draft,
-saves on close, omits incomplete conditions and does not write unchanged sessions.
-Unreadable data is preserved until explicit Reset Routes. Write failure or a
-concurrent update retains the draft with explicit discard, never overwriting the
+`LinkRoutingStore` atomically stores `link-routing.json`. The editor has no Save
+button: it saves each change as it happens, whether that's choosing a matching
+style or destination, adding, removing or reordering a route, or leaving a
+pattern's text field. A field still being typed in keeps its last saved pattern
+until editing ends, so half-typed text never routes links; closing the editor
+ends editing and saves. Empty conditions are left out, a route with no filled
+condition is not saved, and unchanged edits do not write. Unreadable data is
+preserved until explicit Reset Routes. Write failure or a concurrent update
+keeps the unsaved edits with an explicit Discard Changes, never overwriting the
 newer rules. Missing destinations retain their UUIDs and fallback policy.
 
 ### Internal original-request routing

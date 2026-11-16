@@ -103,6 +103,22 @@ extension LinkRoutingState {
     }
 }
 
+enum LinkRoutingDraft {
+    static func savable(_ rules: [LinkRoute], editing: Set<UUID> = [], saved: [LinkRoute] = []) -> [LinkRoute] {
+        let savedPatterns = Dictionary(saved.flatMap(\.conditions).map { ($0.id, $0.pattern) },
+                                       uniquingKeysWith: { first, _ in first })
+        return rules.compactMap { rule in
+            var rule = rule
+            rule.conditions = rule.conditions.compactMap { condition in
+                var condition = condition
+                if editing.contains(condition.id) { condition.pattern = savedPatterns[condition.id] ?? "" }
+                return condition.pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : condition
+            }
+            return rule.conditions.isEmpty ? nil : rule
+        }
+    }
+}
+
 struct LinkRoutingSpace: Equatable {
     let id: UUID
     let profileID: UUID
@@ -188,7 +204,7 @@ final class LinkRoutingStore: ObservableObject {
 
     @discardableResult
     func commitEditor(_ rules: [LinkRoute], basedOn original: [LinkRoute]) -> Bool {
-        let filtered = rules.filter { !$0.conditions.isEmpty && $0.conditions.allSatisfy { !$0.pattern.isEmpty } }
+        let filtered = LinkRoutingDraft.savable(rules)
         if filtered == original { return true }
         guard state.rules == original else {
             errorMessage = "Routes changed in another window. Reopen Air Traffic Control to review the latest routes."
