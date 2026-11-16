@@ -675,7 +675,7 @@ private final class ThemeColorPad: NSView {
         }
     }
     func cancelGesture() {
-        if dragOrigin != nil { NSCursor.arrow.set() }
+        if dragOrigin != nil { NSCursor.arrow.set(); setHoveredHandle(nil) }
         dragOrigin = nil; dragHandleOrigin = nil
         updateButtonHoverStyle(at: window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) })
     }
@@ -733,15 +733,20 @@ private final class ThemeColorPad: NSView {
     override func cursorUpdate(with event: NSEvent) {
         if dragOrigin == nil { hoverCursor(at: convert(event.locationInWindow, from: nil)).set() }
     }
+    private func setHoveredHandle(_ index: Int?) {
+        if index != hovered { hovered = index; refresh(animated: editor?.isGestureInProgress == false) }
+    }
+    private func updateHoveredHandle(at point: NSPoint) {
+        setHoveredHandle(buttonContains(point) ? nil : handle(at: point))
+    }
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        let next = buttonContains(point) ? nil : handle(at: point)
-        if next != hovered { hovered = next; refresh(animated: editor?.isGestureInProgress == false) }
+        updateHoveredHandle(at: point)
         updateButtonHoverStyle(at: point)
         hoverCursor(at: point).set()
     }
     override func mouseExited(with event: NSEvent) {
-        hovered = nil; refresh(animated: editor?.isGestureInProgress == false); NSCursor.arrow.set()
+        if dragHandleOrigin == nil { setHoveredHandle(nil); NSCursor.arrow.set() }
         updateButtonHoverStyle(at: nil)
     }
     override func mouseDown(with event: NSEvent) {
@@ -755,6 +760,7 @@ private final class ThemeColorPad: NSView {
         if dragHandleOrigin != nil { NSCursor.closedHand.set() }
         updateButtonHoverStyle(at: point)
         updateColor(dragHandleOrigin ?? point)
+        if dragHandleOrigin != nil { updateHoveredHandle(at: point) }
     }
     override func mouseDragged(with event: NSEvent) {
         guard let origin = dragOrigin else { return }
@@ -764,7 +770,9 @@ private final class ThemeColorPad: NSView {
             updateColor(NSPoint(x: handleOrigin.x + point.x - origin.x, y: handleOrigin.y + point.y - origin.y))
         } else {
             updateColor(point)
-            hoverCursor(at: point).set()
+            let inside = bounds.contains(point)
+            if inside { updateHoveredHandle(at: point) } else { setHoveredHandle(nil) }
+            (inside ? hoverCursor(at: point) : NSCursor.arrow).set()
             updateButtonHoverStyle(at: point)
         }
     }
@@ -772,9 +780,12 @@ private final class ThemeColorPad: NSView {
         guard dragOrigin != nil else { return }
         let draggedKnob = dragHandleOrigin != nil
         dragOrigin = nil; dragHandleOrigin = nil; onEnd?()
-        let point = convert(event.locationInWindow, from: nil)
-        if draggedKnob { (bounds.contains(point) ? NSCursor.openHand : NSCursor.arrow).set() }
-        updateButtonHoverStyle(at: bounds.contains(point) ? point : nil)
+        let point = convert(event.locationInWindow, from: nil), inside = bounds.contains(point)
+        if draggedKnob {
+            if inside { updateHoveredHandle(at: point) } else { setHoveredHandle(nil) }
+            (inside ? hoverCursor(at: point) : NSCursor.arrow).set()
+        }
+        updateButtonHoverStyle(at: inside ? point : nil)
     }
     private func updateColor(_ point: NSPoint) {
         guard bounds.width > 0, bounds.height > 0 else { return }
@@ -891,6 +902,7 @@ private final class ThemeNoiseControl: NSControl {
     private let scrollEvents = PassthroughSubject<Double, Never>()
     private var scrollDelivery: AnyCancellable?
     private var lastScrollTime: TimeInterval = 0
+    private let tooltipAnchor = TooltipAnchorView()
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override init(frame: NSRect) {
@@ -898,17 +910,16 @@ private final class ThemeNoiseControl: NSControl {
         setAccessibilityElement(true)
         setAccessibilityRole(.slider); setAccessibilityLabel("Theme texture and noise")
         setAccessibilityHelp("Click to cycle textures. Rotate or scroll to adjust noise.")
-        updateTooltip()
+        addSubview(tooltipAnchor)
+        tooltipAnchor.frame = knobRect
+        tooltipAnchor.parcTooltip = TooltipConfiguration("Noise", anchor: .bottom)
         setAccessibilityMinValue(0); setAccessibilityMaxValue(100)
         observeScroll()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        updateTooltip()
-    }
-    private func updateTooltip() {
-        parcTooltip = TooltipConfiguration("Noise", anchor: .bottom, anchorRect: knobRect)
+        tooltipAnchor.frame = knobRect
     }
     private var knobRect: NSRect {
         let side = min(bounds.width, bounds.height) / 2

@@ -20,7 +20,7 @@ Finish assigned work first; explicit deferrals remain deferred.
 - Restore New Tab's pressed scale after a cancelled click, and prevent long
   Space drags from exposing blank strip content.
   [Sidebar motion](sidebar-motion.md), [theme rendering](space-theme-rendering.md).
-- Finish the documented theme-control hover/dot/tooltip details.
+- Finish the documented theme-control hover/dot details.
   [Theme editor](space-theme-editor.md).
 
 ## Performance

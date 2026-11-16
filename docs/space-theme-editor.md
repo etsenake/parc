@@ -9,8 +9,11 @@ owns gestures, [appearance](space-theme-appearance.md) owns parent policy, and
 
 The pad clips to continuous 8-point corners, fills `labelColor` at 0.05 and tints
 its stretched DotGrid at 0.4. Color handles keep their own position/hover springs.
-Pad buttons suppress hover while a knob is hovered or dragged, restoring that
-state from the actual pointer after cancellation.
+The knob under the pointer keeps its hover growth through a pad drag, including
+a grabbed knob and the primary knob arriving under a background drag, so the
+growth always matches the open or closed hand. Pad buttons suppress hover while
+a knob is hovered or dragged, restoring that state from the actual pointer after
+cancellation.
 
 ## Preset swatches
 
@@ -75,15 +78,15 @@ in place. Onboarding does not install that callback.
 ## Tooltip adoption
 
 Swatches, arrows, add/remove, appearance and noise controls use the shared Parc
-tooltip below the control and inherit their popover's palette. Noise anchors to
-`knobRect`; the tooltip hit region currently remains the whole dial.
+tooltip below the control and inherit their popover's palette. Noise lives on a
+tooltip anchor covering the centre knob's square frame, the same region that
+shows the pointing hand, so the ring and corners stay quiet while you line up a
+drag. The anchor passes every click and drag through to the dial.
 
 ## Remaining presentation limits
 
 The intensity thumb/noise indicator do not grow their shadow/scale on hover.
-During a pad drag, entering a handle changes the cursor without refreshing its
-hover scale. Noise uses whole lit dots during continuous rotation, and its
-label can trigger outside the center knob.
+Noise uses whole lit dots during continuous rotation.
 
 ## Checks
 

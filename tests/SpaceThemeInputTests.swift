@@ -215,6 +215,7 @@ private final class ThemeInputEvent: NSEvent {
 
         pad.mouseDown(with: mouse(.leftMouseDown, pad, primary))
         expect(NSCursor.current == .closedHand, "grabbing a knob shows the closed hand")
+        expect(knobs[0].transform.m11 > 1 && knobs[1].transform.m11 == 1, "the grabbed knob shows its hover growth")
         NSCursor.arrow.set()
         let moved = NSPoint(x: primary.x - 40, y: primary.y - 30)
         pad.mouseDragged(with: mouse(.leftMouseDragged, pad, moved))
@@ -226,8 +227,14 @@ private final class ThemeInputEvent: NSEvent {
         let outside = NSPoint(x: -60, y: moved.y)
         pad.mouseDown(with: mouse(.leftMouseDown, pad, moved))
         pad.mouseDragged(with: mouse(.leftMouseDragged, pad, outside))
+        pad.mouseExited(with: NSEvent.enterExitEvent(with: .mouseExited, location: pad.convert(outside, to: nil), modifierFlags: [],
+                                                     timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                                     trackingNumber: 0, userData: nil)!)
+        expect(knobs[0].transform.m11 > 1 && NSCursor.current == .closedHand, "a knob held past the pad's edge keeps its growth and the closed hand")
+        pad.mouseDragged(with: mouse(.leftMouseDragged, pad, outside))
         pad.mouseUp(with: mouse(.leftMouseUp, pad, outside))
         expect(NSCursor.current == .arrow, "release outside the pad restores the arrow")
+        expect(knobs[0].transform.m11 == 1, "release outside the pad drops the knob's hover growth with the arrow")
         NSCursor.arrow.set()
         pad.mouseDown(with: mouse(.leftMouseDown, pad, background))
         expect(NSCursor.current == .arrow, "a background press makes no cursor change")
@@ -236,12 +243,44 @@ private final class ThemeInputEvent: NSEvent {
         let followed = drawn(knobs[0], pad, in: view)
         expect(hypot(followed.x - interior.x, followed.y - interior.y) < 0.001, "a background drag brings the primary knob to the pointer")
         expect(NSCursor.current == .openHand, "the knob arriving under a background drag shows the open hand")
+        expect(knobs[0].transform.m11 > 1, "the knob arriving under a background drag shows its hover growth with the open hand")
         pad.cursorUpdate(with: cursorUpdate(pad, corner))
         expect(NSCursor.current == .openHand, "a cursor update makes no change during a background drag")
         pad.mouseDragged(with: mouse(.leftMouseDragged, pad, corner))
         expect(NSCursor.current == .arrow, "past the rim the knob stays behind and the arrow returns")
+        expect(knobs[0].transform.m11 == 1, "the knob left behind at the rim drops its hover growth with the arrow")
         pad.mouseUp(with: mouse(.leftMouseUp, pad, corner))
         expect(NSCursor.current == .arrow, "a background release makes no cursor change")
+
+        pad.mouseDown(with: mouse(.leftMouseDown, pad, background))
+        pad.mouseDragged(with: mouse(.leftMouseDragged, pad, interior))
+        expect(knobs[0].transform.m11 > 1, "a background drag grows the knob it brings under the pointer")
+        view.finishEditing()
+        expect(knobs[0].transform.m11 == 1 && NSCursor.current == .arrow, "a cancelled drag drops the knob's hover growth with the arrow")
+        pad.mouseUp(with: mouse(.leftMouseUp, pad, interior))
+        pad.mouseMoved(with: mouse(.mouseMoved, pad, background))
+        let candidates = stride(from: 60.0, through: pad.bounds.width - 60, by: 20).flatMap { x in
+            stride(from: 80.0, through: pad.bounds.height - 80, by: 20).map { NSPoint(x: x, y: $0) }
+        }
+        let clicked = candidates.first { point in
+            knobs.allSatisfy { let knob = drawn($0, pad, in: view); return hypot(knob.x - point.x, knob.y - point.y) > 60 }
+        }!
+        NSCursor.arrow.set()
+        pad.mouseDown(with: mouse(.leftMouseDown, pad, clicked)); pad.mouseUp(with: mouse(.leftMouseUp, pad, clicked))
+        expect(knobs[0].transform.m11 == 1 && NSCursor.current == .arrow, "a plain click on the pad moves the knob there without growing it under the arrow")
+        pad.mouseDown(with: mouse(.leftMouseDown, pad, background))
+        pad.mouseDragged(with: mouse(.leftMouseDragged, pad, interior))
+        pad.mouseDragged(with: mouse(.leftMouseDragged, pad, NSPoint(x: -10, y: pad.bounds.midY)))
+        expect(knobs[0].transform.m11 == 1 && NSCursor.current == .arrow, "outside the pad a background drag shows no knob growth and the arrow")
+        pad.mouseUp(with: mouse(.leftMouseUp, pad, NSPoint(x: -10, y: pad.bounds.midY)))
+        let companion = drawn(knobs[1], pad, in: view)
+        pad.mouseMoved(with: mouse(.mouseMoved, pad, companion))
+        pad.mouseDown(with: mouse(.leftMouseDown, pad, companion))
+        let grabbedUnder = drawn(knobs[0], pad, in: view)
+        expect(hypot(grabbedUnder.x - companion.x, grabbedUnder.y - companion.y) < 0.5 && knobs[0].transform.m11 > 1
+               && knobs[1].transform.m11 == 1 && knobs[2].transform.m11 == 1,
+               "grabbing a companion grows the primary that takes its place under the closed hand, not the companion that moves away")
+        pad.mouseUp(with: mouse(.leftMouseUp, pad, companion))
 
         let add = control("Add color", view) as! NSButton
         let addCenter = pad.convert(NSPoint(x: add.bounds.midX, y: add.bounds.midY), from: add)
@@ -386,15 +425,55 @@ private final class ThemeInputEvent: NSEvent {
     static func editorTooltips() {
         let view = make(), noise = control("Theme texture and noise", view)
         let knob = NSRect(x: noise.bounds.midX - 20, y: noise.bounds.midY - 20, width: 40, height: 40)
-        expect(noise.bounds.size == NSSize(width: 80, height: 80)
-               && noise.parcTooltip == TooltipConfiguration("Noise", anchor: .bottom, anchorRect: knob),
-               "Noise is anchored below the dial's 40-point knob")
+        let anchors = noise.subviews.compactMap { $0 as? TooltipAnchorView }
+        expect(noise.parcTooltip == nil && anchors.count == 1, "the dial's square and ring carry no tooltip of their own")
+        let anchor = anchors[0]
+        expect(noise.bounds.size == NSSize(width: 80, height: 80) && anchor.frame == knob
+               && anchor.parcTooltip == TooltipConfiguration("Noise", anchor: .bottom),
+               "Noise belongs to the dial's 40-point centre knob and sits below it")
         noise.setFrameSize(NSSize(width: 100, height: 100))
-        expect(noise.parcTooltip?.anchorRect == NSRect(x: 25, y: 25, width: 50, height: 50),
+        expect(anchor.frame == NSRect(x: 25, y: 25, width: 50, height: 50),
                "the anchor follows the knob when the dial's frame changes")
         let tooltips = children(view).compactMap(\.parcTooltip)
         expect(tooltips.count >= 6 && tooltips.allSatisfy { $0.palette == nil },
                "the editor's tooltips leave their palette to the popover window")
+        noiseTooltipRegion()
+    }
+    final class KeyHostWindow: NSWindow {
+        var pointer = NSPoint.zero
+        override var isKeyWindow: Bool { true }
+        override var mouseLocationOutsideOfEventStream: NSPoint { pointer }
+    }
+    static func noiseTooltipRegion() {
+        InputOverrides.install()
+        InputOverrides.pressedMouseButtons = 0; InputOverrides.modifierFlags = []
+        defer { InputOverrides.pressedMouseButtons = nil; InputOverrides.modifierFlags = nil }
+        let view = make()
+        let window = KeyHostWindow(contentRect: NSRect(x: 200, y: 200, width: view.frame.width, height: view.frame.height),
+                                   styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+        defer { window.contentView = nil; window.close() }
+        let noise = control("Theme texture and noise", view)
+        let anchor = noise.subviews.compactMap { $0 as? TooltipAnchorView }.first!
+        let owner = anchor.trackingAreas.compactMap { $0.owner as? NSResponder }.first!
+        func enter(_ point: NSPoint) {
+            window.pointer = noise.convert(point, to: nil)
+            owner.mouseEntered(with: NSEvent.enterExitEvent(with: .mouseEntered, location: window.pointer, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, trackingNumber: 0, userData: nil)!)
+        }
+        func label() -> String? { (window.childWindows?.first?.contentView as? TooltipView)?.content.label }
+        let c = NSPoint(x: noise.bounds.midX, y: noise.bounds.midY)
+        expect(noise.hitTest(noise.convert(c, to: noise.superview)) === noise, "in a window, clicks on the knob still reach the dial")
+        enter(NSPoint(x: c.x + 30, y: c.y)); drain(0.6)
+        expect(label() == nil, "the ring shows no Noise tooltip")
+        enter(NSPoint(x: c.x - 30, y: c.y - 30)); drain(0.6)
+        expect(label() == nil, "the dial's corner shows no Noise tooltip")
+        enter(NSPoint(x: c.x + 19, y: c.y + 19)); drain(0.6)
+        expect(label() == "Noise", "the centre knob's frame shows Noise, where the pointing hand shows")
+        expect(window.childWindows?.first?.isVisible == false && !window.isVisible, "nothing was put on screen")
     }
     static func dialKnobGeometry() {
         var theme = SpaceTheme(); theme.noise = 0.5
