@@ -7,7 +7,9 @@ import os
 from pathlib import Path
 import plistlib
 import shutil
+import signal
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -103,15 +105,16 @@ class DmgTests(unittest.TestCase):
 
     def dmgbuild(self, app, image, log):
         self.calls.append(["dmgbuild", str(app), str(image), str(log)])
-        if isinstance(self.build_error, KeyboardInterrupt):
+        if self.build_error:
             mount = Path(self.temp.name) / "Parc"
             mount.mkdir()
             self.mounted.add(mount)
+            writable = str(image.with_name(".tempParc-arm64.dmg")).replace("/private/var/", "/var/", 1)
             self.attached = [{"image-path": str(Path(self.temp.name) / "other.dmg"),
-                              "system-entities": [{"mount-point": "/Volumes/Other"}]},
-                             {"image-path": str(image.with_name(".tempParc-arm64.dmg")),
+                              "system-entities": [{"mount-point": "/Volumes/Other"}]}, {},
+                             {"image-path": writable, "system-entities": [{"dev-entry": "/dev/disk9"}]},
+                             {"image-path": writable,
                               "system-entities": [{"dev-entry": "/dev/disk9"}, {"mount-point": str(mount)}]}]
-        if self.build_error:
             raise self.build_error
         shutil.rmtree(self.volume, ignore_errors=True)
         self.volume.mkdir()
@@ -220,15 +223,30 @@ class DmgTests(unittest.TestCase):
         self.build_error = None
         self.assertEqual(self.execute()["phase"], "complete")
 
-    def test_interrupted_dmgbuild_unmounts_only_its_own_image(self):
-        self.build_error = KeyboardInterrupt()
-        with self.assertRaises(KeyboardInterrupt):
-            self.execute()
-        detaches = [call for call in self.calls if call[:2] == ["hdiutil", "detach"]]
-        self.assertEqual(detaches, [["hdiutil", "detach", str(Path(self.temp.name) / "Parc")]])
-        self.assertEqual(self.mounted, set())
-        self.assertFalse(self.output.exists())
-        self.assertEqual(self.leftovers(), [])
+    def test_failed_or_interrupted_dmgbuild_unmounts_only_its_own_image(self):
+        for error in (RuntimeError("Unable to sync"), KeyboardInterrupt()):
+            with self.subTest(error=type(error).__name__):
+                self.reset()
+                self.build_error = error
+                with self.assertRaises((dmg.Refusal, KeyboardInterrupt)):
+                    self.execute()
+                detaches = [call for call in self.calls if call[:2] == ["hdiutil", "detach"]]
+                self.assertEqual(detaches, [["hdiutil", "detach", str(Path(self.temp.name) / "Parc")]])
+                self.assertEqual(self.mounted, set())
+                self.assertFalse(self.output.exists())
+                self.assertEqual(self.leftovers(), [])
+                shutil.rmtree(Path(self.temp.name) / "Parc")
+                self.attached = []
+
+    def test_stop_signal_interrupts_packaging_so_its_cleanup_runs(self):
+        prior = signal.getsignal(signal.SIGTERM)
+        self.addCleanup(signal.signal, signal.SIGTERM, prior)
+        arguments = ["package-dmg.py", str(self.package), "--output", str(self.output), "--sign-identity", "id",
+                     "--profile", "profile", "--team", TEAM]
+        with (patch.object(sys, "argv", arguments),
+              patch.object(dmg, "package_dmg", side_effect=lambda *args: os.kill(os.getpid(), signal.SIGTERM)),
+              self.assertRaisesRegex(KeyboardInterrupt, "signal 15")):
+            dmg.main()
 
     def test_unmount_that_reports_busy_after_succeeding_is_not_retried(self):
         self.phantom = True

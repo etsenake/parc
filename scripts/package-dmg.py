@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Create, sign, notarize and verify Parc's drag-to-Applications disk image."""
 import argparse
+import contextlib
 import datetime
 import fcntl
 import importlib.util
@@ -10,6 +11,7 @@ from pathlib import Path
 import plistlib
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -88,18 +90,12 @@ def verify_layout(volume, folder):
 
 def release_images(work, folder):
     result = subprocess.run(["hdiutil", "info", "-plist"], capture_output=True)
-    try:
-        images = plistlib.loads(result.stdout).get("images", [])
-    except Exception:
-        return
-    for image in images:
+    for image in plistlib.loads(result.stdout).get("images", []):
         if Path(image.get("image-path", "/")).resolve().is_relative_to(work.resolve()):
             for entity in image.get("system-entities", []):
                 if entity.get("mount-point"):
-                    try:
-                        detach(Path(entity["mount-point"]), folder / "interrupted-detach.log")
-                    except Refusal:
-                        pass
+                    with contextlib.suppress(Exception):
+                        detach(Path(entity["mount-point"]), folder / "leftover-detach.log", attempts=1)
 
 
 def build_image(app, output, folder):
@@ -110,11 +106,10 @@ def build_image(app, output, folder):
             layout.build(app, image, folder / "dmgbuild.log")
         except Exception as error:
             raise Refusal("dmgbuild could not build the install window: " + str(error)) from error
-        except BaseException:
-            release_images(work, folder)
-            raise
         os.link(image, output)
     finally:
+        with contextlib.suppress(Exception):
+            release_images(work, folder)
         shutil.rmtree(work, ignore_errors=True)
 
 
@@ -247,6 +242,11 @@ def main():
     parser.add_argument("--profile", required=True)
     parser.add_argument("--team", required=True)
     args = parser.parse_args()
+
+    def interrupted(signum, frame):
+        raise KeyboardInterrupt("DMG packaging interrupted by signal " + str(signum))
+
+    signal.signal(signal.SIGTERM, interrupted)
     try:
         package_dmg(args.package, args.output, args.sign_identity, args.profile, args.team)
     except (Refusal, OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:

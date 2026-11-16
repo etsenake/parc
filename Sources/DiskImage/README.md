@@ -101,11 +101,13 @@ the layout file shipped in 2.7.0 and tampered images are refused.
 
 The check runs before submission to Apple and again on the downloaded release
 asset. The DMG receipt records that the image has an install window, so a
-resumed image from before it skips only the layout check; a resumed image laid
-out by Parc's earlier writer is refused and has to be rebuilt. If the build is
-interrupted while dmgbuild has its image mounted, packaging detaches that
-image before cleaning up. `publish-homebrew.py` checks the layout only for a
-release whose source builds the window with dmgbuild: older published images
-can't change, and Finder never read the earlier writer's layout. Publishing
-checks against the current checkout's layout, so change the layout between
-releases rather than while one is being published.
+resumed image from before it skips only the layout check. A resumed image laid
+out by Parc's earlier writer is refused; to rebuild it, move that image and its
+`dmg-notarization` folder aside and package again. Whether dmgbuild succeeds,
+fails or is stopped, including by the release's stop signal, packaging then
+detaches any image still mounted from its temporary folder before deleting it.
+`publish-homebrew.py` checks the layout only for a release whose source builds
+the window with dmgbuild: older published images can't change, and Finder
+never read the earlier writer's layout. Publishing checks against the current
+checkout's layout, so change the layout between releases rather than while
+one is being published.
