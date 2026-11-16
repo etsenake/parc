@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.8.0 (2026-11-16)
+
+### New
+
+- **extensions:** Warn on every page when an extension starts debugging the browser, in a Parc strip with Cancel and close that stop it, instead of letting it debug silently
+
+### Fixed
+
+- **devtools:** Bring back the right-click menu in docked Developer Tools, so Edit attribute, Copy, Store as global variable and the rest show up instead of a click that does nothing
+- **devtools:** Open View certificate from the Security and Network panels for every origin, and in undocked Developer Tools, instead of doing nothing unless it was the page's own certificate
+- **extensions:** Right-click now works in extension pop-ups, extension side panels, embedded extension options and the undocked device toolbar, with Inspect, Copy and Paste, instead of doing nothing
+- **automation:** Let Puppeteer, Playwright and ChromeDriver drive their own isolated Parc profile from --user-data-dir, find DevToolsActivePort where they expect it and skip onboarding with --no-first-run, instead of silently using your real profile
+- **extensions:** Open file choosers from extension pop-ups and side panels instead of silently cancelling them, and keep the pop-up open while you pick
+- **devtools:** Open DevTools on DevTools with Command-Option-I in an undocked tools window, title each tools window after its page, and enable Full Screen and Close Window there
+- **devtools:** Show the download arrival in the inspected page's window for screenshots, traces and other files saved from Developer Tools, instead of no sign anything happened
+- **printing:** Let Save as PDF work when an embedded page such as extension options prints, instead of the save panel doing nothing
+- **install:** Open the downloaded disk image as Parc's install window for real this time, now that Finder can read the map, with each park sign planted on its own little grassy knoll instead of in the sea
+- **devtools:** Make View's Zoom In, Zoom Out and Actual Size zoom an undocked Developer Tools window instead of being greyed out
+- **extensions:** Confirm folder uploads from extension pop-ups and side panels on their own window instead of refusing them or floating a loose dialog
+- **devtools:** Open links, Learn more and Open in new tab from service worker, shared worker, extension and Node Developer Tools in a front tab instead of doing nothing
+- **extensions:** Put the debugging warning's buttons in the Tab order as soon as it appears, let pane focus reach it and announce it once when a background tab with one is shown
+- **devtools:** Attach Chromium's prompts, such as DevTools' Allow edit files for Workspaces and Local Overrides and the file pickers' folder warnings, to their page or window instead of floating loose mid-screen
+- **permissions:** Ask macOS for location access when a site you allow starts using it, so pages like store locators get your position, and show Off in macOS with a Settings button when macOS blocks it
+- **permissions:** Show Off in macOS with a Settings button for camera, microphone, notifications and clipboard when macOS blocks them, ask macOS before an allowed site's first notification, and flag macOS blocks on Settings' site pages
+- **permissions:** Show a site's first notification once macOS allows Parc to notify, instead of macOS silently dropping it while it asks
+- **permissions:** Update Settings' site pages live when macOS turns camera, microphone or notifications off or on, instead of only after a reload
+- **devices:** Show Parc's own device picker for Web Bluetooth, WebUSB, WebHID and Web Serial instead of crashing the browser when a site or extension asks for a device
+
 ## 2.7.0 (2026-11-16)
 
 ### New
