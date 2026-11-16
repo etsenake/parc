@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#include "../Support/TestFailure.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -284,6 +285,7 @@ static void TestCheckbox(void) {
 }
 
 int main(void) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];

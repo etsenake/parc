@@ -7,7 +7,8 @@ import AppKit
         guard value() else { fatalError("EmptyWindow: \(message)") }
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         presentationRule()
         pendingPanePredicate()
         hoverHandOff()

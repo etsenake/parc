@@ -6,7 +6,8 @@ struct NoteTabTests {
     static func expect(_ value: @autoclosure () throws -> Bool, _ message: String) throws {
         assertions += 1; if try !value() { throw NSError(domain: message, code: 1) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-note-tabs-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try BrowserStore(directory: directory), documentID = UUID()

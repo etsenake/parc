@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#include "../../Support/TestFailure.h"
 #import "browser_window.h"
 
 #include <stdio.h>
@@ -232,6 +233,7 @@ static void TestMainThreadBoundary(void) {
 }
 
 int main(void) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     TestAttachmentAndNotificationIdentity();

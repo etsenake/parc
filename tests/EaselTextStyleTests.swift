@@ -12,7 +12,8 @@ struct EaselTextStyleTests {
         assertions += 1
         do { try operation(); fatalError("Expected rejection: " + message) } catch { }
     }
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
         for family in EaselTextStyle.Family.allCases {

@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#include "../Support/TestFailure.h"
 #import <QuartzCore/QuartzCore.h>
 #import "pane_compositor_view.h"
 
@@ -241,6 +242,7 @@ static void TestCancelledAndSuspendedPresentation() {
 }
 
 int main(int argc, char** argv) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];

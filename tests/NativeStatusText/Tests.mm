@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#include "../Support/TestFailure.h"
 #import "native_appkit_bridge.h"
 #import "status_text.h"
 #include <cstdio>
@@ -425,6 +426,7 @@ static void LiveLinkOutcomeRefresh() {
   [other close];
 }
 int main() {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];

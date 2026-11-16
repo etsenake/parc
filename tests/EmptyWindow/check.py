@@ -110,7 +110,7 @@ def build(directory, name, replace=None):
         changed.write_text(text.replace(old, new))
         files = [changed if path == app / source else path for path in files]
     executable = Path(directory) / name
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     *map(str, files), str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
     return executable
 
@@ -139,5 +139,6 @@ with tempfile.TemporaryDirectory(prefix="parc-empty-window-") as directory:
     subprocess.run([str(main.result())], check=True)
     for name, (replace, failure) in controls.items():
         result = subprocess.run([str(built[name].result())], capture_output=True, text=True)
+        assert result.returncode >= 0, f"negative control crashed with signal {-result.returncode} instead of failing: {name}\n{result.stderr[-1000:]}"
         assert result.returncode != 0 and failure in result.stderr, f"negative control did not fail: {name}\n{result.stderr[-1000:]}"
         print(f"EmptyWindow negative control fails as expected: {name}")

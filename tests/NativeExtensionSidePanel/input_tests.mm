@@ -1,4 +1,5 @@
 #import "extension_side_panel_input.h"
+#include "../Support/TestFailure.h"
 #include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
@@ -20,6 +21,7 @@ static NSEvent* Key(NSWindow* window, unsigned short code,
       isARepeat:NO keyCode:code];
 }
 int main() {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     auto make = [] {

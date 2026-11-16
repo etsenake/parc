@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#include "../Support/TestFailure.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -50,6 +51,7 @@ static int assertions;
 }
 @end
 int main() {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     KeyWindow* parent =

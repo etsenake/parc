@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix='parc-native-drop-') as scratch:
         bridge_result = subprocess.run(bridge_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if bridge_result.returncode:
             print(bridge_result.stdout.decode()); raise SystemExit(bridge_result.returncode)
-        command = ['xcrun', 'swiftc', '-warnings-as-errors', '-whole-module-optimization', '-parse-as-library', '-import-objc-header', str(imports)] + [str(p) for p in files[:-1]] + [str(output / 'router.o'), str(output / 'bridge.o'), '-lc++', '-o', str(output / 'check')]
+        command = ['xcrun', 'swiftc', str(root / 'tests/Support/TestFailure.swift'), '-warnings-as-errors', '-whole-module-optimization', '-parse-as-library', '-import-objc-header', str(imports)] + [str(p) for p in files[:-1]] + [str(output / 'router.o'), str(output / 'bridge.o'), '-lc++', '-o', str(output / 'check')]
         files.extend([native, bridge, bridge_header])
     inputs = {str(p.relative_to(root)): hash_file(p) for p in files}
     start = time.monotonic()

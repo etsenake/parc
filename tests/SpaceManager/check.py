@@ -136,6 +136,6 @@ with tempfile.TemporaryDirectory(prefix="parc-space-manager-") as directory:
     sources += [root / "tests/KeyboardNavigation/NativeShortcutStub.swift",
                 Path(__file__).with_name("NativeHostStub.swift"), Path(__file__).with_name("SpaceManagerTests.swift")]
     executable = scratch / "checks"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
                     *map(str, sources), "-o", str(executable)], check=True)
     subprocess.run([str(executable)], check=True)

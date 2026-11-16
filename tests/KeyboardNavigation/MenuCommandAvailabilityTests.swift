@@ -20,7 +20,8 @@ import AppKit
 }
 
 @main @MainActor struct MenuCommandAvailabilityTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let app = ActiveApplication.shared as! ActiveApplication
         var checks = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {

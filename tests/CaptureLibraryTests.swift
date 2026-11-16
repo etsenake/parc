@@ -5,8 +5,9 @@ import UniformTypeIdentifiers
 
 @main
 struct CaptureLibraryTests {
+    @MainActor static func main() async { await exitOnFailure(runChecks) }
     @MainActor
-    static func main() async throws {
+    static func runChecks() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("ParcCaptureLibrary-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let profile = UUID(), space = UUID(), id = UUID(), capturedAt = Date(timeIntervalSince1970: 1_600_000_000)

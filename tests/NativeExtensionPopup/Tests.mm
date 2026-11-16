@@ -1,4 +1,5 @@
 #include <cmath>
+#include "../Support/TestFailure.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -54,6 +55,7 @@ static void Pump() {
   }
 }
 int main() {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     NSApp.activationPolicy = NSApplicationActivationPolicyAccessory;

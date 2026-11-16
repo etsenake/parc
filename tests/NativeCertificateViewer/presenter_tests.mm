@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#include "../Support/TestFailure.h"
 #import <Security/Security.h>
 #import <SecurityInterface/SFCertificatePanel.h>
 #import <objc/runtime.h>
@@ -35,6 +36,7 @@ static NSWindow* Window() {
   return w;
 }
 int main(int argc, char** argv) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     EXPECT(argc == 2);
     [NSApplication sharedApplication];

@@ -7,7 +7,8 @@ import AppKit
     }
     enum Control: Hashable { case header, divider }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         var toggles = 0
         let header = NSView(), pinnedView = NSView(), todayView = NSView()
         let pinnedID = SidebarItemReference.tab(UUID()), todayID = SidebarItemReference.tab(UUID())

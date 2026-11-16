@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#include "../Support/TestFailure.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -560,6 +561,7 @@ static void TestParcPresentation(void) {
 }
 
 int main(void) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];

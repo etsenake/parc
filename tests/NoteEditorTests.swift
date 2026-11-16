@@ -38,7 +38,8 @@ struct NoteEditorTests {
     static func require<T>(_ value: T?, _ message: String) throws -> T {
         guard let value else { throw NSError(domain: message, code: 1) }; return value
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         let fontURL = URL(fileURLWithPath: try require(CommandLine.arguments.dropFirst().first, "Actual bundled Notes title font input"))
         for url in try FileManager.default.contentsOfDirectory(at: fontURL.deletingLastPathComponent(), includingPropertiesForKeys: nil) where url.pathExtension == "ttf" {

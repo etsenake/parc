@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#include "../Support/TestFailure.h"
 #include <objc/runtime.h>
 #include <stdio.h>
 
@@ -80,6 +81,7 @@ static void Hover(PCVideoPiPPresenter* presenter) {
       runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
 }
 int main(void) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     __block int actions = 0, changes = 0;

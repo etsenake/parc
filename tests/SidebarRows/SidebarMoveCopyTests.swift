@@ -8,7 +8,8 @@ struct SidebarMoveCopyTests {
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
         count += 1; precondition(value(), message)
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.borderless], backing: .buffered, defer: true)
         let location = SidebarContainerLocation(spaceID: UUID(), folderID: nil, section: .pinned)
         var valid = true, moves = 0, copies = 0

@@ -3,7 +3,7 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$repo_root/build/tests"
 spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$repo_root/build/tests/easel-spinner.swift" ParcButtonSpinner)
-xcrun swiftc -parse-as-library \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/EaselCanvasInteraction.swift" \
@@ -16,7 +16,7 @@ xcrun swiftc -parse-as-library \
 style_bundle="$repo_root/build/tests/EaselTextStyle.app/Contents"
 mkdir -p "$style_bundle/MacOS" "$style_bundle/Resources/EaselFonts"
 cp "$repo_root/Resources/EaselFonts/"*.ttf "$style_bundle/Resources/EaselFonts/"
-xcrun swiftc -parse-as-library \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/EaselCanvasInteraction.swift" \
@@ -34,7 +34,7 @@ xcrun swiftc -parse-as-library \
   -o "$style_bundle/MacOS/EaselTextStyle"
 "$style_bundle/MacOS/EaselTextStyle"
 
-xcrun swiftc -parse-as-library \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/EaselCanvasInteraction.swift" \
@@ -59,7 +59,7 @@ xcrun swiftc -parse-as-library \
 mkdir -p "$style_bundle/Resources/CustomInfoPicker" "$style_bundle/Resources/AppIcons/Marks"
 cp "$repo_root/Resources/CustomInfoPicker/feather.ttf" "$style_bundle/Resources/CustomInfoPicker/"
 cp "$repo_root/Resources/AppIcons/Marks/Borderless.png" "$style_bundle/Resources/AppIcons/Marks/"
-xcrun swiftc -parse-as-library \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/Sources/ParcApp/LocalContentDrop.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
@@ -83,7 +83,7 @@ xcrun swiftc -parse-as-library \
   -o "$style_bundle/MacOS/EaselImageExport"
 "$style_bundle/MacOS/EaselImageExport"
 
-xcrun swiftc -parse-as-library \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/CaptureDestinations.swift" \
@@ -93,7 +93,7 @@ xcrun swiftc -parse-as-library \
   -o "$repo_root/build/tests/capture-destinations"
 "$repo_root/build/tests/capture-destinations"
 
-xcrun swiftc -parse-as-library \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselWebNavigation.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \
   "$repo_root/Sources/ParcApp/PointingHand.swift" \

@@ -32,7 +32,8 @@ import AppKit
     static func check(_ value: @autoclosure () throws -> Bool, _ reason: String) throws {
         count += 1; if try !value() { throw NSError(domain: reason, code: count) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-local-drop-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

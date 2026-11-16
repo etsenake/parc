@@ -9,7 +9,8 @@ private final class SeeThroughView: NSView { override func hitTest(_ point: NSPo
 
 @main
 struct ExtensionControlsTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         var assertions = 0
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {

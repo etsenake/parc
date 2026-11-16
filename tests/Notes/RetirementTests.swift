@@ -2,7 +2,8 @@ import AppKit
 
 @main @MainActor
 struct NoteRetirementTests {
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         var count = 0
         func check(_ value: @autoclosure () throws -> Bool, _ message: String) throws {

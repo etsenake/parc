@@ -6,7 +6,8 @@ import AppKit
         count += 1; precondition(value(), message)
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         typealias L = SidebarPinnedHeaderLayout
         let digit: (Int, Bool) -> CGFloat = { value, chips in CGFloat(String(value).count + (chips ? 1 : 0)) * 6 }
         check(L.height == SidebarChromeLayout.pinnedSectionHeaderHeight && SidebarChromeLayout.TablistSlot.pinnedSectionHeader.row == .accessory(height: 26),

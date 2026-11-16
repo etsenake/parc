@@ -22,7 +22,8 @@ import AppKit
         view.subviews.filter { !($0 is NSVisualEffectView) && $0.className.contains("Canvas") }
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
 
         let background = components(IncognitoWindowTheme.background, .displayP3)

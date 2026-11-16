@@ -22,7 +22,8 @@ import AppKit
         precondition(condition(), message)
     }
 
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         var below = EaselZoomInteraction(zoom: 0.8)!
         expect(!below.record(0.99), "Approaching actual size is silent")

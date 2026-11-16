@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#include "../Support/TestFailure.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -69,6 +70,7 @@ static PCNativeUninstallPresenter* Presenter(
                                                   result:result];
 }
 int main() {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];

@@ -11,7 +11,8 @@ struct CaptureDestinationTests {
         assertions += 1
         do { try body(); preconditionFailure(message) } catch { }
     }
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-capture-destinations-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try EaselStore(directory: directory)

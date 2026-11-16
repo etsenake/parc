@@ -8,7 +8,8 @@ struct CaptureEditingTests {
     @MainActor static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
         checks += 1; precondition(condition(), message)
     }
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         _ = NSApplication.shared
         let pattern = CGContext(data: nil, width: 40, height: 20, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!

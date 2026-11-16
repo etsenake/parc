@@ -6,7 +6,8 @@ import Foundation
         count += 1; precondition(value(), message)
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         var state = BrowserState.initial()
         let space = state.spaces[0], profile = space.profileID
         let other = BrowserSpace(id: UUID(), name: "Other", symbol: "circle", color: "#808080", profileID: profile)

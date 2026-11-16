@@ -98,7 +98,7 @@ with tempfile.TemporaryDirectory(prefix="parc-pinned-section-") as directory:
     }
     for name, sources in suites.items():
         executable = scratch / name
-        subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+        subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                         *map(str, sources), "-o", str(executable)], check=True)
         subprocess.run([str(executable)], check=True)
 print("Pinned section checks passed")

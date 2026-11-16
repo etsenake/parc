@@ -34,7 +34,8 @@ import Carbon.HIToolbox
         return source
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
         let azerty = injected(base: ["&", "é", "\"", "'", "(", "§", "è", "!", "ç", "à"], shift: digits,

@@ -26,7 +26,8 @@ struct NoteStoreTests {
         return Writes(encodes: ObservedString.backgroundEncodes(reads), replaces: Set(temporaries.map(\.path)).count,
                       offMain: !temporaries.isEmpty && !temporaries.contains(where: \.onMainThread))
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         FileOperations.install()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-notes-model-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

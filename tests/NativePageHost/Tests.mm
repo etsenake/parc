@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#include "../Support/TestFailure.h"
 #import <QuartzCore/QuartzCore.h>
 #import "page_host.h"
 #import "pane_compositor_view.h"
@@ -887,6 +888,7 @@ static void TestHistoryOverlayContainer(void) {
 }
 
 int main(void) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];

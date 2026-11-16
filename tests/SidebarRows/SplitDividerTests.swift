@@ -18,7 +18,8 @@ import AppKit
     static func near(_ values: [Double], _ expected: [Double]) -> Bool {
         values.count == expected.count && zip(values, expected).allSatisfy { abs($0 - $1) < 0.000001 }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         let scaleWindow = SplitScaleWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 1200),
                                            styleMask: .borderless, backing: .buffered, defer: false)

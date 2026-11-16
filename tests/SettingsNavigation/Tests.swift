@@ -3,7 +3,8 @@ import Foundation
 enum Place: Equatable { case general, profiles, links, profile(Int) }
 
 @main struct SettingsNavigationTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         var assertions = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {
             assertions += 1; precondition(value(), message)

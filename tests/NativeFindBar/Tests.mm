@@ -1,4 +1,5 @@
 #import "find_bar_view.h"
+#include "../Support/TestFailure.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -57,7 +58,7 @@ static void Shift(PCNativeFindView *view, BOOL down) {
   NSEvent *event = [NSEvent keyEventWithType:NSEventTypeFlagsChanged location:NSZeroPoint modifierFlags:down ? NSEventModifierFlagShift : 0 timestamp:0 windowNumber:view.window.windowNumber context:nil characters:@"" charactersIgnoringModifiers:@"" isARepeat:NO keyCode:56];
   [view flagsChanged:event];
 }
-int main() { @autoreleasepool {
+int main() { ParcExitOnUncaughtExceptions(); @autoreleasepool {
   [NSApplication sharedApplication];
   NSWindow *window = Window();
   PCNativeFocusManager *manager = [[PCNativeFocusManager alloc] initWithWindow:window];

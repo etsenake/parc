@@ -73,7 +73,8 @@ import AppKit
 @MainActor func contents(_ item: NSDraggingItem) -> NSImage? { item.imageComponentsProvider?().first?.contents as? NSImage }
 
 @main @MainActor struct CardTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let portraitPane = NSSize(width: 412, height: 808)
         let portrait = SplitDropPlaceholderCard.size(forIncomingPane: portraitPane)!

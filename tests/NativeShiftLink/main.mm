@@ -1,4 +1,5 @@
 #import "native_shift_link.h"
+#include "../Support/TestFailure.h"
 #include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
@@ -19,6 +20,7 @@ static NativeShiftLinkClick Click(NSEventModifierFlags modifiers, bool in_shown_
 }
 
 int main() {
+  ParcExitOnUncaughtExceptions();
   constexpr auto shift = NSEventModifierFlagShift;
   Check(ClassifyNativeShiftLink(Click(shift, true)) == NativeShiftLink::kSamePeek,
         "Shift-click inside the shown Peek navigates that Peek");

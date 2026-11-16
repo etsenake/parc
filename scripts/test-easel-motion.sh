@@ -3,13 +3,13 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$repo_root/build/tests"
 spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$repo_root/build/tests/easel-spinner.swift" ParcButtonSpinner)
-xcrun swiftc -warnings-as-errors -parse-as-library \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \
   "$repo_root/tests/EaselMotionTests.swift" \
   -o "$repo_root/build/tests/easel-motion"
 "$repo_root/build/tests/easel-motion"
 
-xcrun swiftc -warnings-as-errors -parse-as-library \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/EaselCanvasInteraction.swift" \

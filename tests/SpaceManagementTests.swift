@@ -10,7 +10,8 @@ import AppKit
         do { try body() } catch { count += 1; return }
         throw NSError(domain: message, code: -1)
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-space-management-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }

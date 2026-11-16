@@ -2,7 +2,8 @@ import AppKit
 
 @main
 struct EaselWebInputTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         var submissions = 0, closes = 0
         let controller = EaselWebInput(validOwner: { false }, submit: { _, _ in submissions += 1; return true })

@@ -50,6 +50,7 @@ int parc_engine_shutdown_if_idle(void) { return 0; }
 @end
 
 int main(void) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     PCNativePage* page = [[PCNativePage alloc] initForTest];
     page.testTitle = @"Track";

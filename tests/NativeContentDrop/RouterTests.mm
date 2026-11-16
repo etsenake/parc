@@ -1,4 +1,5 @@
 #import "content_drop_router.h"
+#include "../Support/TestFailure.h"
 #include <cstdio>
 #include <cstdlib>
 @interface DragFixture : NSObject
@@ -29,7 +30,7 @@
 @end
 static int count;
 static void Check(bool b, const char* s) { ++count; if (!b) { fprintf(stderr,"%s\n",s); exit(1); } }
-int main() { @autoreleasepool {
+int main() { ParcExitOnUncaughtExceptions(); @autoreleasepool {
   [NSApplication sharedApplication];
   NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,200,200) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
   DropFixture* owner = [[DropFixture alloc] initWithFrame:NSMakeRect(0,0,200,200)]; window.contentView = owner;

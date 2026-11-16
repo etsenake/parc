@@ -10,7 +10,8 @@ import AppKit
         count += 1; precondition(condition(), message)
     }
 
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         _ = NSApplication.shared
         let date = Date()
         let object = EaselItem(kind: .rectangle, frame: .init(x: 80, y: 80, width: 100, height: 100))

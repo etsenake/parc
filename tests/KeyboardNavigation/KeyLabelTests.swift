@@ -2,7 +2,8 @@ import AppKit
 import Carbon.HIToolbox
 
 @main @MainActor struct KeyLabelTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         var checks = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) { checks += 1; precondition(value(), message) }
         func chord(_ key: String, _ flags: NSEvent.ModifierFlags = .control) -> KeyboardShortcut {

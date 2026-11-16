@@ -8,7 +8,8 @@ struct EaselImageExportTests {
     @MainActor static func expect(_ value: @autoclosure () -> Bool, _ message: String) {
         count += 1; if !value() { fatalError(message) }
     }
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-easel-export-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

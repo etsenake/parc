@@ -19,7 +19,8 @@ private final class TrackingEvent: NSEvent {
 private final class SeeThroughView: NSView { override func hitTest(_ point: NSPoint) -> NSView? { nil } }
 
 @main struct SplitPaneControlPresentationTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         GeometryWrites.install()
         var checks = 0

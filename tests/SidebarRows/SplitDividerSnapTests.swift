@@ -6,7 +6,8 @@ import AppKit
         count += 1
         if try !value() { throw NSError(domain: message, code: count) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         var state = SplitDividerSnapState()
         try check(!state.update(distance: 0, velocity: 0) && !state.canSnap && !state.isSnapped, "Initial center is unarmed")
         try check(!state.update(distance: -14, velocity: 0) && state.canSnap, "Leaving exact fourteen-point boundary arms")

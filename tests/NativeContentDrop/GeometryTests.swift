@@ -10,7 +10,8 @@ import AppKit
         let proposal = SplitDropGeometry.proposal(at: point, frames: frames, orientation: axis)
         check(proposal?.0 == target && proposal?.1 == proposedAxis, "wrong edge/center for \(point)")
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let page = NSRect(x: 31, y: 76, width: 1000, height: 800)
         expect(NSPoint(x: 430, y: 476), [page], .horizontal, .insert(0), .horizontal)
         expect(NSPoint(x: 431, y: 476), [page], .horizontal, .replace(0), .horizontal)
