@@ -125,6 +125,27 @@ enum ParcToastTiming {
     static let accessoryDelay: TimeInterval = 0.5
 }
 
+enum ParcToastFocus: Equatable { case card, button(Int) }
+
+enum ParcToastKeyboard {
+    enum Action: Equatable { case focus, next, previous, activate, dismiss }
+    static func action(for event: NSEvent) -> Action? {
+        action(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers, modifiers: event.modifierFlags)
+    }
+    static func action(keyCode: UInt16, characters: String?, modifiers: NSEvent.ModifierFlags) -> Action? {
+        let flags = modifiers.intersection([.command, .option, .control, .shift])
+        if flags == [.command, .option, .shift] && characters?.lowercased() == "a" { return .focus }
+        if flags == [.control] && keyCode == 97 { return .focus }
+        switch (keyCode, flags) {
+        case (48, []), (124, []), (125, []): return .next
+        case (48, [.shift]), (123, []), (126, []): return .previous
+        case (36, []), (76, []), (49, []): return .activate
+        case (53, []): return .dismiss
+        default: return nil
+        }
+    }
+}
+
 enum ParcToastScroll {
     static func dismisses(window: NSWindow?, deltaX: CGFloat, deltaY: CGFloat, owners: [NSWindow?]) -> Bool {
         guard deltaX != 0 || deltaY != 0, let window else { return false }
@@ -202,6 +223,7 @@ final class ParcToastState: ObservableObject {
     @Published var showAccessory = false
     @Published var reduceMotion = false
     @Published var maxWidth: CGFloat = ParcToastPlacement.windowSide
+    @Published var focused: ParcToastFocus?
     init(content: ParcToastContent, accessory: ParcToastAccessory? = nil, theme: SpaceTheme, basicBackground: NSColor? = nil) {
         self.content = content; self.accessory = accessory; self.theme = theme; self.basicBackground = basicBackground
     }
@@ -217,6 +239,7 @@ final class ParcToastState: ObservableObject {
 struct ParcToastFrames: Equatable {
     var body = CGRect.zero
     var accessory = CGRect.zero
+    var buttons: [Int: CGRect] = [:]
 }
 private struct ParcToastFrameKey: PreferenceKey {
     static let defaultValue = ParcToastFrames()
@@ -224,6 +247,7 @@ private struct ParcToastFrameKey: PreferenceKey {
         let next = nextValue()
         if !next.body.isEmpty { value.body = next.body }
         if !next.accessory.isEmpty { value.accessory = next.accessory }
+        value.buttons.merge(next.buttons) { $1 }
     }
 }
 
@@ -269,6 +293,7 @@ struct ParcToastCard: View {
             .padding(.horizontal, 12).padding(.vertical, 10).frame(minHeight: 42)
             .background(backdrop(accessory: false))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(focusRing(cornerRadius: 12, shown: state.focused == .card))
             .background(GeometryReader { proxy in
                 Color.clear.preference(key: ParcToastFrameKey.self,
                     value: ParcToastFrames(body: proxy.frame(in: .named("toast"))))
@@ -307,18 +332,25 @@ struct ParcToastCard: View {
                     }
                 }
                 .padding(.vertical, subLabel != nil && !buttons.isEmpty ? 4 : 0)
-                ForEach(Array(buttons.enumerated()), id: \.offset) { _, button in
-                    switch button {
-                    case .share(let urls):
-                        SwiftUI.Button { actions.share(urls) } label: {
-                            Image(systemName: "square.and.arrow.up").offset(x: 0, y: -1)
-                        }
-                        .buttonStyle(ParcToastButtonStyle(ink: ink, isDark: palette.isDark))
-                        .accessibilityLabel("Share")
-                    case .retry:
-                        SwiftUI.Button("Retry") { actions.retry?() }
+                ForEach(Array(buttons.enumerated()), id: \.offset) { index, button in
+                    Group {
+                        switch button {
+                        case .share(let urls):
+                            SwiftUI.Button { actions.share(urls) } label: {
+                                Image(systemName: "square.and.arrow.up").offset(x: 0, y: -1)
+                            }
                             .buttonStyle(ParcToastButtonStyle(ink: ink, isDark: palette.isDark))
+                            .accessibilityLabel("Share")
+                        case .retry:
+                            SwiftUI.Button("Retry") { actions.retry?() }
+                                .buttonStyle(ParcToastButtonStyle(ink: ink, isDark: palette.isDark))
+                        }
                     }
+                    .overlay(focusRing(cornerRadius: 6, shown: state.focused == .button(index)))
+                    .background(GeometryReader { proxy in
+                        Color.clear.preference(key: ParcToastFrameKey.self,
+                            value: ParcToastFrames(buttons: [index: proxy.frame(in: .named("toast"))]))
+                    })
                 }
             }
         case .shortcut(let leading, let shortcut, let trailing):
@@ -357,6 +389,13 @@ struct ParcToastCard: View {
         .padding(.trailing, 13)
         .transition(.move(edge: .top).combined(with: .opacity))
         .padding(.horizontal, 8)
+    }
+
+    private func focusRing(cornerRadius: CGFloat, shown: Bool) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius + 3, style: .continuous)
+            .strokeBorder(Color(nsColor: .keyboardFocusIndicatorColor), lineWidth: 3)
+            .padding(-3).opacity(shown ? 1 : 0)
+            .allowsHitTesting(false).accessibilityHidden(true)
     }
 
     @ViewBuilder private func backdrop(accessory: Bool) -> some View {
@@ -439,7 +478,14 @@ private struct ParcToastMaterial: NSViewRepresentable {
 
 @MainActor
 private final class ParcToastWindow: NSWindow {
-    override var canBecomeKey: Bool { false }
+    var acceptsKeyboard = false
+    var onCommandKey: (() -> Void)?
+    override var canBecomeKey: Bool { acceptsKeyboard }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard acceptsKeyboard, event.modifierFlags.contains(.command) else { return super.performKeyEquivalent(with: event) }
+        onCommandKey?()
+        return parent?.performKeyEquivalent(with: event) == true || super.performKeyEquivalent(with: event)
+    }
     override var canBecomeMain: Bool { false }
 }
 
@@ -449,6 +495,7 @@ final class ParcToastPresentation: NSView {
     private let duration: TimeInterval
     private var onTap: (() -> Void)?
     private var onRetry: (() -> Void)?
+    private let share: @MainActor ([URL], NSPoint?) -> Void
     var onRetire: ((Bool) -> Void)?
     var pointerLocation: () -> NSPoint = { NSEvent.mouseLocation }
     private weak var originalWindow: NSWindow?
@@ -459,21 +506,23 @@ final class ParcToastPresentation: NSView {
     private var observers: [NSObjectProtocol] = []
     private var workspaceObserver: NSObjectProtocol?
     private var scrollMonitor: Any?
+    private var keyMonitor: Any?
     private(set) var isRetiring = false
     private(set) var frames = ParcToastFrames()
     override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { false }
+    override var acceptsFirstResponder: Bool { state.focused != nil }
 
     init(content: ParcToastContent, theme: SpaceTheme, basicBackground: NSColor? = nil, duration: TimeInterval = ParcToastTiming.duration,
-         onTap: (() -> Void)? = nil, onRetry: (() -> Void)? = nil, share: @escaping @MainActor ([URL]) -> Void = { _ in }) {
+         onTap: (() -> Void)? = nil, onRetry: (() -> Void)? = nil,
+         share: @escaping @MainActor ([URL], NSPoint?) -> Void = { _, _ in }) {
         state = ParcToastState(content: content, theme: theme, basicBackground: basicBackground)
-        self.duration = duration; self.onTap = onTap; self.onRetry = onRetry
+        self.duration = duration; self.onTap = onTap; self.onRetry = onRetry; self.share = share
         super.init(frame: NSRect(x: 0, y: 0, width: ParcToastPlacement.windowSide, height: ParcToastPlacement.windowSide))
         host = NSHostingView(rootView: ParcToastCard(state: state, actions: ParcToastActions(
             tap: onTap == nil ? nil : { [weak self] in self?.performTap() },
             accessory: nil,
             dismiss: { [weak self] in self?.retire(animated: true, finished: true) },
-            share: share,
+            share: { urls in share(urls, nil) },
             frames: { [weak self] frames in
                 guard let self, !self.isRetiring else { return }
                 self.frames = frames
@@ -488,6 +537,7 @@ final class ParcToastPresentation: NSView {
         observers.forEach(NotificationCenter.default.removeObserver)
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
     }
 
     static func frame(in parent: NSWindow, over anchor: NSView?) -> NSRect {
@@ -509,6 +559,7 @@ final class ParcToastPresentation: NSView {
         panel.isReleasedWhenClosed = false; panel.isOpaque = false
         panel.backgroundColor = .clear; panel.hasShadow = false
         panel.contentView = self; panel.acceptsMouseMovedEvents = true
+        panel.onCommandKey = { [weak self] in self?.returnFocus() }
         panel.appearance = parent.effectiveAppearance
         originalWindow = parent; self.panel = panel
         state.maxWidth = frame.width
@@ -524,7 +575,7 @@ final class ParcToastPresentation: NSView {
         }
         timer = Timer.scheduledTimer(withTimeInterval: duration, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, !self.isRetiring, !self.containsPointer else { return }
+                guard let self, !self.isRetiring, !self.containsPointer, self.state.focused == nil else { return }
                 self.retire(animated: true, finished: true)
             }
         }
@@ -565,12 +616,82 @@ final class ParcToastPresentation: NSView {
         onRetry()
     }
 
+    var keyboardTargets: [ParcToastFocus] {
+        guard case .standard(_, _, _, let buttons) = state.content.body else { return [] }
+        let usable = buttons.indices.filter { if case .retry = buttons[$0] { return onRetry != nil } else { return true } }
+        return (onTap == nil ? [] : [.card]) + usable.map { .button($0) }
+    }
+
+    func takesFocusShortcut(_ event: NSEvent) -> Bool {
+        guard event.window === originalWindow, ParcToastKeyboard.action(for: event) == .focus else { return false }
+        return focusFromKeyboard()
+    }
+
+    @discardableResult
+    func focusFromKeyboard() -> Bool {
+        guard !isRetiring, let panel, panel.isVisible, let first = keyboardTargets.first else { return false }
+        panel.acceptsKeyboard = true
+        state.focused = first
+        panel.makeKey()
+        panel.makeFirstResponder(self)
+        return true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard !isRetiring, let focused = state.focused else { super.keyDown(with: event); return }
+        let targets = keyboardTargets
+        switch ParcToastKeyboard.action(for: event) {
+        case .next?, .previous?:
+            guard let index = targets.firstIndex(of: focused) else { return }
+            let step = ParcToastKeyboard.action(for: event) == .next ? 1 : targets.count - 1
+            state.focused = targets[(index + step) % targets.count]
+        case .activate?: activate(focused)
+        case .dismiss?: retire(animated: true, finished: true)
+        case .focus?: returnFocus()
+        case nil: super.keyDown(with: event)
+        }
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        guard !isRetiring, state.focused != nil else { super.cancelOperation(sender); return }
+        retire(animated: true, finished: true)
+    }
+
+    private func activate(_ target: ParcToastFocus) {
+        switch target {
+        case .card: performTap()
+        case .button(let index):
+            guard case .standard(_, _, _, let buttons) = state.content.body, buttons.indices.contains(index) else { return }
+            switch buttons[index] {
+            case .share(let urls): share(urls, shareLocation(for: index))
+            case .retry: performRetry()
+            }
+        }
+    }
+
+    private func shareLocation(for index: Int) -> NSPoint? {
+        guard let panel, let frame = frames.buttons[index] else { return nil }
+        return panel.convertPoint(toScreen: convert(NSPoint(x: frame.minX, y: frame.maxY + 4), to: nil))
+    }
+
+    private func endKeyboardFocus() {
+        state.focused = nil
+        panel?.acceptsKeyboard = false
+    }
+
+    private func returnFocus() {
+        let hadFocus = panel?.isKeyWindow == true
+        endKeyboardFocus()
+        if hadFocus, let parent = originalWindow, parent.isVisible { parent.makeKey() }
+    }
+
     func dismiss(animated: Bool) { retire(animated: animated, finished: false) }
 
-    private func retire(animated: Bool, finished: Bool) {
+    private func retire(animated: Bool, finished: Bool, returningFocus: Bool = true) {
         guard !isRetiring else { if !animated { closePresentation() }; return }
         let shouldAnimate = animated && panel?.isVisible == true && !state.reduceMotion
         isRetiring = true; onTap = nil; onRetry = nil
+        if returningFocus { returnFocus() } else { endKeyboardFocus() }
         timer?.invalidate(); timer = nil
         panel?.ignoresMouseEvents = true
         state.hide(animated: shouldAnimate)
@@ -589,6 +710,7 @@ final class ParcToastPresentation: NSView {
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
         workspaceObserver = nil
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }; scrollMonitor = nil
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }; keyMonitor = nil
         let panel = self.panel
         self.panel = nil; originalWindow = nil
         if let panel {
@@ -602,9 +724,19 @@ final class ParcToastPresentation: NSView {
                      NSWindow.willBeginSheetNotification, NSWindow.willEnterFullScreenNotification,
                      NSWindow.willExitFullScreenNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: parent, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.dismiss(animated: false) }
+                MainActor.assumeIsolated { self?.retire(animated: false, finished: false, returningFocus: false) }
             })
         }
+        observers.append(NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel,
+                                                                queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.endKeyboardFocus()
+                if NSApp.keyWindow == nil, let parent = self.originalWindow, parent.isVisible, !parent.isMiniaturized {
+                    parent.makeKey()
+                }
+            }
+        })
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -618,6 +750,11 @@ final class ParcToastPresentation: NSView {
                 self?.scrolled(in: event.window, deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY)
             }
             return event
+        }
+        guard !keyboardTargets.isEmpty else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let consumed = MainActor.assumeIsolated { self?.takesFocusShortcut(event) ?? false }
+            return consumed ? nil : event
         }
     }
     func scrolled(in window: NSWindow?, deltaX: CGFloat, deltaY: CGFloat) {
@@ -662,10 +799,10 @@ final class ParcToastQueue {
 @MainActor
 final class ParcToastPresenter {
     private(set) var current: ParcToastPresentation?
-    private let share: @MainActor ([URL]) -> Void
+    private let share: @MainActor ([URL], NSPoint?) -> Void
     var basicBackground: NSColor?
     var onIdle: (() -> Void)?
-    init(share: @escaping @MainActor ([URL]) -> Void = { _ in }) { self.share = share }
+    init(share: @escaping @MainActor ([URL], NSPoint?) -> Void = { _, _ in }) { self.share = share }
 
     @discardableResult
     func show(_ content: ParcToastContent, in parent: NSWindow, over anchor: NSView?, theme: SpaceTheme,

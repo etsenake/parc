@@ -234,8 +234,8 @@ struct PaneTitleLayout {
         }
         return menu
     }
-    static func popUp(for urls: [URL]) {
-        menu(for: urls)?.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    static func popUp(for urls: [URL], at location: NSPoint? = nil) {
+        menu(for: urls)?.popUp(positioning: nil, at: location ?? NSEvent.mouseLocation, in: nil)
     }
     static func sharingServices(for urls: [URL]) -> [NSSharingService] {
         let selector = NSSelectorFromString("sharingServicesForItems:")

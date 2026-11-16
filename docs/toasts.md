@@ -46,12 +46,13 @@ ordinary toasts share replacement semantics. Retired cards stop accepting input
 immediately, with up to one second retained for exit. Reduce Motion removes the
 scale and exit delay.
 
-A five-second repeating timer dismisses on the first non-hover tick. Default
+A five-second repeating timer dismisses on the first tick without hover or
+keyboard focus. Default
 run-loop scheduling waits while the share menu is open. Real scroll movement or
 a ten-point vertical card drag dismisses; zero-motion trackpad events do not.
 Tap removes the toast before invoking its captured action. Close, miniaturization,
 sheets and fullscreen transitions dismiss immediately. A toast that finishes on
-its own (timer, tap, Retry, scroll or drag) leaves the window idle, and the
+its own (timer, tap, Retry, Escape, scroll or drag) leaves the window idle, and the
 browser window then shows any waiting import notice; replacement, those window
 changes and outside dismissal do not count. The window's `ParcToastQueue` shows
 import notices only in an ordinary, ready browser window, holds each back while
@@ -60,6 +61,24 @@ window is in front, and puts back one no window could show. Binding changes dism
 only cards showing a shortcut. VoiceOver announces label/subtitle; actionable
 cards expose a button role and the actual captured action, and Share and Retry
 stay separate named buttons.
+
+## Keyboard
+
+A toast never takes focus when it appears, so typing stays in the page or field.
+While a toast with an action is showing, Command–Option–Shift–A (Chromium's
+shortcut for focusing a popup that didn't take focus) or Control–F6 (macOS's Move
+focus to the floating window, when that system shortcut leaves the key to Parc)
+in its browser window moves focus into it. A local key monitor catches the
+shortcut before the page can, and only while such a toast is visible. Its stops
+are the whole card when it is clickable, then Share and Retry; Tab, Shift-Tab and
+the arrow keys move between them under the system focus ring, Space or Return
+presses the focused one and Escape dismisses the toast. Share opens its menu
+under the button and keeps focus in the toast. Retry, a clickable card, Escape,
+Control–F6 again and any Command shortcut hand focus back to the window, which
+keeps its own focused page or field; a Command shortcut then goes on to the page
+and Parc's menus as if pressed there. Clicking elsewhere just ends the keyboard
+session, and if Parc goes to the background meanwhile, the window gets focus back. The child window
+can become key only during that keyboard session, so clicks never take focus.
 
 ## Parc's toasts
 
@@ -92,7 +111,8 @@ Share actions hand the selected URLs to the chosen system service.
 ## Checks
 
 `scripts/test-toasts.sh` covers placement, one-time framing, geometry, hit testing,
-replacement, timer/hover, scroll, tap and Retry ordering, idle hand-off, the
+replacement, timer/hover, scroll, tap and Retry ordering, keyboard focus and
+keys, focus-shortcut routing, idle hand-off, the
 import-notice queue, extension notice wording, binding/parent changes and theme
 contrast. Shortcut cue checks
 retain their own lifecycle tests; BrowserToolbar checks cover share-menu

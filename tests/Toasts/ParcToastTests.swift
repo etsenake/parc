@@ -134,7 +134,7 @@ import AppKit
         let pane = NSView(frame: NSRect(x: 520, y: 10, width: 470, height: 660))
         root.addSubview(pane); parent.contentView = root
         var shared: [[URL]] = []
-        let toasts = ParcToastPresenter(share: { shared.append($0) })
+        let toasts = ParcToastPresenter(share: { urls, _ in shared.append(urls) })
         check(toasts.show(.copiedCurrentURL(url), in: parent, over: pane, theme: SpaceTheme()) == nil,
               "a hidden parent presents nothing")
         parent.orderBack(nil)
@@ -408,6 +408,116 @@ import AppKit
               "a notice no window could show goes back in line")
         parent.orderBack(nil)
         toasts.onIdle = nil
+
+        func key(_ code: UInt16, _ characters: String = "", _ flags: NSEvent.ModifierFlags = [],
+                 in window: NSWindow? = nil) -> NSEvent {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,
+                             windowNumber: window?.windowNumber ?? 0, context: nil, characters: characters,
+                             charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)!
+        }
+        func action(_ code: UInt16, _ characters: String = "", _ flags: NSEvent.ModifierFlags = []) -> ParcToastKeyboard.Action? {
+            ParcToastKeyboard.action(for: key(code, characters, flags))
+        }
+        check(action(0, "a", [.command, .option, .shift]) == .focus && action(97, "", [.control, .function]) == .focus
+              && action(0, "a", [.command]) == nil && action(97, "", [.function]) == nil,
+              "Command-Option-Shift-A and Control-F6 move focus into a notice, and nothing else does")
+        check(action(48, "\t") == .next && action(48, "\t", [.shift]) == .previous
+              && action(124, "", [.numericPad, .function]) == .next && action(123, "", [.numericPad, .function]) == .previous
+              && [UInt16(36), 76, 49].allSatisfy { action($0, " ") == .activate } && action(53, "\u{1b}") == .dismiss
+              && action(36, "\r", [.command]) == nil,
+              "Tab and the arrows move between actions, Space and Return press one, Escape dismisses")
+        var keyboardShares: [NSPoint?] = [], keyboardRetries = 0
+        let keyed = ParcToastPresentation(content: .standard("Couldn’t add Grammarly", buttons: [.share([url]), .retry]),
+                                          theme: SpaceTheme(), duration: 0.3, onRetry: { keyboardRetries += 1 },
+                                          share: { _, point in keyboardShares.append(point) })
+        check(keyed.present(in: parent, over: nil), "keyboard owner admitted")
+        guard let keyedPanel = keyed.window else { preconditionFailure("missing keyboard child") }
+        check(!keyedPanel.canBecomeKey && !keyed.acceptsFirstResponder && keyed.state.focused == nil,
+              "a notice never takes focus from the page when it appears")
+        keyed.keyDown(with: key(53, "\u{1b}"))
+        keyed.keyDown(with: key(36, "\r"))
+        check(!keyed.isRetiring && keyboardRetries == 0 && keyed.state.focused == nil,
+              "keys reaching a notice that wasn't given focus do nothing")
+        check(keyed.keyboardTargets == [.button(0), .button(1)], "Share then Retry are the notice's keyboard stops")
+        check(keyed.focusFromKeyboard() && keyed.state.focused == .button(0) && keyedPanel.canBecomeKey && keyed.acceptsFirstResponder,
+              "focusing the notice lands on its first action")
+        await drain(0.6)
+        check(!keyed.isRetiring, "a notice with keyboard focus outlasts its timer, as it does under the pointer")
+        keyed.keyDown(with: key(48, "\t"))
+        check(keyed.state.focused == .button(1), "Tab moves to Retry")
+        keyed.keyDown(with: key(48, "\t"))
+        check(keyed.state.focused == .button(0), "and wraps back to Share")
+        keyed.keyDown(with: key(123, "", [.numericPad, .function]))
+        check(keyed.state.focused == .button(1), "the left arrow goes round to Retry")
+        keyed.keyDown(with: key(48, "\t", [.shift]))
+        check(keyed.state.focused == .button(0), "Shift-Tab comes back to Share")
+        _ = keyedPanel.performKeyEquivalent(with: key(13, "w", [.command]))
+        check(keyed.state.focused == nil && !keyedPanel.canBecomeKey && !keyed.isRetiring,
+              "a Command shortcut ends the notice's keyboard session and leaves the notice up")
+        keyed.focusFromKeyboard()
+        keyed.keyDown(with: key(97, "", [.control, .function]))
+        check(keyed.state.focused == nil && !keyed.isRetiring, "Control-F6 again goes back to the window")
+        keyed.focusFromKeyboard()
+        keyed.keyDown(with: key(49, " "))
+        check(keyboardShares.count == 1 && keyboardShares[0].map { keyedPanel.frame.contains($0) } == true && !keyed.isRetiring,
+              "Space on Share opens the share menu at the button and keeps the notice")
+        keyed.keyDown(with: key(48, "\t"))
+        keyed.keyDown(with: key(36, "\r"))
+        check(keyboardRetries == 1 && keyed.isRetiring && keyed.state.focused == nil && !keyedPanel.canBecomeKey,
+              "Return on Retry retries once and the notice lets go of focus")
+        keyed.dismiss(animated: false)
+
+        var escapedIdle = 0
+        toasts.onIdle = { escapedIdle += 1 }
+        guard let escaping = toasts.show(.copiedCurrentURL(url), in: parent, over: nil, theme: SpaceTheme()) else {
+            preconditionFailure("escape owner refused")
+        }
+        check(escaping.focusFromKeyboard(), "a copy notice's Share can take keyboard focus")
+        escaping.keyDown(with: key(53, "\u{1b}"))
+        check(escaping.isRetiring && escapedIdle == 1 && toasts.current == nil,
+              "Escape dismisses the focused notice, which counts as finishing it")
+        guard let cancelled = toasts.show(.copiedCurrentURL(url), in: parent, over: nil, theme: SpaceTheme()) else {
+            preconditionFailure("cancel owner refused")
+        }
+        cancelled.focusFromKeyboard()
+        cancelled.cancelOperation(nil)
+        check(cancelled.isRetiring && escapedIdle == 2, "Command-period dismisses it the same way")
+        toasts.onIdle = nil
+        guard let resigning = toasts.show(.copiedCurrentURL(url), in: parent, over: nil, theme: SpaceTheme(), duration: 0.3),
+              let resigningPanel = resigning.window else { preconditionFailure("resign owner refused") }
+        resigning.focusFromKeyboard()
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: resigningPanel)
+        check(resigning.state.focused == nil && !resigningPanel.canBecomeKey, "clicking elsewhere ends the notice's keyboard focus")
+        await drain(0.5)
+        check(resigning.isRetiring, "and its timer carries on")
+        resigning.dismiss(animated: false)
+        var keyboardTaps = 0
+        let tappable = ParcToastPresentation(content: .tabRestored(to: "Work", selected: false), theme: SpaceTheme(),
+                                             onTap: { keyboardTaps += 1 })
+        check(tappable.present(in: parent, over: nil) && tappable.keyboardTargets == [.card] && tappable.focusFromKeyboard()
+              && tappable.state.focused == .card, "a clickable notice takes focus as a whole")
+        tappable.keyDown(with: key(36, "\r"))
+        check(keyboardTaps == 1 && tappable.isRetiring, "Return clicks it")
+        tappable.dismiss(animated: false)
+        let quiet = ParcToastPresentation(content: .standard("Retry later", buttons: [.retry]), theme: SpaceTheme())
+        check(quiet.present(in: parent, over: nil) && quiet.keyboardTargets.isEmpty && !quiet.focusFromKeyboard()
+              && quiet.state.focused == nil, "a notice with nothing to press has nothing to focus")
+        quiet.dismiss(animated: false)
+        guard let monitored = toasts.show(.copiedCurrentURL(url), in: parent, over: nil, theme: SpaceTheme()) else {
+            preconditionFailure("monitor owner refused")
+        }
+        check(!monitored.takesFocusShortcut(key(0, "a", [.command, .option, .shift])) && monitored.state.focused == nil
+              && !monitored.takesFocusShortcut(key(0, "a", [.command], in: parent)),
+              "the shortcut from another window, or another shortcut, leaves the notice alone")
+        check(monitored.takesFocusShortcut(key(0, "a", [.command, .option, .shift], in: parent)) && monitored.state.focused == .button(0),
+              "the shortcut pressed in the browser window moves focus into its notice")
+        guard let viaF6 = toasts.show(.copiedCurrentURL(url), in: parent, over: nil, theme: SpaceTheme()) else {
+            preconditionFailure("Control-F6 owner refused")
+        }
+        check(viaF6.takesFocusShortcut(key(97, "", [.control, .function], in: parent)) && viaF6.state.focused == .button(0),
+              "Control-F6 does the same")
+        viaF6.dismiss(animated: false)
+        monitored.dismiss(animated: false)
 
         let closing = ParcToastPresentation(content: .standard("Close"), theme: SpaceTheme())
         check(closing.present(in: parent, over: pane), "close owner admitted")

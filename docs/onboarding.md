@@ -122,7 +122,7 @@ removal, “Blocked by your administrator”, “Needs a parent’s approval” 
 such as iCloud Passwords refused by Apple's helper, get earlier notices without
 Retry, one per reason, and an import-data failure notice goes before them all.
 Each waiting notice appears once the one before it finishes on its own (time, a
-click, Retry or a scroll) while the window stays in front, otherwise when
+click, Retry, Escape or a scroll) while the window stays in front, otherwise when
 the window next comes forward. These are actual engine operations, not
 consequences of simply selecting a row.
 
