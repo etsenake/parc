@@ -9,7 +9,10 @@ retargets an import. Discovery and source selection alone submit no data.
 
 The source cards discover installed browsers and load immutable profile results
 inline. Every readable source profile comes along, including its extensions;
-there is no separate profile-selection or destination-choice step. An unreadable
+there is no separate profile-selection or destination-choice step. Opera and
+Opera GX side profiles count as profiles of their own, each under the name Opera
+shows for it, or a numbered one when it has none, except those Opera wipes when
+it quits. An unreadable
 source remains represented so access guidance can follow.
 
 The source Default profile, or first readable profile, imports into the original

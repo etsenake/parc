@@ -92,10 +92,20 @@ channel shares it. Helium's patches set its folder to `net.imput.helium` and
 its item to `Helium Storage Key`/`Helium`. Dia (`Dia/User Data`,
 `Dia Safe Storage`/`Dia`) matches the importers Zen and Helium ship; Comet's
 folder (`Comet`) matches Helium's importer and its item
-(`Comet Safe Storage`/`Comet`) matches tools tested on real installs. Opera GX
-keeps its single profile in its data folder, like Opera; importers disagree on
-its Keychain item, so Parc asks for `Opera GX Safe Storage`/`Opera GX` and, only
-when that item does not exist, `Opera Safe Storage`/`Opera`; a wrong key almost
+(`Comet Safe Storage`/`Comet`) matches tools tested on real installs. Opera and
+Opera GX keep their first profile in the data folder itself (or its `Default`
+folder) and each further profile, which Opera calls a side profile, in a folder
+of its own under `_side_profiles`, as Opera's forum volunteers and the importers
+and forensic tools that read them describe. Discovery lists the side profiles
+after the browser's own, in folder order, each read from its folder's `Default`
+when that holds `Preferences`, otherwise from the folder itself. It takes the
+`name` from the folder's `<folder>_sideprofile.json` settings file, or numbers
+the browser's name by the profile's place in the list (`Opera GX 3`) when there
+is none. A side profile whose settings list `side-profile-clear-on-exit` is one
+Opera wipes when it quits, so it is not offered. Side profiles run from the
+same app, so they share its Keychain item and the import's single key request.
+Importers disagree on Opera GX's Keychain item, so Parc asks for
+`Opera GX Safe Storage`/`Opera GX` and, only when that item does not exist, `Opera Safe Storage`/`Opera`; a wrong key almost
 always fails the reader's padding check, and that category is then refused. ChatGPT Atlas keeps its
 profiles in `com.openai.atlas/browser-data/host`, as OpenAI's own tooling reads
 them, and its key in an OpenAI-only Keychain group; its `login-staging-` profile
@@ -243,7 +253,12 @@ databases under both legacy and scoped transaction modes. All runners require
 explicit source/output paths and a private output directory; none generates GN,
 builds the engine, opens a browser, imports real profiles or accesses Keychain.
 Native service/writer/session integration checks use the exact pinned targets
-and generated Mojo headers.
+and generated Mojo headers. `tests/BrowserImport/check_discovery.py` compiles
+discovery and its made-up fixture, `ImportDiscovery.mm`, with the shipping
+output's Parc browser flags, syntax only: Opera and Opera GX homes whose side
+profiles use either folder layout, a name, no name or clear-on-exit, a browser
+whose only data is in a side profile, and a Chrome folder whose stray
+`_side_profiles` is ignored.
 
 ## Explicit exported password CSV
 

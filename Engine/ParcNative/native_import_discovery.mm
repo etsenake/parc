@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <map>
+#include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
@@ -78,7 +79,8 @@ void AddProfile(ProfilesResult& result,
                 const std::shared_ptr<const Installation>& source,
                 const base::FilePath& path,
                 std::string name,
-                bool listing) {
+                bool listing,
+                std::string folder = {}) {
   struct stat directory{};
   base::FilePath normalized = base::MakeAbsoluteFilePath(path);
   if (normalized.empty())
@@ -97,6 +99,8 @@ void AddProfile(ProfilesResult& result,
   p->source = source;
   p->path = normalized;
   p->name = std::move(name);
+  p->directory =
+      folder.empty() ? normalized.BaseName().value() : std::move(folder);
   p->identifier = base::Uuid::GenerateRandomV4().AsLowercaseString();
   auto can = [&](const char* relative) {
     return Readable(normalized.AppendASCII(relative), &p->restricted);
@@ -178,6 +182,41 @@ void AddProfile(ProfilesResult& result,
   result.restricted |= p->restricted;
   result.profiles.push_back(std::move(p));
 }
+bool KeepsProfileAtRoot(const Installation& source) {
+  return source.bundle_id == "com.operasoftware.Opera" ||
+         source.bundle_id == "com.operasoftware.OperaGX";
+}
+void AddSideProfiles(ProfilesResult& result,
+                     const std::shared_ptr<const Installation>& source,
+                     const base::FilePath& root,
+                     bool listing) {
+  std::vector<base::FilePath> folders;
+  base::FileEnumerator enumerator(root.AppendASCII("_side_profiles"), false,
+                                  base::FileEnumerator::DIRECTORIES);
+  for (auto folder = enumerator.Next(); !folder.empty();
+       folder = enumerator.Next())
+    folders.push_back(folder);
+  std::sort(folders.begin(), folders.end());
+  for (const auto& folder : folders) {
+    const auto card =
+        JSON(folder.Append(folder.BaseName().value() + "_sideprofile.json"));
+    const auto* features = card ? card->FindList("features") : nullptr;
+    if (features && features->contains("side-profile-clear-on-exit"))
+      continue;
+    auto profile = folder.AppendASCII("Default");
+    if (!base::PathExists(profile.AppendASCII("Preferences")))
+      profile = folder;
+    if (!base::PathExists(profile.AppendASCII("Preferences")))
+      continue;
+    const auto* name = card ? card->FindString("name") : nullptr;
+    AddProfile(result, source, profile,
+               name && !name->empty()
+                   ? *name
+                   : source->name + " " +
+                         base::NumberToString(result.profiles.size() + 1),
+               listing, folder.BaseName().value());
+  }
+}
 ProfilesResult Load(std::shared_ptr<const Installation> source,
                     base::FilePath home,
                     bool listing) {
@@ -203,11 +242,12 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
     for (const char* directory : known)
       AddProfile(result, source, root.AppendASCII(directory), directory,
                  listing);
-    if (result.profiles.empty() &&
-        (source->bundle_id == "com.operasoftware.Opera" ||
-         source->bundle_id == "com.operasoftware.OperaGX") &&
-        base::PathExists(root.AppendASCII("Preferences")))
-      AddProfile(result, source, root, source->name, listing);
+    if (KeepsProfileAtRoot(*source)) {
+      if (result.profiles.empty() &&
+          base::PathExists(root.AppendASCII("Preferences")))
+        AddProfile(result, source, root, source->name, listing);
+      AddSideProfiles(result, source, root, listing);
+    }
     auto blocked = [](const base::FilePath& path) {
       return access(path.value().c_str(), R_OK) != 0 &&
              (errno == EACCES || errno == EPERM);
@@ -344,7 +384,7 @@ std::vector<Installation> Importable(std::vector<Installation> installed,
     _source = source;
     _identifier = base::SysUTF8ToNSString(_data->identifier);
     _displayName = base::SysUTF8ToNSString(_data->name);
-    _directoryName = base::SysUTF8ToNSString(_data->path.BaseName().value());
+    _directoryName = base::SysUTF8ToNSString(_data->directory);
     _supportedCategories =
         static_cast<PCNativeImportCategories>(_data->categories);
     _access = _data->restricted ? PCNativeImportAccessRestricted
