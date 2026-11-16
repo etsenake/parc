@@ -38,7 +38,7 @@ assert "SidebarSpacePagingModel.themePages(selected: index, offset: offset, widt
 assert "alphaValue" not in strip and "isOnFloatingSurface" not in sidebar_view, "a swipe's neighbouring theme is stacked over the sidebar again"
 assert "ThemeRendererView(" not in sidebar_view and "neighborTheme" not in sidebar_view \
     and "        applyPagePalette(page, paletteForPage(spaceID))\n" in sidebar_view \
-    and "ThemeChromePalette(theme: space.theme, appearance: window?.effectiveAppearance ?? effectiveAppearance)" in sidebar_view, \
+    and "ThemeChromePalette(theme: space.theme, appearance: window?.effectiveAppearance ?? NSApp?.effectiveAppearance ?? effectiveAppearance)" in sidebar_view, \
     "the neighbouring page builds a theme renderer for its palette again"
 refresh = sidebar_view[sidebar_view.index("    private func refresh(_ page: SidebarSpacePage"):]
 refresh = refresh[:refresh.index("\n    }\n")]

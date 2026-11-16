@@ -15,10 +15,23 @@ observation follows explicit appearance changes and is replaced on reparenting.
 Unthemed automatic surfaces receive the window's complete appearance object;
 saved forced Light/Dark themes retain their explicit appearance.
 
-Only the physical window surface owns behind-window material. A floating sidebar
-uses popover blur on the side its Space resolves to, the forced side or the
-window's when automatic, so forced text never sits over a contrasting blur; see
+Only the physical window surface owns behind-window material. Its light or dark
+material, like the floating sidebar's popover blur, takes the side the Space
+resolves to: the forced side, or the window's when automatic, colored or not.
+Forced text therefore never sits over a contrasting material; see
 [sidebar motion](sidebar-motion.md#floating-surface).
+
+A colored Automatic Space picks its text side from what actually lies behind the
+text. `ThemeRenderMath.chromeBackgrounds` samples the color layer where the
+sidebar sits on the gradient, with its underlay, over the material's own color
+and over contrasting content showing through the material. The palette takes the
+side where white or black text would read better there, then moves the text and
+accent colors toward white or black until they reach 4.5:1, or as far as they
+go. Forced Spaces keep their side and get the same nudge only where they fall
+short. Only the text and accent change; every other role keeps its side's color,
+and colorless Spaces keep the window's appearance and system colors. Over bright
+content, such as a white page or desktop, a dark-mode blur is itself mid-gray,
+which limits contrast for every Space.
 
 Private-window surfaces use a static opaque incognito background and BrandBlue
 palette, with no material/canvas. Empty/invalid themes hide the canvas and retain
@@ -83,5 +96,8 @@ Undo transactions remain in their focused guides.
 `scripts/test-theme-rendering.sh` covers backing/content separation, propagation,
 material ownership, no-op publication, invalid themes, gradient/texture uniforms,
 alpha readback and spring interruption. Theme input/appearance/Undo and website-
-palette components cover their shared boundaries. Sidebar paging and floating-
-surface components check pair/progress continuity and material layering.
+palette components cover their shared boundaries. The appearance check also
+verifies text and accent contrast for Automatic and forced Spaces across colors,
+intensities and both appearances, and the docked material rule. Sidebar paging
+and floating-surface components check pair/progress continuity and material
+layering.

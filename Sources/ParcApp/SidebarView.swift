@@ -2147,7 +2147,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
     private func paletteForPage(_ spaceID: UUID) -> ThemeChromePalette? {
         guard let space = spaces.first(where: { $0.id == spaceID }) else { return palette }
-        return ThemeChromePalette(theme: space.theme, appearance: window?.effectiveAppearance ?? effectiveAppearance)
+        return ThemeChromePalette(theme: space.theme, appearance: window?.effectiveAppearance ?? NSApp?.effectiveAppearance ?? effectiveAppearance)
     }
 
     private func keep(_ id: UUID, page: SidebarSpacePage) {
@@ -4151,7 +4151,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         spacesHost.dark = palette.isDark
         spacesHost.activeTints = spaces.map { space in
             guard space.theme.primaryColor != nil, space.theme.isValid else { return nil }
-            return ThemeChromePalette(theme: space.theme, appearance: window?.effectiveAppearance ?? effectiveAppearance).maxContrastColor
+            return ThemeChromePalette(theme: space.theme, appearance: window?.effectiveAppearance ?? NSApp?.effectiveAppearance ?? effectiveAppearance).maxContrastColor
         }
     }
     private var selectionOrder: [SidebarItemReference] {

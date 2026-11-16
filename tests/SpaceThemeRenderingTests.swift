@@ -384,7 +384,8 @@ struct SpaceThemeRenderingTests {
         let darkSurface = ThemeSurfaceStyle(theme: lightTheme, appearance: dark)
         let lightSurface = ThemeSurfaceStyle(theme: darkTheme, appearance: light)
         check(darkSurface.backgroundIsDark && !lightSurface.backgroundIsDark, "Metal backdrop follows native appearance independently of text contrast")
-        check(darkSurface.material.rawValue == 1 && lightSurface.material.rawValue == 1, "editor themes use original light material")
+        check(darkSurface.material.rawValue == 2 && lightSurface.material.rawValue == 1,
+              "a coloured Automatic Space's material follows the Mac, like its floating blur")
         check(ThemeSurfaceStyle(theme: SpaceTheme(), appearance: dark).material.rawValue == 2, "empty theme follows native dark material")
         check(ThemeSurfaceStyle(theme: SpaceTheme(), appearance: light).material.rawValue == 1, "empty theme follows native light material")
         check(ThemeChromePalette(theme: SpaceTheme(), appearance: dark).contentAppearance === dark,
@@ -447,7 +448,8 @@ struct SpaceThemeRenderingTests {
         check(root.surfaceStyle.backgroundIsDark && nested.surfaceStyle.backgroundIsDark, "native appearance update reaches original and nested surfaces")
         check(neighborContent.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua,
               "appearance update republishes an unthemed neighbor's content scheme")
-        check(!root.palette.isDark, "native appearance update preserves contrast-selected theme text")
+        check(!root.palette.isDark, "a light color keeps dark text after the Mac turns dark")
+        check(material.material.rawValue == 2, "a coloured Automatic Space's window material follows the Mac into dark")
         root.drawsBackground = false
         check(material.isHidden, "locked sidebar backing visibility is preserved")
         root.drawsBackground = true
@@ -458,7 +460,7 @@ struct SpaceThemeRenderingTests {
         root.drawsMaterial = true
         check(!material.isHidden, "restoring the material shows the native backdrop again")
         root.theme = SpaceTheme()
-        check(!material.isHidden && material.material.rawValue == 2, "removing final color restores native backing")
+        check(!material.isHidden && material.material.rawValue == 2, "removing final color keeps the native dark backing")
         check(root.subviews.compactMap { $0 as? MTKView }.allSatisfy(\.isHidden), "empty theme retires color/texture canvas")
         var invalid = darkTheme; invalid.intensity = .nan
         root.theme = invalid

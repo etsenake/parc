@@ -16,14 +16,14 @@ struct ThemeChromePalette: Equatable {
     let foregroundPrimary: NSColor
     let foregroundSecondary: NSColor
     let foregroundTertiary: NSColor
-    let maxContrastColor: NSColor
+    private(set) var maxContrastColor: NSColor
     let minContrastColor: NSColor
     let backgroundExtra: NSColor
     let background: NSColor
     let focus: NSColor
     let hover: NSColor
     let cutoutColor: NSColor
-    let title: NSColor
+    private(set) var title: NSColor
     let subtitle: NSColor
     let shaded: NSColor
     let shadedDark: NSColor
@@ -33,16 +33,26 @@ struct ThemeChromePalette: Equatable {
         inheritedContentAppearance ?? NSAppearance(named: isDark ? .darkAqua : .aqua)
     }
 
+    static let textContrast = 4.5
+
     init(theme: SpaceTheme, appearance: NSAppearance) {
+        let systemDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let backdropDark = theme.appearance == .automatic ? systemDark : theme.appearance == .dark
+        let backgrounds = ThemeRenderMath.chromeBackgrounds(theme: theme, backdropIsDark: backdropDark)
         let dark: Bool
         switch theme.appearance {
         case .light: dark = false
         case .dark: dark = true
         case .automatic:
-            dark = ThemeRenderMath.automaticDark(theme: theme)
-                ?? (appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
+            dark = backgrounds.isEmpty ? systemDark
+                : ThemeRenderMath.worstContrast(SIMD4(1, 1, 1, 1), over: backgrounds)
+                    > ThemeRenderMath.worstContrast(SIMD4(0, 0, 0, 1), over: backgrounds)
         }
         self.init(theme: theme, isDark: dark)
+        if !backgrounds.isEmpty {
+            title = ThemeRenderMath.readable(title, isDark: dark, over: backgrounds, target: Self.textContrast)
+            maxContrastColor = ThemeRenderMath.readable(maxContrastColor, isDark: dark, over: backgrounds, target: Self.textContrast)
+        }
         if theme.appearance == .automatic && (!theme.isValid || theme.primaryColor == nil) {
             inheritedContentAppearance = appearance
         }
@@ -158,8 +168,7 @@ struct ThemeSurfaceStyle {
         case .light: backgroundIsDark = false
         case .dark: backgroundIsDark = true
         }
-        let darkMaterial = hasColor ? theme.appearance == .dark : backgroundIsDark
-        material = NSVisualEffectView.Material(rawValue: darkMaterial ? 2 : 1)!
+        material = NSVisualEffectView.Material(rawValue: backgroundIsDark ? 2 : 1)!
     }
 }
 
@@ -245,21 +254,78 @@ enum ThemeRenderMath {
         return srgb(result)
     }
 
-    static func automaticDark(theme: SpaceTheme) -> Bool? {
-        guard let primary = theme.primaryColor, theme.colorCount > 0, theme.isValid,
-              let converted = nativeColor(primary).cgColor.converted(to: CGColorSpaceCreateDeviceRGB(),
-                    intent: .defaultIntent, options: nil), let c = converted.components, c.count >= 3 else { return nil }
-        let base = SIMD4<Float>(Float(c[0]), Float(c[1]), Float(c[2]), 1)
-        func contrast(_ color: NSColor) -> Double {
-            let candidate = color.usingColorSpace(.extendedSRGB) ?? color
-            let rgb = SIMD4<Float>(Float(candidate.redComponent), Float(candidate.greenComponent),
-                                   Float(candidate.blueComponent), Float(candidate.alphaComponent))
-            let first = luminance(base) + 0.05, second = luminance(rgb) + 0.05
-            return max(first, second) / min(first, second)
+    static let lightMaterial = SIMD4<Float>(0.94, 0.94, 0.94, 1)
+    static let darkMaterial = SIMD4<Float>(0.16, 0.16, 0.16, 1)
+    static let materialOverContrastingContent = SIMD4<Float>(0.5, 0.5, 0.5, 1)
+
+    static func layerAlpha(_ theme: SpaceTheme) -> Float { Float(0.2 + 0.55 * theme.intensity) }
+
+    static func underlay(alpha: Float, isDark: Bool) -> SIMD4<Float> {
+        SIMD4(isDark ? SIMD3<Float>.zero : SIMD3<Float>(repeating: 1), min(alpha, 0.5) * (isDark ? 0.35 : 1))
+    }
+
+    static func chromeBackgrounds(theme: SpaceTheme, backdropIsDark: Bool) -> [SIMD4<Float>] {
+        let colors = theme.colors.map(srgb)
+        guard theme.isValid, !colors.isEmpty else { return [] }
+        let alpha = layerAlpha(theme)
+        let scrim = underlay(alpha: alpha, isDark: backdropIsDark)
+        let backdrops = [backdropIsDark ? darkMaterial : lightMaterial, materialOverContrastingContent].map { over(scrim, $0) }
+        let bases = (colors.count > 1 ? [0, 0.25, 0.5] : [0]).map { linearOklabMix(colors[0], colors[min(1, colors.count - 1)], $0) }
+        func layer(_ linear: SIMD4<Float>) -> SIMD4<Float> { SIMD4(encoded(linear.x), encoded(linear.y), encoded(linear.z), linear.w) }
+        var layers = bases.map { layer(SIMD4($0, alpha)) }
+        if colors.count > 2 {
+            let overlay = SIMD4(linearized(colors[2].x), linearized(colors[2].y), linearized(colors[2].z), alpha)
+            layers += bases.map { layer(over(overlay, SIMD4($0, alpha))) }
         }
-        let light = ThemeChromePalette(theme: theme, isDark: false)
-        let dark = ThemeChromePalette(theme: theme, isDark: true)
-        return contrast(dark.title) >= contrast(light.title)
+        return backdrops.flatMap { backdrop in layers.map { over($0, backdrop) } }
+    }
+
+    static func linearized(_ v: Float) -> Float { abs(v) > 0.04045 ? (v < 0 ? -1 : 1) * pow((abs(v) + 0.055) / 1.055, 2.4) : v / 12.92 }
+
+    static func encoded(_ v: Float) -> Float { abs(v) > 0.0031308 ? (v < 0 ? -1 : 1) * (1.055 * pow(abs(v), 1 / 2.4) - 0.055) : v * 12.92 }
+
+    static func linearOklabMix(_ a: SIMD4<Float>, _ b: SIMD4<Float>, _ t: Float) -> SIMD3<Float> {
+        func lab(_ c: SIMD4<Float>) -> SIMD3<Float> {
+            let rgb = SIMD3(linearized(c.x), linearized(c.y), linearized(c.z))
+            let lms = SIMD3((rgb * SIMD3(0.4122214708, 0.5363325363, 0.0514459929)).sum(),
+                            (rgb * SIMD3(0.2119034982, 0.6806995451, 0.1073969566)).sum(),
+                            (rgb * SIMD3(0.0883024619, 0.2817188376, 0.6299787005)).sum())
+            let root = SIMD3(cbrt(lms.x), cbrt(lms.y), cbrt(lms.z))
+            return SIMD3((root * SIMD3(0.2104542553, 0.7936177850, -0.0040720468)).sum(),
+                         (root * SIMD3(1.9779984951, -2.4285922050, 0.4505937099)).sum(),
+                         (root * SIMD3(0.0259040371, 0.7827717662, -0.8086757660)).sum())
+        }
+        let c = lab(a) + (lab(b) - lab(a)) * t
+        let lms = SIMD3((c * SIMD3(1, 0.3963377774, 0.2158037573)).sum(), (c * SIMD3(1, -0.1055613458, -0.0638541728)).sum(),
+                        (c * SIMD3(1, -0.0894841775, -1.2914855480)).sum())
+        let cube = lms * lms * lms
+        return SIMD3((cube * SIMD3(4.0767416621, -3.3077115913, 0.2309699292)).sum(),
+                     (cube * SIMD3(-1.2684380046, 2.6097574011, -0.3413193965)).sum(),
+                     (cube * SIMD3(-0.0041960863, -0.7034186147, 1.7076147010)).sum())
+    }
+
+    static func components(_ color: NSColor) -> SIMD4<Float> {
+        let converted = color.usingColorSpace(.extendedSRGB) ?? color
+        return SIMD4(Float(converted.redComponent), Float(converted.greenComponent), Float(converted.blueComponent), 1)
+    }
+
+    static func contrast(_ a: SIMD4<Float>, _ b: SIMD4<Float>) -> Double {
+        let first = luminance(a) + 0.05, second = luminance(b) + 0.05
+        return max(first, second) / min(first, second)
+    }
+
+    static func worstContrast(_ color: SIMD4<Float>, over backgrounds: [SIMD4<Float>]) -> Double {
+        backgrounds.map { contrast(color, $0) }.min() ?? .infinity
+    }
+
+    static func readable(_ color: NSColor, isDark: Bool, over backgrounds: [SIMD4<Float>], target: Double) -> NSColor {
+        let start = components(color), extreme = SIMD4<Float>(repeating: isDark ? 1 : 0) + SIMD4(0, 0, 0, isDark ? 0 : 1)
+        guard worstContrast(start, over: backgrounds) < target else { return color }
+        for step in 1...20 {
+            let candidate = start + (extreme - start) * (Float(step) / 20)
+            if worstContrast(candidate, over: backgrounds) >= target { return self.color(candidate) }
+        }
+        return self.color(extreme)
     }
 }
 
@@ -812,9 +878,8 @@ struct ThemeGradientUniforms {
             overlay1 = colors[2]
             overlay0 = SIMD4(colors[2].x, colors[2].y, colors[2].z, 0)
         }
-        let alpha = Float(0.2 + 0.55 * theme.intensity)
-        let underlayAlpha = min(alpha, 0.5) * (backgroundIsDark ? 0.35 : 1)
-        underlay = SIMD4(backgroundIsDark ? SIMD3<Float>.zero : SIMD3<Float>(repeating: 1), underlayAlpha)
+        let alpha = ThemeRenderMath.layerAlpha(theme)
+        underlay = ThemeRenderMath.underlay(alpha: alpha, isDark: backgroundIsDark)
         parameters = SIMD4(alpha, Float(min(2, colors.count)), colors.count == 3 ? 2 : 0, 0)
     }
 }
