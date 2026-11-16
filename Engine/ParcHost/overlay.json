@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 762,
+  "version": 763,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -359,7 +359,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_page.mm",
       "target": "parc/native/native_appkit_page.mm",
-      "sha256": "a49ad3c64d7733bf925184ecfb83455a4753aaf3dc06119708c9281232c143cc"
+      "sha256": "fadc44bcc7c67fff8059a26cefcf86d4118294cde0624e0eb52cfb85321537f1"
     },
     {
       "source": "Engine/ParcNative/native_page_shell_notify.h",
@@ -1124,12 +1124,12 @@
     {
       "source": "Engine/ParcNative/native_link_routing.mm",
       "target": "parc/native/native_link_routing.mm",
-      "sha256": "11daec74d6f2e864f0ddc7ebedf3e3fea760562b6e1982c0c2906b3bc0eb49ce"
+      "sha256": "e59dc2dd1fa151220e052633e35f7e2a6752e45467635d662c3d8b6a3b0470c0"
     },
     {
       "source": "Engine/ParcNative/native_shift_link.h",
       "target": "parc/native/native_shift_link.h",
-      "sha256": "27cd4a1b9922016e3216c4d6c4c30a28bfcf7302270ef756c3ef3c87579d658f"
+      "sha256": "4ae48c10e701e54ec9fa8e3428bbbf1a6e9a3d6de025e89d493ca15c1074e5d5"
     },
     {
       "source": "Engine/ParcNative/native_history_swipe.h",

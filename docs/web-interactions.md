@@ -234,13 +234,20 @@ An ad link the pointer only grazes can flash a promise for a moment, because
 Chromium doesn't say which frame an address came from. Otherwise Option keeps
 the plain address and Shift says a new window. Links in ordinary embedded frames
 open in Split View and Peek like the page's own, so they get the same answer.
-Inside a Peek, an embedded frame sandboxed against navigating the page keeps the
-new window, which the capsule can't tell apart; see [Peek](peek.md#links-inside-a-peek).
+Inside a Peek, Shift over an embedded frame sandboxed against navigating the page
+says a new window, because that is where its click goes: the engine reads the
+sandbox of the frame the pointer is over, noted with each address like the fenced
+check. A sandboxed frame allowed to keep its own origin and from the same site as
+the frame around it runs inside that frame, and Chromium doesn't say which of the
+two the pointer is over, so the capsule gives the surrounding frame's answer
+there. Sandboxing never changes Split View, which opens a new pane instead of
+navigating the page; see [Peek](peek.md#links-inside-a-peek).
 
 While text shows, the answer is asked again once after the current event when
 the window gains or loses focus (a sheet opening takes it), a sheet ends, the
 window refreshes its navigation state (panes, selection, Peek, closing), or the
-pointer enters a fenced frame or leaves one without a new address. Only actual
+pointer moves between the page and an embedded frame Chromium draws separately,
+such as a fenced ad or another site's frame. Only actual
 links are explained; local transient messages share the capsule. Text truncates
 in the middle; explained text expands immediately. Ordinary hover uses a
 0.5-second debounce and 1.5-second expansion delay, token-guarded alpha fade and

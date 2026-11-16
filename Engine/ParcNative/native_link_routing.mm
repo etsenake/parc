@@ -669,9 +669,9 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
       frame->GetOutermostMainFrame() != main_frame ||
       source->GetBrowserContext() != browser.GetProfile()) return nullptr;
   using Sandbox = network::mojom::WebSandboxFlags;
-  const bool frame_can_navigate_page = frame == main_frame ||
-      !frame->IsSandboxed(Sandbox::kTopNavigation) ||
-      !frame->IsSandboxed(Sandbox::kTopNavigationByUserActivation);
+  const bool frame_can_navigate_page = NativeFrameCanNavigatePage(frame == main_frame,
+      frame->IsSandboxed(Sandbox::kTopNavigation),
+      frame->IsSandboxed(Sandbox::kTopNavigationByUserActivation));
   auto creation = std::make_unique<CreatedPage>(*source, *main_frame, browser);
   PCNativeBrowserWindow* binding = AppKitBindingForBrowser(&browser);
   NativeShiftLinkClick click{.modifiers = creation->modifiers_,

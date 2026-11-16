@@ -207,6 +207,6 @@ Profile, and Space routing rules never apply to Shift-click.
 
 Links in ordinary embedded frames take the same route as the page's own, inside
 and outside a Peek; fenced ad frames keep Chromium's behaviour. Inside a Peek, an
-embedded frame sandboxed against navigating the page keeps the new window, though
-the hover capsule still says "in this Peek". Other modifier clicks keep their
-routes; see [web interactions](web-interactions.md#hovered-link-status).
+embedded frame sandboxed against navigating the page keeps the new window, and
+the hover capsule says so. Other modifier clicks keep their routes; see
+[web interactions](web-interactions.md#hovered-link-status).

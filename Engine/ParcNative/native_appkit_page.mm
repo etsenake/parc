@@ -110,6 +110,7 @@
 #include "native_confirm_infobars.h"
 #include "net/base/net_errors.h"
 #include "sad_tab.h"
+#include "services/network/public/mojom/web_sandbox_flags.mojom.h"
 #import "native_shift_link.h"
 #import "status_text.h"
 #include "tab_transfer.h"
@@ -364,13 +365,19 @@ class NativePageInputDiagnostics final
       widget_observation_{this};
 };
 
-class FencedFramePointer final
+struct LinkFrame {
+  bool fenced = false;
+  bool can_navigate_page = true;
+  bool operator==(const LinkFrame&) const = default;
+};
+
+class LinkFramePointer final
     : public content::WebContentsObserver,
       public content::RenderWidgetHost::InputEventObserver,
       public content::RenderWidgetHostObserver {
  public:
-  FencedFramePointer(content::WebContents& contents,
-                     base::RepeatingClosure changed)
+  LinkFramePointer(content::WebContents& contents,
+                   base::RepeatingClosure changed)
       : content::WebContentsObserver(&contents), changed_(std::move(changed)) {
     contents.ForEachRenderFrameHost([this](content::RenderFrameHost* frame) {
       if (frame->IsRenderFrameLive()) {
@@ -378,28 +385,46 @@ class FencedFramePointer final
       }
     });
   }
-  bool inside() const { return inside_ != nullptr; }
+  bool fenced() const { return inside_ && fenced_.contains(inside_.get()); }
+  bool FrameCanNavigatePage() const {
+    auto* main = web_contents() ? web_contents()->GetPrimaryMainFrame() : nullptr;
+    if (!main || !inside_ || main->GetRenderWidgetHost() == inside_.get()) {
+      return true;
+    }
+    content::RenderFrameHost* root = nullptr;
+    main->ForEachRenderFrameHostWithAction([&](content::RenderFrameHost* frame) {
+      auto* parent = frame->GetParentOrOuterDocument();
+      if (frame->GetRenderWidgetHost() != inside_.get() ||
+          (parent && parent->GetRenderWidgetHost() == inside_.get())) {
+        return content::RenderFrameHost::FrameIterationAction::kContinue;
+      }
+      root = frame;
+      return content::RenderFrameHost::FrameIterationAction::kStop;
+    });
+    using Sandbox = network::mojom::WebSandboxFlags;
+    return !root || NativeFrameCanNavigatePage(false,
+        root->IsSandboxed(Sandbox::kTopNavigation),
+        root->IsSandboxed(Sandbox::kTopNavigationByUserActivation));
+  }
 
  private:
   void Watch(content::RenderFrameHost* frame) {
-    const bool fenced = frame->IsFencedFrameRoot();
     auto* widget = frame->GetRenderWidgetHost();
-    if ((!fenced && frame->GetParentOrOuterDocument()) || !widget ||
-        widgets_.IsObservingSource(widget)) {
+    if (!widget || widgets_.IsObservingSource(widget)) {
       return;
     }
     widgets_.AddObservation(widget);
     inputs_.AddObservation(widget);
-    if (fenced) {
+    if (frame->IsNestedWithinFencedFrame()) {
       fenced_.insert(widget);
     }
   }
   void Point(const content::RenderWidgetHost* widget) {
-    const bool was_inside = inside();
-    inside_ = widget;
-    if (was_inside != inside()) {
-      changed_.Run();
+    if (inside_ == widget) {
+      return;
     }
+    inside_ = widget;
+    changed_.Run();
   }
   void RenderFrameCreated(content::RenderFrameHost* frame) override {
     Watch(frame);
@@ -413,7 +438,7 @@ class FencedFramePointer final
         Point(nullptr);
       }
     } else if (blink::WebInputEvent::IsMouseEventType(type)) {
-      Point(fenced_.contains(&widget) ? &widget : nullptr);
+      Point(&widget);
     }
   }
   void RenderWidgetHostDestroyed(content::RenderWidgetHost* widget) override {
@@ -701,8 +726,8 @@ class NativePageState final
       input_diagnostics_ =
           std::make_unique<NativePageInputDiagnostics>(contents, page_view_);
     }
-    fenced_pointer_ = std::make_unique<FencedFramePointer>(
-        contents, base::BindRepeating(&NativePageState::FencedPointerChanged,
+    link_pointer_ = std::make_unique<LinkFramePointer>(
+        contents, base::BindRepeating(&NativePageState::LinkPointerChanged,
                                       base::Unretained(this)));
     top_band_ = std::make_unique<TopBandColorSampler>(base::BindRepeating(
         &NativePageState::TopBandColorChanged, base::Unretained(this)));
@@ -810,7 +835,8 @@ class NativePageState final
       if (![client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] ||
           ![client nativeBrowser:binding allowsPeekWithShift:YES])
         return PCNativeStatusLinkOutcomeNewWindow;
-      NativeShiftLinkClick click{.modifiers = flags, .shift_peek_enabled = true};
+      NativeShiftLinkClick click{.modifiers = flags, .shift_peek_enabled = true,
+          .frame_can_navigate_page = state->StatusLinkCanNavigatePage()};
       click.in_shown_peek =
           [client respondsToSelector:@selector(nativeBrowser:canNavigatePeekLinkFromPage:)] &&
           [client nativeBrowser:binding canNavigatePeekLinkFromPage:source];
@@ -851,10 +877,9 @@ class NativePageState final
         reader_ && reader_->revision() == find_revision_ ? find_result_ : nil;
   }
   void SetStatusText(NSString* text) {
-    ++status_text_updates_;
-    const bool fenced = PointerInFencedFrame();
-    const bool changed = fenced != status_text_fenced_;
-    status_text_fenced_ = fenced;
+    const LinkFrame frame = PointerLinkFrame();
+    const bool changed = frame != status_link_frame_;
+    status_link_frame_ = frame;
     [status_text_ updateText:text];
     if (changed) [status_text_ setNeedsLinkOutcomeRefresh];
   }
@@ -1339,26 +1364,16 @@ class NativePageState final
       network_activity_->Bind(frame, true);
     }
   }
-  void FencedPointerChanged() {
-    if (PointerInFencedFrame()) {
-      if (!status_text_fenced_) {
-        fenced_entry_update_ = status_text_updates_;
-      }
-      status_text_fenced_ = true;
-    } else if (status_text_fenced_ &&
-               fenced_entry_update_ == status_text_updates_) {
-      status_text_fenced_ = false;
-    } else {
-      return;
-    }
-    [status_text_ setNeedsLinkOutcomeRefresh];
-  }
-  bool PointerInFencedFrame() const {
-    return fenced_pointer_ && fenced_pointer_->inside();
+  void LinkPointerChanged() { [status_text_ setNeedsLinkOutcomeRefresh]; }
+  LinkFrame PointerLinkFrame() const {
+    if (!link_pointer_) return {};
+    return {.fenced = link_pointer_->fenced(),
+            .can_navigate_page = link_pointer_->FrameCanNavigatePage()};
   }
   bool StatusLinkInFencedFrame() const {
-    return status_text_fenced_ || PointerInFencedFrame();
+    return status_link_frame_.fenced || (link_pointer_ && link_pointer_->fenced());
   }
+  bool StatusLinkCanNavigatePage() const { return status_link_frame_.can_navigate_page; }
   void TopBandColorChanged() {
     if (!ShouldNotifyShellPayloadChange(last_shell_notify_,
                                         CurrentShellNotifyState())) {
@@ -1588,10 +1603,8 @@ class NativePageState final
                           MediaStreamCaptureIndicator::Observer>
       capture_observation_{this};
   std::unique_ptr<NativePageInputDiagnostics> input_diagnostics_;
-  std::unique_ptr<FencedFramePointer> fenced_pointer_;
-  bool status_text_fenced_ = false;
-  uint64_t status_text_updates_ = 0;
-  uint64_t fenced_entry_update_ = 0;
+  std::unique_ptr<LinkFramePointer> link_pointer_;
+  LinkFrame status_link_frame_;
   std::unique_ptr<TopBandColorSampler> top_band_;
   std::unique_ptr<NativeReader> reader_;
   base::WeakPtr<content::WebContents> contents_;

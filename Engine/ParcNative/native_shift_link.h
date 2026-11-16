@@ -15,6 +15,11 @@ struct NativeShiftLinkClick {
   bool can_open_peek = false;
 };
 
+inline bool NativeFrameCanNavigatePage(bool main_frame, bool top_navigation_sandboxed,
+                                       bool user_activation_top_navigation_sandboxed) {
+  return main_frame || !top_navigation_sandboxed || !user_activation_top_navigation_sandboxed;
+}
+
 inline NativeShiftLink ClassifyNativeShiftLink(const NativeShiftLinkClick& click) {
   constexpr NSEventModifierFlags relevant = NSEventModifierFlagShift |
       NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand;
