@@ -300,13 +300,10 @@ bool NativeExtensionActionBridge::HasEnabledExtensions(
     content::WebContents& contents) const {
   if (!ValidPage(contents) || !registry_observation_.IsObserving())
     return false;
-  auto& profile = *browser_.GetProfile();
-  for (const auto& extension :
-       extensions::ExtensionRegistry::Get(&profile)->enabled_extensions()) {
-    if (AvailableInProfile(*extension, profile))
-      return true;
-  }
-  return false;
+  return std::ranges::any_of(container_.model_->action_ids(),
+                             [this](const std::string& id) {
+                               return container_.Find(id) != nullptr;
+                             });
 }
 void NativeExtensionActionBridge::OnExtensionLoaded(
     content::BrowserContext*, const extensions::Extension* extension) {

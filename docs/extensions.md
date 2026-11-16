@@ -63,22 +63,24 @@ owns popup/side-panel replacement, closure and saved-focus restoration.
 ### Popup toolbar enabled-extension availability
 
 `hasEnabledExtensions(for:)` validates the selected attached page and its
-Browser-owned Profile, then reads Chromium's enabled registry. It uses the
-extension-settings visibility predicate, excluding normal internal components.
-Availability also counts the rare extensions without an action. A private
-Profile reads its original Profile's registry, but in private windows and their
-pop-ups availability counts only extensions allowed in Incognito, the rule
-Chromium's toolbar model uses for private tiles. Every action applies its own
-page/permission checks.
+Browser-owned Profile, then reports whether the window's toolbar actions model
+has an action the Site Control Center would show as a tile. Availability and
+tiles therefore always agree: an extension with no action never makes the
+Extensions control appear. A private window's model holds only extensions
+allowed in Incognito, so its pop-ups follow the same rule. Every action applies
+its own page/permission checks.
 
-Registry load/unload notifications feed a coalesced window callback. Shutdown
-removes observation and invalidates pending deliveries.
+Registry load/unload and toolbar-model changes feed a coalesced window
+callback. Shutdown removes observation and invalidates pending deliveries.
 
 ### Popup extension-menu metadata carrier
 
-The native `enabledExtensions(for:)` API snapshots the same extensions, including
-those without an action. Manifest artwork loads asynchronously at 32 logical
-points with available scale representations; missing or failed images stay nil.
+The native `enabledExtensions(for:)` API snapshots the enabled registry with the
+extension-settings visibility predicate, which excludes normal internal
+components, and keeps those without an action. A private Profile reads its
+original Profile's registry but lists only extensions allowed in Incognito.
+Manifest artwork loads asynchronously at 32 logical points with available scale
+representations; missing or failed images stay nil.
 The Site Control Center reads action snapshots and does not need this metadata.
 Chromium's manifest handler gives every ordinary extension that declares no
 action a stand-in: a disabled-by-default action in Manifest V3 and a page action

@@ -135,13 +135,17 @@ class NativeExtensionActionsTest : public ParcBrowserWindowTest,
     return value;
   }
   scoped_refptr<const extensions::Extension> AddPreinstalledExtension(
-      const std::string& name) {
+      const std::string& name,
+      bool allowed_in_private = false) {
     auto value =
         extensions::ExtensionBuilder(name)
             .SetManifestVersion(3)
             .SetLocation(extensions::mojom::ManifestLocation::kInternal)
             .AddFlags(extensions::Extension::WAS_INSTALLED_BY_DEFAULT)
             .Build();
+    if (allowed_in_private)
+      extensions::ExtensionPrefs::Get(profile())->SetIsIncognitoEnabled(
+          value->id(), true);
     extensions::ExtensionRegistrar::Get(profile())->AddExtension(value);
     return value;
   }
@@ -384,7 +388,7 @@ TEST_F(NativeExtensionActionsTest, RealChangesCoalesceAndSnapshotIsCopied) {
   EXPECT_FALSE([old.title isEqualToString:@"Updated"]);
   EXPECT_NSEQ(@"Updated", Value(*extension_).title);
 }
-TEST_F(NativeExtensionActionsTest, EnabledExtensionWithoutActionInvalidatesGate) {
+TEST_F(NativeExtensionActionsTest, AvailabilityCountsOnlyExtensionsWithTiles) {
   auto* registrar = extensions::ExtensionRegistrar::Get(profile());
   registrar->RemoveExtension(extension_->id(),
                              extensions::UnloadedExtensionReason::DISABLE);
@@ -397,21 +401,27 @@ TEST_F(NativeExtensionActionsTest, EnabledExtensionWithoutActionInvalidatesGate)
   registrar->AddExtension(component);
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(bridge_->HasEnabledExtensions(*contents_));
-  const int previous = notifications_;
-  auto no_action = AddPreinstalledExtension("No action");
-  EXPECT_TRUE(bridge_->HasEnabledExtensions(*contents_));
+  int previous = notifications_;
+  AddPreinstalledExtension("No action");
+  EXPECT_FALSE(bridge_->HasEnabledExtensions(*contents_));
   EXPECT_EQ(0u, Snapshot().count);
   EXPECT_EQ(previous, notifications_);
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(previous + 1, notifications_);
+  EXPECT_FALSE(bridge_->HasEnabledExtensions(*contents_));
+  auto other = AddExtension("Action Beta");
+  EXPECT_TRUE(bridge_->HasEnabledExtensions(*contents_));
+  EXPECT_EQ(1u, Snapshot().count);
   attached_ = false;
   EXPECT_FALSE(bridge_->HasEnabledExtensions(*contents_));
   attached_ = true;
-  registrar->RemoveExtension(no_action->id(),
+  base::RunLoop().RunUntilIdle();
+  previous = notifications_;
+  registrar->RemoveExtension(other->id(),
                              extensions::UnloadedExtensionReason::DISABLE);
   EXPECT_FALSE(bridge_->HasEnabledExtensions(*contents_));
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(previous + 2, notifications_);
+  EXPECT_EQ(previous + 1, notifications_);
 }
 TEST_F(NativeExtensionActionsTest,
        PrivateAvailabilityCountsOnlyExtensionsAllowedThere) {
@@ -470,6 +480,10 @@ TEST_F(NativeExtensionActionsTest,
       allowed->id(), extensions::UnloadedExtensionReason::DISABLE);
   EXPECT_FALSE(private_bridge->HasEnabledExtensions(*private_contents));
   EXPECT_TRUE(bridge_->HasEnabledExtensions(*contents_));
+  AddPreinstalledExtension("Private no action", true);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(private_bridge->HasEnabledExtensions(*private_contents));
+  EXPECT_EQ(0u, private_actions().count);
 
   private_host.bridge = nullptr;
   private_bridge->Shutdown(base::DoNothing());
