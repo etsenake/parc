@@ -44,7 +44,6 @@ final class Window { var isKeyWindow = true; weak var firstResponder: AnyObject?
 ''' + method + '\n' + keys + '\n' + plural + '\n' + edit + '''
     func menu(_ folder: Folder) -> NSMenu {
         let menu = NSMenu(); menu.autoenablesItems = false
-        let button = NSButton()
 ''' + menu + '''
         return menu
     }
