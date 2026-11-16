@@ -1231,32 +1231,38 @@ struct SidebarDuplicateResult {
     let openTabIDs: [UUID]
 }
 
-struct SidebarSplitCopy: Equatable {
+struct SidebarItemsCopy: Equatable {
     let collection: SidebarMoveCollection
     let groups: [BrowserSplitLayout]
     var roots: [SidebarItemReference] { collection.roots }
     var tabs: [BrowserTab] { collection.tabs }
+    var folderIDs: [UUID] { collection.folderIDs }
     var source: SidebarHierarchySnapshot { collection.hierarchy }
+    var wholeSplits: Bool { roots.allSatisfy { if case .split = $0 { return true } else { return false } } }
 
     init?(items: [SidebarItemReference], spaceID: UUID, profileID: UUID, state: BrowserState) {
-        guard !items.isEmpty, items.allSatisfy({ if case .split = $0 { return true } else { return false } }),
-              let collection = SidebarMoveCollection(items: items, spaceID: spaceID, profileID: profileID, state: state),
-              collection.folderIDs.isEmpty, collection.tabs.count == collection.tabIDs.count,
-              collection.tabs.allSatisfy({ $0.archivedAt == nil && FolderDuplicateTarget.validSource($0.savedURL) }) else { return nil }
-        let groups = collection.roots.compactMap { root -> BrowserSplitLayout? in
-            guard case .split(let id) = root else { return nil }
-            return collection.hierarchy.groups.first { $0.id == id }
-        }
-        guard groups.count == collection.roots.count,
-              groups.flatMap(\.tabIDs) == collection.tabIDs else { return nil }
+        guard let collection = SidebarMoveCollection(items: items, spaceID: spaceID, profileID: profileID, state: state),
+              collection.tabs.count == collection.tabIDs.count,
+              collection.tabs.allSatisfy({
+                  $0.archivedAt == nil && ($0.folderID == nil || $0.kind == .pinned) && FolderDuplicateTarget.validSource($0.savedURL)
+              }) else { return nil }
+        let ids = Set(collection.tabIDs)
+        let groups = collection.hierarchy.groups.filter { !$0.tabIDs.allSatisfy { !ids.contains($0) } }
+        guard groups.allSatisfy({ group in
+            group.tabIDs.allSatisfy(ids.contains) && group.sidebarAnchorID.map(group.tabIDs.contains) == true
+        }) else { return nil }
         self.collection = collection; self.groups = groups
     }
 
-    func matchesPlacement(of other: SidebarSplitCopy) -> Bool {
+    func matchesPlacement(of other: SidebarItemsCopy) -> Bool {
         func placement(_ tab: BrowserTab) -> [String] {
             [tab.id.uuidString, tab.profileID.uuidString, tab.spaceID.uuidString, tab.kind.rawValue, tab.folderID?.uuidString ?? ""]
         }
+        func parents(_ copy: SidebarItemsCopy) -> [UUID?] {
+            copy.folderIDs.map { id in copy.source.folders.first { $0.id == id }?.parentID }
+        }
         return roots == other.roots && groups == other.groups && collection.tabIDs == other.collection.tabIDs
+            && folderIDs == other.folderIDs && parents(self) == parents(other)
             && source.spaceID == other.source.spaceID && source.profileID == other.source.profileID
             && tabs.map(placement) == other.tabs.map(placement)
     }
@@ -1280,8 +1286,9 @@ struct FolderRemovalTarget: Equatable {
         self.init(items: [.folder(folderID)], spaceID: spaceID, profileID: profileID, state: state)
     }
 
-    init?(items: [SidebarItemReference], spaceID: UUID, profileID: UUID, state: BrowserState) {
-        guard let hierarchy = SidebarHierarchySnapshot(state: state, spaceID: spaceID, profileID: profileID),
+    init?(items: [SidebarItemReference], spaceID: UUID, profileID: UUID, includesFavorites: Bool = false, state: BrowserState) {
+        guard let hierarchy = SidebarHierarchySnapshot(state: state, spaceID: spaceID, profileID: profileID,
+                                                       includesFavorites: includesFavorites),
               let roots = SidebarHierarchy.roots(items, state: state, spaceID: spaceID), !roots.isEmpty else { return nil }
         var folders: [UUID] = [], tabIDs: [UUID] = []
         func collect(_ item: SidebarItemReference) -> Bool {
@@ -1302,7 +1309,8 @@ struct FolderRemovalTarget: Equatable {
         guard roots.allSatisfy(collect), Set(tabIDs).count == tabIDs.count else { return nil }
         let tabs = tabIDs.compactMap { id in state.tab(id) }
         guard tabs.count == tabIDs.count, tabs.allSatisfy({
-            $0.spaceID == spaceID && $0.profileID == profileID && $0.kind != .favorite && $0.archivedAt == nil
+            ($0.kind == .favorite ? includesFavorites && $0.folderID == nil : $0.spaceID == spaceID)
+                && $0.profileID == profileID && $0.archivedAt == nil
                 && ($0.folderID == nil || $0.kind == .pinned)
                 && FolderDuplicateTarget.validSource($0.savedURL)
         }), Set(state.openTabs(where: { $0.folderID.map(folders.contains) == true }).map(\.id)).isSubset(of: Set(tabIDs)) else { return nil }
@@ -1316,6 +1324,11 @@ struct FolderRemovalTarget: Equatable {
         if roots.count == 1, case .folder(let id) = roots[0] { name = hierarchy.folders.first { $0.id == id }!.name }
         else { name = "Selected Items" }
         self.hierarchy = hierarchy; folderIDs = folders; self.tabs = tabs; self.groups = groups
+    }
+
+    func refreshed(in state: BrowserState) -> FolderRemovalTarget? {
+        FolderRemovalTarget(items: roots, spaceID: hierarchy.spaceID, profileID: hierarchy.profileID,
+                            includesFavorites: hierarchy.includesFavorites, state: state)
     }
 }
 
@@ -1399,11 +1412,15 @@ protocol SidebarItemsRecord {
     var tabs: [BrowserTab] { get }
     var groups: [BrowserSplitLayout] { get }
     var locations: [FolderDeletionUndo.Location] { get }
+    var includesFavorites: Bool { get }
 }
 
 extension SidebarItemsRecord {
+    var includesFavorites: Bool { false }
+
     func matchingTarget(in state: BrowserState) -> FolderRemovalTarget? {
-        guard let target = FolderRemovalTarget(items: roots, spaceID: spaceID, profileID: profileID, state: state),
+        guard let target = FolderRemovalTarget(items: roots, spaceID: spaceID, profileID: profileID,
+                                               includesFavorites: includesFavorites, state: state),
               locations.allSatisfy({ location in
                   location.siblings.filter(roots.contains).allSatisfy {
                       SidebarHierarchy.location(of: $0, state: state, spaceID: spaceID) == location.container
@@ -1431,6 +1448,7 @@ extension SidebarItemsRecord {
                     ?? min(position, siblings.count)
                 siblings.insert(root, at: insertion)
             }
+            if location.container.section == .favorite, siblings.count > 12 { return false }
             next.sidebarItemOrder[location.container.key] = siblings.map { item in
                 if case .split(let id) = item, let anchor = next.splitLayouts.first(where: { $0.id == id })?.sidebarAnchorID { return .tab(anchor) }
                 return item
@@ -1443,9 +1461,11 @@ extension SidebarItemsRecord {
 struct SidebarCopyUndo: SidebarItemsRecord {
     static let duplicateName = "Duplicate"
     static let folderCopyName = "Copy to Folder"
+    static let dragCopyName = "Copy"
     let actionName: String
     let roots: [SidebarItemReference]
     let spaceID: UUID, profileID: UUID
+    let includesFavorites: Bool
     let folders: [BrowserFolder]
     let tabs: [BrowserTab]
     let groups: [BrowserSplitLayout]
@@ -1457,10 +1477,12 @@ struct SidebarCopyUndo: SidebarItemsRecord {
 
     init?(actionName: String, roots: [SidebarItemReference], spaceID: UUID, profileID: UUID,
           documents: [SidebarDocumentReference], openTabIDs: [UUID], state: BrowserState) {
-        guard let target = FolderRemovalTarget(items: roots, spaceID: spaceID, profileID: profileID, state: state),
+        let includesFavorites = roots.contains { SidebarHierarchy.location(of: $0, state: state, spaceID: spaceID)?.section == .favorite }
+        guard let target = FolderRemovalTarget(items: roots, spaceID: spaceID, profileID: profileID,
+                                               includesFavorites: includesFavorites, state: state),
               target.roots == roots else { return nil }
         self.actionName = actionName; self.roots = roots
-        self.spaceID = spaceID; self.profileID = profileID
+        self.spaceID = spaceID; self.profileID = profileID; self.includesFavorites = includesFavorites
         folders = target.hierarchy.folders.filter { target.folderIDs.contains($0.id) }
         tabs = target.tabs; groups = target.groups
         var seen = Set<String>()
@@ -1497,8 +1519,9 @@ struct SidebarCopyUndo: SidebarItemsRecord {
 
 extension FolderRemovalSelection {
     func isCurrent(for target: FolderRemovalTarget, in state: BrowserState) -> Bool {
-        Self.resolve(target: target, state: state, selected: original, focused: originalFocus, referrerPool: referrerPool,
-                     previouslySelectedItemID: previouslySelectedItemID, available: { tabIDs.contains($0) }) == self
+        Self.resolve(target: target, state: state, spaceID: spaceID, selected: original, focused: originalFocus,
+                     referrerPool: referrerPool, previouslySelectedItemID: previouslySelectedItemID,
+                     available: { tabIDs.contains($0) }) == self
     }
 }
 
@@ -1667,12 +1690,12 @@ struct FolderRemovalSelection: Equatable {
         self.replacementSpaceID = replacementSpaceID ?? spaceID
     }
 
-    static func resolve(target: FolderRemovalTarget, state: BrowserState,
+    static func resolve(target: FolderRemovalTarget, state: BrowserState, spaceID: UUID? = nil,
                         selected: [UUID], focused: UUID?, referrerPool: Set<UUID> = [],
                         previouslySelectedItemID: UUID? = nil, available: (UUID) -> Bool) -> Self? {
-        let space = target.hierarchy.spaceID, profile = target.hierarchy.profileID
-        guard FolderRemovalTarget(items: target.roots, spaceID: space,
-            profileID: profile, state: state) == target else { return nil }
+        let space = spaceID ?? target.hierarchy.spaceID, profile = target.hierarchy.profileID
+        guard space == target.hierarchy.spaceID || target.hierarchy.includesFavorites,
+              target.refreshed(in: state) == target else { return nil }
         return resolve(removing: Set(target.tabs.map(\.id)), spaceID: space,
             profileID: profile, state: state, selected: selected, focused: focused, referrerPool: referrerPool,
             previouslySelectedItemID: previouslySelectedItemID, available: available)
@@ -4005,20 +4028,31 @@ final class BrowserStore: ObservableObject {
         guard !isEphemeral, SidebarDuplicateTarget(items: target.roots, spaceID: expected.spaceID,
                 profileID: expected.profileID, state: state) == target,
               SidebarCopySources(destinations: destinations, documents: documents).validates(target.tabs),
-              target.tabs.allSatisfy({ !retiringTabIDs.contains($0.id) }) else { return nil }
-        let previous = creation?.validated(profileID: expected.profileID, state: state).activeTabBeforeCreationID
-        let folderMap = Dictionary(uniqueKeysWithValues: target.folderIDs.map { ($0, UUID()) })
-        let tabMap = Dictionary(uniqueKeysWithValues: target.tabs.map { ($0.id, UUID()) })
-        let groupMap = Dictionary(uniqueKeysWithValues: target.groups.map { ($0.id, UUID()) })
+              target.tabs.allSatisfy({ !retiringTabIDs.contains($0.id) }),
+              let copied = adjacentCopies(roots: target.roots, folderIDs: target.folderIDs, tabs: target.tabs,
+                  groups: target.groups, spaceID: expected.spaceID, profileID: expected.profileID,
+                  destinations: destinations, creation: creation, opensEverySplit: true) else { return nil }
+        try commitProfileSettings(copied.state)
+        return copied.result
+    }
+
+    private func adjacentCopies(roots: [SidebarItemReference], folderIDs: [UUID], tabs: [BrowserTab],
+                                groups: [BrowserSplitLayout], spaceID: UUID, profileID: UUID,
+                                destinations: [UUID: String], creation: TabCreationProvenance?,
+                                opensEverySplit: Bool) -> (state: BrowserState, result: SidebarDuplicateResult)? {
+        let previous = creation?.validated(profileID: profileID, state: state).activeTabBeforeCreationID
+        let folderMap = Dictionary(uniqueKeysWithValues: folderIDs.map { ($0, UUID()) })
+        let tabMap = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, UUID()) })
+        let groupMap = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, UUID()) })
         var next = state
         let now = clock()
-        for id in target.folderIDs {
+        for id in folderIDs {
             guard var copy = state.folders.first(where: { $0.id == id }), let newID = folderMap[id] else { return nil }
             copy.id = newID
             if let parent = copy.parentID, let newParent = folderMap[parent] { copy.parentID = newParent }
             next.folders.append(copy)
         }
-        for original in target.tabs {
+        for original in tabs {
             guard let id = tabMap[original.id], let url = destinations[original.id] else { return nil }
             var copy = original
             copy.id = id
@@ -4030,7 +4064,7 @@ final class BrowserStore: ObservableObject {
             copy.isUnread = true; copy.archiveProvenance = nil
             next.tabs.append(copy)
         }
-        for group in target.groups {
+        for group in groups {
             guard let id = groupMap[group.id], let anchor = group.sidebarAnchorID,
                   let newAnchor = tabMap[anchor] else { return nil }
             let children = group.tabIDs.compactMap { tabMap[$0] }
@@ -4038,9 +4072,9 @@ final class BrowserStore: ObservableObject {
             next.splitLayouts.append(BrowserSplitLayout(id: id, sidebarAnchorID: newAnchor, customTitle: group.customTitle, customIcon: group.customIcon,
                 spaceID: group.spaceID, tabIDs: children, orientation: group.orientation, widthFactors: group.widthFactors))
         }
-        for id in target.folderIDs {
-            let sourceLocation = SidebarContainerLocation(spaceID: expected.spaceID, folderID: id, section: .pinned)
-            let destination = SidebarContainerLocation(spaceID: expected.spaceID, folderID: folderMap[id]!, section: .pinned)
+        for id in folderIDs {
+            let sourceLocation = SidebarContainerLocation(spaceID: spaceID, folderID: id, section: .pinned)
+            let destination = SidebarContainerLocation(spaceID: spaceID, folderID: folderMap[id]!, section: .pinned)
             let children = SidebarHierarchy.children(in: sourceLocation, state: state)
             var copied: [SidebarItemReference] = []
             for child in children {
@@ -4048,7 +4082,7 @@ final class BrowserStore: ObservableObject {
                 case .folder(let id): guard let mapped = folderMap[id] else { return nil }; copied.append(.folder(mapped))
                 case .tab(let id): guard let mapped = tabMap[id] else { return nil }; copied.append(.tab(mapped))
                 case .split(let id):
-                    guard let anchor = target.groups.first(where: { $0.id == id })?.sidebarAnchorID,
+                    guard let anchor = groups.first(where: { $0.id == id })?.sidebarAnchorID,
                           let mapped = tabMap[anchor] else { return nil }
                     copied.append(.tab(mapped))
                 }
@@ -4072,20 +4106,20 @@ final class BrowserStore: ObservableObject {
             switch item {
             case .tab(let id):
                 if shouldOpen,
-                   target.tabs.first(where: { $0.id == id }).map({ InternalPage(urlString: $0.savedURL) == nil }) == true,
+                   tabs.first(where: { $0.id == id }).map({ InternalPage(urlString: $0.savedURL) == nil }) == true,
                    let copied = tabMap[id] { eager.append(copied) }
             case .folder(let id):
-                for child in SidebarHierarchy.children(in: .init(spaceID: expected.spaceID, folderID: id, section: .pinned), state: state) {
+                for child in SidebarHierarchy.children(in: .init(spaceID: spaceID, folderID: id, section: .pinned), state: state) {
                     requestOpen(child, shouldOpen: false)
                 }
             case .split(let id):
-                for child in target.groups.first(where: { $0.id == id })?.tabIDs ?? [] {
-                    requestOpen(.tab(child), shouldOpen: true)
+                for child in groups.first(where: { $0.id == id })?.tabIDs ?? [] {
+                    requestOpen(.tab(child), shouldOpen: opensEverySplit || shouldOpen)
                 }
             }
         }
-        for (index, root) in target.roots.enumerated() {
-            guard let source = SidebarHierarchy.location(of: root, state: state, spaceID: expected.spaceID),
+        for (index, root) in roots.enumerated() {
+            guard let source = SidebarHierarchy.location(of: root, state: state, spaceID: spaceID),
                   let copy = mapped(root) else { return nil }
             var siblings = siblingsByKey[source.key] ?? SidebarHierarchy.children(in: source, state: state)
             guard let position = siblings.firstIndex(of: root) else { return nil }
@@ -4094,33 +4128,30 @@ final class BrowserStore: ObservableObject {
             requestOpen(root, shouldOpen: index < 5)
         }
         for (key, siblings) in siblingsByKey { next.sidebarItemOrder[key] = siblings.map(stored) }
-        let result = SidebarDuplicateResult(roots: copiedRoots,
-            tabIDs: target.tabs.compactMap { tabMap[$0.id] }, openTabIDs: eager)
-        try commitProfileSettings(next)
-        return result
+        return (next, SidebarDuplicateResult(roots: copiedRoots, tabIDs: tabs.compactMap { tabMap[$0.id] }, openTabIDs: eager))
     }
 
-    func copySidebarSplits(_ copy: SidebarSplitCopy, to destination: SidebarContainerLocation,
-                           before: SidebarItemReference?, destinations: [UUID: String],
-                           documents: [UUID: SidebarDocumentReference] = [:],
-                           creation: TabCreationProvenance? = nil) throws -> SidebarDuplicateResult? {
-        guard let placed = placedSplitCopy(copy, to: destination, before: before, destinations: destinations,
+    func copySidebarItems(_ copy: SidebarItemsCopy, to destination: SidebarContainerLocation,
+                          before: SidebarItemReference?, destinations: [UUID: String],
+                          documents: [UUID: SidebarDocumentReference] = [:],
+                          creation: TabCreationProvenance? = nil) throws -> SidebarDuplicateResult? {
+        guard let placed = placedItemsCopy(copy, to: destination, before: before, destinations: destinations,
                                            documents: documents, creation: creation) else { return nil }
         try commitProfileSettings(placed.state)
         return placed.result
     }
 
-    func copySidebarSplitsReloadingOriginals(_ copy: SidebarSplitCopy, to destination: SidebarContainerLocation,
+    func copySidebarSplitsReloadingOriginals(_ copy: SidebarItemsCopy, to destination: SidebarContainerLocation,
                                              before: SidebarItemReference?, destinations: [UUID: String],
                                              documents: [UUID: SidebarDocumentReference] = [:],
                                              creation: TabCreationProvenance? = nil,
                                              completion: @escaping (Result<SidebarDuplicateResult?, Error>) -> Void) {
         let originals = Set(copy.tabs.map(\.id))
         func placed(holding: Bool) -> (state: BrowserState, result: SidebarDuplicateResult)? {
-            placedSplitCopy(copy, to: destination, before: before, destinations: destinations,
+            placedItemsCopy(copy, to: destination, before: before, destinations: destinations,
                             documents: documents, creation: creation, holdingRetirement: holding)
         }
-        guard placed(holding: false) != nil else { completion(.success(nil)); return }
+        guard copy.wholeSplits, placed(holding: false) != nil else { completion(.success(nil)); return }
         withRetiredPages(originals, shouldCommit: { placed(holding: true) != nil },
                          onRefusal: { completion(.success(nil)) }) { [weak self] in
             guard let self, let value = placed(holding: false) else { completion(.success(nil)); return }
@@ -4129,67 +4160,35 @@ final class BrowserStore: ObservableObject {
         }
     }
 
-    func canCopySidebarSplits(_ copy: SidebarSplitCopy, to destination: SidebarContainerLocation,
-                              before: SidebarItemReference?, destinations: [UUID: String],
-                              documents: [UUID: SidebarDocumentReference] = [:]) -> Bool {
-        placedSplitCopy(copy, to: destination, before: before, destinations: destinations,
+    func canCopySidebarItems(_ copy: SidebarItemsCopy, to destination: SidebarContainerLocation,
+                             before: SidebarItemReference?, destinations: [UUID: String],
+                             documents: [UUID: SidebarDocumentReference] = [:]) -> Bool {
+        placedItemsCopy(copy, to: destination, before: before, destinations: destinations,
                         documents: documents, creation: nil) != nil
     }
 
-    private func placedSplitCopy(_ original: SidebarSplitCopy, to destination: SidebarContainerLocation,
+    private func placedItemsCopy(_ original: SidebarItemsCopy, to destination: SidebarContainerLocation,
                                  before: SidebarItemReference?, destinations: [UUID: String],
                                  documents: [UUID: SidebarDocumentReference],
                                  creation: TabCreationProvenance?,
                                  holdingRetirement: Bool = false) -> (state: BrowserState, result: SidebarDuplicateResult)? {
         let source = original.source
         guard !isEphemeral,
-              let copy = SidebarSplitCopy(items: original.roots, spaceID: source.spaceID, profileID: source.profileID, state: state),
+              let copy = SidebarItemsCopy(items: original.roots, spaceID: source.spaceID, profileID: source.profileID, state: state),
               copy.matchesPlacement(of: original),
               SidebarCopySources(destinations: destinations, documents: documents).validates(copy.tabs),
               holdingRetirement || copy.tabs.allSatisfy({ !retiringTabIDs.contains($0.id) }),
               let destinationProfile = state.spaces.first(where: { $0.id == destination.spaceID })?.profileID,
               destination.profileID == nil || destination.profileID == destinationProfile else { return nil }
         guard destinationProfile == source.profileID
-                || copy.tabs.allSatisfy({ InternalPage(urlString: $0.savedURL) == nil }) else { return nil }
-        let previous = creation?.validated(profileID: source.profileID, state: state).activeTabBeforeCreationID
-        let now = clock()
-        var next = state
-        var roots: [SidebarItemReference] = [], tabIDs: [UUID] = [], open: [UUID] = []
-        var siblingsByKey: [String: [SidebarItemReference]] = [:]
-        for group in copy.groups {
-            guard let anchor = group.sidebarAnchorID,
-                  let location = SidebarHierarchy.location(of: .split(group.id), state: state, spaceID: source.spaceID) else { return nil }
-            let map = Dictionary(uniqueKeysWithValues: group.tabIDs.map { ($0, UUID()) })
-            for id in group.tabIDs {
-                guard let original = copy.tabs.first(where: { $0.id == id }), let url = destinations[id], let newID = map[id] else { return nil }
-                var tab = original
-                tab.id = newID; tab.referrerID = nil; tab.activeTabBeforeCreationID = previous
-                tab.url = url; tab.savedURL = url
-                tab.title = original.savedTitle; tab.savedTitle = original.savedTitle
-                tab.createdAt = now; tab.lastAccessed = now
-                tab.isUnread = true; tab.archiveProvenance = nil
-                next.tabs.append(tab); tabIDs.append(newID)
-                if InternalPage(urlString: original.savedURL) == nil { open.append(newID) }
-            }
-            let id = UUID()
-            guard let newAnchor = map[anchor] else { return nil }
-            next.splitLayouts.append(BrowserSplitLayout(id: id, sidebarAnchorID: newAnchor, customTitle: group.customTitle,
-                customIcon: group.customIcon, spaceID: group.spaceID, tabIDs: group.tabIDs.compactMap { map[$0] },
-                orientation: group.orientation, widthFactors: group.widthFactors))
-            var siblings = siblingsByKey[location.key] ?? SidebarHierarchy.children(in: location, state: state)
-            guard let index = siblings.firstIndex(of: .split(group.id)) else { return nil }
-            siblings.insert(.split(id), at: index + 1); siblingsByKey[location.key] = siblings
-            roots.append(.split(id))
-        }
-        func stored(_ item: SidebarItemReference) -> SidebarItemReference {
-            if case .split(let id) = item, let anchor = next.splitLayouts.first(where: { $0.id == id })?.sidebarAnchorID { return .tab(anchor) }
-            return item
-        }
-        for (key, siblings) in siblingsByKey { next.sidebarItemOrder[key] = siblings.map(stored) }
-        guard let move = SidebarWindowMove(items: roots, sourceSpaceID: source.spaceID, profileID: source.profileID,
-                  destinationProfileID: destinationProfile, to: destination, before: before, state: next),
-              let placed = move.applying(to: next) else { return nil }
-        return (placed, SidebarDuplicateResult(roots: roots, tabIDs: tabIDs, openTabIDs: open))
+                || (copy.wholeSplits && copy.tabs.allSatisfy({ InternalPage(urlString: $0.savedURL) == nil })) else { return nil }
+        guard let copied = adjacentCopies(roots: copy.roots, folderIDs: copy.folderIDs, tabs: copy.tabs, groups: copy.groups,
+                  spaceID: source.spaceID, profileID: source.profileID, destinations: destinations,
+                  creation: creation, opensEverySplit: false),
+              let move = SidebarWindowMove(items: copied.result.roots, sourceSpaceID: source.spaceID, profileID: source.profileID,
+                  destinationProfileID: destinationProfile, to: destination, before: before, state: copied.state),
+              let placed = move.applying(to: copied.state) else { return nil }
+        return (placed, copied.result)
     }
 
     func deleteFolder(_ target: FolderRemovalTarget, selection: FolderRemovalSelection? = nil,
@@ -4326,6 +4325,11 @@ final class BrowserStore: ObservableObject {
                     $0.id == location.container.folderID && $0.spaceID == undo.spaceID
                 })
             })
+            && undo.locations.allSatisfy({ location in
+                location.container.section != .favorite
+                    || SidebarHierarchy.children(in: location.container, state: state).count
+                        + location.siblings.filter(undo.roots.contains).count <= 12
+            })
     }
 
     @discardableResult
@@ -4360,7 +4364,7 @@ final class BrowserStore: ObservableObject {
         for key in Array(next.selectionBySpace.keys) { next.selectionBySpace[key]?.removeAll { ids.contains($0) } }
         if let selection {
             next.selectionBySpace[selection.replacementSpaceID.uuidString] = selection.tabIDs
-            if next.activeSpaceID == spaceID && state.selectedTabIDs == selection.original {
+            if next.activeSpaceID == selection.spaceID && state.selectedTabIDs == selection.original {
                 next.activeSpaceID = selection.replacementSpaceID
                 next.selectedTabIDs = selection.tabIDs
             }

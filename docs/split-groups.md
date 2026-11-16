@@ -276,10 +276,11 @@ new navigation in the destination Profile; it does not move an authenticated pag
 A whole split moves through its private sidebar session. Option copies whole
 splits with fresh item/group IDs and preserved saved placement/geometry. Within
 one Profile, Note/Easel copies reference the same documents. The original window
-and complete ordered membership remain validated through commit.
+and complete ordered membership remain validated through commit. Each copy
+records one **Copy** Undo step in the window that received it.
 
-The visible Space header moves items to the top of Pinned and refuses Option
-copy. A dock Space target moves/copies eligible items not already there to its
+The visible Space header moves items to the top of Pinned, or copies them there
+with Option. A dock Space target moves/copies eligible items not already there to its
 Pinned list when all are saved, otherwise Today, then selects that Space. Another
 window uses the collection transfer owner. Folder-target placement follows
 [folder moves](folder-moves.md).
@@ -289,11 +290,13 @@ URLs: pages, local editors, Finder and other applications cannot consume them.
 A whole split does not tear off into a new window or become a page-area drop.
 A failed external destination returns the drag image to its source.
 
-Mixed selections containing ordinary tabs or folders remain move-only; whole-split
-Option-copy does not imply generic selection copying. Cross-Profile split copies
-retire/reload original web pages through native consent before saving the copy.
-A split containing a Note/Easel cannot be copied across Profiles because its
-document cannot simultaneously inhabit two Profile stores.
+Tabs, folders and mixed selections copy through the same session within one
+window and shared data; see [Option-drag copies](folder-moves.md#option-drag-copies).
+Only whole splits copy into another window or a Space that keeps separate data.
+Those separate-data copies retire/reload original web pages through native
+consent before saving the copy. A split holding a Note or Easel deliberately
+never copies into a separate-data Space: Parc never duplicates a document's
+contents, so moving the document is the supported path.
 
 ## Cross-Profile moves
 

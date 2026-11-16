@@ -278,7 +278,7 @@ extension BrowserWindowController {
         let wholeSplits = items.allSatisfy { if case .split = $0 { return true } else { return false } }
         let session = SidebarMoveSession(items: items, window: window,
             validate: { [weak self] in self?.spaceCommandsAvailable == true && valid() },
-            validateTransfer: valid, allowsCopy: wholeSplits, propose: { [weak self] location, before in
+            validateTransfer: valid, allowsCopy: wholeSplits || folderDuplicateContextAvailable, propose: { [weak self] location, before in
                 guard valid(), let self, self.spaceCommandsAvailable else { return false }
                 return SidebarHierarchy.moving(items, to: location, before: before, expected: expected, state: self.store.state) != nil
             }, commit: { [weak self] location, before in
@@ -391,33 +391,41 @@ extension BrowserWindowController {
               location.profileID == nil || location.profileID == destinationProfile,
               destinationProfile == source.activeProfileID
                 || InterProfileMove.profilesAvailable(source.activeProfileID, destinationProfile, in: store.state),
-              let copy = SidebarSplitCopy(items: items, spaceID: source.activeSpaceID,
-                  profileID: source.activeProfileID, state: store.state) else { return nil }
+              let copy = SidebarItemsCopy(items: items, spaceID: source.activeSpaceID,
+                  profileID: source.activeProfileID, state: store.state),
+              copy.wholeSplits || (source === self && destinationProfile == source.activeProfileID) else { return nil }
         let sourceProfile = source.activeProfileID, spaceID = activeSpaceID, profileID = activeProfileID
         let focus = source.focusedTabID
-        let focusIndex = copy.groups.last.flatMap { group in focus.flatMap { group.tabIDs.firstIndex(of: $0) } } ?? 0
-        let current: () -> (copy: SidebarSplitCopy, sources: SidebarCopySources)? = { [weak self] in
+        let lastSplit = copy.roots.last.flatMap { root -> BrowserSplitLayout? in
+            guard copy.wholeSplits, case .split(let id) = root else { return nil }
+            return copy.groups.first { $0.id == id }
+        }
+        let focusIndex = lastSplit.flatMap { group in focus.flatMap { group.tabIDs.firstIndex(of: $0) } } ?? 0
+        let current: () -> (copy: SidebarItemsCopy, sources: SidebarCopySources)? = { [weak self] in
             guard let self, self.folderDuplicateContextAvailable,
-                  let now = SidebarSplitCopy(items: copy.roots, spaceID: copy.source.spaceID,
+                  let now = SidebarItemsCopy(items: copy.roots, spaceID: copy.source.spaceID,
                       profileID: copy.source.profileID, state: self.store.state), now.matchesPlacement(of: copy),
                   let resolved = self.resolveSidebarCopyDestinations?(now.tabs), resolved.validates(now.tabs) else { return nil }
             return (now, resolved)
         }
         guard let proposed = current(),
-              store.canCopySidebarSplits(proposed.copy, to: location, before: before,
+              store.canCopySidebarItems(proposed.copy, to: location, before: before,
                   destinations: proposed.sources.destinations, documents: proposed.sources.documents) else { return nil }
         let sourceShown = source.selectedTabIDs.filter { id in copy.tabs.contains { $0.id == id } }
         let sourceFocus = source.focusedTabID.flatMap { sourceShown.contains($0) ? $0 : nil } ?? sourceShown.first
         let sourceSpace = source.activeSpaceID
-        let arrive: (SidebarDuplicateResult) -> Void = { [weak self, weak window] result in
+        let arrive: (SidebarDuplicateResult, SidebarCopySources) -> Void = { [weak self, weak window] result, urls in
             guard let self, let window, self.window === window else { return }
+            self.registerSidebarCopyUndo(SidebarCopyUndo.dragCopyName, roots: result.roots, spaceID: location.spaceID,
+                profileID: destinationProfile, sources: urls, openTabIDs: result.openTabIDs,
+                originatingSpaceID: location.spaceID, window: window)
             if location.spaceID != self.activeSpaceID {
                 if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
                 guard self.selectSpaceFromUser(location.spaceID, profileID: destinationProfile) else { self.render(self.store.state); return }
             }
             guard self.activeSpaceID == location.spaceID, self.activeProfileID == destinationProfile else { self.render(self.store.state); return }
             self.openDuplicatedChildren(result.openTabIDs, spaceID: location.spaceID, profileID: destinationProfile, window: window)
-            if case .split(let id)? = result.roots.last,
+            if copy.wholeSplits, case .split(let id)? = result.roots.last,
                let copied = self.store.state.splitLayouts.first(where: { $0.id == id }), !copied.tabIDs.isEmpty {
                 _ = self.selectTab(copied.tabIDs[min(focusIndex, copied.tabIDs.count - 1)])
             } else { self.render(self.store.state) }
@@ -430,9 +438,9 @@ extension BrowserWindowController {
             let creation = self.creationProvenance(activeTabID: self.currentTabID)
             guard destinationProfile != sourceProfile else {
                 do {
-                    guard let result = try self.store.copySidebarSplits(now, to: location, before: before,
+                    guard let result = try self.store.copySidebarItems(now, to: location, before: before,
                         destinations: urls.destinations, documents: urls.documents, creation: creation) else { return false }
-                    arrive(result); return true
+                    arrive(result, urls); return true
                 } catch {
                     showError(error); return false
                 }
@@ -445,7 +453,7 @@ extension BrowserWindowController {
                     if let source, source !== self, source.activeSpaceID == sourceSpace, let shown = sourceFocus {
                         _ = source.selectTab(shown)
                     }
-                    arrive(result)
+                    arrive(result, urls)
                 case .success(nil): NSSound.beep()
                 case .failure(let error): showError(error)
                 }
@@ -1113,18 +1121,20 @@ extension BrowserWindowController {
         let space = activeSpaceID, profile = activeProfileID, selection = selectedTabIDs, focus = focusedTabID
         let ids = Set(target.tabs.map(\.id))
         guard retirementUnavailableReason?(ids) == nil else { completion(false); return }
-        let nextSelection = space == target.hierarchy.spaceID
-            ? FolderRemovalSelection.resolve(target: target, state: store.state, selected: selection,
+        let showsTarget = space == target.hierarchy.spaceID
+            || (target.hierarchy.includesFavorites && profile == target.hierarchy.profileID)
+        let nextSelection = showsTarget
+            ? FolderRemovalSelection.resolve(target: target, state: store.state, spaceID: space, selected: selection,
                 focused: focus, referrerPool: presentation.referrerPool,
                 previouslySelectedItemID: presentation.previouslySelectedItemID,
                 available: { self.switcherCanUse($0) }) : nil
-        guard space != target.hierarchy.spaceID || nextSelection != nil else { completion(false); return }
+        guard !showsTarget || nextSelection != nil else { completion(false); return }
         commit(nextSelection, { [weak self, weak window] in
             guard let self, let window, self.window === window, self.folderUndoOwnerAvailable,
                   self.activeSpaceID == space, self.activeProfileID == profile,
                   self.selectedTabIDs == selection, self.focusedTabID == focus else { return false }
             guard let nextSelection else { return true }
-            return FolderRemovalSelection.resolve(target: target, state: self.store.state,
+            return FolderRemovalSelection.resolve(target: target, state: self.store.state, spaceID: space,
                 selected: selection, focused: focus, referrerPool: self.presentation.referrerPool,
                 previouslySelectedItemID: self.presentation.previouslySelectedItemID,
                 available: { self.switcherCanUse($0) }) == nextSelection

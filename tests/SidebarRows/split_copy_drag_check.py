@@ -31,7 +31,14 @@ mask = body(surface, "override func draggingSession(_ session: NSDraggingSession
 expect("guard context == .withinApplication else { return .copy }" in mask, "outside the app the split offers copy only")
 expect("sidebarDrag?.allowsCopy == true ? [.move, .copy] : .move" in mask, "inside the app copy joins move only for copyable sessions")
 handle = body(drag, "class SidebarMoveHandle: NSView, NSDraggingSource, SidebarItemDragSource")
-expect("context == .withinApplication ? .move : []" in handle, "ordinary handles (folders) stay move-only")
+expect("guard context == .withinApplication else { return [] }" in handle
+       and "sidebarDrag?.allowsCopy == true ? [.move, .copy] : .move" in handle,
+       "folder handles offer copy beside move inside Parc for copyable sessions, nothing outside")
+row = body(sidebar, "final class SidebarTabRow: NSView, NSDraggingSource")
+row_mask = body(row, "func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext)")
+expect("guard context == .withinApplication else { return [] }" in row_mask
+       and "sidebarDrag?.allowsCopy == true ? [.move, .copy] : .move" in row_mask,
+       "tab rows offer copy beside move inside Parc for copyable sessions, nothing outside")
 expect("forType: SidebarMoveSession.pasteboardType" in handle and handle.count("setString") == 1,
        "the pasteboard item carries only the private session type")
 expect("if let rendered = makeDragImage?() { image = rendered }" in handle, "a supplied renderer replaces the live capture")
@@ -43,8 +50,9 @@ expect(image.index("setHover(false)") < image.index("cacheDisplay") < image.inde
 expect("moveSurface.makeDragImage = { [weak self] in self?.dragImage() }" in group, "the split cell renders its own drag image")
 
 moves = body(controller, "func prepareSidebarMoves(_ items: [SidebarItemReference]) -> SidebarMoveSession?")
-expect("allowsCopy: wholeSplits" in moves and "if case .split = $0 { return true } else { return false }" in moves,
-       "only whole-split sessions may be copied")
+expect("allowsCopy: wholeSplits || folderDuplicateContextAvailable" in moves
+       and "if case .split = $0 { return true } else { return false }" in moves,
+       "every session can offer copy where copies are allowed, and whole splits as before")
 wrapper = body(controller, "func prepareSidebarCopyDrop(")
 expect("cached.key == key, cached.revision == store.stateRevision { return cached.action }" in wrapper
        and "copyDropCache = (key, store.stateRevision, action)" in wrapper,
@@ -54,17 +62,23 @@ for guard in ("session.allowsCopy", "session.isValidForWindowTransfer", "source.
               "folderDuplicateContextAvailable", "source.folderDuplicateContextAvailable",
               "sidebarWindowMoveEnvironment", "source.sidebarWindowMoveEnvironment",
               "InterProfileMove.profilesAvailable(source.activeProfileID, destinationProfile, in: store.state)",
-              "SidebarSplitCopy(items: items, spaceID: source.activeSpaceID"):
+              "SidebarItemsCopy(items: items, spaceID: source.activeSpaceID",
+              "copy.wholeSplits || (source === self && destinationProfile == source.activeProfileID)"):
     expect(guard in copy, f"copy preparation condition missing: {guard}")
-expect("store.canCopySidebarSplits(" in copy and "guard !consumed" in copy and "consumed = true" in copy,
+expect("store.canCopySidebarItems(" in copy and "guard !consumed" in copy and "consumed = true" in copy,
        "the copy is proposed without saving and runs once")
 expect(copy.count("session.isValidForWindowTransfer") == 1 and copy.index("session.isValidForWindowTransfer") < copy.index("let current"),
        "the ended session is consulted only while preparing; copy(_:) validates it before running the action")
 arrive = copy[copy.index("let arrive:"):copy.index("let perform:")]
 perform = copy[copy.index("let perform:"):]
-expect(arrive.index("self.openDuplicatedChildren(") < arrive.index("self.selectTab(")
-       and perform.index("self.store.copySidebarSplits(") < perform.index("arrive(result)"),
-       "copy saves, then opens the children in the background and selects the copy")
+expect(arrive.index("self.registerSidebarCopyUndo(SidebarCopyUndo.dragCopyName") < arrive.index("self.openDuplicatedChildren(")
+       < arrive.index("self.selectTab(") and perform.index("self.store.copySidebarItems(") < perform.index("arrive(result, urls)"),
+       "copy saves, registers Undo Copy, then opens pages in the background and selects a whole-split copy")
+expect("originatingSpaceID: location.spaceID, window: window)" in arrive and "spaceID: location.spaceID," in arrive,
+       "Undo Copy belongs to the window and Space the copy landed in")
+expect("if copy.wholeSplits, case .split(let id)? = result.roots.last" in arrive,
+       "tab, folder and mixed copies leave selection alone, as Duplicate does")
+expect(perform.count("arrive(result, urls)") == 2, "both the same-data and separate-data split copies register Undo")
 expect("guard self.activeSpaceID == location.spaceID, self.activeProfileID == destinationProfile else" in arrive,
        "a copy is opened and selected only in the Space it landed in")
 expect("guard destinationProfile != sourceProfile else { return perform() }" in copy
@@ -73,17 +87,18 @@ expect("guard destinationProfile != sourceProfile else { return perform() }" in 
 expect("sidebar.prepareCopyDrop = { [weak self] session, items, location, before in" in controller, "the destination window prepares copies")
 
 drag_tile = body(tile, "override func mouseDragged(with event: NSEvent)")
-expect("!event.modifierFlags.contains(.option) || session.allowsCopy" in drag_tile, "only a whole Favorite split tile starts an Option drag")
+expect("!event.modifierFlags.contains(.option) || session.allowsCopy" in drag_tile, "a Favorite tile starts an Option drag whenever its session can copy")
 tile_mask = body(tile, "func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext)")
 expect("sidebarDrag?.allowsCopy == true ? [.move, .copy] : .move" in tile_mask and "return []" in tile_mask,
-       "a split tile offers copy and move inside Parc, nothing outside")
+       "a copyable tile offers copy and move inside Parc, nothing outside")
 
 hd = body(sidebar, "private func headerOrDockDrop(")
 header = hd[:hd.index("guard !spacesHost.isHiddenOrHasHiddenAncestor")]
-expect("guard !copying else { return [] }" in header and "admitDrop(session, to: pinned, before: before, copying: false)" in header,
-       "the Space header only moves")
+expect("guard !copying" not in header and "admitDrop(session, to: pinned, before: before, copying: copying)" in header
+       and "return copying ? .copy : .move" in header, "the Space header moves, or copies with Option")
 expect('SidebarContainerLocation(spaceID: spaceID, folderID: nil, section: .pinned)' in header
-       and ".first { !session.items.contains($0) }" in header, "after the pinnedTabsHeader accessory: the top of Pinned")
+       and "let before = copying ? children.first : children.first { !session.items.contains($0) }" in header,
+       "after the pinnedTabsHeader accessory: the top of Pinned, above even the originals for a copy")
 dock = hd[hd.index("guard !spacesHost.isHiddenOrHasHiddenAncestor"):]
 expect("let items = session.items.filter { space(of: $0) != target }" in dock and "$0.kind != .favorite" in dock,
        "items already in the dock's Space are skipped; Favorites are in no Space")
@@ -93,7 +108,7 @@ expect("let top = SidebarHierarchy.children(in: destination, state: state).first
        "dock drops land at index 0 of the list (drop type on → SidebarLocation index 0)")
 expect("guard session.allowsCopy, let action = prepareCopyDrop?(session, items, destination, top)" in dock
        and dock.index("let items = session.items.filter") < dock.index("if copying {"),
-       "a dock Option drop copies the whole splits not already there to the top of the list")
+       "a dock Option drop copies the items not already there to the top of the list")
 expect("prepareDockDrop?(session, items, destination, top)" in dock, "a dock move runs the window's dock transaction")
 perform_dock = body(sidebar, "override func performDragOperation(_ sender: NSDraggingInfo) -> Bool")
 expect("else if let dock { dropped = session.transferThenEnd(dock) }" in perform_dock,
@@ -129,18 +144,35 @@ expect("let copying = mask.contains(.copy) && option" in update and "option = NS
 expect("guard !option || copying else { return [] }" in update, "Option never lets a move-only source move")
 expect(update.index("headerOrDockDrop(") < update.index("guard scroll.frame.contains(point)"), "the header and dock are targets before the outline")
 expect(update.count("admitDrop(session, to: destination, before: before, copying: copying)") == 2, "tray and outline drops share the admission")
-expect(update.count("return operation") == 2 and "return .move" not in update, "the drop reports copy or move")
+expect(update.count("return operation") == 2 and "return .move" not in update
+       and "let operation: NSDragOperation = copying ? .copy : .move" in update,
+       "the drop reports copy, so AppKit shows the green-plus copy pointer, or move")
+expect("override func wantsPeriodicDraggingUpdates() -> Bool { true }" in sidebar,
+       "periodic drag updates re-read Option, so the copy pointer follows Option pressed or released mid-drag")
+expect("let children = SidebarHierarchy.children(in: folder, state: state)" in update
+       and "before = copying ? children.first : children.first { !session.items.contains($0) }" in update,
+       "a folder-middle copy lands at the very top of the folder")
+pinned_header = body(sidebar, "private func pinnedHeaderDrop(")
+expect("moving: copying ? [] : session.items" in pinned_header
+       and "admitDrop(session, to: destination, before: first, copying: copying)" in pinned_header,
+       "the collapsed Pinned header takes copies at the top of Pinned")
 perform = body(sidebar, "override func performDragOperation(_ sender: NSDraggingInfo) -> Bool")
-expect(perform.index("if let copy { dropped = session.copy(copy) }") < perform.index("else if let external"), "a prepared copy runs instead of a move")
+expect(perform.index("if let copy { dropped = session.copy(copy) }") < perform.index("else if let dock")
+       < perform.index("else if let external") < perform.index("else { dropped = session.move(to: destination, before: before) }"),
+       "a prepared copy runs instead of a dock transfer, window transfer or move")
 
-place = body(store, "private func placedSplitCopy(")
-expect(place.index("next.splitLayouts.append(") < place.index("SidebarWindowMove(items: roots"),
-       "duplicate next to the original, then the ordinary move to the drop location")
+place = body(store, "private func placedItemsCopy(")
+expect(place.index("adjacentCopies(roots: copy.roots") < place.index("SidebarWindowMove(items: copied.result.roots"),
+       "duplicate next to the originals with Duplicate's copier, then the ordinary move to the drop location")
+expect("opensEverySplit: false" in place, "drag copies open only their first five items' pages")
+duplicate = body(store, "func duplicateSidebarItems(")
+expect("adjacentCopies(" in duplicate and "opensEverySplit: true" in duplicate, "Duplicate shares the same copier and keeps its page rule")
 reload = body(store, "func copySidebarSplitsReloadingOriginals(")
 expect(reload.index("withRetiredPages(originals") < reload.index("self.commitProfileSettings(value.state)"),
        "the originals' pages are retired with consent before the copy is saved")
-expect("|| copy.tabs.allSatisfy({ InternalPage(urlString: $0.savedURL) == nil })" in place,
-       "a Note or Easel alias never copies into another Profile's store")
+expect("|| (copy.wholeSplits && copy.tabs.allSatisfy({ InternalPage(urlString: $0.savedURL) == nil }))" in place,
+       "only whole web splits copy into a Space that keeps separate data; a Note or Easel alias never does")
+expect("guard copy.wholeSplits, placed(holding: false) != nil" in reload, "the separate-data reload path is for whole splits only")
 expect("now.matchesPlacement(of: copy)" in copy and "self.resolveSidebarCopyDestinations?(now.tabs)" in copy,
        "after the sheet the copy is rebuilt by placement and its current sources resolved")
 expect("return immediate ?? began" in copy and "else if !done { NSSound.beep() }" in copy,
@@ -148,6 +180,10 @@ expect("return immediate ?? began" in copy and "else if !done { NSSound.beep() }
 expect("copy.matchesPlacement(of: original)" in place, "the store binds placement, not whole records")
 expect("let now = current(self.store.state) else { return false }" in dockc and "proposal: { current($0)?.applying(to: $0) }" in dockc,
        "the dock move rebinds placement at drop and after the decision")
+retire = body(controller, "private func retireSidebarItems(")
+expect("|| (target.hierarchy.includesFavorites && profile == target.hierarchy.profileID)" in retire
+       and retire.count("spaceID: space,") == 2,
+       "undoing a tray copy works out the replacement selection in whichever Space of that data the window shows")
 expect("$0.spaceID == spaceID || $0.kind == .favorite" in body(controller, "func openDuplicatedChildren("),
        "copied Favorite splits open their children whatever their home Space")
-print(f"PASS: {checks} whole-split copy drag source assertions (no browser)")
+print(f"PASS: {checks} sidebar copy drag source assertions (no browser)")

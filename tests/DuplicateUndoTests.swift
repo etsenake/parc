@@ -199,6 +199,96 @@ struct DuplicateUndoTests {
         try check(!pinManager.canUndo, "A copy that is already closing blocks Undo")
         retiring?(false)
         try check(pinManager.canUndo, "Undo returns after the other close is declined")
+
+        store.requestPageRetirement = { _, canCommit, done in done(canCommit()) }
+        func dragCopy(_ items: [SidebarItemReference], to destination: SidebarContainerLocation,
+                      before: SidebarItemReference? = nil) throws -> (SidebarDuplicateResult, FolderUndoManager, SidebarCopyUndo) {
+            let made = SidebarItemsCopy(items: items, spaceID: space.id, profileID: profile.id, state: store.state)!
+            let sources = Dictionary(uniqueKeysWithValues: made.tabs.map { ($0.id, $0.savedURL) })
+            let docs = Dictionary(uniqueKeysWithValues: made.tabs.compactMap { tab -> (UUID, SidebarDocumentReference)? in
+                guard let page = InternalPage(urlString: tab.savedURL) else { return nil }
+                return references.values.first { $0.page == page }.map { (tab.id, $0) }
+            })
+            let result = try store.copySidebarItems(made, to: destination, before: before, destinations: sources, documents: docs)!
+            let record = SidebarCopyUndo(actionName: SidebarCopyUndo.dragCopyName, roots: result.roots, spaceID: space.id,
+                profileID: profile.id, documents: Array(docs.values), openTabIDs: result.openTabIDs, state: store.state)!
+            let manager = FolderUndoManager()
+            manager.appendSidebarCopy(record, store: store, canUse: { _, _ in true }, remove: remove,
+                                      didRestore: { restored.append($0) }, onError: { _ in })
+            return (result, manager, record)
+        }
+        let beforeDrag = store.state
+        let anchor = SidebarHierarchy.children(in: targetLocation, state: store.state).first
+        let (dragged, dragManager, dragRecord) = try dragCopy([.tab(keep.id), .folder(second.id)], to: targetLocation, before: anchor)
+        let draggedLayout = layout(store.state)
+        try check(dragManager.undoMenuItemTitle == "Undo Copy" && dragRecord.documentReferences.count == 2 && dragRecord.documentsAreAvailable,
+                  "An Option-drag copy registers Undo Copy and keeps its Easel aliases' references")
+        dragManager.undo()
+        try check(layout(store.state) == layout(beforeDrag) && store.state.tabs == beforeDrag.tabs && store.state.folders == beforeDrag.folders,
+                  "Undo Copy removes the dragged copies and leaves the originals and the folder they landed in untouched")
+        try check(dragManager.redoMenuItemTitle == "Redo Copy", "Redo Copy follows")
+        dragManager.redo()
+        try check(layout(store.state) == draggedLayout && Array(SidebarHierarchy.children(in: targetLocation, state: store.state).prefix(2)) == dragged.roots,
+                  "Redo puts the copies back at the drop spot")
+        try check(try Data(contentsOf: noteFile) == noteBytes && easels.load(easel.document.id) === easel, "Copying and undoing never touch the shared documents")
+
+        let splitBefore = store.state
+        let (splitCopy, splitManager, _) = try dragCopy([.split(split.id)], to: pinned, before: .tab(keep.id))
+        guard case .split(let splitCopyID)? = splitCopy.roots.first else { throw NSError(domain: "split drag copy", code: 1) }
+        try check(SidebarHierarchy.children(in: pinned, state: store.state).first == .split(splitCopyID) && splitManager.canUndo,
+                  "A whole-split Option-drag copy can now be undone")
+        splitManager.undo()
+        try check(store.state.splitLayouts == splitBefore.splitLayouts && layout(store.state) == layout(splitBefore), "Undo removes the copied split whole")
+        splitManager.redo()
+        try check(store.state.splitLayouts.contains { $0.id == splitCopyID } && SidebarHierarchy.children(in: pinned, state: store.state).first == .split(splitCopyID),
+                  "Redo brings the copied split back with the same identity")
+
+        var withFavorite = store.state
+        let favorite = tab("Favorite", kind: .favorite)
+        withFavorite.tabs.append(favorite)
+        try store.commitProfileSettings(withFavorite)
+        let tray = SidebarContainerLocation(spaceID: space.id, folderID: nil, section: .favorite, profileID: profile.id)
+        let (trayCopy, trayManager, trayRecord) = try dragCopy([.tab(keep.id)], to: tray)
+        try check(trayRecord.includesFavorites && SidebarHierarchy.children(in: tray, state: store.state) == [.tab(favorite.id)] + trayCopy.roots,
+                  "A copy dropped on the Favorites tray is recorded with the tray")
+        trayManager.undo()
+        try check(SidebarHierarchy.children(in: tray, state: store.state) == [.tab(favorite.id)] && store.state.tab(trayCopy.tabIDs[0]) == nil,
+                  "Undo takes the copied Favorite back out of the tray")
+        trayManager.redo()
+        try check(SidebarHierarchy.children(in: tray, state: store.state) == [.tab(favorite.id)] + trayCopy.roots, "Redo returns it to the tray")
+        trayManager.undo()
+        var full = store.state
+        full.tabs += (0..<11).map { tab("Filler\($0)", kind: .favorite) }
+        try store.commitProfileSettings(full)
+        try check(!trayManager.canRedo, "A full tray holds Redo back instead of overfilling it")
+        let (outCopy, outManager, outRecord) = try dragCopy([.tab(favorite.id)], to: pinned)
+        try check(!outRecord.includesFavorites && store.state.tab(outCopy.tabIDs[0])?.kind == .pinned, "A Favorite tile copied into Pinned is an ordinary pinned copy")
+        outManager.undo()
+        try check(store.state.tab(outCopy.tabIDs[0]) == nil && store.state.tab(favorite.id) != nil, "Undo removes only the copy, never the Favorite")
+
+        var roomy = store.state
+        roomy.tabs.removeAll { $0.title.hasPrefix("Filler") }
+        let there = BrowserSpace(id: UUID(), name: "There", symbol: "circle", color: "FEDCBA", profileID: profile.id)
+        var awayTab = tab("Away"); awayTab.spaceID = there.id
+        roomy.spaces.append(there); roomy.tabs.append(awayTab)
+        try store.commitProfileSettings(roomy)
+        let (shared, _, sharedRecord) = try dragCopy([.tab(keep.id)], to: tray)
+        let sharedID = shared.tabIDs[0]
+        var elsewhere = store.state
+        elsewhere.activeSpaceID = there.id; elsewhere.selectedTabIDs = [sharedID]; elsewhere.selectionBySpace[there.id.uuidString] = [sharedID]
+        try store.commitProfileSettings(elsewhere)
+        let sharedTarget = sharedRecord.matchingTarget(in: store.state)!
+        let handoff = FolderRemovalSelection.resolve(target: sharedTarget, state: store.state, spaceID: there.id,
+            selected: [sharedID], focused: sharedID, available: { _ in true })
+        try check(handoff?.spaceID == there.id && handoff?.tabIDs == [awayTab.id],
+                  "Undoing a tray copy selected in another Space of the same data hands selection to that Space's own tab")
+        try check(FolderRemovalSelection.resolve(target: dragRecord.matchingTarget(in: store.state)!, state: store.state, spaceID: there.id,
+            selected: [awayTab.id], focused: awayTab.id, available: { _ in true }) == nil,
+                  "Copies outside the tray still resolve selection only in their own Space")
+        var sharedOutcome: Result<Bool, Error>?
+        store.removeSidebarCopy(sharedRecord, target: sharedTarget, selection: handoff, shouldCommit: { true }) { sharedOutcome = $0 }
+        try check((try? sharedOutcome?.get()) == true && store.state.tab(sharedID) == nil && store.state.activeSpaceID == there.id
+                  && store.state.selectedTabIDs == [awayTab.id], "The other Space keeps showing a real tab after the tray copy is undone")
         print("\(count) duplicate undo assertions passed")
     }
 }

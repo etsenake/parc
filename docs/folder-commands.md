@@ -53,12 +53,15 @@ saved tree or claim that a page opened.
 
 Command–Option–Return on **Pin to [folder]** copies the eligible original
 collection into that captured same-profile folder through the same fresh-ID
-transaction. See [command bar](command-bar.md).
+transaction. See [command bar](command-bar.md). Option-drag places the same
+copies at the drop point and opens pages only for its first five items; see
+[Option-drag copies](folder-moves.md#option-drag-copies).
 
 ### Duplicate Undo and Redo
 
-Duplicate and the Pin to [folder] copy each record one step, **Duplicate** or
-**Copy to Folder**, on the originating window's Undo stack. Undo removes exactly
+Duplicate, the Pin to [folder] copy and an Option-drag copy each record one
+step, **Duplicate**, **Copy to Folder** or **Copy**, on the originating window's
+Undo stack; an Option-drag copy belongs to the window it landed in. Undo removes exactly
 the copied folders, tabs, splits and Note/Easel aliases. Copies are not archived,
 originals stay untouched and document contents never change. Copied pages close
 through Delete's native consent, and a selected copy hands selection to a
@@ -71,10 +74,10 @@ splits keep their members. A moved, archived or regrouped copy, or a new child
 inside a copied folder, retires the step instead of removing anything. Renames,
 navigation and other edits do not: Undo records the copies as they are, and Redo
 restores those records with the same IDs beside their surviving neighbors. It
-then reopens the background pages Duplicate opened if the window still shows the
-originating Space. Redo waits while a copied document cannot validate and refuses
-if a copied ID returned or the parent folder is gone. Whole-split Option-drag
-copies keep no Undo, like other sidebar drags.
+then reopens the background pages the copy opened if the window still shows the
+originating Space. Redo waits while a copied document cannot validate, or while
+the Favorites tray has no room for a copy dropped on it, and refuses if a copied
+ID returned or the parent folder is gone.
 
 ## Typed Note and Easel reference copies
 

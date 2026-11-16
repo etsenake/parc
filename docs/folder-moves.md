@@ -36,9 +36,51 @@ its own drag.
 
 Dragging an original selected row moves the ordered
 [multi-selection](sidebar-selection.md), suppressing selected descendants beneath
-an ancestor and saving once. A whole split has its separate Option-copy/external
-drag support in [split groups](split-groups.md). Do not generalize that support
-to every row or external pasteboard payload.
+an ancestor and saving once. Holding Option drops a copy instead; see
+[Option-drag copies](#option-drag-copies). External pasteboard payloads never
+authorize either.
+
+## Option-drag copies
+
+Holding Option while dragging drops a copy and leaves the original, as in Finder.
+Tabs, folders with everything nested in them, whole splits, Favorite tiles and
+mixed selections copy to any spot a move could reach in the same window: Pinned,
+Today, a folder's edges or middle, the Favorites tray, the collapsed Pinned
+header, the Space header (top of Pinned) and a dock Space that shares data with
+the source. Folders still cannot become Favorites or Today items, and the tray's
+twelve-root limit refuses an overfull copy as a whole.
+
+Copies come from Duplicate's copier: fresh folder, tab and split IDs with saved
+titles, mute state, split names, orientation, proportions, folder disclosure
+and each page's current address. They are built beside the originals and then
+placed by the ordinary move transaction, so Today/pinned conversion and Space
+changes follow the move rules; one save publishes everything after the source,
+destination, document references and native owners revalidate. A Note or Easel
+copy is a new sidebar entry for the same document, exactly as Duplicate makes;
+document contents are never duplicated. Copies leave the window's selection
+alone, except a whole-split copy, which still selects the copied split. Only the
+first five copied top-level items open background pages, a split's panes
+counting with their split; folder contents and later items stay saved until
+selected, so a large copy loads little.
+
+While Option is held over a valid target the drop reports a copy, so the pointer
+shows the standard green-plus copy badge. Each drag update rereads Option, so
+pressing or releasing it mid-drag switches between copy and move on the spot. An
+invalid target shows no badge or insertion line, and the drag image slides back.
+Tabs, folders and mixed selections never copy into another window or into a
+Space that keeps separate data; whole splits keep their own cross-window and
+separate-data copy in [split groups](split-groups.md#whole-split-copy-and-external-drags--sp23).
+An Option drag never falls back to a move.
+
+Each Option-drag copy, whole splits and tray copies included, records one
+**Copy** step on the receiving window's Undo stack through the
+[Duplicate Undo](folder-commands.md#duplicate-undo-and-redo) machinery.
+
+Notes and Easels are deliberately never duplicated into a Space that keeps
+separate data, by Option-drag or any other copy: Parc never copies a document's
+contents, and an entry cannot point into another Space's document store. Moving
+the document is the supported path; see
+[cross-Profile moves](split-groups.md#cross-profile-moves).
 
 ## Move to another Space
 
@@ -162,13 +204,15 @@ moves retain original documents, pages and rollback behavior.
 Tiles capture a move lease after down; dragging cancels release actions. Stale
 selection/membership/Profile/native ownership or retirement refuses. Detach,
 hide, disable and deactivation cancel pending sources. Existing Command reset,
-Shift activation and Option behavior stay with the tile's pointer owner, separate
-from outline multi-selection. Unsupported copy intent never silently becomes move.
+Shift activation and Option-click Open in Split stay with the tile's pointer
+owner, separate from outline multi-selection; an Option drag copies the tile.
+A refused copy never silently becomes a move.
 
 ## Checks and limits
 
 Store/ownership tests cover nested and mixed placements, original document IDs,
 complete-group admission, capacities, stale/foreign/cycle refusal, real disk-write
-failure, reload, competing claims and rollback. Ordinary-tab and folder drags
-remain move-only, including mixed selections with splits. The supported
-whole-split copy path and document restrictions are in [split groups](split-groups.md#whole-split-copy-and-external-drags--sp23).
+failure, reload, competing claims and rollback. The sidebar copy tests cover
+Option-drag copies of each item kind into every target, separate-data refusals,
+the bounded page rule and Undo/Redo; a source check covers the copy pointer and
+drop routing.

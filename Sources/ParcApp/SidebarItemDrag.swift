@@ -122,7 +122,8 @@ class SidebarMoveHandle: NSView, NSDraggingSource, SidebarItemDragSource {
         beginDraggingSession(with: [dragging], event: event, source: self)
     }
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        context == .withinApplication ? .move : []
+        guard context == .withinApplication else { return [] }
+        return sidebarDrag?.allowsCopy == true ? [.move, .copy] : .move
     }
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         sidebarDrag?.end(); sidebarDrag = nil

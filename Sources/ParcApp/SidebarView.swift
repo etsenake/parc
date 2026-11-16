@@ -1053,7 +1053,10 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         }
         return image
     }
-    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { context == .withinApplication ? .move : [] }
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        guard context == .withinApplication else { return [] }
+        return sidebarDrag?.allowsCopy == true ? [.move, .copy] : .move
+    }
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         sidebarDrag?.end(); sidebarDrag = nil
         splitDrag?.end(); splitDrag = nil
@@ -4708,13 +4711,13 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         if !spaceHeader.isHiddenOrHasHiddenAncestor {
             let header = convert(spaceHeader.bounds, from: spaceHeader)
             if header.contains(point) {
-                guard !copying else { return [] }
                 let pinned = SidebarContainerLocation(spaceID: spaceID, folderID: nil, section: .pinned)
-                let before = SidebarHierarchy.children(in: pinned, state: state).first { !session.items.contains($0) }
-                guard admitDrop(session, to: pinned, before: before, copying: false) else { return [] }
+                let children = SidebarHierarchy.children(in: pinned, state: state)
+                let before = copying ? children.first : children.first { !session.items.contains($0) }
+                guard admitDrop(session, to: pinned, before: before, copying: copying) else { return [] }
                 dropProposal = (session, pinned, before)
                 dropFeedback.isInsertion = false; dropFeedback.targetRect = header
-                return .move
+                return copying ? .copy : .move
             }
         }
         guard !spacesHost.isHiddenOrHasHiddenAncestor,
@@ -4790,7 +4793,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         guard shownPage.renderedPinned?.header == true, let frame = list.itemFrame(for: SidebarListRow.pinnedHeader) else { return nil }
         let rect = convert(frame, from: list)
         guard rect.contains(point) else { return nil }
-        let (destination, first) = PinnedSectionCollapse.headerDrop(state: state, spaceID: spaceID, moving: session.items)
+        let (destination, first) = PinnedSectionCollapse.headerDrop(state: state, spaceID: spaceID, moving: copying ? [] : session.items)
         guard admitDrop(session, to: destination, before: first, copying: copying) else { return false }
         dropProposal = (session, destination, first)
         reorderFeedback.propose(index: -1)
@@ -4892,7 +4895,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             if case .folder(let id) = item, point.y > rect.minY + rect.height * 0.25, point.y < rect.maxY - rect.height * 0.25 {
                 let folder = SidebarContainerLocation(spaceID: spaceID, folderID: id, section: .pinned)
                 destination = folder
-                before = SidebarHierarchy.children(in: folder, state: state).first { !session.items.contains($0) }
+                let children = SidebarHierarchy.children(in: folder, state: state)
+                before = copying ? children.first : children.first { !session.items.contains($0) }
                 feedback = rect; insertion = false
                 if state.folders.first(where: { $0.id == id })?.isExpanded == false { onCollapsedFolder = id }
             } else {

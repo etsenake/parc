@@ -30,6 +30,13 @@ struct SidebarMoveCopyTests {
         check(!copyable.move(to: location, before: nil) && moves == 1, "Copying never also moves the originals")
         let failing = session(copy: true)
         check(!failing.copy({ false }) && failing.ended, "A refused commit still ends the one-shot session")
+        for items in [[SidebarItemReference.tab(UUID())], [.folder(UUID())], [.tab(UUID()), .folder(UUID()), .split(UUID())]] {
+            let mixed = SidebarMoveSession(items: items, window: window, validate: { valid }, allowsCopy: true,
+                                           propose: { _, _ in true }, commit: { _, _ in moves += 1; return true })
+            let before = (copies, moves)
+            check(mixed.copy({ copies += 1; return true }) && copies == before.0 + 1 && moves == before.1 && mixed.ended,
+                  "A copyable tab, folder or mixed session copies once without moving")
+        }
 
         let handle = SidebarMoveHandle(frame: NSRect(x: 0, y: 0, width: 120, height: 36))
         window.contentView?.addSubview(handle)

@@ -20,9 +20,6 @@ Finish assigned work first.
 
 ## Folders
 
-- Ordinary-tab, folder and mixed-selection Option-drag copies are absent; whole
-  splits copy. Note/Easel splits cannot copy across Profiles. These need explicit
-  copy transactions. [Folder moves](folder-moves.md).
 - Changing what data a Space uses refuses with no message when one of its Notes
   or Easels is also a Favorite, archived, or open in another Space on the old
   data. It needs the move explanation, shown before the sharing warning.
