@@ -40,7 +40,10 @@ blocks.append("    func refreshResults(requestNative: Bool = false) {\n"
     + source[query_start:query_end] + source[rows_start:rows_end]
     + "        rebuilds += 1\n        table.selectedRow = results.isEmpty ? -1 : 0\n    }\n")
 (output / "Pipeline.swift").write_text("import AppKit\nextension NavigationFixture {\n" + "\n".join(blocks) + "}\n")
-window = (repo / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+import sys
+sys.path.insert(0, str(repo / "tests/Support"))
+from window_sources import browser_window_controller_source
+window = browser_window_controller_source(repo / "Sources/ParcApp")
 # Integration guard: an explicit URL click supplies the compact anchor, while
 # Cmd-L's default call retains the full palette. Ordinary address submission
 # must resolve against the captured tab rather than opening/switching a tab.
@@ -54,7 +57,7 @@ for use in ("func focusAddress(anchor: NSView? = nil)",
             "else { self.resolveInput(input, replacing: commandTab) }"):
     assert use in window, f"current-tab compact editor wiring changed: {use}"
 start = window.index("    private func commandBarTabs(")
-end = window.index("    private func commandBarTabCaption(", start)
+end = window.index("    func commandBarTabCaption(", start)
 (output / "TabCandidates.swift").write_text("import Foundation\nextension TabCandidatesFixture {\n" +
     window[start:end].replace("private func commandBarTabs", "func commandBarTabs", 1) + "}\n")
 PY

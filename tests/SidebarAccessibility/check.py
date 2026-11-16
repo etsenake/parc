@@ -4,6 +4,8 @@ import re
 import subprocess
 import sys
 import tempfile
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
     scratch = Path(directory)
@@ -25,12 +27,12 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
     sys.path.insert(0, str(Path(__file__).parent))
     from key_view_links import assert_sidebar_links
     assert_sidebar_links(sidebar)
-    controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+    controller = browser_window_controller_source(root / "Sources/ParcApp")
     for use, count in (("let dismissed = sidebar.isPresented && !presented", 1),
                        ("if dismissed, sidebarOwnsFirstResponder { window?.makeFirstResponder(nil) }", 1),
                        ("sidebar.revealForEditing = { [weak self] in self?.revealSidebarForEditing() }", 1),
                        ("        revealSidebarForEditing()\n", 2),
-                       ("private func revealSidebarForEditing() {\n        if sidebarPresentation == .hidden { setSidebarPresentation(.floating) }\n"
+                       ("func revealSidebarForEditing() {\n        if sidebarPresentation == .hidden { setSidebarPresentation(.floating) }\n"
                         "        settleSidebarMotion(); layoutChrome(); rootView.layoutSubtreeIfNeeded()", 1)):
         assert controller.count(use) == count, f"the window owner no longer keeps focus out of the hidden sidebar: {use}"
     renames = re.findall(r"let commit = prepare\w+Rename\?\(", sidebar)
@@ -56,7 +58,8 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
                       ("EaselWebInput.swift", "if SavedFocus.mayReturn(to: previousView, in: parentWindow) { parentWindow.makeFirstResponder(previousView) }"),
                       ("SidebarPreviewController.swift", "let responder = previousResponder as? NSView, SavedFocus.mayReturn(to: responder, in: window) {\n                    window.makeFirstResponder(responder)"),
                       ("WindowFrameCrankView.swift", "guard let view, SavedFocus.mayReturn(to: view, in: window), view.acceptsFirstResponder else { return nil }")):
-        assert use in (app / name).read_text(), f"{name} restores saved focus without SavedFocus: {use}"
+        text = browser_window_controller_source(app) if name == "BrowserWindowController.swift" else (app / name).read_text()
+        assert use in text, f"{name} restores saved focus without SavedFocus: {use}"
     (scratch / "ActionButton.swift").write_text(sidebar[:sidebar.index("final class MenuAction")]
         + "\nenum SplitOrientation: Equatable { case horizontal, vertical }\n")
     navigation = (root / "Sources/ParcApp/NavigationControls.swift").read_text()

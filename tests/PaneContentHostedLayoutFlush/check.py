@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
 resizer = (root / "Sources/ParcApp/PageContentResizer.swift").read_text()
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 
 assert "enum PaneContentHostedLayoutFlush" in resizer, \
     "PaneContentHostedLayoutFlush helper missing from PageContentResizer.swift"
@@ -24,7 +27,7 @@ assert "static func flushHostedLayout(_ view: NSView)" in resizer, \
     "flushHostedLayout must remain for real size / dirty chrome changes"
 
 pane = re.search(
-    r"private final class BrowserPane: NSView \{(?P<body>.*?)\n\}\n\nextension BrowserPane:",
+    r"(?:private )?final class BrowserPane: NSView \{(?P<body>.*?)\n\}\n\nextension BrowserPane:",
     controller, re.S)
 assert pane, "BrowserPane class not found"
 body = pane.group("body")

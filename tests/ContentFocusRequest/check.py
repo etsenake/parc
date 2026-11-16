@@ -3,8 +3,11 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 for use, count in (("let request = ContentFocusRequest(window: window, content: pageHost)", 1),
                    ("focusedTabID = id; updateNavigation(); requestNativeSelection(); focusSelectedContent(); return true", 1),
                    ("updateNavigation(); requestNativeSelection(); focusSelectedContent()\n", 1),
@@ -20,7 +23,7 @@ assert controller.count("ContentFocusRequest.returnsToSaved(view, find: find,") 
 assert controller.count("if self.panes[id]?.showsBlank == true { window.makeFirstResponder(nil); return .focused }") == 1
 assert controller.count("else if panes[id]?.showsBlank == true { window.makeFirstResponder(nil) }") == 1
 assert controller.count("else if self.panes[id]?.showsBlank == true { self.window?.makeFirstResponder(nil) }") == 1
-pane = controller[controller.index("private final class BrowserPane: NSView {"):]
+pane = controller[controller.index("final class BrowserPane: NSView {"):]
 pane = pane[:pane.index("\n}\n")]
 def switches(text):
     return len(re.findall(r"(?<!var )\bsurface = ", text))

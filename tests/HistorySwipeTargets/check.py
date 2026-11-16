@@ -2,13 +2,16 @@
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
 
 
 def body(path, start, end):
-    text = (root / path).read_text()
+    text = browser_window_controller_source(root / "Sources/ParcApp") if path == controller else (root / path).read_text()
     assert text.count(start) == 1, f"{path}: expected one {start!r}"
     begin = text.index(start)
     return text[begin:text.index(end, begin)]
@@ -40,7 +43,7 @@ require(allows, "the shell's swipe rule", present=(
     "tabSwitcher == nil", "navigationHistory == nil", "themePopover == nil", "!siteControlCenterDefers",
     "pageCapture == nil", "menuTrackingDepth == 0", "window?.attachedSheet == nil",
     "PCNativeBrowserApplication.owner(of: page) === browser", "historySwipePages.contains"), absent=focus)
-pages = body(controller, "private var historySwipePages: [PCNativePage] {", "\n    }\n")
+pages = body(controller, "var historySwipePages: [PCNativePage] {", "\n    }\n")
 require(pages, "the swipeable page list", present=(
     "HistorySwipeTargets.pages(", "renderedPaneIDs", "activePeek", "selectedPage",
     "isInternal: tab.map { InternalPage.isInternal($0.url) } ?? true",

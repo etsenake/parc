@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
 checks = 0
 
@@ -30,14 +34,14 @@ for guard in ("!closingTabIDs.contains(id)", "!transferringTabIDs.contains(id)",
               "transferRecoveries[id] == nil", "!store.retiringTabIDs.contains(id)"):
     expect(guard in tab, f"per-tab condition missing: {guard}")
 expect("ownership" not in tab, "the shared per-tab conditions leave which window holds the page to each action")
-row = body(controller, "private func canPerformSidebarTabAction(")
+row = body(controller, "func canPerformSidebarTabAction(")
 expect("sidebarTabActionWindowAvailable" in row and "sidebarTabActionAvailable(expected.id)" in row
        and "window?.isKeyWindow == true" in row, "ordinary row actions use the shared conditions plus the key window")
 expect("usableHere: closing ? ownership.canUse(expected.id, owner: presentationID) : switcherCanUse(expected.id)" in row
        and "heldElsewhere: canMovePageHere(expected.id)" in row, "a row action checks which window holds its page")
 expect("PageReparenting.rowAction(closing: closing, busy: !sidebarTabActionAvailable(expected.id)" in row,
        "row Close acts on a page here or one another window holds that can move here")
-roots = body(controller, "private func sidebarRootsCloseAvailable(_ ids: Set<UUID>, movingHere: Bool = true) -> Bool")
+roots = body(controller, "func sidebarRootsCloseAvailable(_ ids: Set<UUID>, movingHere: Bool = true) -> Bool")
 for guard in ("sidebarTabActionWindowAvailable", "commandBar == nil", "!ids.isEmpty", "visibleTabs.contains",
               "PageReparenting.rowAction(closing: true, busy: !sidebarTabActionAvailable(id)",
               "usableHere: switcherCanUse(id)", "heldElsewhere: movingHere && canMovePageHere(id)) != nil",
@@ -45,9 +49,9 @@ for guard in ("sidebarTabActionWindowAvailable", "commandBar == nil", "!ids.isEm
     expect(guard in roots, f"roots close condition missing: {guard}")
 expect("ids.allSatisfy" in roots and "PageReparenting.rowAction" in roots.split("ids.allSatisfy")[1],
        "every root's page, here or elsewhere, must pass row Close's rule, so a page that can't move refuses the set")
-expect("ownership.canUse(id, owner: presentationID)" in body(controller, "private func switcherCanUse(_ id: UUID) -> Bool"),
+expect("ownership.canUse(id, owner: presentationID)" in body(controller, "func switcherCanUse(_ id: UUID) -> Bool"),
        "a page counts as usable here only while this window owns it")
-close = body(controller, "private func prepareSidebarRootsClose(", ") -> (() -> Bool)? {")
+close = body(controller, "func prepareSidebarRootsClose(", ") -> (() -> Bool)? {")
 moving, rest = close.split("if !isPrivateBrowsing, archive {")
 expect("let elsewhere = target.items.tabs.map(\\.id).filter { !switcherCanUse($0) }" in moving
        and "if !elsewhere.isEmpty {" in moving,
@@ -62,7 +66,7 @@ expect("self.moveRootsHere(elsewhere[...], moved: [])" in moving and "ids.allSat
 expect("let giveBack = { [weak self] in self?.returnMovedRoots(moved); declined() }" in moving
        and "close() else { giveBack(); return false }" in moving,
        "moved pages go back when the close can't be prepared or doesn't start")
-chain = body(controller, "private func moveRootsHere(")
+chain = body(controller, "func moveRootsHere(")
 expect("let arrival = PendingArrival { [weak self] in self?.returnMovedRoots(moved) }" in chain,
        "a move that ends without the page arriving (dropped unrun) sends earlier pages back")
 expect("if !started { arrival.ran = true; returnMovedRoots(moved) }" in chain,
@@ -71,15 +75,15 @@ step = chain.split("let started = request(id, self) {")[1].split("if !started")[
 expect(step.index("arrival.ran = true") < step.index("moveRootsHere(ids.dropFirst(), moved: moved + [id], then: close)")
        < step.index("return true\n"),
        "an arrival continues the chain and is never selected here instead of being closed or returned")
-expect("for id in ids { returnIfUnshown(id) }" in body(controller, "private func returnMovedRoots("),
+expect("for id in ids { returnIfUnshown(id) }" in body(controller, "func returnMovedRoots("),
        "moved pages go back through the ordinary deferred return")
-unshown = body(controller, "private func returnIfUnshown(_ id: UUID)")
-returnable = body(controller, "private var returnableIDs: Set<UUID>")
+unshown = body(controller, "func returnIfUnshown(_ id: UUID)")
+returnable = body(controller, "var returnableIDs: Set<UUID>")
 expect("heldContentIDs.contains(id) || holdsEmptyClaim(id)" in unshown
        and "shownSinceArrival.union(heldReturns).filter(holdsEmptyClaim)" in returnable,
        "a handed-over claim with nothing behind it, which has no pane here, goes back as moved content does, "
        "including while its return is held")
-returns = body(controller, "private func scheduleUntargetedReturns()")
+returns = body(controller, "func scheduleUntargetedReturns()")
 expect("self.shownSinceArrival.remove(id)" in returns
        and "let outcome = self.onUntargetedReturn?(id, self, .deselected)" in returns
        and "if outcome == .started { return }" in returns
@@ -91,7 +95,7 @@ expect(transfer.index("if untargeted { failedDuringReturn = nil }") < transfer.i
 expect("func returnFailed(_ id: UUID) -> Bool { failedDuringReturn == id }" in controller,
        "a move that started and failed before reporting it is held only by its own failure, keeping the one-retry limit")
 retry = body(controller, "func retryHeldReturns()")
-gate = body(controller, "private func noteReturnGate()")
+gate = body(controller, "func noteReturnGate()")
 for name, text in (("scheduleUntargetedReturns", returns), ("retryHeldReturns", retry), ("noteReturnGate", gate),
                    ("holdFailedReturn", body(controller, "private func holdFailedReturn(_ id: UUID)"))):
     expect("asyncAfter" not in text and "Timer" not in text, f"{name} never retries on a timer")
@@ -103,7 +107,7 @@ for name, change in (("transferringTabIDs", "if transferringTabIDs.isEmpty, !old
                      ("collectionTransfer", "if collectionTransfer == nil, oldValue != nil { onReturnUnblocked?() }"),
                      ("nativeFullscreenTabID", "if nativeFullscreenTabID == nil, oldValue != nil { onReturnUnblocked?() }"),
                      ("wholeWindowClose", "if !wholeWindowClose, oldValue { onReturnUnblocked?() }")):
-    expect(change in controller.split(f"private var {name}", 1)[1].split("\n    }\n", 1)[0],
+    expect(change in re.split(rf"^    (?:private )?var {name}\b", controller, maxsplit=1, flags=re.M)[1].split("\n    }\n", 1)[0],
            f"the end of {name} (a move or its recovery, full screen, a cancelled close) retries held returns")
 expect(body(controller, "func selectSpace(_ id: UUID)").rstrip("}").rstrip().endswith("noteReturnGate()"),
        "showing another Space retries held returns, after the new Space is in place")
@@ -118,10 +122,10 @@ for term in ("presentation.isReady", "activePeek == nil", "!promotingPeek", "com
     expect(term in gate_terms, f"a refusal that ends without a move, full screen or close is in the gate: {term}")
 expect("self.tabSwitcher = nil\n            self.noteReturnGate()" in controller, "closing the tab switcher checks the gate")
 for name in ("themePopover", "siteControlCenter", "peeks", "promotingPeek"):
-    declaration = controller.split(f"private var {name}", 1)[1].split("\n", 1)[0]
+    declaration = re.split(rf"^    (?:private )?var {name}\b", controller, maxsplit=1, flags=re.M)[1].split("\n", 1)[0]
     expect("noteReturnGate()" in declaration, f"closing {name} checks the gate")
-expect("noteReturnGate()" in body(controller, "private var commandBar: CommandBar?"), "closing the command bar checks the gate")
-navigation = body(controller, "private func updateNavigation()")
+expect("noteReturnGate()" in body(controller, "var commandBar: CommandBar?"), "closing the command bar checks the gate")
+navigation = body(controller, "func updateNavigation()")
 expect(navigation.rstrip("}").rstrip().endswith("noteReturnGate()"), "every navigation refresh checks the gate")
 expect("noteReturnGate()\n        refreshStartPage()\n        refreshPendingPaneSidebar()\n        scheduleUntargetedReturns()\n    }" in controller,
        "every render checks the gate, so a Space change any path made is seen")
@@ -160,14 +164,14 @@ closed = body(delegate, "controller.onClose = {")
 expect(closed.index("self?.windows.removeAll { $0 === controller }")
        < closed.index("for other in self?.windows ?? [] where other.store === controller.store { other.retryHeldReturns() }"),
        "a closed window lets the others retry, after it is gone, so none waits for it")
-pending = body(controller, "private final class PendingArrival {")
+pending = body(controller, "final class PendingArrival {")
 expect("guard !ran else { return }" in pending and "DispatchQueue.main.async(execute: abandoned)" in pending,
        "a dropped step reports itself on the main thread when released")
 expect("guard let self, allowed else { declined(); return }" in rest,
        "a close declined at its leave-page prompt sends moved pages back")
 expect("prepareSidebarDeletion(" in rest.split("}")[0] and "declined: declined)" in rest.split("}")[0],
        "the archive branch passes the give-back on")
-deletion = body(controller, "private func prepareSidebarDeletion(", ") -> (() -> Bool)? {")
+deletion = body(controller, "func prepareSidebarDeletion(", ") -> (() -> Bool)? {")
 expect(deletion.count("declined()") == 3 and "case .success(false): self.updateNavigation(); declined()" in deletion
        and "case .failure(let error): self.updateNavigation(); declined();" in deletion
        and "self.updateNavigation(); declined()\n" in deletion,
@@ -181,7 +185,7 @@ keyboard = body(controller, "sidebar.prepareSidebarClose = { [weak self] items i
 expect("self.prepareSidebarRootsClose(items, archive: target.archivesItems," in keyboard
        and "isSelectionCommand: true, selectionIsCurrent: current)" in keyboard,
        "keyboard Close of selected rows takes the same roots close, moving held pages here")
-expect("sidebarRootsCloseAvailable(Set(group.tabIDs))" in body(controller, "private func splitCellCloseAvailable("),
+expect("sidebarRootsCloseAvailable(Set(group.tabIDs))" in body(controller, "func splitCellCloseAvailable("),
        "the split Close enables with the same conditions")
 split = body(controller, "sidebar.prepareSplitClose = { [weak self] id in")
 expect("self.splitCellCloseAction(id)" in split, "the split's close action is read when pressed")

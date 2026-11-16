@@ -12,7 +12,10 @@ assert "icon.fallbackTintColor = title" in sidebar, "tab fallbacks must tint wit
 assert "resetParts?.icon.fallbackTintColor = title" in sidebar, "reset fallbacks must tint with the same title color"
 assert "InternalPage.sidebarFallbackSymbol(urlString: tab.url)" in sidebar
 assert "paintpalette" not in sidebar, "Easel and Note rows must not share a paintpalette glyph"
-controller = Path("Sources/ParcApp/BrowserWindowController.swift").read_text()
+import sys
+sys.path.insert(0, str(Path(".") / "tests/Support"))
+from window_sources import browser_window_controller_source
+controller = browser_window_controller_source(Path(".") / "Sources/ParcApp")
 assert "InternalPage.sidebarFallbackSymbol(urlString: tab.url)" in controller
 assert 'systemSymbolName: "paintpalette"' not in controller
 print("sidebar document glyphs use title tint and distinct symbols")

@@ -4,8 +4,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 for use in ('sidebar.onPageMenu = { [weak self] in self?.showSiteControlCenter() }',
             'case .siteInfo, .siteInsecure: self.showSiteControlCenter(from: anchor)',
             'popupChrome.prepareExtensions = { [weak self] in self?.preparePopupSiteControls(requireExtensions: true) }',
@@ -32,7 +34,7 @@ def body(start):
     return text[:text.index("\n    }\n")]
 for start in ("    private func siteControlCenterSettings(page:", "    private func siteControlCenterMoreMenu("):
     assert "canPerformPageTool(" not in body(start), f"the open card reads a key-gated page tool: {start.strip()}"
-update = body("    private func updateSiteControlCenter(")
+update = body("    func updateSiteControlCenter(")
 assert update.count("canCapturePage") == update.count("canPerformPageTool") == 1 \
     and update.index("if window?.isKeyWindow == true {") < update.index("canCapturePage"), \
     "the card reads capture and page tools only while the browser window holds key"

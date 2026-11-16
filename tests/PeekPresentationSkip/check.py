@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
 controller = (root / "Sources/ParcApp/PeekController.swift").read_text()
 skip = (root / "Sources/ParcCore/PeekPresentationSkip.swift").read_text()
-window = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+window = browser_window_controller_source(root / "Sources/ParcApp")
 
 assert "enum PeekPresentationSkip" in skip, "PeekPresentationSkip helper missing"
 assert "static func shouldSkip(previous: String?, next: String) -> Bool" in skip, \

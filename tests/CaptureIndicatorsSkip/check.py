@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 
 assert "captureIndicatorsDirty" not in controller, \
     "dirty-bit early out can miss capture start/stop; skip must compare live fingerprint"
-assert "private var lastCapturePresentationFingerprint: String?" in controller, \
+assert "var lastCapturePresentationFingerprint: String?" in controller, \
     "missing last-applied capture presentation fingerprint"
 
 fp = re.search(
-    r"private func capturePresentationFingerprint\(\s*_ presentations: \[UUID: CaptureIndicatorPresentation\]\s*\) -> String \{(?P<body>.*?)\n    \}\n\n    private func refreshCaptureIndicators",
+    r"(?:private )?func capturePresentationFingerprint\(\s*_ presentations: \[UUID: CaptureIndicatorPresentation\]\s*\) -> String \{(?P<body>.*?)\n    \}\n\n    (?:private )?func refreshCaptureIndicators",
     controller, re.S)
 assert fp, "capturePresentationFingerprint not found"
 fp_body = fp.group("body")
@@ -28,7 +31,7 @@ for needle in (
     assert needle in fp_body, f"fingerprint no longer includes {needle}"
 
 refresh = re.search(
-    r"private func refreshCaptureIndicators\(\) \{(?P<body>.*?)\n    \}\n\n    private func favoriteOverlayStates\(",
+    r"(?:private )?func refreshCaptureIndicators\(\) \{(?P<body>.*?)\n    \}\n\n    (?:private )?func favoriteOverlayStates\(",
     controller, re.S)
 assert refresh, "refreshCaptureIndicators not found"
 body = refresh.group("body")
@@ -56,7 +59,7 @@ assert "return" in body[skip_idx:body.index("capturePresentations = next")], \
     "identical fingerprint must return before the map is replaced"
 
 live = re.search(
-    r"private func refreshLivePageChrome\(\) -> Bool \{(?P<body>.*?)\n    \}\n\n",
+    r"(?:private )?func refreshLivePageChrome\(\) -> Bool \{(?P<body>.*?)\n    \}\n\n",
     controller, re.S)
 assert live and "refreshCaptureIndicators()" in live.group("body"), \
     "refreshLivePageChrome must still invoke refreshCaptureIndicators"

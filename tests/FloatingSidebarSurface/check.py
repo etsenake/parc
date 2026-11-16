@@ -5,9 +5,12 @@ import re
 import shutil
 import subprocess
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
-controller = (app / "BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(app)
 for use in ("        sidebarContainer.floatingCornerRadius = floatingSurface ? FloatingSidebarSurface.cornerRadius : nil\n"
             "        sidebarContainer.docksFloatingSurface = fullPass && sidebarFloatingSurface && sidebarPresentation == .locked\n",
             "        sidebar.layer?.cornerRadius = floatingSurface ? FloatingSidebarSurface.cornerRadius : 0\n"

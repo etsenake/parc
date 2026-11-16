@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
 layout = (app / "DeveloperToolbarLayout.swift").read_text()
-controller = (app / "BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(app)
 
 assert "enum DeveloperChromeGeometry" in layout, "DeveloperChromeGeometry helper missing"
 assert "static func paneIsCurrent(" in layout, "paneIsCurrent missing"
 assert "static func peekIsCurrent(" in layout, "peekIsCurrent missing"
 
 def method(signature):
-    match = re.search(rf"^    private func {signature} \{{(?P<body>.*?)\n    \}}\n", controller, re.S | re.M)
+    match = re.search(rf"^    (?:private )?func {signature} \{{(?P<body>.*?)\n    \}}\n", controller, re.S | re.M)
     return match and match.group("body")
 
 

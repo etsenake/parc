@@ -2,6 +2,8 @@
 from pathlib import Path
 import subprocess
 import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
 
@@ -37,19 +39,19 @@ delegate = facade[facade.index("- (void)setDelegate:(id<PCBrowserViewDelegate>)d
 delegate = delegate[:delegate.index("\n}\n")]
 assert "_hasPublishedPageColor = NO;" in delegate, "a new delegate receives the current colour"
 
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 handler = body(controller, "func browserViewDidChangePageColor(_ view: PCBrowserView) {")
 assert "pane.browserToolbar.showPageColor(of: view.nativePage, failing: pane.showsFailure)" in handler \
     and "!pane.browserToolbar.isHidden" in handler, "the window repaints a visible pane bar"
 for forbidden in ("refreshLivePageChrome", "render(", "needsLayout", "configureBrowserToolbar", "peek"):
     assert forbidden not in handler, f"the colour-only path must not reach {forbidden}"
-configure = controller[controller.index("private func configureBrowserToolbar("):]
+configure = controller[controller.index("func configureBrowserToolbar("):]
 configure = configure[:configure.index("let revision = browser.readerRevision")]
 assert "toolbar.showPageColor(of: page, failing: failing)" in configure, \
     "full configuration shares the colour-only path's choice"
 assert "toolbar.isHidden = true; toolbar.setPageColor(nil, for: nil)" in configure, \
     "a hidden page bar forgets its colour and owner"
-document = controller[controller.index("private func configureDocumentToolbar("):]
+document = controller[controller.index("func configureDocumentToolbar("):]
 document = document[:document.index("let enabled =")]
 assert document.count("toolbar.setPageColor(nil, for: nil)") == 2, \
     "a document bar is clear whether shown or hidden"

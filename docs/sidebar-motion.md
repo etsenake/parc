@@ -15,7 +15,7 @@ Related guides: [resizing and geometry](sidebar-resize.md),
 | Responsibility | Source |
 |---|---|
 | Transitions, frames and redraw policy | `Sources/ParcApp/SidebarMotionController.swift` |
-| Window integration | `Sources/ParcApp/BrowserWindowController.swift` |
+| Window integration | `Sources/ParcApp/BrowserWindowController+Sidebar.swift` |
 | Hover model and event ownership | `Sources/ParcCore/SidebarHover.swift`, `Sources/ParcApp/SidebarHoverTracker.swift` |
 | Floating material and theme canvas | `Sources/ParcApp/ThemeRenderer.swift` |
 | Space paging | `Sources/ParcApp/SidebarSpacePaging.swift`, `Sources/ParcApp/SidebarView.swift` |

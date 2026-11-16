@@ -4,6 +4,12 @@ Regular windows retain stable identities, their Space and selected content,
 focused panes, sidebar mode/width and activity dates. Each live page has one
 window owner even when the same shared sidebar item is selected elsewhere.
 
+`BrowserWindowController.swift` holds the window object's stored state, setup,
+AppKit overrides and the engine and AppKit callbacks it answers. Its behavior
+lives in `BrowserWindowController+<Topic>.swift` extensions grouped by area
+(sidebar, splits, Peek, command bar, downloads and so on), and its page panes
+live in `BrowserPane.swift`. Add new window code to the matching topic file.
+
 ## Restoration and launch continuity
 
 AppKit restores regular windows by stable ID and owns frame, minimized and

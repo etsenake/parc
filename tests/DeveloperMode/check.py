@@ -7,7 +7,9 @@ root = Path(__file__).resolve().parents[2]
 import sys
 sys.path.insert(0, str(root / "tests/Tooltip"))
 from support import tooltip_sources
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 for use in ("setDeveloperMode(!DeveloperModePreferences.shared.isEnabled(host: request.host), host: request.host,",
             "setDeveloperMode(!DeveloperModePreferences.shared.isEnabled(host: host), host: host, browser: browser, page: page)",
             "if tool == .developerTools { toggleDeveloperTools(browser); return }",

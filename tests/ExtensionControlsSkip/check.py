@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 
 assert "extensionControlsDirty" not in controller, \
     "dirty-bit early out can miss Changed→DeliverChanged; skip must compare live Snapshot"
 assert "lastExtensionControlsSurfaceSignature" not in controller, \
     "surface-only skip without Snapshot is not a true visible-model no-op"
 
-assert "private var lastExtensionControlsSignature: String?" in controller, \
+assert "var lastExtensionControlsSignature: String?" in controller, \
     "missing last-applied extension-control signature"
 
 sig = re.search(
-    r"private func extensionControlsSignature\((?P<body>.*?)\n    \}\n\n    private func extensionControlsPopupAvailable",
+    r"(?:private )?func extensionControlsSignature\((?P<body>.*?)\n    \}\n\n    (?:private )?func extensionControlsPopupAvailable",
     controller, re.S)
 assert sig, "extensionControlsSignature not found"
 sig_body = sig.group("body")
@@ -33,7 +36,7 @@ for needle in (
     assert needle in sig_body, f"signature no longer includes {needle}"
 
 refresh = re.search(
-    r"private func refreshExtensionControls\(\) \{(?P<body>.*?)\n    \}\n\n    private func preparePopupSiteControls",
+    r"(?:private )?func refreshExtensionControls\(\) \{(?P<body>.*?)\n    \}\n",
     controller, re.S)
 assert refresh, "refreshExtensionControls not found"
 body = refresh.group("body")

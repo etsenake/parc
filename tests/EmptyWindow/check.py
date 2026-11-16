@@ -4,14 +4,17 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
-controller = (app / "BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(app)
 
 
 def body(name):
-    match = re.search(rf"^    private func {name}\(.*?^    }}\n", controller, re.S | re.M)
+    match = re.search(rf"^    (?:private )?func {name}\(.*?^    }}\n", controller, re.S | re.M)
     assert match, f"BrowserWindowController.{name} is missing"
     return match.group(0)
 
@@ -39,7 +42,7 @@ for path in ("if sidebarPresentation == .floating { setSidebarPresentation(.hidd
 direct = re.findall(r"\bsidebarPresentation = ([^;\n} ]+)", controller)
 assert sorted(direct) == [".hidden", ".hidden", "presentation", "presentation", "saved.sidebar"], \
     f"an unexpected direct presentation write: {direct}"
-render = re.search(r"^    private func render\(_ sharedState: BrowserState\) \{.*?^    }\n", controller, re.S | re.M).group(0)
+render = re.search(r"^    (?:private )?func render\(_ sharedState: BrowserState\) \{.*?^    }\n", controller, re.S | re.M).group(0)
 tail = [line.strip() for line in render[render.index("        lastChromeState = sharedState\n"):].rstrip().removesuffix("}").splitlines()
         if line.strip()]
 assert "refreshPendingPaneSidebar()" in tail, "render no longer ends by applying the pending-pane rule"

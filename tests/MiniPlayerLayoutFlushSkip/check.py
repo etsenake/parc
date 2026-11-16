@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
 view = (root / "Sources/ParcApp/MiniPlayerView.swift").read_text()
@@ -51,7 +54,7 @@ assert re.search(
     fb) is None, \
     "failure must not unconditionally layoutSubtree contentView after onHeightChanged"
 
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 assert "miniPlayerSourceSignature" in controller, \
     "mini-player multi-window sweep signature must remain"
 

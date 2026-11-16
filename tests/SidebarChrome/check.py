@@ -7,6 +7,8 @@ root = Path(__file__).resolve().parents[2]
 import sys
 sys.path.insert(0, str(root / "tests/Tooltip"))
 from support import tooltip_sources
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 here = Path(__file__).parent
 app = root / "Sources/ParcApp"
 core = root / "Sources/ParcCore"
@@ -84,7 +86,7 @@ for use in ("guard let window, isTablistBackground(event) else { super.mouseDown
             "switch SidebarTablistBackground.press(clickCount: event.clickCount, modifiers: event.modifierFlags)",
             "case .passThrough: super.mouseDown(with: event)"):
     assert use in press, f"a press SidebarView doesn't drag with no longer reaches the Space menu surface: {use}"
-controller = (app / "BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(app)
 assert "sidebar.toggleSpaceHeaderOnSingleUnnamedSpaces = { [weak self] in self?.store.toggleSpaceHeaderOnSingleUnnamedSpaces() }" in controller, \
     "BrowserWindowController no longer records the Space header toggle in the store"
 store = (root / "Sources/ParcCore/BrowserStore.swift").read_text()

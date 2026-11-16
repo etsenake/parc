@@ -2,12 +2,15 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
 here = Path(__file__).parent
 app = root / "Sources/ParcApp"
 core = root / "Sources/ParcCore"
-controller = (app / "BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(app)
 for use in ("frameThickness: frameThickness\n",
             "sidePanel: extensionSidePanelVisible, thickness: frameThickness)",
             "isPopupWindow ? SidebarChromeFrames.pageInset : WindowFramePreferences.shared.thickness",

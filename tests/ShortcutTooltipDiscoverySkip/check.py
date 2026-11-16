@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 skip = (root / "Sources/ParcCore/ShortcutTooltipDiscoverySkip.swift").read_text()
 
 assert "enum ShortcutTooltipDiscoverySkip" in skip, "ShortcutTooltipDiscoverySkip helper missing"
@@ -51,7 +54,7 @@ assert body.index("updateSiteControlCenterShortcuts()") < body.index(
     "last-applied must be recorded only after a real apply"
 
 fp = re.search(
-    r"private func shortcutTooltipDiscoveryFingerprint\(\) -> String \{(?P<body>.*?)\n    \}\n",
+    r"(?:private )?func shortcutTooltipDiscoveryFingerprint\(\) -> String \{(?P<body>.*?)\n    \}\n",
     controller, re.S)
 assert fp, "shortcutTooltipDiscoveryFingerprint helper missing"
 fp_body = fp.group("body")

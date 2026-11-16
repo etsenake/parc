@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 motion = (root / "Sources/ParcApp/SidebarMotionController.swift").read_text()
 
 assert "struct LayoutChromeGeometryFingerprint: Equatable" in motion, \
@@ -21,7 +24,7 @@ assert "var commandBarOpen: Bool" in motion and "var transferringTabIDs: [UUID]"
 assert "var libraryContentWidth: CGFloat\n" in motion, \
     "fingerprint must cover the Library page's content width"
 
-assert "private var lastAppliedChromeGeometryFingerprint: LayoutChromeGeometryFingerprint?" in controller, \
+assert "var lastAppliedChromeGeometryFingerprint: LayoutChromeGeometryFingerprint?" in controller, \
     "missing last-applied chrome geometry fingerprint"
 assert "private func chromeGeometryFingerprint() -> LayoutChromeGeometryFingerprint" in controller, \
     "chromeGeometryFingerprint builder missing"
@@ -33,7 +36,7 @@ assert "library: libraryView != nil,\n            libraryContentWidth: libraryCo
     "chromeGeometryFingerprint must read the Library page's content width"
 
 layout = re.search(
-    r"private func layoutChrome\(\) \{(?P<body>.*?)\n    \}\n\n    private func chromeGeometryFingerprint\(\)",
+    r"(?:private )?func layoutChrome\(\) \{(?P<body>.*?)\n    \}\n\n    (?:private )?func chromeGeometryFingerprint\(\)",
     controller, re.S)
 assert layout, "layoutChrome not found before chromeGeometryFingerprint"
 body = layout.group("body")
@@ -66,7 +69,7 @@ assert "windowKeyViews.relink()" in body, \
     "full pass must still request key-view relink"
 
 geometry = re.search(
-    r"private func layoutChromeGeometry\(\) \{(?P<body>.*?)\n    \}\n\n    func newTab",
+    r"(?:private )?func layoutChromeGeometry\(\) \{(?P<body>.*?)\n    \}\n\n    func newTab",
     controller, re.S)
 assert geometry, "layoutChromeGeometry not found"
 geo = geometry.group("body")

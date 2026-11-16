@@ -3,6 +3,9 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
@@ -22,7 +25,8 @@ for source, use in (("PaneTitleControl.swift", "entry.showImage(service.image)")
                     ("DownloadLocationPicker.swift", "folder.showImage(NSImage(size: size, flipped: false)"),
                     ("SplitPaneMenu.swift", "item.showImage(SplitPaneMenuArtwork.image(artwork))"),
                     ("EaselImageExport.swift", "item.showImage(SidebarIconCatalog.featherImage(0xE9CA, size: 14))")):
-    expect(use in (app / source).read_text(), f"{source} no longer shows its menu image: {use}")
+    text = browser_window_controller_source(app) if source == "BrowserWindowController.swift" else (app / source).read_text()
+    expect(use in text, f"{source} no longer shows its menu image: {use}")
 
 declarations = (
     re.compile(r"\b(?:let|var)\s+(\w+)\s*(?::\s*NSMenuItem\s*)?=\s*(?:NSMenuItem\(|MenuAction\.item)"),

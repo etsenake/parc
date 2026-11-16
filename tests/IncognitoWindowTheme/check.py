@@ -3,19 +3,22 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
-controller = (app / "BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(app)
 for use in ("        let incognitoTheme = store.isEphemeral && !popup\n"
             "        rootView.incognito = incognitoTheme; sidebarContainer.incognito = incognitoTheme\n",
             "TooltipController.controller(for: window).palette = TooltipColorPalette(theme: self.rootView.paletteTheme)",
             "        rootView.incognito = incognitoTheme; sidebarContainer.incognito = incognitoTheme\n"
             "        toasts.basicBackground = windowBasicBackground\n",
-            "private var windowBasicBackground: NSColor? { rootView.incognito ? IncognitoWindowTheme.background : nil }",
+            "var windowBasicBackground: NSColor? { rootView.incognito ? IncognitoWindowTheme.background : nil }",
             "theme: rootView.theme, basicBackground: windowBasicBackground) : nil",
             "self.shortcutHint?.update(theme: self.rootView.theme, basicBackground: self.windowBasicBackground)",
             "canEdit: commandID != nil, theme: rootView.theme, basicBackground: windowBasicBackground)",
-            "private var windowPaletteTheme: SpaceTheme { rootView.incognito ? IncognitoWindowTheme.paletteTheme : activeSpace.theme }",
+            "var windowPaletteTheme: SpaceTheme { rootView.incognito ? IncognitoWindowTheme.paletteTheme : activeSpace.theme }",
             "NavigationHistoryController(page: page, snapshot: snapshot, window: window,\n                    theme: self.windowPaletteTheme)",
             "RecentTabSwitcher(items: items, currentTabIDs: sourceIDs, parent: window, theme: windowPaletteTheme,",
             "completion(.closed(self.recentSwitcherItems(available, in: window), theme: self.windowPaletteTheme))",

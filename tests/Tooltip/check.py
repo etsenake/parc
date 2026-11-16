@@ -7,6 +7,8 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import tooltip_sources
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
@@ -73,7 +75,7 @@ for name, text in sources.items():
     for call in (r"\bmakeKey", r"\bmakeMain", r"\borderFront", r"\bactivate\(", r"NSApp\.activate", r"becomeKey\("):
         assert not re.search(call, text), f"{name} must not take focus: {call}"
 assert "event.trackingArea" not in sources["TooltipController.swift"], "tracking areas are only valid on entered/exited events"
-controller = (app / "BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(app)
 assert "TooltipController.controller(for: window).palette = TooltipColorPalette(theme: self.rootView.paletteTheme)" in controller, \
     "the browser window no longer gives its tooltips the window theme's palette (the Space's, or the incognito theme's)"
 delegate = (app / "AppDelegate.swift").read_text()

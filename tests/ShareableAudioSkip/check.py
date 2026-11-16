@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
 
 
@@ -19,11 +22,11 @@ def body(source, signature):
 
 assert "shareableAudioDirty" not in controller, \
     "dirty-bit early out can miss audible/mute/shareable flips; skip must compare live fingerprint"
-assert "private var lastShareableAudioFingerprint: String?" in controller, \
+assert "var lastShareableAudioFingerprint: String?" in controller, \
     "missing last-applied shareable/audio fingerprint"
-assert "private var lastAppliedShareable = Set<UUID>()" in controller, \
+assert "var lastAppliedShareable = Set<UUID>()" in controller, \
     "missing last-applied shareable set"
-assert "private var lastAppliedAudio: [UUID: SidebarTabAudio] = [:]" in controller, \
+assert "var lastAppliedAudio: [UUID: SidebarTabAudio] = [:]" in controller, \
     "missing last-applied audio map"
 
 assert "canShareThisTabInstead" in body(controller, "private func liveShareableTabs() -> Set<UUID>"), \
@@ -47,7 +50,7 @@ for needle in (
 ):
     assert needle in fp_body, f"fingerprint no longer includes {needle}"
 
-pub_body = body(controller, "private func publishedShareableAndAudio()")
+pub_body = body(controller, "func publishedShareableAndAudio()")
 assert "-> (shareable: Set<UUID>, audio: [UUID: SidebarTabAudio], changed: Bool)" in pub_body, \
     "publishedShareableAndAudio must report whether the maps changed"
 assert "liveShareableTabs()" in pub_body, "must still build live shareable before skip"
@@ -69,7 +72,7 @@ assert pub_body.index("liveTabAudio()") < pub_body.index(
     "if fingerprint == lastShareableAudioFingerprint"), \
     "live audio probe must precede the identical-fingerprint skip"
 
-rem_body = body(controller, "private func rememberAppliedShareableAudio(shareable: Set<UUID>,")
+rem_body = body(controller, "func rememberAppliedShareableAudio(shareable: Set<UUID>,")
 assert "lastShareableAudioFingerprint = shareableAudioFingerprint" in rem_body, \
     "remember must record fingerprint only after handoff"
 assert "lastAppliedShareable = shareable" in rem_body and "lastAppliedAudio = audio" in rem_body, \
@@ -90,7 +93,7 @@ assert "browsers.compactMap" not in live_body, \
 assert "tabAudioState" not in live_body, \
     "live path must not inline a second audio rebuild"
 
-nav_body = body(controller, "private func updateNavigation()")
+nav_body = body(controller, "func updateNavigation()")
 assert "publishedShareableAndAudio()" in nav_body, \
     "updateNavigation must publish through the same fingerprint gate"
 assert "applyShareableAudio: published.changed" in nav_body, \

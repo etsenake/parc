@@ -2,10 +2,13 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
-controller = (app / "BrowserWindowController.swift").read_text()
-configure = controller[controller.index("private func configureSpaceManager("):controller.index("func clearArchive()")]
+controller = browser_window_controller_source(app)
+configure = controller[controller.index("func configureSpaceManager("):controller.index("func clearArchive()")]
 for use in ("return SpaceClearToday.ids(in: self.store.state, spaceID: id, profileID: space.profileID)",
             ".filter { self.ownership.canUse($0, owner: self.presentationID) }",
             "sidebar.canClearToday = { targetValid() && !clearable().isEmpty }",

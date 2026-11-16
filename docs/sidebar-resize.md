@@ -15,7 +15,7 @@ Related contracts: [motion](sidebar-motion.md),
 | Width gesture and persistence policy | `Sources/ParcCore/SidebarResize.swift` |
 | Edge hit testing, cursor, indicator and haptics | `Sources/ParcApp/SidebarResizeRegion.swift` |
 | Header, list and dock geometry | `Sources/ParcApp/SidebarChromeLayout.swift` |
-| Window integration and final layout | `Sources/ParcApp/BrowserWindowController.swift` |
+| Window integration and final layout | `Sources/ParcApp/BrowserWindowController+Sidebar.swift`, `Sources/ParcApp/BrowserWindowController+ChromeLayout.swift` |
 | Renderer-paced page sizing | `Sources/ParcCore/PageContentResize.swift`, `Sources/ParcApp/PageContentResizer.swift` |
 | Renderer reports and observation leases | `Sources/ParcApp/PageRenderFrames.swift`, `Engine/ParcNative/native_appkit_page.mm` |
 | Space header and menus | `Sources/ParcApp/SidebarSpaceHeader.swift`, `Sources/ParcApp/SidebarSpaceMenu.swift` |

@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 
 layout = re.search(
-    r"private func layoutChrome\(\) \{(?P<body>.*?)\n    \}\n\n    private func chromeGeometryFingerprint\(\)",
+    r"(?:private )?func layoutChrome\(\) \{(?P<body>.*?)\n    \}\n\n    (?:private )?func chromeGeometryFingerprint\(\)",
     controller, re.S)
 assert layout, "layoutChrome not found"
 body = layout.group("body")
@@ -41,7 +44,7 @@ assert "windowKeyViews.relink()" in full, \
     "full pass must still request key-view relink (skip lives inside WindowKeyViewLoop)"
 
 geometry = re.search(
-    r"private func layoutChromeGeometry\(\) \{(?P<body>.*?)\n    \}\n\n    func newTab",
+    r"(?:private )?func layoutChromeGeometry\(\) \{(?P<body>.*?)\n    \}\n\n    func newTab",
     controller, re.S)
 assert geometry, "layoutChromeGeometry not found"
 geo = geometry.group("body")

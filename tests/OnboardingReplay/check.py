@@ -2,6 +2,9 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -18,11 +21,11 @@ def method(source, signature):
 
 
 app = (ROOT / "Sources/ParcApp/AppDelegate.swift").read_text()
-browser = (ROOT / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+browser = browser_window_controller_source(ROOT / "Sources/ParcApp")
 template = (Path(__file__).parent / "Harness.swift").read_text()
 browser_methods = "\n".join(method(browser, signature) for signature in (
     "func prepareAuxiliaryWindowForOnboarding(", "func closeForOnboarding(",
-    "func windowShouldClose(", "private func finishScriptingWindowClose("))
+    "func windowShouldClose(", "func finishScriptingWindowClose("))
 app_methods = "\n".join(method(app, signature) for signature in (
     "private func startOnboardingReplay(", "private func restoreReplayWindow(",
     "private func finishOnboardingReplay("))

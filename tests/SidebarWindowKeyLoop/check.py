@@ -4,9 +4,11 @@ import re
 import subprocess
 import sys
 import tempfile
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
-for use, count in (("private lazy var windowKeyViews = WindowKeyViewLoop(", 1),
+controller = browser_window_controller_source(root / "Sources/ParcApp")
+for use, count in (("lazy var windowKeyViews = WindowKeyViewLoop(", 1),
                    ("excluded: { [sidebarContainer, parkedPages, pageHost, weak self] in\n"
                     "            EaselBrowserObjects.excludesFromKeyboardNavigation($0) ||\n"
                     "            WindowKeyViewLoop.windowExcludes($0, sidebarContainer: sidebarContainer, parkedPages: parkedPages,\n"
@@ -19,7 +21,7 @@ for use, count in (("private lazy var windowKeyViews = WindowKeyViewLoop(", 1),
                    ("recalculateKeyViewLoop", 0),
                    ("autorecalculatesKeyViewLoop", 0)):
     assert controller.count(use) == count, f"the window owner's key-view loop wiring changed: {use}"
-layout = controller[controller.index("    private func layoutChrome() {"):controller.index("    private func chromeFrames(sidebarWidth: CGFloat, in bounds: NSRect) -> SidebarChromeFrames {")]
+layout = controller[controller.index("    func layoutChrome() {"):controller.index("    private func chromeFrames(sidebarWidth: CGFloat, in bounds: NSRect) -> SidebarChromeFrames {")]
 assert layout.index("guard fullPass else { return }") < layout.index("windowKeyViews.relink()"), \
     "the window loop must relink at the end of every full chrome layout"
 sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
 split = (root / "Sources/ParcApp/SplitDragView.swift").read_text()
 drag = (root / "Sources/ParcApp/SidebarItemDrag.swift").read_text()
@@ -39,10 +42,10 @@ expect(image.index("setHover(false)") < image.index("cacheDisplay") < image.inde
        "the drag image is captured without hover, then hover is restored")
 expect("moveSurface.makeDragImage = { [weak self] in self?.dragImage() }" in group, "the split cell renders its own drag image")
 
-moves = body(controller, "private func prepareSidebarMoves(_ items: [SidebarItemReference]) -> SidebarMoveSession?")
+moves = body(controller, "func prepareSidebarMoves(_ items: [SidebarItemReference]) -> SidebarMoveSession?")
 expect("allowsCopy: wholeSplits" in moves and "if case .split = $0 { return true } else { return false }" in moves,
        "only whole-split sessions may be copied")
-wrapper = body(controller, "private func prepareSidebarCopyDrop(")
+wrapper = body(controller, "func prepareSidebarCopyDrop(")
 expect("cached.key == key, cached.revision == store.stateRevision { return cached.action }" in wrapper
        and "copyDropCache = (key, store.stateRevision, action)" in wrapper,
        "dragging updates reuse one proposal per target and state revision")
@@ -96,7 +99,7 @@ perform_dock = body(sidebar, "override func performDragOperation(_ sender: NSDra
 expect("if let dock { return session.transferThenEnd(dock) }" in perform_dock,
        "a dock drop finishes its transfer under the live session, then ends the drag")
 
-dockc = body(controller, "private func prepareSidebarDockDrop(")
+dockc = body(controller, "func prepareSidebarDockDrop(")
 expect("SidebarWindowMove(items: items, sourceSpaceID: source.activeSpaceID" in dockc and "destinationProfileID: space.profileID" in dockc,
        "the dock move is the ordinary placement into that Space, any Profile")
 cross = dockc[dockc.index("if source !== self {"):dockc.index("guard sidebarWindowMoveAvailable, let validateOwners")]
@@ -145,6 +148,6 @@ expect("return immediate ?? began" in copy and "else if !done { NSSound.beep() }
 expect("copy.matchesPlacement(of: original)" in place, "the store binds placement, not whole records")
 expect("let now = current(self.store.state) else { return false }" in dockc and "proposal: { current($0)?.applying(to: $0) }" in dockc,
        "the dock move rebinds placement at drop and after the decision")
-expect("$0.spaceID == spaceID || $0.kind == .favorite" in body(controller, "private func openDuplicatedChildren("),
+expect("$0.spaceID == spaceID || $0.kind == .favorite" in body(controller, "func openDuplicatedChildren("),
        "copied Favorite splits open their children whatever their home Space")
 print(f"PASS: {checks} whole-split copy drag source assertions (no browser)")

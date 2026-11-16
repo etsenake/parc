@@ -2,6 +2,9 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
 here = Path(__file__).parent
 delegate = (root / "Sources/ParcApp/AppDelegate.swift").read_text()
@@ -20,7 +23,7 @@ assert delegate.count("restoredRecord: record)") == 2, "AppDelegate no longer ha
 quit_start = delegate.index("guard windows.allSatisfy({ $0.prepareNotesToClose() }) else {")
 assert delegate.index("recordWindowSessions()", quit_start) < delegate.index("terminationInProgress = true", quit_start), \
     "quit no longer records the windows before it starts closing them"
-window = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+window = browser_window_controller_source(root / "Sources/ParcApp")
 for use in ("didSet { if windowSidebarWidth != oldValue { onSessionRecordChange?() } }",
             "windowSidebarWidth = SidebarWindowWidth(lastUsed: store.state.settings.sidebarWidth, restored: restoredRecord?.sidebarWidth)",
             "BrowserWindowRecord(sidebarWidth: windowSidebarWidth.width, itemLastActiveDates: closedItems.itemLastActiveDates,"):

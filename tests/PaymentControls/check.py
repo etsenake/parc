@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
 sidebar = (app / "SidebarView.swift").read_text()
-controller = (app / "BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(app)
 
 assert (
     "guard title != paymentEntryTitle || symbol != paymentEntrySymbol\n"
@@ -17,7 +20,7 @@ assert "needsLayout = true\n        return true" in sidebar, \
     "updatePaymentEntry no longer marks layout when a visible field changes"
 
 payment = re.search(
-    r"private func refreshPaymentControls\(\) \{(?P<body>.*?)\n    \}\n\n    private func performPaymentAction",
+    r"(?:private )?func refreshPaymentControls\(\) \{(?P<body>.*?)\n    \}\n\n    (?:private )?func performPaymentAction",
     controller, re.S)
 assert payment, "refreshPaymentControls not found"
 body = payment.group("body")

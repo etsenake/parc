@@ -3,10 +3,13 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 
 root = Path(__file__).resolve().parents[2]
 sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 plus = (root / "Sources/ParcApp/SidebarPlusMenu.swift").read_text()
 for use in (
     'private let footerMore = ActionButton("New Tab, Folder, or Space")\n',
@@ -60,9 +63,9 @@ for gone in ("palette.isDark", ".appearance = ", "NSAppearance(named:", "appeara
     assert gone not in history, f"the history chooser still picks its own light/dark half: {gone}"
 assert ("NavigationHistoryController(page: page, snapshot: snapshot, window: window,\n"
         "                    theme: self.windowPaletteTheme)") in controller \
-    and "private var windowPaletteTheme: SpaceTheme { rootView.incognito ? IncognitoWindowTheme.paletteTheme : activeSpace.theme }" in controller, \
+    and "var windowPaletteTheme: SpaceTheme { rootView.incognito ? IncognitoWindowTheme.paletteTheme : activeSpace.theme }" in controller, \
     "the window hands the history chooser its Space theme, or the incognito theme in a private window"
-assert "sidebar.plusMenuTheme = rootView.paletteTheme" in controller.split("private func applyChromeTheme(", 1)[1].split("\n    }\n", 1)[0], \
+assert "sidebar.plusMenuTheme = rootView.paletteTheme" in controller.split("func applyChromeTheme(", 1)[1].split("\n    }\n", 1)[0], \
     "the window hands its chrome theme to the plus HUD"
 assert "var paletteTheme: SpaceTheme { incognito ? IncognitoWindowTheme.paletteTheme : theme }" in (root / "Sources/ParcApp/ThemeRenderer.swift").read_text(), \
     "the surface's palette theme is the incognito theme only for a private window"

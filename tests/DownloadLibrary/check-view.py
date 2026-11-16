@@ -11,6 +11,9 @@ root = pathlib.Path(__file__).resolve().parents[2]
 import sys
 sys.path.insert(0, str(root / "tests/Tooltip"))
 from support import tooltip_sources
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as directory:
     temporary = pathlib.Path(directory)
     sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
@@ -101,7 +104,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
         "SidebarView's key-view chain no longer ends with footer More after the Space header and list"
     for gone in ("ActionButton(\"Downloads\"", "arrow.down.circle", "width - 73", "onDownloads"):
         assert gone not in sidebar, f"SidebarView still carries the former Downloads button: {gone}"
-    controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+    controller = browser_window_controller_source(root / "Sources/ParcApp")
     for use in ("sidebar.onLibrary = { [weak self] page in self?.showLibraryFromEntry(page) }",
                 "switch LibraryEntryRoute.decide(target: target, showing: showing,",
                 "case .open(let page): showLibrary(isPrivateBrowsing && page != .captures ? .downloads : Self.libraryKind(page))",
@@ -114,8 +117,8 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
                 "self.startLibraryFlyoutFileQuery()",
                 "if libraryView != nil { sidebar.libraryDidClose() }",
                 "recordLibraryPage(view.kind)\n        sidebar.libraryDidOpen()",
-                "private var libraryView: LibraryView? { didSet { updateLibraryEntryExpansion() } }",
-                "private var tabSwitcher: RecentTabSwitcher? { didSet { updateLibraryEntryExpansion() } }",
+                "var libraryView: LibraryView? { didSet { updateLibraryEntryExpansion() } }",
+                "var tabSwitcher: RecentTabSwitcher? { didSet { updateLibraryEntryExpansion() } }",
                 "sidebar.libraryEntryExpansionAllowed = libraryView == nil && tabSwitcher == nil && commandBar == nil",
                 "case let .share(item, share): return shareLibraryFlyoutItem(item, share)",
                 "case .deleteCapture(let capture): return deleteLibraryFlyoutCapture(capture)",
@@ -132,7 +135,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
     assert ("downloadsButton.progress?.colors = DownloadBadgeColors(foreground: palette?.foregroundPrimary ?? .labelColor,\n"
             "            maxContrast: palette?.maxContrastColor ?? .labelColor, cutout: palette?.cutoutColor ?? .windowBackgroundColor)") in library_view, \
         "The Library rail's Downloads badge no longer takes the sidebar's palette roles"
-    command_bar_observer = re.search(r"private var commandBar: CommandBar\? \{\s*didSet \{(.*?)\n        \}", controller, re.S)
+    command_bar_observer = re.search(r"(?:private )?var commandBar: CommandBar\? \{\s*didSet \{(.*?)\n        \}", controller, re.S)
     assert command_bar_observer and "updateLibraryEntryExpansion()" in command_bar_observer.group(1), \
         "Every command panel replacement must still update the Library entry expansion gate"
     assert controller.count("LibraryFlyoutSharing.perform(share, items: items)") == 3, "Download, folder file and capture shares perform through the macOS service"

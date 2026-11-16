@@ -6,6 +6,8 @@ root = Path(__file__).resolve().parents[2]
 import sys
 sys.path.insert(0, str(root / "tests/Tooltip"))
 from support import tooltip_sources
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 app = root / "Sources/ParcApp"
 sidebar = (app / "SidebarView.swift").read_text()
 for use in ("private let addressBackground = SidebarAddressPillView()",
@@ -48,7 +50,7 @@ for kind in ("Entered", "Exited"):
     assert (f"guard let revealTracking, event.trackingArea === revealTracking else {{ super.mouse{kind}(with: event); return }}"
             in sidebar), f"the sidebar's mouse{kind} must not match a nil tracking area"
 assert "addressBackground.layer?.backgroundColor" not in sidebar, "the palette must not overwrite the pill's own fill"
-controller = (app / "BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(app)
 assert "for view in [addressBackground, addressButton, pageActions, extensionToolbar] as [NSView] {\n                view.isHidden = usesContentToolbar" \
     in sidebar, "the Toolbar no longer hides exactly the URL bar group"
 assert "showsNavigation: !usesContentToolbar && !navigationInContentToolbar," in sidebar, \

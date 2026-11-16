@@ -2,6 +2,9 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests/Support"))
+from window_sources import browser_window_controller_source
 root = Path(__file__).resolve().parents[2]
 pinned = {"PageFailureView.swift": ["SidebarMotionController.pinDrawnContent(self, to: .scaleAxesIndependently)",
                                     "SidebarMotionController.pinDrawnContent(sentence, to: .center)",
@@ -12,7 +15,7 @@ for source, calls in pinned.items():
     text = (root / "Sources/ParcApp" / source).read_text()
     for call in calls:
         assert call in text, f"{source} no longer pins: {call}"
-controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+controller = browser_window_controller_source(root / "Sources/ParcApp")
 for use in ("sidebarContainer.isHidden = !sidebarAvailable\n",
             "let placement = SidebarPresentationFrame(sidebarPresentation, inMotion: sidebarMotionVisible,\n"
             "                                                 floatingSurface: sidebarFloatingSurface, revealsAnchored: sidebarRevealsAnchored)\n"
@@ -49,7 +52,7 @@ for use in ("        libraryView = view\n        libraryContentWidth = view.cont
     assert controller.count(use) == 1, f"BrowserWindowController no longer owns the Library width as checked: {use}"
 assert controller.index("libraryContentWidth = view.contentWidth") < controller.index("rootView.addSubview(view)\n        layoutChrome()"), \
     "the Library opens at its page's width without a group"
-setter = controller[controller.index("private func setLibraryContentWidth("):controller.index("private func openLibraryURLs(")]
+setter = controller[controller.index("func setLibraryContentWidth("):controller.index("func openLibraryURLs(")]
 for use in ("guard libraryContentWidth != width else { return }",
             "guard let libraryView, window?.isVisible == true, window?.isMiniaturized != true, !rootView.inLiveResize else {\n"
             "            libraryMotion.cancel(); layoutChrome(); return\n",
