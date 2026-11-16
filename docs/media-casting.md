@@ -4,7 +4,7 @@ View → Cast and the current page menu open the genuine Chromium Cast dialog fo
 
 ## Native ownership
 
-Parc uses Chromium 156 `MediaRouterUI::CreateWithDefaultMediaSourceAndMirroring` and the actual `CastDialogView`. Its native adapter supplies the original AppKit page parent and anchor instead of manufacturing a Chrome BrowserView/toolbar. The real router retains discovery, supported sinks/modes, default presentation requests, OS capture permission, route requests/results and failure messages. The dialog retains Chromium's geometry, palette, keyboard and accessibility behavior.
+Parc uses Chromium 157 `MediaRouterUI::CreateWithDefaultMediaSourceAndMirroring` and the actual `CastDialogView`. Its native adapter supplies the original AppKit page parent and anchor instead of manufacturing a Chrome BrowserView/toolbar. The real router retains discovery, supported sinks/modes, default presentation requests, OS capture permission, route requests/results and failure messages. The dialog retains Chromium's geometry, palette, keyboard and accessibility behavior.
 
 The native session binds the original WebContents/document, Browser/Profile and NSWindow. Each route-changing action revalidates them, selected/visible page, policy, security reservation, retirement and transfer state. Navigation, hidden/changed selection, transfer, renderer loss, parent closure/minimization and profile/service shutdown revoke the chooser. Controller dispatch retains its owner and defers destructive reentry until the current controller call returns. Native service observers detach before service shutdown. No URL is replayed and no page or device list is duplicated.
 

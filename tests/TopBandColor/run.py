@@ -7,7 +7,7 @@ the checkout's mojom tools, applies top-band-color.patch in memory to the
 pristine Blink files, and runs `clang++ -fsyntax-only` on the renderer tracker,
 the four patched Blink files and the browser's native_appkit_page.mm. Never
 invokes GN/Ninja or writes the source tree. This checks that the code compiles
-against Chromium 156's real headers, not that it links or runs.
+against the pinned Chromium's real headers, not that it links or runs.
 """
 import argparse
 import hashlib

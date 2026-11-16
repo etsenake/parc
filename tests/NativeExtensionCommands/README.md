@@ -1,7 +1,7 @@
 # Native extension command registry
 
 `Engine/ParcNative/extension_keybinding_registry.{h,cc}` implements the native
-registration and dispatch boundary against pinned Chromium 156.0.8078.96. It
+registration and dispatch boundary against pinned Chromium 157.0.8103.80. It
 uses the actual owning Browser's Profile and TabListInterface and derives from
 Chromium's shared ExtensionKeybindingRegistry. It does not introduce a
 FocusManager, a substitute Browser, a second event router or a second permission

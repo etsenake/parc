@@ -14,7 +14,7 @@ The original captured Browser/Profile/page/document/window and exclusive
 security reservation still own consent. Chromium's withholding checkbox,
 500-millisecond unobstructed input delay, once-only decision and deferred
 original-owner revalidation are preserved. Return accepts and Escape cancels.
-Chromium 156 instead makes Cancel
+Chromium 157 instead makes Cancel
 the default for this prompt (`extension_install_dialog_view.cc`). Return only
 accepts while the button is enabled and unobstructed, and never from a key
 repeat or from a keyDown whose timestamp precedes the end of the current input
@@ -24,7 +24,7 @@ additional-permission and app/theme requests keep their actual
 upstream-specific text and controls, drawn in the same Parc dialog: the
 justification box and parent password sit on the field card, any checkbox is
 the round one, and their accept button has no Return badge because Return
-never accepts them. Those Chromium 156 security/service requirements are
+never accepts them. Those Chromium 157 security/service requirements are
 explicit current-engine adaptations.
 
 Removing an extension uses the same Parc dialog: the extension's artwork, the

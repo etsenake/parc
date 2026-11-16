@@ -2,7 +2,7 @@
 
 `find_bar_view.h/.mm` is a real AppKit Find control: editable single-line field,
 results, previous/next/close controls, keyed page/window focus registration and
-safe reattachment/teardown. `find_bar.h/.mm` supplies the actual Chromium 156
+safe reattachment/teardown. `find_bar.h/.mm` supplies the actual Chromium 157
 `FindBar` implementation to its real `FindBarController` and `FindTabHelper`.
 It does not simulate search, own WebContents or construct a substitute Browser.
 

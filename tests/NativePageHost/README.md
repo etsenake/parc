@@ -62,7 +62,7 @@ host. It is terminal and idempotent. Ordinary host detachment preserves the page
 and still reports the actual window change. Neither operation closes a browser
 tab or grants consent to unload.
 
-## Chromium 156 parent-view visibility adaptation
+## Chromium 157 parent-view visibility adaptation
 
 The Chromium version pinned in [the source lock](../../Engine/source-lock.json)
 requires the host to show the native WebContents container, in addition to
@@ -70,12 +70,12 @@ renderer visibility notifications:
 
 | Pinned source evidence | Established behavior |
 |---|---|
-| `chrome/browser/extensions/open_tab_helper.cc:183–198` | `active:false` selects `NEW_BACKGROUND_TAB`. |
-| `chrome/browser/ui/navigator/browser_navigator.cc:539–540` | Background creation sets `initially_hidden`. |
-| `content/browser/web_contents/web_contents_view_mac.mm:434–440,861–866` | Creation hides the native container; the host-visible setter forwards to its native bridge. |
-| `content/app_shim_remote_cocoa/web_contents_ns_view_bridge.mm:91–115` | The bridge sets the actual container NSView's hidden flag. |
-| `ui/views/controls/native/native_view_host_mac.mm:287–318` | The normal native host explicitly shows/hides that container. |
-| `content/browser/web_contents/web_contents_impl.cc:3179–3182,5436–5465` | `WasShown()` updates page/renderer visibility; showing the renderer child does not clear its container parent's hidden flag. |
+| `chrome/browser/extensions/open_tab_helper.cc`, `OpenTabHelper::OpenTab` | `active:false` selects `NEW_BACKGROUND_TAB`. |
+| `chrome/browser/ui/navigator/browser_navigator.cc`, `CreateTargetContents` | Background creation sets `initially_hidden`. |
+| `content/browser/web_contents/web_contents_view_mac.mm`, `CreateView` and `ViewsHostableSetVisible` | Creation hides the native container; the host-visible setter forwards to its native bridge. |
+| `content/app_shim_remote_cocoa/web_contents_ns_view_bridge.mm`, `WebContentsNSViewBridge::SetVisible` | The bridge sets the actual container NSView's hidden flag. |
+| `ui/views/controls/native/native_view_host_mac.mm`, `ShowWidget` and `HideWidget` | The normal native host explicitly shows/hides that container. |
+| `content/browser/web_contents/web_contents_impl.cc`, `WasShown()` and `UpdateVisibilityAndNotifyPageAndView` | `WasShown()` updates page/renderer visibility; showing the renderer child does not clear its container parent's hidden flag. |
 
 The native adapter now applies the existing shell-visible-page decision to that
 exact managed container before `WasShown()`/`WasHidden()`. It revalidates the

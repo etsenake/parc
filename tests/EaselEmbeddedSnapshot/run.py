@@ -7,7 +7,7 @@ the lock's configured output`, swaps the source for this checkout's overlay copy
 puts every Engine/ParcNative overlay file first on the include path, and
 rewrites -o, -MF and crash diagnostics into the results directory. Never
 invokes GN/Ninja/siso builds or writes the engine workspace. This proves the
-code compiles against Chromium 156's real headers, not that it links or runs.
+code compiles against the pinned Chromium's real headers, not that it links or runs.
 """
 import argparse
 import hashlib
