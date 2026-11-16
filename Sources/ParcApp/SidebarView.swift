@@ -286,14 +286,14 @@ final class SidebarNewTabRow: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         button.actionBlock = { [weak self] in
-            self?.springPress(false)
+            self?.releasePress()
             action()
         }
         button.setAccessibilityLabel(SidebarNewTabAppearance.title)
         button.onHover = { [weak self] _ in self?.refreshPlate() }
         button.onHighlight = { [weak self] pressed in
-            guard pressed, let self, !self.holdsPress else { return }
-            self.springPress(true)
+            guard let self else { return }
+            if !pressed { self.releasePress() } else if !self.holdsPress { self.springPress(true) }
         }
         icon.image = SidebarNewTabAppearance.plus
         icon.imageScaling = .scaleNone
@@ -314,6 +314,7 @@ final class SidebarNewTabRow: NSView {
         layer.add(Self.bounce(pressed: pressed, bounds: bounds, from: presented), forKey: Self.bounceKey)
         pressedSize = pressed ? bounds.size : nil
     }
+    private func releasePress() { if holdsPress { springPress(false) } }
     func dropHeldPress() {
         guard holdsPress else { return }
         layer?.removeAnimation(forKey: Self.bounceKey)

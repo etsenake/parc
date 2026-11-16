@@ -20,8 +20,7 @@ final class AreaEvent: NSEvent {
         count += 1; precondition(value(), message)
     }
     static func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
-    static func main() { exitOnFailure(runChecks) }
-    static func runChecks() {
+    static func main() {
         precondition(ManagerTestApplication.shared is ManagerTestApplication, "the checks' application is the first")
         let manager = SpaceManagerView(frame: NSRect(x: 0, y: 0, width: 900, height: 650))
         let window = ManagerTestWindow(contentRect: manager.frame, styleMask: [.borderless], backing: .buffered, defer: true)
@@ -767,13 +766,37 @@ final class AreaEvent: NSEvent {
         check(press?.mass == 1 && abs((press?.stiffness ?? 0) - pow(2 * .pi / 0.2, 2)) < 1e-9
               && abs((press?.damping ?? 0) - 4 * .pi * 0.5 / 0.2) < 1e-9 && press?.duration == press?.settlingDuration,
               "the spring has damping ratio 0.5 and response 0.2 and lasts its settling time")
-        row.button.highlight(false)
-        check(bounce() === press, "a press dragged off or released outside the row keeps it at 0.992")
+        func springsBack(_ spring: CASpringAnimation?) -> Bool {
+            spring?.isRemovedOnCompletion == true && (spring?.toValue as? NSValue).map { CATransform3DIsIdentity($0.caTransform3DValue) } == true
+        }
         row.button.highlight(true)
-        check(bounce() === press, "dragging back onto the row changes nothing")
+        check(bounce() === press, "a press that stays down keeps its one spring")
         row.button.highlight(false)
-        check(bounce() === press, "only a completed click releases the press")
+        let dragOff = bounce()
+        check(dragOff !== press && springsBack(dragOff), "dragging off the row springs it back to full size")
+        row.button.highlight(true)
+        let dragBack = bounce()
+        check(dragBack !== dragOff && dragBack?.isRemovedOnCompletion == false
+              && (dragBack?.toValue as? NSValue).map { CATransform3DEqualToTransform($0.caTransform3DValue, pressed ?? CATransform3DIdentity) } == true,
+              "dragging back onto the row presses it again")
+        row.button.highlight(false)
+        let cancelled = bounce()
+        check(cancelled !== dragBack && springsBack(cancelled), "a click released outside the row returns it to full size")
+        row.button.highlight(false)
+        check(bounce() === cancelled, "a repeated release leaves the spring back running")
+        row.layer?.removeAnimation(forKey: SidebarNewTabRow.bounceKey)
 
+        row.button.highlight(true)
+        let clicked = bounce()
+        row.button.highlight(false)
+        let clickRelease = bounce()
+        check(clicked?.isRemovedOnCompletion == false && springsBack(clickRelease),
+              "a click springs the row back as the button lets go")
+        check(row.button.sendAction(row.button.action, to: row.button.target) && bounce() === clickRelease,
+              "New Tab's action keeps the spring back the release started")
+        row.layer?.removeAnimation(forKey: SidebarNewTabRow.bounceKey)
+
+        row.button.highlight(true)
         let held = row.frame.size
         row.setFrameSize(NSSize(width: held.width + 100, height: held.height))
         row.layoutSubtreeIfNeeded()

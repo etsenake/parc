@@ -224,11 +224,14 @@ fades over 0.1 seconds; the latest completion alone may hide it. The divider
 shortens when Clear appears and lengthens after it disappears. Hidden Clear
 cannot receive clicks or appear as an accessibility child.
 
-New Tab presses to scale 0.992 with a spring and returns to identity when its
-action completes. A press released outside can remain held until a completed
-click; changing Spaces clears that held state. Its selected look changes
-without animation while a new-tab command session is active. Clear retains
-its keyboard command and accessibility action; it is not a Tab stop.
+New Tab presses to scale 0.992 with a spring and follows the button's highlight
+like the dock plus: dragging off springs it back to full size, dragging back
+presses it again, and a click released outside always ends at full size. A
+completed click springs it back as the button lets go; the action and the
+render for the new tab leave that spring running. Changing Spaces drops a held
+press. Its selected look changes without animation while a new-tab command
+session is active. Clear retains its keyboard command and accessibility
+action; it is not a Tab stop.
 
 ## Drawn content inside the group
 
