@@ -1,5 +1,132 @@
 # Changelog
 
+## 2.6.0 (2026-11-16)
+
+### New
+
+- **onboarding:** Ask for your favorite sites right after you pick a browser to import, so you're choosing them while your stuff moves in instead of watching it load
+- **sidebar:** Teach Command-Z to un-copy, so a Duplicate or Pin to folder copy you regret vanishes and Redo puts it right back where it was
+- **import:** Keep your Chrome bookmarks moving in even after Chrome locks them in a safe, and pack the bookmarks and passwords saved to your Google Account too
+- **import:** Offer Firefox switchers the same drop-your-passwords step Safari gets, complete with a map to Firefox’s own export button
+- **import:** Welcome Zen to the browser lineup and stop Firefox’s hidden account entry from making a clean password import look half-done
+- **shortcuts:** Let your number keypad keep its own shortcuts, so Control–keypad 1 stops impersonating Control-1 and Clear quits cosplaying as Escape
+- **splits:** Let VoiceOver nudge split dividers and give keyboards Widen, Narrow and Make All Split Panes Equal, so Expand is no longer a one-way trip
+- **import:** Take Safari’s own Export Browsing Data zip, so every Safari Profile’s history, your bookmarks and your passwords move in without Full Disk Access or a password scavenger hunt
+- **splits:** Trade the split menu's shrugging Share for Copy Links, which scoops up every page in the split as titled links, and let Command-C copy a lone sidebar row too
+- **format:** Give Notes and Easels a real Edit › Format menu, so Command-B, I and U finally bold, slant and underline, headings, lists, indents and links come along for the ride, and the checkmarks know exactly what your text is wearing
+- **popups:** Show a quiet sign when a site's pop-up gets blocked, with Open, Open All and Always Allow in the site controls card, so sign-ins and course tools stop dead-ending
+- **import:** Let password files with thousands of logins move in whole, fed to the importer a bite at a time instead of being turned away at the door
+- **task-manager:** Open Task Manager from any window, even a Note, an Easel or an empty Space, and find it in the Window menu too, so a memory-hogging tab has nowhere left to hide
+- **sidebar:** Fold Pinned away under a tidy header that shows a little stack of its icons, or just a count while you share your screen, with Collapse Pinned in the View menu and command bar and a roomy Pinned drop spot on empty Library cards
+- **import:** Pack the payment cards from Safari's export file too, shredding Parc's copy the moment they're read and leaving out any card you already have
+- **import:** Open the door to Chrome Beta, Dev and Canary, Opera GX, Dia, Comet, Helium and ChatGPT Atlas, each found by its real folder and Keychain name
+- **peek:** Let two fingers fling a Peek away: the card follows along, taps at the point of no return, springs back if you chicken out, and every close now fades instead of blinking out
+- **sidebar:** Let tab, folder and work-site preview cards stretch out to a roomier 288 points, with a bigger still-crisp tab picture and longer lists, while squeezing politely into narrow windows
+- **import:** Stop leaving Opera and Opera GX side profiles behind, so each one comes along as its own profile under the name you gave it, minus the throwaway ones Opera wipes on quit
+- **peek:** Right-click a tab in a folder's preview card and Open in Peek to see its very own live page float over where you are, scroll, typing and video intact, then close it to tuck it back into its tab or click the tab to bring it home without a single reload
+- **peek:** Let Peek float above the whole window, reaching closer to its edges, while the page behind takes a polite step back instead of just sitting there dimmed
+- **sidebar:** Quietly keep a week of sidebar backups and offer the newest good one when your saved sidebar won’t open, instead of slamming the door with “Parc couldn’t start”
+- **sidebar:** Hold Option while dragging to drop a copy of any tab, folder, Favorite or mixed bunch anywhere in the sidebar, green plus and all, with Command-Z standing by if the twin was a mistake
+- **media:** Show the Mini Player's Cast button in speaker-only homes on sites like YouTube, so beaming a tab's sound to your Nest or Google Home takes one click instead of a scavenger hunt through the menus
+- **previews:** Give a tab's hover picture its own Open in Peek button right beside Split View, so one hover and one click float that page over yours without a single reload
+
+### Fixed
+
+- **routing:** Save Air Traffic Control routes the moment you change them, so a link clicked with the panel still open already goes to the Space you picked
+- **updates:** Give What's New its own parc://whats-new address, so the app's install path stops photobombing your History, copied links and address bar
+- **command-bar:** Stop New Parc Note from answering to the old borrowed name it was supposed to have dropped
+- **setup:** Skip the iCloud Passwords extension on macOS 15.5 and later, where Apple won't let it talk to Parc, send Safari passwords to import instead, and fess up when it couldn't be added
+- **setup:** Name the imported ad blocker that refused to leave with a Couldn’t remove notice, even when it was still downloading after ten minutes, instead of letting it lurk
+- **extensions:** Let an extension's right-click menu open and close its side panel instead of greying the option out with an excuse that expired the day the panel moved in
+- **extensions:** Only show the Extensions button in private pop-ups when an extension is actually allowed in private windows, instead of opening a party with no guests
+- **import:** Ask macOS for a browser's Keychain key just once per import instead of stacking a prompt for every profile, and unlock the rare saved items Chromium sealed with its spare key
+- **extensions:** Show the Extensions button only when there's an extension tile behind it, so buttonless background extensions stop ringing the doorbell and running off
+- **links:** Teach Option-click to open links in Split View beside your page instead of sneakily downloading them, and let the link preview say Split View only when a split is really coming
+- **links:** Let the link preview pill change colours with your Space while it's showing, instead of clinging to last season's theme until you hover again
+- **setup:** Check Safari's password helper's own guest list before offering iCloud Passwords, and give setup's Couldn’t add/remove notice a Retry button, Profile names and a seat right after the import notice
+- **extensions:** Make an extension's side panel menu say Close Side Panel while the panel is still loading, instead of promising to open the very thing the click shuts
+- **links:** Paste renamed tabs under the names you gave them, so copied titled links stop blurting out the page's own title
+- **import:** Call Zen by its own name when its profile turns out to be damaged, instead of blaming Firefox for a mess it never made
+- **command-bar:** Make clicking a page toolbar's address open the full command bar right where Command-L would, aimed at the pane you clicked, instead of a cramped dropdown that forgot half its tricks
+- **extensions:** Let an extension call off its side panel while it's still loading instead of having it barge in anyway, and keep the panel's Open or Close menu item honest when its corner gets tucked away
+- **sidebar:** Keep the extension and site buttons beside the sidebar's address in place while their popup or Site Settings panel is open, and always out for VoiceOver, so your password manager's button stops ghosting you mid-login
+- **links:** Copy pinned tabs under the title their sidebar row actually shows, not whatever the page has started calling itself since you pinned it
+- **command-bar:** Let the sidebar's address editor stretch out to 450 points with its address row lined up over the results, while pop-ups keep theirs tucked neatly inside even the skinniest sign-in window
+- **onboarding:** Give every import page after Favorites its own number in the setup counter, so bookmarks and passwords stop squatting on Favorites' step and the total stops fibbing about what's left
+- **splits:** Let VoiceOver hear a split divider's new spot after drags, double-clicks, Expand, window resizes and panes coming or going, once it settles, instead of hoarding the news until you bump into it again
+- **links:** Let the link preview promise Split View and Peek from whichever pane you're hovering, change its story when the window does while you hold the key, and stop making promises on behalf of ads
+- **spaces:** Let Manage Spaces resize itself when a Space is deleted, folded into a folder, undone or redone, or changed from another window, instead of leaving a card-sized hole or shoving the comeback card off the edge
+- **tooltips:** Repaint a tooltip that is already showing when its window changes theme, so a keyboard Space switch or theme nudge stops leaving yesterday's colors hanging around
+- **library:** Let Media spot iCloud borrowing or returning a photo right away, wait for slow copies to land before redrawing, ditch stale grid math mid-sum and follow a new screenshot folder the moment you pick it
+- **import:** Tell you which Profile an imported extension missed and hand you a Retry, and when an administrator, another app or a parent is the real holdout, say so instead of dangling a Retry that can't win
+- **developer-mode:** Put the blocked pop-up sign on the Developer Mode toolbar too, so a swallowed sign-in window can't hide behind the stripes
+- **windows:** Let the shortcuts panel grey out Copy when the page truly can't be copied, and stop Command-T in a sign-in popup from yanking a busy main window forward for nothing, so a fresh window catches the tab instead
+- **links:** Copy titles like Vec<T>, snake_case.py and **launch** as Markdown that pastes exactly as written, instead of letting renderers swallow the angle brackets or turn your asterisks into a bold surprise
+- **onboarding:** Count the new browser's pages on Favorites even while your last import is still packing up, so switching browsers mid-import stops sneaking an extra step into the total later
+- **shortcuts:** Let French, Belgian, Czech and Lithuanian number rows fire digit shortcuts like Command-Shift-2, and call the keypad's decimal key Keypad , wherever it types a comma instead of insisting it's a dot
+- **command-bar:** Keep your Control-Space search text planted right where you started typing, and keep both bars' address rows lined up with their results even when scroll bars refuse to hide
+- **toasts:** Let keyboards reach a notice's Share and Retry with Command-Option-Shift-A or Control-F6, hop between them with Tab and send it packing with Escape, all without the notice ever snatching focus from what you're typing
+- **windows:** When closing a tab another window is holding can't go through, say why and send it home instead of leaving it squatting, selected, in the window you were tidying
+- **sidebar:** Keep the floating sidebar's frosted glass on your Space's own light or dark side, so forced-dark text stops squinting at a pale blur, and let the glass melt from one Space into the next as you swipe
+- **peek:** Let a Shift-click inside a Peek open the link right there in the same Peek, Back and swipe included, instead of launching a surprise window, and let links in a page's embedded frames Shift-peek too
+- **sidebar:** With Reduce Motion on, tab, folder and work-site preview cards now just fade in and out where they stand instead of zooming out of the sidebar at you
+- **tooltips:** Let shortcut keycaps press for Shift-plus-number and symbol shortcuts like Command-Shift-2, so Capture's tooltip finally nods along when you nail it
+- **command-bar:** Stop buttons hiding under the command bar from lighting up as your pointer drifts across it, so the bar feels solid instead of haunted
+- **library:** Let the Library snap straight to its new width when Reduce Motion is on, instead of swooping across the window each time you visit Spaces or a Space comes or goes, and freeze any swoop mid-air the moment you flip the switch
+- **sidebar:** Let VoiceOver call out every Control-Space hop through the sidebar, naming each tab, folder and split, piping up at either end of the list, and keeping its voice down while tabs load in the background
+- **private:** Stop private windows from tripping over each other when they open and close at the same moment, so slamming the last one shut and diving straight into a fresh one just works, nothing private lingers afterwards, and Open Link in Incognito Window opens a private window even when none is open
+- **windows:** Bring a window Parc reopens on its own back where you left it, with its own size, spot and sidebar, instead of parking it wherever a long-closed window used to sit
+- **peek:** Let Undo bring back a closed Peek even after its page wandered off to another window, fetching the page home first just like Reopen does
+- **windows:** Give the frozen picture a moved tab leaves behind a real snapshot even when the window holding the page is sitting in the back, instead of a dim blank panel
+- **themes:** Let the color knob under your drag puff up like the open hand promises, and keep the Noise label on the dial's middle button so it stops photobombing your spins
+- **import:** Keep Parc steady when it's paired with an older engine that only names the extensions it couldn't add, showing the plain Couldn't add notice instead of tripping over the missing Profile and Retry
+- **peek:** Once you expand a Peek into a tab, its right-click menu stops treating it like a guest and offers Open Link in Split View like every other tab
+- **peek:** Keep the link preview honest over sandboxed frames inside a Peek, saying a new window when that's where your Shift-click really goes instead of fibbing about this Peek
+- **themes:** Let colored Automatic Spaces read the room and pick light or dark text from what's actually behind the sidebar, so pale-on-pale stops whispering, and give dark-mode Macs the same dark glass docked as floating
+- **sidebar:** Let VoiceOver pick sidebar tabs with VO-Return and gather a bunch with VO-Command-Return for the selected-items menu without ever whisking you off to another tab, and stop background tabs coming and going from wiping a selection you built
+- **command-bar:** Let the address editor's icon and text glide out of the sidebar pill and land right on its line, and save a seat for always-on scroll bars so results stop shuffling sideways when the list grows
+- **import:** Give every extension that missed its import its own notice and Retry, even when the rest of your data stumbled too, lined up politely behind the Only some of your data imported notice
+- **sidebar:** Let New Tab shake off a cancelled press, springing back when you drag away and squishing again when you come back
+- **downloads:** Give Reduce Motion fans a calm download hello, with the icon and tray fading in right where they rest instead of doing aerial acrobatics across the window
+- **sidebar:** Let Command-S dock the floating sidebar while Spaces are still sliding without a hiccup, so the glass hands off to the window mid-swipe instead of jumping at the finish
+- **sidebar:** Let Delete sweep away a bunch of selected empty folders after one quick are-you-sure, with Undo, instead of playing dead, and beep when it truly can't help
+- **onboarding:** Make Retry honor the ad blocker you picked in setup, so a blocker you kept out never sneaks back in and a retry that works still leaves just the one you chose
+- **splits:** Stop split dividers and the page's edge grip from flashing their resize arrows through the command bar, so the pointer over the bar stays the bar's own
+- **peek:** Let your typing follow you to the page underneath the moment a Peek starts fading, and let a Peek whose tab you close mid-fade just leave with it instead of popping back to wave goodbye
+- **toasts:** Let Command-Option-Shift-A and Control-F6 stay yours when they belong to a Parc command, and have VoiceOver name the notice, Share or Retry each time keyboard focus hops between them
+- **peek:** Let the page behind a tab's own Peek ease back into place as the card fades, instead of snapping forward the moment you put it back
+- **spaces:** Trade the mystery beep for a straight answer when a Note or Easel can't move to a Space with its own data, naming the folder, split or Archive entry still holding on to it before you're ever asked to confirm
+- **sidebar:** Give long Space swipes a rubber band, so the sidebar stretches gently at the next Space or the first one instead of wandering off into empty nothing while the color daydreams about Spaces further along
+- **archive:** Let an archived page's preview pop up over a Note, an Easel or an empty start page too, instead of giving your click the silent treatment
+- **themes:** Let the intensity thumb and noise marker puff up a gentle 5% with a deeper shadow when you hover or grab them, fill the dial's dots smoothly as you turn, and keep color knobs honest when they slide under a pointer that never moved
+- **start-page:** Let the last tab in a Space bow out gracefully, fading away while the start page glows in through your Space's own colors instead of blinking out
+- **archive:** Put Back now rebuilds a deleted folder around its tabs, nested folders, name, icon and spot included, so siblings move back in together instead of drifting loose across Pinned
+- **onboarding:** Keep each setup's ad-blocker choice its own, so a download from an earlier setup that fails after you start Replay can't sneak a declined blocker back with a Retry
+- **spaces:** Give Share data with and Keep separate the same straight answer moves got, naming the Favorite, Archive entry or other Space still clinging to a Note or Easel instead of refusing in total silence
+- **sidebar:** Offer your backups when the saved sidebar has vanished, not just when it's mangled, and stop copies saved while your Mac's clock was time-traveling from cutting the line as the newest
+- **themes:** Let the noise dial's marker cast its whole shadow even parked at the bottom, instead of having it sliced off at the dial's edge
+- **archive:** Let an archived page's preview open over a tab whose page hasn't loaded yet too, then quietly move in with that page the moment it turns up
+- **archive:** Let an archived tab that's open in a preview or halfway out the Archive door still learn its folder's way home when that folder is deleted, so Put Back rebuilds the folders around it too
+- **media:** Let protected streams listen when a page switches pitch correction off, so speeding up with a pitch-bending extension finally gives you the chipmunks you asked for instead of a polite shrug
+- **sidebar:** Make clearing history over a time range also sweep out sidebar backups saved while your Mac's clock was fibbing, instead of letting a wrong timestamp sneak one past the broom
+- **sidebar:** Stop swipes onto the last Space from tapping the trackpad like they meant to make a new one, and let a swipe that catches a long click's slide keep the page and color already on screen instead of swapping in a surprise neighbor
+- **peek:** Let a fading Peek bow out with its whole window instead of popping back for an encore, hand your typing to the page underneath every single time, let Stay settle a Peek even mid tab-close, and keep the page behind centred and the fading card in step while the sidebar slides or the window resizes
+- **peek:** Let the page behind a Peek that opens mid-slide keep its poise, staying dead centre while the sidebar or Library glides past instead of drifting a couple of points off until the dance ends
+- **scripting:** Let scripts grab a tab by its id inside a Space straight away, instead of making Parc call the whole Space's roll first
+- **sidebar:** Keep an extension's button beside the sidebar's address standing by from the moment you click it, so it stops ducking out while its popup is still getting dressed
+- **peek:** Keep the page behind a Peek dead centre even when a sidebar or Library slide gets interrupted and restarts toward the same spot, instead of trusting the first slide's starting line
+- **extensions:** Keep an extension's Open or Close Side Panel item honest even while its menu is open, so a panel that starts or quits mid-menu flips the label before your click instead of after it
+- **themes:** Let the sidebar's glass deepen its shade just enough behind mid-tone Spaces on a dark Mac, so tab names stop squinting at you over a bright page while your Space keeps its colors
+
+### Faster
+
+- **tabs:** Let Parc skip the archive when it only cares about open tabs, and stop launch from copying every tab and history visit one at a time
+- **easels:** Let web pages inside an Easel nap after four hours out of sight, like regular tabs, instead of hogging memory forever
+- **library:** Let the Media page check your photo folders quietly and only redraw when something actually changed, instead of re-sorting the whole pile twice every five seconds to learn nothing moved
+- **library:** Let the Media page hear photos land, change or wander off instead of re-checking every file every five seconds, and slip each one into the grid without reshuffling the whole pile
+- **scripting:** Let scripts and launchers list all your tabs in one quick sweep instead of making Parc rummage through every tab, archive and all, for each title and URL
+- **library:** Keep one lookout per iCloud folder instead of a guard on every photo, so a Desktop full of screenshots stays light while Media is open and Remove Download stops insisting they're in use
+
 ## 2.5.1 (2026-11-15)
 
 ### Fixed
