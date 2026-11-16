@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import plistlib
 import shutil
-import stat
 import subprocess
 import tempfile
 import unittest
@@ -58,24 +57,20 @@ class DmgTests(unittest.TestCase):
         self.phantom = False
         self.stuck = False
         self.mounted = set()
+        self.build_error = None
+        self.layout_error = None
+        self.attached = []
 
     def run_tool(self, args, **kwargs):
         args = list(map(str, args))
         self.calls.append(args)
         out, err = "", ""
         code = int(self.fail is not None and args[:len(self.fail)] == self.fail)
-        if args[0] in ("tiffutil", "xattr"):
+        if args[0] == "xattr":
             return subprocess.CompletedProcess(args, 1, "", "") if code else REAL_RUN(args, **kwargs)
-        if args[0] == "ditto":
-            shutil.copytree(args[1], args[2])
-        elif args[:2] == ["hdiutil", "create"]:
-            self.assertEqual(args[args.index("-format") + 1], "UDRW")
-            stage = Path(args[args.index("-srcfolder") + 1])
-            self.assertTrue((stage / "Applications").is_symlink())
-            shutil.rmtree(self.volume, ignore_errors=True)
-            shutil.copytree(stage, self.volume, symlinks=True)
-            Path(args[-1]).write_bytes(b"writable fixture image")
-        elif args[:2] == ["hdiutil", "attach"] and not code:
+        if args[:3] == ["hdiutil", "info", "-plist"]:
+            return subprocess.CompletedProcess(args, 0, plistlib.dumps({"images": self.attached}), b"")
+        if args[:2] == ["hdiutil", "attach"] and not code:
             mount = Path(args[args.index("-mountpoint") + 1])
             mount.rmdir()
             os.rename(self.volume, mount)
@@ -91,11 +86,6 @@ class DmgTests(unittest.TestCase):
             if self.phantom:
                 self.phantom = False
                 return subprocess.CompletedProcess(args, 16, "", "reported busy after unmounting")
-        elif args[:2] == ["hdiutil", "convert"] and not code:
-            self.assertEqual(args[args.index("-format") + 1], "UDZO")
-            if self.tamper:
-                self.tamper(self.volume)
-            Path(args[args.index("-o") + 1]).write_bytes(b"fixture disk image")
         elif args[:2] == ["codesign", "-dv"]:
             err = f"Authority=Developer ID Application: Fixture\nTeamIdentifier={self.actual_team}\nTimestamp=Today\nCDHash={self.cdhash}\n"
         elif args[:3] == ["xcrun", "notarytool", "submit"]:
@@ -111,9 +101,36 @@ class DmgTests(unittest.TestCase):
                 self.output.write_bytes(self.output.read_bytes() + b"ticket")
         return subprocess.CompletedProcess(args, code, out, err)
 
+    def dmgbuild(self, app, image, log):
+        self.calls.append(["dmgbuild", str(app), str(image), str(log)])
+        if isinstance(self.build_error, KeyboardInterrupt):
+            mount = Path(self.temp.name) / "Parc"
+            mount.mkdir()
+            self.mounted.add(mount)
+            self.attached = [{"image-path": str(Path(self.temp.name) / "other.dmg"),
+                              "system-entities": [{"mount-point": "/Volumes/Other"}]},
+                             {"image-path": str(image.with_name(".tempParc-arm64.dmg")),
+                              "system-entities": [{"dev-entry": "/dev/disk9"}, {"mount-point": str(mount)}]}]
+        if self.build_error:
+            raise self.build_error
+        shutil.rmtree(self.volume, ignore_errors=True)
+        self.volume.mkdir()
+        shutil.copytree(app, self.volume / "Parc.app")
+        (self.volume / "Applications").symlink_to("/Applications")
+        if self.tamper:
+            self.tamper(self.volume)
+        image.write_bytes(b"fixture disk image")
+
+    def check_layout(self, volume, finder_info, icon):
+        self.calls.append(["layout", str(volume), icon.decode()])
+        if self.layout_error:
+            raise layout.LayoutError(self.layout_error)
+
     def execute(self):
         with (patch.object(dmg.subprocess, "run", side_effect=self.run_tool), patch.object(dmg.time, "sleep"),
               patch.object(dmg.os.path, "ismount", side_effect=lambda path: Path(path) in self.mounted),
+              patch.object(layout, "build", side_effect=self.dmgbuild),
+              patch.object(layout, "verify", side_effect=self.check_layout),
               contextlib.redirect_stdout(io.StringIO())):
             return dmg.package_dmg(self.package, self.output, "fixture-identity", "fixture-profile", TEAM, 0)
 
@@ -141,22 +158,22 @@ class DmgTests(unittest.TestCase):
         self.assertTrue(any(call[:6] == ["spctl", "--assess", "--type", "open", "--context", "context:primary-signature"]
                             for call in self.calls))
 
-    def test_install_window_is_laid_out_before_compression_and_signing(self):
+    def test_install_window_is_built_by_dmgbuild_and_checked_before_submission(self):
         self.execute()
-        steps = [["tiffutil", "-cathidpicheck"], ["hdiutil", "create"], ["hdiutil", "attach"],
-                 ["xattr", "-wx", "com.apple.FinderInfo"], ["hdiutil", "detach"], ["hdiutil", "convert"],
-                 ["codesign", "--sign"], ["xcrun", "notarytool", "submit"]]
+        steps = [["dmgbuild"], ["codesign", "--sign"], ["hdiutil", "attach"], ["layout"],
+                 ["xcrun", "notarytool", "submit"]]
         self.assertEqual([self.position(step) for step in steps], sorted(self.position(step) for step in steps))
+        build = self.calls[self.position(["dmgbuild"])]
+        self.assertEqual(Path(build[1]), self.app.resolve())
+        image = Path(build[2])
+        self.assertEqual(image.name, "Parc-arm64.dmg")
+        self.assertTrue(image.parent.name.startswith(".parc-dmg-"))
+        self.assertEqual(image.parent.parent, self.output.parent.resolve())
+        self.assertEqual(Path(build[3]), self.package.parent.resolve() / "dmg-notarization/dmgbuild.log")
         attach = self.calls[self.position(["hdiutil", "attach"])]
         self.assertIn("-nobrowse", attach)
-        self.assertNotIn("-readonly", attach)
-        entries = layout.read_store((self.volume / ".DS_Store").read_bytes())
-        self.assertEqual(entries[("Parc.app", "Iloc")][1][:8], (160).to_bytes(4, "big") + (204).to_bytes(4, "big"))
-        self.assertEqual(entries[("Applications", "Iloc")][1][:8], (480).to_bytes(4, "big") + (204).to_bytes(4, "big"))
-        background = self.volume / layout.BACKGROUND
-        self.assertEqual(layout.tiff_sizes(background.read_bytes()), [(640, 400), (1280, 800)])
-        self.assertTrue(background.parent.stat().st_flags & stat.UF_HIDDEN)
-        self.assertEqual((self.volume / ".VolumeIcon.icns").read_bytes(), b"fixture icon")
+        self.assertIn("-readonly", attach)
+        self.assertEqual(self.calls[self.position(["layout"])][2], "fixture icon")
         self.assertEqual(self.leftovers(), [])
 
     def test_image_keeps_one_stable_name_beside_the_package(self):
@@ -186,94 +203,39 @@ class DmgTests(unittest.TestCase):
             self.execute()
         self.assertEqual(self.count(["xcrun", "notarytool", "submit"]), 0)
 
-    def test_missing_or_wrong_install_window_is_refused_before_submission(self):
-        def moved(volume):
-            entries = [entry if entry[0] != "Applications" else (*entry[:3], layout.icon_location(480, 320))
-                       for entry in layout.layout_entries(layout.background_alias(volume))]
-            (volume / ".DS_Store").write_bytes(layout.store(entries))
-
-        def stale(volume):
-            image = (volume / layout.BACKGROUND).stat()
-            alias = layout.alias_record(layout.VOLUME, layout.mac_time(volume.stat().st_birthtime), ".background",
-                                        (volume / ".background").stat().st_ino, "background.tiff", image.st_ino + 1,
-                                        layout.mac_time(image.st_birthtime))
-            (volume / ".DS_Store").write_bytes(layout.store(layout.layout_entries(alias)))
-
-        def single(volume):
-            one = Path(self.temp.name) / "one.tiff"
-            REAL_RUN(["tiffutil", "-cat", str(layout.ART / layout.ARTWORK[0]), "-out", str(one)], check=True,
-                     capture_output=True)
-            with (volume / layout.BACKGROUND).open("r+b") as stream:
-                stream.truncate(0)
-                stream.write(one.read_bytes())
-
-        tampers = {"no layout file": lambda volume: (volume / ".DS_Store").unlink(),
-                   "moved icon": moved,
-                   "stale background reference": stale,
-                   "single-size background": single,
-                   "visible background folder": lambda volume: os.chflags(volume / ".background", 0),
-                   "no custom icon flag": lambda volume: REAL_RUN(["xattr", "-d", "com.apple.FinderInfo", str(volume)],
-                                                                  check=True),
-                   "different volume icon": lambda volume: (volume / ".VolumeIcon.icns").write_bytes(b"other")}
-        for name, tamper in tampers.items():
-            with self.subTest(name):
-                self.reset()
-                self.tamper = tamper
-                with self.assertRaisesRegex(dmg.Refusal, "install window"):
-                    self.execute()
-                self.assertEqual(self.count(["xcrun", "notarytool", "submit"]), 0)
-
-    def test_failed_layout_unmounts_and_leaves_no_image(self):
-        self.fail = ["xattr", "-wx"]
-        with self.assertRaisesRegex(dmg.Refusal, "xattr failed"):
+    def test_wrong_install_window_is_refused_before_submission(self):
+        self.layout_error = "the Finder layout differs from what dmgbuild writes for this window: . vstl"
+        with self.assertRaisesRegex(dmg.Refusal, "install window is missing or wrong: .* vstl"):
             self.execute()
-        self.assertGreater(self.count(["hdiutil", "detach"]), 0)
-        self.assertGreater(self.position(["hdiutil", "detach"]), self.position(["xattr", "-wx"]))
-        self.assertTrue(self.volume.is_dir())
+        self.assertEqual(self.count(["xcrun", "notarytool", "submit"]), 0)
+        self.assertEqual(self.count(["hdiutil", "detach"]), 1)
+
+    def test_failed_dmgbuild_leaves_no_image_or_staging(self):
+        self.build_error = RuntimeError("Unable to attach disk image")
+        with self.assertRaisesRegex(dmg.Refusal, "dmgbuild could not build the install window: Unable to attach"):
+            self.execute()
         self.assertFalse(self.output.exists())
         self.assertEqual(self.leftovers(), [])
-        self.fail = None
+        self.assertEqual(self.count(["codesign", "--sign"]), 0)
+        self.build_error = None
         self.assertEqual(self.execute()["phase"], "complete")
 
-    def test_failed_compression_leaves_no_partial_image(self):
-        self.fail = ["hdiutil", "convert"]
-        with self.assertRaisesRegex(dmg.Refusal, "hdiutil failed"):
+    def test_interrupted_dmgbuild_unmounts_only_its_own_image(self):
+        self.build_error = KeyboardInterrupt()
+        with self.assertRaises(KeyboardInterrupt):
             self.execute()
+        detaches = [call for call in self.calls if call[:2] == ["hdiutil", "detach"]]
+        self.assertEqual(detaches, [["hdiutil", "detach", str(Path(self.temp.name) / "Parc")]])
+        self.assertEqual(self.mounted, set())
         self.assertFalse(self.output.exists())
         self.assertEqual(self.leftovers(), [])
-        self.fail = None
-        self.assertEqual(self.execute()["phase"], "complete")
-
-    def test_layout_checked_on_the_writable_volume_never_reaches_the_output(self):
-        with patch.object(layout, "hide"), self.assertRaisesRegex(dmg.Refusal, "background folder is visible"):
-            self.execute()
-        self.assertEqual(self.count(["hdiutil", "convert"]), 0)
-        self.assertFalse(self.output.exists())
-        self.assertEqual(self.leftovers(), [])
-        self.assertEqual(self.execute()["phase"], "complete")
-
-    def test_failed_attach_leaves_no_staging_behind(self):
-        self.fail = ["hdiutil", "attach"]
-        with self.assertRaisesRegex(dmg.Refusal, "hdiutil failed"):
-            self.execute()
-        self.assertEqual(self.leftovers(), [])
-        self.assertFalse(self.output.exists())
-
-    def test_stuck_volume_keeps_the_first_error_and_its_files(self):
-        self.fail = ["xattr", "-wx"]
-        self.stuck = True
-        with self.assertRaisesRegex(dmg.Refusal, "xattr failed"):
-            self.execute()
-        self.assertEqual(self.count(["hdiutil", "detach", "-force"]), 1)
-        [work] = self.leftovers()
-        self.assertTrue((self.output.parent / work / "volume/Parc.app/Contents/MacOS/Parc").is_file())
-        self.assertFalse(self.output.exists())
 
     def test_unmount_that_reports_busy_after_succeeding_is_not_retried(self):
         self.phantom = True
-        self.execute()
+        self.assertEqual(self.execute()["phase"], "complete")
         self.assertEqual(self.count(["hdiutil", "detach", "-force"]), 0)
-        self.assertEqual(self.position(["hdiutil", "convert"]) - self.position(["hdiutil", "detach"]), 1)
+        first = self.position(["hdiutil", "detach"])
+        self.assertNotEqual(self.calls[first + 1][:2], ["hdiutil", "detach"])
 
     def test_resumed_image_from_before_the_install_window_skips_only_the_layout(self):
         self.execute()
@@ -281,10 +243,11 @@ class DmgTests(unittest.TestCase):
         receipt = json.loads(receipt_path.read_text())
         del receipt["install_window"]
         receipt_path.write_text(json.dumps(receipt))
-        (self.volume / ".DS_Store").unlink()
+        self.layout_error = "the Finder layout is missing or unreadable"
         self.calls = []
         self.assertEqual(self.execute()["phase"], "complete")
         self.assertEqual(self.count(["xattr", "-px"]), 0)
+        self.assertEqual(self.count(["layout"]), 0)
 
     def test_busy_volume_retries_then_forces_its_unmount(self):
         self.busy = 2
@@ -315,9 +278,7 @@ class DmgTests(unittest.TestCase):
         self.assertEqual(self.execute()["phase"], "complete")
         self.execute()
         self.assertEqual(self.count(["xcrun", "notarytool", "submit"]), 1)
-        self.assertEqual(self.count(["hdiutil", "create"]), 1)
-        self.assertEqual(self.count(["hdiutil", "convert"]), 1)
-        self.assertEqual(sum(call[:2] == ["hdiutil", "attach"] and "-readonly" not in call for call in self.calls), 1)
+        self.assertEqual(self.count(["dmgbuild"]), 1)
 
     def test_ambiguous_upload_cannot_submit_twice(self):
         self.no_id = True
@@ -338,14 +299,16 @@ class DmgTests(unittest.TestCase):
             self.execute()
 
     def test_published_images_from_before_the_install_window_skip_only_the_layout(self):
-        self.tamper = lambda volume: (volume / ".DS_Store").unlink()
+        self.layout_error = "the Finder layout is missing or unreadable"
         with self.assertRaisesRegex(dmg.Refusal, "install window"):
             self.execute()
         self.calls = []
-        with patch.object(dmg.subprocess, "run", side_effect=self.run_tool):
+        with (patch.object(dmg.subprocess, "run", side_effect=self.run_tool),
+              patch.object(layout, "verify", side_effect=self.check_layout)):
             dmg.verify_dmg(self.output, self.report, self.package.parent / "dmg-notarization", notarized=False,
                            layout_expected=False)
         self.assertEqual(self.count(["xattr", "-px"]), 0)
+        self.assertEqual(self.count(["layout"]), 0)
 
 
 if __name__ == "__main__":

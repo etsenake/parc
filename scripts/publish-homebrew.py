@@ -177,7 +177,11 @@ def promote_verified_artifacts(release, notes):
 
 def ships_install_window(commit):
     art = f"{commit}:{dmg_tool.layout.ART_FOLDER}/{dmg_tool.layout.ARTWORK[0]}"
-    return subprocess.run(["git", "cat-file", "-e", art], cwd=ROOT, capture_output=True).returncode == 0
+    if subprocess.run(["git", "cat-file", "-e", art], cwd=ROOT, capture_output=True).returncode:
+        return False
+    builder = subprocess.run(["git", "show", f"{commit}:scripts/dmg_layout.py"], cwd=ROOT, capture_output=True,
+                             text=True)
+    return not builder.returncode and "dmgbuild" in builder.stdout
 
 
 def dmg_asset(release, version):

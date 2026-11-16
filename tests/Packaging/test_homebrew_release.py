@@ -127,16 +127,23 @@ class HomebrewReleaseTests(unittest.TestCase):
         git = lambda *args: subprocess.run(["git", "-C", str(source), *args], check=True, capture_output=True,
                                            text=True).stdout.strip()
         source.mkdir()
+        builder = source / "scripts/dmg_layout.py"
         git("init", "-q")
         git("-c", "user.name=Parc", "-c", "user.email=parc@example.invalid", "commit", "-q", "--allow-empty", "-m", "before")
         before = git("rev-parse", "HEAD")
         art.parent.mkdir(parents=True)
         art.write_bytes(b"art")
+        builder.parent.mkdir()
+        builder.write_text("def write(volume):\n    pass\n")
         git("add", ".")
-        git("-c", "user.name=Parc", "-c", "user.email=parc@example.invalid", "commit", "-q", "-m", "after")
+        git("-c", "user.name=Parc", "-c", "user.email=parc@example.invalid", "commit", "-q", "-m", "own writer")
+        own_writer = git("rev-parse", "HEAD")
+        builder.write_text('WHEELS = (("dmgbuild", "1.6.7"),)\n')
+        git("-c", "user.name=Parc", "-c", "user.email=parc@example.invalid", "commit", "-q", "-am", "dmgbuild")
         after = git("rev-parse", "HEAD")
         with patch.object(publisher, "ROOT", source):
             self.assertFalse(publisher.ships_install_window(before))
+            self.assertFalse(publisher.ships_install_window(own_writer))
             self.assertTrue(publisher.ships_install_window(after))
             self.assertFalse(publisher.ships_install_window("f" * 40))
 

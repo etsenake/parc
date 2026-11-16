@@ -1,22 +1,22 @@
 import hashlib
 import importlib.util
-import os
 from pathlib import Path
 import plistlib
-import stat
 import struct
+import subprocess
+import sys
 import tempfile
+import types
 import unittest
+from unittest.mock import patch
+import zipfile
 
-spec = importlib.util.spec_from_file_location("parc_dmg_layout", Path(__file__).resolve().parents[2] / "scripts/dmg_layout.py")
+REPO = Path(__file__).resolve().parents[2]
+spec = importlib.util.spec_from_file_location("parc_dmg_layout", REPO / "scripts/dmg_layout.py")
 layout = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(layout)
-VOLUME_CREATED = 3846000000.5
-FILE_CREATED = 3846000001.25
-
-
-def fixture_alias():
-    return layout.alias_record("Parc", VOLUME_CREATED, ".background", 23, "background.tiff", 24, FILE_CREATED)
+SHIPPED_2_7_0 = Path(__file__).with_name("fixtures") / "ds-store-2.7.0.bin"
+ICON = b"fixture icon"
 
 
 def tiff(sizes):
@@ -29,121 +29,158 @@ def tiff(sizes):
     return bytes(data)
 
 
-class LayoutRecordTests(unittest.TestCase):
-    def test_alias_has_fixed_bytes_and_reads_back(self):
-        alias = fixture_alias()
-        self.assertEqual(hashlib.sha256(alias).hexdigest(),
-                         "eac4b526fe2aa69c581b644885a5625dac94186bfd4082902d8d823e9090c81a")
-        self.assertEqual(layout.read_alias(alias), {
-            "kind": 0, "volume": "Parc", "volume_created": 3846000000, "filesystem": b"H+", "folder_id": 23,
-            "name": "background.tiff", "file_id": 24, "file_created": 3846000001,
-            "path": "/.background/background.tiff", "folder": ".background",
-            "carbon_path": "Parc:.background:\0background.tiff"})
-
-    def test_store_has_fixed_bytes_and_round_trips(self):
-        data = layout.store(layout.layout_entries(fixture_alias()))
-        self.assertEqual(len(data), 4 + 2 * layout.PAGE)
-        self.assertEqual(hashlib.sha256(data).hexdigest(),
-                         "bbb0c553595bb8cb63c9fd0e95f688aacd20020ee71e23a3fbc9cb1abaab6f7d")
-        entries = layout.read_store(data)
-        self.assertEqual(list(entries), [(".", "bwsp"), (".", "icvp"), (".", "vSrn"), (".", "vstl"),
-                                         ("Applications", "Iloc"), ("Parc.app", "Iloc")])
-        self.assertEqual(entries[("Parc.app", "Iloc")], ("blob", struct.pack(">IIII", 160, 204, 0xFFFFFFFF, 0xFFFF0000)))
-        self.assertEqual(entries[("Applications", "Iloc")], ("blob", struct.pack(">IIII", 480, 204, 0xFFFFFFFF, 0xFFFF0000)))
-        self.assertEqual(entries[(".", "vstl")], ("type", b"icnv"))
-        view = plistlib.loads(entries[(".", "icvp")][1])
-        self.assertEqual(view.pop("backgroundImageAlias"), fixture_alias())
-        self.assertEqual(view, layout.icon_view_options())
-        self.assertEqual(view["backgroundType"], 2)
-        self.assertEqual((view["iconSize"], view["textSize"]), (128.0, 13.0))
-        window = plistlib.loads(entries[(".", "bwsp")][1])
-        self.assertEqual(window["WindowBounds"], "{{200, 120}, {640, 400}}")
-        self.assertFalse(window["ShowToolbar"] or window["ShowSidebar"] or window["ShowStatusBar"])
-
-    def test_reader_follows_internal_nodes(self):
-        entries = [("a", "Iloc", "blob", layout.icon_location(1, 2)), ("b", "vSrn", "long", 1),
-                   ("c", "Iloc", "blob", layout.icon_location(3, 4))]
-        leaf = lambda chosen: struct.pack(">II", 0, len(chosen)) + b"".join(layout.encode_entry(*e) for e in chosen)
-        data = bytearray(layout.store(entries))
-        root = struct.pack(">III", 3, 1, 2) + layout.encode_entry(*entries[1])
-        info = layout.INFO_ADDRESS + 4
-        struct.pack_into(">I", data, info, 4)
-        struct.pack_into(">II", data, info + 8 + 8, 0x2000 | 12, 0x3000 | 12)
-        data += bytes(0x4000 - (len(data) - 4))
-        for address, body in ((layout.NODE_ADDRESS, root), (0x2000, leaf(entries[:1])), (0x3000, leaf(entries[2:]))):
-            data[address + 4:address + 4 + layout.PAGE] = body + bytes(layout.PAGE - len(body))
-        self.assertEqual(set(layout.read_store(bytes(data))), {("a", "Iloc"), ("b", "vSrn"), ("c", "Iloc")})
-
-    def test_garbage_and_truncated_stores_are_rejected(self):
-        data = layout.store(layout.layout_entries(fixture_alias()))
-        for broken in (b"", b"not a store", data[:2052], data[:4] + b"Bud2" + data[8:]):
-            with self.subTest(length=len(broken)), self.assertRaises((ValueError, struct.error)):
-                layout.read_store(broken)
-        with self.assertRaises(layout.LayoutError):
-            layout.read_alias(fixture_alias()[:40])
-
-
-    def test_hostile_alias_lengths_and_shared_tree_nodes_are_refused(self):
-        alias = bytearray(fixture_alias())
-        first_tag = 8 + struct.calcsize(layout.ALIAS_FIXED)
-        for length in (-4, -100, 30000):
-            struct.pack_into(">h", alias, first_tag + 2, length)
-            with self.subTest(length=length), self.assertRaises(layout.LayoutError):
-                layout.read_alias(bytes(alias))
-        entries = [("a", "vSrn", "long", 1)]
-        data = bytearray(layout.store(entries))
-        root = struct.pack(">III", 1, 1, 1) + layout.encode_entry(*entries[0])
-        data[layout.NODE_ADDRESS + 4:layout.NODE_ADDRESS + 4 + len(root)] = root
-        with self.assertRaises(layout.LayoutError):
-            layout.read_store(bytes(data))
-
-
-class VolumeTests(unittest.TestCase):
+class FetchTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
+        temporary = tempfile.TemporaryDirectory(prefix="parc-dmgbuild-")
         self.addCleanup(temporary.cleanup)
-        self.volume = Path(temporary.name)
-        background = self.volume / layout.BACKGROUND
-        background.parent.mkdir()
-        background.write_bytes(tiff(layout.BACKGROUND_SIZES))
-        os.chflags(background.parent, stat.UF_HIDDEN)
-        (self.volume / layout.VOLUME_ICON).write_bytes(b"icon")
-        layout.write(self.volume)
+        self.root = Path(temporary.name).resolve()
+        self.cache = self.root / "cache"
+        self.wheels = []
+        for name in ("alpha", "beta"):
+            wheel = self.root / f"{name}-1.0-py3-none-any.whl"
+            with zipfile.ZipFile(wheel, "w") as archive:
+                archive.writestr(f"{name}/__init__.py", "VALUE = 1\n")
+                archive.writestr(f"{name}-1.0.dist-info/METADATA", "Name: " + name)
+            self.wheels.append((name, "1.0", wheel.as_uri(), hashlib.sha256(wheel.read_bytes()).hexdigest()))
 
-    def rewrite(self, code, kind, value):
-        entries = [entry if entry[1] != code else (entry[0], code, kind, value)
-                   for entry in layout.layout_entries(layout.background_alias(self.volume))]
-        (self.volume / ".DS_Store").write_bytes(layout.store(entries))
+    def test_pinned_wheels_unpack_once_into_one_cached_folder(self):
+        with patch.object(layout, "WHEELS", tuple(self.wheels)):
+            site = layout.fetch(self.cache)
+            self.assertEqual(site, layout.directory(self.cache))
+            self.assertEqual(sorted(path.name for path in site.iterdir()), ["alpha", "beta"])
+            for wheel in self.root.glob("*.whl"):
+                wheel.unlink()
+            self.assertEqual(layout.fetch(self.cache), site)
+        self.assertEqual([path.name for path in self.cache.iterdir()], [site.name])
 
-    def test_written_volume_verifies(self):
-        layout.verify(self.volume, layout.CUSTOM_ICON, b"icon")
+    def test_mismatched_wheel_is_refused_and_not_cached(self):
+        wheels = (self.wheels[0], (*self.wheels[1][:3], "0" * 64))
+        with (patch.object(layout, "WHEELS", wheels),
+              self.assertRaisesRegex(layout.LayoutError, "beta 1.0 does not match its pinned SHA-256")):
+            layout.fetch(self.cache)
+        self.assertEqual(list(self.cache.iterdir()), [])
 
-    def test_wrong_kinds_and_loose_types_are_refused(self):
-        view = layout.icon_view_options() | {"backgroundImageAlias": layout.background_alias(self.volume)}
-        cases = {"icon view as a number": ("icvp", "long", 7),
-                 "icon view as a list": ("icvp", "blob", plistlib.dumps([1])),
-                 "broken XML": ("icvp", "blob", b"<?xml version='1.0'?><plist><dict>"),
-                 "alias as text": ("icvp", "blob", plistlib.dumps(view | {"backgroundImageAlias": "alias"})),
-                 "integer for a bool": ("icvp", "blob", plistlib.dumps(view | {"labelOnBottom": 1})),
-                 "integer for a float": ("icvp", "blob", plistlib.dumps(view | {"iconSize": 128})),
-                 "non-text key": ("icvp", "blob", bytes.fromhex("62706c6973743030d1010210011002080b0d0000000000"
-                                                                "0001010000000000000003000000000000000000000000"
-                                                                "000000000f"))}
-        for name, record in cases.items():
+
+class LoadTests(unittest.TestCase):
+    def test_a_library_loaded_from_elsewhere_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            site = Path(temporary).resolve() / "site"
+            pinned = {}
+            for name in ("ds_store", "mac_alias"):
+                pinned[name] = types.ModuleType(name)
+                pinned[name].__file__ = str(site / name / "__init__.py")
+            elsewhere = types.ModuleType("dmgbuild")
+            elsewhere.__file__ = str(Path(temporary) / "other/dmgbuild/__init__.py")
+            for module in (elsewhere, types.ModuleType("dmgbuild")):
+                with (self.subTest(file=getattr(module, "__file__", None)),
+                      patch.object(layout, "fetch", return_value=site), patch.object(sys, "path", list(sys.path)),
+                      patch.dict(sys.modules, pinned | {"dmgbuild": module}),
+                      self.assertRaisesRegex(layout.LayoutError, "^dmgbuild was loaded from outside its pinned copy")):
+                    layout.load()
+
+    def test_libraries_that_cannot_be_fetched_refuse_the_layout(self):
+        failure = subprocess.CalledProcessError(6, ["curl"])
+        with (patch.object(layout, "load", side_effect=failure),
+              self.assertRaisesRegex(layout.LayoutError, "pinned dmgbuild libraries could not be loaded")):
+            layout.verify(Path("/nonexistent"), bytes(32), ICON)
+
+
+class SettingsTests(unittest.TestCase):
+    def test_dmgbuild_gets_the_install_window_settings(self):
+        self.assertEqual(layout.settings(Path("/stage/Parc.app")), {
+            "files": ["/stage/Parc.app"], "symlinks": {"Applications": "/Applications"},
+            "icon": "/stage/Parc.app/Contents/Resources/Parc.icns",
+            "background": str(REPO / "Sources/DiskImage/background.png"), "format": "UDZO",
+            "window_rect": ((200, 120), (640, 400)), "default_view": "icon-view", "show_status_bar": False,
+            "show_tab_view": False, "show_toolbar": False, "show_pathbar": False, "show_sidebar": False,
+            "icon_size": 128, "text_size": 13, "icon_locations": {"Parc.app": (160, 190), "Applications": (480, 190)}})
+
+
+class ImageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        temporary = tempfile.TemporaryDirectory(prefix="parc-dmg-image-")
+        cls.addClassCleanup(temporary.cleanup)
+        cls.root = Path(temporary.name).resolve()
+        app = cls.root / "stage/Parc.app"
+        (app / "Contents/Resources").mkdir(parents=True)
+        (app / "Contents/Resources/Parc.icns").write_bytes(ICON)
+        (app / "Contents/Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": "org.parc.Browser"}))
+        cls.image = cls.root / "Parc-arm64.dmg"
+        layout.build(app, cls.image, cls.root / "dmgbuild.log")
+
+    def mount(self, writable=False):
+        mount = Path(tempfile.mkdtemp(prefix="mount-", dir=self.root))
+        options = ["-shadow", str(mount) + ".shadow"] if writable else ["-readonly"]
+        subprocess.run(["hdiutil", "attach", str(self.image), "-nobrowse", "-noautoopen", *options,
+                        "-mountpoint", str(mount)], check=True, capture_output=True)
+        self.addCleanup(subprocess.run, ["hdiutil", "detach", "-force", str(mount)], capture_output=True)
+        return mount
+
+    def check(self, volume, finder_info=None):
+        if finder_info is None:
+            result = subprocess.run(["xattr", "-px", "com.apple.FinderInfo", str(volume)], capture_output=True,
+                                    text=True)
+            finder_info = b"" if result.returncode else bytes.fromhex("".join(result.stdout.split()))
+        layout.verify(volume, finder_info, ICON)
+
+    def test_dmgbuild_image_passes_with_exactly_dmgbuilds_records(self):
+        volume = self.mount()
+        self.check(volume)
+        self.assertEqual(sorted(path.name for path in volume.iterdir()),
+                         [".DS_Store", ".VolumeIcon.icns", ".background.tiff", "Applications", "Parc.app"])
+        records = layout.records((volume / ".DS_Store").read_bytes())
+        self.assertEqual(sorted(records), [(".", "bwsp"), (".", "icvl"), (".", "icvp"), (".", "vSrn"),
+                                           ("Applications", "Iloc"), ("Parc.app", "Iloc")])
+        self.assertEqual((records[(".", "icvl")], records[(".", "vSrn")]), (b"icnv", 1))
+        self.assertEqual({name: records[(name, "Iloc")] for name in layout.POSITIONS}, layout.POSITIONS)
+        view = records[(".", "icvp")]
+        self.assertEqual((view["backgroundType"], view["iconSize"], view["textSize"]), (2, 128.0, 13.0))
+        self.assertEqual(records[(".", "bwsp")]["WindowBounds"], "{{200, 120}, {640, 400}}")
+        self.assertEqual(layout.tiff_sizes((volume / ".background.tiff").read_bytes()), layout.BACKGROUND_SIZES)
+
+    def test_the_shipped_2_7_0_layout_is_refused(self):
+        volume = self.mount(writable=True)
+        (volume / ".DS_Store").write_bytes(SHIPPED_2_7_0.read_bytes())
+        with self.assertRaisesRegex(layout.LayoutError, "differs from what dmgbuild writes for this window: "
+                                                        r"\. icvl, \. vstl$"):
+            self.check(volume)
+
+    def test_tampered_images_are_refused(self):
+        shipped_alias = layout.records(SHIPPED_2_7_0.read_bytes())[(".", "icvp")]["backgroundImageAlias"]
+
+        def moved(volume):
+            alias = layout.records((volume / ".DS_Store").read_bytes())[(".", "icvp")]["backgroundImageAlias"]
+            with patch.dict(layout.POSITIONS, {"Applications": (480, 320)}):
+                (volume / ".DS_Store").write_bytes(layout.written_store(alias))
+
+        def replaced(volume):
+            picture = volume / layout.BACKGROUND
+            data = picture.read_bytes()
+            picture.unlink()
+            picture.write_bytes(data)
+
+        def single(volume):
+            with (volume / layout.BACKGROUND).open("r+b") as stream:
+                stream.truncate(0)
+                stream.write(tiff([layout.WINDOW]))
+
+        cases = {"no layout file": (lambda volume: (volume / ".DS_Store").unlink(), "missing or unreadable"),
+                 "moved icon": (moved, r"window: Applications Iloc$"),
+                 "another image's picture": (lambda volume: (volume / ".DS_Store").write_bytes(
+                     layout.written_store(shipped_alias)), "does not point at this volume's picture"),
+                 "replaced picture": (replaced, "does not point at this volume's picture"),
+                 "single-size picture": (single, "lacks its 1x and 2x images"),
+                 "different volume icon": (lambda volume: (volume / layout.VOLUME_ICON).write_bytes(b"other"),
+                                           "does not carry Parc's icon")}
+        for name, (tamper, message) in cases.items():
             with self.subTest(name):
-                self.rewrite(*record)
-                with self.assertRaises(layout.LayoutError):
-                    layout.verify(self.volume, layout.CUSTOM_ICON, b"icon")
-
-    def test_alias_fields_must_all_match_the_picture(self):
-        root, folder = self.volume.stat(), (self.volume / ".background").stat()
-        image = (self.volume / layout.BACKGROUND).stat()
-        alias = layout.alias_record(layout.VOLUME, layout.mac_time(root.st_birthtime), ".background", folder.st_ino,
-                                    "other.tiff", image.st_ino, layout.mac_time(image.st_birthtime))
-        view = layout.icon_view_options() | {"backgroundImageAlias": alias}
-        self.rewrite("icvp", "blob", plistlib.dumps(view, fmt=plistlib.FMT_BINARY))
-        with self.assertRaisesRegex(layout.LayoutError, "does not point"):
-            layout.verify(self.volume, layout.CUSTOM_ICON, b"icon")
+                volume = self.mount(writable=True)
+                tamper(volume)
+                with self.assertRaisesRegex(layout.LayoutError, message):
+                    self.check(volume)
+        with self.assertRaisesRegex(layout.LayoutError, "does not carry Parc's icon"):
+            self.check(self.mount(), finder_info=bytes(32))
 
 
 class ArtworkTests(unittest.TestCase):
@@ -164,6 +201,8 @@ class ArtworkTests(unittest.TestCase):
             sizes.append(struct.unpack(">II", data[16:24]))
         self.assertEqual(sizes, layout.BACKGROUND_SIZES)
         self.assertFalse(layout.ART.is_relative_to(layout.ART.parents[1] / "Resources"))
+        self.assertEqual(sorted(path.name for path in layout.ART.iterdir() if path.suffix == ".png"),
+                         sorted(layout.ARTWORK))
 
 
 if __name__ == "__main__":

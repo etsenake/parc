@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Create, sign, notarize and verify Parc's drag-to-Applications disk image."""
 import argparse
-import contextlib
 import datetime
 import fcntl
 import importlib.util
@@ -87,40 +86,36 @@ def verify_layout(volume, folder):
         raise Refusal("DMG install window is missing or wrong: " + str(error)) from error
 
 
+def release_images(work, folder):
+    result = subprocess.run(["hdiutil", "info", "-plist"], capture_output=True)
+    try:
+        images = plistlib.loads(result.stdout).get("images", [])
+    except Exception:
+        return
+    for image in images:
+        if Path(image.get("image-path", "/")).resolve().is_relative_to(work.resolve()):
+            for entity in image.get("system-entities", []):
+                if entity.get("mount-point"):
+                    try:
+                        detach(Path(entity["mount-point"]), folder / "interrupted-detach.log")
+                    except Refusal:
+                        pass
+
+
 def build_image(app, output, folder):
     work = Path(tempfile.mkdtemp(prefix=".parc-dmg-", dir=output.parent))
-    volume = work / "volume"
     try:
-        stage = work / "stage"
-        stage.mkdir()
-        notary.command(["ditto", app, stage / "Parc.app"], folder / "copy.log")
-        (stage / "Applications").symlink_to("/Applications")
-        background = layout.stage_extras(stage, app / "Contents/Resources/Parc.icns")
-        notary.command(["tiffutil", "-cathidpicheck", *(layout.ART / name for name in layout.ARTWORK),
-                        "-out", background], folder / "background.log")
-        layout.hide(background.parent)
-        writable = work / "layout.dmg"
-        notary.command(["hdiutil", "create", "-volname", layout.VOLUME, "-srcfolder", stage,
-                        "-format", "UDRW", "-fs", "HFS+", writable], folder / "create.log")
-        volume.mkdir()
-        notary.command(["hdiutil", "attach", writable, "-nobrowse", "-noautoopen", "-owners", "off",
-                        "-mountpoint", volume], folder / "layout-attach.log")
+        image = work / output.name
         try:
-            layout.write(volume)
-            notary.command(["xattr", "-wx", "com.apple.FinderInfo", layout.CUSTOM_ICON.hex(), volume],
-                           folder / "volume-icon.log")
-            verify_layout(volume, folder)
+            layout.build(app, image, folder / "dmgbuild.log")
+        except Exception as error:
+            raise Refusal("dmgbuild could not build the install window: " + str(error)) from error
         except BaseException:
-            with contextlib.suppress(Refusal):
-                detach(volume, folder / "layout-detach.log")
+            release_images(work, folder)
             raise
-        detach(volume, folder / "layout-detach.log")
-        compressed = work / output.name
-        notary.command(["hdiutil", "convert", writable, "-format", "UDZO", "-o", compressed], folder / "convert.log")
-        os.link(compressed, output)
+        os.link(image, output)
     finally:
-        if not os.path.ismount(volume):
-            shutil.rmtree(work, ignore_errors=True)
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def verify_dmg(dmg, report, folder, *, notarized=True, layout_expected=True):
