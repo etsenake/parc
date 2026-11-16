@@ -60,7 +60,7 @@ the previous one is showing, brings the next on that idle hand-off only while th
 window is in front, and puts back one no window could show. Binding changes dismiss
 only cards showing a shortcut. VoiceOver announces label/subtitle; a clickable
 card, Share and Retry are separate named buttons that carry the actual captured
-action.
+action, and each shows the pointing hand.
 
 ## Keyboard
 

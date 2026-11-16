@@ -95,7 +95,15 @@ final class PointingHandColorWell: NSColorWell {
 }
 
 extension View {
-    func pointingHandCursor() -> some View { background(PointingHandCursorArea()) }
+    func pointingHandCursor() -> some View { modifier(PointingHandCursor()) }
+}
+
+struct PointingHandCursor: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+    func body(content: Content) -> some View {
+        let marked = content.background(PointingHandCursorArea())
+        if #available(macOS 15, *) { marked.pointerStyle(isEnabled ? .link : nil) } else { marked }
+    }
 }
 
 private struct PointingHandCursorArea: NSViewRepresentable {

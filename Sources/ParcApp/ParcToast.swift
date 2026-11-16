@@ -416,7 +416,7 @@ struct ParcToastCard: View {
     private struct TapModifier: ViewModifier {
         let tap: (() -> Void)?
         @ViewBuilder func body(content: Content) -> some View {
-            if let tap { content.contentShape(Rectangle()).onTapGesture(perform: tap) } else { content }
+            if let tap { content.contentShape(Rectangle()).pointingHandCursor().onTapGesture(perform: tap) } else { content }
         }
     }
     private struct AccessibilityModifier: ViewModifier {

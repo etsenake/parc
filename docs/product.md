@@ -80,6 +80,9 @@ to read more. Subsystem guides own the details.
 - Library → Archive previews single web pages only. Notes, Easels and splits are
   restored rather than previewed, and no close-time page picture is saved. See
   [archive previews](archive-preview.md#product-decisions).
+- Every button and clickable control shows the pointing hand; tabs, menu rows,
+  the bookmark picker's list and click-to-dismiss backdrops keep the arrow. See
+  [the pointing-hand check](../tests/PointingHand/README.md).
 
 ## Scope boundaries
 
