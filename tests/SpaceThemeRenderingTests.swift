@@ -550,7 +550,13 @@ struct SpaceThemeRenderingTests {
         theme.intensity = 1
         config = ThemeGradientUniforms(theme: theme, backgroundIsDark: true, pointSize: size)
         check(near(config.parameters.x, 0.75) && near(config.underlay.w, 0.175) && config.underlay.x == 0,
-              "dark native backing uses capped black underlay independently of text")
+              "a dark Space whose text already reads keeps the capped black underlay on dark backing")
+        let midTone = SpaceTheme(primaryColor: ThemeColor(hex: "6B5CDB")!, colorCount: 2, intensity: 0.5)
+        let midConfig = ThemeGradientUniforms(theme: midTone, backgroundIsDark: true, pointSize: size)
+        let midReading = ThemeRenderMath.chromeReading(theme: midTone, backdropIsDark: true)!
+        check(midConfig.underlay == midReading.underlay && midConfig.underlay.x == 0
+              && midConfig.underlay.w > ThemeRenderMath.underlay(alpha: midConfig.parameters.x, isDark: true).w,
+              "a mid-tone Space on dark glass draws the deeper underlay its sidebar text was judged over")
         for count in 1...3 {
             theme.colorCount = count
             config = ThemeGradientUniforms(theme: theme, backgroundIsDark: false, pointSize: size)

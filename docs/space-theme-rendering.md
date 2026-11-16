@@ -21,17 +21,23 @@ resolves to: the forced side, or the window's when automatic, colored or not.
 Forced text therefore never sits over a contrasting material; see
 [sidebar motion](sidebar-motion.md#floating-surface).
 
-A colored Automatic Space picks its text side from what actually lies behind the
-text. `ThemeRenderMath.chromeBackgrounds` samples the color layer where the
-sidebar sits on the gradient, with its underlay, over the material's own color
-and over contrasting content showing through the material. The palette takes the
-side where white or black text would read better there, then moves the text and
-accent colors toward white or black until they reach 4.5:1, or as far as they
-go. Forced Spaces keep their side and get the same nudge only where they fall
-short. Only the text and accent change; every other role keeps its side's color,
-and colorless Spaces keep the window's appearance and system colors. Over bright
-content, such as a white page or desktop, a dark-mode blur is itself mid-gray,
-which limits contrast for every Space.
+A colored Space picks its text side from what actually lies behind the text.
+`ThemeRenderMath.chromeReading` samples the color layer where the sidebar sits
+on the gradient, with its underlay, over the material's own color and over
+contrasting content showing through the material, such as a white page under
+the floating sidebar, where a dark-mode blur is itself mid-gray. Text and accent
+colors move toward white or black until they reach 4.5:1. Where even white or
+black falls short, the underlay beneath the color layer deepens just enough, up
+to half opacity, the light glass's usual ceiling. It keeps the glass's tone, so
+dark glass only darkens and light glass only lightens, and an underlay that works
+against the text only thins out. The Space's color stays on top at its own
+strength, and the canvas draws the same underlay the text was judged over.
+Automatic keeps the side where white or black reads better before any deepening,
+switching only when the other side alone can reach 4.5:1, and takes whichever
+gets closer when neither can; forced Spaces keep theirs. A few strong mid-tone gradients, mostly three-color ones at high
+intensity, stay a little short with the underlay at its deepest. Every other role
+keeps its side's color, and colorless Spaces keep the window's appearance and
+system colors.
 
 Private-window surfaces use a static opaque incognito background and BrandBlue
 palette, with no material/canvas. Empty/invalid themes hide the canvas and retain
@@ -107,6 +113,7 @@ material ownership, no-op publication, invalid themes, gradient/texture uniforms
 alpha readback and spring interruption. Theme input/appearance/Undo and website-
 palette components cover their shared boundaries. The appearance check also
 verifies text and accent contrast for Automatic and forced Spaces across colors,
-intensities and both appearances, and the docked material rule. Sidebar paging
+intensities and both appearances, that the underlay deepens only as far as the
+text needs and keeps its tone, and the docked material rule. Sidebar paging
 and floating-surface components check pair/progress continuity, a swipe's color
 staying within its two Spaces, and material layering.

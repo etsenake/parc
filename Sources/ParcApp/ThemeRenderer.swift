@@ -38,20 +38,12 @@ struct ThemeChromePalette: Equatable {
     init(theme: SpaceTheme, appearance: NSAppearance) {
         let systemDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let backdropDark = theme.appearance == .automatic ? systemDark : theme.appearance == .dark
-        let backgrounds = ThemeRenderMath.chromeBackgrounds(theme: theme, backdropIsDark: backdropDark)
-        let dark: Bool
-        switch theme.appearance {
-        case .light: dark = false
-        case .dark: dark = true
-        case .automatic:
-            dark = backgrounds.isEmpty ? systemDark
-                : ThemeRenderMath.worstContrast(SIMD4(1, 1, 1, 1), over: backgrounds)
-                    > ThemeRenderMath.worstContrast(SIMD4(0, 0, 0, 1), over: backgrounds)
-        }
+        let reading = ThemeRenderMath.chromeReading(theme: theme, backdropIsDark: backdropDark)
+        let dark = reading?.isDark ?? backdropDark
         self.init(theme: theme, isDark: dark)
-        if !backgrounds.isEmpty {
-            title = ThemeRenderMath.readable(title, isDark: dark, over: backgrounds, target: Self.textContrast)
-            maxContrastColor = ThemeRenderMath.readable(maxContrastColor, isDark: dark, over: backgrounds, target: Self.textContrast)
+        if let reading {
+            title = ThemeRenderMath.readable(title, isDark: dark, over: reading.backgrounds, target: Self.textContrast)
+            maxContrastColor = ThemeRenderMath.readable(maxContrastColor, isDark: dark, over: reading.backgrounds, target: Self.textContrast)
         }
         if theme.appearance == .automatic && (!theme.isValid || theme.primaryColor == nil) {
             inheritedContentAppearance = appearance
@@ -264,12 +256,51 @@ enum ThemeRenderMath {
         SIMD4(isDark ? SIMD3<Float>.zero : SIMD3<Float>(repeating: 1), min(alpha, 0.5) * (isDark ? 0.35 : 1))
     }
 
+    static let readableUnderlayLimit: Float = 0.5
+
+    struct ChromeReading {
+        let isDark: Bool
+        let underlay: SIMD4<Float>
+        let backgrounds: [SIMD4<Float>]
+        let reachesTarget: Bool
+        let shift: Float
+        let baseContrast: Double
+        let contrast: Double
+    }
+
     static func chromeBackgrounds(theme: SpaceTheme, backdropIsDark: Bool) -> [SIMD4<Float>] {
+        chromeReading(theme: theme, backdropIsDark: backdropIsDark)?.backgrounds ?? []
+    }
+
+    static func chromeReading(theme: SpaceTheme, backdropIsDark: Bool) -> ChromeReading? {
+        let layers = chromeLayers(theme)
+        guard !layers.isEmpty else { return nil }
+        let sides = theme.appearance == .automatic ? [false, true] : [theme.appearance == .dark]
+        return sides.map { sideReading(layers, alpha: layerAlpha(theme), isDark: $0, backdropIsDark: backdropIsDark) }.min { a, b in
+            if a.reachesTarget != b.reachesTarget { return a.reachesTarget }
+            return a.reachesTarget ? a.baseContrast > b.baseContrast : a.contrast > b.contrast
+        }
+    }
+
+    static func sideReading(theme: SpaceTheme, backdropIsDark: Bool, isDark: Bool) -> ChromeReading? {
+        let layers = chromeLayers(theme)
+        return layers.isEmpty ? nil : sideReading(layers, alpha: layerAlpha(theme), isDark: isDark, backdropIsDark: backdropIsDark)
+    }
+
+    static func readableUnderlay(base: SIMD4<Float>, backdropIsDark: Bool, isDark: Bool, shift: Float) -> SIMD4<Float> {
+        let alpha = backdropIsDark == isDark ? max(base.w, min(readableUnderlayLimit, base.w + shift)) : max(0, base.w - shift)
+        return SIMD4(base.x, base.y, base.z, alpha)
+    }
+
+    static func chromeBackgrounds(layers: [SIMD4<Float>], backdropIsDark: Bool, underlay scrim: SIMD4<Float>) -> [SIMD4<Float>] {
+        let backdrops = [backdropIsDark ? darkMaterial : lightMaterial, materialOverContrastingContent].map { over(scrim, $0) }
+        return backdrops.flatMap { backdrop in layers.map { over($0, backdrop) } }
+    }
+
+    static func chromeLayers(_ theme: SpaceTheme) -> [SIMD4<Float>] {
         let colors = theme.colors.map(srgb)
         guard theme.isValid, !colors.isEmpty else { return [] }
         let alpha = layerAlpha(theme)
-        let scrim = underlay(alpha: alpha, isDark: backdropIsDark)
-        let backdrops = [backdropIsDark ? darkMaterial : lightMaterial, materialOverContrastingContent].map { over(scrim, $0) }
         let bases = (colors.count > 1 ? [0, 0.25, 0.5] : [0]).map { linearOklabMix(colors[0], colors[min(1, colors.count - 1)], $0) }
         func layer(_ linear: SIMD4<Float>) -> SIMD4<Float> { SIMD4(encoded(linear.x), encoded(linear.y), encoded(linear.z), linear.w) }
         var layers = bases.map { layer(SIMD4($0, alpha)) }
@@ -277,7 +308,30 @@ enum ThemeRenderMath {
             let overlay = SIMD4(linearized(colors[2].x), linearized(colors[2].y), linearized(colors[2].z), alpha)
             layers += bases.map { layer(over(overlay, SIMD4($0, alpha))) }
         }
-        return backdrops.flatMap { backdrop in layers.map { over($0, backdrop) } }
+        return layers
+    }
+
+    private static func sideReading(_ layers: [SIMD4<Float>], alpha: Float, isDark: Bool, backdropIsDark: Bool) -> ChromeReading {
+        let base = underlay(alpha: alpha, isDark: backdropIsDark), target = ThemeChromePalette.textContrast
+        let text = SIMD4<Float>(SIMD3(repeating: isDark ? 1 : 0), 1)
+        func reading(_ shift: Float, baseContrast: Double? = nil) -> ChromeReading {
+            let scrim = readableUnderlay(base: base, backdropIsDark: backdropIsDark, isDark: isDark, shift: shift)
+            let backgrounds = chromeBackgrounds(layers: layers, backdropIsDark: backdropIsDark, underlay: scrim)
+            let contrast = worstContrast(text, over: backgrounds)
+            return ChromeReading(isDark: isDark, underlay: scrim, backgrounds: backgrounds, reachesTarget: contrast >= target,
+                                 shift: shift, baseContrast: baseContrast ?? contrast, contrast: contrast)
+        }
+        let start = reading(0)
+        guard !start.reachesTarget else { return start }
+        let farthest = backdropIsDark == isDark ? max(0, readableUnderlayLimit - base.w) : base.w
+        var best = reading(farthest, baseContrast: start.contrast)
+        guard best.reachesTarget else { return best }
+        var low: Float = 0, high = farthest
+        for _ in 0..<12 {
+            let middle = (low + high) / 2, candidate = reading(middle, baseContrast: start.contrast)
+            if candidate.reachesTarget { high = middle; best = candidate } else { low = middle }
+        }
+        return best
     }
 
     static func linearized(_ v: Float) -> Float { abs(v) > 0.04045 ? (v < 0 ? -1 : 1) * pow((abs(v) + 0.055) / 1.055, 2.4) : v / 12.92 }
@@ -892,7 +946,12 @@ struct ThemeGradientUniforms {
     var underlay = SIMD4<Float>.zero
     var parameters = SIMD4<Float>.zero
 
-    init(theme: SpaceTheme, backgroundIsDark: Bool, pointSize: NSSize) {
+    static func underlay(theme: SpaceTheme, backgroundIsDark: Bool) -> SIMD4<Float> {
+        ThemeRenderMath.chromeReading(theme: theme, backdropIsDark: backgroundIsDark)?.underlay
+            ?? ThemeRenderMath.underlay(alpha: ThemeRenderMath.layerAlpha(theme), isDark: backgroundIsDark)
+    }
+
+    init(theme: SpaceTheme, backgroundIsDark: Bool, pointSize: NSSize, underlay known: SIMD4<Float>? = nil) {
         let colors = theme.colors.map(ThemeRenderMath.srgb)
         guard !colors.isEmpty, pointSize.width > 0, pointSize.height > 0 else { return }
         let ratio = Float(pointSize.width / pointSize.height)
@@ -905,7 +964,7 @@ struct ThemeGradientUniforms {
             overlay0 = SIMD4(colors[2].x, colors[2].y, colors[2].z, 0)
         }
         let alpha = ThemeRenderMath.layerAlpha(theme)
-        underlay = ThemeRenderMath.underlay(alpha: alpha, isDark: backgroundIsDark)
+        underlay = known ?? Self.underlay(theme: theme, backgroundIsDark: backgroundIsDark)
         parameters = SIMD4(alpha, Float(min(2, colors.count)), colors.count == 3 ? 2 : 0, 0)
     }
 }
@@ -939,6 +998,14 @@ private final class ThemeMetalRenderer {
     }()
     private var textures: [SpaceTheme.Texture: MTLTexture] = [:]
     private var missingTextures: Set<SpaceTheme.Texture> = []
+    private var underlays: [(theme: SpaceTheme, isDark: Bool, value: SIMD4<Float>)] = []
+
+    private func underlay(_ theme: SpaceTheme, isDark: Bool) -> SIMD4<Float> {
+        if let known = underlays.first(where: { $0.isDark == isDark && $0.theme == theme }) { return known.value }
+        let value = ThemeGradientUniforms.underlay(theme: theme, backgroundIsDark: isDark)
+        underlays = [(theme, isDark, value)] + underlays.prefix(3)
+        return value
+    }
 
     init() throws {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
@@ -1019,8 +1086,10 @@ private final class ThemeMetalRenderer {
             command.present(drawable); command.commit()
             return
         }
-        var uniforms = ThemeGradientUniforms(theme: theme, backgroundIsDark: isDark, pointSize: pointSize)
-        let nextUniforms = next.map { ThemeGradientUniforms(theme: $0.theme, backgroundIsDark: $0.isDark, pointSize: pointSize) }
+        var uniforms = ThemeGradientUniforms(theme: theme, backgroundIsDark: isDark, pointSize: pointSize,
+                                             underlay: underlay(theme, isDark: isDark))
+        let nextUniforms = next.map { ThemeGradientUniforms(theme: $0.theme, backgroundIsDark: $0.isDark, pointSize: pointSize,
+                                                            underlay: underlay($0.theme, isDark: $0.isDark)) }
         var line = theme.rendersColor ? uniforms : nextUniforms ?? uniforms
         var mixing = SIMD4<Float>(progress, theme.rendersColor ? 1 : 0, incoming ? 1 : 0, 0)
         let pass = MTLRenderPassDescriptor()

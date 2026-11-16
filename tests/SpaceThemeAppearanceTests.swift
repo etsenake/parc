@@ -139,6 +139,37 @@ struct SpaceThemeAppearanceTests {
                && palette.shadedDark == plain.shadedDark && palette.contentAppearance?.name == plain.contentAppearance?.name,
                "\(label): only the text and accent change; every other role keeps the side's own color")
     }
+    @MainActor static func checkUnderlay(_ theme: SpaceTheme, backdropIsDark: Bool, palette: ThemeChromePalette, _ label: String) {
+        let reading = ThemeRenderMath.chromeReading(theme: theme, backdropIsDark: backdropIsDark)!
+        let base = ThemeRenderMath.underlay(alpha: ThemeRenderMath.layerAlpha(theme), isDark: backdropIsDark)
+        let layers = ThemeRenderMath.chromeLayers(theme), target = ThemeChromePalette.textContrast
+        let text = SIMD4<Float>(SIMD3(repeating: reading.isDark ? 1 : 0), 1)
+        func contrast(_ underlay: SIMD4<Float>) -> Double {
+            ThemeRenderMath.worstContrast(text, over: ThemeRenderMath.chromeBackgrounds(layers: layers, backdropIsDark: backdropIsDark, underlay: underlay))
+        }
+        expect(reading.isDark == palette.isDark && reading.backgrounds == ThemeRenderMath.chromeBackgrounds(theme: theme, backdropIsDark: backdropIsDark),
+               "\(label): the text is judged over the very underlay the canvas draws")
+        expect(reading.underlay.w <= ThemeRenderMath.readableUnderlayLimit + 1e-6, "\(label): the underlay never goes past half opacity")
+        expect(reading.underlay.x == base.x && reading.underlay.y == base.y && reading.underlay.z == base.z,
+               "\(label): the underlay keeps the glass's own tone, so dark glass never turns milky and light glass never turns smoky")
+        if contrast(base) >= target {
+            expect(reading.underlay == base, "\(label): glass whose text already reads keeps its underlay")
+            return
+        }
+        if reading.isDark == backdropIsDark {
+            expect(reading.underlay.w >= base.w, "\(label): a helping underlay only ever deepens")
+        } else {
+            expect(reading.underlay.w <= base.w, "\(label): an underlay working against the text only ever thins")
+        }
+        if reading.reachesTarget {
+            let lighter = ThemeRenderMath.readableUnderlay(base: base, backdropIsDark: backdropIsDark, isDark: reading.isDark,
+                                                          shift: max(0, reading.shift - 0.01))
+            expect(contrast(reading.underlay) >= target && contrast(lighter) < target, "\(label): the underlay deepens just enough to reach 4.5:1")
+        } else {
+            let farthest = ThemeRenderMath.readableUnderlay(base: base, backdropIsDark: backdropIsDark, isDark: reading.isDark, shift: 2)
+            expect(reading.underlay == farthest, "\(label): text that cannot reach 4.5:1 gets the deepest underlay allowed")
+        }
+    }
     @MainActor static func readableAutomaticText() {
         let light = NSAppearance(named: .aqua)!, dark = NSAppearance(named: .darkAqua)!
         func worst(_ color: NSColor, _ backgrounds: [SIMD4<Float>]) -> Double {
@@ -157,10 +188,11 @@ struct SpaceThemeAppearanceTests {
                                "\(label): the sidebar's color layer is sampled across its gradient over both backdrops")
                         let palette = ThemeChromePalette(theme: theme, appearance: appearance)
                         let plain = ThemeChromePalette(theme: theme, isDark: palette.isDark)
-                        let otherBest = worst(palette.isDark ? .black : .white, backgrounds)
-                        expect(worst(palette.title, backgrounds) >= min(ThemeChromePalette.textContrast, otherBest) - 1e-9,
+                        let other = ThemeRenderMath.sideReading(theme: theme, backdropIsDark: systemDark, isDark: !palette.isDark)!
+                        expect(worst(palette.title, backgrounds) >= min(ThemeChromePalette.textContrast, other.contrast) - 1e-9,
                                "\(label): Automatic's text reads at least as well as the other side's best could")
                         checkPushed(palette, plain, backgrounds, label)
+                        checkUnderlay(theme, backdropIsDark: systemDark, palette: palette, label)
                         expect(ThemeSurfaceStyle(theme: theme, appearance: appearance).material.rawValue == (systemDark ? 2 : 1),
                                "\(label): the docked material follows the Mac, like the floating blur")
                         for forced in [SpaceTheme.Appearance.light, .dark] {
@@ -172,6 +204,7 @@ struct SpaceThemeAppearanceTests {
                                    && ThemeSurfaceStyle(theme: pinned, appearance: appearance).material.rawValue == (forced == .dark ? 2 : 1),
                                    "\(label): a Space forced \(forced) keeps its side and material")
                             checkPushed(forcedPalette, forcedPlain, pinnedBackgrounds, "\(label), forced \(forced)")
+                            checkUnderlay(pinned, backdropIsDark: forced == .dark, palette: forcedPalette, "\(label), forced \(forced)")
                         }
                     }
                 }
@@ -180,7 +213,7 @@ struct SpaceThemeAppearanceTests {
         let single = SpaceTheme(primaryColor: ThemeColor(hex: "6B5CDB")!, colorCount: 1, intensity: 0.5)
         let alpha = ThemeRenderMath.layerAlpha(single), color = ThemeRenderMath.srgb(single.primaryColor!)
         let overContent = ThemeRenderMath.over(SIMD4(color.x, color.y, color.z, alpha),
-                                               ThemeRenderMath.over(ThemeRenderMath.underlay(alpha: alpha, isDark: true),
+                                               ThemeRenderMath.over(ThemeRenderMath.chromeReading(theme: single, backdropIsDark: true)!.underlay,
                                                                     ThemeRenderMath.materialOverContrastingContent))
         let sampled = ThemeRenderMath.chromeBackgrounds(theme: single, backdropIsDark: true)
         expect(sampled.count == 2 && abs(sampled[1].x - overContent.x) < 0.002 && abs(sampled[1].y - overContent.y) < 0.002
@@ -194,7 +227,8 @@ struct SpaceThemeAppearanceTests {
         let stacked = tripleAlpha + tripleAlpha * (1 - tripleAlpha)
         let mixed = (third * tripleAlpha + first * tripleAlpha * (1 - tripleAlpha)) / stacked
         let bottom = ThemeRenderMath.over(SIMD4(encode(mixed.x), encode(mixed.y), encode(mixed.z), stacked),
-                                          ThemeRenderMath.over(ThemeRenderMath.underlay(alpha: tripleAlpha, isDark: false), ThemeRenderMath.lightMaterial))
+                                          ThemeRenderMath.over(ThemeRenderMath.chromeReading(theme: triple, backdropIsDark: false)!.underlay,
+                                                               ThemeRenderMath.lightMaterial))
         let tripleSamples = ThemeRenderMath.chromeBackgrounds(theme: triple, backdropIsDark: false)
         expect(tripleSamples.count == 12 && abs(tripleSamples[3].x - bottom.x) < 0.002 && abs(tripleSamples[3].y - bottom.y) < 0.002
                && abs(tripleSamples[3].z - bottom.z) < 0.002,
@@ -210,6 +244,28 @@ struct SpaceThemeAppearanceTests {
         let purplePalette = ThemeChromePalette(theme: purple, appearance: light)
         expect(!purplePalette.isDark && worst(purplePalette.title, behind) >= ThemeChromePalette.textContrast,
                "the purple Automatic Space on a light Mac gets dark text that reads")
+        var shortBefore = 0, readsNow = 0
+        for hex in ["6B5CDB", "3A7BD5", "E91E63", "8E44AD", "16A085", "7F7F7F", "D35400"] {
+            for count in 1...2 {
+                for intensity in [0.25, 0.5, 0.75] {
+                    let theme = SpaceTheme(primaryColor: ThemeColor(hex: hex)!, colorCount: count, intensity: intensity)
+                    let layers = ThemeRenderMath.chromeLayers(theme)
+                    let oldBackgrounds = ThemeRenderMath.chromeBackgrounds(
+                        layers: layers, backdropIsDark: true, underlay: ThemeRenderMath.underlay(alpha: ThemeRenderMath.layerAlpha(theme), isDark: true))
+                    if max(worst(.white, oldBackgrounds), worst(.black, oldBackgrounds)) < ThemeChromePalette.textContrast { shortBefore += 1 }
+                    let palette = ThemeChromePalette(theme: theme, appearance: dark)
+                    let reading = ThemeRenderMath.chromeReading(theme: theme, backdropIsDark: true)!
+                    let deepest = ThemeRenderMath.readableUnderlay(base: ThemeRenderMath.underlay(alpha: ThemeRenderMath.layerAlpha(theme), isDark: true),
+                                                                   backdropIsDark: true, isDark: reading.isDark, shift: 2)
+                    let now = worst(palette.title, reading.backgrounds)
+                    if now >= ThemeChromePalette.textContrast { readsNow += 1 }
+                    expect(now >= ThemeChromePalette.textContrast || reading.underlay == deepest,
+                           "\(hex) ×\(count) at \(intensity): a mid-tone Space's sidebar text reaches 4.5:1 on dark glass or the underlay goes as far as it may")
+                }
+            }
+        }
+        expect(shortBefore >= 12, "control: the old light underlay left many mid-tone Spaces short of 4.5:1 on a dark Mac (\(shortBefore) of 42)")
+        expect(readsNow >= 36, "nearly every mid-tone Space reads at 4.5:1 on dark glass (\(readsNow) of 42)")
         let red = SpaceTheme(primaryColor: ThemeColor(red: 0.9, green: 0.15, blue: 0.2)!, colorCount: 2, intensity: 0.5)
         expect(ThemeChromePalette(theme: red, appearance: dark).isDark, "a red Automatic Space on a dark Mac gets light text")
         let colorless = ThemeChromePalette(theme: SpaceTheme(), appearance: dark)
