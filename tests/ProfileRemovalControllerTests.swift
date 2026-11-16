@@ -11,7 +11,8 @@ import Foundation
         do { try operation() } catch { assertions += 1; return }
         throw Failure(message: "Expected refusal before native dispatch")
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Parc-Profile-Controller-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: directory) }

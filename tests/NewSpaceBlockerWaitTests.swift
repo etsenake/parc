@@ -5,7 +5,8 @@ import Foundation
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
         precondition(value(), message); checks += 1
     }
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         typealias Wait = NewSpaceBlockerWait
         check(Wait.next(peek: .awaitingConfirmation, confirmationShown: true, attemptsLeft: 0) == .waitForConfirmation, "A Peek asking for confirmation keeps New Space waiting without using attempts")
         check(Wait.next(peek: .awaitingConfirmation, confirmationShown: false, attemptsLeft: 40) == .waitForConfirmation, "A fresh confirmation is waited on")

@@ -6,7 +6,8 @@ struct FavoriteMoveTests {
     static func check(_ value: @autoclosure () throws -> Bool, _ reason: String) throws {
         count += 1; if try !value() { throw NSError(domain: reason, code: count) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let profile = BrowserProfile(id: UUID(), name: "Original"), foreign = BrowserProfile(id: UUID(), name: "Other")
         let home = BrowserSpace(id: UUID(), name: "Home", symbol: "circle", color: "AABBCC", profileID: profile.id)
         let active = BrowserSpace(id: UUID(), name: "Active", symbol: "circle", color: "AABBCC", profileID: profile.id)

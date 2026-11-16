@@ -10,7 +10,8 @@ import AppKit
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) {
         count += 1; precondition(value(), message)
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         var asked: [String] = []
         func answer(_ route: String, _ value: Bool) -> Bool { asked.append(route); return value }
         func route(showsPage: Bool, page: Bool, window: Bool) -> TaskManagerRoute? {

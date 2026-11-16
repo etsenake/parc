@@ -1,7 +1,8 @@
 import Foundation
 
 @main struct ResultTextTests {
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         var count = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {
             count += 1; precondition(value(), message)

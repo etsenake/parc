@@ -43,7 +43,8 @@ struct FakeWindow {
         precondition(value, message)
     }
 
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         admission()
         holdResolution()
         liveRoundTrip()

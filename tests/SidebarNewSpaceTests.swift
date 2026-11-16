@@ -5,7 +5,8 @@ import Foundation
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
         precondition(value(), message); checks += 1
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         var state = BrowserState.initial()
         let source = state.spaces[0], profile = source.profileID
         let other = BrowserProfile(id: UUID(), name: "Other")

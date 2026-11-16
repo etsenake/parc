@@ -6,7 +6,8 @@ struct SidebarKeyboardCloseTests {
     static func check(_ value: @autoclosure () throws -> Bool, _ message: String) throws {
         count += 1; if try !value() { throw NSError(domain: message, code: 1) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-keyboard-close-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

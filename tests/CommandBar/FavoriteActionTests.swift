@@ -6,7 +6,8 @@ struct FavoriteActionTests {
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
         count += 1; precondition(value(), message)
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let profile = BrowserProfile(id: UUID(), name: "Original")
         let foreign = BrowserProfile(id: UUID(), name: "Other")
         let space = BrowserSpace(id: UUID(), name: "Origin", symbol: "circle", color: "ABCDEF", profileID: profile.id)

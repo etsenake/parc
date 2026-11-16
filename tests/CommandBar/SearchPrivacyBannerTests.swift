@@ -1,7 +1,8 @@
 import AppKit
 
 @main struct CommandBarSearchPrivacyBannerTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         var assertions = 0
         func check(_ condition: @autoclosure () -> Bool, _ message: String) {
             precondition(condition(), message); assertions += 1

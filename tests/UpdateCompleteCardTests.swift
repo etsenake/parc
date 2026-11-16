@@ -9,7 +9,8 @@ struct UpdateCompleteCardTests {
         assertions += 1
         if !condition() { throw Failure(message: message) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         let card = UpdateCompleteCard(frame: .zero)
         var actions = 0

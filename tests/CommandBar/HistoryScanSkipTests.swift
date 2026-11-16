@@ -8,7 +8,8 @@ struct HistoryScanSkipTests {
         precondition(condition(), message)
     }
 
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         typealias Skip = CommandBarHistoryScanSkip
 
         let idle = Skip.key(query: "", historyRevision: 3, excludedURL: "https://now.test",

@@ -5,7 +5,8 @@ import Foundation
 struct SidebarSpaceMoveTests {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ message: String) { count += 1; precondition(value(), message) }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         var state = BrowserState.initial()
         let source = state.spaces[0]
         let destination = BrowserSpace(id: UUID(), name: "Work", symbol: "circle", color: "112233", profileID: source.profileID)

@@ -39,7 +39,8 @@ struct NoteEditorChromeLayoutSkipTests {
         )
     }
 
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         let settled = fingerprint()
         expect(!NoteEditorChromeLayoutSkip.shouldSkip(previous: nil, next: settled),
                "First layoutDocument apply must run full chrome")

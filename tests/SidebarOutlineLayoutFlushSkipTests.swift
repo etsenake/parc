@@ -6,7 +6,8 @@ struct SidebarOutlineLayoutFlushSkipTests {
         precondition(condition(), message)
     }
 
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         expect(!SidebarOutlineLayoutFlushSkip.shouldFlush(
             frameChanged: false, needsLayout: false, subtreeNeedsLayout: false),
                "Identical outline frames with a clean subtree are a true no-op skip")

@@ -30,7 +30,8 @@ struct PeekPresentationSkipTests {
             crash: crash, favicon: favicon)
     }
 
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         typealias Skip = PeekPresentationSkip
 
         expect(Skip.shouldSkip(previous: nil, next: "a") == false, "First fingerprint never skips")

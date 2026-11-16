@@ -6,7 +6,8 @@ struct TypedCommandTests {
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
         count += 1; precondition(value(), message)
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         typealias Command = CommandBarTypedCommand
         let space = UUID()
         let titles: [(Command.Kind, String)] = [

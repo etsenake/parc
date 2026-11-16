@@ -6,7 +6,8 @@ struct FolderCopyTests {
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
         count += 1; precondition(value(), message)
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let profile = BrowserProfile(id: UUID(), name: "Profile")
         let space = BrowserSpace(id: UUID(), name: "Source", symbol: "circle", color: "000000", profileID: profile.id)
         let away = BrowserSpace(id: UUID(), name: "Destination", symbol: "circle", color: "000000", profileID: profile.id)

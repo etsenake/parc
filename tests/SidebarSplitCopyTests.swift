@@ -6,7 +6,8 @@ struct SidebarSplitCopyTests {
     static func check(_ value: @autoclosure () throws -> Bool, _ message: String) throws {
         count += 1; if try !value() { throw NSError(domain: message, code: 1) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-split-copy-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let profile = BrowserProfile(id: UUID(), name: "Original"), foreignProfile = BrowserProfile(id: UUID(), name: "Other")

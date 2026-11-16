@@ -2,7 +2,8 @@ import AppKit
 
 @main
 struct LinkRoutingTextEditingTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 28))
         var ended = false

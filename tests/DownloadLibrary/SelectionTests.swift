@@ -6,7 +6,8 @@ struct DownloadLibrarySelectionTests {
     static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
         assertions += 1; precondition(condition(), message)
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try BrowserStore(directory: directory)

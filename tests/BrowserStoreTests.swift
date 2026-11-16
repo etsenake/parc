@@ -3897,7 +3897,8 @@ struct BrowserStoreTests {
         print("PASS: \(assertions) BrowserStore assertions")
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         do { try run() }
         catch {
             FileHandle.standardError.write(Data("FAIL: \(error)\n".utf8))

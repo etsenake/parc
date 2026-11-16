@@ -14,7 +14,8 @@ struct FolderDocumentCloseTests {
         }
         return result
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-folder-documents-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let profile = BrowserProfile(id: UUID(), name: "Original")

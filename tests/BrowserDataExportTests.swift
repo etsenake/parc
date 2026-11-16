@@ -7,7 +7,8 @@ struct BrowserDataExportTests {
         assertions += 1
         precondition(value(), message)
     }
-    static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         let profile = BrowserProfile(id: UUID(), name: "Primary")
         let otherProfile = BrowserProfile(id: UUID(), name: "Other")
         let space = BrowserSpace(id: UUID(), name: "Work\r\nToday", symbol: "circle", color: "B9B5D4", profileID: profile.id)

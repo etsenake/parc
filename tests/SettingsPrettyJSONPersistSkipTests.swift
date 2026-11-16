@@ -8,7 +8,8 @@ struct SettingsPrettyJSONPersistSkipTests {
         precondition(condition(), message)
     }
 
-    static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         typealias Skip = SettingsPrettyJSONPersistSkip
 
         let first = Data("{\"version\":1}\n".utf8)

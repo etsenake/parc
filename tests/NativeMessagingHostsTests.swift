@@ -8,7 +8,8 @@ struct NativeMessagingHostsTests {
         precondition(condition(), message)
     }
 
-    static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         let files = FileManager.default
         let root = files.temporaryDirectory.appendingPathComponent("parc-nmh-\(UUID().uuidString)", isDirectory: true)
         defer { try? files.removeItem(at: root) }

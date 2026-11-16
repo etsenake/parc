@@ -8,7 +8,8 @@ struct ClosedItemsTests {
         assertions += 1
         if try !value() { throw NSError(domain: message, code: assertions) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("parc-reopen-component-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = try BrowserStore(directory: dir, now: { Date(timeIntervalSince1970: 1_800_000_000) })

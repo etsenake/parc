@@ -6,7 +6,8 @@ struct ReconcileInputsTests {
         precondition(condition(), message)
     }
 
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         var closedBuilds = 0
         CommandBarReconcileInputs.withPresentedBar(Optional<Int>.none) { _ in
             closedBuilds += 1

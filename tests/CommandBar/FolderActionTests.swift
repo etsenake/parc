@@ -6,7 +6,8 @@ struct FolderActionTests {
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) {
         assertions += 1; precondition(value(), message)
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let profile = BrowserProfile(id: UUID(), name: "Personal")
         let foreign = BrowserProfile(id: UUID(), name: "Work")
         let first = BrowserSpace(id: UUID(), name: "Home", symbol: "house", color: "ABCDEF", profileID: profile.id)

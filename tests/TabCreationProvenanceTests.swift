@@ -2,7 +2,8 @@ import Foundation
 
 @main
 struct TabCreationProvenanceTests {
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         var count = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {
             count += 1; precondition(value(), message)

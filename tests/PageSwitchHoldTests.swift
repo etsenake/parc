@@ -12,7 +12,8 @@ struct PageSwitchHoldTests {
         panes.count == expected.count && zip(panes, expected).allSatisfy { $0 === $1 }
     }
 
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         let a = Pane(), b = Pane(), c = Pane(), d = Pane(), e = Pane(), note = Pane()
 
         var hold = PageSwitchHold<Pane>()

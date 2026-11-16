@@ -6,7 +6,8 @@ struct SpaceActionTests {
     static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
         assertions += 1; precondition(condition(), message)
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let personal = BrowserProfile(id: UUID(), name: "Personal")
         let work = BrowserProfile(id: UUID(), name: "Work")
         let profiles = [personal, work]

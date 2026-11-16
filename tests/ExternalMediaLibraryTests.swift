@@ -7,7 +7,8 @@ import ImageIO
 import UniformTypeIdentifiers
 
 @main struct ExternalMediaLibraryTests {
-    @MainActor static func main() async throws {
+    @MainActor static func main() async { await exitOnFailure(runChecks) }
+    @MainActor static func runChecks() async throws {
         let order = ["file:A", "capture:B", "file:C", "capture:D"]
         for index in order.indices {
             let navigation = MediaLibraryNavigation(orderedIDs: order, selectedID: order[index])

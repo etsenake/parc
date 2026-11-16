@@ -6,7 +6,8 @@ struct ShortcutTooltipDiscoverySkipTests {
         precondition(condition(), message)
     }
 
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         typealias Skip = ShortcutTooltipDiscoverySkip
 
         expect(Skip.shouldSkip(previous: nil, next: "a") == false,

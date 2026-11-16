@@ -10,7 +10,8 @@ import AppKit
             return NSTextField(labelWithString: titles[row])
         }
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         var count = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {

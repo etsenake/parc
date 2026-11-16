@@ -12,7 +12,8 @@ struct AutoArchivePresentationTests {
         do { try operation() } catch { assertions += 1; return }
         throw Failure(message: "Expected rejection")
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Parc-AutoArchive-Presentation-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         var now = Date(timeIntervalSince1970: 1_800_000_000)

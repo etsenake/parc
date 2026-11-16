@@ -1,7 +1,8 @@
 import AppKit
 
 @main @MainActor struct CompactLayoutTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         var count = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {

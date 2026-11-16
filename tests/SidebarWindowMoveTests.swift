@@ -6,7 +6,8 @@ struct SidebarWindowMoveTests {
     static func check(_ value: @autoclosure () throws -> Bool, _ message: String) throws {
         count += 1; if try !value() { throw NSError(domain: message, code: 1) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-window-move-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }

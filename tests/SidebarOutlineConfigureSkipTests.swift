@@ -34,7 +34,8 @@ struct SidebarOutlineConfigureSkipTests {
         )
     }
 
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         typealias Skip = SidebarOutlineConfigureSkip
         let objectA = NSObject(), objectB = NSObject()
         let contentA = ObjectIdentifier(objectA), contentB = ObjectIdentifier(objectB)

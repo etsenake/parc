@@ -330,22 +330,18 @@ import Foundation
         }
     }
 
-    static func main() {
-        do {
-            try testRetentionKeepsRecentAndDailyCopies()
-            try testBackupsFollowCadenceAndSkipDownloadsAndHistory()
-            try testOnlyValidStatesAreBackedUp()
-            try testRescueRestoresNewestGoodBackupAndKeepsUnreadableFile()
-            try testNoBackupLeavesTheFileAlone()
-            try testClearingHistoryPrunesBackups()
-            try testAddressRulesMatchWholeAddresses()
-            try testClearArchivePrunesBackups()
-            try testRemovingASpacesDataPrunesBackups()
-            try testPrivateAndPlainStoresNeverWriteBackups()
-            print("SessionBackupTests passed (\(assertions) assertions)")
-        } catch {
-            FileHandle.standardError.write(Data("FAIL: \(error)\n".utf8))
-            exit(1)
-        }
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
+        try testRetentionKeepsRecentAndDailyCopies()
+        try testBackupsFollowCadenceAndSkipDownloadsAndHistory()
+        try testOnlyValidStatesAreBackedUp()
+        try testRescueRestoresNewestGoodBackupAndKeepsUnreadableFile()
+        try testNoBackupLeavesTheFileAlone()
+        try testClearingHistoryPrunesBackups()
+        try testAddressRulesMatchWholeAddresses()
+        try testClearArchivePrunesBackups()
+        try testRemovingASpacesDataPrunesBackups()
+        try testPrivateAndPlainStoresNeverWriteBackups()
+        print("SessionBackupTests passed (\(assertions) assertions)")
     }
 }

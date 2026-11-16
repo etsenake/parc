@@ -54,7 +54,8 @@ struct BrowserTabLookupTests {
         }
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let profile = BrowserProfile(id: UUID(), name: "Lookup")
         let space = BrowserSpace(id: UUID(), name: "Lookup", symbol: "circle", color: "ABCDEF", profileID: profile.id)
         var random = Generator(state: 0x5EED)

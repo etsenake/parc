@@ -16,7 +16,8 @@ struct PaneContentHostedLayoutFlushTests {
         precondition(condition(), message)
     }
 
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         expect(!PaneContentHostedLayoutFlush.shouldLayoutContent(
             frameChanged: false, needsLayout: false),
                "Identical content frame with clean content skips content.layout")

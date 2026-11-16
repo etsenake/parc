@@ -3,7 +3,9 @@ import Foundation
 @main
 struct LinkRoutingStoreTests {
     @MainActor
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    @MainActor
+    static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }

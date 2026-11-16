@@ -12,7 +12,8 @@ struct ProfileRemovalTests {
         do { try operation() } catch { assertions += 1; return }
         throw Failure(message: "Expected rejection")
     }
-    static func main() async throws {
+    static func main() async { await exitOnFailure(runChecks) }
+    static func runChecks() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Parc-Profile-Removal-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: directory) }

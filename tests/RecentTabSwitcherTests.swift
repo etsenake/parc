@@ -2,7 +2,8 @@ import Foundation
 
 @main
 struct RecentTabSwitcherTests {
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         var assertions = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {
             assertions += 1; precondition(value(), message)

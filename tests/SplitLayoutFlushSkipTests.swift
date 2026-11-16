@@ -6,7 +6,8 @@ struct SplitLayoutFlushSkipTests {
         precondition(condition(), message)
     }
 
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         expect(!SplitLayoutFlushSkip.shouldFlush(
             frameChanged: false, needsLayout: false, subtreeNeedsLayout: false),
                "Identical frames with a clean subtree are a true no-op skip")

@@ -57,7 +57,8 @@ struct LayoutChromeGeometrySkipTests {
         )
     }
 
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         let settled = fingerprint()
         expect(!LayoutChromeGeometrySkip.shouldReturnEarly(
             previous: nil, next: settled, dirtyHostedLayout: false),

@@ -5,7 +5,8 @@ import Foundation
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
         precondition(value(), message); checks += 1
     }
-    static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         typealias Choice = NewSpaceWindowChoice<Int>
         func w(_ id: Int, privately: Bool = false, popup: Bool = false, minimized: Bool = false, creating: Bool = false)
             -> (id: Int, isPrivate: Bool, isPopup: Bool, isMinimized: Bool, isCreating: Bool) {

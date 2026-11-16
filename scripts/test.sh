@@ -25,7 +25,7 @@ step() {
 swift_test() {
   local executable="$repo_root/build/tests/$1"
   shift
-  xcrun swiftc "$@" -o "$executable"
+  xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" "$@" -o "$executable"
   "$executable"
 }
 core_sources=(
@@ -64,7 +64,7 @@ compile_and_run() {
   local executable="$repo_root/build/tests/$1"
   local test_source="$repo_root/tests/$2.swift"
   shift 2
-  xcrun swiftc -parse-as-library "${core_sources[@]}" "$test_source" "$@" -o "$executable"
+  xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library "${core_sources[@]}" "$test_source" "$@" -o "$executable"
   "$executable"
 }
 step compile_and_run favorite-moves FavoriteMoveTests \
@@ -379,7 +379,7 @@ step compile_and_run sidebar-window-move SidebarWindowMoveTests \
 step swift_test dock-reopen -warnings-as-errors -parse-as-library "$repo_root/Sources/ParcCore/DockReopen.swift" \
   "$repo_root/tests/DockReopenTests.swift"
 step swift_test tab-peek -warnings-as-errors -parse-as-library "$repo_root/Sources/ParcCore/TabPeek.swift" \
-  "$repo_root/tests/Support/TestFailure.swift" "$repo_root/tests/TabPeekTests.swift"
+  "$repo_root/tests/TabPeekTests.swift"
 
 wait
 shopt -s nullglob
