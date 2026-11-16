@@ -17,11 +17,9 @@ struct SidebarPinnedHeaderContent: Equatable {
 }
 
 enum SidebarPinnedHeaderLayout {
-    static let height = SidebarChromeLayout.pinnedSectionHeaderHeight
+    static let height = SidebarChromeLayout.tablistVisibleRowHeight
     static let labelInset: CGFloat = 10
     static let labelFontSize: CGFloat = 11
-    static let plateInset: CGFloat = 2
-    static let plateRadius: CGFloat = 8
     static let summarySpacing: CGFloat = 6
     static let chipSide: CGFloat = 16
     static let chipRadius: CGFloat = 4.5
@@ -52,10 +50,6 @@ enum SidebarPinnedHeaderLayout {
             CGPoint(x: center.x + cos(angle) * point.x - sin(angle) * point.y,
                     y: center.y + sin(angle) * point.x + cos(angle) * point.y)
         }
-    }
-
-    static func plateFrame(width: CGFloat, height: CGFloat = height) -> CGRect {
-        CGRect(x: 0, y: plateInset, width: max(0, width), height: max(0, height - plateInset * 2))
     }
 
     struct Summary: Equatable {
@@ -131,6 +125,8 @@ final class SidebarPinnedHeaderView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
+        layer?.cornerRadius = SidebarRowAppearance.cornerRadius
+        layer?.cornerCurve = .continuous
         addCursorUpdateArea()
         setAccessibilityElement(true)
         setAccessibilityRole(.disclosureTriangle)
@@ -153,7 +149,7 @@ final class SidebarPinnedHeaderView: NSView {
         refreshAccessibility()
         if toggled || roleChanged { refreshTooltip() }
         if toggled { NSAccessibility.post(element: self, notification: .valueChanged) }
-        needsDisplay = true
+        refreshColors()
     }
 
     func needsFavicon(for tabID: UUID, url: String) -> Bool { favicons[tabID]?.url != url }
@@ -179,7 +175,15 @@ final class SidebarPinnedHeaderView: NSView {
     private var ink: NSColor { dark ? .white : .black }
     private var emphasis: Bool { !content.placeholder && ((hover && window?.isKeyWindow == true) || pressed) }
 
-    private func refreshColors() { needsDisplay = true }
+    private var plateFill: NSColor? {
+        guard emphasis else { return nil }
+        return pressed ? SidebarRowAppearance.controlFill(pressed: true, dark: dark) : SidebarRowAppearance.color(.hovered, dark: dark)
+    }
+
+    private func refreshColors() {
+        layer?.backgroundColor = plateFill?.cgColor
+        needsDisplay = true
+    }
 
     private func turnChevron(to angle: CGFloat, animated: Bool) {
         chevronTurn?.timer.invalidate(); chevronTurn = nil
@@ -245,13 +249,6 @@ final class SidebarPinnedHeaderView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let plate = L.plateFrame(width: bounds.width, height: bounds.height)
-        if emphasis {
-            let fill = pressed ? SidebarRowAppearance.controlFill(pressed: true, dark: dark)
-                : SidebarRowAppearance.color(.hovered, dark: dark)
-            fill.setFill()
-            NSBezierPath(roundedRect: plate, xRadius: L.plateRadius, yRadius: L.plateRadius).fill()
-        }
         if !content.placeholder { drawChevron() }
         let label = labelText
         let labelSize = label.size()
@@ -354,7 +351,7 @@ final class SidebarPinnedHeaderView: NSView {
     override func mouseMoved(with event: NSEvent) { setHover(isTopmost(atWindowPoint: event.locationInWindow)) }
     override func mouseExited(with event: NSEvent) { setHover(false) }
     override func viewDidHide() { super.viewDidHide(); resetPointer() }
-    func resetPointer() { pressed = false; setHover(false) }
+    func resetPointer() { pressed = false; hover = false; refreshColors() }
     private func setHover(_ next: Bool) {
         guard next != hover else { return }
         hover = next

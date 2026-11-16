@@ -4791,14 +4791,16 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
     private func pinnedHeaderDrop(_ session: SidebarMoveSession, at point: NSPoint, copying: Bool, state: BrowserState,
                                   spaceID: UUID) -> Bool? {
-        guard shownPage.renderedPinned?.header == true, let frame = list.itemFrame(for: SidebarListRow.pinnedHeader) else { return nil }
+        guard shownPage.renderedPinned?.header == true, let frame = list.itemFrame(for: SidebarListRow.pinnedHeader),
+              let slot = list.rowFrame(for: SidebarListRow.pinnedHeader) else { return nil }
         let rect = convert(frame, from: list)
-        guard rect.contains(point) else { return nil }
+        guard convert(slot, from: list).contains(point) else { return nil }
         let (destination, first) = PinnedSectionCollapse.headerDrop(state: state, spaceID: spaceID, moving: copying ? [] : session.items)
         guard admitDrop(session, to: destination, before: first, copying: copying) else { return false }
         dropProposal = (session, destination, first)
         reorderFeedback.propose(index: -1)
         dropFeedback.isInsertion = false; dropFeedback.targetRect = rect.intersection(scroll.frame)
+        dropFeedback.targetCornerRadius = SidebarRowAppearance.cornerRadius
         if pinnedFolded(spaceID) { springPinnedCandidate = spaceID }
         return true
     }
@@ -4942,6 +4944,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         let index = insertion ? before.flatMap { siblings.firstIndex(of: $0) } ?? siblings.count : -1
         reorderFeedback.propose(index: index)
         dropFeedback.isInsertion = insertion; dropFeedback.targetRect = feedback.intersection(scroll.frame)
+        if !insertion { dropFeedback.targetCornerRadius = SidebarRowAppearance.cornerRadius }
         springCandidate = onCollapsedFolder
         return operation
     }

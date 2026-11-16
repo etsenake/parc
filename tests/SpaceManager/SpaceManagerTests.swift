@@ -402,7 +402,7 @@ final class AreaEvent: NSEvent {
         let headerRow = outline.convert(outline.rows[0].frame, to: sidebar)
         let pinnedHeader = descendants(sidebar).compactMap { $0 as? SidebarPinnedHeaderView }.first
         check(header.isHidden && outline.rows.count == 1
-              && headerRow.height == SidebarChromeLayout.pinnedSectionHeaderHeight + SidebarChromeLayout.tablistIntercellSpacing
+              && headerRow.height == SidebarChromeLayout.tablistCellHeight + SidebarChromeLayout.tablistIntercellSpacing
               && !descendants(sidebar).contains { $0 is SidebarHairline },
               "an empty card lists only its Pinned header, with no divider")
         check(pinnedHeader?.content.placeholder == true && pinnedHeader?.accessibilityRole() == .staticText

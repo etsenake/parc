@@ -251,6 +251,12 @@ final class SidebarOutlineView: NSView {
         return row.contentFrame
     }
 
+    func rowFrame(for key: AnyHashable) -> NSRect? {
+        guard let row = rowsByKey[key], !row.isHidden else { return nil }
+        if needsLayout { placeRows() }
+        return row.frame
+    }
+
     func scrollRowToVisible(_ key: AnyHashable, inset: CGFloat = 0, wholeRow: Bool = false, animated: Bool = true) {
         if needsLayout { placeRows() }
         let rowFrame = wholeRow ? rowsByKey[key].flatMap { $0.isHidden ? nil : $0.frame } : itemFrame(for: key)

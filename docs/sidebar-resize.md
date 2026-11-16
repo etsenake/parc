@@ -169,7 +169,8 @@ bounded animated layout. Avoid duplicating its arithmetic in view owners.
 | Space header | 36 points tall; 8-point top spacing without Favorites, zero with Favorites |
 | Tab list | 8-point side insets; 16-point indentation per folder level |
 | Ordinary item slot | 40-point cell plus 1-point gap; visible 36-point row centered vertically |
-| Pinned header / Today divider | 27-point slot with pinned items, otherwise a 3-point band / 25-point slot |
+| Pinned header | An ordinary item slot with pinned items, otherwise a 3-point drop band |
+| Today divider / Incognito heading | 25-point slot / 36-point heading in a 37-point slot, like the Space header; neither is a row |
 | List bottom | 120-point inset |
 | Dock | 50 points tall; 32-point leading and trailing controls at 8-point side insets |
 
@@ -223,13 +224,17 @@ is described in [split views](split-groups.md) and [folder moves](folder-moves.m
 
 ## Pinned section
 
-A Space with at least one pinned item shows a small Pinned header above its
-pinned rows: an 11-point "Pinned" label and a chevron in the rows' close-button
-column. Clicking the header, its context menu, View → Collapse Pinned (Expand
-Pinned while folded) or the same command in the command bar folds or unfolds
-the section. An empty Pinned keeps the 3-point drop band and no header. Rows
-slide and fade over 0.25 seconds and the chevron turns over 0.2 seconds; Reduce
-Motion makes both instant.
+A Space with at least one pinned item shows a Pinned header above its pinned
+rows: an 11-point "Pinned" label and a chevron in the rows' close-button column,
+both centred. The header takes the same row slot as New Tab and tab rows, as
+does an empty Library card's plain Pinned label, so its hover and press plate
+has their height, 12-point continuous corners and full width, and a drag over
+it lights the row with the same 12-point corners a folder gets. Clicking the
+header, its context menu, View → Collapse Pinned (Expand Pinned while folded)
+or the same command in the command bar folds or unfolds the section. An empty
+Pinned keeps the 3-point drop band and no header. Rows slide and fade over 0.25
+seconds and the chevron turns over 0.2 seconds; Reduce Motion makes both
+instant.
 
 Folded, the header says what it hides. By default it shows the favicons of the
 first four pinned tabs, in sidebar order through folders and splits, each on a
@@ -254,9 +259,10 @@ next tab pinned there arrives folded and shows up in the header's summary.
 
 While Pinned is folded:
 
-- A drop on the header lands at the top of Pinned. Holding a drag there for the
-  system spring-loading delay unfolds it, and it folds again if the drag leaves
-  or is cancelled. A drop in the band under the header lands at the end.
+- A drop anywhere in the header's row lands at the top of Pinned. Holding a
+  drag there for the system spring-loading delay unfolds it, and it folds again
+  if the drag leaves or is cancelled. A drop in the band under the header's row
+  lands at the end.
 - Arrow-key browsing and Control–Space skip the hidden rows but reach the
   peeking tab. Number shortcuts and Next/Previous Tab still count pinned tabs,
   so Command–1 keeps its tab, which then peeks out.
@@ -296,4 +302,4 @@ components; inspect a check before running it under the current work contract:
 | `tests/SidebarChrome/check.py` | Header/list/dock geometry, Space header and settings wiring |
 | `tests/SidebarFavoritesEmptyState/check.py` | Card layout, persistence, drag state and keyboard dismissal |
 | `tests/SidebarOutline/check.py` | Row geometry, disclosure and accessibility wrappers |
-| `tests/SidebarPinnedSection/check.py` | Fold state, peeks, the folded summary and its drawing, header drops, keyboard order, commands and the icon setting |
+| `tests/SidebarPinnedSection/check.py` | Fold state, peeks, the folded summary and its drawing, the header plate measured against New Tab's, header drops, keyboard order, commands and the icon setting |

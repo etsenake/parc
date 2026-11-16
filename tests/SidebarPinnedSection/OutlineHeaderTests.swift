@@ -19,8 +19,8 @@ import AppKit
                    .item(todayID, content: todayView, depth: 0, in: nil)]
         }
         let entry = entries(expanded: true, pinned: true)[0]
-        check(entry.row == .accessory(height: SidebarChromeLayout.pinnedSectionHeaderHeight) && entry.content === header && !entry.isItem,
-              "the visible header is a content row in its own slot, not a selectable item")
+        check(entry.row == .item && entry.content === header && !entry.isItem,
+              "the visible header takes a standard row slot without becoming a selectable item")
         check(entry.expanded == true && entry.toggle != nil && !entry.expandableWithoutChildren, "the header carries real disclosure")
 
         let outline = SidebarOutlineView(frame: NSRect(x: 0, y: 0, width: 212, height: 400))
@@ -34,13 +34,23 @@ import AppKit
         headerRow.setAccessibilityDisclosed(true)
         check(toggles == 1, "asking for the current state does nothing")
         let frames = outline.rowFrames()
-        check(frames[Control.header]?.height == 27 && frames[pinnedID]?.minY == 27, "pinned rows begin under the 26-point header")
+        let slot = SidebarChromeLayout.tablistCellHeight + SidebarChromeLayout.tablistIntercellSpacing
+        check(frames[Control.header]?.height == slot && frames[pinnedID]?.minY == slot && frames[pinnedID]?.height == slot,
+              "the header's slot is exactly as tall as the pinned row under it")
+        check(outline.itemFrame(for: Control.header)?.height == outline.itemFrame(for: pinnedID)?.height
+              && outline.itemFrame(for: Control.header)?.minY == SidebarChromeLayout.TablistRow.item.viewSpan?.minY,
+              "the header's view sits in the row slot exactly like an item's")
+        check(outline.rowFrame(for: Control.header) == frames[Control.header]
+              && outline.rowFrame(for: Control.header)!.contains(outline.itemFrame(for: Control.header)!)
+              && outline.rowFrame(for: Control.header)!.maxY == frames[pinnedID]!.minY,
+              "the header's whole slot, gaps included, is reported for drops and meets the next row")
 
         outline.reload(entries(expanded: false, pinned: false))
         check(!row(Control.header)!.isAccessibilityDisclosed(), "a folded Pinned reads as collapsed")
         check(row(pinnedID) == nil && outline.rows.map(\.key) == [AnyHashable(Control.header), AnyHashable(Control.divider), AnyHashable(todayID)],
               "folding removes the pinned rows and keeps Today below the header")
-        check(outline.itemFrame(for: Control.header) == NSRect(x: 0, y: 0, width: 212, height: 26),
+        let span = SidebarChromeLayout.TablistRow.item.viewSpan!
+        check(outline.itemFrame(for: Control.header) == NSRect(x: 0, y: span.minY, width: 212, height: span.height),
               "the folded header still reports its frame for drops")
         let collapsedFrames = outline.rowFrames()
         outline.reload(entries(expanded: true, pinned: true))

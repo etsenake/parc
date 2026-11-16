@@ -40,7 +40,11 @@ requires(sidebar, ("return PinnedSectionCollapse.isEmpty(state: state, spaceID: 
                    "guard InternalPage(urlString: tab.url) == nil else { header.setFavicon(nil, for: tab.id, url: tab.url); return }"),
          "empty Library cards, folded folder peeks or internal-page icons lost their checked handling")
 requires(sidebar, ("if let admitted = pinnedHeaderDrop(session, at: point, copying: copying, state: state, spaceID: spaceID) {",
-                   "PinnedSectionCollapse.headerDrop(state: state, spaceID: spaceID, moving: session.items)",
+                   "let slot = list.rowFrame(for: SidebarListRow.pinnedHeader) else { return nil }",
+                   "guard convert(slot, from: list).contains(point) else { return nil }",
+                   "dropFeedback.targetCornerRadius = SidebarRowAppearance.cornerRadius\n        if pinnedFolded(spaceID)",
+                   "if !insertion { dropFeedback.targetCornerRadius = SidebarRowAppearance.cornerRadius }",
+                   "PinnedSectionCollapse.headerDrop(state: state, spaceID: spaceID, moving: copying ? [] : session.items)",
                    "guard admitDrop(session, to: destination, before: first, copying: copying) else { return false }",
                    "if pinnedFolded(spaceID) { springPinnedCandidate = spaceID }",
                    "updatePinnedSpringLoading(operation.isEmpty ? nil : springPinnedCandidate)",
@@ -86,6 +90,12 @@ with tempfile.TemporaryDirectory(prefix="parc-pinned-section-") as directory:
     (scratch / "ActionButton.swift").write_text(
         "import AppKit\nenum SplitOrientation: Equatable { case horizontal, vertical }\n"
         + sidebar[:sidebar.index("final class MenuAction")])
+    (scratch / "SidebarRows.swift").write_text("import AppKit\n" + sidebar[:sidebar.index("final class SidebarTabRow")])
+    plate = [*store_sources, app / "SidebarChromeLayout.swift", app / "SidebarRowAppearance.swift",
+             app / "SidebarPinnedHeader.swift", app / "SidebarOutline.swift", scratch / "SidebarRows.swift",
+             app / "TranslucentButtonFace.swift", app / "PointerCover.swift", app / "ReloadControl.swift", app / "PointingHand.swift"]
+    if core / "SidebarOutlineConfigureSkip.swift" not in plate:
+        plate.append(core / "SidebarOutlineConfigureSkip.swift")
     suites = {
         "model": [*sorted(core.glob("*.swift")), here / "ModelTests.swift"],
         "header": [*store_sources, app / "SidebarChromeLayout.swift", app / "SidebarRowAppearance.swift",
@@ -95,6 +105,7 @@ with tempfile.TemporaryDirectory(prefix="parc-pinned-section-") as directory:
                     scratch / "SidebarItemReference.swift", scratch / "ActionButton.swift",
                     app / "TranslucentButtonFace.swift", app / "PointerCover.swift", app / "ReloadControl.swift",
                     app / "PointingHand.swift", here / "OutlineHeaderTests.swift"],
+        "plate": [*plate, *tooltip_sources(root, scratch, plate), here / "PlateGeometryTests.swift"],
     }
     for name, sources in suites.items():
         executable = scratch / name

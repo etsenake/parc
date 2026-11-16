@@ -338,8 +338,10 @@ final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityAct
 @MainActor
 final class SidebarDropFeedbackView: NSView {
     var tint = NSColor.controlAccentColor { didSet { needsDisplay = true } }
-    var targetRect: NSRect? { didSet { needsDisplay = true } }
+    var targetRect: NSRect? { didSet { targetCornerRadius = Self.standardCornerRadius; needsDisplay = true } }
+    var targetCornerRadius = SidebarDropFeedbackView.standardCornerRadius { didSet { needsDisplay = true } }
     var isInsertion = false
+    static let standardCornerRadius: CGFloat = 6
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     static let insertionCircle: CGFloat = 6
@@ -347,7 +349,7 @@ final class SidebarDropFeedbackView: NSView {
         guard let rect = targetRect else { return }
         tint.withAlphaComponent(isInsertion ? 0.9 : 0.5).setFill()
         guard isInsertion, rect.width > rect.height else {
-            NSBezierPath(roundedRect: rect, xRadius: isInsertion ? 1 : 6, yRadius: isInsertion ? 1 : 6).fill()
+            NSBezierPath(roundedRect: rect, xRadius: isInsertion ? 1 : targetCornerRadius, yRadius: isInsertion ? 1 : targetCornerRadius).fill()
             return
         }
         let diameter = Self.insertionCircle

@@ -10,8 +10,9 @@ import AppKit
     static func runChecks() throws {
         typealias L = SidebarPinnedHeaderLayout
         let digit: (Int, Bool) -> CGFloat = { value, chips in CGFloat(String(value).count + (chips ? 1 : 0)) * 6 }
-        check(L.height == SidebarChromeLayout.pinnedSectionHeaderHeight && SidebarChromeLayout.TablistSlot.pinnedSectionHeader.row == .accessory(height: 26),
-              "the header is a small 26-point accessory row")
+        let mid = SidebarChromeLayout.tablistVisibleRowHeight / 2
+        check(L.height == SidebarChromeLayout.tablistVisibleRowHeight && SidebarChromeLayout.TablistSlot.pinnedSectionHeader.row == .item,
+              "the header is a standard sidebar row")
         check(SidebarChromeLayout.tablistSlots(pinnedItems: 1, todayItems: 0, isPrivate: false, sectionHeader: true)
               == [.pinnedSectionHeader, .pinnedItem, .newTab], "a Space with pinned items leads with the header")
         check(SidebarChromeLayout.tablistSlots(pinnedItems: 0, todayItems: 1, isPrivate: false, sectionHeader: true)
@@ -19,7 +20,7 @@ import AppKit
         check(SidebarChromeLayout.tablistSlots(pinnedItems: 0, todayItems: 0, isPrivate: true, sectionHeader: true) == [.privateHeading, .newTab],
               "private windows never get a Pinned header")
         let chevron = L.chevronFrame(width: 212)
-        check(chevron.midX == 212 - SidebarRowAppearance.closeTrailingInset - SidebarRowAppearance.closeSize / 2 && chevron.midY == 13,
+        check(chevron.midX == 212 - SidebarRowAppearance.closeTrailingInset - SidebarRowAppearance.closeSize / 2 && chevron.midY == mid,
               "the chevron sits in the rows' close-button column, centred")
 
         let wide = L.summary(width: 212, labelWidth: 36, icons: 4, count: 6, showsIcons: true, countWidth: digit)
@@ -27,7 +28,7 @@ import AppKit
         check(wide.chips.first?.minX == L.labelInset + 36 + L.summarySpacing, "the stack starts a fixed gap after the label")
         check(zip(wide.chips, wide.chips.dropFirst()).allSatisfy { $1.minX - $0.minX == L.chipPitch && $1.minX < $0.maxX },
               "icons overlap at an even pitch")
-        check(wide.chips.allSatisfy { $0.midY == 13 && $0.width == L.chipSide }, "icons are centred on the label line")
+        check(wide.chips.allSatisfy { $0.midY == mid && $0.width == L.chipSide }, "icons are centred on the label line")
         check(wide.countX == wide.chips[3].maxX + L.countSpacing, "the count follows the last icon")
         check(wide.countX! + digit(2, true) <= chevron.minX - L.chevronClearance, "the summary never runs into the chevron")
 
@@ -43,7 +44,7 @@ import AppKit
         let pill = L.summary(width: 212, labelWidth: 36, icons: 4, count: 6, showsIcons: false, countWidth: digit)
         check(pill.chips.isEmpty && pill.pill != nil && pill.pill!.width >= pill.pill!.height, "icons off: a count pill and no icons")
         check(pill.pill!.width == max(L.pillHeight, digit(6, false) + L.pillPadding * 2), "the pill is measured for the bare count it draws")
-        check(pill.pill?.minX == L.labelInset + 36 + L.summarySpacing && pill.pill?.midY == 13, "the pill sits where the icons would")
+        check(pill.pill?.minX == L.labelInset + 36 + L.summarySpacing && pill.pill?.midY == mid, "the pill sits where the icons would")
         check(L.summary(width: 212, labelWidth: 36, icons: 4, count: 6, showsIcons: true, countWidth: digit).pill == nil, "icons on: no pill")
         check(L.summary(width: 212, labelWidth: 36, icons: 0, count: 2, showsIcons: true, countWidth: digit).pill != nil,
               "with no icon to show, the pill keeps the count visible")
@@ -67,7 +68,7 @@ import AppKit
               "the folded chevron points to the trailing edge")
         check(L.chevronDuration == 0.2, "the chevron turns over 0.2 seconds")
 
-        let header = SidebarPinnedHeaderView(frame: NSRect(x: 0, y: 0, width: 212, height: 26))
+        let header = SidebarPinnedHeaderView(frame: NSRect(x: 0, y: 0, width: 212, height: L.height))
         var toggles = 0
         check(header.accessibilityRole() == .disclosureTriangle && header.isAccessibilityElement(), "the header is a disclosure control")
         check(!header.isAccessibilitySelectorAllowed(#selector(NSView.accessibilityPerformPress)), "no press without an owner")
@@ -120,12 +121,12 @@ import AppKit
         var refused = false
         do { try broken.setShowsCollapsedIcons(false) } catch { refused = true }
         check(refused && defaults.string(forKey: "parc.pinnedSection.v1") == "garbage", "an unreadable preference is never clobbered")
-        let card = SidebarPinnedHeaderView(frame: NSRect(x: 0, y: 0, width: 212, height: 26))
+        let card = SidebarPinnedHeaderView(frame: NSRect(x: 0, y: 0, width: 212, height: L.height))
         card.update(.init(placeholder: true), fallbacks: [:], animated: false)
         check(card.accessibilityRole() == .staticText && card.accessibilityLabel() == "Pinned" && card.accessibilityValue() == nil
               && (card.accessibilityHelp() ?? "").isEmpty && card.toolTip == nil,
               "an empty Library card's header is a plain Pinned label")
-        check(card.hitTest(NSPoint(x: 20, y: 13)) == nil && !card.accessibilityPerformPress() && card.summary == nil,
+        check(card.hitTest(NSPoint(x: 20, y: mid)) == nil && !card.accessibilityPerformPress() && card.summary == nil,
               "the empty card's label leaves clicks to the card and folds nothing")
         print("Pinned header checks passed: \(count)")
     }

@@ -134,7 +134,6 @@ enum SidebarChromeLayout {
     static let tablistVisibleRowHeight: CGFloat = 36
     static let tablistRowBoundaryOutset: CGFloat = (tablistCellHeight - tablistVisibleRowHeight) / 2 + tablistIntercellSpacing / 2
     static let pinnedHeaderHeight: CGFloat = 2
-    static let pinnedSectionHeaderHeight: CGFloat = 26
     static let sectionDividerHeight: CGFloat = 24
     static let sectionDividerInset: CGFloat = 18 - 8
     static let sectionDividerSpacing: CGFloat = 8
@@ -171,8 +170,7 @@ enum SidebarChromeLayout {
         var row: TablistRow {
             switch self {
             case .pinnedHeader: .gap(height: pinnedHeaderHeight)
-            case .pinnedSectionHeader: .accessory(height: pinnedSectionHeaderHeight)
-            case .pinnedItem, .newTab, .todayItem: .item
+            case .pinnedSectionHeader, .pinnedItem, .newTab, .todayItem: .item
             case .sectionDivider: .accessory(height: sectionDividerHeight)
             case .privateHeading: .accessory(height: unpinnedHeaderHeight)
             }
