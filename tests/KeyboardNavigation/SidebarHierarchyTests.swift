@@ -1,7 +1,8 @@
 import Foundation
 
 @main @MainActor struct SidebarHierarchyTests {
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         var count = 0
         func check(_ value: @autoclosure () -> Bool, _ message: String) {
             count += 1; precondition(value(), message)

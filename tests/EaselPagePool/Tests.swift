@@ -165,7 +165,8 @@ import AppKit
         expect(pixel(card, 280, 200) != [255, 0, 0], "Without it the export keeps the webpage card")
     }
 
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-pool-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

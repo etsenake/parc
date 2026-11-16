@@ -15,7 +15,8 @@ import SwiftUI
     }
 }
 @main @MainActor struct BrowserImportFocusTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let parent = ProbeWindow(), importer = ProbeWindow(), other = ProbeWindow()
         func canReturn(_ requested: Bool = true, _ active: Bool = true, _ key: NSWindow? = nil) -> Bool {

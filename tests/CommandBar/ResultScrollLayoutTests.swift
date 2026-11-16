@@ -6,7 +6,8 @@ import AppKit
 }
 
 @main @MainActor struct ResultScrollLayoutTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let rows = Rows()
         var checks = 0

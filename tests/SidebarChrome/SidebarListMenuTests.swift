@@ -52,7 +52,8 @@ import AppKit
         }
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("parc-list-menu-\(UUID().uuidString)", isDirectory: true)

@@ -1,7 +1,8 @@
 import AppKit
 
 @main struct CopyCommandTests {
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         _ = NSApplication.shared
         var checks = 0
         func expect(_ value: @autoclosure () -> Bool, _ reason: String) { checks += 1; precondition(value(), reason) }

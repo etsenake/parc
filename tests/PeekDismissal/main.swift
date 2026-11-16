@@ -19,7 +19,8 @@ struct PeekDismissalChecks {
         while !predicate() && Date() < deadline { pump(0.02) }
         expect(predicate(), "real main-queue timer did not complete")
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         typealias Owner = PeekDismissalConfirmation
         typealias Reason = Owner.Reason
         let contexts: [(Reason?, Bool)] = [

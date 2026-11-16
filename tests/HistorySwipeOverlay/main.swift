@@ -145,7 +145,8 @@ struct Fingers {
             && close(a.width, b.width, tolerance) && close(a.height, b.height, tolerance)
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         diaValues()
         curves()
         springs()

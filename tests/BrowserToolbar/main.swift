@@ -12,7 +12,7 @@ private final class TitleTrackingEvent: NSEvent {
     override var trackingArea: NSTrackingArea? { area }
 }
 
-try MainActor.assumeIsolated {
+MainActor.assumeIsolated { exitOnFailure {
     _ = NSApplication.shared
     let suite = "Parc.ToolbarChecks." + UUID().uuidString
     let defaults = UserDefaults(suiteName: suite)!
@@ -705,4 +705,4 @@ try MainActor.assumeIsolated {
     copy.performClick(nil)
     check(invocations == 1, "detached Toolbar cannot dispatch")
     print("Browser Toolbar component checks: \(checks) passed")
-}
+} }

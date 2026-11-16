@@ -1,7 +1,8 @@
 import Foundation
 
 @main struct SelectionTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         var checks = 0
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
             checks += 1; precondition(condition(), message)

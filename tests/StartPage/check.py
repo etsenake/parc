@@ -110,6 +110,7 @@ with tempfile.TemporaryDirectory(prefix="parc-start-page-") as directory:
     subprocess.run([str(main.result())], check=True, timeout=120)
     for name, (replace, failure) in controls.items():
         result = subprocess.run([str(built[name].result())], capture_output=True, text=True, timeout=120)
+        assert result.returncode >= 0, f"negative control crashed with signal {-result.returncode} instead of failing: {name}\n{result.stderr[-1000:]}"
         assert result.returncode != 0 and failure in result.stderr, f"negative control did not fail: {name}\n{result.stderr[-1000:]}"
         print(f"StartPage negative control fails as expected: {name}")
 print("StartPage check passed")

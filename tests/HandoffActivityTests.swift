@@ -7,7 +7,8 @@ struct HandoffActivityTests {
         count += 1; if !value { throw NSError(domain: message, code: 1) }
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let page = URL(string: "https://example.com/a?b=c")!
         try check(HandoffActivity.publishable(page) == page, "an https page is published")
         try check(HandoffActivity.publishable(URL(string: "HTTP://example.com/a")!) == URL(string: "http://example.com/a"),

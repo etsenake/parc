@@ -3,7 +3,8 @@ import CoreText
 
 @main
 struct OnboardingSetupCardTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         let fontURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Resources/NoteFonts/Nunito-ExtraBold.ttf")

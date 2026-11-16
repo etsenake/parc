@@ -92,5 +92,6 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-pacing-") as directory:
                                                          "⌘S locks a floating sidebar: per-frame")}
     for name, (source, failure) in controls.items():
         result = subprocess.run([str(build(directory, name.replace(" ", "-"), source))], capture_output=True, text=True)
+        assert result.returncode >= 0, f"negative control crashed with signal {-result.returncode} instead of failing: {name}\n{result.stderr[-1000:]}"
         assert result.returncode != 0 and failure in result.stdout, f"negative control did not fail: {name}\n{result.stdout[-2000:]}"
         print(f"SidebarPacing negative control fails as expected: {name}")

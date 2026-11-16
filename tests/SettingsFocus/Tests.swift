@@ -24,7 +24,8 @@ import AppKit
 }
 
 @main @MainActor struct SettingsFocusTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let app = TestApplication.shared as! TestApplication
         var assertions = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {

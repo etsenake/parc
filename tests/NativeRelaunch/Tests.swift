@@ -2,7 +2,8 @@ import Foundation
 
 @main
 struct NativeRelaunchTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let cwd = URL(fileURLWithPath: "/tmp/parc-relaunch", isDirectory: true)
         var assertions = 0
         func check(_ args: [String], _ expected: [NativeRelaunchRequest.Destination], _ label: String) {

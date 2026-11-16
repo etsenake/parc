@@ -1,7 +1,8 @@
 import AppKit
 
 @main struct SidebarFocusTests {
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         _ = NSApplication.shared
         var checks = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {

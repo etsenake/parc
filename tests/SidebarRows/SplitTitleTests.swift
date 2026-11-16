@@ -11,7 +11,8 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
         checks += 1
         if try !value() { throw NSError(domain: message, code: checks) }
     }
-    static func main() async throws {
+    static func main() async { await exitOnFailure(runChecks) }
+    static func runChecks() async throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-split-title-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

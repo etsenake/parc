@@ -9,7 +9,8 @@ import AppKit
 }
 
 @main struct CaptureMotionChecks {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         var count = 0
         func check(_ condition: @autoclosure () -> Bool, _ message: String) {

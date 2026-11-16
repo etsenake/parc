@@ -151,7 +151,8 @@ struct SpaceThemeHapticTests {
         noise.mouseUp(with: event(.leftMouseUp, in: noise, point: top))
         expect(pulses == beforeReplacement + 1, "Dial clicks stay silent even when they cross noise detents")
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         predicateChecks()
         intensityChecks()

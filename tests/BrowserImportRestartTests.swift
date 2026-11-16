@@ -1,7 +1,8 @@
 import Foundation
 
 @main struct BrowserImportRestartTests {
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try BrowserStore(directory: directory)

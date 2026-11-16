@@ -6,7 +6,8 @@ import AppKit
         count += 1
         guard value() else { fatalError("SidebarWindowKeyLoop: \(message)") }
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 1000, height: 700),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)

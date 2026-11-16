@@ -10,7 +10,8 @@ struct SpaceThemeEditorTests {
     static func near(_ a: Double, _ b: Double, _ message: String, line: Int = #line) {
         expect(abs(a - b) < 0.000001, message, line: line)
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         blankPadAndLimits()
         gesturesAndUndo()
         loadedColorsAndAppearance()

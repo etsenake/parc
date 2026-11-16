@@ -5,7 +5,8 @@ import ScreenCaptureKit
 
 @main
 struct PortraitChecks {
-    @MainActor static func main() async throws {
+    @MainActor static func main() async { await exitOnFailure(runChecks) }
+    @MainActor static func runChecks() async throws {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.accessory)
         NSApp.finishLaunching()

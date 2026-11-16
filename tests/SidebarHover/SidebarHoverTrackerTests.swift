@@ -10,7 +10,8 @@ import QuartzCore
         guard value() else { fatalError("SidebarHoverTracker: \(message)") }
     }
     static func wait(_ seconds: TimeInterval) { RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds)) }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 700),
                               styleMask: [.borderless], backing: .buffered, defer: false)

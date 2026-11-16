@@ -7,7 +7,8 @@ struct SoftwareUpdateSessionTests {
         checks += 1; precondition(value(), message)
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         manualCheckUpToDate()
         manualCheckDownloadAndInstall()
         backgroundDownloadWaitsForBanner()

@@ -6,7 +6,8 @@ private final class ComponentWindow: NSWindow {
 }
 
 @main struct FavoritePointerTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         var count = 0
         func check(_ value: @autoclosure () -> Bool, _ message: String) {

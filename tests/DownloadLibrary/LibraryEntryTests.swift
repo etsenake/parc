@@ -66,7 +66,8 @@ import UniformTypeIdentifiers
         return CellMotion(samples: raw.map { ($0.0, $0.1, travel == 0 ? 1 : ($0.1 - from) / travel) }, start: start)
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         SystemOverrides.install()

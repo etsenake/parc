@@ -7,7 +7,8 @@ import AppKit
         if !value { fatalError(message) }
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         let image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: nil)!
         let plain = MenuAction.item("Copy URL") {}

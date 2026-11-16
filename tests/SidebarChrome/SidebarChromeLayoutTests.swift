@@ -14,7 +14,8 @@ extension SidebarChromeLayout.Toolbar {
         let shown = frames.compactMap { $0 }.sorted { $0.minX < $1.minX }
         for (a, b) in zip(shown, shown.dropFirst()) { check(a.maxX <= b.minX + 0.0001, "\(message): \(a) overlaps \(b)") }
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         typealias L = SidebarChromeLayout
         check(L.headerBottom - L.hiddenAddressHeight(toolbar: true, hasPrompt: false, keyboardSearch: false) == L.headerTop + L.navigationRowHeight,
               "Toolbar collapses the hidden URL row before the Space header and Favorites")

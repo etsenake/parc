@@ -13,7 +13,8 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
     static func check(_ condition: @autoclosure () throws -> Bool, _ reason: String) throws {
         count += 1; if try !condition() { throw NSError(domain: reason, code: count) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         try check(SidebarIconCatalog.resourceDirectory == Bundle.main.resourceURL?.appendingPathComponent("CustomInfoPicker", isDirectory: true)
                   && SidebarIconCatalog.font(.ionicons, size: 14).fontName == "ionicons", "The icon resources load from the bundle's CustomInfoPicker resources")

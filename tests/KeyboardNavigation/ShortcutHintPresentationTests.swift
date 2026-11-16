@@ -7,7 +7,8 @@ import AppKit
 }
 
 @main struct ShortcutHintPresentationTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         let app = NSApplication.shared
         let appearanceOnly = CommandLine.arguments.contains("--appearance")
         app.setActivationPolicy(appearanceOnly ? .regular : .prohibited)

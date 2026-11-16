@@ -11,7 +11,8 @@ import CoreText
     static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
         assertions += 1; precondition(condition(), message)
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         NSApplication.shared.setActivationPolicy(.prohibited)
         if CommandLine.arguments.count > 1 {
             CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: CommandLine.arguments[1]) as CFURL, .process, nil)

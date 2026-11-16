@@ -20,7 +20,8 @@ struct OnboardingKeyboardTests {
         guard condition() else { fatalError("Line \(line): \(message)") }
     }
 
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         closeSetupOwner()
         themeEditorLoop()

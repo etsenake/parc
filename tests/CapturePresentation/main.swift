@@ -1,7 +1,8 @@
 import AppKit
 
 @main struct CapturePresentationChecks {
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         _ = NSApplication.shared
         let bounds = NSRect(x: 0, y: 0, width: 1000, height: 700)
         let source = NSRect(x: 100, y: 120, width: 300, height: 200)

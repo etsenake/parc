@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-try MainActor.assumeIsolated {
+MainActor.assumeIsolated { exitOnFailure {
 var checks = 0
 func check(_ value: @autoclosure () -> Bool, _ reason: String) {
     checks += 1; precondition(value(), reason)
@@ -71,4 +71,4 @@ session.receive(nil, reset: false); session.receive(b, reset: false)
 session.pointer(down: false, tracksSelection: false); drain()
 check(displayed === b, "coalesced selection invalidation preserves active drag tracking")
 print("\(checks) Shared Quote preference and lifecycle assertions passed")
-}
+} }

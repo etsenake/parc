@@ -32,7 +32,8 @@ struct SidebarSpaceHeaderTests {
         return rep.bitmapData.map { Data(bytes: $0, count: rep.bytesPerRow * rep.pixelsHigh) }
     }
 
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         typealias L = SidebarChromeLayout
         typealias H = L.SpaceHeader

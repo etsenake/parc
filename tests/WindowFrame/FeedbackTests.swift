@@ -19,7 +19,8 @@ import AVFoundation
     static func peak(_ x: [Float]) -> Float { x.map { abs($0) }.max() ?? 0 }
     static func crossings(_ x: [Float]) -> Int { zip(x, x.dropFirst()).filter { ($0 < 0) != ($1 < 0) }.count }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         typealias S = WindowFrameCrankSound
         let rate = S.sampleRate
         check(S.notchClick(seed: 9, deep: false) == S.notchClick(seed: 9, deep: false), "clicks are deterministic")

@@ -7,7 +7,8 @@ import AppKit
         guard value() else { fatalError("Resident: \(message)") }
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         restingAndGrowth()
         slotGeometry()

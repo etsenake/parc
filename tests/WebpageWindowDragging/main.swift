@@ -1,7 +1,7 @@
 import AppKit
 import Combine
 
-try MainActor.assumeIsolated {
+MainActor.assumeIsolated { exitOnFailure {
 var checks = 0
 func check(_ value: @autoclosure () -> Bool, _ reason: String) {
     checks += 1; precondition(value(), reason)
@@ -166,4 +166,4 @@ DispatchOverrides.currentEvent = nil; DispatchOverrides.cursor = nil; DispatchOv
 check(!window.isVisible && !otherWindow.isVisible, "components did not show windows")
 print("\(checks) webpage-window-dragging component assertions passed; no browser or native window grabber executed")
 
-}
+} }

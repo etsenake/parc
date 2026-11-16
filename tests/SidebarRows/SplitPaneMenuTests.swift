@@ -5,7 +5,8 @@ import AppKit
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
         count += 1; precondition(value(), message)
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         var performed: [SplitPaneOperation] = []
         var available = true

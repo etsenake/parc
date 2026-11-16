@@ -12,7 +12,8 @@ struct FairPlayIdentitySitesTests {
         }
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         normalization()
         learning()
         userChoices()

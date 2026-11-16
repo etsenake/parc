@@ -22,7 +22,8 @@ import Foundation
         }
         return entered
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         check(R.window.fidelity == .inside && R.sidebar.fidelity == .hasLingered, "window and sidebar fidelity")
         check([R.innerLeftEdge, .outerLeftEdge, .innerTopLeftEdge, .trafficLight].allSatisfy { $0.fidelity == .hasStopped }, "edge fidelity")
         check(R.allCases.allSatisfy { $0.lingerRequirement == ($0 == .outerLeftEdge ? 0.16 : 0.15) }, "0.15 s linger, 0.16 s off the edge")

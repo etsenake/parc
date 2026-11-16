@@ -1,7 +1,8 @@
 import Foundation
 
 @main @MainActor struct WindowOwnerSequenceTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         var live = true, key = true, secure = true
         var performed: [Int] = []
         func valid() -> Bool { live && key && secure }

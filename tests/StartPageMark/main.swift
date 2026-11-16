@@ -29,7 +29,8 @@ struct SeededGenerator: RandomNumberGenerator {
         CGPoint(x: p.x * t.m11 + p.y * t.m21 + t.m41, y: p.x * t.m12 + p.y * t.m22 + t.m42)
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         singleAndDoubleClicksAreInert()
         dragTriggersTaffy()
         holdTriggersCharge()

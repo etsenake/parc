@@ -6,7 +6,8 @@ struct DefaultBrowserTests {
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
         checks += 1; precondition(value(), message)
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let application = URL(fileURLWithPath: "/Applications/Parc.app")
         let another = URL(fileURLWithPath: "/Applications/Other/Parc.app")
         var handlers: [String: URL] = [:]

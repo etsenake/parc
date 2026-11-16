@@ -11,7 +11,8 @@ import Combine
         count += 1
         if try !value() { throw NSError(domain: message, code: count) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-favorite-rename-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

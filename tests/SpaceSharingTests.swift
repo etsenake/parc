@@ -7,7 +7,8 @@ import Foundation
         if try !value() { throw NSError(domain: message, code: count) }
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         try upgrade()
         try archiveInterval()
         try separateCreation()

@@ -7,7 +7,8 @@ import Foundation
         guard value() else { fatalError("WindowFramePreferences: \(message)") }
     }
 
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         let suite = "parc.windowFrame.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }

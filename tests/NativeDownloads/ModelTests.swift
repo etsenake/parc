@@ -6,7 +6,8 @@ struct NativeDownloadsModelTests {
     static func expect(_ condition: @autoclosure () -> Bool) {
         count += 1; precondition(condition(), "Native download assertion \(count) failed")
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-downloads-\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: directory) }

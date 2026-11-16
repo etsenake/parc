@@ -20,7 +20,8 @@ struct DownloadLocationPickerTests {
         return picker
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         let downloads = URL(fileURLWithPath: "/Users/parc-sample/Downloads", isDirectory: true)
         let custom = URL(fileURLWithPath: "/Volumes/Archive/Incoming Files", isDirectory: true)

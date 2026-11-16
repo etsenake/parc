@@ -8,7 +8,8 @@ import ImageIO
         if try !condition() { throw NSError(domain: "Line \(line): \(message)", code: assertions) }
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         let source = root.appendingPathComponent("source", isDirectory: true)
         let packaged = root.appendingPathComponent("packaged", isDirectory: true)

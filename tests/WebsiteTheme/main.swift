@@ -1,7 +1,7 @@
 import AppKit
 import Combine
 
-try MainActor.assumeIsolated {
+MainActor.assumeIsolated { exitOnFailure {
     var checks = 0
     func check(_ value: @autoclosure () -> Bool, _ reason: String) {
         checks += 1; precondition(value(), reason)
@@ -77,4 +77,4 @@ try MainActor.assumeIsolated {
     check(light != dark, "automatic system colors resolve in the original palette appearance")
     check(light.contains("--arc-background-simple-color:") && dark.contains("--arc-background-simple-color:"), "uncolored background still exports semantic values")
     print("\(checks) website theme preference and color assertions passed")
-}
+} }

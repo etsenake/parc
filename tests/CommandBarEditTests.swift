@@ -1,7 +1,8 @@
 import AppKit
 
 @main struct CommandBarEditTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         var count = 0
         func check(_ value: @autoclosure () -> Bool, _ message: String) {
             precondition(value(), message); count += 1

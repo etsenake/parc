@@ -6,7 +6,8 @@ import AppKit
         precondition(value(), message); checks += 1
     }
     static func spin(_ seconds: TimeInterval) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         func window() -> NSWindow {
             NSWindow(contentRect: NSRect(x: 0, y: 0, width: 40, height: 40), styleMask: [.titled],

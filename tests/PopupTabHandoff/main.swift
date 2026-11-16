@@ -3,7 +3,8 @@
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
         precondition(value(), message); checks += 1
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         typealias Window = PopupTabHandoff.Candidate<Int>
         typealias Choice = PopupTabHandoff.Choice<Int>
         func choose(private source: Bool = false, _ windows: [Window]) -> Choice {

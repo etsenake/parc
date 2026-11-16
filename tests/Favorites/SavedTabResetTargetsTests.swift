@@ -1,7 +1,8 @@
 import Foundation
 
 @main struct SavedTabResetTargetsTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         var checks = 0
         func check(_ value: @autoclosure () -> Bool, _ message: String) {
             precondition(value(), message); checks += 1

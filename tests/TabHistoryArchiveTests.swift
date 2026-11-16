@@ -7,7 +7,8 @@ struct TabHistoryArchiveTests {
         count += 1; if !value { throw NSError(domain: message, code: 1) }
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-tab-history-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let profile = UUID(), other = UUID()

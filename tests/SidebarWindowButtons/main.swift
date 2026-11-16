@@ -21,7 +21,8 @@ final class GroupQueries { var receivers: [ObjectIdentifier] = []; var answers: 
     static func subroles(_ buttons: [NSButton]) -> [NSAccessibility.Subrole?] {
         buttons.map { (NSAccessibility.unignoredDescendant(of: $0) as? NSCell)?.accessibilitySubrole() }
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         typealias W = WindowStandardButtons
         check(W.buttonDimension == 14 && W.buttonSpace == (isAtLeast26 ? 9 : 6), "1.170's 14-point buttons, 9 apart on macOS 26+")

@@ -12,7 +12,7 @@ final class RecordingSound: InterfaceCaptureSound {
     }
 }
 
-try MainActor.assumeIsolated {
+MainActor.assumeIsolated { exitOnFailure {
     let suite = "Parc.InterfaceFeedbackChecks." + UUID().uuidString
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -120,4 +120,4 @@ try MainActor.assumeIsolated {
         check(outputs == 0, "unreadable preference cannot authorize audio or haptics")
     }
     print("Interface feedback component checks: \(checks) passed")
-}
+} }

@@ -2,7 +2,8 @@ import Foundation
 
 @main @MainActor struct Coalescing {
     static func turn() { RunLoop.main.run(until: Date()) }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let refresh = NextTurnCoalescer()
         var runs = 0
         refresh.schedule { runs += 1 }

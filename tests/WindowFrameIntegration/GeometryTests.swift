@@ -16,7 +16,8 @@ import AppKit
                                    libraryContentWidth: 500, popup: popup, sidePanel: sidePanel, thickness: thickness)
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         for thickness in [CGFloat(3), 10, 13] {
             let hidden = frames(.hidden, thickness: thickness).pageHost
             check(hidden == NSRect(x: thickness, y: thickness, width: 1200 - 2 * thickness, height: 760 - 2 * thickness),

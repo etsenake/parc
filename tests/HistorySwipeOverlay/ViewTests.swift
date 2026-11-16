@@ -24,7 +24,8 @@ struct ThemeChromePalette: Equatable {
         return (gray.whiteComponent, gray.alphaComponent)
     }
 
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         let size = NSSize(width: 600, height: 400)
         let view = HistorySwipeOverlayView(frame: NSRect(origin: .zero, size: size))
         check(view.layer?.masksToBounds == true, "the overlay clips everything it draws to its pane")

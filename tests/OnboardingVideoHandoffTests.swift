@@ -3,7 +3,8 @@ import QuartzCore
 
 @main
 struct OnboardingVideoHandoffTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let now: TimeInterval = 1_000
         precondition(
             OnboardingVideoHandoff.recoveredDuration(imageBeginTime: now, now: now) == 0,

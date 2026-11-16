@@ -6,7 +6,8 @@ struct DownloadPointerTests {
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) {
         assertions += 1; precondition(value(), message)
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)

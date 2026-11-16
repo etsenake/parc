@@ -8,7 +8,8 @@ private final class ActivityWindow: NSWindow {
 }
 
 @main struct FavoriteTileOverlayTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         GeometryWrites.install()
         SystemOverrides.install()

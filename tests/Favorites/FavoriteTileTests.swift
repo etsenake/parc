@@ -14,7 +14,8 @@ private final class HitCountingContentView: NSView {
 }
 
 @main struct FavoriteTileTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         GeometryWrites.install()
         var checks = 0

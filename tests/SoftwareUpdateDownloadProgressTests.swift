@@ -9,7 +9,8 @@ struct SoftwareUpdateDownloadProgressTests {
         precondition(value(), message)
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         downloadCounts()
         stableCounter()
         progressTransitions()

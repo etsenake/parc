@@ -12,7 +12,8 @@ private final class VisibleWindow: NSWindow {
     }
     static func near(_ a: CGFloat, _ b: CGFloat, _ e: CGFloat = 0.0001) -> Bool { abs(a - b) <= e }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         FrameSources.install()
         Redraws.install()
         GeometryWrites.install()

@@ -1,7 +1,8 @@
 import AppKit
 
 @main @MainActor struct RenameCommandTests {
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         var checks = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {

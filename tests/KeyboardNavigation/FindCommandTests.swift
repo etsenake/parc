@@ -31,7 +31,8 @@ import AppKit
     static func expect(_ condition: @autoclosure () -> Bool, _ label: String) {
         count += 1; precondition(condition(), label)
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let window = FindWindow(), other = FindWindow(), text = FindText(frame: .init(x: 0, y: 0, width: 200, height: 100))
         window.contentView?.addSubview(text); window.makeFirstResponder(text)

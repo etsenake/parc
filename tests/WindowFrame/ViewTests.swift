@@ -95,7 +95,8 @@ final class FocusView: NSView {
                                               deep: NSColor(srgbRed: 0.05, green: 0.06, blue: 0.08, alpha: 1),
                                               cap: NSColor(srgbRed: 0.14, green: 0.15, blue: 0.18, alpha: 1), dark: true)
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         geometry()
         transitions()

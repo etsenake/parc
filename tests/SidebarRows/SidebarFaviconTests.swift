@@ -1,7 +1,8 @@
 import AppKit
 
 @main struct SidebarFaviconTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         var checks = 0
         func check(_ value: @autoclosure () -> Bool, _ message: String) {

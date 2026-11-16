@@ -7,7 +7,8 @@ struct ReleaseNotesLaunchTests {
         count += 1; if !value { throw NSError(domain: message, code: 1) }
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let v182 = AppVersion(version: "1.8.2", build: "41"), v190 = AppVersion(version: "1.9.0", build: "42")
         try check(v190.isNewer(than: v182) && !v182.isNewer(than: v190) && !v182.isNewer(than: v182), "versions order")
         try check(AppVersion(version: "1.10.0", build: "50").isNewer(than: AppVersion(version: "1.9.9", build: "49")),

@@ -40,7 +40,8 @@ struct IconSettingsTests {
     static func rows(in view: NSView) -> [IconChoiceRow] {
         view.subviews.flatMap { ($0 as? IconChoiceRow).map { [$0] } ?? rows(in: $0) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let application = IconSettingsTestApplication.shared as! IconSettingsTestApplication
         let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

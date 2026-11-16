@@ -6,7 +6,8 @@ import AppKit
         count += 1
         guard value() else { fatalError("SidebarAccessibility: \(message)") }
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         check(SidebarAccessibility.hideSidebar == "Hide sidebar" && SidebarAccessibility.lockSidebar == "Lock sidebar",
               "toggle labels follow the locked/floating pair")

@@ -14,7 +14,8 @@ struct PagePlaceholderImagesTests {
         return context.makeImage()!
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let first = UUID(), second = UUID(), third = UUID()
         let one = UUID(), two = UUID(), three = UUID()
 

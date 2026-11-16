@@ -15,7 +15,8 @@ import AppKit
             DispatchQueue.main.async { continuation.resume() }
         }
     }
-    static func main() async throws {
+    static func main() async { await exitOnFailure(runChecks) }
+    static func runChecks() async throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-title-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

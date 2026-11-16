@@ -24,7 +24,8 @@ struct ReturnModifierTests {
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) {
         assertions += 1; precondition(value(), message)
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 180, height: 80),
                               styleMask: [], backing: .buffered, defer: false)

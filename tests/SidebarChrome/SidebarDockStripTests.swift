@@ -38,7 +38,8 @@ import AppKit
         strip.updateHover(atWindowPoint: item.map { strip.documentView!.convert(NSPoint(x: $0.midX, y: $0.midY), to: nil) })
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 100), styleMask: [.borderless], backing: .buffered, defer: true)
         let host = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 100))

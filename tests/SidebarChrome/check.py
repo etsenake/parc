@@ -219,8 +219,10 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-chrome-") as directory:
         copy.write_text(source.replace(original, mutated))
         sources = [copy if path.name == file else path for path in suites[suite]]
         try:
-            failed = subprocess.run([str(build(f"negative-{index}", sources))], capture_output=True, text=True,
-                                    timeout=60).returncode != 0
+            result = subprocess.run([str(build(f"negative-{index}", sources))], capture_output=True, text=True, timeout=60)
+            assert result.returncode >= 0, \
+                f"negative control crashed with signal {-result.returncode} instead of failing: reverting {rule}\n{result.stderr[-1000:]}"
+            failed = result.returncode != 0
         except subprocess.TimeoutExpired:
             failed = True
         assert failed, f"negative control passed: reverting {rule} left the {suite} suite green"

@@ -116,5 +116,6 @@ with tempfile.TemporaryDirectory(prefix="parc-resident-command-bar-") as directo
     }
     for name, (replace, failure) in controls.items():
         result = subprocess.run([str(build(directory, name.replace(" ", "-"), replace))], capture_output=True, text=True)
+        assert result.returncode >= 0, f"negative control crashed with signal {-result.returncode} instead of failing: {name}\n{result.stderr[-1000:]}"
         assert result.returncode != 0 and failure in result.stderr, f"negative control did not fail: {name}\n{result.stderr[-1000:]}"
         print(f"Resident negative control fails as expected: {name}")

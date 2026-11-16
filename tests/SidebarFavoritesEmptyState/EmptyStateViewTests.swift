@@ -18,7 +18,8 @@ struct EmptyStateViewTests {
                  backing: .buffered, defer: false)
     }
 
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("parc-empty-state-view-\(UUID().uuidString)", isDirectory: true)

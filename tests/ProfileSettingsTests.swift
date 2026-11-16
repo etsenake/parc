@@ -13,7 +13,8 @@ struct ProfileSettingsTests {
         do { try operation() } catch { assertions += 1; return }
         throw Failure(message: "Expected the operation to fail")
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Parc-Profile-Settings-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try BrowserStore(directory: directory)

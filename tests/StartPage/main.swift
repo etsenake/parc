@@ -16,7 +16,8 @@ import AppKit
         return theme
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         layoutGeometry()
         chromeGeometry()

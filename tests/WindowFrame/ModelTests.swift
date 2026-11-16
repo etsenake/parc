@@ -9,7 +9,8 @@ import Foundation
     }
     static func near(_ a: Double, _ b: Double, _ tolerance: Double = 0.0001) -> Bool { abs(a - b) < tolerance }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         typealias T = WindowFrameThickness
         check(T.range == 3...13 && T.standard == 10, "range and default")
         check(T.clamped(1) == 3 && T.clamped(20) == 13 && T.clamped(7) == 7, "clamping")

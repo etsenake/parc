@@ -5,7 +5,8 @@ import Foundation
     static func check(_ value: @autoclosure () throws -> Bool, _ reason: String) throws {
         count += 1; if try !value() { throw NSError(domain: reason, code: count) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         try gateAndPrompt()
         try splitDrop()
         try collectionMoves()

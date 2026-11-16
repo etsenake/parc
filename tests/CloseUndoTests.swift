@@ -7,7 +7,8 @@ struct CloseUndoTests {
         count += 1; if try !value() { throw NSError(domain: message, code: 1) }
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-close-undo-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }

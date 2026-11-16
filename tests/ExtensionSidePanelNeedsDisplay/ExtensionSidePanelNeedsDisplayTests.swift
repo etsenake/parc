@@ -3,7 +3,8 @@ import AppKit
 @main
 @MainActor
 struct ExtensionSidePanelNeedsDisplayTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         var checks = 0
         func check(_ condition: @autoclosure () -> Bool, _ message: String) {

@@ -7,7 +7,8 @@ import Foundation
         count += 1
         guard try value() else { fatalError("SidebarFavoritesEmptyState dismissal: \(message)") }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("parc-empty-state-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)

@@ -4,7 +4,8 @@ import UniformTypeIdentifiers
 
 @main
 struct BrandMarkChecks {
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         _ = NSApplication.shared
         guard let color = ParcBrandMark.image(.borderless),
               let mono = ParcBrandMark.image(.monochrome) else {

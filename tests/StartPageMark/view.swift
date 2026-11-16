@@ -32,7 +32,8 @@ import AppKit
         return palette.maxContrastColor.cgColor.copy(alpha: StartPageMarkView.tintAlpha)!
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let mark = StartPageMarkView(frame: NSRect(x: 0, y: 0, width: 65, height: 96))
         mark.appearance = NSAppearance(named: .aqua)
         mark.layoutSubtreeIfNeeded()

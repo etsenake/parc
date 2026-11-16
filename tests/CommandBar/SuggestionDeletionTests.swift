@@ -5,7 +5,8 @@ import AppKit
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) {
         assertions += 1; precondition(value(), message)
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         let row = CommandResultCell(title: "History result", detail: "example.test", accessory: "", isTab: false, icon: nil, enabled: true)
         var deleted = 0, opened = 0, eligible = true

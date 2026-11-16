@@ -2,7 +2,8 @@ import Foundation
 
 @main
 struct BlockedPopupsTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         var checks = 0
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
             checks += 1

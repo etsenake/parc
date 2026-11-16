@@ -9,7 +9,8 @@ struct ShortcutPersistSkipTests {
         precondition(condition(), message)
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

@@ -22,7 +22,8 @@ struct SpaceThemeAppearanceTests {
             expect(selected == (value == choice ? 1 : 0), "Parent choice selects exactly \(choice.title), including \(value.title)")
         }
     }
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         let originalAppearance = NSApp.appearance
         let suite = "Parc.SpaceThemeAppearanceTests.\(UUID().uuidString)"

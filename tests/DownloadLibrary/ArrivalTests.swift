@@ -28,7 +28,8 @@ import AppKit
         near(Double(a.x), x, tolerance) && near(Double(a.y), y, tolerance)
     }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         expect(LibraryArtwork.directory == Bundle.main.resourceURL?.appendingPathComponent("Library", isDirectory: true)
                && LibraryArtwork.boxOfThings("box") != nil, "the bin item's artwork loads from the bundle's Library resources")

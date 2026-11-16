@@ -17,7 +17,8 @@ import AppKit
 }
 
 @main @MainActor struct PageCaptureGestureChecks {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let domain = "Parc.CAP17." + UUID().uuidString
         let defaults = UserDefaults(suiteName: domain)!

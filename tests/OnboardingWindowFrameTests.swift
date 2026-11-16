@@ -2,7 +2,8 @@ import AppKit
 
 @main
 struct OnboardingWindowFrameTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         typealias Layout = OnboardingWindowFrameLayout
         let content = NSRect(x: 0, y: 0, width: OnboardingSetupLayout.size.width - OnboardingSetupLayout.instructionWidth,
                              height: OnboardingSetupLayout.size.height)

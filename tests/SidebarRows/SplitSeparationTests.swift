@@ -6,7 +6,8 @@ import Foundation
         count += 1
         if try !value() { throw NSError(domain: message, code: count) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-separation-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let now = Date(timeIntervalSince1970: 1_000_000)

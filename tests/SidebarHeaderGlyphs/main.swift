@@ -47,7 +47,8 @@ import SwiftUI
         return (minX, maxX)
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         typealias Chrome = SidebarChromeLayout
         check(Chrome.navigationGlyphPointSize == 16 && Chrome.narrowNavigationGlyphPointSize == 14, "16 and 14 points")

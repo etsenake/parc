@@ -11,7 +11,8 @@ struct OnboardingThemeStepTests {
         expect(abs(a - b) < 0.001, "\(message) (\(a) vs \(b))", line: line)
     }
 
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         layoutConstants()
         chromeGeometryAndShadow()

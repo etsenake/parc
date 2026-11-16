@@ -134,7 +134,8 @@ private final class ThemeGestureEvent: NSEvent {
         view.finishEditing()
         try expect(view.theme != baseline && commits == 3, "An unphased wheel burst after idle starts a new edit")
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-theme-undo-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

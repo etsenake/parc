@@ -3,7 +3,8 @@ import Foundation
 @main
 @MainActor
 struct OnboardingTests {
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-onboarding-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }

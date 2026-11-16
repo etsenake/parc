@@ -3,7 +3,8 @@ import SwiftUI
 
 @main
 struct SiteControlCenterChecks {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         var assertions = 0
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {

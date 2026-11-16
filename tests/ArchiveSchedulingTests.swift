@@ -2,8 +2,9 @@ import Foundation
 
 @main
 struct ArchiveSchedulingTests {
+    @MainActor static func main() { exitOnFailure(runChecks) }
     @MainActor
-    static func main() {
+    static func runChecks() {
         var assertions = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) {
             assertions += 1

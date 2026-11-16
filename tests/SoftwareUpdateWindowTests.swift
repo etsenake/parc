@@ -7,7 +7,8 @@ struct SoftwareUpdateWindowTests {
         checks += 1; precondition(value(), message)
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let info: [String: Any] = ["CFBundleName": "Parc", "CFBundleShortVersionString": "1.8.2", "CFBundleVersion": "22"]
         let (content, primary, secondary) = SoftwareUpdateWindow.content(style: .upToDate, info: info,
                                                                          icon: NSImage(size: NSSize(width: 1024, height: 1024)))

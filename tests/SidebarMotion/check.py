@@ -103,6 +103,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-motion-") as directory:
         return executable
     subprocess.run([str(build("checks", motion))], check=True)
     result = subprocess.run([str(build("unheld", motion.replace(hold, "")))], capture_output=True, text=True)
+    assert result.returncode >= 0, f"negative control crashed with signal {-result.returncode} instead of failing: unheld\n{result.stderr[-1000:]}"
     assert result.returncode != 0 and "a hidden drawing view is sized once" in result.stderr, \
         "negative control: the hidden-view check passes without the hold"
     print("SidebarMotion negative control fails as expected: hidden drawing view without the hold")

@@ -59,7 +59,8 @@ private final class Source: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
         return (list, views)
     }
 
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         let alphabet: [L.TablistRow] = [.item, .gap(height: L.pinnedHeaderHeight), .accessory(height: L.sectionDividerHeight),
                                         .accessory(height: L.unpinnedHeaderHeight)]

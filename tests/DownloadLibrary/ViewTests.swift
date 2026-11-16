@@ -30,7 +30,8 @@ private final class LiveCloud: ExternalMediaCloudObservation, @unchecked Sendabl
 @main @MainActor struct ViewCheck {
  static var count=0
  static func expect(_ c: @autoclosure () -> Bool, _ s: String) {count += 1; precondition(c(),s)}
- static func main() throws {
+ static func main() { exitOnFailure(runChecks) }
+ static func runChecks() throws {
   _ = NSApplication.shared
   NSApp.setActivationPolicy(.prohibited)
   SystemOverrides.install()

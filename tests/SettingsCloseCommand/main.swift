@@ -16,7 +16,8 @@ import AppKit
     }
 }
 @main @MainActor struct SettingsCloseCommandTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let settings = ProbeWindow(), browser = ProbeWindow(), sheet = ProbeWindow()
         SettingsCloseCommand.perform(window: settings, appIsActive: true, sender: nil)

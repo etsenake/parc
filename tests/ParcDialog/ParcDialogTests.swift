@@ -30,7 +30,8 @@ struct ParcDialogTests {
         override func draw(_ dirtyRect: NSRect) { color.setFill(); bounds.fill() }
     }
 
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         _ = NSApplication.shared
         NSApp.appearance = NSAppearance(named: .aqua)
 

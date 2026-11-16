@@ -2,8 +2,9 @@ import AppKit
 
 @main
 struct PagePlaceholderCheck {
+    @MainActor static func main() { exitOnFailure(runChecks) }
     @MainActor
-    static func main() throws {
+    static func runChecks() throws {
         setvbuf(stdout, nil, _IONBF, 0)
         var count = 0
         func expect(_ ok: Bool, _ message: String) { count += 1; precondition(ok, message) }

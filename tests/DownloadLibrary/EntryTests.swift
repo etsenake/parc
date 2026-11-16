@@ -3,7 +3,8 @@ import AppKit
 @main @MainActor struct DownloadEntryChecks {
     static var count = 0
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) { count += 1; precondition(value(), message) }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -29,7 +29,8 @@ private final class HoverTrackingEvent: NSEvent {
 }
 
 @main @MainActor struct SettingsHoverTests {
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         let app = HoverApplication.shared as! HoverApplication
         var checks = 0
         func check(_ value: @autoclosure () -> Bool, _ message: String) {

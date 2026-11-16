@@ -1,7 +1,8 @@
 import Foundation
 
 @main struct BrowserImportTests {
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         var checks = 0
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
             checks += 1; precondition(condition(), message)

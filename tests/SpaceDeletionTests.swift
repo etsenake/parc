@@ -6,7 +6,8 @@ import Foundation
         count += 1
         if try !condition() { throw NSError(domain: message, code: count) }
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-space-delete-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
