@@ -339,7 +339,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "parc/native/native_appkit_bridge.h",
-      "sha256": "711144d27649e97d3af7337b6a460019161e75aa5c2f73f1151ce27f35fb7891"
+      "sha256": "141aaf4364a871c92d6030708dea85f2c0872e4f592dbbd0debc9d6d681d3296"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -1044,7 +1044,7 @@
     {
       "source": "Engine/ParcNative/native_confirm_infobars.mm",
       "target": "parc/native/native_confirm_infobars.mm",
-      "sha256": "a633502dd4632c08523fc3cbdd6bcd3d1d40ebad7e9af257db60e2143d9c657e"
+      "sha256": "eb7ae7cc1cc894dc0f42bebe8be088f32cc9fddfae2b45b0e0d1190c94f7666e"
     },
     {
       "source": "Engine/ParcNative/native_search.h",

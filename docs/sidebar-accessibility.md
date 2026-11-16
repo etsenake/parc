@@ -149,8 +149,9 @@ owned by capture UI, and panes dimmed behind an active Peek are excluded.
 
 The window loop is not globally recalculated: capture overlays and preview
 cards retain their own keyboard ownership. The linker runs after full chrome
-layout, when a window becomes key, and when a newly swapped renderer takes
-focus. Field editors remain with their fields. Unchanged correct links are
+layout, when a window becomes key, when a newly swapped renderer takes focus,
+and when an [extension-debugging warning](web-interactions.md#banners-and-blocked-pop-ups) row appears or
+goes away. Field editors remain with their fields. Unchanged correct links are
 not rewritten.
 
 With a hidden or absent sidebar, the page side loops on itself. With a shown

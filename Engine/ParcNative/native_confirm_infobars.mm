@@ -13,6 +13,7 @@
 #include "base/scoped_observation.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "components/infobars/content/content_infobar_manager.h"
 #include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
@@ -21,6 +22,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "native_appkit_host.h"
 #include "native_appkit_page.h"
 #import "window_security_reservation.h"
 
@@ -216,8 +218,21 @@ void AttachNativeConfirmInfoBars(content::WebContents& contents) {
   NativeInfoBars::CreateForWebContents(&contents);
   NativeInfoBars::FromWebContents(&contents)->Start();
 }
-bool FocusNativeConfirmInfoBar(content::WebContents*) {
-  return false;
+bool FocusNativeConfirmInfoBar(content::WebContents* contents) {
+  PCNativePage* page = ExistingNativePage(contents);
+  auto* state = InfoBarsForPage(page);
+  NSWindow* window = page.nativeView.window;
+  if (!state || contents->IsBeingDestroyed() || state->DebuggerWarnings().count == 0 ||
+      !window || window.attachedSheet || PCNativeWindowHasSecurityReservation(window)) {
+    return false;
+  }
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(contents);
+  PCNativeBrowserWindow* binding = browser ? AppKitBindingForBrowser(browser) : nil;
+  id<PCNativeBrowserWindowClient> client = binding.client;
+  return binding.window == window &&
+         [client respondsToSelector:@selector(nativeBrowser:focusDebuggerWarningForPage:)] &&
+         [client nativeBrowser:binding focusDebuggerWarningForPage:page];
 }
 }
 

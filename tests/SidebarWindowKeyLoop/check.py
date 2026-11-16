@@ -16,7 +16,8 @@ for use, count in (("lazy var windowKeyViews = WindowKeyViewLoop(", 1),
                    ("isPage: { [extensionSidePanel] in $0 is PCBrowserView || $0 === extensionSidePanel.content },", 1),
                    ("passesThrough: { $0 is PeekHostView })", 1),
                    ("windowKeyViews.attach(to: window)", 1),
-                   ("windowKeyViews.relink()", 3),
+                   ("windowKeyViews.relink()", 4),
+                   ("if relinksKeyViews { windowKeyViews.relink() }", 1),
                    ("extension SidebarView: SidebarKeyViewEnds {}", 1),
                    ("recalculateKeyViewLoop", 0),
                    ("autorecalculatesKeyViewLoop", 0)):
@@ -24,6 +25,10 @@ for use, count in (("lazy var windowKeyViews = WindowKeyViewLoop(", 1),
 layout = controller[controller.index("    func layoutChrome() {"):controller.index("    private func chromeFrames(sidebarWidth: CGFloat, in bounds: NSRect) -> SidebarChromeFrames {")]
 assert layout.index("guard fullPass else { return }") < layout.index("windowKeyViews.relink()"), \
     "the window loop must relink at the end of every full chrome layout"
+toolbars = controller[controller.index("    func refreshDeveloperToolbars() {"):controller.index("    func configurePaneDeveloperToolbar(")]
+assert toolbars.count("relinksKeyViews = true") == 2 and \
+    toolbars.rindex("relinksKeyViews = true") < toolbars.index("if relinksKeyViews { windowKeyViews.relink() }"), \
+    "a debugger warning row that appears or goes away relinks the window loop after its pane or Peek strip is laid out"
 sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
 for use in ("var keyViewEntry: NSView { keyViewGate }",
             "weak var keyViewExit: NSView? { didSet { if keyViewExit !== oldValue { setNeedsKeyViewLinking() } } }"):

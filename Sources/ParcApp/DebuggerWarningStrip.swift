@@ -26,8 +26,8 @@ final class DebuggerWarningStrip: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     @discardableResult
-    func update(_ next: [PCNativeDebuggerWarning], palette: ParcToastPalette, suppressed: Bool) -> [PCNativeDebuggerWarning] {
-        let appeared = DebuggerWarningLayout.appeared(next, previous: warnings)
+    func update(_ next: [PCNativeDebuggerWarning], palette: ParcToastPalette, suppressed: Bool) -> Bool {
+        let previous = warnings, wasHidden = isHidden
         let animate = window != nil && !suppressed && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         var kept: [DebuggerWarningRow] = []
         for warning in next {
@@ -48,7 +48,12 @@ final class DebuggerWarningStrip: NSView {
         let hidden = rows.isEmpty || suppressed
         if isHidden != hidden { isHidden = hidden; setAccessibilityHidden(hidden) }
         needsLayout = true
-        return appeared
+        return DebuggerWarningLayout.keyViewsChanged(warnings, previous: previous, hidden: isHidden, wasHidden: wasHidden)
+    }
+
+    func focusFirstCancel() -> Bool {
+        guard !isHiddenOrHasHiddenAncestor, let window, let cancel = rows.first?.cancel else { return false }
+        return window.makeFirstResponder(cancel) && window.firstResponder === cancel
     }
 
     func apply(_ next: ParcToastPalette) {
@@ -89,7 +94,7 @@ private final class DebuggerWarningRow: NSView {
     var onClose: ((PCNativeDebuggerWarning) -> Void)?
     private let icon = NSImageView()
     private let message = NSTextField(labelWithString: "")
-    private let cancel: DebuggerWarningCancelButton
+    let cancel: DebuggerWarningCancelButton
     private let close = DeveloperToolbarButton(symbol: "xmark", title: DebuggerWarningLayout.closeTitle)
     override var isFlipped: Bool { true }
 

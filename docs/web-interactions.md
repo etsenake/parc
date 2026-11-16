@@ -283,7 +283,11 @@ down to make room. It uses the toast palette from the Space theme, the bar's own
 wording, and a Cancel button that runs the bar's real button and detaches the
 debugger everywhere. The × does what Chrome's close does, which also detaches,
 so the warning can never be put away while the extension keeps debugging.
-VoiceOver announces it when it appears, and page full screen hides it.
+Cancel and × join the window's Tab order as soon as a row appears, and
+Chromium's request to focus the infobar area moves focus to the first row's
+Cancel on that page. VoiceOver announces each warning once, when its page is
+first visible in the key window, so one that arrived in a background tab or
+window is announced on arrival there. Page full screen hides it.
 
 Tab sharing exposes **Share this tab instead** on the eligible hovered sidebar
 row through its actual `TabSharingInfoBarDelegate`. It appears before Close,

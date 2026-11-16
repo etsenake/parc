@@ -2,7 +2,7 @@ import AppKit
 
 private final class Token {}
 
-@main
+@main @MainActor
 struct DebuggerWarningTests {
     static func main() {
         var assertions = 0
@@ -30,9 +30,27 @@ struct DebuggerWarningTests {
         expect(tiny.message.width == 0, "The message never takes a negative width")
 
         let first = Token(), second = Token(), third = Token()
-        expect(DebuggerWarningLayout.appeared([first, second], previous: [first]).elementsEqual([second], by: ===),
-               "Only a newly added warning counts as appeared")
-        expect(DebuggerWarningLayout.appeared([first], previous: [first, third]).isEmpty, "Removing a warning announces nothing")
+        let announcements = DebuggerWarningAnnouncements<Token>()
+        expect(announcements.claim([first]).elementsEqual([first], by: ===), "A warning shown on a visible page is announced")
+        expect(announcements.claim([first, second]).elementsEqual([second], by: ===),
+               "Only a warning not yet announced is announced")
+        expect(announcements.claim([first]).isEmpty, "Removing a warning announces nothing")
+        expect(announcements.claim([second, first]).isEmpty, "A warning shown again after a background stint is not announced twice")
+        expect(announcements.claim([third]).elementsEqual([third], by: ===),
+               "A warning that appeared in the background is announced once its page is shown")
+
+        expect(!DebuggerWarningLayout.keyViewsChanged([first], previous: [first], hidden: false, wasHidden: false),
+               "Unchanged rows keep the window's key-view loop")
+        expect(DebuggerWarningLayout.keyViewsChanged([first, second], previous: [first], hidden: false, wasHidden: false),
+               "A row that appears relinks the loop")
+        expect(DebuggerWarningLayout.keyViewsChanged([second], previous: [first, second], hidden: false, wasHidden: false),
+               "A row that goes away relinks the loop")
+        expect(DebuggerWarningLayout.keyViewsChanged([second, first], previous: [first, second], hidden: false, wasHidden: false),
+               "Reordered rows relink the loop")
+        expect(DebuggerWarningLayout.keyViewsChanged([first], previous: [first], hidden: false, wasHidden: true),
+               "A strip shown again relinks the loop")
+        expect(DebuggerWarningLayout.keyViewsChanged([], previous: [first], hidden: true, wasHidden: false),
+               "A strip that empties and hides relinks the loop")
 
         expect(DeveloperChromeGeometry.paneIsCurrent(bounds: NSRect(x: 0, y: 0, width: 500, height: 400),
             developerHeight: 0, browserHeight: 40,

@@ -745,6 +745,9 @@ NS_SWIFT_UI_ACTOR
 - (void)nativeBrowserDidReleaseLastBrowser:(PCNativeBrowserWindow*)browser;
 - (void)nativeBrowserCreationReservationDidAbort:
     (PCNativeBrowserWindow*)browser;
+- (BOOL)nativeBrowser:(PCNativeBrowserWindow*)browser
+    focusDebuggerWarningForPage:(PCNativePage*)page
+    NS_SWIFT_NAME(nativeBrowser(_:focusDebuggerWarningFor:));
 @end
 
 NS_SWIFT_UI_ACTOR

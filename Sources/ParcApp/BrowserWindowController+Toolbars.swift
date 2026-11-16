@@ -308,6 +308,7 @@ extension BrowserWindowController {
         let modal = activePeek?.modalPhase
         let leading = renderedPaneIDs.first
         var flushedChromeLayout = false
+        var relinksKeyViews = false
         for (id, pane) in panes {
             let obstructed = modal == .presented
             if pane.controlsObstructed != obstructed { pane.controlsObstructed = obstructed }
@@ -325,7 +326,7 @@ extension BrowserWindowController {
             } else {
                 configureDocumentToolbar(pane, tabID: id, visible: topBar, leading: id == leading)
             }
-            configureDebuggerWarning(pane.debuggerWarning, browser: pane.browser,
+            let warningChanged = configureDebuggerWarning(pane.debuggerWarning, browser: pane.browser,
                 visible: selectedTabIDs.contains(id) && nativeFullscreenTabID != id && !pane.showsLocalContent)
             let developerHeight: CGFloat = pane.loadedDeveloperToolbar?.isHidden == false ? DeveloperToolbarLayout.height : 0
             let browserHeight: CGFloat = pane.browserToolbar.isHidden ? 0 : BrowserToolbarView.height
@@ -343,6 +344,7 @@ extension BrowserWindowController {
                 pane.layoutSubtreeIfNeeded()
                 flushedChromeLayout = true
             }
+            if warningChanged { pane.debuggerWarning.layoutSubtreeIfNeeded(); relinksKeyViews = true }
         }
         refreshSplitPaneHighlights()
         for peek in presentedPeeks {
@@ -354,7 +356,7 @@ extension BrowserWindowController {
                     isActivePeek: activePeek === peek,
                     developerToolbarHidden: peek.view.developerToolbar.isHidden),
                 failing: peek.showsFailure, themeBackground: nil)
-            configureDebuggerWarning(peek.view.debuggerWarning, browser: peek.browser, visible: true)
+            let warningChanged = configureDebuggerWarning(peek.view.debuggerWarning, browser: peek.browser, visible: true)
             let developerHeight: CGFloat = peek.view.developerToolbar.isHidden ? 0 : DeveloperToolbarLayout.height
             let browserHeight: CGFloat = peek.view.browserToolbar.isHidden ? 0 : BrowserToolbarView.height
             if peek.view.needsLayout
@@ -370,11 +372,13 @@ extension BrowserWindowController {
                 peek.view.layoutSubtreeIfNeeded()
                 flushedChromeLayout = true
             }
+            if warningChanged { peek.view.debuggerWarning.layoutSubtreeIfNeeded(); relinksKeyViews = true }
         }
         applySidebarToolbarOwnership()
         if flushedChromeLayout {
             synchronizeNativeLayout()
         }
+        if relinksKeyViews { windowKeyViews.relink() }
     }
     func configurePaneDeveloperToolbar(_ pane: BrowserPane, visible: Bool) {
         let shows = visible && libraryView == nil

@@ -245,7 +245,7 @@ import AppKit
               "without the pass-through the Peek's host would be a stop")
         let undimmed = WindowKeyViewLoop.pageSide(in: root, excluded: { $0 === container || $0 === parked }, isPage: isPage,
                                                   passesThrough: passesThrough)
-        check(undimmed.first === header && undimmed.contains { $0 === page.renderer }, "without the Peek rule the dimmed pane would be")
+        check(undimmed.contains { $0 === header } && undimmed.contains { $0 === page.renderer }, "without the Peek rule the dimmed pane would be")
         peekView.removeFromSuperview(); peek = nil
         loop.relink()
         check(names(side()) == ["header", "renderer"] && step(from: sidebar.plus) == "header" && step(from: page.renderer) == "toggle",

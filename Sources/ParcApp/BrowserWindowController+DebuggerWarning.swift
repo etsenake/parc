@@ -1,6 +1,8 @@
 import AppKit
 
 extension BrowserWindowController {
+    private static let debuggerWarningAnnouncements = DebuggerWarningAnnouncements<PCNativeDebuggerWarning>()
+
     func setupDebuggerWarnings() {
         menuObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name(PCNativePageDebuggerWarningsDidChangeNotification), object: nil, queue: .main
@@ -30,14 +32,15 @@ extension BrowserWindowController {
         for peek in presentedPeeks where !peek.view.debuggerWarning.warnings.isEmpty { peek.view.debuggerWarning.apply(palette) }
     }
 
-    func configureDebuggerWarning(_ strip: DebuggerWarningStrip, browser: PCBrowserView?, visible: Bool) {
+    @discardableResult
+    func configureDebuggerWarning(_ strip: DebuggerWarningStrip, browser: PCBrowserView?, visible: Bool) -> Bool {
         let page = browser?.nativePage.flatMap { page -> PCNativePage? in
             page.isClosed || !page.responds(to: #selector(getter: PCNativePage.debuggerWarnings)) ? nil : page
         }
         let warnings = page?.debuggerWarnings ?? []
         let suppressed = !visible || isClosing || wholeWindowClose || libraryView != nil
         let ownedFocus = strip.ownsFocus
-        let appeared = strip.update(warnings, palette: debuggerWarningPalette, suppressed: suppressed)
+        let keyViewsChanged = strip.update(warnings, palette: debuggerWarningPalette, suppressed: suppressed)
         if ownedFocus, !strip.ownsFocus, let page, window?.isKeyWindow == true, commandBar == nil {
             window?.makeFirstResponder(page.nativeView)
         }
@@ -53,11 +56,22 @@ extension BrowserWindowController {
                   page.dismissDebuggerWarning(warning) else { return }
             self.refreshDeveloperToolbars()
         }
-        guard !suppressed, let window, window.isKeyWindow else { return }
-        for warning in appeared {
+        guard !suppressed, let window, window.isKeyWindow else { return keyViewsChanged }
+        for warning in Self.debuggerWarningAnnouncements.claim(strip.warnings) {
             NSAccessibility.post(element: window, notification: .announcementRequested,
                                  userInfo: [.announcement: warning.message,
                                             .priority: NSAccessibilityPriorityLevel.high.rawValue])
         }
+        return keyViewsChanged
+    }
+
+    @objc(nativeBrowser:focusDebuggerWarningForPage:)
+    func nativeBrowser(_ browser: PCNativeBrowserWindow, focusDebuggerWarningFor page: PCNativePage) -> Bool {
+        guard browser === nativeBinding, presentation.isReady, !isClosing, !wholeWindowClose, !page.isClosed,
+              let window, window.isKeyWindow, window.attachedSheet == nil, commandBar == nil else { return false }
+        let strip: DebuggerWarningStrip?
+        if let peek = activePeek { strip = peek.browser.nativePage === page ? peek.view.debuggerWarning : nil }
+        else { strip = panes.first(where: { $0.value.browser?.nativePage === page })?.value.debuggerWarning }
+        return strip?.focusFirstCancel() == true
     }
 }

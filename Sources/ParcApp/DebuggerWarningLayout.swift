@@ -46,7 +46,18 @@ enum DebuggerWarningLayout {
                       cancel: cancel, close: close, showsIcon: showsIcon)
     }
 
-    static func appeared<Item: AnyObject>(_ next: [Item], previous: [Item]) -> [Item] {
-        next.filter { item in !previous.contains { $0 === item } }
+    static func keyViewsChanged<Item: AnyObject>(_ next: [Item], previous: [Item], hidden: Bool, wasHidden: Bool) -> Bool {
+        hidden != wasHidden || !next.elementsEqual(previous, by: ===)
+    }
+}
+
+@MainActor
+final class DebuggerWarningAnnouncements<Item: AnyObject> {
+    private let announced = NSHashTable<Item>.weakObjects()
+
+    func claim(_ showing: [Item]) -> [Item] {
+        let pending = showing.filter { !announced.contains($0) }
+        pending.forEach(announced.add)
+        return pending
     }
 }
