@@ -1095,6 +1095,8 @@ NS_SWIFT_UI_ACTOR
     NS_SWIFT_NAME(openSiteControls(handler:));
 - (BOOL)toggleSiteControlsPermission:(NSInteger)index revision:(NSUInteger)revision
     NS_SWIFT_NAME(toggleSiteControlsPermission(_:revision:));
+- (BOOL)openSiteControlsSystemSettings:(NSInteger)index revision:(NSUInteger)revision
+    NS_SWIFT_NAME(openSiteControlsSystemSettings(_:revision:));
 - (void)closeSiteControls;
 @property(nonatomic, readonly) BOOL canShowCertificate;
 - (BOOL)showCertificate;

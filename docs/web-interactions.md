@@ -35,6 +35,11 @@ live shortcuts and accessibility help. This is Parc's own presentation choice.
 - Secure HTTP(S) permissions come from the genuine headless PageInfo session in
   `Engine/ParcNative/native_page_info.mm`. Changes go through its presenter and
   `OnUIClosing` lifecycle, including reload consequences.
+- When a site's location is allowed but macOS has Location Services off or
+  denied for Parc, its row reads **Off in macOS** instead of Allowed and adds a
+  **Settings** capsule that opens Location Services in System Settings; the row
+  still toggles the site. The card refreshes when macOS's answer changes. The
+  security popover shows the same notice with **Open System Settings…**.
 - Automatic Picture-in-Picture uses PageInfo's item or the Profile's real content
   setting, with ASK treated as on. Managed/compound permissions display without
   exposing an unsupported toggle.
@@ -164,7 +169,15 @@ a competing sheet ends it neutrally.
 
 Ordinary permissions use the two-action card; permission-element stages retain
 their native titles and choices. During a handoff to macOS, the card stays open
-with progress. Location retains the engine's initial accuracy. Request type
+with progress.
+
+While macOS hasn't decided whether Parc may use location, the engine waits
+silently. Chrome asks macOS from its location-bar icon, which Parc lacks, so the
+page observer in `site_permissions.mm` asks when a page starts using location
+(after Allow on the card or on an allowed site), once the page is visible in the
+active window: one request at a time, none after macOS decides. Allowing hands
+the waiting `getCurrentPosition`/`watchPosition` its position; refusing gives
+the page a permission error. Location retains the engine's initial accuracy. Request type
 supplies the title and symbol, including protocol-handler and combined
 camera/microphone wording. Security warnings are Chromium's interstitials under
 Parc's skin; see [failure and recovery](#failure-and-recovery-surfaces--web17).
@@ -473,7 +486,9 @@ Focused suites are `tests/SiteControlCenter`, `tests/NativeSitePermissions`,
 `tests/NativeJavaScriptDialogs`, `tests/NativeHTTPAuth`,
 `tests/NativeExternalProtocol`, `tests/NativeStatusText`, `tests/NativeShiftLink`,
 `tests/RendererCrashPresentation`, `scripts/test-blocked-popups.sh` (blocked-content
-wording and parsing) and relevant extension/page-tool components.
+wording and parsing), `scripts/test-site-permission-rows.sh` (permission row
+wording, including location off in macOS) and relevant extension/page-tool
+components.
 Native changes need their appropriate compiler checks; app changes need the
 Swift checks in [the working contract](../AGENTS.md). Older test helpers may
 present windows: inspect them and follow current authorization.

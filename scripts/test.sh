@@ -109,6 +109,7 @@ step bash "$repo_root/tests/ImportedExtensionReports/run.sh"
 step bash "$repo_root/tests/DebuggerWarning/run.sh"
 step bash "$repo_root/scripts/test-media-notify.sh"
 step bash "$repo_root/scripts/test-scripting.sh"
+step bash "$repo_root/scripts/test-site-permission-rows.sh"
 step compile_and_run link-routing-text LinkRoutingTextEditingTests \
   "$repo_root/Sources/ParcApp/LinkRoutingTextEditing.swift"
 step compile_and_run automatic-archive-presentation AutoArchivePresentationTests

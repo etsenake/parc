@@ -179,17 +179,17 @@ extension BrowserWindowController {
         }
         siteControlCenterPermissionTargets = [:]
         guard secure else { return rows }
-        let permissions = siteControlCenterPermissions.filter { $0["autoPictureInPicture"] as? Bool == true }
-            + siteControlCenterPermissions.filter { $0["autoPictureInPicture"] as? Bool != true }
-        for row in permissions {
-            guard let title = row["title"] as? String, let key = row["key"] as? String,
-                  let index = row["index"] as? Int, let revision = row["revision"] as? UInt else { continue }
-            let allowed = row["allowed"] as? Bool ?? false
-            let id = "permission:" + key
-            siteControlCenterPermissionTargets[id] = (index, revision)
-            rows.append(Setting(id: id, symbol: "gearshape.fill", symbolSize: 13,
-                                symbolWeight: .medium, title: title, subtitle: allowed ? "Allowed" : "Blocked",
-                                isOn: allowed, isEnabled: row["changeable"] as? Bool ?? false))
+        let systemSettings = page.responds(to: #selector(PCNativePage.openSiteControlsSystemSettings(_:revision:)))
+        for row in SitePermissionRow.ordered(siteControlCenterPermissions) {
+            siteControlCenterPermissionTargets[row.id] = (row.index, row.revision)
+            let accessory = systemSettings && row.systemSettings
+                ? Setting.Accessory(title: SitePermissionRow.systemSettingsTitle, help: SitePermissionRow.systemSettingsHelp)
+                : nil
+            rows.append(Setting(id: row.id, symbol: "gearshape.fill", symbolSize: 13,
+                                symbolWeight: .medium, title: row.title,
+                                subtitle: accessory == nil ? (row.allowed ? "Allowed" : "Blocked") : row.subtitle,
+                                isOn: row.allowed, isEnabled: row.changeable,
+                                accessibilityValue: accessory == nil ? nil : row.accessibilityValue, accessory: accessory))
         }
         return rows
     }
@@ -258,6 +258,12 @@ extension BrowserWindowController {
             guard currentPresentation(), let self, let controller, let page else { return }
             self.toggleSiteControlCenterSetting(id, page: page, afterDismissal: afterDismissal)
             if currentPresentation() { self.updateSiteControlCenter(controller, page: page, items: nil) }
+        }
+        model.onSettingAccessory = { [weak self, weak page] id in
+            guard currentPresentation(), let self, let page,
+                  let (index, revision) = self.siteControlCenterPermissionTargets[id],
+                  page.responds(to: #selector(PCNativePage.openSiteControlsSystemSettings(_:revision:))) else { return }
+            _ = page.openSiteControlsSystemSettings(index, revision: revision)
         }
         model.onSiteSettings = { [weak self] in
             guard currentPresentation(), let self else { return }

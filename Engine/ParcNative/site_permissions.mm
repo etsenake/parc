@@ -13,6 +13,7 @@
 #include "base/functional/bind.h"
 #include "base/mac/mac_util.h"
 #include "base/memory/weak_ptr.h"
+#include "base/no_destructor.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
@@ -29,8 +30,10 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_capability_type.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 #import "dialog_style.h"
@@ -195,12 +198,9 @@ void ShowSystemNotificationsDeniedSheet(NSWindow* window) {
 }
 
 void EnsureSystemNotificationsAllowed(NSWindow* window) {
-  // Genuine-controller tests share this adapter; only a real app bundle has a
-  // notification center.
   if (![NSBundle.mainBundle.bundlePath hasSuffix:@".app"]) {
     return;
   }
-  // Built on main so the weak window is only ever touched there.
   __weak NSWindow* weak = window;
   void (^denied)(void) = ^{
     ShowSystemNotificationsDeniedSheet(weak);
@@ -313,8 +313,6 @@ class Request final : public content::WebContentsObserver,
     for (const auto& request : delegate_->Requests()) {
       auto* frame =
           content::RenderFrameHost::FromID(request->get_requesting_frame_id());
-      // Permission delegation can canonicalize the origin. Trust the actual
-      // manager origin, while binding each actual requesting frame document.
       if (!frame ||
           content::WebContents::FromRenderFrameHost(frame) != contents ||
           request->requesting_origin() != origin_) {
@@ -333,8 +331,6 @@ class Request final : public content::WebContentsObserver,
       }
       if (variant_ != Variant::kAsk) {
         if (!permission_name.empty()) permission_name += u", ";
-        // The embedded flow supports camera, microphone and geolocation.
-        // Ordinary requests must never call this narrower name accessor.
         permission_name += request->GetPermissionNameTextFragment();
       }
       typed_geolocation_ |= request->GetContentSettingsType() ==
@@ -344,14 +340,11 @@ class Request final : public content::WebContentsObserver,
         Cancel();
         return;
       }
-      // Opaque identity comparisons only; never dereferenced after this loop.
-      // The owning prompt identity is also checked before every decision.
       requests_.push_back(request.get());
       frames_.push_back(frame->GetWeakDocumentPtr());
       types.push_back(request->request_type());
       if (request->request_type() ==
           permissions::RequestType::kRegisterProtocolHandler) {
-        // Only Chromium's protocol-handler request carries this type.
         mailto = static_cast<custom_handlers::
                                  RegisterProtocolHandlerPermissionRequest*>(
                      request.get())
@@ -377,8 +370,6 @@ class Request final : public content::WebContentsObserver,
     bool precise = false;
     if (typed_geolocation_ && (variant_ == Variant::kAsk ||
                               variant_ == Variant::kPreviouslyDenied)) {
-      // Actual current Chromium policy selects the allowed accuracy controls.
-      // Do not translate the old generic CEF result into a fabricated option.
       if (delegate_->Requests().size() != 1) {
         Cancel();
         return;
@@ -465,8 +456,6 @@ class Request final : public content::WebContentsObserver,
       ConfigureFollowUp(permission_name, allow, weak);
     }
     if (variant_ == Variant::kOsSystemSettings) {
-      // AppKit equivalent of the engine's host-widget activation observer.
-      // A settings handoff may occlude this page; it must not decide its grant.
       system_observers_ = [NSMutableArray array];
       for (NSNotificationName name in @[ NSApplicationDidBecomeActiveNotification,
                                          NSWindowDidBecomeKeyNotification ]) {
@@ -506,8 +495,6 @@ class Request final : public content::WebContentsObserver,
     [reservation_ invalidate];
     reservation_ = nil;
     auto result = std::move(result_);
-    // The manager may still be installing its factory result. Never resolve
-    // on that creation stack, nor decide a later prompt after replacement.
     if (result) {
       base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE,
@@ -549,7 +536,6 @@ class Request final : public content::WebContentsObserver,
         if (offers_one_time_) {
           add(IDS_PERMISSION_ALLOW_THIS_TIME, PCSitePermissionAllowOnce);
         } else {
-          // An allowed non-temporary request uses its own real grant label.
           [labels addObject:allow];
           [choices addObject:@(PCSitePermissionAllow)];
         }
@@ -593,8 +579,6 @@ class Request final : public content::WebContentsObserver,
     return embedded_ ? flow && flow->prompt_variant() == variant_ : !flow;
   }
   bool HasSystemSurface() const {
-    // Native completion is deferred. Once a user closes the prompt, a late OS
-    // response must not win that gap and advance instead of their dismissal.
     return Valid() && presenter_.shown;
   }
   void RequestSystemPermissions() {
@@ -621,8 +605,6 @@ class Request final : public content::WebContentsObserver,
             if (--self->pending_system_requests_) return;
             for (auto type : self->system_types_) {
               if (system_permission_settings::CanPrompt(type)) {
-                // An undetermined response is not an allow or a deny. Keep
-                // the current sheet and let the user retry or dismiss it.
                 [self->presenter_ setSystemRequestPending:NO];
                 return;
               }
@@ -638,8 +620,6 @@ class Request final : public content::WebContentsObserver,
     if (refreshing_system_) return;
     refreshing_system_ = true;
     std::weak_ptr<Request> weak = keep;
-    // Preserve type identity: asynchronous cache refreshes can finish in any
-    // order. The resulting vector's order is deliberately not used as an ID.
     using State = std::pair<ContentSettingsType, bool>;
     auto barrier = base::BarrierCallback<State>(system_types_.size(),
         base::BindOnce([](std::weak_ptr<Request> weak, std::vector<State> states) {
@@ -650,7 +630,6 @@ class Request final : public content::WebContentsObserver,
           auto denied = std::find_if(states.begin(), states.end(),
                                     [](const State& state) { return state.second; });
           if (denied == states.end()) {
-            // Avoid replacing a sheet within AppKit's activation stack.
             base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
                 FROM_HERE, base::BindOnce([](std::weak_ptr<Request> weak) {
                   if (auto self = weak.lock(); self && self->Valid()) self->AdvanceFlow();
@@ -672,8 +651,6 @@ class Request final : public content::WebContentsObserver,
     auto keep = shared_from_this();
     if (!HasSystemSurface() || !IsSystemStage()) return;
     auto delegate = delegate_;
-    // This is a model transition, not a user permission decision. Silence the
-    // old native sheet before the manager replaces/finalizes its exact prompt.
     closed_ = true;
     result_.Reset();
     [presenter_ invalidate];
@@ -683,8 +660,6 @@ class Request final : public content::WebContentsObserver,
     if (Valid(/*completing=*/true)) {
       delegate->AdvanceOrFinalizeEmbeddedPromptFlow();
     } else if (IsCurrent()) {
-      // Release observers can move or close the page. Finalize that same
-      // prompt as ignored; never leave its engine request suspended.
       delegate->Ignore(std::monostate{});
     }
   }
@@ -742,7 +717,6 @@ class Request final : public content::WebContentsObserver,
     [reservation_ invalidate];
     reservation_ = nil;
     valid = valid && Valid(/*completing=*/true);
-    // Only controls offered by this exact model stage may change settings.
     if (choice == PCSitePermissionAllowOnce) {
       valid &= offers_one_time_ && (variant_ == Variant::kAsk ||
                                     variant_ == Variant::kPreviouslyDenied);
@@ -771,8 +745,6 @@ class Request final : public content::WebContentsObserver,
                   ContentSettingsType::NOTIFICATIONS) != system_types_.end();
     NSWindow* window = window_;
     auto result = std::move(result_);
-    // No member access after callback: the manager can destroy this prompt,
-    // this page, or synchronously replace its request and UI.
     if (result) {
       std::move(result).Run(valid ? choice : PCSitePermissionInterrupted,
                             std::move(options));
@@ -799,8 +771,6 @@ class Request final : public content::WebContentsObserver,
     }
   }
   void OnVisibilityChanged(content::Visibility visibility) override {
-    // A covered window leaves the page OCCLUDED; the prompt stays, as in
-    // Chrome's PermissionRequestManager, which reacts only to HIDDEN.
     if (visibility == content::Visibility::HIDDEN) {
       Cancel();
     }
@@ -893,9 +863,6 @@ class NativePrompt final : public permissions::PermissionPrompt {
     if (!delegate_ || delegate_->GetCurrentPrompt() != this) {
       return;
     }
-    // These genuine manager operations own content settings, one-time expiry,
-    // metrics and downstream OS policy. No synthetic content setting is
-    // written.
     auto delegate = delegate_;
     delegate->SetDecisionTime();
     switch (choice) {
@@ -922,7 +889,7 @@ class NativePrompt final : public permissions::PermissionPrompt {
   std::shared_ptr<Request> request_;
   base::WeakPtrFactory<NativePrompt> weak_factory_{this};
 };
-}  // namespace
+}
 
 std::unique_ptr<permissions::PermissionPrompt> CreateNativeSitePermissionPrompt(
     content::WebContents& contents,
@@ -939,10 +906,31 @@ std::unique_ptr<permissions::PermissionPrompt> CreateNativeSitePermissionPrompt(
 }
 
 namespace {
-// The page's attachment gate and the cancellation of its one live prompt.
+bool g_system_location_requested = false;
+
+bool CanRequestSystemLocation() {
+  return !g_system_location_requested &&
+         system_permission_settings::CanPrompt(ContentSettingsType::GEOLOCATION);
+}
+
+void RequestSystemLocation() {
+  g_system_location_requested = true;
+  system_permission_settings::Request(
+      ContentSettingsType::GEOLOCATION,
+      base::BindOnce([] { g_system_location_requested = false; }));
+}
+
+base::RepeatingClosureList& SystemLocationObservers() {
+  static base::NoDestructor<base::RepeatingClosureList> observers;
+  return *observers;
+}
+
 class NativeSitePermissions final
-    : public content::WebContentsUserData<NativeSitePermissions> {
+    : public content::WebContentsObserver,
+      public content::WebContentsUserData<NativeSitePermissions> {
  public:
+  ~NativeSitePermissions() override { StopAwaitingWindow(); }
+
   std::unique_ptr<permissions::PermissionPrompt> CreatePrompt(
       Delegate* delegate) {
     auto prompt =
@@ -957,31 +945,118 @@ class NativeSitePermissions final
   void SetAttached(bool attached) {
     attached_ = attached;
     if (!attached) {
-      // The prompt's cancellation may reenter and create the next prompt.
+      StopAwaitingWindow();
       auto detach = std::move(detach_);
       if (detach) {
         detach.Run();
       }
+      return;
     }
+    RequestSystemLocationIfUsed();
   }
 
  private:
   friend WebContentsUserData;
   explicit NativeSitePermissions(content::WebContents* contents)
-      : content::WebContentsUserData<NativeSitePermissions>(*contents) {}
+      : content::WebContentsObserver(contents),
+        content::WebContentsUserData<NativeSitePermissions>(*contents) {}
+
+  void OnCapabilityTypesChanged(content::WebContentsCapabilityType type,
+                                bool used) override {
+    if (type != content::WebContentsCapabilityType::kGeolocation) {
+      return;
+    }
+    if (used) {
+      RequestSystemLocationIfUsed();
+    } else {
+      StopAwaitingWindow();
+    }
+  }
+  void OnVisibilityChanged(content::Visibility visibility) override {
+    if (visibility == content::Visibility::VISIBLE) {
+      RequestSystemLocationIfUsed();
+    }
+  }
+  void WebContentsDestroyed() override { StopAwaitingWindow(); }
+
+  void RequestSystemLocationIfUsed() {
+    auto* contents = web_contents();
+    if (!attached_ || !contents || contents->IsBeingDestroyed() ||
+        !contents->IsCapabilityActive(
+            content::WebContentsCapabilityType::kGeolocation) ||
+        !CanRequestSystemLocation()) {
+      StopAwaitingWindow();
+      return;
+    }
+    NSView* view = contents->GetNativeView().GetNativeNSView();
+    NSWindow* window = view.window;
+    if (!window || contents->GetVisibility() != content::Visibility::VISIBLE) {
+      StopAwaitingWindow();
+      return;
+    }
+    if (NSApp.active && window.visible && !window.miniaturized &&
+        !view.hiddenOrHasHiddenAncestor &&
+        (window.keyWindow || window.mainWindow)) {
+      StopAwaitingWindow();
+      RequestSystemLocation();
+      return;
+    }
+    AwaitWindow(window);
+  }
+
+  void AwaitWindow(NSWindow* window) {
+    if (awaited_window_ == window && window_observers_.count) {
+      return;
+    }
+    StopAwaitingWindow();
+    awaited_window_ = window;
+    window_observers_ = [NSMutableArray array];
+    base::WeakPtr<NativeSitePermissions> weak = weak_factory_.GetWeakPtr();
+    void (^retry)(NSNotification*) = ^(NSNotification*) {
+      if (weak) {
+        weak->RequestSystemLocationIfUsed();
+      }
+    };
+    for (NSNotificationName name in @[ NSWindowDidBecomeKeyNotification,
+                                       NSWindowDidBecomeMainNotification,
+                                       NSWindowDidDeminiaturizeNotification ]) {
+      [window_observers_
+          addObject:[NSNotificationCenter.defaultCenter
+                        addObserverForName:name
+                                    object:window
+                                     queue:nil
+                                usingBlock:retry]];
+    }
+    [window_observers_
+        addObject:[NSNotificationCenter.defaultCenter
+                      addObserverForName:NSApplicationDidBecomeActiveNotification
+                                  object:nil
+                                   queue:nil
+                              usingBlock:retry]];
+  }
+
+  void StopAwaitingWindow() {
+    for (id observer in window_observers_) {
+      [NSNotificationCenter.defaultCenter removeObserver:observer];
+    }
+    window_observers_ = nil;
+    awaited_window_ = nil;
+  }
 
   bool attached_ = false;
   base::RepeatingClosure detach_;
+  NSWindow* __weak awaited_window_ = nil;
+  NSMutableArray* __strong window_observers_ = nil;
+  base::WeakPtrFactory<NativeSitePermissions> weak_factory_{this};
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(NativeSitePermissions);
-}  // namespace
+}
 
 std::unique_ptr<permissions::PermissionPrompt> CreateSitePermissionPrompt(
     content::WebContents* contents,
     Delegate* delegate) {
-  // Chrome's own prompts need a BrowserView, which no Parc page has.
   if (!contents) {
     return nullptr;
   }
@@ -1004,4 +1079,31 @@ void SetNativeSitePermissionsAttached(content::WebContents& contents,
     page->SetAttached(attached);
   }
 }
-}  // namespace parc
+
+bool IsSystemLocationOff() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  return !system_permission_settings::IsAllowed(
+             ContentSettingsType::GEOLOCATION) &&
+         !system_permission_settings::CanPrompt(
+             ContentSettingsType::GEOLOCATION);
+}
+
+void OpenSystemLocationSettings(content::WebContents& contents) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  system_permission_settings::OpenSystemSettings(
+      &contents, ContentSettingsType::GEOLOCATION);
+}
+
+base::CallbackListSubscription ObserveSystemLocation(
+    base::RepeatingClosure changed) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  static base::NoDestructor<
+      std::unique_ptr<system_permission_settings::ScopedObservation>>
+      observation;
+  if (!*observation) {
+    *observation = system_permission_settings::Observe(base::BindRepeating(
+        [](ContentSettingsType, bool) { SystemLocationObservers().Notify(); }));
+  }
+  return SystemLocationObservers().Add(std::move(changed));
+}
+}

@@ -113,6 +113,10 @@ final class SiteControlCenterModel: ObservableObject {
         }
     }
     struct Setting: Identifiable, Equatable {
+        struct Accessory: Equatable {
+            let title: String
+            let help: String
+        }
         let id: String
         let symbol: String
         let symbolSize: CGFloat
@@ -121,6 +125,8 @@ final class SiteControlCenterModel: ObservableObject {
         let subtitle: String
         let isOn: Bool
         let isEnabled: Bool
+        var accessibilityValue: String? = nil
+        var accessory: Accessory? = nil
     }
 
     @Published var canShare = false
@@ -145,6 +151,7 @@ final class SiteControlCenterModel: ObservableObject {
     var onManageExtensions: (() -> Void)?
     var onAddExtension: (() -> Void)?
     var onSetting: ((String) -> Void)?
+    var onSettingAccessory: ((String) -> Void)?
     var onSiteSettings: (() -> Void)?
     var onSecurity: (() -> Void)?
     var onMore: (() -> Void)?
@@ -185,7 +192,7 @@ final class SiteControlCenterModel: ObservableObject {
 
     func invalidate() {
         onButton = nil; onExtension = nil; onExtensionContextMenu = nil; onExtensionPin = nil
-        onManageExtensions = nil; onAddExtension = nil; onSetting = nil; onSiteSettings = nil
+        onManageExtensions = nil; onAddExtension = nil; onSetting = nil; onSettingAccessory = nil; onSiteSettings = nil
         onSecurity = nil; onMore = nil
         onBlockedOpen = nil; onBlockedOpenAll = nil; onBlockedAllow = nil; onBlockedSettings = nil
     }
@@ -593,7 +600,10 @@ struct SiteControlCenterSettingsView: View {
                                      colors: colors.menu, onHeaderClick: { model.onSiteSettings?() }) {
             VStack(alignment: .leading, spacing: SiteControlCenterMetrics.spacing) {
                 ForEach(model.settings) { setting in
-                    SiteControlCenterSettingRow(setting: setting, colors: colors) { model.onSetting?(setting.id) }
+                    SiteControlCenterSettingRow(setting: setting, colors: colors,
+                                                accessoryAction: { model.onSettingAccessory?(setting.id) }) {
+                        model.onSetting?(setting.id)
+                    }
                 }
             }
         }
@@ -603,9 +613,25 @@ struct SiteControlCenterSettingsView: View {
 struct SiteControlCenterSettingRow: View {
     let setting: SiteControlCenterModel.Setting
     let colors: SiteControlCenterColors
+    var accessoryAction: () -> Void = {}
     let action: () -> Void
 
     var body: some View {
+        if let accessory = setting.accessory {
+            ZStack(alignment: .trailing) {
+                row
+                SwiftUI.Button(accessory.title, action: accessoryAction)
+                    .buttonStyle(SiteControlCenterCapsuleStyle(colors: colors))
+                    .parcTooltip(TooltipConfiguration(accessory.help))
+                    .accessibilityLabel(accessory.help)
+                    .padding(.trailing, SidebarPlusMenuView.separatorInsets.left)
+            }
+        } else {
+            row
+        }
+    }
+
+    @ViewBuilder private var row: some View {
         let side = SiteControlCenterMetrics.settingIcon
         let icon = SidebarPlusRowButton.iconCenter
         let symbol = Image(systemName: setting.symbol).font(.system(size: setting.symbolSize, weight: setting.symbolWeight))
@@ -623,6 +649,15 @@ struct SiteControlCenterSettingRow: View {
                 }
                 .lineLimit(1)
                 Spacer(minLength: 0)
+                if let accessory = setting.accessory {
+                    Text(accessory.title).font(Font(SiteControlCenterBlockedMetrics.actionFont))
+                        .padding(.horizontal, SiteControlCenterBlockedMetrics.actionPadding)
+                        .padding(.leading, 4)
+                        .padding(.trailing, SidebarPlusMenuView.separatorInsets.left)
+                        .fixedSize()
+                        .hidden()
+                        .accessibilityHidden(true)
+                }
             }
             .frame(height: SidebarPlusMenuView.rowHeight)
         }
@@ -630,7 +665,7 @@ struct SiteControlCenterSettingRow: View {
         .disabled(!setting.isEnabled)
         .parcTooltip(TooltipConfiguration(setting.title))
         .accessibilityLabel(setting.title)
-        .accessibilityValue(setting.subtitle)
+        .accessibilityValue(setting.accessibilityValue ?? setting.subtitle)
     }
 }
 

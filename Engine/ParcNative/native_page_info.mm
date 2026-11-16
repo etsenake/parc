@@ -35,6 +35,7 @@
 #include "content/public/browser/web_contents_user_data.h"
 #include "native_appkit_page.h"
 #include "native_page_retirement.h"
+#include "site_permissions.h"
 #include "net/cert/x509_certificate.h"
 #include "ui/base/base_window.h"
 #include "url/url_constants.h"
@@ -89,6 +90,12 @@ bool HasPageInfo(content::WebContents* contents) {
         (url.SchemeIs(url::kAboutScheme) && url.spec() != url::kAboutBlankURL)) return false;
   }
   return true;
+}
+
+bool SystemLocationOff(const PageInfo::PermissionInfo& permission) {
+  return (permission.type == ContentSettingsType::GEOLOCATION ||
+          permission.type == ContentSettingsType::GEOLOCATION_WITH_OPTIONS) &&
+      PageInfoUI::IsToggleOn(permission) && IsSystemLocationOff();
 }
 
 class SiteInfo final : public content::WebContentsObserver,
@@ -275,6 +282,8 @@ class SiteInfo final : public content::WebContentsObserver,
         int text = 0, link = 0;
         if (ui_delegate_->ShouldShowSettingsLinkForPermission(permission.type, &text, &link))
           ui_delegate_->SettingsLinkClicked(permission.type);
+        else if (SystemLocationOff(permission))
+          OpenSystemLocationSettings(*web_contents());
         return;
       }
       if (!Mutable(permission)) return;
@@ -378,8 +387,12 @@ class SiteInfo final : public content::WebContentsObserver,
       }
       if (permission.setting) button(@"Reset to default", kResetPermission + i, mutable_permission);
       int text = 0, link = 0;
-      if (ui_delegate_->ShouldShowSettingsLinkForPermission(permission.type, &text, &link))
+      if (ui_delegate_->ShouldShowSettingsLinkForPermission(permission.type, &text, &link)) {
         button(@"Open System Settings…", kSystemPermission + i);
+      } else if (SystemLocationOff(permission)) {
+        label(@"Location is off for Parc in macOS System Settings.", false, true);
+        button(@"Open System Settings…", kSystemPermission + i);
+      }
     }
     for (size_t i = 0; i < objects_.size(); ++i) {
       const auto& item = *objects_[i];
@@ -460,6 +473,8 @@ class SiteControls final : public content::WebContentsObserver,
     handler_ = [handler copy];
     active_ = true;
     if (!HasPageInfo(contents)) return true;
+    system_location_ = ObserveSystemLocation(
+        base::BindRepeating(&SiteControls::Refresh, callbacks_.GetWeakPtr()));
     model_ = std::make_shared<PageInfo>(std::make_unique<ChromePageInfoDelegate>(contents), contents, url);
     ui_delegate_ = std::make_unique<ChromePageInfoUiDelegate>(contents, url);
     auto model = model_;
@@ -493,10 +508,19 @@ class SiteControls final : public content::WebContentsObserver,
     model->UpdatePermissions();
   }
 
+  bool OpenSystemSettings(NSInteger index, NSUInteger revision) {
+    if (!Current() || revision != revision_ || index < 0 ||
+        static_cast<size_t>(index) >= permissions_.size() ||
+        !SystemLocationOff(permissions_[index])) return false;
+    OpenSystemLocationSettings(*web_contents());
+    return true;
+  }
+
   void End() {
     if (!active_) return;
     active_ = false;
     callbacks_.InvalidateWeakPtrs();
+    system_location_ = {};
     auto model = std::move(model_);
     SiteControlsHandler handler = handler_;
     handler_ = nil;
@@ -602,6 +626,7 @@ class SiteControls final : public content::WebContentsObserver,
         @"title" : title,
         @"allowed" : @(PageInfoUI::IsToggleOn(permission)),
         @"changeable" : @(Changeable(permission)),
+        @"systemSettings" : @(SystemLocationOff(permission)),
         @"autoPictureInPicture" : @(permission.type == ContentSettingsType::AUTO_PICTURE_IN_PICTURE),
         @"key" : [NSString stringWithFormat:@"%d %@", static_cast<int>(permission.type),
             permission.requesting_origin ? base::SysUTF8ToNSString(permission.requesting_origin->Serialize()) : @""],
@@ -620,6 +645,7 @@ class SiteControls final : public content::WebContentsObserver,
   PermissionInfoList permissions_;
   content::WeakDocumentPtr document_;
   SiteControlsHandler __strong handler_;
+  base::CallbackListSubscription system_location_;
   base::WeakPtrFactory<SiteControls> callbacks_{this};
   base::WeakPtrFactory<SiteControls> lifetime_{this};
   WEB_CONTENTS_USER_DATA_KEY_DECL();
@@ -673,6 +699,12 @@ void RefreshNativeSiteControls(content::WebContents* contents) {
   if (!contents || self.closed || parc::IsNativePageRetiring(self)) return NO;
   auto* controls = parc::SiteControls::FromWebContents(contents);
   return controls && controls->Toggle(index, revision);
+}
+- (BOOL)openSiteControlsSystemSettings:(NSInteger)index revision:(NSUInteger)revision {
+  auto* contents = parc::ContentsForNativePage(self);
+  if (!contents || self.closed || parc::IsNativePageRetiring(self)) return NO;
+  auto* controls = parc::SiteControls::FromWebContents(contents);
+  return controls && controls->OpenSystemSettings(index, revision);
 }
 - (void)closeSiteControls {
   auto* contents = parc::ContentsForNativePage(self);
