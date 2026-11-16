@@ -113,9 +113,8 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 - Share Split View… in the split pane menu doesn't work. Remove the item, its
   share action and its menu artwork. [Split groups](split-groups.md),
   [menu artwork](../Resources/SplitPaneMenu/README.md).
-- Add split outcomes to hover text, refresh a visible status capsule during
-  Space-theme edits, and provide blocked-popup chooser/release UI.
-  [Web interactions](web-interactions.md).
+- Refresh a visible status capsule during Space-theme edits, and provide
+  blocked-popup chooser/release UI. [Web interactions](web-interactions.md).
 - Tooltip shortcut feedback needs the same shifted-symbol matching as command
   dispatch. [Tooltips](tooltips.md).
 - Download arrival needs a Reduce Motion path. [Downloads](download-library.md).

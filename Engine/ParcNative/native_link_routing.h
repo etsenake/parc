@@ -15,18 +15,13 @@ class GURL;
 namespace content { class WebContents; class RenderFrameHost; class NavigationHandle; struct OpenURLParams; }
 namespace parc {
 void EnableNativeLinkNavigation(content::WebContents&);
-// Exact CEF main-frame OnAddressChange, including same-document URL updates.
 void UpdateNativeLinkURL(content::WebContents&, const GURL&);
 std::optional<base::UnguessableToken> PrepareNativeCurrentLink(
     BrowserWindowInterface&, content::RenderFrameHost*, const GURL&,
     WindowOpenDisposition, std::optional<uint32_t> input_modifiers);
-// Returns true only when this exact token is a matched ATC admission and the
-// original callback was consumed. The created page may arrive asynchronously.
 bool HandleNativeMatchedLink(BrowserWindowInterface&, content::WebContents*,
     const content::OpenURLParams&,
     base::OnceCallback<void(content::NavigationHandle&)>& callback);
-// A synchronous request handoff. The original OpenURLParams copy and source
-// document remain together until the base navigator returns its actual page.
 class NativePeekNavigation {
  public:
   ~NativePeekNavigation();
@@ -48,19 +43,17 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
 std::unique_ptr<NativePeekNavigation> PrepareNativeSplitNavigation(
     BrowserWindowInterface& browser, content::WebContents* source,
     const content::OpenURLParams& params);
-// Capture the original creator, before CEF attaches its host. This is a lease on
-// the actual source document, never a URL-to-parent lookup or last-opened slot.
+bool NativeSplitLinkAvailable(BrowserWindowInterface&, content::WebContents& source);
+std::optional<base::UnguessableToken> PrepareNativeOptionLink(
+    BrowserWindowInterface&, content::RenderFrameHost*, const GURL&);
+std::unique_ptr<content::OpenURLParams> TakeNativeOptionLink(
+    content::WebContents* source, const content::OpenURLParams&);
 void CaptureNativeCreatedPage(content::WebContents* source,
     content::GlobalRenderFrameHostId opener, content::WebContents* created);
-// Called while the caller owns the exact newly-created WebContents. Chromium's
-// normal popup blocker and adoption continue afterward; this only records a
-// presentation request, including a matched same-profile destination Space.
-// The exact source document/Space and destination are revalidated once at
-// adoption. Does not navigate, move profiles or consume the WebContents.
 void PrepareNativeCreatedPage(BrowserWindowInterface& browser,
     content::WebContents* source, content::WebContents& created,
     const GURL& target, WindowOpenDisposition disposition, bool user_gesture);
-}  // namespace parc
+}
 #ifdef __OBJC__
 #import "native_appkit_bridge.h"
 namespace parc {

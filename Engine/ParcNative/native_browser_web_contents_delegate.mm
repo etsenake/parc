@@ -85,6 +85,9 @@ NativeBrowserWebContentsDelegate::PrepareNativeMainFrameLink(
     const GURL& url,
     WindowOpenDisposition disposition,
     std::optional<uint32_t> input_modifiers) {
+  if (disposition == WindowOpenDisposition::SAVE_TO_DISK) {
+    return PrepareNativeOptionLink(browser_.get(), source, url);
+  }
   return PrepareNativeCurrentLink(browser_.get(), source, url, disposition,
                                   input_modifiers);
 }
@@ -102,6 +105,14 @@ content::WebContents* NativeBrowserWebContentsDelegate::OpenURLFromTab(
   const auto early_browser_weak = browser_->GetWeakPtr();
   const auto early_source_weak =
       source ? source->GetWeakPtr() : base::WeakPtr<content::WebContents>();
+  if (params.disposition == WindowOpenDisposition::SAVE_TO_DISK &&
+      params.native_route_token) {
+    auto split = TakeNativeOptionLink(source, params);
+    if (!split) {
+      return nullptr;
+    }
+    return OpenURLFromTab(source, *split, std::move(navigation_handle_callback));
+  }
   const bool native_split_owner =
       params.disposition == WindowOpenDisposition::NEW_SPLIT_VIEW && source &&
       HasNativeSplitOwner(browser_.get(), *source);

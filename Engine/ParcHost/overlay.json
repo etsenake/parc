@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 742,
+  "version": 743,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -339,7 +339,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "parc/native/native_appkit_bridge.h",
-      "sha256": "7bb9e5094b97f0e5e0e9a7212814d69633fc61dc9e1a95278a4c55e322e4613b"
+      "sha256": "dcf0f50cb20b109251db416d9e5df88f9dfdfa1810646d1d79c24cd299f900d3"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -359,7 +359,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_page.mm",
       "target": "parc/native/native_appkit_page.mm",
-      "sha256": "c4a2632c2f437994e7cfb93f6f47846b2958d7c824335bf563c9e177f7644719"
+      "sha256": "951ba314437bf32126099548549a3d0e920519de229c2a9f4ac59aef8624cfa2"
     },
     {
       "source": "Engine/ParcNative/native_page_shell_notify.h",
@@ -1084,12 +1084,12 @@
     {
       "source": "Engine/ParcNative/native_link_routing.h",
       "target": "parc/native/native_link_routing.h",
-      "sha256": "e49696c40173dba55421a95caa3db12a4d89c45158edc99179838afc87f4313b"
+      "sha256": "73b8584063d57362e700de8f2ec10d848d5fd80b156345b709f8d1af3e9eca2e"
     },
     {
       "source": "Engine/ParcNative/native_link_routing.mm",
       "target": "parc/native/native_link_routing.mm",
-      "sha256": "a2931731314f3233fd9a5562b4e3693348b0ba7cb75d2f31a5a2232a459a49da"
+      "sha256": "c1d1e868a8ce33878d9c81886a3d03f1425443e23eeda6fbd6c9bb8817fb9bab"
     },
     {
       "source": "Engine/ParcNative/native_history_swipe.h",
@@ -1994,7 +1994,7 @@
     {
       "source": "Engine/ParcNative/native_browser_web_contents_delegate.mm",
       "target": "parc/native/native_browser_web_contents_delegate.mm",
-      "sha256": "8262ad040ddb0e358880b7013398b4b6e7f288b6f5d6e3393ae3e7647e0a602f"
+      "sha256": "5b3949896e68da3b725ad1fbae1e5122d30f7c60b7bb0e774431015f21e3af17"
     },
     {
       "source": "Engine/ParcNative/native_web_contents_view_delegate.h",
@@ -2899,7 +2899,7 @@
     {
       "source": "Engine/ParcChromium/renderer/parc_native_link_policy.cc",
       "target": "content/renderer/parc_native_link_policy.cc",
-      "sha256": "818059288c41addbff31d8a717c1cf03f8dbe1b208be6dac946c659396c7bc69"
+      "sha256": "12793defda2c78a42fdf662b0f5813fa5b59bac8ac45ff32f7708d6729c0c6c2"
     },
     {
       "source": "Engine/ParcChromium/renderer/parc_native_link_policy.h",
@@ -2909,7 +2909,7 @@
     {
       "source": "Engine/ParcChromium/shell/parc_frame_lifetimes.cc",
       "target": "content/browser/renderer_host/parc_frame_lifetimes.cc",
-      "sha256": "83fa7fb907b24e1eb0c34ec85e263ba8803ad8ae109e71357b319b44a07f42d9"
+      "sha256": "c832ff18b3ab942102aa30c5cfaa625db6930a7ead0001df7bfad6a2878603d4"
     },
     {
       "source": "Engine/ParcChromium/shell/parc_native_media_notification_service.cc",

@@ -267,6 +267,18 @@ static void PresentationAndContent() {
         "explained text truncates in the middle; https keeps no icon");
   [controller updateModifierFlags:0];
   Check([label.stringValue isEqual:@"secure.test/path"], "releasing the modifier restores the URL");
+  controller.linkOutcome = ^PCNativeStatusLinkOutcome(NSEventModifierFlags flags, NSURL*) {
+    ++asked;
+    return flags == NSEventModifierFlagOption ? PCNativeStatusLinkOutcomeSplitView
+                                              : PCNativeStatusLinkOutcomeNone;
+  };
+  [controller updateModifierFlags:NSEventModifierFlagOption];
+  Check([label.stringValue isEqual:@"Open https://secure.test/path in Split View"],
+        "an admitted Option split explains Split View over the full URL");
+  [controller updateModifierFlags:NSEventModifierFlagOption | NSEventModifierFlagCommand];
+  Check([label.stringValue isEqual:@"secure.test/path"],
+        "a modifier the shell cannot split keeps the plain URL");
+  [controller updateModifierFlags:0];
   [controller updateText:@"Preparing Reader…"];
   [controller updateModifierFlags:NSEventModifierFlagCommand];
   Check([label.stringValue isEqual:@"Preparing Reader…"], "non-link status text is never explained");

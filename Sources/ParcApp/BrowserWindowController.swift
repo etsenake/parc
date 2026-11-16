@@ -1006,10 +1006,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, splitLinkLeaseFor page: PCNativePage) -> Any? {
+        guard let id = splitLinkSourceID(browser, page) else { return nil }
+        return SplitLinkLease(owner: self, source: page, focusedID: id)
+    }
+
+    func nativeBrowser(_ browser: PCNativeBrowserWindow, canSplitLinkFrom page: PCNativePage) -> Bool {
+        splitLinkSourceID(browser, page) != nil && selectedTabIDs.count < 4
+    }
+
+    private func splitLinkSourceID(_ browser: PCNativeBrowserWindow, _ page: PCNativePage) -> UUID? {
         guard nativeBrowser(browser, canRouteCurrentLinkFrom: page),
               let entry = browsers.first(where: { $0.value.nativePage === page }),
               currentTabID == entry.key, browserViewCanOpenLinkInSplitView(entry.value) else { return nil }
-        return SplitLinkLease(owner: self, source: page, focusedID: entry.key)
+        return entry.key
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, isSplitLinkLeaseCurrent value: Any,

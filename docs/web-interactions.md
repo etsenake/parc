@@ -181,9 +181,30 @@ empty/repeated separators are removed.
 Open Link in Split View uses the original source page and split owner to insert
 a pane after it. It requires an eligible HTTP(S) link in a normal browser with
 capacity; a fifth pane reports **Cannot Add New Pane**. Peek, embedded Easel and
-popup owners do not offer this context-menu route. Option and Option–Command
-link clicks already use the native split-link lease; their status-text gap is
-separate from actual split functionality.
+popup owners do not offer this context-menu route.
+
+### Split View from link clicks
+
+Option-click and Option–Command-click open an HTTP(S) link in Split View, in a
+pane after the clicked page, when the window can take a split right now: a real
+click in the selected page of a normal key window, with no Peek, pop-up, sheet,
+command bar or Library in the way and fewer than four panes. The app answers
+that from existing state without changing anything (`canSplitLinkFrom`: the
+split-link lease rules plus the pane limit). Links inside the page's embedded
+frames split the same way, except isolated fenced ad frames, which keep
+Chromium's behaviour for both modifiers even though the hover text can't tell
+them apart.
+
+Chromium's own policy turns a plain Option-click into a download. Parc's
+renderer link policy (`parc_native_link_policy.cc`) instead sends it through the
+existing native link query, `PrepareNativeOptionLink` gives it a one-use token,
+and the browser then opens it exactly as an Option–Command click, so no Chromium
+file changes. The two modifiers share one fallback: when no split is possible
+the link opens in a background tab, and at the four-pane limit Parc also says
+**Cannot Add New Pane**. Chromium still waits half a second before acting on an
+Option-click, so an Option-double-click keeps selecting a word in the link.
+Non-web links keep Chromium's save-the-link behaviour, and **Save Link As…**
+still downloads any link.
 
 ### Hovered-link status
 
@@ -194,17 +215,16 @@ Compact width caps at 400 points; expansion stays inside the page.
 
 Plain display removes the scheme prefix/trailing slash for readability, with
 insecure/mail icons where appropriate. Modifier descriptions explain background
-or foreground tabs, Peek and new-window destinations without changing the link.
-Only actual links are explained; local transient messages share the capsule.
-Text truncates in the middle; explained text expands immediately. Ordinary
-hover uses a 0.5-second debounce and 1.5-second expansion delay, token-guarded
-alpha fade and immediate side changes. Theme is refreshed on presentation and
-appearance change, not continuously during a Space-theme edit.
-
-The current `native_appkit_page.mm` outcome callback still omits Option and
-Option–Command split descriptions. The split destination works; only **Open …
-in Split View** hover feedback is missing. That concrete engine follow-up is in
-[the backlog](backlog.md).
+or foreground tabs, Peek, new-window and Split View destinations without
+changing the link. **Open … in Split View** appears for Option and
+Option–Command only when the click will split: an HTTP(S) link outside Peek and
+the same `canSplitLinkFrom` answer the click uses. Otherwise those modifiers keep
+the plain address. Only actual links are explained; local transient messages
+share the capsule. Text truncates in the middle; explained text expands
+immediately. Ordinary hover uses a 0.5-second debounce and 1.5-second expansion
+delay, token-guarded alpha fade and immediate side changes. Theme is refreshed
+on presentation and appearance change, not continuously during a Space-theme
+edit.
 
 <a id="banners-and-blocked-pop-ups-arcs-disposition"></a>
 ### Banners and blocked pop-ups
@@ -300,6 +320,5 @@ Native changes need their appropriate compiler checks; app changes need the
 Swift checks in [the working contract](../AGENTS.md). Older test helpers may
 present windows: inspect them and follow current authorization.
 
-The [backlog](backlog.md) indexes the remaining split-link hover descriptions,
-live status-capsule theme updates, blocked-popup controls and cross-family
-menu work described above.
+The [backlog](backlog.md) indexes the remaining live status-capsule theme
+updates, blocked-popup controls and cross-family menu work described above.

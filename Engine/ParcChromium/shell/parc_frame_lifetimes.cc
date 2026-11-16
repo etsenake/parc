@@ -31,10 +31,12 @@ void RenderFrameHostImpl::PrepareNativeMainFrameLink(
     WindowOpenDisposition disposition, std::optional<uint32_t> input_modifiers,
     PrepareNativeMainFrameLinkCallback callback) {
   auto* contents = WebContents::FromRenderFrameHost(this);
+  const bool option = disposition == WindowOpenDisposition::SAVE_TO_DISK;
   if ((disposition != WindowOpenDisposition::CURRENT_TAB &&
        disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB &&
-       disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB) ||
-      !contents || !IsInPrimaryMainFrame() || !IsActive() ||
+       disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB && !option) ||
+      !contents || !(option ? GetPage().IsPrimary() : IsInPrimaryMainFrame()) ||
+      !IsActive() ||
       IsNestedWithinFencedFrame() ||
       document != GetDocumentToken() || !url.SchemeIsHTTPOrHTTPS() ||
       !contents->GetMutableRendererPrefs()->native_main_frame_link_policy ||

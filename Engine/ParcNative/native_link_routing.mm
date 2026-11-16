@@ -36,6 +36,7 @@ namespace parc {
 namespace {
 const char kCreatedPageKey = 0;
 const char kPendingCurrentLinkKey = 0;
+const char kPendingOptionLinkKey = 0;
 const char kCurrentLinkSequenceKey = 0;
 const char kRoutedPageKey = 0;
 const char kCreatedRouteKey = 0;
@@ -233,6 +234,16 @@ class CreatedPage final : public base::SupportsUserData::Data {
 class CurrentLinkSequence final : public base::SupportsUserData::Data {
  public:
   uint64_t value = 0;
+};
+class PendingOptionLink final : public base::SupportsUserData::Data {
+ public:
+  PendingOptionLink(content::RenderFrameHost& frame, const GURL& target)
+      : token(base::UnguessableToken::Create()), initiator(frame.GetGlobalFrameToken()),
+        document(frame.GetWeakDocumentPtr()), url(target) {}
+  const base::UnguessableToken token;
+  const content::GlobalRenderFrameHostToken initiator;
+  const content::WeakDocumentPtr document;
+  const GURL url;
 };
 class PendingCurrentLink final : public base::SupportsUserData::Data {
  public:
@@ -489,10 +500,11 @@ void NativePeekNavigation::DidNavigate(content::WebContents* created) {
 static std::unique_ptr<CreatedPage> CaptureSplitOrigin(
     BrowserWindowInterface& browser, content::WebContents* source,
     content::RenderFrameHost* frame, content::WebContents& child) {
-  if (!source || !frame || frame != source->GetPrimaryMainFrame() ||
+  if (!source || !frame || frame->IsNestedWithinFencedFrame() ||
+      frame->GetOutermostMainFrame() != source->GetPrimaryMainFrame() ||
       source->GetBrowserContext() != browser.GetProfile() ||
       !AppKitBrowserAcceptsNewPages(browser)) return nullptr;
-  auto creation = std::make_unique<CreatedPage>(*source, *frame, browser);
+  auto creation = std::make_unique<CreatedPage>(*source, *source->GetPrimaryMainFrame(), browser);
   const auto source_lease = source->GetWeakPtr();
   const auto child_lease = child.GetWeakPtr();
   const GURL source_url = source->GetLastCommittedURL();
@@ -528,6 +540,53 @@ std::unique_ptr<NativePeekNavigation> PrepareNativeSplitNavigation(
   state->peek = false;
   state->params.native_route_split = true;
   return std::unique_ptr<NativePeekNavigation>(new NativePeekNavigation(std::move(state)));
+}
+bool NativeSplitLinkAvailable(BrowserWindowInterface& browser, content::WebContents& source) {
+  if (!HasNativeSplitOwner(browser, source) || browser.IsDeleteScheduled() ||
+      !AppKitBrowserAcceptsNewPages(browser)) return false;
+  PCNativePage* page = ExistingNativePage(&source);
+  PCNativeBrowserWindow* binding = AppKitBindingForBrowser(&browser);
+  return page && !page.closed && binding &&
+      [PCNativeBrowserApplication ownerForPage:page] == binding &&
+      page.nativeView.window == binding.window &&
+      [binding.client respondsToSelector:@selector(nativeBrowser:canSplitLinkFromPage:)] &&
+      [binding.client nativeBrowser:binding canSplitLinkFromPage:page];
+}
+std::optional<base::UnguessableToken> PrepareNativeOptionLink(
+    BrowserWindowInterface& browser, content::RenderFrameHost* frame, const GURL& target) {
+  auto* source = frame ? content::WebContents::FromRenderFrameHost(frame) : nullptr;
+  if (!source || frame->IsNestedWithinFencedFrame() ||
+      frame->GetOutermostMainFrame() != source->GetPrimaryMainFrame() ||
+      source->GetBrowserContext() != browser.GetProfile() || !target.SchemeIsHTTPOrHTTPS())
+    return std::nullopt;
+  auto pending = std::make_unique<PendingOptionLink>(*frame, target);
+  const auto token = pending->token;
+  source->SetUserData(&kPendingOptionLinkKey, std::move(pending));
+  return token;
+}
+std::unique_ptr<content::OpenURLParams> TakeNativeOptionLink(
+    content::WebContents* source, const content::OpenURLParams& params) {
+  auto* pending = source ? static_cast<PendingOptionLink*>(
+      source->GetUserData(&kPendingOptionLinkKey)) : nullptr;
+  if (!pending || !params.native_route_token || pending->token != *params.native_route_token ||
+      params.disposition != WindowOpenDisposition::SAVE_TO_DISK) return nullptr;
+  auto data = source->TakeUserData(&kPendingOptionLinkKey);
+  pending = static_cast<PendingOptionLink*>(data.get());
+  auto* frame = pending->document.AsRenderFrameHostIfValid();
+  if (!frame || frame->GetGlobalFrameToken() != pending->initiator ||
+      frame->IsNestedWithinFencedFrame() ||
+      frame->GetOutermostMainFrame() != source->GetPrimaryMainFrame() ||
+      !params.initiator_frame_token ||
+      content::GlobalRenderFrameHostToken(params.initiator_process_id,
+          *params.initiator_frame_token) != pending->initiator ||
+      !params.is_renderer_initiated || !params.user_gesture ||
+      params.started_from_context_menu || params.url != pending->url ||
+      !ui::PageTransitionCoreTypeIs(params.transition, ui::PAGE_TRANSITION_LINK))
+    return nullptr;
+  auto split = std::make_unique<content::OpenURLParams>(params);
+  split->native_route_token.reset();
+  split->disposition = WindowOpenDisposition::NEW_SPLIT_VIEW;
+  return split;
 }
 std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
     BrowserWindowInterface& browser, content::WebContents* source,

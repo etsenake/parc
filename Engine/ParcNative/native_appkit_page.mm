@@ -707,15 +707,22 @@ class NativePageState final
         return PCNativeStatusLinkOutcomeNone;
       constexpr NSEventModifierFlags shift = NSEventModifierFlagShift;
       constexpr NSEventModifierFlags command = NSEventModifierFlagCommand;
+      constexpr NSEventModifierFlags option = NSEventModifierFlagOption;
       if (flags == command) return PCNativeStatusLinkOutcomeNewBackgroundTab;
       if (flags == (shift | command)) return PCNativeStatusLinkOutcomeNewForegroundTab;
-      if (flags == (shift | NSEventModifierFlagOption)) return PCNativeStatusLinkOutcomeNewWindow;
-      if (flags != shift) return PCNativeStatusLinkOutcomeNone;
+      if (flags == (shift | option)) return PCNativeStatusLinkOutcomeNewWindow;
       PCNativePage* source = state->page_;
-      if (!source || source.peekParentPage) return PCNativeStatusLinkOutcomeNewWindow;
       NSString* scheme = url.scheme.lowercaseString;
-      if (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"])
-        return PCNativeStatusLinkOutcomeNewWindow;
+      const bool web = [scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"];
+      if (flags == option || flags == (option | command)) {
+        auto* contents = state->contents();
+        return source && !source.peekParentPage && web && contents &&
+                NativeSplitLinkAvailable(*state->browser(), *contents)
+            ? PCNativeStatusLinkOutcomeSplitView : PCNativeStatusLinkOutcomeNone;
+      }
+      if (flags != shift) return PCNativeStatusLinkOutcomeNone;
+      if (!source || source.peekParentPage) return PCNativeStatusLinkOutcomeNewWindow;
+      if (!web) return PCNativeStatusLinkOutcomeNewWindow;
       PCNativeBrowserWindow* binding = AppKitBindingForBrowser(state->browser());
       id<PCNativeBrowserWindowClient> client = binding.client;
       return [client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] &&
