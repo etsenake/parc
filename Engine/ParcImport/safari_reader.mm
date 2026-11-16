@@ -12,6 +12,7 @@
 
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
@@ -22,6 +23,7 @@ namespace {
 constexpr size_t kMaxRows = 1000000;
 constexpr size_t kMaxPlistBytes = 64 * 1024 * 1024;
 constexpr size_t kMaxHistoryJSONBytes = 256 * 1024 * 1024;
+constexpr size_t kMaxCardsJSONBytes = 16 * 1024 * 1024;
 constexpr int64_t kUnixEpochMicros = 11644473600000000LL;
 constexpr size_t kMaxDepth = 128;
 constexpr long double kCocoaEpochMicros = 12622780800000000.0L;
@@ -173,6 +175,86 @@ Batch ReadExportedHistory(const base::FilePath& path, const Cancellation& cancel
   return batch;
 }
 
+void Wipe(std::string* text) {
+  if (text) std::fill(text->begin(), text->end(), '\0');
+}
+
+struct CardWipe {
+  base::ListValue* cards = nullptr;
+  ~CardWipe() {
+    if (!cards) return;
+    for (base::Value& value : *cards) {
+      if (base::DictValue* card = value.GetIfDict()) {
+        for (const char* key : {"card_number", "cardholder_name", "card_name"}) Wipe(card->FindString(key));
+      }
+    }
+  }
+};
+
+Batch ReadExportedCards(const ReadOptions& options, const Cancellation& cancel) {
+  const auto path = options.profile_path.AppendASCII("PaymentCards.json");
+  struct stat before {}, after {};
+  std::string bytes;
+  const bool read = lstat(path.value().c_str(), &before) == 0 && S_ISREG(before.st_mode) &&
+      base::ReadFileToStringWithMaxSize(path, &bytes, kMaxCardsJSONBytes) &&
+      stat(path.value().c_str(), &after) == 0 && SameFile(before, after);
+  if (!read) {
+    Wipe(&bytes);
+    return Failure(kAutofill, "The exported Safari payment cards are unavailable, changed while reading, or too large.");
+  }
+  std::optional<base::DictValue> root = base::JSONReader::ReadDict(
+      bytes, base::JSON_PARSE_RFC | base::JSON_REPLACE_INVALID_CHARACTERS);
+  Wipe(&bytes);
+  std::string().swap(bytes);
+  base::ListValue* cards = root ? root->FindList("payment_cards") : nullptr;
+  CardWipe wipe{cards};
+  if (Cancelled(cancel)) return Failure(kAutofill, "Import was cancelled.");
+  const base::DictValue* metadata = root ? root->FindDict("metadata") : nullptr;
+  const std::string* type = metadata ? metadata->FindString("data_type") : nullptr;
+  if (!type || *type != "payment_cards" || !cards)
+    return Failure(kAutofill, "The exported Safari payment cards have an unsupported structure.");
+  if (cards->size() > kMaxRows) return Failure(kAutofill, "Safari payment cards exceed the import limit.");
+  Batch batch;
+  batch.category = kAutofill;
+  for (base::Value& value : *cards) {
+    if (Cancelled(cancel)) break;
+    base::DictValue* card = value.GetIfDict();
+    std::string* number = card ? card->FindString("card_number") : nullptr;
+    std::u16string digits;
+    if (number) {
+      digits.reserve(number->size());
+      for (char c : *number)
+        if (c != ' ' && c != '-') digits.push_back(static_cast<unsigned char>(c));
+      Wipe(number);
+    }
+    if (digits.empty()) {
+      WarnOnce(batch, "Safari payment cards without a card number were skipped.");
+      continue;
+    }
+    Autofill entry;
+    entry.kind = Autofill::Kind::kCard;
+    entry.fields["number"] = std::move(digits);
+    if (const std::string* name = card->FindString("cardholder_name"))
+      entry.fields["name"] = base::UTF8ToUTF16(*name);
+    if (const std::string* nickname = card->FindString("card_name"))
+      entry.fields["nickname"] = base::UTF8ToUTF16(*nickname);
+    const std::optional<int> month = card->FindInt("card_expiration_month");
+    if (month && *month >= 1 && *month <= 12) entry.fields["month"] = base::NumberToString16(*month);
+    const std::optional<int> year = card->FindInt("card_expiration_year");
+    if (year && *year >= 1000 && *year <= 9999) entry.fields["year"] = base::NumberToString16(*year);
+    batch.autofill.push_back(std::move(entry));
+  }
+  if (Cancelled(cancel)) {
+    for (auto& entry : batch.autofill) {
+      auto& digits = entry.fields["number"];
+      std::fill(digits.begin(), digits.end(), u'\0');
+    }
+    return Failure(kAutofill, "Import was cancelled.");
+  }
+  batch.success = true;
+  return batch;
+}
+
 Batch ReadHistory(const ReadOptions& options, const Cancellation& cancel) {
   const auto exported = options.profile_path.AppendASCII("History.json");
   if (!base::PathExists(options.profile_path.AppendASCII("History.db")) && base::PathExists(exported))
@@ -222,6 +304,7 @@ Batch ReadSafariCategory(const ReadOptions& options, uint32_t category,
       return Failure(category, "The selected Safari source is invalid.");
     if (category == kBookmarks) return ReadBookmarks(options, cancel);
     if (category == kHistory) return ReadHistory(options, cancel);
+    if (category == kAutofill) return ReadExportedCards(options, cancel);
     return Failure(category, "This category is not supported by the Safari reader. Use the supported browser export flow when available.");
   }
 }

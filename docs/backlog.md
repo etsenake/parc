@@ -39,10 +39,9 @@ Finish assigned work first; explicit deferrals remain deferred.
 
 ## Data and credentials
 
-- **DATA15:** Payment cards in Safari's export file are not imported yet. Dia,
-  Comet, ChatGPT Atlas, Helium, Opera GX and Chrome Beta are not offered as
-  sources until their data folders and Keychain names are confirmed on a real
-  install. [Import capabilities](../Engine/ParcImport/README.md#reader-and-writer-boundary).
+- **DATA15:** Dia, Comet, ChatGPT Atlas, Helium, Opera GX and Chrome Beta are
+  not offered as sources until their data folders and Keychain names are
+  confirmed on a real install. [Import capabilities](../Engine/ParcImport/README.md#reader-and-writer-boundary).
 
 ## Performance
 

@@ -111,7 +111,7 @@ func safariExportChecks(window: NSWindow, safari: PCNativeImportSource) throws -
            "Opening an export clears an old interrupted import's folder but not one another import may still be opening")
     try files.removeItem(at: opening)
     request.complete(.init(profiles: [
-        PCNativeImportProfile("export-default", [.history], .complete, name: "Safari", directory: "profile-0"),
+        PCNativeImportProfile("export-default", [.history, .autofill], .complete, name: "Safari", directory: "profile-0"),
         PCNativeImportProfile("export-work", [.history], .complete, name: "Work", directory: "profile-1")], access: .complete))
     expect(coordinator.stage == .bookmarks && coordinator.bookmarkPages.count == 1
            && coordinator.bookmarkPages[0].destination == destination,
@@ -141,8 +141,19 @@ func safariExportChecks(window: NSWindow, safari: PCNativeImportSource) throws -
     let requests = PCNativeBrowserApplication.browserRequests.suffix(2)
     expect(requests.map(\.path) == [store.independentEngineProfilePath(for: destination.profileID),
                                     store.independentEngineProfilePath(for: work!.id)]
-           && requests.allSatisfy { $0.categories == [.history] },
-           "The default Profile's history goes to the original Profile and Work's to its own")
+           && requests.map(\.categories) == [[.history, .autofill], [.history]],
+           "The default Profile's history and the export's payment cards go to the original Profile, and Work's history to its own")
+    let cards = request.directories[0].appendingPathComponent("PaymentCards.json")
+    expect(files.fileExists(atPath: cards.path), "The payment cards wait in the default Profile's private folder for the reader")
+    PCNativeBrowserApplication.browserCompletions.remove(at: 1)(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+    expect(files.fileExists(atPath: cards.path), "Work's history finishing first leaves the default Profile's cards alone")
+    requests.first?.progress(.init(message: nil, category: .history, phase: .writing))
+    requests.first?.progress(.init(message: nil, category: .autofill, phase: .reading))
+    expect(files.fileExists(atPath: cards.path), "The payment cards stay until the reader has read them")
+    requests.first?.progress(.init(message: nil, category: .autofill, phase: .writing))
+    expect(!files.fileExists(atPath: cards.path)
+           && files.fileExists(atPath: request.directories[0].appendingPathComponent("History.json").path),
+           "Parc deletes its copy of the payment cards as soon as the reader has them, before they're even saved")
     expect(leftovers().count == 1, "The export folder stays while its history is still being read")
     while !PCNativeBrowserApplication.browserCompletions.isEmpty {
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
@@ -151,6 +162,26 @@ func safariExportChecks(window: NSWindow, safari: PCNativeImportSource) throws -
     expect(leftovers().isEmpty && !coordinator.hasBackgroundWork, "The export folder is removed once its import ends")
     expect(ImportedBrowserDataFailures.take() == nil, "A clean export import reports no failure")
     coordinator.cancel()
+
+    let cardsOnly = start()
+    cardsOnly.importSafariExport(try save("Cards only.zip", storedZip([
+        ("Safari Export/PaymentCards.json", #"{"metadata":{"data_type":"payment_cards"},"payment_cards":[]}"#)])))
+    wait { !PCNativeBrowserApplication.exportRequests.isEmpty }
+    let cardsRequest = PCNativeBrowserApplication.exportRequests.removeFirst()
+    let cardsFile = cardsRequest.directories[0].appendingPathComponent("PaymentCards.json")
+    expect(cardsRequest.names == ["Safari"] && files.fileExists(atPath: cardsFile.path),
+           "An export with only payment cards still becomes the default Safari Profile")
+    cardsRequest.complete(.init(profiles: [
+        PCNativeImportProfile("export-cards", [.autofill], .complete, name: "Safari", directory: "profile-0")], access: .complete))
+    expect(PCNativeBrowserApplication.browserRequests.last?.categories == [.autofill]
+           && PCNativeBrowserApplication.browserRequests.last?.path == store.independentEngineProfilePath(for: destination.profileID),
+           "The payment cards go to the original Profile")
+    PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .failed, bookmarks: [], warnings: [], error: nil))
+    expect(!files.fileExists(atPath: cardsFile.path), "Even a failed card import deletes Parc's copy the moment it ends")
+    wait { leftovers().isEmpty }
+    expect(leftovers().isEmpty && ImportedBrowserDataFailures.take() == .failed,
+           "A failed card import shows the import failure notice and leaves no folder")
+    cardsOnly.cancel()
 
     let partial = start()
     partial.importSafariExport(try save("Passwords only.zip", storedZip([

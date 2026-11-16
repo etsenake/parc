@@ -7,6 +7,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/cancelable_task_tracker.h"
@@ -84,8 +85,6 @@ class HistoryImport final : public history::HistoryDBTask {
                      ? "History import was cancelled before commit."
                      : "History import did not commit."};
     } else {
-      // Visits past history's retention, and rows the reader couldn't
-      // parse, are skipped as Chromium's own import skips them.
       result_ = {true, result.imported, {}};
     }
     return true;
@@ -115,6 +114,7 @@ WriteResult WriteAutofill(std::vector<mojom::AutofillPtr> rows,
   std::vector<autofill::AutofillProfile> profiles;
   std::vector<autofill::CreditCard> cards;
   std::vector<autofill::AutocompleteEntry> entries;
+  size_t invalid = 0, duplicate = 0;
   const bool committed = db->RunAtomicImport(base::BindOnce(
       [](std::vector<mojom::AutofillPtr>* input,
          std::shared_ptr<std::atomic_bool> cancelled,
@@ -123,8 +123,22 @@ WriteResult WriteAutofill(std::vector<mojom::AutofillPtr> rows,
          autofill::AutocompleteTable* forms,
          std::vector<autofill::AutofillProfile>* profiles,
          std::vector<autofill::CreditCard>* cards,
-         std::vector<autofill::AutocompleteEntry>* entries) {
+         std::vector<autofill::AutocompleteEntry>* entries, size_t* invalid,
+         size_t* duplicate) {
         auto& rows = *input;
+        std::set<std::u16string> saved;
+        bool loaded = false;
+        auto identity = [](const autofill::CreditCard& card) {
+          std::u16string result;
+          for (char16_t c : card.number())
+            if (base::IsAsciiDigit(c))
+              result.push_back(c);
+          if (result.empty())
+            return result;
+          return result + u"/" +
+                 card.GetRawInfo(autofill::CREDIT_CARD_EXP_MONTH) + u"/" +
+                 card.GetRawInfo(autofill::CREDIT_CARD_EXP_4_DIGIT_YEAR);
+        };
         for (auto& row : rows) {
           if (cancelled->load())
             return false;
@@ -159,7 +173,23 @@ WriteResult WriteAutofill(std::vector<mojom::AutofillPtr> rows,
             card.SetRawInfo(autofill::CREDIT_CARD_EXP_4_DIGIT_YEAR,
                             field("year"));
             card.SetNickname(field("nickname"));
-            if (!card.HasValidCardNumber() || !payments->AddCreditCard(card))
+            if (!card.HasValidCardNumber()) {
+              ++*invalid;
+              continue;
+            }
+            if (!loaded) {
+              std::vector<std::unique_ptr<autofill::CreditCard>> existing;
+              if (payments->GetCreditCards(&existing))
+                for (const auto& stored : existing)
+                  saved.insert(identity(*stored));
+              loaded = true;
+            }
+            const auto key = identity(card);
+            if (!key.empty() && !saved.insert(key).second) {
+              ++*duplicate;
+              continue;
+            }
+            if (!payments->AddCreditCard(card))
               return false;
             cards->push_back(std::move(card));
           } else
@@ -170,7 +200,7 @@ WriteResult WriteAutofill(std::vector<mojom::AutofillPtr> rows,
                forms->UpdateAutocompleteEntries(*entries) && !cancelled->load();
       },
       &rows, cancelled, addresses, payments, forms, &profiles, &cards,
-      &entries));
+      &entries, &invalid, &duplicate));
   if (!committed)
     return {false, 0,
             cancelled->load() ? "Import was cancelled before autofill commit."
@@ -181,7 +211,8 @@ WriteResult WriteAutofill(std::vector<mojom::AutofillPtr> rows,
   for (const auto& c : cards)
     backend->NotifyOfCreditCardChanged(autofill::CreditCardChange(
         autofill::CreditCardChange::ADD, c.guid(), c));
-  return {true, rows.size(), {}};
+  return {true, rows.size() - invalid - duplicate, {},
+          invalid ? "Payment cards with invalid card numbers were skipped." : ""};
 }
 class Writer final : public ImportWriter,
                      public password_manager::PasswordStoreConsumer,
@@ -264,8 +295,6 @@ class Writer final : public ImportWriter,
     if (!reply_)
       return;
     auto callback = std::move(reply_);
-    // Closing an owned remote is safe only at terminal result. Pending browser
-    // writes remain subject to the explicit unconfirmed-outcome error above.
     cookies_.reset();
     weak_factory_.InvalidateWeakPtrs();
     expected_passwords_.clear();
@@ -365,9 +394,6 @@ class Writer final : public ImportWriter,
                 self->OnProfileDestroyed();
                 return;
               }
-              // GetError describes initialization/sync, not this write. Read
-              // back exact requested credentials after the store's completed
-              // writes.
               self->passwords_->GetAllLogins(self->weak_factory_.GetWeakPtr());
             },
             shared_from_this()));
@@ -534,7 +560,7 @@ class Writer final : public ImportWriter,
   bool cookie_failed_ = false;
   base::WeakPtrFactory<Writer> weak_factory_{this};
 };
-}  // namespace
+}
 std::shared_ptr<ImportWriter> WriteImportBatch(Profile& profile,
                                                int family,
                                                mojom::BatchPtr batch,
@@ -544,4 +570,4 @@ std::shared_ptr<ImportWriter> WriteImportBatch(Profile& profile,
   writer->Start(std::move(batch), skip);
   return writer;
 }
-}  // namespace parc::importer
+}

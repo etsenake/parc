@@ -133,11 +133,16 @@ before any history, and Parc deletes its copy of the CSV as soon as that import
 ends. Each Profile's history goes through the native Safari reader and the
 history writer: the default Profile's into the original Space/Profile, the
 others into a same-named unused Parc Profile or a new one, as with direct
-imports. Payment cards and Safari extensions are listed in the file but not
+imports. Payment cards go to the original Profile through the native Safari
+reader and the same card writer Chromium-family imports use. Parc writes the
+cards file only into the default Profile's private folder (a folder of its own
+when the export has no history), wipes its in-memory copies, and deletes the
+file as soon as the reader has read it, or when that Profile's import ends if
+reading never finished. Safari extensions are listed in the file but not
 imported. The temporary folder is removed when the import's background work
 ends or it is cancelled, and leftovers from an interrupted import are removed
-the next time an export is opened. A failed password or history part reports
-through the import failure notice.
+the next time an export is opened. A failed password, history or card part
+reports through the import failure notice.
 
 ## Exported Safari and Firefox passwords
 

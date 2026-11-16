@@ -147,10 +147,13 @@ void AddProfile(ProfilesResult& result,
       p->categories |= PCNativeImportCategoryHistory;
     if (can("Bookmarks.plist"))
       p->categories |= PCNativeImportCategoryBookmarks;
+    if (can("PaymentCards.json"))
+      p->categories |= PCNativeImportCategoryAutofill;
     p->constraints.push_back(
-        "Safari directly imports accessible history and bookmarks. Passwords "
-        "require an explicit export from Passwords/Safari; cookies, payment "
-        "data and Safari extensions are not imported by this source.");
+        "Safari directly imports accessible history and bookmarks, and its "
+        "export file adds payment cards. Passwords require an explicit export "
+        "from Passwords/Safari; cookies and Safari extensions are not "
+        "imported by this source.");
   } else {
     if (can("places.sqlite"))
       p->categories |=

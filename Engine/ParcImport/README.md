@@ -41,7 +41,7 @@ the key is always the source browser's own, never Parc's.
 | Source | Directly supported data | Deliberate restriction |
 | --- | --- | --- |
 | Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Arc | History; ordered bookmarks/empty folders from the local and account stores, plain or encrypted; cookies; saved passwords, including those saved to the browser account; form entries, current and historical local addresses, local payment cards; explicitly selected Web Store extensions | Actual macOS `v10` AES-CBC formats only, including Chromium's fallback key (below). Unknown encryption, absent authorization or invalid encrypted-cookie host binding refuses that category. A source's concrete readable files determine availability. |
-| Safari | Default-store history and XML/binary-plist bookmarks; each Profile's history from Safari's export file | This reader supports no direct password/cookie/payment/extension import. Separate Safari Profile stores are not read directly. Passwords require an explicit OS/source export. |
+| Safari | Default-store history and XML/binary-plist bookmarks; each Profile's history and the payment cards from Safari's export file | This reader supports no direct password/cookie/payment/extension import; payment cards come only from the export file. Separate Safari Profile stores are not read directly. Passwords require an explicit OS/source export. |
 | Firefox, Zen | History, bookmark hierarchy and form entries | Pinned macOS excludes the external NSS reader; no direct passwords, cookies, encrypted payment records or add-on installation is advertised. Passwords come from the browser's own CSV export (below). |
 
 Safari's export file reaches this reader as one private folder per Safari
@@ -52,6 +52,17 @@ optional `title`, `time_usec` (Unix microseconds) and the visit count from
 `visit_count` or Apple's documented `visits_count`, hides redirect sources
 (entries with a `destination_url`), and skips invalid entries with one warning.
 The file is limited to 256 MiB and checked for change while it is read.
+The export's payment cards arrive as `PaymentCards.json` in the default
+Profile's folder, or in a folder of their own when the export has no history,
+and discovery then offers the autofill category for that folder. The reader
+requires `metadata.data_type` to be `payment_cards` and takes Apple's
+documented keys: `card_number` with spaces and dashes removed,
+`cardholder_name`, `card_name` as the nickname, and `card_expiration_month`
+(1–12) and `card_expiration_year` (four digits) when plausible. Entries without
+a number are skipped with one warning. The file is limited to 16 MiB and
+checked for change while it is read; the raw bytes are zeroed once parsed, and
+every parsed number and name is zeroed before the reader returns, as the
+Chromium reader zeroes a decrypted card number.
 `loadSafariExportProfiles` turns those folders into ordinary Safari-family
 profiles, so session, writer, cancellation and destination policy are the same
 as direct imports. Reading separate Safari Profile folders inside Safari's
@@ -152,7 +163,11 @@ The target writes use the original regular Profile's genuine services:
   transaction and restores the backend's legacy or scoped transaction mode.
   Cancellation/write failure rolls back only that import. Native change
   notifications follow actual commit, respecting target address/payment
-  preferences and policy.
+  preferences and policy. A card whose number fails Chromium's own card-number
+  check is skipped with a warning instead of failing the category, and a card
+  whose digits and expiry match a locally saved card, or an earlier card in the
+  same import, is skipped, so a repeated import does not duplicate cards while
+  a reissued card with a new expiry still arrives.
 - Extension IDs are intersected with the original explicit selection. Empty IDs
   install nothing. Already installed IDs are left alone; new IDs use the actual
   Web Store install/policy pipeline and original-window permission prompt.

@@ -564,16 +564,20 @@ final class BrowserImportCoordinator {
             categories.remove(.bookmarks); categories.remove(.extensions)
             guard categories.rawValue != 0 else { continue }
             guard item.destination.isCurrent(in: store.state) else {
+                if categories.contains(.autofill) { safariExport?.removePaymentCards() }
                 dataFailed = true
                 reportBackgroundWarnings(["\(item.profile.displayName): its destination was removed, so this import stopped."])
                 continue
             }
-            let id = UUID()
+            let id = UUID(), carriesCards = categories.contains(.autofill)
             backgroundPending.insert(id)
             let lease = PCNativeBrowserApplication.importBrowserData(from: item.profile,
                 toProfilePath: store.independentEngineProfilePath(for: item.destination.profileID), in: window,
                 categories: categories, skipExistingCookies: skipExistingCookies,
-                progress: { _ in }, completion: { [weak self] result in
+                progress: { [weak self] event in
+                    if carriesCards && event.category.contains(.autofill) && event.phase != .reading { self?.safariExport?.removePaymentCards() }
+                }, completion: { [weak self] result in
+                    if carriesCards { self?.safariExport?.removePaymentCards() }
                     guard let self, self.backgroundToken == token, !self.cancelled,
                           self.backgroundPending.remove(id) != nil else { return }
                     self.backgroundSessions[id] = nil
@@ -586,6 +590,7 @@ final class BrowserImportCoordinator {
             if backgroundPending.contains(id) {
                 if let lease { backgroundSessions[id] = lease }
                 else {
+                    if carriesCards { safariExport?.removePaymentCards() }
                     backgroundPending.remove(id); dataFailed = true
                     reportBackgroundWarnings(["Parc could not begin the import from \(item.profile.displayName)."])
                 }
@@ -1126,7 +1131,7 @@ final class BrowserImportCoordinator {
                 names: export.profiles.map { $0.name ?? "Safari" }) { [weak self] result in
                     guard let self, self.isCurrent, self.generation == token, self.stage == .loading else { return }
                     self.discovery = nil
-                    let readable = result.profiles.filter { $0.supportedCategories.contains(.history) }
+                    let readable = result.profiles.filter { !$0.supportedCategories.isDisjoint(with: [.history, .autofill]) }
                     self.startSafariExport(readable, unreadable: export.profiles.count - readable.count, token: token)
                 }
         }
@@ -1145,7 +1150,8 @@ final class BrowserImportCoordinator {
         }
         beginImport()
         requiresSafariAccess = false; passwordDestination = nil
-        if unreadable > 0 { failed("Some Safari history in the export file couldn’t be read.") }
+        if unreadable > 0 { failed("Some Safari history or payment cards in the export file couldn’t be read.") }
+        if !chosen.contains(where: { $0.supportedCategories.contains(.autofill) }) { export.removePaymentCards() }
         if export.skippedParts > 0 { failed("Some parts of the Safari export file couldn’t be read.") }
         if !export.bookmarks.isEmpty {
             do {

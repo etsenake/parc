@@ -221,6 +221,43 @@ void SafariExport(const base::FilePath& path) {
   Require(!ReadSafariCategory(options, kHistory, cancel).success, "Malformed exported history is refused");
   Require(base::WriteFile(file, json), "restore a valid exported history");
   Require(ReadSafariCategory(options, kHistory, cancel).success, "The restored export reads again");
+  const auto cards_file = path.AppendASCII("PaymentCards.json");
+  Require(!ReadSafariCategory(options, kAutofill, cancel).success, "No payment cards file means no payment cards");
+  const std::string cards = R"({
+    "metadata" : {"browser_name" : "Safari", "browser_version" : "18.4", "data_type" : "payment_cards",
+                  "export_time_usec" : 1751296375693668, "schema_version" : 1},
+    "payment_cards" : [
+      {"card_number" : "4111 1111-1111 1111", "card_name" : "Made-up card", "cardholder_name" : "Sample Person",
+       "card_expiration_month" : 11, "card_expiration_year" : 2031, "card_last_used_time_usec" : 1722730594744987},
+      {"card_number" : "5555555555554444", "card_expiration_month" : 13, "card_expiration_year" : 31},
+      {"card_name" : "No number"},
+      "not a card"
+    ]
+  })";
+  Require(base::WriteFile(cards_file, cards), "write exported Safari payment cards");
+  auto card_batch = ReadSafariCategory(options, kAutofill, cancel);
+  Require(card_batch.success && card_batch.autofill.size() == 2, "Exported payment cards with numbers are read");
+  const auto& first = card_batch.autofill[0];
+  Require(first.kind == Autofill::Kind::kCard && first.fields.at("number") == u"4111111111111111",
+          "Card numbers lose the spaces and dashes people type, keeping only what the writer validates");
+  Require(first.fields.at("name") == u"Sample Person" && first.fields.at("nickname") == u"Made-up card" &&
+          first.fields.at("month") == u"11" && first.fields.at("year") == u"2031",
+          "Cardholder, nickname and expiry come from Apple's documented keys");
+  const auto& second = card_batch.autofill[1];
+  Require(!second.fields.contains("month") && !second.fields.contains("year") && !second.fields.contains("name"),
+          "An impossible month, a two-digit year and missing names are left out rather than invented");
+  Require(card_batch.warnings.size() == 1, "Entries without a card number are skipped with one warning");
+  Require(Bytes(cards_file) == cards, "The exported payment cards file is left unchanged");
+  cancel->store(true);
+  Require(!ReadSafariCategory(options, kAutofill, cancel).success, "Exported payment cards honour cancellation");
+  cancel->store(false);
+  Require(base::WriteFile(cards_file, R"({"metadata":{"data_type":"history"},"history":[]})"),
+          "write a non-card export file");
+  Require(!ReadSafariCategory(options, kAutofill, cancel).success, "Only a payment cards export is read as cards");
+  Require(base::WriteFile(cards_file, R"({"metadata":{"data_type":"payment_cards"},"payment_cards":[]})"),
+          "write an empty card export");
+  auto empty_cards = ReadSafariCategory(options, kAutofill, cancel);
+  Require(empty_cards.success && empty_cards.autofill.empty(), "An export with no saved cards imports nothing, cleanly");
   Require(base::WriteFile(path.AppendASCII("History.db"), "not sqlite"), "add a Safari database beside it");
   Require(!ReadSafariCategory(options, kHistory, cancel).success,
           "A real Safari History.db always wins over an exported History.json");

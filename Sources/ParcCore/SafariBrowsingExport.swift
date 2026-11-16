@@ -11,6 +11,7 @@ struct SafariBrowsingExport {
     let profiles: [Profile]
     let bookmarks: [BrowserImportBookmark]
     let passwordsFile: URL?
+    let paymentCardsFile: URL?
     let includesPaymentCards: Bool
     let includesExtensions: Bool
     let skippedParts: Int
@@ -20,6 +21,7 @@ struct SafariBrowsingExport {
         var histories: [(stem: String, entry: SafariExportZip.Entry, data: Data?)] = []
         var bookmarksEntry: SafariExportZip.Entry?
         var passwordsEntry: SafariExportZip.Entry?
+        var cardsEntry: (entry: SafariExportZip.Entry, data: Data?)?
         var paymentCards = false, extensions = false, skipped = 0, oversized = false
         func attempt<T>(_ body: () throws -> T) -> T? {
             do { return try body() } catch {
@@ -34,19 +36,26 @@ struct SafariBrowsingExport {
             } else if lowered.hasSuffix(".csv") {
                 if passwordsEntry == nil { passwordsEntry = entry }
             } else if lowered.hasSuffix(".json") {
-                guard let classified = attempt({ try zip.classify(entry) }) else { skipped += 1; continue }
+                guard var classified = attempt({ try zip.classify(entry) }) else { skipped += 1; continue }
                 switch classified.type {
                 case "history":
                     guard entry.uncompressedSize <= SafariExportZip.historyLimit,
                           histories.count < SafariExportZip.profileLimit else { skipped += 1; oversized = true; continue }
                     histories.append((String(entry.name.dropLast(5)), entry, classified.data))
                 case "extensions": extensions = true
-                case "payment_cards": paymentCards = true
+                case "payment_cards":
+                    paymentCards = true
+                    if cardsEntry == nil {
+                        cardsEntry = (entry, classified.data); classified.data = nil
+                    } else {
+                        var extra = classified.data; classified.data = nil
+                        wipe(&extra); zip.wipe(entry)
+                    }
                 default: break
                 }
             }
         }
-        guard !histories.isEmpty || bookmarksEntry != nil || passwordsEntry != nil else {
+        guard !histories.isEmpty || bookmarksEntry != nil || passwordsEntry != nil || cardsEntry != nil else {
             throw skipped == 0 ? SafariExportFailure.notExport : oversized ? SafariExportFailure.tooLarge : SafariExportFailure.damaged
         }
         var bookmarks: [BrowserImportBookmark] = []
@@ -62,6 +71,19 @@ struct SafariBrowsingExport {
             if entry.uncompressedSize > SafariExportZip.passwordsLimit {
                 skipped += 1; oversized = true
             } else if let data = attempt({ try zip.contents(of: entry) }) { passwords = data } else { skipped += 1 }
+        }
+        var cards: Data?
+        if let found = cardsEntry {
+            if found.entry.uncompressedSize > SafariExportZip.paymentCardsLimit {
+                skipped += 1; oversized = true
+            } else if let data = found.data ?? attempt({ try zip.contents(of: found.entry) }) {
+                cards = data
+            } else { skipped += 1 }
+            cardsEntry?.data = nil
+        }
+        defer {
+            wipe(&cards)
+            if let found = cardsEntry { zip.wipe(found.entry) }
         }
         let directory = temporaryRoot.appendingPathComponent("ParcSafariExport-" + UUID().uuidString, isDirectory: true)
         try makeDirectory(directory)
@@ -83,16 +105,33 @@ struct SafariBrowsingExport {
                 try write(contents, to: folder.appendingPathComponent("History.json"))
                 profiles.append(Profile(name: item.name, directory: folder))
             }
+            var paymentCardsFile: URL?
+            if let cards {
+                if profiles.isEmpty {
+                    let folder = directory.appendingPathComponent("profile-0", isDirectory: true)
+                    try makeDirectory(folder)
+                    profiles.append(Profile(name: nil, directory: folder))
+                }
+                let file = profiles[0].directory.appendingPathComponent("PaymentCards.json")
+                try write(cards, to: file)
+                paymentCardsFile = file
+            }
             guard !profiles.isEmpty || !bookmarks.isEmpty || passwordsFile != nil else {
                 throw oversized ? SafariExportFailure.tooLarge : SafariExportFailure.damaged
             }
             return SafariBrowsingExport(directory: directory, profiles: profiles, bookmarks: bookmarks,
-                                        passwordsFile: passwordsFile, includesPaymentCards: paymentCards,
+                                        passwordsFile: passwordsFile, paymentCardsFile: paymentCardsFile,
+                                        includesPaymentCards: paymentCards,
                                         includesExtensions: extensions, skippedParts: skipped)
         } catch {
             try? FileManager.default.removeItem(at: directory)
             throw error
         }
+    }
+
+    func removePaymentCards() {
+        guard let paymentCardsFile else { return }
+        try? FileManager.default.removeItem(at: paymentCardsFile)
     }
 
     func removePasswords() {
@@ -119,6 +158,14 @@ struct SafariBrowsingExport {
         return stems.indices.map { index in
             guard let separator = stems[index].range(of: " - ") else { return (index, nil) }
             return (index, named(stems[index][separator.upperBound...]))
+        }
+    }
+
+    fileprivate static func wipe(_ data: inout Data?) {
+        guard var bytes = data else { return }
+        data = nil
+        bytes.withUnsafeMutableBytes { raw in
+            if let base = raw.baseAddress { _ = memset_s(base, raw.count, 0, raw.count) }
         }
     }
 
@@ -157,7 +204,7 @@ struct SafariBrowsingExport {
 private enum SafariExportFailure {
     static var notExport: CocoaError {
         CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey:
-            "This file doesn’t contain Safari history, bookmarks or passwords. Choose the .zip file Safari’s File → Export Browsing Data to File saves."])
+            "This file doesn’t contain Safari history, bookmarks, passwords or payment cards. Choose the .zip file Safari’s File → Export Browsing Data to File saves."])
     }
 
     static var tooLarge: CocoaError {
@@ -187,6 +234,7 @@ private final class SafariExportZip {
     static let historyLimit: UInt64 = 256 << 20
     static let bookmarksLimit: UInt64 = 64 << 20
     static let passwordsLimit: UInt64 = 32 << 20
+    static let paymentCardsLimit: UInt64 = 16 << 20
     static let classifyLimit: UInt64 = 256 << 20
     static let prefixLength = 64 << 10
     static let entryLimit: UInt64 = 10_000
@@ -197,7 +245,7 @@ private final class SafariExportZip {
         return value
     }
 
-    let data: Data
+    private(set) var data: Data
     private(set) var entries: [Entry] = []
     private var inflated: UInt64 = 0
 
@@ -328,9 +376,14 @@ private final class SafariExportZip {
             let full = try contents(of: entry)
             return (Self.dataType(in: full), full)
         }
-        if let type = Self.dataType(in: try prefix(of: entry, length: Self.prefixLength)) { return (type, nil) }
+        var start: Data? = try prefix(of: entry, length: Self.prefixLength)
+        let type = start.flatMap(Self.dataType)
+        SafariBrowsingExport.wipe(&start)
+        if let type { return (type, nil) }
         guard entry.uncompressedSize <= Self.classifyLimit else { return (nil, nil) }
-        return (Self.dataType(in: try contents(of: entry)), nil)
+        var full: Data? = try contents(of: entry)
+        defer { SafariBrowsingExport.wipe(&full) }
+        return (full.flatMap(Self.dataType), nil)
     }
 
     private func spend(_ bytes: UInt64) throws {
@@ -341,17 +394,20 @@ private final class SafariExportZip {
     func contents(of entry: Entry) throws -> Data {
         let source = try compressedBytes(of: entry)
         try spend(entry.uncompressedSize)
-        let output: Data
+        var output: Data?
         if entry.method == 0 {
             guard entry.compressedSize == entry.uncompressedSize else { throw SafariExportFailure.damaged }
             output = Data(source)
         } else {
             let size = Int(entry.uncompressedSize)
             output = Self.inflate(source, capacity: size + 1)
-            guard output.count == size else { throw SafariExportFailure.damaged }
+            guard output?.count == size else { SafariBrowsingExport.wipe(&output); throw SafariExportFailure.damaged }
         }
-        guard Self.crc32(output) == entry.crc else { throw SafariExportFailure.damaged }
-        return output
+        let valid = output.map { Self.crc32($0) == entry.crc } ?? false
+        guard valid, let checked = output else {
+            SafariBrowsingExport.wipe(&output); throw SafariExportFailure.damaged
+        }
+        return checked
     }
 
     private func prefix(of entry: Entry, length: Int) throws -> Data {
@@ -361,9 +417,11 @@ private final class SafariExportZip {
             guard entry.compressedSize == entry.uncompressedSize else { throw SafariExportFailure.damaged }
             return Data(source.prefix(length))
         }
-        let output = Self.inflate(source, capacity: length)
-        guard output.count == length else { throw SafariExportFailure.damaged }
-        return output
+        var output: Data? = Self.inflate(source, capacity: length)
+        guard output?.count == length, let complete = output else {
+            SafariBrowsingExport.wipe(&output); throw SafariExportFailure.damaged
+        }
+        return complete
     }
 
     private func compressedBytes(of entry: Entry) throws -> Data {
@@ -377,14 +435,31 @@ private final class SafariExportZip {
         return data[lower..<(lower + Int(entry.compressedSize))]
     }
 
+    func wipe(_ entry: Entry) {
+        guard entry.method == 0 || entry.method == 8, fits(entry.localOffset, 30) else { return }
+        let header = Int(entry.localOffset)
+        let start = entry.localOffset + 30 + UInt64(u16(header + 26)) + UInt64(u16(header + 28))
+        guard fits(start, entry.compressedSize) else { return }
+        let lower = Int(start), count = Int(entry.compressedSize)
+        data.withUnsafeMutableBytes { raw in
+            if let base = raw.baseAddress { _ = memset_s(base + lower, count, 0, count) }
+        }
+    }
+
     private static func inflate(_ source: Data, capacity: Int) -> Data {
         var output = Data(count: capacity)
+        let scratchSize = max(compression_decode_scratch_buffer_size(COMPRESSION_ZLIB), 1)
+        let scratch = UnsafeMutableRawPointer.allocate(byteCount: scratchSize, alignment: 16)
+        defer { _ = memset_s(scratch, scratchSize, 0, scratchSize); scratch.deallocate() }
         let written = output.withUnsafeMutableBytes { target in
             source.withUnsafeBytes { input -> Int in
                 guard let destination = target.bindMemory(to: UInt8.self).baseAddress,
                       let origin = input.bindMemory(to: UInt8.self).baseAddress else { return 0 }
-                return compression_decode_buffer(destination, capacity, origin, input.count, nil, COMPRESSION_ZLIB)
+                return compression_decode_buffer(destination, capacity, origin, input.count, scratch, COMPRESSION_ZLIB)
             }
+        }
+        output.withUnsafeMutableBytes { raw in
+            if let base = raw.baseAddress, written < capacity { _ = memset_s(base + written, capacity - written, 0, capacity - written) }
         }
         output.count = written
         return output

@@ -562,6 +562,9 @@ class Session final : public ProfileObserver,
                   return;
                 if (result.count)
                   self->written_any_ = true;
+                if (!result.warning.empty())
+                  [self->warnings_
+                      addObject:base::SysUTF8ToNSString(result.warning)];
                 if (result.success)
                   self->completed_ |= self->active_;
                 else {

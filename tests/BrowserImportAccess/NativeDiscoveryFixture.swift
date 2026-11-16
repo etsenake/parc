@@ -2,7 +2,8 @@ import AppKit
 
 struct PCNativeImportCategories: OptionSet {
     let rawValue: UInt
-    static let history = Self(rawValue: 1), bookmarks = Self(rawValue: 2), extensions = Self(rawValue: 32)
+    static let history = Self(rawValue: 1), bookmarks = Self(rawValue: 2), autofill = Self(rawValue: 16)
+    static let extensions = Self(rawValue: 32)
 }
 enum PCNativeImportAccess { case complete, restricted }
 enum PCNativeImportOutcome { case completed, partial, cancelled, failed }
@@ -44,7 +45,12 @@ enum PCNativeImportOutcome { case completed, partial, cancelled, failed }
         self.identifier = identifier; self.title = title; self.url = url; self.children = children
     }
 }
-@MainActor struct PCNativeImportEvent { let message: String? }
+enum PCNativeImportPhase { case reading, writing, finished }
+@MainActor struct PCNativeImportEvent {
+    let message: String?
+    var category: PCNativeImportCategories = []
+    var phase: PCNativeImportPhase = .reading
+}
 @MainActor struct PCNativeImportResult {
     let outcome: PCNativeImportOutcome, bookmarks: [PCNativeImportedBookmark], warnings: [String], error: NSError?
     var historyVisitCounts: [String: NSNumber] = [:]
@@ -87,6 +93,7 @@ struct PCNativeRestrictedExtensionError: Error { let restriction: PCNativeExtens
     struct BrowserRequest {
         let profile: PCNativeImportProfile, path: String, window: NSWindow
         let skipExistingCookies: Bool, categories: PCNativeImportCategories
+        var progress: (PCNativeImportEvent) -> Void = { _ in }
     }
     static var browserRequests: [BrowserRequest] = []
     static var imports = 0
@@ -129,7 +136,7 @@ struct PCNativeRestrictedExtensionError: Error { let restriction: PCNativeExtens
         completion: @escaping (PCNativeImportResult) -> Void) -> PCNativeImportSession? {
         imports += 1
         browserRequests.append(.init(profile: from, path: toProfilePath, window: window,
-            skipExistingCookies: skipExistingCookies, categories: categories))
+            skipExistingCookies: skipExistingCookies, categories: categories, progress: progress))
         guard acceptsBrowserImport else { return nil }
         browserCompletions.append(completion); return PCNativeImportSession()
     }

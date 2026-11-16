@@ -240,7 +240,7 @@ private func nested(_ folders: Int, leaf: Bool) -> Data {
         let root = workspace.appendingPathComponent("root", isDirectory: true)
         try manager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? manager.removeItem(at: workspace) }
-        let notExport = "This file doesn’t contain Safari history, bookmarks or passwords. Choose the .zip file Safari’s File → Export Browsing Data to File saves."
+        let notExport = "This file doesn’t contain Safari history, bookmarks, passwords or payment cards. Choose the .zip file Safari’s File → Export Browsing Data to File saves."
         let tooLarge = "Part of this Safari export is too large to import."
         let damaged = "This Safari export file is damaged or uses a format Parc can’t read."
         var archiveNumber = 0
@@ -298,8 +298,17 @@ private func nested(_ folders: Int, leaf: Bool) -> Data {
         expect(permissions(localized.profiles[1].directory.appendingPathComponent("History.json")) == 0o600,
                "Unpacked history files are private to the current user.")
         let unpacked = (manager.enumerator(atPath: localized.directory.path)?.allObjects as? [String] ?? []).sorted()
-        expect(unpacked == ["profile-0", "profile-0/History.json", "profile-1", "profile-1/History.json"],
-               "Only history is written to disk; bookmarks, extensions and payment cards are never unpacked.")
+        expect(unpacked == ["profile-0", "profile-0/History.json", "profile-0/PaymentCards.json", "profile-1", "profile-1/History.json"],
+               "Only history and payment cards are written to disk; bookmarks and extensions are never unpacked.")
+        expect(localized.paymentCardsFile == localized.profiles[0].directory.appendingPathComponent("PaymentCards.json")
+               && localized.paymentCardsFile.flatMap(contents) == Data(typedJSON("payment_cards").utf8),
+               "Payment cards, found by their data type whatever the file is called, go beside the default profile's history exactly as exported.")
+        expect(localized.paymentCardsFile.flatMap(permissions) == 0o600, "The unpacked payment cards are private to the current user.")
+        localized.removePaymentCards()
+        expect(!manager.fileExists(atPath: localized.profiles[0].directory.appendingPathComponent("PaymentCards.json").path)
+               && manager.fileExists(atPath: localized.profiles[0].directory.appendingPathComponent("History.json").path),
+               "Removing the payment cards deletes only their file.")
+        localized.removePaymentCards()
         localized.remove()
         expect(!manager.fileExists(atPath: localized.directory.path), "Removing the export deletes its whole folder.")
 
@@ -325,7 +334,8 @@ private func nested(_ folders: Int, leaf: Bool) -> Data {
 
         let single = try open([FixtureEntry("History - Work.json", historyJSON("https://work.example.com/"))])
         expect(single.profiles.map(\.name) == ["Work"], "A single suffixed history file names its profile.")
-        expect(single.bookmarks.isEmpty && single.passwordsFile == nil && !single.includesExtensions && !single.includesPaymentCards,
+        expect(single.bookmarks.isEmpty && single.passwordsFile == nil && single.paymentCardsFile == nil
+               && !single.includesExtensions && !single.includesPaymentCards,
                "A history-only export reports nothing else.")
         single.remove()
 
@@ -369,15 +379,24 @@ private func nested(_ folders: Int, leaf: Bool) -> Data {
             FixtureEntry("Notes.json", #"{"metadata":{"browser_name":"Safari"}}"#),
             FixtureEntry("Bookmarks.html", sampleBookmarks),
         ])
-        expect(extras.includesPaymentCards && extras.includesExtensions && extras.profiles.isEmpty,
-               "Payment cards and extensions are detected without becoming profiles.")
-        expect((try? manager.contentsOfDirectory(atPath: extras.directory.path)) == [],
-               "Payment cards and extensions are never written to disk.")
+        expect(extras.includesPaymentCards && extras.includesExtensions && extras.profiles.map(\.name) == [nil],
+               "Without any history, payment cards get a default profile folder of their own.")
+        expect((manager.enumerator(atPath: extras.directory.path)?.allObjects as? [String] ?? []).sorted()
+               == ["profile-0", "profile-0/PaymentCards.json"]
+               && extras.paymentCardsFile == extras.profiles[0].directory.appendingPathComponent("PaymentCards.json"),
+               "Only the payment cards are written; extensions never are.")
         extras.remove()
 
-        expect(failure(makeZip([FixtureEntry("PaymentCards.json", typedJSON("payment_cards")),
-                                FixtureEntry("Extensions.json", typedJSON("extensions"))])) == notExport,
-               "An export with only payment cards and extensions is not importable.")
+        let cardsOnly = try open([FixtureEntry("PaymentCards.json", typedJSON("payment_cards"), deflate: false),
+                                  FixtureEntry("Extensions.json", typedJSON("extensions"))])
+        expect(cardsOnly.profiles.count == 1 && cardsOnly.paymentCardsFile != nil && cardsOnly.bookmarks.isEmpty
+               && cardsOnly.passwordsFile == nil, "An export with only payment cards and extensions imports its payment cards.")
+        cardsOnly.remove()
+        expect(failure(makeZip([FixtureEntry("Extensions.json", typedJSON("extensions"))])) == notExport,
+               "An export with only extensions is not importable.")
+        let bulkyCards = #"{"metadata":{"data_type":"payment_cards"},"payment_cards":[],"padding":""# + String(repeating: "a", count: 16 << 20) + #""}"#
+        expect(failure(makeZip([FixtureEntry("PaymentCards.json", bulkyCards)])) == tooLarge,
+               "A payment cards file over 16 MiB is refused as too large.")
         expect(failure(Data("This is a plain text note, not an archive.".utf8)) == notExport, "A file that isn't a ZIP is refused as not a Safari export.")
         expect(failure(Data()) == notExport, "An empty file is refused as not a Safari export.")
         expect(failure(makeZip([])) == notExport, "An empty ZIP is refused as not a Safari export.")
