@@ -38,10 +38,10 @@ for native, enum_name, swift_name, src in pairs:
 reader = (root / "Engine/ParcNative/native_reader.cc").read_text()
 if 'kPCPageToolReaderScheme' not in reader:
     raise SystemExit("native_reader.cc must use kPCPageToolReaderScheme")
-file_dialog = (root / "Engine/ParcNative/file_dialog.mm").read_text()
-for token in ('IDC_PRINT', 'IDC_SAVE_PAGE'):
-    if token not in file_dialog:
-        raise SystemExit(f"file_dialog.mm missing {token}")
+page_commands = (root / "Engine/ParcNative/native_appkit_page.mm").read_text()
+for tool, command in (("Print", "IDC_PRINT"), ("Save", "IDC_SAVE_PAGE")):
+    if not re.search(rf"case PCNativePageTool{tool}:\s*return {command};", page_commands):
+        raise SystemExit(f"native_appkit_page.mm no longer sends {tool} to Chromium's {command}")
 if 'chrome-distiller' not in page:
     raise SystemExit("native_page_tool_appearance.h missing chrome-distiller")
 print("Page tool appearance: native/Swift metrics pinned")

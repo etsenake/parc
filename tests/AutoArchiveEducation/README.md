@@ -1,9 +1,9 @@
 # Automatic archive education component checks
 
-Run from the repository root with an output directory outside Git:
+Run from the repository root:
 
 ```sh
-bash tests/AutoArchiveEducation/check.sh /absolute/path/to/check-output
+bash tests/AutoArchiveEducation/check.sh
 ```
 
 The script compiles the production `SidebarBannerHost` and exercises it
