@@ -24,10 +24,14 @@ opens a popup, also lists Open Side Panel, or Close Side Panel from the moment
 its panel starts opening, so a panel that is still loading offers Close and
 choosing it closes that panel. When the app hides an open panel's area, the
 panel counts as closed at once, so the item says Open Side Panel and choosing
-it opens the panel afresh. The engine's own command toggles Parc's native
-panel, the same panel a toolbar click or the extension's own open request uses.
-Choosing it closes an open Site Control Center first. Pop-up windows keep the
-item disabled with the tooltip "Side panels are not available in pop-up windows."
+it opens the panel afresh. The label keeps up while the menu is open: moving
+to a row or choosing it checks the menu again, so a panel that starts or stops
+while the menu shows flips the item's label first, and a click that lands as
+its label changes only shows the new label, which VoiceOver also announces.
+The engine's own command toggles Parc's native panel, the same panel a toolbar
+click or the extension's own open request uses. Choosing it closes an open Site
+Control Center first. Pop-up windows keep the item disabled with the tooltip
+"Side panels are not available in pop-up windows."
 
 ## Held-Command picker
 

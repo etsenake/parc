@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 767,
+  "version": 768,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -224,12 +224,12 @@
     {
       "source": "Engine/ParcNative/extension_context_menu.mm",
       "target": "parc/native/extension_context_menu.mm",
-      "sha256": "8a7d073fc707d8adc5c05d2490af199638be9ade7381cf8b0438dc2a81c11460"
+      "sha256": "7d96783fc7f766deb0077d32fb3e59b7ea804b50fcb7ad29839bb386b5e88aee"
     },
     {
       "source": "tests/NativeExtensionContextMenu/context_menu_browsertest.mm",
       "target": "parc/tests/parc_native_extensions/context_menu_browsertest.mm",
-      "sha256": "055625797d197b296c96f538bd143f5058ebcff93d81b306012858a24fc4d13b"
+      "sha256": "5172698f08b327e19d629ecd51be51cb4294b5cb20e3edf5dbae8d6787cea6b9"
     },
     {
       "source": "Engine/ParcNative/autofill_bubble_handler.h",

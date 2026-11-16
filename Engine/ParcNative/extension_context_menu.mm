@@ -3,6 +3,7 @@
 
 #import <AppKit/AppKit.h>
 
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -45,7 +46,8 @@
 @interface PCNativeExtensionMenuTarget : NSObject <NSUserInterfaceValidations>
 - (instancetype)initWithItem:(NSMenuItem*)item
                   controller:(MenuControllerCocoa*)controller
-                   canInvoke:(BOOL (^)(void))canInvoke;
+                   canInvoke:(BOOL (^)(void))canInvoke
+                     refresh:(void (^)(NSMenuItem*))refresh;
 - (void)itemSelected:(NSMenuItem*)item;
 @end
 
@@ -53,22 +55,29 @@
   __weak MenuControllerCocoa* _controller;
   SEL _originalAction;
   BOOL (^_canInvoke)(void);
+  void (^_refresh)(NSMenuItem*);
   BOOL _invoked;
 }
 - (instancetype)initWithItem:(NSMenuItem*)item
                   controller:(MenuControllerCocoa*)controller
-                   canInvoke:(BOOL (^)(void))canInvoke {
+                   canInvoke:(BOOL (^)(void))canInvoke
+                     refresh:(void (^)(NSMenuItem*))refresh {
   if ((self = [super init])) {
     _controller = controller;
     _originalAction = item.action;
     _canInvoke = [canInvoke copy];
+    _refresh = [refresh copy];
   }
   return self;
 }
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item {
   MenuControllerCocoa* controller = _controller;
-  return !_invoked && controller && _canInvoke() &&
-         [controller validateUserInterfaceItem:item];
+  const BOOL valid = !_invoked && controller && _canInvoke() &&
+                     [controller validateUserInterfaceItem:item];
+  if (_refresh && [(id)item isKindOfClass:NSMenuItem.class]) {
+    _refresh((NSMenuItem*)item);
+  }
+  return valid;
 }
 - (void)itemSelected:(NSMenuItem*)item {
   __attribute__((objc_precise_lifetime)) PCNativeExtensionMenuTarget* keep =
@@ -146,14 +155,15 @@ NSString* SidePanelUnavailableReason(BrowserWindowInterface* browser) {
   return nil;
 }
 
-bool SidePanelLoading(BrowserWindowInterface* browser,
-                      const std::string& extension_id) {
+std::optional<bool> SidePanelOpenOrLoading(BrowserWindowInterface* browser,
+                                           const std::string& extension_id) {
   auto* panel = browser ? SidePanelUI::From(browser) : nullptr;
   if (!panel || !panel->UsesNativeExtensionContent()) {
-    return false;
+    return std::nullopt;
   }
   const SidePanelEntryKey key(SidePanelEntryId::kExtension, extension_id);
-  return panel->IsSidePanelEntryPending(key, false) ||
+  return panel->IsSidePanelEntryShowing(key) ||
+         panel->IsSidePanelEntryPending(key, false) ||
          panel->IsSidePanelEntryPending(key, true);
 }
 
@@ -366,12 +376,16 @@ class NativeExtensionContextMenu::Session final
     if (command ==
         extensions::ExtensionContextMenuModel::TOGGLE_SIDE_PANEL_VISIBILITY) {
       item.identifier = @"extension-menu:side-panel";
-      if (SidePanelLoading(browser_.get(), id_)) {
-        item.title = l10n_util::GetNSString(
-            IDS_EXTENSIONS_SUBMENU_CLOSE_SIDE_PANEL_ITEM);
-      }
+      RetitleSidePanel(item);
     }
     items_.push_back({item, model->AsWeakPtr(), index, command});
+  }
+  void RetitleSidePanel(NSMenuItem* item) const {
+    if (auto open = SidePanelOpenOrLoading(browser_.get(), id_)) {
+      item.title = l10n_util::GetNSString(
+          *open ? IDS_EXTENSIONS_SUBMENU_CLOSE_SIDE_PANEL_ITEM
+                : IDS_EXTENSIONS_SUBMENU_OPEN_SIDE_PANEL_ITEM);
+    }
   }
   void BindTargets(NSMenu*) {
     std::weak_ptr<Session> weak = shared_from_this();
@@ -379,6 +393,15 @@ class NativeExtensionContextMenu::Session final
       const auto model = item.model;
       const size_t index = item.index;
       const int command = item.command;
+      void (^refresh)(NSMenuItem*) = nil;
+      if (command == extensions::ExtensionContextMenuModel::
+                         TOGGLE_SIDE_PANEL_VISIBILITY) {
+        refresh = ^(NSMenuItem* native) {
+          if (auto state = weak.lock(); state && !state->cancelled_) {
+            state->RetitleSidePanel(native);
+          }
+        };
+      }
       auto* target = [[PCNativeExtensionMenuTarget alloc]
           initWithItem:item.native
             controller:controller_
@@ -388,7 +411,8 @@ class NativeExtensionContextMenu::Session final
                       state->model_ && model && index < model->GetItemCount() &&
                       model->GetCommandIdAt(index) == command &&
                       !state->UnavailableReason(command);
-             }];
+             }
+               refresh:refresh];
       item.native.target = target;
       [targets_ addObject:target];
     }

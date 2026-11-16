@@ -8,6 +8,18 @@ final class Recorder: NSObject, NSMenuDelegate {
     func menuDidClose(_ menu: NSMenu) { log.append("close " + menu.title) }
 }
 
+@MainActor
+final class SidePanelToggle: NSObject, NSMenuItemValidation {
+    var open = false
+    private let recorder: Recorder
+    init(recorder: Recorder) { self.recorder = recorder }
+    @objc func toggle(_ sender: NSMenuItem) { recorder.log.append("perform " + sender.title); open.toggle() }
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        item.title = open ? "Close Side Panel" : "Open Side Panel"
+        return true
+    }
+}
+
 @main
 struct ParcContextMenuChecks {
     @MainActor static func main() { exitOnFailure(runChecks) }
@@ -97,6 +109,30 @@ struct ParcContextMenuChecks {
         expect(view.card.width >= m.minimumWidth && view.card.width <= m.maximumWidth, "the card fits its titles within bounds")
         expect(view.row(at: NSPoint(x: view.rows[1].midX, y: view.rows[1].midY)) == nil, "a separator is not a row")
         expect(view.accessibilityChildren()?.count == rows.count, "VoiceOver sees each row as a menu item")
+
+        let toggle = SidePanelToggle(recorder: recorder)
+        func sidePanelMenu() -> NSMenu {
+            let menu = NSMenu(title: "root")
+            menu.delegate = recorder
+            menu.addItem(item("Options"))
+            let panel = NSMenuItem(title: "Open Side Panel", action: #selector(SidePanelToggle.toggle(_:)), keyEquivalent: "")
+            panel.target = toggle
+            menu.addItem(panel)
+            return menu
+        }
+        func label(_ view: ParcContextMenuView, _ row: Int) -> String? {
+            view.accessibilityChildren()?.lazy.compactMap { $0 as? NSAccessibilityElement }
+                .first { $0.accessibilityFrameInParentSpace() == view.rows[row] }?.accessibilityLabel()
+        }
+        toggle.open = false
+        let live = ParcContextMenuView(menu: sidePanelMenu(), colors: ParcMenuColors(theme: SpaceTheme()))
+        expect(live.refresh().isEmpty && live.items[1].title == "Open Side Panel",
+               "checking an open menu again leaves unchanged rows alone")
+        toggle.open = true
+        expect(live.refresh() == [1] && live.items[1].title == "Close Side Panel",
+               "a row whose action changed while the menu is open takes its new label")
+        expect(label(live, 1) == "Close Side Panel", "VoiceOver hears the new label too")
+        expect(live.refresh().isEmpty, "the new label counts as seen")
 
         let parent = NSWindow(contentRect: NSRect(x: -12_000, y: -12_000, width: 600, height: 700),
                               styleMask: [.borderless], backing: .buffered, defer: false)
@@ -201,6 +237,36 @@ struct ParcContextMenuChecks {
             }
             RunLoop.main.add(timer, forMode: .common)
         }) == ["open root", "close root", "perform Options"], "a VoiceOver press on a row chooses it at once")
+
+        toggle.open = false
+        let panelSample = ParcContextMenuView(menu: sidePanelMenu(), colors: colors)
+        let panelRow = screenRow(panelSample, 1, beside: anchor)
+        expect(run(sidePanelMenu(), [mouse(.mouseMoved, panelRow), mouse(.leftMouseUp, panelRow)]) ==
+               ["open root", "close root", "perform Open Side Panel"], "a row whose label still holds acts on the first click")
+        toggle.open = false
+        expect(run(sidePanelMenu(), [mouse(.mouseMoved, panelRow)], during: { _ in
+            let timer = Timer(timeInterval: 0.05, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    toggle.open = true
+                    NSApp.postEvent(mouse(.leftMouseUp, panelRow), atStart: false)
+                    NSApp.postEvent(mouse(.leftMouseUp, panelRow), atStart: false)
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+        }) == ["open root", "close root", "perform Close Side Panel"],
+               "a click on a row whose label just changed shows the new label first, and the next click does what it says")
+        toggle.open = false
+        expect(run(sidePanelMenu(), [mouse(.mouseMoved, NSPoint(x: anchor.minX - 200, y: anchor.minY))], during: { _ in
+            let timer = Timer(timeInterval: 0.05, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    toggle.open = true
+                    NSApp.postEvent(mouse(.mouseMoved, panelRow), atStart: false)
+                    NSApp.postEvent(mouse(.leftMouseUp, panelRow), atStart: false)
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+        }) == ["open root", "close root", "perform Close Side Panel"],
+               "pointing at a row picks up its new label, so one click does what it now says")
 
         parent.orderOut(nil)
         expect(!ParcContextMenu(anchor: anchor, regions: [], parent: parent, colors: colors).present(extensionMenu()),

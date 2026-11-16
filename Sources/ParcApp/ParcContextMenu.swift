@@ -61,6 +61,8 @@ final class ParcContextMenuView: NSView {
     var colors: ParcMenuColors { didSet { needsDisplay = true } }
     var onPress: ((Int) -> Void)?
     private let showsState: Bool
+    private var elements: [Element] = []
+    private var faces: [Face] = []
     private static let checkConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
     private static let chevronConfiguration = NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
 
@@ -83,7 +85,6 @@ final class ParcContextMenuView: NSView {
         wantsLayer = true
         setAccessibilityElement(true)
         setAccessibilityRole(.menu)
-        var elements: [Element] = []
         for (index, item) in items.enumerated() where !item.isSeparatorItem {
             let element = Element(index: index, view: self)
             element.setAccessibilityRole(.menuItem)
@@ -95,6 +96,33 @@ final class ParcContextMenuView: NSView {
             elements.append(element)
         }
         setAccessibilityChildren(elements)
+        faces = items.map(Face.init)
+    }
+
+    private struct Face: Equatable {
+        let title: String
+        let enabled: Bool
+        let state: NSControl.StateValue
+        @MainActor init(_ item: NSMenuItem) { title = item.title; enabled = item.isEnabled; state = item.state }
+    }
+
+    @discardableResult
+    func refresh() -> Set<Int> {
+        source.update()
+        var changed = Set<Int>()
+        for (index, item) in items.enumerated() where Face(item) != faces[index] {
+            faces[index] = Face(item)
+            changed.insert(index)
+        }
+        guard !changed.isEmpty else { return changed }
+        for element in elements where changed.contains(element.index) {
+            element.setAccessibilityLabel(items[element.index].title)
+            element.setAccessibilityEnabled(items[element.index].isEnabled)
+            NSAccessibility.post(element: element, notification: .titleChanged)
+        }
+        if let highlighted, !items[highlighted].isEnabled { self.highlighted = nil }
+        needsDisplay = true
+        return changed
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -231,6 +259,7 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
     private var pendingRow: Timer?
     private var tip: (level: Int, row: Int, timer: Timer?, delay: TimeInterval)?
     private var tipPresenter: (presenter: TooltipPresenter, level: Int)?
+    private var refreshed: (level: Int, row: Int)?
     var willPerform: ((NSMenuItem) -> Void)?
 
     init(anchor: NSRect, regions: [NSRect], parent: NSWindow, colors: ParcMenuColors) {
@@ -322,6 +351,7 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
         guard let (level, row) = hit(point) else {
             hover(nil, in: nil)
             levels.last?.view.highlighted = nil
+            refreshed = nil
             return
         }
         hover(row, in: level)
@@ -407,6 +437,7 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
         pendingRow = nil
         guard levels.indices.contains(level) else { return }
         let view = levels[level].view
+        refresh(row, in: level)
         let item = view.items[row]
         let opened = level + 1 < levels.count && levels[level + 1].view.source === item.submenu
         closeLevels(after: opened ? level + 1 : level)
@@ -454,6 +485,7 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
     private func move(_ delta: Int, in level: Int) {
         guard levels.indices.contains(level) else { return }
         let view = levels[level].view
+        view.refresh()
         let enabled = view.items.indices.filter { !view.items[$0].isSeparatorItem && view.items[$0].isEnabled }
         guard let first = enabled.first, let last = enabled.last else { return }
         if let current = view.highlighted, let position = enabled.firstIndex(of: current) {
@@ -461,12 +493,22 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
         } else {
             view.highlighted = delta > 0 ? first : last
         }
+        if let row = view.highlighted { refreshed = (level, row) }
+    }
+
+    private func refresh(_ row: Int, in level: Int) {
+        guard refreshed?.level != level || refreshed?.row != row else { return }
+        refreshed = (level, row)
+        levels[level].view.refresh()
     }
 
     @discardableResult
     private func choose(level: Int, row: Int) -> Bool {
         guard levels.indices.contains(level) else { return false }
-        let item = levels[level].view.items[row]
+        let view = levels[level].view
+        refreshed = (level, row)
+        guard !view.refresh().contains(row) else { return false }
+        let item = view.items[row]
         guard item.isEnabled, !item.isSeparatorItem, !item.hasSubmenu else { return false }
         chosen = item
         done = true
@@ -518,6 +560,7 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
             current.presenter.close()
             tipPresenter = nil
         }
+        if let current = refreshed, current.level > level { refreshed = nil }
         while levels.count > level + 1, let (view, window, _) = levels.popLast() {
             view.onPress = nil
             window.parent?.removeChildWindow(window)
