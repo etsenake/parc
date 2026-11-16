@@ -123,7 +123,9 @@ extension BrowserWindowController {
         }
         guard !ImportedExtensionFailures.pending.isEmpty else { return }
         let names = ImportedExtensionFailures.take()
-        if showToast(.extensionsNotAdded(names), at: .window) == nil { ImportedExtensionFailures.restore(names) }
+        if showToast(.extensionsNotApplied(added: names.added, removed: names.removed), at: .window) == nil {
+            ImportedExtensionFailures.restore(names)
+        }
     }
 
     @discardableResult

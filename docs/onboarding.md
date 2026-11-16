@@ -86,9 +86,13 @@ The accepted choice applies once after setup completes. Keeping one removes
 other imported blockers from their recorded destination Profiles; keeping all
 changes none. Yes requests uBlock Origin and falls back to uBlock Origin Lite
 when Manifest V2 is refused. Native removal is restricted to known blocker IDs,
-refuses external installs and can wait for an outstanding download. Installation
-failure uses the browser's existing failure notice. Removal failures are currently
-logged without a visible failure or retry notice.
+refuses external installs and can wait up to ten minutes for an outstanding
+download; a blocker still downloading then counts as not removed. Each blocker is
+removed separately, so a failure is attributed to the right one. The browser
+window shows **Couldn’t add uBlock Origin Lite** or **Couldn’t remove** with the
+blocker's name. Failures that arrive together share one notice: a single failure
+is named and several are counted, a failed add sits above a failed removal, and
+there is no retry action. An import-data failure notice goes first.
 These are actual engine operations, not consequences of simply selecting a row.
 
 ## Welcome presentation
@@ -405,6 +409,6 @@ Relevant existing checks include:
 - The whole-module Swift check for material application changes.
 
 Read check entry points and follow [AGENTS.md](../AGENTS.md); this guide grants
-no permission to open apps or run browser fixtures. Remaining onboarding work is in
-the [backlog](backlog.md#onboarding). Reduce Motion, the Lite blocker fallback and
+no permission to open apps or run browser fixtures. Remaining work is in the
+[backlog](backlog.md). Reduce Motion, the Lite blocker fallback and
 no seeded starter folder retain the behavior above.

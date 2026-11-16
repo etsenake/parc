@@ -142,12 +142,6 @@ workflow, renders first.
   fades. This needs a Peek host above the page card that keeps window dragging in
   the margins.
 
-## Onboarding
-
-- Failed iCloud Passwords installation and imported ad-blocker removal are only
-  logged. Show failure/retry feedback so setup does not silently leave a choice
-  unapplied. [Onboarding](onboarding.md).
-
 ## Media
 
 Casting continuity across navigation and picture in picture are implemented.

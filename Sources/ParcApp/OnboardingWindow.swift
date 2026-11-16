@@ -878,10 +878,15 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         for (profileID, identifiers) in plan.removals
         where store.state.profiles.contains(where: { $0.id == profileID })
             && !store.state.profileRemovals.contains(where: { $0.profileID == profileID }) {
-            PCNativeBrowserApplication.removeSetupAdBlockers(identifiers,
-                fromProfilePath: store.independentEngineProfilePath(for: profileID)) { error in
-                    if let error { NSLog("Parc could not remove an imported ad blocker: %@", error.localizedDescription) }
-                }
+            for identifier in identifiers.sorted() {
+                let name = draft.importedAdBlockers.first { $0.identifier == identifier }?.displayName ?? identifier
+                PCNativeBrowserApplication.removeSetupAdBlockers([identifier],
+                    fromProfilePath: store.independentEngineProfilePath(for: profileID)) { error in
+                        guard let error else { return }
+                        NSLog("Parc could not remove %@: %@", name, error.localizedDescription)
+                        MainActor.assumeIsolated { ImportedExtensionFailures.addRemovals([name]) }
+                    }
+            }
         }
         if let profileID = plan.installProfileID,
            BrowserImportDestination(spaceID: space.id, profileID: profileID).isCurrent(in: store.state) {

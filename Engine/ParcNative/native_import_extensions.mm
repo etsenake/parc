@@ -76,7 +76,6 @@ namespace parc::importer {
 namespace {
 constexpr uint32_t kExtensionCategory = PCNativeImportCategoryExtensions;
 class Batch;
-// Imports that may still be installing extensions; main thread only.
 std::vector<std::weak_ptr<Batch>>& LiveBatches() {
   static base::NoDestructor<std::vector<std::weak_ptr<Batch>>> batches;
   return *batches;
@@ -97,7 +96,6 @@ class Installer final : public extensions::WebstoreInstallWithPrompt {
         profile_(profile.GetWeakPtr()) {
     set_show_post_install_ui(false);
   }
-  // False once Chromium is installing; its real result follows.
   bool CancelBeforeInstall() {
     if (installing_)
       return false;
@@ -120,8 +118,6 @@ class Installer final : public extensions::WebstoreInstallWithPrompt {
   base::WeakPtr<Profile> profile_;
   bool installing_ = false;
 };
-// Every request's extensions are read back from their source, then installed
-// side by side; one failure never stops the others.
 class Batch final : public ProfileObserver,
                     public std::enable_shared_from_this<Batch> {
  public:
@@ -169,7 +165,6 @@ class Batch final : public ProfileObserver,
     MaybeFinish();
   }
   bool Stopped() const { return cancelled_ || finished_; }
-  // Whether this import may still install `id` into the Profile at `path`.
   bool MayInstall(NSString* path, const std::string& id) const {
     if (finished_)
       return false;
@@ -182,7 +177,6 @@ class Batch final : public ProfileObserver,
              [groups_[item.group].path isEqualToString:path];
     });
   }
-  // The Web Store answered; past this point Chromium owns the install.
   bool Proceed(size_t index) {
     if (Stopped() || items_[index].state != Item::kPreparing)
       return false;
@@ -191,7 +185,6 @@ class Batch final : public ProfileObserver,
     StartQueuedLater();
     return true;
   }
-  // Stop reaches only lookups; downloads Chromium already owns carry on.
   void Cancel() {
     if (finished_ || reported_)
       return;
@@ -211,9 +204,6 @@ class Batch final : public ProfileObserver,
     }
     MaybeFinish();
   }
-  // The installer observes its Profile and aborts itself; only that Profile's
-  // extensions fail. Our reference goes first so the installer can't outlive
-  // the Profile.
   void OnProfileWillBeDestroyed(Profile* profile) override {
     profile->RemoveObserver(this);
     for (auto& item : items_) {
@@ -221,7 +211,6 @@ class Batch final : public ProfileObserver,
         continue;
       if (item.state == Item::kPreparing)
         --preparing_;
-      // A Profile removed after the results has nothing left to report.
       item.state = reported_ ? Item::kDeclined : Item::kFailed;
       --pending_;
       item.installer = nullptr;
@@ -256,7 +245,6 @@ class Batch final : public ProfileObserver,
     return item.state == Item::kQueued || item.state == Item::kPreparing ||
            item.state == Item::kInstalling;
   }
-  // Released with its abort so that no late callback can reach it.
   bool Abort(Item& item) {
     if (!item.installer || !item.installer->CancelBeforeInstall())
       return false;
@@ -293,8 +281,6 @@ class Batch final : public ProfileObserver,
             },
             weak_from_this(), index));
   }
-  // The reader confirms each selection is still the source's own Web Store
-  // extension, as it did when extensions imported with the profile.
   void Read(size_t index) {
     auto& group = groups_[index];
     std::string error;
@@ -349,7 +335,6 @@ class Batch final : public ProfileObserver,
           name = pair.second;
       items_.push_back({index, id, name});
       auto& item = items_.back();
-      // A supervised Profile's parent approval can't come from an import.
       if (cancelled_) {
         item.state = Item::kDeclined;
       } else if (!confirmed.contains(id) || !group.profile ||
@@ -367,7 +352,6 @@ class Batch final : public ProfileObserver,
     StartQueued();
     MaybeFinish();
   }
-  // A few Web Store requests at a time, each with its own time limit.
   void StartQueued() {
     for (size_t index = 0; index < items_.size() && preparing_ < 4; ++index) {
       auto& item = items_[index];
@@ -409,7 +393,6 @@ class Batch final : public ProfileObserver,
             weak_from_this(), index));
     item.installer->BeginInstall();
   }
-  // Runs inside Chromium's completion, which still holds its own reference.
   void Installed(size_t index,
                  bool success,
                  extensions::webstore_install::Result result) {
@@ -419,7 +402,6 @@ class Batch final : public ProfileObserver,
         --preparing_;
         StartQueuedLater();
       }
-      // An earlier import is still downloading it; that one reports it.
       item.elsewhere = result == extensions::webstore_install::INSTALL_IN_PROGRESS;
       item.state = success          ? Item::kInstalled
                    : item.elsewhere ? Item::kDeclined
@@ -429,7 +411,6 @@ class Batch final : public ProfileObserver,
     item.installer = nullptr;
     MaybeFinish();
   }
-  // One stalled Web Store answer can't hold up the rest.
   void Tick() {
     const auto now = base::TimeTicks::Now();
     if (now - started_ > base::Seconds(30))
@@ -470,7 +451,6 @@ class Batch final : public ProfileObserver,
         [failed addObject:name];
       item.background = item.state == Item::kInstalling;
     }
-    // Stopping is the user's choice; nothing to report as failed.
     if (cancelled_)
       [failed removeAllObjects];
     const PCNativeImportOutcome outcome =
@@ -494,7 +474,6 @@ class Batch final : public ProfileObserver,
                        },
                        result, completion));
   }
-  // Downloads still running at Report end here, once, with any failures.
   void Finish() {
     auto keep = shared_from_this();
     finished_ = true;
@@ -641,7 +620,6 @@ constexpr const char* kAdBlockerIDs[] = {
     "onomjaelhagjjojbkcafidnepbfkpnee", "ojjjflcdgjegkdcojbahlbgeiinpbfgf",
     "jhkhlgaomejplkanglolfpcmfknnomle", "gekoepiplklhniacchbbgbhilidiojmb",
     "amgmhmoikcefmalfmbpkpnnpebhmhfnd"};
-// An import may still be downloading a blocker the user chose to remove.
 constexpr base::TimeDelta kRemovalWait = base::Minutes(10);
 
 class Installer final : public extensions::WebstoreInstallWithPrompt {
@@ -658,8 +636,6 @@ class Installer final : public extensions::WebstoreInstallWithPrompt {
     return profile_ && !profile_->ShutdownStarted();
   }
   std::unique_ptr<extensions::InstallPromptData> CreateInstallPrompt() const override {
-    // The setup owner has already accepted this particular extension. Keep
-    // Chromium's metadata, signature, policy and CRX installation checks.
     return nullptr;
   }
 
@@ -667,8 +643,6 @@ class Installer final : public extensions::WebstoreInstallWithPrompt {
   base::WeakPtr<Profile> profile_;
 };
 
-// Installs the first candidate that ends up enabled; one already enabled is
-// the result.
 class Session final : public std::enable_shared_from_this<Session> {
  public:
   Session(NSString* path, std::vector<std::string> candidates, NSString* failure,
@@ -689,8 +663,6 @@ class Session final : public std::enable_shared_from_this<Session> {
             self->Finish(error ?: importer::ImportError(@"The selected Profile is unavailable."));
             return;
           }
-          // This setup continuation cannot provide parental reauthentication.
-          // Never replace a required parent decision with the setup selection.
           if (profile->IsChild()) {
             self->Finish(importer::ImportError(@"This Profile requires parental approval to install extensions."));
             return;
@@ -712,7 +684,6 @@ class Session final : public std::enable_shared_from_this<Session> {
     if (std::any_of(candidates_.begin(), candidates_.end(), [&](const std::string& id) {
           return registry->enabled_extensions().Contains(id);
         })) {
-      // An earlier candidate this setup installed but the engine keeps off.
       std::u16string ignored;
       for (const auto& id : disabled_)
         if (registry->disabled_extensions().Contains(id))
@@ -726,10 +697,7 @@ class Session final : public std::enable_shared_from_this<Session> {
       return;
     }
     error_ = nil;
-    // A Manifest V2 candidate is refused, or installed disabled, by an engine
-    // that no longer runs Manifest V2; the next candidate follows.
     const auto id = candidates_[next_++];
-    // Chromium reports an existing install as success; that copy is the user's.
     const bool existed = registry->GetInstalledExtension(id) != nullptr;
     installer_ = base::MakeRefCounted<Installer>(id, *profile_,
         base::BindOnce([](std::weak_ptr<Session> weak, std::string id, bool existed, bool success,
@@ -741,7 +709,6 @@ class Session final : public std::enable_shared_from_this<Session> {
             self->disabled_.push_back(id);
           if (!success && !message.empty())
             self->error_ = importer::ImportError(base::SysUTF8ToNSString(message));
-          // Leave Chromium's completion stack before releasing its installer.
           base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
               base::BindOnce([](std::shared_ptr<Session> self) {
                 self->installer_ = nullptr;
@@ -753,12 +720,8 @@ class Session final : public std::enable_shared_from_this<Session> {
   void Finish(NSError* error) {
     if (finished_) return;
     finished_ = true;
-    // Do not release the installer/context inside Chromium's own completion
-    // stack. Retain this owner through the single main-thread delivery.
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
         base::BindOnce([](std::shared_ptr<Session> self, NSError* error) {
-          // WebstoreStandaloneInstaller itself observes Profile destruction
-          // and supplies its terminal failure before aborting installation.
           self->installer_ = nullptr; self->context_ = nullptr;
           auto completion = self->completion_; self->completion_ = nil;
           self->lifetime_.reset();
@@ -781,7 +744,6 @@ class Session final : public std::enable_shared_from_this<Session> {
 void StartSession(NSString* path, std::vector<std::string> candidates,
                   NSString* failure, void (^completion)(NSError*)) {
   auto session = std::make_shared<Session>(path, std::move(candidates), failure, completion);
-  // Always asynchronous, including profile admission failure.
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
       base::BindOnce(&Session::Start, std::move(session)));
 }
@@ -823,7 +785,6 @@ class Removal final : public extensions::ExtensionRegistryObserver,
                             const extensions::Extension* extension,
                             bool) override {
     if (finished_ || !waiting_.erase(extension->id())) return;
-    // Not from inside the registry's own notification.
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
         base::BindOnce([](std::weak_ptr<Removal> weak, std::string id) {
           auto self = weak.lock();
@@ -838,8 +799,6 @@ class Removal final : public extensions::ExtensionRegistryObserver,
   }
 
  private:
-  // Only a blocker an import may still install is waited for, so one the
-  // user installs again later stays.
   void Poll() {
     if (finished_) return;
     std::erase_if(waiting_, [&](const std::string& id) {
@@ -855,13 +814,10 @@ class Removal final : public extensions::ExtensionRegistryObserver,
     const extensions::Extension* extension =
         extensions::ExtensionRegistry::Get(profile_.get())->GetInstalledExtension(id);
     if (!extension) return;
-    // External installs return after an internal uninstall.
     if (extensions::Manifest::IsExternalLocation(extension->location())) {
       error_ = importer::ImportError(@"An ad blocker installed by another app can't be removed here.");
       return;
     }
-    // The internal reason opens no uninstall page and skips Chromium's policy
-    // check, so the user's own permission is checked here.
     auto* policy = extensions::ExtensionSystem::Get(profile_.get())->management_policy();
     std::u16string message;
     if (!policy->UserMayModifySettings(extension, &message) ||
@@ -873,7 +829,10 @@ class Removal final : public extensions::ExtensionRegistryObserver,
           : base::SysUTF16ToNSString(message));
     }
   }
-  void Expire() { Finish(error_); }
+  void Expire() {
+    Finish(error_ ?: importer::ImportError(
+        @"An imported ad blocker was still being added and could not be removed."));
+  }
   void Stop() {
     timer_.Stop();
     poll_.Stop();
@@ -929,7 +888,6 @@ class Removal final : public extensions::ExtensionRegistryObserver,
   std::set<std::string> ids;
   for (NSString* id in extensionIDs)
     ids.insert(base::SysNSStringToUTF8(id));
-  // Paths match the import's own, which are standardized absolute paths.
   if (!profilePath.isAbsolutePath || ![profilePath isEqual:profilePath.stringByStandardizingPath] ||
       !std::all_of(ids.begin(), ids.end(), [](const std::string& value) {
         return std::any_of(std::begin(parc::setup_extension::kAdBlockerIDs),

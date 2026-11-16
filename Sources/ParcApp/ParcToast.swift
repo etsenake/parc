@@ -35,8 +35,12 @@ struct ParcToastContent: Equatable {
         standard("To exit full screen, press " + shortcut + ".")
     }
     static let archiveCleared = standard("Archive Cleared")
-    static func extensionsNotAdded(_ names: [String]) -> ParcToastContent {
-        standard(names.count == 1 ? "Couldn’t add " + names[0] : "Couldn’t add \(names.count) extensions")
+    static func extensionsNotApplied(added: [String], removed: [String]) -> ParcToastContent {
+        func line(_ verb: String, _ names: [String], _ kind: String) -> String? {
+            names.isEmpty ? nil : names.count == 1 ? "Couldn’t \(verb) " + names[0] : "Couldn’t \(verb) \(names.count) \(kind)"
+        }
+        let lines = [line("add", added, "extensions"), line("remove", removed, "ad blockers")].compactMap { $0 }
+        return standard(lines.first ?? "", subLabel: lines.dropFirst().first)
     }
     static let importPartial = standard("Only some of your data imported. Please try again!")
     static let importFailed = standard("We weren’t able to import… please try again!")

@@ -36,8 +36,8 @@ remaining effort, speed, or additions outside that old checklist.
 The folder count includes answering whether Duplicate had Undo; it did not then.
 Duplicate has since gained Undo, which these figures do not count.
 The setup count corrects old arithmetic; the audit also found silent failures
-when installing iCloud Passwords or removing an imported blocker. Those failures
-remain in the [backlog](backlog.md#onboarding), outside the old count.
+when installing iCloud Passwords or removing an imported blocker, outside the old
+count. Both show a notice; see [onboarding](onboarding.md).
 
 The old table already marked keyboard navigation, downloads, sidebar, saved tabs,
 auto-archive, general navigation, splits, web interactions, extensions, Spaces

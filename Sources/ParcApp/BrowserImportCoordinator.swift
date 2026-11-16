@@ -1002,8 +1002,13 @@ enum ImportedBrowserDataFailures {
 
 @MainActor
 enum ImportedExtensionFailures {
+    struct Names: Equatable {
+        var added: [String] = []
+        var removed: [String] = []
+        var isEmpty: Bool { added.isEmpty && removed.isEmpty }
+    }
     static let didFail = Notification.Name("ParcImportedExtensionsDidFail")
-    private(set) static var pending: [String] = []
+    private(set) static var pending = Names()
     private(set) static var failedIdentifiers = Set<String>()
     static var present: (() -> Void)?
     static func clearFailed(_ identifiers: Set<String>) { failedIdentifiers.subtract(identifiers) }
@@ -1011,12 +1016,18 @@ enum ImportedExtensionFailures {
         failedIdentifiers.formUnion(identifiers)
         NotificationCenter.default.post(name: didFail, object: nil)
     }
-    static func add(_ names: [String]) {
-        for name in names where !pending.contains(name) { pending.append(name) }
+    static func add(_ names: [String]) { record(Names(added: names)) }
+    static func addRemovals(_ names: [String]) { record(Names(removed: names)) }
+    static func take() -> Names { defer { pending = Names() }; return pending }
+    static func restore(_ names: Names) {
+        pending = Names(added: names.added + pending.added.filter { !names.added.contains($0) },
+                        removed: names.removed + pending.removed.filter { !names.removed.contains($0) })
+    }
+    private static func record(_ names: Names) {
+        for name in names.added where !pending.added.contains(name) { pending.added.append(name) }
+        for name in names.removed where !pending.removed.contains(name) { pending.removed.append(name) }
         present?()
     }
-    static func take() -> [String] { defer { pending = [] }; return pending }
-    static func restore(_ names: [String]) { pending = names + pending.filter { !names.contains($0) } }
 }
 
 enum ArcSidebarSnapshot {

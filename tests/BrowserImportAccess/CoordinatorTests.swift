@@ -424,7 +424,7 @@ import AppKit
                "Results appear while a download is still running, and only known ad blockers carry on into setup with their Profile")
         downloading.background(["uBlock Origin"])
         expect(coordinator.warnings.filter { $0 == "uBlock Origin couldn’t be added." }.count == 1
-               && ImportedExtensionFailures.pending.contains("uBlock Origin"),
+               && ImportedExtensionFailures.pending.added.contains("uBlock Origin"),
                "A later failure is recorded once and waits for a browser window")
         expect(coordinator.importedAdBlockers.isEmpty && ImportedExtensionFailures.failedIdentifiers.contains(known.identifier),
                "An ad blocker whose download failed isn't offered in setup")
@@ -442,17 +442,29 @@ import AppKit
                && coordinator.warnings.contains("Extension couldn’t be added."),
                "An install that can't begin lists each extension as a failure")
         coordinator.cancel()
-        expect(ImportedExtensionFailures.take() == ["uBlock Origin", "Extension"],
+        expect(ImportedExtensionFailures.take() == .init(added: ["uBlock Origin", "Extension"]),
                "With no results page, every failed extension waits for a browser window, once each")
         expect(ImportedBrowserDataFailures.take() == nil, "Imports whose data came in say nothing about it")
         var presented = 0
         ImportedExtensionFailures.present = { presented += 1 }
         downloading.background(["uBlock Origin"])
         ImportedExtensionFailures.add(["uBlock Origin"])
-        expect(ImportedExtensionFailures.pending == ["uBlock Origin"] && presented == 2,
+        expect(ImportedExtensionFailures.pending == .init(added: ["uBlock Origin"]) && presented == 2,
                "After the import has closed, a later failure waits for a browser window, once")
-        expect(ImportedExtensionFailures.take() == ["uBlock Origin"] && ImportedExtensionFailures.pending.isEmpty,
-               "Shown once, it is gone")
+        ImportedExtensionFailures.addRemovals(["AdBlock"])
+        ImportedExtensionFailures.addRemovals(["AdBlock", "Ghostery"])
+        expect(ImportedExtensionFailures.pending == .init(added: ["uBlock Origin"], removed: ["AdBlock", "Ghostery"])
+               && presented == 4,
+               "An ad blocker setup couldn't remove waits beside the ones it couldn't add, each named once")
+        let shown = ImportedExtensionFailures.take()
+        expect(shown == .init(added: ["uBlock Origin"], removed: ["AdBlock", "Ghostery"])
+               && ImportedExtensionFailures.pending.isEmpty, "Shown once, it is gone")
+        ImportedExtensionFailures.add(["iCloud Passwords"])
+        ImportedExtensionFailures.addRemovals(["Ghostery"])
+        ImportedExtensionFailures.restore(shown)
+        expect(ImportedExtensionFailures.take()
+               == .init(added: ["uBlock Origin", "iCloud Passwords"], removed: ["AdBlock", "Ghostery"]),
+               "A notice no window could show comes back first, without repeating a name that failed again meanwhile")
         ImportedExtensionFailures.present = nil
         return checks
     }
@@ -510,7 +522,7 @@ import AppKit
                && ImportedExtensionFailures.pending.isEmpty && ImportedBrowserDataFailures.take() == .partial,
                "Completion delivers blockers, one partial-import toast that covers its failed extensions, and releases the coordinator")
         install.background([blocker.displayName])
-        expect(ImportedExtensionFailures.take() == [blocker.displayName], "Failures arriving after detachment reach the browser window")
+        expect(ImportedExtensionFailures.take() == .init(added: [blocker.displayName]), "Failures arriving after detachment reach the browser window")
 
         let stopStore = try BrowserStore(directory: directory.appendingPathComponent("StopAfterFailure"))
         let stopWindow = NSWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)

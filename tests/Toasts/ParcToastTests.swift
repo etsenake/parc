@@ -63,6 +63,17 @@ import AppKit
         check(label(.zoom(percent: 110)) == "110%", "zoomChanged is the percentage")
         check(label(.fullScreenExit(shortcut: "⎋")) == "To exit full screen, press ⎋.", "didEnterFullScreen names the exit binding")
         check(label(.archiveCleared) == "Archive Cleared", "archiveCleared")
+        check(ParcToastContent.extensionsNotApplied(added: ["iCloud Passwords"], removed: []).body
+              == .standard(icon: nil, label: "Couldn’t add iCloud Passwords", subLabel: nil, buttons: []),
+              "a failed setup install names the extension")
+        check(ParcToastContent.extensionsNotApplied(added: [], removed: ["AdBlock"]).body
+              == .standard(icon: nil, label: "Couldn’t remove AdBlock", subLabel: nil, buttons: []),
+              "an imported ad blocker that stayed is named")
+        check(ParcToastContent.extensionsNotApplied(added: ["A", "B"], removed: ["AdBlock", "Ghostery"]).body
+              == .standard(icon: nil, label: "Couldn’t add 2 extensions", subLabel: "Couldn’t remove 2 ad blockers", buttons: []),
+              "both failures share one notice, counted when several")
+        check(ParcToastContent.extensionsNotApplied(added: ["iCloud Passwords"], removed: ["AdBlock"]).accessibilityText
+              == "Couldn’t add iCloud Passwords, Couldn’t remove AdBlock", "both lines are announced")
         check(label(.tabRestored(to: "Work", selected: false)) == "Tab restored to Work. Click to view."
               && label(.tabRestored(to: "Work", selected: true)) == "Tab restored to Work", "tabUnarchived wording")
         check(label(.pinnedToFolder("Reading")) == "Pinned to “Reading”", "tabPinnedToFolder")
