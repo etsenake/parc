@@ -141,10 +141,14 @@ The engine owns the address. `RegisterWhatsNewWebUI` in
 browser-main `PreBrowserStart` callback, after Chromium registers its own
 `chrome://whats-new` controller and before any window opens, and replaces that
 controller with one that reads the outer app bundle's `WhatsNew.html` off the
-main thread. Paths other than the page itself return nothing. The data source
-keeps Chromium's WebUI header policy (no frames, plugins or framing, Trusted
-Types) except its script rule, so the page's own policy, which allows only its
-inline script by hash and no network, governs scripts.
+main thread. A request whose path is anything but `/` returns nothing. The
+update range after `#` is not part of that path, so See What's New's
+`#from=…&to=…` and a restored tab carrying it open the page. Chromium's WebUI
+request path includes the fragment, which is why the source checks the URL's own
+path instead. The data source keeps Chromium's WebUI header policy (no frames,
+plugins or framing, Trusted Types) except its script rule, so the page's own
+policy, which allows only its inline script by hash and no network, governs
+scripts.
 
 Tabs saved with a Parc bundle's page file, from this install or an earlier one
 whose bundle still carries Parc's identifier, restore at `parc://whats-new` and

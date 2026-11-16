@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 769,
+  "version": 770,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -2114,7 +2114,7 @@
     {
       "source": "Engine/ParcChromium/parc_branding.cc",
       "target": "parc/parc_branding.cc",
-      "sha256": "5d4c7782fd39f0b64882b30108b1df6214fdb971e4c197c9af3d03e35eaa24b8"
+      "sha256": "827f20c8485631ec56bd6a7e9087cea980632bd920058be5f4ef900f787b9e3f"
     },
     {
       "source": "Engine/ParcChromium/parc_content_clients.h",

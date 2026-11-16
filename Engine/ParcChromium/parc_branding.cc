@@ -1034,7 +1034,7 @@ class WhatsNewPageSource final : public content::URLDataSource {
   }
   void StartDataRequest(const GURL& url, const content::WebContents::Getter&,
                         GotDataCallback callback) override {
-    if (!URLDataSource::URLToRequestPath(url).empty()) {
+    if (url.path() != "/") {
       std::move(callback).Run(nullptr);
       return;
     }

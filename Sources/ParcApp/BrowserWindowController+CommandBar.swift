@@ -1043,8 +1043,8 @@ extension BrowserWindowController {
     }
     func openHistoryPage() { openPageInNewTab("parc://history/") }
     func openReleaseNotes(fragment: String? = nil) {
-        guard let url = SoftwareUpdateBanner.releaseNotesURL else { return }
-        openPageInNewTab(url.absoluteString + (fragment.map { "#" + $0 } ?? ""))
+        guard SoftwareUpdateBanner.releaseNotesURL != nil else { return }
+        openPageInNewTab(WhatsNewPage.address(range: fragment))
     }
     private func openPageInNewTab(_ address: String) {
         guard canOpenPageInNewTab, window?.isKeyWindow == true, windowCommandSecurityAvailable,

@@ -2125,6 +2125,8 @@ enum InternalPage: Equatable {
 enum WhatsNewPage {
     static let address = "parc://whats-new/"
 
+    static func address(range: String?) -> String { address + (range.map { "#" + $0 } ?? "") }
+
     static func isBundledFile(_ address: String, running: URL = Bundle.main.bundleURL) -> Bool {
         guard let url = URL(string: address), url.isFileURL else { return false }
         let file = url.standardizedFileURL
@@ -2135,7 +2137,7 @@ enum WhatsNewPage {
 
     static func relocated(_ address: String, running: URL = Bundle.main.bundleURL) -> String {
         guard isBundledFile(address, running: running), let url = URL(string: address) else { return address }
-        return Self.address + (url.fragment.map { "#" + $0 } ?? "")
+        return Self.address(range: url.fragment)
     }
 }
 
