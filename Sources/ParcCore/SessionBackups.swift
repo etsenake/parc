@@ -22,6 +22,11 @@ final class SessionBackups {
     struct Backup: Equatable {
         let url: URL
         let date: Date
+        var sequence = 0
+
+        func isNewer(than other: Backup) -> Bool {
+            (sequence, date) > (other.sequence, other.date)
+        }
     }
 
     struct Restorable {
@@ -99,31 +104,36 @@ final class SessionBackups {
         directory.appendingPathComponent(folderName, isDirectory: true)
     }
 
-    static func name(for date: Date) -> String {
-        "session-" + date.formatted(stamp) + ".json"
+    static func name(for date: Date, sequence: Int) -> String {
+        "session-" + date.formatted(stamp) + "-\(sequence).json"
     }
 
-    static func date(fromName name: String) -> Date? {
+    static func backup(named name: String, in folder: URL) -> Backup? {
         guard name.hasPrefix("session-"), name.hasSuffix(".json") else { return nil }
-        return try? Date(String(name.dropFirst("session-".count).dropLast(".json".count)), strategy: stamp)
+        let fields = name.dropFirst("session-".count).dropLast(".json".count)
+            .split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let date = try? Date(String(fields[0]), strategy: stamp) else { return nil }
+        let url = folder.appendingPathComponent(name)
+        guard fields.count == 2 else { return Backup(url: url, date: date) }
+        guard let sequence = Int(fields[1]), (1...Int(Int32.max)).contains(sequence) else { return nil }
+        return Backup(url: url, date: date, sequence: sequence)
     }
 
     static func list(in directory: URL) -> [Backup] {
         let folder = folder(in: directory)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        return names.compactMap { name in
-            date(fromName: name).map { Backup(url: folder.appendingPathComponent(name), date: $0) }
-        }.sorted { $0.date > $1.date }
+        return names.compactMap { backup(named: $0, in: folder) }.sorted { $0.isNewer(than: $1) }
     }
 
     static func retained(_ backups: [Backup], calendar: Calendar) -> Set<URL> {
-        let newest = backups.sorted { $0.date > $1.date }
+        let newest = backups.sorted { $0.isNewer(than: $1) }
         var keep = Set(newest.prefix(recentCount).map(\.url))
-        var earliest: [Date: Backup] = [:]
-        for backup in newest { earliest[calendar.startOfDay(for: backup.date)] = backup }
-        for day in earliest.keys.sorted(by: >).prefix(dailyCount) {
-            if let backup = earliest[day] { keep.insert(backup.url) }
+        var days: [(day: Date, first: Backup)] = []
+        for backup in newest {
+            let day = calendar.startOfDay(for: backup.date)
+            if days.last?.day == day { days[days.count - 1].first = backup } else { days.append((day, backup)) }
         }
+        keep.formUnion(days.prefix(dailyCount).map(\.first.url))
         return keep
     }
 
@@ -139,7 +149,7 @@ final class SessionBackups {
 
     func backUpIfDue(_ state: BrowserState, at date: Date) {
         if !lastBackupKnown {
-            lastBackup = Self.list(in: directory).first { $0.date <= date }?.date
+            lastBackup = Self.list(in: directory).first?.date
             lastBackupKnown = true
         }
         if let lastBackup, lastBackup <= date, date.timeIntervalSince(lastBackup) < Self.interval { return }
@@ -150,11 +160,13 @@ final class SessionBackups {
     func backUp(_ state: BrowserState, at date: Date) throws {
         let data = try Self.encoded(state)
         _ = try BrowserStore.savedSession(from: data)
-        if let newest = Self.list(in: directory).first, (try? Data(contentsOf: newest.url)) == data {
+        let newest = Self.list(in: directory).first
+        if let newest, (try? Data(contentsOf: newest.url)) == data {
             lastBackup = date; lastBackupKnown = true
             return
         }
-        try Self.write(data, to: Self.folder(in: directory).appendingPathComponent(Self.name(for: date)))
+        let name = Self.name(for: date, sequence: (newest?.sequence ?? 0) + 1)
+        try Self.write(data, to: Self.folder(in: directory).appendingPathComponent(name))
         lastBackup = date; lastBackupKnown = true
         let backups = Self.list(in: directory)
         let keep = Self.retained(backups, calendar: calendar)

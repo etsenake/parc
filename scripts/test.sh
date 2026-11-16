@@ -74,7 +74,7 @@ step compile_and_run favorite-moves FavoriteMoveTests \
   "$repo_root/Sources/ParcCore/RecentTabOrder.swift"
 step compile_and_run browser-store BrowserStoreTests \
   "$repo_root/Sources/ParcCore/FolderLinks.swift" "$repo_root/tests/Support/FileObservation.swift"
-step compile_and_run session-backups SessionBackupTests
+step compile_and_run session-backups SessionBackupTests "$repo_root/Sources/ParcApp/SidebarRescue.swift"
 step compile_and_run browser-tab-lookup BrowserTabLookupTests "$repo_root/Sources/ParcCore/FolderLinks.swift"
 step compile_and_run whats-new-page WhatsNewPageTests
 step compile_and_run link-routing-store LinkRoutingStoreTests

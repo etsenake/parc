@@ -56,24 +56,36 @@ owner-only folder beside `session.json`. After a save, and once at launch, Parc
 writes a copy when the newest one is at least an hour old and the sidebar has
 changed, so a busy hour costs one small file. It keeps the six newest copies
 plus the first copy from each of the seven latest days Parc was used, at most
-thirteen. Each copy passes the startup loader's decode and validation before an
-atomic write, and leaves out history and downloads. Private windows,
-`--parc-profile` profiles and model-test stores write none.
+thirteen. Each copy's name carries its UTC time and a number one higher than
+the last copy's, and "newest", the hourly check and both retention rules follow
+that number. A copy stamped while the Mac's clock ran ahead therefore never
+outranks later copies once the clock is fixed, and it ages out within about a
+week of use instead of waiting for real time to catch up. Each copy passes the
+startup loader's decode and validation before an atomic write, and leaves out
+history and downloads. Private windows, `--parc-profile` profiles and
+model-test stores write none.
 
 **Rescue.** If `session.json` exists but can't be read or validated, startup
 shows a standard system alert, a Core Foundation user notification that needs
 no app window or finished launch. Restore Backup takes the newest copy that
 passes the loader's checks, skipping copies this version can't read, damaged or
-newer, and the alert says how old it is. The unreadable file stays beside it as
-`session-unreadable-<UTC time>.json`: a hard link (or copy) is made before the
-backup is swapped in atomically, so nothing is lost and a newer Parc's file can
-be put back by hand. Quit changes nothing, so an older Parc never replaces a
-newer Parc's file unless the person chooses to restore. With no usable copy the
-"Parc couldn’t start" alert says whether backups are missing or unreadable, and
-Parc quits as before. A restored sidebar's Downloads list refills from the
-engine. A missing `session.json` still starts fresh, and `--parc-smoke` reports
-instead of asking. The automatic backups and this rescue cover recovery; no
-window lists the backups for browsing or choosing an older one.
+newer, and the alert says how old it is; a copy stamped after the current time
+says its age is unknown instead of showing a future date. The unreadable file
+stays beside it as `session-unreadable-<UTC time>.json`: a hard link (or copy)
+is made before the backup is swapped in atomically, so nothing is lost and a
+newer Parc's file can be put back by hand. Quit changes nothing, so an older
+Parc never replaces a newer Parc's file unless the person chooses to restore.
+With no usable copy the "Parc couldn’t start" alert says whether backups are
+missing or unreadable, and Parc quits as before. A restored sidebar's Downloads
+list refills from the engine. If `session.json` is missing but a copy passes
+the checks, the same alert, worded for a missing file, offers Restore Backup or
+Start Empty. Starting empty is the safe choice there because no file needs
+protecting, and an alert that can't be shown starts empty too. First launch and
+a folder with no usable copies start empty without asking, as do
+`--parc-profile` profiles, which keep no backups. `--parc-smoke` never asks: it
+starts empty when the file is missing and reports an unreadable one. The
+automatic backups and this rescue cover recovery; no window lists the backups
+for browsing or choosing an older one.
 
 **Privacy.** Copies follow the main file's rules. Clearing history over a time
 range removes every copy taken since the range began, so all of them for all
@@ -87,7 +99,8 @@ Space that shares data leaves older copies, which age out within about a week.
 Kept unreadable files are left alone: they are the person's own data, perhaps
 from a newer Parc, and this version can't safely rewrite them.
 `tests/SessionBackupTests.swift` covers the schedule, cadence, validation,
-rescue choice, the kept file and pruning.
+rescue choice and wording, the missing-file offer and the starts that never ask,
+write order after a clock fix, the kept file and pruning.
 
 ## Dock, reopen and closing windows
 
