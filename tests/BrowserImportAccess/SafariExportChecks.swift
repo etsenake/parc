@@ -118,6 +118,8 @@ func safariExportChecks(window: NSWindow, safari: PCNativeImportSource) throws -
            "The export's bookmarks become the usual bookmark page for the original Space")
     expect(coordinator.passwordDestination == nil && coordinator.stage != .safariPasswords,
            "Passwords from the export need no password page")
+    expect(coordinator.setupPage == .bookmarks && coordinator.setupPagesAhead.isEmpty,
+           "Setup counts the export's bookmarks page and no password page")
     expect(PCNativeBrowserApplication.passwordRequests.count == 1
            && PCNativeBrowserApplication.passwordRequests[0].path == store.independentEngineProfilePath(for: destination.profileID),
            "The export's passwords go to the original Profile through the native CSV importer")
@@ -130,6 +132,8 @@ func safariExportChecks(window: NSWindow, safari: PCNativeImportSource) throws -
     expect(coordinator.stage == .importing && coordinator.message == "Importing your Safari passwords…"
            && store.state.tabs.contains { $0.url == "https://kept.example.test/" },
            "Accepting the bookmarks first saves them and keeps the import open until the passwords are in")
+    expect(coordinator.setupPage == .progress && coordinator.setupPagesAhead.isEmpty,
+           "Waiting on the export's passwords is a progress page with nothing after it")
     passwords.complete(.init(outcome: .completed, importedCount: 1))
     expect(coordinator.stage == .finished, "The import finishes once the passwords are in")
     expect(!files.fileExists(atPath: passwords.url.path), "Parc deletes its copy of the passwords as soon as they're in")

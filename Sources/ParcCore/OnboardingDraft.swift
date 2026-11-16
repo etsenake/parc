@@ -46,6 +46,9 @@ struct OnboardingDraft: Codable, Equatable {
         var title: String
         var url: String
     }
+    enum ImportPage: String, Codable {
+        case progress, bookmarks, passwordChoice, passwordFile
+    }
     var version = 1
     var spaceID: UUID
     var stage: Stage = .introAnimation
@@ -63,6 +66,7 @@ struct OnboardingDraft: Codable, Equatable {
     var replayBaseName: String?
     var replayBaseTheme: SpaceTheme?
     var replayAppearance: String?
+    var importPages: [ImportPage] = []
     var wantsDefaultBrowser: Bool { defaultBrowserChoice ?? true }
     var showsAdBlockers: Bool {
         Set(importedAdBlockers.map(\.identifier)) != [OnboardingAdBlocker.uBlockOrigin] || stage.current == .adBlockers
@@ -74,17 +78,31 @@ struct OnboardingDraft: Codable, Equatable {
     func visibleSetupOrder() -> [Stage] {
         Stage.setupOrder(includingAdBlockers: showsAdBlockers, retaining: stage.current)
     }
-    func displayedSetupCount() -> Int {
-        visibleSetupOrder().filter { $0 != .ready && $0 != .continuedImport }.count
+    func displayedSetupCount(importSteps: Int? = nil) -> Int {
+        visibleSetupOrder().filter { $0 != .ready && $0 != .continuedImport }.count + (importSteps ?? importPages.count)
     }
-    func displayedStepNumber() -> Int {
+    func displayedStepNumber(importSteps: Int? = nil) -> Int {
         let counted = visibleSetupOrder().filter { $0 != .continuedImport }
-        let shown = stage.current == .continuedImport ? .favorites : stage.current
-        return (counted.firstIndex(of: shown) ?? 0) + 1
+        let favorites = counted.firstIndex(of: .favorites) ?? 1
+        if stage == .continuedImport { return favorites + 1 + importPages.count }
+        let index = counted.firstIndex(of: stage.current) ?? 0
+        return index + 1 + (index > favorites ? importSteps ?? importPages.count : 0)
+    }
+    func importSteps(current: ImportPage?, ahead: [ImportPage]) -> Int {
+        let waiting = current.map { $0 != .progress && $0 != importPages.last } ?? false
+        return importPages.count + (waiting ? 1 : 0) + ahead.count
+    }
+    mutating func recordImportPage(_ page: ImportPage) {
+        if page != .progress, let index = importPages.lastIndex(of: page) {
+            importPages.removeSubrange(importPages.index(after: index)...)
+        } else if importPages.last != page {
+            importPages.append(page)
+        }
     }
     func savedForResume(importInProgress: Bool) -> Self {
         var saved = self
         if stage == .continuedImport || (importInProgress && stage == .favorites) { saved.stage = .bookmarks }
+        if saved.stage == .bookmarks { saved.importPages = [] }
         return saved
     }
     func windowFrameValue(saved: Int) -> Int {
@@ -205,7 +223,7 @@ struct OnboardingDraft: Codable, Equatable {
         case version, spaceID, stage, spaceName, theme, favoriteURLs, favoriteOrder
         case bookmarks, bookmarkFileName, defaultBrowserChoice, iCloudPasswordsProfileID
         case importedAdBlockers, adBlockerChoice, windowFrameThickness
-        case replayBaseName, replayBaseTheme, replayAppearance
+        case replayBaseName, replayBaseTheme, replayAppearance, importPages
     }
 
     init(spaceID: UUID, spaceName: String, theme: SpaceTheme,
@@ -235,6 +253,8 @@ struct OnboardingDraft: Codable, Equatable {
         replayBaseName = try container.decodeIfPresent(String.self, forKey: .replayBaseName)
         replayBaseTheme = try container.decodeIfPresent(SpaceTheme.self, forKey: .replayBaseTheme)
         replayAppearance = try container.decodeIfPresent(String.self, forKey: .replayAppearance)
+        importPages = try container.decodeIfPresent([String].self, forKey: .importPages)?
+            .compactMap(ImportPage.init(rawValue:)) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -256,6 +276,7 @@ struct OnboardingDraft: Codable, Equatable {
         try container.encodeIfPresent(replayBaseName, forKey: .replayBaseName)
         try container.encodeIfPresent(replayBaseTheme, forKey: .replayBaseTheme)
         try container.encodeIfPresent(replayAppearance, forKey: .replayAppearance)
+        if !importPages.isEmpty { try container.encode(importPages, forKey: .importPages) }
     }
 
     static let introDuration: TimeInterval = 3.3
@@ -271,8 +292,9 @@ struct OnboardingDraft: Codable, Equatable {
         var draft = try JSONDecoder().decode(Self.self, from: Data(contentsOf: url))
         guard draft.version == 1, draft.spaceID == space.id, draft.theme.isValid,
               draft.bookmarks.count <= 50_000,
-              draft.importedAdBlockers.count <= 64 else { throw CocoaError(.fileReadCorruptFile) }
+              draft.importedAdBlockers.count <= 64, draft.importPages.count <= 8 else { throw CocoaError(.fileReadCorruptFile) }
         if draft.stage == .continuedImport { draft.stage = .bookmarks }
+        if draft.stage.current == .bookmarks { draft.importPages = [] }
         draft.importedAdBlockers = draft.importedAdBlockers.filter {
             OnboardingAdBlocker.isKnown($0.identifier) && !$0.identifier.isEmpty && !$0.displayName.isEmpty
         }
@@ -305,7 +327,7 @@ struct OnboardingDraft: Codable, Equatable {
         defer { try? remove(directory: directory, fileName: replayRestartFileName) }
         guard FileManager.default.fileExists(atPath: directory.appendingPathComponent(replayRestartFileName).path),
               var draft = try? load(directory: directory, space: space, fileName: replayRestartFileName) else { return nil }
-        draft.stage = .bookmarks
+        draft.stage = .bookmarks; draft.importPages = []
         return draft
     }
 }

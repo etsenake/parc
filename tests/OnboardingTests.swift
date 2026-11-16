@@ -658,6 +658,7 @@ struct OnboardingTests {
 
         try Self.checkReplayDedupe(root: root)
         try Self.checkFavoritesDuringImport(root: root, store: store)
+        try Self.checkImportStepCounter(root: root, store: store)
 
         let failureRoot = root.appendingPathComponent("replay-write-failure")
         let failureStore = try BrowserStore(directory: failureRoot)
@@ -780,18 +781,20 @@ struct OnboardingTests {
             && draft.previousStage() == .bookmarks && draft.displayedStepNumber() == 2,
             "Favorites goes on to a running import's remaining pages, or straight to theme once nothing is left")
         draft.stage = .continuedImport
+        draft.recordImportPage(.bookmarks)
         precondition(draft.nextStage() == .theme && draft.nextStage(continuingImport: true) == .theme
             && draft.previousStage() == .favorites
-            && draft.displayedStepNumber() == 2 && draft.displayedSetupCount() == 6
+            && draft.displayedStepNumber() == 3 && draft.displayedSetupCount() == 7
             && draft.visibleSetupOrder().firstIndex(of: .continuedImport) == 2,
-            "The import's remaining pages sit between Favorites and theme, keep Favorites' number and add no step")
+            "The import's remaining pages sit between Favorites and theme, each with a number of its own")
         draft.importedAdBlockers = [.init(identifier: OnboardingAdBlocker.uBlockOrigin, displayName: "uBlock Origin")]
-        precondition(draft.displayedStepNumber() == 2 && draft.displayedSetupCount() == 5,
-            "Without the ad-blocker step the import's remaining pages still share Favorites' number")
+        precondition(draft.displayedStepNumber() == 3 && draft.displayedSetupCount() == 6,
+            "Without the ad-blocker step the import's pages keep their numbers in a smaller total")
         draft.importedAdBlockers = []
         draft.stage = .theme
-        precondition(draft.previousStage() == .favorites && draft.displayedStepNumber() == 3,
-            "Once the import is done, Back from theme returns to Favorites")
+        precondition(draft.previousStage() == .favorites && draft.displayedStepNumber() == 4,
+            "Once the import is done, theme follows its pages and Back returns to Favorites")
+        draft.importPages = []
         let direction = OnboardingExperience.direction
         precondition(direction(.bookmarks, .favorites) == .forward && direction(.favorites, .bookmarks) == .back
             && direction(.favorites, .continuedImport) == .forward && direction(.continuedImport, .favorites) == .back
@@ -841,5 +844,172 @@ struct OnboardingTests {
         precondition(next(.continuedImport, true, true, false) == .importPage && next(.favorites, true, true, false) == .nextStage
             && next(.bookmarks, false, false, false) == .nextStage,
             "The import's own pages keep their Next; Favorites always uses the step order")
+    }
+
+    static func checkImportStepCounter(root: URL, store: BrowserStore) throws {
+        typealias Stage = OnboardingDraft.Stage
+        typealias Page = OnboardingDraft.ImportPage
+        func fresh() -> OnboardingDraft {
+            OnboardingDraft(spaceID: store.activeSpace.id, spaceName: "Setup", theme: store.activeSpace.theme)
+        }
+        func show(_ draft: inout OnboardingDraft, _ stage: Stage, _ current: Page? = nil, ahead: [Page] = [],
+                  started: Bool = true) -> String {
+            draft.stage = stage
+            if stage == .continuedImport, let current { draft.recordImportPage(current) }
+            let steps = stage == .bookmarks && !started ? 0 : draft.importSteps(current: current, ahead: ahead)
+            return "\(draft.displayedStepNumber(importSteps: steps)) of \(draft.displayedSetupCount(importSteps: steps))"
+        }
+        func walk(_ draft: inout OnboardingDraft) -> [String] {
+            [Stage.theme, .windowFrame, .adBlockers, .defaultBrowser].map { show(&draft, $0) }
+        }
+
+        var skipped = fresh()
+        precondition(show(&skipped, .bookmarks, started: false) == "1 of 6" && show(&skipped, .favorites) == "2 of 6"
+            && walk(&skipped) == ["3 of 6", "4 of 6", "5 of 6", "6 of 6"],
+            "No browser found or a skipped import counts only the steps everyone sees")
+
+        var chrome = fresh()
+        precondition(show(&chrome, .bookmarks, started: false) == "1 of 6"
+            && show(&chrome, .favorites, .progress, ahead: [.bookmarks]) == "2 of 7",
+            "Once a Chromium import starts, Favorites counts the bookmarks page it is reading")
+        precondition(show(&chrome, .continuedImport, .bookmarks) == "3 of 7"
+            && walk(&chrome) == ["4 of 7", "5 of 7", "6 of 7", "7 of 7"],
+            "The bookmarks page takes the next number and every later step moves along by one")
+        precondition(show(&chrome, .favorites) == "2 of 7" && show(&chrome, .theme) == "4 of 7",
+            "Back from theme to Favorites keeps the total, and theme keeps its number on the way forward again")
+
+        var slow = fresh()
+        precondition(show(&slow, .favorites, .progress, ahead: [.bookmarks]) == "2 of 7"
+            && show(&slow, .continuedImport, .progress, ahead: [.bookmarks]) == "3 of 8"
+            && show(&slow, .continuedImport, .bookmarks) == "4 of 8" && show(&slow, .theme) == "5 of 8",
+            "An import still reading after Favorites shows its progress page as a step of its own")
+        precondition(show(&slow, .favorites, .bookmarks) == "2 of 8" && show(&slow, .continuedImport, .bookmarks) == "4 of 8",
+            "Back from bookmarks to Favorites keeps the progress page counted, and bookmarks keeps its number")
+
+        var reading = fresh()
+        _ = show(&reading, .continuedImport, .progress, ahead: [.bookmarks, .passwordFile])
+        precondition(show(&reading, .favorites, .bookmarks, ahead: [.passwordFile]) == "2 of 9"
+            && show(&reading, .continuedImport, .bookmarks, ahead: [.passwordFile]) == "4 of 9",
+            "Back from the progress page keeps its step, and the finished reading's bookmarks come after it")
+
+        var safari = fresh()
+        precondition(show(&safari, .favorites, .progress, ahead: [.bookmarks, .passwordChoice]) == "2 of 8"
+            && show(&safari, .continuedImport, .bookmarks, ahead: [.passwordChoice]) == "3 of 8"
+            && show(&safari, .continuedImport, .passwordChoice) == "4 of 8",
+            "Safari counts its bookmarks and its password choice, which starts on the extension")
+        precondition(show(&safari, .continuedImport, .passwordFile) == "5 of 9"
+            && show(&safari, .continuedImport, .passwordChoice, ahead: [.passwordFile]) == "4 of 9"
+            && show(&safari, .continuedImport, .bookmarks, ahead: [.passwordChoice, .passwordFile]) == "3 of 9",
+            "Choosing manual import adds the file page, and Back keeps it counted while it is still coming")
+        precondition(show(&safari, .continuedImport, .passwordChoice, ahead: [.passwordFile]) == "4 of 9"
+            && safari.importPages == [.bookmarks, .passwordChoice] && show(&safari, .theme) == "5 of 8",
+            "Choosing the extension after all drops the file page backed out of once setup moves on")
+
+        var firefox = fresh()
+        precondition(show(&firefox, .favorites, .progress, ahead: [.bookmarks, .passwordFile]) == "2 of 8"
+            && show(&firefox, .continuedImport, .bookmarks, ahead: [.passwordFile]) == "3 of 8"
+            && show(&firefox, .continuedImport, .passwordFile) == "4 of 8" && show(&firefox, .theme) == "5 of 8",
+            "Firefox and Zen count bookmarks and their password file")
+        var empty = fresh()
+        precondition(show(&empty, .favorites, .progress, ahead: [.bookmarks, .passwordFile]) == "2 of 8"
+            && show(&empty, .continuedImport, .passwordFile) == "3 of 7" && show(&empty, .theme) == "4 of 7",
+            "With no bookmarks found, the total loses that page as the password file appears")
+
+        var finished = fresh()
+        precondition(show(&finished, .favorites, .progress, ahead: [.bookmarks]) == "2 of 7"
+            && show(&finished, .theme) == "3 of 6",
+            "An import that finished with nothing left during Favorites leaves only the usual steps")
+        var failed = fresh()
+        precondition(show(&failed, .continuedImport, .progress, ahead: [.bookmarks, .passwordFile]) == "3 of 9"
+            && show(&failed, .theme) == "4 of 7",
+            "An import that fails on its progress page keeps that page and moves on to theme")
+        var stopped = fresh()
+        precondition(show(&stopped, .continuedImport, .progress, ahead: [.bookmarks, .passwordFile]) == "3 of 9"
+            && show(&stopped, .continuedImport, .bookmarks) == "4 of 8",
+            "Stop Import drops the password page and keeps the bookmarks already read")
+
+        var export = fresh()
+        precondition(show(&export, .favorites, .bookmarks) == "2 of 7"
+            && show(&export, .continuedImport, .bookmarks) == "3 of 7"
+            && show(&export, .continuedImport, .progress) == "4 of 8" && show(&export, .theme) == "5 of 8",
+            "Safari's export file counts its bookmarks, then a progress page if its passwords are still going in")
+        var exportBusy = fresh()
+        precondition(show(&exportBusy, .favorites, .progress) == "2 of 6"
+            && show(&exportBusy, .continuedImport, .progress) == "3 of 7" && show(&exportBusy, .theme) == "4 of 7",
+            "An export with only passwords counts a progress page only once it shows")
+
+        var later = fresh()
+        precondition(show(&later, .favorites, .passwordFile) == "2 of 7" && show(&later, .bookmarks, started: false) == "1 of 6",
+            "Safari's Do this later counts its waiting password page, which Back to the access page puts away")
+        precondition(show(&later, .favorites, .passwordFile) == "2 of 7"
+            && show(&later, .continuedImport, .passwordFile) == "3 of 7" && show(&later, .theme) == "4 of 7",
+            "Putting access off again brings the password page back into the count")
+
+        var pages = fresh()
+        pages.recordImportPage(.progress); pages.recordImportPage(.progress); pages.recordImportPage(.bookmarks)
+        pages.recordImportPage(.progress)
+        precondition(pages.importPages == [.progress, .bookmarks, .progress],
+            "A page shown again in place isn't counted twice, but a second progress page later on is")
+        pages.importPages = [.bookmarks, .passwordChoice, .passwordFile]
+        pages.recordImportPage(.bookmarks)
+        precondition(pages.importPages == [.bookmarks], "Going back to a page cuts off the pages after it")
+        precondition(pages.importSteps(current: .progress, ahead: []) == 1
+            && pages.importSteps(current: .bookmarks, ahead: [.passwordFile]) == 2
+            && pages.importSteps(current: .passwordChoice, ahead: [.passwordFile]) == 3,
+            "Away from the import's pages, a waiting page counts unless it's an unshown progress page or already counted")
+
+        let page = OnboardingExperience.CounterPage.init
+        precondition(page(.favorites, .progress, true) == page(.favorites, .bookmarks, false)
+            && page(.theme, nil, false) == page(.theme, .bookmarks, true),
+            "Favorites and later steps hold their counter while the import moves on out of sight")
+        precondition(page(.continuedImport, .progress, true) != page(.continuedImport, .bookmarks, true)
+            && page(.bookmarks, .progress, true) != page(.bookmarks, .progress, false)
+            && page(.bookmarks, .progress, true) == page(.bookmarks, .bookmarks, true),
+            "The counter settles again when an import page changes, or when another browser discards the import")
+
+        var resumed = fresh()
+        _ = show(&resumed, .favorites, .progress, ahead: [.bookmarks])
+        _ = show(&resumed, .continuedImport, .bookmarks)
+        resumed.stage = .theme
+        let resumeRoot = root.appendingPathComponent("counter-\(UUID())")
+        try FileManager.default.createDirectory(at: resumeRoot, withIntermediateDirectories: true)
+        try resumed.save(directory: resumeRoot)
+        var reopened = try OnboardingDraft.load(directory: resumeRoot, space: store.activeSpace)
+        precondition(reopened.importPages == [.bookmarks] && show(&reopened, .theme) == "4 of 7",
+            "A setup resumed after the import keeps its pages in the count")
+        resumed.stage = .continuedImport
+        let atImport = resumed.savedForResume(importInProgress: true)
+        precondition(atImport.stage == .bookmarks && atImport.importPages.isEmpty,
+            "A setup resumed at the import starts its count afresh")
+        try atImport.save(directory: resumeRoot)
+        let json = try String(contentsOf: resumeRoot.appendingPathComponent("onboarding.json"), encoding: .utf8)
+        precondition(!json.contains("importPages"), "Drafts without import pages save nothing new")
+        var tampered = try JSONSerialization.jsonObject(with: Data(contentsOf: resumeRoot.appendingPathComponent("onboarding.json"))) as! [String: Any]
+        tampered["stage"] = Stage.bookmarks.rawValue
+        tampered["importPages"] = ["bookmarks"]
+        try JSONSerialization.data(withJSONObject: tampered).write(to: resumeRoot.appendingPathComponent("onboarding.json"))
+        let atChoice = try OnboardingDraft.load(directory: resumeRoot, space: store.activeSpace)
+        precondition(atChoice.importPages.isEmpty,
+            "A saved draft at the browser choice never carries an old import's pages")
+        tampered["stage"] = Stage.theme.rawValue
+        tampered["importPages"] = ["bookmarks", "somethingNewer"]
+        try JSONSerialization.data(withJSONObject: tampered).write(to: resumeRoot.appendingPathComponent("onboarding.json"))
+        let newer = try OnboardingDraft.load(directory: resumeRoot, space: store.activeSpace)
+        precondition(newer.importPages == [.bookmarks], "A page name from a newer Parc is left out rather than breaking the draft")
+        tampered["importPages"] = Array(repeating: "progress", count: 9)
+        try JSONSerialization.data(withJSONObject: tampered).write(to: resumeRoot.appendingPathComponent("onboarding.json"))
+        precondition((try? OnboardingDraft.load(directory: resumeRoot, space: store.activeSpace)) == nil,
+            "An impossible number of import pages is a damaged draft")
+        resumed.stage = .theme
+        try resumed.save(directory: resumeRoot, fileName: OnboardingDraft.replayRestartFileName)
+        let replay = OnboardingDraft.takeReplayRestart(directory: resumeRoot, space: store.activeSpace)
+        precondition(replay?.stage == .bookmarks && replay?.importPages.isEmpty == true,
+            "Replay's access restart begins the import's count afresh too")
+
+        var uBlock = fresh()
+        _ = show(&uBlock, .continuedImport, .bookmarks)
+        uBlock.importedAdBlockers = [.init(identifier: OnboardingAdBlocker.uBlockOrigin, displayName: "uBlock Origin")]
+        precondition(show(&uBlock, .theme) == "4 of 6" && show(&uBlock, .defaultBrowser) == "6 of 6",
+            "Leaving out the ad-blocker step keeps the import's pages counted")
     }
 }

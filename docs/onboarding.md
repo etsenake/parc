@@ -61,8 +61,20 @@ order. If the import is still reading when Favorites is done, its progress page
 with **Stop Import** stays until the next page or the end. When it finished with
 nothing left, or failed, Favorites goes straight to theme; failures still show
 the import notice in the browser. A skipped import, or no browser found, goes
-straight to Favorites and then theme. The import's later pages keep Favorites'
-counter number and add no step to the total.
+straight to Favorites and then theme.
+
+The counter counts included setup steps, not enum values, and each of the
+import's later pages is a step of its own. Until an import starts, the total
+holds only the steps everyone sees. From Favorites on, it adds the pages the
+import still expects: its bookmarks while it reads or once some are found, and
+for Safari, Firefox and Zen the password choice or file, following the selected
+choice. The progress page counts once it shows. The counter settles when a page
+appears and holds still while it stays up, so the total changes only on moving
+to another page, by the pages that turned up or dropped away. Pages already
+passed keep their numbers, so Back and Next step over a finished progress page,
+and theme keeps its number after a trip Back to Favorites. A page backed out of
+drops away unless it is still coming, and another import starts the count
+afresh. A setup resumed after the import keeps those pages in its count.
 
 Back follows the actual order. From Favorites it returns to the browser choice
 with the import kept: a running import keeps running there with **Stop Import**
@@ -75,7 +87,7 @@ bookmarks; theme goes Back to Favorites. Import pages use **Do this later** or
 replay instead restores its starting theme. Frame Skip keeps the saved thickness.
 Favorites Skip selects no new
 Favorites, preserving existing ones in replay. Back is hidden on the finished
-card. The counter reflects the included setup steps rather than enum values.
+card.
 
 The ad-blocker step is omitted only when the imported set is exactly uBlock
 Origin; it also appears after an empty or skipped import. With no imported

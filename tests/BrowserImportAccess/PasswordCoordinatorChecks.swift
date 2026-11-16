@@ -462,6 +462,42 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
     expect(unmarked.stage == .safariPasswords && unmarked.canContinueSetupPasswords,
            "Coming back through Favorites shows the imported file, ready for Next")
     unmarked.cancel()
+
+    let counted = start(iCloudSupported: true)
+    expect(counted.setupPage == .progress && counted.setupPagesAhead == [.bookmarks, .passwordChoice],
+           "While Safari reads, setup expects its bookmarks and the password choice, which starts on the extension")
+    complete([selected])
+    expect(counted.setupPage == .bookmarks && counted.setupPagesAhead == [.passwordChoice],
+           "Once read, the bookmarks page is showing and the password choice is still to come")
+    counted.commitBookmarks()
+    expect(counted.setupPage == .passwordChoice && counted.setupPagesAhead.isEmpty,
+           "The extension choice leaves no file page ahead")
+    counted.choosePasswordMethod(installExtension: false)
+    expect(counted.setupPagesAhead == [.passwordFile], "Choosing manual import puts the file page ahead")
+    counted.continuePasswordChoice()
+    expect(counted.setupPage == .passwordFile && counted.setupPagesAhead.isEmpty, "The file page is the import's last page")
+    counted.goBackInSetup(); counted.goBackInSetup()
+    expect(counted.setupPage == .bookmarks && counted.setupPagesAhead == [.passwordChoice, .passwordFile],
+           "Back to the bookmarks keeps the manual choice and its file page ahead")
+    expect(counted.returnToSourceInSetup() && counted.setupPage == .bookmarks
+               && counted.setupPagesAhead == [.passwordChoice, .passwordFile],
+           "Waiting behind the browser choice, the import still reports the pages that come back")
+    counted.cancel()
+
+    let plain = start()
+    expect(plain.setupPagesAhead == [.bookmarks, .passwordFile],
+           "Without Apple's helper, Safari expects its bookmarks and the password file")
+    complete([])
+    expect(plain.setupPage == .passwordFile && plain.setupPagesAhead.isEmpty,
+           "With no bookmarks found, the password file is the only page left")
+    plain.cancel()
+
+    let halted = start()
+    halted.stopImport()
+    complete([selected], outcome: .cancelled)
+    expect(halted.setupPage == .bookmarks && halted.setupPagesAhead.isEmpty,
+           "Stop Import keeps the bookmarks already read and drops the password page")
+    halted.cancel()
     return checks
 }
 
@@ -501,6 +537,8 @@ func setupAccessChecks(store: BrowserStore, destination: BrowserImportDestinatio
     PCNativeBrowserApplication.profiles.removeFirst().complete(restricted)
     expect(safariLater.stage == .safariPasswords && safariLater.passwordDestination == destination,
            "Do this later on Safari still offers its password file, which needs no Full Disk Access")
+    expect(safariLater.setupPage == .passwordFile && safariLater.setupPagesAhead.isEmpty,
+           "Setup counts that waiting password file as the import's only page")
     safariLater.goBackInSetup()
     expect(safariLater.stage == .safariAccess && safariLater.passwordDestination == nil,
            "Back from Stay logged in returns to the access page that was put off")

@@ -38,6 +38,8 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private var importFoundNoSources = false
     private var importHadStarted = false
     private var importInterrupted = false
+    private var counterPage: OnboardingExperience.CounterPage?
+    private var counterText = ""
     private var passwordHelp: OnboardingPasswordHelp?
     var onCancelImportRestart: (() -> Void)?
     var hasActiveBrowserImport: Bool { browserImport != nil && !isClosed && !isFinishing }
@@ -419,7 +421,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             return
         }
         let isReady = draft.stage == .ready
-        progress.stringValue = isReady ? "Ready" : "\(draft.displayedStepNumber()) of \(draft.displayedSetupCount())"
+        progress.stringValue = stepCounterText()
         back.isHidden = isReady || draft.previousStage() == nil
             || (importFoundNoSources && draft.previousStage()?.current == .bookmarks)
         skip.title = "Skip for now"
@@ -694,6 +696,20 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             }
         }
     }
+    private func stepCounterText() -> String {
+        guard draft.stage != .ready else { return "Ready" }
+        let held = browserImport?.hasStartedImport == true ? browserImport : nil
+        let page = OnboardingExperience.CounterPage(stage: draft.stage, importPage: held?.setupPage,
+                                                    importStarted: held != nil)
+        guard page != counterPage, draft.stage != .continuedImport || page.importPage != nil else { return counterText }
+        counterPage = page
+        if draft.stage == .continuedImport, let shown = held?.setupPage { draft.recordImportPage(shown) }
+        let steps = draft.stage == .bookmarks && held == nil ? 0
+            : draft.importSteps(current: held?.setupPage, ahead: held?.setupPagesAhead ?? [])
+        counterText = "\(draft.displayedStepNumber(importSteps: steps)) of \(draft.displayedSetupCount(importSteps: steps))"
+        return counterText
+    }
+
     private func advance(leavingWelcome: Bool = false) {
         guard !isFinishing, !isClosed,
               window?.attachedSheet == nil, passwordHelp?.isPresented != true else { return }
@@ -944,7 +960,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
               let space = store.state.spaces.first(where: { $0.id == draft.spaceID }) else { return }
         let destination = BrowserImportDestination(spaceID: space.id, profileID: space.profileID)
         importHadStarted = false; importInterrupted = false
-        draft.iCloudPasswordsProfileID = nil; persistDraft()
+        draft.iCloudPasswordsProfileID = nil; draft.importPages = []; persistDraft()
         let controller = BrowserImportViewController(store: store, destination: destination, window: window,
             onboarding: true, ownerIsCurrent: { [weak self] in
                 guard let self else { return false }
@@ -953,6 +969,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         controller.onClose = { [weak self, weak controller] in
             guard let self, !self.isClosed, !self.isFinishing else { return }
             if controller?.foundNoSources == true { self.importFoundNoSources = true }
+            if self.draft.stage == .bookmarks { self.draft.importPages = [] }
             self.captureBrowserImportResults()
             self.releaseBrowserImport()
             if self.draft.stage == .favorites { self.persistDraft(); self.render() } else { self.advanceStage() }
@@ -963,7 +980,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             self.importHadStarted = started
             switch OnboardingExperience.importChange(on: self.draft.stage, started: started,
                                                      wasStarted: wasStarted, resting: controller.isResting) {
-            case .showFavorites: self.transition(to: .favorites); return
+            case .showFavorites:
+                self.draft.importPages = []
+                self.transition(to: .favorites); return
             case .returnToSource:
                 if controller.returnToSource() { return }
             case .show:
@@ -1024,7 +1043,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         skip.title = importer.isImporting ? "Stop Import" : importer.skipTitle ?? ""
         skip.isHidden = !importer.isImporting && importer.skipTitle == nil
         skip.isEnabled = importer.isImporting || importer.canSkip
-        progress.stringValue = "\(draft.displayedStepNumber()) of \(draft.displayedSetupCount())"
+        progress.stringValue = stepCounterText()
         progress.isHidden = false; next.isHidden = false
         setupCard.isHidden = false
         setupCard.configure(title: importer.showsSourceCards ? "Get us up\nto speed." : importer.headingText,

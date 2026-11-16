@@ -959,6 +959,38 @@ final class BrowserImportCoordinator {
         }
     }
 
+    var setupPage: OnboardingDraft.ImportPage? {
+        switch parkedStage ?? stage {
+        case .importing: return .progress
+        case .bookmarks: return .bookmarks
+        case .passwordChoice: return .passwordChoice
+        case .safariPasswords: return .passwordFile
+        default: return nil
+        }
+    }
+
+    var setupPagesAhead: [OnboardingDraft.ImportPage] {
+        switch parkedStage ?? stage {
+        case .importing: return (hasPendingBookmarks || readsBookmarks ? [.bookmarks] : []) + passwordPagesAhead
+        case .bookmarks: return passwordPagesAhead
+        case .passwordChoice: return wantsICloudPasswords ? [] : [.passwordFile]
+        default: return []
+        }
+    }
+
+    private var readsBookmarks: Bool {
+        guard session == nil else { return true }
+        guard finishAfterExportPasswords == nil else { return false }
+        let unread = queue.isEmpty && completed == 0 ? chosenProfiles : queue
+        return unread.contains { $0.supportedCategories.contains(.bookmarks) }
+    }
+
+    private var passwordPagesAhead: [OnboardingDraft.ImportPage] {
+        guard !passwordStageOffered, passwordDestination?.isCurrent(in: store.state) == true else { return [] }
+        guard onboarding && offersICloudPasswordChoice else { return [.passwordFile] }
+        return keepsPasswordChoice && !wantsICloudPasswords ? [.passwordChoice, .passwordFile] : [.passwordChoice]
+    }
+
     @discardableResult
     func returnToSourceInSetup() -> Bool {
         guard onboarding, isCurrent, parkedStage == nil, !importingPasswords, !removingPasswordFile else { return false }

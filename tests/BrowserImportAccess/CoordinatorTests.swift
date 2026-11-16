@@ -608,6 +608,8 @@ import AppKit
         let spaces = stopped.state.spaces, requests = PCNativeBrowserApplication.browserRequests.count
         stopping.continueSourceInline()
         expect(stopping.stage == .importing, "Next starts Arc's import straight from the profile choice, as Chrome's does")
+        expect(stopping.setupPage == .progress && stopping.setupPagesAhead == [.bookmarks],
+               "While Arc's sidebar is read, its bookmarks page is expected and no password page")
         stopping.stopImport()
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
         expect(stopping.stage == .finished && stopped.state.spaces == spaces, "Stop while Arc's sidebar is read adds nothing")

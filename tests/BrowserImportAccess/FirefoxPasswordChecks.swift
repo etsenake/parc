@@ -17,13 +17,14 @@ func firefoxPasswordChecks(store: BrowserStore, destination: BrowserImportDestin
            "Firefox-family imports never mention a Chromium Keychain key")
     PCNativeBrowserApplication.acceptsBrowserImport = true
     defer { PCNativeBrowserApplication.acceptsBrowserImport = false }
-    func start(onboarding: Bool) -> BrowserImportCoordinator {
+    func start(onboarding: Bool, source chosen: PCNativeImportSource? = nil) -> BrowserImportCoordinator {
+        let source = chosen ?? firefox
         let coordinator = BrowserImportCoordinator(store: store, destination: destination, window: window,
             onboarding: onboarding, supportsICloudPasswords: true, ownerIsCurrent: { true })
         PCNativeBrowserApplication.browserCompletions.removeAll()
-        coordinator.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([firefox])
-        if onboarding { coordinator.selectSourceInline(firefox) }
-        else { coordinator.select(firefox); coordinator.loadProfiles() }
+        coordinator.discover(); PCNativeBrowserApplication.sources.removeFirst().complete([source])
+        if onboarding { coordinator.selectSourceInline(source) }
+        else { coordinator.select(source); coordinator.loadProfiles() }
         let profile = PCNativeImportProfile("default-release", [.history, .bookmarks], .complete, name: "Firefox")
         PCNativeBrowserApplication.profiles.removeFirst().complete(.init(profiles: [profile], access: .complete))
         coordinator.continueSourceInline()
@@ -34,7 +35,11 @@ func firefoxPasswordChecks(store: BrowserStore, destination: BrowserImportDestin
     }
 
     let setup = start(onboarding: true)
+    expect(setup.setupPage == .progress && setup.setupPagesAhead == [.bookmarks, .passwordFile],
+           "While Firefox reads, setup expects its bookmarks and its password file")
     complete([PCNativeImportedBookmark("kept", title: "Kept", url: URL(string: "https://example.org/firefox-kept")!)])
+    expect(setup.setupPage == .bookmarks && setup.setupPagesAhead == [.passwordFile],
+           "Firefox's password file stays ahead of its bookmarks page")
     expect(setup.stage == .bookmarks && setup.passwordDestination == destination,
            "Setup keeps Firefox's bookmarks first and holds the original Profile for its password file")
     setup.commitBookmarks()
@@ -69,6 +74,8 @@ func firefoxPasswordChecks(store: BrowserStore, destination: BrowserImportDestin
     let empty = start(onboarding: true); complete([])
     expect(empty.stage == .safariPasswords && empty.setupBackReturnsToSource,
            "With no bookmarks Firefox's password file is the first page and Back returns to the browser choice")
+    expect(empty.setupPage == .passwordFile && empty.setupPagesAhead.isEmpty,
+           "Without bookmarks the password file is the only import page counted")
     empty.goBackInSetup()
     expect(empty.stage == .profiles && empty.parkedStage == .safariPasswords,
            "Back parks Firefox's password file behind the browser cards")
@@ -107,6 +114,12 @@ func firefoxPasswordChecks(store: BrowserStore, destination: BrowserImportDestin
     locked.goBackInSetup()
     expect(locked.stage == .safariAccess, "Back from that password file returns to the access page")
     locked.cancel()
+    PCNativeBrowserApplication.browserCompletions.removeAll()
+
+    let zenSetup = start(onboarding: true, source: zen)
+    expect(zenSetup.setupPage == .progress && zenSetup.setupPagesAhead == [.bookmarks, .passwordFile],
+           "Zen counts the same bookmarks and password file pages as Firefox")
+    zenSetup.cancel()
     PCNativeBrowserApplication.browserCompletions.removeAll()
     return checks
 }

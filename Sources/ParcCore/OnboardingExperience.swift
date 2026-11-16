@@ -27,6 +27,17 @@ enum OnboardingExperience {
         return destination > origin ? .forward : .back
     }
 
+    struct CounterPage: Equatable {
+        let stage: OnboardingDraft.Stage
+        let importPage: OnboardingDraft.ImportPage?
+        let importStarted: Bool
+        init(stage: OnboardingDraft.Stage, importPage: OnboardingDraft.ImportPage?, importStarted: Bool) {
+            self.stage = stage
+            self.importPage = stage == .continuedImport ? importPage : nil
+            self.importStarted = stage == .bookmarks && importStarted
+        }
+    }
+
     enum ImportChange: Equatable {
         case showFavorites, returnToSource, show, showInPlace, hold
     }

@@ -58,6 +58,8 @@ final class BrowserImportViewController: NSViewController {
     var hasStartedImport: Bool { !closed && coordinator.hasStartedImportInSetup }
     var isResting: Bool { !closed && coordinator.isRestingInSetup }
     var backReturnsToSource: Bool { closed || coordinator.setupBackReturnsToSource }
+    var setupPage: OnboardingDraft.ImportPage? { closed ? nil : coordinator.setupPage }
+    var setupPagesAhead: [OnboardingDraft.ImportPage] { closed ? [] : coordinator.setupPagesAhead }
     var skipIsSelected: Bool { skipSelected }
     var isImporting: Bool { coordinator.stage == .importing }
     var isLoading: Bool {
