@@ -1,3 +1,4 @@
+#include "../../Support/TestFailure.h"
 #import <AppKit/AppKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
@@ -381,7 +382,7 @@ class Harness : public fp::FairPlayRendererClient {
     StartPolling();
   }
 
-  void OnNeedData(fp::StreamType) override {
+  void OnNeedData(fp::StreamId) override {
     if (options_.feed_delay_ms < 0) {
       while (next_ < samples_.size() && renderer_->IsReadyForMoreData(fp::StreamType::kVideo)) {
         EnqueueNext();
@@ -654,6 +655,7 @@ std::vector<uint8_t> ReadFile(const std::string& path) {
 }
 
 int main(int argc, char** argv) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     if (argc == 5 && std::string(argv[1]) == "--write-yuv") {
       return WriteYuv(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));

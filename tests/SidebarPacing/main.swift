@@ -828,4 +828,4 @@ let budget = "Parc's budget: no per-frame main-thread work in its views"
     print("\nSidebarPacing: \(c.count) assertions, \(c.failures.count) failed")
     return c.failures.isEmpty ? 0 : 1
 }
-exit(MainActor.assumeIsolated { run() })
+MainActor.assumeIsolated { exitOnFailure { exit(run()) } }

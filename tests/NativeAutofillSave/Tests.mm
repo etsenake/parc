@@ -1,3 +1,4 @@
+#include "../Support/TestFailure.h"
 #import <AppKit/AppKit.h>
 
 #include <cstdio>
@@ -450,6 +451,7 @@ static void TestValidationReleasesNativeOwner() {
   [original close];
 }
 int main() {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];

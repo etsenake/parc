@@ -1,6 +1,6 @@
 import AppKit
 import Foundation
-try MainActor.assumeIsolated {
+MainActor.assumeIsolated { exitOnFailure {
 let suite = "Parc.DeveloperModeChecks." + UUID().uuidString
 let defaults = UserDefaults(suiteName: suite)!
 defer { defaults.removePersistentDomain(forName: suite) }
@@ -56,4 +56,4 @@ toolbar.layoutSubtreeIfNeeded()
 check(sign?.isHidden == true && sign?.isAccessibilityHidden() == true && extensions?.isHidden == false,
       "clearing blocked content hides the sign and brings Extensions back")
 print("Developer Mode preference checks: \(checks) passed")
-}
+} }

@@ -1,3 +1,4 @@
+#include "../../Support/TestFailure.h"
 #import <AppKit/AppKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -1686,6 +1687,7 @@ bool LoadAll(World* w, std::string* error) {
 }
 
 int main(int argc, char** argv) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     g_start = CFAbsoluteTimeGetCurrent();
     setvbuf(stdout, nullptr, _IOLBF, 0);

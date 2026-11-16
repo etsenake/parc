@@ -11,7 +11,8 @@ struct PresentationTests {
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) {
         count += 1; precondition(value(), message)
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         let output = URL(fileURLWithPath: CommandLine.arguments[2])
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)

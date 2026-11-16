@@ -1,3 +1,4 @@
+#include "../../Support/TestFailure.h"
 #import <AVFoundation/AVFoundation.h>
 #import <AppKit/AppKit.h>
 #import <QuartzCore/QuartzCore.h>
@@ -641,6 +642,7 @@ const Section kSections[] = {
 }
 
 int main(int argc, char** argv) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     for (int i = 1; i + 1 < argc; i += 2) {
       if (std::string(argv[i]) == "--only") g_only = argv[i + 1];

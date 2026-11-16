@@ -1,3 +1,4 @@
+#include "../Support/TestFailure.h"
 #import <AppKit/AppKit.h>
 
 #include <cstdio>
@@ -182,6 +183,7 @@ static void TestPresentedReentry() {
   [window close];
 }
 int main() {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];

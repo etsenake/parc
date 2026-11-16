@@ -1,3 +1,4 @@
+#include "../Support/TestFailure.h"
 #import <AppKit/AppKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -5684,6 +5685,7 @@ void RunAll() {
 }
 
 int main(int argc, char** argv) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     g_start = CFAbsoluteTimeGetCurrent();
     setvbuf(stdout, nullptr, _IOLBF, 0);

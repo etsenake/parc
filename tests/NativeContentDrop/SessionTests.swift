@@ -50,7 +50,8 @@ extension ReservedPane: SplitLayoutFollowing {
     static func check(_ value: @autoclosure () -> Bool, _ reason: String) {
         count += 1; precondition(value(), reason)
     }
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0,y: 0,width: 200,height: 200), styleMask: .borderless, backing: .buffered, defer: false)
         let host = NSView(frame: NSRect(x: 0,y: 0,width: 200,height: 200)); window.contentView = host

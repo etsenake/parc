@@ -1,3 +1,4 @@
+#include "../Support/TestFailure.h"
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 
@@ -645,6 +646,7 @@ void TeardownScenario() {
 }
 
 int main(int argc, char** argv) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     std::string only = argc > 1 ? argv[1] : "";
     if (only.empty() || only == "webvtt") {

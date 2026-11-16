@@ -1,3 +1,4 @@
+#include "../Support/TestFailure.h"
 #import <AVFoundation/AVFoundation.h>
 #import <CoreAudio/CoreAudio.h>
 #import <Foundation/Foundation.h>
@@ -1470,6 +1471,7 @@ void Teardown() {
 }
 
 int main(int argc, char** argv) {
+  ParcExitOnUncaughtExceptions();
   @autoreleasepool {
     std::string only = argc > 1 ? argv[1] : "";
     Check(fp::FairPlayHlsPlayer::IsSupported(), "client URL loading is available on this macOS");
