@@ -148,9 +148,14 @@
           retell(WORDS.softwareHeading, WORDS.softwareLede, {});
         }
         break;
-      case 'BLOCKED_INTERCEPTION':
+      case 'BLOCKED_INTERCEPTION': {
         retell(WORDS.watchedHeading, WORDS.watchedLede, {});
+        const dead = document.getElementById('primary-button');
+        if (dead) {
+          dead.classList.add('hidden');
+        }
         break;
+      }
       case 'CAPTIVE_PORTAL':
         restate(WORDS.portalHeading, WORDS.portalLede, {}, true);
         relabel(WORDS.portalButton);

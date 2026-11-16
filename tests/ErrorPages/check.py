@@ -145,10 +145,15 @@ INTERSTITIAL_JOBS = [
      lambda r: [not r["extra"]["primary"], [c for c in r["calls"] if c[1] != "showMoreSection"] == [],
                 r["extra"]["heading"] == "Software on your Mac is blocking secure connections",
                 "Example Shield" in r["extra"]["details"]]),
-    ("blocked-interception", {}, [step(note("heading", text("h1"))), step(note("primary", text("#primary-button"))),
+    ("blocked-interception", {}, [step(note("heading", text("h1"))), step(note("primary", shown("#primary-button"))),
+                                  step(note("details", shown("#details-button"))), step(ENTER),
                                   step(js_click("#details-button")), step(js_click("#proceed-link"))],
-     lambda r: [r["extra"]["heading"] == "This connection is being monitored", r["extra"]["primary"] == "Back to safety",
-                calls(r, "cert", "dontProceed") == 0, calls(r, "cert", "proceed") == 1]),
+     lambda r: [r["extra"]["heading"] == "This connection is being monitored", not r["extra"]["primary"],
+                r["extra"]["details"], calls(r, "cert", "dontProceed") == 0, calls(r, "cert", "proceed") == 1,
+                [c[1] for c in r["calls"]] == ["showMoreSection", "proceed"]]),
+    ("blocked-interception", {"name": "warning-blocked-interception-unskinned", "raw": True, "expect_errors": True},
+     [step(note("primary", shown("#primary-button"))), step(js_click("#primary-button"))],
+     lambda r: [r["extra"]["primary"], len(r["errors"]) >= 1, not r["calls"]]),
     ("safe-browsing", {}, [step(note("heading", text("h1"))), step(note("primary", text("#primary-button"))),
                            step(note("theme", "document.querySelector('meta[name=theme-color]').content")),
                            step(js_click("#primary-button")), step(js_click("#details-button")),
@@ -223,11 +228,14 @@ SHEET = [("net", "refused"), ("net", "offline"), ("net", "dns"), ("net", "timed-
          ("warning", "blocked-interception"), ("warning", "billing"), ("alt", "webapp"), ("alt", "proxy")]
 
 
-def page_for(pieces, kind, key):
+EXPECT_ERRORS = set()
+
+
+def page_for(pieces, kind, key, raw=False):
     if kind == "net":
         return pages.net_error_page(pieces, fixtures.NET[key])
     if kind == "warning":
-        return pages.interstitial_page(pieces, fixtures.INTERSTITIALS[key])
+        return pages.interstitial_page(pieces, fixtures.INTERSTITIALS[key], parc=not raw)
     return pages.alternative_page(pieces, key, fixtures.ALTERNATIVE[key])
 
 
@@ -236,7 +244,9 @@ def build_jobs(out, pieces, sheet_dir):
     for kind, specs in (("net", NET_JOBS), ("warning", INTERSTITIAL_JOBS), ("alt", ALTERNATIVE_JOBS)):
         for key, options, steps, check in specs:
             name = options.get("name", f"{kind}-{key}")
-            html = page_for(pieces, kind, key)
+            html = page_for(pieces, kind, key, options.get("raw", False))
+            if options.get("expect_errors"):
+                EXPECT_ERRORS.add(name)
             path = out / f"{name}.html"
             path.write_text(html, encoding="utf-8")
             for dark in (False, True):
@@ -294,7 +304,7 @@ def main():
             failures.append(f"{job['name']}: {report.get('error') if report else 'no result'}")
             continue
         problems = []
-        if report["errors"]:
+        if report["errors"] and job["name"] not in EXPECT_ERRORS:
             problems.append(f"script errors {report['errors']}")
         if report["violations"]:
             problems.append(f"policy violations {report['violations']}")

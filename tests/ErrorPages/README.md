@@ -31,6 +31,8 @@ the back-online line, subframe errors, the fallback to Chromium's words, and
 Go back appearing only when the renderer says there is history behind the
 page. For warnings they cover Parc's words on every type, the steady Details
 label, the primary and proceed commands, the proceed click delay, the typed
-bypass, reporting and certificate details. The web-app offline and
+bypass, reporting and certificate details. A control loads the monitoring
+warning without Parc's skin to prove its dead Back to safety button is
+detected, and the skinned page must hide it. The web-app offline and
 organization proxy pages load under the skin with their own controls. The generated C++ is also
 syntax-checked with the system compiler.
