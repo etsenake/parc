@@ -468,9 +468,9 @@ few AVD and display-pipe methods (`apply-message-filter`), but
 process (EPERM, checked with the probe). So both IOKit grants cover the whole
 user client, in every GPU process: Chromium's GPU profile does have
 parameters (`RESTRICT_GPU_DARWIN_USER_DIRS`, `DISABLE_METAL_SHADER_CACHE`), but
-FairPlay is on in every build, so a parameter wouldn't narrow anything. The
-way to keep this attack surface out of the GPU process is a separate FairPlay
-media process that hosts the display layer through `CAContext`/`CALayerHost`.
+FairPlay is on in every build, so a parameter wouldn't narrow anything. A
+separate FairPlay process with `CALayerHost` isn't planned: it means weeks of
+new Chromium changes under every protected site, for no known exposure.
 
 Already allowed by `gpu.sb`: all preference reads, all POSIX shared memory
 (CoreAudio's `AudioIO`), `com.apple.coremedia.videodecoder` and
