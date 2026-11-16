@@ -21,7 +21,8 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
   `chrome/browser/chrome_browser_main.cc`; a delegate override would have to copy those whole
   methods. Answered by `UsesNativeStartup` in `parc_main_delegate.mm`.
 - **`SetMainResourceBundleFactory`, `SetBrowserResourceBundleFactory`**: menus, strings and product
-  names say Parc in every process. `chrome_main_delegate.cc` and
+  names say Parc in every process, and network error pages and security warnings wear Parc's
+  pages and skin. `chrome_main_delegate.cc` and
   `chrome/browser/chrome_resource_bundle_helper.cc` create the shared resource bundle with a null
   delegate and no embedder input. Answered by `NativeResourceBundle` in `parc_main_delegate.mm`; the
   destructor removes both.

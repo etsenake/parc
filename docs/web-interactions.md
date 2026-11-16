@@ -166,8 +166,8 @@ Ordinary permissions use the two-action card; permission-element stages retain
 their native titles and choices. During a handoff to macOS, the card stays open
 with progress. Location retains the engine's initial accuracy. Request type
 supplies the title and symbol, including protocol-handler and combined
-camera/microphone wording. Chromium's certificate error interstitial remains
-the page error surface.
+camera/microphone wording. Security warnings are Chromium's interstitials under
+Parc's skin; see [failure and recovery](#failure-and-recovery-surfaces--web17).
 
 ## Context menus, hovered status and banners — WEB16
 
@@ -332,6 +332,41 @@ rules still apply in private windows, as in Chromium.
 snapshots, separately from ordinary navigation error pages. The native page's
 process termination/error code owns the crash state. Recovery actions retain
 that page identity and cannot reload another tab after selection or transfer.
+
+### Network error pages and security warnings
+
+A failed navigation still commits Chromium's error page at the failed address,
+so the address field, Copy URL and history keep the site's own address (an
+internal one shows as `parc://`). Parc changes only the page's template, through
+the resource-bundle delegates Parc already installs in every process
+([how Parc changes Chromium](chromium-seams.md#extension-points-come-first)):
+
+- Network errors use Parc's template from
+  [`Engine/ParcChromium/error_pages`](../Engine/ParcChromium/error_pages/README.md)
+  in place of Chromium's. Chromium still fills it with its localized data, so
+  automatic reload when the network returns, Reload, Details, DNS-check
+  updates and the diagnostics links behave as before. Each common error has
+  Parc's drawing and words; any other code shows Chromium's own localized
+  heading and summary in Parc's layout. Details shows Chromium's exact
+  sentence, suggestions and links. Return presses the primary button.
+- Offline pages replace the dinosaur with a toy: Space tosses a spark from the
+  plug to the bobbing socket, three misses end a round, and the best score is
+  kept in the Profile, where Chromium kept the dinosaur's. The
+  `--disable-dinosaur-easter-egg` switch turns it off. `parc://dino` opens it.
+- Security warnings keep Chromium's interstitial page and script, so every
+  command, the proceed click delay, the typed bypass, reporting, the
+  certificate details and the strict script policy stay as they were. Parc
+  adds its stylesheet, drawings and a small script that rewrites the headline
+  and lede for certificate errors and dangerous sites (moving Chromium's own
+  paragraph, with its links, into Details) and the headline for insecure
+  forms. Clock, captive-portal, lookalike, HTTPS-Only and enterprise warnings
+  keep Chromium's words in Parc's look.
+- Titles and visible text say `parc://` where Chromium's say `chrome://`;
+  links still go to the real internal page.
+
+`tests/ErrorPages/check.py` renders every variant windowlessly with
+Chromium-shaped data and checks those behaviours; see its
+[README](../tests/ErrorPages/README.md).
 
 The failure view is contained in the page's actual pane/Peek bounds and replaces
 content immediately. The reload link uses native pointer, keyboard and

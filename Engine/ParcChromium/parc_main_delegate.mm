@@ -22,11 +22,13 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiler/main_thread_stack_sampling_profiler.h"
+#include "components/grit/components_resources.h"
 #include "components/prefs/pref_service.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
 #include "parc/chromium_hooks.h"
+#include "parc/error_pages.h"
 #include "parc/native/native_appkit_host.h"
 #include "parc/native/native_background_picture_in_picture_api.h"
 #include "parc/native/native_browser.h"
@@ -92,6 +94,9 @@ class ChildProductBrandingDelegate final
     return nullptr;
   }
   std::optional<std::string> LoadDataResourceString(int resource_id) override {
+    if (resource_id == IDR_NET_ERROR_HTML) {
+      return std::string(NetErrorPageTemplate());
+    }
     return std::nullopt;
   }
   bool GetRawDataResource(int resource_id,

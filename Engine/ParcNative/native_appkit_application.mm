@@ -49,6 +49,7 @@
 #include "chrome/browser/ui/webui/current_channel_logo.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/theme_resources.h"
+#include "components/grit/components_resources.h"
 #include "components/grit/metrics_internals_resources.h"
 #include "components/grit/version_ui_resources.h"
 #include "components/strings/grit/components_strings.h"
@@ -79,6 +80,7 @@
 #include "native_profile_policy.h"
 #include "native_page_retirement.h"
 #include "pane_compositor.h"
+#include "parc/error_pages.h"
 #include "parc/product_name_strings.h"
 #include "tab_transfer.h"
 #include "window_security_reservation.h"
@@ -701,6 +703,20 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
           &html, 0, "alt=\"$i18n{logo_alt_text}\"", "alt=\"Parc\"");
       base::ReplaceFirstSubstringAfterOffset(
           &html, 0, "$i18n{application_label}", "Parc");
+      return base::MakeRefCounted<base::RefCountedString>(std::move(html));
+    }
+    if (resource_id == IDR_SECURITY_INTERSTITIAL_HTML ||
+        resource_id == IDR_SECURITY_INTERSTITIAL_WITHOUT_PROMO_HTML) {
+      auto html = ui::ResourceBundle::GetSharedInstance()
+                      .LoadDataResourceStringForScale(resource_id, scale_factor);
+      const size_t head = html.find("</head>");
+      if (head != std::string::npos) {
+        html.insert(head, InterstitialStyle());
+        const size_t body = html.rfind("</body>");
+        if (body != std::string::npos) {
+          html.insert(body, InterstitialScript());
+        }
+      }
       return base::MakeRefCounted<base::RefCountedString>(std::move(html));
     }
     if (resource_id == IDR_WEBUI_IMAGES_CHROME_LOGO_DARK_SVG) {

@@ -54,6 +54,34 @@ action("internal_extension_manifest") {
            rebase_path(outputs[0], root_build_dir) ]
 }
 
+_error_pages_source = "$target_gen_dir/error_pages.cc"
+
+action("error_pages") {
+  script = "generate_error_pages.py"
+  inputs = [
+    "error_pages/art/barricade.svg",
+    "error_pages/art/blocked-page.svg",
+    "error_pages/art/lock-badge.svg",
+    "error_pages/art/plane.svg",
+    "error_pages/art/plug.svg",
+    "error_pages/art/signpost.svg",
+    "error_pages/art/snail.svg",
+    "error_pages/display-font.woff.b64",
+    "error_pages/interstitial.css",
+    "error_pages/interstitial.js",
+    "error_pages/neterror.css",
+    "error_pages/neterror.html",
+    "error_pages/neterror.js",
+  ]
+  outputs = [ _error_pages_source ]
+  args = [
+    "--source",
+    rebase_path("error_pages", root_build_dir),
+    "--output",
+    rebase_path(_error_pages_source, root_build_dir),
+  ]
+}
+
 _product_name_header = "$root_gen_dir/parc/product_name_strings.h"
 _product_name_source = "$root_gen_dir/parc/product_name_strings.cc"
 _product_name_grit_python_inputs =
@@ -132,9 +160,11 @@ source_set("browser") {
   sources = [
     "//chrome/app/chrome_main_delegate.cc",
     "//chrome/app/chrome_main_delegate.h",
+    _error_pages_source,
     _product_name_source,
     "chromium_hooks.h",
     "content_main.h",
+    "error_pages.h",
     "frame_focus.cc",
     "frame_focus.h",
     "web_push.cc",
@@ -263,6 +293,7 @@ source_set("browser") {
 
   deps = [
     ":crash_reporter_client",
+    ":error_pages",
     ":internal_extension_manifest",
     ":product_name_strings",
     "//chrome/browser/extensions",
@@ -293,6 +324,7 @@ source_set("browser") {
     "//components/memory_system",
     "//components/metrics/debug:resources",
     "//components/policy:generated",
+    "//components/resources:components_resources",
     "//components/webapps/isolated_web_apps:scheme",
     "//content/public/app",
     "//third_party/cld_3/src/src:cld_3",

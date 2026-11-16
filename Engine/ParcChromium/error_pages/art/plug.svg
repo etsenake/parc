@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="clipped">
+<g class="plug-left">
+<path class="k" stroke-width="9" d="M8 116 C8 96 30 98 30 82 L30 78"/>
+<path class="kf" stroke-width="9" d="M18 60 Q18 54 24 54 L36 54 Q42 54 42 60 L42 74 Q42 80 36 80 L24 80 Q18 80 18 74 Z"/>
+<path class="k" stroke-width="9" d="M24 54 L24 42"/>
+<path class="k" stroke-width="9" d="M36 54 L36 42"/>
+</g>
+<g class="plug-right">
+<path class="k" stroke-width="9" d="M112 136 L112 116 C112 96 90 98 90 82 L90 80"/>
+<path class="kf" stroke-width="9" d="M76 52 Q76 46 82 46 L98 46 Q104 46 104 52 L104 74 Q104 80 98 80 L82 80 Q76 80 76 74 Z"/>
+<g class="plug-eyes">
+<circle class="kd" cx="84" cy="58" r="3.5"/>
+<circle class="kd" cx="96" cy="58" r="3.5"/>
+</g>
+</g>
+<g class="plug-dots">
+<circle class="ad" cx="52" cy="30" r="3.2"/>
+<circle class="ad" cx="60" cy="24" r="3.2"/>
+<circle class="ad" cx="68" cy="30" r="3.2"/>
+</g>
+<circle class="ad plug-signal" cx="30" cy="38" r="3.6" visibility="hidden"/>
+</svg>

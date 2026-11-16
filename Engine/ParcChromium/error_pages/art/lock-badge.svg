@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+<path class="k" stroke-width="9" d="M30 62 L30 36 C30 13 70 13 70 36 L70 41"/>
+<path class="kf" stroke-width="9" d="M16 74 Q16 62 28 62 L72 62 Q84 62 84 74 L84 94 Q84 106 72 106 L28 106 Q16 106 16 94 Z"/>
+<circle class="kd" cx="50" cy="80" r="4.5"/>
+<path class="k" stroke-width="7.2" d="M50 82 L50 92"/>
+<circle class="p" stroke-width="18" cx="92" cy="90" r="20"/>
+<circle class="af" stroke-width="9" cx="92" cy="90" r="20"/>
+<path class="a" stroke-width="7.2" d="M92 81.5 L92 90.5"/>
+<circle class="ad" cx="92" cy="98.5" r="3.5"/>
+</svg>

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 770,
+  "version": 771,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -334,7 +334,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_application.mm",
       "target": "parc/native/native_appkit_application.mm",
-      "sha256": "cdeafba5c184b007f27bd7d37b418046d052fa09bef969be617d82b145685a41"
+      "sha256": "82f3e496f341ef9f02d6ac1f54ab59e00fb8984fe44e6e9531e2b8d8f5a80b86"
     },
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
@@ -2069,12 +2069,87 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "0031f819d7eb3a76a30dae7fc7d9a4eb7e2a94a589e6d88296f6a77276d80a10"
+      "sha256": "5550375b4e59cd1f4408831aa99cc6a8ea2431dcda6d3d6c647f6c63d3578a54"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
       "target": "parc/generate_product_name_strings.py",
       "sha256": "052845c8f991c5f0c710b9a0aaa7f67687c1aeda9fa2a3111d9d561fb30ad7b2"
+    },
+    {
+      "source": "Engine/ParcChromium/generate_error_pages.py",
+      "target": "parc/generate_error_pages.py",
+      "sha256": "e3a3fb17c062f310e8c1d37f42bc16707e3b9e7eb56523590d60fc4d646316d2"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages.h",
+      "target": "parc/error_pages.h",
+      "sha256": "c9fdc182d0221ffe37994c63becf4f91ff37fe8aa1e811cd7a18c14a9bdec1e8"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/display-font.woff.b64",
+      "target": "parc/error_pages/display-font.woff.b64",
+      "sha256": "7690029ca42fccaea55375740abe9bf06d83b6c2a765b5ef433885a9e0c589d7"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/interstitial.css",
+      "target": "parc/error_pages/interstitial.css",
+      "sha256": "b2c1d069777c2499b89d135960a6c46aa5f104c57a4df28b0714f161d1968e9d"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/interstitial.js",
+      "target": "parc/error_pages/interstitial.js",
+      "sha256": "870ef0adf9c361c4174cd58431893548cb7b40a64d70e132fdc5a91ad04c3ee8"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/neterror.css",
+      "target": "parc/error_pages/neterror.css",
+      "sha256": "f87343614ef371511d87643e6e55c3f6ca813d3b1191d57647c378e2ac53fe7a"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/neterror.html",
+      "target": "parc/error_pages/neterror.html",
+      "sha256": "21c3a10f784ce234ae4ca78337bcc3b7ddc1d9f1a75a8faad5ce311f65bfd8d3"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/neterror.js",
+      "target": "parc/error_pages/neterror.js",
+      "sha256": "eab24fe53f831bbdb296dcf0da430770c51bea1083331ba3c6794f28b825d3ff"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/art/barricade.svg",
+      "target": "parc/error_pages/art/barricade.svg",
+      "sha256": "41d05f49e6493d07264987bacd005d5ea60bbba4c40f99567c40f63685c0f8c1"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/art/blocked-page.svg",
+      "target": "parc/error_pages/art/blocked-page.svg",
+      "sha256": "0686490af4023144ba8e52a2e7a707609d05330d7b21cb9ba04e9e3af4f353c7"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/art/lock-badge.svg",
+      "target": "parc/error_pages/art/lock-badge.svg",
+      "sha256": "9569448a0e12fd594994f420b3703720f5f91da70934a424f5d1b3c28f04059f"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/art/plane.svg",
+      "target": "parc/error_pages/art/plane.svg",
+      "sha256": "7f6a3dc0a10b283feffc71b7786c93bbcf1a2ddafec7c33445c3dab45d881f99"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/art/plug.svg",
+      "target": "parc/error_pages/art/plug.svg",
+      "sha256": "a413abaa7842fb0dde951ea0c3c1ccbf1d7dcd617a6a3d97324344e3b8c4233d"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/art/signpost.svg",
+      "target": "parc/error_pages/art/signpost.svg",
+      "sha256": "f95e2f60f4dcb3dc903327157674537b7a162625237c9689495bc0ae9d9811c5"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/art/snail.svg",
+      "target": "parc/error_pages/art/snail.svg",
+      "sha256": "5ff1d6de17b4fa22f30200765ea5df34b932101541c2c96802e03fbfeecd0b44"
     },
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
@@ -2134,7 +2209,7 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.mm",
       "target": "parc/parc_main_delegate.mm",
-      "sha256": "7999579f392fd68836b48ac2f3c579f3bdb0732ba6c72b0f1b823ff032d15734"
+      "sha256": "6968b5143198590ed1db458105fbcbb1e28fa0de253186ae0697eb26e2beab9d"
     },
     {
       "source": "Engine/ParcNative/native_application.mm",
