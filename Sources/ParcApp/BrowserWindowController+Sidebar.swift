@@ -117,7 +117,7 @@ extension BrowserWindowController {
                     if revealPreviewTab(id) { render(store.state) }
                 case .excludedMiniWindow, .navigateSource, .openNewTab: break
                 }
-            case .split: selectTab(id, extendingSplit: true)
+            case .split: openTabInSplitView(id)
             case .archive:
                 closeTabsWithReopen(Set([id]), reason: .manual)
             case .duplicate:
@@ -173,6 +173,9 @@ extension BrowserWindowController {
         case .selectOriginal, .duplicate, .reveal, .excludedMiniWindow: break
         }
     }
+
+    @discardableResult
+    func openTabInSplitView(_ id: UUID) -> Bool { selectTab(id, extendingSplit: true) }
 
     @discardableResult
     private func revealPreviewTab(_ id: UUID) -> Bool {

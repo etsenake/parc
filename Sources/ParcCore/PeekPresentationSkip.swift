@@ -50,6 +50,7 @@ enum PeekPresentationSkip {
         closePending: Bool,
         canExpand: Bool,
         canSplit: Bool,
+        splitToolTip: String?,
         capture: String,
         crash: String,
         favicon: String
@@ -63,6 +64,7 @@ enum PeekPresentationSkip {
             closePending ? "p1" : "p0",
             canExpand ? "e1" : "e0",
             canSplit ? "s1" : "s0",
+            "st:\(splitToolTip ?? "")",
             capture,
             crash,
             favicon,

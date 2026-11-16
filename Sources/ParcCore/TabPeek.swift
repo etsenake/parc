@@ -168,3 +168,32 @@ struct TabPeekSession: Equatable {
         }
     }
 }
+
+struct TabPeekSplitFacts: Equatable {
+    var peekInteractive = true
+    var tabUsable = true
+    var parentSelected = true
+    var panes = 1
+    var windowReady = true
+}
+
+enum TabPeekSplitRefusal: Equatable {
+    case unavailable, full
+
+    var toolTip: String {
+        switch self {
+        case .unavailable: return "Split View isn't available right now"
+        case .full: return "Split View already shows four pages"
+        }
+    }
+}
+
+enum TabPeekSplit {
+    static let paneLimit = 4
+
+    static func refusal(_ facts: TabPeekSplitFacts) -> TabPeekSplitRefusal? {
+        guard facts.peekInteractive, facts.tabUsable, facts.parentSelected else { return .unavailable }
+        if facts.panes >= paneLimit { return .full }
+        return facts.windowReady ? nil : .unavailable
+    }
+}

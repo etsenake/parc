@@ -17,6 +17,7 @@ struct PeekPresentationSkipTests {
         closePending: Bool = false,
         canExpand: Bool = true,
         canSplit: Bool = false,
+        splitToolTip: String? = nil,
         capture: String = PeekPresentationSkip.captureToken(
             active: false, camera: false, microphone: false, tab: false,
             window: false, display: false, mirrored: false, shared: false),
@@ -26,7 +27,7 @@ struct PeekPresentationSkipTests {
         PeekPresentationSkip.fingerprint(
             title: title, url: url, loading: loading, canGoBack: canGoBack,
             canGoForward: canGoForward, closePending: closePending,
-            canExpand: canExpand, canSplit: canSplit, capture: capture,
+            canExpand: canExpand, canSplit: canSplit, splitToolTip: splitToolTip, capture: capture,
             crash: crash, favicon: favicon)
     }
 
@@ -64,6 +65,14 @@ struct PeekPresentationSkipTests {
                "Expand availability change must not skip")
         expect(Skip.shouldSkip(previous: idle, next: fingerprint(canSplit: true)) == false,
                "Split availability change must not skip")
+        let full = "Split View already shows four pages"
+        expect(Skip.shouldSkip(previous: idle, next: fingerprint(splitToolTip: full)) == false,
+               "A tab-backed Peek's split reason appearing must not skip")
+        expect(Skip.shouldSkip(previous: fingerprint(splitToolTip: full),
+                               next: fingerprint(splitToolTip: "Split View isn't available right now")) == false,
+               "A changed split reason must not skip, so the tooltip says the current why")
+        expect(Skip.shouldSkip(previous: fingerprint(splitToolTip: full), next: fingerprint(splitToolTip: full)),
+               "An unchanged split reason still skips")
 
         let capturing = Skip.captureToken(
             active: true, camera: true, microphone: false, tab: false,

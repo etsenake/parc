@@ -39,6 +39,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     var onMotionPreference: (() -> Void)?
     var canInteract: (() -> Bool)?
     var canSplit: (() -> Bool)?
+    var splitToolTip: (() -> String?)?
     var canExpand: (() -> Bool)?
 
     init(page: PCNativePage, parent: PCNativePage?, parentTabID: UUID, sourceSpaceID: UUID, holding held: PCBrowserView? = nil) {
@@ -423,6 +424,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
             closePending: closePending,
             canExpand: !closePending && canExpand?() == true,
             canSplit: !closePending && canSplit?() == true,
+            splitToolTip: presentedSplitToolTip,
             capture: capture,
             crash: crash,
             favicon: PeekPresentationSkip.faviconToken(page.favicon?.tiffRepresentation))
@@ -433,6 +435,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         view.isBusy = closePending
         view.canExpand = !closePending && canExpand?() == true
         view.canSplit = !closePending && canSplit?() == true
+        view.splitToolTip = presentedSplitToolTip
         view.loadingIndicator.setLoading(browser.isLoading)
         if let crash = browser.rendererCrash {
             failure.showRendererFailure(RendererCrashPresentation(pageIdentifier: page.identifier,
@@ -441,6 +444,8 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
             failure.clear()
         }
     }
+
+    private var presentedSplitToolTip: String? { closePending ? nil : splitToolTip?() }
 
     private func promote(split: Bool) {
         guard canRequestExit, canExpand?() == true, !split || canSplit?() == true else { return }
@@ -463,7 +468,7 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         view.settleMotion(); view.removeFromSuperview()
         if browser.delegate === self { browser.delegate = nil }
         failure.pageView = nil
-        onClose = nil; onCloseRefused = nil; onReturn = nil; onLeavingChange = nil; onPromote = nil; onUpdate = nil; onMediaChange = nil; onContextImage = nil; onMotionPreference = nil; canInteract = nil; canSplit = nil; canExpand = nil
+        onClose = nil; onCloseRefused = nil; onReturn = nil; onLeavingChange = nil; onPromote = nil; onUpdate = nil; onMediaChange = nil; onContextImage = nil; onMotionPreference = nil; canInteract = nil; canSplit = nil; splitToolTip = nil; canExpand = nil
     }
 
     private func installSwipeMonitor() {
@@ -575,6 +580,13 @@ final class PeekHostView: PeekHitView {
     var isBusy = false { didSet { closeButton.isEnabled = !isBusy; expandButton.isEnabled = canExpand && !isBusy } }
     var canExpand = false { didSet { expandButton.isEnabled = canExpand && !isBusy } }
     var canSplit = false { didSet { splitButton.isEnabled = canSplit } }
+    var splitToolTip: String? {
+        didSet {
+            guard splitToolTip != oldValue else { return }
+            LiveShortcutToolTip.set(splitButton, splitToolTip ?? Self.splitTitle, anchor: .trailing)
+        }
+    }
+    private static let splitTitle = "Add Peek to Split View"
     override var acceptsFirstResponder: Bool { true }
 
     override init(frame: NSRect) {
@@ -586,7 +598,7 @@ final class PeekHostView: PeekHitView {
         card.wantsLayer = true
         card.layer?.cornerRadius = Self.cornerRadius; card.layer?.masksToBounds = true
         for (button, name, id) in [(closeButton, "Close Peek", "closeTab:"), (expandButton, "Open Peek as Tab", "openInCurrentSpace:"),
-                                   (splitButton, "Add Peek to Split View", nil)] as [(PeekControlButton, String, String?)] {
+                                   (splitButton, Self.splitTitle, nil)] as [(PeekControlButton, String, String?)] {
             LiveShortcutToolTip.set(button, name, commandID: id, anchor: .trailing)
             button.setAccessibilityLabel(name)
             controls.addSubview(button)

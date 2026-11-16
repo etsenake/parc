@@ -261,6 +261,7 @@ extension BrowserWindowController {
             peek.view.layoutSubtreeIfNeeded()
         }
         reconcileTabPeek()
+        if let shown = tabPeek?.shownController { _ = shown.refresh() }
         for card in leavingTabPeekCards { placePeek(card); card.view.layoutSubtreeIfNeeded() }
         syncPeekStepBack()
     }

@@ -430,9 +430,12 @@ extension BrowserWindowController {
             return self.switcherCanUse(heldID) && self.visibleTabs.contains { $0.id == heldID }
         }
         controller.canSplit = { [weak self, weak controller] in
-            guard let self, let controller, controller.canInteract?() == true else { return false }
-            return self.selectedTabIDs.contains(parent) && self.selectedTabIDs.count < 4 && self.nativeFullscreenTabID == nil
-                && self.splitCommandsAvailable && self.switcherCanUse(heldID)
+            guard let self, let controller else { return false }
+            return self.tabPeekSplitRefusal(controller, tabID: heldID, parentID: parent) == nil
+        }
+        controller.splitToolTip = { [weak self, weak controller] in
+            guard let self, let controller else { return nil }
+            return self.tabPeekSplitRefusal(controller, tabID: heldID, parentID: parent)?.toolTip
         }
         controller.onClose = { [weak self, weak held] in
             guard let self, let held, page.isClosed else { return }
@@ -455,13 +458,24 @@ extension BrowserWindowController {
         }
     }
 
+    private func tabPeekSplitRefusal(_ controller: PeekController, tabID: UUID, parentID: UUID) -> TabPeekSplitRefusal? {
+        var facts = TabPeekSplitFacts()
+        facts.peekInteractive = controller.canInteract?() == true
+        facts.tabUsable = switcherCanUse(tabID) && visibleTabs.contains { $0.id == tabID }
+        facts.parentSelected = selectedTabIDs.contains(parentID)
+        facts.panes = selectedTabIDs.count
+        facts.windowReady = !isPopupWindow && presentation.isReady && nativeFullscreenTabID == nil && libraryView == nil
+            && transferringTabIDs.isEmpty && (selectedTabIDs.count == 1 || activeSplitLayout != nil)
+        return TabPeekSplit.refusal(facts)
+    }
+
     func promoteTabPeek(split: Bool) {
         guard let held = tabPeeks.current, let controller = held.shownController,
               controller.canRequestExit, controller.canExpand?() == true, !split || controller.canSplit?() == true,
               let binding = nativeBinding else { return }
         let page = controller.page, id = held.tabID
         let focusReturn = PeekFocusReturn(source: controller.view)
-        let selected = split ? selectTab(id, extendingSplit: true) : selectTab(id)
+        let selected = split ? openTabInSplitView(id) : selectTab(id)
         guard selected, held.session.phase != .shown else { focusReturn?.cancel(); return }
         if let window {
             focusReturn?.perform(in: window, ownerIsAvailable: {

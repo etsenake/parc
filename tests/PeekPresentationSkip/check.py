@@ -24,6 +24,7 @@ for needle in (
     "closePending:",
     "canExpand:",
     "canSplit:",
+    "splitToolTip:",
     "capture:",
     "crash:",
     "favicon:",
@@ -80,5 +81,51 @@ assert peek_wire.group("fn") in ("refreshLivePageChromeOrRender", "updateNavigat
     "peek.onUpdate must still reach live chrome / navigation"
 assert "PeekPresentationSkip" not in window, \
     "Peek skip must not move onto the BrowserWindowController onUpdate bridge"
+
+
+def function_body(text, start, end="\n    }\n"):
+    assert text.count(start) == 1, f"expected one {start!r}"
+    begin = text.index(start)
+    return text[begin:text.index(end, begin)]
+
+
+assert "splitToolTip: presentedSplitToolTip," in controller and "view.splitToolTip = presentedSplitToolTip" in controller, \
+    "the split reason must change the fingerprint and reach the Split button's tooltip"
+assert "private var presentedSplitToolTip: String? { closePending ? nil : splitToolTip?() }" in controller, \
+    "a closing Peek shows the plain Split tooltip"
+assert "LiveShortcutToolTip.set(splitButton, splitToolTip ?? Self.splitTitle, anchor: .trailing)" in controller \
+    and 'private static let splitTitle = "Add Peek to Split View"' in controller, \
+    "without a reason the Split button keeps its usual name"
+
+tab_wiring = function_body(window, "    private func wireTabPeek(")
+tab_rule = function_body(window, "    private func tabPeekSplitRefusal(")
+for blocker in ("splitCommandsAvailable", "activePeek == nil", "spaceCommandsAvailable"):
+    assert blocker not in tab_wiring + tab_rule, \
+        f"a tab-backed Peek's Split button must not wait for {blocker!r}, which is off while its own Peek shows"
+assert "self.tabPeekSplitRefusal(controller, tabID: heldID, parentID: parent) == nil" in tab_wiring \
+    and "self.tabPeekSplitRefusal(controller, tabID: heldID, parentID: parent)?.toolTip" in tab_wiring, \
+    "a tab-backed Peek's Split button and its tooltip follow one rule"
+for token in ("controller.canInteract?() == true", "switcherCanUse(tabID)", "visibleTabs.contains { $0.id == tabID }",
+              "selectedTabIDs.contains(parentID)", "facts.panes = selectedTabIDs.count", "!isPopupWindow",
+              "presentation.isReady", "nativeFullscreenTabID == nil", "libraryView == nil", "transferringTabIDs.isEmpty",
+              "(selectedTabIDs.count == 1 || activeSplitLayout != nil)",
+              "TabPeekSplit.refusal(facts)"):
+    assert token in tab_rule, f"the tab-backed split rule lost {token!r}"
+
+ordinary = function_body(window, "    func wirePeek(")
+assert """        peek.canSplit = { [weak self, weak peek] in
+            guard let self, let peek else { return false }
+            return self.activePeek === peek && self.selectedTabIDs.contains(id)
+                && self.selectedTabIDs.count < 4 && self.nativeFullscreenTabID == nil
+        }""" in ordinary and "splitToolTip" not in ordinary, "an ordinary Peek keeps today's Split rule and tooltip"
+
+assert "func openTabInSplitView(_ id: UUID) -> Bool { selectTab(id, extendingSplit: true) }" in window, \
+    "the card's Split View action opens the tab beside the current page"
+assert "            case .split: openTabInSplitView(id)\n" in function_body(window, "    private func performSidebarPreview("), \
+    "the preview card's Split View uses the shared action"
+assert "let selected = split ? openTabInSplitView(id) : selectTab(id)" in function_body(window, "    func promoteTabPeek(split: Bool) {"), \
+    "a tab-backed Peek's Split button uses the card's Split View action"
+assert "if let shown = tabPeek?.shownController { _ = shown.refresh() }" in function_body(window, "    func layoutPeeks() {"), \
+    "a tab-backed Peek's buttons follow the window's layout like an ordinary Peek's"
 
 print("PeekPresentationSkip check passed")

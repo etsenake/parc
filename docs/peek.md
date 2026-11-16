@@ -137,10 +137,15 @@ sidebar, Expand, Open in [Space], the tab switcher, its Mini Player or the page
 going fullscreen) moves the page back into its pane first, where the page-switch
 hold keeps the old page up until it draws, then fades the emptied card with the
 close fade, which follows the window's layout if the window is resized
-meanwhile. Add to Split joins the tab to the current split the same way.
-Switching tabs or Spaces, or closing, archiving or moving the tab, puts the page
-back at once without a motion; closing the window closes it with the window's
-other pages.
+meanwhile. The round Split button, like Add Peek to Split View in the page
+menus, runs the preview card's own Split View action, so the tab joins a split
+with your page the same way. It dims when no split can form, with its tooltip
+saying why: four pages already showing, where the card's Split View does
+nothing too, or the window busy (a popup, a full screen page, the Library or a
+tab moving between windows). Ordinary Peeks keep their usual Split rule and
+tooltip. Switching tabs or Spaces, or closing, archiving or moving the tab,
+puts the page back at once without a motion; closing the window closes it with
+the window's other pages.
 
 The item is offered only for a web tab in the current Space and Profile that
 isn't on screen, closing, moving or failed, over a live web page in this window
@@ -150,9 +155,12 @@ showing, it closes through its own close and consent, confirmation pill
 included, and the tab opens once it is gone; a refused close or an expired
 confirmation drops the request. While in Peek the tab neither
 sleeps nor auto-archives. `tests/TabPeekTests.swift` covers admission, refusals,
-replacement and the round trips, checking that the same page comes back, that
-only a tab with no page loads, and that every way out of the card removes it or
-plays its exit in the same step, so a hand-back never finds a stranded card.
+replacement, the Split button's rule and the round trips, checking that the same
+page comes back, that only a tab with no page loads, and that every way out of
+the card removes it or plays its exit in the same step, so a hand-back never
+finds a stranded card.
+`tests/PeekPresentationSkip/check.py` checks that the card and the Peek share
+the Split View action and that ordinary Peeks keep their Split rule.
 
 ## Open in current Space command
 

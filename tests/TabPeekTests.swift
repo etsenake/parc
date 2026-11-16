@@ -53,6 +53,7 @@ struct FakeWindow {
         forcedReturns()
         replacement()
         handBackNeedsAShownCard()
+        splitAvailability()
         print("TabPeek: \(checks) checks passed")
     }
 
@@ -233,6 +234,28 @@ struct FakeWindow {
             window.apply(session.exitFinished())
             expect(!window.cardShown, "after \(way) the card is gone once any exit ends")
         }
+    }
+
+    static func splitAvailability() {
+        func refusal(_ edit: (inout TabPeekSplitFacts) -> Void) -> TabPeekSplitRefusal? {
+            var facts = TabPeekSplitFacts()
+            edit(&facts)
+            return TabPeekSplit.refusal(facts)
+        }
+        expect(refusal { _ in } == nil, "a tab-backed Peek over a single page offers Split View")
+        expect(refusal { $0.panes = 3 } == nil, "a tab-backed Peek over a three-page split still offers Split View")
+        expect(refusal { $0.panes = 4 } == .full, "four pages is as full as Split View gets, as on the card")
+        expect(refusal { $0.panes = 4; $0.windowReady = false } == .full, "a full split says so even while the window is busy")
+        expect(refusal { $0.peekInteractive = false } == .unavailable, "a Peek that isn't the window's live Peek can't split")
+        expect(refusal { $0.tabUsable = false } == .unavailable, "a tab that's closing, moving or gone can't join the split")
+        expect(refusal { $0.parentSelected = false } == .unavailable, "the page underneath must be on screen to split with")
+        expect(refusal { $0.windowReady = false } == .unavailable, "a popup, full screen page or open Library refuses")
+        expect(refusal { $0.peekInteractive = false; $0.panes = 4 } == .unavailable,
+               "a Peek that can't act is unavailable before it is full")
+        expect(TabPeekSplitRefusal.full.toolTip.contains("four pages"), "the full tooltip says why")
+        expect(!TabPeekSplitRefusal.unavailable.toolTip.isEmpty
+               && TabPeekSplitRefusal.unavailable.toolTip != TabPeekSplitRefusal.full.toolTip,
+               "each refusal has its own tooltip")
     }
 
     static func replacement() {
