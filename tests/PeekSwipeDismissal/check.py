@@ -124,6 +124,17 @@ assert handoff.index("exitTimer?.invalidate(); exitTimer = nil") < handoff.index
     "a card handing its page to an opened tab cancels its close fade's end, so no hand-back runs after the session moved on"
 relay = body(tab, "    func browserView(_ view: PCBrowserView, didFailWithError error: Error) {")
 require(relay, "Open in Peek's load failure", present=("view.nativePage == nil, let onFailure",))
+expanded = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
+assert "func nativeBrowser(_ browser: PCNativeBrowserWindow, isPeekPage page: PCNativePage) -> Bool {\n" \
+    "        browser === nativeBinding && presentedPeek(for: page)?.page === page" in expanded, \
+    "the right-click menu asks the window whether a page is a Peek, Open in Peek included"
+require(body(tab, "    func presentedPeek(for page: PCNativePage) -> PeekController? {"), "the presented Peek lookup",
+        present=("tabPeeks.current?.shownController",))
+assert "var shownController: PeekController? { session.holdsPage ? controller : nil }" in (root / tab).read_text(), \
+    "an expanded tab Peek no longer presents its page, so its menu offers Open Link in Split View again"
+back = body(tab, "    private func handTabPageBack(")
+assert back.index("browser.delegate = self") < back.index("pane.browser = browser"), \
+    "a page handed back to its tab sends the menu's Open Link in Split View to the window, as any tab does"
 arrived = body(tab, "    private func tabPeekPageArrived(")
 assert arrived.index("held.relay.onFailure = nil") < arrived.index("applyTabPeek(held.session.pageReady("), \
     "once the tab's page has arrived, a late load failure can't abandon a card that is already showing"

@@ -139,8 +139,10 @@ struct FakeWindow {
             return expect(false, "a live plan starts a session")
         }
         window.apply(session.opening)
+        expect(session.holdsPage, "a shown tab Peek presents its page as a Peek")
         let promoting = session.resolve(.promote)
         expect(promoting == [.returnPage("page-a"), .exit], "the page returns before the card plays its exit")
+        expect(!session.holdsPage, "an expanded tab Peek stops presenting its page as a Peek in the same step")
         window.apply(promoting)
         expect(window.pane === original && window.cardShown && window.exits == 1,
                "the tab shows its page while the empty card exits")

@@ -21,6 +21,7 @@ struct PeekWindowHostChecks {
         pageStepsBackEvenly()
         stepTransformKeepsTheCenter()
         stepFollowsASlidingPage()
+        openingRidesASlide()
         regionsRouteClicks()
         steppedPageRejectsTheRevealedBand()
         hitTestingThroughTheViewTree()
@@ -248,6 +249,111 @@ struct PeekWindowHostChecks {
         let moved = movingLayer.animation(forKey: PeekStepBack.key) as? CABasicAnimation
         assert(moved.flatMap { transform($0.fromValue) }.map { CATransform3DEqualToTransform($0, transform(moved?.toValue)!) } == true,
                "a slide that doesn't change the page's size keeps the plain hold")
+    }
+
+    static func slidingPage(from start: CGRect, to end: CGRect, slide: CABasicAnimation) -> (NSView, CALayer) {
+        let view = NSView(frame: end)
+        view.wantsLayer = true
+        guard let layer = view.layer else { fatalError("a windowless view still gets its layer") }
+        slide.fromValue = NSValue(rect: start)
+        slide.isRemovedOnCompletion = false
+        layer.add(slide, forKey: PeekStepBack.slideKey)
+        return (view, layer)
+    }
+
+    static func openingRidesASlide() {
+        let narrow = CGRect(x: 0, y: 0, width: 1042, height: 780)
+        let wide = CGRect(x: 0, y: 0, width: 1042 + sidebarWidth, height: 780)
+        let scale = PeekWindowLayout(bounds: window, page: wide, stepsBack: true).scale
+        let final = PeekWindowLayout.stepTransform(bounds: wide, anchor: .zero, scale: scale)
+
+        let resting = NSView(frame: wide)
+        resting.wantsLayer = true
+        guard let restingLayer = resting.layer else { return assert(false, "a windowless view still gets its layer") }
+        PeekStepBack([resting]).animateIn(scale: scale)
+        let plain = restingLayer.animation(forKey: PeekStepBack.key) as? CABasicAnimation
+        assert(plain?.duration == PeekStepBack.openDuration && plain?.timingFunction == CAMediaTimingFunction(name: .easeOut)
+               && transform(plain?.toValue).map { CATransform3DEqualToTransform($0, final) } == true,
+               "a Peek opening with no slide keeps its plain 0.3-second ease-out step")
+
+        func check(_ slide: CABasicAnimation, _ label: String) -> (CAKeyframeAnimation, [CATransform3D], [Double])? {
+            let (view, layer) = slidingPage(from: narrow, to: wide, slide: slide)
+            PeekStepBack([view]).animateIn(scale: scale)
+            guard let opening = layer.animation(forKey: PeekStepBack.key) as? CAKeyframeAnimation,
+                  let values = opening.values?.compactMap(transform), let times = opening.keyTimes?.map(\.doubleValue),
+                  values.count == times.count, values.count > 2 else {
+                assert(false, "a Peek opening \(label) rides the slide"); return nil
+            }
+            assert(opening.isAdditive && !opening.isRemovedOnCompletion && opening.fillMode == .both
+                   && opening.calculationMode == .linear, "the opening that rides a slide stays put once it ends")
+            assert(CATransform3DEqualToTransform(values[values.count - 1], final), "it ends exactly on the final step \(label)")
+            assert(close(values[0].m11, 1), "it starts from the page at rest \(label)")
+            return (opening, values, times)
+        }
+
+        let now = CACurrentMediaTime()
+        let library = CABasicAnimation(keyPath: PeekStepBack.slideKey)
+        library.duration = 0.2; library.beginTime = now - 0.05
+        guard let first = check(library, "while the Library is already sliding") else { return }
+        let (opening, values, times) = first
+        assert(close(opening.duration, PeekStepBack.openDuration, 0.005), "the opening keeps its 0.3 seconds when the slide ends first")
+        func aimedOnlyAtTheEnd(_ value: CATransform3D, width: CGFloat) -> CGFloat {
+            let eased = (1 - value.m11) / (1 - final.m11)
+            return abs(eased * final.m41 + (1 + eased * (final.m11 - 1)) * width / 2 - width / 2)
+        }
+        var worst: CGFloat = 0
+        for (value, time) in zip(values, times) {
+            let moment = opening.beginTime + time * opening.duration
+            let slid = CGFloat(min(1, max(0, (moment - library.beginTime) / library.duration)))
+            let width = narrow.width + (wide.width - narrow.width) * slid
+            assert(close(centreOffset(of: value, width: width), 0), "the opening step stays centred on the sliding page at \(time)")
+            worst = max(worst, aimedOnlyAtTheEnd(value, width: width))
+        }
+        assert(zip(values, values.dropFirst()).allSatisfy { $1.m11 <= $0.m11 + 1e-9 }, "the page only steps back while opening")
+
+        let long = CABasicAnimation(keyPath: PeekStepBack.slideKey)
+        long.duration = 0.5; long.beginTime = now
+        guard let second = check(long, "when the slide outlasts it") else { return }
+        let (outlasting, longValues, longTimes) = second
+        assert(close(outlasting.duration, long.beginTime + long.duration - outlasting.beginTime, 0.001),
+               "the composed step lasts until the slide ends")
+        for (value, time) in zip(longValues, longTimes) {
+            let moment = outlasting.beginTime + time * outlasting.duration
+            let width = narrow.width + (wide.width - narrow.width) * CGFloat(min(1, (moment - long.beginTime) / long.duration))
+            assert(close(centreOffset(of: value, width: width), 0), "the step stays centred while the long slide runs at \(time)")
+            worst = max(worst, aimedOnlyAtTheEnd(value, width: width))
+            if time * outlasting.duration >= PeekStepBack.openDuration + 0.01 {
+                assert(close(value.m11, final.m11), "after the opening ends the step holds its final size")
+            }
+        }
+        assert(worst > 0.5, "an opening aimed only at the final width would sit off-centre during these slides")
+
+        let spring = CASpringAnimation(keyPath: PeekStepBack.slideKey)
+        spring.stiffness = 1218; spring.damping = 55.8
+        spring.duration = spring.settlingDuration
+        guard let third = check(spring, "while the floating sidebar springs") else { return }
+        let (sprung, springValues, springTimes) = third
+        assert(close(sprung.duration, max(PeekStepBack.openDuration, spring.duration), 0.01),
+               "a spring slide is composed for as long as the spring runs")
+        func springWidth(at elapsed: Double) -> CGFloat {
+            var offset = 1.0, velocity = 0.0, clock = 0.0
+            let step = 1e-5, mass = Double(spring.mass), stiffness = Double(spring.stiffness), damping = Double(spring.damping)
+            while clock < elapsed {
+                velocity += (-stiffness * offset - damping * velocity) / mass * step
+                offset += velocity * step
+                clock += step
+            }
+            return narrow.width + (wide.width - narrow.width) * CGFloat(1 - offset)
+        }
+        var springChecks = 0
+        for (index, (value, time)) in zip(springValues, springTimes).enumerated()
+        where index > 0 && index < springValues.count - 1 && index % 4 == 0 {
+            springChecks += 1
+            let elapsed = time * sprung.duration
+            assert(close(centreOffset(of: value, width: springWidth(at: elapsed)), 0, 0.02),
+                   "the opening step stays centred on the springing page at \(elapsed) seconds")
+        }
+        assert(springChecks >= 6, "the spring is checked all the way through")
     }
 
     final class Flipped: NSView { override var isFlipped: Bool { true } }
