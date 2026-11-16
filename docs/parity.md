@@ -24,7 +24,7 @@ remaining effort, speed, or additions outside that old checklist.
 | Windows | 71.4% | 10/14, still 71.4%; the specific limitations inside its remaining broad items have since been fixed or settled as product decisions. |
 | Data and credentials | 75.0% | 15/16, 93.8%; the open item, additional browser-import formats, has since landed. |
 | Folders | 65.2% | 19/23, 82.6%; copying, document moves and later folder restoration remain; the selection gaps have since been fixed or settled. |
-| Archive and history | 70.6% | 15/17, 88.2%; broader previews and deleted-folder reconstruction remain. |
+| Archive and history | 70.6% | 15/17, 88.2%; deleted-folder reconstruction remains, while broader previews were settled as decisions: archived documents and splits are restored, not previewed. |
 | Command bar | 82.8% | 26/29, 89.7%; missing commands remain; covered controls no longer react to hover. |
 | Recent-tab switcher | 69.2% | 13/13, 100% of that inventory; the old open claims were already implemented. |
 | Peek | 66.7% | At least 16/21, 76.2%; two old open items are complete, and the remaining cases the others overlapped have since been fixed or settled. |

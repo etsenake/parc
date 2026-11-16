@@ -6,11 +6,13 @@ details. [Product status](parity.md) describes what exists; this list does not
 authorize starting every task.
 
 Completed fixes stay done. Missing test receipts, browser access, user confirmation
-and routine release timing are not backlog work. Update or remove an item when
-its implementation lands; do not preserve completed rows or percentage tables.
+and routine release timing are not backlog work. New [performance](performance-navigation.md)
+work needs a concrete delay or resource problem; a missing benchmark is not a defect.
+Update or remove an item when its implementation lands; do not preserve completed
+rows or percentage tables.
 
 For otherwise unassigned work, retain the requested order: Routing, Windows,
-Data, Performance, Folders, Archive, Command bar, Tab switcher, Peek and Onboarding.
+Data, Folders, Archive, Command bar, Tab switcher, Peek and Onboarding.
 Finish assigned work first; explicit deferrals remain deferred.
 
 ## Sidebar accessibility and presentation
@@ -19,12 +21,6 @@ Finish assigned work first; explicit deferrals remain deferred.
   [Theme rendering](space-theme-rendering.md).
 - Finish the documented theme-control hover/dot details.
   [Theme editor](space-theme-editor.md).
-
-## Performance
-
-There is no separate performance phase. New performance work needs a concrete
-delay or resource problem; a missing benchmark is not a defect.
-[Current implementation](performance-navigation.md).
 
 ## Folders
 
