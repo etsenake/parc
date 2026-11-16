@@ -158,6 +158,11 @@ changes belong in the owning guide and release notes, not an ever-growing log he
   share or save to the Library labelled Incognito but never go to an Easel. This
   keeps private browsing from writing documents to disk or mixing sessions in an
   Easel's pages. See [capture Library](capture-library.md#private-media-ownership).
+- Library → Archive previews single web pages only. Notes and Easels are restored,
+  not previewed, so no live editor is handed over at the risk of unsaved input;
+  splits are restored, not previewed side by side; and no close-time page picture
+  is saved, since many archived pages have none and it would keep private
+  screenshots on disk. See [archive previews](archive-preview.md#product-decisions).
 
 ## Scope boundaries
 

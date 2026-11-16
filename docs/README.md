@@ -26,7 +26,7 @@ Git and release notes retain history.
 - [Split groups](split-groups.md), [split navigation](split-navigation.md),
   [Peek](peek.md), [web interactions](web-interactions.md).
 - [Automatic archive](archive.md), [archive previews](archive-preview.md),
-  [archived documents](archive-preview-documents.md), [downloads](download-library.md).
+  [downloads](download-library.md).
 - [Routing](routing-interaction.md), [private routing](private-route-lifecycle.md),
   [internal addresses](internal-addresses.md).
 

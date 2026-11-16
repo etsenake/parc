@@ -40,10 +40,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 
 ## Archive and history
 
-- **HIST13:** live previews support one web tab. Connect document/group preview,
-  close consent and promotion to their existing owners; add persisted close-time
-  images if previews must show the page as it was when closed.
-  [Archive preview](archive-preview.md), [document owners](archive-preview-documents.md).
 - **HIST14:** Library Put Back cannot reconstruct deleted nested folder roots.
   Existing window Undo restores the tree; persisted Archive restoration needs
   folder provenance. [Archive](archive.md).
