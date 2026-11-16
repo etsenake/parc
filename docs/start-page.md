@@ -10,8 +10,13 @@ Command-S works there like anywhere else.
 The start page shows when an ordinary or private window's current Space has no
 selected tab, Note, Easel or split, including in full screen. Closing the last
 open tab in a Space opens it in that window with the command bar focused; the
-window stays open. Switching to a Space with no open tab, or creating one,
-lands there too. Popup windows, an open Library and Space creation keep their
+window stays open and on that Space, even when another Space has open pages.
+Archiving it, clearing Today and a page closing itself do the same. The last
+tab means no other Pinned or Today item is left: a Pinned tab is selected
+instead. Favorites don't keep a Space open, though a close still returns to a
+Favorite selected just before it, by the
+[close rules](folder-commands.md#selection-after-ordinary-delete). Switching to
+a Space with no open tab, or creating one, lands there too. Popup windows, an open Library and Space creation keep their
 own content. Add Split's pending pane keeps its placeholder and sidebar hold
 while a result is being chosen; see [sidebar motion](sidebar-motion.md#add-splits-pending-pane-keeps-its-sidebar).
 
@@ -205,4 +210,6 @@ The first checks the paper's tint, glows, appearance and swipe hand-off, and
 runs the close fade on a pretend clock: its curve and lock, when the real close
 starts, "Leave site?", refusal, interruption and Reduce Motion. The
 empty-window check covers the sidebar rule, Command-T and Command-L routing,
-the start page's focus conditions and how the window wires the close fade.
+the start page's focus conditions, how the window wires the close fade, and
+that closing, clearing or a page closing itself keeps the window on its Space
+whatever page the engine picks next.

@@ -16,7 +16,172 @@ import AppKit
         shadowImage()
         pageCardShadowView()
         splitBackingAndShadows()
+        closeKeepsSpace()
         print("EmptyWindow: \(count) assertions passed")
+    }
+
+    static func page(_ space: BrowserSpace, _ kind: TabKind = .today, accessed: TimeInterval = 0) -> BrowserTab {
+        BrowserTab(id: UUID(), spaceID: space.id, profileID: space.profileID, url: "https://example.test/", title: "Page", kind: kind,
+                   createdAt: Date(timeIntervalSince1970: 0), lastAccessed: Date(timeIntervalSince1970: accessed),
+                   savedURL: "https://example.test/", savedTitle: "Page")
+    }
+
+    static func twoSpaces(_ make: (BrowserSpace) -> [BrowserTab]) -> (BrowserState, BrowserSpace, BrowserTab) {
+        var state = BrowserState.initial()
+        let home = state.spaces[0]
+        let other = BrowserSpace(id: UUID(), name: "Other", symbol: "circle", color: "112233", profileID: home.profileID)
+        let elsewhere = page(other, accessed: 99)
+        state.spaces.append(other)
+        state.tabs = make(home) + [elsewhere]
+        state.selectionBySpace[other.id.uuidString] = [elsewhere.id]
+        return (state, home, elsewhere)
+    }
+
+    static func archived(_ state: BrowserState, _ ids: Set<UUID>) -> BrowserState {
+        var next = state
+        for index in next.tabs.indices where ids.contains(next.tabs[index].id) && next.tabs[index].kind == .today {
+            next.tabs[index].archivedAt = Date(timeIntervalSince1970: 100)
+        }
+        next.selectedTabIDs.removeAll { ids.contains($0) }
+        return next
+    }
+
+    static func engineSelects(_ id: UUID, in window: inout WindowPresentation, state: BrowserState, closing: Set<UUID> = []) {
+        guard window.admitsEngineSelection(of: id, closing: { closing.contains($0) }) else { return }
+        _ = window.selectExistingTab(id, state: state, available: { _ in true })
+    }
+
+    static func decide(_ removing: Set<UUID>, _ window: WindowPresentation, _ state: BrowserState) -> FolderRemovalSelection? {
+        let space = state.spaces.first { $0.id == window.activeSpaceID }!
+        return FolderRemovalSelection.resolve(removing: removing, spaceID: space.id, profileID: space.profileID, state: state,
+            selected: window.selectedTabIDs, focused: window.preferredFocusedTabID, referrerPool: window.referrerPool,
+            previouslySelectedItemID: window.previouslySelectedItemID, available: { _ in true })
+    }
+
+    static func singleSpaceUnchanged() {
+        var only = BrowserState.initial()
+        let space = only.spaces[0], lone = page(space), favorite = page(space, .favorite, accessed: 99)
+        only.tabs = [lone, favorite]
+        only.selectedTabIDs = [lone.id]
+        var single = WindowPresentation(state: only, ready: true)
+        guard let alone = decide([lone.id], single, only) else { return check(false, "a single Space's last close resolves") }
+        check(alone.tabIDs.isEmpty && alone.replacementSpaceID == space.id, "a single Space empties when its last tab closes")
+        single.closePage(lone.id)
+        engineSelects(favorite.id, in: &single, state: only)
+        let emptied = archived(only, [lone.id])
+        check(single.finishFolderRemoval(alone, state: emptied, available: { _ in true })
+              && single.activeSpaceID == space.id && single.selectedTabIDs.isEmpty,
+              "a single Space is unchanged: its last close still shows the start page, not a Favorite the engine picks")
+    }
+
+    static func closeKeepsSpace() {
+        var last: BrowserTab!
+        var (state, home, elsewhere) = twoSpaces { home in last = page(home); return [last] }
+        state.selectedTabIDs = [last.id]
+        var window = WindowPresentation(state: state, ready: true)
+        guard let decision = decide([last.id], window, state) else { return check(false, "the last tab's close resolves") }
+        check(decision.tabIDs.isEmpty && decision.replacementSpaceID == home.id, "closing the last tab empties its own Space")
+        engineSelects(elsewhere.id, in: &window, state: state, closing: [last.id])
+        check(window.activeSpaceID == home.id && window.selectedTabIDs == [last.id],
+              "the current Space is kept and a second Space isn't selected while the last tab is closing")
+        singleSpaceUnchanged()
+        window.closePage(last.id)
+        engineSelects(elsewhere.id, in: &window, state: state)
+        check(!window.selectedTabIDs.contains(elsewhere.id), "a second Space isn't selected after the last tab closes")
+        check(window.activeSpaceID == home.id, "the current Space is kept when the engine picks a page in a second Space")
+        var landed = archived(state, [last.id])
+        window.reconcile(landed) { _ in true }
+        check(window.finishFolderRemoval(decision, state: landed, available: { _ in true })
+              && window.activeSpaceID == home.id && window.selectedTabIDs.isEmpty,
+              "the close lands on the current Space's start page")
+        check(!window.admitsEngineSelection(of: elsewhere.id, closing: { _ in false }), "the engine's pick stays refused until the window pushes its own choice")
+        window.engineSelectionSynchronized()
+        check(window.admitsEngineSelection(of: elsewhere.id, closing: { _ in false }), "once the window pushed its choice a page asking for focus is followed again")
+        guard let undo = ClosedTabsUndo(prompt: .archive, ids: [last.id], spaceID: home.id, profileID: home.profileID,
+                                        focusedTabID: last.id, before: state, after: landed),
+              let restored = undo.restoring(landed) else { return check(false, "the closed tab has an Undo") }
+        landed = restored
+        check(window.finishClosedTabsUndo(undo, state: landed, available: { _ in true })
+              && window.activeSpaceID == home.id && window.selectedTabIDs == [last.id], "Undo brings the tab back into the same Space")
+
+        var left: BrowserTab!, right: BrowserTab!
+        var (split, _, splitElsewhere) = twoSpaces { home in left = page(home); right = page(home); return [left, right] }
+        split.selectedTabIDs = [left.id, right.id]
+        var paired = WindowPresentation(state: split, ready: true)
+        paired.closePage(left.id)
+        check(paired.admitsEngineSelection(of: right.id, closing: { _ in false })
+              && !paired.admitsEngineSelection(of: splitElsewhere.id, closing: { _ in false }),
+              "an engine pick of the pane still on screen is followed as before, while a second Space's page is not")
+
+        var today: BrowserTab!, pinned: BrowserTab!
+        var (withPinned, pinnedHome, pinnedElsewhere) = twoSpaces { home in
+            today = page(home); pinned = page(home, .pinned); return [pinned, today]
+        }
+        withPinned.selectedTabIDs = [today.id]
+        var pinnedWindow = WindowPresentation(state: withPinned, ready: true)
+        guard let toPinned = decide([today.id], pinnedWindow, withPinned) else { return check(false, "a close beside a Pinned tab resolves") }
+        check(toPinned.tabIDs == [pinned.id] && toPinned.replacementSpaceID == pinnedHome.id,
+              "a Pinned tab keeps the Space from emptying, so closing the last Today tab selects it")
+        pinnedWindow.closePage(today.id)
+        engineSelects(pinnedElsewhere.id, in: &pinnedWindow, state: withPinned)
+        withPinned = archived(withPinned, [today.id])
+        check(pinnedWindow.finishFolderRemoval(toPinned, state: withPinned, available: { _ in true })
+              && pinnedWindow.activeSpaceID == pinnedHome.id && pinnedWindow.selectedTabIDs == [pinned.id],
+              "the Pinned tab is selected in the same Space, not the engine's pick in a second Space")
+
+        var opened: BrowserTab!, shared: BrowserTab!
+        var (withFavorite, favoriteHome, _) = twoSpaces { home in
+            opened = page(home); shared = page(home, .favorite); return [shared, opened]
+        }
+        withFavorite.selectedTabIDs = [shared.id]
+        var favoriteWindow = WindowPresentation(state: withFavorite, ready: true)
+        _ = favoriteWindow.selectExistingTab(opened.id, state: withFavorite, available: { _ in true })
+        favoriteWindow.recordSelectionForReturn(opened.id, state: withFavorite)
+        guard let toFavorite = decide([opened.id], favoriteWindow, withFavorite) else { return check(false, "a close after a Favorite resolves") }
+        check(toFavorite.tabIDs == [shared.id] && toFavorite.replacementSpaceID == favoriteHome.id,
+              "closing a tab returns to the Favorite selected just before it, in the same Space")
+        withFavorite = archived(withFavorite, [opened.id])
+        favoriteWindow.closePage(opened.id)
+        check(favoriteWindow.finishFolderRemoval(toFavorite, state: withFavorite, available: { _ in true })
+              && favoriteWindow.activeSpaceID == favoriteHome.id && favoriteWindow.selectedTabIDs == [shared.id],
+              "the Favorite comes back in the current Space")
+
+        var first: BrowserTab!, second: BrowserTab!
+        var (cleared, clearedHome, clearedElsewhere) = twoSpaces { home in
+            first = page(home, accessed: 2); second = page(home, accessed: 1); return [first, second]
+        }
+        cleared.selectedTabIDs = [first.id]
+        var clearing = WindowPresentation(state: cleared, ready: true)
+        guard let wiped = decide([first.id, second.id], clearing, cleared) else { return check(false, "clearing Today resolves") }
+        check(wiped.tabIDs.isEmpty && wiped.replacementSpaceID == clearedHome.id, "clearing Today empties the current Space")
+        clearing.closePage(first.id)
+        clearing.closePage(second.id)
+        engineSelects(clearedElsewhere.id, in: &clearing, state: cleared)
+        cleared = archived(cleared, [first.id, second.id])
+        check(clearing.finishFolderRemoval(wiped, state: cleared, available: { _ in true })
+              && clearing.activeSpaceID == clearedHome.id && clearing.selectedTabIDs.isEmpty,
+              "clearing Today stays on the current Space instead of following the engine to a second Space")
+
+        var closer: BrowserTab!, sibling: BrowserTab!
+        var (selfClosed, selfHome, selfElsewhere) = twoSpaces { home in
+            closer = page(home, accessed: 2); sibling = page(home, accessed: 1); return [closer, sibling]
+        }
+        selfClosed.selectedTabIDs = [closer.id]
+        var closing = WindowPresentation(state: selfClosed, ready: true)
+        guard let handOver = decide([closer.id], closing, selfClosed) else { return check(false, "a page closing itself resolves") }
+        closing.closePage(closer.id)
+        check(closing.finishFolderRemoval(handOver, state: selfClosed, available: { _ in true }),
+              "a page that closed itself hands over by the close rules")
+        engineSelects(selfElsewhere.id, in: &closing, state: selfClosed)
+        check(closing.activeSpaceID == selfHome.id && closing.selectedTabIDs == [sibling.id],
+              "a page closing itself hands over to a tab in its own Space, not the engine's pick in a second Space")
+        selfClosed.tabs.removeAll { $0.id == sibling.id }
+        closing = WindowPresentation(state: selfClosed, ready: true)
+        guard let lastOut = decide([closer.id], closing, selfClosed) else { return check(false, "a last page closing itself resolves") }
+        closing.closePage(closer.id)
+        check(closing.finishFolderRemoval(lastOut, state: selfClosed, available: { _ in true })
+              && closing.activeSpaceID == selfHome.id && closing.selectedTabIDs.isEmpty,
+              "the last page closing itself leaves its own Space's start page")
     }
 
     static func presentationRule() {

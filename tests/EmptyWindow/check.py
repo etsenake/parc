@@ -128,6 +128,26 @@ assert "activePeek == nil, closeFade?.isClosing != true," in controller, \
 assert "heldOverSwitch || passesInput ? nil : super.hitTest(point)" in controller, "a fading page still takes clicks"
 assert "heldOverSwitch = false; passesInput = false; alphaValue = 1; super.viewWillMove(toSuperview: newSuperview)" in controller, \
     "a faded page could come back invisible"
+select = controller[controller.index("    func nativeBrowser(_ browser: PCNativeBrowserWindow, didSelect page: PCNativePage) {"):]
+select = select[:select.index("\n    }\n")]
+admission = ("guard presentation.admitsEngineSelection(of: id, closing: { closingTabIDs.contains($0) || modelRetirementIDs.contains($0) }) else {\n"
+             "            browser.synchronizeSelectionAndLayout(); presentation.engineSelectionSynchronized(); return\n        }")
+assert admission in select and select.index("existingNativeSelection(browser, page)") < select.index(admission) \
+    < select.index("next.selectExistingTab(id"), "the engine's own pick after a close can move the window to another Space"
+release = body("releaseClosedTab")
+assert "presentation.remove(id)" not in release and release.index("let replacement = closedItself ? closedPageReplacement(id) : nil") \
+    < release.index("presentation.closePage(id)") < release.index("presentation.finishFolderRemoval(replacement") \
+    < release.index("ownership.release(id, owner: presentationID)"), "a page closing itself no longer hands over by the close rules"
+assert "self.render(self.store.state); self.requestNativeSelection(); self.focusSelectedLocalContent()" in release, \
+    "a page closing itself leaves the engine's pick in place"
+assert "binding.synchronizeSelectionAndLayout()\n        presentation.engineSelectionSynchronized()" in body("flushPendingNativeSelection"), \
+    "the window never takes the engine's selections again after a close"
+assert body("requestNativeSelection").count("pushNativeSelection()") == 2 and "nativeBinding?.synchronizeSelectionAndLayout()" \
+    not in body("requestNativeSelection"), "a Peek or Easel selection push leaves the engine's selections refused"
+assert release.index("pushedByClose = store.retiringTabIDs.contains(id)") < release.index("if updateSavedTab { store.closeTab(id) }") \
+    < release.index("guard shown, closedItself || !pushedByClose else { return }") \
+    < release.index("guard closedItself else { self.requestNativeSelection(); return }"), \
+    "a shown page closed outside a store close leaves the engine's selections refused"
 
 sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [app / name for name in (
     "SidebarMotionController.swift", "SidebarChromeLayout.swift", "WindowStandardButtons.swift", "ParcSplitView.swift",
@@ -139,11 +159,12 @@ def build(directory, name, replace=None):
     files = list(sources)
     if replace:
         source, old, new = replace
-        text = (app / source).read_text()
+        target = root / source if "/" in source else app / source
+        text = target.read_text()
         assert old in text, f"negative control no longer matches {source}: {old}"
-        changed = Path(directory) / f"{name}-{source}"
+        changed = Path(directory) / f"{name}-{target.name}"
         changed.write_text(text.replace(old, new))
-        files = [changed if path == app / source else path for path in files]
+        files = [changed if path == target else path for path in files]
     executable = Path(directory) / name
     subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     *map(str, files), str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
@@ -166,6 +187,18 @@ with tempfile.TemporaryDirectory(prefix="parc-empty-window-") as directory:
                                            "            if !layer.isGeometryFlipped { card.origin.y = bounds.height - card.maxY }\n"
                                            "            shadow.frame = ContentShadowImage.frame(around: card)\n"),
                                           "a shadow surrounds the pane's layer"),
+        "engine follows a closing tab": (("Sources/ParcCore/WindowPresentation.swift",
+                                          "!awaitsCloseReplacement && !selectedTabIDs.contains(where: closing)", "!awaitsCloseReplacement"),
+                                         "the current Space is kept and a second Space isn't selected while the last tab is closing"),
+        "engine follows a closed tab": (("Sources/ParcCore/WindowPresentation.swift",
+                                         "if isReady, selectedTabIDs.contains(id) { awaitsCloseReplacement = true }\n", ""),
+                                        "a single Space is unchanged"),
+        "survivor refused": (("Sources/ParcCore/WindowPresentation.swift", "selectedTabIDs.contains(id) || ", ""),
+                             "an engine pick of the pane still on screen is followed as before"),
+        "engine ignored for good": (("Sources/ParcCore/WindowPresentation.swift",
+                                     "mutating func engineSelectionSynchronized() { awaitsCloseReplacement = false }",
+                                     "mutating func engineSelectionSynchronized() {}"),
+                                    "once the window pushed its choice a page asking for focus is followed again"),
     }
     with ThreadPoolExecutor() as pool:
         main = pool.submit(build, directory, "check")

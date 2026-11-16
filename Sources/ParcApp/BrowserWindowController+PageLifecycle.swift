@@ -7,6 +7,9 @@ extension BrowserWindowController {
         inputRevisions.removeValue(forKey: id)
         if let retry = transferRecoveries[id] { retry(); return }
         guard browsers[id] != nil || panes[id] != nil || store.state.containsTab(id) else { return }
+        let shown = selectedTabIDs.contains(id), pushedByClose = store.retiringTabIDs.contains(id)
+        let closedItself = updateSavedTab && shown
+        let replacement = closedItself ? closedPageReplacement(id) : nil
         if pendingNativeSelection?.tabID == id { pendingNativeSelection = nil }
         if let browser = browsers.removeValue(forKey: id) {
             if let page = browser.nativePage { attachedPageIDs.remove(page.identifier) }
@@ -20,11 +23,27 @@ extension BrowserWindowController {
         easelEditors[id]?.editor.retirePageOwner()
         panes[id]?.clearNativeContent(); easelEditors.removeValue(forKey: id); easelFailures.removeValue(forKey: id)
         if nativeFullscreenTabID == id { restoreNativeFullscreenPresentation() }
-        presentation.remove(id)
+        presentation.closePage(id)
+        if let replacement, presentation.finishFolderRemoval(replacement, state: store.state, available: { self.switcherCanUse($0) }) {
+            focusedTabID = replacement.focusedTabID
+        }
         ownership.release(id, owner: presentationID)
         tabHistoryChanged.remove(id)
         if updateSavedTab { store.closeTab(id) }
         if focusedTabID == id { focusedTabID = presentation.preferredFocusedTabID }
+        guard shown, closedItself || !pushedByClose else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isClosing, !self.wholeWindowClose else { return }
+            guard closedItself else { self.requestNativeSelection(); return }
+            self.render(self.store.state); self.requestNativeSelection(); self.focusSelectedLocalContent()
+        }
+    }
+
+    private func closedPageReplacement(_ id: UUID) -> FolderRemovalSelection? {
+        guard !isPopupWindow, presentation.isReady, !isClosing, !wholeWindowClose else { return nil }
+        return FolderRemovalSelection.resolve(removing: [id], spaceID: activeSpaceID, profileID: activeProfileID,
+            state: store.state, selected: selectedTabIDs, focused: focusedTabID, referrerPool: presentation.referrerPool,
+            previouslySelectedItemID: presentation.previouslySelectedItemID, available: { self.switcherCanUse($0) })
     }
 
     func retireBrowserAfterModelChange(_ id: UUID) {
@@ -133,13 +152,13 @@ extension BrowserWindowController {
         if let peek = activePeek, !peek.view.isHidden, !isClosing, !wholeWindowClose,
            !windowClosePending, !peek.page.isClosed {
             pendingNativeSelection = nil
-            nativeBinding?.synchronizeSelectionAndLayout()
+            pushNativeSelection()
             refreshNavigationControls()
             return
         }
         closedItems.selected(selectedTabIDs)
         if currentBrowser == nil, selectedNativePage()?.isEmbedded == true {
-            pendingNativeSelection = nil; nativeBinding?.synchronizeSelectionAndLayout(); refreshNavigationControls(); return
+            pendingNativeSelection = nil; pushNativeSelection(); refreshNavigationControls(); return
         }
         recordRecentTabSelection()
         pendingNativeSelection = nil
@@ -156,6 +175,12 @@ extension BrowserWindowController {
                 tabID: id, view: view, pageIdentifier: view.nativePage?.identifier))
         }
         flushPendingNativeSelection()
+    }
+
+    private func pushNativeSelection() {
+        guard let binding = nativeBinding else { return }
+        binding.synchronizeSelectionAndLayout()
+        presentation.engineSelectionSynchronized()
     }
 
     private func flushPendingNativeSelection() {
@@ -197,6 +222,7 @@ extension BrowserWindowController {
         synchronizingNativeLayout = true
         defer { synchronizingNativeLayout = false }
         binding.synchronizeSelectionAndLayout()
+        presentation.engineSelectionSynchronized()
         refreshNavigationControls()
     }
 

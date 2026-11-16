@@ -288,6 +288,19 @@ struct WindowPresentation {
         return true
     }
 
+    private(set) var awaitsCloseReplacement = false
+
+    mutating func closePage(_ id: UUID) {
+        if isReady, selectedTabIDs.contains(id) { awaitsCloseReplacement = true }
+        remove(id)
+    }
+
+    func admitsEngineSelection(of id: UUID, closing: (UUID) -> Bool) -> Bool {
+        selectedTabIDs.contains(id) || (!awaitsCloseReplacement && !selectedTabIDs.contains(where: closing))
+    }
+
+    mutating func engineSelectionSynchronized() { awaitsCloseReplacement = false }
+
     mutating func remove(_ id: UUID) {
         let previousSelection = selectedTabIDs
         for spaceID in Array(focusedTabBySpace.keys) where focusedTabBySpace[spaceID] == id {

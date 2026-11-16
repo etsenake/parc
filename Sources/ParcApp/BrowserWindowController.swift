@@ -1457,6 +1457,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         guard !applyingNativeSelection, let (id, view) = existingNativeSelection(browser, page),
               !rendering else { return }
+        guard presentation.admitsEngineSelection(of: id, closing: { closingTabIDs.contains($0) || modelRetirementIDs.contains($0) }) else {
+            browser.synchronizeSelectionAndLayout(); presentation.engineSelectionSynchronized(); return
+        }
         var next = presentation
         guard next.selectExistingTab(id, state: store.state,
                                      available: { ownership.canUse($0, owner: presentationID) }) else { return }

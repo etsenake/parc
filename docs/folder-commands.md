@@ -136,6 +136,10 @@ and treats a split as one item. Closing/unavailable owners cannot be substitutes
 
 Native consent revalidates hierarchy, pool and selection. Only the original
 window consumes the decision; later selection/Space changes cannot be overwritten.
+When the shown page goes, the engine picks a next page of its own, often one
+parked in another Space; unless that page is already on screen, the window
+ignores the pick until it has pushed its own choice back. A page that closes
+itself is replaced by these same rules.
 Folder deletion commits archives/removal/replacement durably together; ordinary
 tab Close retains its existing deferred persistence schedule.
 
