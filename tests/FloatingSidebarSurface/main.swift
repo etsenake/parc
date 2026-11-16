@@ -123,6 +123,7 @@ import MetalKit
         checkSwipeMaterial()
         checkPagingBlend()
         checkSwipeDock()
+        checkDockHandOff()
 
         func materials() -> [NSVisualEffectView] { container.subviews.compactMap { $0 as? NSVisualEffectView } }
         check(materials().count == 1, "no dock material before the first dock")
@@ -487,10 +488,18 @@ import MetalKit
         guard blurs().count == 2 else { fatalError("FloatingSidebarSurface: the swipe's crossfade") }
         let base = blurs()[0], crossfade = blurs()[1]
         surface.preparesFloatingDock = true
-        guard blurs().count == 3, let dock = blurs().last else { fatalError("FloatingSidebarSurface: the dock's preparation adds its material") }
-        check(surface.subviews.firstIndex(of: dock) == surface.subviews.firstIndex(of: crossfade).map { $0 + 1 },
-              "the window's material, created mid-swipe, lies over the crossfade so it covers both blurs as it fades in")
-        check(dock.alphaValue == 0 && near(base.alphaValue, blend.base) && near(crossfade.alphaValue, blend.incoming),
+        guard blurs().count == 4 else { fatalError("FloatingSidebarSurface: the dock's preparation adds its material and its crossfade") }
+        let dock = blurs()[2], dockCrossfade = blurs()[3]
+        check(surface.subviews.firstIndex(of: dock) == surface.subviews.firstIndex(of: crossfade).map { $0 + 1 }
+              && surface.subviews.firstIndex(of: dockCrossfade) == surface.subviews.firstIndex(of: dock).map { $0 + 1 }
+              && surface.subviews.firstIndex { $0 is MTKView }.map { $0 > surface.subviews.firstIndex(of: dockCrossfade)! } == true,
+              "the window's material and its crossfade, created mid-swipe, lie over both blurs and under the theme")
+        func side(_ view: NSVisualEffectView) -> NSAppearance.Name? { view.appearance?.name }
+        check(dock.material.rawValue == 1 && side(dock) == .aqua && dockCrossfade.material.rawValue == 2 && side(dockCrossfade) == .darkAqua
+              && dockCrossfade.blendingMode == .behindWindow && dockCrossfade.isEmphasized && dockCrossfade.maskImage === dock.maskImage,
+              "the window's material takes the left page's style and its crossfade the right page's, masked alike")
+        check(dock.alphaValue == 0 && dockCrossfade.alphaValue == 0 && !dockCrossfade.isHidden
+              && near(base.alphaValue, blend.base) && near(crossfade.alphaValue, blend.incoming),
               "prepared: the swipe's blend is untouched")
         root.layoutSubtreeIfNeeded(); root.display(); CATransaction.flush()
         NSAnimationContext.runAnimationGroup { context in
@@ -498,22 +507,28 @@ import MetalKit
             context.allowsImplicitAnimation = true
             surface.docksFloatingSurface = true
         }
-        check(base.alphaValue == 0 && crossfade.alphaValue == 0 && dock.alphaValue == 1, "docking fades both blurs out and the window's material in")
-        for (view, name) in [(base, "blur"), (crossfade, "crossfade"), (dock, "dock material")] {
+        check(base.alphaValue == 0 && crossfade.alphaValue == 0 && dock.alphaValue == 1 && near(dockCrossfade.alphaValue, 0.95),
+              "docking fades both blurs out and the window's material and its crossfade in, to the swipe's progress")
+        check((dockCrossfade.layer?.animation(forKey: "opacity") as? CABasicAnimation).map { $0.toValue == nil && $0.byValue == nil } == true,
+              "the dock crossfade's fade has no fixed end, so it follows the swipe as it keeps settling")
+        for (view, name) in [(base, "blur"), (crossfade, "crossfade"), (dock, "dock material"), (dockCrossfade, "dock crossfade")] {
             let fade = view.layer?.animation(forKey: "opacity") as? CABasicAnimation
             check(fade.map { near($0.duration, 0.08, 1e-6) } == true, "the \(name) fades on the group's 0.08 s timing")
         }
         surface.pagingTransition = ThemePagingTransition(from: light, theme: dark, progress: 0.97)
-        check(base.alphaValue == 0 && crossfade.alphaValue == 0, "the swipe moving on mid-dock keeps both blurs faded")
+        check(base.alphaValue == 0 && crossfade.alphaValue == 0 && near(dockCrossfade.alphaValue, 0.97),
+              "the swipe settling on mid-dock keeps both blurs faded and moves the window's crossfade with it")
         surface.theme = dark
         surface.preparesFloatingDock = false
-        check(base.alphaValue == 0 && crossfade.alphaValue == 0 && dock.alphaValue == 1,
-              "the swipe's commit and the full pass's end of preparation keep the fades mid-dock")
+        check(base.alphaValue == 0 && crossfade.alphaValue == 0 && dock.alphaValue == 1 && near(dockCrossfade.alphaValue, 0.97)
+              && dock.material.rawValue == 1 && dockCrossfade.material.rawValue == 2,
+              "the swipe's commit and the full pass's end of preparation keep the fades and both docked styles mid-dock")
         surface.docksFloatingSurface = false
         let resumed = FloatingSidebarSurface.pagingBlend(progress: 0.97)
-        check(near(base.alphaValue, resumed.base) && near(crossfade.alphaValue, resumed.incoming) && dock.isHidden,
-              "a reversed dock restores the swipe's blend")
-        check([base, crossfade, dock].allSatisfy { $0.layer?.animation(forKey: "opacity") == nil }, "a reversed dock leaves no fade in flight")
+        check(near(base.alphaValue, resumed.base) && near(crossfade.alphaValue, resumed.incoming) && dock.isHidden && dockCrossfade.isHidden,
+              "a reversed dock restores the swipe's blend and hides the window's materials")
+        check([base, crossfade, dock, dockCrossfade].allSatisfy { $0.layer?.animation(forKey: "opacity") == nil },
+              "a reversed dock leaves no fade in flight")
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.08
             context.allowsImplicitAnimation = true
@@ -522,6 +537,8 @@ import MetalKit
         surface.pagingTransition = nil
         check(!crossfade.isHidden && crossfade.alphaValue == 0 && crossfade.layer?.animation(forKey: "opacity") != nil,
               "a swipe ending mid-dock lets the crossfade finish fading instead of vanishing")
+        check(dockCrossfade.isHidden && dock.material.rawValue == 2 && side(dock) == .darkAqua,
+              "and the window's material settles on the arrived Space's style, as the window behind does")
         surface.docksFloatingSurface = false
         check(crossfade.isHidden && base.alphaValue == 1 && crossfade.layer?.animation(forKey: "opacity") == nil,
               "reversing that dock hides the finished swipe's crossfade and shows the whole blur")
@@ -541,8 +558,55 @@ import MetalKit
         surface.docksFloatingSurface = true
         surface.floatingCornerRadius = nil
         surface.docksFloatingSurface = false
-        check(crossfade.isHidden && base.alphaValue == 1 && dock.isHidden,
-              "a dock settling mid-swipe hides the crossfade and restores the blur, though the swipe goes on")
+        check(crossfade.isHidden && base.alphaValue == 1 && dock.isHidden && dockCrossfade.isHidden,
+              "a dock settling mid-swipe hides every crossfade and restores the blur, though the swipe goes on")
         surface.pagingTransition = nil
+    }
+
+    static func checkDockHandOff() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.appearance = NSAppearance(named: .aqua)
+        let root = ThemeRendererView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        window.contentView = root
+        defer { window.contentView = nil }
+        let surface = ThemeRendererView(frame: NSRect(x: 5, y: 5, width: 200, height: 290))
+        root.addSubview(surface)
+        surface.coordinateSpace = root
+        guard surface.subviews.contains(where: { $0 is MTKView }) else { print("FloatingSidebarSurface: no Metal; the dock's hand-off is not checked"); return }
+        var uncoloured = SpaceTheme(); uncoloured.appearance = .dark
+        var light = SpaceTheme.singleColor(ThemeColor(red: 0.8, green: 0.88, blue: 0.97)!); light.appearance = .light
+        func publish(_ transition: ThemePagingTransition?) { root.pagingTransition = transition; surface.pagingTransition = transition }
+        root.theme = uncoloured; surface.theme = uncoloured
+        surface.floatingCornerRadius = FloatingSidebarSurface.cornerRadius
+        surface.drawsBackground = true
+        publish(ThemePagingTransition(from: uncoloured, theme: light, progress: 0.6))
+        surface.preparesFloatingDock = true
+        root.layoutSubtreeIfNeeded(); root.display(); CATransaction.flush()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.08
+            context.allowsImplicitAnimation = true
+            surface.docksFloatingSurface = true
+        }
+        struct Look: Equatable { var kind: Int, side: NSAppearance.Name?, alpha: CGFloat }
+        func looks(_ views: [NSVisualEffectView]) -> [Look] {
+            views.filter { !$0.isHidden }.map { Look(kind: $0.material.rawValue, side: $0.appearance?.name, alpha: $0.alphaValue) }
+        }
+        func windowBlend() -> [Look] { looks(root.subviews.compactMap { $0 as? NSVisualEffectView }) }
+        func docked() -> [Look] { looks(Array(surface.subviews.compactMap { $0 as? NSVisualEffectView }.suffix(2))) }
+        for progress: CGFloat in [0.6, 0.8, 0.97] {
+            publish(ThemePagingTransition(from: uncoloured, theme: light, progress: progress))
+            check(windowBlend().count == 2 && docked() == windowBlend(),
+                  "settling at \(progress), the docking sidebar's materials match the window's own blend: \(docked()) vs \(windowBlend())")
+        }
+        root.theme = light; surface.theme = light
+        check(docked() == windowBlend(), "the commit leaves both blends alike")
+        surface.drawsBackground = false
+        surface.floatingCornerRadius = nil
+        surface.docksFloatingSurface = false
+        check(surface.subviews.compactMap { $0 as? NSVisualEffectView }.allSatisfy(\.isHidden) && windowBlend().count == 2,
+              "once settled the sidebar draws no backdrop of its own and the window's identical blend shows through")
+        publish(nil)
+        check(windowBlend().count == 1, "the swipe's end leaves the window's own material")
     }
 }

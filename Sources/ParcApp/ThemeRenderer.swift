@@ -449,7 +449,7 @@ final class ThemeRendererView: NSView {
             updateFloatingPagingMaterial()
             updateDockMaterial()
             if !docksFloatingSurface {
-                for view in [material, floatingPagingMaterial, dockMaterial, floatingShadow] as [NSView?] {
+                for view in [material, floatingPagingMaterial, dockMaterial, dockPagingMaterial, floatingShadow] as [NSView?] {
                     view?.layer?.removeAnimation(forKey: "opacity")
                 }
             }
@@ -465,6 +465,7 @@ final class ThemeRendererView: NSView {
     private var pagingMaterial: ThemeMaterialView?
     private var floatingPagingMaterial: ThemeMaterialView?
     private var dockMaterial: ThemeMaterialView?
+    private var dockPagingMaterial: ThemeMaterialView?
     private var floatingShadow: FloatingSidebarShadowView?
     private var canvas: ThemeMetalCanvas?
     private var renderer: ThemeMetalRenderer?
@@ -535,6 +536,7 @@ final class ThemeRendererView: NSView {
         if let pagingMaterial, pagingMaterial.frame != bounds { pagingMaterial.frame = bounds }
         if let floatingPagingMaterial, floatingPagingMaterial.frame != bounds { floatingPagingMaterial.frame = bounds }
         if let dockMaterial, dockMaterial.frame != bounds { dockMaterial.frame = bounds }
+        if let dockPagingMaterial, dockPagingMaterial.frame != bounds { dockPagingMaterial.frame = bounds }
         if let canvas, canvas.frame != bounds {
             canvas.frame = bounds
             canvas.needsDisplay = true
@@ -721,13 +723,26 @@ final class ThemeRendererView: NSView {
         }
         guard shown || dockMaterial != nil else { return }
         let view = dockMaterial ?? makeDockMaterial()
+        let from = pagingTransition.map { style(for: $0.from) } ?? surfaceStyle
         if shown {
-            Self.apply(surfaceStyle, to: view)
+            Self.apply(from, to: view)
             if view.maskImage == nil { view.maskImage = floatingCornerRadius.flatMap(FloatingSidebarSurface.mask) }
         }
         let alpha: CGFloat = shown && docksFloatingSurface ? 1 : 0
         if view.alphaValue != alpha { view.alphaValue = alpha }
         if view.isHidden == shown { view.isHidden = !shown }
+        let to = pagingTransition.map { style(for: $0.theme) }
+        guard shown, let transition = pagingTransition, let to,
+              to.material != from.material || to.backgroundIsDark != from.backgroundIsDark else {
+            if dockPagingMaterial?.isHidden == false { dockPagingMaterial?.isHidden = true }
+            return
+        }
+        let crossfade = dockPagingMaterial ?? makeDockPagingMaterial(above: view)
+        Self.apply(to, to: crossfade)
+        if crossfade.maskImage !== view.maskImage { crossfade.maskImage = view.maskImage }
+        let crossfadeAlpha: CGFloat = docksFloatingSurface ? min(1, max(0, transition.progress)) : 0
+        if crossfade.alphaValue != crossfadeAlpha { crossfade.alphaValue = crossfadeAlpha }
+        if crossfade.isHidden { crossfade.isHidden = false }
     }
     private func makeDockMaterial() -> ThemeMaterialView {
         let view = ThemeMaterialView(frame: bounds)
@@ -738,6 +753,17 @@ final class ThemeRendererView: NSView {
         view.alphaValue = 0
         addSubview(view, positioned: .above, relativeTo: floatingPagingMaterial ?? material)
         dockMaterial = view
+        return view
+    }
+    private func makeDockPagingMaterial(above dock: ThemeMaterialView) -> ThemeMaterialView {
+        let view = ThemeMaterialView(frame: bounds)
+        view.wantsLayer = true
+        view.blendingMode = .behindWindow
+        view.isEmphasized = true
+        view.isHidden = true
+        view.alphaValue = 0
+        addSubview(view, positioned: .above, relativeTo: dock)
+        dockPagingMaterial = view
         return view
     }
     private func drawTheme(in canvas: MTKView) {

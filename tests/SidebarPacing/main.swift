@@ -689,8 +689,9 @@ let budget = "Parc's budget: no per-frame main-thread work in its views"
     let swiping = Window()
     var forcedLight = SpaceTheme.singleColor(ThemeColor(red: 0.8, green: 0.88, blue: 0.97)!); forcedLight.appearance = .light
     var forcedDark = SpaceTheme(); forcedDark.appearance = .dark
-    swiping.sidebarContainer.theme = forcedDark
-    swiping.sidebarContainer.pagingTransition = ThemePagingTransition(from: forcedDark, theme: forcedLight, progress: 0.95)
+    swiping.rootView.theme = forcedDark; swiping.sidebarContainer.theme = forcedDark
+    let midSwipe = ThemePagingTransition(from: forcedDark, theme: forcedLight, progress: 0.95)
+    swiping.rootView.pagingTransition = midSwipe; swiping.sidebarContainer.pagingTransition = midSwipe
     let swipeName = "⌘S locks a floating sidebar mid-swipe"
     let swipeDock = harness.measure(swipeName, swiping, from: .floating, to: .locked)
     print("\n\(swipeName): \(String(format: "%.1f", swipeDock.frames)) display frames in flight")
@@ -713,24 +714,25 @@ let budget = "Parc's budget: no per-frame main-thread work in its views"
     let blend = FloatingSidebarSurface.pagingBlend(progress: 0.95)
     func blended() -> Bool {
         let materials = swipeMaterials()
-        return materials.count == 3 && !materials[1].isHidden && abs(materials[0].alphaValue - blend.base) < 1e-6
-            && abs(materials[1].alphaValue - blend.incoming) < 1e-6 && materials[2].isHidden
+        return materials.count == 4 && !materials[1].isHidden && abs(materials[0].alphaValue - blend.base) < 1e-6
+            && abs(materials[1].alphaValue - blend.incoming) < 1e-6 && materials[2].isHidden && materials[3].isHidden
     }
     harness.settle(swiping, at: .floating)
-    c.expect(blended(), "floating mid-swipe shows the blur, the crossfade at the swipe's blend and no dock material")
+    c.expect(blended(), "floating mid-swipe shows the blur, the crossfade at the swipe's blend and no dock materials")
     target = swiping.settled + 1
     swiping.present(.locked); swiping.commit()
     let swipeFades = fades(swiping)
-    c.expect(swipeFades.count == 4 && swipeFades.allSatisfy { $0.map { abs($0 - 0.08) < 1e-6 } == true },
-             "the mid-swipe dock fades the shadow, both blurs and the window's material once each on the group's 0.08 s timing: \(swipeFades)")
+    c.expect(swipeFades.count == 5 && swipeFades.allSatisfy { $0.map { abs($0 - 0.08) < 1e-6 } == true },
+             "the mid-swipe dock fades the shadow, both blurs, the window's material and its crossfade once each on the group's 0.08 s timing: \(swipeFades)")
     swiping.layoutChrome()
     let midSwipeDock = swipeMaterials().map(\.alphaValue), midSwipeFades = fades(swiping)
-    c.expect(midSwipeDock == [0, 0, 1] && midSwipeFades.count == 4 && midSwipeFades.allSatisfy { $0.map { abs($0 - 0.08) < 1e-6 } == true },
+    c.expect(midSwipeDock.count == 4 && midSwipeDock[0] == 0 && midSwipeDock[1] == 0 && midSwipeDock[2] == 1 && abs(midSwipeDock[3] - 0.95) < 1e-6
+             && midSwipeFades.count == 5 && midSwipeFades.allSatisfy { $0.map { abs($0 - 0.08) < 1e-6 } == true },
              "a full pass during the mid-swipe dock undid the fades: \(midSwipeDock), \(midSwipeFades)")
     harness.until { swiping.settled >= target }
     let settledSwipe = swipeMaterials()
-    c.expect(settledSwipe[1].isHidden && settledSwipe[0].alphaValue == 1 && settledSwipe[2].isHidden,
-             "the settled dock hides the crossfade and restores the window's material")
+    c.expect(settledSwipe[1].isHidden && settledSwipe[0].alphaValue == 1 && settledSwipe[2].isHidden && settledSwipe[3].isHidden,
+             "the settled dock hides every crossfade and restores the window's material")
     harness.settle(swiping, at: .floating)
     target = swiping.settled + 1
     swiping.present(.locked); swiping.commit()
@@ -739,6 +741,63 @@ let budget = "Parc's budget: no per-frame main-thread work in its views"
              "a mid-swipe dock reversed into floating lost the swipe's blend or left a fade in flight: \(swipeMaterials().map(\.alphaValue))")
     harness.until { swiping.settled >= target }
     swiping.close()
+
+    struct Look: Equatable { var kind: Int, side: NSAppearance.Name?, alpha: CGFloat }
+    func looks(_ views: [NSVisualEffectView]) -> [Look] {
+        views.filter { !$0.isHidden }.map { Look(kind: $0.material.rawValue, side: $0.appearance?.name, alpha: $0.alphaValue) }
+    }
+    let settling = Window()
+    settling.rootView.theme = forcedDark; settling.sidebarContainer.theme = forcedDark
+    func publish(_ progress: CGFloat) {
+        let transition = ThemePagingTransition(from: forcedDark, theme: forcedLight, progress: progress)
+        settling.rootView.pagingTransition = transition; settling.sidebarContainer.pagingTransition = transition
+    }
+    publish(0.6)
+    harness.settle(settling, at: .floating)
+    let settleName = "⌘S docks while a swipe settles"
+    var progress: CGFloat = 0.6, updates = 0, settleFlight = Work(), settlePreparation = Work()
+    var handOff: (docked: [Look], window: [Look]) = ([], [])
+    let settleTimer = Timer(timeInterval: 0.008, repeats: true) { _ in
+        MainActor.assumeIsolated {
+            guard progress < 1 else { return }
+            progress = min(1, progress + 0.05); updates += 1
+            publish(progress)
+        }
+    }
+    target = settling.settled + 1
+    settling.willSettle = {
+        settleFlight = Work.take(nil); settleTimer.invalidate()
+        let materials = settling.sidebarContainer.subviews.compactMap { $0 as? NSVisualEffectView }
+        handOff = (looks(Array(materials.suffix(2))), looks(settling.rootView.subviews.compactMap { $0 as? NSVisualEffectView }))
+    }
+    settling.didPrepare = { settlePreparation = Work.take(nil) }
+    Meter.root = settling.rootView; Meter.exemptSurface = settling.sidebarContainer
+    Meter.on = true; Meter.reset()
+    settling.present(.locked); settling.commit()
+    let settleGroup = Work.take(nil)
+    Meter.reset()
+    RunLoop.main.add(settleTimer, forMode: .common)
+    harness.until { settling.settled >= target }
+    Meter.on = false; Meter.exemptSurface = nil; settling.willSettle = nil; settling.didPrepare = nil; settleTimer.invalidate()
+    print("\n\(settleName): \(updates) swipe frames during the dock")
+    print("  per frame:   \(settleFlight)")
+    c.expect(updates > 1, "\(settleName): the swipe kept settling while the sidebar docked (\(updates) frames)")
+    for (pass, work) in [("preparation", settlePreparation), ("group", settleGroup)] {
+        c.expect(work.layouts.mostOutsideAppKit <= 1, "\(settleName): a view laid out twice in the \(pass): \(work.layouts.byLabel)")
+    }
+    c.expect(settleFlight.layouts.total == 0 && settleFlight.frames.total == 0 && settleFlight.text.total == 0,
+             "\(settleName): the dock added layout or geometry work in flight: \(settleFlight)")
+    c.expect(settleFlight.layerSets.total > 0 && settleFlight.layerSets.byKey.keys.allSatisfy { $0 == "opacity ThemeMaterialView" }
+             && settleFlight.layerSets.total <= updates,
+             "\(settleName): in flight only the window's own crossfade follows the swipe: \(settleFlight.layerSets.byKey)")
+    c.expect(settleFlight.invalidations.byLabel.keys.allSatisfy { $0 == "ThemeMetalCanvas" } && settleFlight.invalidations.total <= 2 * updates
+             && settleFlight.draws.byLabel.keys.allSatisfy { $0 == "ThemeMetalCanvas" },
+             "\(settleName): in flight only the two theme canvases redraw, once per swipe frame: \(settleFlight.invalidations.byLabel), \(settleFlight.draws.byLabel)")
+    c.expect(handOff.window.count == 2 && handOff.docked == handOff.window,
+             "\(settleName): the docked sidebar's materials match the window's blend it hands over to: \(handOff.docked) vs \(handOff.window)")
+    c.expect(settling.sidebarContainer.subviews.compactMap { $0 as? NSVisualEffectView }.dropFirst().allSatisfy(\.isHidden),
+             "\(settleName): once settled the sidebar shows none of its own crossfades")
+    settling.close()
 
     print("\nControls (each must violate the budget):")
     let unpinned = Window(pinsSurface: false)

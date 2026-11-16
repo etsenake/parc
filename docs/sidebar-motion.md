@@ -100,6 +100,10 @@ with the first. Corners and the edge remain until settling. A full layout
 during that group preserves the material crossfade. Reversing back to floating
 clears the old fades and restores the floating shadow, blur and swipe blend.
 The dock material is created lazily, above both blurs, and hidden after settling.
+Mid-swipe it takes the left page's style, and a second dock material on the right
+page's style fades in to the swipe's progress, exactly as the window's own
+crossfade does, so the window behind takes over without a jump when the dock
+settles, even while the swipe is still settling.
 
 A Space swipe updates one theme canvas with the two adjacent themes and their
 fractional position. It does not stack a translucent neighboring canvas over
@@ -257,8 +261,11 @@ in an offscreen AppKit harness. It checks bounded preparation/settle work,
 geometry continuity and reversals, renderer sizing, animation lifetime, and
 that hidden drawing views and the pinned canvas do not acquire per-frame
 layout work. Shown material views are measured separately from that budget.
-A dock during a swipe blend fades the shadow, both blurs and the window's
-material once each and keeps the same budget, continuity and reversal behavior.
+A dock during a swipe blend fades the shadow, both blurs and both dock materials
+once each and keeps the same budget, continuity and reversal behavior. A dock
+while the swipe keeps settling adds no layout or geometry work: only the theme
+canvases redraw and the two crossfades, the window's and the dock's, follow each
+swipe frame, and the dock materials match the window's blend they hand over to.
 Negative controls remove the optimizations or introduce extra layout and
 require the budget to fail.
 
