@@ -238,8 +238,7 @@ struct CommandBarTypedCommand: Hashable, Sendable {
     }
 
     static func commandBarSearchText(forMenuCommand id: String) -> String {
-        let triggers = CommandBarMenuItemInfo.searchText(forMenuCommand: id)
-        return id == "createNote:" ? triggers + " new arc note" : triggers
+        CommandBarMenuItemInfo.searchText(forMenuCommand: id)
     }
 
     static func splitCommands(paneCount: Int, vertical: Bool) -> [CommandBarTypedCommand] {

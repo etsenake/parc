@@ -39,7 +39,12 @@ struct TypedCommandTests {
         check(Command.commandBarTitle(forMenuCommand: "split:", menuTitle: "Add Split View") == "Add Split View", "Add Split View keeps its menu title (side by side)")
         check(Command(kind: .addVerticalSplit).title == "Add Vertical Split View", "the stacked add")
         check(Command.commandBarTitle(forMenuCommand: "createNote:", menuTitle: "New Note") == "New Parc Note", "New Note takes Parc's name")
-        check(Command.commandBarSearchText(forMenuCommand: "createNote:").contains("parc note"), "\"parc note\" finds it")
+        let noteSearch = Command.commandBarSearchText(forMenuCommand: "createNote:")
+        check((Command.commandBarTitle(forMenuCommand: "createNote:", menuTitle: "New Note") + " " + noteSearch).lowercased()
+              .contains("parc note"), "\"parc note\" finds it by its title")
+        check(noteSearch.contains("Scratchpad"), "Its own triggers still find it")
+        let noteWords = (noteSearch + " " + Command.rankingPhrases(forMenuCommand: "createNote:").joined(separator: " ")).lowercased()
+        check(!noteWords.split(separator: " ").contains("arc"), "The borrowed alias is gone from its search and ranking text")
         check(Command.commandBarTitle(forMenuCommand: "newTab:", menuTitle: "New Tab") == "New Tab", "Other menu titles are unchanged")
 
         check(CommandBarWebDocument.catalog.count == 11, "Eleven recovered document types")
