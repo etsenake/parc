@@ -176,4 +176,4 @@ final class Page { var sample: TopBarColorClient.Sample? }
     exit(failures == 0 ? 0 : 1)
 }
 
-MainActor.assumeIsolated { main() }
+MainActor.assumeIsolated { exitOnFailure(main) }

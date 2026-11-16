@@ -110,7 +110,7 @@ with tempfile.TemporaryDirectory(prefix="parc-plus-menu-") as directory:
     subprocess.run(
         [
             "xcrun",
-            "swiftc",
+            "swiftc", str(root / "tests/Support/TestFailure.swift"),
             "-warnings-as-errors",
             "-parse-as-library",
             "-target",
@@ -133,7 +133,7 @@ with tempfile.TemporaryDirectory(prefix="parc-plus-menu-") as directory:
     subprocess.run(
         [
             "xcrun",
-            "swiftc",
+            "swiftc", str(root / "tests/Support/TestFailure.swift"),
             "-warnings-as-errors",
             "-parse-as-library",
             "-target",

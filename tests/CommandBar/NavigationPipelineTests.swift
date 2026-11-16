@@ -122,7 +122,8 @@ struct TabCandidatesFixture {
 }
 
 @main struct NavigationPipelineTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         var checks = 0, failures = 0

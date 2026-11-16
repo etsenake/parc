@@ -19,7 +19,8 @@ import AppKit
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) {
         count += 1; precondition(value(), message)
     }
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

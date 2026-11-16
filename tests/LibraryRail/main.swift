@@ -3,7 +3,8 @@ import QuartzCore
 
 @main
 struct LibraryRailChecks {
-    @MainActor static func main() { run() }
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() { run() }
 }
 
 @MainActor

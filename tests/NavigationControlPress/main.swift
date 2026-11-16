@@ -99,4 +99,4 @@ func run() {
     expect(NavigationControlPress.historyHoldDuration == 0.3, "recovered native hold duration")
     print("\(count) navigation press assertions passed; no browser or posted events")
 }
-MainActor.assumeIsolated { run() }
+MainActor.assumeIsolated { exitOnFailure(run) }

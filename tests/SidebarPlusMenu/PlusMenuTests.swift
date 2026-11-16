@@ -152,7 +152,8 @@ extension NSWindow {
         return (parent, anchor)
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         let titles = SidebarPlusMenuModel.rows(privateBrowsing: false, canCreateEasel: true, canCreateNote: true, canSplit: true) { id in
             id == "newTab:" ? "⌘T" : id == "createEasel:" ? "⌃⇧E" : id == "createNote:" ? "⌃⇧N" : id == "split:" ? "⌃⇧=" : ""

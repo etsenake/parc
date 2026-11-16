@@ -458,4 +458,4 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     window.orderOut(nil)
     print("SidebarPreview: \(c.count) assertions passed")
 }
-MainActor.assumeIsolated { run() }
+MainActor.assumeIsolated { exitOnFailure(run) }

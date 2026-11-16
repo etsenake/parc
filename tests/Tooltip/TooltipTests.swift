@@ -20,7 +20,8 @@ import SwiftUI
 
     static let commandS = KeyboardShortcut(key: "s", flags: .command)
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         configuration()
         palette()

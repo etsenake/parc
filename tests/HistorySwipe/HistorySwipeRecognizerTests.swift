@@ -201,7 +201,8 @@ struct Run {
         return 1 + resisted / (resisted + 1)
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         diaValues()
         trackpadBack()
         trackpadForward()

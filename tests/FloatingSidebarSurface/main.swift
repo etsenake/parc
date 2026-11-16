@@ -9,7 +9,8 @@ import MetalKit
     }
     static func near(_ a: CGFloat, _ b: CGFloat, _ e: CGFloat = 0.002) -> Bool { abs(a - b) <= e }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
 
         check(FloatingSidebarSurface.cornerRadius == 8, "updateLayer's and the blur masks' radius is 10 − 2")

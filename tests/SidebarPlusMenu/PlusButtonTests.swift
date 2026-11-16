@@ -42,7 +42,8 @@ final class PointerWindow: NSWindow {
         return (maxAlpha, maxX - minX + 1, maxY - minY + 1, plate, corner)
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         NSApplication.shared.setActivationPolicy(.prohibited)
         for (dark, white, a4, a5, a11, a12) in [(false, CGFloat(0), CGFloat(0.071), CGFloat(0.090), CGFloat(0.565), CGFloat(0.910)),
                                                 (true, CGFloat(1), CGFloat(0.077), CGFloat(0.103), CGFloat(0.592), CGFloat(0.923))] {

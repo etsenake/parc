@@ -15,7 +15,8 @@ struct ShortcutSmileyTimerIdleTests {
     }
     static func armed(_ timers: [FrameSource]) -> Bool { timers.contains(where: \.isLive) }
 
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         _ = NSApplication.shared
         FrameSources.install()
         Redraws.install()

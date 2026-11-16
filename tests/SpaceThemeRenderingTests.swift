@@ -366,7 +366,8 @@ struct SpaceThemeRenderingTests {
         check(reported.count == count, "a detached editor reports nothing")
     }
 
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         var assertions = 0

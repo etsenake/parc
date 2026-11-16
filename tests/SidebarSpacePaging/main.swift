@@ -358,4 +358,4 @@ func run() {
     print("SidebarSpacePaging: \(count) checks passed")
 }
 
-MainActor.assumeIsolated { run() }
+MainActor.assumeIsolated { exitOnFailure(run) }

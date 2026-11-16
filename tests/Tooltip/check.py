@@ -97,7 +97,7 @@ assert "view.toolTip" not in shortcuts and "(view as? NSControl)?.cell?.setAcces
 with tempfile.TemporaryDirectory(prefix="parc-tooltip-") as directory:
     scratch = Path(directory)
     executable = scratch / "checks"
-    subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+    subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     *[str(path) for path in tooltip_sources(root, scratch, [])],
                     str(root / "tests/Support/AppKitObservation.swift"),
                     str(Path(__file__).with_name("TooltipTests.swift")), "-o", str(executable)], check=True)

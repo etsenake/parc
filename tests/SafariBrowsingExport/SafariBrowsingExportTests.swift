@@ -229,7 +229,8 @@ private func nested(_ folders: Int, leaf: Bool) -> Data {
 }
 
 @main struct SafariBrowsingExportTests {
-    static func main() throws {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() throws {
         var checks = 0
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
             checks += 1

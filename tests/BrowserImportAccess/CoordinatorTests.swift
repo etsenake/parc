@@ -1,7 +1,8 @@
 import AppKit
 
 @main struct BrowserImportAccessTests {
-    @MainActor static func main() throws {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() throws {
         NSApplication.shared.setActivationPolicy(.prohibited)
         var checks = 0
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {

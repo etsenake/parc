@@ -119,7 +119,8 @@ extension NSView {
         return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
     }
 
-    static func main() {
+    static func main() { exitOnFailure(runChecks) }
+    static func runChecks() {
         _ = NSApplication.shared
         method_exchangeImplementations(class_getInstanceMethod(NSView.self, #selector(NSView.init(frame:)))!,
                                        class_getInstanceMethod(NSView.self, #selector(NSView.swipeCountingInit(frame:)))!)

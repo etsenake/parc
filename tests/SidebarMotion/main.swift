@@ -396,4 +396,4 @@ import QuartzCore
     window.orderOut(nil)
     print("SidebarMotion: \(c.count) assertions passed")
 }
-MainActor.assumeIsolated { run() }
+MainActor.assumeIsolated { exitOnFailure(run) }

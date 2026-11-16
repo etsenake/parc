@@ -69,4 +69,4 @@ func run() {
     host.reset(); window.close()
     print("AutoArchiveEducation inert lifecycle checks passed")
 }
-MainActor.assumeIsolated { run() }
+MainActor.assumeIsolated { exitOnFailure(run) }

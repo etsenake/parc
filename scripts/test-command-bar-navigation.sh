@@ -101,7 +101,7 @@ end = window.index("    func commandBarTabCaption(", start)
 (output / "TabCandidates.swift").write_text("import Foundation\nextension TabCandidatesFixture {\n" +
     window[start:end].replace("private func commandBarTabs", "func commandBarTabs", 1) + "}\n")
 PY
-xcrun swiftc -warnings-as-errors -whole-module-optimization -parse-as-library \
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -whole-module-optimization -parse-as-library \
   "$repo_root"/Sources/ParcCore/*.swift \
   "$repo_root/Sources/ParcApp/CommandBarRanking.swift" \
   "$repo_root/Sources/ParcApp/CommandBarCommandCandidate.swift" \

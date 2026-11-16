@@ -10,7 +10,8 @@ import AppKit
 }
 
 @main struct ParcToastTests {
-    @MainActor static func main() {
+    @MainActor static func main() { exitOnFailure(runChecks) }
+    @MainActor static func runChecks() {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
         app.finishLaunching()
