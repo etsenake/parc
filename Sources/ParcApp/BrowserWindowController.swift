@@ -1971,6 +1971,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     var addressPromptHolds: [ObjectIdentifier: AddressPopoverRevealHold] = [:]
+    var extensionPopupKeyObserver: NSObjectProtocol?
+    var extensionPopupAtSidebar = false
     func nativeBrowserPaymentActionsDidChange(_ browser: PCNativeBrowserWindow) {
         guard browser === nativeBinding else { return }
         refreshPaymentControls()
@@ -1984,7 +1986,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func nativeBrowserExtensionPopupAnchor(_ browser: PCNativeBrowserWindow) -> PCNativeExtensionPopupAnchor {
         guard browser === nativeBinding else { return .window() }
-        if sidebar.isPresented && sidebarShowsAddressBar {
+        extensionPopupAtSidebar = extensionPopupsAnchorToSidebar
+        if extensionPopupAtSidebar {
+            followExtensionPopupsForAddressHold()
             return .sidebar(width: sidebarContainer.bounds.width)
         }
         if let peek = activePeek, peek.view.content.window === window {

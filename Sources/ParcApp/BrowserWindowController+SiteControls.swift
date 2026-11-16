@@ -274,7 +274,7 @@ extension BrowserWindowController {
                 self.sidebar.isPresented ? self.sidebar.pageControlsAnchor : browser
             self.dismissSiteControlCenter { [weak self, weak browser, weak anchor] in
                 guard let self, let browser, self.currentBrowser === browser, browser.canShowSiteInfo else { return }
-                _ = browser.showSiteInfo(from: self.selectedBrowserToolbar?.siteControlCenterAnchor ?? anchor ?? browser)
+                self.showSiteInfo(browser, from: self.selectedBrowserToolbar?.siteControlCenterAnchor ?? anchor ?? browser)
             }
         }
         model.onMore = { [weak self] in
@@ -381,7 +381,7 @@ extension BrowserWindowController {
                       browser.canShowSiteInfo else { return }
                 let anchor: NSView = self.isPopupWindow ? self.popupChrome.pageControlsAnchor :
                     self.sidebar.isPresented ? self.sidebar.pageControlsAnchor : browser
-                _ = browser.showSiteInfo(from: anchor)
+                self.showSiteInfo(browser, from: anchor)
             }
             info.isEnabled = presentation.isReady && !isClosing && !wholeWindowClose && browser.canShowSiteInfo
             menu.addItem(info)

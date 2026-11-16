@@ -112,7 +112,27 @@ import QuartzCore
 @MainActor final class AddressPopoverRevealHold {
     private var observers: [NSObjectProtocol] = []
     private var popover: NSPopover?
+    private weak var window: NSWindow?
+    private var isOpen: ((NSWindow) -> Bool)?
     private var onEnd: (() -> Void)?
+
+    init(window: NSWindow, isOpen: @escaping (NSWindow) -> Bool, onEnd: @escaping () -> Void) {
+        self.window = window
+        self.isOpen = isOpen
+        self.onEnd = onEnd
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.end() }
+        })
+        observers.append(center.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.endIfWindowClosed() }
+        })
+    }
+
+    func endIfWindowClosed() {
+        guard let isOpen else { return }
+        if window.map(isOpen) != true { end() }
+    }
 
     init(onEnd: @escaping () -> Void) {
         self.onEnd = onEnd
@@ -138,6 +158,8 @@ import QuartzCore
     func end() {
         removeObservers()
         popover = nil
+        window = nil
+        isOpen = nil
         let onEnd = onEnd
         self.onEnd = nil
         onEnd?()
@@ -152,10 +174,16 @@ import QuartzCore
 enum SidebarAddressButtonsReveal {
     static let fadeDuration: CFTimeInterval = 0.15
 
-    static func revealed(sidebarHovered: Bool, showingMenu: Bool, anchored: Bool) -> Bool {
-        sidebarHovered || showingMenu || !anchored
+    static func revealed(sidebarHovered: Bool, showingMenu: Bool, anchored: Bool, voiceOverRunning: Bool) -> Bool {
+        sidebarHovered || showingMenu || !anchored || voiceOverRunning
     }
     static func showsSiteControlCenter(revealed: Bool, copyQuoteLink: Bool) -> Bool { revealed || copyQuoteLink }
+    @MainActor static func holdsExtensionPopup(_ popup: NSWindow, of window: NSWindow, showsPage: Bool, atSidebar: Bool) -> Bool {
+        popup.parent === window && showsPage && atSidebar
+    }
+    @MainActor static func extensionPopupOpen(_ popup: NSWindow, of window: NSWindow?) -> Bool {
+        window.map { popup.parent === $0 } == true
+    }
 
     @MainActor static func apply(_ shown: Bool, to view: NSView, animated: Bool) {
         let alpha: CGFloat = shown ? 1 : 0

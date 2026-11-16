@@ -1570,8 +1570,21 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     func setAddressPopover(_ owner: AnyObject, open: Bool) {
         let id = ObjectIdentifier(owner)
         guard open ? addressPopovers.insert(id).inserted : addressPopovers.remove(id) != nil else { return }
+        guard !open else { updateAddressButtonsReveal(); return }
+        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.settleAfterAddressHold() } }
+    }
+    private func settleAfterAddressHold() {
+        if pointerOverOwnWindow { retestPointerInSidebar() }
         updateAddressButtonsReveal()
     }
+    private var pointerOverOwnWindow: Bool {
+        guard let window, NSApp.isActive else { return false }
+        return NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0) == window.windowNumber
+    }
+    private var voiceOverRunning = NSWorkspace.shared.isVoiceOverEnabled {
+        didSet { if voiceOverRunning != oldValue { updateAddressButtonsReveal() } }
+    }
+    private var voiceOverObservation: NSKeyValueObservation?
     private var firstResponderObservation: NSKeyValueObservation?
     private var addressControlFocused: Bool {
         guard let responder = window?.firstResponder as? NSView else { return false }
@@ -1637,7 +1650,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         guard !keyboardSearchActive else { return }
         let revealed = SidebarAddressButtonsReveal.revealed(sidebarHovered: pointerInSidebar || addressControlFocused,
                                                             showingMenu: showingAddressMenu || !addressPopovers.isEmpty,
-                                                            anchored: !sidebarFloating)
+                                                            anchored: !sidebarFloating, voiceOverRunning: voiceOverRunning)
         SidebarAddressButtonsReveal.apply(SidebarAddressButtonsReveal.showsSiteControlCenter(revealed: revealed, copyQuoteLink: showsSharedQuote),
                                           to: pageActions, animated: animated)
         SidebarAddressButtonsReveal.apply(revealed, to: extensionToolbar, animated: animated)
@@ -1944,6 +1957,9 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         for button in [back, forward, reload, reloadOptions, toggle, pageActions] as [NSButton] { button.imagePosition = .imageOnly }
         toggle.image = NavigationControlArtwork.symbol("sidebar.left", pointSize: SidebarChromeLayout.navigationGlyphPointSize) ?? toggle.image
         toggle.translucentFace = TranslucentButtonFace(view: toggle)
+        voiceOverObservation = NSWorkspace.shared.observe(\.isVoiceOverEnabled) { [weak self] _, _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.voiceOverRunning = NSWorkspace.shared.isVoiceOverEnabled } }
+        }
         updateAddressButtonsReveal(animated: false)
         toggle.focusRingCornerRadius = 5; footerMore.focusRingCornerRadius = 5
         for button in [back, forward, reload, reloadOptions] { button.focusRingCornerRadius = 5 }

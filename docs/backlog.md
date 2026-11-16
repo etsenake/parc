@@ -84,9 +84,8 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 - **CMD25:** Task Manager needs a window-level route for Notes/Easels/empty
   windows; Restore Data needs a backup producer and restore flow; Pinned
   expand/collapse needs sidebar state and commands. [Command bar](command-bar.md).
-- Controls covered by the command bar can still show hover feedback. Some
-  extension-popup, site-bubble and accessibility focus states also lack sidebar
-  button-reveal ownership. [Command bar](command-bar.md), [navigation](navigation.md).
+- Controls covered by the command bar can still show hover feedback.
+  [Command bar](command-bar.md).
 - The sidebar's compact editor feels cramped. At 350 points wide, titles
   truncate early, and its address row's icon and text sit left of the result
   rows' icon and title columns. Widen it to about 450 points and line the address

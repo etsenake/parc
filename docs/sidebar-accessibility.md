@@ -40,6 +40,13 @@ not require a different order; AppKit skips controls that cannot currently
 become key. Space dock buttons deliberately refuse first responder, but Space
 shortcuts and accessibility press actions remain available.
 
+The docked sidebar's Site Control Center and extension buttons appear on hover,
+keyboard focus or an open menu, popup or panel, and stay exposed and keyboard
+reachable at zero opacity. While VoiceOver is running they stay revealed, so
+its cursor never outlines empty space; Parc observes VoiceOver turning on and
+off and does not track the cursor. [Navigation](navigation.md#sidebar-controls-and-url-pill)
+owns the full rule.
+
 ## Item list outline
 
 `SidebarView.render` supplies ordered `SidebarOutlineEntry` values to
@@ -204,6 +211,7 @@ reconciliation, and should preserve the command field's ownership.
 | `tests/SidebarMiniPlayerFocus/check.py` | Mini-player keyboard actions and visible rings |
 | `tests/SidebarChrome/check.py` | Dock order, Space identifiers and header controls |
 | `tests/SidebarWindowButtons/check.py` | Window controls and presentation-state pointer handling |
+| `tests/SidebarHeaderGlyphs/check.py` | URL row button reveal rule, popup and panel holds, and VoiceOver |
 
 These are model and inert AppKit component checks. Inspect their entry points
 before running them under [AGENTS.md](../AGENTS.md). Review each new focus-restore

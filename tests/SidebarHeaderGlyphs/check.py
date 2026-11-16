@@ -17,6 +17,15 @@ for use in ("private let addressBackground = SidebarAddressPillView()",
             "let glyph = Chrome.navigationGlyphPointSize(buttonSide: (bar.back ?? bar.toggle)?.height ?? Chrome.dockButtonSide)",
             "let revealed = SidebarAddressButtonsReveal.revealed(sidebarHovered: pointerInSidebar || addressControlFocused,",
             "showingMenu: showingAddressMenu || !addressPopovers.isEmpty,",
+            "anchored: !sidebarFloating, voiceOverRunning: voiceOverRunning)",
+            "voiceOverObservation = NSWorkspace.shared.observe(\\.isVoiceOverEnabled) { [weak self] _, _ in",
+            "self?.voiceOverRunning = NSWorkspace.shared.isVoiceOverEnabled",
+            "didSet { if voiceOverRunning != oldValue { updateAddressButtonsReveal() } }",
+            "        guard !open else { updateAddressButtonsReveal(); return }\n"
+            "        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.settleAfterAddressHold() } }",
+            "        if pointerOverOwnWindow { retestPointerInSidebar() }\n        updateAddressButtonsReveal()",
+            "guard let window, NSApp.isActive else { return false }",
+            "NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0) == window.windowNumber",
             "SidebarAddressButtonsReveal.showsSiteControlCenter(revealed: revealed, copyQuoteLink: showsSharedQuote)",
             "SidebarAddressButtonsReveal.apply(revealed, to: extensionToolbar, animated: animated)",
             "if sidebarFloating != floating { sidebarFloating = floating; updateAddressButtonsReveal() }",
@@ -68,16 +77,37 @@ pill = (app / "SidebarAddressPill.swift").read_text()
 assert 'static let placeholder = "Search or Enter URL…"' in pill and '"magnifyingglass"' in pill \
     and "override func hitTest(_ point: NSPoint) -> NSView? { nil }" in pill[pill.index("class SidebarAddressSearchIcon"):], \
     "the empty URL bar's glyph no longer matches or lets clicks through to the URL bar"
-assert "if sidebar.isPresented && sidebarShowsAddressBar {\n            return .sidebar(" in controller, \
-    "extension popups no longer anchor at the visible sidebar URL bar"
+assert "var extensionPopupsAnchorToSidebar: Bool { sidebar.isPresented && sidebarShowsAddressBar }" in controller \
+    and "extensionPopupAtSidebar = extensionPopupsAnchorToSidebar\n        if extensionPopupAtSidebar {\n" \
+        "            followExtensionPopupsForAddressHold()\n            return .sidebar(" \
+    in controller, "extension popups no longer anchor at, and hold, the visible sidebar URL bar"
+follow = controller[controller.index("private func holdAddressButtons(forExtensionPopup popup: NSWindow?) {"):]
+follow = follow[:follow.index("\n    }\n")]
+for use in ("addressPromptHolds.values.forEach { $0.endIfWindowClosed() }",
+            "guard let popup, let window, !isClosing, addressPromptHolds[ObjectIdentifier(popup)] == nil,",
+            "SidebarAddressButtonsReveal.holdsExtensionPopup(popup, of: window, showsPage: popup.contentView is PCNativePageHost,",
+            "atSidebar: extensionPopupAtSidebar && extensionPopupsAnchorToSidebar)",
+            "isOpen: { SidebarAddressButtonsReveal.extensionPopupOpen($0, of: window) },"):
+    assert use in follow, f"an extension popup at the sidebar URL bar no longer holds its buttons revealed: {use}"
+assert "forName: NSWindow.didBecomeKeyNotification," in controller \
+    and "self?.holdAddressButtons(forExtensionPopup: note.object as? NSWindow)" in controller, \
+    "extension popups are no longer noticed as they open"
+assert "extensionPopupKeyObserver.map(NotificationCenter.default.removeObserver)" in controller \
+    and "dismissSiteControlCenter(); endAddressButtonHolds(); " in controller, "closing the window must end every hold"
+assert controller.count("self.showSiteInfo(browser, from: ") == 2 and "_ = browser.showSiteInfo(from: anchor)\n" not in \
+    controller[controller.index("let info = MenuAction.item(\"Site Settings and Security…\")"):], \
+    "Site Settings and Security no longer holds the sidebar's buttons revealed"
+assert "if anchor === sidebar.pageControlsAnchor { holdAddressButtonsForNextPopover() }\n        return browser.showSiteInfo(from: anchor)" \
+    in controller, "the site panel opened from the sidebar URL bar no longer holds its buttons revealed"
 assert controller.count("if anchor === sidebar.pageControlsAnchor { sidebar.setAddressPopover(controller, open: true) }") == 1, \
     "the pill popover no longer holds its buttons revealed"
 assert controller.count("self.sidebar.setAddressPopover(controller, open: false)") == 2, "close and detach must release the reveal hold"
 anchor_body = controller[controller.index("func sitePermissionAnchor(forPage page: NSView) -> NSDictionary? {"):]
 anchor_body = anchor_body[:anchor_body.index("\n    }\n")]
-assert "if anchor === sidebar.pageControlsAnchor { holdAddressButtonsForPermissionPrompt() }" in anchor_body, \
+assert "if anchor === sidebar.pageControlsAnchor { holdAddressButtonsForNextPopover() }" in anchor_body, \
     "a permission prompt from the pill no longer holds its buttons revealed"
-for use in ("let hold = AddressPopoverRevealHold { [weak self] in",
+for use in ("holdAddressButtons(owner: NSObject()) { AddressPopoverRevealHold(onEnd: $0) }",
+            "addressPromptHolds[id] = hold { [weak self] in",
             "self.sidebar.setAddressPopover(owner, open: false)",
             "sidebar.setAddressPopover(owner, open: true)",
             "addressPromptHolds.values.forEach { $0.end() }"):

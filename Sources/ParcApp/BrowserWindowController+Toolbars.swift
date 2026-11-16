@@ -683,19 +683,49 @@ extension BrowserWindowController {
             ?? (activePeek != nil ? nil : isPopupWindow ? popupChrome.pageControlsAnchor
                 : sidebar.isPresented ? sidebar.pageControlsAnchor : nil)
         guard let anchor, anchor.window === window, !anchor.isHiddenOrHasHiddenAncestor else { return nil }
-        if anchor === sidebar.pageControlsAnchor { holdAddressButtonsForPermissionPrompt() }
+        if anchor === sidebar.pageControlsAnchor { holdAddressButtonsForNextPopover() }
         return ["view": anchor, "rect": NSValue(rect: anchor.bounds),
                 "edge": NSNumber(value: NSRectEdge.maxY.rawValue)]
     }
-    private func holdAddressButtonsForPermissionPrompt() {
-        let owner = NSObject()
-        let hold = AddressPopoverRevealHold { [weak self] in
+    func holdAddressButtonsForNextPopover() {
+        holdAddressButtons(owner: NSObject()) { AddressPopoverRevealHold(onEnd: $0) }
+    }
+    private func holdAddressButtons(owner: AnyObject, _ hold: (@escaping () -> Void) -> AddressPopoverRevealHold) {
+        let id = ObjectIdentifier(owner)
+        addressPromptHolds[id] = hold { [weak self] in
             guard let self else { return }
             self.sidebar.setAddressPopover(owner, open: false)
-            self.addressPromptHolds[ObjectIdentifier(owner)] = nil
+            self.addressPromptHolds[id] = nil
         }
-        addressPromptHolds[ObjectIdentifier(owner)] = hold
         sidebar.setAddressPopover(owner, open: true)
+    }
+    var extensionPopupsAnchorToSidebar: Bool { sidebar.isPresented && sidebarShowsAddressBar }
+    func followExtensionPopupsForAddressHold() {
+        guard extensionPopupKeyObserver == nil, !isClosing else { return }
+        extensionPopupKeyObserver = NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification,
+                                                                           object: nil, queue: nil) { [weak self] note in
+            MainActor.assumeIsolated { self?.holdAddressButtons(forExtensionPopup: note.object as? NSWindow) }
+        }
+    }
+    private func holdAddressButtons(forExtensionPopup popup: NSWindow?) {
+        addressPromptHolds.values.forEach { $0.endIfWindowClosed() }
+        guard let popup, let window, !isClosing, addressPromptHolds[ObjectIdentifier(popup)] == nil,
+              SidebarAddressButtonsReveal.holdsExtensionPopup(popup, of: window, showsPage: popup.contentView is PCNativePageHost,
+                                                              atSidebar: extensionPopupAtSidebar && extensionPopupsAnchorToSidebar)
+        else { return }
+        holdAddressButtons(owner: popup) { [weak window] onEnd in
+            AddressPopoverRevealHold(window: popup, isOpen: { SidebarAddressButtonsReveal.extensionPopupOpen($0, of: window) },
+                                     onEnd: onEnd)
+        }
+    }
+    func endAddressButtonHolds() {
+        extensionPopupKeyObserver.map(NotificationCenter.default.removeObserver)
+        extensionPopupKeyObserver = nil
+        addressPromptHolds.values.forEach { $0.end() }
+    }
+    @discardableResult func showSiteInfo(_ browser: PCBrowserView, from anchor: NSView) -> Bool {
+        if anchor === sidebar.pageControlsAnchor { holdAddressButtonsForNextPopover() }
+        return browser.showSiteInfo(from: anchor)
     }
 
     func extensionControlItems() -> [ExtensionControlItem] {

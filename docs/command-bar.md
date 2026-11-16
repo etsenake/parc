@@ -80,8 +80,11 @@ copy. See [copy commands](keyboard-navigation.md#copy-commands).
 Every command surface, shadow and privacy banner lives in one host view inside
 the browser window. The browser stays key, so Edit Theme, History, Extensions,
 Release Notes and page tools validate live. Choosing a command dismisses the
-bar, revalidates and runs it; refusal beeps. Obsolete key-panel availability
-snapshots are no longer used.
+bar, revalidates and runs it; refusal beeps. An extension action opens its
+popup at the sidebar's URL row while that row shows, and the row's buttons stay
+revealed until the popup closes, as for one opened from the sidebar; see
+[navigation](navigation.md#sidebar-controls-and-url-pill). Obsolete key-panel
+availability snapshots are no longer used.
 
 The host receives mouse input only over the bar; shadow/outside presses land
 normally after ending the session. The field uses its own editor and undo in the

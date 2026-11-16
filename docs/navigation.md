@@ -88,14 +88,22 @@ Split views retain one URL row following the focused pane while each pane owns
 its navigation controls.
 
 Sidebar hover, floating presentation, menus and keyboard-focused controls reveal
-the URL row. Zero-opacity controls remain accessible and keyboard reachable,
-but do not accept invisible pointer clicks. Site Control Center, native menus
-and permission cards hold the row revealed for their lifetime.
+the URL row's Site Control Center and extension buttons; the address label
+itself always shows. Zero-opacity controls remain accessible and keyboard
+reachable, but do not accept invisible pointer clicks. Site Control Center,
+native menus, permission cards, Site Settings and Security and extension popups
+opened at that row hold it revealed for their lifetime, so the pointer can move
+into them without the buttons fading.
 
-Extension popups and site-settings bubbles do not hold the sidebar's Site
-Control Center and extension buttons revealed after the pointer leaves.
-VoiceOver highlighting alone also does not reveal those buttons; keyboard focus
-does. The address label itself remains visible.
+An extension popup is a child window of the browser window, whether the
+sidebar, the command bar or the extension opened it. When one becomes key while
+popups anchor at the sidebar's URL row, Parc holds the buttons until the popup
+closes, whatever closed it: focus returning to the browser, Escape, navigation,
+the extension or the browser window closing. A popup detached from its browser
+window also releases when it loses focus or another window takes focus.
+Site Settings and Security follows its own popover's close.
+While VoiceOver is running the buttons stay revealed, so its cursor never
+outlines empty space. Parc follows VoiceOver turning on and off, not its cursor.
 
 ## Loading, Stop and Refresh feedback
 

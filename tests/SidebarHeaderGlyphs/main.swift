@@ -143,10 +143,13 @@ import SwiftUI
         check(pill.layer?.backgroundColor == SidebarAddressPillView.fill(dark: true, hovered: true).cgColor, "dark follows the palette")
         check(pill.hitTest(NSPoint(x: 10, y: 10)) == nil, "the surface takes no clicks")
 
-        for hovered in [false, true] { for menu in [false, true] { for anchored in [false, true] {
-            check(SidebarAddressButtonsReveal.revealed(sidebarHovered: hovered, showingMenu: menu, anchored: anchored)
-                  == (hovered || menu || !anchored), "reveal predicate \(hovered) \(menu) \(anchored)")
-        } } }
+        for hovered in [false, true] { for menu in [false, true] { for anchored in [false, true] { for voiceOver in [false, true] {
+            check(SidebarAddressButtonsReveal.revealed(sidebarHovered: hovered, showingMenu: menu, anchored: anchored,
+                                                       voiceOverRunning: voiceOver)
+                  == (hovered || menu || !anchored || voiceOver), "reveal predicate \(hovered) \(menu) \(anchored) \(voiceOver)")
+        } } } }
+        check(SidebarAddressButtonsReveal.revealed(sidebarHovered: false, showingMenu: false, anchored: true, voiceOverRunning: true),
+              "VoiceOver keeps the docked sidebar's buttons revealed with the pointer elsewhere")
         check(!SidebarAddressButtonsReveal.showsSiteControlCenter(revealed: false, copyQuoteLink: false), "idle hides Site Control Center")
         check(SidebarAddressButtonsReveal.showsSiteControlCenter(revealed: false, copyQuoteLink: true), "a quote link keeps it")
         check(SidebarAddressButtonsReveal.showsSiteControlCenter(revealed: true, copyQuoteLink: false), "revealed shows it")
@@ -280,6 +283,83 @@ import SwiftUI
         center.post(name: NSPopover.didCloseNotification, object: prompt)
         check(unshown == 1 && ended == 1, "ended holds ignore later popovers")
         withExtendedLifetime((hold, fallback)) {}
+
+        func window() -> NSWindow {
+            let result = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 300), styleMask: [.titled, .closable],
+                                  backing: .buffered, defer: true)
+            result.isReleasedWhenClosed = false
+            return result
+        }
+        let popupWindow = window(), otherWindow = window(), browserWindow = window()
+        browserWindow.addChildWindow(popupWindow, ordered: .above)
+        check(SidebarAddressButtonsReveal.holdsExtensionPopup(popupWindow, of: browserWindow, showsPage: true, atSidebar: true),
+              "a page popup in this browser window placed at the sidebar takes a hold")
+        check(!SidebarAddressButtonsReveal.holdsExtensionPopup(popupWindow, of: browserWindow, showsPage: false, atSidebar: true),
+              "a child window without a page, such as a popover or the history list, takes no hold")
+        check(!SidebarAddressButtonsReveal.holdsExtensionPopup(popupWindow, of: browserWindow, showsPage: true, atSidebar: false),
+              "a popup placed away from the sidebar takes no hold")
+        check(!SidebarAddressButtonsReveal.holdsExtensionPopup(otherWindow, of: browserWindow, showsPage: true, atSidebar: true),
+              "another window's popup takes no hold")
+        check(SidebarAddressButtonsReveal.extensionPopupOpen(popupWindow, of: browserWindow), "an attached popup is open")
+        check(!SidebarAddressButtonsReveal.extensionPopupOpen(popupWindow, of: nil), "a popup whose browser window is gone is not")
+        browserWindow.removeChildWindow(popupWindow)
+        check(!SidebarAddressButtonsReveal.extensionPopupOpen(popupWindow, of: browserWindow),
+              "a popup the engine detached from its browser window is closed")
+        var popupOpen = true, popupEnded = 0
+        let popupHold = AddressPopoverRevealHold(window: popupWindow, isOpen: { $0 === popupWindow && popupOpen }) { popupEnded += 1 }
+        center.post(name: NSWindow.didResignKeyNotification, object: popupWindow)
+        popupHold.endIfWindowClosed()
+        check(popupEnded == 0, "an extension popup that loses focus but stays open keeps its hold")
+        center.post(name: NSWindow.didResignKeyNotification, object: otherWindow)
+        center.post(name: NSWindow.willCloseNotification, object: otherWindow)
+        check(popupEnded == 0, "another window resigning or closing keeps the popup's hold")
+        popupOpen = false
+        center.post(name: NSWindow.didResignKeyNotification, object: popupWindow)
+        check(popupEnded == 1, "a popup detached from its browser window ends its hold as it loses focus")
+        center.post(name: NSWindow.willCloseNotification, object: popupWindow)
+        popupHold.endIfWindowClosed()
+        check(popupEnded == 1, "a popup hold ends once")
+        var closedEnded = 0
+        let closingHold = AddressPopoverRevealHold(window: popupWindow, isOpen: { _ in true }) { closedEnded += 1 }
+        center.post(name: NSWindow.willCloseNotification, object: popupWindow)
+        check(closedEnded == 1, "closing the popup ends its hold whatever closed it")
+        var sweptEnded = 0
+        let sweptHold = AddressPopoverRevealHold(window: popupWindow, isOpen: { _ in false }) { sweptEnded += 1 }
+        sweptHold.endIfWindowClosed()
+        check(sweptEnded == 1, "a sweep ends a hold whose popup is no longer open")
+        var panelEnded = 0
+        let panelHold = AddressPopoverRevealHold { panelEnded += 1 }
+        let panel = NSPopover()
+        center.post(name: NSPopover.willShowNotification, object: panel)
+        panelHold.endIfWindowClosed()
+        check(panelEnded == 0, "a popup sweep leaves the site panel's popover hold alone")
+        center.post(name: NSPopover.didCloseNotification, object: panel)
+        check(panelEnded == 1, "the site panel closing ends its hold")
+        withExtendedLifetime((closingHold, sweptHold)) {}
+
+        var holders = Set<ObjectIdentifier>()
+        func shown(voiceOver: Bool = false) -> Bool {
+            SidebarAddressButtonsReveal.revealed(sidebarHovered: false, showingMenu: !holders.isEmpty, anchored: true,
+                                                 voiceOverRunning: voiceOver)
+        }
+        func holdButtons(_ owner: AnyObject, _ make: (@escaping () -> Void) -> AddressPopoverRevealHold) -> AddressPopoverRevealHold {
+            holders.insert(ObjectIdentifier(owner))
+            return make { holders.remove(ObjectIdentifier(owner)) }
+        }
+        check(!shown(), "a docked sidebar hides its buttons with the pointer away and nothing open")
+        var extensionOpen = true
+        let extensionHold = holdButtons(popupWindow) { AddressPopoverRevealHold(window: popupWindow, isOpen: { _ in extensionOpen }, onEnd: $0) }
+        check(shown(), "an open extension popup keeps the buttons revealed with the pointer inside it")
+        let sitePanel = NSPopover(), sitePanelOwner = NSObject()
+        let siteHold = holdButtons(sitePanelOwner) { AddressPopoverRevealHold(onEnd: $0) }
+        center.post(name: NSPopover.willShowNotification, object: sitePanel)
+        center.post(name: NSPopover.didCloseNotification, object: sitePanel)
+        check(shown(), "closing the site panel leaves the popup's hold in place")
+        extensionOpen = false
+        center.post(name: NSWindow.didResignKeyNotification, object: popupWindow)
+        check(!shown(), "the buttons fade once the popup closes")
+        check(shown(voiceOver: true), "VoiceOver still reveals them after every hold ends")
+        withExtendedLifetime((extensionHold, siteHold)) {}
 
         print("SidebarHeaderGlyphs checks: \(count) passed")
     }
