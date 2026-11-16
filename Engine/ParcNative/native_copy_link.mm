@@ -9,6 +9,7 @@
 #include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversion_utils.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/enterprise/data_protection/data_protection_clipboard_utils.h"
@@ -44,10 +45,6 @@ namespace {
 using shared_highlighting::LinkGenerationError;
 using shared_highlighting::LinkGenerationReadyStatus;
 
-// A browser-owned command window may copy its parent's original selected page
-// without manufacturing focus or re-resolving the current front browser. This
-// capability is deliberately plain URL only; quote/selection keeps its existing
-// focused-frame contract. The same clipboard-policy operation owns completion.
 class CopyCommandWindow {
  public:
   CopyCommandWindow(PCNativePage* page, PCNativeBrowserWindow* binding, NSWindow* command)
@@ -64,8 +61,6 @@ class CopyCommandWindow {
         PCNativeWindowHasSecurityReservation(command) ||
         [PCNativeBrowserApplication windowForNativeWindow:command] ||
         [PCNativeBrowserApplication ownerForPage:page] != binding) return false;
-    // This existing client method is a pure original-selection query. A changed
-    // selected pane/Peek or a reentrant detach must not retarget the operation.
     id<PCNativeBrowserWindowClient> client = binding.client;
     return client && [client selectedNativePage] == page && binding.client == client &&
         binding.window == owner && page.nativeView.window == owner &&
@@ -92,21 +87,54 @@ bool CanCopy(content::WebContents* contents, PCNativeLinkCopyFormat format,
       contents->GetVisibility() != content::Visibility::VISIBLE || !frame ||
       !frame->IsRenderFrameLive() || !contents->GetLastCommittedURL().is_valid()) return false;
   if (format != PCNativeLinkCopyFormatQuote) return true;
-  // Match upstream's supported main-frame scope. Never encode selected text
-  // by hand or use the context-menu-only preemptive RequestSelector endpoint.
   return contents->GetFocusedFrame() == frame && frame->GetView() &&
       !frame->GetView()->GetSelectedText().empty() &&
       shared_highlighting::ShouldOfferLinkToText(contents->GetLastCommittedURL());
 }
 
-std::u16string Markdown(const std::u16string& title, const GURL& url) {
-  std::u16string label;
-  for (char16_t c : title) {
-    if (c == u'\\' || c == u'[' || c == u']') label += u'\\';
-    label += c == u'\r' || c == u'\n' ? u' ' : c;
+std::u16string MarkdownLabel(const std::u16string& title) {
+  std::u32string text;
+  for (size_t i = 0; i < title.size(); ++i) {
+    base_icu::UChar32 c;
+    if (!base::ReadUnicodeCharacter(title, &i, &c)) c = 0xFFFD;
+    text += c == '\r' || c == '\n' ? U' ' : static_cast<char32_t>(c);
   }
-  if (label.empty()) label = base::UTF8ToUTF16(url.spec());
-  // Escape delimiters in the destination; retain its actual query/fragment.
+  auto space = [](char32_t c) { return [NSCharacterSet.whitespaceCharacterSet longCharacterIsMember:c]; };
+  auto word = [](char32_t c) { return [NSCharacterSet.alphanumericCharacterSet longCharacterIsMember:c]; };
+  auto entity = [&text](size_t index) {
+    size_t next = index + 1;
+    if (next < text.size() && text[next] == U'#') ++next;
+    const size_t name = next;
+    while (next < text.size() && base::IsAsciiAlphaNumeric(text[next])) ++next;
+    return next > name && next < text.size() && text[next] == U';';
+  };
+  std::u16string label;
+  for (size_t index = 0; index < text.size();) {
+    const char32_t c = text[index];
+    size_t end = index + 1;
+    bool escaped = false;
+    switch (c) {
+      case U'\\': escaped = base::IsAsciiPunctuation(end < text.size() ? text[end] : U']'); break;
+      case U'[': case U']': case U'<': case U'`': escaped = true; break;
+      case U'&': escaped = entity(index); break;
+      case U'*': case U'_': case U'~': {
+        while (end < text.size() && text[end] == c) ++end;
+        const char32_t before = index ? text[index - 1] : U'[', after = end < text.size() ? text[end] : U']';
+        escaped = !(space(before) && space(after)) && !(c == U'_' && word(before) && word(after));
+        break;
+      }
+    }
+    for (; index < end; ++index) {
+      if (escaped) label += u'\\';
+      base::WriteUnicodeCharacter(static_cast<base_icu::UChar32>(text[index]), &label);
+    }
+  }
+  return label;
+}
+
+std::u16string Markdown(const std::u16string& title, const GURL& url) {
+  std::u16string label = MarkdownLabel(base::TrimWhitespace(title, base::TRIM_ALL).empty()
+                                           ? base::UTF8ToUTF16(url.spec()) : title);
   std::string destination = url.spec();
   base::ReplaceSubstringsAfterOffset(&destination, 0, "(", "%28");
   base::ReplaceSubstringsAfterOffset(&destination, 0, ")", "%29");
@@ -256,9 +284,7 @@ class CopyLink final : public content::WebContentsObserver,
   base::WeakPtrFactory<CopyLink> callbacks_{this};
 };
 WEB_CONTENTS_USER_DATA_KEY_IMPL(CopyLink);
-}  // namespace
-// A selection lease is separate from CopyLink's asynchronous operation. Merely
-// observing a selection does not invoke the renderer or touch the pasteboard.
+}
 struct SharedQuoteState {
   bool valid = true;
   content::WeakDocumentPtr document;
@@ -308,9 +334,6 @@ class SharedQuoteObserver final : public content::WebContentsObserver {
     if (changed) changed(nil, reset);
   }
   void SelectionChanged(std::u16string text) {
-    // Use the actual observer payload: Chromium deliberately clears password
-    // selections before broadcasting. Never bypass that boundary by publishing
-    // arbitrary platform-view text. Coalesce on main with exact text validation.
     auto alive = weak_.GetWeakPtr();
     Clear(false);
     if (!alive) return;
@@ -359,7 +382,7 @@ class SharedQuoteObserver final : public content::WebContentsObserver {
   base::WeakPtrFactory<SharedQuoteObserver> weak_{this};
   base::WeakPtrFactory<SharedQuoteObserver> publication_{this};
 };
-}  // namespace parc
+}
 
 @implementation PCNativeSharedQuoteSelection {
   std::shared_ptr<parc::SharedQuoteState> _state;

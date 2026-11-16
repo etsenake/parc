@@ -39,7 +39,17 @@ rich-text version linking each tab's name to its address; Markdown copies stay
 Markdown only. Rich-text and Markdown links use exactly the title the tab's
 sidebar row shows: its given name, else its saved title, which is the title a
 pinned tab or Favorite was saved with or a Today tab's current page title, else
-its saved address. Ancestors suppress duplicate descendants; splits keep child
+its saved address.
+
+Markdown labels escape only what CommonMark or GitHub renderers would read as
+markup, so a title such as `Vec<T>` or `snake_case.py` pastes exactly as the
+sidebar shows it. Brackets, `<` and backticks are always escaped, `&` only
+before an entity such as `&amp;`, and a backslash only before punctuation or at
+the end. A run of `*` or `~` stays bare only between spaces, and `_` also stays
+bare inside a word. A `#` is never escaped because a label always follows `[`.
+The page's own Copy URL as Markdown escapes its title the same way.
+
+Ancestors suppress duplicate descendants; splits keep child
 order. Deduplication uses tab ID, so distinct tabs with one URL stay distinct
 lines. Only web and local file addresses are copied: Notes, Easels, Parc's own
 pages, blank tabs and malformed destinations are skipped. A Copied Link or

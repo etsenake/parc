@@ -84,7 +84,8 @@ and private identity. Policy replacement produces restricted-copy feedback.
 Rejected live eligibility cannot fall through to an unloaded model-tab copy.
 Command-bar result copying and unloaded model tabs retain their separate
 plain-string routes. Markdown preserves query and fragment; no tracker-removal
-behavior is implied.
+behavior is implied. Its title follows the sidebar's
+[Markdown label escaping](sidebar-selection.md#select-all-and-plural-commands).
 
 [Shared Quote](settings.md#shared-quote-affordance)'s setting controls only its
 mouse-selection affordance. It does not disable the explicit command or its

@@ -48,7 +48,7 @@ import AppKit
         check(pasteboard.string(forType: .html) == "<meta charset=\"utf-8\"><a href=\"https://one.invalid/a?b=1&amp;c=2\">Fish &amp; &lt;Chips&gt;</a><br>\n"
               + "<a href=\"https://two.invalid/\">https://two.invalid/</a>", "Rich-text targets get each title linked to its address")
         check(LinkPasteboard.write(links, format: .markdown, to: pasteboard) && pasteboard.types?.contains(.html) == false
-              && pasteboard.string(forType: .string)?.hasPrefix("[Fish & <Chips>](<https://one.invalid/a?b=1&c=2>)") == true,
+              && pasteboard.string(forType: .string)?.hasPrefix("[Fish & \\<Chips>](<https://one.invalid/a?b=1&c=2>)") == true,
               "Markdown copies stay Markdown only")
         let unchangedCount = pasteboard.changeCount
         check(!LinkPasteboard.write([], format: .plain, to: pasteboard) && pasteboard.changeCount == unchangedCount,

@@ -67,11 +67,7 @@ enum FolderLinks {
             case .plain: return link.url
             case .markdown:
                 let title = link.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? link.url : link.title
-                let label = title.replacingOccurrences(of: "\\", with: "\\\\")
-                    .replacingOccurrences(of: "[", with: "\\[")
-                    .replacingOccurrences(of: "]", with: "\\]")
-                    .replacingOccurrences(of: "\r", with: " ")
-                    .replacingOccurrences(of: "\n", with: " ")
+                let label = markdownLabel(title)
                 let destination = link.url.replacingOccurrences(of: "<", with: "%3C")
                     .replacingOccurrences(of: ">", with: "%3E")
                     .replacingOccurrences(of: "\r", with: "%0D")
@@ -79,6 +75,45 @@ enum FolderLinks {
                 return "[\(label)](<\(destination)>)"
             }
         }.joined(separator: "\n")
+    }
+
+    static func markdownLabel(_ text: String) -> String {
+        let scalars = text.unicodeScalars.map { $0 == "\r" || $0 == "\n" ? " " : $0 }
+        func at(_ index: Int) -> Unicode.Scalar { index < 0 ? "[" : index >= scalars.count ? "]" : scalars[index] }
+        func isSpace(_ scalar: Unicode.Scalar) -> Bool { CharacterSet.whitespaces.contains(scalar) }
+        func isWord(_ scalar: Unicode.Scalar) -> Bool { CharacterSet.alphanumerics.contains(scalar) }
+        func isASCIIAlphanumeric(_ scalar: Unicode.Scalar) -> Bool { scalar.isASCII && isWord(scalar) }
+        func startsEntity(_ index: Int) -> Bool {
+            var next = index + 1
+            if next < scalars.count, scalars[next] == "#" { next += 1 }
+            let name = next
+            while next < scalars.count, isASCIIAlphanumeric(scalars[next]) { next += 1 }
+            return next > name && next < scalars.count && scalars[next] == ";"
+        }
+        var label = String.UnicodeScalarView(), index = 0
+        while index < scalars.count {
+            let scalar = scalars[index]
+            var end = index + 1
+            let escaped: Bool
+            switch scalar {
+            case "\\":
+                let next = at(end)
+                escaped = next.value > 0x20 && next.value < 0x7F && !isASCIIAlphanumeric(next)
+            case "[", "]", "<", "`": escaped = true
+            case "&": escaped = startsEntity(index)
+            case "*", "_", "~":
+                while end < scalars.count, scalars[end] == scalar { end += 1 }
+                let before = at(index - 1), after = at(end)
+                escaped = !(isSpace(before) && isSpace(after)) && !(scalar == "_" && isWord(before) && isWord(after))
+            default: escaped = false
+            }
+            for character in scalars[index..<end] {
+                if escaped { label.append("\\") }
+                label.append(character)
+            }
+            index = end
+        }
+        return String(label)
     }
 
     static func html(for links: [Link]) -> String? {

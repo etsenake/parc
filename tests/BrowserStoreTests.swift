@@ -3319,7 +3319,7 @@ struct BrowserStoreTests {
             store.updateTab(renamed, title: "Page Title")
             try store.saveSidebarTitle(store.state.tab(renamed)!, title: "  My <Name> & Co  ")
             let renamedLinks = FolderLinks.links(in: store.state, items: [.tab(renamed)], spaceID: space, profileID: profile)!
-            try expect(FolderLinks.text(for: renamedLinks, format: .markdown) == "[My <Name> & Co](<https://example.com/renamed>)",
+            try expect(FolderLinks.text(for: renamedLinks, format: .markdown) == "[My \\<Name> & Co](<https://example.com/renamed>)",
                        "Markdown copies a renamed tab under the name the sidebar shows")
             try expect(FolderLinks.html(for: renamedLinks) == "<meta charset=\"utf-8\"><a href=\"https://example.com/renamed\">My &lt;Name&gt; &amp; Co</a>",
                        "Rich copy links a renamed tab's sidebar name to its address")
@@ -3349,7 +3349,7 @@ struct BrowserStoreTests {
                        "A pinned tab's sidebar row keeps the title saved when it was pinned")
             let links = FolderLinks.links(in: store.state, items: [.tab(id)], spaceID: space, profileID: profile)!
             try expect(links.map(\.title) == [SidebarTabTitle.display(tab)], "Copied links take the title the sidebar row shows")
-            try expect(FolderLinks.text(for: links, format: .markdown) == "[Saved <Title>](<https://example.com/pinned>)",
+            try expect(FolderLinks.text(for: links, format: .markdown) == "[Saved \\<Title>](<https://example.com/pinned>)",
                        "Markdown copies a pinned tab under its saved title, not the live one")
             try expect(FolderLinks.html(for: links) == "<meta charset=\"utf-8\"><a href=\"https://example.com/pinned\">Saved &lt;Title&gt;</a>",
                        "Rich copy links a pinned tab's saved title to its address")
@@ -3358,6 +3358,35 @@ struct BrowserStoreTests {
                        && FolderLinks.links(in: store.state, target: FolderLinkTarget(folderID: folder, spaceID: space, profileID: profile)) == links,
                        "The split menu and a folder's Copy All Links use the same saved title")
         }
+    }
+
+    static func testMarkdownLinkLabels() throws {
+        let cases: [(String, String)] = [
+            ("Vec<T>", #"Vec\<T>"#),
+            ("<b>bold</b> & <https://example.com>", #"\<b>bold\</b> & \<https://example.com>"#),
+            ("snake_case_name.py", "snake_case_name.py"),
+            ("_private and __dunder__", #"\_private and \_\_dunder\_\_"#),
+            ("**Bold** and *it* or a*b*c", #"\*\*Bold\*\* and \*it\* or a\*b\*c"#),
+            ("5 * 3 = 15 and x ~ y and a _ b", "5 * 3 = 15 and x ~ y and a _ b"),
+            ("~/Downloads and ~~gone~~", #"\~/Downloads and \~\~gone\~\~"#),
+            ("`code` here", #"\`code\` here"#),
+            ("# Heading #1", "# Heading #1"),
+            ("AT&T &amp; Tom & Jerry &#169; &#x1F600; &; &copy", #"AT&T \&amp; Tom & Jerry \&#169; \&#x1F600; &; &copy"#),
+            (#"C:\Users\me and a\*b and trailing\"#, #"C:\Users\me and a\\\*b and trailing\\"#),
+            ("[link](url) ![img]", #"\[link\](url) !\[img\]"#),
+            ("Line\r\nbreak\nhere", "Line  break here"),
+            ("naïve_test 日本_語 😀_x", #"naïve_test 日本_語 😀\_x"#),
+            ("a\u{00A0}*\u{00A0}b", "a\u{00A0}*\u{00A0}b"),
+            ("", ""),
+        ]
+        for (title, label) in cases {
+            try expect(FolderLinks.markdownLabel(title) == label, "Markdown label for \(title.debugDescription) is \(label.debugDescription), got \(FolderLinks.markdownLabel(title).debugDescription)")
+        }
+        let links = [FolderLinks.Link(tabID: UUID(), title: "Vec<T> & `Option<_>`", url: "https://example.com/a_b"),
+                     FolderLinks.Link(tabID: UUID(), title: "", url: "https://example.com/_next/a_b?x=1&y=2")]
+        try expect(FolderLinks.text(for: links, format: .markdown) == #"[Vec\<T> & \`Option\<\_>\`](<https://example.com/a_b>)"# + "\n"
+                   + #"[https://example.com/\_next/a_b?x=1&y=2](<https://example.com/_next/a_b?x=1&y=2>)"#,
+                   "Markdown copies escape every label, including the address standing in for a blank title, and keep destinations as they were")
     }
 
     static func testFolderRemovalSelection() throws {
@@ -3716,6 +3745,7 @@ struct BrowserStoreTests {
         try testFolderDuplication()
         try testSidebarSelectionCommands()
         try testCopiedLinksUseSavedPinnedTitle()
+        try testMarkdownLinkLabels()
         try testSidebarMultiSelection()
         try testTypedSplitDropTransactions()
         try testNativePageAdoption()
