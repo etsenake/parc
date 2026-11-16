@@ -91,6 +91,27 @@ NS_SWIFT_UI_ACTOR
 @end
 
 NS_SWIFT_UI_ACTOR
+@interface PCImportedExtensionFailure : NSObject
+@property(nonatomic, readonly, copy) NSString* name;
+@property(nonatomic, readonly, copy, nullable) NSString* identifier;
+@property(nonatomic, readonly, copy, nullable) NSString* profilePath;
+@property(nonatomic, readonly) PCNativeExtensionRestriction restriction;
+- (instancetype)init NS_UNAVAILABLE;
+@end
+
+NS_SWIFT_UI_ACTOR
+@interface PCImportedExtensions : NSObject
++ (nullable PCNativeImportSession*)install:(NSArray<PCNativeImportExtensionRequest*>*)requests
+    completion:(void (^)(PCNativeImportExtensionResult* result,
+                         NSArray<PCImportedExtensionFailure*>* failures))completion
+    backgroundFailures:(void (^)(NSArray<PCImportedExtensionFailure*>* failures))backgroundFailures
+    NS_SWIFT_NAME(install(_:completion:backgroundFailures:));
++ (PCNativeExtensionRestriction)restrictionForError:(nullable NSError*)error
+    NS_SWIFT_NAME(restriction(for:));
+- (instancetype)init NS_UNAVAILABLE;
+@end
+
+NS_SWIFT_UI_ACTOR
 @interface PCBrowserView : NSView
 - (instancetype)initWithFrame:(NSRect)frame
                   profilePath:(NSString*)profilePath NS_DESIGNATED_INITIALIZER

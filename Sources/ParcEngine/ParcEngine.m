@@ -179,6 +179,111 @@ static void PCFinishEngineTermination(void* unused) {
 }
 @end
 
+@interface PCImportedExtensionFailure ()
+- (instancetype)initWithName:(NSString*)name
+                  identifier:(NSString*)identifier
+                 profilePath:(NSString*)profilePath
+                 restriction:(PCNativeExtensionRestriction)restriction;
+@end
+@implementation PCImportedExtensionFailure
+- (instancetype)initWithName:(NSString*)name
+                  identifier:(NSString*)identifier
+                 profilePath:(NSString*)profilePath
+                 restriction:(PCNativeExtensionRestriction)restriction {
+  self = [super init];
+  if (self) {
+    _name = [name copy];
+    _identifier = [identifier copy];
+    _profilePath = [profilePath copy];
+    _restriction = restriction;
+  }
+  return self;
+}
+@end
+
+static NSString* PCReportedString(id object, SEL property) {
+  if (![object respondsToSelector:property]) {
+    return nil;
+  }
+  id value = [object valueForKey:NSStringFromSelector(property)];
+  return [value isKindOfClass:[NSString class]] ? value : nil;
+}
+static PCImportedExtensionFailure* PCReportedFailure(id reported) {
+  if ([reported isKindOfClass:[NSString class]]) {
+    return [[PCImportedExtensionFailure alloc]
+        initWithName:reported
+          identifier:nil
+         profilePath:nil
+         restriction:PCNativeExtensionRestrictionNone];
+  }
+  PCNativeImportExtensionFailure* failure = reported;
+  NSString* name = PCReportedString(failure, @selector(name));
+  if (!name) {
+    return nil;
+  }
+  NSString* identifier = PCReportedString(failure, @selector(identifier));
+  NSString* profilePath = PCReportedString(failure, @selector(profilePath));
+  PCNativeExtensionRestriction restriction =
+      [failure respondsToSelector:@selector(restriction)]
+          ? failure.restriction
+          : PCNativeExtensionRestrictionNone;
+  if (restriction < PCNativeExtensionRestrictionNone ||
+      restriction > PCNativeExtensionRestrictionBlocklisted) {
+    restriction = PCNativeExtensionRestrictionNone;
+  }
+  BOOL located = identifier && profilePath;
+  return [[PCImportedExtensionFailure alloc]
+      initWithName:name
+        identifier:located ? identifier : nil
+       profilePath:located ? profilePath : nil
+       restriction:located ? restriction : PCNativeExtensionRestrictionNone];
+}
+static NSArray<PCImportedExtensionFailure*>* PCReportedFailures(id reported) {
+  NSMutableArray<PCImportedExtensionFailure*>* failures = [NSMutableArray array];
+  if (![reported isKindOfClass:[NSArray class]]) {
+    return failures;
+  }
+  for (id item in (NSArray*)reported) {
+    PCImportedExtensionFailure* failure = PCReportedFailure(item);
+    if (failure) {
+      [failures addObject:failure];
+    }
+  }
+  return failures;
+}
+static NSArray<PCImportedExtensionFailure*>* PCResultFailures(
+    PCNativeImportExtensionResult* result) {
+  for (NSString* key in @[ @"failures", @"failedNames" ]) {
+    if ([result respondsToSelector:NSSelectorFromString(key)]) {
+      return PCReportedFailures([result valueForKey:key]);
+    }
+  }
+  return @[];
+}
+
+@implementation PCImportedExtensions
++ (PCNativeImportSession*)install:(NSArray<PCNativeImportExtensionRequest*>*)requests
+                       completion:(void (^)(PCNativeImportExtensionResult*,
+                                            NSArray<PCImportedExtensionFailure*>*))completion
+               backgroundFailures:(void (^)(NSArray<PCImportedExtensionFailure*>*))
+                                      backgroundFailures {
+  return [PCNativeBrowserApplication installImportedExtensions:requests
+      completion:^(PCNativeImportExtensionResult* result) {
+        completion(result, PCResultFailures(result));
+      }
+      backgroundFailures:^(NSArray* failures) {
+        backgroundFailures(PCReportedFailures(failures));
+      }];
+}
++ (PCNativeExtensionRestriction)restrictionForError:(NSError*)error {
+  if (![PCNativeBrowserApplication
+          respondsToSelector:@selector(extensionRestrictionForError:)]) {
+    return PCNativeExtensionRestrictionNone;
+  }
+  return [PCNativeBrowserApplication extensionRestrictionForError:error];
+}
+@end
+
 @interface PCBrowserView () <PCNativePageObserver>
 @end
 @implementation PCBrowserView {

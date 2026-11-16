@@ -386,7 +386,7 @@ import AppKit
         profile.extensions = [known, unknown]
         let path = store.independentEngineProfilePath(for: destination.profileID)
         func failure(_ item: PCNativeImportExtension,
-                     _ restriction: PCNativeExtensionRestriction = .none) -> PCNativeImportExtensionFailure {
+                     _ restriction: PCNativeExtensionRestriction = .none) -> PCImportedExtensionFailure {
             .init(identifier: item.identifier, name: item.displayName, profilePath: path, restriction: restriction)
         }
         func imported(_ item: PCNativeImportExtension) -> ImportedExtensionFailures.Failure {
@@ -449,6 +449,22 @@ import AppKit
         expect(coordinator.warnings.filter { $0 == "uBlock Origin couldn’t be added." }.count == 1 && repeated == 0,
                "The same failure is never listed or announced twice")
         ImportedExtensionFailures.present = nil
+        while ImportedExtensionFailures.take() != nil {}
+        run()
+        PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))
+        let older = PCNativeBrowserApplication.extensionInstalls.removeFirst()
+        older.complete(.init(outcome: .partial, installingIdentifiers: [unknown.identifier],
+                             failures: [.init(name: known.displayName)]))
+        let named = ImportedExtensionFailures.take()
+        expect(coordinator.warnings.contains("uBlock Origin couldn’t be added.") && coordinator.importedAdBlockers.isEmpty
+               && named?.failures.map(\.name) == ["uBlock Origin"] && named?.failures.first?.profile == nil
+               && named?.canRetry == false,
+               "An older engine that reports only names gets the plain notice, without a Profile or Retry")
+        older.background([.init(name: unknown.displayName)])
+        let namedLate = ImportedExtensionFailures.take()
+        expect(ImportedExtensionFailures.failedIdentifiers.contains(unknown.identifier)
+               && namedLate?.failures.map(\.name) == ["Extension"] && namedLate?.canRetry == false,
+               "A later name-only failure still finds its extension, and still comes without Retry")
         run()
         PCNativeBrowserApplication.rejectsExtensionInstall = true
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed, bookmarks: [], warnings: [], error: nil))

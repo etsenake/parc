@@ -9,15 +9,22 @@ enum ImportedExtensionRetries {
         let destination: BrowserImportDestination
         var profile: String? = nil
         var reason: ImportedExtensionFailures.Failure.Reason? = nil
+        var retryable = true
         var target: String { "import " + destination.profileID.uuidString + " " + identifier }
         var failure: ImportedExtensionFailures.Failure {
             .init(name: name, profile: profile, target: target, reason: reason)
         }
+        @MainActor func reported(by failure: PCImportedExtensionFailure) -> Item {
+            var item = self
+            guard failure.identifier != nil else { item.profile = nil; item.retryable = false; return item }
+            item.reason = .init(failure.restriction)
+            return item
+        }
     }
     private static var installs: [UUID: PCNativeImportSession] = [:]
 
-    static func record(_ item: Item, retryable: Bool = true, store: BrowserStore) {
-        guard retryable else { ImportedExtensionFailures.record(item.failure); return }
+    static func record(_ item: Item, store: BrowserStore) {
+        guard item.retryable else { ImportedExtensionFailures.record(item.failure); return }
         ImportedExtensionFailures.record(item.failure) { [weak store] in
             guard let store else { return }
             retry(item, store: store)
@@ -29,19 +36,16 @@ enum ImportedExtensionRetries {
         let request = PCNativeImportExtensionRequest(source: item.source,
             profilePath: store.independentEngineProfilePath(for: item.destination.profileID), extensionIDs: [item.identifier])
         let id = UUID()
-        let failed = { [weak store] (failures: [PCNativeImportExtensionFailure], late: Bool) in
-            if late { ImportedExtensionFailures.recordFailed(failures.map(\.identifier)) }
+        let failed = { [weak store] (failures: [PCImportedExtensionFailure], late: Bool) in
+            let mine = failures.filter { ($0.identifier ?? item.identifier) == item.identifier }
+            if late, !mine.isEmpty { ImportedExtensionFailures.recordFailed([item.identifier]) }
             guard let store else { return }
-            for failure in failures where failure.identifier == item.identifier {
-                var again = item
-                again.reason = .init(failure.restriction)
-                record(again, store: store)
-            }
+            for failure in mine { record(item.reported(by: failure), store: store) }
         }
-        let install = PCNativeBrowserApplication.installImportedExtensions([request], completion: { result in
+        let install = PCImportedExtensions.install([request], completion: { result, failures in
             installs[id] = nil
             ImportedExtensionFailures.clearFailed(result.installedIdentifiers)
-            failed(result.failures, false)
+            failed(failures, false)
         }, backgroundFailures: { failed($0, true) })
         guard let install else { record(item, store: store); return }
         installs[id] = install

@@ -52,7 +52,9 @@ names the Profile when the import was adding extensions to more than one, as in
 “Couldn’t add Grammarly to Work”, and **Retry** installs just that extension
 again from the same source Profile into the same Parc Profile. An extension whose
 destination went away before installing has no Retry, and a policy, parental or
-safety block says so instead of offering one.
+safety block says so instead of offering one. The app reads these reports
+through its own adapter, so paired with an older engine that only names the
+extensions, it shows the plain notice without a Profile or Retry.
 
 All callbacks check generation, source lease and original/current destination.
 Stop waits for the actual native result. Cancellation is not rollback: confirmed
@@ -198,7 +200,9 @@ fixtures or inert components. Restart fixtures replace final app launch with a
 recording seam. `scripts/test-safari-browsing-export.sh` runs the export ZIP
 and bookmark-file readers against made-up archives, including ZIP64, data
 descriptors, damaged and hostile entries, and localized file names.
-Native reader/writer fixtures use disposable databases; see the
+`tests/ImportedExtensionReports/run.sh` feeds the extension-report adapter both
+engines' report shapes and checks that the app never links the newer one's
+failure class. Native reader/writer fixtures use disposable databases; see the
 [native import checks](../Engine/ParcImport/README.md#focused-checks).
 
 Parc’s utility content client registers the isolated import reader. Its protocol

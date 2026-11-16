@@ -71,17 +71,32 @@ enum PCNativeImportPhase { case reading, writing, finished }
 }
 enum PCNativeExtensionRestriction: Int { case none, administrator, otherApp, parentalApproval, blocklisted }
 struct PCNativeRestrictedExtensionError: Error { let restriction: PCNativeExtensionRestriction }
-@MainActor final class PCNativeImportExtensionFailure {
-    let identifier: String, name: String, profilePath: String, restriction: PCNativeExtensionRestriction
+@MainActor final class PCImportedExtensionFailure {
+    let name: String, identifier: String?, profilePath: String?, restriction: PCNativeExtensionRestriction
     init(identifier: String, name: String, profilePath: String, restriction: PCNativeExtensionRestriction = .none) {
         self.identifier = identifier; self.name = name; self.profilePath = profilePath; self.restriction = restriction
     }
+    init(name: String) { self.name = name; identifier = nil; profilePath = nil; restriction = .none }
 }
 @MainActor struct PCNativeImportExtensionResult {
     var outcome: PCNativeImportOutcome
     var installedIdentifiers: Set<String> = []
     var installingIdentifiers: Set<String> = []
-    var failures: [PCNativeImportExtensionFailure] = []
+    var failures: [PCImportedExtensionFailure] = []
+}
+@MainActor enum PCImportedExtensions {
+    static func install(_ requests: [PCNativeImportExtensionRequest],
+        completion: @escaping (PCNativeImportExtensionResult, [PCImportedExtensionFailure]) -> Void,
+        backgroundFailures: @escaping ([PCImportedExtensionFailure]) -> Void) -> PCNativeImportSession? {
+        guard !PCNativeBrowserApplication.rejectsExtensionInstall else { return nil }
+        let lease = PCNativeImportSession()
+        PCNativeBrowserApplication.extensionInstalls.append(.init(requests: requests, lease: lease,
+            complete: { completion($0, $0.failures) }, background: backgroundFailures))
+        return lease
+    }
+    static func restriction(for error: Error?) -> PCNativeExtensionRestriction {
+        (error as? PCNativeRestrictedExtensionError)?.restriction ?? .none
+    }
 }
 @MainActor enum PCNativeBrowserApplication {
     struct SourceRequest { let lease: PCNativeImportDiscovery; let complete: ([PCNativeImportSource]) -> Void }
@@ -143,7 +158,7 @@ struct PCNativeRestrictedExtensionError: Error { let restriction: PCNativeExtens
     struct ExtensionInstall {
         let requests: [PCNativeImportExtensionRequest], lease: PCNativeImportSession
         let complete: (PCNativeImportExtensionResult) -> Void
-        let background: ([PCNativeImportExtensionFailure]) -> Void
+        let background: ([PCImportedExtensionFailure]) -> Void
     }
     static var extensionInstalls: [ExtensionInstall] = []
     static var rejectsExtensionInstall = false
@@ -158,17 +173,6 @@ struct PCNativeRestrictedExtensionError: Error { let restriction: PCNativeExtens
     static func removeSetupAdBlockers(_ identifiers: Set<String>, fromProfilePath path: String,
                                       completion: @escaping (Error?) -> Void) {
         setupChanges.append(.init(kind: "remove", identifiers: identifiers, path: path, complete: completion))
-    }
-    static func extensionRestriction(for error: Error?) -> PCNativeExtensionRestriction {
-        (error as? PCNativeRestrictedExtensionError)?.restriction ?? .none
-    }
-    static func installImportedExtensions(_ requests: [PCNativeImportExtensionRequest],
-        completion: @escaping (PCNativeImportExtensionResult) -> Void,
-        backgroundFailures: @escaping ([PCNativeImportExtensionFailure]) -> Void) -> PCNativeImportSession? {
-        guard !rejectsExtensionInstall else { return nil }
-        let lease = PCNativeImportSession()
-        extensionInstalls.append(.init(requests: requests, lease: lease, complete: completion, background: backgroundFailures))
-        return lease
     }
 }
 
