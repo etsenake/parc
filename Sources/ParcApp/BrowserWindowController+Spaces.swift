@@ -746,11 +746,15 @@ extension BrowserWindowController {
             guard let self, valid() else { return }
             self.commandBar?.dismiss()
             guard let window = self.window else { return }
+            let ownerValid: () -> Bool = { [weak self, weak window] in
+                guard let self, let window, self.window === window else { return false }
+                return !self.isClosing && !self.wholeWindowClose && !self.windowClosePending
+                    && !self.windowCloseApproved && self.spaceCreation == nil
+            }
             SpaceSharingConfirmation.present(on: window, store: self.store, spaceID: id, sharing: sharing,
-                ownerValid: { [weak self, weak window] in
-                    guard let self, let window, self.window === window else { return false }
-                    return !self.isClosing && !self.wholeWindowClose && !self.windowClosePending
-                        && !self.windowCloseApproved && self.spaceCreation == nil
+                ownerValid: ownerValid, explain: { [weak self] block in
+                    guard let self, ownerValid() else { return }
+                    self.showDocumentMoveBlock(block)
                 }, completion: { [weak self] result in
                     if case .failure(let error) = result { self?.showError(error) }
                 })

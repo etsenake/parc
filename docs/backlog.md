@@ -18,14 +18,6 @@ For otherwise unassigned work, retain the requested order: Routing, Windows,
 Data, Folders, Archive, Command bar, Tab switcher, Peek and Onboarding.
 Finish assigned work first.
 
-## Folders
-
-- Changing what data a Space uses refuses with no message when one of its Notes
-  or Easels is also a Favorite, archived, or open in another Space on the old
-  data. It needs the move explanation, shown before the sharing warning.
-  [Folder moves](folder-moves.md#notes-and-easels-still-used-in-the-source-space),
-  [Space management](space-management.md).
-
 ## Media
 
 Casting continuity across navigation and picture in picture are implemented.

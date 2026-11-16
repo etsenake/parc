@@ -3,6 +3,7 @@ import AppKit
 @MainActor enum SpaceSharingConfirmation {
     static func present(on window: NSWindow, store: BrowserStore, spaceID: UUID, sharing: SpaceDataSharing,
                         ownerValid: @escaping () -> Bool,
+                        explain: @escaping (InterProfileDocumentBlock) -> Void,
                         completion: @escaping (Result<Bool, Error>) -> Void) {
         guard let space = store.state.spaces.first(where: { $0.id == spaceID }) else { completion(.success(false)); return }
         let target = sharing.partner.flatMap { id in store.state.spaces.first { $0.id == id } }
@@ -19,6 +20,9 @@ import AppKit
                 && !store.isProfileRemovalPending(target.profileID)
         }
         guard window.attachedSheet == nil, valid() else { completion(.success(false)); return }
+        if let block = store.sharingDocumentBlock(forSpace: spaceID, to: sharing) {
+            explain(block); completion(.success(false)); return
+        }
         guard let warning = store.sharingWarning(forSpace: spaceID, to: sharing) else { completion(.success(false)); return }
         let stillWarned: () -> Bool = { valid() && store.sharingWarning(forSpace: spaceID, to: sharing) == warning }
         let dialog = ParcDialog(.init(
@@ -32,6 +36,7 @@ import AppKit
                     switch result {
                     case .success(let change):
                         if let unused = change?.unusedProfile { handOff(unused) }
+                        if change == nil, let block = store.sharingDocumentBlock(forSpace: spaceID, to: sharing) { explain(block) }
                         completion(.success(change != nil))
                     case .failure(let error):
                         completion(.failure(error))

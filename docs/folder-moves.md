@@ -126,8 +126,18 @@ New Space with Keep separate shows the same sentence in its own form. If the
 entries appear after the warning was confirmed, the same notice replaces the
 refusal beep; other late refusals still beep. `InterProfileDocumentBlock` builds
 the text from the same check the store applies, and every other move rule and the
-document rollback are unchanged. Changing what data a Space uses applies the same
-refusal without explaining it yet; see the [backlog](backlog.md#folders).
+document rollback are unchanged.
+
+Changing what data a Space uses moves its open Notes and Easels with it, so a
+Favorite, an archived entry or an entry in another Space still on the old data
+refuses it the same way. Share data with and Keep separate check before their
+warning and skip it when they find any. Settings answers in a line under its
+Share data with row, for example "The Note “Plans” is still used elsewhere on
+Home’s current data: in Favorites and in the Archive.", which stays while it is
+true for the Space shown and clears on the next choice. The Space menus show it
+as a window notice titled "Can’t keep Home separate" or "Can’t share Work’s data
+with Home". A change refused after its warning explains itself the same way;
+other refusals stay silent, as before.
 
 ### Reveal after moving
 

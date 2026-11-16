@@ -16,6 +16,7 @@ import Foundation
         try mixedDocumentCollection()
         try sharedAssetRollback()
         try documentBlocks()
+        try dataChangeBlocks()
         print("InterProfileMoveTests: \(count) assertions passed")
     }
 
@@ -607,6 +608,72 @@ import Foundation
         let fresh = try unwrap(InterProfileDocumentBlock(moving: Set(draft.tabIDs), before: duplicated, after: draft.applying(to: duplicated)),
                                "a New Space that keeps separate data is blocked the same way")
         try check(fresh.message == "This Note is still used elsewhere in Home: in the folder “Research”.", "the New Space form shows the same explanation")
+    }
+
+    static func dataChangeBlocks() throws {
+        let f = fixture()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-data-change-block-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let note = InternalPage.note(UUID()).urlString, easel = InternalPage.easel(UUID()).urlString
+        let work = BrowserSpace(id: UUID(), name: "Work", symbol: "circle", color: "AABBCC", profileID: f.p.id)
+        func set(_ id: UUID, _ url: String, title: String, in state: inout BrowserState) {
+            let index = state.tabs.firstIndex { $0.id == id }!
+            state.tabs[index].url = url; state.tabs[index].savedURL = url
+            state.tabs[index].title = title; state.tabs[index].savedTitle = title
+        }
+        func alias(_ url: String, _ space: BrowserSpace, _ kind: TabKind, archived: Bool = false) -> BrowserTab {
+            BrowserTab(id: UUID(), spaceID: space.id, profileID: space.profileID, url: url, title: "Alias", kind: kind,
+                       createdAt: Date(timeIntervalSince1970: 3), lastAccessed: Date(timeIntervalSince1970: 4),
+                       archivedAt: archived ? Date(timeIntervalSince1970: 5) : nil, savedURL: url, savedTitle: "Alias")
+        }
+        func stored(_ state: BrowserState) throws -> BrowserStore {
+            let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(state).write(to: directory.appendingPathComponent("session.json"))
+            return try BrowserStore(directory: directory)
+        }
+        func refused(_ store: BrowserStore) -> Bool {
+            guard let assignment = store.profileAssignment(f.q.id, toSpace: f.s.id), let after = assignment.proposal(store.state) else { return false }
+            return InterProfileMove.documents(moving: assignment.tabIDs, after: after) == nil
+        }
+
+        var state = f.state; state.spaces.append(work)
+        set(f.today.id, note, title: "Plans", in: &state)
+        let quiet = try stored(state)
+        try check(quiet.sharingDocumentBlock(forSpace: f.s.id, to: .separate) == nil
+                  && quiet.sharingDocumentBlock(forSpace: f.s.id, to: .share(withSpace: f.d.id)) == nil && !refused(quiet),
+                  "a Note used only in the Space changing its data has nothing to explain and is not refused")
+
+        var spread = state; spread.tabs.append(alias(note, work, .today))
+        let separate = try unwrap(try stored(spread).sharingDocumentBlock(forSpace: f.s.id, to: .separate),
+                                  "a Note open in another Space on the old data blocks Keep separate")
+        try check(separate.change == .keepSeparate && separate.title == "Can’t keep Home separate", "Keep separate names the Space it can’t separate")
+        try check(separate.message == "The Note “Plans” is still used elsewhere on Home’s current data: in Today in Work.",
+                  "an entry in a Space sharing the old data is named with its Space")
+
+        var kept = state; kept.tabs += [alias(note, f.s, .favorite), alias(note, f.s, .today, archived: true)]
+        let keptStore = try stored(kept)
+        let share = try unwrap(keptStore.sharingDocumentBlock(forSpace: f.s.id, to: .share(withSpace: f.d.id)),
+                               "a Favorite and an archived entry block sharing other data")
+        try check(refused(keptStore), "the explanation matches a data change the store refuses")
+        try check(share.change == .share(target: "Office") && share.title == "Can’t share Office’s data with Home", "sharing names both Spaces")
+        try check(share.message == "The Note “Plans” is still used elsewhere on Home’s current data: in Favorites and in the Archive.",
+                  "Favorites and the Archive stay with the old data")
+
+        var pair = spread; set(f.g1.id, easel, title: "Board", in: &pair)
+        pair.tabs.append(alias(easel, f.s, .today, archived: true))
+        try check(try stored(pair).sharingDocumentBlock(forSpace: f.s.id, to: .separate)?.message
+                  == "The Note “Plans” is still used elsewhere on Home’s current data: in Today in Work. 1 more Easel is too.",
+                  "a data change explains the first document and counts the rest")
+
+        var after = kept; after.tabs[after.tabs.firstIndex { $0.id == f.today.id }!].profileID = UUID()
+        let lone = try unwrap(InterProfileDocumentBlock(moving: [f.today.id], before: kept, after: after, sharing: .separate),
+                              "a lone Note still blocks a data change")
+        try check(lone.subject == "The Note “Plans”", "a data change names the Note even when it is the Space’s only item")
+        let moved = try unwrap(InterProfileDocumentBlock(moving: [f.today.id], before: kept, after: after), "the same entries block a move")
+        try check(moved.change == .move && moved.subject == "This Note" && moved.title == "Can’t move to Home"
+                  && moved.message == "This Note is still used elsewhere in Home: in Favorites and in the Archive.",
+                  "move wording is unchanged when no data change is given")
     }
 
     static func unwrap<T>(_ value: T?, _ reason: String) throws -> T {

@@ -74,6 +74,7 @@ struct InterProfileDocumentBlock: Equatable {
         case leftBehind(Section, split: Bool)
         case archive
     }
+    enum Change: Equatable { case move, share(target: String), keepSeparate }
 
     let document: InternalPage
     let subject: String
@@ -81,8 +82,9 @@ struct InterProfileDocumentBlock: Equatable {
     let destinationSpace: String
     let places: [Place]
     let others: [InternalPage]
+    let change: Change
 
-    init?(moving ids: Set<UUID>, before: BrowserState, after: BrowserState?) {
+    init?(moving ids: Set<UUID>, before: BrowserState, after: BrowserState?, sharing: SpaceDataSharing? = nil) {
         guard let after else { return nil }
         var checked: [String] = []
         var blocked: [(tab: BrowserTab, page: InternalPage, blockers: [BrowserTab])] = []
@@ -99,9 +101,16 @@ struct InterProfileDocumentBlock: Equatable {
         guard let first = blocked.first, let original = before.tab(first.tab.id),
               let source = Self.spaceName(original.spaceID, before, after),
               let destination = Self.spaceName(first.tab.spaceID, after, before) else { return nil }
+        switch sharing {
+        case nil: change = .move
+        case .separate?: change = .keepSeparate
+        case .share(let id)?:
+            guard let target = Self.spaceName(id, before, after) else { return nil }
+            change = .share(target: target)
+        }
         let kind = first.page.noteID != nil ? "Note" : "Easel"
         let shown = InternalPage(urlString: first.tab.url) == first.page
-        if ids.count == 1 && shown {
+        if sharing == nil && ids.count == 1 && shown {
             subject = "This " + kind
         } else {
             let title = (shown ? [first.tab.customTitle, first.tab.title, first.tab.savedTitle] : [first.tab.customTitle, first.tab.savedTitle])
@@ -136,7 +145,13 @@ struct InterProfileDocumentBlock: Equatable {
         others = blocked.dropFirst().map(\.page)
     }
 
-    var title: String { "Can’t move to " + destinationSpace }
+    var title: String {
+        switch change {
+        case .move: return "Can’t move to " + destinationSpace
+        case .share(let target): return "Can’t share " + target + "’s data with " + sourceSpace
+        case .keepSeparate: return "Can’t keep " + sourceSpace + " separate"
+        }
+    }
 
     var message: String {
         let mixed = places.contains { if case .sidebar(_, _, _?) = $0 { return true } else { return false } }
@@ -160,7 +175,8 @@ struct InterProfileDocumentBlock: Equatable {
         case 3: list = phrases[0] + ", " + phrases[1] + " and " + phrases[2]
         default: list = phrases[0] + ", " + phrases[1] + " and \(phrases.count - 2) more places"
         }
-        var text = subject + " is still used elsewhere" + (mixed ? "" : " in " + sourceSpace) + ": " + list + "."
+        let scope = change != .move ? " on " + sourceSpace + "’s current data" : mixed ? "" : " in " + sourceSpace
+        var text = subject + " is still used elsewhere" + scope + ": " + list + "."
         if !others.isEmpty {
             let noun = others.allSatisfy({ $0.noteID != nil }) ? "Note"
                 : others.allSatisfy({ $0.easelID != nil }) ? "Easel" : "document"

@@ -181,26 +181,36 @@ extension BrowserStore {
         }
     }
 
-    func changeSharing(ofSpace spaceID: UUID, to sharing: SpaceDataSharing, newProfileID: UUID = UUID(),
-                       shouldCommit: @escaping () -> Bool = { true },
-                       completion: @escaping (Result<SpaceSharingChange?, Error>) -> Void) {
-        guard let space = state.spaces.first(where: { $0.id == spaceID }) else { completion(.success(nil)); return }
-        let previous = space.profileID
-        let target: UUID
-        var created: BrowserProfile?
+    private func sharingDestination(ofSpace spaceID: UUID, to sharing: SpaceDataSharing,
+                                    newProfileID: UUID) -> (space: BrowserSpace, profileID: UUID, created: BrowserProfile?)? {
+        guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return nil }
         switch sharing {
         case .share(let otherID):
             guard otherID != spaceID, let other = state.spaces.first(where: { $0.id == otherID }),
-                  other.profileID != previous else { completion(.success(nil)); return }
-            target = other.profileID
+                  other.profileID != space.profileID else { return nil }
+            return (space, other.profileID, nil)
         case .separate:
-            guard !spaceSharing(of: spaceID).isEmpty else { completion(.success(nil)); return }
+            guard !spaceSharing(of: spaceID).isEmpty else { return nil }
             let name = space.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            created = BrowserProfile(id: newProfileID, name: name.isEmpty ? "Profile" : name,
-                                     autoArchiveHours: state.resolvedAutoArchiveHours(forSpace: spaceID))
-            target = newProfileID
+            return (space, newProfileID, BrowserProfile(id: newProfileID, name: name.isEmpty ? "Profile" : name,
+                                                        autoArchiveHours: state.resolvedAutoArchiveHours(forSpace: spaceID)))
         }
-        assignProfile(target, toSpace: spaceID, creating: created, shouldCommit: shouldCommit) { [weak self] result in
+    }
+
+    func sharingDocumentBlock(forSpace spaceID: UUID, to sharing: SpaceDataSharing) -> InterProfileDocumentBlock? {
+        guard let destination = sharingDestination(ofSpace: spaceID, to: sharing, newProfileID: UUID()),
+              let assignment = profileAssignment(destination.profileID, toSpace: spaceID, creating: destination.created) else { return nil }
+        return InterProfileDocumentBlock(moving: assignment.tabIDs, before: state, after: assignment.proposal(state), sharing: sharing)
+    }
+
+    func changeSharing(ofSpace spaceID: UUID, to sharing: SpaceDataSharing, newProfileID: UUID = UUID(),
+                       shouldCommit: @escaping () -> Bool = { true },
+                       completion: @escaping (Result<SpaceSharingChange?, Error>) -> Void) {
+        guard let destination = sharingDestination(ofSpace: spaceID, to: sharing, newProfileID: newProfileID) else {
+            completion(.success(nil)); return
+        }
+        let previous = destination.space.profileID, target = destination.profileID
+        assignProfile(target, toSpace: spaceID, creating: destination.created, shouldCommit: shouldCommit) { [weak self] result in
             completion(result.map { moved in
                 guard moved, let self else { return nil }
                 return SpaceSharingChange(spaceID: spaceID, profileID: target, previousProfileID: previous,

@@ -3811,16 +3811,22 @@ final class BrowserStore: ObservableObject {
     func assignProfile(_ profileID: UUID, toSpace spaceID: UUID, creating newProfile: BrowserProfile? = nil,
                        shouldCommit: @escaping () -> Bool = { true },
                        completion: @escaping (Result<Bool, Error>) -> Void = { _ in }) {
+        guard let assignment = profileAssignment(profileID, toSpace: spaceID, creating: newProfile) else { completion(.success(false)); return }
+        moveAcrossProfiles(assignment.tabIDs, proposal: { shouldCommit() ? assignment.proposal($0) : nil }, completion: completion)
+    }
+
+    func profileAssignment(_ profileID: UUID, toSpace spaceID: UUID, creating newProfile: BrowserProfile? = nil)
+        -> (tabIDs: Set<UUID>, proposal: (BrowserState) -> BrowserState?)? {
         func including(_ state: BrowserState) -> BrowserState? {
             guard let newProfile else { return state }
             guard newProfile.id == profileID, !state.profiles.contains(where: { $0.id == profileID }) else { return nil }
             var next = state; next.profiles.append(newProfile); return next
         }
         guard !isEphemeral, let space = state.spaces.first(where: { $0.id == spaceID }), let available = including(state),
-              InterProfileMove.profilesAvailable(space.profileID, profileID, in: available) else { completion(.success(false)); return }
+              InterProfileMove.profilesAvailable(space.profileID, profileID, in: available) else { return nil }
         let ids = Set(state.openTabs(where: { $0.spaceID == spaceID && $0.kind != .favorite }).map(\.id))
-        moveAcrossProfiles(ids, proposal: { original in
-            guard shouldCommit(), let current = including(original),
+        return (ids, { original in
+            guard let current = including(original),
                   InterProfileMove.profilesAvailable(space.profileID, profileID, in: current),
                   let index = current.spaces.firstIndex(where: { $0.id == spaceID && $0.profileID == space.profileID }),
                   Set(current.openTabs(where: { $0.spaceID == spaceID && $0.kind != .favorite }).map(\.id)) == ids else { return nil }
@@ -3847,7 +3853,7 @@ final class BrowserStore: ObservableObject {
                 next.selectedTabIDs.removeAll { id in next.tabs.first { $0.id == id }?.profileID != profileID }
             }
             return next
-        }, completion: completion)
+        })
     }
 
     private func withRetiredPages(_ ids: Set<UUID>,

@@ -185,6 +185,11 @@ confirmation:
 - Choosing what the Space already has, or keeping separate a Space that already is,
   shows nothing and changes nothing.
 
+Before any of these, a change that would strand one of the Space's Notes or Easels
+on the old data is refused and explained instead, as
+[folder moves](folder-moves.md#notes-and-easels-still-used-in-the-source-space)
+describes; `sharingDocumentBlock` previews the store's own assignment for it.
+
 The wording and the choice live in `SpaceSharingWarning`. When the change leaves
 data unused, the confirmation hands it to `ProfileRemovalController.remove`, which
 stages the removal record and prepares it natively in one step. Failures use the
@@ -238,8 +243,8 @@ and closed windows reject stale completions.
 ## Checks
 
 `scripts/test-space-sharing.sh` covers the upgrade, Links conversion, per-Space
-Auto-Archive, atomic creation, change sharing, which warning each situation gets
-and unused-Profile reporting.
+Auto-Archive, atomic creation, change sharing, which warning each situation gets,
+unused-Profile reporting and the Note and Easel refusal explained before the warning.
 Space-management/store/inter-Profile components cover title migration, exact
 leases, failed saves, deletion/Undo, document relocation and owner preservation.
 `tests/SpaceManager/check.py` exercises real inert cards/sidebar controls and

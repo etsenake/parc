@@ -14,6 +14,7 @@ import Foundation
         try separateCreation()
         try draftCreation()
         try changeSharing()
+        try documentBlocks()
         try warnings()
         try legacyAppWideKey()
         try deletion()
@@ -233,6 +234,65 @@ import Foundation
         let defaultRecord = try store.stageRemoval(of: last!.unusedProfile!)
         try check(store.isProfileRemovalPending(p.id) && defaultRecord.fallbackProfileID == fallback
             && store.defaultProfileID == fallback, "removing the default Profile hands Default to a surviving Profile in the same save")
+    }
+
+    static func documentBlocks() throws {
+        let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
+        var state = BrowserState.initial()
+        let p = state.profiles[0], q = BrowserProfile(id: UUID(), name: "Q")
+        state.spaces[0].name = "Alpha"
+        let a = state.spaces[0]
+        let b = BrowserSpace(id: UUID(), name: "Beta", symbol: "circle", color: "B9B5D4", profileID: p.id)
+        let c = BrowserSpace(id: UUID(), name: "Gamma", symbol: "circle", color: "B9B5D4", profileID: q.id)
+        state.profiles.append(q); state.spaces += [b, c]
+        let page = InternalPage.note(UUID())
+        var plans = tab(a, page.urlString); plans.title = "Plans"; plans.savedTitle = "Plans"
+        let web = tab(a, "https://a.example")
+        var relocated: [[InternalPage]] = []
+        func load(_ extra: [BrowserTab]) throws -> BrowserStore {
+            var next = state; next.tabs = [plans, web] + extra
+            try write(next, to: directory)
+            let store = try BrowserStore(directory: directory)
+            relocated = []
+            store.relocateLocalDocuments = { _, pages, _, _ in relocated.append(pages); return {} }
+            return store
+        }
+        func change(_ store: BrowserStore, _ sharing: SpaceDataSharing) throws -> SpaceSharingChange? {
+            var outcome: Result<SpaceSharingChange?, Error>?
+            store.changeSharing(ofSpace: a.id, to: sharing) { outcome = $0 }
+            return try outcome!.get()
+        }
+        var archived = tab(a, page.urlString); archived.archivedAt = Date()
+
+        let blocked: [(extra: [BrowserTab], sharing: SpaceDataSharing, title: String, places: String, reason: String)] = [
+            ([tab(a, page.urlString, kind: .favorite)], .separate, "Can’t keep Alpha separate", "in Favorites", "a Favorite"),
+            ([archived], .share(withSpace: c.id), "Can’t share Gamma’s data with Alpha", "in the Archive", "an archived entry"),
+            ([tab(b, page.urlString)], .share(withSpace: c.id), "Can’t share Gamma’s data with Alpha", "in Today in Beta", "an entry in a Space sharing the old data"),
+        ]
+        for (extra, sharing, title, places, reason) in blocked {
+            let store = try load(extra)
+            let before = store.state
+            let block = store.sharingDocumentBlock(forSpace: a.id, to: sharing)
+            try check(block?.title == title && block?.message == "The Note “Plans” is still used elsewhere on Alpha’s current data: " + places + ".",
+                      reason + " explains why the data can’t change")
+            try check(try change(store, sharing) == nil && store.state == before && relocated.isEmpty,
+                      reason + " still refuses the change exactly as before")
+        }
+
+        let store = try load([])
+        try check(store.sharingDocumentBlock(forSpace: a.id, to: .share(withSpace: c.id)) == nil
+                  && store.sharingDocumentBlock(forSpace: a.id, to: .separate) == nil,
+                  "a Note used only in the changing Space has nothing to explain")
+        try check(store.sharingDocumentBlock(forSpace: b.id, to: .share(withSpace: a.id)) == nil
+                  && store.sharingDocumentBlock(forSpace: c.id, to: .separate) == nil
+                  && store.sharingDocumentBlock(forSpace: a.id, to: .share(withSpace: UUID())) == nil,
+                  "a choice that changes nothing has nothing to explain")
+        try check(store.sharingWarning(forSpace: a.id, to: .share(withSpace: c.id)) == .share(target: "Gamma", space: "Alpha", discardsOwnData: false),
+                  "without blocking entries the data warning is still asked")
+        let joined = try change(store, .share(withSpace: c.id))
+        try check(joined == SpaceSharingChange(spaceID: a.id, profileID: q.id, previousProfileID: p.id, unusedProfile: nil)
+                  && store.state.tabs.allSatisfy { $0.profileID == q.id } && relocated == [[page]],
+                  "a data change with no shared Notes or Easels proceeds and carries its Note along")
     }
 
     static func deletion() throws {

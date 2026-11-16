@@ -87,6 +87,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private let deleteSpace = SettingsPillButton(title: "Delete Space…")
     private let shareData = PointingHandPopUpButton(frame: .zero, pullsDown: true)
     private var shareChoices: [SpaceDataSharing] = []
+    private let shareDataNote = NSTextField(wrappingLabelWithString: "")
+    private var refusedSharing: (spaceID: UUID, sharing: SpaceDataSharing)?
+    private var refusedSharingSubscription: AnyCancellable?
     private let removalNote = NSTextField(labelWithString: "Removing old data…")
     private let removalRetry = SettingsPillButton(title: "Retry")
     private let removalRow = SettingsGroupView(frame: NSRect(x: SettingsLayout.margin, y: 0, width: SettingsLayout.groupWidth, height: SettingsLayout.rowHeight))
@@ -293,6 +296,10 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             field.font = .systemFont(ofSize: 11); field.textColor = .secondaryLabelColor
         }
         sharedNote.lineBreakMode = .byTruncatingTail
+        shareDataNote.font = .systemFont(ofSize: 11); shareDataNote.textColor = .secondaryLabelColor
+        shareDataNote.maximumNumberOfLines = 3
+        shareDataNote.cell?.truncatesLastVisibleLine = true
+        shareDataNote.isHidden = true
     }
     @objc private func deleteSelectedSpace() { showSpaceDeletion() }
     @objc private func renameSelectedSpace() { showSpaceNameEditor() }
@@ -539,6 +546,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         identity.separator(at: rowHeight)
         rowLabel("Share data with", in: identity, row: 1, width: 160)
         trailing(shareData, in: identity, top: rowHeight, width: 220, height: 25)
+        shareDataNote.frame = NSRect(x: SettingsLayout.margin + SettingsLayout.rowInset, y: 0,
+                                     width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 2, height: 16)
+        content.addSubview(shareDataNote)
 
         let searchTitle = SettingsSectionHeading(title: "Search")
         content.addSubview(searchTitle)
@@ -603,6 +613,12 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private func layoutSpaceCards() {
         guard let layout = spaceEditorLayout else { return }
         var bottom = layout.identity.frame.maxY
+        if !shareDataNote.isHidden {
+            let width = shareDataNote.frame.width
+            let height = shareDataNote.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: 44)).height ?? 16
+            shareDataNote.frame = NSRect(x: shareDataNote.frame.minX, y: bottom + 8, width: width, height: min(ceil(height), 44))
+            bottom = shareDataNote.frame.maxY
+        }
         let note = !downloadHelp.isHidden || !downloadRetry.isHidden
         layout.downloads.setFrameSize(NSSize(width: SettingsLayout.groupWidth, height: SettingsLayout.rowHeight + (note ? 44 : 0)))
         for (title, group) in layout.sections {
@@ -967,6 +983,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         renameSpace.isEnabled = edited != nil && !removing
         spaceNameValue.stringValue = edited?.name ?? ""
         renderShareData(edited, removing: removing)
+        renderShareDataNote()
         if let edited, !removing {
             let canDelete = store.state.spaces.count > 1 && SpaceDeletionTarget(spaceID: edited.id, state: store.state) != nil
             deleteSpace.isEnabled = canDelete && onDeleteSpace != nil
@@ -1061,6 +1078,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     func windowWillClose(_ notification: Notification) {
         isClosing = true
         lifecycleRevision &+= 1
+        refusedSharing = nil; refusedSharingSubscription = nil
         sheetFocusContext = nil
         membershipPane.cancelPresentation()
         archiveInfoPopover?.close(); archiveInfoPopover = nil
@@ -1165,14 +1183,44 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         shareData.setAccessibilityHelp(others.isEmpty ? "Add another Space to share data between Spaces." : nil)
     }
 
+    private func renderShareDataNote() {
+        let block = refusedSharing.flatMap { refused in
+            editedSpace?.id == refused.spaceID ? store.sharingDocumentBlock(forSpace: refused.spaceID, to: refused.sharing) : nil
+        }
+        if block == nil { refusedSharing = nil }
+        if refusedSharing == nil {
+            refusedSharingSubscription = nil
+        } else if refusedSharingSubscription == nil {
+            refusedSharingSubscription = store.statePublisher
+                .removeDuplicates { $0.tabs == $1.tabs && $0.folders == $1.folders && $0.splitLayouts == $1.splitLayouts }
+                .dropFirst().receive(on: RunLoop.main).sink { [weak self] _ in
+                    guard let self, !self.isClosing else { return }
+                    self.renderShareDataNote()
+                }
+        }
+        let text = block?.message ?? ""
+        guard shareDataNote.stringValue != text || shareDataNote.isHidden != text.isEmpty else { return }
+        shareDataNote.stringValue = text
+        shareDataNote.toolTip = text.isEmpty ? nil : text
+        shareDataNote.isHidden = text.isEmpty
+        layoutSpaceCards()
+    }
+
     @objc private func shareDataChosen(_ sender: NSMenuItem) {
         guard let window, window.attachedSheet == nil, let space = editedSpace,
               shareChoices.indices.contains(sender.tag) else { return }
-        let revision = lifecycleRevision
-        SpaceSharingConfirmation.present(on: window, store: store, spaceID: space.id, sharing: shareChoices[sender.tag],
+        let revision = lifecycleRevision, sharing = shareChoices[sender.tag]
+        refusedSharing = nil; renderShareDataNote()
+        SpaceSharingConfirmation.present(on: window, store: store, spaceID: space.id, sharing: sharing,
             ownerValid: { [weak self] in
                 guard let self else { return false }
                 return !self.isClosing && self.lifecycleRevision == revision && self.editedSpace?.id == space.id
+            }, explain: { [weak self] block in
+                guard let self, !self.isClosing, self.lifecycleRevision == revision, self.editedSpace?.id == space.id else { return }
+                self.refusedSharing = (space.id, sharing)
+                self.renderShareDataNote()
+                NSAccessibility.post(element: self.shareDataNote, notification: .announcementRequested, userInfo: [
+                    .announcement: block.message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
             }, completion: { [weak self] result in
                 guard let self, !self.isClosing, self.lifecycleRevision == revision else { return }
                 if case .failure(let error) = result { self.reportProfileSettingsError(error) }
