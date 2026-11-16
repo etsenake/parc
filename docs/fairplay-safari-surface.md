@@ -93,8 +93,8 @@ state and `bufferedchange` timing. Native buffering/eviction drives the real
 state rather than a timer pretending that data arrived.
 
 Opening requires `disableRemotePlayback` or an eligible non-blob HLS alternative.
-Selecting AirPlay can switch to that alternative. Subsequent loading/CSP and
-format edge cases remain in [media follow-ups](safari-media-edges.md).
+Selecting AirPlay can switch to that alternative. Its loading/CSP and format
+edges are described in [media boundaries](safari-media-edges.md).
 
 ## Presentation and fullscreen
 

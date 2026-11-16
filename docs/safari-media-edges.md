@@ -55,9 +55,9 @@ the receiver is picked. A successful launch retains its original active or cache
 document; failed launches withdraw pending requests. See [Mini Player](media-mini-player.md).
 
 A cached page's native pipeline and eligible URL/HLS readers can continue casting.
-Its JavaScript remains frozen, so Media Source cannot append beyond its buffered
-range. Receiver controls do not thaw the page or provide a reverse play command
-to its paused source pipeline. A source that is destroyed or evicted cannot keep
+Its JavaScript stays frozen, as every browser freezes cached pages, so a Media
+Source cast stops once it plays out its buffered range. Receiver controls do not
+thaw the page or provide a reverse play command to its paused source pipeline. A source that is destroyed or evicted cannot keep
 feeding that route. An active cast from a moved element remains with its starting
 tab until it ends; closing that starting frame ends its presentation connection.
 
@@ -67,19 +67,15 @@ until a route/start failure, sink loss or remoting stop clears it. Chromium uses
 Stop casting to return locally; it does not offer a synthetic “This Mac” device.
 Tab mirroring is represented as Cast even on a Safari-identity page.
 
-These concrete control edges remain:
+A second audible player joining the session before the device pick is handled
+makes Chromium refuse the remoting request, and navigating in the instant before
+Parc first sees a new route can make that earlier-page cast open the media
+chooser instead of the direct Stop menu. Both stay, like the same-site Connecting
+label in [Mini Player](media-mini-player.md#cast): the first matches Chrome and
+would need a Chromium change, and the others last only a moment.
 
-- If the media session gains a second player before the device pick is handled,
-  its single-player remoting request is refused. Preserve the picked player
-  explicitly if this interaction is extended to competing players.
-- The route watcher records the current document when it first observes a remote
-  route. Navigation before that observation can make an earlier-page cast open
-  the current media chooser instead of the direct Stop menu. Capture the route's
-  originating document when starting it.
-- Pending default-presentation routes are matched by source URL until the page
-  receives its connection, so another tab with the same request can briefly show
-  Connecting. Availability observes the default presentation's sources; a
-  speaker that only supports tab-audio mirroring does not make that button appear.
+Availability observes the default presentation's sources; a speaker that only
+supports tab-audio mirroring does not make the Mini Player's Cast button appear.
 
 ## Moved elements and renderer boundaries
 
@@ -113,12 +109,14 @@ Out-of-band `<track>` sources remain Blink-owned rather than native alternate
 tracks. The [web surface guide](fairplay-safari-surface.md) owns output-protection
 notification boundaries.
 
-SAMPLE-AES setup reads the first registration/private-data descriptor of each
-type. Later duplicate descriptors are not searched, and parser selection follows
-the PMT stream type even if its audio-format declaration disagrees. Each encrypted
-elementary stream emits its own initial `encrypted` event; combined audio/video
-is not coalesced into one event. Descriptor selection and conflicting format
-declarations are the remaining transport-stream follow-ups.
+Each encrypted elementary stream emits its own initial `encrypted` event;
+combined audio/video is not coalesced into one event. SAMPLE-AES setup reads the
+first registration/private-data descriptor of each type. Later duplicate
+descriptors are not searched, and parser selection follows the PMT stream type
+even if its audio-format declaration disagrees. These descriptor cases and the
+CSP-blocked AirPlay alternative above stay: no real site, stream or packager is
+known to hit them, and searching later descriptors would change Chromium's
+reader for every transport stream.
 
 MPEG-1/2 video uses VideoToolbox in the GPU process, including its software decoder
 when hardware decoding is unavailable. This is a process dependency, not a

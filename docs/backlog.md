@@ -48,10 +48,8 @@ workflow, renders first.
 Casting continuity across navigation and picture in picture are implemented.
 The remaining work is specific to these paths:
 
-- Correct competing-player cast selection, capture the route's original document
-  before navigation, and narrow same-source Connecting labels and speaker-only
-  discovery. Media Source on a frozen page cannot append beyond its buffered
-  range. [Casting and media boundaries](safari-media-edges.md).
+- The Mini Player's Cast button still needs speaker-only discovery.
+  [Casting and media boundaries](safari-media-edges.md).
 - FairPlay needs MSE pitch-policy forwarding. VP8/MP3 and protected Opus/PCM
   remain unsupported; codec eligibility and fallback behavior belong in
   [FairPlay integration](../Engine/ParcNative/fairplay_chromium/README.md).
@@ -60,9 +58,6 @@ The remaining work is specific to these paths:
   [Native HLS](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md),
   [composition](../Engine/ParcNative/fairplay_chromium/COMPOSITING.md),
   [native audio](../Engine/ParcNative/fairplay/README.md).
-- Native-HLS alternative availability must respect CSP; transport-stream parsing
-  still stops at the first matching descriptor. See
-  [media boundaries](safari-media-edges.md) for the exact cases and retained scope.
 - Worker ManagedMediaSource lacks playback-position feedback for its high-water
   stop. Existing shared workers keep their old identity until they end. The
   [web surface](fairplay-safari-surface.md) and [identity](fairplay-identity.md)
