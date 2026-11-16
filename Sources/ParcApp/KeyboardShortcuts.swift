@@ -20,6 +20,7 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
     let modifiers: UInt
     static let modifierMask: NSEvent.ModifierFlags = [.control, .option, .shift, .command]
     static let clearKey = "\u{f739}"
+    static let keypadDecimalCode: UInt16 = 65
     private static let keypadMark: Unicode.Scalar = "\u{20e3}"
     private static let keypadCharacters: [UInt16: String] = [
         65: ".", 67: "*", 69: "+", 75: "/", 78: "-", 81: "=", 82: "0", 83: "1", 84: "2",
@@ -72,7 +73,9 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
         case "\u{f72d}": return "⇟"
         case "\u{5}": return "?⃝"
         default:
-            if isKeypadKey, let character = key.unicodeScalars.first { return "Keypad \(character)" }
+            if isKeypadKey, let character = key.unicodeScalars.first {
+                return Self.keypadName(character, typing: Self.layoutCharacter(forPhysicalCode:))
+            }
             guard let value = key.unicodeScalars.first?.value, (0xF704...0xF717).contains(value) else { return nil }
             return "F\(value - 0xF703)"
         }
@@ -122,19 +125,26 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
         })
     }
 
-    static func capture(_ event: NSEvent) -> KeyboardShortcut? {
-        guard let key = keypadKey(forPhysicalCode: event.keyCode) else { return characterCapture(event) }
+    typealias LayoutTyping = (UInt16, Int) -> String?
+    static func capture(_ event: NSEvent, layout: LayoutTyping? = nil) -> KeyboardShortcut? {
+        guard let key = keypadKey(forPhysicalCode: event.keyCode) else { return characterCapture(event, layout: layout) }
         let value = KeyboardShortcut(key: key, flags: event.modifierFlags)
         return value.isValid ? value : nil
     }
-    static func characterCapture(_ event: NSEvent) -> KeyboardShortcut? {
-        guard let key = keyForPhysicalCode(event.keyCode) else { return nil }
+    static func characterCapture(_ event: NSEvent, layout: LayoutTyping? = nil) -> KeyboardShortcut? {
+        guard let key = keyForPhysicalCode(event.keyCode, layout: layout) else { return nil }
         let value = KeyboardShortcut(key: key, flags: event.modifierFlags)
         return value.isValid ? value : nil
     }
     static func keypadKey(forPhysicalCode keyCode: UInt16) -> String? {
         if keyCode == 71 { return clearKey }
         return keypadCharacters[keyCode].map { $0 + String(keypadMark) }
+    }
+    private static let unprintable = CharacterSet.whitespacesAndNewlines.union(.controlCharacters).union(.nonBaseCharacters)
+    static func keypadName(_ character: Unicode.Scalar, typing: (UInt16) -> String?) -> String {
+        guard character == ".", let typed = typing(keypadDecimalCode), typed.count == 1,
+              !typed.unicodeScalars.contains(where: unprintable.contains) else { return "Keypad \(character)" }
+        return "Keypad \(typed)"
     }
 
     private static let functionKeyNumbers: [UInt16: UInt32] = [
@@ -148,27 +158,46 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
         return event.keyCode == 53 || functionKeyNumbers[event.keyCode] != nil
     }
 
-    static func keyForPhysicalCode(_ keyCode: UInt16) -> String? {
+    static func keyForPhysicalCode(_ keyCode: UInt16, layout: LayoutTyping? = nil) -> String? {
         let specials: [UInt16: String] = [36: "\r", 48: "\t", 49: " ", 51: "\u{7f}", 53: "\u{1b}",
             117: "\u{f728}", 123: "\u{f702}", 124: "\u{f703}", 125: "\u{f701}", 126: "\u{f700}",
             115: "\u{f729}", 119: "\u{f72b}", 116: "\u{f72c}", 121: "\u{f72d}"]
         let key: String?
         if let special = specials[keyCode] { key = special }
         else if let number = functionKeyNumbers[keyCode], let scalar = UnicodeScalar(0xF703 + number) { key = String(scalar) }
-        else {
-            guard let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue() else { return nil }
-            guard let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
-            let data = Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue()
-            guard let bytes = CFDataGetBytePtr(data) else { return nil }
-            let layout = UnsafeRawPointer(bytes).assumingMemoryBound(to: UCKeyboardLayout.self)
-            var dead: UInt32 = 0, length = 0
-            var characters = [UniChar](repeating: 0, count: 4)
-            let result = UCKeyTranslate(layout, keyCode, UInt16(kUCKeyActionDisplay), 0,
-                UInt32(LMGetKbdType()), 0, &dead,
-                characters.count, &length, &characters)
-            key = result == noErr && length > 0 ? String(utf16CodeUnits: characters, count: length) : nil
-        }
+        else { key = typedKey(forPhysicalCode: keyCode, layout: layout ?? currentLayout()) }
         return key
+    }
+    private static let numberRowCodes: Set<UInt16> = [18, 19, 20, 21, 22, 23, 25, 26, 28, 29]
+    static func isNumberRow(_ keyCode: UInt16) -> Bool { numberRowCodes.contains(keyCode) }
+    static func typedKey(forPhysicalCode keyCode: UInt16, layout: LayoutTyping) -> String? {
+        let base = layout(keyCode, 0)
+        guard isNumberRow(keyCode), !isDigit(base) else { return base }
+        for modifiers in [cmdKey, shiftKey] {
+            if let typed = layout(keyCode, modifiers), isDigit(typed) { return typed }
+        }
+        return base
+    }
+    private static func isDigit(_ text: String?) -> Bool {
+        guard let text, text.count == 1, let scalar = text.unicodeScalars.first else { return false }
+        return ("0"..."9").contains(scalar)
+    }
+    static func currentLayout() -> LayoutTyping {
+        let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue()
+        return { code, modifiers in source.flatMap { layoutCharacter(forPhysicalCode: code, modifiers: modifiers, in: $0) } }
+    }
+    static func layoutCharacter(forPhysicalCode keyCode: UInt16) -> String? { currentLayout()(keyCode, 0) }
+    static func layoutCharacter(forPhysicalCode keyCode: UInt16, modifiers: Int = 0, in source: TISInputSource) -> String? {
+        guard let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
+        let data = Unmanaged<CFData>.fromOpaque(property).takeUnretainedValue()
+        guard let bytes = CFDataGetBytePtr(data) else { return nil }
+        let layout = UnsafeRawPointer(bytes).assumingMemoryBound(to: UCKeyboardLayout.self)
+        var dead: UInt32 = 0, length = 0
+        var characters = [UniChar](repeating: 0, count: 4)
+        let result = UCKeyTranslate(layout, keyCode, UInt16(kUCKeyActionDisplay), UInt32((modifiers >> 8) & 0xFF),
+            UInt32(LMGetKbdType()), 0, &dead,
+            characters.count, &length, &characters)
+        return result == noErr && length > 0 ? String(utf16CodeUnits: characters, count: length) : nil
     }
     @MainActor static func systemShortcuts() -> Set<KeyboardShortcut> {
         var result: Unmanaged<CFArray>?
@@ -176,21 +205,23 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
         let records = result.takeRetainedValue() as NSArray
         return systemShortcuts(records: records.compactMap { $0 as? [String: Any] })
     }
-    static func systemShortcuts(records: [[String: Any]]) -> Set<KeyboardShortcut> {
-        Set(records.compactMap { record in
+    static func systemShortcuts(records: [[String: Any]], layout: LayoutTyping? = nil) -> Set<KeyboardShortcut> {
+        let layout = layout ?? currentLayout()
+        return Set(records.flatMap { record -> [KeyboardShortcut] in
             guard (record[kHISymbolicHotKeyEnabled as String] as? NSNumber)?.boolValue == true,
                   let code = (record[kHISymbolicHotKeyCode as String] as? NSNumber)?.intValue,
                   (0...Int(UInt16.max)).contains(code),
                   let modifiers = (record[kHISymbolicHotKeyModifiers as String] as? NSNumber)?.uintValue,
-                  let key = keypadKey(forPhysicalCode: UInt16(code)) ?? keyForPhysicalCode(UInt16(code)),
-                  !key.isEmpty else { return nil }
+                  let key = keypadKey(forPhysicalCode: UInt16(code)) ?? keyForPhysicalCode(UInt16(code), layout: layout),
+                  !key.isEmpty else { return [] }
             var flags: NSEvent.ModifierFlags = []
             for (carbon, native) in [(controlKey, NSEvent.ModifierFlags.control),
                                      (optionKey, .option), (shiftKey, .shift), (cmdKey, .command)] {
                 if modifiers & UInt(carbon) != 0 { flags.insert(native) }
             }
-            guard !flags.isEmpty else { return nil }
-            return KeyboardShortcut(key: key, flags: flags)
+            guard !flags.isEmpty else { return [] }
+            let own = isNumberRow(UInt16(code)) ? layout(UInt16(code), 0).flatMap { $0.isEmpty ? nil : $0 } : nil
+            return [KeyboardShortcut(key: key, flags: flags)] + (own.map { [KeyboardShortcut(key: $0, flags: flags)] } ?? [])
         })
     }
 
@@ -811,12 +842,22 @@ final class KeyboardShortcuts: ObservableObject {
         guard let characters = event.characters, characters.count == 1 else { return false }
         return KeyboardShortcut(key: characters, flags: event.modifierFlags).isReserved
     }
-    func chord(for event: NSEvent) -> KeyboardShortcut? {
+    func chord(for event: NSEvent, layout: KeyboardShortcut.LayoutTyping? = nil) -> KeyboardShortcut? {
         if let key = KeyboardShortcut.keypadKey(forPhysicalCode: event.keyCode) {
             let physical = KeyboardShortcut(key: key, flags: event.modifierFlags)
             if assignedPhysicalChords.contains(physical) { return physical }
         }
-        return KeyboardShortcut.characterCapture(event)
+        guard KeyboardShortcut.isNumberRow(event.keyCode) else { return KeyboardShortcut.characterCapture(event, layout: layout) }
+        let layout = layout ?? KeyboardShortcut.currentLayout()
+        guard let chord = KeyboardShortcut.characterCapture(event, layout: layout) else { return nil }
+        guard let typed = layout(event.keyCode, 0) else { return chord }
+        let own = KeyboardShortcut(key: typed, flags: event.modifierFlags)
+        let bound = assignedPhysicalChords.contains(own) || (nativeChords[own] != nil && !assignedPhysicalChords.contains(chord))
+        return own != chord && own.isValid && bound ? own : chord
+    }
+    func recordedChord(for event: NSEvent, layout: KeyboardShortcut.LayoutTyping? = nil) -> KeyboardShortcut? {
+        KeyboardShortcut.keypadKey(forPhysicalCode: event.keyCode) == nil
+            ? chord(for: event, layout: layout) : KeyboardShortcut.capture(event, layout: layout)
     }
     func performKeypadEquivalent(_ event: NSEvent) -> Bool? {
         guard event.type == .keyDown, let key = KeyboardShortcut.keypadKey(forPhysicalCode: event.keyCode) else { return nil }

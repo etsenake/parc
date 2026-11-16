@@ -41,7 +41,8 @@ for use in (
     "static let titleFont = NSFont.systemFont(ofSize: 13, weight: .medium)",
     "static let shortcutFont = NSFont.systemFont(ofSize: 13, weight: .regular)",
     "private static let shortcutKern: CGFloat = 2",
-    "NSAttributedString(string: row.shortcut, attributes: [\n            .font: Self.shortcutFont, .kern: Self.shortcutKern,",
+    "let shortcut = Self.shortcutText(row.shortcut, color: row.enabled ? colors.subtitle : colors.disabledSubtitle)",
+    "NSMutableAttributedString(string: text, attributes: [\n            .font: Self.shortcutFont, .kern: Self.shortcutKern,",
     ".font: Self.titleFont, .foregroundColor: titleColor",
 ):
     assert use in plus, f"the plus HUD rows no longer use the menu fonts: {use}"

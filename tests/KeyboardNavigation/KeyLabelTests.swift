@@ -1,6 +1,7 @@
 import AppKit
+import Carbon.HIToolbox
 
-@main struct KeyLabelTests {
+@main @MainActor struct KeyLabelTests {
     static func main() {
         var checks = 0
         func expect(_ value: @autoclosure () -> Bool, _ message: String) { checks += 1; precondition(value(), message) }
@@ -40,6 +41,40 @@ import AppKit
                && chord("1\u{20e3}").searchText.contains("keypad 1"), "Enter, Clear and keypad keys are spoken and searchable by name")
         expect(chord("\t").spokenDisplay == chord("\t").display && chord("k", .command).spokenDisplay == "⌘K",
                "Every other chord speaks its displayed text")
+
+        let decimal = KeyboardShortcut.keypadDecimalCode
+        let commaLayout: (UInt16) -> String? = { $0 == decimal ? "," : "x" }
+        expect(KeyboardShortcut.keypadName(".", typing: commaLayout) == "Keypad ,",
+               "On a comma-decimal layout the keypad decimal key reads Keypad ,")
+        expect(KeyboardShortcut.keypadName("1", typing: commaLayout) == "Keypad 1"
+               && KeyboardShortcut.keypadName(",", typing: commaLayout) == "Keypad ,",
+               "Only the decimal key follows the layout; digits and the keypad comma keep their own names")
+        expect([nil, "", " ", "\u{3}", "\u{301}", ".."].allSatisfy { typed in
+            KeyboardShortcut.keypadName(".", typing: { _ in typed }) == "Keypad ."
+        }, "A missing, blank, control, lone combining or multi-character translation falls back to Keypad .")
+        func layout(_ id: String) -> TISInputSource {
+            let filter = [kTISPropertyInputSourceID as String: id] as CFDictionary
+            guard let list = TISCreateInputSourceList(filter, true)?.takeRetainedValue() as? [TISInputSource],
+                  let source = list.first else { preconditionFailure("\(id) ships with macOS") }
+            return source
+        }
+        let german = layout("com.apple.keylayout.German"), english = layout("com.apple.keylayout.US")
+        expect(KeyboardShortcut.keypadName(".", typing: { KeyboardShortcut.layoutCharacter(forPhysicalCode: $0, in: german) }) == "Keypad ,"
+               && KeyboardShortcut.keypadName(".", typing: { KeyboardShortcut.layoutCharacter(forPhysicalCode: $0, in: english) }) == "Keypad .",
+               "The shortcut layout translation names the decimal key Keypad , on German and Keypad . on U.S.")
+        let commaDecimal = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.control, .numericPad], timestamp: 1,
+                                            windowNumber: 0, context: nil, characters: ",", charactersIgnoringModifiers: ",",
+                                            isARepeat: false, keyCode: decimal)
+        let captured = commaDecimal.flatMap { KeyboardShortcut.capture($0) }
+        let saved = captured.flatMap { try? JSONEncoder().encode($0) }
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        expect(captured == KeyboardShortcut(key: ".\u{20e3}", flags: .control) && saved?["key"] as? String == ".\u{20e3}"
+               && captured.map { $0.hashValue == chord(".\u{20e3}").hashValue } == true,
+               "A decimal key typing a comma still records, saves and hashes as the same keypad . identity")
+        let liveName = KeyboardShortcut.keypadName(".", typing: KeyboardShortcut.layoutCharacter(forPhysicalCode:))
+        expect(chord(".\u{20e3}").display == "⌃" + liveName && chord(".\u{20e3}").symbols.last == liveName
+               && chord(".\u{20e3}").keycapSymbols.last == liveName && chord(".\u{20e3}").spokenDisplay == "⌃" + liveName,
+               "Menu text, Settings caps, Essentials and tooltip keycaps and accessibility share the layout's decimal label")
         print("Shortcut key label checks passed: \(checks)")
     }
 }

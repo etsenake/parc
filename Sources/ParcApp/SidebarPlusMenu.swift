@@ -516,11 +516,19 @@ final class SidebarPlusRowButton: NSButton {
             .font: Self.titleFont, .foregroundColor: titleColor
         ])
         title.draw(at: Self.titleOrigin)
-        let shortcut = NSAttributedString(string: row.shortcut, attributes: [
-            .font: Self.shortcutFont, .kern: Self.shortcutKern,
-            .foregroundColor: row.enabled ? colors.subtitle : colors.disabledSubtitle
-        ])
+        let shortcut = Self.shortcutText(row.shortcut, color: row.enabled ? colors.subtitle : colors.disabledSubtitle)
         let shortcutWidth = shortcut.size().width
         shortcut.draw(at: NSPoint(x: bounds.width - Self.shortcutRightInset - shortcutWidth, y: 12))
+    }
+
+    static func shortcutText(_ text: String, color: NSColor) -> NSAttributedString {
+        let result = NSMutableAttributedString(string: text, attributes: [
+            .font: Self.shortcutFont, .kern: Self.shortcutKern, .foregroundColor: color
+        ])
+        guard let space = text.lastIndex(of: " ") else { return result }
+        var start = space
+        while start > text.startIndex, text[text.index(before: start)].isLetter { start = text.index(before: start) }
+        result.removeAttribute(.kern, range: NSRange(start...space, in: text))
+        return result
     }
 }

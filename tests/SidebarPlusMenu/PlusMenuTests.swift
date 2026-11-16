@@ -260,6 +260,19 @@ extension NSWindow {
             let tabShortcut = ink(rep, NSRect(x: 150, y: 242, width: 52, height: 40), background: highlight)
             check(near(tabShortcut.color, over(colors.subtitle, highlight.map { $0 / 255 }, dark: dark), 3),
                   "\(mode): the highlighted row keeps the subtitle shortcut colour")
+            let keypadRows = SidebarPlusMenuModel.rows(privateBrowsing: false, canCreateEasel: true, canCreateNote: true,
+                                                       canSplit: true) { $0 == "newTab:" ? "⌃Keypad 1" : $0 == "createEasel:" ? "⌃SS" : "" }
+            let keypadRep = render(SidebarPlusMenuView(rows: keypadRows, colors: colors) { _ in }, dark: dark)
+            let keypadInk = ink(keypadRep, NSRect(x: 112, y: 250, width: 84, height: 24), background: highlight)
+            let keypadText = NSMutableAttributedString(string: "⌃", attributes: [.font: NSFont.systemFont(ofSize: 13), .kern: 2])
+            keypadText.append(NSAttributedString(string: "Keypad 1", attributes: [.font: NSFont.systemFont(ofSize: 13)]))
+            let keypadWidth = keypadText.boundingRect(with: .zero, options: [.usesLineFragmentOrigin, .usesDeviceMetrics]).width
+            check(abs((keypadInk.maxX - keypadInk.minX) - keypadWidth) <= 1
+                  && near(keypadInk.color, over(colors.subtitle, highlight.map { $0 / 255 }, dark: dark), 3),
+                  "\(mode): a keypad shortcut keeps the modifier spacing, sets Keypad 1 untracked and stays subtitle")
+            let doubled = ink(keypadRep, shortcutBox, background: background)
+            check(abs((doubled.maxX - doubled.minX) - inkWidth("⌃SS", [.font: NSFont.systemFont(ofSize: 13), .kern: 2])) <= 1,
+                  "\(mode): a label without a space, like ß's ⌃SS, keeps 2-point tracking on every character")
             let disabledRows = SidebarPlusMenuModel.rows(privateBrowsing: true, canCreateEasel: false, canCreateNote: false,
                                                          canSplit: false) { $0 == "createEasel:" ? "⌃⇧E" : "" }
             let disabled = SidebarPlusMenuView(rows: disabledRows, colors: colors) { _ in }

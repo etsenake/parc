@@ -111,7 +111,7 @@ final class ShortcutRecorderView: NSView {
         let value: KeyboardShortcut?
         if flags.isEmpty && (event.keyCode == 51 || event.keyCode == 117) { value = nil }
         else {
-            guard let captured = KeyboardShortcut.capture(event) else { NSSound.beep(); cancelRecording(); return }
+            guard let captured = KeyboardShortcuts.shared.recordedChord(for: event) else { NSSound.beep(); cancelRecording(); return }
             value = captured
         }
         if onChange?(value) == true { shortcut = value }
