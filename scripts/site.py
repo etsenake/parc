@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Build parcbrowser.com from site/, filling its release slots and adding the site's What's New page."""
 import argparse
+import hashlib
 from html import escape
 import importlib.util
 from pathlib import Path
+import re
 import shutil
 import sys
 
@@ -15,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
 DOWNLOAD = "https://github.com/etsenake/parc-releases/releases/latest/download/Parc-arm64.dmg"
 BUILD_MARK = ".parc-site-build"
+STAMPED = re.compile(r'(\b(?:href|src|poster)=")(/?)(assets/site\.(?:css|js)|media/hero[\w.-]*)(")')
 
 FRESH_SLOT = '<section id="fresh" class="fresh sec" data-fill="latest-release" hidden></section>'
 VERSION_SLOT = '<span data-fill="version"></span>'
@@ -120,6 +123,13 @@ def site_whats_new(page: str) -> str:
     return replace_once(page, "</style>", SITE_STYLE + "</style>", "What's New")
 
 
+def stamp(text: str, out: Path) -> str:
+    def versioned(match: re.Match) -> str:
+        digest = hashlib.sha256((out / match.group(3)).read_bytes()).hexdigest()[:10]
+        return f"{match.group(1)}{match.group(2)}{match.group(3)}?v={digest}{match.group(4)}"
+    return STAMPED.sub(versioned, text)
+
+
 def build(arguments) -> None:
     out = Path(arguments.out).resolve()
     if out == ROOT or out.is_relative_to(SITE) or SITE.is_relative_to(out):
@@ -136,7 +146,10 @@ def build(arguments) -> None:
     (out / BUILD_MARK).write_text("Built by scripts/site.py; a later build may replace this folder.\n", encoding="utf-8")
     history = releases()
     index = out / "index.html"
-    index.write_text(fill_index(index.read_text(encoding="utf-8"), history), encoding="utf-8")
+    index.write_text(stamp(fill_index(index.read_text(encoding="utf-8"), history), out), encoding="utf-8")
+    missing = out / "404.html"
+    if missing.is_file():
+        missing.write_text(stamp(missing.read_text(encoding="utf-8"), out), encoding="utf-8")
     page = out / "whats-new" / "index.html"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(site_whats_new(whats_new.render(ROOT / "release-notes.json")), encoding="utf-8")
