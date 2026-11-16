@@ -216,7 +216,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                   appropriateFor: nil, create: true).appendingPathComponent("Parc", isDirectory: true)
             }
-            store = try BrowserStore(directory: root)
+            guard let opened = try SidebarRescue.openStore(at: root, keepsBackups: argument("--parc-profile") == nil,
+                                                           interactive: !arguments.contains("--parc-smoke")) else {
+                cancelPendingAppKitRestorations()
+                return .exit(failureExitCode)
+            }
+            store = opened
             store.tabHistory?.prune(keeping: store.state.settings.restoreSession
                 ? Set(store.state.tabs.lazy.filter { $0.archivedAt == nil }.map(\.id)) : [])
             historyDeletionObserver = NotificationCenter.default.addObserver(

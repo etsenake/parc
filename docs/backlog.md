@@ -41,8 +41,9 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 
 ## Command bar
 
-- **CMD25:** Restore Data needs a backup producer and restore flow.
-  [Command bar](command-bar.md).
+- **CMD25:** Restore Data needs a window that lists the sidebar backups by time
+  and swaps the chosen one in on relaunch. [Command bar](command-bar.md),
+  [backups](windows-lifecycle.md#saved-sidebar-backups-and-startup-rescue).
 
 ## Planned interface work
 

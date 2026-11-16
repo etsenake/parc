@@ -2095,18 +2095,23 @@ final class BrowserStore: ObservableObject {
     var retiringTabIDs: Set<UUID> { Set(retirementRequests.keys).union(exclusiveRetirementIDs) }
     private var stateURL: URL { directory.appendingPathComponent("session.json") }
 
-    init(directory: URL, now: @escaping () -> Date = Date.init) throws {
+    init(directory: URL, now: @escaping () -> Date = Date.init, keepsBackups: Bool = false) throws {
         self.directory = directory
         privateParentProfileID = nil; privateEnginePath = nil
         self.clock = now
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
+        if keepsBackups { sessionWriter.keepBackups(SessionBackups(directory: directory)) }
         let file = directory.appendingPathComponent("session.json")
         if FileManager.default.fileExists(atPath: file.path) {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            let bytes = try Data(contentsOf: file)
-            var decoded = try decoder.decode(BrowserState.self, from: bytes)
+            let bytes: Data
+            var decoded: BrowserState
+            do {
+                bytes = try Data(contentsOf: file)
+                decoded = try Self.savedSession(from: bytes)
+            } catch {
+                throw SessionFileUnreadable(underlying: error)
+            }
             windowRecords = decoded.windows; decoded.windows = []
             let historyFile = directory.appendingPathComponent(BrowserHistoryFile.name)
             if FileManager.default.fileExists(atPath: historyFile.path) {
@@ -2122,9 +2127,6 @@ final class BrowserStore: ObservableObject {
             }
             let legacyLayouts = (try? JSONSerialization.jsonObject(with: bytes) as? [String: Any])?["splitLayouts"] as? [[String: Any]]
             let needsGroupIdentityMigration = legacyLayouts?.contains { $0["id"] == nil || $0["sidebarAnchorID"] == nil } == true
-            guard decoded.version == 1, !decoded.spaces.isEmpty, !decoded.profiles.isEmpty else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
             var loaded = decoded
             for i in loaded.tabs.indices {
                 loaded.tabs[i].url = BrowserInternalURL.publicString(WhatsNewPage.relocated(loaded.tabs[i].url))
@@ -2134,7 +2136,6 @@ final class BrowserStore: ObservableObject {
                 loaded.history[i].url = BrowserInternalURL.publicString(loaded.history[i].url)
             }
             state = loaded
-            try validateState()
             _ = state.upgradeSpaceSharing()
             let legacyFallback = defaultProfileID
             for index in state.profileRemovals.indices where state.profileRemovals[index].fallbackProfileID == nil {
@@ -2154,6 +2155,7 @@ final class BrowserStore: ObservableObject {
                 if state != decoded { try save() }
             }
             linkRouting.convertProfileDestinations(spaces: state.spaces.map { LinkRoutingSpace(id: $0.id, profileID: $0.profileID) })
+            if keepsBackups { sessionWriter.backUpIfDue(persisted(state), at: clock()) }
         } else {
             state = .initial()
         }
@@ -2266,7 +2268,7 @@ final class BrowserStore: ObservableObject {
         !archivePreviewLeases(intersecting: ids).isEmpty
     }
 
-    func deleteArchivedTabs(_ ids: Set<UUID>, profileID: UUID? = nil) {
+    func deleteArchivedTabs(_ ids: Set<UUID>, profileID: UUID? = nil, forgettingBackups: Bool = false) {
         let originals = state.archivedTabs(where: { ids.contains($0.id) && (profileID == nil || $0.profileID == profileID) })
         guard !originals.isEmpty else { return }
         let removing = Set(originals.map(\.id))
@@ -2290,11 +2292,14 @@ final class BrowserStore: ObservableObject {
             next.recentlyClosedIDs.removeAll { removing.contains($0) }
             self.state = next
             self.changed()
+            if forgettingBackups { self.forgetBackups(.all) }
         }
     }
 
     func clearArchive(profileID: UUID) {
-        deleteArchivedTabs(Set(state.archivedTabs(where: { $0.profileID == profileID }).map(\.id)), profileID: profileID)
+        let ids = Set(state.archivedTabs(where: { $0.profileID == profileID }).map(\.id))
+        guard !ids.isEmpty else { forgetBackups(.all); return }
+        deleteArchivedTabs(ids, profileID: profileID, forgettingBackups: true)
     }
 
     func profilePath(for tab: BrowserTab) -> String {
@@ -3604,7 +3609,9 @@ final class BrowserStore: ObservableObject {
             : next.spaces.map(\.profileID).first(where: keeps) ?? next.profiles.first?.id
         if next.settings.defaultProfileID == record.profileID { next.settings.defaultProfileID = survivor }
         if next.settings.settingsProfileID == record.profileID { next.settings.settingsProfileID = survivor }
+        next.settings.topAppsEmptyStateDismissedForProfiles?.removeAll { $0 == record.profileID }
         try commitProfileSettings(next)
+        forgetBackups(.profile(record.profileID))
         if historyChanged { historyRevision &+= 1 }
     }
 
@@ -5173,6 +5180,7 @@ final class BrowserStore: ObservableObject {
     func forgetHistory(_ deletion: ChromiumHistoryDeletion) {
         let profileID = deletion.profilePath.flatMap(profileID(forEnginePath:))
         guard deletion.profilePath == nil || profileID != nil else { return }
+        if let pruning = SessionBackups.Pruning(deletion) { forgetBackups(pruning) }
         let count = state.history.count
         state.history.removeAll { (profileID == nil || $0.profileID == profileID) && deletion.removes($0) }
         guard state.history.count != count else { return }
@@ -5235,16 +5243,21 @@ final class BrowserStore: ObservableObject {
 
     private func persistSnapshot(_ snapshot: BrowserState, wait: Bool) throws {
         guard !isEphemeral else { return }
-        let url = stateURL
+        let url = stateURL, date = clock()
         if wait {
             var caught: Error?
-            sessionWriter.write(snapshot, to: url, wait: true, allowSkip: false) { caught = $0 }
+            sessionWriter.write(snapshot, to: url, at: date, wait: true, allowSkip: false) { caught = $0 }
             if let caught { throw caught }
             return
         }
-        sessionWriter.write(snapshot, to: url, wait: false, allowSkip: true) { [weak self] error in
+        sessionWriter.write(snapshot, to: url, at: date, wait: false, allowSkip: true) { [weak self] error in
             DispatchQueue.main.async { self?.reportPersistence(error) }
         }
+    }
+
+    private func forgetBackups(_ pruning: SessionBackups.Pruning) {
+        guard !isEphemeral else { return }
+        sessionWriter.forgetBackups(pruning, in: directory, current: persisted(state), at: clock())
     }
 
     private func reportPersistence(_ error: Error?) {
@@ -5290,7 +5303,7 @@ final class BrowserStore: ObservableObject {
         if selectFallback && next.selectedTabIDs.isEmpty { next.selectedTabIDs = Array(visible.suffix(1).map(\.id)) }
     }
 
-    private func validateState() throws {
+    nonisolated static func validateSaved(_ state: BrowserState) throws {
         if let id = state.settings.defaultProfileID, !state.profiles.contains(where: { $0.id == id }) {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -5637,14 +5650,26 @@ private final class SessionFileWriter: @unchecked Sendable {
     private var lastWrittenHistory: [BrowserHistoryEntry]?
     private var historyRecords = 0
     private var historyPreserved = false
+    private var backups: SessionBackups?
 
     func preserveHistoryFile() { queue.sync { historyPreserved = true } }
+    func keepBackups(_ value: SessionBackups) { queue.sync { backups = value } }
+    func backUpIfDue(_ snapshot: BrowserState, at date: Date) {
+        queue.async { self.backups?.backUpIfDue(snapshot, at: date) }
+    }
+    func forgetBackups(_ pruning: SessionBackups.Pruning, in directory: URL, current: BrowserState, at date: Date) {
+        queue.sync {
+            guard let pruning = pruning.excluding(try? SessionBackups.encoded(current)) else { return }
+            if let backups { backups.forget(pruning) } else { SessionBackups.prune(pruning, in: directory) }
+        }
+        backUpIfDue(current, at: date)
+    }
 
-    func write(_ snapshot: BrowserState, to url: URL, wait: Bool, allowSkip: Bool,
+    func write(_ snapshot: BrowserState, to url: URL, at date: Date, wait: Bool, allowSkip: Bool,
                completion: @escaping (Error?) -> Void) {
         let work = {
             do {
-                try self.encodeAndReplace(snapshot, to: url, allowSkip: allowSkip)
+                try self.encodeAndReplace(snapshot, to: url, at: date, allowSkip: allowSkip)
                 completion(nil)
             } catch {
                 completion(error)
@@ -5663,7 +5688,7 @@ private final class SessionFileWriter: @unchecked Sendable {
         }
     }
 
-    private func encodeAndReplace(_ snapshot: BrowserState, to url: URL, allowSkip: Bool) throws {
+    private func encodeAndReplace(_ snapshot: BrowserState, to url: URL, at date: Date, allowSkip: Bool) throws {
         if allowSkip, lastWritten == snapshot { return }
         try persistHistory(snapshot.history,
                            at: url.deletingLastPathComponent().appendingPathComponent(BrowserHistoryFile.name))
@@ -5673,16 +5698,15 @@ private final class SessionFileWriter: @unchecked Sendable {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(session)
-        if lastWrittenBytes == data, FileManager.default.fileExists(atPath: url.path) {
-            lastWritten = snapshot
-            return
+        if lastWrittenBytes != data || !FileManager.default.fileExists(atPath: url.path) {
+            do { try Self.replaceAtomically(data, at: url) } catch {
+                lastWritten = nil
+                throw error
+            }
+            lastWrittenBytes = data
         }
-        do { try Self.replaceAtomically(data, at: url) } catch {
-            lastWritten = nil
-            throw error
-        }
-        lastWrittenBytes = data
         lastWritten = snapshot
+        backups?.backUpIfDue(session, at: date)
     }
 
     private func persistHistory(_ history: [BrowserHistoryEntry], at url: URL) throws {

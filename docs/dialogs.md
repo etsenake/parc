@@ -9,8 +9,9 @@ the same style with the same checkbox and field card
 extension install and remove, password/address/card saving, website sign-in,
 open-in-app, unresponsive pages, the notifications-permission nudge and the
 download, caret-browsing and private-window decisions. The system alert is not
-used for anything Parc owns. The one exception is the "Parc couldn’t start"
-error, which can appear before any Parc window or engine exists.
+used for anything Parc owns. The exceptions are the "Parc couldn’t start" error
+and the [saved-sidebar rescue](windows-lifecycle.md#saved-sidebar-backups-and-startup-rescue),
+which appear before any Parc window or engine exists.
 
 ## Attachment and results
 

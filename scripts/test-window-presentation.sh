@@ -49,6 +49,7 @@ split_controls_source="$(source_path Sources/ParcCore/SplitPaneControls.swift)"
 split_cross_space_source="$(source_path Sources/ParcCore/SplitCrossSpaceAdd.swift)"
 folder_creation_source="$(source_path Sources/ParcCore/SidebarFolderFromItems.swift)"
 tab_history_source="$(source_path Sources/ParcCore/TabHistoryArchive.swift)"
+session_backups_source="$(source_path Sources/ParcCore/SessionBackups.swift)"
 note_source="$(source_path Sources/ParcCore/NoteStore.swift)"
 easel_source="$(source_path Sources/ParcCore/EaselStore.swift)"
 easel_text_source="$(source_path Sources/ParcCore/EaselRichText.swift)"
@@ -59,6 +60,6 @@ failure_source="$(source_path tests/Support/TestFailure.swift)"
 mkdir -p -- "$build_root"
 xcrun swiftc "$failure_source" -warnings-as-errors -whole-module-optimization -parse-as-library \
   "$saved_window_frame_source" \
-  "$store_source" "$tab_lookup_source" "$space_sharing_source" "$window_frame_source" "$space_management_source" "$import_source" "$arc_sidebar_import_source" "$favorite_split_source" "$original_split_source" "$inter_profile_source" "$space_move_source" "$window_move_source" "$closed_items_source" "$placeholder_images_source" "$favorite_action_source" "$folder_move_source" "$folder_action_source" "$theme_source" "$onboarding_source" "$routing_source" "$pretty_json_source" "$removal_source" "$split_controls_source" "$split_cross_space_source" "$folder_creation_source" "$tab_history_source" "$note_source" "$easel_source" "$easel_text_source" "$presentation_source" "$restoration_launch_source" "$test_source" \
+  "$store_source" "$tab_lookup_source" "$space_sharing_source" "$window_frame_source" "$space_management_source" "$import_source" "$arc_sidebar_import_source" "$favorite_split_source" "$original_split_source" "$inter_profile_source" "$space_move_source" "$window_move_source" "$closed_items_source" "$placeholder_images_source" "$favorite_action_source" "$folder_move_source" "$folder_action_source" "$theme_source" "$onboarding_source" "$routing_source" "$pretty_json_source" "$removal_source" "$split_controls_source" "$split_cross_space_source" "$folder_creation_source" "$tab_history_source" "$session_backups_source" "$note_source" "$easel_source" "$easel_text_source" "$presentation_source" "$restoration_launch_source" "$test_source" \
   -o "$build_root/window-presentation"
 exec "$build_root/window-presentation"

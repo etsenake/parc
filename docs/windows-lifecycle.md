@@ -44,6 +44,50 @@ Quit, Dock termination and system termination enter the same application
 termination coordinator. It saves window/history state, waits for genuine page
 consent and native-service drain, then lets AppKit finish termination.
 
+## Saved sidebar backups and startup rescue
+
+The sidebar, Archive, window records and settings live in `session.json` in
+Parc's Application Support folder; visits live beside it in `history.jsonl`.
+Saves replace the file atomically, and a file that fails to decode or validate
+is never overwritten.
+
+**Backups.** `SessionBackups` keeps earlier good copies in `Sidebar Backups`, an
+owner-only folder beside `session.json`. After a save, and once at launch, Parc
+writes a copy when the newest one is at least an hour old and the sidebar has
+changed, so a busy hour costs one small file. It keeps the six newest copies
+plus the first copy from each of the seven latest days Parc was used, at most
+thirteen. Each copy passes the startup loader's decode and validation before an
+atomic write, and leaves out history and downloads. Private windows,
+`--parc-profile` profiles and model-test stores write none.
+
+**Rescue.** If `session.json` exists but can't be read or validated, startup
+shows a standard system alert, a Core Foundation user notification that needs
+no app window or finished launch. Restore Backup takes the newest copy that
+passes the loader's checks, skipping copies this version can't read, damaged or
+newer, and the alert says how old it is. The unreadable file stays beside it as
+`session-unreadable-<UTC time>.json`: a hard link (or copy) is made before the
+backup is swapped in atomically, so nothing is lost and a newer Parc's file can
+be put back by hand. Quit changes nothing, so an older Parc never replaces a
+newer Parc's file unless the person chooses to restore. With no usable copy the
+"Parc couldn’t start" alert says whether backups are missing or unreadable, and
+Parc quits as before. A restored sidebar's Downloads list refills from the
+engine. A missing `session.json` still starts fresh, and `--parc-smoke` reports
+instead of asking.
+
+**Privacy.** Copies follow the main file's rules. Clearing history over a time
+range removes every copy taken since the range began, so all of them for all
+time. Deleting particular visits, as the history page does, removes copies that
+hold one of those exact addresses unless the current sidebar still holds it.
+Clear Archive removes every copy, and finishing a Profile's removal, including
+the data of a deleted Space that was its last user, removes every copy that
+mentions that Profile. Each clear leaves a fresh copy of the current sidebar and
+removes leftover temporary save files. Deleting single tabs, archived items or a
+Space that shares data leaves older copies, which age out within about a week.
+Kept unreadable files are left alone: they are the person's own data, perhaps
+from a newer Parc, and this version can't safely rewrite them.
+`tests/SessionBackupTests.swift` covers the schedule, cadence, validation,
+rescue choice, the kept file and pruning.
+
 ## Dock, reopen and closing windows
 
 Dock New Window and New Private Window use the actual engine/Profile readiness

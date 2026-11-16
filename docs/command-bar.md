@@ -422,4 +422,5 @@ separate owner/lifecycle coverage. Follow [the working contract](../AGENTS.md)
 before running checks.
 
 Current source still has these separate limitations, tracked in [the backlog](backlog.md):
-Restore Data needs a backup producer and restore flow.
+Restore Data has [backups and a startup rescue](windows-lifecycle.md#saved-sidebar-backups-and-startup-rescue)
+but no window to browse and restore them.
