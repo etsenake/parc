@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.7.0 (2026-11-16)
+
+### New
+
+- **install:** Open the downloaded disk image as Parc's own install window, with a squiggly arrow, a paper boat and one little drag to Applications
+- **pages:** Give every page that can't load Parc's own drawings and words, from nosediving paper planes to a plug toy for offline waits, and dress security warnings in Parc's look without loosening a single safety bolt
+- **pages:** Turn parc://chrome-urls into Parc's own directory of internal pages, with every address finally spelled parc://
+- **dialogs:** Tell you a page is stuck in plain words instead of Chromium's "Page Unresponsive" robot-speak
+- **pages:** Put a little nosedived paper plane on the "This page couldn't open" view so it stops looking like a blank apology
+- **pages:** Give every remaining security warning Parc's own words, from wrong clocks to café Wi-Fi sign-ins, and keep the details button saying Details no matter how often you open it
+- **pages:** Dress the rare web app offline and organization proxy pages in Parc's look too, so no Chromium error page is left in its work clothes
+
+### Fixed
+
+- **peek:** Make a closed Peek wait its turn on the main thread when it reopens after its page hops windows, by contract now instead of by good manners
+- **sidebar:** Let the Pinned header stand up straight at full row height, so its highlight lines up with New Tab instead of crouching beside it
+- **spaces:** Keep the window in its Space when you close that Space's last tab, so the start page glows in through your own colors instead of the browser wandering off to another Space
+- **updates:** Make See What's New actually open after an update and spotlight the versions you skipped, instead of greeting you with "This site can't be reached"
+- **updates:** Retire the Update Complete card's Share Parc row, which was mostly sharing a shrug
+- **updates:** Give See What's New a pointing hand and a hover glow on the Update Complete card, so it finally looks as clickable as it is
+- Make every SwiftUI button and clickable toast actually show the pointing hand on recent macOS, instead of letting it sneak back to an arrow
+- **install:** Hang the install window's icon names on little wooden park signs instead of a clay strip above the sea, so they stay readable in dark mode too
+- **peek:** Wake up the greyed-out Split button on a tab you opened in Peek, so one click tucks its page back into its tab and sets it beside yours, just like the preview card's Split View
+- **peek:** Let a dimmed Peek Split button perk right back up the moment the Library closes, full screen ends, a tab lands from another window, the split changes or you stay after all, instead of sulking until the page does something
+- **pages:** Only offer Go back on an error page when there's actually a page behind it, and fall back to Try again otherwise
+- **licences:** Credit Cormorant Garamond for the error page headings it now sets, not just What's New
+- **pages:** Hide the monitored-connection warning's Back to safety button, which never did anything, so Details is its one honest control instead of a dead end
+
 ## 2.6.0 (2026-11-16)
 
 ### New
