@@ -442,10 +442,17 @@ import AppKit
         check(keyed.keyboardTargets == [.button(0), .button(1)], "Share then Retry are the notice's keyboard stops")
         check(keyed.focusFromKeyboard() && keyed.state.focused == .button(0) && keyedPanel.canBecomeKey && keyed.acceptsFirstResponder,
               "focusing the notice lands on its first action")
+        func spoken(_ panel: NSWindow) -> String? {
+            guard let element = panel.firstResponder as? NSView, element.isAccessibilityElement(),
+                  element.accessibilityRole() == .button else { return nil }
+            return element.accessibilityLabel()
+        }
+        check(spoken(keyedPanel) == "Share",
+              "keyboard focus lands on an AppKit Share button, so VoiceOver announces it like any focused control")
         await drain(0.6)
         check(!keyed.isRetiring, "a notice with keyboard focus outlasts its timer, as it does under the pointer")
         keyed.keyDown(with: key(48, "\t"))
-        check(keyed.state.focused == .button(1), "Tab moves to Retry")
+        check(keyed.state.focused == .button(1) && spoken(keyedPanel) == "Retry", "Tab moves to Retry, and focus with it")
         keyed.keyDown(with: key(48, "\t"))
         check(keyed.state.focused == .button(0), "and wraps back to Share")
         keyed.keyDown(with: key(123, "", [.numericPad, .function]))
@@ -453,7 +460,7 @@ import AppKit
         keyed.keyDown(with: key(48, "\t", [.shift]))
         check(keyed.state.focused == .button(0), "Shift-Tab comes back to Share")
         _ = keyedPanel.performKeyEquivalent(with: key(13, "w", [.command]))
-        check(keyed.state.focused == nil && !keyedPanel.canBecomeKey && !keyed.isRetiring,
+        check(keyed.state.focused == nil && !keyedPanel.canBecomeKey && !keyed.isRetiring && spoken(keyedPanel) == nil,
               "a Command shortcut ends the notice's keyboard session and leaves the notice up")
         keyed.focusFromKeyboard()
         keyed.keyDown(with: key(97, "", [.control, .function]))
@@ -496,10 +503,18 @@ import AppKit
         let tappable = ParcToastPresentation(content: .tabRestored(to: "Work", selected: false), theme: SpaceTheme(),
                                              onTap: { keyboardTaps += 1 })
         check(tappable.present(in: parent, over: nil) && tappable.keyboardTargets == [.card] && tappable.focusFromKeyboard()
-              && tappable.state.focused == .card, "a clickable notice takes focus as a whole")
+              && tappable.state.focused == .card && tappable.window.map(spoken) == "Tab restored to Work. Click to view.",
+              "a clickable notice takes focus as a whole, announced by its text")
         tappable.keyDown(with: key(36, "\r"))
         check(keyboardTaps == 1 && tappable.isRetiring, "Return clicks it")
         tappable.dismiss(animated: false)
+        var pressed = 0
+        let pressable = ParcToastPresentation(content: .standard("Couldn’t add Grammarly", buttons: [.retry]), theme: SpaceTheme(),
+                                              onRetry: { pressed += 1 })
+        let retryElement = pressable.subviews.first { $0.accessibilityRole() == .button && $0.accessibilityLabel() == "Retry" }
+        check(retryElement?.accessibilityPerformPress() == true && pressed == 1 && pressable.isRetiring
+              && retryElement?.isAccessibilityElement() == false && retryElement?.accessibilityPerformPress() == false && pressed == 1,
+              "VoiceOver can press Retry once, and a retired notice leaves the accessibility tree")
         let quiet = ParcToastPresentation(content: .standard("Retry later", buttons: [.retry]), theme: SpaceTheme())
         check(quiet.present(in: parent, over: nil) && quiet.keyboardTargets.isEmpty && !quiet.focusFromKeyboard()
               && quiet.state.focused == nil, "a notice with nothing to press has nothing to focus")
@@ -512,6 +527,21 @@ import AppKit
               "the shortcut from another window, or another shortcut, leaves the notice alone")
         check(monitored.takesFocusShortcut(key(0, "a", [.command, .option, .shift], in: parent)) && monitored.state.focused == .button(0),
               "the shortcut pressed in the browser window moves focus into its notice")
+        var assigned: [UInt16] = []
+        toasts.yieldsShortcut = { assigned.contains($0.keyCode) }
+        guard let yielding = toasts.show(.copiedCurrentURL(url), in: parent, over: nil, theme: SpaceTheme()) else {
+            preconditionFailure("yielding owner refused")
+        }
+        assigned = [0]
+        check(!yielding.takesFocusShortcut(key(0, "a", [.command, .option, .shift], in: parent)) && yielding.state.focused == nil
+              && yielding.takesFocusShortcut(key(97, "", [.control, .function], in: parent)) && yielding.state.focused == .button(0),
+              "Command-Option-Shift-A assigned to a Parc command stays the person's, while Control-F6 still reaches the notice")
+        await drain(0.6)
+        let shareFrame = yielding.frames.buttons[0].map { yielding.convert($0, to: nil) }.flatMap { yielding.window?.convertToScreen($0) }
+        check(shareFrame.flatMap { (yielding.accessibilityHitTest(NSPoint(x: $0.midX, y: $0.midY)) as? NSView)?.accessibilityLabel() }
+              == "Share", "VoiceOver's pointer over Share finds the Share button")
+        yielding.dismiss(animated: false)
+        toasts.yieldsShortcut = { _ in false }
         guard let viaF6 = toasts.show(.copiedCurrentURL(url), in: parent, over: nil, theme: SpaceTheme()) else {
             preconditionFailure("Control-F6 owner refused")
         }

@@ -100,6 +100,18 @@ import AppKit
         try registry.reset("zoomIn:")
         expect(registry.nativeCommand(for: plus, editable: false)?.item === zoom,
                "Reset restores the indexed symbolic default")
+        let qwerty: KeyboardShortcut.LayoutTyping = { code, _ in code == 0 ? "a" : nil }
+        let focusNotice = event(0, "A", [.command, .option, .shift]), controlF6 = event(97, "\u{f709}", [.control, .function])
+        expect(!registry.isAssigned(focusNotice, layout: qwerty) && !registry.isAssigned(controlF6, layout: qwerty),
+               "Out of the box, neither notice focus shortcut belongs to a Parc command")
+        try registry.set(.init(key: "a", flags: [.command, .option, .shift]), for: "custom:")
+        try registry.set(.init(key: "\u{f709}", flags: .control), for: "decoy1:")
+        expect(registry.isAssigned(focusNotice, layout: qwerty) && registry.isAssigned(controlF6, layout: qwerty),
+               "Assigning either one to a command in Settings makes it the person's")
+        try registry.set(nil, for: "custom:")
+        try registry.reset("decoy1:")
+        expect(!registry.isAssigned(focusNotice, layout: qwerty) && !registry.isAssigned(controlF6, layout: qwerty),
+               "Clearing those assignments gives both back to notices")
         f12.menu?.removeItem(f12)
         expect(registry.nativeCommand(for: f12Event, editable: false) == nil,
                "Detached indexed owner cannot dispatch")

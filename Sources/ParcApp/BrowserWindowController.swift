@@ -751,6 +751,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         rootView.incognito = incognitoTheme; sidebarContainer.incognito = incognitoTheme
         toasts.basicBackground = windowBasicBackground
         toasts.onIdle = { [weak self] in self?.showImportFailuresWhenIdle() }
+        toasts.yieldsShortcut = { KeyboardShortcuts.shared.isAssigned($0) }
         sidebarContainer.addSubview(sidebar)
         SidebarMotionController.pinSurface(of: sidebarContainer, except: sidebar)
         rootView.onPaletteChange = { [weak self] palette in

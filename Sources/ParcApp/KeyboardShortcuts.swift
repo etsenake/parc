@@ -855,6 +855,9 @@ final class KeyboardShortcuts: ObservableObject {
         let bound = assignedPhysicalChords.contains(own) || (nativeChords[own] != nil && !assignedPhysicalChords.contains(chord))
         return own != chord && own.isValid && bound ? own : chord
     }
+    func isAssigned(_ event: NSEvent, layout: KeyboardShortcut.LayoutTyping? = nil) -> Bool {
+        chord(for: event, layout: layout).map(assignedPhysicalChords.contains) ?? false
+    }
     func recordedChord(for event: NSEvent, layout: KeyboardShortcut.LayoutTyping? = nil) -> KeyboardShortcut? {
         KeyboardShortcut.keypadKey(forPhysicalCode: event.keyCode) == nil
             ? chord(for: event, layout: layout) : KeyboardShortcut.capture(event, layout: layout)
