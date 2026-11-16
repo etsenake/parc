@@ -332,6 +332,10 @@ rules still apply in private windows, as in Chromium.
 snapshots, separately from ordinary navigation error pages. The native page's
 process termination/error code owns the crash state. Recovery actions retain
 that page identity and cannot reload another tab after selection or transfer.
+The crash shows the wilting flower; Parc's own "This page couldn’t open" view
+(a load that fails after it started, an unsupported app address, an Easel
+failure) shows the paper plane from `Resources/PageFailure`, with the raw
+message in the corner.
 
 ### Network error pages and security warnings
 

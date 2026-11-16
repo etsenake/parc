@@ -57,7 +57,8 @@ final class PageFailureView: NSView {
         acknowledged = nil
         presentation = .navigation(message)
         hidePage()
-        artwork.isHidden = true
+        artwork.image = SadTabContent.navigationArtwork
+        artwork.isHidden = artwork.image == nil
         sentence.segments = [SadTabContent.Segment(text: "This page couldn’t open. ", isLink: false),
                              SadTabContent.Segment(text: "Try again", isLink: true)]
         corner.segments = [SadTabContent.Segment(text: message, isLink: false)]
@@ -69,6 +70,7 @@ final class PageFailureView: NSView {
         if presentation != .renderer(crash) { acknowledged = nil }
         presentation = .renderer(crash)
         hidePage()
+        artwork.image = SadTabContent.artwork
         artwork.isHidden = false
         sentence.segments = SadTabContent.segments(SadTabContent.message)
         corner.segments = [SadTabContent.Segment(text: SadTabContent.errorCode(crash.errorCode), isLink: false)]
@@ -165,7 +167,9 @@ final class PageFailureView: NSView {
         super.layout()
         let width = bounds.width, height = bounds.height
         let showsArtwork = !artwork.isHidden
-        let art = showsArtwork ? SadTabContent.artworkSize : .zero
+        let crashed: Bool
+        if case .renderer = presentation { crashed = true } else { crashed = false }
+        let art = showsArtwork ? (crashed ? SadTabContent.artworkSize : SadTabContent.navigationArtworkSize) : .zero
         let spacing = showsArtwork ? SadTabContent.artworkSpacing : 0
         let line = sentence.fittingSize(width: width)
         let column = art.height + spacing + line.height
@@ -174,7 +178,7 @@ final class PageFailureView: NSView {
         sentence.frame = aligned(NSRect(x: (width - line.width) / 2, y: top + art.height + spacing,
                                         width: line.width, height: line.height))
         let inset = SadTabContent.cornerInset
-        corner.maximumHeight = showsArtwork ? .greatestFiniteMagnitude
+        corner.maximumHeight = crashed ? .greatestFiniteMagnitude
             : max(SadTabContent.lineHeight, height - inset - max(0, top + column) - 8)
         let code = corner.fittingSize(width: max(0, width - 2 * inset))
         corner.frame = aligned(NSRect(x: width - inset - code.width, y: height - inset - code.height,

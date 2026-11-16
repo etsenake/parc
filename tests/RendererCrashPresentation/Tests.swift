@@ -67,6 +67,8 @@ struct RendererCrashPresentationTests {
         let art = SadTabContent.artwork
         expect(SadTabContent.artworkDirectory == Bundle.main.resourceURL?.appendingPathComponent("SadTab", isDirectory: true) && art != nil,
                "the artwork loads from the bundle's SadTab resources")
+        expect(SadTabContent.navigationArtwork?.isTemplate == true,
+               "the navigation drawing loads from the bundle's PageFailure resources as a template")
         expect(art != nil && art!.isTemplate && art!.size == NSSize(width: 96, height: 103) &&
                art!.representations.compactMap { $0 as? NSBitmapImageRep }.map(\.pixelsWide).sorted() == [96, 192],
                "the bundled SadTab template loads with its 1x and 2x bitmaps")
@@ -108,15 +110,19 @@ struct RendererCrashPresentationTests {
         failure.showNavigationFailure("Previous navigation error")
         expect(failure.presentation == .navigation("Previous navigation error"), "ordinary error has independent presentation")
         failure.layoutSubtreeIfNeeded()
-        expect(failure.artwork.isHidden && link.text == "This page couldn’t open. Try again" &&
-               failure.corner.text == "Previous navigation error", "navigation failure uses the composition without artwork")
+        expect(!failure.artwork.isHidden && failure.artwork.image === SadTabContent.navigationArtwork &&
+               link.text == "This page couldn’t open. Try again" && failure.corner.text == "Previous navigation error",
+               "navigation failure shows the paper-plane drawing, sentence and message")
+        expect(near(failure.artwork.frame.width, 96) && near(failure.artwork.frame.height, 96),
+               "navigation drawing is 96 points square")
         failure.showRendererFailure(first)
         expect(failure.presentation == .renderer(first), "real snapshot replaces ordinary error presentation")
         expect(page.isHidden && page.window === window && page.superview === root,
                "crash hides but retains exact page/window/container")
         expect(page.hitTest(NSPoint(x: 30, y: 30)) == nil, "hidden native page cannot receive pointer hits")
         expect(page.isAccessibilityHidden(), "hidden native page is hidden from AppKit accessibility")
-        expect(!failure.artwork.isHidden && link.text == SadTabContent.plainMessage && failure.corner.text == "Error code: 42",
+        expect(!failure.artwork.isHidden && failure.artwork.image === SadTabContent.artwork &&
+               link.text == SadTabContent.plainMessage && failure.corner.text == "Error code: 42",
                "crash shows the artwork, sentence and the snapshot's error code")
 
         failure.layoutSubtreeIfNeeded()

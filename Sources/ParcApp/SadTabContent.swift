@@ -41,31 +41,44 @@ import AppKit
     }
 
     static let artworkDirectory: URL? = Bundle.main.resourceURL?.appendingPathComponent("SadTab", isDirectory: true)
+    static let navigationArtworkDirectory: URL? = Bundle.main.resourceURL?.appendingPathComponent("PageFailure", isDirectory: true)
     private static var cachedArtwork: NSImage?
+    private static var cachedNavigationArtwork: NSImage?
 
     static var artwork: NSImage? {
         if let cachedArtwork { return cachedArtwork }
-        guard let directory = artworkDirectory,
-              let data = try? Data(contentsOf: directory.appendingPathComponent("SadTab.png")),
+        cachedArtwork = templateImage(in: artworkDirectory, named: "SadTab")
+        return cachedArtwork
+    }
+
+    static var navigationArtwork: NSImage? {
+        if let cachedNavigationArtwork { return cachedNavigationArtwork }
+        cachedNavigationArtwork = templateImage(in: navigationArtworkDirectory, named: "PageFailure")
+        return cachedNavigationArtwork
+    }
+
+    private static func templateImage(in directory: URL?, named name: String) -> NSImage? {
+        guard let directory,
+              let data = try? Data(contentsOf: directory.appendingPathComponent("\(name).png")),
               let base = NSBitmapImageRep(data: data) else { return nil }
         let size = NSSize(width: base.pixelsWide, height: base.pixelsHigh)
         base.size = size
         let image = NSImage(size: size)
         image.addRepresentation(base)
-        if let data = try? Data(contentsOf: directory.appendingPathComponent("SadTab@2x.png")),
+        if let data = try? Data(contentsOf: directory.appendingPathComponent("\(name)@2x.png")),
            let double = NSBitmapImageRep(data: data) {
             double.size = size
             image.addRepresentation(double)
         }
-        if let vector = NSImage(contentsOf: directory.appendingPathComponent("SadTab.svg")) {
+        if let vector = NSImage(contentsOf: directory.appendingPathComponent("\(name).svg")) {
             for representation in vector.representations { image.addRepresentation(representation) }
         }
         image.isTemplate = true
-        cachedArtwork = image
         return image
     }
 
     static let artworkSize = NSSize(width: 96 * 96 / 103, height: 96)
+    static let navigationArtworkSize = NSSize(width: 96, height: 96)
     static let artworkSpacing: CGFloat = 64
     static let cornerInset: CGFloat = 20
 }

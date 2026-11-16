@@ -13,6 +13,7 @@ xcrun swiftc "$root/tests/Support/TestFailure.swift" -parse-as-library -warnings
   "$root/Sources/ParcCore/SpaceTheme.swift" \
   "$root/tests/RendererCrashPresentation/Tests.swift" \
   -framework AppKit -o "$out/tests"
-rm -rf "$out/SadTab"
+rm -rf "$out/SadTab" "$out/PageFailure"
 cp -R "$root/Resources/SadTab" "$out/SadTab"
+cp -R "$root/Resources/PageFailure" "$out/PageFailure"
 "$out/tests"
