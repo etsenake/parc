@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 746,
+  "version": 747,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -1289,7 +1289,7 @@
     {
       "source": "Engine/ParcImport/safari_reader.mm",
       "target": "parc/importer/safari_reader.mm",
-      "sha256": "a13929622e75d279848dbebfe94ab96acdbeb5d22d454d40d976480f0dbee7bf"
+      "sha256": "4facd274ff45d765389dc97eb962bd7f69f45c9385f1a76c0531d3d0ad91058a"
     },
     {
       "source": "Engine/ParcImport/parc_import.mojom",
@@ -1314,7 +1314,7 @@
     {
       "source": "Engine/ParcNative/native_import_discovery.mm",
       "target": "parc/native/native_import_discovery.mm",
-      "sha256": "d037ebb61d06b8c5cf70ab669b8b00ff74fd3255d91280cb4a7d78f57c5feb6b"
+      "sha256": "d6e9f9ea10aaee5eaad67c8670f2217ae623a5ae5bf97ece34f2cea0dd7747b3"
     },
     {
       "source": "Engine/ParcNative/native_import_extensions.mm",

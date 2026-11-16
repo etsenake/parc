@@ -180,6 +180,7 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
     checks += onboardingImportOrderChecks(store: store, destination: destination, window: window, safari: safari)
     checks += setupAccessChecks(store: store, destination: destination, window: window, safari: safari, other: other)
     checks += firefoxPasswordChecks(store: store, destination: destination, window: window)
+    checks += try safariExportChecks(window: window, safari: safari)
     return checks
 }
 

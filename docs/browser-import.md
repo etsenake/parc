@@ -21,7 +21,8 @@ is rechecked before use. Native imports preserve existing cookies
 Arc imports also read the source sidebar snapshot to bring Spaces, pinned tabs,
 Favorites and automatic-archive settings into the corresponding Parc Profiles.
 If that snapshot cannot be read, ordinary browser-data import still uses the
-normal destination policy. The explicit HTML bookmark-file import remains.
+normal destination policy. Safari's export file is the file-based route
+(below).
 Native category capabilities and access failures determine what can be imported;
 Swift bookmark/progress models never receive native credential contents.
 Choosing a Chromium-family browser replaces the intro line with a note that
@@ -101,6 +102,33 @@ choices from the replay intent. No discovery token or credential is persisted
 in the restart file. A held earlier import delays restart rather than truncating
 its background work.
 
+## Safari's export file
+
+Safari's **File → Export Browsing Data to File** saves a ZIP file. Apple
+documents its contents: one bookmarks web page, one passwords CSV and one
+payment-cards JSON, plus a history JSON and an extensions JSON for each Safari
+Profile. Names are localized and a Profile's files carry ` - <Profile name>`
+after the base name; the default Profile's have no suffix. Parc therefore
+recognises JSON files by the `data_type` inside them, not by name.
+
+With Safari's card chosen, **Use Safari’s export file instead…** opens a file
+panel for the ZIP, in setup and the File menu import window; setup's Safari
+access page points back to it for people who would rather not grant Full Disk
+Access. Parc's own reader opens the ZIP on a
+background queue (stored and deflated entries, ZIP64, CRC-checked, with size
+limits) and writes only what it imports to a private temporary folder.
+Bookmarks become the usual bookmark page for the original Space/Profile.
+Passwords go through the same native CSV importer into the original Profile,
+before any history, and Parc deletes its copy of the CSV as soon as that import
+ends. Each Profile's history goes through the native Safari reader and the
+history writer: the default Profile's into the original Space/Profile, the
+others into a same-named unused Parc Profile or a new one, as with direct
+imports. Payment cards and Safari extensions are listed in the file but not
+imported. The temporary folder is removed when the import's background work
+ends or it is cancelled, and leftovers from an interrupted import are removed
+the next time an export is opened. A failed password or history part reports
+through the import failure notice.
+
 ## Exported Safari and Firefox passwords
 
 The user explicitly chooses or drops one exported CSV. Parc does not unlock
@@ -147,7 +175,10 @@ Primary owners are `BrowserImportCoordinator.swift`, the original setup/menu
 presenter, `BrowserImportDestination` and [native import](../Engine/ParcImport/README.md).
 Focused import, access, focus, password-file and restart-helper checks use
 fixtures or inert components. Restart fixtures replace final app launch with a
-recording seam. Native reader/writer fixtures use disposable databases; see the
+recording seam. `scripts/test-safari-browsing-export.sh` runs the export ZIP
+and bookmark-file readers against made-up archives, including ZIP64, data
+descriptors, damaged and hostile entries, and localized file names.
+Native reader/writer fixtures use disposable databases; see the
 [native import checks](../Engine/ParcImport/README.md#focused-checks).
 
 Parc’s utility content client registers the isolated import reader. Its protocol

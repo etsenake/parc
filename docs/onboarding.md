@@ -50,8 +50,9 @@ The account-free sequence is:
 8. The finished card and **Get Started**.
 
 Account, cloud and AI steps are excluded. No starter folder is seeded. Import
-is skipped if no browser is found; HTML selection remains available through its
-own action.
+is skipped if no browser is found. Choosing Safari's card also offers **Use
+Safari’s export file instead…**, which imports the file Safari's own export
+saves; see [browser import](browser-import.md#safaris-export-file).
 
 Favorites sits right after the browser choice so people pick sites while the
 import reads. Access guidance comes first because the import cannot start
@@ -139,8 +140,8 @@ The File → Import window wraps the same presenter for its originating browser.
 See [browser import](browser-import.md) for native data and consent boundaries.
 
 Selecting a browser begins cancellable discovery, not import. Next waits for a
-usable result. Start fresh, switching source or accepting an HTML file cancels
-the previous lease and advances its generation. Stale callbacks cannot restore a
+usable result. Start fresh, switching source or choosing Safari's export file
+cancels the previous lease and advances its generation. Stale callbacks cannot restore a
 discarded choice. The original setup Space/Profile remains the primary destination.
 Supported data and extensions follow the selected browser's import; cookie
 protection and engine policy remain native.
@@ -178,8 +179,8 @@ suppresses a later password offer even when native completion wins the
 cancellation race; any returned bookmarks remain selectable.
 
 Setup's outer control uses **Next**. The menu importer retains its separate
-password/bookmark order and final results. HTML-panel callbacks require
-the same setup stage, importer instance and original window.
+password/bookmark order and final results. Export-file panel callbacks require
+the same importer instance and original window.
 
 ### Safari access inside setup
 

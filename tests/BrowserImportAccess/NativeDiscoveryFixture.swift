@@ -104,6 +104,17 @@ enum PCNativeImportOutcome { case completed, partial, cancelled, failed }
         completion: @escaping (PCNativeImportProfileResult) -> Void) -> PCNativeImportDiscovery {
         let lease = PCNativeImportDiscovery(); profiles.append(.init(source: source, lease: lease, complete: completion)); return lease
     }
+    struct ExportRequest {
+        let directories: [URL], names: [String], lease: PCNativeImportDiscovery
+        let complete: (PCNativeImportProfileResult) -> Void
+    }
+    static var exportRequests: [ExportRequest] = []
+    static func loadSafariExportProfiles(_ directories: [URL], names: [String],
+        completion: @escaping (PCNativeImportProfileResult) -> Void) -> PCNativeImportDiscovery {
+        let lease = PCNativeImportDiscovery()
+        exportRequests.append(.init(directories: directories, names: names, lease: lease, complete: completion))
+        return lease
+    }
     static func importBrowserData(from: PCNativeImportProfile, toProfilePath: String, in window: NSWindow,
         categories: PCNativeImportCategories, skipExistingCookies: Bool,
         progress: @escaping (PCNativeImportEvent) -> Void,

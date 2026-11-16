@@ -143,7 +143,7 @@ void AddProfile(ProfilesResult& result,
         "require macOS Keychain authorization. Unsupported encryption is "
         "reported without importing those records.");
   } else if (source->family == 1) {
-    if (can("History.db"))
+    if (can("History.db") || can("History.json"))
       p->categories |= PCNativeImportCategoryHistory;
     if (can("Bookmarks.plist"))
       p->categories |= PCNativeImportCategoryBookmarks;
@@ -553,6 +553,60 @@ std::vector<Installation> Importable(std::vector<Installation> installed,
                 initWithProfiles:profiles
                       restricted:result.restricted
                      constraints:constraints
+                           error:nil]);
+          },
+          cancelled, source, [completion copy]));
+  return lease;
+}
++ (PCNativeImportDiscovery*)
+    loadSafariExportProfiles:(NSArray<NSURL*>*)directories
+                       names:(NSArray<NSString*>*)names
+                  completion:
+                      (void (^)(PCNativeImportProfileResult*))completion {
+  auto cancelled = std::make_shared<std::atomic_bool>(false);
+  auto lease = [[PCNativeImportDiscovery alloc] initWithCancellation:cancelled];
+  std::vector<std::pair<base::FilePath, std::string>> entries;
+  for (NSUInteger index = 0; index < directories.count && index < names.count;
+       ++index) {
+    if (directories[index].isFileURL && directories[index].path.absolutePath)
+      entries.emplace_back(
+          base::FilePath(base::SysNSStringToUTF8(directories[index].path)),
+          base::SysNSStringToUTF8(names[index]));
+  }
+  auto installation = std::make_shared<parc::importer::Installation>(
+      parc::importer::Installation{1, "com.apple.Safari", "Safari", "", "", "",
+                                   entries.empty() ? base::FilePath()
+                                                   : entries.front().first.DirName()});
+  PCNativeImportSource* source =
+      [[PCNativeImportSource alloc] initWithInstallation:installation];
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(
+          [](std::shared_ptr<const parc::importer::Installation> installation,
+             std::vector<std::pair<base::FilePath, std::string>> entries) {
+            parc::importer::ProfilesResult result;
+            for (const auto& [path, name] : entries)
+              parc::importer::AddProfile(result, installation, path, name, false);
+            return result;
+          },
+          std::shared_ptr<const parc::importer::Installation>(installation),
+          std::move(entries)),
+      base::BindOnce(
+          [](std::shared_ptr<std::atomic_bool> cancelled,
+             PCNativeImportSource* source,
+             void (^completion)(PCNativeImportProfileResult*),
+             parc::importer::ProfilesResult result) {
+            if (cancelled->load())
+              return;
+            NSMutableArray* profiles = [NSMutableArray array];
+            for (auto& p : result.profiles)
+              [profiles addObject:[[PCNativeImportProfile alloc]
+                                      initWithData:std::move(p)
+                                            source:source]];
+            completion([[PCNativeImportProfileResult alloc]
+                initWithProfiles:profiles
+                      restricted:result.restricted
+                     constraints:@[]
                            error:nil]);
           },
           cancelled, source, [completion copy]));

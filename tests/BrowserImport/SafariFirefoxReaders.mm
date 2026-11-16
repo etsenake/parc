@@ -173,6 +173,51 @@ void Firefox(const base::FilePath& path) {
   options.profile_path = path.AppendASCII("missing");
   Require(!ReadFirefoxCategory(options, kHistory, cancel).success, "Missing source does not become empty success");
 }
+void SafariExport(const base::FilePath& path) {
+  using namespace parc::importer;
+  ReadOptions options; options.family = Family::kSafari; options.profile_path = path;
+  auto cancel = std::make_shared<std::atomic_bool>(false);
+  const auto file = path.AppendASCII("History.json");
+  const std::string json = R"({
+    "metadata" : {"browser_name" : "Safari", "browser_version" : "18.4", "data_type" : "history",
+                  "export_time_usec" : 1751296375693668, "schema_version" : 1},
+    "history" : [
+      {"url" : "http://redirect.example.test/", "time_usec" : 1751296375691025, "visit_count" : 2,
+       "destination_url" : "https://redirect.example.test/", "destination_time_usec" : 1751296375691668},
+      {"url" : "https://redirect.example.test/", "time_usec" : 1751296375691668, "visit_count" : 4,
+       "title" : "Caf\u00e9 fixture", "source_url" : "http://redirect.example.test/",
+       "source_time_usec" : 1751296375691025},
+      {"url" : "https://documented.example.test/", "time_usec" : 1722367302951310, "visits_count" : 7},
+      {"url" : "not a url", "time_usec" : 1722367302951310, "visit_count" : 1},
+      {"url" : "https://untimed.example.test/", "visit_count" : 1}
+    ]
+  })";
+  Require(base::WriteFile(file, json), "write exported Safari history");
+  auto result = ReadSafariCategory(options, kHistory, cancel);
+  Require(result.success && result.history.size() == 3, "Exported Safari history keeps its valid entries");
+  Require(result.history[0].hidden && !result.history[1].hidden, "Redirect sources are hidden and their targets are not");
+  Require(result.history[0].visits == 2 && result.history[1].visits == 4 && result.history[2].visits == 7,
+          "Visit counts come from either the visit_count or the documented visits_count key");
+  Require(result.history[1].title == u"Caf\u00e9 fixture" && result.history[0].title.empty(), "Titles are optional and decoded");
+  Require(result.history[0].last_visit == 1751296375691025LL + 11644473600000000LL &&
+          result.history[1].last_visit == 1751296375691668LL + 11644473600000000LL,
+          "Unix microseconds become Chromium's 1601-based microseconds exactly, odd values included");
+  Require(result.warnings.size() == 1, "Invalid exported entries are skipped with one warning");
+  Require(Bytes(file) == json, "The exported history file is left unchanged");
+  cancel->store(true);
+  Require(!ReadSafariCategory(options, kHistory, cancel).success, "Exported history honours cancellation");
+  cancel->store(false);
+  Require(base::WriteFile(file, R"({"metadata":{"data_type":"payment_cards"},"payment_cards":[]})"),
+          "write a non-history export file");
+  Require(!ReadSafariCategory(options, kHistory, cancel).success, "Only a history export is read as history");
+  Require(base::WriteFile(file, "{ not json"), "write malformed export");
+  Require(!ReadSafariCategory(options, kHistory, cancel).success, "Malformed exported history is refused");
+  Require(base::WriteFile(file, json), "restore a valid exported history");
+  Require(ReadSafariCategory(options, kHistory, cancel).success, "The restored export reads again");
+  Require(base::WriteFile(path.AppendASCII("History.db"), "not sqlite"), "add a Safari database beside it");
+  Require(!ReadSafariCategory(options, kHistory, cancel).success,
+          "A real Safari History.db always wins over an exported History.json");
+}
 void WAL(const base::FilePath& path) {
   using namespace parc::importer;
   const auto file = path.AppendASCII("History.db");
@@ -196,10 +241,12 @@ int main() {
     std::fprintf(stderr, "fixture: start\n");
     base::ScopedTempDir temporary;
     Require(temporary.CreateUniqueTempDir(), "create disposable fixture root");
-    for (const char* name : {"Safari", "Firefox", "WAL"})
+    for (const char* name : {"Safari", "SafariExport", "Firefox", "WAL"})
       Require(base::CreateDirectory(temporary.GetPath().AppendASCII(name)), "create fixture source");
     std::fprintf(stderr, "fixture: Safari\n");
     Safari(temporary.GetPath().AppendASCII("Safari"));
+    std::fprintf(stderr, "fixture: SafariExport\n");
+    SafariExport(temporary.GetPath().AppendASCII("SafariExport"));
     std::fprintf(stderr, "fixture: Firefox\n");
     Firefox(temporary.GetPath().AppendASCII("Firefox"));
     std::fprintf(stderr, "fixture: WAL\n");

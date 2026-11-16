@@ -41,8 +41,24 @@ the key is always the source browser's own, never Parc's.
 | Source | Directly supported data | Deliberate restriction |
 | --- | --- | --- |
 | Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Arc | History; ordered bookmarks/empty folders from the local and account stores, plain or encrypted; cookies; saved passwords, including those saved to the browser account; form entries, current and historical local addresses, local payment cards; explicitly selected Web Store extensions | Actual macOS `v10` AES-CBC formats only, including Chromium's fallback key (below). Unknown encryption, absent authorization or invalid encrypted-cookie host binding refuses that category. A source's concrete readable files determine availability. |
-| Safari | Default-store history and XML/binary-plist bookmarks | This reader supports no direct password/cookie/payment/extension import. Modern separate Safari profile stores are not advertised. Passwords require an explicit OS/source export. |
+| Safari | Default-store history and XML/binary-plist bookmarks; each Profile's history from Safari's export file | This reader supports no direct password/cookie/payment/extension import. Separate Safari Profile stores are not read directly. Passwords require an explicit OS/source export. |
 | Firefox, Zen | History, bookmark hierarchy and form entries | Pinned macOS excludes the external NSS reader; no direct passwords, cookies, encrypted payment records or add-on installation is advertised. Passwords come from the browser's own CSV export (below). |
+
+Safari's export file reaches this reader as one private folder per Safari
+Profile, written by the app's ZIP reader, holding that Profile's exported
+`History.json`. When a folder has no `History.db`, the Safari reader reads that
+JSON instead: it requires `metadata.data_type` to be `history`, takes `url`,
+optional `title`, `time_usec` (Unix microseconds) and the visit count from
+`visit_count` or Apple's documented `visits_count`, hides redirect sources
+(entries with a `destination_url`), and skips invalid entries with one warning.
+The file is limited to 256 MiB and checked for change while it is read.
+`loadSafariExportProfiles` turns those folders into ordinary Safari-family
+profiles, so session, writer, cancellation and destination policy are the same
+as direct imports. Reading separate Safari Profile folders inside Safari's
+private container is decided against: that layout is undocumented and has
+already moved once, it still needs Full Disk Access and a private Safari
+database for Profile names, and Safari's export file covers the same need in a
+format Apple documents.
 
 Zen is built on Firefox and uses the Firefox reader. Zen's own build sets its
 profile name to `zen`, so its `profiles.ini` and profiles live in

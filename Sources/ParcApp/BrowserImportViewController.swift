@@ -42,7 +42,11 @@ final class BrowserImportViewController: NSViewController {
     var canShowPasswordHelp: Bool { !closed && isSafariPasswords && !coordinator.importingPasswords }
     var passwordExport: BrowserPasswordExport { coordinator.passwordExport ?? .safari }
     var usesFullSetupColumn: Bool { isSafariAccess || isSafariPasswords }
-    var setupAccessory: NSView? { isSafariAccess ? onboardingAccess?.actions : nil }
+    var setupAccessory: NSView? { isSafariAccess ? onboardingAccess?.actions : offersSafariExport ? exportLink : nil }
+    private var offersSafariExport: Bool {
+        !closed && !skipSelected && showsSourceCards && coordinator.canChooseSafariExport
+            && coordinator.source.map(BrowserImportCoordinator.isSafari) == true
+    }
     var headingText: String { heading.stringValue }
     var message: String { detail.stringValue }
     var nextTitle: String { embedded ? "Next" : next.title }
@@ -76,6 +80,8 @@ final class BrowserImportViewController: NSViewController {
     private let accessView = BrowserImportAccessView()
     private let passwordsView = BrowserImportPasswordsView()
     private var passwordPanel: NSOpenPanel?
+    private var exportPanel: NSOpenPanel?
+    private let exportLink = ActionButton("Use Safari’s export file instead…")
     private var passwordHelp: OnboardingPasswordHelp?
     private var promptedPasswordRequest: UUID?
     private let onboarding: Bool
@@ -132,7 +138,11 @@ final class BrowserImportViewController: NSViewController {
         closeControl.setAccessibilityLabel("Close Import")
         closeControl.actionBlock = { [weak self] in self?.requestClose() }
         if !onboarding { root.addSubview(windowBackdrop) }
+        exportLink.isBordered = false; exportLink.alignment = .left; exportLink.focusRingType = .default
+        exportLink.setAccessibilityLabel("Use Safari’s export file instead")
+        exportLink.actionBlock = { [weak self] in self?.chooseSafariExport() }
         [heading, detail, next, cancelButton, logo, accessView, passwordsView, closeControl].forEach(root.addSubview)
+        if !onboarding { root.addSubview(exportLink) }
         next.keyEquivalent = "\r"
         cancelButton.keyEquivalent = "\u{1b}"
         next.target = self; next.action = #selector(nextPressed)
@@ -268,6 +278,7 @@ final class BrowserImportViewController: NSViewController {
         closed = true; restartRequest = nil
         onHidePasswordHelp?(); dismissPasswordHelp(remove: true)
         passwordPanel?.cancel(nil); passwordPanel = nil
+        exportPanel?.cancel(nil); exportPanel = nil
         accessTimer?.invalidate(); accessTimer = nil
         if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
         activationObserver = nil
@@ -301,6 +312,7 @@ final class BrowserImportViewController: NSViewController {
         if showsSourceCards || coordinator.stage == .loading {
             heading.frame = NSRect(x: 28, y: 106, width: 290, height: 26)
             detail.frame = NSRect(x: 28, y: 142, width: 260, height: 200)
+            exportLink.frame = NSRect(x: 26, y: 346, width: 264, height: 24)
         } else {
             heading.frame = NSRect(x: 34, y: 36, width: width - 68, height: 66)
             detail.frame = NSRect(x: 34, y: 104, width: width - 68, height: 45)
@@ -377,7 +389,7 @@ final class BrowserImportViewController: NSViewController {
             if embedded {
                 heading.stringValue = "Import from \(name)."
                 detail.stringValue = coordinator.source.map(BrowserImportCoordinator.isSafari) == true
-                    ? "To import Safari browser history, Parc will need Full Disk Access. Feel free to remove access when this step is finished."
+                    ? "To import Safari browser history, Parc will need Full Disk Access. Feel free to remove access when this step is finished. Rather not? Go Back and use Safari’s export file instead."
                     : "To import from \(name), Parc will need Full Disk Access. Feel free to remove access when this step is finished."
                 next.isEnabled = !coordinator.continueAfterSafariRefresh && !coordinator.restarting
                 onboardingAccess?.update(ready: coordinator.safariAccessReady, checking: coordinator.checkingSafariAccess,
@@ -427,6 +439,11 @@ final class BrowserImportViewController: NSViewController {
         if cards { updateSourcePicker() } else { sourcePicker?.isHidden = true }
         updateBackdrop()
         cancelButton.isHidden = choosingAccess || choosingPasswords
+        exportLink.isHidden = !offersSafariExport
+        exportLink.attributedTitle = NSAttributedString(string: exportLink.title, attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: embedded ? OnboardingSetupPalette.title : ParcDialogStyle.popoverTitle,
+            .underlineStyle: NSUnderlineStyle.single.rawValue])
         updateCloseKey()
         cancelButton.keyEquivalent = choosingAccess || choosingPasswords ? "" : "\u{1b}"
         next.isLoading = isLoading
@@ -455,6 +472,20 @@ final class BrowserImportViewController: NSViewController {
             passwordChoice = host; root.addSubview(host)
         }
         passwordChoice?.isHidden = false; passwordChoice?.frame = root.bounds
+    }
+
+    private func chooseSafariExport() {
+        guard offersSafariExport, let window, window.attachedSheet == nil, exportPanel == nil else { return }
+        let panel = NSOpenPanel(); exportPanel = panel
+        panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.zip]; panel.prompt = "Import"
+        panel.message = "Choose the .zip file that Safari’s File → Export Browsing Data to File saved."
+        panel.beginSheetModal(for: window) { [weak self, weak panel] response in
+            guard let self, !self.closed, self.exportPanel === panel else { return }
+            self.exportPanel = nil
+            guard response == .OK, let url = panel?.url else { return }
+            self.coordinator.importSafariExport(url)
+        }
     }
 
     private func choosePasswordFile() {

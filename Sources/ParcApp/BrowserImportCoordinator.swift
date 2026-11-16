@@ -74,6 +74,10 @@ final class BrowserImportCoordinator {
     private var startingBackground = false
     private var backgroundDeferred = false
     private var backgroundToken = UUID()
+    private var safariExport: SafariBrowsingExport?
+    private var exportPasswords: PCNativePasswordFileImportSession?
+    private var stoppedExportPasswords = false
+    private static var liveExports = Set<URL>()
 
     func detach(onAdBlockers: (([OnboardingDraft.ImportedAdBlocker]) -> Void)?) {
         guard hasBackgroundWork, !cancelled else { cancel(); return }
@@ -103,6 +107,7 @@ final class BrowserImportCoordinator {
     }
 
     private func finishBackground() {
+        discardSafariExport()
         hasBackgroundWork = false
         reportDataFailure()
         if detached {
@@ -121,6 +126,7 @@ final class BrowserImportCoordinator {
     private var extensionBatch: UUID?
     private let arcSidebarURL: URL
     private let arcPreferencesURL: URL
+    private let safariExportRoot: URL
     private var queue: [PCNativeImportProfile] = []
     private var queuedDestinations: [String: BrowserImportDestination] = [:]
     private var usedProfiles = Set<UUID>()
@@ -132,9 +138,13 @@ final class BrowserImportCoordinator {
          supportsICloudPasswords: Bool = ICloudPasswordsSupport.connects(),
          arcSidebarURL: URL = ArcSidebarSnapshot.defaultURL,
          arcPreferencesURL: URL = ArcSidebarSnapshot.preferencesURL,
+         safariExportRoot: URL = FileManager.default.temporaryDirectory,
          ownerIsCurrent: @escaping () -> Bool) {
         self.store = store; originalDestination = destination; self.window = window
         self.arcSidebarURL = arcSidebarURL; self.arcPreferencesURL = arcPreferencesURL
+        self.safariExportRoot = safariExportRoot
+        let live = Self.liveExports
+        DispatchQueue.global(qos: .utility).async { Self.removeAbandonedExports(in: safariExportRoot, keeping: live) }
         self.onboarding = onboarding
         self.supportsICloudPasswords = supportsICloudPasswords
         self.ownerIsCurrent = ownerIsCurrent
@@ -187,6 +197,7 @@ final class BrowserImportCoordinator {
         guard !hasBackgroundWork, stage != .importing && stage != .bookmarks && stage != .passwordChoice && stage != .safariPasswords && !restarting,
               parkedStage == nil else { return }
         discovery?.cancel(); generation = UUID(); let token = generation
+        discardSafariExport()
         foundNoSources = false
         checkingSafariAccess = false; continueAfterSafariRefresh = false; safariAccessError = nil
         source = nil; sources = []; profiles = []; selectedProfiles = []
@@ -242,6 +253,7 @@ final class BrowserImportCoordinator {
     private func clearSourceInline(notify: Bool) {
         guard isChoosingSourceInline, isCurrent, parkedStage == nil else { return }
         generation = UUID(); discovery?.cancel(); discovery = nil
+        discardSafariExport()
         source = nil; profiles = []; selectedProfiles = []
         requiresSafariAccess = false; safariAccessReady = false
         warnings = []; error = nil; stage = .sources
@@ -461,13 +473,16 @@ final class BrowserImportCoordinator {
     private func importNext() {
         guard isCurrent, let window else { cancel(); return }
         guard !queue.isEmpty else {
-            if passwordDestination?.isCurrent(in: store.state) == true { hasBackgroundWork = true; backgroundDeferred = true }
+            if passwordDestination?.isCurrent(in: store.state) == true || exportPasswords != nil {
+                hasBackgroundWork = true; backgroundDeferred = true
+            }
             else { startBackground(in: window) }
             if !(onboarding && hasPendingBookmarks), presentPasswordStageIfNeeded() {
                 onChange?(); return
             }
-            stage = hasPendingBookmarks ? .bookmarks : .finished
-            message = hasPendingBookmarks ? "Choose the bookmarks to keep in your sidebar." : "Your import has finished."
+            if hasPendingBookmarks {
+                stage = .bookmarks; message = "Choose the bookmarks to keep in your sidebar."
+            } else { finishImportStage("Your import has finished.") }
             onChange?(); return
         }
         let profile = queue.removeFirst(), token = generation
@@ -575,7 +590,7 @@ final class BrowserImportCoordinator {
     }
 
     private func startDeferredBackground() {
-        guard backgroundDeferred, !cancelled else { return }
+        guard backgroundDeferred, !cancelled, exportPasswords == nil else { return }
         backgroundDeferred = false
         guard let host = (window?.isVisible == true ? window : nil) ?? NSApp.windows.first(where: { $0.isVisible }) ?? window else {
             if !backgroundProfiles.isEmpty { dataFailed = true }
@@ -827,7 +842,7 @@ final class BrowserImportCoordinator {
                 bookmarkPages[index].accepted = accepted; bookmarkPages[index].selection = accepted
             }
             if !(onboarding && presentPasswordStageIfNeeded()) {
-                stage = .finished; message = "Your bookmarks are ready in Parc."; startDeferredBackground()
+                finishImportStage("Your bookmarks are ready in Parc."); startDeferredBackground()
             }
             error = nil
         } catch { self.error = error.localizedDescription }
@@ -871,7 +886,7 @@ final class BrowserImportCoordinator {
             }
             error = nil
             if !presentPasswordStageIfNeeded() {
-                stage = .finished; message = "Your import has finished."; startDeferredBackground()
+                finishImportStage("Your import has finished."); startDeferredBackground()
             }
             onChange?()
         case .passwordChoice, .safariPasswords:
@@ -968,10 +983,142 @@ final class BrowserImportCoordinator {
         parkedStage = stage; stage = .profiles; message = "Bring your browsing with you."
     }
 
+    var canChooseSafariExport: Bool {
+        isCurrent && parkedStage == nil && !hasBackgroundWork && !restarting
+            && (stage == .sources || stage == .profiles || stage == .safariAccess)
+    }
+
+    func importSafariExport(_ archive: URL) {
+        guard canChooseSafariExport else { return }
+        guard archive.isFileURL, archive.pathExtension.lowercased() == "zip" else {
+            error = "Choose the .zip file that Safari’s File → Export Browsing Data to File saved."; onChange?(); return
+        }
+        let returning: Stage = source == nil ? .sources : .profiles
+        discovery?.cancel(); discovery = nil; generation = UUID(); let token = generation
+        restartWaitingToken = nil; checkingSafariAccess = false; continueAfterSafariRefresh = false; safariAccessError = nil
+        discardSafariExport()
+        stage = .loading; error = nil; message = "Opening your Safari export…"; onChange?()
+        let root = safariExportRoot, live = Self.liveExports
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            Self.removeAbandonedExports(in: root, keeping: live)
+            let result = Result { try SafariBrowsingExport.open(archive, temporaryRoot: root) }
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { if case .success(let export) = result { export.remove() }; return }
+                    self.openedSafariExport(result, token: token, returning: returning)
+                }
+            }
+        }
+    }
+
+    private nonisolated static func removeAbandonedExports(in root: URL, keeping live: Set<URL>) {
+        let files = FileManager.default
+        let kept = Set(live.map { $0.resolvingSymlinksInPath().path }), cutoff = Date().addingTimeInterval(-600)
+        for url in (try? files.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        where url.lastPathComponent.hasPrefix("ParcSafariExport-") && !kept.contains(url.resolvingSymlinksInPath().path) {
+            guard let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                  modified < cutoff else { continue }
+            try? files.removeItem(at: url)
+        }
+    }
+
+    private func openedSafariExport(_ result: Result<SafariBrowsingExport, Error>, token: UUID, returning: Stage) {
+        guard isCurrent, generation == token, stage == .loading else {
+            if case .success(let export) = result { export.remove() }
+            return
+        }
+        switch result {
+        case .failure(let failure):
+            stage = returning; message = "Bring your browsing with you."; error = failure.localizedDescription
+            onChange?()
+        case .success(let export):
+            safariExport = export; Self.liveExports.insert(export.directory)
+            guard !export.profiles.isEmpty else { startSafariExport([], unreadable: 0, token: token); return }
+            discovery = PCNativeBrowserApplication.loadSafariExportProfiles(export.profiles.map(\.directory),
+                names: export.profiles.map { $0.name ?? "Safari" }) { [weak self] result in
+                    guard let self, self.isCurrent, self.generation == token, self.stage == .loading else { return }
+                    self.discovery = nil
+                    let readable = result.profiles.filter { $0.supportedCategories.contains(.history) }
+                    self.startSafariExport(readable, unreadable: export.profiles.count - readable.count, token: token)
+                }
+        }
+    }
+
+    private func startSafariExport(_ chosen: [PCNativeImportProfile], unreadable: Int, token: UUID) {
+        guard let export = safariExport, isCurrent, generation == token else { return }
+        if Self.earlierImportRunning {
+            stage = .importing; message = "Finishing your last import…"; onChange?()
+            Self.waitingStarts.append { [weak self] in
+                guard let self, self.isCurrent, self.generation == token, self.stage == .importing else { return }
+                self.startSafariExport(chosen, unreadable: unreadable, token: token)
+            }
+            return
+        }
+        beginImport()
+        requiresSafariAccess = false; passwordDestination = nil
+        if unreadable > 0 { failed("Some Safari history in the export file couldn’t be read.") }
+        if export.skippedParts > 0 { failed("Some parts of the Safari export file couldn’t be read.") }
+        if !export.bookmarks.isEmpty {
+            do {
+                let selection = try BrowserImportSelection(roots: export.bookmarks, expandsTopFolders: onboarding)
+                bookmarkPages.append(BookmarkPage(sourceName: "Safari", destination: originalDestination, selection: selection))
+            } catch { failed("Bookmarks: \(error.localizedDescription)") }
+        }
+        queueProfiles(chosen, primaryDestination: originalDestination)
+        if let file = export.passwordsFile { importSafariExportPasswords(file, from: export) }
+        message = "Importing your Safari export…"; onChange?()
+        importNext()
+    }
+
+    private func importSafariExportPasswords(_ file: URL, from export: SafariBrowsingExport) {
+        guard let window else { export.removePasswords(); failed("Safari passwords couldn’t be imported."); return }
+        stoppedExportPasswords = false
+        exportPasswords = PCNativeBrowserApplication.importPasswordFile(file,
+            toProfilePath: store.independentEngineProfilePath(for: originalDestination.profileID), in: window) { [weak self] result in
+            export.removePasswords()
+            guard let self, self.exportPasswords != nil else { return }
+            self.exportPasswords = nil
+            let stopped = self.stoppedExportPasswords
+            self.stoppedExportPasswords = false
+            switch result.outcome {
+            case .completed: self.dataImported = true
+            case .cancelled where stopped: self.dataImported = true
+            case .partial: self.dataImported = true; self.failed("Some Safari passwords couldn’t be imported.")
+            default: self.failed("Safari passwords couldn’t be imported.")
+            }
+            if let error = result.error { self.warnings.append("Passwords: \(error.localizedDescription)") }
+            if let text = self.finishAfterExportPasswords, self.stage == .importing {
+                self.finishAfterExportPasswords = nil
+                self.stage = .finished; self.message = text
+            }
+            self.startDeferredBackground()
+            self.onChange?()
+        }
+        if exportPasswords == nil { export.removePasswords(); failed("Safari passwords couldn’t be imported.") }
+    }
+
+    private var finishAfterExportPasswords: String?
+
+    private func finishImportStage(_ text: String) {
+        guard exportPasswords != nil else { stage = .finished; message = text; return }
+        finishAfterExportPasswords = text
+        stage = .importing; message = "Importing your Safari passwords…"
+    }
+
+    private func discardSafariExport() {
+        guard let export = safariExport else { return }
+        safariExport = nil; Self.liveExports.remove(export.directory)
+        let directory = export.directory
+        DispatchQueue.global(qos: .utility).async { try? FileManager.default.removeItem(at: directory) }
+    }
+
     func stopImport() {
         guard stage == .importing else { return }
         queue = []; queuedDestinations = [:]; passwordDestination = nil; pendingExtensions = []; backgroundProfiles = []
+        if let exportPasswords { stoppedExportPasswords = true; exportPasswords.cancel() }
+        finishAfterExportPasswords = nil
         guard let session else {
+            if exportPasswords == nil { discardSafariExport() }
             generation = UUID(); stage = .finished
             message = "Import stopped. Data already imported has been kept."; onChange?(); return
         }
@@ -987,6 +1134,7 @@ final class BrowserImportCoordinator {
         backgroundSessions.values.forEach { $0.cancel() }
         backgroundSessions = [:]; backgroundPending = []; backgroundProfiles = []; backgroundDeferred = false
         extensionInstall?.cancel(); extensionInstall = nil; pendingExtensions = []
+        exportPasswords?.cancel(); exportPasswords = nil
         onDetachedAdBlockers = nil; finishBackground()
         passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
         importingPasswords = false; removingPasswordFile = false; passwordDestination = nil

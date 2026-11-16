@@ -11,13 +11,18 @@
 #include <sys/stat.h>
 
 #include "base/files/file_util.h"
+#include "base/json/json_reader.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/values.h"
 #include "url/gurl.h"
 
 namespace parc::importer {
 namespace {
 constexpr size_t kMaxRows = 1000000;
 constexpr size_t kMaxPlistBytes = 64 * 1024 * 1024;
+constexpr size_t kMaxHistoryJSONBytes = 256 * 1024 * 1024;
+constexpr int64_t kUnixEpochMicros = 11644473600000000LL;
 constexpr size_t kMaxDepth = 128;
 constexpr long double kCocoaEpochMicros = 12622780800000000.0L;
 
@@ -43,8 +48,14 @@ NSDictionary* Dictionary(id value) {
   return [value isKindOfClass:[NSDictionary class]] ? value : nil;
 }
 
-// The selected source directory already identifies the Safari profile. Never
-// substitute another home/container path when access is denied or data is absent.
+bool SameFile(const struct stat& before, const struct stat& after) {
+  return before.st_dev == after.st_dev && before.st_ino == after.st_ino &&
+      before.st_size == after.st_size && before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec &&
+      before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec &&
+      before.st_ctimespec.tv_sec == after.st_ctimespec.tv_sec &&
+      before.st_ctimespec.tv_nsec == after.st_ctimespec.tv_nsec;
+}
+
 Batch ReadBookmarks(const ReadOptions& options, const Cancellation& cancel) {
   const auto path = options.profile_path.AppendASCII("Bookmarks.plist");
   struct stat before {}, after {};
@@ -54,11 +65,7 @@ Batch ReadBookmarks(const ReadOptions& options, const Cancellation& cancel) {
       stat(path.value().c_str(), &after) != 0) {
     return Failure(kBookmarks, "Safari bookmarks are unavailable, too large, or access is restricted.");
   }
-  if (before.st_dev != after.st_dev || before.st_ino != after.st_ino ||
-      before.st_size != after.st_size || before.st_mtimespec.tv_sec != after.st_mtimespec.tv_sec ||
-      before.st_mtimespec.tv_nsec != after.st_mtimespec.tv_nsec ||
-      before.st_ctimespec.tv_sec != after.st_ctimespec.tv_sec ||
-      before.st_ctimespec.tv_nsec != after.st_ctimespec.tv_nsec) {
+  if (!SameFile(before, after)) {
     return Failure(kBookmarks, "Safari changed its bookmarks during import. Close it and try again.");
   }
   if (Cancelled(cancel)) return Failure(kBookmarks, "Import was cancelled.");
@@ -72,7 +79,6 @@ Batch ReadBookmarks(const ReadOptions& options, const Cancellation& cancel) {
   Batch batch;
   batch.category = kBookmarks;
   size_t visited = 0;
-  // Source positions are import-local IDs, never destination bookmark IDs.
   auto read = [&](auto&& self, NSDictionary* node, std::string key,
                   std::string parent, size_t depth, bool is_root) -> bool {
     if (Cancelled(cancel) || ++visited > kMaxRows || depth > kMaxDepth)
@@ -83,8 +89,6 @@ Batch ReadBookmarks(const ReadOptions& options, const Cancellation& cancel) {
       id children = node[@"Children"];
       if ((!is_root && !title) ||
           (children && ![children isKindOfClass:[NSArray class]])) return false;
-      // Match the native Safari importer: root/menu are structural, while the
-      // toolbar and ordinary folders remain explicit, including empty folders.
       if (!is_root && !(parent.empty() && [title isEqualToString:@"BookmarksMenu"])) {
         batch.bookmarks.push_back({key, parent, base::SysNSStringToUTF16(title), {}, true});
         parent = key;
@@ -122,7 +126,57 @@ Batch ReadBookmarks(const ReadOptions& options, const Cancellation& cancel) {
   return batch;
 }
 
+Batch ReadExportedHistory(const base::FilePath& path, const Cancellation& cancel) {
+  struct stat before {}, after {};
+  std::string bytes;
+  if (lstat(path.value().c_str(), &before) != 0 || !S_ISREG(before.st_mode) ||
+      !base::ReadFileToStringWithMaxSize(path, &bytes, kMaxHistoryJSONBytes) ||
+      stat(path.value().c_str(), &after) != 0 || !SameFile(before, after)) {
+    return Failure(kHistory, "The exported Safari history is unavailable, changed while reading, or too large.");
+  }
+  if (Cancelled(cancel)) return Failure(kHistory, "Import was cancelled.");
+  std::optional<base::DictValue> root = base::JSONReader::ReadDict(
+      bytes, base::JSON_PARSE_RFC | base::JSON_REPLACE_INVALID_CHARACTERS);
+  std::string().swap(bytes);
+  const base::DictValue* metadata = root ? root->FindDict("metadata") : nullptr;
+  const std::string* type = metadata ? metadata->FindString("data_type") : nullptr;
+  const base::ListValue* items = root ? root->FindList("history") : nullptr;
+  if (!type || *type != "history" || !items)
+    return Failure(kHistory, "The exported Safari history has an unsupported structure.");
+  if (items->size() > kMaxRows) return Failure(kHistory, "Safari history exceeds the import limit.");
+  Batch batch;
+  batch.category = kHistory;
+  for (const base::Value& value : *items) {
+    if (Cancelled(cancel)) return Failure(kHistory, "Import was cancelled.");
+    const base::DictValue* item = value.GetIfDict();
+    const std::string* text = item ? item->FindString("url") : nullptr;
+    const std::optional<double> time = item ? item->FindDouble("time_usec") : std::nullopt;
+    std::optional<double> visits = item ? item->FindDouble("visit_count") : std::nullopt;
+    if (item && !visits) visits = item->FindDouble("visits_count");
+    const GURL url(text ? *text : std::string());
+    constexpr double kLatest = 9e18;
+    if (!url.is_valid() || !time || !std::isfinite(*time) || *time < 0 || *time >= kLatest ||
+        (visits && (!std::isfinite(*visits) || *visits < 0))) {
+      WarnOnce(batch, "Invalid Safari history entries were skipped.");
+      continue;
+    }
+    History entry;
+    entry.url = url.spec();
+    if (const std::string* title = item->FindString("title")) entry.title = base::UTF8ToUTF16(*title);
+    entry.visits = static_cast<int>(std::clamp(visits.value_or(1), 1.0, static_cast<double>(std::numeric_limits<int>::max())));
+    entry.hidden = item->FindString("destination_url") != nullptr;
+    entry.last_visit = static_cast<int64_t>(*time) + kUnixEpochMicros;
+    batch.history.push_back(std::move(entry));
+  }
+  if (Cancelled(cancel)) return Failure(kHistory, "Import was cancelled.");
+  batch.success = true;
+  return batch;
+}
+
 Batch ReadHistory(const ReadOptions& options, const Cancellation& cancel) {
+  const auto exported = options.profile_path.AppendASCII("History.json");
+  if (!base::PathExists(options.profile_path.AppendASCII("History.db")) && base::PathExists(exported))
+    return ReadExportedHistory(exported, cancel);
   SnapshotDatabase database;
   if (!database.Open(options.profile_path.AppendASCII("History.db")))
     return Failure(kHistory, database.error());
@@ -158,7 +212,7 @@ Batch ReadHistory(const ReadOptions& options, const Cancellation& cancel) {
   batch.success = true;
   return batch;
 }
-}  // namespace
+}
 
 Batch ReadSafariCategory(const ReadOptions& options, uint32_t category,
                          const Cancellation& cancel) {
@@ -171,4 +225,4 @@ Batch ReadSafariCategory(const ReadOptions& options, uint32_t category,
     return Failure(category, "This category is not supported by the Safari reader. Use the supported browser export flow when available.");
   }
 }
-}  // namespace parc::importer
+}

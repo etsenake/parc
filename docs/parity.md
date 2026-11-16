@@ -138,6 +138,10 @@ changes belong in the owning guide and release notes, not an ever-growing log he
 - Both Peek triggers, links to other sites and Shift-click, stay on by default
   for new users and remain switchable in Settings → Links.
   See [Peek](peek.md#presentation-and-remaining-scope).
+- Safari Profiles come from Safari's own export file, and Firefox and Zen
+  passwords from the browser's own CSV export. Parc does not read Safari's
+  private Profile folders or Firefox's encrypted password store directly. See
+  [native import](../Engine/ParcImport/README.md#reader-and-writer-boundary).
 - Protected video uses the implemented FairPlay route and automatically learned
   site identity; pages remain in Chromium. Do not substitute a fixed site list.
 - Preserve upstream security maintenance through deliberate Chromium pin
