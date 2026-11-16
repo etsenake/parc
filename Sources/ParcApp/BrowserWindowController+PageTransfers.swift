@@ -42,22 +42,22 @@ extension BrowserWindowController {
             source.syncPlaceholderImageHolders()
             placeholderCapturesPending[id] = generation
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05 + Double(attempt) * 0.15) { [weak self, weak source, weak page] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + PagePlaceholderCaptureOrder.delay(before: attempt)) { [weak self, weak source, weak page] in
             guard let self, self.placeholderCapturesPending[id] == generation else { return }
             guard let page, !page.isClosed, self.store.placeholderImages.isShown(id),
                   self.pageCapture == nil, let window = self.window,
                   self.browsers[id]?.nativePage === page, page.nativeView.window === window else {
                 self.placeholderCapturesPending.removeValue(forKey: id); return
             }
-            if attempt < 3, !PagePlaceholderCaptureOrder.mayCapture(id, pending: Set(self.placeholderCapturesPending.keys),
-                                                                    focused: self.currentTabID) {
+            if PagePlaceholderCaptureOrder.waits(id, attempt: attempt, pending: Set(self.placeholderCapturesPending.keys),
+                                                 focused: self.currentTabID) {
                 self.capturePlaceholderSnapshot(id, page: page, from: source ?? self, attempt: attempt + 1, generation: generation)
                 return
             }
             let key = ObjectIdentifier(page)
             guard Self.placeholderCaptureLeases[key] == nil, page.canCapture(in: window),
-                  let capture = page.beginCapture(in: window) else {
-                if attempt < 5, let source {
+                  let capture = page.beginPlaceholderSnapshot(in: window) else {
+                if PagePlaceholderCaptureOrder.retries(after: attempt), let source {
                     self.capturePlaceholderSnapshot(id, page: page, from: source, attempt: attempt + 1, generation: generation)
                 } else { self.placeholderCapturesPending.removeValue(forKey: id) }
                 return
@@ -668,5 +668,11 @@ extension BrowserWindowController {
             let session = try notes.create()
             openNote(id: session.document.id, title: session.displayTitle, inSplit: inSplit)
         } catch { showNoteError(error) }
+    }
+}
+
+extension PCNativePage {
+    func beginPlaceholderSnapshot(in window: NSWindow) -> PCNativePageCapture? {
+        responds(to: #selector(beginPlaceholderCapture(in:))) ? beginPlaceholderCapture(in: window) : beginCapture(in: window)
     }
 }

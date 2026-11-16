@@ -44,6 +44,9 @@ Read-only eligibility may populate command search without key focus. Starting
 or using the lease requires the genuine key source window after the command
 panel closes. Native validation independently checks the document, bounds,
 policy and security reservation; asynchronous callbacks carry a generation.
+The frozen picture a moved tab leaves behind uses a separate placeholder lease
+that skips only the key-window rule and copies only the whole visible page; see
+[windows lifecycle](windows-lifecycle.md#moving-selected-content-between-windows).
 
 An output lease survives its own Save/Easel sheet and OS message composer while
 retaining document/security validity. Every output revalidates it. Canceling a

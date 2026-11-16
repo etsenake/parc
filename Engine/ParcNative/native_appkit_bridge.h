@@ -1503,6 +1503,8 @@ NS_SWIFT_UI_ACTOR
 - (BOOL)canCaptureInWindow:(NSWindow*)window NS_SWIFT_NAME(canCapture(in:));
 - (nullable PCNativePageCapture*)beginCaptureInWindow:(NSWindow*)window
     NS_SWIFT_NAME(beginCapture(in:));
+- (nullable PCNativePageCapture*)beginPlaceholderCaptureInWindow:(NSWindow*)window
+    NS_SWIFT_NAME(beginPlaceholderCapture(in:));
 @end
 
 NS_SWIFT_UI_ACTOR

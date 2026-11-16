@@ -1,14 +1,16 @@
-# Install at //parc/tests/parc_native_tab_transfer and add its unit_tests target
-# to //chrome/test:unit_tests only on macOS with enable_parc.
 assert(is_mac)
 
 source_set("unit_tests") {
   testonly = true
-  sources = [ "tab_transfer_unittest.cc" ]
+  sources = [
+    "page_capture_unittest.cc",
+    "tab_transfer_unittest.cc",
+  ]
   include_dirs = [ "//parc/native" ]
   deps = [
     "//base",
     "//base/test:test_support",
+    "//parc/native:native_page_capture_api",
     "//parc/native:tab_transfer",
     "//parc/native:unload_transactions",
     "//chrome/browser/ui:unload_controller",

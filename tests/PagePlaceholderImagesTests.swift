@@ -37,11 +37,37 @@ struct PagePlaceholderImagesTests {
                && !PagePlaceholderCaptureOrder.mayCapture(second, pending: [first, second], focused: first),
                "a pane waits only while the focused pane's copy is still to come")
 
-        let engineSource = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Engine/ParcNative/native_page_capture.mm")
-        let capture = try String(contentsOf: engineSource, encoding: .utf8)
+        expect(PagePlaceholderCaptureOrder.waits(second, attempt: 0, pending: [first, second], focused: first)
+               && PagePlaceholderCaptureOrder.waits(second, attempt: 2, pending: [first, second], focused: first)
+               && !PagePlaceholderCaptureOrder.waits(second, attempt: 3, pending: [first, second], focused: first)
+               && !PagePlaceholderCaptureOrder.waits(first, attempt: 0, pending: [first, second], focused: first),
+               "a pane waits for the focused pane's copy for three tries at most, then copies anyway")
+        var attempt = 0, tries = 1, waited = PagePlaceholderCaptureOrder.delay(before: 0)
+        while PagePlaceholderCaptureOrder.retries(after: attempt) {
+            attempt += 1; tries += 1; waited += PagePlaceholderCaptureOrder.delay(before: attempt)
+        }
+        expect(tries == 6 && abs(waited - 2.55) < 0.001,
+               "a copy the engine keeps refusing is tried six times over about two and a half seconds, then left blank")
+
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        func source(_ path: String) throws -> String {
+            try String(contentsOf: repository.appendingPathComponent(path), encoding: .utf8)
+        }
+        let capture = try source("Engine/ParcNative/native_page_capture.mm")
         expect(capture.contains("visibleNativePages") && !capture.contains("selectedNativePage"),
                "a window's non-focused pane can be copied, so a moved split's panes all get an image")
+        expect(capture.contains("BeginPageCapture(self, window, parc::PageCapturePurpose::kPlaceholder)")
+               && capture.contains("BeginPageCapture(self, window, parc::PageCapturePurpose::kPerson)")
+               && capture.contains("PageCaptureNeedsKeyWindow(purpose_)") && capture.contains("PageCaptureViewportOnly(purpose_)"),
+               "only the placeholder lease skips the key-window rule, and it copies nothing but the visible page")
+        let transfers = try source("Sources/ParcApp/BrowserWindowController+PageTransfers.swift")
+        let captures = try source("Sources/ParcApp/BrowserWindowController+MediaAndCapture.swift")
+        expect(transfers.contains("let capture = page.beginPlaceholderSnapshot(in: window)")
+               && !transfers.contains("page.beginCapture(in: window) else")
+               && transfers.contains("responds(to: #selector(beginPlaceholderCapture(in:))) ? beginPlaceholderCapture(in: window) : beginCapture(in: window)"),
+               "the frozen picture uses the placeholder lease, so a window behind the front one still gets its image")
+        expect(captures.contains("page.beginCapture(in: parent)") && !captures.contains("beginPlaceholder"),
+               "the person's own captures keep the strict lease")
 
         let shared = frame(20)
         images.store(shared, for: first)

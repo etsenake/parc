@@ -72,7 +72,13 @@ placeholder, however many, uses the one image and scales it to its own pane. It
 is kept only while some window shows the placeholder, and a private window's
 images never reach a regular window. The engine copies any pane the receiving
 window shows, not only its focused one, so every pane of a moved split gets an
-image; the focused pane's copy is taken first.
+image; the focused pane's copy is taken first. The receiving window takes the
+copy even when it isn't in front, as after a return to a background window: the
+placeholder's own capture lease skips only the key-window rule and copies only
+the whole visible page, while the active app, a visible unminimized window, no
+sheet or security prompt and the screenshot policies still apply. A person's
+own captures keep the key-window rule. The copy is tried six times over about
+two and a half seconds before the pane is left plain.
 
 Clicking or activating the placeholder through accessibility moves the actual
 content back without reloading it. The last browser window stays open. A
@@ -139,9 +145,3 @@ transfer registry and `BrowserWindowController` own these paths. Focused model
 coverage includes `WindowPresentation`, `ClosedItems`, `CloseUndo`,
 `PagePlaceholder`, `PagePlaceholderImages` and session-store tests. Native/compiler checks validate their
 interfaces when run.
-
-## Remaining behavior and explicit deferrals
-
-The explicitly deferred cross-window case remains: an automatic return to a
-non-key window can leave a blank frozen placeholder. See
-[the backlog](backlog.md#deferred).

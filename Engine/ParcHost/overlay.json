@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 759,
+  "version": 760,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -14,7 +14,7 @@
     {
       "source": "Engine/ParcNative/BUILD.gn",
       "target": "parc/native/BUILD.gn",
-      "sha256": "46131254cd3490df6c5d49b62a60d74af75fb98205153a99ce6d8dacaa620542"
+      "sha256": "8303f1ff590da86f15d126f52fca8a82a1d764769d79eae59061ba60f9216644"
     },
     {
       "source": "Engine/ParcNative/page_host.h",
@@ -339,7 +339,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "parc/native/native_appkit_bridge.h",
-      "sha256": "0d6f38fafcf2c9146df082d4f5ea65682a72d6dc9db84d754ab2b1036bf48eab"
+      "sha256": "acaf6c20e29b88b0addca8adb60061f257941d4fe3ea7e021880142f6ffae5a8"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -524,12 +524,17 @@
     {
       "source": "tests/NativeTabTransfer/BUILD.gn",
       "target": "parc/tests/parc_native_tab_transfer/BUILD.gn",
-      "sha256": "3e596d754c6634a198c3745ca5a22e61bd68654aecaec1eff4f3edc9e407e44b"
+      "sha256": "3f66cbd4fa553a6185da63fb692fa0a0cb21224a4b82b24a1a249a873f7c88b7"
     },
     {
       "source": "tests/NativeTabTransfer/tab_transfer_unittest.cc",
       "target": "parc/tests/parc_native_tab_transfer/tab_transfer_unittest.cc",
       "sha256": "a90c161536617220f983d79384b170c22b650af50cb1aa9a5ff97dbc146c7e9e"
+    },
+    {
+      "source": "tests/NativeTabTransfer/page_capture_unittest.cc",
+      "target": "parc/tests/parc_native_tab_transfer/page_capture_unittest.cc",
+      "sha256": "57ef98fe6a1da465053c8956dbdd02a0b2c4b062513fccc0fbe3a995ca06bc04"
     },
     {
       "source": "Engine/ParcNative/downloads.cc",
@@ -1144,7 +1149,12 @@
     {
       "source": "Engine/ParcNative/native_page_capture.mm",
       "target": "parc/native/native_page_capture.mm",
-      "sha256": "ac8979f9fd224b8d0974c0b2ba2f031a70f1a3ccd9fb1b0ca0a66628637ba0c5"
+      "sha256": "b2ce22ade2b3093585d48b55db6330ec64306c197d73e07e723d3560fe2bae46"
+    },
+    {
+      "source": "Engine/ParcNative/native_page_capture.h",
+      "target": "parc/native/native_page_capture.h",
+      "sha256": "562cf5ff92e27b2239814ea26c5cc7ff236379ea8eeebb1dc8c4806d0b975573"
     },
     {
       "source": "Engine/ParcNative/native_download_arrival.h",
@@ -2059,7 +2069,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "5c5fe532846b9beffa7dd1ecadaed87dd29d792a7b51a384f39bc097ca8b1abf"
+      "sha256": "0031f819d7eb3a76a30dae7fc7d9a4eb7e2a94a589e6d88296f6a77276d80a10"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",

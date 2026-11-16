@@ -2,7 +2,9 @@
 
 `NativeTabTransferTest.*` exercises the production `TransferLiveTab` function with actual Chromium Browser, TabStripModel, TabInterface, WebContents and UnloadController instances. Its twenty-two cases cover identical tab/page pointers, empty and nonempty destination selection, ordinary popup owners, cross-profile and unsupported owner refusal, last-source rollback, original pin/group/opener restoration on rollback, untouched and rolled-back preexisting-empty-owner preservation, explicit close ordering, owner-refill checks, failed source reattachment, callback-driven ownership changes, real close reservations, nested transfer and independent page destruction. The presentation callback stands in only for AppKit attachment; it does not implement tab ownership or close logic.
 
-The shared `tab_transfer` source set is consumed by both //parc:browser and the test-only target, avoiding a //parc:browser dependency from chrome/test:unit_tests. Run `unit_tests --gtest_filter='NativeTabTransferTest.*'`. The overlay maps the production source set and the test target into the pinned engine.
+The shared `tab_transfer` source set is consumed by both //parc:browser and the test-only target, avoiding a //parc:browser dependency from chrome/test:unit_tests. Run `unit_tests --gtest_filter='NativeTabTransferTest.*'`. The overlay maps the production source set and the test target into the pinned engine; the target installs at //parc/tests/parc_native_tab_transfer and joins //chrome/test:unit_tests on macOS when `enable_parc` is set.
+
+`NativePageCaptureTest.*` pins the window rules for the frozen picture a moved tab leaves behind. The placeholder copy may come from a window that isn't in front, while a person's own capture still needs the front window; every other rule (active app, visible unminimized window, no sheet or security prompt) refuses both, and the placeholder copy takes only the whole visible page.
 
 ## Native shell contract
 

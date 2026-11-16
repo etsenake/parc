@@ -33,8 +33,16 @@ final class PagePlaceholderImages {
 }
 
 enum PagePlaceholderCaptureOrder {
+    static let orderedAttempts = 3
+    static let lastAttempt = 5
+
     static func mayCapture(_ tab: UUID, pending: Set<UUID>, focused: UUID?) -> Bool {
         guard let focused, focused != tab else { return true }
         return !pending.contains(focused)
     }
+    static func waits(_ tab: UUID, attempt: Int, pending: Set<UUID>, focused: UUID?) -> Bool {
+        attempt < orderedAttempts && !mayCapture(tab, pending: pending, focused: focused)
+    }
+    static func retries(after attempt: Int) -> Bool { attempt < lastAttempt }
+    static func delay(before attempt: Int) -> TimeInterval { 0.05 + Double(attempt) * 0.15 }
 }

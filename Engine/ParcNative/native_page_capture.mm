@@ -46,6 +46,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "native_appkit_host.h"
+#include "native_page_capture.h"
 #include "native_page_retirement.h"
 #include "native_profile_removal.h"
 #include "tab_transfer.h"
@@ -171,8 +172,6 @@ void PostFailure(CaptureCompletion completion, NSString* error) {
       }, [completion copy], result));
 }
 
-// Any pane the window currently shows, not only its focused one: a window
-// copies each pane of a split it has just received.
 bool PageShownInWindow(PCNativeBrowserWindow* binding, PCNativePage* page) {
   return [[binding.client visibleNativePages] containsObject:page];
 }
@@ -181,9 +180,14 @@ bool CaptureEligible(PCNativePage* page, content::WebContents* contents,
                      NSWindow* window, bool require_key) {
   if (!page || page.closed || !contents || contents->IsBeingDestroyed() ||
       !window || page.nativeView.window != window ||
-      !NSApp.active || !window.visible || window.miniaturized ||
-      (require_key && !window.keyWindow) || window.attachedSheet ||
-      PCNativeWindowHasSecurityReservation(window) ||
+      !PageCaptureWindowAdmits({.app_active = static_cast<bool>(NSApp.active),
+                                .visible = static_cast<bool>(window.visible),
+                                .miniaturized = static_cast<bool>(window.miniaturized),
+                                .key = static_cast<bool>(window.keyWindow),
+                                .attached_sheet = window.attachedSheet != nil,
+                                .security_reservation =
+                                    PCNativeWindowHasSecurityReservation(window)},
+                               require_key) ||
       page.nativeView.hiddenOrHasHiddenAncestor || contents->IsCrashed() ||
       contents->GetVisibility() != content::Visibility::VISIBLE ||
       !contents->GetPrimaryMainFrame() ||
@@ -219,8 +223,8 @@ class PageCapture final : public content::WebContentsObserver,
                           public std::enable_shared_from_this<PageCapture> {
  public:
   PageCapture(PCNativePage* page, content::WebContents& contents, NSWindow* window,
-              void (^invalidated)())
-      : content::WebContentsObserver(&contents), page_(page), window_(window),
+              PageCapturePurpose purpose, void (^invalidated)())
+      : content::WebContentsObserver(&contents), purpose_(purpose), page_(page), window_(window),
         document_(contents.GetPrimaryMainFrame()->GetWeakDocumentPtr()),
         profile_(Profile::FromBrowserContext(contents.GetBrowserContext())->GetWeakPtr()),
         invalidated_([invalidated copy]),
@@ -266,9 +270,6 @@ class PageCapture final : public content::WebContentsObserver,
     return true;
   }
 
-  // The completed image can remain open beneath this lease's output sheet.
-  // Window activation, page focus and sheets are admission checks, not a new
-  // document identity. The app also invalidates on its exact selection change.
   NSColor* ThemeColor() const {
     if (!Valid()) return nil;
     const auto color = web_contents()->GetThemeColor();
@@ -336,7 +337,7 @@ class PageCapture final : public content::WebContentsObserver,
 
   void TargetElement(NSPoint point, TargetCompletion completion) {
     if (!completion) return;
-    if (Capturing()) { PostTarget(completion, nil); return; }
+    if (Capturing() || PageCaptureViewportOnly(purpose_)) { PostTarget(completion, nil); return; }
     if (ActiveCaptures().contains(web_contents()) || !CanCapture() ||
         !std::isfinite(point.x) || !std::isfinite(point.y) ||
         point.x < 0 || point.y < 0 || point.x >= viewport_.width() ||
@@ -351,12 +352,11 @@ class PageCapture final : public content::WebContentsObserver,
 
   void CaptureElement(PCNativePageCaptureTarget* target, CaptureCompletion completion) {
     if (!completion) return;
-    if (!target || target != offered_target_ || Capturing() || !CanCapture()) {
+    if (!target || target != offered_target_ || Capturing() || PageCaptureViewportOnly(purpose_) ||
+        !CanCapture()) {
       PostFailure(completion, @"This element selection is no longer available.");
       return;
     }
-    // Consume the offer once. A click re-reads the same original document and
-    // point; changed geometry or page zoom requires a new hover selection.
     offered_target_ = nil;
     element_completion_ = [completion copy];
     auto weak = weak_factory_.GetWeakPtr();
@@ -370,6 +370,12 @@ class PageCapture final : public content::WebContentsObserver,
     if (!completion) return;
     if (Capturing() || ActiveCaptures().contains(web_contents())) {
       PostFailure(completion, @"A capture is already in progress.");
+      return;
+    }
+    if (PageCaptureViewportOnly(purpose_) &&
+        (full_page || !NSEqualRects(region, NSMakeRect(0, 0, viewport_.width(),
+                                                       viewport_.height())))) {
+      PostFailure(completion, @"This capture copies only the visible page.");
       return;
     }
     if (!CanCapture()) {
@@ -388,7 +394,6 @@ class PageCapture final : public content::WebContentsObserver,
         PostFailure(completion, @"The selected region is outside the original viewport.");
         return;
       }
-      // Integral compositor DIPs; outward rounding retains every selected pixel.
       area = gfx::ToEnclosingRect(gfx::RectF(region.origin.x, region.origin.y,
                                             region.size.width, region.size.height));
     }
@@ -410,8 +415,6 @@ class PageCapture final : public content::WebContentsObserver,
  private:
   void ReadGeometry(uint64_t request, bool after_copy, SkBitmap bitmap) {
     if (!completion_ || request != request_ || !Valid()) return;
-    // The same document's visual viewport owns both scroll and pinch scale.
-    // No URL, DOM content or executable page string crosses this boundary.
     constexpr char16_t script[] = uR"JS((() => {
       const v = visualViewport;
       return v ? {width:innerWidth, height:innerHeight,
@@ -451,8 +454,6 @@ class PageCapture final : public content::WebContentsObserver,
     capture_geometry_ = std::move(value);
     capture_zoom_ = zoom;
     auto weak = weak_factory_.GetWeakPtr();
-    // CopyFromSurface may deliver off sequence. Its bitmap is ref-counted; the
-    // callback only copies that value and posts to the owning UI sequence.
     web_contents()->GetRenderWidgetHostView()->CopyFromSurface(
         capture_area_, gfx::Size(), base::Seconds(10),
         base::BindOnce([](scoped_refptr<base::SequencedTaskRunner> runner,
@@ -481,7 +482,6 @@ class PageCapture final : public content::WebContentsObserver,
     if (target_completion_) PostTarget(target_completion_, nil);
     target_completion_ = [completion copy];
     target_point_ = point;
-    // Bound renderer work to one request plus the newest pending pointer.
     if (!target_inflight_) StartTarget();
   }
   void StartTarget() {
@@ -547,7 +547,6 @@ class PageCapture final : public content::WebContentsObserver,
       }
     }
     offered_target_ = target;
-    // Even a queued publication must still belong to the current hover request.
     runner_->PostTask(FROM_HERE, base::BindOnce(
         [](base::WeakPtr<PageCapture> weak, uint64_t generation,
            TargetCompletion callback, PCNativePageCaptureTarget* target) {
@@ -592,7 +591,8 @@ class PageCapture final : public content::WebContentsObserver,
     return true;
   }
   bool CanCapture() const {
-    return Valid() && CaptureEligible(page_, web_contents(), window_, true) &&
+    return Valid() &&
+        CaptureEligible(page_, web_contents(), window_, PageCaptureNeedsKeyWindow(purpose_)) &&
         web_contents()->GetRenderWidgetHostView()->GetViewBounds().size() == viewport_;
   }
   void ReleaseOperation() {
@@ -613,8 +613,6 @@ class PageCapture final : public content::WebContentsObserver,
   void StartFullPage(uint64_t request) {
     capture_layout_ = nil;
     agent_ = content::DevToolsAgentHost::GetOrCreateFor(web_contents());
-    // A second metrics/emulation client would make size restoration ambiguous.
-    // Do not take over DevTools or another native full-page capture session.
     if (!agent_ || agent_->IsAttached() || !agent_->AttachClient(this)) {
       agent_.reset();
       Fail(request, @"Close this page’s developer tools before capturing the full page.");
@@ -633,9 +631,6 @@ class PageCapture final : public content::WebContentsObserver,
     auto keep_alive = weak_from_this().lock();
     if (restoring_) return;
     restoring_ = true;
-    // Detach first: it invalidates PageHandler's pending weak screenshot
-    // callback and clears this client's emulation, so no late callback can
-    // restore obsolete dimensions after our cleanup.
     if (agent_ && attached_) {
       attached_ = false;
       agent_->DetachClient(this);
@@ -648,15 +643,10 @@ class PageCapture final : public content::WebContentsObserver,
       restoring_ = false;
       return;
     }
-    // WebPreferences belong to WebContents, and can survive a new document.
-    // Restore only our two temporary fields, never overwrite unrelated prefs.
     auto prefs = contents->GetOrCreateWebPreferences();
     prefs.hide_scrollbars = original_hide_scrollbars_;
     prefs.record_whole_document = original_record_document_;
     contents->SetWebPreferences(prefs);
-    // The stable PCNativePageHost is outside the compositor resize. Its managed
-    // WebContents container keeps current shell/infobar geometry even if a
-    // window resize caused cancellation. Never size a replacement document.
     if (document_.AsRenderFrameHostIfValid() == contents->GetPrimaryMainFrame() &&
         page_ && ContentsForNativePage(page_) == contents &&
         page_.nativeView.window == window_) {
@@ -679,7 +669,6 @@ class PageCapture final : public content::WebContentsObserver,
     const uint64_t request = request_;
     const std::string* data = value->FindStringByDottedPath("result.data");
     std::string encoded = data ? *data : std::string();
-    // Do not destroy the DevTools session inside its dispatcher callback.
     runner_->PostTask(FROM_HERE, base::BindOnce(&PageCapture::ProtocolResult,
         weak_factory_.GetWeakPtr(), request, std::move(encoded)));
   }
@@ -699,7 +688,6 @@ class PageCapture final : public content::WebContentsObserver,
   }
   void AgentHostClosed(content::DevToolsAgentHost*) override {
     attached_ = false;
-    // As with protocol delivery, leave the agent's observer stack first.
     runner_->PostTask(FROM_HERE, base::BindOnce(&PageCapture::Invalidate,
         weak_factory_.GetWeakPtr(), true));
   }
@@ -726,8 +714,6 @@ class PageCapture final : public content::WebContentsObserver,
         size:NSMakeSize(encoded.pixels.width(), encoded.pixels.height())
         error:data ? nil : @"The renderer returned no usable capture pixels."
         layout:data ? capture_layout_ : nil];
-    // This method is already a queued main-sequence reply, outside renderer,
-    // DevTools and observer stacks. The callback may destroy this entire lease.
     completion(result);
   }
   void Fail(uint64_t request, NSString* error) {
@@ -761,6 +747,7 @@ class PageCapture final : public content::WebContentsObserver,
     Invalidate(true);
   }
 
+  const PageCapturePurpose purpose_;
   PCNativePage* __weak page_;
   NSWindow* __weak window_;
   content::WeakDocumentPtr document_;
@@ -801,25 +788,27 @@ class PageCapture final : public content::WebContentsObserver,
       widget_observer_{this};
   base::WeakPtrFactory<PageCapture> weak_factory_{this};
 };
-}  // namespace
-}  // namespace parc
+}
+}
 
 @interface PCNativePageCapture () {
  @public
   std::shared_ptr<parc::PageCapture> state;
 }
 - (instancetype)initWithPage:(PCNativePage*)page
-                   contents:(content::WebContents&)contents window:(NSWindow*)window;
+                   contents:(content::WebContents&)contents window:(NSWindow*)window
+                    purpose:(parc::PageCapturePurpose)purpose;
 @end
 @implementation PCNativePageCapture
 @synthesize sourceURL = _sourceURL, pageTitle = _pageTitle, invalidated = _invalidated;
 - (instancetype)initWithPage:(PCNativePage*)page
-                   contents:(content::WebContents&)contents window:(NSWindow*)window {
+                   contents:(content::WebContents&)contents window:(NSWindow*)window
+                    purpose:(parc::PageCapturePurpose)purpose {
   if ((self = [super init])) {
     _sourceURL = base::SysUTF8ToNSString(parc::PublicInternalURL(contents.GetLastCommittedURL()).spec());
     _pageTitle = base::SysUTF16ToNSString(contents.GetTitle());
     __weak PCNativePageCapture* weakSelf = self;
-    state = std::make_shared<parc::PageCapture>(page, contents, window, ^{
+    state = std::make_shared<parc::PageCapture>(page, contents, window, purpose, ^{
       PCNativePageCapture* owner = weakSelf;
       if (owner.invalidated) owner.invalidated();
     });
@@ -853,15 +842,28 @@ class PageCapture final : public content::WebContentsObserver,
 }
 @end
 
+namespace parc {
+namespace {
+PCNativePageCapture* BeginPageCapture(PCNativePage* page, NSWindow* window,
+                                      PageCapturePurpose purpose) {
+  auto* contents = ContentsForNativePage(page);
+  if (!contents || contents->IsBeingDestroyed() || !contents->GetPrimaryMainFrame() ||
+      page.closed || page.nativeView.window != window) return nil;
+  return [[PCNativePageCapture alloc] initWithPage:page contents:*contents window:window
+                                           purpose:purpose];
+}
+}
+}
+
 @implementation PCNativePage (Capture)
 - (BOOL)canCaptureInWindow:(NSWindow*)window {
   return parc::CaptureEligible(self, parc::ContentsForNativePage(self), window, false);
 }
 - (PCNativePageCapture*)beginCaptureInWindow:(NSWindow*)window {
-  auto* contents = parc::ContentsForNativePage(self);
-  if (!contents || contents->IsBeingDestroyed() || !contents->GetPrimaryMainFrame() ||
-      self.closed || self.nativeView.window != window) return nil;
-  return [[PCNativePageCapture alloc] initWithPage:self contents:*contents window:window];
+  return parc::BeginPageCapture(self, window, parc::PageCapturePurpose::kPerson);
+}
+- (PCNativePageCapture*)beginPlaceholderCaptureInWindow:(NSWindow*)window {
+  return parc::BeginPageCapture(self, window, parc::PageCapturePurpose::kPlaceholder);
 }
 @end
 
@@ -900,8 +902,6 @@ class LiveCapturePosition final : public std::enable_shared_from_this<LiveCaptur
     const double scale = width_ / (region_.size.width * zoom);
     if (!std::isfinite(scale) || scale <= 0 || scale > 10000) { Finish(false); return; }
     auto n = [](double value) { return base::NumberToString(value); };
-    // Preserve unrelated inline styling. Unlike a screenshot, this is still
-    // the real running document, clipped by the original Easel object surface.
     std::string script = R"JS((() => {
       if (!document.body || !['interactive','complete'].includes(document.readyState)) return false;
       document.body.style.transformOrigin = 'top left';
@@ -940,7 +940,7 @@ class LiveCapturePosition final : public std::enable_shared_from_this<LiveCaptur
   base::OneShotTimer timer_;
   void (^completion_)(BOOL);
 };
-}  // namespace parc
+}
 @interface PCNativeLiveCapturePosition () {
  @public
   std::shared_ptr<parc::LiveCapturePosition> state;
@@ -986,8 +986,6 @@ class EmbeddedPageSnapshot final : public std::enable_shared_from_this<EmbeddedP
       : page_(page), contents_(contents.GetWeakPtr()),
         document_(contents.GetPrimaryMainFrame()->GetWeakDocumentPtr()),
         completion_([completion copy]), runner_(base::SequencedTaskRunner::GetCurrentDefault()) {}
-  // A dropped copy callback can release the last owner on another sequence.
-  // The request still answers once, and the capture ends on the UI sequence.
   ~EmbeddedPageSnapshot() {
     if (capturer_) {
       runner_->PostTask(FROM_HERE, base::BindOnce([](base::ScopedClosureRunner) {}, std::move(capturer_)));
@@ -1012,8 +1010,7 @@ class EmbeddedPageSnapshot final : public std::enable_shared_from_this<EmbeddedP
   }
   void Start() {
     if (!Valid()) { Finish(EncodedCapture()); return; }
-    capturer_ = contents_->IncrementCapturerCount(gfx::Size(), /*stay_hidden=*/true,
-                                                  /*stay_awake=*/false, /*is_activity=*/false);
+    capturer_ = contents_->IncrementCapturerCount(gfx::Size(), true, false, false);
     runner_->PostDelayedTask(FROM_HERE, base::BindOnce([](std::weak_ptr<EmbeddedPageSnapshot> weak) {
       if (auto owner = weak.lock()) owner->Finish(EncodedCapture());
     }, weak_from_this()), base::Seconds(5));
@@ -1030,9 +1027,7 @@ class EmbeddedPageSnapshot final : public std::enable_shared_from_this<EmbeddedP
     if (finished_) return;
     if (!Valid()) { Finish(EncodedCapture()); return; }
     auto* view = contents_->GetRenderWidgetHostView();
-    // A page that was hidden has no surface until its first captured frame.
     if (!view->IsSurfaceAvailableForCopy() || view->GetViewBounds().IsEmpty()) { Retry(); return; }
-    // CopyFromSurface may deliver off sequence; the bitmap is ref-counted.
     view->CopyFromSurface(gfx::Rect(), gfx::Size(), base::Seconds(2), base::BindOnce(
         [](scoped_refptr<base::SequencedTaskRunner> runner,
            std::shared_ptr<EmbeddedPageSnapshot> owner, const content::CopyFromSurfaceResult& result) {
@@ -1082,7 +1077,7 @@ class EmbeddedPageSnapshot final : public std::enable_shared_from_this<EmbeddedP
   int attempts_ = 0;
   bool finished_ = false;
 };
-}  // namespace parc
+}
 @implementation PCNativePage (EmbeddedSnapshot)
 - (BOOL)snapshotEmbeddedPageWithCompletion:(void (^)(PCNativePageCaptureResult*))completion {
   auto* contents = parc::ContentsForNativePage(self);
