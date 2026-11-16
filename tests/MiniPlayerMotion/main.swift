@@ -27,7 +27,7 @@ func verifyMotion() {
         unrelated.frame.origin.x = 10
     }
     precondition(card.frame == NSRect(x: 10, y: 15, width: 75, height: 70), "the layout change lands on the card's frame")
-    precondition(unrelated.layer?.animation(forKey: "parc.media.position") == nil, "a view outside the deck and companion never moves")
+    precondition(unrelated.layer?.animation(forKey: "parc.media.position") == nil, "a view outside the deck and companion moves without animating")
     precondition(card.layer?.animation(forKey: "parc.media.opacity") == nil, "an unchanged opacity is not animated")
     precondition(card.layer?.animation(forKey: "unrelated") != nil, "the card keeps its own unrelated animation")
     if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
