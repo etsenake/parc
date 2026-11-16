@@ -121,6 +121,18 @@ enum PCNativeImportOutcome { case completed, partial, cancelled, failed }
     }
     static var extensionInstalls: [ExtensionInstall] = []
     static var rejectsExtensionInstall = false
+    struct SetupChange { let kind: String, identifiers: Set<String>, path: String, complete: (Error?) -> Void }
+    static var setupChanges: [SetupChange] = []
+    static func installICloudPasswordsExtension(toProfilePath path: String, completion: @escaping (Error?) -> Void) {
+        setupChanges.append(.init(kind: "iCloud Passwords", identifiers: [], path: path, complete: completion))
+    }
+    static func installSetupAdBlocker(toProfilePath path: String, completion: @escaping (Error?) -> Void) {
+        setupChanges.append(.init(kind: "uBlock Origin", identifiers: [], path: path, complete: completion))
+    }
+    static func removeSetupAdBlockers(_ identifiers: Set<String>, fromProfilePath path: String,
+                                      completion: @escaping (Error?) -> Void) {
+        setupChanges.append(.init(kind: "remove", identifiers: identifiers, path: path, complete: completion))
+    }
     static func installImportedExtensions(_ requests: [PCNativeImportExtensionRequest],
         completion: @escaping (PCNativeImportExtensionResult) -> Void,
         backgroundFailures: @escaping ([String]) -> Void) -> PCNativeImportSession? {

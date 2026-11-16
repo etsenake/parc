@@ -36,6 +36,9 @@ foreground outline and hover/press overlays remain distinct. `PaneShareMenu`
 queries actual AppKit services for the immutable URLs and dispatches those same
 URLs; unavailable services do not get fabricated commands.
 
+**Retry** uses that same button style with a text label. Like a tap, it removes
+the toast before running its captured action, once.
+
 ## Lifetime
 
 One toast is visible per window. Presenting another retires it; Press Again and
@@ -47,9 +50,13 @@ A five-second repeating timer dismisses on the first non-hover tick. Default
 run-loop scheduling waits while the share menu is open. Real scroll movement or
 a ten-point vertical card drag dismisses; zero-motion trackpad events do not.
 Tap removes the toast before invoking its captured action. Close, miniaturization,
-sheets and fullscreen transitions dismiss immediately. Binding changes dismiss
+sheets and fullscreen transitions dismiss immediately. A toast that finishes on
+its own (timer, tap, Retry, scroll or drag) leaves the window idle, and the
+browser window then shows any waiting import notice; replacement, those window
+changes and outside dismissal do not count. Binding changes dismiss
 only cards showing a shortcut. VoiceOver announces label/subtitle; actionable
-cards expose a button role and the actual captured action.
+cards expose a button role and the actual captured action, and Share and Retry
+stay separate named buttons.
 
 ## Parc's toasts
 
@@ -72,6 +79,7 @@ cards expose a button role and the actual captured action.
 | Clear Archive | Archive Cleared |
 | Put Back | Tab restored to the named Space; click to view |
 | Clear Today | Cleared Tabs! Use Command-Z to undo |
+| Import or setup failure | Import-data result, then extensions Parc can't retry, then setup's own Couldn’t add/remove with Retry |
 | Copy/drop failures | Actual Parc error wording |
 
 Copy feedback uses the actual copied URL when it retains the page's scheme,
@@ -81,9 +89,10 @@ Share actions hand the selected URLs to the chosen system service.
 ## Checks
 
 `scripts/test-toasts.sh` covers placement, one-time framing, geometry, hit testing,
-replacement, timer/hover, scroll, tap ordering, binding/parent changes and theme
-contrast. Shortcut cue checks retain their own lifecycle tests; BrowserToolbar
-checks cover share-menu construction.
+replacement, timer/hover, scroll, tap and Retry ordering, idle hand-off, setup
+notice wording, binding/parent changes and theme contrast. Shortcut cue checks
+retain their own lifecycle tests; BrowserToolbar checks cover share-menu
+construction.
 
 ## Scope
 

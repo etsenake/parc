@@ -91,9 +91,16 @@ refuses external installs and can wait up to ten minutes for an outstanding
 download; a blocker still downloading then counts as not removed. Each blocker is
 removed separately, so a failure is attributed to the right one. The browser
 window shows **Couldn’t add uBlock Origin Lite** or **Couldn’t remove** with the
-blocker's name. Failures that arrive together share one notice: a single failure
-is named and several are counted, a failed add sits above a failed removal, and
-there is no retry action. An import-data failure notice goes first.
+blocker's name; when that blocker was being removed from more than one Profile,
+the notice says which, as in “from Work and School” (beyond three, “and 2 more”).
+Failures that arrive together share one notice: a single failure is named and
+several are counted, and a failed add sits above a failed removal. Its **Retry**
+runs every listed install or removal again; one that fails again brings the
+notice back. Failures Parc can't retry, such as the import's own extensions or
+iCloud Passwords refused by Apple's helper, get an earlier notice without Retry,
+and an import-data failure notice goes before both. Each waiting notice appears
+once the one before it finishes on its own (time, a click, Retry or a scroll)
+while the window stays in front, otherwise when the window next comes forward.
 These are actual engine operations, not consequences of simply selecting a row.
 
 ## Welcome presentation
@@ -204,8 +211,9 @@ late panel and file callbacks; no password material is placed in the setup draft
 
 ### Safari password choice and finish-owned installation
 
-On macOS 14 through 15.4, Safari setup offers **Add iCloud Passwords Extension**
-(recommended, initially selected) or **Import Passwords from Safari** (manual).
+When Apple's helper admits Parc (below), Safari setup offers **Add iCloud
+Passwords Extension** (recommended, initially selected) or **Import Passwords
+from Safari** (manual).
 Selecting a row changes pending state only. Next accepts it; the manual route
 opens CSV import, while the extension route stores the exact destination Profile
 and skips CSV.
@@ -218,15 +226,22 @@ sharing the ad-blocker notice above. Chromium retains metadata, policy, signatur
 and CRX validation. Child Profiles are refused because this path cannot provide
 parental reauthentication.
 
-Older macOS versions, and macOS 15.5 and later, go straight to manual import with
-no extension choice. From 15.5, Apple's iCloud Passwords helper starts only for
-browsers on [Apple's list](https://github.com/apple/password-manager-resources)
-or signed with Apple's passkey-browser entitlement. Parc has neither, so the
-extension would install but never connect. Parc deliberately does not ask Apple
-to add it to that list. If Parc is listed or gains the entitlement, the choice
-can return on the macOS versions that admit it. A setup saved with the
-extension choice before an upgrade to 15.5 or later installs nothing at Finish
-and shows the Couldn’t add notice.
+The extension talks to Apple's iCloud Passwords helper, which ships with
+Safari rather than macOS, so an updated Safari on macOS 14 or early 15 can
+already refuse Parc. Parc reads the helper's code signature, never launching
+it: the helper Chromium's native-messaging manifest names, else the one in
+Safari's system folder. Its parent launch constraint carries
+[Apple's list](https://github.com/apple/password-manager-resources), admitting
+only listed browsers, by signing identifier and team, or browsers signed with
+Apple's passkey-browser entitlement. Parc checks its own signature against that
+constraint. A helper without one admits any browser; with no helper, or a
+constraint Parc can't evaluate, macOS 14 through 15.4 decide as before. Parc is
+neither listed nor entitled, so setup offers the choice only with an older
+helper and otherwise goes straight to manual import; macOS 13 never offers it.
+Parc deliberately does not ask Apple to add it to that list. If Parc is listed
+or gains the entitlement, the choice returns on its own. A setup saved with the
+extension choice before the helper changed installs nothing at Finish and shows
+the Couldn’t add notice, without Retry.
 
 ### Import content and initial bookmark recommendations
 

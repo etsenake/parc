@@ -764,18 +764,10 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             guard let onComplete else { throw CocoaError(.featureUnsupported) }
             try onComplete()
             if !submittedICloudPasswords, let profileID = draft.iCloudPasswordsProfileID,
-               BrowserImportDestination(spaceID: draft.spaceID, profileID: profileID).isCurrent(in: store.state) {
+               case let destination = BrowserImportDestination(spaceID: draft.spaceID, profileID: profileID),
+               destination.isCurrent(in: store.state) {
                 submittedICloudPasswords = true
-                if ICloudPasswordsSupport.connects() {
-                    PCNativeBrowserApplication.installICloudPasswordsExtension(
-                        toProfilePath: store.independentEngineProfilePath(for: profileID)) { error in
-                            guard let error else { return }
-                            NSLog("Parc could not install the selected iCloud Passwords extension: %@", error.localizedDescription)
-                            MainActor.assumeIsolated { ImportedExtensionFailures.add(["iCloud Passwords"]) }
-                        }
-                } else {
-                    ImportedExtensionFailures.add(["iCloud Passwords"])
-                }
+                SetupExtensionChanges.addICloudPasswords(to: destination, store: store)
             }
             applyAdBlockerChoice()
             scheduledAdvance?.cancel(); scheduledAdvance = nil
@@ -875,27 +867,12 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
               let space = store.state.spaces.first(where: { $0.id == draft.spaceID }) else { return }
         draft.adBlockerChoice = nil
         let plan = choice.plan(for: draft.importedAdBlockers, setupProfileID: space.profileID)
-        for (profileID, identifiers) in plan.removals
-        where store.state.profiles.contains(where: { $0.id == profileID })
-            && !store.state.profileRemovals.contains(where: { $0.profileID == profileID }) {
-            for identifier in identifiers.sorted() {
-                let name = draft.importedAdBlockers.first { $0.identifier == identifier }?.displayName ?? identifier
-                PCNativeBrowserApplication.removeSetupAdBlockers([identifier],
-                    fromProfilePath: store.independentEngineProfilePath(for: profileID)) { error in
-                        guard let error else { return }
-                        NSLog("Parc could not remove %@: %@", name, error.localizedDescription)
-                        MainActor.assumeIsolated { ImportedExtensionFailures.addRemovals([name]) }
-                    }
-            }
-        }
+        let names = Dictionary(draft.importedAdBlockers.map { ($0.identifier, $0.displayName) }) { first, _ in first }
+        SetupExtensionChanges.removeAdBlockers(plan.removals, names: names, store: store)
         if let profileID = plan.installProfileID,
-           BrowserImportDestination(spaceID: space.id, profileID: profileID).isCurrent(in: store.state) {
-            PCNativeBrowserApplication.installSetupAdBlocker(
-                toProfilePath: store.independentEngineProfilePath(for: profileID)) { error in
-                    guard let error else { return }
-                    NSLog("Parc could not install uBlock Origin: %@", error.localizedDescription)
-                    MainActor.assumeIsolated { ImportedExtensionFailures.add(["uBlock Origin Lite"]) }
-                }
+           case let destination = BrowserImportDestination(spaceID: space.id, profileID: profileID),
+           destination.isCurrent(in: store.state) {
+            SetupExtensionChanges.addAdBlocker(to: destination, store: store)
         }
     }
 

@@ -63,17 +63,35 @@ import AppKit
         check(label(.zoom(percent: 110)) == "110%", "zoomChanged is the percentage")
         check(label(.fullScreenExit(shortcut: "⎋")) == "To exit full screen, press ⎋.", "didEnterFullScreen names the exit binding")
         check(label(.archiveCleared) == "Archive Cleared", "archiveCleared")
-        check(ParcToastContent.extensionsNotApplied(added: ["iCloud Passwords"], removed: []).body
+        func failed(_ names: String..., in profile: String? = nil) -> [ParcToastContent.FailedExtension] {
+            names.map { .init(name: $0, profile: profile) }
+        }
+        check(ParcToastContent.extensionsNotApplied(added: failed("iCloud Passwords"), removed: []).body
               == .standard(icon: nil, label: "Couldn’t add iCloud Passwords", subLabel: nil, buttons: []),
               "a failed setup install names the extension")
-        check(ParcToastContent.extensionsNotApplied(added: [], removed: ["AdBlock"]).body
+        check(ParcToastContent.extensionsNotApplied(added: [], removed: failed("AdBlock")).body
               == .standard(icon: nil, label: "Couldn’t remove AdBlock", subLabel: nil, buttons: []),
               "an imported ad blocker that stayed is named")
-        check(ParcToastContent.extensionsNotApplied(added: ["A", "B"], removed: ["AdBlock", "Ghostery"]).body
+        check(ParcToastContent.extensionsNotApplied(added: failed("A", "B"), removed: failed("AdBlock", "Ghostery")).body
               == .standard(icon: nil, label: "Couldn’t add 2 extensions", subLabel: "Couldn’t remove 2 ad blockers", buttons: []),
               "both failures share one notice, counted when several")
-        check(ParcToastContent.extensionsNotApplied(added: ["iCloud Passwords"], removed: ["AdBlock"]).accessibilityText
+        check(ParcToastContent.extensionsNotApplied(added: failed("iCloud Passwords"), removed: failed("AdBlock")).accessibilityText
               == "Couldn’t add iCloud Passwords, Couldn’t remove AdBlock", "both lines are announced")
+        check(ParcToastContent.extensionsNotApplied(added: failed("uBlock Origin Lite"), removed: [], retry: true).body
+              == .standard(icon: nil, label: "Couldn’t add uBlock Origin Lite", subLabel: nil, buttons: [.retry]),
+              "a notice whose changes can be retried carries a Retry button")
+        func removal(_ profiles: String...) -> String? {
+            label(.extensionsNotApplied(added: [], removed: profiles.flatMap { failed("AdBlock", in: $0) }))
+        }
+        check(removal("Work") == "Couldn’t remove AdBlock from Work"
+              && removal("Work", "School") == "Couldn’t remove AdBlock from Work and School"
+              && removal("Work", "School", "Home") == "Couldn’t remove AdBlock from Work, School and Home"
+              && removal("Work", "School", "Home", "Lab", "Club") == "Couldn’t remove AdBlock from Work, School and 3 more",
+              "one blocker that stayed in several Profiles names them, briefly")
+        check(label(.extensionsNotApplied(added: [], removed: failed("AdBlock", in: "Work") + failed("Ghostery", in: "School")))
+              == "Couldn’t remove 2 ad blockers", "several blockers are counted, not listed with their Profiles")
+        check(label(.extensionsNotApplied(added: failed("uBlock Origin Lite", in: "Work"), removed: []))
+              == "Couldn’t add uBlock Origin Lite to Work", "an add names its Profile with “to”")
         check(label(.tabRestored(to: "Work", selected: false)) == "Tab restored to Work. Click to view."
               && label(.tabRestored(to: "Work", selected: true)) == "Tab restored to Work", "tabUnarchived wording")
         check(label(.pinnedToFolder("Reading")) == "Pinned to “Reading”", "tabPinnedToFolder")
@@ -265,6 +283,54 @@ import AppKit
             quote.dismiss(animated: false)
         }
         parent.appearance = nil
+
+        var retries = 0
+        var retiringWhenRetried: Bool?
+        var retrying: ParcToastPresentation?
+        retrying = ParcToastPresentation(content: .extensionsNotApplied(added: failed("AdBlock"), removed: [], retry: true),
+                                         theme: SpaceTheme(), onRetry: { retries += 1; retiringWhenRetried = retrying?.isRetiring })
+        check(retrying?.present(in: parent, over: nil) == true, "retry owner admitted")
+        retrying?.performRetry()
+        retrying?.performRetry()
+        check(retries == 1 && retiringWhenRetried == true, "Retry dismisses the notice before retrying, once")
+        retrying?.dismiss(animated: false)
+
+        var idle = 0
+        toasts.onIdle = { idle += 1 }
+        guard let natural = toasts.show(.standard("Natural"), in: parent, over: nil, theme: SpaceTheme(), duration: 0.3) else {
+            preconditionFailure("idle owner refused")
+        }
+        await drain(0.5)
+        check(natural.isRetiring && toasts.current == nil && idle == 1, "a toast that runs its course leaves the window idle")
+        natural.dismiss(animated: false)
+        guard let replaced = toasts.show(.standard("Replaced"), in: parent, over: nil, theme: SpaceTheme()),
+              let replacement = toasts.show(.standard("Replacement"), in: parent, over: nil, theme: SpaceTheme()) else {
+            preconditionFailure("replacement owners refused")
+        }
+        check(replaced.isRetiring && idle == 1, "a replaced toast doesn't count as finished")
+        NotificationCenter.default.post(name: NSWindow.willMiniaturizeNotification, object: parent)
+        check(replacement.isRetiring && toasts.current == nil && idle == 1, "a toast the window sweeps away doesn't either")
+        replaced.dismiss(animated: false)
+        guard let scrolledAway = toasts.show(.standard("Scrolled"), in: parent, over: nil, theme: SpaceTheme()) else {
+            preconditionFailure("scroll owner refused")
+        }
+        scrolledAway.scrolled(in: parent, deltaX: 0, deltaY: 3)
+        check(idle == 2, "scrolling a toast away finishes it")
+        scrolledAway.dismiss(animated: false)
+        var presenterRetries = 0
+        guard let retriedNotice = toasts.show(.extensionsNotApplied(added: failed("AdBlock"), removed: [], retry: true),
+                                              in: parent, over: nil, theme: SpaceTheme(), onRetry: { presenterRetries += 1 }) else {
+            preconditionFailure("retry notice refused")
+        }
+        retriedNotice.performRetry()
+        check(presenterRetries == 1 && toasts.current == nil && idle == 3, "Retry finishes the notice and leaves the window idle")
+        retriedNotice.dismiss(animated: false)
+        guard let swept = toasts.show(.standard("Swept"), in: parent, over: nil, theme: SpaceTheme()) else {
+            preconditionFailure("sweep owner refused")
+        }
+        toasts.dismiss(animated: false)
+        check(swept.isRetiring && idle == 3, "a dismissal from outside doesn't finish it")
+        toasts.onIdle = nil
 
         let closing = ParcToastPresentation(content: .standard("Close"), theme: SpaceTheme())
         check(closing.present(in: parent, over: pane), "close owner admitted")

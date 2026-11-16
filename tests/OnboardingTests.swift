@@ -45,16 +45,7 @@ struct OnboardingTests {
                      "An older draft never invents extension installation authorization")
         precondition(migrated.selectedFavorites.map(\.url) == [OnboardingDraft.favoriteChoices[0].url],
                      "A missing order preserves old explicit choices, not new defaults")
-        func release(_ major: Int, _ minor: Int, _ patch: Int = 0) -> OperatingSystemVersion {
-            OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: patch)
-        }
-        precondition(!ICloudPasswordsSupport.connects(on: release(13, 6))
-            && ICloudPasswordsSupport.connects(on: release(14, 0))
-            && ICloudPasswordsSupport.connects(on: release(15, 4, 1)),
-            "iCloud Passwords stays offered from macOS 14 through 15.4")
-        precondition([release(15, 5), release(15, 7, 2), release(16, 0), release(26, 1), release(27, 2, 1)]
-            .allSatisfy { !ICloudPasswordsSupport.connects(on: $0) },
-            "From macOS 15.5 Apple's helper refuses browsers missing from its list, so setup stops offering the extension")
+        try checkICloudPasswordsHelper(root: root)
         legacy["stage"] = 4
         try JSONSerialization.data(withJSONObject: legacy).write(to: draftFile)
         let legacyTheme = try OnboardingDraft.load(directory: root, space: store.activeSpace)
@@ -318,6 +309,105 @@ struct OnboardingTests {
         try Self.checkSkip(root: root)
         try Self.checkExperience()
         print("Onboarding draft, commit, retry, restart, rollback, replay and skip checks passed")
+    }
+
+    static func checkICloudPasswordsHelper(root: URL) throws {
+        func release(_ major: Int, _ minor: Int, _ patch: Int = 0) -> OperatingSystemVersion {
+            OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: patch)
+        }
+        func der(_ tag: UInt8, _ body: [UInt8]) -> [UInt8] {
+            [tag] + (body.count < 0x80 ? [UInt8(body.count)] : [0x82, UInt8(body.count >> 8), UInt8(body.count & 0xff)]) + body
+        }
+        func text(_ value: String) -> [UInt8] { der(0x0c, Array(value.utf8)) }
+        func pair(_ key: String, _ value: [UInt8]) -> [UInt8] { der(0x30, text(key) + value) }
+        func dictionary(_ pairs: [UInt8]...) -> [UInt8] { der(0xb0, pairs.flatMap { $0 }) }
+        func array(_ items: [UInt8]...) -> [UInt8] { der(0x30, items.flatMap { $0 }) }
+        let one = der(0x02, [1]), five = der(0x02, [5]), yes = der(0x01, [0xff])
+        func constraint(_ requirements: [UInt8]) -> Data {
+            Data(der(0x70, one + dictionary(pair("ccat", der(0x02, [0])), pair("comp", one),
+                                            pair("reqs", requirements), pair("vers", one))))
+        }
+        let passkeys = "com.apple.developer.web-browser.public-key-credential"
+        let allowList = constraint(dictionary(pair("$or-array", array(
+            pair("$and", dictionary(pair("entitlements", dictionary(pair("$query",
+                array(array(one, text(passkeys)), array(five, yes))))))),
+            pair("$and", dictionary(
+                pair("signing-identifier", dictionary(pair("$in", array(text("com.google.Chrome"), text("com.google.Chrome.beta"))))),
+                pair("team-identifier", text("EQHXZ8M8AV"))))))))
+        func be(_ value: Int) -> [UInt8] { [24, 16, 8, 0].map { UInt8(truncatingIfNeeded: value >> $0) } }
+        func le(_ value: Int) -> [UInt8] { [0, 8, 16, 24].map { UInt8(truncatingIfNeeded: value >> $0) } }
+        func program(_ parent: Data?, overrun: Int = 0) -> [UInt8] {
+            var slots: [(Int, [UInt8])] = [(2, be(0xfade0c01) + be(12) + be(0))]
+            if let parent { slots.append((9, be(0xfade8181) + be(8 + parent.count + overrun) + [UInt8](parent))) }
+            let header = 12 + slots.count * 8
+            var index: [UInt8] = [], blobs: [UInt8] = []
+            for (slot, blob) in slots { index += be(slot) + be(header + blobs.count); blobs += blob }
+            let signature = be(0xfade0cc0) + be(header + blobs.count) + be(slots.count) + index + blobs
+            return le(0xfeedfacf) + le(0x0100000c) + le(0) + le(2) + le(2) + le(40) + le(0) + le(0)
+                + le(0x2) + le(24) + [UInt8](repeating: 0, count: 16)
+                + le(0x1d) + le(16) + le(72) + le(signature.count) + signature
+        }
+        func universal(_ slice: [UInt8]) -> Data {
+            Data(be(0xcafebabe) + be(1) + be(0x0100000c) + be(0) + be(64) + be(slice.count) + be(14)
+                 + [UInt8](repeating: 0, count: 36) + slice)
+        }
+        precondition(ICloudPasswordsSupport.parentConstraint(in: Data(program(allowList))) == .restricted(allowList)
+            && ICloudPasswordsSupport.parentConstraint(in: universal(program(allowList))) == .restricted(allowList)
+            && ICloudPasswordsSupport.parentConstraint(in: universal(program(nil))) == .unrestricted,
+            "The helper's parent launch constraint is read straight from its code signature, in thin and universal files")
+        func universal64(_ slice: [UInt8]) -> Data {
+            Data(be(0xcafebabf) + be(1) + be(0x0100000c) + be(0) + be(0) + be(64) + be(0) + be(slice.count) + be(14) + be(0)
+                 + [UInt8](repeating: 0, count: 24) + slice)
+        }
+        precondition(ICloudPasswordsSupport.parentConstraint(in: universal64(program(allowList))) == .restricted(allowList),
+            "64-bit universal files are read too")
+        precondition(ICloudPasswordsSupport.parentConstraint(in: Data("#!/bin/sh".utf8)) == nil
+            && ICloudPasswordsSupport.parentConstraint(in: universal(Array(program(allowList).prefix(80)))) == nil
+            && ICloudPasswordsSupport.parentConstraint(in: universal(program(allowList, overrun: 4096))) == nil,
+            "A file that isn't a whole signed program can't be inspected")
+
+        let folder = root.appendingPathComponent("helper", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let restricted = folder.appendingPathComponent("restricted"), open = folder.appendingPathComponent("open")
+        try universal(program(allowList)).write(to: restricted)
+        try universal(program(nil)).write(to: open)
+        let manifest = folder.appendingPathComponent("com.apple.passwordmanager.json")
+        try JSONSerialization.data(withJSONObject: ["name": "com.apple.passwordmanager", "path": restricted.path]).write(to: manifest)
+        let missing = folder.appendingPathComponent("missing")
+        let stale = folder.appendingPathComponent("stale.json")
+        try JSONSerialization.data(withJSONObject: ["path": missing.path]).write(to: stale)
+        precondition(ICloudPasswordsSupport.installedHelper(manifest: manifest, fallback: open) == .restricted(allowList)
+            && ICloudPasswordsSupport.installedHelper(manifest: missing, fallback: open) == .unrestricted
+            && ICloudPasswordsSupport.installedHelper(manifest: stale, fallback: restricted) == .restricted(allowList)
+            && ICloudPasswordsSupport.installedHelper(manifest: missing, fallback: missing) == nil,
+            "The helper Chromium's manifest names comes first, then its usual place; none found means none inspected")
+
+        typealias Signer = ICloudPasswordsSupport.Signer
+        func connects(_ helper: ICloudPasswordsSupport.Helper?, as signer: Signer = Signer(identifier: "com.etsenake.parc", team: "PARCTEAM01"),
+                      on version: OperatingSystemVersion) -> Bool {
+            ICloudPasswordsSupport.connects(helper: helper, signer: signer, on: version)
+        }
+        precondition(!connects(.restricted(allowList), on: release(14, 6)) && !connects(.restricted(allowList), on: release(15, 3)),
+            "An updated Safari on macOS 14 or early 15 already ships the allow-list, so setup stops offering the extension there")
+        precondition(connects(.unrestricted, on: release(14, 6)) && connects(.unrestricted, on: release(15, 6)) && !connects(.unrestricted, on: release(13, 6)),
+            "A helper without the allow-list keeps the extension, from macOS 14 on")
+        precondition(connects(.restricted(allowList), as: Signer(identifier: "com.google.Chrome", team: "EQHXZ8M8AV"), on: release(27, 2))
+            && !connects(.restricted(allowList), as: Signer(identifier: "com.google.Chrome", team: "PARCTEAM01"), on: release(27, 2))
+            && !connects(.restricted(allowList), as: Signer(), on: release(27, 2)),
+            "A listed signing identifier connects only with its listed team")
+        precondition(connects(.restricted(allowList), as: Signer(entitlements: [passkeys: true]), on: release(27, 2))
+            && !connects(.restricted(allowList), as: Signer(entitlements: [passkeys: false]), on: release(27, 2)),
+            "Apple's passkey-browser entitlement admits a browser off the list")
+        let unknown = constraint(dictionary(pair("$or", dictionary(pair("on-system-volume", yes),
+                                                                    pair("signing-identifier", text("com.google.Chrome"))))))
+        precondition(connects(.restricted(unknown), as: Signer(identifier: "com.google.Chrome"), on: release(27, 2)),
+            "A matching alternative decides even beside one Parc can't evaluate")
+        precondition(connects(.restricted(unknown), on: release(15, 4, 1)) && !connects(.restricted(unknown), on: release(15, 5))
+            && connects(.restricted(Data([0x70, 0x01])), on: release(14, 0)) && !connects(.restricted(Data([0x70, 0x01])), on: release(26, 1)),
+            "A constraint Parc can't evaluate falls back to the macOS rule")
+        precondition(!connects(nil, on: release(13, 6)) && connects(nil, on: release(14, 0)) && connects(nil, on: release(15, 4, 1))
+            && [release(15, 5), release(15, 7, 2), release(16, 0), release(26, 1), release(27, 2, 1)].allSatisfy { !connects(nil, on: $0) },
+            "Without an inspectable helper, iCloud Passwords stays offered only from macOS 14 through 15.4")
     }
 
     static func checkSkip(root: URL) throws {

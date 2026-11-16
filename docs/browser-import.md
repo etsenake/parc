@@ -131,9 +131,10 @@ precedes the OS operation but is not an atomic filesystem compare-and-swap.
 
 ## Setup-only iCloud Passwords choice
 
-On macOS 14 through 15.4, Safari setup offers the Apple extension or manual CSV
-after bookmarks; other versions go straight to manual CSV, for the reason in
-[onboarding](onboarding.md#safari-password-choice-and-finish-owned-installation).
+When Apple's installed iCloud Passwords helper admits Parc, Safari setup offers
+the Apple extension or manual CSV after bookmarks; otherwise it goes straight to
+manual CSV, as [onboarding](onboarding.md#safari-password-choice-and-finish-owned-installation)
+explains.
 Selecting the recommendation records intent; Next accepts it for the original
 destination. Successful Finish/browser preparation submits the genuine Profile
 installer. Replay supports that same Finish-owned installation; cancelling

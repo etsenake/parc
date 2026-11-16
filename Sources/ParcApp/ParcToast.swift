@@ -2,7 +2,11 @@ import AppKit
 import SwiftUI
 
 struct ParcToastContent: Equatable {
-    enum Button: Equatable { case share([URL]) }
+    enum Button: Equatable { case share([URL]), retry }
+    struct FailedExtension: Equatable {
+        var name: String
+        var profile: String? = nil
+    }
     enum Body: Equatable {
         case standard(icon: String?, label: String, subLabel: String?, buttons: [Button])
         case shortcut(leading: String?, shortcut: String, trailing: String?)
@@ -35,12 +39,28 @@ struct ParcToastContent: Equatable {
         standard("To exit full screen, press " + shortcut + ".")
     }
     static let archiveCleared = standard("Archive Cleared")
-    static func extensionsNotApplied(added: [String], removed: [String]) -> ParcToastContent {
-        func line(_ verb: String, _ names: [String], _ kind: String) -> String? {
-            names.isEmpty ? nil : names.count == 1 ? "Couldn’t \(verb) " + names[0] : "Couldn’t \(verb) \(names.count) \(kind)"
+    static func extensionsNotApplied(added: [FailedExtension], removed: [FailedExtension],
+                                     retry: Bool = false) -> ParcToastContent {
+        func line(_ verb: String, _ place: String, _ failures: [FailedExtension], _ kind: String) -> String? {
+            var names: [String] = [], profiles: [String] = []
+            for failure in failures {
+                if !names.contains(failure.name) { names.append(failure.name) }
+                if let profile = failure.profile, !profiles.contains(profile) { profiles.append(profile) }
+            }
+            guard let name = names.first else { return nil }
+            guard names.count == 1 else { return "Couldn’t \(verb) \(names.count) \(kind)" }
+            return "Couldn’t \(verb) " + name + (profiles.isEmpty ? "" : " \(place) " + listed(profiles))
         }
-        let lines = [line("add", added, "extensions"), line("remove", removed, "ad blockers")].compactMap { $0 }
-        return standard(lines.first ?? "", subLabel: lines.dropFirst().first)
+        let lines = [line("add", "to", added, "extensions"), line("remove", "from", removed, "ad blockers")].compactMap { $0 }
+        return standard(lines.first ?? "", subLabel: lines.dropFirst().first, buttons: retry ? [.retry] : [])
+    }
+    private static func listed(_ names: [String]) -> String {
+        switch names.count {
+        case 1: return names[0]
+        case 2: return names[0] + " and " + names[1]
+        case 3: return names[0] + ", " + names[1] + " and " + names[2]
+        default: return names[0] + ", " + names[1] + " and \(names.count - 2) more"
+        }
     }
     static let importPartial = standard("Only some of your data imported. Please try again!")
     static let importFailed = standard("We weren’t able to import… please try again!")
@@ -198,6 +218,7 @@ struct ParcToastActions {
     var dismiss: () -> Void
     var share: @MainActor ([URL]) -> Void
     var frames: (ParcToastFrames) -> Void
+    var retry: (() -> Void)?
 }
 
 struct ParcToastCard: View {
@@ -279,6 +300,9 @@ struct ParcToastCard: View {
                         }
                         .buttonStyle(ParcToastButtonStyle(ink: ink, isDark: palette.isDark))
                         .accessibilityLabel("Share")
+                    case .retry:
+                        SwiftUI.Button("Retry") { actions.retry?() }
+                            .buttonStyle(ParcToastButtonStyle(ink: ink, isDark: palette.isDark))
                     }
                 }
             }
@@ -409,7 +433,8 @@ final class ParcToastPresentation: NSView {
     let state: ParcToastState
     private let duration: TimeInterval
     private var onTap: (() -> Void)?
-    var onRetire: (() -> Void)?
+    private var onRetry: (() -> Void)?
+    var onRetire: ((Bool) -> Void)?
     var pointerLocation: () -> NSPoint = { NSEvent.mouseLocation }
     private weak var originalWindow: NSWindow?
     private weak var panel: ParcToastWindow?
@@ -425,19 +450,20 @@ final class ParcToastPresentation: NSView {
     override var acceptsFirstResponder: Bool { false }
 
     init(content: ParcToastContent, theme: SpaceTheme, basicBackground: NSColor? = nil, duration: TimeInterval = ParcToastTiming.duration,
-         onTap: (() -> Void)? = nil, share: @escaping @MainActor ([URL]) -> Void = { _ in }) {
+         onTap: (() -> Void)? = nil, onRetry: (() -> Void)? = nil, share: @escaping @MainActor ([URL]) -> Void = { _ in }) {
         state = ParcToastState(content: content, theme: theme, basicBackground: basicBackground)
-        self.duration = duration; self.onTap = onTap
+        self.duration = duration; self.onTap = onTap; self.onRetry = onRetry
         super.init(frame: NSRect(x: 0, y: 0, width: ParcToastPlacement.windowSide, height: ParcToastPlacement.windowSide))
         host = NSHostingView(rootView: ParcToastCard(state: state, actions: ParcToastActions(
             tap: onTap == nil ? nil : { [weak self] in self?.performTap() },
             accessory: nil,
-            dismiss: { [weak self] in self?.dismiss(animated: true) },
+            dismiss: { [weak self] in self?.retire(animated: true, finished: true) },
             share: share,
             frames: { [weak self] frames in
                 guard let self, !self.isRetiring else { return }
                 self.frames = frames
-            })))
+            },
+            retry: onRetry == nil ? nil : { [weak self] in self?.performRetry() })))
         host.frame = bounds; host.autoresizingMask = [.width, .height]
         addSubview(host)
     }
@@ -484,7 +510,7 @@ final class ParcToastPresentation: NSView {
         timer = Timer.scheduledTimer(withTimeInterval: duration, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !self.isRetiring, !self.containsPointer else { return }
-                self.dismiss(animated: true)
+                self.retire(animated: true, finished: true)
             }
         }
         NSAccessibility.post(element: self, notification: .announcementRequested,
@@ -514,19 +540,27 @@ final class ParcToastPresentation: NSView {
 
     func performTap() {
         guard !isRetiring, let onTap else { return }
-        dismiss(animated: true)
+        retire(animated: true, finished: true)
         onTap()
     }
 
-    func dismiss(animated: Bool) {
+    func performRetry() {
+        guard !isRetiring, let onRetry else { return }
+        retire(animated: true, finished: true)
+        onRetry()
+    }
+
+    func dismiss(animated: Bool) { retire(animated: animated, finished: false) }
+
+    private func retire(animated: Bool, finished: Bool) {
         guard !isRetiring else { if !animated { closePresentation() }; return }
         let shouldAnimate = animated && panel?.isVisible == true && !state.reduceMotion
-        isRetiring = true; onTap = nil
+        isRetiring = true; onTap = nil; onRetry = nil
         timer?.invalidate(); timer = nil
         panel?.ignoresMouseEvents = true
         state.hide(animated: shouldAnimate)
         let retire = onRetire; onRetire = nil
-        retire?()
+        retire?(finished)
         guard shouldAnimate else { closePresentation(); return }
         let work = DispatchWorkItem { [weak self] in self?.closePresentation() }
         closeWork = work
@@ -574,7 +608,7 @@ final class ParcToastPresentation: NSView {
     func scrolled(in window: NSWindow?, deltaX: CGFloat, deltaY: CGFloat) {
         guard !isRetiring, ParcToastScroll.dismisses(window: window, deltaX: deltaX, deltaY: deltaY,
                                                      owners: [originalWindow, panel]) else { return }
-        dismiss(animated: true)
+        retire(animated: true, finished: true)
     }
 }
 
@@ -583,20 +617,23 @@ final class ParcToastPresenter {
     private(set) var current: ParcToastPresentation?
     private let share: @MainActor ([URL]) -> Void
     var basicBackground: NSColor?
+    var onIdle: (() -> Void)?
     init(share: @escaping @MainActor ([URL]) -> Void = { _ in }) { self.share = share }
 
     @discardableResult
     func show(_ content: ParcToastContent, in parent: NSWindow, over anchor: NSView?, theme: SpaceTheme,
               duration: TimeInterval = ParcToastTiming.duration, onTap: (() -> Void)? = nil,
-              onRetire: (() -> Void)? = nil) -> ParcToastPresentation? {
+              onRetry: (() -> Void)? = nil, onRetire: (() -> Void)? = nil) -> ParcToastPresentation? {
         let next = ParcToastPresentation(content: content, theme: theme, basicBackground: basicBackground,
-                                        duration: duration, onTap: onTap, share: share)
+                                        duration: duration, onTap: onTap, onRetry: onRetry, share: share)
         guard next.present(in: parent, over: anchor) else { return nil }
         let previous = current
         current = next
-        next.onRetire = { [weak self, weak next] in
-            if let self, self.current === next { self.current = nil }
+        next.onRetire = { [weak self, weak next] finished in
+            let idle = self.map { $0.current === next } ?? false
+            if idle { self?.current = nil }
             onRetire?()
+            if idle && finished { self?.onIdle?() }
         }
         previous?.dismiss(animated: true)
         return next

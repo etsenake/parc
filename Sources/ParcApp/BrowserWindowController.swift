@@ -452,6 +452,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var shortcutHintCommand: PCNativeShortcutCommand?
     weak var shortcutHintPage: PCNativePage?
     let toasts = ParcToastPresenter(share: { PaneShareMenu.popUp(for: $0) })
+    weak var importFailureNotice: ParcToastPresentation?
     var copyLinkOperation = UUID()
     lazy var sharedQuotes: SharedQuoteController = SharedQuoteController(isCurrent: { [weak self] page in
         guard let self else { return false }
@@ -728,6 +729,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let incognitoTheme = store.isEphemeral && !popup
         rootView.incognito = incognitoTheme; sidebarContainer.incognito = incognitoTheme
         toasts.basicBackground = windowBasicBackground
+        toasts.onIdle = { [weak self] in self?.showImportFailuresWhenIdle() }
         sidebarContainer.addSubview(sidebar)
         SidebarMotionController.pinSurface(of: sidebarContainer, except: sidebar)
         rootView.onPaletteChange = { [weak self] palette in

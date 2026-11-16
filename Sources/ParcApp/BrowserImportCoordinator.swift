@@ -1010,13 +1010,22 @@ enum ImportedBrowserDataFailures {
 
 @MainActor
 enum ImportedExtensionFailures {
-    struct Names: Equatable {
-        var added: [String] = []
-        var removed: [String] = []
-        var isEmpty: Bool { added.isEmpty && removed.isEmpty }
+    struct Failure: Hashable {
+        enum Change: Hashable { case add, removal }
+        var change: Change = .add
+        var name: String
+        var profile: String? = nil
+        var target: String? = nil
+    }
+    struct Notice {
+        let failures: [Failure]
+        fileprivate let retries: [Failure: @MainActor () -> Void]
+        var canRetry: Bool { !retries.isEmpty }
+        @MainActor func retry() { for failure in failures { retries[failure]?() } }
     }
     static let didFail = Notification.Name("ParcImportedExtensionsDidFail")
-    private(set) static var pending = Names()
+    private(set) static var pending: [Failure] = []
+    private static var retries: [Failure: @MainActor () -> Void] = [:]
     private(set) static var failedIdentifiers = Set<String>()
     static var present: (() -> Void)?
     static func clearFailed(_ identifiers: Set<String>) { failedIdentifiers.subtract(identifiers) }
@@ -1024,17 +1033,30 @@ enum ImportedExtensionFailures {
         failedIdentifiers.formUnion(identifiers)
         NotificationCenter.default.post(name: didFail, object: nil)
     }
-    static func add(_ names: [String]) { record(Names(added: names)) }
-    static func addRemovals(_ names: [String]) { record(Names(removed: names)) }
-    static func take() -> Names { defer { pending = Names() }; return pending }
-    static func restore(_ names: Names) {
-        pending = Names(added: names.added + pending.added.filter { !names.added.contains($0) },
-                        removed: names.removed + pending.removed.filter { !names.removed.contains($0) })
-    }
-    private static func record(_ names: Names) {
-        for name in names.added where !pending.added.contains(name) { pending.added.append(name) }
-        for name in names.removed where !pending.removed.contains(name) { pending.removed.append(name) }
+    static func add(_ names: [String]) {
+        for name in names { insert(Failure(name: name), retry: nil) }
         present?()
+    }
+    static func record(_ failure: Failure, retry: (@MainActor () -> Void)? = nil) {
+        insert(failure, retry: retry)
+        present?()
+    }
+    static func take() -> Notice? {
+        let plain = pending.filter { retries[$0] == nil }
+        let shown = plain.isEmpty ? pending : plain
+        guard !shown.isEmpty else { return nil }
+        pending.removeAll { shown.contains($0) }
+        var taken: [Failure: @MainActor () -> Void] = [:]
+        for failure in shown { taken[failure] = retries.removeValue(forKey: failure) }
+        return Notice(failures: shown, retries: taken)
+    }
+    static func restore(_ notice: Notice) {
+        pending = notice.failures + pending.filter { !notice.failures.contains($0) }
+        retries.merge(notice.retries) { current, _ in current }
+    }
+    private static func insert(_ failure: Failure, retry: (@MainActor () -> Void)?) {
+        if !pending.contains(failure) { pending.append(failure) }
+        if let retry { retries[failure] = retry }
     }
 }
 

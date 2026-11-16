@@ -114,23 +114,33 @@ extension BrowserWindowController {
         return copied
     }
     func showImportFailures() {
-        guard presentation.isReady, !isClosing, !isPrivateBrowsing, !isPopupWindow else { return }
+        guard presentation.isReady, !isClosing, !isPrivateBrowsing, !isPopupWindow,
+              importFailureNotice?.isRetiring != false else { return }
         if let outcome = ImportedBrowserDataFailures.take() {
-            if showToast(outcome == .failed ? .importFailed : .importPartial, at: .window) == nil {
-                ImportedBrowserDataFailures.restore(outcome)
-            }
+            importFailureNotice = showToast(outcome == .failed ? .importFailed : .importPartial, at: .window)
+            if importFailureNotice == nil { ImportedBrowserDataFailures.restore(outcome) }
             return
         }
-        guard !ImportedExtensionFailures.pending.isEmpty else { return }
-        let names = ImportedExtensionFailures.take()
-        if showToast(.extensionsNotApplied(added: names.added, removed: names.removed), at: .window) == nil {
-            ImportedExtensionFailures.restore(names)
+        guard let notice = ImportedExtensionFailures.take() else { return }
+        func failed(_ change: ImportedExtensionFailures.Failure.Change) -> [ParcToastContent.FailedExtension] {
+            notice.failures.filter { $0.change == change }.map { .init(name: $0.name, profile: $0.profile) }
+        }
+        importFailureNotice = showToast(.extensionsNotApplied(added: failed(.add), removed: failed(.removal), retry: notice.canRetry),
+                                        at: .window, onRetry: notice.canRetry ? { notice.retry() } : nil)
+        if importFailureNotice == nil { ImportedExtensionFailures.restore(notice) }
+    }
+
+    func showImportFailuresWhenIdle() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, NSApp.isActive, self.window?.isKeyWindow == true, self.toasts.current == nil else { return }
+            self.showImportFailures()
         }
     }
 
     @discardableResult
     func showToast(_ content: ParcToastContent, at location: ToastLocation = .content(nil),
-                           onTap: (() -> Void)? = nil, onRetire: (() -> Void)? = nil) -> ParcToastPresentation? {
+                   onTap: (() -> Void)? = nil, onRetry: (() -> Void)? = nil,
+                   onRetire: (() -> Void)? = nil) -> ParcToastPresentation? {
         guard let window, !isClosing, !wholeWindowClose else { return nil }
         let anchor: NSView?
         switch location {
@@ -139,7 +149,8 @@ extension BrowserWindowController {
             anchor = id.flatMap { panes[$0] } ?? activePeek.flatMap { $0.view.isHidden ? nil : $0.view }
                 ?? currentTabID.flatMap { panes[$0] }
         }
-        let toast = toasts.show(content, in: window, over: anchor, theme: rootView.theme, onTap: onTap, onRetire: onRetire)
+        let toast = toasts.show(content, in: window, over: anchor, theme: rootView.theme, onTap: onTap, onRetry: onRetry,
+                                onRetire: onRetire)
         if toast != nil { retireShortcutHint() }
         return toast
     }
