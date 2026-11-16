@@ -102,53 +102,62 @@ final class ExternalMediaLibrary: ObservableObject {
         guard clients.insert(client).inserted else { return }
         if activation == nil {
             activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refresh() }
+                MainActor.assumeIsolated { self?.startRefresh(announced: false) }
             }
         }
         if refreshTimer == nil {
             let timer = DispatchSource.makeTimerSource(queue: .main)
             timer.schedule(deadline: .now() + 5, repeating: 5, leeway: .seconds(1))
             timer.setEventHandler { [weak self] in MainActor.assumeIsolated {
-                if let self, !self.isLoading { self.refresh() }
+                if let self, self.refreshTask == nil { self.startRefresh(announced: false) }
             } }
             timer.resume(); refreshTimer = timer
         }
-        refresh()
+        startRefresh(announced: clients.count == 1)
     }
     func deactivate(_ client: UUID) {
         clients.remove(client)
         guard clients.isEmpty else { return }
-        generation &+= 1; refreshTask?.cancel(); refreshTask = nil; stopWatching()
+        cancelRefresh(); stopWatching()
         refreshTimer?.cancel(); refreshTimer = nil
         if let activation { NotificationCenter.default.removeObserver(activation) }; activation = nil
-        items = []; folders = []; isLoading = false
+        if !items.isEmpty { items = [] }
+        if !folders.isEmpty { folders = [] }
+        if isLoading { isLoading = false }
     }
-    func refresh() {
+    func refresh() { startRefresh(announced: true) }
+    private func startRefresh(announced: Bool) {
         guard !clients.isEmpty else { return }
-        generation &+= 1; let token = generation; let roots = systemFolders()
-        refreshTask?.cancel(); isLoading = true
+        generation &+= 1; let token = generation; let roots = systemFolders(); let previous = items
+        refreshTask?.cancel()
+        if announced, !isLoading { isLoading = true }
         refreshTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let snapshot = try await self.disk.scan(systemFolders: roots)
+                let snapshot = try await self.disk.scan(systemFolders: roots, previous: previous)
                 guard !Task.isCancelled, self.generation == token, !self.clients.isEmpty else { return }
-                if self.items != snapshot.items { self.items = snapshot.items }
+                if snapshot.itemsChanged { self.items = snapshot.items }
                 if self.folders != snapshot.folders { self.folders = snapshot.folders }
-                self.error = snapshot.warning
+                if self.error != snapshot.warning { self.error = snapshot.warning }
                 self.watch(snapshot.folders); self.folderAccess = snapshot.access
             } catch {
                 guard !Task.isCancelled, self.generation == token else { return }
-                self.items = []; self.error = error.localizedDescription; self.stopWatching()
+                let message = error.localizedDescription
+                if !self.items.isEmpty { self.items = [] }
+                if self.error != message { self.error = message }
+                self.stopWatching()
             }
-            self.isLoading = false
+            self.refreshTask = nil
+            if self.isLoading { self.isLoading = false }
         }
     }
+    private func cancelRefresh() { generation &+= 1; refreshTask?.cancel(); refreshTask = nil }
     func contains(_ item: ExternalMediaFile) -> Bool { items.contains(item) }
     func grant(_ url: URL) async throws {
         try await disk.grant(url); refresh()
     }
     func setEnabled(_ enabled: Bool, folder: URL) async throws {
-        generation &+= 1; refreshTask?.cancel(); stopWatching()
+        cancelRefresh(); stopWatching()
         items.removeAll { $0.folder == folder }
         try await disk.setEnabled(enabled, folder: folder); refresh()
     }
@@ -180,13 +189,16 @@ final class ExternalMediaLibrary: ObservableObject {
         refreshTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 200_000_000)
             guard !Task.isCancelled, let self, self.generation == token else { return }
-            self.refresh()
+            self.startRefresh(announced: false)
         }
     }
 }
 
 actor ExternalMediaDisk {
-    struct Snapshot: Sendable { let items: [ExternalMediaFile]; let folders: [ExternalMediaFolder]; let warning: String?; let access: [ExternalMediaAccess] }
+    struct Snapshot: Sendable {
+        let items: [ExternalMediaFile]; let itemsChanged: Bool
+        let folders: [ExternalMediaFolder]; let warning: String?; let access: [ExternalMediaAccess]
+    }
     private struct Grant: Codable { let path: String; var bookmark: Data?; var disabled: Bool }
     private struct Configuration: Codable { var version = 1; var grants: [Grant] = []; var hiddenPaths: Set<String> = [] }
     private let directory: URL
@@ -242,7 +254,7 @@ actor ExternalMediaDisk {
         guard !stale, resolved.standardizedFileURL.resolvingSymlinksInPath().path == root.path else { throw ExternalMediaFailure.changed }
         return (resolved, resolved.startAccessingSecurityScopedResource())
     }
-    func scan(systemFolders: [URL]) throws -> Snapshot {
+    func scan(systemFolders: [URL], previous: [ExternalMediaFile]? = nil) throws -> Snapshot {
         let config = try read()
         let roots = Set((systemFolders + config.grants.map { URL(fileURLWithPath: $0.path, isDirectory: true) })
             .map { $0.standardizedFileURL.resolvingSymlinksInPath().path }).sorted()
@@ -269,7 +281,9 @@ actor ExternalMediaDisk {
             catch { folders.append(.init(url: root, name: root.lastPathComponent, access: .unavailable(error.localizedDescription))) }
         }
         current = files
-        return Snapshot(items: files.values.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date }, folders: folders,
+        let items = files.values.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date }
+        let kept = previous.flatMap { $0 == items ? $0 : nil }
+        return Snapshot(items: kept ?? items, itemsChanged: kept == nil, folders: folders,
                         warning: skipped == 0 ? nil : "\(skipped) file\(skipped == 1 ? " was" : "s were") unavailable while Media refreshed.", access: leases)
     }
     static func describe(_ url: URL, folder: URL) throws -> ExternalMediaFile? {

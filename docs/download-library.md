@@ -36,6 +36,16 @@ Unchanged profile/record inputs skip catalog filter and sort work. Metadata
 updates reload changed rows; a new Library context renews callbacks even when
 its filtered list looks identical.
 
+A large Downloads folder cannot slow this page, because the page never reads
+the folder. Its size follows the managers' download history, the table draws
+only visible rows, and missing-file state comes from each manager's record
+rather than a per-file check. The entry flyout reads Documents, Desktop and
+Screenshots, not Downloads, off the main queue. The one place folder size
+counts is Library's Media page, which rescans Downloads with the other media
+folders; that rescan sorts and compares in the background and reaches the main
+thread only when something changed. See
+[Media discovery](capture-library.md#os-media-discovery-and-access--cap23).
+
 ## Private-window Downloads
 
 Regular and private Library windows show the merged regular/live-private
@@ -255,12 +265,6 @@ selection, pointer, preview/entry, arrival and download-location checks. Native
 manager tests cover history initialization, private lifetimes, capability
 validation and creation-only arrival. Consult [the working contract](../AGENTS.md)
 before running a suite; older helpers may create windows.
-
-The large-folder/history investigation remains explicitly deferred until after
-the product polish pass as **DL-PERF-01** in [the backlog](backlog.md). Its original
-report concerned another browser; it is not a reproduced Parc stall. Start by
-identifying a repeatable delay and separating filesystem size, manager history
-size, transfer throughput and main-thread presentation work.
 
 Documents, Desktop and Screenshots are filesystem sources in the entry flyout;
 they have no dedicated Library pages. Library's Easels & Notes category opens

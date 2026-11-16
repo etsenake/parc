@@ -17,15 +17,17 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private let collection = CaptureCollectionView()
     private let scroll = NSScrollView()
     private let message = CaptureEmptyMessage(wrappingLabelWithString: "")
+    private enum CacheKey: Hashable { case capture(UUID), file(URL, ExternalMediaFile.Revision) }
     private enum Item: Equatable {
         case capture(SavedCapture), file(ExternalMediaFile)
         var id: String { switch self { case .capture(let item): return "capture:" + item.id.uuidString; case .file(let item): return "file:" + item.id } }
         var title: String { switch self { case .capture(let item): return item.title; case .file(let item): return item.title } }
         var date: Date { switch self { case .capture(let item): return item.createdAt; case .file(let item): return item.date } }
         var searchText: String { switch self { case .capture(let item): return item.title + " " + item.sourceURL + " " + item.spaceName; case .file(let item): return item.title + " " + item.detail + " " + item.folder.lastPathComponent } }
-        var cacheKey: String { switch self { case .capture(let item): return item.revision.uuidString; case .file(let item): return item.id + String(describing: item.revision) } }
+        var cacheKey: CacheKey { switch self { case .capture(let item): return .capture(item.revision); case .file(let item): return .file(item.url, item.revision) } }
     }
     private var items: [Item] = []
+    private var appliedQuery = ""
     private let accessStatus = NSTextField(labelWithString: "")
     private var actionError: String?
     private let mediaClient = UUID()
@@ -44,8 +46,8 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private var observedMediaFolders: [ExternalMediaFolder] = []
     private var observedMediaError: String?
     private var observedMediaLoading = false
-    private var thumbnails: [String: NSImage] = [:]
-    private var thumbnailTasks: [String: (id: UUID, task: Task<Void, Never>)] = [:]
+    private var thumbnails: [CacheKey: NSImage] = [:]
+    private var thumbnailTasks: [CacheKey: (id: UUID, task: Task<Void, Never>)] = [:]
     private var generation: UInt64 = 0
     private var presentationGeneration: UInt64 = 0
     private var captureSharing: CaptureLibrarySharing?
@@ -164,6 +166,10 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         for tile in collection.subviews.compactMap({ $0 as? CaptureLibraryTile }) { tile.setScrolling(scrolling) }
     }
     func controlTextDidChange(_ obj: Notification) { beginUserAction(); reload(force: true) }
+    func searchFieldDidEndSearching(_ sender: NSSearchField) {
+        guard appliedQuery != sender.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        beginUserAction(); reload(force: true)
+    }
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if textView.hasMarkedText() { return false }
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
@@ -178,33 +184,20 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         return false
     }
     private func reload(force: Bool = false) {
-        if !force && shouldSkipCatalogReload() { return }
+        let rebuild = force || catalogItemsChanged()
+        if !rebuild && !catalogStatusChanged() { return }
         rememberAppliedCatalog()
-        let selected = selectedItem?.id
-        let query = search.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        var next = store.items.map(Item.capture)
-        next.append(contentsOf: media.items.map(Item.file))
-        if !query.isEmpty {
-            next = next.filter { $0.searchText.localizedStandardContains(query) }
-        }
-        next.sort { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date }
+        if rebuild { rebuildItems() }
         let nextMessage: String
         if let error = store.loadError { nextMessage = error }
         else if store.isLoading || media.isLoading { nextMessage = "Loading Media…" }
-        else if query.isEmpty { nextMessage = "Saved captures and media in your folders appear here." }
+        else if appliedQuery.isEmpty { nextMessage = "Saved captures and media in your folders appear here." }
         else { nextMessage = "No matching media" }
         let nextAccess = statusText()
-        let itemsChanged = next != items
-        if itemsChanged {
-            items = next
-            let keys = Set(items.map(\.cacheKey)); thumbnails = thumbnails.filter { keys.contains($0.key) }
-            for (key, pending) in thumbnailTasks where !keys.contains(key) { pending.task.cancel(); thumbnailTasks[key] = nil }
-            collection.reloadData()
-            if let selected, let index = items.firstIndex(where: { $0.id == selected }) { collection.selectionIndexPaths = [IndexPath(item: index, section: 0)] }
-        }
         if message.stringValue != nextMessage { message.stringValue = nextMessage }
         message.isHidden = !items.isEmpty && store.loadError == nil
         if accessStatus.stringValue != nextAccess { setAccessStatus(nextAccess) }
+        guard rebuild else { return }
         preview?.reconcile()
         if let preview {
             let navigation = navigation(for: .capture(preview.selectedItem))
@@ -216,14 +209,33 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         }
     }
 
-    private func shouldSkipCatalogReload() -> Bool {
-        store.items == observedCaptures
-            && store.loadError == observedCaptureLoadError
-            && store.isLoading == observedCaptureLoading
-            && media.items == observedMediaItems
-            && media.folders == observedMediaFolders
-            && media.error == observedMediaError
-            && media.isLoading == observedMediaLoading
+    private func rebuildItems() {
+        let selected = selectedItem?.id
+        appliedQuery = search.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        var next = store.items.map(Item.capture)
+        next.append(contentsOf: media.items.map(Item.file))
+        if !appliedQuery.isEmpty {
+            next = next.filter { $0.searchText.localizedStandardContains(appliedQuery) }
+        }
+        next.sort { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date }
+        guard next != items else { return }
+        items = next
+        let keys = Set(items.map(\.cacheKey)); thumbnails = thumbnails.filter { keys.contains($0.key) }
+        for (key, pending) in thumbnailTasks where !keys.contains(key) { pending.task.cancel(); thumbnailTasks[key] = nil }
+        collection.reloadData()
+        if let selected, let index = items.firstIndex(where: { $0.id == selected }) { collection.selectionIndexPaths = [IndexPath(item: index, section: 0)] }
+    }
+
+    private func catalogItemsChanged() -> Bool {
+        store.items != observedCaptures || media.items != observedMediaItems
+    }
+
+    private func catalogStatusChanged() -> Bool {
+        store.loadError != observedCaptureLoadError
+            || store.isLoading != observedCaptureLoading
+            || media.folders != observedMediaFolders
+            || media.error != observedMediaError
+            || media.isLoading != observedMediaLoading
     }
 
     private func rememberAppliedCatalog() {

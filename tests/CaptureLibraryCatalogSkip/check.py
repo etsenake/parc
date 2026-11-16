@@ -11,41 +11,49 @@ assert "private var observedMediaItems: [ExternalMediaFile] = []" in source, \
     "missing last-applied media items snapshot"
 assert "private var observedMediaFolders: [ExternalMediaFolder] = []" in source, \
     "missing last-applied media folders snapshot"
-assert "private func shouldSkipCatalogReload() -> Bool" in source, \
-    "shouldSkipCatalogReload predicate missing"
+assert "private func catalogItemsChanged() -> Bool" in source, \
+    "catalogItemsChanged predicate missing"
+assert "private func catalogStatusChanged() -> Bool" in source, \
+    "catalogStatusChanged predicate missing"
 assert "private func rememberAppliedCatalog()" in source, \
     "rememberAppliedCatalog missing"
 
 reload = re.search(
-    r"private func reload\(force: Bool = false\) \{(?P<body>.*?)\n    \}\n\n    private func shouldSkipCatalogReload\(\) -> Bool \{",
+    r"private func reload\(force: Bool = false\) \{(?P<body>.*?)\n    \}\n\n    private func rebuildItems\(\) \{(?P<rebuild>.*?)\n    \}\n\n    private func catalogItemsChanged\(\) -> Bool \{(?P<items>.*?)\n    \}\n\n    private func catalogStatusChanged\(\) -> Bool \{(?P<status>.*?)\n    \}\n\n    private func rememberAppliedCatalog",
     source, re.S)
-assert reload, "reload(force:) not found"
-body = reload.group("body")
-assert "if !force && shouldSkipCatalogReload() { return }" in body, \
-    "identical catalog must return before filter/sort when not forced"
-assert "rememberAppliedCatalog()" in body, \
-    "changed/forced catalog must record last apply before rebuild"
-assert body.index("if !force && shouldSkipCatalogReload() { return }") < body.index(
-    "rememberAppliedCatalog()"), \
-    "skip gate must precede rememberAppliedCatalog"
-assert body.index("rememberAppliedCatalog()") < body.index("store.items.map"), \
-    "remember must precede filter/sort from store.items"
-
-skip = re.search(
-    r"private func shouldSkipCatalogReload\(\) -> Bool \{(?P<body>.*?)\n    \}\n\n    private func rememberAppliedCatalog",
-    source, re.S)
-assert skip, "shouldSkipCatalogReload body not found"
-skip_body = skip.group("body")
+assert reload, "reload(force:), rebuildItems() and catalog predicates not found in order"
+body, rebuild = reload.group("body"), reload.group("rebuild")
+items, status = reload.group("items"), reload.group("status")
+gate = "let rebuild = force || catalogItemsChanged()"
+skip = "if !rebuild && !catalogStatusChanged() { return }"
+for needle in (gate, skip, "rememberAppliedCatalog()", "if rebuild { rebuildItems() }", "guard rebuild else { return }"):
+    assert needle in body, f"reload(force:) no longer contains {needle}"
+assert body.index(gate) < body.index(skip) < body.index("rememberAppliedCatalog()") < body.index("if rebuild { rebuildItems() }"), \
+    "identical catalogs must return before recording, and recording must precede the rebuild"
+assert body.index("if rebuild { rebuildItems() }") < body.index("guard rebuild else { return }") < body.index("preview?.reconcile()"), \
+    "status-only changes must update the message without reconciling previews"
+assert "store.items.map" in rebuild and "next.sort" in rebuild and "store.items.map" not in body, \
+    "only rebuildItems() may map, filter and sort the catalog"
+assert "isLoading" not in items and "error" not in items and "folders" not in items, \
+    "loading, error and folder changes must not rebuild the grid list"
+for needle in ("store.items != observedCaptures", "media.items != observedMediaItems"):
+    assert needle in items, f"catalogItemsChanged no longer includes {needle}"
 for needle in (
-    "store.items == observedCaptures",
-    "store.loadError == observedCaptureLoadError",
-    "store.isLoading == observedCaptureLoading",
-    "media.items == observedMediaItems",
-    "media.folders == observedMediaFolders",
-    "media.error == observedMediaError",
-    "media.isLoading == observedMediaLoading",
+    "store.loadError != observedCaptureLoadError",
+    "store.isLoading != observedCaptureLoading",
+    "media.folders != observedMediaFolders",
+    "media.error != observedMediaError",
+    "media.isLoading != observedMediaLoading",
 ):
-    assert needle in skip_body, f"Captures fingerprint no longer includes {needle}"
+    assert needle in status, f"catalogStatusChanged no longer includes {needle}"
+
+media = (root / "Sources/ParcApp/ExternalMediaLibrary.swift").read_text()
+assert "if let self, self.refreshTask == nil { self.startRefresh(announced: false) }" in media, \
+    "the periodic Media rescan must stay quiet and skip while a refresh is running"
+assert "MainActor.assumeIsolated { self?.startRefresh(announced: false) }" in media, \
+    "app activation must rescan Media quietly"
+assert "if snapshot.itemsChanged { self.items = snapshot.items }" in media, \
+    "Media must publish its list only when the background scan found a change"
 
 assert "func controlTextDidChange(_ obj: Notification) { beginUserAction(); reload(force: true) }" in source, \
     "search filter changes must force reload (not catalog-skip)"

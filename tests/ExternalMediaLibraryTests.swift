@@ -1,3 +1,5 @@
+import AppKit
+import Combine
 import Foundation
 import Darwin
 import CoreGraphics
@@ -72,6 +74,13 @@ import UniformTypeIdentifiers
         precondition(xattr.withUnsafeBytes { setxattr(movie.path, "com.apple.metadata:kMDItemWhereFroms", $0.baseAddress, $0.count, 0, 0) } == 0)
         snapshot = try await disk.scan(systemFolders: [folder])
         precondition(snapshot.items.first { $0.url == movie }?.isScreenRecording == false)
+        let repeated = try await disk.scan(systemFolders: [folder], previous: snapshot.items)
+        precondition(!repeated.itemsChanged && repeated.items == snapshot.items, "An unchanged rescan reports no change")
+        let addition = folder.appendingPathComponent("Addition.png"); try png.write(to: addition)
+        let grown = try await disk.scan(systemFolders: [folder], previous: snapshot.items)
+        precondition(grown.itemsChanged && grown.items.count == snapshot.items.count + 1, "A new file is reported as a change")
+        precondition(zip(grown.items, grown.items.dropFirst()).allSatisfy { $0.date > $1.date || ($0.date == $1.date && $0.id < $1.id) })
+        try fm.removeItem(at: addition)
         let data = try await disk.data(capture); precondition(data == png)
         let export = root.appendingPathComponent("Export.png")
         try await disk.export(capture, to: export); let exported = try Data(contentsOf: export); precondition(exported == png)
@@ -144,6 +153,28 @@ import UniformTypeIdentifiers
             preconditionFailure("Disposable file observation did not settle")
         }
         try await until { live.items.count == 2 && !live.isLoading }
+        var published = 0, itemChanges = 0, loadingChanges = 0
+        let observers = [live.objectWillChange.sink { published += 1 },
+                         live.$items.dropFirst().sink { _ in itemChanges += 1 },
+                         live.$isLoading.dropFirst().sink { _ in loadingChanges += 1 }]
+        let note = root.appendingPathComponent("Notes.txt"); try Data("not media".utf8).write(to: note)
+        let watchedNote = folder.appendingPathComponent("Notes.txt"); try fm.moveItem(at: note, to: watchedNote)
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+        try await Task.sleep(nanoseconds: 800_000_000)
+        precondition(published == 0, "A background refresh that found nothing new published to the main thread")
+        live.refresh()
+        precondition(live.isLoading)
+        try await until { !live.isLoading }
+        precondition(itemChanges == 0 && loadingChanges == 2, "An explicit refresh with nothing new republished the list")
+        published = 0; loadingChanges = 0
+        let staged = root.appendingPathComponent("Settled.png"); try png.write(to: staged)
+        let settled = folder.appendingPathComponent("Settled.png"); try fm.moveItem(at: staged, to: settled)
+        try await until { live.items.contains { $0.url == settled } }
+        try await Task.sleep(nanoseconds: 400_000_000)
+        precondition(published == 1 && itemChanges == 1 && loadingChanges == 0, "A background change published more than once")
+        observers.forEach { $0.cancel() }
+        try fm.removeItem(at: watchedNote); try fm.removeItem(at: settled)
+        try await until { live.items.count == 2 }
         live.deactivate(a)
         let arrival = folder.appendingPathComponent("Arrival.png"); try png.write(to: arrival)
         try await until { live.items.contains { $0.url == arrival } }
@@ -167,7 +198,7 @@ import UniformTypeIdentifiers
         do { _ = try await broken.scan(systemFolders: [folder]); fatalError("Invalid preferences accepted") } catch ExternalMediaFailure.invalidConfiguration {}
         do { try await broken.setEnabled(true, folder: folder); fatalError("Invalid preferences replaced") } catch ExternalMediaFailure.invalidConfiguration {}
         let preservedConfig = try Data(contentsOf: config.appendingPathComponent("MediaFolders.json")); precondition(preservedConfig == corrupt)
-        print("External media discovery, original-byte export, revision, hiding, source access and corruption checks passed")
+        print("External media discovery, change publication, original-byte export, revision, hiding, source access and corruption checks passed")
     }
 }
 

@@ -1588,6 +1588,16 @@ import UniformTypeIdentifiers
   capturesFingerprintView.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification,object:capturesSearch))
   drainMain()
   expect(capturesFingerprintCount()==1,"Clearing Captures search force-reloads membership")
+  capturesSearch.stringValue="no-match-filter"
+  capturesFingerprintView.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification,object:capturesSearch))
+  drainMain()
+  capturesSearch.stringValue=""
+  capturesFingerprintView.searchFieldDidEndSearching(capturesSearch as! NSSearchField)
+  drainMain()
+  expect(capturesFingerprintCount()==1,"The search field's clear button restores the full grid")
+  capturesFingerprintView.searchFieldDidEndSearching(capturesSearch as! NSSearchField)
+  drainMain()
+  expect(capturesFingerprintCount()==1,"Ending a search that is already applied leaves the grid alone")
   expect(capturesFingerprintCatalog.contains(capturesFingerprintSaved),"Fingerprint fixture capture remains durable")
   let statusRoot=directory.appendingPathComponent("media-status",isDirectory:true)
   let statusFolder=statusRoot.appendingPathComponent("Pictures",isDirectory:true)
@@ -1688,6 +1698,48 @@ import UniformTypeIdentifiers
   staleWindow.contentView=nil
   expect(staleStatus()==nil,"invalidate() clears a stale file-action failure so the next presentation starts clean")
   staleWindow.close()
+  let quietRoot=directory.appendingPathComponent("media-quiet-refresh",isDirectory:true)
+  let quietFolder=quietRoot.appendingPathComponent("Pictures",isDirectory:true)
+  let quietLater=quietRoot.appendingPathComponent("Later",isDirectory:true)
+  try FileManager.default.createDirectory(at:quietFolder,withIntermediateDirectories:true)
+  try capturesPNG.write(to:quietFolder.appendingPathComponent("fixture.png"))
+  let quietMedia=ExternalMediaLibrary(directory:quietRoot.appendingPathComponent("Preferences",isDirectory:true),
+   preferencesAreEphemeral:true,systemFolders:{[quietFolder,quietLater]})
+  let quietView=CaptureLibraryView(store:capturesFingerprintCatalog,profileOwner:capturesFingerprintStore,media:quietMedia,regularHeader:true,ownerValid:{true})
+  quietView.frame=NSRect(x:0,y:0,width:400,height:600)
+  let quietWindow=NSWindow(contentRect:quietView.frame,styleMask:.titled,backing:.buffered,defer:false)
+  quietWindow.isReleasedWhenClosed=false;quietWindow.contentView=quietView
+  let quietGrid=all(quietView).compactMap{$0 as? NSCollectionView}.first!
+  let quietCaptures=capturesFingerprintCatalog.items.count
+  func quietWait(_ pending:() -> Bool) {
+   let deadline=Date(timeIntervalSinceNow:10)
+   while pending() && Date()<deadline { RunLoop.main.run(mode:.default,before:Date(timeIntervalSinceNow:0.02)) }
+   drainMain()
+  }
+  func quietStatus()->String? { all(quietView).compactMap{$0 as? NSTextField}.first{!$0.isHidden && $0.font?.pointSize==10.5}?.stringValue }
+  quietWait { quietMedia.isLoading || quietMedia.folders.count<2 || quietGrid.numberOfItems(inSection:0)<quietCaptures+1 }
+  expect(quietGrid.numberOfItems(inSection:0)==quietCaptures+1 && quietStatus()=="1 folder needs access. Right-click empty space to fix.",
+         "Quiet-refresh Media starts with its capture, its file and one missing folder")
+  let quietSearch=all(quietView).compactMap{$0 as? NSTextField}.first{$0.placeholderString=="Search Media…" || $0.accessibilityLabel()=="Search Media"}!
+  quietSearch.stringValue="pending-unapplied-query"
+  quietMedia.refresh()
+  expect(quietMedia.isLoading,"An explicit Media refresh shows loading")
+  quietWait { quietMedia.isLoading }
+  expect(quietGrid.numberOfItems(inSection:0)==quietCaptures+1,"A loading flip with nothing new does not rebuild the Media grid")
+  try FileManager.default.createDirectory(at:quietLater,withIntermediateDirectories:true)
+  quietMedia.refresh()
+  quietWait { quietMedia.isLoading || quietStatus() != nil }
+  expect(quietStatus()==nil && quietGrid.numberOfItems(inSection:0)==quietCaptures+1,
+         "A folder-access change updates the status line without rebuilding the Media grid")
+  let quietStaged=quietRoot.appendingPathComponent("arrival.png");try capturesPNG.write(to:quietStaged)
+  try FileManager.default.moveItem(at:quietStaged,to:quietFolder.appendingPathComponent("arrival.png"))
+  quietWait { quietMedia.items.count<2 || quietGrid.numberOfItems(inSection:0) != 0 }
+  expect(quietMedia.items.count==2 && quietGrid.numberOfItems(inSection:0)==0,"A new file rebuilds the Media grid with the current search")
+  quietSearch.stringValue=""
+  quietView.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification,object:quietSearch))
+  drainMain()
+  expect(quietGrid.numberOfItems(inSection:0)==quietCaptures+2,"Clearing search shows the capture and both files")
+  quietView.invalidate();quietWindow.contentView=nil;quietWindow.close()
   let messageRoot=directory.appendingPathComponent("media-message-overlay",isDirectory:true)
   let messageStore=try BrowserStore(directory:messageRoot)
   let messageProfile=messageStore.activeSpace.profileID

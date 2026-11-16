@@ -190,10 +190,6 @@ what users see or hear today, and each must keep it that way.
 - **SCRIPT10–SCRIPT13:** broader scripting commands, error contexts, collection
   properties and window/sidebar mutation remain deferred. Existing automation
   works. [Scripting](scripting.md).
-- **PERF09 / DL-PERF-01:** investigate large-Downloads-folder stalls after polish.
-  The original report concerned another browser; establish a repeatable Parc
-  delay and distinguish filesystem size, history size, throughput and UI work
-  before choosing a fix. [Downloads](download-library.md).
 - **Cross-window cases explicitly deferred:** automatic return to a non-key
   window can leave a blank placeholder; failed close after transfer can leave
   the tab selected; foreign-window split closing is restricted; Close-Peek Undo

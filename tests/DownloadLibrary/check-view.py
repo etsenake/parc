@@ -150,11 +150,11 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
     assert "if !force && shouldSkipCatalogReload() { return }" in download_library, \
         "DownloadLibraryView no longer skips identical catalog fingerprints"
     capture_library = (root / "Sources/ParcApp/CaptureLibraryView.swift").read_text()
-    assert "if !force && shouldSkipCatalogReload() { return }" in capture_library, \
+    assert "if !rebuild && !catalogStatusChanged() { return }" in capture_library, \
         "CaptureLibraryView no longer skips identical Captures-visible fingerprints"
-    assert "store.items == observedCaptures" in capture_library, \
+    assert "store.items != observedCaptures" in capture_library, \
         "CaptureLibraryView fingerprint must compare the capture list"
-    assert "media.folders == observedMediaFolders" in capture_library, \
+    assert "media.folders != observedMediaFolders" in capture_library, \
         "CaptureLibraryView fingerprint must compare media folder membership/access"
     arrival = (root / "Sources/ParcApp/DownloadArrival.swift").read_text()
     assert "static func make(palette: ThemeChromePalette) -> NSView? { DownloadBinBoxOfThingsItem(palette: palette) }" in arrival, \

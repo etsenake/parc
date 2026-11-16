@@ -73,11 +73,20 @@ OS-level revocation remains in macOS Settings. This is file access, not Screen
 Recording permission.
 
 Only visible clients keep observation active. Vnode events coalesce directory
-writes/deletes/renames; app activation and a five-second active-view refresh catch
+writes/deletes/renames; app activation and a five-second active-view rescan catch
 content-only changes, permissions and screenshot-location changes. Last-client
 retirement cancels work, releases watchers/scopes and clears results. Owned sheets,
 previews and thumbnail requests carry window/generation. Cancellation settles once
 even if Quick Look never answers, and late callbacks cannot restore retired work.
+
+Folder size never costs the main thread on a quiet rescan. The disk actor reads,
+sorts and compares each rescan against the list Media already shows; when nothing
+changed it hands that same list back and Media publishes nothing, so large folders
+add only background work. A change publishes the list once, and the view rebuilds
+its grid once. Loading, folder-access and error changes update only the message
+and status line. **Loading Media…** appears for the first load and for refreshes a
+person starts (Refresh, folder access and visibility, hiding); the periodic,
+watcher and app-activation rescans stay quiet.
 
 File revisions include device/inode, size, nanosecond modification/change times,
 kind and local-file state. Reads validate source/catalog/revision; no-follow file
@@ -111,9 +120,13 @@ from the drawn thumbnail rectangle. Increase Contrast adds the selected focus ed
 `tests/ExternalMediaLibraryTests.swift` covers disposable shallow enumeration,
 classification, aliases, same-path replacement, disappearance, hiding, source
 configuration, bookmarks, unreadable/missing folders and corrupt preferences.
-Native client checks cover vnode arrival/removal and shutdown. Library view checks
-cover thumbnail geometry, hover, scrolling, selection, source rectangles and
-mixed capture/file navigation.
+Native client checks cover vnode arrival/removal, shutdown, a quiet rescan that
+publishes nothing and a new file that publishes the list exactly once without a
+loading flip. Library view checks cover thumbnail geometry, hover, scrolling,
+selection, source rectangles, mixed capture/file navigation, and a loading flip
+that leaves the grid alone while a new file rebuilds it.
+`tests/CaptureLibraryCatalogSkip` pins the skip structure; `scripts/test.sh` runs
+both Media checks.
 
 ## Private Media ownership
 
