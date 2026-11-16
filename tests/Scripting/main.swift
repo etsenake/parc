@@ -40,6 +40,11 @@ import AppKit
         guard self.space == space, self.profile == profile else { return [] }
         return tabs.filter { $0.profileID == profile }
     }
+    func scriptingTabRecord(_ id: UUID, inSpace space: UUID, profile: UUID) -> ScriptTabRecord? {
+        tabLookups += 1
+        guard self.space == space, self.profile == profile else { return nil }
+        return tabs.first { $0.id == id && $0.profileID == profile }
+    }
     func scriptingPerform(_ action: ScriptTabAction, tab: UUID, profile: UUID) throws { actions.append((action, tab, profile)) }
     func scriptingNavigate(_ url: URL, tab: UUID, profile: UUID) throws { navigations.append((url, tab, profile)) }
     func scriptingMakeTab(_ url: URL, space: UUID?, profile: UUID?) throws -> ScriptTabRecord {
@@ -171,6 +176,10 @@ final class ObservedCommand: NSScriptCommand {
                 let members = Set(state.tabs.filter { $0.profileID == profile && ($0.spaceID == space || $0.kind == .favorite) }.map(\.id))
                 return state.scriptListedTabs(inSpace: space, profile: profile, where: usable) == listed.filter { members.contains($0.id) }
             } }, "a Space's tab list keeps the old membership rule and order")
+            expect(probeIDs.allSatisfy { id in [home.id, office.id, away.id, lab.id, gone].allSatisfy { space in [alpha.id, leaving.id, beta.id].allSatisfy { profile in
+                state.scriptListedTab(id, inSpace: space, profile: profile, where: usable)
+                    == state.scriptListedTabs(inSpace: space, profile: profile, where: usable).first { $0.id == id }
+            } } }, "a tab named inside a Space is the Space list's first match, found without listing it")
             guard twins else { continue }
             let homeTabs = state.scriptListedTabs(inSpace: home.id, profile: alpha.id, where: usable)
             expect(homeTabs.contains { $0.id == shared.id && $0.spaceID == office.id } && homeTabs.filter { $0.id == doubled.id }.count == 2,
@@ -178,6 +187,11 @@ final class ObservedCommand: NSScriptCommand {
             expect(state.scriptListedTab(crossed.id, profile: nil, where: usable)?.profileID == beta.id
                 && state.scriptListedTab(crossed.id, profile: alpha.id, where: usable) == crossed,
                 "a profile-bound lookup skips an earlier tab from another profile with the same identity")
+            expect(state.scriptListedTab(shared.id, inSpace: home.id, profile: alpha.id, where: usable)?.spaceID == office.id
+                && state.scriptListedTab(crossed.id, inSpace: office.id, profile: alpha.id, where: usable)?.profileID == beta.id
+                && state.scriptListedTab(distinct.tabs[46].id, inSpace: office.id, profile: alpha.id, where: usable) == distinct.tabs[46]
+                && state.scriptListedTab(distinct.tabs[46].id, inSpace: home.id, profile: alpha.id, where: usable) == nil,
+                "a tab named inside a Space keeps the list's identity rule, its first match and its absences")
         }
         let app = NSApplication.shared
         let delegate = ScriptDelegateProbe()
@@ -432,6 +446,40 @@ final class ObservedCommand: NSScriptCommand {
         expect(numberByID.reply as? ParcScriptTab == nil && numberByID.passes == 1 && numberByID.lookups == 0
             && paddedByID.reply as? ParcScriptTab == nil && paddedByID.passes == 1 && paddedByID.lookups == 0,
             "an id that is not a tab identity keeps Cocoa's own comparison over the listed tabs")
+        let tabInSpace = reference("tAbB", "ID  ", NSAppleEventDescriptor(string: target.id.uuidString), in: bulkSpace)
+        let spaceByID = counted { perform("coregetd", on: property("pALL", of: tabInSpace)) }
+        expect(describes(spaceByID.reply as? NSAppleEventDescriptor, target) && spaceByID.passes == 0 && spaceByID.lookups == 2,
+            "a tab named by its id inside a Space is found and read through lookups without listing the Space")
+        let bulkSpaceWrapper = bulkWrapper.appleScriptSpaces[0]
+        let directInSpace = counted { bulkSpaceWrapper.valueInAppleScriptTabs(withUniqueID: target.id.uuidString) }
+        expect((directInSpace.reply as? ParcScriptTab)?.identifier == target.id.uuidString && directInSpace.passes == 0 && directInSpace.lookups == 1,
+            "the Space resolves a tab id through one lookup")
+        let absentInSpace = counted { bulkSpaceWrapper.valueInAppleScriptTabs(withUniqueID: UUID().uuidString) }
+        expect(absentInSpace.reply as? ParcScriptTab == nil && absentInSpace.passes == 0 && absentInSpace.lookups == 1,
+            "an unknown tab id inside a Space finds nothing after one lookup")
+        let lowercaseInSpace = counted { bulkSpaceWrapper.valueInAppleScriptTabs(withUniqueID: target.id.uuidString.lowercased()) }
+        expect((lowercaseInSpace.reply as? ParcScriptTab)?.identifier == target.id.uuidString && lowercaseInSpace.passes == 0 && lowercaseInSpace.lookups == 1,
+            "a tab id in other letter case still matches inside a Space")
+        let numberInSpace = counted { bulkSpaceWrapper.valueInAppleScriptTabs(withUniqueID: NSNumber(value: 5)) }
+        let paddedInSpace = counted { bulkSpaceWrapper.valueInAppleScriptTabs(withUniqueID: " " + target.id.uuidString) }
+        expect(numberInSpace.reply as? ParcScriptTab == nil && numberInSpace.passes == 1 && numberInSpace.lookups == 0
+            && paddedInSpace.reply as? ParcScriptTab == nil && paddedInSpace.passes == 1 && paddedInSpace.lookups == 0,
+            "an id that is not a tab identity keeps Cocoa's own comparison over the Space's tabs")
+        let stranger = ScriptTabRecord(id: UUID(), profileID: bulk.otherProfile, title: "Stranger", url: "https://example.test/stranger",
+            loading: false, location: "unpinned")
+        bulk.tabs.append(stranger)
+        let strangerInSpace = counted { bulkSpaceWrapper.valueInAppleScriptTabs(withUniqueID: stranger.id.uuidString) }
+        expect((bulkWrapper.valueInAppleScriptTabs(withUniqueID: stranger.id.uuidString))?.identifier == stranger.id.uuidString
+            && strangerInSpace.reply as? ParcScriptTab == nil && strangerInSpace.passes == 0 && strangerInSpace.lookups == 1,
+            "a tab the window has but the Space doesn't list is not found inside the Space")
+        bulk.tabs.removeLast()
+        let listedSpaces = ParcScriptWindow(owner: listed).appleScriptSpaces
+        expect(listedSpaces[1].title == "Work" && listedSpaces[1].valueInAppleScriptTabs(withUniqueID: docs.id.uuidString) == nil
+            && listedSpaces[0].valueInAppleScriptTabs(withUniqueID: docs.id.uuidString)?.identifier == docs.id.uuidString,
+            "a tab is found only inside the Space that lists it")
+        listed.scriptingAvailable = false
+        expect(listedSpaces[0].valueInAppleScriptTabs(withUniqueID: docs.id.uuidString) == nil, "a Space whose window is gone finds no tab")
+        listed.scriptingAvailable = true
         let held = bulkWrapper.appleScriptTabs[1]
         bulk.tabs[1] = ScriptTabRecord(id: bulk.tabs[1].id, profileID: bulk.profile, title: "Renamed", url: "https://example.test/renamed",
             loading: true, location: "unpinned")

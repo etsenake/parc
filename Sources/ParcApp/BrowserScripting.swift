@@ -26,11 +26,14 @@ extension BrowserState {
     func scriptListedTab(_ id: UUID, profile: UUID?, where usable: (BrowserTab) -> Bool) -> BrowserTab? {
         tab(id, where: { (profile == nil || $0.profileID == profile) && scriptListsTab($0, where: usable) })
     }
+    private func scriptSpaceHolds(_ id: UUID, space: UUID, profile: UUID) -> Bool {
+        containsTab(id, where: { $0.profileID == profile && ($0.spaceID == space || $0.kind == .favorite) })
+    }
     func scriptListedTabs(inSpace space: UUID, profile: UUID, where usable: (BrowserTab) -> Bool) -> [BrowserTab] {
-        openTabs(where: { tab in
-            scriptListsTab(tab, where: usable)
-                && containsTab(tab.id, where: { $0.profileID == profile && ($0.spaceID == space || $0.kind == .favorite) })
-        })
+        openTabs(where: { scriptListsTab($0, where: usable) && scriptSpaceHolds($0.id, space: space, profile: profile) })
+    }
+    func scriptListedTab(_ id: UUID, inSpace space: UUID, profile: UUID, where usable: (BrowserTab) -> Bool) -> BrowserTab? {
+        scriptSpaceHolds(id, space: space, profile: profile) ? scriptListedTab(id, profile: nil, where: usable) : nil
     }
 }
 
@@ -133,6 +136,7 @@ protocol BrowserScriptOwner: AnyObject {
     var scriptingActiveTabID: UUID? { get }
     var scriptingActiveSpaceID: UUID { get }
     func scriptingTabs(in space: UUID, profile: UUID) -> [ScriptTabRecord]
+    func scriptingTabRecord(_ id: UUID, inSpace space: UUID, profile: UUID) -> ScriptTabRecord?
     func scriptingPerform(_ action: ScriptTabAction, tab: UUID, profile: UUID) throws
     func scriptingNavigate(_ url: URL, tab: UUID, profile: UUID) throws
     func scriptingMakeTab(_ url: URL, space: UUID?, profile: UUID?) throws -> ScriptTabRecord
@@ -189,6 +193,17 @@ enum BrowserScriptError: Error, LocalizedError {
 @MainActor
 private func scriptResult<T>(_ body: () throws -> T) -> T? {
     do { return try body() } catch { BrowserScriptError.report(error); return nil }
+}
+
+@MainActor
+private func scriptTab(withUniqueID uniqueID: Any, owner: any BrowserScriptOwner, listed: () -> [ParcScriptTab],
+                       record: (UUID) -> ScriptTabRecord?) -> ParcScriptTab? {
+    guard let text = uniqueID as? String, let id = UUID(uuidString: text) else {
+        return listed().first { ($0.identifier as NSString).scriptingIsEqual(to: uniqueID) }
+    }
+    return record(id).flatMap { found in
+        (found.id.uuidString as NSString).scriptingIsEqual(to: uniqueID) ? ParcScriptTab(owner: owner, record: found) : nil
+    }
 }
 
 @MainActor
@@ -314,12 +329,8 @@ final class ParcScriptWindow: NSObject {
     @objc(valueInAppleScriptTabsWithUniqueID:) func valueInAppleScriptTabs(withUniqueID uniqueID: Any) -> ParcScriptTab? {
         scriptResult {
             let owner = try resolve()
-            guard let text = uniqueID as? String, let id = UUID(uuidString: text) else {
-                return appleScriptTabs.first { ($0.identifier as NSString).scriptingIsEqual(to: uniqueID) }
-            }
-            return owner.scriptingTabRecord(id, profile: nil).flatMap { record in
-                (record.id.uuidString as NSString).scriptingIsEqual(to: uniqueID) ? ParcScriptTab(owner: owner, record: record) : nil
-            }
+            return scriptTab(withUniqueID: uniqueID, owner: owner, listed: { appleScriptTabs },
+                             record: { owner.scriptingTabRecord($0, profile: nil) })
         } ?? nil
     }
     override func newScriptingObject(of objectClass: AnyClass, forValueForKey key: String,
@@ -454,6 +465,13 @@ final class ParcScriptSpace: NSObject {
                 BrowserScriptError.report(BrowserScriptError.unsupported("Moving or replacing scripted tabs is not supported.")); return
             }
         }
+    }
+    @objc(valueInAppleScriptTabsWithUniqueID:) func valueInAppleScriptTabs(withUniqueID uniqueID: Any) -> ParcScriptTab? {
+        scriptResult {
+            let owner = try resolve().0
+            return scriptTab(withUniqueID: uniqueID, owner: owner, listed: { appleScriptTabs },
+                             record: { owner.scriptingTabRecord($0, inSpace: spaceID, profile: profileID) })
+        } ?? nil
     }
     override var objectSpecifier: NSScriptObjectSpecifier? {
         guard let owner, let description = NSClassDescription(for: ParcScriptWindow.self) as? NSScriptClassDescription else { return nil }

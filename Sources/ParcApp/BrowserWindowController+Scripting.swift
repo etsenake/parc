@@ -60,6 +60,10 @@ extension BrowserWindowController: BrowserScriptOwner {
         guard scriptingSpaces.contains(where: { $0.id == space && $0.profileID == profile }) else { return [] }
         return store.state.scriptListedTabs(inSpace: space, profile: profile, where: scriptingUsable).map(scriptingRecord)
     }
+    func scriptingTabRecord(_ id: UUID, inSpace space: UUID, profile: UUID) -> ScriptTabRecord? {
+        guard scriptingSpaces.contains(where: { $0.id == space && $0.profileID == profile }) else { return nil }
+        return store.state.scriptListedTab(id, inSpace: space, profile: profile, where: scriptingUsable).map(scriptingRecord)
+    }
     private func scriptingCheck() throws {
         guard scriptingAvailable else { throw BrowserScriptError.missing }
         guard !wholeWindowClose, !windowClosePending, !windowCloseApproved,
