@@ -1,10 +1,10 @@
 // Copyright 2026 Parc contributors.
-// Genuine service/registry/coordinator/ExtensionViewHost tests. The explicitly
-// non-Views test Browser exposes the native registration gap that a normal
-// BrowserView fixture masks. AppKit hosts and extension renderer are real.
 #include "extension_side_panel.h"
 
+#include <vector>
+
 #include "base/functional/bind.h"
+#include "base/functional/callback.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
 #include "base/test/run_until.h"
@@ -151,6 +151,14 @@ class NativeSidePanelBrowserTest : public extensions::ExtensionApiTest,
         "<!doctype html><title>Contextual</title><input id=field>");
     return LoadExtension(fixture_.UnpackedPath());
   }
+  const extensions::Extension* LoadOther() {
+    other_fixture_.WriteManifest(R"({"manifest_version":3,"name":"Other panel",
+      "version":"1.0","permissions":["sidePanel"],
+      "side_panel":{"default_path":"other.html"}})");
+    other_fixture_.WriteFile(FILE_PATH_LITERAL("other.html"),
+                             "<!doctype html><title>Other</title>");
+    return LoadExtension(other_fixture_.UnpackedPath());
+  }
   content::WebContents* AddPage() {
     auto contents = content::WebContents::Create(
         content::WebContents::CreateParams(profile()));
@@ -165,11 +173,32 @@ class NativeSidePanelBrowserTest : public extensions::ExtensionApiTest,
   SidePanelEntryKey Key(const extensions::Extension* extension) {
     return SidePanelEntryKey(SidePanelEntryId::kExtension, extension->id());
   }
+  int WindowId() {
+    return extensions::ExtensionTabUtil::GetWindowId(native_browser_.get());
+  }
   bool OpenGlobal(const extensions::Extension* extension) {
-    auto result = service()->OpenSidePanelForWindow(
-        *extension, profile(),
-        extensions::ExtensionTabUtil::GetWindowId(native_browser_.get()),
-        false);
+    auto result =
+        service()->OpenSidePanelForWindow(*extension, profile(), WindowId(),
+                                          false);
+    return result.has_value() && result.value();
+  }
+  bool OpenTab(const extensions::Extension* extension,
+               content::WebContents* page) {
+    auto result = service()->OpenSidePanelForTab(
+        *extension, profile(), extensions::ExtensionTabUtil::GetTabId(page),
+        std::nullopt, false);
+    return result.has_value() && result.value();
+  }
+  bool CloseWindowPanel(const extensions::Extension* extension) {
+    auto result = service()->CloseSidePanelForWindow(*extension, profile(),
+                                                     WindowId(), false);
+    return result.has_value() && result.value();
+  }
+  bool CloseTabPanel(const extensions::Extension* extension,
+                     content::WebContents* page) {
+    auto result = service()->CloseSidePanelForTab(
+        *extension, profile(), extensions::ExtensionTabUtil::GetTabId(page),
+        std::nullopt, false);
     return result.has_value() && result.value();
   }
   void Contextual(const extensions::Extension* extension,
@@ -193,6 +222,7 @@ class NativeSidePanelBrowserTest : public extensions::ExtensionApiTest,
   }
   std::unique_ptr<SecondaryHost> secondary_;
   extensions::TestExtensionDir fixture_;
+  extensions::TestExtensionDir other_fixture_;
   NSWindow* __strong window_ = nil;
   NSView* __strong container_ = nil;
   std::unique_ptr<BrowserWindowInterface> native_browser_;
@@ -207,6 +237,19 @@ class PanelDestructionObserver : public content::WebContentsObserver {
       : WebContentsObserver(contents) {}
   void WebContentsDestroyed() override { destroyed = true; }
   bool destroyed = false;
+};
+class FirstLoadStopObserver : public content::WebContentsObserver {
+ public:
+  FirstLoadStopObserver(content::WebContents* contents,
+                        base::OnceClosure stopped)
+      : WebContentsObserver(contents), stopped_(std::move(stopped)) {}
+  void DidStopLoading() override {
+    if (stopped_)
+      std::move(stopped_).Run();
+  }
+
+ private:
+  base::OnceClosure stopped_;
 };
 
 IN_PROC_BROWSER_TEST_F(NativeSidePanelBrowserTest,
@@ -235,7 +278,7 @@ IN_PROC_BROWSER_TEST_F(NativeSidePanelBrowserTest,
   const auto* extension = LoadFixture();
   ASSERT_TRUE(extension);
   [window_ orderOut:nil];
-  ASSERT_TRUE(OpenGlobal(extension));  // upstream success is not visibility
+  ASSERT_TRUE(OpenGlobal(extension));
   EXPECT_FALSE(panel_->GetWebContentsForTest(SidePanelEntryId::kExtension));
   EXPECT_FALSE(panel_->IsSidePanelShowing());
   [window_ orderFront:nil];
@@ -346,8 +389,6 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_FALSE(SidePanelUI::From(native_browser_.get()));
   EXPECT_TRUE(base::test::RunUntil([&] { return *drained; }));
   EXPECT_EQ(0, shown_);
-  // TearDown destroys this actual Browser after the lease drain, before the
-  // profile-owned ExtensionApiTest environment is released.
 }
 IN_PROC_BROWSER_TEST_F(
     NativeSidePanelBrowserTest,
@@ -425,7 +466,6 @@ IN_PROC_BROWSER_TEST_F(NativeSidePanelBrowserTest,
   ASSERT_TRUE(WaitVisible());
   auto* original = panel_->GetWebContentsForTest(SidePanelEntryId::kExtension);
   ASSERT_TRUE(content::ExecJs(original, "window.nativePanelIdentity=281"));
-  // Leave a real source tab so this test exercises move, not Browser deletion.
   AddPage();
   native_browser_->GetTabStripModel()->ActivateTabAt(0);
   ASSERT_TRUE(WaitVisible());
@@ -541,4 +581,143 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_EQ(original,
             panel_->GetWebContentsForTest(SidePanelEntryId::kExtension));
 }
-}  // namespace parc
+IN_PROC_BROWSER_TEST_F(NativeSidePanelBrowserTest,
+                       WindowCloseCancelsLoadingGlobalPanelUntilReopened) {
+  const auto* extension = LoadFixture();
+  ASSERT_TRUE(extension);
+  ASSERT_TRUE(OpenGlobal(extension));
+  ASSERT_TRUE(panel_->IsSidePanelEntryPending(Key(extension), false));
+  EXPECT_FALSE(panel_->IsSidePanelShowing());
+  auto* loading = panel_->GetWebContentsForTest(SidePanelEntryId::kExtension);
+  ASSERT_TRUE(loading);
+  PanelDestructionObserver destroyed(loading);
+  ASSERT_TRUE(CloseWindowPanel(extension));
+  EXPECT_FALSE(panel_->IsSidePanelEntryPending(Key(extension), false));
+  EXPECT_FALSE(panel_->GetWebContentsForTest(SidePanelEntryId::kExtension));
+  EXPECT_FALSE(
+      SidePanelRegistry::From(native_browser_.get())->GetActiveEntry());
+  EXPECT_TRUE(base::test::RunUntil([&] { return destroyed.destroyed; }));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(panel_->IsSidePanelShowing());
+  EXPECT_TRUE(container_.hidden);
+  EXPECT_EQ(0, shown_);
+  ASSERT_TRUE(OpenGlobal(extension));
+  ASSERT_TRUE(WaitVisible());
+  EXPECT_TRUE(panel_->IsSidePanelEntryShowing(Key(extension), false));
+  EXPECT_EQ(1, shown_);
+}
+IN_PROC_BROWSER_TEST_F(NativeSidePanelBrowserTest,
+                       WindowCloseLeavesLoadingContextualPanel) {
+  const auto* extension = LoadFixture();
+  ASSERT_TRUE(extension);
+  auto* page = native_browser_->GetTabStripModel()->GetActiveWebContents();
+  Contextual(extension, page);
+  ASSERT_TRUE(OpenTab(extension, page));
+  ASSERT_TRUE(panel_->IsSidePanelEntryPending(Key(extension), true));
+  auto* loading = panel_->GetWebContentsForTest(SidePanelEntryId::kExtension);
+  ASSERT_TRUE(loading);
+  ASSERT_TRUE(CloseWindowPanel(extension));
+  EXPECT_TRUE(panel_->IsSidePanelEntryPending(Key(extension), true));
+  ASSERT_TRUE(WaitVisible());
+  EXPECT_TRUE(panel_->IsSidePanelEntryShowing(Key(extension), true));
+  EXPECT_EQ(loading,
+            panel_->GetWebContentsForTest(SidePanelEntryId::kExtension));
+  EXPECT_EQ(1, shown_);
+}
+IN_PROC_BROWSER_TEST_F(NativeSidePanelBrowserTest,
+                       TabCloseCancelsLoadingContextualPanel) {
+  const auto* extension = LoadFixture();
+  ASSERT_TRUE(extension);
+  auto* page = native_browser_->GetTabStripModel()->GetActiveWebContents();
+  Contextual(extension, page);
+  ASSERT_TRUE(OpenTab(extension, page));
+  ASSERT_TRUE(panel_->IsSidePanelEntryPending(Key(extension), true));
+  auto* loading = panel_->GetWebContentsForTest(SidePanelEntryId::kExtension);
+  ASSERT_TRUE(loading);
+  PanelDestructionObserver destroyed(loading);
+  ASSERT_TRUE(CloseTabPanel(extension, page));
+  EXPECT_FALSE(panel_->IsSidePanelEntryPending(Key(extension), true));
+  EXPECT_FALSE(SidePanelRegistry::GetDeprecated(page)->GetActiveEntry());
+  EXPECT_TRUE(base::test::RunUntil([&] { return destroyed.destroyed; }));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(panel_->IsSidePanelShowing());
+  EXPECT_FALSE(panel_->GetWebContentsForTest(SidePanelEntryId::kExtension));
+  EXPECT_EQ(0, shown_);
+}
+IN_PROC_BROWSER_TEST_F(NativeSidePanelBrowserTest,
+                       TabCloseLeavesLoadingGlobalPanelOfAnotherTab) {
+  const auto* extension = LoadFixture();
+  ASSERT_TRUE(extension);
+  auto* first = native_browser_->GetTabStripModel()->GetActiveWebContents();
+  Contextual(extension, first);
+  AddPage();
+  ASSERT_TRUE(OpenGlobal(extension));
+  ASSERT_TRUE(panel_->IsSidePanelEntryPending(Key(extension), false));
+  auto* loading = panel_->GetWebContentsForTest(SidePanelEntryId::kExtension);
+  ASSERT_TRUE(loading);
+  ASSERT_TRUE(CloseTabPanel(extension, first));
+  EXPECT_TRUE(panel_->IsSidePanelEntryPending(Key(extension), false));
+  ASSERT_TRUE(WaitVisible());
+  EXPECT_TRUE(panel_->IsSidePanelEntryShowing(Key(extension), false));
+  EXPECT_EQ(loading,
+            panel_->GetWebContentsForTest(SidePanelEntryId::kExtension));
+  EXPECT_EQ(extension->GetResourceURL("global.html"),
+            loading->GetLastCommittedURL());
+}
+IN_PROC_BROWSER_TEST_F(NativeSidePanelBrowserTest,
+                       PageChangeWhileLoadingShowsOnlyTheNewestPage) {
+  const auto* extension = LoadFixture();
+  ASSERT_TRUE(extension);
+  ASSERT_TRUE(OpenGlobal(extension));
+  auto* loading = panel_->GetWebContentsForTest(SidePanelEntryId::kExtension);
+  ASSERT_TRUE(loading);
+  std::vector<GURL> shown_pages;
+  auto subscription =
+      panel_->RegisterSidePanelShown(base::BindLambdaForTesting([&] {
+        shown_pages.push_back(
+            panel_->GetWebContentsForTest(SidePanelEntryId::kExtension)
+                ->GetLastCommittedURL());
+      }));
+  FirstLoadStopObserver change(
+      loading, base::BindLambdaForTesting([&] {
+        EXPECT_EQ(extension->GetResourceURL("global.html"),
+                  loading->GetLastCommittedURL());
+        extensions::api::side_panel::PanelOptions changed;
+        changed.path = "tab.html";
+        changed.enabled = true;
+        service()->SetOptions(*extension, std::move(changed));
+      }));
+  ASSERT_TRUE(WaitVisible());
+  base::RunLoop().RunUntilIdle();
+  ASSERT_EQ(1u, shown_pages.size());
+  EXPECT_EQ(extension->GetResourceURL("tab.html"), shown_pages.front());
+  EXPECT_EQ(loading,
+            panel_->GetWebContentsForTest(SidePanelEntryId::kExtension));
+  EXPECT_EQ(1, shown_);
+}
+IN_PROC_BROWSER_TEST_F(NativeSidePanelBrowserTest,
+                       WindowCloseCancelsLoadingGlobalPanelOverTabPanel) {
+  const auto* tab_extension = LoadFixture();
+  ASSERT_TRUE(tab_extension);
+  const auto* other = LoadOther();
+  ASSERT_TRUE(other);
+  auto* page = native_browser_->GetTabStripModel()->GetActiveWebContents();
+  Contextual(tab_extension, page);
+  ASSERT_TRUE(OpenTab(tab_extension, page));
+  ASSERT_TRUE(WaitVisible());
+  ASSERT_TRUE(panel_->IsSidePanelEntryShowing(Key(tab_extension), true));
+  EXPECT_EQ(1, shown_);
+  panel_->Toggle(Key(other), SidePanelOpenTrigger::kExtension);
+  ASSERT_TRUE(panel_->IsSidePanelEntryPending(Key(other), false));
+  EXPECT_FALSE(SidePanelRegistry::GetDeprecated(page)->GetActiveEntry());
+  auto* loading = panel_->GetWebContentsForTest(SidePanelEntryId::kExtension);
+  ASSERT_TRUE(loading);
+  PanelDestructionObserver destroyed(loading);
+  ASSERT_TRUE(CloseWindowPanel(other));
+  EXPECT_FALSE(panel_->IsSidePanelEntryPending(Key(other), false));
+  EXPECT_TRUE(base::test::RunUntil([&] { return destroyed.destroyed; }));
+  base::RunLoop().RunUntilIdle();
+  EXPECT_FALSE(panel_->IsSidePanelShowing());
+  EXPECT_EQ(1, shown_);
+}
+}

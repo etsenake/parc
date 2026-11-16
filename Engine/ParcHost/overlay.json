@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 748,
+  "version": 749,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -229,7 +229,7 @@
     {
       "source": "tests/NativeExtensionContextMenu/context_menu_browsertest.mm",
       "target": "parc/tests/parc_native_extensions/context_menu_browsertest.mm",
-      "sha256": "61a93ed88f67eb4e7824166147122fb2d096a6aa220d7520bd2cb314dfe37a52"
+      "sha256": "055625797d197b296c96f538bd143f5058ebcff93d81b306012858a24fc4d13b"
     },
     {
       "source": "Engine/ParcNative/autofill_bubble_handler.h",
@@ -319,7 +319,7 @@
     {
       "source": "Engine/ParcNative/extension_side_panel.mm",
       "target": "parc/native/extension_side_panel.mm",
-      "sha256": "e38aad135bb92e2b4b966c7815301eb4aa18c916f7699810026c8b965b7748ec"
+      "sha256": "1db6b93278507f199098460875828793cbf6d54ae21f4ae6b38855daa52022c8"
     },
     {
       "source": "tests/NativeExtensionSidePanel/BUILD.gn",
@@ -329,7 +329,7 @@
     {
       "source": "tests/NativeExtensionSidePanel/side_panel_browsertest.mm",
       "target": "parc/tests/parc_native_side_panel/side_panel_browsertest.mm",
-      "sha256": "02751fa66a66fe164538dafc2799eb54ea4dc9e6fd216ef87f6230122b01e9a8"
+      "sha256": "37ec335bd334f5c50ee84d0936c8de9a5054e8bc17972de37cb9eacc52886e1b"
     },
     {
       "source": "Engine/ParcNative/native_appkit_application.mm",

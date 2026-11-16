@@ -20,6 +20,11 @@ an extension URL or replace extension content with a shell approximation.
   separate content container below it.
 - Show waits for real host loading and a valid visible original window and
   container. Coordinator notification and focus follow successful attachment.
+- A loading panel already counts as the open entry of its window or tab, so an
+  extension's close request for it cancels the open before anything appears. A
+  window-wide close leaves a loading tab panel alone, and a tab close leaves
+  other entries alone. A page change during loading reuses the same page and
+  shows only once the newest page has loaded.
 - Replacement/context switching detach synchronously and preserve eligible real
   hosts in their coordinator caches. Tab moves transfer or reuse the actual
   session. Generation checks reject stale presentation.

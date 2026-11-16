@@ -22,7 +22,9 @@ reason as a tooltip. See [Site Control Center](web-interactions.md).
 An extension that declares a side panel, such as a web clipper whose button
 opens a popup, also lists Open Side Panel, or Close Side Panel from the moment
 its panel starts opening, so a panel that is still loading offers Close and
-choosing it closes that panel. The engine's own command toggles Parc's native
+choosing it closes that panel. When the app hides an open panel's area, the
+panel counts as closed at once, so the item says Open Side Panel and choosing
+it opens the panel afresh. The engine's own command toggles Parc's native
 panel, the same panel a toolbar click or the extension's own open request uses.
 Choosing it closes an open Site Control Center first. Pop-up windows keep the
 item disabled with the tooltip "Side panels are not available in pop-up windows."

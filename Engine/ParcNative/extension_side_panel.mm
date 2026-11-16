@@ -27,8 +27,10 @@
 #include "components/input/native_web_keyboard_event.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
@@ -51,6 +53,17 @@
 namespace parc {
 using Coordinator = extensions::ExtensionSidePanelCoordinator;
 using Manager = extensions::ExtensionSidePanelManager;
+
+class SidePanelLoadStopObserver final : public content::WebContentsObserver {
+ public:
+  SidePanelLoadStopObserver(content::WebContents* contents,
+                            base::RepeatingClosure stopped)
+      : content::WebContentsObserver(contents), stopped_(std::move(stopped)) {}
+  void DidStopLoading() override { stopped_.Run(); }
+
+ private:
+  base::RepeatingClosure stopped_;
+};
 
 class NativeExtensionSidePanel::State final
     : public std::enable_shared_from_this<State>,
@@ -97,6 +110,7 @@ class NativeExtensionSidePanel::State final
   void FinishShutdown();
   bool ContextValid() const;
   bool SessionValid(const Session&, bool visible) const;
+  bool Pending(const SidePanelEntryKey&) const;
   SidePanelRegistry* Contextual() const {
     if (shutdown_)
       return nullptr;
@@ -222,6 +236,16 @@ class NativeExtensionSidePanel::State::Session final
                     [native.superview isMemberOfClass:PCNativePageHost.class])))
       return false;
     if (!reuse) {
+      load_stop_ = std::make_unique<SidePanelLoadStopObserver>(
+          host_->host_contents(),
+          base::BindRepeating(
+              [](std::weak_ptr<Session> weak) {
+                if (auto self = weak.lock(); self && !self->closed_ &&
+                                             !self->shown_ && self->host_ &&
+                                             self->host_->has_loaded_once())
+                  self->OnLoaded();
+              },
+              weak));
       observer_ = [[PCSidePanelPageObserver alloc] init];
       observer_.changed = ^{
         if (auto self = weak.lock(); self && !self->closed_) {
@@ -332,14 +356,10 @@ class NativeExtensionSidePanel::State::Session final
     Suspend(reason, true);
     will_detach_ = {};
     did_insert_ = {};
+    load_stop_.reset();
     if (coordinator_) {
       auto coordinator = coordinator_;
-      auto* registry =
-          for_tab_ && tab_ ? SidePanelRegistry::From(tab_.get()) : nullptr;
-      if (!for_tab_) {
-        if (auto owner = owner_.lock(); owner && owner->browser_)
-          registry = SidePanelRegistry::From(owner->browser_);
-      }
+      auto* registry = Registry();
       if (reset_active && registry && entry_ &&
           registry->GetActiveEntry() == entry_.get())
         registry->ResetActiveEntry();
@@ -348,6 +368,86 @@ class NativeExtensionSidePanel::State::Session final
     coordinator_.reset();
     entry_.reset();
     tab_.reset();
+  }
+  SidePanelRegistry* Registry() const {
+    if (for_tab_)
+      return tab_ ? SidePanelRegistry::From(tab_.get()) : nullptr;
+    auto owner = owner_.lock();
+    return owner && owner->browser_ ? SidePanelRegistry::From(owner->browser_)
+                                    : nullptr;
+  }
+  void Mark() {
+    auto* registry = Registry();
+    if (!registry || !entry_)
+      return;
+    if (!for_tab_)
+      Displace();
+    auto active = registry->GetActiveEntry();
+    if (active == entry_.get())
+      return;
+    if (active && *active)
+      replaced_ = (*active)->GetWeakPtr();
+    registry->SetActiveEntry(entry_.get());
+    marked_ = true;
+  }
+  void Displace() {
+    auto owner = owner_.lock();
+    auto* tab = owner && owner->browser_
+                    ? TabListInterface::From(owner->browser_)->GetActiveTab()
+                    : nullptr;
+    auto* contextual = tab ? SidePanelRegistry::From(tab) : nullptr;
+    if (!contextual)
+      return;
+    auto active = contextual->GetActiveEntry();
+    if (!active || !*active)
+      return;
+    displaced_ = (*active)->GetWeakPtr();
+    displaced_tab_ = tab->GetWeakPtr();
+    contextual->ResetActiveEntry();
+  }
+  static void Restore(SidePanelRegistry& registry,
+                      const base::WeakPtr<SidePanelEntry>& entry) {
+    if (entry && registry.GetEntryForKey(entry->key()) == entry.get())
+      registry.SetActiveEntry(entry.get());
+    else
+      registry.ResetActiveEntry();
+  }
+  void Unmark() {
+    if (std::exchange(marked_, false) && entry_) {
+      auto* registry = Registry();
+      if (registry && registry->GetActiveEntry() == entry_.get())
+        Restore(*registry, replaced_);
+    }
+    RestoreDisplaced();
+    Settle();
+  }
+  void RestoreDisplaced() {
+    if (!displaced_ || !displaced_tab_)
+      return;
+    auto* contextual = SidePanelRegistry::From(displaced_tab_.get());
+    if (contextual && !contextual->GetActiveEntry())
+      Restore(*contextual, displaced_);
+  }
+  void Shown() {
+    auto owner = owner_.lock();
+    auto* active = owner && owner->browser_
+                       ? TabListInterface::From(owner->browser_)->GetActiveTab()
+                       : nullptr;
+    if (displaced_tab_.get() != active)
+      RestoreDisplaced();
+    Settle();
+  }
+  void Settle() {
+    marked_ = false;
+    replaced_.reset();
+    displaced_.reset();
+    displaced_tab_.reset();
+  }
+  bool PendingActive() const {
+    if (closed_ || shown_ || !entry_)
+      return false;
+    auto* registry = Registry();
+    return registry && registry->GetActiveEntry() == entry_.get();
   }
   static NSResponder* NormalizeResponder(NSResponder* responder) {
     if ([responder isKindOfClass:NSTextView.class] &&
@@ -422,6 +522,7 @@ class NativeExtensionSidePanel::State::Session final
   }
   base::CallbackListSubscription will_detach_;
   base::CallbackListSubscription did_insert_;
+  std::unique_ptr<SidePanelLoadStopObserver> load_stop_;
   int calls_ = 0;
   base::OnceClosure destroy_after_calls_;
   std::weak_ptr<State> owner_;
@@ -432,6 +533,10 @@ class NativeExtensionSidePanel::State::Session final
   bool for_tab_;
   uint64_t generation_;
   bool shown_ = false;
+  bool marked_ = false;
+  base::WeakPtr<SidePanelEntry> replaced_;
+  base::WeakPtr<SidePanelEntry> displaced_;
+  base::WeakPtr<tabs::TabInterface> displaced_tab_;
   bool closed_ = false;
   bool suspending_ = false;
   std::shared_ptr<extensions::ExtensionViewHost> host_;
@@ -454,6 +559,11 @@ bool NativeExtensionSidePanel::State::ContextValid() const {
          (container == window.contentView ||
           [container isDescendantOf:window.contentView]) &&
          window.visible && !NSIsEmptyRect(container.bounds);
+}
+bool NativeExtensionSidePanel::State::Pending(
+    const SidePanelEntryKey& key) const {
+  return current_ && !current_->closed_ && !current_->shown_ &&
+         current_->key_ == key;
 }
 bool NativeExtensionSidePanel::State::SessionValid(const Session& s,
                                                    bool visible) const {
@@ -516,7 +626,10 @@ void NativeExtensionSidePanel::State::Show(
       coordinator->GetBrowser() != browser_)
     return;
   if (current_ && current_->entry_.get() == entry && !current_->closed_) {
+    auto same = current_;
     Changed();
+    if (current_ != same && trigger != SidePanelOpenTrigger::kTabChanged)
+      Show(key, trigger);
     return;
   }
   auto weak_entry = entry->GetWeakPtr();
@@ -544,6 +657,7 @@ void NativeExtensionSidePanel::State::Show(
                                         generation_);
   }
   current_ = session;
+  session->Mark();
   if (!session->Prepare())
     Cancel(session);
 }
@@ -551,14 +665,14 @@ void NativeExtensionSidePanel::State::Ready(
     const std::shared_ptr<Session>& session) {
   auto alive = shared_from_this();
 
-  if (current_ != session || session->closed_)
+  if (current_ != session || session->closed_ || session->shown_)
     return;
-  if (session->shown_ || !SessionValid(*session, false) ||
-      !session->host_->has_loaded_once()) {
-    if (!session->shown_)
-      Cancel(session);
+  if (!SessionValid(*session, false) || !session->host_->has_loaded_once()) {
+    Cancel(session);
     return;
   }
+  if (session->host_->host_contents()->GetController().GetPendingEntry())
+    return;
   Session::CallScope call(*session);
   session->RememberFocus(host_->SidePanelWindow());
   if (!host_->SetSidePanelVisible(true) || !SessionValid(*session, false)) {
@@ -566,6 +680,7 @@ void NativeExtensionSidePanel::State::Ready(
     return;
   }
   session->shown_ = true;
+  session->Shown();
   if (!SessionValid(*session, true)) {
     Cancel(session);
     return;
@@ -607,6 +722,8 @@ void NativeExtensionSidePanel::State::Close(SidePanelEntryHideReason reason,
     return;
   in_close_ = true;
   auto session = std::move(current_);
+  if (session)
+    session->Unmark();
 
   const bool cache = session && !reset_active && !shutdown_ &&
                      session->entry_ && session->coordinator_;
@@ -814,8 +931,7 @@ void NativeExtensionSidePanel::Close(SidePanelEntryHideReason reason, bool) {
 }
 void NativeExtensionSidePanel::Toggle(SidePanelEntryKey key,
                                       SidePanelOpenTrigger trigger) {
-  if (IsSidePanelEntryShowing(key) ||
-      (state_->current_ && state_->current_->key_ == key))
+  if (IsSidePanelEntryShowing(key) || state_->Pending(key))
     Close();
   else
     state_->Show(key, trigger);
@@ -835,7 +951,9 @@ bool NativeExtensionSidePanel::IsSidePanelShowing() const {
 }
 bool NativeExtensionSidePanel::IsSidePanelEntryShowing(
     const SidePanelEntryKey& key) const {
-  return IsSidePanelShowing() && state_->current_->key_ == key;
+  const auto& current = state_->current_;
+  return current && current->key_ == key &&
+         (IsSidePanelShowing() || current->PendingActive());
 }
 bool NativeExtensionSidePanel::IsSidePanelEntryShowing(
     const SidePanelEntryKey& key,
@@ -848,9 +966,7 @@ bool NativeExtensionSidePanel::UsesNativeExtensionContent() const {
 bool NativeExtensionSidePanel::IsSidePanelEntryPending(
     const SidePanelEntryKey& key,
     bool for_tab) const {
-  return state_->current_ && !state_->current_->closed_ &&
-         !state_->current_->shown_ && state_->current_->key_ == key &&
-         state_->current_->for_tab_ == for_tab;
+  return state_->Pending(key) && state_->current_->for_tab_ == for_tab;
 }
 base::CallbackListSubscription NativeExtensionSidePanel::RegisterSidePanelShown(
     ShownCallback callback) {

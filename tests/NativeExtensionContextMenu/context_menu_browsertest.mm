@@ -419,8 +419,10 @@ class NativeSidePanelMenuBrowserTest
                              side_extension_->id());
   }
   bool PanelShowing() {
-    return base::test::RunUntil(
-        [&] { return panel_->IsSidePanelEntryShowing(Key(), false); });
+    return base::test::RunUntil([&] {
+      return panel_->IsSidePanelShowing() &&
+             panel_->IsSidePanelEntryShowing(Key(), false);
+    });
   }
   NSWindow* SidePanelWindow() const override { return window_; }
   NSView* SidePanelContainer() const override { return container_; }
@@ -486,7 +488,7 @@ IN_PROC_BROWSER_TEST_F(NativeSidePanelMenuBrowserTest,
   ASSERT_NO_FATAL_FAILURE(OpenWindow(BrowserWindowInterface::TYPE_NORMAL));
   panel_->Toggle(Key(), SidePanelOpenTrigger::kExtension);
   ASSERT_TRUE(panel_->IsSidePanelEntryPending(Key(), false));
-  ASSERT_FALSE(panel_->IsSidePanelEntryShowing(Key()));
+  ASSERT_FALSE(panel_->IsSidePanelShowing());
   auto* loading = panel_->GetWebContentsForTest(SidePanelEntryId::kExtension);
   ASSERT_TRUE(loading);
   content::WebContentsDestroyedWatcher destroyed(loading);
@@ -509,6 +511,34 @@ IN_PROC_BROWSER_TEST_F(NativeSidePanelMenuBrowserTest,
   destroyed.Wait();
   EXPECT_FALSE(panel_->IsSidePanelShowing());
   EXPECT_FALSE(panel_->GetWebContentsForTest(SidePanelEntryId::kExtension));
+}
+
+IN_PROC_BROWSER_TEST_F(NativeSidePanelMenuBrowserTest,
+                       HiddenPanelAreaOffersOpenAndOpensAgain) {
+  ASSERT_NO_FATAL_FAILURE(OpenWindow(BrowserWindowInterface::TYPE_NORMAL));
+  panel_->Toggle(Key(), SidePanelOpenTrigger::kExtension);
+  ASSERT_TRUE(PanelShowing());
+  auto* hidden = panel_->GetWebContentsForTest(SidePanelEntryId::kExtension);
+  ASSERT_TRUE(hidden);
+  content::WebContentsDestroyedWatcher destroyed(hidden);
+  container_.hidden = YES;
+  EXPECT_FALSE(panel_->IsSidePanelEntryShowing(Key()));
+  EXPECT_FALSE(panel_->IsSidePanelEntryPending(Key(), false));
+  WhenTracking(^(NSMenu* menu) {
+    [menu update];
+    EXPECT_FALSE(Item(menu, IDS_EXTENSIONS_SUBMENU_CLOSE_SIDE_PANEL_ITEM));
+    NSMenuItem* open = Item(menu, IDS_EXTENSIONS_SUBMENU_OPEN_SIDE_PANEL_ITEM);
+    ASSERT_TRUE(open);
+    EXPECT_TRUE(open.enabled);
+    Dispatch(menu, open);
+  });
+  EXPECT_TRUE(side_presenter_->Show(*side_model_));
+  EXPECT_EQ(began_count_, 1);
+  EXPECT_TRUE(panel_->IsSidePanelEntryPending(Key(), false));
+  destroyed.Wait();
+  EXPECT_TRUE(PanelShowing());
+  EXPECT_FALSE(container_.hidden);
+  EXPECT_TRUE(panel_->GetWebContentsForTest(SidePanelEntryId::kExtension));
 }
 
 IN_PROC_BROWSER_TEST_F(NativeSidePanelMenuBrowserTest,
