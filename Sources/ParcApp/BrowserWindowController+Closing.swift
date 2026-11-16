@@ -141,13 +141,17 @@ extension BrowserWindowController {
         }
     }
 
+    enum TabCloseStart: Equatable { case started, unsavedNotes, unavailable }
+
     @discardableResult
-    func closeTab(_ id: UUID) -> Bool {
-        guard prepareNotesToClose([id]) else { return false }
+    func closeTab(_ id: UUID) -> Bool { startTabClose(id) == .started }
+
+    func startTabClose(_ id: UUID) -> TabCloseStart {
+        guard prepareNotesToClose([id]) else { return .unsavedNotes }
         guard !wholeWindowClose, !isClosing, !windowClosePending,
               !closingTabIDs.contains(id), !transferringTabIDs.contains(id),
               ownership.canUse(id, owner: presentationID),
-              retirementUnavailableReason?([id]) == nil else { return false }
+              retirementUnavailableReason?([id]) == nil else { return .unavailable }
         prepareStoreContext()
         closeTabsWithReopen([id]) { [weak self] approved in
             guard let self, !self.isClosing else { return }
@@ -156,7 +160,19 @@ extension BrowserWindowController {
             if self.focusedTabID == id { self.focusedTabID = self.presentation.preferredFocusedTabID }
             self.render(self.store.state); self.requestNativeSelection()
         }
-        return true
+        return .started
+    }
+
+    func reportRefusedClose(_ ids: Set<UUID>, unsavedNotes: Bool) {
+        let notice = PageReparenting.closeRefusal(unsavedNotes: unsavedNotes, reason: retirementUnavailableReason?(ids)) ?? .beep
+        let title = ids.count == 1 ? "This tab couldn’t close" : "These tabs couldn’t close"
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isClosing, let window = self.window else { return }
+            switch notice {
+            case .explain(let message): ParcDialog.inform(in: window, .init(title: title, message: message), queued: true)
+            case .beep: NSSound.beep()
+            }
+        }
     }
 
     func closeClickedSplitPane(_ id: UUID) {

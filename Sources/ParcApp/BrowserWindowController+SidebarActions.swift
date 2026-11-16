@@ -504,7 +504,44 @@ extension BrowserWindowController {
     func closeTabMovingHere(_ id: UUID) -> Bool {
         if ownership.canUse(id, owner: presentationID) { return closeTab(id) }
         guard canMovePageHere(id), let request = onRequestTabTransfer else { refuseTabMove(); return false }
-        return request(id, self) { [weak self] in self?.closeTab(id) ?? false }
+        let origins = closeOrigins([id])
+        let unsavedNotes = origins[id]?()?.prepareNotesToClose([id]) == false
+        if unsavedNotes || retirementUnavailableReason?([id]) != nil {
+            reportRefusedClose([id], unsavedNotes: unsavedNotes); return false
+        }
+        return request(id, self) { [weak self] in self?.closeArrivedTab(id, origins: origins); return true }
+    }
+    private func closeArrivedTab(_ id: UUID, origins: [UUID: () -> BrowserWindowController?]) {
+        let start = startTabClose(id)
+        guard start != .started else { return }
+        handBackRefusedClose([id], origins: origins)
+        reportRefusedClose([id], unsavedNotes: start == .unsavedNotes)
+    }
+    func closeOrigins(_ ids: [UUID]) -> [UUID: () -> BrowserWindowController?] {
+        var origins: [UUID: () -> BrowserWindowController?] = [:]
+        for id in ids {
+            switch tabHolder?(id, self) ?? .none {
+            case .content(let holder), .emptyClaim(let holder): origins[id] = { [weak holder] in holder }
+            case .none: break
+            }
+        }
+        return origins
+    }
+    func handBackRefusedClose(_ ids: ArraySlice<UUID>, origins: [UUID: () -> BrowserWindowController?]) {
+        guard let id = ids.first else { return }
+        let rest = ids.dropFirst()
+        let arrival = PendingArrival { [weak self] in self?.handBackRefusedClose(rest, origins: origins) }
+        let started = origins[id]?().map { origin in
+            transferTab(id, to: origin, placement: { [weak self] in
+                arrival.ran = true
+                self?.handBackRefusedClose(rest, origins: origins)
+                return true
+            }, untargeted: true)
+        } ?? false
+        guard !started else { return }
+        arrival.ran = true
+        returnIfUnshown(id)
+        handBackRefusedClose(rest, origins: origins)
     }
     func finishEmptyClaimHandOver(_ id: UUID, placement: (() -> Bool)?) {
         DispatchQueue.main.async { [weak self] in

@@ -98,8 +98,14 @@ Peek travels with its original parent collection. Reopen/Undo restores a whole
 split even when another window holds it. Closing a shared row first moves it to
 the requesting window, then uses that window's close/Undo ownership; a split
 or multi-row selection held elsewhere moves all its pages first, and refuses
-only when one can't move. Commands that require a live page are available only
-to its current holder.
+only when one can't move. Close isn't offered while a page is still opening, and
+a Note there that can't save is explained before anything moves. If the close
+still can't begin once the pages arrive, the window says why and each page goes
+straight back to the window it came from, so the requesting window keeps its
+selection and placeholders as they were. A page that can't go back, such as a
+Note that still can't save, stays here showing its problem; a close the person
+declines at a leave-page prompt takes the ordinary return. Commands that require
+a live page are available only to its current holder.
 
 A placeholder image can briefly show backing while a frame is captured, encoded
 or fitted to a new pane size. The image is descriptive only; failure to obtain
@@ -134,7 +140,6 @@ interfaces when run.
 ## Remaining behavior and explicit deferrals
 
 The explicitly deferred cross-window cases remain: an automatic return to a
-non-key window can leave a blank frozen placeholder; a close that cannot begin
-after transfer can leave its tab selected; Close-Peek Undo is unavailable while
-its parent is elsewhere, although Reopen can bring the parent back. See
-[the backlog](backlog.md#deferred).
+non-key window can leave a blank frozen placeholder; Close-Peek Undo is
+unavailable while its parent is elsewhere, although Reopen can bring the parent
+back. See [the backlog](backlog.md#deferred).

@@ -596,6 +596,64 @@ struct WindowPresentationTests {
                "a tab closing, moving or retiring takes no row action")
         expect(PageReparenting.rowAction(closing: false, busy: false, usableHere: false, heldElsewhere: false) == nil,
                "a tab no window can give here takes no row action")
+
+        var closeState = BrowserState.initial()
+        let closeSpace = closeState.spaces[0]
+        let held = tab(closeSpace), mine = tab(closeSpace)
+        closeState.tabs = [held, mine]
+        closeState.selectedTabIDs = [held.id]
+        let closeMoves = NativePageOwnership(), holderWindow = UUID(), viewerWindow = UUID(), bystanderWindow = UUID()
+        func usable(by window: UUID) -> (UUID) -> Bool { { closeMoves.canUse($0, owner: window) } }
+        func move(from source: UUID, to destination: UUID) -> Bool {
+            guard let reservation = closeMoves.reserveTransfer(held.id, page: "close-held", from: source, to: destination) else { return false }
+            return closeMoves.finishTransfer(reservation, moved: true)
+        }
+        var holder = WindowPresentation(state: closeState, ready: true)
+        var viewer = WindowPresentation(state: closeState, ready: true)
+        expect(closeMoves.claim(held.id, owner: viewerWindow, page: "close-held") && viewer.leavePlaceholder(held.id, state: closeState)
+               && move(from: viewerWindow, to: holderWindow), "the page moves to the window that selected it")
+        viewer.reconcile(closeState, available: usable(by: viewerWindow))
+        holder.reconcile(closeState, available: usable(by: holderWindow))
+        let viewerBefore = (viewer.selectedTabIDs, viewer.displayedTabIDs, viewer.displayedPlaceholders)
+        expect(viewerBefore.0.isEmpty && viewerBefore.2 == [held.id], "the window it left shows its placeholder, with no row selected")
+        expect(move(from: holderWindow, to: viewerWindow) && holder.leavePlaceholder(held.id, state: closeState),
+               "closing it from the placeholder window first moves the page there")
+        viewer.adopt(held.id, state: closeState, foreground: false)
+        viewer.reconcile(closeState, available: usable(by: viewerWindow))
+        holder.reconcile(closeState, available: usable(by: holderWindow))
+        expect(viewer.selectedTabIDs == [held.id] && viewer.displayedPlaceholders.isEmpty,
+               "while it waits to close, the page fills its old placeholder, so keeping it after a refused close would select it")
+        expect(move(from: viewerWindow, to: holderWindow) && viewer.leavePlaceholder(held.id, state: closeState),
+               "a close that can't begin hands the page back to the window it came from")
+        holder.adopt(held.id, state: closeState, foreground: false)
+        holder.reconcile(closeState, available: usable(by: holderWindow))
+        viewer.reconcile(closeState, available: usable(by: viewerWindow))
+        expect(viewer.selectedTabIDs == viewerBefore.0 && viewer.displayedTabIDs == viewerBefore.1
+               && viewer.displayedPlaceholders == viewerBefore.2,
+               "the closing window is left exactly as before, placeholder and all, with nothing newly selected")
+        expect(holder.selectedTabIDs == [held.id] && holder.displayedPlaceholders.isEmpty, "the window it came from shows it live again")
+        closeState.selectedTabIDs = [mine.id]
+        var bystander = WindowPresentation(state: closeState, ready: true)
+        expect(move(from: holderWindow, to: bystanderWindow) && holder.leavePlaceholder(held.id, state: closeState),
+               "closing it from a window that wasn't showing it moves the page there too")
+        bystander.adopt(held.id, state: closeState, foreground: false)
+        bystander.reconcile(closeState, available: usable(by: bystanderWindow))
+        expect(bystander.selectedTabIDs == [mine.id] && !bystander.displayedTabIDs.contains(held.id),
+               "a page moved here only to close arrives in the background")
+        expect(move(from: bystanderWindow, to: holderWindow) && !bystander.leavePlaceholder(held.id, state: closeState),
+               "handing it back leaves nothing behind in a window that never showed it")
+        holder.adopt(held.id, state: closeState, foreground: false)
+        holder.reconcile(closeState, available: usable(by: holderWindow))
+        bystander.reconcile(closeState, available: usable(by: bystanderWindow))
+        expect(bystander.selectedTabIDs == [mine.id] && !bystander.hasPlaceholders && holder.selectedTabIDs == [held.id],
+               "the person's selection stays as it was and the page is back where it came from")
+        expect(PageReparenting.closeRefusal(unsavedNotes: false, reason: nil) == nil,
+               "with nothing known to stop the close, the page may move here to close")
+        expect(PageReparenting.closeRefusal(unsavedNotes: false, reason: "A page is still opening.") == .explain("A page is still opening."),
+               "a close stopped by a page still opening gives that reason")
+        if case .explain(let message) = PageReparenting.closeRefusal(unsavedNotes: true, reason: "A page is still opening.") {
+            expect(message.contains("Note"), "a Note that couldn't save says so, since its own notice is inside the Note")
+        } else { expect(false, "a Note that couldn't save explains itself") }
         print("WindowPresentationTests: \(assertions) assertions passed")
     }
 }

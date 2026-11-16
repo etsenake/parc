@@ -64,8 +64,34 @@ expect("self.moveRootsHere(elsewhere[...], moved: [])" in moving and "ids.allSat
        and "isSelectionCommand: isSelectionCommand, selectionIsCurrent: current, declined: giveBack)," in moving,
        "held pages move here, then the whole set (here and moved) closes or archives here only once all are here")
 expect("let giveBack = { [weak self] in self?.returnMovedRoots(moved); declined() }" in moving
-       and "close() else { giveBack(); return false }" in moving,
-       "moved pages go back when the close can't be prepared or doesn't start")
+       and "self?.handBackRefusedClose(moved[...], origins: origins); declined()\n"
+           "                        self?.reportRefusedClose(ids, unsavedNotes: false); return false" in moving,
+       "moved pages go straight back to their windows, and the window says why, when the close can't be prepared or start")
+expect(moving.index("let origins = self.closeOrigins(elsewhere)")
+       < moving.index("origins[$0]?()?.prepareNotesToClose([$0]) == false")
+       < moving.index("self.reportRefusedClose(ids, unsavedNotes: true); return false")
+       < moving.index("consumed = true") < moving.index("self.moveRootsHere(elsewhere[...], moved: [])"),
+       "the windows holding the pages are noted, and a Note there that can't save is explained, before anything moves")
+single = body(controller, "func closeTabMovingHere(_ id: UUID) -> Bool")
+arrived = body(controller, "private func closeArrivedTab(")
+hand = body(controller, "func handBackRefusedClose(")
+expect(single.index("let origins = closeOrigins([id])")
+       < single.index("let unsavedNotes = origins[id]?()?.prepareNotesToClose([id]) == false")
+       < single.index("reportRefusedClose([id], unsavedNotes: unsavedNotes); return false")
+       < single.index("return request(id, self)")
+       and "self?.closeArrivedTab(id, origins: origins); return true }" in single,
+       "a row's Close notes the window holding its page, explains a Note that can't save before moving, "
+       "and owns the whole arrival, so the page is never selected instead")
+expect("selectTab" not in arrived and "guard start != .started else { return }" in arrived
+       and "handBackRefusedClose([id], origins: origins)" in arrived
+       and "reportRefusedClose([id], unsavedNotes: start == .unsavedNotes)" in arrived,
+       "a close that can't begin hands the page back where it came from and says why")
+expect("selectTab" not in hand and "transferTab(id, to: origin, placement: { [weak self] in" in hand
+       and "arrival.ran = true\n                self?.handBackRefusedClose(rest, origins: origins)\n                return true" in hand
+       and "let arrival = PendingArrival { [weak self] in self?.handBackRefusedClose(rest, origins: origins) }" in hand
+       and "returnIfUnshown(id)\n        handBackRefusedClose(rest, origins: origins)" in hand and "untargeted: true" in hand,
+       "pages go back one at a time, each to its own window, the next after the last lands or fails; "
+       "one that can't go back takes the ordinary return")
 chain = body(controller, "func moveRootsHere(")
 expect("let arrival = PendingArrival { [weak self] in self?.returnMovedRoots(moved) }" in chain,
        "a move that ends without the page arriving (dropped unrun) sends earlier pages back")

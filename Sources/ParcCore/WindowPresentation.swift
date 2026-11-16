@@ -404,6 +404,15 @@ enum PageReparenting {
         return pages
     }
 
+    enum RefusedCloseNotice: Equatable {
+        case explain(String)
+        case beep
+    }
+    static func closeRefusal(unsavedNotes: Bool, reason: String?) -> RefusedCloseNotice? {
+        if unsavedNotes { return .explain("The Note couldn’t save its latest changes. Open it to retry or discard them.") }
+        return reason.map { .explain($0) }
+    }
+
     enum RowAction: Equatable { case here, moveHere, moveHereThenClose }
     static func rowAction(closing: Bool, busy: Bool, usableHere: Bool, heldElsewhere: Bool) -> RowAction? {
         guard !busy else { return nil }

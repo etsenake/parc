@@ -766,13 +766,20 @@ extension BrowserWindowController {
             var consumed = false
             return { [weak self] in
                 guard !consumed, let self, valid() else { return false }
+                let origins = self.closeOrigins(elsewhere)
+                guard !elsewhere.contains(where: { origins[$0]?()?.prepareNotesToClose([$0]) == false }) else {
+                    self.reportRefusedClose(ids, unsavedNotes: true); return false
+                }
                 consumed = true
                 return self.moveRootsHere(elsewhere[...], moved: []) { [weak self] moved in
                     let giveBack = { [weak self] in self?.returnMovedRoots(moved); declined() }
                     guard let self, ids.allSatisfy(self.switcherCanUse),
                           let close = self.prepareSidebarRootsClose(items, archive: archive, requiresConfirmation: requiresConfirmation,
                               isSelectionCommand: isSelectionCommand, selectionIsCurrent: current, declined: giveBack),
-                          close() else { giveBack(); return false }
+                          close() else {
+                        self?.handBackRefusedClose(moved[...], origins: origins); declined()
+                        self?.reportRefusedClose(ids, unsavedNotes: false); return false
+                    }
                     return true
                 }
             }
@@ -864,6 +871,7 @@ extension BrowserWindowController {
                           self.retirementUnavailableReason?(ids) == nil else {
                         releaseSelection(); lease.end()
                         self.updateNavigation(); declined()
+                        if approved, self.retirementUnavailableReason?(ids) != nil { self.reportRefusedClose(ids, unsavedNotes: false) }
                         return
                     }
                     lease.end()

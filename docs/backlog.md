@@ -151,9 +151,8 @@ what users see or hear today, and each must keep it that way.
   deferred. Reading a tab's properties as one record and addressing a Space by
   its title already work. [Scripting](scripting.md).
 - **Cross-window cases explicitly deferred:** automatic return to a non-key
-  window can leave a blank placeholder; failed close after transfer can leave
-  the tab selected; Close-Peek Undo requires the local parent, though Reopen
-  works. [Windows](windows-lifecycle.md).
+  window can leave a blank placeholder; Close-Peek Undo requires the local
+  parent, though Reopen works. [Windows](windows-lifecycle.md).
 - Rare reverse-playback optimization and additional 3GPP/AMR formats retain their
   existing scope decisions. [Media boundaries](safari-media-edges.md).
 
