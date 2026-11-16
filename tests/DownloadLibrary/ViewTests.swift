@@ -7,6 +7,16 @@ import UniformTypeIdentifiers
  override var isKeyWindow: Bool { key }
  override var mouseLocationOutsideOfEventStream: NSPoint { pointer }
 }
+@MainActor private final class CountingMediaSource: NSObject, NSCollectionViewDataSource {
+ let base: NSCollectionViewDataSource
+ var made = 0
+ init(_ base: NSCollectionViewDataSource) { self.base = base }
+ func numberOfSections(in collectionView: NSCollectionView) -> Int { base.numberOfSections?(in: collectionView) ?? 1 }
+ func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int { base.collectionView(collectionView, numberOfItemsInSection: section) }
+ func collectionView(_ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
+  made += 1; return base.collectionView(collectionView, itemForRepresentedObjectAt: indexPath)
+ }
+}
 @main @MainActor struct ViewCheck {
  static var count=0
  static func expect(_ c: @autoclosure () -> Bool, _ s: String) {count += 1; precondition(c(),s)}
@@ -1651,7 +1661,7 @@ import UniformTypeIdentifiers
   let toggleWindow=NSWindow(contentRect:toggleView.frame,styleMask:.titled,backing:.buffered,defer:false)
   toggleWindow.isReleasedWhenClosed=false;toggleWindow.contentView=toggleView
   let toggleGrid=all(toggleView).compactMap{$0 as? NSCollectionView}.first!
-  for _ in 0..<200 where toggleMedia.isLoading || toggleGrid.numberOfItems(inSection:0)<1 {
+  for _ in 0..<200 where toggleMedia.isLoading || toggleGrid.numberOfItems(inSection:0)<capturesFingerprintCatalog.items.count+1 {
    RunLoop.main.run(mode:.default,before:Date(timeIntervalSinceNow:0.02))
   }
   let toggleInitialCount=toggleGrid.numberOfItems(inSection:0)
@@ -1680,7 +1690,7 @@ import UniformTypeIdentifiers
   let staleWindow=NSWindow(contentRect:staleView.frame,styleMask:.titled,backing:.buffered,defer:false)
   staleWindow.isReleasedWhenClosed=false;staleWindow.contentView=staleView
   let staleGrid=all(staleView).compactMap{$0 as? NSCollectionView}.first!
-  for _ in 0..<200 where staleMedia.isLoading || staleGrid.numberOfItems(inSection:0)<1 {
+  for _ in 0..<200 where staleMedia.isLoading || staleGrid.numberOfItems(inSection:0)<capturesFingerprintCatalog.items.count+1 {
    RunLoop.main.run(mode:.default,before:Date(timeIntervalSinceNow:0.02))
   }
   staleView.layoutSubtreeIfNeeded()
@@ -1740,6 +1750,75 @@ import UniformTypeIdentifiers
   drainMain()
   expect(quietGrid.numberOfItems(inSection:0)==quietCaptures+2,"Clearing search shows the capture and both files")
   quietView.invalidate();quietWindow.contentView=nil;quietWindow.close()
+  let liveRoot=directory.appendingPathComponent("media-incremental",isDirectory:true)
+  let liveFolder=liveRoot.appendingPathComponent("Pictures",isDirectory:true)
+  try FileManager.default.createDirectory(at:liveFolder,withIntermediateDirectories:true)
+  for index in 0..<24 {
+   let file=liveFolder.appendingPathComponent(String(format:"fixture-%02d.png",index));try capturesPNG.write(to:file)
+   try FileManager.default.setAttributes([.modificationDate:Date(timeIntervalSince1970:1_700_000_000-Double(index)*60)],ofItemAtPath:file.path)
+  }
+  let liveStore=try BrowserStore(directory:liveRoot.appendingPathComponent("profile",isDirectory:true))
+  let liveProfile=liveStore.activeSpace.profileID
+  let liveCatalog=CaptureLibraryStore.shared(directory:liveStore.capturesDirectory(for:liveProfile),profileID:liveProfile)
+  for _ in 0..<50 where liveCatalog.isLoading { RunLoop.main.run(mode:.default,before:Date(timeIntervalSinceNow:0.02)) }
+  let liveMedia=ExternalMediaLibrary(directory:liveRoot.appendingPathComponent("Preferences",isDirectory:true),
+   preferencesAreEphemeral:true,systemFolders:{[liveFolder]})
+  let liveView=CaptureLibraryView(store:liveCatalog,profileOwner:liveStore,media:liveMedia,regularHeader:true,ownerValid:{true})
+  liveView.frame=NSRect(x:0,y:0,width:400,height:600)
+  let liveWindow=DownloadHoverWindow(contentRect:liveView.frame,styleMask:.titled,backing:.buffered,defer:false)
+  liveWindow.isReleasedWhenClosed=false;liveWindow.pointer=NSPoint(x:-1000,y:-1000);liveWindow.contentView=liveView
+  let liveGrid=all(liveView).compactMap{$0 as? CaptureCollectionView}.first!
+  quietWait { liveMedia.isLoading || liveGrid.numberOfItems(inSection:0)<24 }
+  let liveSource=CountingMediaSource(liveGrid.dataSource!)
+  liveGrid.dataSource=liveSource;liveGrid.reloadData();liveView.layoutSubtreeIfNeeded()
+  let liveClip=liveGrid.enclosingScrollView!.contentView
+  liveGrid.scrollToItems(at:[IndexPath(item:4,section:0)],scrollPosition:.top);liveView.layoutSubtreeIfNeeded()
+  func liveTitle(_ index:Int)->String? { liveGrid.item(at:IndexPath(item:index,section:0))?.view.subviews.compactMap{$0 as? NSButton}.first?.toolTip }
+  func liveLit(_ index:Int)->Bool { liveGrid.item(at:IndexPath(item:index,section:0)).map{$0.view.layer!.sublayers![0].frame==$0.view.bounds} ?? false }
+  liveGrid.selectionIndexPaths=[IndexPath(item:7,section:0)]
+  let liveOrigin=liveClip.bounds.origin,liveSelected=liveTitle(7)
+  let liveHovered=liveTitle(5)!,liveHoverTile=liveGrid.item(at:IndexPath(item:5,section:0))!.view
+  liveWindow.pointer=liveHoverTile.convert(NSPoint(x:liveHoverTile.bounds.midX,y:liveHoverTile.bounds.midY),to:nil)
+  (liveHoverTile as NSView).mouseEntered(with:NSEvent.enterExitEvent(with:.mouseEntered,location:liveWindow.pointer,modifierFlags:[],timestamp:0,
+   windowNumber:liveWindow.windowNumber,context:nil,eventNumber:0,trackingNumber:0,userData:nil)!)
+  expect(liveOrigin.y>0 && liveSelected=="fixture-07.png" && liveLit(5),"The incremental grid starts scrolled, with a selection and a hovered tile")
+  func liveSettle(_ count:Int) { quietWait { liveGrid.numberOfItems(inSection:0) != count };liveView.layoutSubtreeIfNeeded();drainMain() }
+  liveSource.made=0
+  let liveStaged=liveRoot.appendingPathComponent("arrival.png");try capturesPNG.write(to:liveStaged)
+  try FileManager.default.setAttributes([.modificationDate:Date(timeIntervalSince1970:1_700_000_060)],ofItemAtPath:liveStaged.path)
+  try FileManager.default.moveItem(at:liveStaged,to:liveFolder.appendingPathComponent("arrival.png"))
+  liveSettle(25)
+  expect(liveGrid.numberOfItems(inSection:0)==25 && liveSource.made<=2,"A single arrival inserts one tile instead of reloading the grid (made \(liveSource.made))")
+  expect(liveGrid.selectionIndexPaths==[IndexPath(item:8,section:0)] && liveTitle(8)==liveSelected,"The selection stays on its file as an arrival shifts it")
+  expect(liveClip.bounds.origin==liveOrigin,"An arrival keeps the scroll position")
+  expect(liveTitle(6)==liveHovered && !liveLit(6) && liveLit(5),"Hover follows the pointer, not the tile that moved away")
+  liveGrid.scrollToItems(at:[IndexPath(item:0,section:0)],scrollPosition:.top);liveView.layoutSubtreeIfNeeded();drainMain()
+  liveSource.made=0
+  let liveEdited=liveFolder.appendingPathComponent("fixture-07.png")
+  let liveHandle=try FileHandle(forWritingTo:liveEdited);_=try liveHandle.seekToEnd();try liveHandle.write(contentsOf:capturesPNG);try liveHandle.close()
+  quietWait { liveTitle(0) != "fixture-07.png" }
+  liveView.layoutSubtreeIfNeeded();drainMain()
+  expect(liveGrid.numberOfItems(inSection:0)==25 && liveTitle(0)=="fixture-07.png" && liveSource.made<=2,
+         "An in-place change moves just that tile to the top (made \(liveSource.made))")
+  expect(liveGrid.selectionIndexPaths==[IndexPath(item:0,section:0)],"The selection follows the changed file")
+  liveGrid.scrollToItems(at:[IndexPath(item:11,section:0)],scrollPosition:.top);liveView.layoutSubtreeIfNeeded();drainMain()
+  liveSource.made=0
+  try FileManager.default.moveItem(at:liveFolder.appendingPathComponent("fixture-10.png"),to:liveFolder.appendingPathComponent("fixture-10b.png"))
+  quietWait { liveTitle(11) != "fixture-10b.png" }
+  liveView.layoutSubtreeIfNeeded();drainMain()
+  expect(liveGrid.numberOfItems(inSection:0)==25 && liveTitle(11)=="fixture-10b.png" && liveSource.made<=2,"A rename swaps one tile (made \(liveSource.made))")
+  liveSource.made=0
+  try FileManager.default.removeItem(at:liveEdited)
+  liveSettle(24)
+  expect(liveGrid.numberOfItems(inSection:0)==24 && liveGrid.selectionIndexPaths.isEmpty && liveSource.made<=2,
+         "Removing the selected file drops its tile and the selection (made \(liveSource.made))")
+  liveSource.made=0
+  let liveSearch=all(liveView).compactMap{$0 as? NSTextField}.first{$0.placeholderString=="Search Media…" || $0.accessibilityLabel()=="Search Media"}!
+  liveSearch.stringValue="fixture-1"
+  liveView.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification,object:liveSearch))
+  liveView.layoutSubtreeIfNeeded();drainMain()
+  expect(liveGrid.numberOfItems(inSection:0)==10 && liveSource.made>=4,"A search reloads the visible grid, so the counter sees full reloads")
+  liveView.invalidate();liveWindow.contentView=nil;liveWindow.close()
   let messageRoot=directory.appendingPathComponent("media-message-overlay",isDirectory:true)
   let messageStore=try BrowserStore(directory:messageRoot)
   let messageProfile=messageStore.activeSpace.profileID

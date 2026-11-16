@@ -17,16 +17,25 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private let collection = CaptureCollectionView()
     private let scroll = NSScrollView()
     private let message = CaptureEmptyMessage(wrappingLabelWithString: "")
-    private enum CacheKey: Hashable { case capture(UUID), file(URL, ExternalMediaFile.Revision) }
-    private enum Item: Equatable {
+    fileprivate enum CacheKey: Hashable, Sendable { case capture(UUID), file(URL, ExternalMediaFile.Revision) }
+    private enum Item: Equatable, Sendable {
         case capture(SavedCapture), file(ExternalMediaFile)
         var id: String { switch self { case .capture(let item): return "capture:" + item.id.uuidString; case .file(let item): return "file:" + item.id } }
         var title: String { switch self { case .capture(let item): return item.title; case .file(let item): return item.title } }
         var date: Date { switch self { case .capture(let item): return item.createdAt; case .file(let item): return item.date } }
         var searchText: String { switch self { case .capture(let item): return item.title + " " + item.sourceURL + " " + item.spaceName; case .file(let item): return item.title + " " + item.detail + " " + item.folder.lastPathComponent } }
         var cacheKey: CacheKey { switch self { case .capture(let item): return .capture(item.revision); case .file(let item): return .file(item.url, item.revision) } }
+        static func precedes(_ a: Item, _ b: Item) -> Bool { a.date == b.date ? a.id < b.id : a.date > b.date }
+    }
+    private struct ListPlan: Sendable {
+        let items: [Item]; let positions: [String: Int]; let query: String
+        let removed: Set<IndexPath>; let inserted: Set<IndexPath>; let reload: Bool; let evicted: Set<CacheKey>
     }
     private var items: [Item] = []
+    private var positions: [String: Int]?
+    private var listVersion: UInt64 = 0
+    private var rebuildTask: Task<Void, Never>?
+    private var rebuildPending = false
     private var appliedQuery = ""
     private let accessStatus = NSTextField(labelWithString: "")
     private var actionError: String?
@@ -42,7 +51,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private var observedCaptures: [SavedCapture] = []
     private var observedCaptureLoadError: String?
     private var observedCaptureLoading = false
-    private var observedMediaItems: [ExternalMediaFile] = []
+    private var observedMediaRevision: UInt64 = 0
     private var observedMediaFolders: [ExternalMediaFolder] = []
     private var observedMediaError: String?
     private var observedMediaLoading = false
@@ -184,20 +193,106 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         return false
     }
     private func reload(force: Bool = false) {
-        let rebuild = force || catalogItemsChanged()
-        if !rebuild && !catalogStatusChanged() { return }
+        let itemsChanged = catalogItemsChanged()
+        if !force && !itemsChanged && !catalogStatusChanged() { return }
         rememberAppliedCatalog()
-        if rebuild { rebuildItems() }
+        if force { rebuildItems() } else if itemsChanged { scheduleRebuild() }
+        refreshMessage()
+        if force { reconcilePreviews() }
+    }
+
+    private func rebuildItems() {
+        rebuildTask?.cancel(); rebuildTask = nil; rebuildPending = false
+        let selected = selectedItem?.id
+        appliedQuery = search.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let next = Self.sortedItems(captures: store.items, files: media.items, query: appliedQuery)
+        guard next != items else { return }
+        items = next; positions = nil; listVersion &+= 1
+        let keys = Set(items.map(\.cacheKey)); thumbnails = thumbnails.filter { keys.contains($0.key) }
+        for (key, pending) in thumbnailTasks where !keys.contains(key) { pending.task.cancel(); thumbnailTasks[key] = nil }
+        collection.reloadData()
+        if let selected, let index = items.firstIndex(where: { $0.id == selected }) { collection.selectionIndexPaths = [IndexPath(item: index, section: 0)] }
+    }
+
+    private func scheduleRebuild() {
+        guard rebuildTask == nil else { rebuildPending = true; return }
+        rebuildPending = false
+        let base = items, version = listVersion, captures = store.items, files = media.items
+        let query = search.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        rebuildTask = Task { [weak self] in
+            let plan = await Task.detached(priority: .userInitiated) { Self.plan(from: base, captures: captures, files: files, query: query) }.value
+            guard let self, !Task.isCancelled else { return }
+            self.rebuildTask = nil
+            let current = self.listVersion == version
+            if current { self.apply(plan) }
+            if self.rebuildPending || !current { self.scheduleRebuild() }
+        }
+    }
+
+    nonisolated private static func sortedItems(captures: [SavedCapture], files: [ExternalMediaFile], query: String) -> [Item] {
+        var next = captures.map(Item.capture)
+        next.append(contentsOf: files.map(Item.file))
+        if !query.isEmpty { next = next.filter { $0.searchText.localizedStandardContains(query) } }
+        next.sort(by: Item.precedes)
+        return next
+    }
+
+    nonisolated private static func plan(from base: [Item], captures: [SavedCapture], files: [ExternalMediaFile], query: String) -> ListPlan {
+        let next = sortedItems(captures: captures, files: files, query: query)
+        var removed: [Int] = [], inserted: [Int] = [], old = 0, new = 0
+        while old < base.count || new < next.count {
+            if new == next.count || (old < base.count && Item.precedes(base[old], next[new])) { removed.append(old); old += 1 }
+            else if old == base.count || Item.precedes(next[new], base[old]) { inserted.append(new); new += 1 }
+            else {
+                if base[old] != next[new] { removed.append(old); inserted.append(new) }
+                old += 1; new += 1
+            }
+        }
+        let evicted = Set(removed.map { base[$0].cacheKey }).subtracting(inserted.map { next[$0].cacheKey })
+        return ListPlan(items: next, positions: Dictionary(next.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first }), query: query,
+                        removed: Set(removed.map { IndexPath(item: $0, section: 0) }), inserted: Set(inserted.map { IndexPath(item: $0, section: 0) }),
+                        reload: removed.count + inserted.count > 200, evicted: evicted)
+    }
+
+    private func apply(_ plan: ListPlan) {
+        let selected = selectedItem?.id
+        appliedQuery = plan.query
+        for key in plan.evicted { thumbnails[key] = nil; thumbnailTasks.removeValue(forKey: key)?.task.cancel() }
+        positions = plan.positions; listVersion &+= 1
+        if plan.reload {
+            items = plan.items; collection.reloadData()
+        } else if plan.removed.isEmpty && plan.inserted.isEmpty {
+            items = plan.items
+        } else {
+            collection.performBatchUpdates({
+                self.items = plan.items
+                self.collection.deleteItems(at: plan.removed)
+                self.collection.insertItems(at: plan.inserted)
+            }, completionHandler: { [weak self] _ in self?.resampleTiles() })
+        }
+        let selection: Set<IndexPath> = selected.flatMap { plan.positions[$0] }.map { [IndexPath(item: $0, section: 0)] } ?? []
+        if collection.selectionIndexPaths != selection { collection.selectionIndexPaths = selection }
+        refreshMessage()
+        reconcilePreviews()
+    }
+
+    private func resampleTiles() {
+        for tile in collection.subviews.compactMap({ $0 as? CaptureLibraryTile }) { tile.resamplePointer() }
+    }
+
+    private func refreshMessage() {
         let nextMessage: String
         if let error = store.loadError { nextMessage = error }
-        else if store.isLoading || media.isLoading { nextMessage = "Loading Media…" }
+        else if store.isLoading || media.isLoading || (rebuildTask != nil && items.isEmpty) { nextMessage = "Loading Media…" }
         else if appliedQuery.isEmpty { nextMessage = "Saved captures and media in your folders appear here." }
         else { nextMessage = "No matching media" }
         let nextAccess = statusText()
         if message.stringValue != nextMessage { message.stringValue = nextMessage }
         message.isHidden = !items.isEmpty && store.loadError == nil
         if accessStatus.stringValue != nextAccess { setAccessStatus(nextAccess) }
-        guard rebuild else { return }
+    }
+
+    private func reconcilePreviews() {
         preview?.reconcile()
         if let preview {
             let navigation = navigation(for: .capture(preview.selectedItem))
@@ -209,25 +304,8 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         }
     }
 
-    private func rebuildItems() {
-        let selected = selectedItem?.id
-        appliedQuery = search.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        var next = store.items.map(Item.capture)
-        next.append(contentsOf: media.items.map(Item.file))
-        if !appliedQuery.isEmpty {
-            next = next.filter { $0.searchText.localizedStandardContains(appliedQuery) }
-        }
-        next.sort { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date }
-        guard next != items else { return }
-        items = next
-        let keys = Set(items.map(\.cacheKey)); thumbnails = thumbnails.filter { keys.contains($0.key) }
-        for (key, pending) in thumbnailTasks where !keys.contains(key) { pending.task.cancel(); thumbnailTasks[key] = nil }
-        collection.reloadData()
-        if let selected, let index = items.firstIndex(where: { $0.id == selected }) { collection.selectionIndexPaths = [IndexPath(item: index, section: 0)] }
-    }
-
     private func catalogItemsChanged() -> Bool {
-        store.items != observedCaptures || media.items != observedMediaItems
+        store.items != observedCaptures || media.revision != observedMediaRevision
     }
 
     private func catalogStatusChanged() -> Bool {
@@ -242,10 +320,17 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         observedCaptures = store.items
         observedCaptureLoadError = store.loadError
         observedCaptureLoading = store.isLoading
-        observedMediaItems = media.items
+        observedMediaRevision = media.revision
         observedMediaFolders = media.folders
         observedMediaError = media.error
         observedMediaLoading = media.isLoading
+    }
+    private func position(of id: String) -> Int? {
+        guard let positions else { return items.firstIndex { $0.id == id } }
+        return positions[id]
+    }
+    private func index(of item: Item) -> Int? {
+        position(of: item.id).flatMap { items.indices.contains($0) && items[$0] == item ? $0 : nil }
     }
     private func contains(_ item: Item) -> Bool {
         switch item { case .capture(let capture): return store.contains(capture); case .file(let file): return media.contains(file) }
@@ -256,6 +341,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         let cell = collectionView.makeItem(withIdentifier: .init("capture"), for: indexPath) as! CaptureLibraryCell
         let item = items[indexPath.item]
         let kind: CaptureLibraryTile.Kind = { if case .file(let file) = item { return file.kind == .movie ? .video : .image }; return .capture }()
+        cell.cacheKey = item.cacheKey
         cell.configure(title: item.title, date: item.date, kind: kind, image: thumbnails[item.cacheKey], scrolling: isScrolling,
                        action: { [weak self] in self?.open(item) })
         if ownerValid(), thumbnails[item.cacheKey] == nil, thumbnailTasks[item.cacheKey] == nil {
@@ -270,10 +356,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
                     guard !Task.isCancelled, self.generation == generation, self.contains(item), let image = NSImage(data: data) else { return }
                     if self.thumbnails.count >= 128, let key = self.thumbnails.keys.first { self.thumbnails.removeValue(forKey: key) }
                     self.thumbnails[item.cacheKey] = image
-                    if let index = self.items.firstIndex(of: item),
-                       let cell = self.collection.item(at: IndexPath(item: index, section: 0)) as? CaptureLibraryCell {
-                        cell.setImage(image)
-                    }
+                    for case let cell as CaptureLibraryCell in self.collection.visibleItems() where cell.cacheKey == item.cacheKey { cell.setImage(image) }
                 } catch {
                 }
             }
@@ -289,7 +372,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         if case .file(let file) = selected { openFilePreview(file); return }
         guard case .capture(let item) = selected, ownerValid(), store.contains(item), let window, window.attachedSheet == nil else { return }
         generation &+= 1
-        if let index = items.firstIndex(of: selected) { collection.selectionIndexPaths = [IndexPath(item: index, section: 0)] }
+        if let index = index(of: selected) { collection.selectionIndexPaths = [IndexPath(item: index, section: 0)] }
         let controller = CaptureLibraryPreview(store: store, profileOwner: profileOwner, selected: item, parent: window,
             valid: { [weak self, weak window] in
                 guard let self, let window else { return false }
@@ -594,11 +677,14 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         }
     }
     private func navigation(for item: Item) -> MediaLibraryNavigation {
-        MediaLibraryNavigation(orderedIDs: items.map(\.id), selectedID: item.id)
+        guard let index = position(of: item.id) else { return MediaLibraryNavigation(index: nil, previous: nil, next: nil) }
+        return MediaLibraryNavigation(index: index, previous: index > 0 ? items[index - 1].id : nil,
+                                      next: index + 1 < items.count ? items[index + 1].id : nil)
     }
     private func movePreview(from item: Item, offset: Int) {
         guard ownerValid(), contains(item), let id = navigation(for: item).neighbor(offset),
-              let next = items.first(where: { $0.id == id }) else { return }
+              let index = position(of: id) else { return }
+        let next = items[index]
         preview?.close(); closeFilePreview(); open(next)
     }
     private func updateFileNavigation(_ file: ExternalMediaFile) {
@@ -654,7 +740,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         })
     }
     private func previewSourceRect(_ item: Item) -> NSRect? {
-        guard ownerValid(), contains(item), let index = items.firstIndex(of: item),
+        guard ownerValid(), contains(item), let index = index(of: item),
               thumbnails[item.cacheKey] != nil,
               let cell = collection.item(at: IndexPath(item: index, section: 0)) as? CaptureLibraryCell,
               cell.view.window === window else { return nil }
@@ -682,6 +768,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
 
 @MainActor
 private final class CaptureLibraryCell: NSCollectionViewItem {
+    fileprivate var cacheKey: CaptureLibraryView.CacheKey?
     private let tile = CaptureLibraryTile()
     private let button = ActionButton("")
     override func loadView() {

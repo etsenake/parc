@@ -1,14 +1,19 @@
 import Foundation
 
 struct MediaLibraryNavigation: Equatable {
-    let orderedIDs: [String]
-    let selectedID: String
-    var index: Int? { orderedIDs.firstIndex(of: selectedID) }
-    var ordinal: Int { index.map { $0 + 1 } ?? 0 }
-    func neighbor(_ offset: Int) -> String? {
-        guard offset == -1 || offset == 1, let index, orderedIDs.indices.contains(index + offset) else { return nil }
-        return orderedIDs[index + offset]
+    let index: Int?
+    private let previous: String?
+    private let next: String?
+    init(index: Int?, previous: String?, next: String?) {
+        self.index = index; self.previous = index == nil ? nil : previous; self.next = index == nil ? nil : next
     }
+    init(orderedIDs: [String], selectedID: String) {
+        let index = orderedIDs.firstIndex(of: selectedID)
+        self.init(index: index, previous: index.flatMap { $0 > 0 ? orderedIDs[$0 - 1] : nil },
+                  next: index.flatMap { $0 + 1 < orderedIDs.count ? orderedIDs[$0 + 1] : nil })
+    }
+    var ordinal: Int { index.map { $0 + 1 } ?? 0 }
+    func neighbor(_ offset: Int) -> String? { offset == -1 ? previous : offset == 1 ? next : nil }
 }
 
 struct MediaLibraryActionTicket {

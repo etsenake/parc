@@ -150,7 +150,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
     assert "if !force && shouldSkipCatalogReload() { return }" in download_library, \
         "DownloadLibraryView no longer skips identical catalog fingerprints"
     capture_library = (root / "Sources/ParcApp/CaptureLibraryView.swift").read_text()
-    assert "if !rebuild && !catalogStatusChanged() { return }" in capture_library, \
+    assert "if !force && !itemsChanged && !catalogStatusChanged() { return }" in capture_library, \
         "CaptureLibraryView no longer skips identical Captures-visible fingerprints"
     assert "store.items != observedCaptures" in capture_library, \
         "CaptureLibraryView fingerprint must compare the capture list"

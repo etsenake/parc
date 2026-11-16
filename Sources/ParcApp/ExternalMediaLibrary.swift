@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CoreServices
 import Darwin
 import ImageIO
 import QuickLookThumbnailing
@@ -71,21 +72,29 @@ final class ExternalMediaLibrary: ObservableObject {
     @Published private(set) var folders: [ExternalMediaFolder] = []
     @Published private(set) var error: String?
     @Published private(set) var isLoading = false
+    private(set) var revision: UInt64 = 0
+    private var index: [String: ExternalMediaFile] = [:]
+    private var appliedVersion: UInt64?
     private let disk: ExternalMediaDisk
     private let systemFolders: (() -> [URL])
     private var clients = Set<UUID>()
-    private var watchers: [DispatchSourceFileSystemObject] = []
+    private var watcher: ExternalMediaWatcher?
+    private var watchedRoots: [String]?
+    private var watchedAliases: [String: String]?
+    private var watchSession: UInt64 = 0
     private var folderAccess: [ExternalMediaAccess] = []
-    private var refreshTimer: DispatchSourceTimer?
+    private var safetyTimer: DispatchSourceTimer?
     private var refreshTask: Task<Void, Never>?
+    private var updateTask: Task<Void, Never>?
     private var generation: UInt64 = 0
-    private var activation: NSObjectProtocol?
+    private var rescanPending = false
+    private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
     init(directory: URL, preferencesAreEphemeral: Bool = false, systemFolders: @escaping () -> [URL] = ExternalMediaLibrary.defaultFolders) {
         self.systemFolders = systemFolders; disk = ExternalMediaDisk(directory: directory, preferencesAreEphemeral: preferencesAreEphemeral)
     }
     deinit {
-        refreshTask?.cancel(); refreshTimer?.cancel(); watchers.forEach { $0.cancel() }
-        if let activation { NotificationCenter.default.removeObserver(activation) }
+        refreshTask?.cancel(); updateTask?.cancel(); safetyTimer?.cancel()
+        observers.forEach { $0.center.removeObserver($0.token) }
     }
     nonisolated static func defaultFolders() -> [URL] {
         let manager = FileManager.default
@@ -100,104 +109,207 @@ final class ExternalMediaLibrary: ObservableObject {
     }
     func activate(_ client: UUID) {
         guard clients.insert(client).inserted else { return }
-        if activation == nil {
-            activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.startRefresh(announced: false) }
+        if observers.isEmpty {
+            let center = NotificationCenter.default, workspace = NSWorkspace.shared.notificationCenter
+            observers.append((center, center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.reconcile() }
+            }))
+            for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
+                observers.append((workspace, workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                    let volume = (note.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL)?.standardizedFileURL.path
+                    MainActor.assumeIsolated { self?.volumeChanged(volume) }
+                }))
             }
         }
-        if refreshTimer == nil {
+        if safetyTimer == nil {
             let timer = DispatchSource.makeTimerSource(queue: .main)
-            timer.schedule(deadline: .now() + 5, repeating: 5, leeway: .seconds(1))
-            timer.setEventHandler { [weak self] in MainActor.assumeIsolated {
-                if let self, self.refreshTask == nil { self.startRefresh(announced: false) }
-            } }
-            timer.resume(); refreshTimer = timer
+            timer.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(10))
+            timer.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.reconcile() } }
+            timer.resume(); safetyTimer = timer
         }
         startRefresh(announced: clients.count == 1)
     }
     func deactivate(_ client: UUID) {
         clients.remove(client)
         guard clients.isEmpty else { return }
-        cancelRefresh(); stopWatching()
-        refreshTimer?.cancel(); refreshTimer = nil
-        if let activation { NotificationCenter.default.removeObserver(activation) }; activation = nil
-        if !items.isEmpty { items = [] }
+        cancelRefresh(); updateTask?.cancel(); updateTask = nil; stopWatching()
+        safetyTimer?.cancel(); safetyTimer = nil
+        observers.forEach { $0.center.removeObserver($0.token) }; observers = []
+        clear()
         if !folders.isEmpty { folders = [] }
         if isLoading { isLoading = false }
     }
     func refresh() { startRefresh(announced: true) }
     private func startRefresh(announced: Bool) {
         guard !clients.isEmpty else { return }
-        generation &+= 1; let token = generation; let roots = systemFolders(); let previous = items
-        refreshTask?.cancel()
+        generation &+= 1; let token = generation; let roots = systemFolders(); let mark = FSEventsGetCurrentEventId()
+        refreshTask?.cancel(); rescanPending = false
         if announced, !isLoading { isLoading = true }
         refreshTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let snapshot = try await self.disk.scan(systemFolders: roots, previous: previous)
+                let snapshot = try await self.disk.scan(systemFolders: roots)
                 guard !Task.isCancelled, self.generation == token, !self.clients.isEmpty else { return }
-                if snapshot.itemsChanged { self.items = snapshot.items }
-                if self.folders != snapshot.folders { self.folders = snapshot.folders }
-                if self.error != snapshot.warning { self.error = snapshot.warning }
-                self.watch(snapshot.folders); self.folderAccess = snapshot.access
+                self.apply(snapshot, since: mark)
             } catch {
                 guard !Task.isCancelled, self.generation == token else { return }
                 let message = error.localizedDescription
-                if !self.items.isEmpty { self.items = [] }
+                self.clear()
                 if self.error != message { self.error = message }
                 self.stopWatching()
             }
             self.refreshTask = nil
             if self.isLoading { self.isLoading = false }
+            if self.rescanPending { self.startRefresh(announced: false) }
         }
     }
-    private func cancelRefresh() { generation &+= 1; refreshTask?.cancel(); refreshTask = nil }
-    func contains(_ item: ExternalMediaFile) -> Bool { items.contains(item) }
+    private func requestRescan() {
+        if refreshTask == nil { startRefresh(announced: false) } else { rescanPending = true }
+    }
+    private func reconcile() {
+        guard !clients.isEmpty, refreshTask == nil else { return }
+        guard watcher != nil else { startRefresh(announced: false); return }
+        generation &+= 1; let token = generation; let roots = systemFolders(); let mark = FSEventsGetCurrentEventId()
+        refreshTask = Task { [weak self] in
+            guard let self else { return }
+            let snapshot = try? await self.disk.reconcile(systemFolders: roots)
+            guard !Task.isCancelled, self.generation == token, !self.clients.isEmpty else { return }
+            if let snapshot { self.apply(snapshot, since: mark) }
+            self.refreshTask = nil
+            if self.rescanPending { self.startRefresh(announced: false) }
+        }
+    }
+    private func volumeChanged(_ volume: String?) {
+        guard !clients.isEmpty else { return }
+        guard let volume else { requestRescan(); return }
+        let prefix = volume.hasSuffix("/") ? volume : volume + "/"
+        if (watchedRoots ?? []).contains(where: { $0 == volume || $0.hasPrefix(prefix) }) { requestRescan() }
+    }
+    private func apply(_ snapshot: ExternalMediaDisk.Snapshot, since mark: FSEventStreamEventId) {
+        publish(snapshot.catalog)
+        if folders != snapshot.folders { folders = snapshot.folders }
+        if error != snapshot.warning { error = snapshot.warning }
+        watch(snapshot.watch, since: mark); folderAccess = snapshot.access
+    }
+    private func publish(_ catalog: ExternalMediaDisk.Catalog) {
+        if let appliedVersion, catalog.version <= appliedVersion { return }
+        appliedVersion = catalog.version; index = catalog.index
+        guard !(catalog.items.isEmpty && items.isEmpty) else { return }
+        revision &+= 1; items = catalog.items
+    }
+    private func clear() {
+        appliedVersion = nil; index = [:]
+        if !items.isEmpty { revision &+= 1; items = [] }
+    }
+    private func cancelRefresh() { generation &+= 1; refreshTask?.cancel(); refreshTask = nil; rescanPending = false }
+    func contains(_ item: ExternalMediaFile) -> Bool { index[item.id] == item }
     func grant(_ url: URL) async throws {
         try await disk.grant(url); refresh()
     }
     func setEnabled(_ enabled: Bool, folder: URL) async throws {
         cancelRefresh(); stopWatching()
-        items.removeAll { $0.folder == folder }
-        try await disk.setEnabled(enabled, folder: folder); refresh()
+        defer { refresh() }
+        publish(try await disk.setEnabled(enabled, folder: folder))
     }
-    func hide(_ file: ExternalMediaFile) async throws { try await disk.hide(file); items.removeAll { $0.id == file.id }; refresh() }
+    func hide(_ file: ExternalMediaFile) async throws { publish(try await disk.hide(file)) }
     func restoreHidden() async throws { try await disk.restoreHidden(); refresh() }
     func validate(_ file: ExternalMediaFile) async throws { try await disk.validate(file) }
     func acquire(_ file: ExternalMediaFile) async throws -> ExternalMediaAccess { try await disk.acquire(file) }
     func data(_ file: ExternalMediaFile) async throws -> Data { try await disk.data(file) }
     func thumbnail(_ file: ExternalMediaFile) async throws -> Data { try await disk.thumbnail(file) }
     func export(_ file: ExternalMediaFile, to url: URL) async throws { try await disk.export(file, to: url) }
-    private func stopWatching() { watchers.forEach { $0.cancel() }; watchers = []; folderAccess = [] }
-    private func watch(_ folders: [ExternalMediaFolder]) {
-        stopWatching()
-        for folder in folders where folder.access == .available {
-            let descriptor = Darwin.open(folder.url.path, O_EVTONLY | O_CLOEXEC)
-            guard descriptor >= 0 else { continue }
-            let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor,
-                eventMask: [.write, .delete, .rename, .attrib, .revoke], queue: .main)
-            source.setCancelHandler { Darwin.close(descriptor) }
-            source.setEventHandler { [weak self] in
-                MainActor.assumeIsolated { self?.scheduleRefresh() }
-            }
-            source.resume(); watchers.append(source)
+    private func stopWatching() { watcher = nil; watchedRoots = nil; watchedAliases = nil; watchSession &+= 1; folderAccess = [] }
+    private func watch(_ aliases: [String: String], since mark: FSEventStreamEventId) {
+        let roots = Set(aliases.values).sorted()
+        guard aliases != watchedAliases || (watcher == nil && !roots.isEmpty) else { return }
+        watcher = nil; watchedRoots = roots; watchedAliases = aliases; watchSession &+= 1
+        guard !roots.isEmpty else { return }
+        let session = watchSession
+        watcher = ExternalMediaWatcher(aliases: aliases, since: mark) { [weak self] batch in
+            Task { @MainActor [weak self] in self?.receive(batch, session: session) }
         }
     }
-    private func scheduleRefresh() {
-        generation &+= 1; let token = generation
-        refreshTask?.cancel()
-        refreshTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            guard !Task.isCancelled, let self, self.generation == token else { return }
-            self.startRefresh(announced: false)
+    private func receive(_ batch: ExternalMediaWatcher.Batch, session: UInt64) {
+        guard session == watchSession, !clients.isEmpty else { return }
+        switch batch {
+        case .rescan: requestRescan()
+        case .paths(let paths):
+            updateTask = Task { [weak self] in
+                guard let self, let catalog = try? await self.disk.update(paths: paths), !self.clients.isEmpty else { return }
+                self.publish(catalog)
+            }
         }
     }
 }
 
+final class ExternalMediaWatcher {
+    enum Batch: Sendable { case rescan, paths(Set<String>) }
+    private final class Sink {
+        private let roots: [String: String]
+        private let handler: @Sendable (Batch) -> Void
+        init(aliases: [String: String], handler: @escaping @Sendable (Batch) -> Void) { roots = aliases; self.handler = handler }
+        func receive(_ paths: [String], _ flags: UnsafeBufferPointer<FSEventStreamEventFlags>) {
+            let dropped = FSEventStreamEventFlags(kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped | kFSEventStreamEventFlagEventIdsWrapped)
+            let broad = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged
+                | kFSEventStreamEventFlagMount | kFSEventStreamEventFlagUnmount)
+            let structural = FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRemoved
+                | kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemChangeOwner | kFSEventStreamEventFlagItemInodeMetaMod)
+            var changed = Set<String>()
+            for (raw, flag) in zip(paths, flags) {
+                let path = raw.count > 1 && raw.hasSuffix("/") ? String(raw.dropLast()) : raw
+                if flag & dropped != 0 { handler(.rescan); return }
+                if flag & broad != 0 {
+                    if covers(path) { handler(.rescan); return }
+                    continue
+                }
+                if roots[path] != nil {
+                    if flag & structural != 0 { handler(.rescan); return }
+                    continue
+                }
+                let name = (path as NSString).lastPathComponent
+                guard let root = roots[(path as NSString).deletingLastPathComponent], ExternalMediaDisk.isMedia(name) else { continue }
+                changed.insert((root as NSString).appendingPathComponent(name))
+            }
+            if !changed.isEmpty { handler(.paths(changed)) }
+        }
+        private func covers(_ path: String) -> Bool {
+            path.isEmpty || path == "/" || roots.keys.contains { $0 == path || $0.hasPrefix(path + "/") }
+        }
+    }
+    private let stream: FSEventStreamRef
+    private let queue: DispatchQueue
+    init?(aliases: [String: String], since: FSEventStreamEventId, handler: @escaping @Sendable (Batch) -> Void) {
+        let roots = Set(aliases.values).sorted(), sink = Sink(aliases: aliases, handler: handler)
+        var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(sink).toOpaque(),
+            retain: { info in
+                guard let info else { return nil }
+                return UnsafeRawPointer(Unmanaged<Sink>.fromOpaque(info).retain().toOpaque())
+            },
+            release: { info in if let info { Unmanaged<Sink>.fromOpaque(info).release() } },
+            copyDescription: nil)
+        let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
+            guard let info, let names = Unmanaged<CFArray>.fromOpaque(UnsafeRawPointer(paths)).takeUnretainedValue() as NSArray as? [String] else { return }
+            Unmanaged<Sink>.fromOpaque(info).takeUnretainedValue().receive(names, UnsafeBufferPointer(start: flags, count: count))
+        }
+        let options = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWatchRoot | kFSEventStreamCreateFlagUseCFTypes)
+        guard let stream = FSEventStreamCreate(kCFAllocatorDefault, callback, &context, roots as CFArray, since, 0.3, options) else { return nil }
+        let queue = DispatchQueue(label: "org.parc.media-folder-events")
+        FSEventStreamSetDispatchQueue(stream, queue)
+        guard FSEventStreamStart(stream) else { FSEventStreamInvalidate(stream); FSEventStreamRelease(stream); return nil }
+        self.stream = stream; self.queue = queue
+    }
+    deinit {
+        let stream = UncheckedStream(stream)
+        queue.async { FSEventStreamStop(stream.value); FSEventStreamInvalidate(stream.value); FSEventStreamRelease(stream.value) }
+    }
+    private struct UncheckedStream: @unchecked Sendable { let value: FSEventStreamRef; init(_ value: FSEventStreamRef) { self.value = value } }
+}
+
 actor ExternalMediaDisk {
+    struct Catalog: Sendable { let items: [ExternalMediaFile]; let index: [String: ExternalMediaFile]; let version: UInt64 }
     struct Snapshot: Sendable {
-        let items: [ExternalMediaFile]; let itemsChanged: Bool
-        let folders: [ExternalMediaFolder]; let warning: String?; let access: [ExternalMediaAccess]
+        let catalog: Catalog
+        let folders: [ExternalMediaFolder]; let warning: String?; let access: [ExternalMediaAccess]; let watch: [String: String]
     }
     private struct Grant: Codable { let path: String; var bookmark: Data?; var disabled: Bool }
     private struct Configuration: Codable { var version = 1; var grants: [Grant] = []; var hiddenPaths: Set<String> = [] }
@@ -205,9 +317,16 @@ actor ExternalMediaDisk {
     private var configuration: Configuration?
     private let preferencesAreEphemeral: Bool
     private var current: [String: ExternalMediaFile] = [:]
+    private var ordered: [ExternalMediaFile] = []
+    private var version: UInt64 = 0
+    private var scannedRoots: [String]?
+    private var available: [String: URL] = [:]
+    private var readable: [String: Bool] = [:]
+    private var remote = false
     init(directory: URL, preferencesAreEphemeral: Bool = false) {
         self.directory = directory; self.preferencesAreEphemeral = preferencesAreEphemeral
     }
+    private var catalog: Catalog { Catalog(items: ordered, index: current, version: version) }
     private var manifest: URL { directory.appendingPathComponent("MediaFolders.json") }
     private func read() throws -> Configuration {
         if let configuration { return configuration }
@@ -231,18 +350,23 @@ actor ExternalMediaDisk {
         var next = try read(); next.grants.removeAll { $0.path == root.path }
         next.grants.append(Grant(path: root.path, bookmark: bookmark, disabled: false)); try commit(next)
     }
-    func setEnabled(_ enabled: Bool, folder: URL) throws {
+    @discardableResult func setEnabled(_ enabled: Bool, folder: URL) throws -> Catalog {
         var next = try read(); let path = folder.standardizedFileURL.resolvingSymlinksInPath().path
         if let index = next.grants.firstIndex(where: { $0.path == path }) {
             next.grants[index].disabled = !enabled
             if !enabled { next.grants[index].bookmark = nil }
         } else { next.grants.append(Grant(path: path, bookmark: nil, disabled: !enabled)) }
-        try commit(next); current = current.filter { $0.value.folder.path != path }
+        try commit(next); available[path] = nil
+        let kept = current.filter { $0.value.folder.path != path }
+        if kept.count != current.count { current = kept; ordered.removeAll { $0.folder.path == path }; version &+= 1 }
+        return catalog
     }
-    func hide(_ file: ExternalMediaFile) throws {
+    @discardableResult func hide(_ file: ExternalMediaFile) throws -> Catalog {
         let scope = try checkedAccess(file, requireLocal: false)
         defer { if scope.1 { scope.0.stopAccessingSecurityScopedResource() } }
-        var next = try read(); next.hiddenPaths.insert(file.id); try commit(next); current[file.id] = nil
+        var next = try read(); next.hiddenPaths.insert(file.id); try commit(next)
+        if current.removeValue(forKey: file.id) != nil { ordered.removeAll { $0.id == file.id }; version &+= 1 }
+        return catalog
     }
     func restoreHidden() throws { var next = try read(); next.hiddenPaths = []; try commit(next) }
     private func access(_ root: URL, configuration: Configuration) throws -> (URL, Bool) {
@@ -254,43 +378,106 @@ actor ExternalMediaDisk {
         guard !stale, resolved.standardizedFileURL.resolvingSymlinksInPath().path == root.path else { throw ExternalMediaFailure.changed }
         return (resolved, resolved.startAccessingSecurityScopedResource())
     }
-    func scan(systemFolders: [URL], previous: [ExternalMediaFile]? = nil) throws -> Snapshot {
-        let config = try read()
-        let roots = Set((systemFolders + config.grants.map { URL(fileURLWithPath: $0.path, isDirectory: true) })
+    private static func roots(_ systemFolders: [URL], _ config: Configuration) -> [String] {
+        Set((systemFolders + config.grants.map { URL(fileURLWithPath: $0.path, isDirectory: true) })
             .map { $0.standardizedFileURL.resolvingSymlinksInPath().path }).sorted()
+    }
+    func scan(systemFolders: [URL]) throws -> Snapshot {
+        let config = try read()
+        let roots = Self.roots(systemFolders, config)
         var files: [String: ExternalMediaFile] = [:], folders: [ExternalMediaFolder] = []; var skipped = 0
-        var leases: [ExternalMediaAccess] = []
+        var leases: [ExternalMediaAccess] = [], reached: [String: URL] = [:], probes: [String: Bool] = [:], aliases: [String: String] = [:], foundRemote = false
         for path in roots {
             try Task.checkCancellation()
             let root = URL(fileURLWithPath: path, isDirectory: true)
             if config.grants.contains(where: { $0.path == path && $0.disabled }) {
                 folders.append(.init(url: root, name: root.lastPathComponent, access: .disabled)); continue
             }
+            probes[path] = Self.isReadable(path); aliases[path] = path
+            if let real = realpath(path, nil) { aliases[String(cString: real)] = path; free(real) }
             do {
                 let (scope, scoped) = try access(root, configuration: config)
                 let lease = ExternalMediaAccess(url: scope, scoped: scoped)
                 defer { withExtendedLifetime(lease) {} }
-                let urls = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentTypeKey], options: [.skipsHiddenFiles, .skipsPackageDescendants, .skipsSubdirectoryDescendants])
-                for url in urls {
+                for name in try FileManager.default.contentsOfDirectory(atPath: path) where Self.isMedia(name) {
                     try Task.checkCancellation()
-                    do { if let file = try Self.describe(url, folder: root), !config.hiddenPaths.contains(file.id) { files[file.id] = file } }
+                    do { if let file = try Self.describe(Self.url(name, in: root), folder: root), !config.hiddenPaths.contains(file.id) { files[file.id] = file } }
                     catch { skipped += 1 }
                 }
-                folders.append(.init(url: root, name: root.lastPathComponent, access: .available)); leases.append(lease)
+                folders.append(.init(url: root, name: root.lastPathComponent, access: .available)); leases.append(lease); reached[path] = root
+                if (try? root.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal) == false { foundRemote = true }
             } catch is CancellationError { throw CancellationError() }
             catch { folders.append(.init(url: root, name: root.lastPathComponent, access: .unavailable(error.localizedDescription))) }
         }
-        current = files
-        let items = files.values.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date }
-        let kept = previous.flatMap { $0 == items ? $0 : nil }
-        return Snapshot(items: kept ?? items, itemsChanged: kept == nil, folders: folders,
-                        warning: skipped == 0 ? nil : "\(skipped) file\(skipped == 1 ? " was" : "s were") unavailable while Media refreshed.", access: leases)
+        current = files; scannedRoots = roots; available = reached; readable = probes; remote = foundRemote
+        let sorted = files.values.sorted(by: Self.precedes)
+        if sorted != ordered { ordered = sorted; version &+= 1 }
+        return Snapshot(catalog: catalog, folders: folders,
+                        warning: skipped == 0 ? nil : "\(skipped) file\(skipped == 1 ? " was" : "s were") unavailable while Media refreshed.", access: leases, watch: aliases)
     }
+    func reconcile(systemFolders: [URL]) throws -> Snapshot? {
+        let roots = Self.roots(systemFolders, try read())
+        guard roots == scannedRoots, !remote, readable.allSatisfy({ Self.isReadable($0.key) == $0.value }) else { return try scan(systemFolders: systemFolders) }
+        return nil
+    }
+    func update(paths: Set<String>) throws -> Catalog? {
+        let config = try read()
+        var replaced = Set<String>(), added: [ExternalMediaFile] = []
+        for path in paths {
+            guard let root = available[(path as NSString).deletingLastPathComponent] else { continue }
+            let name = (path as NSString).lastPathComponent, url = Self.url(name, in: root)
+            var next = config.hiddenPaths.contains(url.path) ? nil : try? Self.describe(url, folder: root)
+            if next != nil, Self.storedName(url.path) != name { next = nil }
+            let previous = current[url.path]
+            guard previous != next else { continue }
+            if previous != nil { replaced.insert(url.path) }
+            current[url.path] = next
+            if let next { added.append(next) }
+        }
+        guard !replaced.isEmpty || !added.isEmpty else { return nil }
+        var merged = replaced.isEmpty ? ordered : ordered.filter { !replaced.contains($0.id) }
+        if added.count > 32 { merged = (merged + added).sorted(by: Self.precedes) }
+        else {
+            for file in added {
+                var low = 0, high = merged.count
+                while low < high { let middle = (low + high) / 2; if Self.precedes(merged[middle], file) { low = middle + 1 } else { high = middle } }
+                merged.insert(file, at: low)
+            }
+        }
+        ordered = merged; version &+= 1
+        return catalog
+    }
+    static func precedes(_ a: ExternalMediaFile, _ b: ExternalMediaFile) -> Bool { a.date == b.date ? a.id < b.id : a.date > b.date }
+    static func isMedia(_ name: String) -> Bool { mediaType(name) != nil }
+    private static func mediaType(_ name: String) -> UTType? {
+        let fileExtension = (name as NSString).pathExtension
+        guard !name.hasPrefix("."), !fileExtension.lowercased().hasSuffix("download"),
+              let type = UTType(filenameExtension: fileExtension), type.conforms(to: .image) || type.conforms(to: .movie) else { return nil }
+        return type
+    }
+    private static func isReadable(_ path: String) -> Bool {
+        guard let directory = opendir(path) else { return false }
+        closedir(directory); return true
+    }
+    private static func storedName(_ path: String) -> String? {
+        var request = attrlist()
+        request.bitmapcount = u_short(ATTR_BIT_MAP_COUNT); request.commonattr = attrgroup_t(ATTR_CMN_NAME)
+        let header = MemoryLayout<UInt32>.size, capacity = header + MemoryLayout<attrreference_t>.size + Int(NAME_MAX) * 4 + 1
+        var buffer = [UInt8](repeating: 0, count: capacity)
+        guard getattrlist(path, &request, &buffer, capacity, UInt32(FSOPT_NOFOLLOW)) == 0 else { return nil }
+        return buffer.withUnsafeBytes { raw -> String? in
+            let reference = raw.loadUnaligned(fromByteOffset: header, as: attrreference_t.self)
+            let start = header + Int(reference.attr_dataoffset), length = Int(reference.attr_length)
+            guard length > 1, start + length <= raw.count else { return nil }
+            return String(decoding: raw[start..<(start + length - 1)], as: UTF8.self)
+        }
+    }
+    private static func url(_ name: String, in root: URL) -> URL { root.appendingPathComponent(name, isDirectory: false).standardizedFileURL }
     static func describe(_ url: URL, folder: URL) throws -> ExternalMediaFile? {
+        guard let type = mediaType(url.lastPathComponent) else { return nil }
         var value = stat()
         guard lstat(url.path, &value) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-        guard (value.st_mode & S_IFMT) == S_IFREG, !url.lastPathComponent.hasPrefix("."), !url.pathExtension.lowercased().hasSuffix("download") else { return nil }
-        guard let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image) || type.conforms(to: .movie) else { return nil }
+        guard (value.st_mode & S_IFMT) == S_IFREG, value.st_flags & UInt32(UF_HIDDEN) == 0 else { return nil }
         let screenshot = getxattr(url.path, "com.apple.metadata:kMDItemIsScreenCapture", nil, 0, 0, XATTR_NOFOLLOW) >= 0
         let hasOrigin = getxattr(url.path, "com.apple.metadata:kMDItemWhereFroms", nil, 0, 0, XATTR_NOFOLLOW) >= 0
         let movie = type.conforms(to: .movie)

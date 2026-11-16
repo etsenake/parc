@@ -72,21 +72,42 @@ Stop Showing This Folder removes its retained bookmark/items for this Profile;
 OS-level revocation remains in macOS Settings. This is file access, not Screen
 Recording permission.
 
-Only visible clients keep observation active. Vnode events coalesce directory
-writes/deletes/renames; app activation and a five-second active-view rescan catch
-content-only changes, permissions and screenshot-location changes. Last-client
-retirement cancels work, releases watchers/scopes and clears results. Owned sheets,
-previews and thumbnail requests carry window/generation. Cancellation settles once
-even if Quick Look never answers, and late callbacks cannot restore retired work.
+Only visible clients keep observation active. One file-level FSEvents stream
+covers every shown folder, including missing or unreadable ones, so a file that
+appears, is written in place, gains the screenshot marker, is renamed or is removed
+reaches Media within about a third of a second. Each event rereads just that file;
+events for subfolders, hidden files and non-media names are dropped on the stream's
+own queue. The stream replays from the moment its scan began, so nothing that
+happens during a scan is lost. Media rescans everything only when macOS reports
+dropped events, a shown folder itself appears, moves, disappears or changes
+permissions, a volume holding one mounts or unmounts, or a person refreshes;
+requests that arrive during a rescan fold into one more afterwards.
 
-Folder size never costs the main thread on a quiet rescan. The disk actor reads,
-sorts and compares each rescan against the list Media already shows; when nothing
-changed it hands that same list back and Media publishes nothing, so large folders
-add only background work. A change publishes the list once, and the view rebuilds
-its grid once. Loading, folder-access and error changes update only the message
-and status line. **Loading Media…** appears for the first load and for refreshes a
-person starts (Refresh, folder access and visibility, hiding); the periodic,
-watcher and app-activation rescans stay quiet.
+Nothing polls files on a local disk. App activation and a once-a-minute check
+reread the screenshot location and whether each folder can still be opened, and
+rescan only when one of those changed. Network folders are the one case events
+miss, because macOS reports only changes made on this Mac; while one is shown, that
+check rescans all folders once a minute. It does the same if the stream cannot
+start. Last-client retirement cancels work, releases the stream and scopes and
+clears results. Owned sheets, previews and thumbnail requests carry
+window/generation. Cancellation settles once even if Quick Look never answers, and
+late callbacks cannot restore retired work.
+
+Folder size never costs the main thread. The disk actor keeps the sorted list, a
+lookup index and a version; a rescan or event that changes nothing publishes
+nothing, and a change hands Media the list and index together, so membership checks
+are lookups. The grid compares that version instead of the list, then merges,
+filters, sorts and diffs against what it shows on a background task. The main
+thread applies only the difference as one batch of tile removals and insertions; a
+file changed in place is removed and reinserted at its new position, and more than
+200 changed tiles reload the grid instead. Selection follows its file, the scroll
+position stays put, tiles under a still pointer resample hover, finished thumbnails
+find their tile among the visible ones and preview navigation reads the planned
+positions. Typing a search still rebuilds the grid immediately. Loading,
+folder-access and error changes update only the message and status line.
+**Loading Media…** appears for the first load and for refreshes a person starts
+(Refresh, folder access and visibility); hiding a file removes just its tile, and
+event, activation and once-a-minute rescans stay quiet.
 
 File revisions include device/inode, size, nanosecond modification/change times,
 kind and local-file state. Reads validate source/catalog/revision; no-follow file
@@ -120,13 +141,16 @@ from the drawn thumbnail rectangle. Increase Contrast adds the selected focus ed
 `tests/ExternalMediaLibraryTests.swift` covers disposable shallow enumeration,
 classification, aliases, same-path replacement, disappearance, hiding, source
 configuration, bookmarks, unreadable/missing folders and corrupt preferences.
-Native client checks cover vnode arrival/removal, shutdown, a quiet rescan that
-publishes nothing and a new file that publishes the list exactly once without a
-loading flip. Library view checks cover thumbnail geometry, hover, scrolling,
-selection, source rectangles, mixed capture/file navigation, and a loading flip
-that leaves the grid alone while a new file rebuilds it.
-`tests/CaptureLibraryCatalogSkip` pins the skip structure; `scripts/test.sh` runs
-both Media checks.
+Its disk checks reread only the file an update names, ignore nested and outside
+paths, and apply renames and removals. Native client checks cover event-driven
+arrival, in-place writes, a later screenshot marker, renames and removals, shutdown,
+a quiet rescan that publishes nothing and a new file that publishes the list exactly
+once without a loading flip. Library view checks cover thumbnail geometry, hover,
+scrolling, selection, source rectangles, mixed capture/file navigation, a loading
+flip that leaves the grid alone, and arrivals, in-place changes, renames and
+removals that make at most two tiles while selection, scroll position and hover
+stay correct. `tests/CaptureLibraryCatalogSkip` pins the skip, off-main planning
+and event structure; `scripts/test.sh` runs both Media checks.
 
 ## Private Media ownership
 

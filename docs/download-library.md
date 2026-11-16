@@ -41,9 +41,9 @@ the folder. Its size follows the managers' download history, the table draws
 only visible rows, and missing-file state comes from each manager's record
 rather than a per-file check. The entry flyout reads Documents, Desktop and
 Screenshots, not Downloads, off the main queue. The one place folder size
-counts is Library's Media page, which rescans Downloads with the other media
-folders; that rescan sorts and compares in the background and reaches the main
-thread only when something changed. See
+counts is Library's Media page, which lists Downloads with the other media
+folders; it rereads only files that folder events name and applies only the grid
+difference on the main thread. See
 [Media discovery](capture-library.md#os-media-discovery-and-access--cap23).
 
 ## Private-window Downloads
