@@ -62,9 +62,9 @@ stay separate named buttons.
 
 | Action | Content and destination |
 |---|---|
-| Copy URL/Markdown, pane Copy Link | Copied Current URL; share the copied link |
+| Copy URL/Markdown | Copied Current URL; share the copied link |
 | Quote/shared quote copy | Copied Link / With Quote; share the text-fragment URL |
-| Multi-item/folder copy | Copied item links; share every exported link |
+| Sidebar row/selection copy, split Copy Links | Copied Link or Copied Links; share every copied link |
 | Copy shortcut education | Copy links faster by pressing, with live keycap |
 | Press Again | Again-to-action cue and Edit accessory |
 | Fifth split pane | Cannot Add New Pane |

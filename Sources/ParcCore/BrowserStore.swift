@@ -1781,6 +1781,11 @@ struct SidebarItemSelection: Equatable {
     private(set) var anchor: SidebarItemReference?
     private(set) var focus: SidebarItemReference?
     mutating func clear() { items = []; singleItem = nil; anchor = nil; focus = nil }
+    func copyTargets(order: [SidebarItemReference], active: SidebarItemReference?) -> [SidebarItemReference]? {
+        if !items.isEmpty { return items }
+        guard let item = singleItem ?? active, order.contains(item) else { return nil }
+        return [item]
+    }
     mutating func selectAll(order: [SidebarItemReference], active: SidebarItemReference?) {
         var seen = Set<SidebarItemReference>()
         let visible = order.filter { seen.insert($0).inserted }

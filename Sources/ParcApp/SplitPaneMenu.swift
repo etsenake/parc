@@ -29,7 +29,7 @@ enum SplitPaneMenu {
                       vertical ? "icon-separate-from-split-menu-bottom" : "icon-separate-from-split", .separate),
                 (vertical ? "Convert to Horizontal Split View" : "Convert to Vertical Split View",
                  vertical ? "icon-split-horizontal" : "icon-split-vertical", .flip),
-                nil, ("Share Split View…", vertical ? "icon-split-share-vertical" : "icon-split-share-horizontal", .share)
+                nil, ("Copy Links", vertical ? "icon-split-copy-links-vertical" : "icon-split-copy-links-horizontal", .copyLinks)
             ]
         } else {
             rows = []

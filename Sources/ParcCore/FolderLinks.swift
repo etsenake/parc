@@ -28,8 +28,8 @@ enum FolderLinks {
                 if case .folder(let child) = item { append(child); continue }
                 for id in SidebarHierarchy.tabIDs(in: item, state: state, spaceID: target.spaceID) {
                     guard seenTabs.insert(id).inserted, let tab = tabs.first(where: { $0.id == id }),
-                          !InternalPage.isInternal(tab.url), let url = URL(string: tab.url), url.scheme != nil else { continue }
-                    result.append(Link(tabID: tab.id, title: tab.title, url: url.absoluteString))
+                          let found = link(for: tab) else { continue }
+                    result.append(found)
                 }
             }
         }
@@ -41,13 +41,23 @@ enum FolderLinks {
                       spaceID: UUID, profileID: UUID) -> [Link]? {
         guard SidebarHierarchySnapshot(state: state, spaceID: spaceID, profileID: profileID) != nil,
               let roots = SidebarHierarchy.roots(items, state: state, spaceID: spaceID) else { return nil }
+        return links(in: state, tabIDs: roots.flatMap { SidebarHierarchy.tabIDs(in: $0, state: state, spaceID: spaceID) },
+                     spaceID: spaceID, profileID: profileID)
+    }
+
+    static func links(in state: BrowserState, tabIDs: [UUID], spaceID: UUID, profileID: UUID) -> [Link] {
         var seen = Set<UUID>()
-        return roots.flatMap { SidebarHierarchy.tabIDs(in: $0, state: state, spaceID: spaceID) }.compactMap { id in
-            guard seen.insert(id).inserted,
-                  let tab = state.tab(id, where: { $0.profileID == profileID && $0.spaceID == spaceID && $0.archivedAt == nil }),
-                  !InternalPage.isInternal(tab.url), let url = URL(string: tab.url), url.scheme != nil else { return nil }
-            return Link(tabID: id, title: tab.title, url: url.absoluteString)
+        return tabIDs.compactMap { id in
+            guard seen.insert(id).inserted, let tab = state.tab(id, where: {
+                $0.archivedAt == nil && $0.profileID == profileID && ($0.kind == .favorite || $0.spaceID == spaceID)
+            }) else { return nil }
+            return link(for: tab)
         }
+    }
+
+    private static func link(for tab: BrowserTab) -> Link? {
+        guard let url = URL(string: tab.url), ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        return Link(tabID: tab.id, title: tab.title, url: url.absoluteString)
     }
 
     static func text(for links: [Link], format: FolderLinkFormat) -> String? {
@@ -69,5 +79,21 @@ enum FolderLinks {
                 return "[\(label)](<\(destination)>)"
             }
         }.joined(separator: "\n")
+    }
+
+    static func html(for links: [Link]) -> String? {
+        guard !links.isEmpty else { return nil }
+        func escaped(_ text: String) -> String {
+            text.replacingOccurrences(of: "&", with: "&amp;")
+                .replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;")
+                .replacingOccurrences(of: "\"", with: "&quot;")
+        }
+        let lines = links.map { link in
+            let title = link.title.components(separatedBy: .newlines).joined(separator: " ")
+                .trimmingCharacters(in: .whitespaces)
+            return "<a href=\"\(escaped(link.url))\">\(escaped(title.isEmpty ? link.url : title))</a>"
+        }
+        return "<meta charset=\"utf-8\">" + lines.joined(separator: "<br>\n")
     }
 }

@@ -428,10 +428,8 @@ extension BrowserWindowController {
         guard presentation.isReady, !isClosing, !wholeWindowClose,
               !windowClosePending, !windowCloseApproved,
               activeSpaceID == target.spaceID, activeProfileID == target.profileID,
-              let links = FolderLinks.links(in: store.state, target: target),
-              let text = FolderLinks.text(for: links, format: format) else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+              let links = FolderLinks.links(in: store.state, target: target) else { return }
+        LinkPasteboard.write(links, format: format)
     }
 
     func prepareFolderDisclosureMenuItem(_ item: NSMenuItem, expanded: Bool,

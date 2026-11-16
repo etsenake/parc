@@ -24,15 +24,24 @@ that set. Other text fields, native editors and webpages retain responder-chain
 Select All; no global monitor intercepts it.
 
 The focused multi-set supplies Copy, Copy URLs, Copy URLs as Markdown and Close.
+Standard Copy also takes a single selected row: a folder reached with the
+arrows, or the current row when nothing else is selected. A tab copies its
+address, a split all its pages and a folder its contents; Copy URL, Markdown and
+Close keep their single-page meaning there. Plain clicks still activate rows.
 Existing command IDs, custom/disabled bindings and address-result paths remain.
 Tracked menu actions capture original selection/native capability; expiry cannot
 fall through to a newly active page. Standard Copy uses native responder dispatch.
 Quote is unavailable for a multi-set because no plural quote contract exists.
 
-Exports use original records and folder-link formatting. Ancestors suppress
-duplicate descendants; splits keep child order. Deduplication uses tab ID, so
-distinct tabs with one URL stay distinct lines. Internal/malformed destinations
-are excluded. These exports do not impersonate live-page clipboard policy.
+Exports use original records and the link formatter the split pane menu's
+Copy Links shares. Plain copies put one address per line as text plus a
+rich-text version linking each title to its address; Markdown copies stay
+Markdown only. Ancestors suppress duplicate descendants; splits keep child
+order. Deduplication uses tab ID, so distinct tabs with one URL stay distinct
+lines. Only web and local file addresses are copied: Notes, Easels, Parc's own
+pages, blank tabs and malformed destinations are skipped. A Copied Link or
+Copied Links notice confirms the copy. These exports do not impersonate
+live-page clipboard policy.
 Fresh/default Close bindings prefer Parc; migration preserves existing implicit
 website priority and explicit custom/disabled choices.
 
@@ -95,4 +104,5 @@ remains available. Favorite tiles do not join range or multi-selection.
 ## Checks
 
 Model, copy-command and ownership checks cover visible Select All, export
-identity/order, stale grants, save failure and saved/mixed close semantics.
+identity/order, single-row copy targets, the rich-text flavor, stale grants,
+save failure and saved/mixed close semantics.

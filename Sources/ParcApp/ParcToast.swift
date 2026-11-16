@@ -23,8 +23,8 @@ struct ParcToastContent: Equatable {
     static func copiedCurrentURL(_ url: URL?) -> ParcToastContent {
         standard("Copied Current URL", buttons: share(url.map { [$0] } ?? []))
     }
-    static func copiedItemLinks(_ urls: [URL]) -> ParcToastContent {
-        standard("Copied item links", buttons: share(urls))
+    static func copiedLinks(_ urls: [URL]) -> ParcToastContent {
+        standard(urls.count == 1 ? "Copied Link" : "Copied Links", buttons: share(urls))
     }
     static func copiedQuoteLink(_ url: URL?) -> ParcToastContent {
         standard("Copied Link", icon: "quote.bubble.fill", subLabel: "With Quote", buttons: share(url.map { [$0] } ?? []))

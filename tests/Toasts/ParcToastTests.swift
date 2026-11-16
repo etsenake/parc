@@ -41,9 +41,12 @@ import AppKit
         check(ParcToastContent.copiedCurrentURL(nil).body
               == .standard(icon: nil, label: "Copied Current URL", subLabel: nil, buttons: []),
               "no URL, no share button")
-        check(ParcToastContent.copiedItemLinks([url, url]).body
-              == .standard(icon: nil, label: "Copied item links", subLabel: nil, buttons: [.share([url, url])]),
-              "copyItemURLs shares every copied URL")
+        check(ParcToastContent.copiedLinks([url, url]).body
+              == .standard(icon: nil, label: "Copied Links", subLabel: nil, buttons: [.share([url, url])]),
+              "copied links share every copied URL")
+        check(ParcToastContent.copiedLinks([url]).body
+              == .standard(icon: nil, label: "Copied Link", subLabel: nil, buttons: [.share([url])]),
+              "a single copied link reads in the singular")
         check(ParcToastContent.copiedQuoteLink(url).body
               == .standard(icon: "quote.bubble.fill", label: "Copied Link", subLabel: "With Quote", buttons: [.share([url])]),
               "copyTabURLQuote: quote icon, sublabel and share button")

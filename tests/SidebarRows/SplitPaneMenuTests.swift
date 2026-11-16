@@ -13,7 +13,7 @@ import AppKit
             { if available { performed.append(operation) } }
         }
         check(!menu.autoenablesItems && menu.title == "Split View Controls Menu", "Actual native menu owns explicit availability")
-        check(menu.items.filter { !$0.isSeparatorItem }.map(\.title) == ["Move Left", "Move Right", "Add Right Split", "Add Left Split", "Separate Tab from Split", "Convert to Vertical Split View", "Share Split View…"], "Split menu matches the installed pane control list")
+        check(menu.items.filter { !$0.isSeparatorItem }.map(\.title) == ["Move Left", "Move Right", "Add Right Split", "Add Left Split", "Separate Tab from Split", "Convert to Vertical Split View", "Copy Links"], "Split menu matches the installed pane control list")
         check(menu.items.first?.isEnabled == false && menu.items[1].isEnabled, "Boundary move is disabled in real NSMenu")
         check(menu.items.filter(\.isSeparatorItem).count == 3, "Menu sections remain native separators")
         let move = menu.items[1]
@@ -26,7 +26,33 @@ import AppKit
         let full = SplitPaneMenu.make(orientation: .vertical, index: 3, count: 4) { operation in { performed.append(operation) } }
         check(full.items.filter { $0.title.hasPrefix("Add ") }.allSatisfy { !$0.isEnabled }, "Four-pane menu has no fifth-pane action")
         check(full.items[0].title == "Move Up" && full.items[0].isEnabled && !full.items[1].isEnabled, "Vertical last-pane neighbor availability")
-        check(full.items[7].title == "Convert to Horizontal Split View" && full.items.last?.title == "Share Split View…", "Convert sits above Share Split View")
+        check(full.items[7].title == "Convert to Horizontal Split View" && full.items.last?.title == "Copy Links", "Convert sits above Copy Links")
+        let copyLinks = menu.items.last!
+        _ = NSApp.sendAction(copyLinks.action!, to: copyLinks.target, from: copyLinks)
+        check(copyLinks.isEnabled && performed == [.moveNext], "Copy Links follows the owner's live refusal like every other row")
+        available = true
+        _ = NSApp.sendAction(copyLinks.action!, to: copyLinks.target, from: copyLinks)
+        check(performed == [.moveNext, .copyLinks], "Copy Links dispatches the split's copy operation")
+        let linkless = SplitPaneMenu.make(orientation: .horizontal, index: 0, count: 2) { operation in
+            operation == .copyLinks ? nil : { performed.append(operation) }
+        }
+        check(linkless.items.last?.title == "Copy Links" && linkless.items.last?.isEnabled == false && linkless.items[1].isEnabled,
+              "With no web page to copy, only Copy Links is disabled")
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("parc-split-links-" + UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        let links = [FolderLinks.Link(tabID: UUID(), title: "Fish & <Chips>", url: "https://one.invalid/a?b=1&c=2"),
+                     FolderLinks.Link(tabID: UUID(), title: "", url: "https://two.invalid/")]
+        check(LinkPasteboard.write(links, format: .plain, to: pasteboard), "Copy Links writes the pasteboard")
+        check(pasteboard.string(forType: .string) == "https://one.invalid/a?b=1&c=2\nhttps://two.invalid/",
+              "Plain-text targets get one bare address per line, in order")
+        check(pasteboard.string(forType: .html) == "<meta charset=\"utf-8\"><a href=\"https://one.invalid/a?b=1&amp;c=2\">Fish &amp; &lt;Chips&gt;</a><br>\n"
+              + "<a href=\"https://two.invalid/\">https://two.invalid/</a>", "Rich-text targets get each title linked to its address")
+        check(LinkPasteboard.write(links, format: .markdown, to: pasteboard) && pasteboard.types?.contains(.html) == false
+              && pasteboard.string(forType: .string)?.hasPrefix("[Fish & <Chips>](<https://one.invalid/a?b=1&c=2>)") == true,
+              "Markdown copies stay Markdown only")
+        let unchangedCount = pasteboard.changeCount
+        check(!LinkPasteboard.write([], format: .plain, to: pasteboard) && pasteboard.changeCount == unchangedCount,
+              "Nothing to copy leaves the pasteboard alone")
         let single = SplitPaneMenu.make(orientation: .vertical, index: 0, count: 1) { operation in
             { performed.append(operation) }
         }
@@ -66,11 +92,11 @@ import AppKit
             }
         }
         check(shows(menu, ["icon-split-move-left", "icon-split-move-right", nil, "icon-split-add-right", "icon-split-add-left", nil,
-                           "icon-separate-from-split", "icon-split-vertical", nil, "icon-split-share-horizontal"]),
+                           "icon-separate-from-split", "icon-split-vertical", nil, "icon-split-copy-links-horizontal"]),
               "A horizontal split's items show their artwork, light or dark by appearance")
         check(shows(full, ["icon-split-move-top", "icon-split-move-bottom", nil, "icon-split-add-top", "icon-split-add-bottom", nil,
-                           "icon-separate-from-split-menu-bottom", "icon-split-horizontal", nil, "icon-split-share-vertical"]),
-              "A vertical split takes the vertical Separate, Convert and Share artwork")
+                           "icon-separate-from-split-menu-bottom", "icon-split-horizontal", nil, "icon-split-copy-links-vertical"]),
+              "A vertical split takes the vertical Separate, Convert and Copy Links artwork")
         check(shows(single, ["icon-split-add-left", "icon-split-add-right", nil, "icon-split-add-top", "icon-split-add-bottom"]),
               "A sole pane's Add rows show their artwork")
         check(menu.items.compactMap(\.image).map(\.size) == [NSSize(width: 18, height: 18), NSSize(width: 18, height: 18),

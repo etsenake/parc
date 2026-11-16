@@ -110,9 +110,17 @@ previous responder; an existing sidebar responder is not stolen.
 
 A single page offers Add Left/Right and Add Top/Bottom. Multiple panes offer
 orientation-appropriate Move and Add commands, Separate, Convert orientation and
-Copy Link. Each menu retains the exact original window, group, ordered pages,
+Copy Links. Each menu retains the exact original window, group, ordered pages,
 focus and geometry. A missing neighbor or fifth pane is disabled. Reorder moves
 original IDs and proportions without navigating.
+
+Copy Links copies every web page in the split in pane order, through the link
+formatter the sidebar's [link copies](sidebar-selection.md#select-all-and-plural-commands)
+use: one address per line as plain text, plus a rich-text version that links
+each page's title, so Notes, Mail or a document paste titled links. Notes,
+Easels, Parc's own pages and blank tabs are skipped, a page appears once, and
+the item is disabled when no pane has a web address. A Copied Links notice with
+Share confirms it. Each pane's page menu keeps its own Copy URL and Share.
 
 Add creates a window-owned pending pane and opens the command bar; it does not
 load an empty webpage. Cancel removes only the pending pane and restores the
@@ -371,7 +379,8 @@ The group context menu offers Separate All Tabs, Add Tab…, orientation convers
 Tab Options, Reset Name and Icon, Change Icon…, Rename…, Duplicate, Move to,
 New Folder with n Items, and appropriate archive/close actions. Private windows
 omit archival and use close wording. Multi-selection uses its selection menu.
-Cloud Share Split View is excluded. Add Tab targets the window's displayed content;
+There is no whole-split Share; the pane menu's Copy Links copies the split's
+addresses. Add Tab targets the window's displayed content;
 conversion can update a background group without changing selection.
 
 New Folder uses the shared atomic collection transaction and one Undo/Redo step.

@@ -19,7 +19,7 @@ geometry with 8× supersampling. These images are not templates.
 | Add Right / Bottom | `icon-split-add-right` | `icon-split-add-bottom` |
 | Separate Tab from Split | `icon-separate-from-split` | `icon-separate-from-split-menu-bottom` |
 | Convert to Vertical / Horizontal Split View | `icon-split-vertical` | `icon-split-horizontal` |
-| Share Split View… | `icon-split-share-horizontal` | `icon-split-share-vertical` |
+| Copy Links | `icon-split-copy-links-horizontal` | `icon-split-copy-links-vertical` |
 
 Images are 18 × 18 points except the two Convert images, which are 22 × 22.
 `SplitPaneMenuArtwork` combines the two bitmap scales for each appearance and

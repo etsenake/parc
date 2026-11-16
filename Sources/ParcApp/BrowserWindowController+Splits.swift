@@ -485,12 +485,8 @@ extension BrowserWindowController {
             case .moveNext: command = .move(1)
             case .addBefore, .addAfter, .addAbove, .addBelow: command = .add(operation)
             case .separate: command = .separate
-            case .copyLink: command = .copyLink
+            case .copyLinks: command = .copyLinks
             case .flip: command = .orientation(orientation == .horizontal ? .vertical : .horizontal)
-            case .share:
-                let urls = self.splitShareURLs()
-                guard !urls.isEmpty else { return nil }
-                return { self.shareSplitView(from: anchor, urls: urls) }
             }
             guard let target = self.splitCommandTarget(command, paneID: paneID) else { return nil }
             return { target.perform() }
@@ -815,15 +811,18 @@ extension BrowserWindowController {
         if case .move(let delta) = command {
             guard let position = selectedTabIDs.firstIndex(of: target), selectedTabIDs.indices.contains(position + delta) else { return nil }
         }
-        if case .copyLink = command {
-            if let page = browsers[target]?.nativePage, !page.canCopyLink(as: .plain) { return nil }
-        }
+        if case .copyLinks = command, splitLinks().isEmpty { return nil }
         var identities: [UUID: SplitPaneIdentity] = [:]
         for id in selectedTabIDs {
             guard let identity = splitPaneIdentity(id) else { return nil }
             identities[id] = identity
         }
         return SplitCommandTarget(owner: self, command: command, originalFocus: focus, targetID: target, identities: identities)
+    }
+
+    func splitLinks() -> [FolderLinks.Link] {
+        guard selectedTabIDs.count > 1, activeSplitLayout != nil else { return [] }
+        return FolderLinks.links(in: store.state, tabIDs: selectedTabIDs, spaceID: activeSpaceID, profileID: activeProfileID)
     }
 
     func prepareSplitMenuItem(_ item: NSMenuItem, command: SplitCommand, preservingTarget: Bool) -> Bool {
@@ -905,20 +904,12 @@ extension BrowserWindowController {
             reclaimFocusAfterSplitPresentation()
         case .addNew: toggleSplit()
         case .add(let operation): beginSplitInsertion(operation, paneID: targetID)
-        case .copyLink:
-            if let page = browsers[targetID]?.nativePage {
-                guard page.canCopyLink(as: .plain) else { return }
-                let identity = splitPaneIdentity(targetID)
-                page.copyLink(as: .plain) { [weak self, weak page] result in
-                    MainActor.assumeIsolated {
-                        guard let self, let page, self.browsers[targetID]?.nativePage === page,
-                              self.splitPaneIdentity(targetID) == identity else { return }
-                        if result == .copied { self.showToast(.copiedCurrentURL(self.copiedLink(page: self.browsers[targetID]?.url)), at: .content(targetID)) }
-                    }
-                }
-            } else if let tab = visibleTabs.first(where: { $0.id == targetID }) {
-                NSPasteboard.general.clearContents()
-                if NSPasteboard.general.setString(tab.url, forType: .string) { showToast(.copiedCurrentURL(URL(string: tab.url)), at: .content(targetID)) }
+        case .copyLinks:
+            let links = splitLinks()
+            guard !links.isEmpty else { return }
+            copyLinkOperation = UUID()
+            if LinkPasteboard.write(links, format: .plain) {
+                showToast(.copiedLinks(links.compactMap { URL(string: $0.url) }), at: .content(targetID))
             }
         case .close:
             closeClickedSplitPane(targetID)

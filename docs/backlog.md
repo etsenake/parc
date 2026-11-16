@@ -106,9 +106,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 
 - Add the generic Edit → Format → Font menu route. Existing document
   formatting works. [Keyboard](keyboard-navigation.md).
-- Share Split View… in the split pane menu doesn't work. Remove the item, its
-  share action and its menu artwork. [Split groups](split-groups.md),
-  [menu artwork](../Resources/SplitPaneMenu/README.md).
 - Provide blocked-popup chooser/release UI.
   [Web interactions](web-interactions.md#banners-and-blocked-pop-ups).
 - Tooltip shortcut feedback needs the same shifted-symbol matching as command

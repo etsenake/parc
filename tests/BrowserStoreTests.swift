@@ -3259,6 +3259,14 @@ struct BrowserStoreTests {
         try expect(selection.items.isEmpty && selection.singleItem == a, "Select All of an ordinary singleton uses the ordinary selection path")
         selection.selectAll(order: [], active: a)
         try expect(selection.items.isEmpty && selection.singleItem == nil && selection.focus == nil, "Empty Select All expires previous selection/focus")
+        var copying = SidebarItemSelection()
+        try expect(copying.copyTargets(order: [a, b, c], active: c) == [c], "With nothing else chosen, Copy takes the current row")
+        try expect(copying.copyTargets(order: [a, b], active: c) == nil, "A current row outside the sidebar, like a Favorite, has nothing to copy")
+        copying.select(b, order: [a, b, c], active: nil, extending: false, toggling: false)
+        try expect(copying.items.isEmpty && copying.copyTargets(order: [a, b, c], active: c) == [b], "One selected row copies that row")
+        try expect(copying.copyTargets(order: [a, c], active: c) == nil, "A selected row that left the sidebar copies nothing")
+        copying.select(c, order: [a, b, c], active: a, extending: false, toggling: true)
+        try expect(copying.copyTargets(order: [a, b, c], active: a) == [a, c], "A multi-selection still copies every selected row")
         try withDirectory { directory in
             let store = try BrowserStore(directory: directory), space = store.activeSpaceID, profile = store.activeSpace.profileID
             let folder = store.createFolder(name: "Folder")
@@ -3281,6 +3289,28 @@ struct BrowserStoreTests {
             let split = store.activeSplitLayout!
             let splitLinks = FolderLinks.links(in: store.state, items: [.split(split.id), .tab(c)], spaceID: space, profileID: profile)!
             try expect(splitLinks.map(\.tabID) == [a, b, c], "Plural copy expands the original split children in their existing order")
+            try expect(FolderLinks.links(in: store.state, items: [.tab(c)], spaceID: space, profileID: profile)?.map(\.tabID) == [c],
+                       "One selected tab copies its own address")
+            try expect(FolderLinks.links(in: store.state, items: [.split(split.id)], spaceID: space, profileID: profile)?.map(\.tabID) == [a, b],
+                       "One selected split copies all of its pages in pane order")
+            var mixed = store.state
+            let favorite = mixed.tabs.firstIndex { $0.id == b }!
+            mixed.tabs[favorite].kind = .favorite; mixed.tabs[favorite].folderID = nil; mixed.tabs[favorite].spaceID = UUID()
+            try expect(FolderLinks.links(in: mixed, items: [.split(split.id)], spaceID: space, profileID: profile)?.map(\.tabID) == [a, b]
+                       && FolderLinks.links(in: mixed, tabIDs: split.tabIDs, spaceID: space, profileID: profile).map(\.tabID) == [a, b],
+                       "A split row's Favorite from another Space is copied alike from the sidebar and the split menu")
+            try expect(FolderLinks.links(in: original, items: [.folder(folder)], spaceID: space, profileID: profile)?.map(\.tabID) == [a, b],
+                       "One selected folder copies its contents")
+            let documents = [InternalPage.note(UUID()).urlString, InternalPage.easel(UUID()).urlString, "parc://settings/", "about:blank"]
+                .map { store.openResolvedURL(URL(string: $0)!) }
+            try expect(FolderLinks.links(in: store.state, items: documents.map { .tab($0) } + [.tab(c)], spaceID: space, profileID: profile)?.map(\.tabID) == [c],
+                       "Notes, Easels, Parc pages and blank tabs have no address to copy")
+            let rich = [FolderLinks.Link(tabID: UUID(), title: "A [label]\nnext", url: "https://example.com/a?x=1&y=2"),
+                        FolderLinks.Link(tabID: UUID(), title: " ", url: "https://example.com/\"c\"")]
+            try expect(FolderLinks.html(for: rich) == "<meta charset=\"utf-8\"><a href=\"https://example.com/a?x=1&amp;y=2\">A [label] next</a><br>\n"
+                       + "<a href=\"https://example.com/&quot;c&quot;\">https://example.com/&quot;c&quot;</a>",
+                       "Rich copy links each page title to its address, escaped, falling back to the address")
+            try expect(FolderLinks.html(for: []) == nil, "Nothing to copy has no rich flavor")
         }
     }
 

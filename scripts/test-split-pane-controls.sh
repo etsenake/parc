@@ -5,7 +5,7 @@ output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 xcrun swiftc -warnings-as-errors -parse-as-library Sources/ParcCore/*.swift tests/SidebarRows/SplitPaneControlsTests.swift -o "$output/model"
 "$output/model"
-xcrun swiftc -warnings-as-errors -parse-as-library Sources/ParcCore/*.swift Sources/ParcApp/SplitPaneMenu.swift Sources/ParcApp/MenuItemImage.swift Sources/ParcApp/SplitPaneHighlight.swift tests/SidebarRows/SplitPaneMenuTests.swift -o "$output/native"
+xcrun swiftc -warnings-as-errors -parse-as-library Sources/ParcCore/*.swift Sources/ParcApp/SplitPaneMenu.swift Sources/ParcApp/LinkPasteboard.swift Sources/ParcApp/MenuItemImage.swift Sources/ParcApp/SplitPaneHighlight.swift tests/SidebarRows/SplitPaneMenuTests.swift -o "$output/native"
 cp -R Resources/SplitPaneMenu "$output/SplitPaneMenu"
 "$output/native"
 tooltip=()

@@ -1,7 +1,7 @@
 import Foundation
 
 enum SplitPaneOperation: Int, CaseIterable {
-    case movePrevious, moveNext, addBefore, addAfter, addAbove, addBelow, separate, copyLink, share, flip
+    case movePrevious, moveNext, addBefore, addAfter, addAbove, addBelow, separate, copyLinks, flip
 
     func isEnabled(index: Int, count: Int) -> Bool {
         guard (0..<count).contains(index) else { return false }
@@ -9,7 +9,7 @@ enum SplitPaneOperation: Int, CaseIterable {
         case .movePrevious: return count > 1 && index > 0
         case .moveNext: return count > 1 && index < count - 1
         case .addBefore, .addAfter, .addAbove, .addBelow: return count < 4
-        case .separate, .copyLink, .share, .flip: return count > 1
+        case .separate, .copyLinks, .flip: return count > 1
         }
     }
 }

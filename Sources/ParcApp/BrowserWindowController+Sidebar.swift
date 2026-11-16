@@ -320,11 +320,10 @@ extension BrowserWindowController {
             return { [weak self] in
                 guard let self, lease.isValid,
                       let current = FolderLinks.links(in: self.store.state, items: items, spaceID: spaceID, profileID: profileID),
-                      let text = FolderLinks.text(for: current, format: format) else { return false }
+                      !current.isEmpty else { return false }
                 self.copyLinkOperation = UUID()
-                NSPasteboard.general.clearContents()
-                let copied = NSPasteboard.general.setString(text, forType: .string)
-                if copied { self.showToast(.copiedItemLinks(current.compactMap { URL(string: $0.url) })) }
+                let copied = LinkPasteboard.write(current, format: format)
+                if copied { self.showToast(.copiedLinks(current.compactMap { URL(string: $0.url) })) }
                 return copied
             }
         }

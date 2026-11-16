@@ -36,8 +36,8 @@ import Foundation
         try check(!SplitPaneOperation.movePrevious.isEnabled(index: 0, count: 3) && SplitPaneOperation.moveNext.isEnabled(index: 0, count: 3), "Native menu neighbor availability")
         try check(!SplitPaneOperation.addAfter.isEnabled(index: 0, count: 4), "Actual four-content maximum")
         try check(!SplitPaneOperation.separate.isEnabled(index: 0, count: 1), "No separation for sole pane")
-        try check(SplitPaneOperation.share.isEnabled(index: 0, count: 2) && !SplitPaneOperation.share.isEnabled(index: 0, count: 1),
-                  "Share Split View is a populated-split action")
+        try check(SplitPaneOperation.copyLinks.isEnabled(index: 0, count: 2) && !SplitPaneOperation.copyLinks.isEnabled(index: 0, count: 1),
+                  "Copy Links is a populated-split action")
         let beforeDraft = store.state
         let draft = SplitPaneInsertion(paneID: b, operation: .addAbove, state: store.state)!
         try check(draft.index == 1 && draft.orientation == .vertical && draft.selection == [a,b,c], "Exact target top insertion")
@@ -146,6 +146,19 @@ import Foundation
         try FileManager.default.removeItem(at: root); try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try check(store.insertSplitPane(pending, tabID: failureID, navigationURL: url, creation: nil, savedHomeIDs: [:], documents: [:]), "Same original receipt retries after storage recovery")
         try check(store.persistenceError == nil, "Successful retry clears durable error")
+        let space = store.activeSpaceID, profile = store.activeSpace.profileID
+        let linkNote = store.openResolvedURL(URL(string: InternalPage.note(UUID()).urlString)!)
+        let linkEasel = store.openResolvedURL(URL(string: InternalPage.easel(UUID()).urlString)!)
+        let linkSettings = store.openResolvedURL(URL(string: "parc://settings/")!)
+        let linkBlank = store.openResolvedURL(URL(string: "about:blank")!)
+        try check(FolderLinks.links(in: store.state, tabIDs: [c, a, b], spaceID: space, profileID: profile).map(\.tabID) == [c, a, b],
+                  "Copy Links copies every page's address in pane order")
+        try check(FolderLinks.links(in: store.state, tabIDs: [linkNote, b, linkSettings, linkEasel, a, linkBlank, b], spaceID: space, profileID: profile).map(\.tabID) == [b, a],
+                  "Notes, Easels, Parc pages and blank tabs are skipped, and a page is copied once")
+        try check(FolderLinks.links(in: store.state, tabIDs: [linkNote, linkSettings], spaceID: space, profileID: profile).isEmpty,
+                  "A split without a web page has nothing to copy, so its Copy Links stays disabled")
+        try check(FolderLinks.links(in: store.state, tabIDs: [a, b], spaceID: space, profileID: UUID()).isEmpty,
+                  "Another Profile's pages are never copied")
         print("PASS: \(count) actual pane menu/store/temporary destination checks (no browser)")
     }
 }

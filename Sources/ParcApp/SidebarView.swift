@@ -4058,6 +4058,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
 
     var hasCommandSelection: Bool { ownsSelectionFocus && itemSelection.items.count > 1 }
+    private var copySelectionItems: [SidebarItemReference]? {
+        guard ownsSelectionFocus else { return nil }
+        return itemSelection.copyTargets(order: selectionOrder, active: selectionActive)
+    }
 
     func commandBarSelectionItems() -> [SidebarItemReference]? {
         guard ownsSelectionFocus, !itemSelection.items.isEmpty else { return nil }
@@ -4066,9 +4070,18 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
 
 
     func prepareSelectionCommand(_ kind: SidebarSelectionCommandKind) -> SidebarSelectionCommandTarget? {
-        guard hasCommandSelection, let state = hierarchyState, let spaceID = activeSpaceID,
-              let lease = prepareSidebarMoves?(itemSelection.items) else { return nil }
-        let items = itemSelection.items, expected = selectionContext
+        guard hasCommandSelection else { return nil }
+        return prepareSelectionCommand(kind, items: itemSelection.items) { $0.hasCommandSelection ? $0.itemSelection.items : nil }
+    }
+    private func prepareCopyCommand() -> SidebarSelectionCommandTarget? {
+        guard let items = copySelectionItems else { return nil }
+        return prepareSelectionCommand(.copyLinks, items: items) { $0.copySelectionItems }
+    }
+    private func prepareSelectionCommand(_ kind: SidebarSelectionCommandKind, items: [SidebarItemReference],
+                                         current: @escaping (SidebarView) -> [SidebarItemReference]?) -> SidebarSelectionCommandTarget? {
+        guard let state = hierarchyState, let spaceID = activeSpaceID,
+              let lease = prepareSidebarMoves?(items) else { return nil }
+        let expected = selectionContext
         let action: (() -> Bool)?
         let title: String
         switch kind {
@@ -4085,7 +4098,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         guard let action else { return nil }
         return SidebarSelectionCommandTarget(kind: kind, title: title, validate: { [weak self] in
             guard let self else { return false }
-            return self.hasCommandSelection && self.itemSelection.items == items && self.selectionContext == expected && lease.isValid
+            return current(self) == items && self.selectionContext == expected && lease.isValid
         }, execute: action)
     }
     @objc override func selectAll(_ sender: Any?) {
@@ -4095,7 +4108,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         refreshItemSelection()
     }
     @objc func copy(_ sender: Any?) {
-        _ = prepareSelectionCommand(.copyLinks)?.perform()
+        _ = prepareCopyCommand()?.perform()
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(selectAll(_:)) { return ownsSelectionFocus && !selectionOrder.isEmpty }
@@ -4104,7 +4117,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             return false
         }
         if item.action == #selector(copy(_:)) {
-            return prepareSelectionCommand(.copyLinks) != nil
+            return prepareCopyCommand() != nil
         }
         return false
     }

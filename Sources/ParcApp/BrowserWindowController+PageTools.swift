@@ -63,18 +63,6 @@ extension BrowserWindowController {
             relativeTo: NSRect(x: bounds.minX, y: top, width: bounds.width, height: 1),
             of: browser, preferredEdge: browser.isFlipped ? .maxY : .minY)
     }
-    func splitShareURLs() -> [URL] {
-        selectedTabIDs.compactMap { id in
-            if let url = browsers[id]?.url, !url.absoluteString.isEmpty { return url }
-            guard let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
-                  let url = URL(string: tab.url), tab.url != "about:blank" else { return nil }
-            return url
-        }
-    }
-    func shareSplitView(from anchor: NSView, urls: [URL]) {
-        guard !urls.isEmpty, anchor.window === window else { return }
-        NSSharingServicePicker(items: urls).show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
-    }
     private func copyPageLink(as format: PCNativeLinkCopyFormat) {
         guard let page = selectedNativePage(), page.canCopyLink(as: format) else { return }
         performLinkCopy(page: page, format: format) { completion in
