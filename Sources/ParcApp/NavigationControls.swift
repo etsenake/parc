@@ -61,10 +61,15 @@ final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDele
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area); trackingArea = area
     }
-    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseEntered(with event: NSEvent) { hovering = isTopmost(atWindowPoint: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = isTopmost(atWindowPoint: event.locationInWindow)
+        if value != hovering { hovering = value }
+    }
     override func mouseExited(with event: NSEvent) { hovering = false }
     override func draw(_ dirtyRect: NSRect) {
         if let face = translucentFace {

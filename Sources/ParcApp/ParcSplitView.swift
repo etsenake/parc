@@ -666,17 +666,29 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                   visible.minX.isFinite, visible.minY.isFinite,
                   visible.width.isFinite, visible.height.isFinite else { return nil }
             let area = NSTrackingArea(rect: visible,
-                options: [.mouseEnteredAndExited, .activeInKeyWindow, .enabledDuringMouseDrag], owner: self, userInfo: nil)
+                options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .enabledDuringMouseDrag], owner: self, userInfo: nil)
             addTrackingArea(area); return area
         }
         if let window, window.isKeyWindow, !isHiddenOrHasHiddenAncestor {
-            updateDividerHover(at: convert(window.mouseLocationOutsideOfEventStream, from: nil), animated: false)
+            updateDividerHover(at: topmostPoint(atWindowPoint: window.mouseLocationOutsideOfEventStream), animated: false)
         } else { updateDividerHover(at: nil, animated: false) }
     }
     override func mouseEntered(with event: NSEvent) {
         guard let area = event.trackingArea, dividerTrackingAreas.contains(where: { $0 === area }),
               let window, event.window === window, window.isKeyWindow, !isHiddenOrHasHiddenAncestor else { return }
-        updateDividerHover(at: convert(event.locationInWindow, from: nil))
+        updateDividerHover(at: topmostPoint(atWindowPoint: event.locationInWindow))
+    }
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard dividerTrackingAreas.contains(where: { $0.rect.contains(point) }) else {
+            super.mouseMoved(with: event); return
+        }
+        guard let window, event.window === window, window.isKeyWindow, !isHiddenOrHasHiddenAncestor else { return }
+        updateDividerHover(at: topmostPoint(atWindowPoint: event.locationInWindow))
+    }
+    private func topmostPoint(atWindowPoint point: NSPoint) -> NSPoint? {
+        let local = convert(point, from: nil)
+        return divider(at: local) != nil && isTopmost(atWindowPoint: point) ? local : nil
     }
     override func mouseExited(with event: NSEvent) {
         guard let area = event.trackingArea, dividerTrackingAreas.contains(where: { $0 === area }) else { return }

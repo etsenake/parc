@@ -122,7 +122,7 @@ final class ActionButton: PointingHandButton {
         super.mouseExited(with: event)
     }
     override func mouseMoved(with event: NSEvent) {
-        if tracksHover { hovered = isEnabled && isTopmost(atWindowPoint: event.locationInWindow) }
+        if tracksHover, bounds.contains(convert(event.locationInWindow, from: nil)) { hovered = isEnabled && isTopmost(atWindowPoint: event.locationInWindow) }
     }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil { hovered = false; translucentFace?.stop() }

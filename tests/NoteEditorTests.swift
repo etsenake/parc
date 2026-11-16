@@ -214,7 +214,8 @@ struct NoteEditorTests {
         try expect(nativeButtons.count == 6 && nativeButtons[0].showsDisclosure && nativeButtons.dropFirst().allSatisfy { !$0.showsDisclosure }, "Actual selection controls use shared original glyph owner with only Aa disclosure")
         try expect(selectionBar.selectedIndex == nil && nativeButtons.allSatisfy { !$0.keyboardSelected }, "Original selection menu starts with no selected keyboard action")
         nativeButtons[1].updateTrackingAreas()
-        let barHover = NoteComponentTrackingEvent(); barHover.area = nativeButtons[1].trackingAreas.first { $0.options == [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect] }
+        let barHover = NoteComponentTrackingEvent(); barHover.area = nativeButtons[1].trackingAreas.first { $0.options == [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect] }
+        barHover.location = nativeButtons[1].convert(NSPoint(x: nativeButtons[1].bounds.midX, y: nativeButtons[1].bounds.midY), to: nil)
         nativeButtons[1].mouseEntered(with: barHover)
         let selectionDocument = session.document, selectionUndo = text.localUndo.canUndo
         selectionBar.appearance = dark; selectionBar.viewDidChangeEffectiveAppearance()
@@ -791,7 +792,8 @@ struct NoteEditorTests {
         try expect(textButton.state == .on && textButton.frame.height == 34 && textButton.frame.width == 34, "Actual attributed paragraph selection is on-state without a text-row checkmark")
         let expansion = try require(initial.first { $0.item == .emphasis }, "Actual expandable emphasis button")
         expansion.updateTrackingAreas()
-        let hover = NoteComponentTrackingEvent(); hover.area = expansion.trackingAreas.first { $0.options == [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect] }
+        let hover = NoteComponentTrackingEvent(); hover.area = expansion.trackingAreas.first { $0.options == [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect] }
+        hover.location = expansion.convert(NSPoint(x: expansion.bounds.midX, y: expansion.bounds.midY), to: nil)
         expansion.mouseEntered(with: hover)
         try expect(expansion.hovered && menu.selectedIndex == nil, "Hover highlights only its original control, without changing keyboard selection or text")
         let beforeAppearance = menuSession.document, originalSelection = body.selectedRanges
@@ -1711,5 +1713,7 @@ private final class NoteComponentWindow: NSWindow {
 
 private final class NoteComponentTrackingEvent: NSEvent {
     var area: NSTrackingArea?
+    var location = NSPoint.zero
     override var trackingArea: NSTrackingArea? { area }
+    override var locationInWindow: NSPoint { location }
 }

@@ -360,11 +360,16 @@ private final class DocumentCard: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect], owner: self)
         tracking = next; addTrackingArea(next)
     }
     override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
-    override func mouseEntered(with event: NSEvent) { hovered = true }
+    override func mouseEntered(with event: NSEvent) { hovered = isTopmost(atWindowPoint: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = isTopmost(atWindowPoint: event.locationInWindow)
+        if value != hovered { hovered = value }
+    }
     override func mouseExited(with event: NSEvent) { hovered = false }
     override func mouseDown(with event: NSEvent) {
         if event.modifierFlags.contains(.control) { trackingOpen = false; rightMouseDown(with: event); return }

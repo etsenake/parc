@@ -327,7 +327,7 @@ enum BrowserToolbarActionSurfaceLayoutSkip {
         super.updateTrackingAreas()
         if let area { removeTrackingArea(area) }; area = nil
         guard window != nil, !isHiddenOrHasHiddenAncestor, !bounds.isEmpty else { clearInteraction(); return }
-        let next = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow], owner: self)
+        let next = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow], owner: self)
         area = next; addTrackingArea(next)
         sampleHover()
     }
@@ -335,13 +335,21 @@ enum BrowserToolbarActionSurfaceLayoutSkip {
         guard let window, window.isKeyWindow, !isHiddenOrHasHiddenAncestor, isEnabled else {
             isHovered = false; refresh(animated: false); return
         }
-        isHovered = bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        let point = window.mouseLocationOutsideOfEventStream
+        isHovered = bounds.contains(convert(point, from: nil)) && isTopmost(atWindowPoint: point)
         refresh(animated: false)
     }
     override func mouseEntered(with event: NSEvent) {
         guard event.trackingArea === area, area != nil, window?.isKeyWindow == true,
               !isHiddenOrHasHiddenAncestor, isEnabled else { return }
-        isHovered = true; refresh(animated: true)
+        isHovered = isTopmost(atWindowPoint: event.locationInWindow); refresh(animated: true)
+    }
+    override func mouseMoved(with event: NSEvent) {
+        guard area != nil, bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = window?.isKeyWindow == true && !isHiddenOrHasHiddenAncestor && isEnabled
+            && isTopmost(atWindowPoint: event.locationInWindow)
+        guard value != isHovered else { return }
+        isHovered = value; refresh(animated: true)
     }
     override func mouseExited(with event: NSEvent) {
         guard event.trackingArea === area, area != nil else { return }

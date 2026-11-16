@@ -77,6 +77,23 @@ import AppKit
         header.nameField.stringValue = "Cancelled"
         _ = header.control(header.nameField, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:)))
         try check(results.count == 2 && results[1] == nil && !header.nameField.isEditable, "Escape cancels native draft")
+        let coverHost = NSView(frame: NSRect(x: 0, y: 0, width: 228, height: 36))
+        let hoverWindow = NSWindow(contentRect: coverHost.frame, styleMask: [.borderless], backing: .buffered, defer: true)
+        hoverWindow.contentView = coverHost
+        let titleRow = SidebarSpaceHeaderView(frame: coverHost.bounds)
+        coverHost.addSubview(titleRow)
+        let centre = NSPoint(x: 114, y: 18)
+        let entered = NSEvent.enterExitEvent(with: .mouseEntered, location: centre, modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)!
+        let moved = NSEvent.mouseEvent(with: .mouseMoved, location: centre, modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!
+        let cover = NSView(frame: coverHost.bounds)
+        coverHost.addSubview(cover)
+        titleRow.mouseEntered(with: entered)
+        try check(!titleRow.isHovered, "a command surface over the Space title row keeps its hover off")
+        cover.removeFromSuperview()
+        titleRow.mouseMoved(with: moved)
+        try check(titleRow.isHovered, "moving out from under the cover lights the Space title row again")
         let list = NSView(), favorites = NSView()
         let chain = SidebarAccessibility.keyViewChain(leading: [], favorites: favorites, list: list, regions: [],
             trailing: [], space: header, beforeList: [header])

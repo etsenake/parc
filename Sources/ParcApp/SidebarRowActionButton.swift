@@ -99,6 +99,7 @@ final class SidebarRowActionButton: PointingHandButton {
     }
     override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true }
     override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
         let value = isTopmost(atWindowPoint: event.locationInWindow)
         guard value != hovering else { return }
         hovering = value; refreshAvailability(); needsDisplay = true
@@ -331,7 +332,10 @@ final class SidebarRowResetRegion: SidebarRowRegionView {
         } == true)
     }
     override func mouseEntered(with event: NSEvent) { setPointerInside(isTopmost(atWindowPoint: event.locationInWindow)) }
-    override func mouseMoved(with event: NSEvent) { setPointerInside(isTopmost(atWindowPoint: event.locationInWindow)) }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+        setPointerInside(isTopmost(atWindowPoint: event.locationInWindow))
+    }
     override func mouseExited(with event: NSEvent) { setPointerInside(false) }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         cancelInteraction()

@@ -584,7 +584,7 @@ final class NoteFormattingView: NSView {
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
         guard formatMenu == nil, !selection.isPresenting, imagePanel == nil else { return }
-        guard let text, canHover else { hideGutter(); return }
+        guard let text, canHover, (superview ?? self).isTopmost(atWindowPoint: event.locationInWindow) else { hideGutter(); return }
         let point = text.convert(event.locationInWindow, from: nil)
         guard let next = NoteParagraphGeometry.target(in: text, at: point),
               let admitted = NoteFormattingTarget(text: text, document: session.document, range: next.range) else { hideGutter(); return }
@@ -593,7 +593,7 @@ final class NoteFormattingView: NSView {
     override func mouseEntered(with event: NSEvent) {
         guard event.trackingArea === tracking else { super.mouseEntered(with: event); return }
         pointerInside = true
-        if let hover, validHover { positionGutter(hover) }
+        if let hover, validHover, (superview ?? self).isTopmost(atWindowPoint: event.locationInWindow) { positionGutter(hover) }
     }
     override func mouseExited(with event: NSEvent) {
         guard event.trackingArea === tracking else { super.mouseExited(with: event); return }
@@ -1052,12 +1052,18 @@ final class NoteFormatButton: NSButton {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         tracking = next; addTrackingArea(next)
     }
     override func mouseEntered(with event: NSEvent) {
         guard event.trackingArea === tracking, isEnabled else { super.mouseEntered(with: event); return }
-        hovered = true; needsDisplay = true
+        hovered = isTopmost(atWindowPoint: event.locationInWindow); needsDisplay = true
+    }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = isEnabled && isTopmost(atWindowPoint: event.locationInWindow)
+        guard value != hovered else { return }
+        hovered = value; needsDisplay = true
     }
     override func mouseExited(with event: NSEvent) {
         guard event.trackingArea === tracking else { super.mouseExited(with: event); return }

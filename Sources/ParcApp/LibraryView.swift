@@ -973,8 +973,8 @@ private final class LibraryTable: NSTableView {
     }
     func resampleHover() {
         guard let window, window.isKeyWindow, !isHiddenOrHasHiddenAncestor else { hoveredRow = -1; return }
-        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        let row = visibleRect.contains(point) ? row(at: point) : -1
+        let location = window.mouseLocationOutsideOfEventStream, point = convert(location, from: nil)
+        let row = visibleRect.contains(point) && isTopmost(atWindowPoint: location) ? row(at: point) : -1
         hoveredRow = row >= 0 && delegate?.tableView?(self, shouldSelectRow: row) != false ? row : -1
     }
     override func didAdd(_ rowView: NSTableRowView, forRow row: Int) {
@@ -1174,12 +1174,18 @@ private final class LibraryRowButton: PointingHandButton {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let area { removeTrackingArea(area) }
-        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         area = next; addTrackingArea(next)
     }
     override var isHidden: Bool { didSet { if isHidden { hovered = false }; refreshTint() } }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); refreshTint() }
-    override func mouseEntered(with event: NSEvent) { hovered = true; refreshTint() }
+    override func mouseEntered(with event: NSEvent) { hovered = isTopmost(atWindowPoint: event.locationInWindow); refreshTint() }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = isTopmost(atWindowPoint: event.locationInWindow)
+        guard value != hovered else { return }
+        hovered = value; refreshTint()
+    }
     override func mouseExited(with event: NSEvent) { hovered = false; refreshTint() }
     private func refreshTint() {
         contentTintColor = DownloadAccessoryColors.foreground(hovered: hovered, appearance: effectiveAppearance)

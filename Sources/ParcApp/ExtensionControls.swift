@@ -215,15 +215,22 @@ final class ExtensionActionButton: PointingHandButton {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area)
         trackingArea = area
         hovered = available && window?.isKeyWindow == true && window.map {
-            bounds.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil))
+            let point = $0.mouseLocationOutsideOfEventStream
+            return bounds.contains(convert(point, from: nil)) && isTopmost(atWindowPoint: point)
         } == true
         updateHighlight()
     }
-    override func mouseEntered(with event: NSEvent) { hovered = true; updateHighlight() }
+    override func mouseEntered(with event: NSEvent) { hovered = isTopmost(atWindowPoint: event.locationInWindow); updateHighlight() }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = isTopmost(atWindowPoint: event.locationInWindow)
+        guard value != hovered else { return }
+        hovered = value; updateHighlight()
+    }
     override func mouseExited(with event: NSEvent) { hovered = false; updateHighlight() }
     fileprivate func nativeHighlight(_ flag: Bool) {
         setPressed(style == .sidebar && flag && available && window?.isKeyWindow == true)

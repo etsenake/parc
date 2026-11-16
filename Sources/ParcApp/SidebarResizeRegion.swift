@@ -95,8 +95,8 @@ final class SidebarResizeRegionView: NSView, ResizeHandleView {
                                                          .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area); trackingArea = area
     }
-    override func mouseEntered(with event: NSEvent) { isHovered = true }
-    override func mouseMoved(with event: NSEvent) { isHovered = true }
+    override func mouseEntered(with event: NSEvent) { isHovered = isUnobstructed(atWindowPoint: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) { isHovered = isUnobstructed(atWindowPoint: event.locationInWindow) }
     override func mouseExited(with event: NSEvent) { isHovered = false }
     override func cursorUpdate(with event: NSEvent) {
         guard let window, isUnobstructed(atWindowPoint: window.mouseLocationOutsideOfEventStream) else {

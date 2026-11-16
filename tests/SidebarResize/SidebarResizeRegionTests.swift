@@ -118,6 +118,13 @@ import QuartzCore
         region.mouseMoved(with: entered)
         check(region.isHovered, "movement inside re-establishes hover")
         region.mouseExited(with: exited); wait(0.3)
+        root.addSubview(overlay)
+        region.mouseEntered(with: entered); region.mouseMoved(with: entered)
+        check(!region.isHovered, "a command surface over the strip keeps its hover off")
+        overlay.removeFromSuperview()
+        region.mouseMoved(with: entered)
+        check(region.isHovered, "moving out from under the cover restores hover")
+        region.mouseExited(with: exited); wait(0.3)
 
         region.isResizing = true
         check(!indicator.isHidden && indicator.animationKeys() == nil, "resizing shows at once without animation")

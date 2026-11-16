@@ -123,9 +123,12 @@ final class PopupChromeView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let addressTracking { removeTrackingArea(addressTracking) }
-        let point = window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
+        let point = window.flatMap { window in
+            let point = window.mouseLocationOutsideOfEventStream, local = convert(point, from: nil)
+            return address.frame.contains(local) && isTopmost(atWindowPoint: point) ? local : nil
+        }
         reconcileAddressHover(pointer: point, active: window?.isKeyWindow == true, visible: !isHiddenOrHasHiddenAncestor)
-        var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeInKeyWindow]
+        var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow]
         if addressHovered { options.insert(.assumeInside) }
         let tracking = NSTrackingArea(rect: address.frame, options: options, owner: self)
         addTrackingArea(tracking); addressTracking = tracking
@@ -133,7 +136,12 @@ final class PopupChromeView: NSView {
     func reconcileAddressHover(pointer: NSPoint?, active: Bool, visible: Bool) {
         addressHovered = active && visible && pointer.map { address.frame.contains($0) } == true
     }
-    override func mouseEntered(with event: NSEvent) { addressHovered = true }
+    override func mouseEntered(with event: NSEvent) { addressHovered = isTopmost(atWindowPoint: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) {
+        guard addressTracking != nil, address.frame.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = isTopmost(atWindowPoint: event.locationInWindow)
+        if value != addressHovered { addressHovered = value }
+    }
     override func mouseExited(with event: NSEvent) { addressHovered = false }
     override func viewDidHide() { super.viewDidHide(); addressHovered = false }
     override func viewWillMove(toWindow newWindow: NSWindow?) {

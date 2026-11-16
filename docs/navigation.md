@@ -81,7 +81,10 @@ has no sidebar referrer, while Peek Reload/history use the parent item.
 
 Navigation glyphs are 16 points in 32-point controls, reduced to 14 in 28-point
 controls when narrow. Hover/press colors and spring feedback are separate from
-loading state. The URL pill is 36 points high with 12-point corners and a
+loading state. Hover shows only while a control is really on top, so the URL
+pill, its buttons and the Space title row stay quiet under the compact editor
+and Control–Space search; see [in-window hosting](command-bar.md#in-window-hosting).
+The URL pill is 36 points high with 12-point corners and a
 13-point host label. An empty page shows Search or Enter URL. Share Quote occupies
 the full row with its own content; toolbar mode hides the sidebar URL row.
 Split views retain one URL row following the focused pane while each pane owns

@@ -65,8 +65,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 
 - **CMD25:** Restore Data needs a backup producer and restore flow.
   [Command bar](command-bar.md).
-- Controls covered by the command bar can still show hover feedback.
-  [Command bar](command-bar.md).
 
 ## Other input and surface limits
 

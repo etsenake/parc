@@ -166,12 +166,18 @@ final class PeekControlButton: PointingHandButton {
 
     override func updateTrackingAreas() {
         if let hoverTracking { removeTrackingArea(hoverTracking) }
-        let tracking = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+        let tracking = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
                                       owner: self, userInfo: nil)
         addTrackingArea(tracking); hoverTracking = tracking
         super.updateTrackingAreas()
     }
-    override func mouseEntered(with event: NSEvent) { setHovered(isEnabled); super.mouseEntered(with: event) }
+    override func mouseEntered(with event: NSEvent) {
+        setHovered(isEnabled && isTopmost(atWindowPoint: event.locationInWindow)); super.mouseEntered(with: event)
+    }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        setHovered(isEnabled && isTopmost(atWindowPoint: event.locationInWindow))
+    }
     override func mouseExited(with event: NSEvent) { setHovered(false); super.mouseExited(with: event) }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil { hovered = false; pressed = false; settleMotion() }

@@ -97,7 +97,7 @@ assert "if let bar = residentCommandBar { residentCommandBar = nil; bar.dismiss(
 sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [app / name for name in (
     "SidebarMotionController.swift", "SidebarChromeLayout.swift", "WindowStandardButtons.swift", "ParcSplitView.swift",
     "SplitMarginHandle.swift", "SplitDropGeometry.swift", "PageCardShadow.swift", "SplitPaneMenu.swift", "MenuItemImage.swift",
-    "SplitPaneHighlight.swift")]
+    "SplitPaneHighlight.swift", "PointerCover.swift")]
 
 
 def build(directory, name, replace=None):

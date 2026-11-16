@@ -295,10 +295,16 @@ import Quartz
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func updateTrackingAreas() {
         super.updateTrackingAreas(); if let tracking { removeTrackingArea(tracking) }
-        tracking = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        tracking = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(tracking!)
     }
-    override func mouseEntered(with event: NSEvent) { hovered = true; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { hovered = isTopmost(atWindowPoint: event.locationInWindow); needsDisplay = true }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = isTopmost(atWindowPoint: event.locationInWindow)
+        guard value != hovered else { return }
+        hovered = value; needsDisplay = true
+    }
     override func mouseExited(with event: NSEvent) { hovered = false; needsDisplay = true }
     override func draw(_ dirtyRect: NSRect) {
         if isEnabled && (hovered || isHighlighted) {

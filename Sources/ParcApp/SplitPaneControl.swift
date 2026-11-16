@@ -84,13 +84,20 @@ enum SplitPaneControlLayoutSkip {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .inVisibleRect, .activeInKeyWindow], owner: self, userInfo: nil)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .inVisibleRect, .activeInKeyWindow], owner: self, userInfo: nil)
         hoverArea = area; addTrackingArea(area)
     }
     override func mouseEntered(with event: NSEvent) {
         guard let hoverArea, event.trackingArea === hoverArea, window?.isKeyWindow == true,
               !isHiddenOrHasHiddenAncestor, isEnabled else { return }
-        isHovered = true; refresh(animated: true)
+        isHovered = isTopmost(atWindowPoint: event.locationInWindow); refresh(animated: true)
+    }
+    override func mouseMoved(with event: NSEvent) {
+        guard hoverArea != nil, bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = window?.isKeyWindow == true && !isHiddenOrHasHiddenAncestor && isEnabled
+            && isTopmost(atWindowPoint: event.locationInWindow)
+        guard value != isHovered else { return }
+        isHovered = value; refresh(animated: true)
     }
     override func mouseExited(with event: NSEvent) {
         guard let hoverArea, event.trackingArea === hoverArea else { return }
@@ -275,7 +282,7 @@ enum SplitPaneCloseAdmission {
     }
     override func mouseMoved(with event: NSEvent) {
         guard event.window === originalWindow else { return }
-        if isHovered == hoverGatesOpen { return }
+        if !isHovered && !hoverGatesOpen { return }
         samplePointer()
     }
     private var hoverGatesOpen: Bool {
@@ -287,7 +294,9 @@ enum SplitPaneCloseAdmission {
     }
     private func samplePointer() {
         if hoverGatesOpen, let host, let window = originalWindow {
-            isHovered = Self.hoverRegion(for: topBar).contains(host.convert(window.mouseLocationOutsideOfEventStream, from: nil))
+            let point = window.mouseLocationOutsideOfEventStream, local = host.convert(point, from: nil)
+            let reference = host.bounds.contains(local) ? host : host.superview ?? host
+            isHovered = Self.hoverRegion(for: topBar).contains(local) && reference.isTopmost(atWindowPoint: point)
         } else { isHovered = false }
         publish()
     }

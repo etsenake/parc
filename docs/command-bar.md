@@ -96,9 +96,19 @@ Escape/committed actions return focus to the focused content's open Find, else
 Peek, page or local document. The saved responder can return only inside that
 eligible target. Outside clicks preserve their new focus. The resident bar keeps
 focus on Escape; a committed action takes focus off its field, resets it, and asks
-for content focus afterwards only if nothing else has taken it. Sidebar rows suppress
-hover when the command surface covers them; remaining control coverage is listed
-under [remaining work](#checks-and-remaining-work).
+for content focus afterwards only if nothing else has taken it.
+
+Controls underneath a command surface stay quiet while the pointer crosses it.
+Every hover-reactive control the bar can cover, in the sidebar, page and pane
+toolbars, Peek, split views, the Library, Notes and Easels, lights up only while
+it is the topmost view under the pointer. It checks on entry and on every move,
+because the bar may cover only part of it. Most use the shared check in
+[PointerCover.swift](../Sources/ParcApp/PointerCover.swift); Favorites, tooltips,
+the developer toolbar, Find and the Downloads search field run the same hit test
+themselves, and the sidebar's resize edge also counts child windows. A view that
+lets clicks through, such as a see-through overlay, never hides hover beneath
+it. The Space title row, extension buttons, split controls, background panes'
+reveal and the resize edge have covered and uncovered checks in their suites.
 
 ## Appearance and theme
 
@@ -402,6 +412,3 @@ before running checks.
 
 Current source still has these separate limitations, tracked in [the backlog](backlog.md):
 Restore Data needs a backup producer and restore flow.
-Toolbar/pane/split/extension controls covered by the bar can still
-show hover feedback underneath it; their tracking does not use the same
-topmost-view check as sidebar rows.

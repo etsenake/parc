@@ -5,6 +5,7 @@ import QuartzCore
     var key = true
     override var isKeyWindow: Bool { key }
 }
+private final class SeeThroughView: NSView { override func hitTest(_ point: NSPoint) -> NSView? { nil } }
 
 @main
 struct ExtensionControlsTests {
@@ -74,6 +75,27 @@ struct ExtensionControlsTests {
         expect(CATransform3DIsIdentity(button.layer!.transform) && button.layer?.animation(forKey: "extensionPress") == nil,
                "Losing the original key window cancels its native press")
         window.key = true
+        let centre = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
+        let entered = NSEvent.enterExitEvent(with: .mouseEntered, location: centre, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)!
+        let exited = NSEvent.enterExitEvent(with: .mouseExited, location: centre, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)!
+        let moved = NSEvent.mouseEvent(with: .mouseMoved, location: centre, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!
+        func hoverAlpha() -> CGFloat { NSColor(cgColor: button.layer!.backgroundColor!)?.alphaComponent ?? 0 }
+        let cover = NSView(frame: button.frame.insetBy(dx: -4, dy: -4))
+        window.contentView?.addSubview(cover)
+        button.mouseEntered(with: entered)
+        expect(hoverAlpha() == 0, "A command surface covering the pin keeps its hover fill off")
+        cover.removeFromSuperview()
+        button.mouseMoved(with: moved)
+        expect(abs(hoverAlpha() - 0.071) < 0.00001, "Moving out from under the cover restores the hover fill")
+        button.mouseExited(with: exited)
+        let glass = SeeThroughView(frame: cover.frame)
+        window.contentView?.addSubview(glass)
+        button.mouseEntered(with: entered)
+        expect(abs(hoverAlpha() - 0.071) < 0.00001, "A see-through overlay leaves the hover fill alone")
+        button.mouseExited(with: exited); glass.removeFromSuperview()
         let topbarAction = ExtensionActionButton(item: item("top"), style: .toolbar)
         window.contentView?.addSubview(topbarAction)
         topbarAction.cell!.highlight(true, withFrame: topbarAction.bounds, in: topbarAction)

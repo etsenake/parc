@@ -160,12 +160,18 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect], owner: self)
         addTrackingArea(area); tracking = area
-        setHover(window.map { $0.isKeyWindow && bounds.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false)
+        setHover(window.map {
+            let point = $0.mouseLocationOutsideOfEventStream
+            return $0.isKeyWindow && bounds.contains(convert(point, from: nil)) && isTopmost(atWindowPoint: point)
+        } ?? false)
     }
     override func mouseEntered(with event: NSEvent) {
-        if event.trackingArea === tracking { setHover(true) } else { super.mouseEntered(with: event) }
+        if event.trackingArea === tracking { setHover(isTopmost(atWindowPoint: event.locationInWindow)) } else { super.mouseEntered(with: event) }
+    }
+    override func mouseMoved(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { setHover(isTopmost(atWindowPoint: event.locationInWindow)) } else { super.mouseMoved(with: event) }
     }
     override func mouseExited(with event: NSEvent) {
         if event.trackingArea === tracking { setHover(false) } else { super.mouseExited(with: event) }

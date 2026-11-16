@@ -10,8 +10,13 @@ import QuartzCore
 private final class FlippedControlHost: NSView { override var isFlipped: Bool { true } }
 private final class TrackingEvent: NSEvent {
     var area: NSTrackingArea?
+    var location = NSPoint.zero
+    var eventWindow: NSWindow?
     override var trackingArea: NSTrackingArea? { area }
+    override var locationInWindow: NSPoint { location }
+    override var window: NSWindow? { eventWindow }
 }
+private final class SeeThroughView: NSView { override func hitTest(_ point: NSPoint) -> NSView? { nil } }
 
 @main struct SplitPaneControlPresentationTests {
     @MainActor static func main() {
@@ -43,7 +48,7 @@ private final class TrackingEvent: NSEvent {
         check(control.hitTest(NSPoint(x: 30, y: 30)) === control, "native button owns glyph hit")
         check((control.cell as? NSButtonCell)?.highlightsBy == [], "system cell does not add an unrelated press fill")
         func ownedAreas() -> [NSTrackingArea] {
-            control.trackingAreas.filter { $0.owner === control && $0.options == [.mouseEnteredAndExited, .inVisibleRect, .activeInKeyWindow] }
+            control.trackingAreas.filter { $0.owner === control && $0.options == [.mouseEnteredAndExited, .mouseMoved, .inVisibleRect, .activeInKeyWindow] }
         }
         check(ownedAreas().count == 1, "one decoration tracking owner alongside AppKit's own tracking")
         let old = TrackingEvent(); old.area = ownedAreas()[0]
@@ -127,6 +132,20 @@ private final class TrackingEvent: NSEvent {
         lock.appearance = NSAppearance(named: .aqua); lock.viewDidChangeEffectiveAppearance()
         lock.mouseEntered(with: lockArea)
         check(lock.isHovered && abs(lockSurface.opacity - 0.05) < 0.00001, "lock shares the symbol hover surface")
+        lock.mouseExited(with: lockArea)
+        lockArea.location = lock.convert(NSPoint(x: 12, y: 12), to: nil)
+        let cover = NSView(frame: lock.frame.insetBy(dx: -4, dy: -4)); host.addSubview(cover)
+        lock.mouseEntered(with: lockArea)
+        check(!lock.isHovered && lockSurface.opacity == 0, "a command surface covering the control keeps its hover off")
+        let lockMove = NSEvent.mouseEvent(with: .mouseMoved, location: lockArea.location, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!
+        cover.removeFromSuperview(); lock.mouseMoved(with: lockMove)
+        check(lock.isHovered && abs(lockSurface.opacity - 0.05) < 0.00001, "moving out from under the cover restores hover")
+        lock.mouseExited(with: lockArea)
+        let glass = SeeThroughView(frame: cover.frame); host.addSubview(glass)
+        lock.mouseEntered(with: lockArea)
+        check(lock.isHovered, "a see-through overlay leaves hover alone")
+        glass.removeFromSuperview()
         lock.mouseExited(with: lockArea); lock.removeFromSuperview()
 
         typealias LayoutSkip = SplitPaneControlLayoutSkip
@@ -255,6 +274,16 @@ private final class TrackingEvent: NSEvent {
         check(!reveal.isRevealed && revealAreas().isEmpty, "hidden original pane releases root tracking")
         pane.isHidden = false; reveal.update(host: pane, bar: bar, focused: false)
         check(reveal.isRevealed, "revealed pane samples pointer without synthetic input")
+        let paneMove = TrackingEvent(); paneMove.area = revealAreas()[0]; paneMove.eventWindow = window
+        let paneCover = NSView(frame: pane.frame); host.addSubview(paneCover)
+        reveal.mouseMoved(with: paneMove)
+        check(!reveal.isHovered && !reveal.isRevealed, "moving onto a command surface over a background pane's top hides its options")
+        paneCover.removeFromSuperview(); reveal.mouseMoved(with: paneMove)
+        check(reveal.isRevealed, "moving out from under the cover reveals the pane's options again")
+        let paneGlass = SeeThroughView(frame: pane.frame); host.addSubview(paneGlass)
+        reveal.mouseMoved(with: paneMove)
+        check(reveal.isRevealed, "a see-through overlay leaves the pane's hover reveal alone")
+        paneGlass.removeFromSuperview()
         reveal.invalidate(); reveal.mouseEntered(with: current)
         check(!reveal.isRevealed && revealAreas().isEmpty, "retirement invalidates old original area")
         weak var retiredReveal: PaneControlVisibility?

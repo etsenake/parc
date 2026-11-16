@@ -101,8 +101,8 @@ import AppKit
                   "The two-by-24 grip is centred on the handle")
         try check(handle.hitTest(NSPoint(x: 395, y: 150)) == nil, "The handle takes no mouse events (pan and double click do nothing here)")
         try check(handle.trackingAreas.count == 1 && handle.trackingAreas[0].rect == handle.region
-                  && handle.trackingAreas[0].options == [.mouseEnteredAndExited, .activeInKeyWindow, .enabledDuringMouseDrag],
-                  "Hover tracks the band with the handle's 0x421 options")
+                  && handle.trackingAreas[0].options == [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .enabledDuringMouseDrag],
+                  "Hover tracks the band with the handle's 0x423 options")
         split.addArrangedSubview(other)
         split.configure(orientation: .horizontal, factors: [1, 1])
         try check(!handle.isShown && handle.region.isEmpty && handle.trackingAreas.isEmpty && grip?.isHidden == true,

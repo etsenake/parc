@@ -179,10 +179,14 @@ final class LibraryRailTile: PointingHandButton {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self)
+        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInActiveApp, .inVisibleRect], owner: self)
         tracking = next; addTrackingArea(next)
     }
-    override func mouseEntered(with event: NSEvent) { hovered = isEnabled }
+    override func mouseEntered(with event: NSEvent) { hovered = isEnabled && isTopmost(atWindowPoint: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        hovered = isEnabled && isTopmost(atWindowPoint: event.locationInWindow)
+    }
     override func mouseExited(with event: NSEvent) { hovered = false }
     override func viewDidHide() { super.viewDidHide(); hovered = false }
     override func mouseDown(with event: NSEvent) {

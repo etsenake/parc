@@ -174,7 +174,11 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         }
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseEntered(with event: NSEvent) { isHovered = isTopmost(atWindowPoint: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { isHovered = isTopmost(atWindowPoint: event.locationInWindow) }
+        super.mouseMoved(with: event)
+    }
     override func mouseExited(with event: NSEvent) { isHovered = false }
     override func viewDidHide() { super.viewDidHide(); clearHover() }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -278,7 +282,11 @@ final class SidebarSpaceHeaderEditButton: PointingHandButton {
 
     override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseEntered(with event: NSEvent) { isHovered = isTopmost(atWindowPoint: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { isHovered = isTopmost(atWindowPoint: event.locationInWindow) }
+        super.mouseMoved(with: event)
+    }
     override func mouseExited(with event: NSEvent) { isHovered = false }
     func clearHover() { isHovered = false }
 

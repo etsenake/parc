@@ -46,10 +46,14 @@ import QuartzCore
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInActiveApp, .inVisibleRect], owner: self)
         addTrackingArea(area); tracking = area
     }
-    override func mouseEntered(with event: NSEvent) { setHovered(true) }
+    override func mouseEntered(with event: NSEvent) { setHovered((superview ?? self).isTopmost(atWindowPoint: event.locationInWindow)) }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        setHovered((superview ?? self).isTopmost(atWindowPoint: event.locationInWindow))
+    }
     override func mouseExited(with event: NSEvent) { setHovered(false) }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil { setHovered(false, animated: false) }

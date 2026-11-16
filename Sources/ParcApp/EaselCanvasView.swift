@@ -829,7 +829,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        let next = !drawing && start == nil && editor == nil && !session.isClosed ? object(at: point)?.id : nil
+        let next = !drawing && start == nil && editor == nil && !session.isClosed
+            && isTopmost(atWindowPoint: event.locationInWindow) ? object(at: point)?.id : nil
         if hoveredObjectID != next { hoveredObjectID = next; invalidateIncrementalDisplay() }
         super.mouseMoved(with: event)
     }

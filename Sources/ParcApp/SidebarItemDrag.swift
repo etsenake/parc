@@ -265,7 +265,7 @@ final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityAct
         if let tracking { removeTrackingArea(tracking) }
         let area = NSTrackingArea(rect: bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect], owner: self)
         addTrackingArea(area); tracking = area
-        let point = window.flatMap { $0.isKeyWindow ? convert($0.mouseLocationOutsideOfEventStream, from: nil) : nil }
+        let point = window.flatMap { $0.isKeyWindow ? topmostPoint(atWindowPoint: $0.mouseLocationOutsideOfEventStream) : nil }
         let wasHover = hover
         hover = point.map { bounds.contains($0) } ?? false
         updateLeadingHover(point)
@@ -273,11 +273,18 @@ final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityAct
         trackedWindow = window
         updateColor()
     }
-    override func mouseEntered(with event: NSEvent) {
-        updateLeadingHover(convert(event.locationInWindow, from: nil))
-        guard !hover else { return }; hover = true; updateColor()
+    override func mouseEntered(with event: NSEvent) { pointerMoved(event, entering: true) }
+    override func mouseMoved(with event: NSEvent) { pointerMoved(event, entering: false) }
+    private func pointerMoved(_ event: NSEvent, entering: Bool) {
+        let point = topmostPoint(atWindowPoint: event.locationInWindow)
+        updateLeadingHover(point)
+        let inside = point != nil || entering && isTopmost(atWindowPoint: event.locationInWindow)
+        guard hover != inside else { return }; hover = inside; updateColor()
     }
-    override func mouseMoved(with event: NSEvent) { updateLeadingHover(convert(event.locationInWindow, from: nil)) }
+    private func topmostPoint(atWindowPoint point: NSPoint) -> NSPoint? {
+        let local = convert(point, from: nil)
+        return bounds.contains(local) && isTopmost(atWindowPoint: point) ? local : nil
+    }
     override func mouseExited(with event: NSEvent) {
         updateLeadingHover(nil)
         guard hover else { return }; hover = false; updateColor()

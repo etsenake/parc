@@ -221,10 +221,15 @@ final class MiniPlayerDeck: NSView {
 
     override func updateTrackingAreas() {
         if let tracking { removeTrackingArea(tracking) }
-        tracking = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+        tracking = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
         addTrackingArea(tracking!); super.updateTrackingAreas()
     }
-    override func mouseEntered(with event: NSEvent) { updateHover(true) }
+    override func mouseEntered(with event: NSEvent) { updateHover((superview ?? self).isTopmost(atWindowPoint: event.locationInWindow)) }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let inside = (superview ?? self).isTopmost(atWindowPoint: event.locationInWindow)
+        if inside != pointerInside { updateHover(inside) }
+    }
     override func mouseExited(with event: NSEvent) { updateHover(false) }
     func updateHover(_ inside: Bool) {
         pointerInside = inside

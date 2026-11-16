@@ -78,16 +78,22 @@ final class SplitMarginHandleView: NSView {
         trackingArea = nil
         let band = region
         guard !band.isEmpty else { return }
-        let area = NSTrackingArea(rect: band, options: [.mouseEnteredAndExited, .activeInKeyWindow, .enabledDuringMouseDrag],
+        let area = NSTrackingArea(rect: band, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .enabledDuringMouseDrag],
                                   owner: self, userInfo: nil)
         addTrackingArea(area); trackingArea = area
         if let window, window.isKeyWindow {
-            setHovered(band.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)), animated: false)
+            let point = window.mouseLocationOutsideOfEventStream
+            setHovered(band.contains(convert(point, from: nil)) && isTopmost(atWindowPoint: point), animated: false)
         } else { setHovered(false, animated: false) }
     }
     override func mouseEntered(with event: NSEvent) {
         guard event.trackingArea === trackingArea, isShown, window?.isKeyWindow == true else { return }
-        setHovered(true, animated: true)
+        setHovered(isTopmost(atWindowPoint: event.locationInWindow), animated: true)
+    }
+    override func mouseMoved(with event: NSEvent) {
+        guard trackingArea != nil, region.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        guard isShown, window?.isKeyWindow == true else { return }
+        setHovered(isTopmost(atWindowPoint: event.locationInWindow), animated: true)
     }
     override func mouseExited(with event: NSEvent) {
         guard event.trackingArea === trackingArea else { return }

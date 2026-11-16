@@ -60,11 +60,17 @@ final class EaselPaletteButton: PointingHandButton {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func updateTrackingAreas() {
         if let hoverTracking { removeTrackingArea(hoverTracking) }
-        let tracking = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let tracking = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(tracking); hoverTracking = tracking
         super.updateTrackingAreas()
     }
-    override func mouseEntered(with event: NSEvent) { pointerInside = true; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { pointerInside = isTopmost(atWindowPoint: event.locationInWindow); needsDisplay = true }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = isTopmost(atWindowPoint: event.locationInWindow)
+        guard value != pointerInside else { return }
+        pointerInside = value; needsDisplay = true
+    }
     override func mouseExited(with event: NSEvent) { pointerInside = false; needsDisplay = true }
     override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); pointerInside = false; needsDisplay = true }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }

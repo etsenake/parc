@@ -868,8 +868,8 @@ private final class CaptureLibraryTile: NSView {
     }
     func resamplePointer(animated: Bool = true) {
         hovered = window.map { window in
-            let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-            return window.isKeyWindow && visibleRect.contains(point) && hitShapeContains(point)
+            let location = window.mouseLocationOutsideOfEventStream, point = convert(location, from: nil)
+            return window.isKeyWindow && visibleRect.contains(point) && hitShapeContains(point) && isTopmost(atWindowPoint: location)
         } ?? false
         shouldHighlight = hovered && !scrolling
         apply(animated: animated)
@@ -901,8 +901,11 @@ private final class CaptureLibraryTile: NSView {
         let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         area = next; addTrackingArea(next)
     }
-    override func mouseEntered(with event: NSEvent) { hover(hitShapeContains(convert(event.locationInWindow, from: nil))) }
-    override func mouseMoved(with event: NSEvent) { hover(hitShapeContains(convert(event.locationInWindow, from: nil))) }
+    override func mouseEntered(with event: NSEvent) { pointerMoved(event) }
+    override func mouseMoved(with event: NSEvent) { pointerMoved(event) }
+    private func pointerMoved(_ event: NSEvent) {
+        hover(hitShapeContains(convert(event.locationInWindow, from: nil)) && isTopmost(atWindowPoint: event.locationInWindow))
+    }
     override func mouseExited(with event: NSEvent) { hover(false) }
     private func hover(_ inside: Bool) {
         guard inside != hovered else { return }

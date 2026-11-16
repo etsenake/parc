@@ -874,10 +874,16 @@ enum LibraryPageHeader {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area); tracking = area
     }
-    override func mouseEntered(with event: NSEvent) { hovered = true; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { hovered = isTopmost(atWindowPoint: event.locationInWindow); needsDisplay = true }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = isTopmost(atWindowPoint: event.locationInWindow)
+        guard value != hovered else { return }
+        hovered = value; needsDisplay = true
+    }
     override func mouseExited(with event: NSEvent) { hovered = false; needsDisplay = true }
     override func draw(_ dirtyRect: NSRect) {
         if style == .header { drawHeader(); return }
@@ -1241,12 +1247,18 @@ enum LibraryPageHeader {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let area { removeTrackingArea(area) }
-        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         area = next; addTrackingArea(next)
     }
     override var isHidden: Bool { didSet { if isHidden { hovered = false }; refreshTint() } }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); refreshTint() }
-    override func mouseEntered(with event: NSEvent) { hovered = true; refreshTint() }
+    override func mouseEntered(with event: NSEvent) { hovered = isTopmost(atWindowPoint: event.locationInWindow); refreshTint() }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = isTopmost(atWindowPoint: event.locationInWindow)
+        guard value != hovered else { return }
+        hovered = value; refreshTint()
+    }
     override func mouseExited(with event: NSEvent) { hovered = false; refreshTint() }
     func refreshTint() {
         contentTintColor = DownloadAccessoryColors.foreground(hovered: hovered, appearance: effectiveAppearance)
@@ -1352,10 +1364,18 @@ enum LibraryPageHeader {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let area { removeTrackingArea(area) }
-        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         area = next; addTrackingArea(next)
     }
-    override func mouseEntered(with event: NSEvent) { hovered = true; shouldHighlight = !scrolling; updatePresentation() }
+    override func mouseEntered(with event: NSEvent) {
+        hovered = isTopmost(atWindowPoint: event.locationInWindow); shouldHighlight = hovered && !scrolling; updatePresentation()
+    }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        let value = isTopmost(atWindowPoint: event.locationInWindow)
+        guard value != hovered else { return }
+        hovered = value; shouldHighlight = value && !scrolling; updatePresentation()
+    }
     override func mouseExited(with event: NSEvent) { hovered = false; shouldHighlight = false; updatePresentation() }
     @objc private func scrollBegan(_ notification: Notification) {
         guard notification.object as? NSScrollView === enclosingScrollView else { return }
@@ -1367,7 +1387,10 @@ enum LibraryPageHeader {
     }
     @objc private func windowFocusChanged(_ notification: Notification) { resamplePointer(); updatePresentation() }
     private func resamplePointer() {
-        hovered = window.map { $0.isKeyWindow && visibleRect.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false
+        hovered = window.map {
+            let point = $0.mouseLocationOutsideOfEventStream
+            return $0.isKeyWindow && visibleRect.contains(convert(point, from: nil)) && isTopmost(atWindowPoint: point)
+        } ?? false
         shouldHighlight = hovered && !scrolling
     }
     private func updatePresentation() {

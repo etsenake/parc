@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix="parc-incognito-window-theme-") as direc
     executable = Path(directory) / "checks"
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
                     str(root / "Sources/ParcCore/SpaceTheme.swift"), str(app / "ThemeRenderer.swift"),
-                    str(app / "SidebarAddressPill.swift"), str(Path(__file__).with_name("main.swift")),
+                    str(app / "SidebarAddressPill.swift"), str(app / "PointerCover.swift"), str(Path(__file__).with_name("main.swift")),
                     "-o", str(executable)], check=True)
     shutil.copytree(root / "Resources/FloatingSidebar", Path(directory) / "FloatingSidebar")
     shutil.copytree(root / "Resources/ThemeTextures", Path(directory) / "ThemeTextures")

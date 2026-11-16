@@ -368,11 +368,15 @@ enum SpaceManagementLayout {
     override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
     override func updateTrackingAreas() {
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area); tracking = area
         super.updateTrackingAreas()
     }
-    override func mouseEntered(with event: NSEvent) { hovered = true }
+    override func mouseEntered(with event: NSEvent) { hovered = isTopmost(atWindowPoint: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        hovered = isTopmost(atWindowPoint: event.locationInWindow)
+    }
     override func mouseExited(with event: NSEvent) { hovered = false }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil { hovered = false }
@@ -400,11 +404,15 @@ enum SpaceManagementLayout {
     override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill() }
     override func updateTrackingAreas() {
         if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
         addTrackingArea(area); tracking = area
         super.updateTrackingAreas()
     }
-    override func mouseEntered(with event: NSEvent) { hovered = isEnabled }
+    override func mouseEntered(with event: NSEvent) { hovered = isEnabled && isTopmost(atWindowPoint: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) {
+        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { super.mouseMoved(with: event); return }
+        hovered = isEnabled && isTopmost(atWindowPoint: event.locationInWindow)
+    }
     override func mouseExited(with event: NSEvent) { hovered = false }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil { hovered = false }
