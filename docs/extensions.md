@@ -65,20 +65,19 @@ owns popup/side-panel replacement, closure and saved-focus restoration.
 `hasEnabledExtensions(for:)` validates the selected attached page and its
 Browser-owned Profile, then reads Chromium's enabled registry. It uses the
 extension-settings visibility predicate, excluding normal internal components.
-Availability also counts the rare extensions without an action. Off-the-record
-registry lookup uses Chromium's original Profile; that count does not grant
-incognito access. So in a pop-up from a private window, Extensions can appear
-when no extension is allowed in private windows; its Site Control Center then
-shows no extension tiles, only Manage and Add Extension. Every action applies
-its own page/permission checks.
+Availability also counts the rare extensions without an action. A private
+Profile reads its original Profile's registry, but in private windows and their
+pop-ups availability counts only extensions allowed in Incognito, the rule
+Chromium's toolbar model uses for private tiles. Every action applies its own
+page/permission checks.
 
 Registry load/unload notifications feed a coalesced window callback. Shutdown
 removes observation and invalidates pending deliveries.
 
 ### Popup extension-menu metadata carrier
 
-The native `enabledExtensions(for:)` API snapshots the same registry, including
-extensions without an action. Manifest artwork loads asynchronously at 32 logical
+The native `enabledExtensions(for:)` API snapshots the same extensions, including
+those without an action. Manifest artwork loads asynchronously at 32 logical
 points with available scale representations; missing or failed images stay nil.
 The Site Control Center reads action snapshots and does not need this metadata.
 Chromium's manifest handler gives every ordinary extension that declares no

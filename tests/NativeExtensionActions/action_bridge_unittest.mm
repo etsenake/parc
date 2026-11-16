@@ -29,6 +29,7 @@
 #include "extension_action_container.h"
 #include "extensions/browser/extension_action.h"
 #include "extensions/browser/extension_action_manager.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
@@ -411,6 +412,74 @@ TEST_F(NativeExtensionActionsTest, EnabledExtensionWithoutActionInvalidatesGate)
   EXPECT_FALSE(bridge_->HasEnabledExtensions(*contents_));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(previous + 2, notifications_);
+}
+TEST_F(NativeExtensionActionsTest,
+       PrivateAvailabilityCountsOnlyExtensionsAllowedThere) {
+  Profile* incognito = profile()->GetPrimaryOTRProfile(true);
+  EXPECT_TRUE(
+      extensions::extension_action_test_util::CreateToolbarModelForProfile(
+          incognito));
+  auto private_browser =
+      CreateBrowser(incognito, BrowserWindowInterface::TYPE_NORMAL, false);
+  ActionHost private_host;
+  auto private_container = std::make_unique<NativeExtensionActionContainer>(
+      *private_browser, private_host);
+  int private_notifications = 0;
+  auto private_bridge = std::make_unique<NativeExtensionActionBridge>(
+      *private_browser, *private_container,
+      base::BindRepeating([](content::WebContents&) { return true; }),
+      base::BindLambdaForTesting([&] { ++private_notifications; }));
+  private_host.bridge = private_bridge.get();
+  AddTab(private_browser.get(), GURL("https://actions.test/private"));
+  auto* private_contents =
+      private_browser->GetTabStripModel()->GetActiveWebContents();
+  const auto private_actions = [&] {
+    return private_bridge->Snapshot(*private_contents, @"private-page",
+                                    @"private-profile");
+  };
+  AddPreinstalledExtension("No action");
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(bridge_->HasEnabledExtensions(*contents_));
+  EXPECT_EQ(2u, bridge_->EnabledSnapshot(*contents_).count);
+  EXPECT_FALSE(private_bridge->HasEnabledExtensions(*private_contents));
+  EXPECT_EQ(0u, private_bridge->EnabledSnapshot(*private_contents).count);
+  EXPECT_EQ(0u, private_actions().count);
+
+  auto allowed = extensions::ExtensionBuilder("Private Beta")
+                     .SetManifestVersion(3)
+                     .SetAction(extensions::ActionInfo::Type::kAction)
+                     .Build();
+  extensions::ExtensionPrefs::Get(profile())->SetIsIncognitoEnabled(
+      allowed->id(), true);
+  const int previous = private_notifications;
+  extensions::ExtensionRegistrar::Get(profile())->AddExtension(allowed);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_LT(previous, private_notifications);
+  NSString* allowed_id = base::SysUTF8ToNSString(allowed->id());
+  EXPECT_TRUE(private_bridge->HasEnabledExtensions(*private_contents));
+  NSArray<PCNativeEnabledExtension*>* enabled =
+      private_bridge->EnabledSnapshot(*private_contents);
+  EXPECT_EQ(1u, enabled.count);
+  EXPECT_NSEQ(allowed_id, enabled.firstObject.identifier);
+  NSArray<PCNativeExtensionAction*>* actions = private_actions();
+  EXPECT_EQ(1u, actions.count);
+  EXPECT_NSEQ(allowed_id, actions.firstObject.identifier);
+  EXPECT_EQ(3u, bridge_->EnabledSnapshot(*contents_).count);
+
+  extensions::ExtensionRegistrar::Get(profile())->RemoveExtension(
+      allowed->id(), extensions::UnloadedExtensionReason::DISABLE);
+  EXPECT_FALSE(private_bridge->HasEnabledExtensions(*private_contents));
+  EXPECT_TRUE(bridge_->HasEnabledExtensions(*contents_));
+
+  private_host.bridge = nullptr;
+  private_bridge->Shutdown(base::DoNothing());
+  private_bridge.reset();
+  private_container->Shutdown();
+  private_container.reset();
+  private_browser->GetTabStripModel()->CloseAllTabs();
+  private_browser->GetFeatures().TearDownPreBrowserWindowDestruction();
+  private_browser.reset();
+  base::RunLoop().RunUntilIdle();
 }
 TEST_F(NativeExtensionActionsTest, EnabledMetadataDoesNotInventActionsOrIcons) {
   auto* registrar = extensions::ExtensionRegistrar::Get(profile());

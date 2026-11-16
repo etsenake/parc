@@ -31,6 +31,7 @@
 #include "extensions/browser/permissions/site_permissions_helper.h"
 #include "extensions/browser/extension_action_manager.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/browser/image_loader.h"
 #include "extensions/browser/ui_util.h"
 #include "extensions/common/extension.h"
@@ -62,7 +63,7 @@ struct NativeEnabledExtensionToken {
   content::WeakDocumentPtr document;
   uint64_t generation;
 };
-}  // namespace parc
+}
 
 @interface PCNativeEnabledExtension () {
  @package
@@ -230,7 +231,13 @@ std::vector<extensions::ImageLoader::ImageRepresentation> ManifestRepresentation
   }
   return result;
 }
-}  // namespace
+bool AvailableInProfile(const extensions::Extension& extension,
+                        Profile& profile) {
+  return extensions::ui_util::ShouldDisplayInExtensionSettings(extension) &&
+         (!profile.IsOffTheRecord() ||
+          extensions::util::IsIncognitoEnabled(&extension, &profile));
+}
+}
 struct NativeExtensionActionBridge::DispatchState {
   size_t active = 0;
   bool stopped = false;
@@ -293,9 +300,10 @@ bool NativeExtensionActionBridge::HasEnabledExtensions(
     content::WebContents& contents) const {
   if (!ValidPage(contents) || !registry_observation_.IsObserving())
     return false;
-  for (const auto& extension : extensions::ExtensionRegistry::Get(browser_.GetProfile())
-                                   ->enabled_extensions()) {
-    if (extensions::ui_util::ShouldDisplayInExtensionSettings(*extension))
+  auto& profile = *browser_.GetProfile();
+  for (const auto& extension :
+       extensions::ExtensionRegistry::Get(&profile)->enabled_extensions()) {
+    if (AvailableInProfile(*extension, profile))
       return true;
   }
   return false;
@@ -374,7 +382,7 @@ void NativeExtensionActionBridge::DeliverChanged() {
     return;
   change_posted_ = false;
   auto callback = changed_;
-  callback.Run();  // Last operation: shell can destroy this bridge.
+  callback.Run();
 }
 void NativeExtensionActionBridge::DidFinishNavigation(
     content::NavigationHandle* handle) {
@@ -387,8 +395,6 @@ void NativeExtensionActionBridge::TitleWasSet(content::NavigationEntry*) {
 void NativeExtensionActionBridge::WebContentsDestroyed() {
   Observe(nullptr);
   ++generation_;
-  // The TabList may still name this destroying contents during its observer
-  // stack. Reconcile only after that genuine owner has updated membership.
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostNonNestableTask(
       FROM_HERE, base::BindOnce(&NativeExtensionActionBridge::Changed,
                                 weak_factory_.GetWeakPtr()));
@@ -457,9 +463,10 @@ NSArray<PCNativeEnabledExtension*>* NativeExtensionActionBridge::EnabledSnapshot
   auto document = contents.GetPrimaryMainFrame()->GetWeakDocumentPtr();
   auto tab = tabs::TabInterface::MaybeGetFromContents(&contents)->GetWeakPtr();
   std::vector<scoped_refptr<const extensions::Extension>> extensions;
-  for (const auto& extension : extensions::ExtensionRegistry::Get(browser_.GetProfile())
-                                   ->enabled_extensions()) {
-    if (extensions::ui_util::ShouldDisplayInExtensionSettings(*extension))
+  auto& profile = *browser_.GetProfile();
+  for (const auto& extension :
+       extensions::ExtensionRegistry::Get(&profile)->enabled_extensions()) {
+    if (AvailableInProfile(*extension, profile))
       extensions.push_back(extension);
   }
   NSMutableArray<PCNativeEnabledExtension*>* result = [NSMutableArray array];
@@ -541,7 +548,6 @@ NSArray<PCNativeExtensionAction*>* NativeExtensionActionBridge::Snapshot(
   auto document = contents.GetPrimaryMainFrame()->GetWeakDocumentPtr();
   auto* tab = tabs::TabInterface::MaybeGetFromContents(&contents);
   const auto tab_weak = tab->GetWeakPtr();
-  // Keep real model objects while copying. No renderer/model pointer escapes.
   std::vector<std::shared_ptr<ExtensionActionViewModel>> models;
   for (const auto& id : container_.model_->action_ids()) {
     if (auto model = container_.Find(id))
@@ -580,8 +586,6 @@ NSArray<PCNativeExtensionAction*>* NativeExtensionActionBridge::Snapshot(
     value.enabled = model->IsEnabled(&contents);
     const auto image = model->GetIcon(&contents, gfx::Size(32, 32));
     if (image.IsImage()) {
-      // Eager native bitmap representations outlive the ImageSkia source's
-      // Browser/Profile dependency. Never retain the lazy model-backed source.
       value.icon = gfx::NSImageFromImageSkia(*image.GetImage().ToImageSkia());
     }
     const auto unbadged =
@@ -591,8 +595,6 @@ NSArray<PCNativeExtensionAction*>* NativeExtensionActionBridge::Snapshot(
       value.iconWithoutBadge =
           gfx::NSImageFromImageSkia(*unbadged.GetImage().ToImageSkia());
     }
-    // Rasterization calls the real model's color-provider closure. Revalidate
-    // before reading further page/profile state, even if rendering reentered.
     if (!weak || generation != generation_ ||
         !document.AsRenderFrameHostIfValid() || !ValidPage(contents)) {
       return @[];
@@ -610,8 +612,6 @@ NSArray<PCNativeExtensionAction*>* NativeExtensionActionBridge::Snapshot(
         const int tab_id = sessions::SessionTabHelper::IdForTab(&contents).id();
         value.badgeText =
             base::SysUTF8ToNSString(action->GetDisplayBadgeText(tab_id));
-        // IconWithBadgeImageSource's resolution: an unset background is the
-        // theme default and is otherwise opaque; unset text has max contrast.
         const SkColor set_background = action->GetBadgeBackgroundColor(tab_id);
         const SkColor background =
             SkColorGetA(set_background) == SK_AlphaTRANSPARENT
@@ -673,8 +673,6 @@ bool NativeExtensionActionBridge::SetPinned(PCNativeExtensionAction* value,
   if (!model)
     return false;
   container_.SetPinned(model->GetId(), pinned);
-  // Accepted real model operation; synchronous observers may have replaced
-  // this owner. Do not dereference owner/model membership after dispatch.
   return true;
 }
-}  // namespace parc
+}
