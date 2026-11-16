@@ -90,6 +90,7 @@ step swift_test native-messaging-hosts -parse-as-library \
 step bash "$repo_root/scripts/test-shortcut-persist-skip.sh"
 step bash "$repo_root/scripts/test-split-link-snapshot.sh"
 step bash "$repo_root/scripts/test-split-link-policy.sh"
+step bash "$repo_root/tests/NativeShiftLink/run.sh"
 step bash "$repo_root/scripts/test-page-shell-notify.sh"
 step bash "$repo_root/scripts/test-top-band-color.sh"
 step bash "$repo_root/scripts/test-pane-compositor-policy.sh"

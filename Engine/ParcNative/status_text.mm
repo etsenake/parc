@@ -90,6 +90,7 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
     case PCNativeStatusLinkOutcomeNewWindow: return @"Open %@ in a new window";
     case PCNativeStatusLinkOutcomePeek: return @"Open %@ in Peek";
     case PCNativeStatusLinkOutcomeSplitView: return @"Open %@ in Split View";
+    case PCNativeStatusLinkOutcomeThisPeek: return @"Open %@ in this Peek";
     case PCNativeStatusLinkOutcomeNone: return nil;
   }
   return nil;

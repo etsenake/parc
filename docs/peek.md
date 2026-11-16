@@ -146,3 +146,21 @@ Parent transfer, orphan preservation, promotion and new-tab provenance already
 use the original page and parent identity. Model/native components cover those
 transactions, confirmation timers, renderer acknowledgments and focus
 cancellation; window key-loop checks cover forward and backward traversal.
+
+## Links inside a Peek
+
+Shift-click, the deliberate "peek at this" gesture, opens the link in that same
+Peek. The engine turns the click's new-window request into an ordinary
+current-tab navigation of the Peek's page, keeping the user gesture, referrer
+and initiator, so the usual navigation rules apply and the page joins the Peek's
+own Back and Forward history, two-finger swipe included. It does this only for
+HTTP(S) links while Shift-click Peek is switched on and the Peek is the window's
+shown, interactive Peek (`canNavigatePeekLinkFrom`). Otherwise a Shift-click in
+a Peek opens a new window, as it did before. A private window's Peek stays in its private
+Profile, and Space routing rules never apply to Shift-click.
+
+Links in ordinary embedded frames take the same route as the page's own, inside
+and outside a Peek; fenced ad frames keep Chromium's behaviour. Inside a Peek, an
+embedded frame sandboxed against navigating the page keeps the new window, though
+the hover capsule still says "in this Peek". Other modifier clicks keep their
+routes; see [web interactions](web-interactions.md#hovered-link-status).

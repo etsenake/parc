@@ -288,6 +288,15 @@ static void PresentationAndContent() {
   Check([label.stringValue isEqual:@"secure.test/path"],
         "a modifier the shell cannot split keeps the plain URL");
   [controller updateModifierFlags:0];
+  controller.linkOutcome = ^PCNativeStatusLinkOutcome(NSEventModifierFlags flags, NSURL*) {
+    ++asked;
+    return flags == NSEventModifierFlagShift ? PCNativeStatusLinkOutcomeThisPeek
+                                             : PCNativeStatusLinkOutcomeNone;
+  };
+  [controller updateModifierFlags:NSEventModifierFlagShift];
+  Check([label.stringValue isEqual:@"Open https://secure.test/path in this Peek"],
+        "Shift inside a Peek explains the link opening in that same Peek");
+  [controller updateModifierFlags:0];
   [controller updateText:@"Preparing Reader…"];
   [controller updateModifierFlags:NSEventModifierFlagCommand];
   Check([label.stringValue isEqual:@"Preparing Reader…"], "non-link status text is never explained");

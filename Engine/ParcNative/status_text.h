@@ -11,6 +11,7 @@ typedef NS_ENUM(NSInteger, PCNativeStatusLinkOutcome) {
   PCNativeStatusLinkOutcomeNewWindow,
   PCNativeStatusLinkOutcomePeek,
   PCNativeStatusLinkOutcomeSplitView,
+  PCNativeStatusLinkOutcomeThisPeek,
 };
 
 @interface PCNativeStatusTextController : NSObject

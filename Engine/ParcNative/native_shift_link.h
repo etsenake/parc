@@ -1,0 +1,37 @@
+// Copyright 2026 Parc contributors.
+#ifndef PARC_NATIVE_NATIVE_SHIFT_LINK_H_
+#define PARC_NATIVE_NATIVE_SHIFT_LINK_H_
+#import <AppKit/AppKit.h>
+#import "status_text.h"
+
+namespace parc {
+enum class NativeShiftLink { kOrdinary, kPeek, kSamePeek };
+
+struct NativeShiftLinkClick {
+  NSEventModifierFlags modifiers = 0;
+  bool shift_peek_enabled = false;
+  bool in_shown_peek = false;
+  bool frame_can_navigate_page = true;
+  bool can_open_peek = false;
+};
+
+inline NativeShiftLink ClassifyNativeShiftLink(const NativeShiftLinkClick& click) {
+  constexpr NSEventModifierFlags relevant = NSEventModifierFlagShift |
+      NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand;
+  if ((click.modifiers & relevant) != NSEventModifierFlagShift || !click.shift_peek_enabled)
+    return NativeShiftLink::kOrdinary;
+  if (click.in_shown_peek)
+    return click.frame_can_navigate_page ? NativeShiftLink::kSamePeek : NativeShiftLink::kOrdinary;
+  return click.can_open_peek ? NativeShiftLink::kPeek : NativeShiftLink::kOrdinary;
+}
+
+inline PCNativeStatusLinkOutcome NativeShiftLinkOutcome(NativeShiftLink link) {
+  switch (link) {
+    case NativeShiftLink::kPeek: return PCNativeStatusLinkOutcomePeek;
+    case NativeShiftLink::kSamePeek: return PCNativeStatusLinkOutcomeThisPeek;
+    case NativeShiftLink::kOrdinary: return PCNativeStatusLinkOutcomeNewWindow;
+  }
+  return PCNativeStatusLinkOutcomeNewWindow;
+}
+}
+#endif

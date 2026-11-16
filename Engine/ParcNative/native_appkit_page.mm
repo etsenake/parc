@@ -110,6 +110,7 @@
 #include "native_confirm_infobars.h"
 #include "net/base/net_errors.h"
 #include "sad_tab.h"
+#import "native_shift_link.h"
 #import "status_text.h"
 #include "tab_transfer.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
@@ -795,27 +796,30 @@ class NativePageState final
       PCNativePage* source = state->page_;
       NSString* scheme = url.scheme.lowercaseString;
       const bool web = [scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"];
-      const bool page_link = source && !source.peekParentPage && web &&
-          !state->StatusLinkInFencedFrame();
+      const bool web_link = source && web && !state->StatusLinkInFencedFrame();
       if (flags == option || flags == (option | command)) {
         auto* contents = state->contents();
-        return page_link && contents &&
+        return web_link && contents &&
                 NativeSplitLinkAvailable(*state->browser(), *contents)
             ? PCNativeStatusLinkOutcomeSplitView : PCNativeStatusLinkOutcomeNone;
       }
       if (flags != shift) return PCNativeStatusLinkOutcomeNone;
-      if (!page_link) return PCNativeStatusLinkOutcomeNewWindow;
+      if (!web_link) return PCNativeStatusLinkOutcomeNewWindow;
       PCNativeBrowserWindow* binding = AppKitBindingForBrowser(state->browser());
       id<PCNativeBrowserWindowClient> client = binding.client;
       if (![client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] ||
           ![client nativeBrowser:binding allowsPeekWithShift:YES])
         return PCNativeStatusLinkOutcomeNewWindow;
-      const bool peek =
-          [client respondsToSelector:@selector(nativeBrowser:canPeekLinkFromPage:)]
-              ? [client nativeBrowser:binding canPeekLinkFromPage:source]
-              : [client respondsToSelector:@selector(nativeBrowser:canPresentPeekFrom:)] &&
-                    [client nativeBrowser:binding canPresentPeekFrom:source];
-      return peek ? PCNativeStatusLinkOutcomePeek : PCNativeStatusLinkOutcomeNewWindow;
+      NativeShiftLinkClick click{.modifiers = flags, .shift_peek_enabled = true};
+      click.in_shown_peek =
+          [client respondsToSelector:@selector(nativeBrowser:canNavigatePeekLinkFromPage:)] &&
+          [client nativeBrowser:binding canNavigatePeekLinkFromPage:source];
+      click.can_open_peek = !click.in_shown_peek &&
+          ([client respondsToSelector:@selector(nativeBrowser:canPeekLinkFromPage:)]
+               ? [client nativeBrowser:binding canPeekLinkFromPage:source]
+               : [client respondsToSelector:@selector(nativeBrowser:canPresentPeekFrom:)] &&
+                     [client nativeBrowser:binding canPresentPeekFrom:source]);
+      return NativeShiftLinkOutcome(ClassifyNativeShiftLink(click));
     };
   }
   void PrepareFind(NSString* text) {

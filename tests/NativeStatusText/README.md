@@ -21,9 +21,9 @@ presentation. Resizing the page within docked DevTools keeps the capsule out of
 the tools pane.
 
 The capsule formats actual link URLs and asks the page's outcome callback for
-modifier descriptions. It explains background and foreground tabs, Peek, new
-windows and Split View; local messages such as Reader preparation remain plain
-text. Modifier changes update the description immediately; window focus, sheet
+modifier descriptions. It explains background and foreground tabs, Peek, the
+same Peek, new windows and Split View; local messages such as Reader
+preparation remain plain text. Modifier changes update the description immediately; window focus, sheet
 and navigation-state changes and crossing a fenced frame re-ask it once after
 the current event, and only an answer that changed redraws the capsule. Ordinary
 text waits half a second to appear and expands after 1.5 seconds; explained links

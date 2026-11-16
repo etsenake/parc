@@ -194,6 +194,7 @@ source_set("browser") {
     "native/native_keychain_namespace.h",
     "native/native_link_routing.h",
     "native/native_link_routing.mm",
+    "native/native_shift_link.h",
     "native/native_media_controls.mm",
     "native/native_page_binding.h",
     "native/native_page_binding.mm",

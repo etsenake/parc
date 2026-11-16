@@ -12,6 +12,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "content/public/browser/frame_tree_node_id.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -26,6 +27,8 @@
 #include "content/public/browser/weak_document_ptr.h"
 #include "native_appkit_host.h"
 #include "native_appkit_page.h"
+#import "native_shift_link.h"
+#include "services/network/public/mojom/web_sandbox_flags.mojom.h"
 #include "ui/base/page_transition_types.h"
 #include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
@@ -275,6 +278,16 @@ bool CanPresentSource(CreatedPage& state) {
       [binding.client respondsToSelector:@selector(nativeBrowser:canPresentPeekFrom:)] &&
       [binding.client nativeBrowser:binding canPresentPeekFrom:parent] &&
       source && state.Parent(*source) == parent;
+}
+bool CanNavigatePeekSource(CreatedPage& state) {
+  auto source = state.source_;
+  PCNativePage* page = source ? state.Parent(*source) : nil;
+  PCNativeBrowserWindow* binding = state.browser_ ?
+      AppKitBindingForBrowser(state.browser_.get()) : nil;
+  return page && binding &&
+      [binding.client respondsToSelector:@selector(nativeBrowser:canNavigatePeekLinkFromPage:)] &&
+      [binding.client nativeBrowser:binding canNavigatePeekLinkFromPage:page] &&
+      source && state.Parent(*source) == page;
 }
 bool CanRouteSource(CreatedPage& state) {
   auto source = state.source_;
@@ -651,21 +664,36 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
   auto* frame = content::RenderFrameHost::FromFrameToken(
       content::GlobalRenderFrameHostToken(params.initiator_process_id,
                                          *params.initiator_frame_token));
-  if (!frame || frame != source->GetPrimaryMainFrame() ||
+  auto* main_frame = source->GetPrimaryMainFrame();
+  if (!frame || frame->IsNestedWithinFencedFrame() ||
+      frame->GetOutermostMainFrame() != main_frame ||
       source->GetBrowserContext() != browser.GetProfile()) return nullptr;
-  auto creation = std::make_unique<CreatedPage>(*source, *frame, browser);
-  const auto relevant = NSEventModifierFlagShift | NSEventModifierFlagControl |
-      NSEventModifierFlagOption | NSEventModifierFlagCommand;
-  if ((creation->modifiers_ & relevant) != NSEventModifierFlagShift ||
-      !CanPresentSource(*creation)) return nullptr;
+  using Sandbox = network::mojom::WebSandboxFlags;
+  const bool frame_can_navigate_page = frame == main_frame ||
+      !frame->IsSandboxed(Sandbox::kTopNavigation) ||
+      !frame->IsSandboxed(Sandbox::kTopNavigationByUserActivation);
+  auto creation = std::make_unique<CreatedPage>(*source, *main_frame, browser);
   PCNativeBrowserWindow* binding = AppKitBindingForBrowser(&browser);
-  if (!binding ||
-      ![binding.client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] ||
-      ![binding.client nativeBrowser:binding allowsPeekWithShift:YES] ||
-      !CanPresentSource(*creation)) return nullptr;
+  NativeShiftLinkClick click{.modifiers = creation->modifiers_,
+      .frame_can_navigate_page = frame_can_navigate_page};
+  click.shift_peek_enabled = creation->Parent(*source) && binding &&
+      [binding.client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] &&
+      [binding.client nativeBrowser:binding allowsPeekWithShift:YES];
+  click.in_shown_peek = click.shift_peek_enabled && CanNavigatePeekSource(*creation);
+  click.can_open_peek = click.shift_peek_enabled && !click.in_shown_peek &&
+      CanPresentSource(*creation);
+  const auto link = ClassifyNativeShiftLink(click);
+  if (link == NativeShiftLink::kOrdinary ||
+      !(link == NativeShiftLink::kSamePeek ? CanNavigatePeekSource(*creation)
+                                           : CanPresentSource(*creation))) return nullptr;
   auto state = std::make_unique<NativePeekNavigation::State>(std::move(creation), params);
-
-  state->params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+  if (link == NativeShiftLink::kSamePeek) {
+    state->peek = false;
+    state->params.disposition = WindowOpenDisposition::CURRENT_TAB;
+    state->params.frame_tree_node_id = content::FrameTreeNodeId();
+  } else {
+    state->params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+  }
   return std::unique_ptr<NativePeekNavigation>(
       new NativePeekNavigation(std::move(state)));
 }

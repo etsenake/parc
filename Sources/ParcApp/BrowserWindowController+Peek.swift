@@ -9,7 +9,7 @@ extension BrowserWindowController {
             && !peeks.values.contains { $0.parentPage === page }
     }
 
-    private func windowAdmitsPeek(_ browser: PCNativeBrowserWindow, overLibrary: Bool = false,
+    func windowAdmitsPeek(_ browser: PCNativeBrowserWindow, overLibrary: Bool = false,
                                   ignoringCommandBar: Bool = false) -> Bool {
         browser === nativeBinding && !isPopupWindow
             && !isClosing && !wholeWindowClose && !windowClosePending && !windowCloseApproved && nativeFullscreenTabID == nil

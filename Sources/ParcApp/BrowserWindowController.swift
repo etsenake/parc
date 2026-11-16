@@ -1033,6 +1033,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                            ignoringCommandBar: true)
     }
 
+    func nativeBrowser(_ browser: PCNativeBrowserWindow, canNavigatePeekLinkFrom page: PCNativePage) -> Bool {
+        guard let peek = activePeek, peek.page === page, !page.isClosed, !peek.closePending, !promotingPeek,
+              PCNativeBrowserApplication.owner(of: page) === browser, peek.canInteract?() == true else { return false }
+        return windowAdmitsPeek(browser, overLibrary: archivePreviews[peek.identity] != nil, ignoringCommandBar: true)
+    }
+
     private func linkClickPaneID(showing page: PCNativePage) -> UUID? {
         guard activePeek == nil else { return nil }
         return LinkClickPane.id(selection: selectedTabIDs, current: currentTabID, rendered: renderedPaneIDs,

@@ -216,21 +216,24 @@ Compact width caps at 400 points; expansion stays inside the page.
 
 Plain display removes the scheme prefix/trailing slash for readability, with
 insecure/mail icons where appropriate. Modifier descriptions explain background
-or foreground tabs, Peek, new-window and Split View destinations without
-changing the link. **Open … in Split View** (Option, Option–Command) and **Open
-… in Peek** (Shift) appear only when the click would do that from the hovered
-page. The app answers read-only, for the pane under the pointer as the click's
-press leaves the window: that pane focused and the command bar closed
-(`canSplitLinkFrom`, `canPeekLinkFrom`). Links in Peek and in fenced ad frames
-never promise either; Parc's engine tells a fenced frame apart by which frame
+or foreground tabs, Peek, the same Peek, new-window and Split View destinations
+without changing the link. **Open … in Split View** (Option, Option–Command),
+**Open … in Peek** (Shift) and, inside a Peek, **Open … in this Peek** (Shift)
+appear only when the click would do that from the hovered page. The app answers
+read-only, for the pane under the pointer as the click's press leaves the
+window: that pane focused and the command bar closed (`canSplitLinkFrom`,
+`canPeekLinkFrom`), or for a Peek, that Peek shown and interactive in the key
+window (`canNavigatePeekLinkFrom`). Links in fenced ad frames never
+promise any of these, and links in a Peek never promise Split View or a new
+Peek; Parc's engine tells a fenced frame apart by which frame
 Chromium sends the pointer's events to, noted with each address the page
 reports, so an address still trailing the pointer out of an ad keeps its answer.
 An ad link the pointer only grazes can flash a promise for a moment, because
 Chromium doesn't say which frame an address came from. Otherwise Option keeps
-the plain address and Shift says a new window. Shift-click Peek opens only from
-the page's main frame, and the capsule can't tell an ordinary embedded frame's
-link apart, so Shift there can still promise Peek while the click opens a new
-window.
+the plain address and Shift says a new window. Links in ordinary embedded frames
+open in Split View and Peek like the page's own, so they get the same answer.
+Inside a Peek, an embedded frame sandboxed against navigating the page keeps the
+new window, which the capsule can't tell apart; see [Peek](peek.md#links-inside-a-peek).
 
 While text shows, the answer is asked again once after the current event when
 the window gains or loses focus (a sheet opening takes it), a sheet ends, the
@@ -386,7 +389,7 @@ press feedback. Status-capsule style/side changes do not animate.
 
 Focused suites are `tests/SiteControlCenter`, `tests/NativeSitePermissions`,
 `tests/NativeJavaScriptDialogs`, `tests/NativeHTTPAuth`,
-`tests/NativeExternalProtocol`, `tests/NativeStatusText`,
+`tests/NativeExternalProtocol`, `tests/NativeStatusText`, `tests/NativeShiftLink`,
 `tests/RendererCrashPresentation`, `scripts/test-blocked-popups.sh` (blocked-content
 wording and parsing) and relevant extension/page-tool components.
 Native changes need their appropriate compiler checks; app changes need the
