@@ -22,6 +22,7 @@ struct PeekWindowHostChecks {
         stepTransformKeepsTheCenter()
         stepFollowsASlidingPage()
         openingRidesASlide()
+        stepTracksAReplacedSlide()
         regionsRouteClicks()
         steppedPageRejectsTheRevealedBand()
         hitTestingThroughTheViewTree()
@@ -354,6 +355,72 @@ struct PeekWindowHostChecks {
                    "the opening step stays centred on the springing page at \(elapsed) seconds")
         }
         assert(springChecks >= 6, "the spring is checked all the way through")
+    }
+
+    static func stepTracksAReplacedSlide() {
+        let narrow = CGRect(x: 0, y: 0, width: 1042, height: 780)
+        let wide = CGRect(x: 0, y: 0, width: 1042 + sidebarWidth, height: 780)
+        let midway = CGRect(x: 0, y: 0, width: narrow.width + sidebarWidth / 2, height: 780)
+        let scale = PeekWindowLayout(bounds: window, page: wide, stepsBack: true).scale
+        let final = PeekWindowLayout.stepTransform(bounds: wide, anchor: .zero, scale: scale)
+        let now = CACurrentMediaTime()
+
+        let first = CABasicAnimation(keyPath: PeekStepBack.slideKey)
+        first.duration = 0.2; first.beginTime = now - 0.1
+        let (view, layer) = slidingPage(from: narrow, to: wide, slide: first)
+        let step = PeekStepBack([view])
+        step.set(1, scale: scale)
+        let following = layer.animation(forKey: PeekStepBack.key) as? CABasicAnimation
+        assert(following?.beginTime == first.beginTime && transform(following?.fromValue).map {
+            CATransform3DEqualToTransform($0, PeekWindowLayout.stepTransform(bounds: narrow, anchor: .zero, scale: scale))
+        } == true, "the step follows the first slide from the page's old width")
+
+        let second = CABasicAnimation(keyPath: PeekStepBack.slideKey)
+        second.fromValue = NSValue(rect: midway)
+        second.duration = 0.2; second.beginTime = now - 0.1
+        second.isRemovedOnCompletion = false
+        layer.add(second, forKey: PeekStepBack.slideKey)
+        step.refresh()
+        guard let tracking = layer.animation(forKey: PeekStepBack.key) as? CABasicAnimation,
+              let from = transform(tracking.fromValue), let to = transform(tracking.toValue) else {
+            return assert(false, "a slide replaced by a new one to the same size is followed again")
+        }
+        assert(tracking.beginTime == second.beginTime && tracking.duration == second.duration && CATransform3DEqualToTransform(to, final),
+               "the step rides the replacement slide's own clock to the same final step")
+        for fraction: CGFloat in [0, 0.25, 0.5, 0.75, 1] {
+            let width = midway.width + (wide.width - midway.width) * fraction
+            assert(close(centreOffset(of: Self.midway(from, to, fraction), width: width), 0),
+                   "the step stays centred on the in-flight width at \(fraction) of the replacement slide")
+        }
+        let stale = PeekWindowLayout.stepTransform(bounds: narrow, anchor: .zero, scale: scale)
+        assert(abs(centreOffset(of: stale, width: midway.width)) > 0.5,
+               "a step still following the first slide's start would sit off-centre when the replacement begins")
+        step.refresh()
+        assert(layer.animation(forKey: PeekStepBack.key) === tracking, "the replacement slide is followed once, not on every layout")
+
+        let third = CABasicAnimation(keyPath: PeekStepBack.slideKey)
+        third.fromValue = NSValue(rect: midway)
+        third.duration = 0.2
+        third.isRemovedOnCompletion = false
+        layer.add(third, forKey: PeekStepBack.slideKey)
+        step.refresh()
+        let restarted = layer.animation(forKey: PeekStepBack.key) as? CABasicAnimation
+        assert(restarted !== tracking && restarted.map { abs($0.beginTime - CACurrentMediaTime()) < 0.05 } == true,
+               "a replacement slide that hasn't started yet is timed from now, not from the slide it replaced")
+
+        let resting = NSView(frame: wide)
+        resting.wantsLayer = true
+        guard let restingLayer = resting.layer else { return assert(false, "a windowless view still gets its layer") }
+        let moving = CABasicAnimation(keyPath: PeekStepBack.slideKey)
+        moving.fromValue = NSValue(rect: wide.offsetBy(dx: 30, dy: 0))
+        moving.isRemovedOnCompletion = false
+        restingLayer.add(moving, forKey: PeekStepBack.slideKey)
+        let still = PeekStepBack([resting])
+        still.set(1, scale: scale)
+        let held = restingLayer.animation(forKey: PeekStepBack.key)
+        still.refresh()
+        assert(restingLayer.animation(forKey: PeekStepBack.key) === held,
+               "a slide that only moves the page leaves the held step alone on later layouts")
     }
 
     final class Flipped: NSView { override var isFlipped: Bool { true } }

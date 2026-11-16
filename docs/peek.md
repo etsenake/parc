@@ -244,9 +244,10 @@ the page never relays out, resizes its renderer or redraws. The step rides with
 the 0.3-second entry fade, follows the swipe and closing fade through the wash,
 and drops at once when the tab changes or the Peek is promoted. When the sidebar
 or Library slides, the step rides the slide's own animation, so the page stays
-centred throughout; a Peek opening during a slide combines its entry with the
-slide the same way, for as long as either runs. The frame crank's shudder adds
-to it while the Peek card stays still. Reduce Motion keeps the page where it is. The page's own loading
+centred throughout, even when a slide is interrupted and replaced by another; a
+Peek opening during a slide combines its entry with the slide the same way, for
+as long as either runs. The frame crank's shudder adds to it while the Peek card
+stays still. Reduce Motion keeps the page where it is. The page's own loading
 bar hides while a Peek shows; the Peek's bar takes the gap above its card.
 
 Clicks follow what you see (`PeekWindowLayout`). The card and its buttons are the
@@ -277,8 +278,9 @@ use the original page and parent identity. Model/native components cover those
 transactions, confirmation timers, renderer acknowledgments and focus
 cancellation; window key-loop checks cover forward and backward traversal.
 `tests/PeekWindowHost` checks the card and step geometry, the step following a
-slide or an opening during one, the click regions, and real view hit-testing for
-the top edge, the revealed frame band, the split grip and the floating sidebar.
+slide, a replaced slide or an opening during one, the click regions, and real
+view hit-testing for the top edge, the revealed frame band, the split grip and
+the floating sidebar.
 
 ## Links inside a Peek
 

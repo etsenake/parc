@@ -11,7 +11,7 @@ final class PeekStepBack {
     private(set) var progress: CGFloat = 0
     private(set) var scale: CGFloat = 1
     private var applied: [ObjectIdentifier: CATransform3D] = [:]
-    private var slides: [ObjectIdentifier: (target: CGRect, start: CGRect, began: CFTimeInterval)] = [:]
+    private var slides: [ObjectIdentifier: (slide: CAAnimation, target: CGRect, start: CGRect, began: CFTimeInterval)] = [:]
     private var openingEnds: CFTimeInterval = 0
 
     init(_ views: [NSView]) { self.views = views }
@@ -54,7 +54,7 @@ final class PeekStepBack {
         guard progress > 0 else { return }
         let remaining = openingEnds - CACurrentMediaTime()
         for view in views where applied[ObjectIdentifier(view)].map({ !CATransform3DEqualToTransform($0, transform(for: view)) }) ?? true
-            || (remaining <= 0 && !followsSlide(of: view)) {
+            || (!followsSlide(of: view) && (remaining <= 0 || !slideRanOut(on: view))) {
             CATransaction.begin(); CATransaction.setDisableActions(true)
             if remaining > 0, let shown = view.layer?.presentation()?.transform {
                 animate(view, from: shown, duration: remaining)
@@ -73,7 +73,7 @@ final class PeekStepBack {
     }
 
     private func slidePath(_ slide: CABasicAnimation, on layer: CALayer, id: ObjectIdentifier) -> (start: CGRect, began: CFTimeInterval)? {
-        let known = slides[id].flatMap { $0.target == layer.bounds ? $0 : nil }
+        let known = slides[id].flatMap { $0.slide === slide && $0.target == layer.bounds ? $0 : nil }
         guard let start = known?.start ?? Self.start(of: slide, model: layer.bounds) ?? layer.presentation()?.bounds,
               start.size != layer.bounds.size else { return nil }
         return (start, slide.beginTime > 0 ? slide.beginTime : known?.began ?? layer.convertTime(CACurrentMediaTime(), from: nil))
@@ -92,15 +92,22 @@ final class PeekStepBack {
         follow.isRemovedOnCompletion = false
         follow.fillMode = .both
         layer.add(follow, forKey: Self.key)
-        slides[id] = (layer.bounds, start, began)
+        slides[id] = (slide, layer.bounds, start, began)
         return true
     }
 
     private func followsSlide(of view: NSView) -> Bool {
         guard let layer = view.layer else { return true }
         let id = ObjectIdentifier(view)
-        guard layer.animation(forKey: Self.slideKey) is CABasicAnimation else { return slides[id] == nil }
-        return slides[id]?.target == layer.bounds
+        guard let slide = layer.animation(forKey: Self.slideKey) as? CABasicAnimation else { return slides[id] == nil }
+        if let record = slides[id], record.slide === slide, record.target == layer.bounds { return true }
+        return slides[id] == nil && slidePath(slide, on: layer, id: id) == nil
+    }
+
+    private func slideRanOut(on view: NSView) -> Bool {
+        guard let layer = view.layer, let record = slides[ObjectIdentifier(view)],
+              layer.animation(forKey: Self.slideKey) == nil else { return false }
+        return layer.convertTime(CACurrentMediaTime(), from: nil) >= record.began + record.slide.duration
     }
 
     private static func start(of slide: CABasicAnimation, model: CGRect) -> CGRect? {
@@ -118,6 +125,7 @@ final class PeekStepBack {
             open(view, from: from, to: to, duration: duration, riding: slide, start: path.start, began: path.began)
             return
         }
+        slides[ObjectIdentifier(view)] = nil
         let animation = CABasicAnimation(keyPath: "transform")
         animation.fromValue = NSValue(caTransform3D: from); animation.toValue = NSValue(caTransform3D: to)
         animation.duration = duration
@@ -158,7 +166,7 @@ final class PeekStepBack {
         animation.fillMode = .both
         layer.add(animation, forKey: Self.key)
         let id = ObjectIdentifier(view)
-        slides[id] = (end, start, began)
+        slides[id] = (slide, end, start, began)
         applied[id] = to
     }
 
