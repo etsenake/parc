@@ -36,6 +36,8 @@ enum CommandBarCommandPresentation {
         "clearCookiesAndRefresh": "trash", "clearCacheAndRefresh": "trash", "clearBrowsingData": "trash",
         "split": "square.split.2x1", "closeSplitPane": "xmark.square", "separateSplitPane": "scissors",
         "expandSplitPane": "arrow.up.left.and.arrow.down.right",
+        "widenSplitPane": "arrow.left.and.right", "narrowSplitPane": "arrow.right.and.line.vertical.and.arrow.left",
+        "equalizeSplitPanes": "equal.square",
         "firstSplitPane": "square.split.2x1", "secondSplitPane": "square.split.2x1",
         "thirdSplitPane": "square.split.2x1", "fourthSplitPane": "square.split.2x1",
         "actualSize": "magnifyingglass", "zoomIn": "plus.magnifyingglass", "zoomOut": "minus.magnifyingglass",

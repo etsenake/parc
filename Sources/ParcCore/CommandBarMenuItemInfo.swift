@@ -42,6 +42,7 @@ struct CommandBarMenuItemInfo: Equatable, Sendable {
         "editTheme:": .init(triggers: ["Theme", "Edit Theme", "Edit Space Theme"]),
         "exit:": .init(triggers: ["Exit", "Exit Modal", "Exit Full Screen"]),
         "expandSplitPane:": .init(triggers: ["Expand", "Expand Split View", "Maximize"]),
+        "equalizeSplitPanes:": .init(triggers: ["Equalize Split View", "Even Split", "Equal Panes", "Reset Split View", "Balance Split View"]),
         "exportNotes:": .init(triggers: ["Export Notes", "Backup Notes", "Download Notes"], bump: 1.5),
         "find:": .init(triggers: ["Find in Page"]),
         "findNext:": .init(triggers: ["Next"]),
@@ -58,6 +59,7 @@ struct CommandBarMenuItemInfo: Equatable, Sendable {
         "javaScriptConsole:": .init(triggers: ["Toggle console", "Console", "Javascript Console", "JS console"]),
         "jumpToSelection:": .init(triggers: ["Jump to Selected", "Selection"]),
         "manageExtensions:": .init(triggers: ["Manage Extensions", "Extensions", "Plugins", "Chrome Extensions"]),
+        "narrowSplitPane:": .init(triggers: ["Narrow Split View", "Shrink Split View", "Smaller Pane", "Shorter Pane"]),
         "networkInspector:": .init(triggers: ["Network Inspector"]),
         "newBlankWindow:": .init(triggers: ["Create Window"]),
         "newIncognitoWindow:": .init(triggers: ["Create Incognito Window", "New Private Window", "Incognito"]),
@@ -89,5 +91,6 @@ struct CommandBarMenuItemInfo: Equatable, Sendable {
         "useSelectionForFind:": .init(triggers: ["Find Selection", "Find Selected"]),
         "viewLibrary:": .init(triggers: ["Library"]),
         "viewSource:": .init(triggers: ["View Source"]),
+        "widenSplitPane:": .init(triggers: ["Widen Split View", "Grow Split View", "Bigger Pane", "Taller Pane"]),
     ]
 }

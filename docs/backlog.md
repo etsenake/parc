@@ -106,9 +106,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 
 - Add the generic Edit → Format → Font menu route. Existing document
   formatting works. [Keyboard](keyboard-navigation.md).
-- Split dividers lack keyboard/accessibility resizing. Pane-handle drag,
-  double-click separation, Option-close unsplit and sidebar drop-to-combine are
-  absent. [Split groups](split-groups.md).
 - Share Split View… in the split pane menu doesn't work. Remove the item, its
   share action and its menu artwork. [Split groups](split-groups.md),
   [menu artwork](../Resources/SplitPaneMenu/README.md).

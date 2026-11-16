@@ -975,6 +975,129 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     }
     func drawDivider(in rect: NSRect) {
     }
+    @discardableResult
+    func moveDivider(_ divider: Int, forward: Bool) -> Bool {
+        commitSteppedResize { SplitPaneResize.movingDivider(divider, in: $0, forward: forward, minimum: $1) }
+    }
+    @discardableResult
+    func resizePane(_ pane: NSView, growing: Bool) -> Bool {
+        commitSteppedResize(paneStep(pane, growing: growing))
+    }
+    @discardableResult
+    func equalizePanes() -> Bool {
+        commitSteppedResize(equalStep)
+    }
+    func canResizePane(_ pane: NSView, growing: Bool) -> Bool {
+        steppedFactors(paneStep(pane, growing: growing)) != nil
+    }
+    var canEqualizePanes: Bool { steppedFactors(equalStep) != nil }
+    private func paneStep(_ pane: NSView, growing: Bool) -> ([Double], Double) -> [Double]? {
+        let index = arrangedSubviews.firstIndex { $0 === pane }
+        return { shares, minimum in
+            index.flatMap { SplitPaneResize.resizingPane($0, in: shares, growing: growing, minimum: minimum) }
+        }
+    }
+    private func equalStep(_ shares: [Double], _ minimum: Double) -> [Double]? {
+        guard savedFactors.count != arrangedSubviews.count || !SplitPaneResize.isEqual(savedFactors) else { return nil }
+        return SplitPaneResize.equal(count: shares.count)
+    }
+    private var adjustableShares: (shares: [Double], minimum: Double)? {
+        let available = Double(availablePaneLength), minimum = Double(minimumPaneLength)
+        guard available.isFinite, available > 0 else { return nil }
+        if let saved = BrowserSplitLayout.normalized(savedFactors, count: arrangedSubviews.count),
+           saved.allSatisfy({ $0 * available >= minimum - 0.5 }) {
+            return (saved, minimum / available)
+        }
+        let lengths = arrangedSubviews.map { Double(isVertical ? $0.frame.width : $0.frame.height) }
+        let total = lengths.reduce(0, +)
+        guard total.isFinite, total > 0,
+              let shown = BrowserSplitLayout.normalized(lengths, count: lengths.count) else { return nil }
+        return (shown, minimum / total)
+    }
+    private func steppedFactors(_ adjust: ([Double], Double) -> [Double]?) -> [Double]? {
+        guard !isTrackingDivider, dropReservation == nil, interactivePaneEdit == nil, !isApplyingLayout,
+              window != nil, let shares = adjustableShares else { return nil }
+        return adjust(shares.shares, shares.minimum)
+    }
+    private func commitSteppedResize(_ adjust: ([Double], Double) -> [Double]?) -> Bool {
+        guard let factors = steppedFactors(adjust), let commit = prepareDividerResize?() else { return false }
+        let views = arrangedSubviews, originalBounds = bounds, orientation = savedOrientation
+        let accepted = commit(factors)
+        let current = originalBounds == bounds && orientation == savedOrientation
+            && views.count == arrangedSubviews.count
+            && zip(views, arrangedSubviews).allSatisfy { $0 === $1 }
+        if accepted, current { savedFactors = factors }
+        applySavedFrames()
+        guard accepted, current else { return false }
+        for element in availableDividerElements() { NSAccessibility.post(element: element, notification: .valueChanged) }
+        return true
+    }
+    private var dividerAccessibilityElements: [DividerAccessibilityElement] = []
+    private func availableDividerElements() -> [DividerAccessibilityElement] {
+        let count = max(0, arrangedSubviews.count - 1)
+        while dividerAccessibilityElements.count > count {
+            let retired = dividerAccessibilityElements.removeLast()
+            retired.owner = nil
+            NSAccessibility.post(element: retired, notification: .uiElementDestroyed)
+        }
+        while dividerAccessibilityElements.count < count {
+            dividerAccessibilityElements.append(DividerAccessibilityElement(owner: self, index: dividerAccessibilityElements.count))
+        }
+        return dividerRects.isEmpty ? [] : dividerAccessibilityElements
+    }
+    override func accessibilityChildren() -> [Any]? {
+        let splitters = availableDividerElements()
+        var ordered: [Any] = []
+        for (index, pane) in arrangedSubviews.enumerated() {
+            ordered.append(pane)
+            if splitters.indices.contains(index) { ordered.append(splitters[index]) }
+        }
+        ordered += subviews.filter { view in !arrangedSubviews.contains { $0 === view } }
+        return NSAccessibility.unignoredChildren(from: ordered)
+    }
+    override func accessibilitySplitters() -> [Any]? { availableDividerElements() }
+    final class DividerAccessibilityElement: NSAccessibilityElement {
+        fileprivate weak var owner: ParcSplitView?
+        let index: Int
+        fileprivate init(owner: ParcSplitView, index: Int) {
+            self.owner = owner; self.index = index
+            super.init()
+        }
+        private var position: (value: Double, minimum: Double, maximum: Double)? {
+            guard isAvailable, let owner, let current = owner.adjustableShares,
+                  current.shares.indices.contains(index + 1) else { return nil }
+            let before = current.shares[..<index].reduce(0, +)
+            let value = before + current.shares[index]
+            return (value, before + current.minimum, value + current.shares[index + 1] - current.minimum)
+        }
+        private var isAvailable: Bool { owner?.dividerRects.indices.contains(index) == true }
+        override func isAccessibilityElement() -> Bool { isAvailable }
+        override func accessibilityRole() -> NSAccessibility.Role? { .splitter }
+        override func accessibilityLabel() -> String? {
+            (owner?.dividerRects.count ?? 0) > 1 ? "Split View Divider \(index + 1)" : "Split View Divider"
+        }
+        override func accessibilityHelp() -> String? { "Increase or decrease to resize the pages on either side." }
+        override func accessibilityValue() -> Any? { position.map { NSNumber(value: ($0.value * 100).rounded()) } }
+        override func accessibilityMinValue() -> Any? { position.map { NSNumber(value: ($0.minimum * 100).rounded()) } }
+        override func accessibilityMaxValue() -> Any? { position.map { NSNumber(value: ($0.maximum * 100).rounded()) } }
+        override func accessibilityValueDescription() -> String? {
+            position?.value.formatted(.percent.precision(.fractionLength(0)))
+        }
+        override func accessibilityOrientation() -> NSAccessibilityOrientation {
+            owner?.isVertical == false ? .horizontal : .vertical
+        }
+        override func accessibilityParent() -> Any? { owner.flatMap { NSAccessibility.unignoredAncestor(of: $0) } }
+        override func accessibilityFrame() -> NSRect {
+            guard let owner, let window = owner.window, owner.dividerRects.indices.contains(index) else { return .zero }
+            return window.convertToScreen(owner.convert(owner.dividerRects[index], to: nil))
+        }
+        override func isAccessibilitySelectorAllowed(_ selector: Selector) -> Bool {
+            guard isAvailable, selector != #selector(setAccessibilityValue(_:)) else { return false }
+            return super.isAccessibilitySelectorAllowed(selector)
+        }
+        override func accessibilityPerformIncrement() -> Bool { isAvailable && owner?.moveDivider(index, forward: true) == true }
+        override func accessibilityPerformDecrement() -> Bool { isAvailable && owner?.moveDivider(index, forward: false) == true }
+    }
 }
 
 @MainActor

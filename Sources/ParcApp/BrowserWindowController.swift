@@ -1478,7 +1478,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let window { ParcDialog.inform(in: window, .init(title: "This feature isn’t available yet", message: capability)) }
     }
     enum SplitCommand {
-        case focus(Int), next, previous, expand, separate, close
+        case focus(Int), next, previous, expand, separate, close, widen, narrow, equalize
         case orientation(SplitOrientation), move(Int), add(SplitPaneOperation), addNew, copyLink
     }
 

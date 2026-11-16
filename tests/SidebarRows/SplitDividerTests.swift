@@ -176,17 +176,104 @@ import AppKit
         try check(originalConstraints.allSatisfy { !$0.isActive }, "Detachment retires the exact parent constraint lease")
         let axSplit = ParcSplitView(frame: NSRect(x: 0, y: 0, width: 1000, height: 500))
         constraintWindow.contentView!.addSubview(axSplit)
-        let axPanes = [NSView(), NSView()]
+        let axPanes = [NSView(), NSView(), NSView()]
         for pane in axPanes {
             pane.setAccessibilityElement(true); pane.setAccessibilityRole(.group)
             axSplit.addArrangedSubview(pane)
         }
-        axSplit.configure(orientation: .horizontal, factors: [1, 1])
+        axSplit.configure(orientation: .horizontal, factors: [1, 1, 1])
         let axChildren = NSAccessibility.unignoredChildren(from: [axSplit]).map { $0 as AnyObject }
+        let splitters = (axSplit.accessibilitySplitters() ?? []).compactMap { $0 as? ParcSplitView.DividerAccessibilityElement }
         try check(!axSplit.isAccessibilityElement() && axSplit.accessibilityRole() != .splitGroup
-                  && (axSplit.accessibilitySplitters() ?? []).isEmpty
-                  && axChildren.count == 2 && axChildren[0] === axPanes[0] && axChildren[1] === axPanes[1],
-                  "Plain native container is ignored: panes are exposed directly and no splitter exists")
+                  && splitters.count == 2 && axChildren.count == 5
+                  && axChildren[0] === axPanes[0] && axChildren[1] === splitters[0] && axChildren[2] === axPanes[1]
+                  && axChildren[3] === splitters[1] && axChildren[4] === axPanes[2],
+                  "The container stays ignored and VoiceOver walks each pane with a splitter between neighbours")
+        func axShares() -> [Double] {
+            let lengths = axPanes.map { Double($0.frame.width) }
+            return lengths.map { $0 / lengths.reduce(0, +) }
+        }
+        func percent(_ value: Any?) -> Double { (value as? NSNumber)?.doubleValue ?? -1 }
+        let firstShares = axShares()
+        try check(splitters.allSatisfy { $0.isAccessibilityElement() && $0.accessibilityRole() == .splitter
+                                         && $0.accessibilityOrientation() == .vertical }
+                  && splitters[0].accessibilityLabel() == "Split View Divider 1"
+                  && splitters[1].accessibilityLabel() == "Split View Divider 2",
+                  "Each divider is a labelled vertical splitter")
+        try check(percent(splitters[0].accessibilityValue()) == (firstShares[0] * 100).rounded()
+                  && percent(splitters[1].accessibilityValue()) == ((firstShares[0] + firstShares[1]) * 100).rounded()
+                  && percent(splitters[0].accessibilityValue()) == 33 && percent(splitters[1].accessibilityValue()) == 67
+                  && splitters[0].accessibilityValueDescription() == (1.0 / 3).formatted(.percent.precision(.fractionLength(0))),
+                  "A splitter reports its position as its share of the split")
+        let minimumShare = 220 / axPanes.map { Double($0.frame.width) }.reduce(0, +)
+        try check(percent(splitters[0].accessibilityMinValue()) == (minimumShare * 100).rounded()
+                  && percent(splitters[0].accessibilityMaxValue()) == ((firstShares[0] + firstShares[1] - minimumShare) * 100).rounded()
+                  && percent(splitters[1].accessibilityMinValue()) == ((firstShares[0] + minimumShare) * 100).rounded()
+                  && percent(splitters[1].accessibilityMaxValue()) == ((1 - minimumShare) * 100).rounded(),
+                  "Splitter limits keep both neighbours at the 220-point minimum")
+        let dividerScreen = constraintWindow.convertToScreen(axSplit.convert(
+            NSRect(x: axPanes[0].frame.maxX, y: 0, width: 10, height: 500), to: nil))
+        try check(splitters[0].accessibilityFrame() == dividerScreen
+                  && (splitters[0].accessibilityParent() as AnyObject?) === (NSAccessibility.unignoredAncestor(of: axSplit) as AnyObject?)
+                  && (axSplit.accessibilityHitTest(NSPoint(x: dividerScreen.midX, y: dividerScreen.midY)) as AnyObject?) === splitters[0],
+                  "A splitter covers its real divider on screen, belongs to the split's parent and is found by hit testing")
+        try check(!splitters[0].isAccessibilitySelectorAllowed(#selector(NSAccessibilityElement.setAccessibilityValue(_:)))
+                  && splitters[0].isAccessibilitySelectorAllowed(#selector(NSAccessibilityElement.accessibilityPerformIncrement))
+                  && splitters[0].isAccessibilitySelectorAllowed(#selector(NSAccessibilityElement.accessibilityPerformDecrement)),
+                  "VoiceOver adjusts a splitter by increment and decrement, not by typing a value")
+        let axFrames = axPanes.map(\.frame)
+        try check(!splitters[0].accessibilityPerformIncrement() && axPanes.map(\.frame) == axFrames,
+                  "Without a window owner to commit, an increment changes nothing")
+        var axCommits: [[Double]] = []
+        var axPrepared = 0
+        axSplit.prepareDividerResize = { axPrepared += 1; return { axCommits.append($0); return true } }
+        try check(splitters[0].accessibilityPerformIncrement() && axPrepared == 1 && axCommits.count == 1
+                  && near([axCommits[0][0] - axCommits[0][1]], [2 * SplitPaneResize.step])
+                  && near([axCommits[0][2]], [1.0 / 3]),
+                  "An increment from even neighbours moves exactly one step through the drag's commit and leaves the other pane alone")
+        try check(axPanes[0].frame.width > axFrames[0].width && axPanes[2].frame.width == axFrames[2].width
+                  && percent(splitters[0].accessibilityValue()) > 33,
+                  "The accepted step lays out the leading pane wider and raises the splitter's value")
+        try check(splitters[0].accessibilityPerformDecrement() && axCommits.count == 2
+                  && abs(axPanes[0].frame.width - axPanes[1].frame.width) <= 1 && axPanes[2].frame.width == axFrames[2].width,
+                  "A decrement that crosses the even point stops there, like the drag's centre snap")
+        for _ in 0..<5 { _ = splitters[1].accessibilityPerformIncrement() }
+        try check(axPanes[2].frame.width == 220 && !splitters[1].accessibilityPerformIncrement(),
+                  "Increments stop at the 220-point minimum and then refuse")
+        let refusedFrames = axPanes.map(\.frame), refusedCommits = axCommits.count
+        axSplit.prepareDividerResize = { { axCommits.append($0); return false } }
+        try check(!splitters[1].accessibilityPerformDecrement() && axPanes.map(\.frame) == refusedFrames
+                  && axCommits.count == refusedCommits + 1,
+                  "A refused commit restores the authoritative layout")
+        axSplit.prepareDividerResize = { { _ in true } }
+        let dragPoint = NSPoint(x: axPanes[0].frame.maxX + 5, y: 300)
+        try check(axSplit.canResizePane(axPanes[0], growing: true) && axSplit.canEqualizePanes
+                  && !axSplit.canResizePane(axPanes[2], growing: false) && !axSplit.canResizePane(NSView(), growing: true),
+                  "Availability asks the same step math: a minimum-width pane can't narrow and a stranger can't resize")
+        try check(axSplit.beginDividerResize(at: dragPoint) && !splitters[0].accessibilityPerformIncrement()
+                  && !axSplit.resizePane(axPanes[0], growing: true) && !axSplit.equalizePanes()
+                  && !axSplit.canResizePane(axPanes[0], growing: true) && !axSplit.canEqualizePanes,
+                  "A live mouse drag refuses VoiceOver and command adjustments and reports them unavailable")
+        axSplit.finishDividerResize(commit: false)
+        axSplit.configure(orientation: .vertical, factors: [1, 1, 1])
+        try check(splitters.allSatisfy { $0.accessibilityOrientation() == .horizontal },
+                  "Stacked panes report horizontal splitters")
+        axSplit.configure(orientation: .horizontal, factors: [1, 1, 1])
+        axPanes[2].removeFromSuperview()
+        try check(!splitters[1].isAccessibilityElement() && splitters[1].accessibilityValue() == nil
+                  && !splitters[1].accessibilityPerformIncrement(),
+                  "A departed pane's splitter stops reporting before VoiceOver asks again")
+        let survivor = (axSplit.accessibilitySplitters() ?? []).compactMap { $0 as? ParcSplitView.DividerAccessibilityElement }
+        try check(survivor.count == 1 && survivor[0] === splitters[0] && survivor[0].accessibilityLabel() == "Split View Divider",
+                  "Removing a pane retires its splitter and keeps the surviving one")
+        axPanes[1].removeFromSuperview()
+        axPrepared = 0
+        axSplit.prepareDividerResize = { axPrepared += 1; return { _ in true } }
+        try check((axSplit.accessibilitySplitters() ?? []).isEmpty
+                  && NSAccessibility.unignoredChildren(from: [axSplit]).count == 1
+                  && !axSplit.resizePane(axPanes[0], growing: true) && !axSplit.resizePane(axPanes[0], growing: false)
+                  && !axSplit.equalizePanes() && axPrepared == 0,
+                  "A single page has no splitter, and the resize commands are unavailable outside a split")
         axSplit.removeFromSuperview()
         let backingHost = NSView(frame: NSRect(x: 0, y: 0, width: 700, height: 500))
         backingHost.wantsLayer = true
@@ -651,6 +738,114 @@ import AppKit
         let released = second.frame
         live.setFrameSize(NSSize(width: live.frame.width - 200, height: live.frame.height - 100))
         try check(second.frame == released, "A released pane keeps its frame until it is parked")
+        try checkResizeSteps()
+        try checkResizeCommands(in: commandWindow)
         print("PASS: \(count) original native divider/store checks (no browser)")
+    }
+
+    static func checkResizeSteps() throws {
+        typealias Steps = SplitPaneResize
+        let even = [0.5, 0.5]
+        try check(near(Steps.movingDivider(0, in: even, forward: true, minimum: 0.2)!, [0.6, 0.4])
+                  && near(Steps.movingDivider(0, in: even, forward: false, minimum: 0.2)!, [0.4, 0.6]),
+                  "A divider step moves one tenth of the split")
+        try check(near(Steps.movingDivider(0, in: [0.45, 0.55], forward: true, minimum: 0.2)!, [0.5, 0.5])
+                  && near(Steps.movingDivider(0, in: [0.505, 0.495], forward: true, minimum: 0.2)!, [0.6, 0.4]),
+                  "A step that crosses the even point stops on it, and one that starts there moves a whole step")
+        try check(near(Steps.movingDivider(0, in: [0.75, 0.25], forward: true, minimum: 0.2)!, [0.8, 0.2])
+                  && Steps.movingDivider(0, in: [0.8, 0.2], forward: true, minimum: 0.2) == nil
+                  && Steps.movingDivider(2, in: even, forward: true, minimum: 0.2) == nil
+                  && Steps.movingDivider(0, in: even, forward: true, minimum: 0.6) == nil,
+                  "Divider steps clamp at the minimum, then refuse, and refuse impossible requests")
+        let expanded = [0.2, 0.6, 0.2]
+        try check(near(Steps.resizingPane(1, in: expanded, growing: false, minimum: 0.2)!, [0.25, 0.5, 0.25]),
+                  "Narrowing gives the freed room to the other panes in proportion")
+        try check(near(Steps.resizingPane(1, in: [0.3, 0.4, 0.3], growing: false, minimum: 0.2)!, [1.0 / 3, 1.0 / 3, 1.0 / 3]),
+                  "Narrowing that crosses the equal share stops on it")
+        try check(near(Steps.resizingPane(0, in: [0.2, 0.3, 0.5], growing: true, minimum: 0.2)!, [0.3, 0.3 - 0.1 / 4, 0.5 - 0.3 / 4]),
+                  "Widening takes room from each other pane in proportion to its room above the minimum")
+        try check(Steps.resizingPane(1, in: expanded, growing: true, minimum: 0.2) == nil
+                  && Steps.resizingPane(0, in: expanded, growing: false, minimum: 0.2) == nil
+                  && Steps.resizingPane(3, in: expanded, growing: true, minimum: 0.2) == nil
+                  && Steps.resizingPane(0, in: [1], growing: true, minimum: 0) == nil,
+                  "Pane steps refuse at the minimum, past the last pane and outside a split")
+        try check(near(Steps.equal(count: 4)!, [0.25, 0.25, 0.25, 0.25]) && Steps.equal(count: 1) == nil
+                  && Steps.isEqual([2, 2, 2]) && !Steps.isEqual([1, 2]) && !Steps.isEqual([1]),
+                  "Equal shares exist only for a real split")
+    }
+
+    static func checkResizeCommands(in window: NSWindow) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-split-steps-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try BrowserStore(directory: root)
+        let ids = (0..<3).map { store.open("https://step-\($0).invalid") }
+        store.setSplit(ids); store.setSplitLayout(orientation: .horizontal, widthFactors: [1, 1, 1])
+        let split = ParcSplitView(frame: NSRect(x: 0, y: 0, width: 1210, height: 800))
+        window.contentView!.addSubview(split)
+        defer { split.removeFromSuperview() }
+        let panes = ids.map { _ in NSView() }
+        panes.forEach(split.addArrangedSubview)
+        var prepared = 0
+        split.prepareDividerResize = {
+            prepared += 1
+            let captured = store.activeSplitLayout!
+            return { factors in
+                guard store.resizeSplit(expected: captured, widthFactors: factors) else { return false }
+                split.configure(orientation: .horizontal, factors: store.activeSplitLayout!.widthFactors)
+                return true
+            }
+        }
+        let original = store.activeSplitLayout!
+        guard let expanded = original.expandedFactors(focusing: ids[1]) else { throw NSError(domain: "expand", code: 0) }
+        _ = store.resizeSplit(expected: original, widthFactors: expanded)
+        split.configure(orientation: .horizontal, factors: store.activeSplitLayout!.widthFactors)
+        func widths() -> [CGFloat] { panes.map(\.frame.width) }
+        try check(widths() == [220, 750, 220], "Expand leaves the other panes at their minimum")
+        try check(!split.canResizePane(panes[1], growing: true) && split.canResizePane(panes[1], growing: false)
+                  && split.canEqualizePanes,
+                  "After Expand the focused pane can only narrow, and Make Equal is offered")
+        try check(!split.resizePane(panes[1], growing: true) && prepared == 0 && store.activeSplitLayout!.widthFactors == expanded,
+                  "Widening an expanded pane has no room left and asks the window for nothing")
+        try check(split.resizePane(panes[1], growing: false) && prepared == 1
+                  && abs(widths()[0] - widths()[2]) <= 1 && widths()[0] > 220 && widths()[1] < 750
+                  && abs(widths()[1] - (750 - 119)) <= 1,
+                  "Narrowing the focused pane takes one step and shares it evenly with the others")
+        try check(try BrowserStore(directory: root).activeSplitLayout == store.activeSplitLayout
+                  && store.state.selectedTabIDs == ids,
+                  "The narrowed layout is saved like a finished drag and keeps every pane")
+        split.resizePane(panes[1], growing: false)
+        try check(split.resizePane(panes[1], growing: false)
+                  && widths().max()! - widths().min()! <= 1,
+                  "Narrowing in steps lands exactly on equal panes")
+        try check(split.resizePane(panes[1], growing: false) && widths()[1] > 220
+                  && split.resizePane(panes[1], growing: false) && widths()[1] == 220
+                  && !split.resizePane(panes[1], growing: false),
+                  "Narrowing stops at the 220-point minimum, then refuses")
+        try check(split.resizePane(panes[0], growing: true) && widths()[0] > widths()[2] && widths()[1] == 220,
+                  "Widening another pane leaves a minimum-width pane alone")
+        try check(split.equalizePanes() && widths().max()! - widths().min()! <= 1
+                  && SplitPaneResize.isEqual(store.activeSplitLayout!.widthFactors),
+                  "Make Equal resets every pane through the same commit")
+        let equalPrepared = prepared
+        try check(!split.canEqualizePanes && !split.equalizePanes() && prepared == equalPrepared,
+                  "Make Equal on an already even split is unavailable and does nothing")
+        _ = store.resizeSplit(expected: store.activeSplitLayout!, widthFactors: expanded)
+        split.configure(orientation: .horizontal, factors: store.activeSplitLayout!.widthFactors)
+        try check(split.equalizePanes() && widths().max()! - widths().min()! <= 1, "Make Equal undoes Expand in one step")
+        try check(try BrowserStore(directory: root).activeSplitLayout.map { SplitPaneResize.isEqual($0.widthFactors) } == true,
+                  "The equal layout after Expand is saved")
+        split.configure(orientation: .vertical, factors: [3, 1, 1])
+        let stale = store.activeSplitLayout!
+        let staleFrames = panes.map(\.frame)
+        var staleCommits = 0
+        split.prepareDividerResize = { { staleCommits += 1; return store.resizeSplit(expected: stale, widthFactors: $0) } }
+        _ = store.resizeSplit(expected: stale, widthFactors: [1, 2, 1])
+        try check(!split.resizePane(panes[0], growing: false) && staleCommits == 1 && panes.map(\.frame) == staleFrames,
+                  "A stale window receipt refuses the command and keeps the authoritative layout")
+        var refusedReceipts = 0
+        split.prepareDividerResize = { refusedReceipts += 1; return nil }
+        try check(!split.resizePane(panes[0], growing: false) && !split.equalizePanes() && refusedReceipts == 2
+                  && panes.map(\.frame) == staleFrames,
+                  "When the window can't take a resize, the commands change nothing")
     }
 }

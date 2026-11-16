@@ -131,8 +131,8 @@ The command bar offers no cross-Profile destination for Add.
 
 Dragging a divider changes only its original adjacent pair while preserving the
 pair's combined share. Double-click equalizes that pair, leaving other source
-weights intact. There is no all-pane equalize command. The resize receipt binds
-page owners, window, selection, orientation, host bounds and backing scale.
+weights intact; Make All Split Panes Equal evens every pane. The resize receipt
+binds page owners, window, selection, orientation, host bounds and backing scale.
 Changes invalidate it; rejection restores current authoritative geometry.
 
 Expanded panes honor the 220-point minimum. Layout redistributes minimum deficits,
@@ -140,6 +140,29 @@ rounds lengths at the owning window's scale, then aligns final edges. The last
 pane does not absorb all rounding remainder. Live resize uses the same geometry
 as committed layout. Nonfinite/invalid scale falls back safely; nonpositive
 persisted weights refuse.
+
+## Keyboard and VoiceOver resizing
+
+Each divider is a VoiceOver splitter, so VoiceOver walks pane, splitter, pane.
+Its value is the divider's position as a percentage of the split, with limits
+that keep both neighbours at the 220-point minimum. VoiceOver's increment and
+decrement move it one step and change only that pair. The container itself
+stays ignored, and dividers are not Tab stops, so there is no focus ring.
+
+The [split navigation](split-navigation.md) commands Widen Current Split and
+Narrow Current Split step the focused pane. Widen takes room from the other
+panes in proportion to what each has above the minimum, and Narrow hands it
+back in proportion to their size. Make All Split Panes Equal is the one-step
+way back after Expand. Each command is disabled when it would change nothing.
+
+A step is a tenth of the split. One that crosses the even point, half the pair
+or an equal share for a pane, stops on it. Steps start from the saved weights,
+or from the displayed sizes while the minimum overrides those weights, as after
+Expand. Splitter steps and all three commands commit through the same window
+receipt as a finished drag, so the minimum, window validation and persistence
+apply. They refuse during a live divider drag, a drop preview or a tab drag
+into the split, lay out at once without the drag's haptics or motion, and
+VoiceOver hears the new value.
 
 ## Divider center snapping
 
@@ -335,9 +358,10 @@ folder removal, saved selection and transfer. Expand does not take focus;
 Separate/Move reclaim it only if presentation removed the previous responder.
 Canceling Add restores the prior content's open Find field, otherwise the content.
 
-The split container exposes its pane contents directly to accessibility. The
-current implementation has no separately focusable divider or numeric splitter
-resize action. Top-bar buttons retain native roles, labels and focus behavior;
+The split container exposes its panes directly to accessibility, with a
+splitter between neighbours; see
+[keyboard and VoiceOver resizing](#keyboard-and-voiceover-resizing). Top-bar
+buttons retain native roles, labels and focus behavior;
 Close is labeled **Close Split View Pane**. The sidebar group exposes its actual
 child/buttons, including visible Close, without inventing another close owner.
 
@@ -360,14 +384,22 @@ prompt is the fallback when the original row cannot host that editor. See
 A standalone ordinary page shows the two-by-24 right-margin grip, with its resize
 cursor/hover band 44 points high. It is decorative: no trailing pane exists to
 resize. Split, pending-pane, popup and no-margin/fullscreen contexts hide it.
-There is no pane-handle drag, child double-click split separation, Option-close
-unsplit gesture or sidebar drop-onto-tab combine action in the current product.
 Page-loading indicators belong to [navigation](navigation.md), not divider state.
+
+Four gestures are deliberately not offered: dragging that grip to open a split,
+double-clicking a sidebar child to separate it, Option-clicking Close to unsplit,
+and dropping one sidebar tab onto another to combine them. Arc built all four
+and shipped them switched off, and each repeats Add Split View, Separate,
+Separate All Tabs or Open in Split View. Double-click means rename on ordinary
+sidebar rows, so on a split child it would give one gesture two meanings.
+Option-click Close means close the other tabs in Safari, and an onto-tab drop
+target would crowd reordering and folder drops in the busiest drag code.
 
 ## Source and validation
 
-Core owners include `SplitMembership`, `BrowserSplitLayout`, `SplitCrossSpaceAdd`,
-`SidebarWindowMove`, `SidebarFolderFromItems` and `BrowserStore` transactions.
+Core owners include `SplitMembership`, `BrowserSplitLayout`, `SplitPaneResize`,
+`SplitCrossSpaceAdd`, `SidebarWindowMove`, `SidebarFolderFromItems` and
+`BrowserStore` transactions.
 Presentation owners include `ParcSplitView`, `SplitDropView`, `SplitDragView`,
 `SidebarSplitCellMenu`, `SplitPaneMenu` and the native content-drop router.
 

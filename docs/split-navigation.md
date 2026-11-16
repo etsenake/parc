@@ -7,8 +7,10 @@ pane-rotation hook. No page is recreated from a stored URL.
 The View menu offers Add Split View, Close this Split Pane, Separate Page from
 Split View and Expand Current Split. Control–Shift–1…4 and Control–Shift–]/[
 select numbered/adjacent panes through the existing shortcut editor, command
-search and native priority pipeline. Hidden menu commands accept shortcuts only
-when `allowsKeyEquivalentWhenHidden` is set explicitly.
+search and native priority pipeline. Widen Current Split, Narrow Current Split
+and Make All Split Panes Equal are hidden View commands with no default chord,
+offered in command search and the shortcut editor. Hidden menu commands accept
+shortcuts only when `allowsKeyEquivalentWhenHidden` is set explicitly.
 
 ## Interaction and ownership
 
@@ -16,7 +18,8 @@ when `allowsKeyEquivalentWhenHidden` is set explicitly.
 |---|---|
 | Numbered focus | Selects a one-based member; missing positions are unavailable. A single pane is position 1. |
 | Adjacent focus | Wraps in current group order and preserves group membership. |
-| Expand | Requires multiple panes. Gives the focused pane the room left after other panes' 220-point minimum, preserving orientation and membership. Each browser window applies it to its own focused split and saves changed weights. It is not a restore toggle. |
+| Expand | Requires multiple panes. Gives the focused pane the room left after other panes' 220-point minimum, preserving orientation and membership. Each browser window applies it to its own focused split and saves changed weights. It is not a restore toggle; Make All Split Panes Equal evens the panes again. |
+| Widen, Narrow and Make Equal | Require multiple panes, act on the command's own window and are disabled when they would change nothing. Widen and Narrow step the focused pane by a tenth of the split; Make Equal evens every pane. Each commits like a finished divider drag; see [keyboard and VoiceOver resizing](split-groups.md#keyboard-and-voiceover-resizing). |
 | Separate | A separated focused pane remains displayed alone; separating another member preserves the surviving focus. Model/group selection changes atomically without closing pages. |
 | Close | Retains the exact original pane and uses real close/beforeunload consent. Refusal preserves it. |
 | Orientation | Uses the existing validated group/page layout transaction. |

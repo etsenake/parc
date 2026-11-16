@@ -2339,6 +2339,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(closeSplitPane): return .close
         case #selector(separateSplitPane): return .separate
         case #selector(expandSplitPane): return .expand
+        case #selector(widenSplitPane): return .widen
+        case #selector(narrowSplitPane): return .narrow
+        case #selector(equalizeSplitPanes): return .equalize
         case #selector(nextSplitPane): return .next
         case #selector(previousSplitPane): return .previous
         case #selector(firstSplitPane): return .focus(1)
@@ -2356,6 +2359,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc private func closeSplitPane(_ sender: Any?) { performSplitMenuCommand(sender) }
     @objc private func separateSplitPane(_ sender: Any?) { performSplitMenuCommand(sender) }
     @objc private func expandSplitPane(_ sender: Any?) { performSplitMenuCommand(sender) }
+    @objc private func widenSplitPane(_ sender: Any?) { performSplitMenuCommand(sender) }
+    @objc private func narrowSplitPane(_ sender: Any?) { performSplitMenuCommand(sender) }
+    @objc private func equalizeSplitPanes(_ sender: Any?) { performSplitMenuCommand(sender) }
     @objc private func nextSplitPane(_ sender: Any?) { performSplitMenuCommand(sender) }
     @objc private func previousSplitPane(_ sender: Any?) { performSplitMenuCommand(sender) }
     @objc private func firstSplitPane(_ sender: Any?) { performSplitMenuCommand(sender) }
@@ -2849,6 +2855,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         item("Close this Split Pane", #selector(closeSplitPane), "-", in: view, modifiers: [.control, .shift])
         item("Separate Page from Split View", #selector(separateSplitPane), in: view)
         item("Expand Current Split", #selector(expandSplitPane), in: view)
+        for (title, selector) in [("Widen Current Split", #selector(widenSplitPane)),
+                                  ("Narrow Current Split", #selector(narrowSplitPane)),
+                                  ("Make All Split Panes Equal", #selector(equalizeSplitPanes))] {
+            item(title, selector, in: view)
+            hideKeepingShortcut(view)
+        }
         for (title, selector, key) in [
             ("Switch to Split View 1", #selector(firstSplitPane), "1"),
             ("Switch to Split View 2", #selector(secondSplitPane), "2"),

@@ -769,7 +769,19 @@ extension BrowserWindowController {
         case .focus(let number): return (1...selectedTabIDs.count).contains(number)
         case .next, .previous: return true
         case .add, .addNew: return selectedTabIDs.count < 4 && splitInsertion == nil
+        case .widen, .narrow, .equalize: return splitResizeIsAvailable(command)
         default: return selectedTabIDs.count > 1
+        }
+    }
+
+    func splitResizeIsAvailable(_ command: SplitCommand) -> Bool {
+        guard selectedTabIDs.count > 1, splitInsertion == nil, renderedPaneIDs == selectedTabIDs,
+              window?.isKeyWindow == true else { return false }
+        let focused = currentTabID.flatMap { panes[$0] }
+        switch command {
+        case .widen: return focused.map { splitView.canResizePane($0, growing: true) } ?? false
+        case .narrow: return focused.map { splitView.canResizePane($0, growing: false) } ?? false
+        default: return splitView.canEqualizePanes
         }
     }
 
@@ -915,6 +927,12 @@ extension BrowserWindowController {
             separateSplitTab(targetID, group: group, originalFocus: currentTabID)
         case .expand:
             NotificationCenter.default.post(name: Self.expandCurrentSplitNotification, object: nil)
+        case .widen:
+            if let pane = panes[targetID] { splitView.resizePane(pane, growing: true) }
+        case .narrow:
+            if let pane = panes[targetID] { splitView.resizePane(pane, growing: false) }
+        case .equalize:
+            splitView.equalizePanes()
         case .orientation(let orientation):
             guard let layout = activeSplitLayout else { return }
             performWindowCommand { store.setSplitLayout(orientation: orientation, widthFactors: layout.widthFactors) }

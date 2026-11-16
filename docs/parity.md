@@ -142,6 +142,9 @@ changes belong in the owning guide and release notes, not an ever-growing log he
   site identity; pages remain in Chromium. Do not substitute a fixed site list.
 - Preserve upstream security maintenance through deliberate Chromium pin
   upgrades and relevant native integration checks.
+- Split View deliberately offers no pane-handle drag, double-click separation,
+  Option-click unsplit or sidebar drop-to-combine gesture; each duplicates an
+  existing route. See [split groups](split-groups.md#split-gesture-and-context-inventory--sp33).
 
 ## Scope boundaries
 
