@@ -179,7 +179,7 @@ def verify(volume, finder_info, app_icon, cache=CACHE):
         differing = sorted(set(found) ^ set(planned)) or sorted(key for key in planned if found[key] != planned[key])
         raise LayoutError("the Finder layout differs from what dmgbuild writes for this window: "
                           + (", ".join(f"{name} {code}" for name, code in differing) or "its record tree"))
-    background = volume / BACKGROUND
+    background = volume.resolve() / BACKGROUND
     try:
         stored, actual = mac_alias.Alias.from_bytes(alias), mac_alias.Alias.for_file(str(background))
         identity = alias_identity(stored)

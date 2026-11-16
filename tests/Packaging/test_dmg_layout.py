@@ -109,8 +109,8 @@ class ImageTests(unittest.TestCase):
         cls.image = cls.root / "Parc-arm64.dmg"
         layout.build(app, cls.image, cls.root / "dmgbuild.log")
 
-    def mount(self, writable=False):
-        mount = Path(tempfile.mkdtemp(prefix="mount-", dir=self.root))
+    def mount(self, writable=False, folder=None):
+        mount = Path(tempfile.mkdtemp(prefix="mount-", dir=folder or self.root))
         options = ["-shadow", str(mount) + ".shadow"] if writable else ["-readonly"]
         subprocess.run(["hdiutil", "attach", str(self.image), "-nobrowse", "-noautoopen", *options,
                         "-mountpoint", str(mount)], check=True, capture_output=True)
@@ -138,6 +138,14 @@ class ImageTests(unittest.TestCase):
         self.assertEqual((view["backgroundType"], view["iconSize"], view["textSize"]), (2, 128.0, 13.0))
         self.assertEqual(records[(".", "bwsp")]["WindowBounds"], "{{200, 120}, {640, 400}}")
         self.assertEqual(layout.tiff_sizes((volume / ".background.tiff").read_bytes()), layout.BACKGROUND_SIZES)
+
+    def test_image_mounted_through_a_symlinked_folder_passes(self):
+        linked = self.root / "linked"
+        if not linked.is_symlink():
+            linked.symlink_to(self.root, target_is_directory=True)
+        volume = self.mount(folder=linked)
+        self.assertNotEqual(volume, volume.resolve())
+        self.check(volume)
 
     def test_the_shipped_2_7_0_layout_is_refused(self):
         volume = self.mount(writable=True)
