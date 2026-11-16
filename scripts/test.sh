@@ -371,6 +371,8 @@ step compile_and_run sidebar-window-move SidebarWindowMoveTests \
 
 step swift_test dock-reopen -warnings-as-errors -parse-as-library "$repo_root/Sources/ParcCore/DockReopen.swift" \
   "$repo_root/tests/DockReopenTests.swift"
+step swift_test tab-peek -warnings-as-errors -parse-as-library "$repo_root/Sources/ParcCore/TabPeek.swift" \
+  "$repo_root/tests/Support/TestFailure.swift" "$repo_root/tests/TabPeekTests.swift"
 
 wait
 shopt -s nullglob
