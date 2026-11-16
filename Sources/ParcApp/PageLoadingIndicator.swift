@@ -53,6 +53,15 @@ enum PageLoadingPresentationSkip {
     private var lastTick: CFTimeInterval = 0
     private var lastPresentation: PageLoadingPresentation?
     private let frames = ViewDisplayFrameDriver()
+    var now: () -> CFTimeInterval = { CACurrentMediaTime() }
+    var isVisibleOnScreen: @MainActor (NSView) -> Bool = { view in
+        guard let window = view.window else { return false }
+        return PageLoadingIndicator.isVisible(occlusion: window.occlusionState, miniaturized: window.isMiniaturized,
+                                              hidden: view.isHiddenOrHasHiddenAncestor)
+    }
+    static func isVisible(occlusion: NSWindow.OcclusionState, miniaturized: Bool, hidden: Bool) -> Bool {
+        !hidden && occlusion.contains(.visible) && !miniaturized
+    }
 
     static func frame(paneMinX: CGFloat, paneWidth: CGFloat, bandHeight: CGFloat) -> NSRect {
         let width = min(size.width, max(0, paneWidth))
@@ -118,10 +127,9 @@ enum PageLoadingPresentationSkip {
 
     func setLoading(_ loading: Bool) {
         if loading == isLoading { return }
-        let now = CACurrentMediaTime()
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if loading {
-            phase = .loading; loadingStart = now
+            phase = .loading; loadingStart = now()
             if reduceMotion { pulse = 1; velocity = 0 }
         } else {
             phase = .hidden
@@ -145,13 +153,13 @@ enum PageLoadingPresentationSkip {
 
     private func startFrames() {
         guard !frames.isRunning, windowVisible else { return }
-        lastTick = CACurrentMediaTime()
+        lastTick = now()
         frames.start(in: self) { [weak self] in self?.tick() ?? false }
     }
     private func stopFrames() { frames.stop() }
 
     private func tick() -> Bool {
-        tick(now: CACurrentMediaTime())
+        tick(now: now())
     }
 
     private func tick(now: CFTimeInterval) -> Bool {
@@ -278,10 +286,7 @@ enum PageLoadingPresentationSkip {
     }
 
     private var occlusionObserver: NSObjectProtocol?
-    private var windowVisible: Bool {
-        guard let window, !isHiddenOrHasHiddenAncestor else { return false }
-        return window.occlusionState.contains(.visible) && !window.isMiniaturized
-    }
+    private var windowVisible: Bool { isVisibleOnScreen(self) }
     override func viewDidHide() { super.viewDidHide(); occlusionChanged() }
     override func viewDidUnhide() { super.viewDidUnhide(); occlusionChanged() }
     override func viewWillMove(toWindow newWindow: NSWindow?) {

@@ -135,6 +135,7 @@ enum DeveloperReloadState: String { case reload, forceReload }
     private var spinning = false
     private let frames = ViewDisplayFrameDriver()
     private var tinted: (color: NSColor, images: [ObjectIdentifier: NSImage])?
+    var now: () -> CFTimeInterval = { CACurrentMediaTime() }
 
     init(view: NSView, pointSize: CGFloat, rasterized: Bool) {
         self.view = view; self.pointSize = pointSize; self.rasterized = rasterized
@@ -157,7 +158,7 @@ enum DeveloperReloadState: String { case reload, forceReload }
             return
         }
         from = progress; target = next
-        start = CACurrentMediaTime(); delay = Self.delay(enteringLoading: loading)
+        start = now(); delay = Self.delay(enteringLoading: loading)
         startFrames()
     }
 
@@ -171,7 +172,7 @@ enum DeveloperReloadState: String { case reload, forceReload }
             return
         }
         spinFrom = rotation; spinTarget = next
-        spinStart = CACurrentMediaTime(); spinning = true
+        spinStart = now(); spinning = true
         startFrames()
     }
 
@@ -189,9 +190,9 @@ enum DeveloperReloadState: String { case reload, forceReload }
     private func stopFrames() { frames.stop() }
 
     private func tick() -> Bool {
-        let now = CACurrentMediaTime()
+        let time = now()
         var keep = false
-        let loadElapsed = now - start - delay
+        let loadElapsed = time - start - delay
         if progress != target {
             if loadElapsed >= 0 {
                 if loadElapsed >= Self.settlingTime {
@@ -205,7 +206,7 @@ enum DeveloperReloadState: String { case reload, forceReload }
             }
         }
         if spinning {
-            let elapsed = now - spinStart
+            let elapsed = time - spinStart
             if elapsed >= Self.actionSettlingTime {
                 rotation = spinTarget.truncatingRemainder(dividingBy: Self.actionRotation)
                 spinFrom = rotation; spinTarget = rotation; spinning = false

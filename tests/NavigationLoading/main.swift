@@ -1,9 +1,5 @@
 import AppKit
 
-private final class VisibleWindow: NSWindow {
-    override var occlusionState: NSWindow.OcclusionState { .visible }
-}
-
 @MainActor @main struct NavigationLoadingChecks {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
@@ -58,6 +54,8 @@ private final class VisibleWindow: NSWindow {
         check(ReloadGlyph.delay(enteringLoading: true) == 0.2 && ReloadGlyph.delay(enteringLoading: false) == 0.1, "0.2 s entering and 0.1 s leaving delays")
         let view = NSView()
         let glyph = ReloadGlyph(view: view, pointSize: SidebarChromeLayout.navigationGlyphPointSize, rasterized: true)
+        var clock: CFTimeInterval = 0
+        glyph.now = { clock }
         func driving(_ sources: [FrameSource]) -> Bool { sources.contains(where: \.isLive) }
         var unanimated = FrameSources.scheduled { glyph.update(loading: true, forceReload: false, animated: false) }
         check(glyph.progress == 1 && glyph.loading, "unanimated switch to Stop")
@@ -90,6 +88,7 @@ private final class VisibleWindow: NSWindow {
         } else {
             check(driving(load), "load spring samples on the display link")
             let redraws = Redraws.count(view)
+            clock += ReloadGlyph.delay(enteringLoading: true) - 1.0 / 60
             load.forEach { $0.fire() }
             check(glyph.progress == 0 && driving(load) && Redraws.count(view) == redraws + 1,
                   "a frame inside the 0.2 s delay redraws the idle glyph and keeps sampling")
@@ -99,13 +98,22 @@ private final class VisibleWindow: NSWindow {
             check(driving(spin), "action spin samples on the display link")
             glyph.stop()
             check(!driving(spin), "stop idles the action spin")
+            let unloadStart = clock
             let unload = FrameSources.scheduled { glyph.update(loading: false, forceReload: false, animated: true) }
             check(driving(unload), "leaving loading samples on the display link")
-            Thread.sleep(forTimeInterval: ReloadGlyph.delay(enteringLoading: false) + ReloadGlyph.settlingTime + 0.05)
+            clock = unloadStart + ReloadGlyph.delay(enteringLoading: false) + ReloadGlyph.settlingTime / 2
+            unload.forEach { $0.fire() }
+            check(driving(unload) && glyph.progress != 0 && glyph.progress != 1, "mid-spring the glyph keeps sampling between Stop and Reload")
+            clock = unloadStart + ReloadGlyph.delay(enteringLoading: false) + ReloadGlyph.settlingTime + 1.0 / 60
             unload.forEach { $0.fire() }
             check(glyph.progress == 0 && !driving(unload), "a settled spring stops its own display link")
         }
 
+        check(PageLoadingIndicator.isVisible(occlusion: .visible, miniaturized: false, hidden: false)
+              && !PageLoadingIndicator.isVisible(occlusion: [], miniaturized: false, hidden: false)
+              && !PageLoadingIndicator.isVisible(occlusion: .visible, miniaturized: true, hidden: false)
+              && !PageLoadingIndicator.isVisible(occlusion: .visible, miniaturized: false, hidden: true),
+              "the pill counts as on screen only in a visible, unminimized window while it and its ancestors are shown")
         let indicator = PageLoadingIndicator(frame: NSRect(x: 0, y: 0, width: 128, height: 4))
         var unwindowed = FrameSources.scheduled { indicator.setLoading(true) }
         check(indicator.isLoading && unwindowed.isEmpty, "no window: loading does not tick")
@@ -156,18 +164,21 @@ private final class VisibleWindow: NSWindow {
         spaceHost.reset()
 
         SystemOverrides.reduceMotion = false
-        let pillWindow = VisibleWindow(contentRect: NSRect(x: 0, y: 0, width: 128, height: 4),
-                                       styleMask: .borderless, backing: .buffered, defer: true)
-        pillWindow.isReleasedWhenClosed = false
         let driven = PageLoadingIndicator(frame: NSRect(x: 0, y: 0, width: 128, height: 4))
-        pillWindow.contentView = driven
-        var loadingStarted = CACurrentMediaTime()
+        var onScreen = false
+        driven.isVisibleOnScreen = { _ in onScreen }
+        driven.now = { clock }
+        var loadingStarted = clock, frame = 0
+        check(FrameSources.scheduled { driven.setLoading(true) }.isEmpty, "a loading pill off screen does not tick")
+        driven.reset()
+        onScreen = true
         var pill = FrameSources.scheduled { driven.setLoading(true) }
         check(driving(pill), "a visible loading pill samples on the display link")
         let track = driven.layer!.sublayers!.first!
         let bar = track.sublayers!.last as! CAShapeLayer
         func deliverFrame() -> [GeometryWrite] {
-            Thread.sleep(forTimeInterval: 1.0 / 60)
+            frame += 1
+            clock = loadingStarted + (Double(frame) - 0.5) / 60
             return GeometryWrites.layerWrites(by: driven) { pill.forEach { $0.fire() } }
         }
         func presentations(_ writes: [GeometryWrite]) -> Int { writes.filter { $0.object === track && $0.key == "transform" }.count }
@@ -182,30 +193,28 @@ private final class VisibleWindow: NSWindow {
             let fraction = spring.damping / (2 * (spring.stiffness * spring.mass).squareRoot())
             return abs(response - 0.8) < 0.0001 && abs(fraction - 0.92) < 0.0001 && spring.duration == spring.settlingDuration
         }
-        func waitForSweep() -> CFTimeInterval {
-            while bar.opacity == 0, CACurrentMediaTime() - loadingStarted < 5 { _ = deliverFrame() }
-            return CACurrentMediaTime() - loadingStarted
+        func sweepFrame() -> Int? {
+            while bar.opacity == 0, frame < 300 { _ = deliverFrame() }
+            return bar.opacity == 0 ? nil : frame
         }
         check(track.bounds.size == PageLoadingIndicator.trackSize(sweeping: false), "loading shows the 48-point track")
-        let sweepAfter = waitForSweep()
-        check(bar.opacity == PageLoadingIndicator.sweepBarOpacity && sweepAfter > PageLoadingIndicator.sweepDelay
-              && sweepAfter < PageLoadingIndicator.sweepDelay + 0.5,
-              "the pill sweeps at the pulse trough after 3.2 s")
+        check(sweepFrame() == 193 && bar.opacity == PageLoadingIndicator.sweepBarOpacity,
+              "the pill sweeps at the pulse trough on the first frame after 3.2 s")
         let widen = boundsSpring()
         check(track.bounds.size == PageLoadingIndicator.trackSize(sweeping: true) && widen.map { near($0.from, 48) && $0.to == 128 } == true
               && widen.map { isSweepSpring($0.spring) } == true && barTarget() == PageLoadingIndicator.sweepBarOpacity,
               "the sweep springs the track from 48 to 128 points and the bar to 0.92 on the sweep spring")
         var skipped = 0
-        let settleDeadline = Date(timeIntervalSinceNow: 8)
-        while skipped < 2, Date() < settleDeadline {
+        let settleLimit = frame + 480
+        while skipped < 2, frame < settleLimit {
             let empty = bar.strokeStart == 0 && bar.strokeEnd == 0
             let writes = deliverFrame()
             skipped = empty && bar.strokeEnd == 0 && writes.isEmpty ? skipped + 1 : 0
         }
         check(skipped == 2 && driving(pill), "settled empty-third ticks skip layer writes while the link keeps sampling")
         var growth: [GeometryWrite] = []
-        let growthDeadline = Date(timeIntervalSinceNow: 1.5)
-        while bar.strokeEnd == 0, Date() < growthDeadline { growth = deliverFrame() }
+        let growthLimit = frame + 90
+        while bar.strokeEnd == 0, frame < growthLimit { growth = deliverFrame() }
         check(bar.strokeEnd > 0 && presentations(growth) == 1, "stroke growth presents")
         driven.setLoading(false)
         let shrink = boundsSpring()
@@ -216,9 +225,9 @@ private final class VisibleWindow: NSWindow {
         driven.reset()
         check(track.animation(forKey: "bounds") == nil && bar.animation(forKey: "opacity") == nil && !driving(pill),
               "reset removes the track and bar springs and idles the pill")
-        loadingStarted = CACurrentMediaTime()
+        loadingStarted = clock; frame = 0
         pill = FrameSources.scheduled { driven.setLoading(true) }
-        check(waitForSweep() < PageLoadingIndicator.sweepDelay + 0.5 && bar.opacity > 0, "a second load sweeps again")
+        check(sweepFrame() == 193 && bar.opacity > 0, "a second load sweeps again on the first frame after 3.2 s")
         SystemOverrides.reduceMotion = true
         let exit = deliverFrame()
         check(presentations(exit) == 1 && bar.opacity == 0 && !driving(pill)
@@ -231,7 +240,6 @@ private final class VisibleWindow: NSWindow {
         driven.reset()
         check(!driving(hiding), "reset idles the pill")
         SystemOverrides.reduceMotion = nil
-        pillWindow.close()
 
         var chosen: [ReloadOptionsMenu.Choice] = []
         let menu = ReloadOptionsMenu.make(state: .forceReload, canReload: true, canForceReload: true, canClearCookies: false) { chosen.append($0) }

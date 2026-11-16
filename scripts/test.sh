@@ -361,6 +361,7 @@ step swift_test external-media-library -parse-as-library -warnings-as-errors \
 step python3 "$repo_root/tests/CaptureLibraryCatalogSkip/check.py"
 step python3 "$repo_root/tests/DownloadLibrary/check-view.py"
 step python3 "$repo_root/tests/LibraryRail/check.py"
+step python3 "$repo_root/tests/NavigationLoading/check.py"
 step python3 "$repo_root/tests/EaselIdleSleep/check.py"
 step python3 "$repo_root/tests/DownloadLocation/check-picker.py"
 step python3 "$repo_root/tests/MenuImages/check.py"
