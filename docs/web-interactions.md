@@ -191,7 +191,11 @@ Docked Developer Tools aren't a Parc page, so the same presenter shows their
 menu through the tools' docked lease, and the menu closes when that lease ends.
 Docked or not, the DevTools items (Edit attribute, Copy, Store as global
 variable…) appear as in Chrome, with the same excluded items removed and none of
-the webpage additions above.
+the webpage additions above. Any other web content Parc hosts outside a Chromium
+window gets the same treatment wherever Chromium would otherwise show nothing:
+extension popups and side panels, embedded extension options and the device
+toolbar of undocked tools keep Chromium's own menu, Inspect included. Each such
+menu is bound to the window showing that content.
 
 ### Split View from link clicks
 

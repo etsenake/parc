@@ -448,6 +448,7 @@ source_set("browser") {
     "//ui/gfx/codec",
     "//ui/menus",
     "//ui/native_theme",
+    "//ui/views",
     "//ui/webui/resources",
   ]
 

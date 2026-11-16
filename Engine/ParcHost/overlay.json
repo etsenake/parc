@@ -1009,7 +1009,7 @@
     {
       "source": "Engine/ParcNative/native_page_context_menu.mm",
       "target": "parc/native/native_page_context_menu.mm",
-      "sha256": "493c20fb95ed41f4984437a4c8ab3a29ba16568d053e8b562f8e799f837fe37e"
+      "sha256": "b30dff27899243b20bd98a197ed16aab9ed1cbba2001b13d58086f26620d81ac"
     },
     {
       "source": "Engine/ParcNative/native_blocked_popups.mm",
@@ -2069,7 +2069,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "104357565fc1375291f9d3e3f78de99d1bf06ec67201937a3204f1206a3354f3"
+      "sha256": "5c0e1786e0d97765fb97d564bc6e0ac1d6f98f3994f3489262e3d49ac9ef11b9"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",

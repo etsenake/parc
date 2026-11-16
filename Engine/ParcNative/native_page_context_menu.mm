@@ -41,6 +41,7 @@
 #include "ui/base/cocoa/menu_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/menus/simple_menu_model.h"
+#include "ui/views/widget/widget.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "url/origin.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -52,13 +53,26 @@ namespace {
 constexpr int kAddImageToEasel = 26500;
 constexpr int kOpenLinkInSplitView = kAddImageToEasel + 1;
 constexpr int kProfileLinkCommands = 100;
+bool ChromiumPresents(content::WebContents& contents) {
+  return views::Widget::GetTopLevelWidgetForNativeView(contents.GetNativeView());
+}
+NSWindow* HostWindow(content::WebContents& contents) {
+  NSView* view = contents.GetNativeView().GetNativeNSView();
+  if (!view || view.hiddenOrHasHiddenAncestor || ExistingNativePage(&contents) ||
+      HasNativeAuxiliaryRoute(contents) || ChromiumPresents(contents)) {
+    return nil;
+  }
+  return view.window;
+}
 struct PageLease {
   base::WeakPtr<content::WebContents> contents;
   content::WeakDocumentPtr document;
   NSWindow* __weak window;
   std::shared_ptr<NativeAuxiliaryPage> auxiliary;
+  bool hosted = false;
   bool Owned() const {
     if (auxiliary) return auxiliary->IsValid() && auxiliary->window() == window;
+    if (hosted) return HostWindow(*contents) == window;
     PCNativePage* page = ExistingNativePage(contents.get());
     return page && !page.closed && page.nativeView.window == window;
   }
@@ -78,11 +92,12 @@ PageLease Lease(RenderViewContextMenu& menu) {
   auto* frame = menu.GetRenderFrameHost();
   PCNativePage* page = ExistingNativePage(contents);
   auto auxiliary = page ? nullptr : GetNativeAuxiliaryPage(*contents);
+  NSWindow* host = page || auxiliary ? nil : HostWindow(*contents);
   NSWindow* window = page ? page.nativeView.window
-                          : auxiliary ? auxiliary->window() : nil;
+                          : auxiliary ? auxiliary->window() : host;
   return {contents->GetWeakPtr(), frame ? frame->GetWeakDocumentPtr()
                                       : content::WeakDocumentPtr(),
-          window, std::move(auxiliary)};
+          window, std::move(auxiliary), host != nil};
 }
 }
 }
@@ -388,13 +403,17 @@ void RegisterNativePageContextMenu() {
 std::unique_ptr<RenderViewContextMenuObserver> CreateNativePageContextMenuObserver(
     RenderViewContextMenu* menu) {
   auto* contents = menu->GetWebContents();
-  return ExistingNativePage(contents) || GetNativeAuxiliaryPage(*contents)
+  return ExistingNativePage(contents) || HasNativeAuxiliaryRoute(*contents) ||
+          !ChromiumPresents(*contents)
       ? std::make_unique<ContextObserver>(menu) : nullptr;
 }
 bool ShowNativePageContextMenu(RenderViewContextMenu& menu, NSView* parent,
                               MenuControllerCocoa* __strong* destination) {
   auto* contents = menu.GetWebContents();
-  if (!ExistingNativePage(contents) && !HasNativeAuxiliaryRoute(*contents)) return false;
+  if (!ExistingNativePage(contents) && !HasNativeAuxiliaryRoute(*contents) &&
+      ChromiumPresents(*contents)) {
+    return false;
+  }
   auto lease = Lease(menu);
   if (!lease.Valid() || !parent || parent.window != lease.window) return true;
   MenuControllerCocoa* controller = [[MenuControllerCocoa alloc]
