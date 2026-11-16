@@ -784,7 +784,10 @@ extension BrowserWindowController {
             _ = binding.showExtensionActionContextMenu(action, for: page)
             return
         }
-        let show = { (menu: ParcContextMenu) in _ = binding.showExtensionActionContextMenu(action, for: page, presenter: menu) }
+        let show = { [weak self] (menu: ParcContextMenu) in
+            menu.willPerform = { item in self?.extensionMenuWillPerform(item) }
+            _ = binding.showExtensionActionContextMenu(action, for: page, presenter: menu)
+        }
         if siteControlCenter?.presentExtensionMenu(beside: control, for: action.identifier, show) == true { return }
         let rect = window.convertToScreen(control.convert(control.bounds, to: nil))
         let screen = SiteControlCenterPlacement.screen(at: CGPoint(x: rect.midX, y: rect.midY)) ?? window.screen?.visibleFrame
@@ -794,6 +797,13 @@ extension BrowserWindowController {
         if inSidebar { sidebar.setAddressPopover(menu, open: true) }
         if let center = siteControlCenter { center.keepingOpen { show(menu) } } else { show(menu) }
         if inSidebar { sidebar.setAddressPopover(menu, open: false) }
+    }
+
+    private static let extensionSidePanelMenuItem = NSUserInterfaceItemIdentifier("extension-menu:side-panel")
+
+    private func extensionMenuWillPerform(_ item: NSMenuItem) {
+        guard item.identifier == Self.extensionSidePanelMenuItem, siteControlCenter != nil else { return }
+        dismissSiteControlCenter()
     }
 
     private func performExtensionActionAfterDismissingControls(_ action: @escaping () -> Void) {

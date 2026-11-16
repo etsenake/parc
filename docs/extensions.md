@@ -118,6 +118,6 @@ one, staleness and security admission.
 
 The [native runtime fixture](../tests/NativeRuntime/README.md) exercises real
 action snapshots, pin state, stale selection refusal and selected-tab grants.
-The extension context menu still disables its side-panel command even though
-extension API and action routes can open the native panel. The missing menu
-connection is described in the [context-menu guide](../tests/NativeExtensionContextMenu/README.md).
+The [context-menu browser cases](../tests/NativeExtensionContextMenu/README.md)
+open and close the native side panel from an extension's menu and keep that
+item unavailable in pop-up windows.

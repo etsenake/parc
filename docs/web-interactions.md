@@ -83,8 +83,9 @@ button opens Parc's existing page menu.
 An extension tile's context menu keeps the card open and draws the engine's
 built menu in the Space's colors. It hangs beside the card aligned to the tile;
 the tile stays lit. Pinned sidebar/toolbar buttons use the same themed menu and
-leave an open card open. A disabled row's engine-supplied reason appears in the
-tooltip and accessibility help.
+leave an open card open. Open or Close Side Panel is the exception: choosing it
+closes the card before the engine toggles the panel. A disabled row's
+engine-supplied reason appears in the tooltip and accessibility help.
 
 Placement considers the entire submenu chain and available window/screen space,
 opening left when the chain cannot fit right. Native-style event tracking keeps

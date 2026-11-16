@@ -119,8 +119,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 - Tooltip shortcut feedback needs the same shifted-symbol matching as command
   dispatch. [Tooltips](tooltips.md).
 - Download arrival needs a Reduce Motion path. [Downloads](download-library.md).
-- Extension context-menu side-panel toggle is unavailable even though toolbar
-  side-panel presentation works. [Extension interaction](extensions-interaction.md).
 
 ## Planned interface work
 

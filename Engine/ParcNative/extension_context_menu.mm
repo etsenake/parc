@@ -19,6 +19,7 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/extensions/extension_action_view_model.h"
 #include "chrome/browser/ui/extensions/extensions_container.h"
+#include "chrome/browser/ui/side_panel/side_panel_ui.h"
 #include "chrome/browser/ui/views/extensions/security_dialog_tracker.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/browser_thread.h"
@@ -38,9 +39,6 @@
 #import "ui/menus/cocoa/menu_controller.h"
 #import "window_security_reservation.h"
 
-// A guarded target still sends the original action to MenuControllerCocoa.
-// That controller performs real MenuModel::ActivatedAt with native event flags;
-// this adapter does not interpret extension commands or grant permissions.
 @interface PCNativeExtensionMenuTarget : NSObject <NSUserInterfaceValidations>
 - (instancetype)initWithItem:(NSMenuItem*)item
                   controller:(MenuControllerCocoa*)controller
@@ -65,7 +63,6 @@
   return self;
 }
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item {
-  // Same selector as the original target preserves its validation contract.
   MenuControllerCocoa* controller = _controller;
   return !_invoked && controller && _canInvoke() &&
          [controller validateUserInterfaceItem:item];
@@ -76,8 +73,6 @@
   MenuControllerCocoa* controller = _controller;
   if (!_invoked && controller && _canInvoke() &&
       [controller validateUserInterfaceItem:item] && !item.hidden) {
-    // Native command callbacks may destroy the owner and its model. Do not
-    // touch them after dispatch. AppKit has already ended/faded menu tracking.
     _invoked = YES;
     [NSApp sendAction:_originalAction to:controller from:item];
   }
@@ -104,10 +99,6 @@
 
 namespace parc {
 namespace {
-// GetContextMenu replaces the action's owned model. Cancellation only ends
-// tracking; a command can still be on the stack (for example inside a pin
-// observer). Keep this UI-thread lease until Show unwinds, even if the
-// presenter is destroyed and replaced during that command.
 class ScopedModelUse final {
  public:
   explicit ScopedModelUse(const ExtensionActionViewModel& model)
@@ -130,24 +121,28 @@ class ScopedModelUse final {
   const bool acquired_;
 };
 
-// These real command paths require services outside this source slice. Keep
-// their original labels, but expose a truthful disabled reason. No replacement
-// uninstall/side-panel action and no guessed approval is executed.
 NSString* DefaultUnavailableReason(int command) {
   using Model = extensions::ExtensionContextMenuModel;
   switch (command) {
     case Model::UNINSTALL:
       return @"Removing extensions is currently unavailable.";
-    case Model::TOGGLE_SIDE_PANEL_VISIBILITY:
-      return @"Extension side panels are currently unavailable.";
     default:
       return nil;
   }
 }
 
-// MenuControllerCocoa supports ordinary command/check/radio/submenu items.
-// Refuse unsupported semantics instead of flattening actionable submenus or
-// rendering button rows as commands. The real action model is never cloned.
+NSString* SidePanelUnavailableReason(BrowserWindowInterface* browser) {
+  auto* panel = browser ? SidePanelUI::From(browser) : nullptr;
+  if (!panel || !panel->UsesNativeExtensionContent()) {
+    return @"Side panels are not available in this window.";
+  }
+  if (browser->GetType() == BrowserWindowInterface::TYPE_POPUP ||
+      browser->GetType() == BrowserWindowInterface::TYPE_APP_POPUP) {
+    return @"Side panels are not available in pop-up windows.";
+  }
+  return nil;
+}
+
 bool SupportedMenu(ui::MenuModel& model) {
   for (size_t i = 0; i < model.GetItemCount(); ++i) {
     switch (model.GetTypeAt(i)) {
@@ -168,12 +163,12 @@ bool SupportedMenu(ui::MenuModel& model) {
         return false;
     }
     if (model.GetIconAt(i).IsImageGenerator()) {
-      return false;  // Current Cocoa adapter explicitly does not support this.
+      return false;
     }
   }
   return true;
 }
-}  // namespace
+}
 
 class NativeExtensionContextMenu::Session final
     : public std::enable_shared_from_this<Session>,
@@ -245,9 +240,6 @@ class NativeExtensionContextMenu::Session final
     registry_->AddObserver(this);
     observing_ = true;
     extensions::SecurityDialogTracker::GetInstance()->AddObserver(this);
-    // Do not call GetContextMenu again while tracking: it replaces and destroys
-    // the action's previous dynamic model. Show holds a model-specific lease
-    // through the complete native command stack, including after cancellation.
     auto* model = action_->GetContextMenu(source);
     if (!model || !SupportedMenu(*model)) {
       Cancel();
@@ -266,9 +258,6 @@ class NativeExtensionContextMenu::Session final
     controller_ = [[MenuControllerCocoa alloc] initWithModel:model
                                                isContextMenu:YES
                                                     delegate:builder_];
-    // The delegate is called from the controller's initializer, before our
-    // controller_ member is assigned. Install guarded targets after
-    // construction.
     BindTargets(controller_.menu);
     NSNotificationCenter* center = NSNotificationCenter.defaultCenter;
     began_ = [center addObserverForName:NSMenuDidBeginTrackingNotification
@@ -326,7 +315,6 @@ class NativeExtensionContextMenu::Session final
     StopObserving();
     [controller_ cancel];
     [app_presenter_ cancelMenu];
-    // Keep controller and targets alive until the nested AppKit stack returns.
   }
   void StateChanged() {
     if (!Valid()) {
@@ -336,8 +324,11 @@ class NativeExtensionContextMenu::Session final
 
  private:
   NSString* UnavailableReason(int command) const {
-    if (command == extensions::ExtensionContextMenuModel::UNINSTALL &&
-        browser_ && extension_) {
+    using Model = extensions::ExtensionContextMenuModel;
+    if (command == Model::TOGGLE_SIDE_PANEL_VISIBILITY) {
+      return SidePanelUnavailableReason(browser_.get());
+    }
+    if (command == Model::UNINSTALL && browser_ && extension_) {
       auto* host = NativeExtensionUninstallService::Get(
           browser_->GetUnownedUserDataHost());
       if (host && host->CanPresent(*extension_)) {
@@ -356,9 +347,13 @@ class NativeExtensionContextMenu::Session final
     if (model->GetTypeAt(index) == ui::MenuModel::TYPE_SUBMENU) {
       return;
     }
-    item.toolTip = UnavailableReason(model->GetCommandIdAt(index));
-    items_.push_back(
-        {item, model->AsWeakPtr(), index, model->GetCommandIdAt(index)});
+    const int command = model->GetCommandIdAt(index);
+    item.toolTip = UnavailableReason(command);
+    if (command ==
+        extensions::ExtensionContextMenuModel::TOGGLE_SIDE_PANEL_VISIBILITY) {
+      item.identifier = @"extension-menu:side-panel";
+    }
+    items_.push_back({item, model->AsWeakPtr(), index, command});
   }
   void BindTargets(NSMenu*) {
     std::weak_ptr<Session> weak = shared_from_this();
@@ -455,7 +450,7 @@ class NativeExtensionContextMenu::Session final
   }
   base::WeakPtr<BrowserWindowInterface> browser_;
   NativeExtensionActionHost* shell_;
-  ExtensionActionViewModel* action_;  // Identity only after GetContextMenu.
+  ExtensionActionViewModel* action_;
   const std::string id_;
   scoped_refptr<const extensions::Extension> extension_;
   NSWindow* __weak window_;
@@ -518,8 +513,6 @@ bool NativeExtensionContextMenu::Show(
   auto state = run_state_;
   CHECK(!state->running);
   state->running = true;
-  // Declared before the model lease: callback release follows its destruction
-  // and native Session::Run return, even when the presenter dies in a command.
   base::ScopedClosureRunner returned(base::BindOnce(
       [](std::shared_ptr<RunState> state) { state->DidReturn(); }, state));
   ScopedModelUse model_use(model);
@@ -528,13 +521,9 @@ bool NativeExtensionContextMenu::Show(
   }
   session_ = std::make_shared<Session>(browser_, host_, model, app_presenter);
   auto keep = session_;
-  // No access to this after the native loop: a command may destroy the
-  // presenter.
   return keep->Run(source);
 }
 void NativeExtensionContextMenu::Cancel() {
-  // Do not clear the active slot while its Run is still on the stack. A native
-  // command may synchronously cancel and attempt another Show before returning.
   if (auto keep = session_) {
     keep->Cancel();
   }
@@ -548,8 +537,6 @@ void NativeExtensionContextMenu::CancelAndWait(base::OnceClosure ready) {
   }
   ++state->cancel_depth;
   Cancel();
-  // Cancel can synchronously destroy this presenter. Only retained state is
-  // touched after native cancellation; nested requests share this barrier.
   CHECK(state->cancel_depth);
   --state->cancel_depth;
   state->MaybeComplete();
@@ -559,4 +546,4 @@ void NativeExtensionContextMenu::HostStateChanged() {
     keep->StateChanged();
   }
 }
-}  // namespace parc
+}

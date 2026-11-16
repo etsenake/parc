@@ -231,6 +231,7 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
     private var pendingRow: Timer?
     private var tip: (level: Int, row: Int, timer: Timer?, delay: TimeInterval)?
     private var tipPresenter: (presenter: TooltipPresenter, level: Int)?
+    var willPerform: ((NSMenuItem) -> Void)?
 
     init(anchor: NSRect, regions: [NSRect], parent: NSWindow, colors: ParcMenuColors) {
         self.anchor = anchor
@@ -259,7 +260,9 @@ final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
         running = false
         if let item = chosen, let owner = item.menu {
             chosen = nil
-            owner.performActionForItem(at: owner.index(of: item))
+            willPerform?(item)
+            let index = owner.index(of: item)
+            if index >= 0 { owner.performActionForItem(at: index) }
         }
         return true
     }
