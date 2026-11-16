@@ -130,9 +130,10 @@ enum DeveloperChromeGeometry {
         browserHeight: CGFloat,
         developerFrame: NSRect,
         browserFrame: NSRect,
-        contentFrame: NSRect
+        contentFrame: NSRect,
+        warningHeight: CGFloat = 0
     ) -> Bool {
-        let headerHeight = max(developerHeight, browserHeight)
+        let headerHeight = max(developerHeight, browserHeight) + warningHeight
         return developerFrame == NSRect(x: 0, y: 0, width: bounds.width, height: developerHeight)
             && browserFrame == NSRect(x: 0, y: 0, width: bounds.width, height: browserHeight)
             && contentFrame == NSRect(x: 0, y: headerHeight, width: bounds.width,
@@ -145,9 +146,11 @@ enum DeveloperChromeGeometry {
         browserHeight: CGFloat,
         developerFrame: NSRect,
         browserFrame: NSRect,
-        contentFrame: NSRect
+        contentFrame: NSRect,
+        warningHeight: CGFloat = 0
     ) -> Bool {
-        let stripHeight = max(developerHeight, browserHeight)
+        let barHeight = max(developerHeight, browserHeight)
+        let stripHeight = barHeight + min(warningHeight, max(0, card.height - barHeight))
         return developerFrame == NSRect(x: 0, y: 0, width: card.width, height: developerHeight)
             && browserFrame == NSRect(x: 0, y: 0, width: card.width, height: browserHeight)
             && contentFrame == NSRect(x: 0, y: stripHeight, width: card.width,

@@ -23,6 +23,7 @@ final class BrowserPane: NSView {
     }
     let browserToolbar = BrowserToolbarView()
     let windowGrabber = WebpageWindowGrabber()
+    let debuggerWarning = DebuggerWarningStrip()
     private let controlVisibility = PaneControlVisibility()
     let splitHighlight = SplitPaneHighlight()
     var controlsFocused = true { didSet { needsLayout = true } }
@@ -101,7 +102,7 @@ final class BrowserPane: NSView {
         super.init(frame: frameRect)
         wantsLayer = true; content.wantsLayer = true; content.layer?.backgroundColor = NSColor.white.cgColor
         splitHighlight.attach(to: self)
-        addSubview(content); addSubview(windowGrabber)
+        addSubview(content); addSubview(windowGrabber); addSubview(debuggerWarning)
         browserToolbar.isHidden = true; addSubview(browserToolbar)
         content.addSubview(error); error.isHidden = true
         controlVisibility.onChange = { [weak self] revealed, duration in
@@ -123,7 +124,10 @@ final class BrowserPane: NSView {
         if showsTopBar != !browserToolbar.isHidden { showsTopBar = !browserToolbar.isHidden; onContentBackingChange?() }
         browserToolbar.frame = NSRect(x: 0, y: 0, width: bounds.width, height: toolbarHeight)
         loadedDeveloperToolbar?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: developerHeight)
-        let nextContent = NSRect(x: 0, y: headerHeight, width: bounds.width, height: bounds.height - headerHeight)
+        let warningHeight = debuggerWarning.height
+        debuggerWarning.frame = NSRect(x: 0, y: headerHeight, width: bounds.width, height: warningHeight)
+        let pageTop = headerHeight + warningHeight
+        let nextContent = NSRect(x: 0, y: pageTop, width: bounds.width, height: bounds.height - pageTop)
         let contentMoved = content.frame != nextContent
         content.frame = nextContent
         if contentMoved { content.needsLayout = true }
@@ -136,7 +140,7 @@ final class BrowserPane: NSView {
             where PaneContentHostedLayoutFlush.shouldLayoutChild(needsLayout: child.needsLayout) {
             child.layoutSubtreeIfNeeded()
         }
-        windowGrabber.frame = WebpageWindowDragState.region(in: bounds, topStripHeight: headerHeight)
+        windowGrabber.frame = WebpageWindowDragState.region(in: bounds, topStripHeight: pageTop)
         let bar = headerHeight == PaneTopBarLayout.height ? NSRect(x: 0, y: 0, width: bounds.width, height: headerHeight) : nil
         controlVisibility.update(host: self, bar: bar, focused: controlsFocused, obstructed: controlsObstructed)
         splitHighlight.layout(bounds: bounds, cornerRadius: layer?.cornerRadius ?? 0)

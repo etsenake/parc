@@ -788,6 +788,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 for peek in self.presentedPeeks { peek.view.adoptWindowTheme(self.rootView) }
                 self.shortcutHint?.update(theme: self.rootView.theme, basicBackground: self.windowBasicBackground)
                 self.toasts.update(theme: self.rootView.theme)
+                self.refreshDebuggerWarningPalettes()
                 self.commandBar?.theme = self.rootView.paletteTheme
                 self.commandBar?.contentAppearance = palette.contentAppearance
                 self.residentCommandBar?.theme = self.rootView.paletteTheme

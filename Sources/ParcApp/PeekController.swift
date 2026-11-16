@@ -544,6 +544,7 @@ final class PeekHostView: PeekHitView {
     let content = LayoutView()
     let developerToolbar = DeveloperToolbarView()
     let browserToolbar = BrowserToolbarView()
+    let debuggerWarning = DebuggerWarningStrip()
     let loadingIndicator = PageLoadingIndicator()
     private let backdrop = ThemeRendererView()
     private let stage = LayoutView()
@@ -613,6 +614,7 @@ final class PeekHostView: PeekHitView {
         card.addSubview(content)
         developerToolbar.isHidden = true; card.addSubview(developerToolbar)
         browserToolbar.isHidden = true; card.addSubview(browserToolbar)
+        card.addSubview(debuggerWarning)
         setAccessibilityRole(.group); setAccessibilityLabel("Peek")
         applyPalette()
     }
@@ -673,7 +675,10 @@ final class PeekHostView: PeekHitView {
         let toolbarHeight: CGFloat = browserToolbar.isHidden ? 0 : BrowserToolbarView.height
         browserToolbar.frame = NSRect(x: 0, y: 0, width: frame.width, height: toolbarHeight)
         let stripHeight = max(developerHeight, toolbarHeight)
-        content.frame = NSRect(x: 0, y: stripHeight, width: frame.width, height: max(0, frame.height - stripHeight))
+        let warningHeight = min(debuggerWarning.height, max(0, frame.height - stripHeight))
+        debuggerWarning.frame = NSRect(x: 0, y: stripHeight, width: frame.width, height: warningHeight)
+        let pageTop = stripHeight + warningHeight
+        content.frame = NSRect(x: 0, y: pageTop, width: frame.width, height: max(0, frame.height - pageTop))
         layoutControls(geometry.controls(closeWidth: closeButton.preferredWidth))
         hitLayout = geometry; hitControls = controls.frame
         onLayout?()

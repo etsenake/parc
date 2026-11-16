@@ -276,6 +276,15 @@ Confirm infobars remain in their genuine `ContentInfoBarManager`, unanswered and
 expiring by their own rules, without an app shelf. Hiding presentation does not
 call Accept or change the underlying security decision.
 
+The one exception is Chromium's warning that an extension “started debugging
+this browser”: every page carrying that bar shows a 40-point strip under its
+toolbar, in each split pane, Peek and private window alike, and the page moves
+down to make room. It uses the toast palette from the Space theme, the bar's own
+wording, and a Cancel button that runs the bar's real button and detaches the
+debugger everywhere. The × does what Chrome's close does, which also detaches,
+so the warning can never be put away while the extension keeps debugging.
+VoiceOver announces it when it appears, and page full screen hides it.
+
 Tab sharing exposes **Share this tab instead** on the eligible hovered sidebar
 row through its actual `TabSharingInfoBarDelegate`. It appears before Close,
 not on split children, and keeps the real sharing callback. There is no in-page

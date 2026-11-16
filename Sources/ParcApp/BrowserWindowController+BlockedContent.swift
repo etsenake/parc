@@ -10,6 +10,7 @@ extension BrowserWindowController {
                 self.blockedContentDidChange(page)
             }
         })
+        setupDebuggerWarnings()
     }
 
     func blockedContent(for page: PCNativePage?) -> BlockedPageContent? {

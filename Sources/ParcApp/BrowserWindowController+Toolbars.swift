@@ -325,6 +325,8 @@ extension BrowserWindowController {
             } else {
                 configureDocumentToolbar(pane, tabID: id, visible: topBar, leading: id == leading)
             }
+            configureDebuggerWarning(pane.debuggerWarning, browser: pane.browser,
+                visible: selectedTabIDs.contains(id) && nativeFullscreenTabID != id && !pane.showsLocalContent)
             let developerHeight: CGFloat = pane.loadedDeveloperToolbar?.isHidden == false ? DeveloperToolbarLayout.height : 0
             let browserHeight: CGFloat = pane.browserToolbar.isHidden ? 0 : BrowserToolbarView.height
             if pane.needsLayout
@@ -335,7 +337,8 @@ extension BrowserWindowController {
                     developerFrame: pane.loadedDeveloperToolbar?.frame
                         ?? NSRect(x: 0, y: 0, width: pane.bounds.width, height: 0),
                     browserFrame: pane.browserToolbar.frame,
-                    contentFrame: pane.content.frame) {
+                    contentFrame: pane.content.frame,
+                    warningHeight: pane.debuggerWarning.height) {
                 pane.needsLayout = true
                 pane.layoutSubtreeIfNeeded()
                 flushedChromeLayout = true
@@ -351,6 +354,7 @@ extension BrowserWindowController {
                     isActivePeek: activePeek === peek,
                     developerToolbarHidden: peek.view.developerToolbar.isHidden),
                 failing: peek.showsFailure, themeBackground: nil)
+            configureDebuggerWarning(peek.view.debuggerWarning, browser: peek.browser, visible: true)
             let developerHeight: CGFloat = peek.view.developerToolbar.isHidden ? 0 : DeveloperToolbarLayout.height
             let browserHeight: CGFloat = peek.view.browserToolbar.isHidden ? 0 : BrowserToolbarView.height
             if peek.view.needsLayout
@@ -360,7 +364,8 @@ extension BrowserWindowController {
                     browserHeight: browserHeight,
                     developerFrame: peek.view.developerToolbar.frame,
                     browserFrame: peek.view.browserToolbar.frame,
-                    contentFrame: peek.view.content.frame) {
+                    contentFrame: peek.view.content.frame,
+                    warningHeight: peek.view.debuggerWarning.height) {
                 peek.view.needsLayout = true
                 peek.view.layoutSubtreeIfNeeded()
                 flushedChromeLayout = true

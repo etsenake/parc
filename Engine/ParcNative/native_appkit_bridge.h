@@ -1062,6 +1062,24 @@ NS_SWIFT_UI_ACTOR
 @property(nonatomic, readonly) BOOL canShareThisTabInstead;
 - (BOOL)shareThisTabInstead;
 @end
+#define PCNativePageDebuggerWarningsDidChangeNotification \
+  @"PCNativePageDebuggerWarningsDidChange"
+NS_SWIFT_UI_ACTOR
+__attribute__((visibility("default")))
+@interface PCNativeDebuggerWarning : NSObject
+@property(nonatomic, readonly, copy) NSString* message;
+@property(nonatomic, readonly, copy) NSString* cancelTitle;
+- (instancetype)init NS_UNAVAILABLE;
++ (instancetype)new NS_UNAVAILABLE;
+@end
+NS_SWIFT_UI_ACTOR
+@interface PCNativePage (DebuggerWarning)
+@property(nonatomic, readonly, copy) NSArray<PCNativeDebuggerWarning*>* debuggerWarnings;
+- (BOOL)cancelDebuggerWarning:(PCNativeDebuggerWarning*)warning
+    NS_SWIFT_NAME(cancelDebuggerWarning(_:));
+- (BOOL)dismissDebuggerWarning:(PCNativeDebuggerWarning*)warning
+    NS_SWIFT_NAME(dismissDebuggerWarning(_:));
+@end
 NS_SWIFT_UI_ACTOR
 @interface PCNativePage (SiteInfo)
 @property(nonatomic, readonly) BOOL canShowSiteInfo;
