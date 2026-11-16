@@ -22,15 +22,17 @@ The picture is original Parc artwork in the What's New page's language:
   [Nunito](../../Resources/NoteFonts/OFL.txt)), drawn into the picture.
 - A squiggle arrow in `#3139FB`, the release-notes divider wave, with three
   red `#FC4C58` pop lines at its tip.
-- A clay-red shore `#C64A42` under the icon labels, then a Parc-blue tide
-  `#5860FF` with a wavy edge, two ripples and a paper boat.
+- A little wooden park sign `#9B6C3F` on two posts under each icon, with
+  ink outlines, faint wood grain and teal grass at its feet. Finder's label
+  lands on the board.
+- A Parc-blue tide `#5860FF` with a wavy edge, two ripples and a paper boat.
 
-Finder draws a background picture the same way in light and dark mode, but its
-icon labels turn white in dark mode. White text on the paper would measure
-about 1.1:1, so the labels sit on the shore instead, whose tone gives black and
-white labels about 4.5:1 each. Both icons stay on the paper. Keep anything
-important out of the bottom 30 points, since Finder may count the title bar
-inside the window size.
+Finder labels are black in light mode and white in dark mode, with no colour
+setting, so the signs' wood is toned to read both ways at about 4.5:1.
+
+Each board is 31 points tall around 13-point text, leaving slack in case Finder
+places labels a little differently. Keep anything important out of the bottom
+30 points, since Finder may count the title bar inside the window size.
 
 The art lives here, not in `Resources/`, because the app build copies all of
 `Resources/` into Parc.app.
