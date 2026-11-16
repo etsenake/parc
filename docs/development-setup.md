@@ -229,6 +229,42 @@ scripts first. The current user instructions and working contract determine
 which checks are authorized; a setup guide is not permission to run a browser
 fixture or change a real profile.
 
+## Write test executables
+
+A failing check must exit, never crash. A trap or abort in a test binary that
+links AppKit makes macOS show a "quit unexpectedly" dialog and write a crash
+report, and negative controls fail on purpose on every run.
+
+Swift test runners compile
+[`tests/Support/TestFailure.swift`](../tests/Support/TestFailure.swift) with the
+test's own sources; a new runner lists it in its `swiftc` command. Inside the
+test module the file replaces `precondition`, `preconditionFailure`,
+`fatalError`, `assert` and `assertionFailure` with versions that print
+`file:line: Precondition failed: message` to standard error and exit with
+status 1. Per-test `check` and `expect` helpers that call `precondition` go
+through it unchanged; give each check a specific message.
+
+Start each `@main` type with `static func main() { exitOnFailure(runChecks) }`
+and put the checks in `runChecks()`, which may throw. An `async` test uses
+`@MainActor static func main() async { await exitOnFailure(runChecks) }` with a
+`@MainActor` `runChecks()`, keeping the main-actor isolation an `async` main
+has. The wrapper turns an escaped Swift error, or an uncaught Objective-C
+exception, into the same clean failure with the error's description or the
+exception's name and reason. A top-level `main.swift` script wraps its entry
+call or throwing block the same way, for example
+`MainActor.assumeIsolated { exitOnFailure(run) }`.
+
+C, C++ and Objective-C harnesses include
+[`tests/Support/TestFailure.h`](../tests/Support/TestFailure.h) and check with
+`PARC_EXPECT(condition)`; a harness's own check macro prints its message and
+calls `exit(1)`. Objective-C harnesses call `ParcExitOnUncaughtExceptions()`
+first in `main`. None of them use `assert` or `abort`.
+
+Negative controls build a deliberately broken copy and pass only when it exits
+with a non-zero status and the expected message. A signal death (Python's
+negative return code, a shell status above 128) is a genuine crash, so runners
+report it as one and fail.
+
 ## What to carry over from the old Mac
 
 Git carries the reusable application/build tools and pinned artifact manifests.
