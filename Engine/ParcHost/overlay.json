@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 775,
+  "version": 776,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -334,7 +334,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_application.mm",
       "target": "parc/native/native_appkit_application.mm",
-      "sha256": "82f3e496f341ef9f02d6ac1f54ab59e00fb8984fe44e6e9531e2b8d8f5a80b86"
+      "sha256": "991da4c6985cf5bfe05f182bf1bd1da51fd36c0b47b2e47542c6df8caf9ba303"
     },
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
@@ -2069,7 +2069,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "08e5327fd08c9d6c83f44f41d270239118cd54fbb831cd988f09a787a62fb88b"
+      "sha256": "104357565fc1375291f9d3e3f78de99d1bf06ec67201937a3204f1206a3354f3"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
@@ -2089,12 +2089,12 @@
     {
       "source": "Engine/ParcChromium/generate_error_pages.py",
       "target": "parc/generate_error_pages.py",
-      "sha256": "e3a3fb17c062f310e8c1d37f42bc16707e3b9e7eb56523590d60fc4d646316d2"
+      "sha256": "5e7e4ee86667b7d1c3d76b03cb1cf5abfb0b976ed99e3cedf8f01f0c66486c90"
     },
     {
       "source": "Engine/ParcChromium/error_pages.h",
       "target": "parc/error_pages.h",
-      "sha256": "c9fdc182d0221ffe37994c63becf4f91ff37fe8aa1e811cd7a18c14a9bdec1e8"
+      "sha256": "c9646bb7e754795e59e69ee7e411fd8ac3a59495e33c7e8017055f09626c4b76"
     },
     {
       "source": "Engine/ParcChromium/error_pages/display-font.woff.b64",
@@ -2104,7 +2104,7 @@
     {
       "source": "Engine/ParcChromium/error_pages/interstitial.css",
       "target": "parc/error_pages/interstitial.css",
-      "sha256": "a18ff0f32615631310e94314d6c7deec46e513083dd641a1fc378a334f64ff7f"
+      "sha256": "2d5dc5e5e7a7a44a3a205c9bc111cedea378d63c2e1824136d2c8c13b0692c4b"
     },
     {
       "source": "Engine/ParcChromium/error_pages/interstitial.js",
@@ -2125,6 +2125,11 @@
       "source": "Engine/ParcChromium/error_pages/neterror.js",
       "target": "parc/error_pages/neterror.js",
       "sha256": "fa3aecb268d31626d6c29b2cf755c948991683e555d93ab10e384bbe3717706d"
+    },
+    {
+      "source": "Engine/ParcChromium/error_pages/webapp.css",
+      "target": "parc/error_pages/webapp.css",
+      "sha256": "61dad2fe36979a8c97ad650dd4096aa4fcfa55ab0b85f825c94094a2f07e049f"
     },
     {
       "source": "Engine/ParcRenderer/error_page_history.h",
@@ -2229,7 +2234,7 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.mm",
       "target": "parc/parc_main_delegate.mm",
-      "sha256": "6968b5143198590ed1db458105fbcbb1e28fa0de253186ae0697eb26e2beab9d"
+      "sha256": "a2580f7d1745d78164e831ff30bb4535971c2555223879bd0ef5cbe3e7e5f805"
     },
     {
       "source": "Engine/ParcNative/native_application.mm",

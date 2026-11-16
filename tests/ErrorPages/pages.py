@@ -17,7 +17,7 @@ def generate(out: Path) -> dict:
     subprocess.run([sys.executable, str(GENERATOR), "--source", str(SOURCE), "--html-dir", str(out),
                     "--output", str(out / "error_pages.cc")], check=True)
     return {name: (out / f"{name}.html").read_text(encoding="utf-8")
-            for name in ("net_error", "interstitial_style", "interstitial_script")}
+            for name in ("net_error", "interstitial_style", "interstitial_script", "webapp_style")}
 
 
 def replace_expressions(source: str, values: dict) -> str:
@@ -66,15 +66,36 @@ def chromium_interstitial_template() -> str:
     return template
 
 
-def skin(template: str, pieces: dict) -> str:
+def skin(template: str, pieces: dict, style="interstitial_style", script="interstitial_script") -> str:
     head = template.find("</head>")
     if head < 0:
         return template
-    template = template[:head] + pieces["interstitial_style"] + template[head:]
+    template = template[:head] + pieces[style] + template[head:]
     body = template.rfind("</body>")
-    if body < 0:
+    if body < 0 or not script:
         return template
-    return template[:body] + pieces["interstitial_script"] + template[body:]
+    return template[:body] + pieces[script] + template[body:]
+
+
+def flattened(name: str) -> str:
+    template = (CHROMIUM / name).read_text(encoding="utf-8")
+
+    def stylesheet(match):
+        return "<style>" + (CHROMIUM / Path(match.group(1)).name).read_text(encoding="utf-8") + "</style>"
+
+    def script(match):
+        return "<script>" + (CHROMIUM / Path(match.group(1)).name).read_text(encoding="utf-8") + "</script>"
+
+    template = re.sub(r'<link rel="stylesheet" href="([^"]+)">', stylesheet, template)
+    return re.sub(r'<script src="([^"]+)"></script>', script, template)
+
+
+def alternative_page(pieces: dict, kind: str, data: dict) -> str:
+    if kind.startswith("webapp"):
+        template = skin(flattened("web_app_error_page.html"), pieces, "webapp_style", None)
+    else:
+        template = skin(flattened("enterprise_proxy_error_page.html"), pieces)
+    return localized(template, data)
 
 
 def text_defaults() -> str:

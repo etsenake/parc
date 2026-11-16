@@ -65,9 +65,10 @@ With CEF gone, Parc owns Chromium's embedder classes and uses them before anythi
 - `ParcBrowserMainExtraParts` installs the native file-dialog factory and the licence WebUI, and
   in `PreBrowserStart` replaces Chromium's What's New and internal-page directory controllers.
 - The resource-bundle delegates Parc installs in every process answer more than strings: the
-  child delegate serves Parc's network error page template for `IDR_NET_ERROR_HTML`, and the
+  child delegate serves Parc's network error page template for `IDR_NET_ERROR_HTML` and skins
+  Chromium's web-app offline and organization proxy pages, and the
   browser delegate adds Parc's stylesheet and script to Chromium's own security interstitial
-  template. Chromium still fills both with its data and runs its own page logic; see
+  template. Chromium still fills them with its data and runs its own page logic; see
   [error pages](web-interactions.md#network-error-pages-and-security-warnings).
 - Parc's BrowserWindow, Browser record and WebContentsDelegate serve each native window, so
   JavaScript dialogs and new pages reach Parc through Chromium's own interfaces.

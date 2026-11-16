@@ -709,14 +709,7 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
         resource_id == IDR_SECURITY_INTERSTITIAL_WITHOUT_PROMO_HTML) {
       auto html = ui::ResourceBundle::GetSharedInstance()
                       .LoadDataResourceStringForScale(resource_id, scale_factor);
-      const size_t head = html.find("</head>");
-      if (head != std::string::npos) {
-        html.insert(head, InterstitialStyle());
-        const size_t body = html.rfind("</body>");
-        if (body != std::string::npos) {
-          html.insert(body, InterstitialScript());
-        }
-      }
+      AddErrorPageSkin(html, InterstitialStyle(), InterstitialScript());
       return base::MakeRefCounted<base::RefCountedString>(std::move(html));
     }
     if (resource_id == IDR_WEBUI_IMAGES_CHROME_LOGO_DARK_SVG) {

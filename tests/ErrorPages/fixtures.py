@@ -200,3 +200,44 @@ INTERSTITIALS = {
                                 primaryButtonText="Go back"),
 }
 
+ICON = ("data:image/png;base64,"
+        "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA"
+        "6AAAdTAAAOpgAAA6mAAAF3CculE8AAAARGVYSWZNTQAqAAAACAABh2kABAAAAAEAAAAaAAAAAAADoAEAAwAAAAEAAQAAoAIA"
+        "BAAAAAEAAAAgoAMABAAAAAEAAAAgAAAAAKyGYvMAAAHJaVRYdFhNTDpjb20uYWRvYmUueG1wAAAAAAA8eDp4bXBtZXRhIHht"
+        "bG5zOng9ImFkb2JlOm5zOm1ldGEvIiB4OnhtcHRrPSJYTVAgQ29yZSA2LjAuMCI+CiAgIDxyZGY6UkRGIHhtbG5zOnJkZj0i"
+        "aHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyI+CiAgICAgIDxyZGY6RGVzY3JpcHRpb24gcmRm"
+        "OmFib3V0PSIiCiAgICAgICAgICAgIHhtbG5zOmV4aWY9Imh0dHA6Ly9ucy5hZG9iZS5jb20vZXhpZi8xLjAvIj4KICAgICAg"
+        "ICAgPGV4aWY6Q29sb3JTcGFjZT4xPC9leGlmOkNvbG9yU3BhY2U+CiAgICAgICAgIDxleGlmOlBpeGVsWERpbWVuc2lvbj4y"
+        "MDwvZXhpZjpQaXhlbFhEaW1lbnNpb24+CiAgICAgICAgIDxleGlmOlBpeGVsWURpbWVuc2lvbj4zMDwvZXhpZjpQaXhlbFlE"
+        "aW1lbnNpb24+CiAgICAgIDwvcmRmOkRlc2NyaXB0aW9uPgogICA8L3JkZjpSREY+CjwveDp4bXBtZXRhPgoVZ0ndAAAFwElE"
+        "QVRYCc1WTWxVRRQ+Z2befY/+UOgrpKVUgQApKFEUxSIxuJBYfxJ/0oBuWAnGhcjChJVJV0ZTF5BIlMS4ICwUSUwwYuLCRiOi"
+        "TauiAlGIQCyhhNb+vffuvfNzPHNLH1DeTyEmOsl7c+/cmfm+Oec75wzAf9zwVvGJCKG7uzYKw+a0EDVgLQFiDkx2CHpez/OG"
+        "dCt7zpoALe9MQ3vdE7axYYvIzruPaoMWhgrIMb5zoTN2SFr7s9P2MzkefIIHenKzITIrAtTR0ehS2W4M5MsolYJMCtyKxQ7S"
+        "AYFzwCSQeyGBt4s12Mh8I224u39goG9df7+uRKQqAdq0qc7Jea+IlHqLUsIS45G1iG0LCebXI78Bu4DAsCuAiRgHwjpFsR7E"
+        "fLwNauXXuH9/WRKiErvkW9yYBQHbICXZ4sL7G0AIQG0kWif45IjWKgZNQWQSAs5ag4itpGRPNGnaKmFUJEDQJfVcvRBUqtUJ"
+        "4ficvvGpwdJ47gPU8WPC4kYXx8/bWB8Wxk6C1gjagjPGoIB7U+Seoe3bU+VIqHIfkvEuRhvJKEwDsvqn5M2iYwoOctGvsHfv"
+        "V2wP5+cyyBGX07tQyV3siAXgphaQsU/BucL7PKWkGypaAA75rc11gZWAT717k3d1FQ/g/Tw6Er/n8vnjGGkCzWLRmjAftkN4"
+        "vtHvVKpVJpCs0FMnnzL/1B5sBQf2JgFnjx4cx3x0AkMTQxQBxSzMKGqAMWgqBe7HiicoNyEZ90rncON44x/jXhVDyTWxzoFQ"
+        "HAo+Mjg+Qy0hE6RLzuXBKhbwPjBeAEDWec9PNe6Lkrw6VOy0ayNjUpwhkfJ5QdoYIFkofp/xUJHA3V2/NZwOVtSjjTnwOOJ9"
+        "GvbWSBqzOHnjbvFDm9dz+G3geQryIWKBIwJhOD+Rv3zjzGtvZQmkt4QrTwUrj72QfvVAn12W0gwswUhBhjOe4WTD/lgNdnor"
+        "/cjmDSJQb7O57oJCBBAaEkpw5sAfxmryY9PzZvZlNUAKFTnZPIzZho8m73F9qoXag8u2RYxjPUZYQ9GiuRfGO+jhzlaO+o1I"
+        "civ7vYm0s6xaZsvp0bgYyR5s6e9nRqVbWQLxYPC7bCq8lI7iNwWopX/pRhrUDSApgsDF6tHg7M71mcJrrCLJWN4/lp3COZrB"
+        "WXvCkTTOvqti28uyLVpqJo2yLoBeNPbPk58u0GM7LgTNISdhoRgNMeAgVBwMEkkI9InYA/uayEDE2lcsQLBG71OToht/6h2d"
+        "CXr9e1kLJJOW3e/6Qp37peYOs3Ysi+smTmG9nQDF5xEBVwRGFUmW8BJ1kshFDD5AzvbIS/oInusNrwcr9VyZgF+RNiJMZ+B4"
+        "ei2crlkCbZODojW66JbSyLkHzPmLAmzIFr+C1gwIRcdgXPyoTnw5q7uA3/6mbOYHi62LpJpjHuRa9wVrvg44uUHMp420hjh+"
+        "Axpq98AhjIvzb+OhugUkx7LK8NZJHWAlcApOBMH+vw3AmUvKi3B6JqbY0wzOAQ0pNpjiX9IDLJ88U9mC03tU6KsTMFxFff73"
+        "LPjkSfL2r9VXVoC99qnqNlyMkyBLPOC94AuDf/HF6V9oVTXgJ/g65CM9kazlf368gUDnH2nILmqE4ZoROIpls14pvlUtgGKO"
+        "YQZMgM/Ndc3/+MqV3P3SdTHf2j6WsvHOragy34smtwNeHJ1fCqjcWGUCh5Cv+XCF6/oQOM45ycXXl2WSzlH72b+bFoN5fB7n"
+        "oDX8vRWcXQUuqCsHVmq8mguI4YdxLh0mibvB+HLsbwXECdB1RYJWQRjlHKg1qEWElr6D3PhIKaByY7MIIwZ9rtCKKrWPUD0N"
+        "lqPCxg40y9OyVTAAlKCRonecU3vg87pL5cBKjc+CwNVlT47OFzK1k/X3LN94loC/9TiaQMLTXH0PQ0gfwrcLJkqBVBqbPYHp"
+        "XTqOzYH61c188c9AgS8aQ9EwnFlxS8qf3up/0f8DDS7AtRaGy0UAAAAASUVORK5CYII=")
+
+ALTERNATIVE = {
+    "webapp": dict(DEFAULTS, title="tasks.example.com", app_short_name="Tasks", icon_url=ICON,
+                   web_app_error_page_message="You’re offline", supplementary_icon="offlineIcon"),
+    "webapp-other": dict(DEFAULTS, title="tasks.example.com", app_short_name="Tasks", icon_url=ICON,
+                         web_app_error_page_message="Tasks can’t open this page right now", supplementary_icon="none"),
+    "proxy": dict(DEFAULTS, title="intranet.example.com", heading="Your organization’s proxy needs you to sign in",
+                  primary_paragraph="The proxy server for <strong>intranet.example.com</strong> asked for your work account before it can connect.",
+                  button_text="Sign in", error_category="0"),
+}

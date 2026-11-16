@@ -79,8 +79,8 @@ def chevron_url(mode, scheme):
     return data_url(svg)
 
 
-def interstitial_style(source, arts):
-    css = (source / "interstitial.css").read_text(encoding="utf-8")
+def filled_style(source, name, arts):
+    css = (source / name).read_text(encoding="utf-8")
 
     def substitute(match):
         kind, *rest = match.group(1).split()
@@ -126,25 +126,28 @@ def build(source):
     arts = {name: (source / "art" / f"{name}.svg").read_text(encoding="utf-8") for name in ARTS}
     pages = {
         "net_error": net_error_page(source, arts),
-        "interstitial_style": interstitial_style(source, arts),
+        "interstitial_style": filled_style(source, "interstitial.css", arts),
+        "webapp_style": filled_style(source, "webapp.css", arts),
         "interstitial_script": "<script>" + (source / "interstitial.js").read_text(encoding="utf-8") + "</script>",
     }
     check("net_error", pages["net_error"], ALLOWED_NET_ERROR_KEYS)
     check("interstitial_style", pages["interstitial_style"])
     check("interstitial_script", pages["interstitial_script"])
+    check("webapp_style", pages["webapp_style"])
     return pages
 
 
 def cpp(pages):
     lines = ['#include "parc/error_pages.h"', "", "namespace parc {", "namespace {"]
     names = {"net_error": "kNetErrorPage", "interstitial_style": "kInterstitialStyle",
-             "interstitial_script": "kInterstitialScript"}
+             "interstitial_script": "kInterstitialScript", "webapp_style": "kWebAppErrorStyle"}
     for key, symbol in names.items():
         lines.append(f'constexpr char {symbol}[] = R"{DELIMITER}({pages[key]}){DELIMITER}";')
     lines += ["}  // namespace", "",
               "std::string_view NetErrorPageTemplate() {", "  return kNetErrorPage;", "}", "",
               "std::string_view InterstitialStyle() {", "  return kInterstitialStyle;", "}", "",
               "std::string_view InterstitialScript() {", "  return kInterstitialScript;", "}", "",
+              "std::string_view WebAppErrorStyle() {", "  return kWebAppErrorStyle;", "}", "",
               "}  // namespace parc", ""]
     return "\n".join(lines)
 

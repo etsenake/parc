@@ -15,6 +15,10 @@ which errors get Parc's own words, is described in
   that the browser resource delegate inserts into Chromium's own interstitial
   template, before `</head>` and `</body>`. The drawings become data URLs with
   each palette's colours filled in.
+- `webapp.css` becomes a `<style>` the child resource delegate adds to
+  Chromium's web-app offline page. Chromium's organization proxy page takes the
+  interstitial style and script instead. `AddErrorPageSkin` in
+  `error_pages.h` does every insertion.
 - `art/` holds the drawings on a 120-point grid. Classes pick the colour: `k`
   ink, `a` accent, `kf`/`af` filled with the page colour, `p` a knockout ring,
   `kd`/`ad` dots. The plug's groups are what the offline toy moves.

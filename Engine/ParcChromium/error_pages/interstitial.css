@@ -30,6 +30,7 @@
 
 #body.lookalike-url { --art: {{art signpost serious light}}; }
 #body.safe-browsing-billing { --art: {{art barricade serious light}}; }
+#body.enterprise-proxy-error { --art: {{art blocked-page neutral light}}; --wash: transparent; }
 
 #body.enterprise-block, #body.enterprise-warn, #body.managed-profile-required,
 #body.supervised-user-verify, #body.supervised-user-verify-subframe {
@@ -77,6 +78,7 @@
   #body.captive-portal { --art: {{art plug neutral dark}}; --wash: transparent; }
   #body.lookalike-url { --art: {{art signpost serious dark}}; }
   #body.safe-browsing-billing { --art: {{art barricade serious dark}}; }
+  #body.enterprise-proxy-error { --art: {{art blocked-page neutral dark}}; --wash: transparent; }
 
   #body.enterprise-block, #body.enterprise-warn, #body.managed-profile-required,
   #body.supervised-user-verify, #body.supervised-user-verify-subframe {

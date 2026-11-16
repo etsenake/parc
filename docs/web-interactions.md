@@ -372,6 +372,10 @@ the resource-bundle delegates Parc already installs in every process
   Browsing says "this site" because Chromium doesn't give it the address. The
   monitoring warning's Back to safety button does nothing in Chromium 157
   either, so Parc leaves it as Chromium wired it.
+- Chromium's two rarer error templates get Parc's look the same way: a web
+  app's offline page (its icon, Parc's plug and Chromium's message) and an
+  organization proxy's sign-in page (the warning skin over Chromium's page and
+  script).
 - Titles and visible text say `parc://` where Chromium's say `chrome://`;
   links still go to the real internal page.
 

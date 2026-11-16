@@ -76,6 +76,7 @@ action("error_pages") {
     "error_pages/neterror.css",
     "error_pages/neterror.html",
     "error_pages/neterror.js",
+    "error_pages/webapp.css",
   ]
   outputs = [ _error_pages_source ]
   args = [

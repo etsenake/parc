@@ -200,23 +200,40 @@ INTERSTITIAL_JOBS = [
                 "thinks games.example.com might go against a policy" in r["text"]]),
 ]
 
+ALTERNATIVE_JOBS = [
+    ("webapp", {}, [step(note("message", text("#default-web-app-msg"))),
+                    step(note("paper", "getComputedStyle(document.body).backgroundColor")),
+                    step(note("icon", "(() => { const i = document.getElementById('icon'); return i.naturalWidth > 0 && getComputedStyle(i).display !== 'none'; })()")),
+                    step(note("plug", "getComputedStyle(document.getElementById('errorContainer'), '::before').width")),
+                    step(note("visible", "(() => { const r = document.getElementById('default-web-app-msg').getBoundingClientRect(); return r.height > 0 && r.bottom <= innerHeight; })()"))],
+     lambda r: [r["extra"]["message"] == "You’re offline", r["title"] == "Tasks", r["extra"]["icon"], r["extra"]["visible"],
+                r["extra"]["paper"] in ("rgb(255, 252, 236)", "rgb(21, 20, 28)"), r["extra"]["plug"] == "72px"]),
+    ("webapp-other", {}, [step(note("plug", "getComputedStyle(document.getElementById('errorContainer'), '::before').content")),
+                          step(note("visible", "(() => { const r = document.getElementById('default-web-app-msg').getBoundingClientRect(); return r.height > 0 && r.bottom <= innerHeight; })()"))],
+     lambda r: [r["extra"]["plug"] in ("none", "normal"), r["extra"]["visible"]]),
+    ("proxy", {"history": True}, [step(ENTER), step(note("heading", text("h1")))],
+     lambda r: [calls(r, "net", "portalSigninButtonClick") == 1, "proxy needs you to sign in" in r["extra"]["heading"]]),
+]
+
 SHEET = [("net", "refused"), ("net", "offline"), ("net", "dns"), ("net", "timed-out"), ("net", "extension"),
          ("net", "not-found-404"), ("net", "bad-address"), ("net", "unknown-code"),
          ("warning", "ssl"), ("warning", "safe-browsing"), ("warning", "https-only"), ("warning", "captive-portal"),
          ("warning", "bad-clock"), ("warning", "lookalike"), ("warning", "lookalike-fake"), ("warning", "https-engagement"),
          ("warning", "enterprise-block-domain"), ("warning", "enterprise-warn"), ("warning", "mitm"),
-         ("warning", "blocked-interception"), ("warning", "billing")]
+         ("warning", "blocked-interception"), ("warning", "billing"), ("alt", "webapp"), ("alt", "proxy")]
 
 
 def page_for(pieces, kind, key):
     if kind == "net":
         return pages.net_error_page(pieces, fixtures.NET[key])
-    return pages.interstitial_page(pieces, fixtures.INTERSTITIALS[key])
+    if kind == "warning":
+        return pages.interstitial_page(pieces, fixtures.INTERSTITIALS[key])
+    return pages.alternative_page(pieces, key, fixtures.ALTERNATIVE[key])
 
 
 def build_jobs(out, pieces, sheet_dir):
     jobs, checks = [], {}
-    for kind, specs in (("net", NET_JOBS), ("warning", INTERSTITIAL_JOBS)):
+    for kind, specs in (("net", NET_JOBS), ("warning", INTERSTITIAL_JOBS), ("alt", ALTERNATIVE_JOBS)):
         for key, options, steps, check in specs:
             name = options.get("name", f"{kind}-{key}")
             html = page_for(pieces, kind, key)

@@ -97,6 +97,18 @@ class ChildProductBrandingDelegate final
     if (resource_id == IDR_NET_ERROR_HTML) {
       return std::string(NetErrorPageTemplate());
     }
+    if (resource_id == IDR_WEBAPP_ERROR_PAGE_HTML ||
+        resource_id == IDR_ENTERPRISE_PROXY_ERROR_PAGE_HTML) {
+      std::string html =
+          ui::ResourceBundle::GetSharedInstance()
+              .LoadDataResourceStringForScale(resource_id, ui::kScaleFactorNone);
+      if (resource_id == IDR_WEBAPP_ERROR_PAGE_HTML) {
+        AddErrorPageSkin(html, WebAppErrorStyle(), std::string_view());
+      } else {
+        AddErrorPageSkin(html, InterstitialStyle(), InterstitialScript());
+      }
+      return html;
+    }
     return std::nullopt;
   }
   bool GetRawDataResource(int resource_id,

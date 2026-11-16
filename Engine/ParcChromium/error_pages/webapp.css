@@ -1,0 +1,53 @@
+:root {
+  --paper: #FFFCEC;
+  --ink: #100E22;
+  --art: {{art plug neutral light}};
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #15141C;
+    --ink: #FFFCEC;
+    --art: {{art plug neutral dark}};
+  }
+}
+
+html, html body { background: var(--paper); }
+
+html body #centerContainer {
+  align-items: center;
+  gap: 22px;
+  width: min(460px, calc(100vw - 64px));
+}
+
+html body #appIconContainer { margin: 0; }
+
+html body .app-icon {
+  width: 96px;
+  height: 96px;
+  border-radius: 22px;
+  object-fit: contain;
+}
+
+html body #errorContainer {
+  flex-direction: column;
+  gap: 14px;
+  color: var(--ink);
+}
+
+html body #centerContainer #errorContainer::before {
+  content: "";
+  width: 72px;
+  height: 72px;
+  background: var(--art) center / 72px 72px no-repeat;
+}
+
+html body #offlineIcon { display: none !important; }
+
+html body #default-web-app-msg {
+  color: var(--ink);
+  font: 600 22px/30px system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  letter-spacing: -0.2px;
+  text-align: center;
+}
