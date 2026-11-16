@@ -64,7 +64,24 @@ final class SessionBackups {
             return remaining.isEmpty ? nil : .addresses(remaining)
         }
 
-        func removes(_ backup: Backup) -> Bool {
+        func removed(from backups: [Backup]) -> [Backup] {
+            guard case .since = self else { return backups.filter(removes) }
+            let written = backups.sorted { $1.isNewer(than: $0) }
+            var laterMinimum = Array(repeating: Date.distantFuture, count: written.count)
+            for index in written.indices.dropLast().reversed() {
+                laterMinimum[index] = min(laterMinimum[index + 1], written[index + 1].date)
+            }
+            var earlierMaximum = Date.distantPast
+            var removed: [Backup] = []
+            for (index, backup) in written.enumerated() {
+                let outOfOrder = earlierMaximum > backup.date || laterMinimum[index] < backup.date
+                if outOfOrder || removes(backup) { removed.append(backup) }
+                earlierMaximum = max(earlierMaximum, backup.date)
+            }
+            return removed
+        }
+
+        private func removes(_ backup: Backup) -> Bool {
             switch self {
             case .all: return true
             case .since(let start): return backup.date.timeIntervalSince(start) > -1
@@ -181,7 +198,7 @@ final class SessionBackups {
     }
 
     static func prune(_ pruning: Pruning, in directory: URL) {
-        for backup in list(in: directory) where pruning.removes(backup) {
+        for backup in pruning.removed(from: list(in: directory)) {
             try? FileManager.default.removeItem(at: backup.url)
         }
         removeLeftovers(in: folder(in: directory), prefixes: [".backup-"])

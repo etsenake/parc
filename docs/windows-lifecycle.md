@@ -88,19 +88,26 @@ automatic backups and this rescue cover recovery; no window lists the backups
 for browsing or choosing an older one.
 
 **Privacy.** Copies follow the main file's rules. Clearing history over a time
-range removes every copy taken since the range began, so all of them for all
-time. Deleting particular visits, as the history page does, removes copies that
-hold one of those exact addresses unless the current sidebar still holds it.
-Clear Archive removes every copy, and finishing a Profile's removal, including
-the data of a deleted Space that was its last user, removes every copy that
-mentions that Profile. Each clear leaves a fresh copy of the current sidebar and
-removes leftover temporary save files. Deleting single tabs, archived items or a
-Space that shares data leaves older copies, which age out within about a week.
-Kept unreadable files are left alone: they are the person's own data, perhaps
-from a newer Parc, and this version can't safely rewrite them.
-`tests/SessionBackupTests.swift` covers the schedule, cadence, validation,
-rescue choice and wording, the missing-file offer and the starts that never ask,
-write order after a clock fix, the kept file and pruning.
+range removes every copy stamped since the range began, so all of them for all
+time, and also every copy whose stamp is out of step with its number: one taken
+after a later-stamped copy, or before an earlier-stamped one. A copy taken after
+one inside the range therefore can't outlive the clear, and neither can a copy
+saved while the clock was set behind, as long as an earlier, correctly stamped
+copy remains to show the jump; with no such copy, nothing in the stamps or
+numbers can reveal it. With a correct clock no copy is out of step, so the clear
+removes exactly the copies taken since the range began. Deleting particular
+visits, as the history page does, removes copies that hold one of those exact
+addresses unless the current sidebar still holds it. Clear Archive removes every
+copy, and finishing a Profile's removal, including the data of a deleted Space
+that was its last user, removes every copy that mentions that Profile. Each
+clear leaves a fresh copy of the current sidebar and removes leftover temporary
+save files. Deleting single tabs, archived items or a Space that shares data
+leaves older copies, which age out within about a week. Kept unreadable files
+are left alone: they are the person's own data, perhaps from a newer Parc, and
+this version can't safely rewrite them. `tests/SessionBackupTests.swift` covers
+the schedule, cadence, validation, rescue choice and wording, the missing-file
+offer and the starts that never ask, write order after a clock fix, the kept
+file and pruning, including range clears with a clock that was set behind.
 
 ## Dock, reopen and closing windows
 

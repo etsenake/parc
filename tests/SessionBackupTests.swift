@@ -423,6 +423,59 @@ import Foundation
         }
     }
 
+    static func testRangeClearsFollowWriteOrder() throws {
+        let day = 86_400.0
+        func written(_ offsets: [Double]) -> [SessionBackups.Backup] {
+            offsets.enumerated().map { index, offset in
+                let date = base.addingTimeInterval(offset)
+                return .init(url: folder.appendingPathComponent(SessionBackups.name(for: date, sequence: index + 1)),
+                             date: date, sequence: index + 1)
+            }
+        }
+        func removed(_ offsets: [Double], since start: Double) -> [Double] {
+            SessionBackups.Pruning.since(base.addingTimeInterval(start)).removed(from: written(offsets))
+                .map { $0.date.timeIntervalSince(base) }.sorted()
+        }
+        try expect(removed([-10 * day, -day, -8 * day], since: -3_600) == [-8 * day, -day],
+                   "A copy saved while the clock was set behind goes, with the copy whose stamp it undercuts")
+        try expect(removed([-10 * day, -600, -5 * day], since: -3_600) == [-5 * day, -600],
+                   "A copy taken after one inside the range goes too, whatever its stamp says")
+        try expect(removed([-10 * day, 365 * day, -1_800], since: -900) == [-1_800, 365 * day],
+                   "A copy taken after one stamped ahead goes with it")
+        try expect(removed([-7_200, -7_200, -600], since: -3_600) == [-600],
+                   "Copies sharing a stamp aren't out of order")
+        var dates: [Date] = []
+        for daysAgo in 0..<10 {
+            for hour in 8...20 { dates.append(base.addingTimeInterval(Double(-daysAgo * 86_400 + hour * 3_600))) }
+        }
+        let noon = base.addingTimeInterval(12 * 3_600)
+        for steady in [chronological(dates), chronological(dates, sequenced: false)] {
+            for start in [base.addingTimeInterval(-30 * day), base.addingTimeInterval(-3 * day + 1_800),
+                          noon.addingTimeInterval(0.5), noon.addingTimeInterval(1.5), base.addingTimeInterval(30 * day)] {
+                let today = Set(steady.filter { $0.date.timeIntervalSince(start) > -1 }.map(\.url))
+                try expect(Set(SessionBackups.Pruning.since(start).removed(from: steady).map(\.url)) == today,
+                           "With a correct clock a range clear removes exactly the copies stamped since it began")
+            }
+        }
+        try withDirectory { directory in
+            let clock = Clock(base.addingTimeInterval(-day))
+            let store = try backingStore(directory, clock)
+            _ = store.openResolvedURL(URL(string: "https://before.test/")!)
+            try flush(store)
+            clock.now = base.addingTimeInterval(-8 * day)
+            _ = store.openResolvedURL(URL(string: "https://behind.test/")!)
+            try flush(store)
+            try expect(SessionBackups.list(in: directory).map(\.date) == [-8 * day, -day].map(base.addingTimeInterval),
+                       "A copy is taken while the clock is set behind")
+            clock.now = base
+            store.forgetHistory(deletion(["timeRange": true, "begin": base.addingTimeInterval(-3_600).timeIntervalSinceReferenceDate,
+                                          "end": Double.greatestFiniteMagnitude, "urls": [String]()]))
+            try flush(store)
+            try expect(SessionBackups.list(in: directory).map(\.date) == [base],
+                       "Clearing the last hour removes the copy really taken in it, leaving only a fresh copy")
+        }
+    }
+
     static func testAddressRulesMatchWholeAddresses() throws {
         try withDirectory { directory in
             let single = SessionBackups.Pruning(deletion(["urls": ["https://a.test/x"], "hosts": ["a.test"]]))
@@ -526,6 +579,7 @@ import Foundation
         try testUnreadableMainFileStillAsksToRestoreOrQuit()
         try testRescueWordsMissingFilesAndOddClocks()
         try testClearingHistoryPrunesBackups()
+        try testRangeClearsFollowWriteOrder()
         try testAddressRulesMatchWholeAddresses()
         try testClearArchivePrunesBackups()
         try testRemovingASpacesDataPrunesBackups()
