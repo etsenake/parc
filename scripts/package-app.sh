@@ -308,7 +308,7 @@ if [ ! -f "$archive" ]; then
 fi
 assets=("$archive")
 if [ -n "$stable" ]; then
-  dmg="$run/Parc-$app_version-arm64.dmg"
+  dmg="$run/Parc-arm64.dmg"
   python3 scripts/package-dmg.py "$run/development" --output "$dmg" \
     --sign-identity "$sign_identity" --profile "$notary_profile" --team "$sign_team"
   check_checkout

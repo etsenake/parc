@@ -180,14 +180,20 @@ def ships_install_window(commit):
     return subprocess.run(["git", "cat-file", "-e", art], cwd=ROOT, capture_output=True).returncode == 0
 
 
+def dmg_asset(release, version):
+    names = (dmg_tool.ASSET, f"Parc-{version}-arm64.dmg")
+    assets = [asset for asset in release["assets"] if asset["name"] in names]
+    digests = {asset.get("digest", "") for asset in assets}
+    if len(digests) != 1 or not re.fullmatch(r"sha256:[0-9a-f]{64}", next(iter(digests))):
+        raise ValueError("The stable release lacks one DMG with GitHub's digest")
+    return min(assets, key=lambda asset: names.index(asset["name"]))
+
+
 def verify_dmg_asset(release, dmg, report, folder, layout_expected=True):
-    filename = f'Parc-{report["app_version"]["version"]}-arm64.dmg'
-    assets = [asset for asset in release["assets"] if asset["name"] == filename]
-    if len(assets) != 1 or not re.fullmatch(r"sha256:[0-9a-f]{64}", assets[0].get("digest", "")):
-        raise ValueError("The stable release lacks its uniquely named DMG and GitHub digest")
+    asset = dmg_asset(release, report["app_version"]["version"])
     with dmg.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    if "sha256:" + digest != assets[0]["digest"]:
+    if "sha256:" + digest != asset["digest"]:
         raise ValueError("Downloaded DMG differs from GitHub's digest")
     dmg_tool.verify_dmg(dmg, report, folder, layout_expected=layout_expected)
     return digest
@@ -231,7 +237,7 @@ def verify_appcast(appcast, tag, archive):
         raise ValueError("The appcast does not offer this release's ZIP")
 
 
-def cask(version, digest):
+def cask(version, digest, filename=dmg_tool.ASSET):
     return f'''# typed: false
 # frozen_string_literal: true
 
@@ -239,7 +245,7 @@ cask "parc" do
   version "{version}"
   sha256 "{digest}"
 
-  url "https://github.com/{PUBLIC_REPOSITORY}/releases/download/v#{{version}}/Parc-#{{version}}-arm64.dmg"
+  url "https://github.com/{PUBLIC_REPOSITORY}/releases/download/v#{{version}}/{filename}"
   name "Parc"
   desc "Native browser with an independent Chromium engine"
   homepage "https://github.com/{PUBLIC_REPOSITORY}"
@@ -299,11 +305,11 @@ def main():
                 verify_acceptance(acceptance, args.tag, commit, app_version, report_sha)
             dmg = Path(temporary) / "Parc.dmg"
             github("release", "download", args.tag, "--repo", REPOSITORY,
-                "--pattern", f'Parc-{app_version["version"]}-arm64.dmg', "--output", str(dmg))
+                "--pattern", dmg_asset(release, app_version["version"])["name"], "--output", str(dmg))
             digest = verify_dmg_asset(release, dmg, report, Path(temporary), ships_install_window(commit))
             version = app_version["version"]
             notes = release_notes.text(json.loads(run("git", "show", commit + ":release-notes.json", cwd=ROOT)), version)
-            public_dmg = Path(temporary) / f"Parc-{version}-arm64.dmg"
+            public_dmg = Path(temporary) / dmg_tool.ASSET
             public_zip = Path(temporary) / f"Parc-{version}-arm64.zip"
             dmg.rename(public_dmg); archive.rename(public_zip)
             appcast = Path(temporary) / "appcast.xml"
@@ -314,13 +320,14 @@ def main():
         if source_version != app_version:
             raise ValueError("The release source commit declares a different version")
         target = tap / "Casks/parc.rb"
+        verified = (cask(version, digest), cask(version, digest, "Parc-#{version}-arm64.dmg"))
         if target.exists():
             match = re.search(r'^  version "([0-9.]+)(?:,[^"]+)?"$', target.read_text(), re.M)
             equal = match and version == match[1]
             if (not match or tuple(map(int, version.split("."))) < tuple(map(int, match[1].split(".")))
-                    or (equal and (not args.resume or target.read_text() != cask(version, digest)))):
+                    or (equal and (not args.resume or target.read_text() not in verified))):
                 raise ValueError("The release must advance the tap or resume its identical verified cask")
-            if dirty and target.read_text() != cask(version, digest):
+            if dirty and target.read_text() not in verified:
                 raise ValueError("Local cask edits differ from this verified release; preserved")
         target.write_text(cask(version, digest))
         if acceptance is not None:

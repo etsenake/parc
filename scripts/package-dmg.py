@@ -22,6 +22,7 @@ Refusal = notary.Refusal
 spec = importlib.util.spec_from_file_location("parc_dmg_layout", Path(__file__).with_name("dmg_layout.py"))
 layout = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(layout)
+ASSET = "Parc-arm64.dmg"
 
 
 def require_report(report, team):
@@ -157,8 +158,8 @@ def package_dmg(package, output, identity, profile, team, poll_seconds=20):
     package, output = package.resolve(), output.resolve()
     report = json.loads((package / "package-report.json").read_text())
     require_report(report, team)
-    if output.parent != package.parent or output.name != f'Parc-{report["app_version"]["version"]}-arm64.dmg':
-        raise Refusal("DMG destination must be the versioned file beside the package directory")
+    if output.parent != package.parent or output.name != ASSET:
+        raise Refusal("DMG destination must be " + ASSET + " beside the package directory")
     folder = package.parent / "dmg-notarization"
     folder.mkdir(exist_ok=True)
     with (folder / "operation.lock").open("a+") as lock:

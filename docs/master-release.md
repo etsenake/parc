@@ -96,10 +96,12 @@ published tag still refuses.
    origin, target platform or lock schema gets a separate versioned workspace
    and a fresh sync.
 4. Seal, build the optimized app, timestamp-sign app/helpers, notarize/staple the
-   app, create/sign/notarize/staple the DMG, and publish ZIP/DMG through
-   `package-app.sh`. Verify actual release/tag, pristine signatures, stable Team
-   and requirement, signed-image hashes, source/overlay identity and Apple
-   acceptance. Existing version tags and uploaded bytes are immutable.
+   app, create/sign/notarize/staple the DMG, and publish the ZIP
+   (`Parc-<version>-arm64.zip`) and the DMG (`Parc-arm64.dmg`, the same name
+   every release) through `package-app.sh`. Verify actual release/tag,
+   pristine signatures, stable Team and requirement, signed-image hashes,
+   source/overlay identity and Apple acceptance. Existing version tags and
+   uploaded bytes are immutable.
 5. Sign the notarized ZIP with Sparkle's `sign_update` (Keychain account `parc`,
    after checking that key's public half is the app's `SUPublicEDKey`), verify
    the signature with `sign_update --verify`, and write the run's one-item
@@ -110,7 +112,11 @@ published tag still refuses.
    signatures and ticket and the DMG's install window. Mirror the DMG, ZIP and
    `appcast.xml` together to the public `etsenake/parc-releases` release and
    make it latest, so Sparkle's feed `releases/latest/download/appcast.xml`
-   offers it. Promote stable/latest and
+   offers it and the website's download link,
+   `https://github.com/etsenake/parc-releases/releases/latest/download/Parc-arm64.dmg`,
+   serves its DMG. The cask's URL and the appcast's ZIP stay pinned to
+   `releases/download/v<version>/`, never `latest`, and their SHA-256 and
+   Sparkle signature bind those exact files. Promote stable/latest and
    update/push the cask's version, URL and checksum in `~/homebrew-tap`; the cask
    says `auto_updates true`, so `brew upgrade` leaves Sparkle-updated installs
    alone. Refresh the local tap metadata, trust the tap (Homebrew 7 loads no

@@ -91,7 +91,7 @@ bash scripts/package-app.sh --stable --from-release [app-<stamp>-<commit> or v<v
 ```
 
 Versioned candidate mode keeps the same distribution, signing, notarization and checkout
-gates. It publishes `Parc-<version>-arm64.dmg` and a ZIP in the etsenake/parc
+gates. It publishes `Parc-arm64.dmg` and `Parc-<version>-arm64.zip` in the etsenake/parc
 `v<version>` pre-release (not latest), titled with the bare version and holding
 only that version's release notes, and refuses an existing tag. The DMG contains the stapled
 app and an Applications shortcut and opens as Parc's

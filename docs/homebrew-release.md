@@ -50,9 +50,15 @@ when the release's source includes it, the install window's layout, then
 promotes the stable release and publishes the cask.
 
 The appcast comes from `scripts/appcast.py`, offers the exact public ZIP and is
-mirrored with the ZIP and DMG into `etsenake/parc-releases`. Existing differing
-asset bytes are never overwritten. The source repository can stay private while
-the cask and Sparkle download public release artifacts without a GitHub login.
+mirrored with the ZIP and DMG into `etsenake/parc-releases`. The DMG is always
+published as `Parc-arm64.dmg`, and the cask downloads it from that version's
+`v<version>` release with its checksum. A release packaged before the DMG had
+one name carries `Parc-<version>-arm64.dmg` instead; the publisher accepts that
+one and mirrors it as `Parc-arm64.dmg`, refuses two DMGs with different bytes,
+and on resume replaces that version's verified cask written with the old file
+name. Existing differing asset bytes are never overwritten. The source
+repository can stay private while the cask and Sparkle download public release
+artifacts without a GitHub login.
 
 The tap checkout is `~/homebrew-tap`; the installed Homebrew tap is a separate
 clone. Preserve edits in both. Publication verifies the cask's version/hash,

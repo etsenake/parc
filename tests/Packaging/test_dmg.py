@@ -43,7 +43,7 @@ class DmgTests(unittest.TestCase):
                        "signed_images": {"Parc.app/Contents/MacOS/Parc": hashlib.sha256(self.image.read_bytes()).hexdigest()}}
         self.report_path = self.package / "package-report.json"
         self.report_path.write_text(json.dumps(self.report))
-        self.output = self.package.parent / "Parc-1.0.0-arm64.dmg"
+        self.output = self.package.parent / "Parc-arm64.dmg"
         self.volume = Path(self.temp.name) / "volume"
         self.calls = []
         self.status = "Accepted"
@@ -158,6 +158,14 @@ class DmgTests(unittest.TestCase):
         self.assertTrue(background.parent.stat().st_flags & stat.UF_HIDDEN)
         self.assertEqual((self.volume / ".VolumeIcon.icns").read_bytes(), b"fixture icon")
         self.assertEqual(self.leftovers(), [])
+
+    def test_image_keeps_one_stable_name_beside_the_package(self):
+        self.assertEqual(dmg.ASSET, "Parc-arm64.dmg")
+        for wrong in (self.package.parent / "Parc-1.0.0-arm64.dmg", self.package / "Parc-arm64.dmg"):
+            with self.subTest(output=wrong), self.assertRaisesRegex(dmg.Refusal, "Parc-arm64.dmg beside"):
+                dmg.package_dmg(self.package, wrong, "fixture-identity", "fixture-profile", TEAM, 0)
+            self.assertFalse(wrong.exists())
+        self.assertEqual(self.calls, [])
 
     def test_unnotarized_app_or_changed_image_never_creates_dmg(self):
         self.report["notarized"] = False

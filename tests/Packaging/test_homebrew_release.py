@@ -53,7 +53,8 @@ class HomebrewReleaseTests(unittest.TestCase):
         self.assertNotIn('require_relative', text)
         self.assertIn('app "Parc.app"', text)
         self.assertIn('  auto_updates true\n  depends_on arch: :arm64\n', text)
-        self.assertIn('Parc-#{version}-arm64.dmg', text)
+        self.assertIn('  url "https://github.com/etsenake/parc-releases/releases/download/v#{version}/Parc-arm64.dmg"\n', text)
+        self.assertNotIn('releases/latest', text)
         self.assertNotIn('zap ', text)
 
     def test_missing_notarization_or_mismatched_identity_rejected(self):
@@ -97,7 +98,7 @@ class HomebrewReleaseTests(unittest.TestCase):
         image = Path(self.temp.name) / "Parc.dmg"
         image.write_bytes(b"fixture dmg")
         digest = hashlib.sha256(image.read_bytes()).hexdigest()
-        self.release["assets"].append({"name": "Parc-1.0.1-arm64.dmg", "digest": "sha256:" + digest})
+        self.release["assets"].append({"name": "Parc-arm64.dmg", "digest": "sha256:" + digest})
         with patch.object(publisher.dmg_tool, "verify_dmg") as verify:
             self.assertEqual(publisher.verify_dmg_asset(self.release, image, self.report, Path(self.temp.name)), digest)
             verify.assert_called_once_with(image, self.report, Path(self.temp.name), layout_expected=True)
@@ -106,6 +107,19 @@ class HomebrewReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "DMG differs"):
                 publisher.verify_dmg_asset(self.release, image, self.report, Path(self.temp.name))
             verify.assert_not_called()
+
+    def test_dmg_asset_prefers_the_stable_name_and_accepts_a_release_packaged_before_it(self):
+        stable = {"name": "Parc-arm64.dmg", "digest": "sha256:" + "a" * 64}
+        legacy = {"name": "Parc-1.0.1-arm64.dmg", "digest": "sha256:" + "a" * 64}
+        zip_asset = {"name": "Parc-1.0.1-arm64.zip", "digest": "sha256:" + "c" * 64}
+        for assets, chosen in (([zip_asset, stable], stable), ([zip_asset, legacy], legacy),
+                               ([legacy, zip_asset, stable], stable)):
+            with self.subTest(assets=[asset["name"] for asset in assets]):
+                self.assertIs(publisher.dmg_asset({"assets": assets}, "1.0.1"), chosen)
+        for assets in ([zip_asset], [dict(legacy, name="Parc-1.0.0-arm64.dmg")], [dict(stable, digest="")],
+                       [stable, dict(legacy, digest="sha256:" + "b" * 64)]):
+            with self.subTest(assets=assets), self.assertRaisesRegex(ValueError, "one DMG"):
+                publisher.dmg_asset({"assets": assets}, "1.0.1")
 
     def test_install_window_is_required_when_the_release_source_ships_it(self):
         source = Path(self.temp.name) / "source"
@@ -253,18 +267,23 @@ class ArtifactOnlyPublicationTests(unittest.TestCase):
                     return json.dumps({'releases': [{'version': '1.1.0', 'changes': []}]})
                 if args[:2] == ('git','show'): return json.dumps(app_version)
                 return ''
+            downloads = []
             def github(*args):
                 if args[0]=='api': return json.dumps(release)
+                if args[:2] == ('release','download'): downloads.append(args[args.index('--pattern') + 1])
                 return ''
-            for failure in (False, True):
-                with self.subTest(invalid_dmg=failure), patch.object(sys,'argv',['publish-homebrew.py','v1.1.0','--tap',str(tap),'--artifact-only','--resume','--appcast',str(feed)]), patch.object(publisher,'verify_appcast'), patch.object(publisher,'run',side_effect=run), patch.object(publisher,'github',side_effect=github), patch.object(publisher,'verify_tag'), patch.object(publisher,'verify_release',return_value=(app_version,'zip-sha','a'*40,{},'report-sha')), patch.object(publisher,'verify_dmg_asset',side_effect=ValueError('invalid DMG') if failure else lambda *args:'dmg-sha'), patch.object(publisher,'promote_verified_artifacts') as promote, patch.object(publisher,'verify_acceptance') as startup, patch.object(publisher,'publish_public') as public, patch.object(Path,'rename'):
+            for failure, packaged in ((False, 'Parc-arm64.dmg'), (False, 'Parc-1.1.0-arm64.dmg'), (True, 'Parc-arm64.dmg')):
+                release['assets'] = [{'name': packaged, 'digest': 'sha256:' + 'd' * 64}]
+                downloads.clear()
+                with self.subTest(invalid_dmg=failure, packaged=packaged), patch.object(sys,'argv',['publish-homebrew.py','v1.1.0','--tap',str(tap),'--artifact-only','--resume','--appcast',str(feed)]), patch.object(publisher,'verify_appcast'), patch.object(publisher,'run',side_effect=run), patch.object(publisher,'github',side_effect=github), patch.object(publisher,'verify_tag'), patch.object(publisher,'verify_release',return_value=(app_version,'zip-sha','a'*40,{},'report-sha')), patch.object(publisher,'verify_dmg_asset',side_effect=ValueError('invalid DMG') if failure else lambda *args:'dmg-sha'), patch.object(publisher,'promote_verified_artifacts') as promote, patch.object(publisher,'verify_acceptance') as startup, patch.object(publisher,'publish_public') as public, patch.object(Path,'rename'):
                     if failure:
                         with self.assertRaises(SystemExit): publisher.main()
                         promote.assert_not_called(); public.assert_not_called()
                     else:
                         publisher.main(); promote.assert_called_once_with(release, 'Small fixes and improvements.')
+                        self.assertEqual(downloads, ['Parc-1.1.0-arm64.zip', packaged])
                         self.assertEqual([path.name for path in public.call_args[0][1]],
-                                         ['Parc-1.1.0-arm64.dmg', 'Parc-1.1.0-arm64.zip', 'appcast.xml'])
+                                         ['Parc-arm64.dmg', 'Parc-1.1.0-arm64.zip', 'appcast.xml'])
                         self.assertEqual(public.call_args[0][2], 'Small fixes and improvements.')
                     startup.assert_not_called()
 
@@ -279,7 +298,8 @@ class ArtifactOnlyPublicationTests(unittest.TestCase):
             (tap / '.DS_Store').write_bytes(b'finder')
             feed = tap.parent / (tap.name + '-appcast.xml'); feed.write_text('<rss/>')
             app_version = {'version':'1.1.0','build':2}
-            release = {'tag_name':'v1.1.0','target_commitish':'a'*40,'name':'Parc 1.1.0 candidate'}
+            release = {'tag_name':'v1.1.0','target_commitish':'a'*40,'name':'Parc 1.1.0 candidate',
+                       'assets': [{'name': 'Parc-arm64.dmg', 'digest': 'sha256:' + 'd' * 64}]}
             real = publisher.run
             def run(*args, **kwargs):
                 if args[:2] == ('git','status'): return real(*args, **kwargs)
@@ -300,6 +320,50 @@ class ArtifactOnlyPublicationTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 publish()
             self.assertEqual((tap / 'README.md').read_text(), 'edited\n')
+
+
+    def test_resume_accepts_this_versions_cask_from_before_the_stable_dmg_name_and_rewrites_it(self):
+        import sys
+        legacy = ('# typed: false\n# frozen_string_literal: true\n\ncask "parc" do\n  version "1.1.0"\n  sha256 "dmg-sha"\n\n'
+                  '  url "https://github.com/etsenake/parc-releases/releases/download/v#{version}/Parc-#{version}-arm64.dmg"\n'
+                  '  name "Parc"\n  desc "Native browser with an independent Chromium engine"\n'
+                  '  homepage "https://github.com/etsenake/parc-releases"\n\n  livecheck do\n    url :url\n'
+                  '    strategy :github_latest\n  end\n\n  auto_updates true\n  depends_on arch: :arm64\n'
+                  '  depends_on macos: :ventura\n\n  app "Parc.app"\n\n  uninstall quit: "org.parc.Browser"\nend\n')
+        for committed, existing, accepted in ((True, legacy, True), (False, legacy, True),
+                                              (True, publisher.cask('1.1.0', 'other-sha'), False),
+                                              (False, legacy.replace('dmg-sha', 'other-sha'), False)):
+            with self.subTest(committed=committed, accepted=accepted), tempfile.TemporaryDirectory() as temporary:
+                tap = Path(temporary); (tap / 'Casks').mkdir()
+                (tap / 'Casks/parc.rb').write_text(publisher.cask('1.0.9', 'old-sha'))
+                git = lambda *command: subprocess.run(['git', *command], cwd=tap, check=True, capture_output=True)
+                git('init', '-q', '-b', 'main'); git('add', '.')
+                git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'tap')
+                (tap / 'Casks/parc.rb').write_text(existing)
+                if committed:
+                    git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'Release Parc 1.1.0')
+                feed = tap.parent / (tap.name + '-appcast.xml'); feed.write_text('<rss/>')
+                app_version = {'version': '1.1.0', 'build': 2}
+                release = {'tag_name': 'v1.1.0', 'target_commitish': 'a' * 40,
+                           'assets': [{'name': 'Parc-1.1.0-arm64.dmg', 'digest': 'sha256:' + 'd' * 64}]}
+                real = publisher.run
+                def run(*args, **kwargs):
+                    if args[:2] == ('git', 'status'): return real(*args, **kwargs)
+                    if args[:3] == ('git', 'remote', 'get-url'): return 'https://github.com/etsenake/homebrew-tap.git'
+                    if args[:3] == ('git', 'branch', '--show-current'): return 'main'
+                    if args[:3] == ('git', 'show', 'a' * 40 + ':release-notes.json'):
+                        return json.dumps({'releases': [{'version': '1.1.0', 'changes': []}]})
+                    if args[:2] == ('git', 'show'): return json.dumps(app_version)
+                    return ''
+                with patch.object(sys, 'argv', ['publish-homebrew.py', 'v1.1.0', '--tap', str(tap), '--artifact-only', '--resume', '--appcast', str(feed)]), patch.object(publisher, 'verify_appcast'), patch.object(publisher, 'run', side_effect=run), patch.object(publisher, 'github', side_effect=lambda *args: json.dumps(release) if args[0] == 'api' else ''), patch.object(publisher, 'verify_tag'), patch.object(publisher, 'verify_release', return_value=(app_version, 'zip-sha', 'a' * 40, {}, 'report-sha')), patch.object(publisher, 'verify_dmg_asset', return_value='dmg-sha'), patch.object(publisher, 'promote_verified_artifacts') as promote, patch.object(publisher, 'publish_public'), patch.object(Path, 'rename'):
+                    if accepted:
+                        publisher.main()
+                        self.assertEqual((tap / 'Casks/parc.rb').read_text(), publisher.cask('1.1.0', 'dmg-sha'))
+                        promote.assert_called_once()
+                    else:
+                        with self.assertRaises(SystemExit): publisher.main()
+                        self.assertEqual((tap / 'Casks/parc.rb').read_text(), existing)
+                        promote.assert_not_called()
 
 
 class AppcastTests(unittest.TestCase):
@@ -324,7 +388,7 @@ class AppcastTests(unittest.TestCase):
 class PublicMirrorTests(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory(); folder = Path(self.folder.name)
-        self.files = [folder / 'Parc-1.1.0-arm64.dmg', folder / 'Parc-1.1.0-arm64.zip']
+        self.files = [folder / 'Parc-arm64.dmg', folder / 'Parc-1.1.0-arm64.zip']
         for path in self.files: path.write_bytes(path.name.encode())
         self.digests = {path.name: 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest() for path in self.files}
         self.release = {'tag_name': 'v1.1.0', 'name': 'Parc 1.1.0 (engine overlay 1)', 'body': 'Package built from …'}

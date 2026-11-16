@@ -74,7 +74,7 @@ class PublishedSigningTests(unittest.TestCase):
             elif sys.argv[1:3] == ['release', 'view']:
                 print(json.dumps({'targetCommitish': 'b' * 40, 'assets': [
                     {'name': 'Parc-1.0.0-arm64.zip', 'digest': 'sha256:' + hashlib.sha256(b'fixture archive').hexdigest()},
-                    {'name': 'Parc-1.0.0-arm64.dmg', 'digest': 'sha256:' + 'd' * 64}]}))
+                    {'name': 'Parc-arm64.dmg', 'digest': 'sha256:' + 'd' * 64}]}))
             elif sys.argv[1:3] == ['release', 'download']:
                 pathlib.Path(sys.argv[sys.argv.index('-D') + 1], sys.argv[sys.argv.index('-p') + 1]).write_bytes(b'fixture archive')
             elif sys.argv[1:3] == ['release', 'create']:
@@ -204,7 +204,8 @@ class PublishedSigningTests(unittest.TestCase):
         arguments = (self.root / 'published').read_text().splitlines()
         self.assertIn('v1.0.0', arguments)
         self.assertTrue(any(item.endswith('/Parc-1.0.0-arm64.zip') for item in arguments))
-        self.assertTrue(any(item.endswith('/Parc-1.0.0-arm64.dmg') for item in arguments))
+        self.assertTrue(any(item.endswith('/Parc-arm64.dmg') for item in arguments))
+        self.assertFalse(any(item.endswith('-1.0.0-arm64.dmg') for item in arguments))
         self.assertIn('--latest=false', arguments)
         self.assertIn('--prerelease', arguments)
         self.assertTrue((self.root / 'published').read_text().endswith(
