@@ -370,8 +370,9 @@ Chromium-shaped data and checks those behaviours; see its
 
 The failure view is contained in the page's actual pane/Peek bounds and replaces
 content immediately. The reload link uses native pointer, keyboard and
-accessibility actions; hover changes the cursor. The hung-renderer sheet uses
-Chromium's text and the unresponsive widget's actual renderer process. Wait
+accessibility actions; hover changes the cursor. The hung-renderer sheet says
+"This page is stuck" in Parc's words and uses the unresponsive widget's actual
+renderer process. Wait
 restarts its hang timer; Exit terminates that process. A replacement request or
 page detach invalidates the old decision. The sheet is Parc's dialog: it lists
 titles without favicons under Parc's mark, Wait answers Return and Escape, and

@@ -18,7 +18,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/hung_renderer/hung_renderer_core.h"
-#include "chrome/grit/generated_resources.h"
 #include "components/input/native_web_keyboard_event.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/navigation_handle.h"
@@ -40,13 +39,11 @@
 #include "native_page_retirement.h"
 #include "native_shortcuts.h"
 #include "net/base/net_errors.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 #import "window_security_reservation.h"
 
 namespace parc {
 namespace {
-// The widget observer retires the timer closure before its raw owner dies.
 class HangDecision final : public content::RenderWidgetHostObserver {
  public:
   HangDecision(content::RenderWidgetHost& widget, base::RepeatingClosure restart)
@@ -85,7 +82,6 @@ class NativeHungRenderer final
   ~NativeHungRenderer() override { Finish(false, false); }
 
   void Show(std::unique_ptr<HangDecision> callback) {
-    // Retire the previous decision before replacing its presentation.
     const auto alive = weak_factory_.GetWeakPtr();
     const uint64_t replacement = generation_ + 1;
     if (callback_) callback_->Detach();
@@ -106,8 +102,6 @@ class NativeHungRenderer final
         !window.isKeyWindow || !window.visible || window.miniaturized ||
         page.nativeView.hiddenOrHasHiddenAncestor || IsNativePageRetiring(page) ||
         window.attachedSheet || PCNativeWindowHasSecurityReservation(window)) {
-      // Background/obscured pages keep their real timer. They never steal a
-      // different page's window or silently terminate a shared process.
       Finish(true, false);
       return;
     }
@@ -129,7 +123,6 @@ class NativeHungRenderer final
            content::WebContents*, content::WebContents*) {
           if (self) self->Responsive();
         }, weak));
-    // Acquiring a reservation can synchronously dismiss another native owner.
     auto reservation = [PCNativeWindowSecurityReservation acquireForWindow:window];
     if (!weak || !OwnerCurrent() || !reservation.isOnlyReservation) {
       [reservation invalidate];
@@ -151,32 +144,30 @@ class NativeHungRenderer final
             }
           }]];
     }
-    // List the pages sharing the actual unresponsive widget's process.
     content::RenderProcessHost* process = callback_->process();
     if (!process) { Responsive(); return; }
     const std::vector<content::WebContents*> hung =
         GetHungWebContentsList(contents, process);
     const int count = static_cast<int>(hung.size());
-    NSMutableString* info = [base::SysUTF16ToNSString(
-        l10n_util::GetPluralStringFUTF16(IDS_BROWSER_HANGMONITOR_RENDERER, count))
-        mutableCopy];
+    const bool several = count > 1;
+    NSMutableString* info = [NSMutableString
+        stringWithString:several
+                             ? @"They stopped responding. You can wait a bit "
+                               @"longer, or close them and reload later."
+                             : @"It stopped responding. You can wait a bit "
+                               @"longer, or close it and reload later."];
     [info appendString:@"\n"];
     for (content::WebContents* affected : hung) {
       [info appendFormat:@"\n%@", base::SysUTF16ToNSString(
           GetHungWebContentsTitle(affected, process))];
     }
     alert_ = [[PCDialogPrompt alloc]
-        initWithTitle:base::SysUTF16ToNSString(l10n_util::GetPluralStringFUTF16(
-                          IDS_BROWSER_HANGMONITOR_RENDERER_TITLE, count))
+        initWithTitle:several ? @"These pages are stuck" : @"This page is stuck"
               message:info];
-    // Wait answers Return and Escape; ending the pages is never a key's default.
-    alert_.escapeButton = [alert_
-        addButtonWithTitle:base::SysUTF16ToNSString(l10n_util::GetStringUTF16(
-                               IDS_BROWSER_HANGMONITOR_RENDERER_WAIT))
-                      role:PCDialogPromptPrimary
-                  response:NSAlertFirstButtonReturn];
-    [alert_ addButtonWithTitle:base::SysUTF16ToNSString(l10n_util::GetPluralStringFUTF16(
-                                   IDS_BROWSER_HANGMONITOR_RENDERER_END, count))
+    alert_.escapeButton = [alert_ addButtonWithTitle:@"Wait"
+                                                role:PCDialogPromptPrimary
+                                            response:NSAlertFirstButtonReturn];
+    [alert_ addButtonWithTitle:several ? @"Exit pages" : @"Exit page"
                           role:PCDialogPromptAuxiliary
                       response:NSAlertSecondButtonReturn];
     const uint64_t generation = generation_;
@@ -238,8 +229,6 @@ class NativeHungRenderer final
       [NSNotificationCenter.defaultCenter removeObserver:observer];
     }
     observations_ = nil;
-    // All state is retired before AppKit/reservation callbacks can reenter or
-    // destroy this object. Only local values are used after these operations.
     if (alert.window.sheetParent) {
       [alert.window.sheetParent endSheet:alert.window returnCode:NSModalResponseCancel];
     }
