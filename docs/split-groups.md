@@ -170,8 +170,16 @@ or from the displayed sizes while the minimum overrides those weights, as after
 Expand. Splitter steps and all three commands commit through the same window
 receipt as a finished drag, so the minimum, window validation and persistence
 apply. They refuse during a live divider drag, a drop preview or a tab drag
-into the split, lay out at once without the drag's haptics or motion, and
-VoiceOver hears the new value.
+into the split, and lay out at once without the drag's haptics or motion.
+
+VoiceOver hears a divider's new value once whenever its reported percentage
+changes, whatever moved it: a step or command, a finished drag, a double-click,
+Expand, a pane arriving or leaving, or a window or sidebar resize. Nothing is
+posted while a divider drag, drop preview or live window resize is under way;
+the split compares values when it ends. A change that comes only from the
+split's size waits until the size has held still for 0.3 seconds, so a sidebar
+drag posts once it stops. A pane arriving or leaving also announces its
+splitter as created or destroyed, with a layout change on the split's parent.
 
 ## Divider center snapping
 

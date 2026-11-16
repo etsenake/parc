@@ -740,6 +740,7 @@ import AppKit
         try check(second.frame == released, "A released pane keeps its frame until it is parked")
         try checkResizeSteps()
         try checkResizeCommands(in: commandWindow)
+        try checkDividerAnnouncements(in: commandWindow)
         print("PASS: \(count) original native divider/store checks (no browser)")
     }
 
@@ -847,5 +848,164 @@ import AppKit
         try check(!split.resizePane(panes[0], growing: false) && !split.equalizePanes() && refusedReceipts == 2
                   && panes.map(\.frame) == staleFrames,
                   "When the window can't take a resize, the commands change nothing")
+    }
+
+    static func checkDividerAnnouncements(in window: NSWindow) throws {
+        struct Post {
+            let element: AnyObject
+            let notification: NSAccessibility.Notification
+            let elements: [AnyObject]
+        }
+        let split = ParcSplitView(frame: NSRect(x: 0, y: 0, width: 1210, height: 800))
+        var posts: [Post] = []
+        split.postAccessibilityNotification = { element, notification, info in
+            posts.append(Post(element: element as AnyObject, notification: notification,
+                              elements: (info?[.uiElements] as? [Any] ?? []).map { $0 as AnyObject }))
+        }
+        window.contentView!.addSubview(split)
+        defer { split.removeFromSuperview() }
+        let panes = (0..<3).map { _ in NSView() }
+        func taken() -> [Post] { defer { posts = [] }; return posts }
+        func splitters() -> [ParcSplitView.DividerAccessibilityElement] {
+            (split.accessibilitySplitters() ?? []).compactMap { $0 as? ParcSplitView.DividerAccessibilityElement }
+        }
+        func value(_ index: Int) -> Double { (splitters()[index].accessibilityValue() as? NSNumber)?.doubleValue ?? -1 }
+        func changed(_ list: [Post]) -> [AnyObject] { list.filter { $0.notification == .valueChanged }.map(\.element) }
+        func same(_ left: [AnyObject], _ right: [AnyObject]) -> Bool {
+            left.count == right.count && zip(left, right).allSatisfy { $0 === $1 }
+        }
+        func settle() { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.45)) }
+        func dividerPoint(_ x: CGFloat = 0) -> NSPoint { NSPoint(x: panes[0].frame.maxX + 5 + x, y: 300) }
+        func doubleClick() {
+            split.mouseDown(with: NSEvent.mouseEvent(with: .leftMouseDown,
+                location: split.convert(NSPoint(x: panes[0].frame.maxX + 3, y: 300), to: nil), modifierFlags: [],
+                timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 2, pressure: 1)!)
+        }
+        let windowCommit: () -> (([Double]) -> Bool)? = { [weak split] in
+            { factors in
+                guard let split, let saved = BrowserSplitLayout.normalized(factors, count: factors.count) else { return false }
+                split.configure(orientation: .horizontal, factors: saved.map { $0 * 2 })
+                return true
+            }
+        }
+        let parent = NSAccessibility.unignoredAncestor(of: split) as AnyObject?
+        split.reconcileArrangedSubviews(Array(panes[..<2]))
+        split.configure(orientation: .horizontal, factors: [1, 1])
+        var list = taken()
+        let first = splitters()[0]
+        try check(parent != nil && list.count == 2
+                  && list[0].notification == .created && list[0].element === first
+                  && list[1].notification == .layoutChanged && list[1].element === parent
+                  && list[1].elements.count == 1 && list[1].elements[0] === first && value(0) == 50,
+                  "A new split's splitter announces itself and the layout change, with no value change")
+        split.configure(orientation: .horizontal, factors: [1, 1])
+        try check(taken().isEmpty, "Laying out the same split again announces nothing")
+
+        split.prepareDividerResize = windowCommit
+        try check(first.accessibilityPerformIncrement() && value(0) == 60, "A VoiceOver step moves the divider")
+        list = taken()
+        try check(list.count == 1 && changed(list).count == 1 && changed(list)[0] === first,
+                  "A VoiceOver step posts its value change exactly once")
+        split.prepareDividerResize = { { _ in false } }
+        try check(!first.accessibilityPerformIncrement() && value(0) == 60 && taken().isEmpty,
+                  "A refused step changes nothing and posts nothing")
+        split.prepareDividerResize = windowCommit
+        try check(first.accessibilityPerformDecrement() && value(0) == 50 && changed(taken()).count == 1,
+                  "Stepping back posts once")
+
+        let dragStart = dividerPoint()
+        try check(split.beginDividerResize(at: dragStart), "A mouse drag admits")
+        for offset in [40.0, 80.0, 120.0] {
+            split.updateDividerResize(at: NSPoint(x: dragStart.x + offset, y: dragStart.y), velocity: 200)
+        }
+        try check(taken().isEmpty, "A live mouse drag never posts while it moves")
+        split.finishDividerResize(commit: true)
+        list = taken()
+        try check(value(0) == 60 && list.count == 1 && changed(list).count == 1 && changed(list)[0] === first,
+                  "A finished mouse drag posts its new value exactly once")
+        try check(split.beginDividerResize(at: dividerPoint()), "A second drag admits")
+        split.updateDividerResize(at: dividerPoint(-80), velocity: 200)
+        split.finishDividerResize(commit: false)
+        try check(value(0) == 60 && taken().isEmpty, "A cancelled drag returns to the same value and posts nothing")
+
+        doubleClick()
+        try check(value(0) == 50 && changed(taken()).count == 1, "A double-click equalize posts once")
+        doubleClick()
+        try check(value(0) == 50 && taken().isEmpty, "Equalizing an already even pair posts nothing")
+        try check(split.beginDividerResize(at: dividerPoint()), "A tiny drag admits")
+        split.updateDividerResize(at: dividerPoint(2), velocity: 200)
+        split.finishDividerResize(commit: true)
+        try check(value(0) == 50 && taken().isEmpty, "A drag too small to change the reported percentage posts nothing")
+
+        split.configure(orientation: .horizontal, factors: [980, 220])
+        try check(value(0) == 82 && changed(taken()).count == 1, "An Expand from the window posts once")
+        split.configure(orientation: .horizontal, factors: [980, 220])
+        try check(taken().isEmpty, "Repeating the same layout posts nothing")
+
+        for width in [1160.0, 1110, 1060, 1010] { split.setFrameSize(NSSize(width: width, height: 800)) }
+        try check(value(0) == 78 && taken().isEmpty, "A window resize that moves the shares waits for the size to settle")
+        settle()
+        list = taken()
+        try check(list.count == 1 && changed(list).count == 1 && changed(list)[0] === first,
+                  "Once the size settles, a run of resizes posts exactly once")
+        try check(split.beginDividerResize(at: dividerPoint()), "A drag admits while the minimum holds a pane")
+        split.updateDividerResize(at: dividerPoint(-100), velocity: 200)
+        try check(value(0) == 68, "The held pair reports its displayed sizes as the drag moves")
+        settle()
+        try check(taken().isEmpty, "Even a paused live drag posts nothing")
+        split.finishDividerResize(commit: true)
+        list = taken()
+        try check(value(0) == 68 && list.count == 1 && changed(list).count == 1,
+                  "Releasing it posts the new value exactly once, through the window's commit")
+        split.configure(orientation: .horizontal, factors: [980, 220])
+        try check(value(0) == 78 && changed(taken()).count == 1, "Expanding again posts once")
+        split.setFrameSize(NSSize(width: 1210, height: 800))
+        try check(value(0) == 82 && taken().isEmpty, "Growing back also waits")
+        split.viewDidEndLiveResize()
+        try check(changed(taken()).count == 1, "The end of a live window resize posts at once")
+        settle()
+        try check(taken().isEmpty, "The settled value is not posted again")
+
+        split.configure(orientation: .horizontal, factors: [1, 1])
+        try check(changed(taken()).count == 1, "Returning to even panes posts once")
+        split.setFrameSize(NSSize(width: 1010, height: 800))
+        settle()
+        split.setFrameSize(NSSize(width: 1210, height: 800))
+        settle()
+        try check(value(0) == 50 && taken().isEmpty, "A window resize that keeps the shares posts nothing")
+        let host = window.contentView!
+        let reservation = split.prepareDropReservation(in: host, contents: Array(panes[..<2]))
+        let preview = reservation?.proposal(at: split.convert(NSPoint(x: 10, y: 300), to: host)) { _, _ in true }
+        try check(preview != nil && splitters().isEmpty && taken().isEmpty,
+                  "A drop preview hides the splitter and posts nothing")
+        reservation?.end()
+        try check(value(0) == 50 && taken().isEmpty, "Ending the preview restores the same value and posts nothing")
+
+        split.reconcileArrangedSubviews(panes)
+        try check(splitters().count == 2 && taken().isEmpty, "VoiceOver asking mid-update posts nothing")
+        split.configure(orientation: .horizontal, factors: [1, 1, 1])
+        list = taken()
+        let added = splitters()
+        try check(added.count == 2 && added[0] === first && value(0) == 33 && value(1) == 67
+                  && list.count == 3 && same(list.filter({ $0.notification == .created }).map(\.element), [added[1]])
+                  && list.contains { $0.notification == .layoutChanged && $0.element === parent
+                                     && $0.elements.count == 1 && $0.elements[0] === added[1] }
+                  && changed(list).count == 1 && changed(list)[0] === first,
+                  "Adding a pane announces its new splitter and the layout, and posts the moved divider once")
+        split.reconcileArrangedSubviews(Array(panes[..<2]))
+        split.configure(orientation: .horizontal, factors: [1, 1])
+        list = taken()
+        try check(splitters().count == 1 && value(0) == 50 && list.count == 3
+                  && same(list.filter({ $0.notification == .uiElementDestroyed }).map(\.element), [added[1]])
+                  && list.contains { $0.notification == .layoutChanged && $0.element === parent && $0.elements.isEmpty }
+                  && changed(list).count == 1 && changed(list)[0] === first,
+                  "Removing a pane retires its splitter, announces the layout and posts the surviving divider once")
+        split.reconcileArrangedSubviews([panes[0]])
+        split.configure(orientation: .horizontal, factors: [1])
+        list = taken()
+        try check(splitters().isEmpty && list.count == 2
+                  && list[0].notification == .uiElementDestroyed && list[0].element === first
+                  && list[1].notification == .layoutChanged && changed(list).isEmpty,
+                  "Ending the split retires the last splitter without a value change")
     }
 }

@@ -773,6 +773,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             synchronizePaneShadows()
             synchronizeDividerPresentation(animated: false)
             updateTrackingAreas()
+            dividerLayoutDidChange()
             return
         }
         clearLayoutAnimation()
@@ -835,6 +836,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         synchronizePaneShadows()
         synchronizeDividerPresentation(animated: false)
         updateTrackingAreas()
+        dividerLayoutDidChange()
     }
     private func divider(at point: NSPoint) -> Int? {
         guard dropReservation == nil else { return nil }
@@ -1028,21 +1030,86 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             && zip(views, arrangedSubviews).allSatisfy { $0 === $1 }
         if accepted, current { savedFactors = factors }
         applySavedFrames()
-        guard accepted, current else { return false }
-        for element in availableDividerElements() { NSAccessibility.post(element: element, notification: .valueChanged) }
-        return true
+        return accepted && current
+    }
+    var postAccessibilityNotification: (Any, NSAccessibility.Notification, [NSAccessibility.NotificationUserInfoKey: Any]?) -> Void = {
+        NSAccessibility.post(element: $0, notification: $1, userInfo: $2)
+    }
+    private struct DividerAnnouncementBasis: Equatable {
+        let orientation: SplitOrientation
+        let factors: [Double]
+        let panes: [ObjectIdentifier]
     }
     private var dividerAccessibilityElements: [DividerAccessibilityElement] = []
-    private func availableDividerElements() -> [DividerAccessibilityElement] {
+    private var createdDividerElements: [DividerAccessibilityElement] = []
+    private var retiredDividerElements: [DividerAccessibilityElement] = []
+    private var announcedDividerBasis: DividerAnnouncementBasis?
+    private var dividerSettleTimer: Timer?
+    private var dividerAnnouncementBasis: DividerAnnouncementBasis {
+        DividerAnnouncementBasis(orientation: savedOrientation, factors: savedFactors,
+                                 panes: arrangedSubviews.map(ObjectIdentifier.init))
+    }
+    private func canAnnounceDividers(endingLiveResize: Bool = false) -> Bool {
+        window != nil && !isTrackingDivider && (endingLiveResize || !inLiveResize)
+    }
+    private func dividerLayoutDidChange() {
+        guard canAnnounceDividers() else { return }
+        guard dividerAnnouncementBasis == announcedDividerBasis, createdDividerElements.isEmpty,
+              retiredDividerElements.isEmpty else { announceDividerChanges(); return }
+        guard recordDividerValues(announcing: false) else { return }
+        dividerSettleTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.announceDividerChanges() }
+        }
+        RunLoop.main.add(timer, forMode: .default)
+        dividerSettleTimer = timer
+    }
+    private func announceDividerChanges(endingLiveResize: Bool = false) {
+        guard canAnnounceDividers(endingLiveResize: endingLiveResize) else { return }
+        dividerSettleTimer?.invalidate(); dividerSettleTimer = nil
+        announcedDividerBasis = dividerAnnouncementBasis
+        reconcileDividerElements()
+        let created = createdDividerElements, retired = retiredDividerElements
+        createdDividerElements = []; retiredDividerElements = []
+        for element in retired { postAccessibilityNotification(element, .uiElementDestroyed, nil) }
+        for element in created { postAccessibilityNotification(element, .created, nil) }
+        if !created.isEmpty || !retired.isEmpty, let parent = NSAccessibility.unignoredAncestor(of: self) {
+            postAccessibilityNotification(parent, .layoutChanged, created.isEmpty ? nil : [.uiElements: created])
+        }
+        recordDividerValues(announcing: true)
+    }
+    @discardableResult
+    private func recordDividerValues(announcing: Bool) -> Bool {
+        var pending = false
+        for element in dividerAccessibilityElements {
+            guard let value = element.reportedValue, value != element.announcedValue else { continue }
+            let changed = element.announcedValue != nil
+            guard announcing || !changed else { pending = true; continue }
+            element.announcedValue = value
+            if changed { postAccessibilityNotification(element, .valueChanged, nil) }
+        }
+        return pending
+    }
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        announceDividerChanges(endingLiveResize: true)
+    }
+    private func reconcileDividerElements() {
         let count = max(0, arrangedSubviews.count - 1)
         while dividerAccessibilityElements.count > count {
-            let retired = dividerAccessibilityElements.removeLast()
-            retired.owner = nil
-            NSAccessibility.post(element: retired, notification: .uiElementDestroyed)
+            let element = dividerAccessibilityElements.removeLast()
+            element.owner = nil
+            if let unannounced = createdDividerElements.firstIndex(where: { $0 === element }) {
+                createdDividerElements.remove(at: unannounced)
+            } else { retiredDividerElements.append(element) }
         }
         while dividerAccessibilityElements.count < count {
-            dividerAccessibilityElements.append(DividerAccessibilityElement(owner: self, index: dividerAccessibilityElements.count))
+            let element = DividerAccessibilityElement(owner: self, index: dividerAccessibilityElements.count)
+            dividerAccessibilityElements.append(element); createdDividerElements.append(element)
         }
+    }
+    private func availableDividerElements() -> [DividerAccessibilityElement] {
+        reconcileDividerElements()
         return dividerRects.isEmpty ? [] : dividerAccessibilityElements
     }
     override func accessibilityChildren() -> [Any]? {
@@ -1059,6 +1126,8 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     final class DividerAccessibilityElement: NSAccessibilityElement {
         fileprivate weak var owner: ParcSplitView?
         let index: Int
+        fileprivate var announcedValue: Double?
+        fileprivate var reportedValue: Double? { position.map { ($0.value * 100).rounded() } }
         fileprivate init(owner: ParcSplitView, index: Int) {
             self.owner = owner; self.index = index
             super.init()
@@ -1077,7 +1146,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             (owner?.dividerRects.count ?? 0) > 1 ? "Split View Divider \(index + 1)" : "Split View Divider"
         }
         override func accessibilityHelp() -> String? { "Increase or decrease to resize the pages on either side." }
-        override func accessibilityValue() -> Any? { position.map { NSNumber(value: ($0.value * 100).rounded()) } }
+        override func accessibilityValue() -> Any? { reportedValue.map { NSNumber(value: $0) } }
         override func accessibilityMinValue() -> Any? { position.map { NSNumber(value: ($0.minimum * 100).rounded()) } }
         override func accessibilityMaxValue() -> Any? { position.map { NSNumber(value: ($0.maximum * 100).rounded()) } }
         override func accessibilityValueDescription() -> String? {
