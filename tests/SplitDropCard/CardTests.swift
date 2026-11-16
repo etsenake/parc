@@ -94,8 +94,9 @@ import AppKit
                                                              incomingPane: portraitPane),
                   let rep = image.representations.first as? NSBitmapImageRep else { check(false, "card image renders"); continue }
             check(image.size == portrait, "card image is the computed card size")
-            check(rep.pixelsWide == Int(portrait.width.rounded(.up)) && rep.pixelsHigh == 250,
-                  "the windowless card caches at 1x, as for a view with no window")
+            let scale = rep.pixelsHigh / 250
+            check(scale >= 1 && rep.pixelsHigh == 250 * scale && rep.pixelsWide == Int((portrait.width * CGFloat(scale)).rounded(.up)),
+                  "the windowless card caches at a whole-pixel scale of its size, as AppKit picks for a view with no window")
             let fill = pixel(rep, 6, rep.pixelsHigh / 2)
             check(dark ? fill.r < 8 && fill.g < 8 && fill.b < 8 && fill.a > 247 : fill.r > 247 && fill.g > 247 && fill.b > 247 && fill.a > 247,
                   "the card is FullOpacityBackgroundPrimary in the application's \(dark ? "dark" : "light") appearance")
