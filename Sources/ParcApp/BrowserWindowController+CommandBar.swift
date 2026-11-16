@@ -39,6 +39,17 @@ extension BrowserWindowController {
         sidebar.highlightItemForKeyboard(sidebarKeyboardBrowsing ? item?.reference : nil, scrollToHighlight: scroll)
     }
 
+    private func announceSidebarKeyboardHighlight() {
+        announceSidebarKeyboard(SidebarKeyboardAnnouncement.highlight(sidebarKeyboardCursor, in: sidebarKeyboardItems(),
+                                                                      state: store.state))
+    }
+
+    private func announceSidebarKeyboard(_ spoken: String?) {
+        guard let spoken, sidebarKeyboardCursor != nil, sidebarKeyboardBrowsing else { return }
+        NSAccessibility.post(element: sidebar, notification: .announcementRequested,
+                             userInfo: [.announcement: spoken, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+    }
+
     func splitInsertionTabs(profileID: UUID) -> [BrowserTab] {
         let spaces = Set(store.state.spaces.filter { $0.profileID == profileID }.map(\.id))
         return store.state.openTabs(where: { $0.profileID == profileID && ($0.kind == .favorite || spaces.contains($0.spaceID)) })
@@ -192,6 +203,13 @@ extension BrowserWindowController {
                                    initialEdit: initialEdit, resident: false)
         commandBarCreatesNewTab = newTab; commandBarShowsNewTabPlaceholder = newTab && !inSidebar
         commandBar = panel; panel.present()
+        if inSidebar, commandBar === panel, let entered = sidebarKeyboardCursor?.highlightedID {
+            DispatchQueue.main.async { [weak self, weak panel] in
+                guard let self, let panel, self.commandBar === panel,
+                      self.sidebarKeyboardCursor?.highlightedID == entered else { return }
+                self.announceSidebarKeyboardHighlight()
+            }
+        }
         if !isPopupWindow, !isPrivateBrowsing {
             deliverCommandBarTopDomains(to: panel, profileID: activeProfileID)
             deliverCommandBarRecentPages(to: panel, profileID: activeProfileID)
@@ -462,9 +480,12 @@ extension BrowserWindowController {
         }
         if inSidebar {
             panel.onSidebarMove = { [weak self] delta in
-                guard isOriginal(), let self else { return }
-                self.sidebarKeyboardCursor?.move(delta, in: self.sidebarKeyboardItems().map(\.id))
+                guard isOriginal(), let self, var cursor = self.sidebarKeyboardCursor else { return }
+                let spoken = SidebarKeyboardAnnouncement.move(delta, cursor: &cursor, in: self.sidebarKeyboardItems(),
+                                                              state: self.store.state)
+                self.sidebarKeyboardCursor = cursor
                 self.reconcileSidebarKeyboardFocus(scroll: true)
+                self.announceSidebarKeyboard(spoken)
             }
             panel.onSidebarQueryState = { [weak self] browsing in
                 guard isOriginal(), let self else { return }
@@ -479,6 +500,7 @@ extension BrowserWindowController {
                         guard try self.store.setFolderExpanded(!folder.isExpanded, expected: folder,
                                                                profileID: commandProfile) else { NSSound.beep(); return }
                         self.reconcileSidebarKeyboardFocus(scroll: true)
+                        self.announceSidebarKeyboardHighlight()
                     } catch {
                         panel?.dismiss()
                         showError(error)

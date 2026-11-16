@@ -35,6 +35,37 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
                        ("func revealSidebarForEditing() {\n        if sidebarPresentation == .hidden { setSidebarPresentation(.floating) }\n"
                         "        settleSidebarMotion(); layoutChrome(); rootView.layoutSubtreeIfNeeded()", 1)):
         assert controller.count(use) == count, f"the window owner no longer keeps focus out of the hidden sidebar: {use}"
+    def body(text, start, end):
+        assert text.count(start) == 1 and text.count(end) == 1, f"the sidebar keyboard mode moved: {start}"
+        return text[text.index(start):text.index(end, text.index(start))]
+    move = body(controller, "panel.onSidebarMove = {", "panel.onSidebarQueryState = {")
+    query = body(controller, "panel.onSidebarQueryState = {", "panel.onSidebarCommit = {")
+    commit = body(controller, "panel.onSidebarCommit = {", "panel.mayRestoreOriginal = {")
+    refresh = body(controller, "private func reconcileSidebarKeyboardFocus(", "private func announceSidebarKeyboardHighlight()")
+    background = body(controller, "func reconcileCommandBar() {", "func presentCommandBar(")
+    assert move.count("SidebarKeyboardAnnouncement.move(") == 1 and move.count("self.announceSidebarKeyboard(spoken)") == 1 \
+        and move.count("announce") == 1, "each Control-Space arrow press asks for exactly one announcement"
+    assert "announce" not in query and "announce" not in refresh and "announce" not in background, \
+        "list refreshes and query changes never speak; the command bar's own scope announcements stay alone"
+    assert commit.count("announce") == 1 and "profileID: commandProfile) else { NSSound.beep(); return }\n" \
+        "                        self.reconcileSidebarKeyboardFocus(scroll: true)\n" \
+        "                        self.announceSidebarKeyboardHighlight()\n" in commit, \
+        "only a folder that Return actually toggled speaks its new state"
+    for use, count in (("commandBar = panel; panel.present()\n"
+                        "        if inSidebar, commandBar === panel, let entered = sidebarKeyboardCursor?.highlightedID {\n"
+                        "            DispatchQueue.main.async { [weak self, weak panel] in\n"
+                        "                guard let self, let panel, self.commandBar === panel,\n"
+                        "                      self.sidebarKeyboardCursor?.highlightedID == entered else { return }\n"
+                        "                self.announceSidebarKeyboardHighlight()\n", 1),
+                       ("announceSidebarKeyboardHighlight()", 3), ("announceSidebarKeyboard(", 3),
+                       ("guard let spoken, sidebarKeyboardCursor != nil, sidebarKeyboardBrowsing else { return }\n"
+                        "        NSAccessibility.post(element: sidebar, notification: .announcementRequested,", 1),
+                       ("SidebarKeyboardAnnouncement.", 2)):
+        assert controller.count(use) == count, f"the sidebar keyboard mode no longer speaks only user-driven moves: {use}"
+    command_bar = (root / "Sources/ParcApp/CommandBar.swift").read_text()
+    assert "if sidebarBrowsing { onSidebarMove?(delta); return }" in command_bar and re.search(
+        r"private var sidebarBrowsing: Bool \{[^}]*!isScoped && !scopeInvalidated \}", command_bar), \
+        "arrow presses reach the sidebar only outside a site search, so its announcements never overlap"
     renames = re.findall(r"let commit = prepare\w+Rename\?\(", sidebar)
     assert len(renames) >= 2 and len(renames) == len(re.findall(
         r"let commit = prepare\w+Rename\?\(\w+\), presentsForEditing\(reveal: revealForEditing\) else \{ return false \}", sidebar)), \

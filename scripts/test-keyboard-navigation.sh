@@ -18,6 +18,9 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library "$repo_root"/Sources/ParcCore/*.swift \
   "$repo_root/tests/KeyboardNavigation/SidebarHierarchyTests.swift" -o "$repo_root/build/tests/sidebar-keyboard-hierarchy"
 "$repo_root/build/tests/sidebar-keyboard-hierarchy"
+xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library "$repo_root"/Sources/ParcCore/*.swift \
+  "$repo_root/tests/KeyboardNavigation/SidebarAnnouncementTests.swift" -o "$repo_root/build/tests/sidebar-keyboard-announcements"
+"$repo_root/build/tests/sidebar-keyboard-announcements"
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -parse-as-library "$repo_root/Sources/ParcApp/KeyboardShortcuts.swift" \
   "$repo_root/Sources/ParcApp/TextFormatMenu.swift" \
   "$repo_root/Sources/ParcCore/SettingsPrettyJSONPersistSkip.swift" \

@@ -197,18 +197,39 @@ sidebar chain. Keep these working keyboard paths even when modifying appearance.
 
 ## Control-Space announcements
 
-The command field retains focus while the sidebar keyboard cursor moves.
-There is currently no dedicated spoken announcement for each highlighted
-sidebar item. Scope entry/exit and search-privacy announcements in
-`CommandBar.swift` are separate and must not be mistaken for item narration.
-Any future narration should announce user-driven movement, not ordinary list
-reconciliation, and should preserve the command field's ownership.
+The command field keeps focus while the sidebar keyboard cursor moves, so
+VoiceOver has no focus change to read. Like the recent-tab switcher, the window
+posts a medium-priority announcement at each user-driven cursor change:
+
+- Entering the mode speaks the item highlighted at the start, if there is one,
+  on the run-loop turn after the field takes focus, so VoiceOver can read the
+  field first. An arrow press before then replaces it.
+- Each Up or Down press speaks exactly one thing: the newly highlighted item,
+  "End of list" or "Top of list" after stepping past either end, or "Sidebar is
+  empty" when there is nothing to highlight.
+- Return on a folder speaks it again with its new state once the change is
+  saved. A refused change only beeps.
+
+A tab speaks the title its row shows. A folder adds "folder" and whether it is
+expanded or collapsed. A split speaks its page titles and "Split View", or its
+custom title, "Split View" and its tab count; one showing only a custom icon
+says "Split View" and its tab count, like its row. `SidebarKeyboardAnnouncement`
+builds the text from the same keyboard item list the cursor walks.
+
+List reconciliation never speaks. A page finishing loading, a title change or a
+background tab closing refreshes or clears the highlight silently, and the next
+arrow press speaks the refreshed list. Clearing the query, which brings the
+highlight back, is silent too. Arrows reach the sidebar only while the field is
+empty and outside a scope, so these announcements never overlap the scope
+entry/exit and search-privacy announcements in `CommandBar.swift`. They move
+neither focus nor selection, and only a running screen reader speaks them.
 
 ## Checks
 
 | Check | Coverage |
 |---|---|
-| `tests/SidebarAccessibility/check.py` | Exposed labels, chain ordering, focus guards, saved responder rules and source wiring |
+| `tests/SidebarAccessibility/check.py` | Exposed labels, chain ordering, focus guards, saved responder rules and source wiring, including Control-Space entry and silent list refreshes |
+| `scripts/test-keyboard-navigation.sh` | Control-Space announcement text, one per arrow press, list ends and folder state |
 | `tests/SidebarOutline/check.py` | Row/cell hierarchy, geometry, stable identities, disclosure and selection |
 | `tests/SidebarWindowKeyLoop/check.py` | Bidirectional traversal, renderer replacement, hidden sidebar, Peek and closed-loop exclusions |
 | `tests/SidebarMiniPlayerFocus/check.py` | Mini-player keyboard actions and visible rings |

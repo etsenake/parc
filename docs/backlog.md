@@ -15,9 +15,8 @@ Finish assigned work first; explicit deferrals remain deferred.
 
 ## Sidebar accessibility and presentation
 
-- Add direct accessibility row-selection setters and spoken Control-Space
-  highlight changes. Existing press/custom selection actions work.
-  [Sidebar accessibility](sidebar-accessibility.md).
+- Add direct accessibility row-selection setters. Existing press/custom
+  selection actions work. [Sidebar accessibility](sidebar-accessibility.md).
 - Restore New Tab's pressed scale after a cancelled click, and prevent long
   Space drags from exposing blank strip content.
   [Sidebar motion](sidebar-motion.md), [theme rendering](space-theme-rendering.md).
