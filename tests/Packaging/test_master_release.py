@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -353,7 +354,8 @@ class Repository(RepositoryFixture):
             return original(**values)
         with patch.object(runner, 'checkpoint', side_effect=interrupted):
             with self.assertRaises(OSError): runner.prepare()
-        commit = self.git('rev-parse', 'HEAD'); runner.prepare()
+        for item in runner.locks: item.close()
+        commit = self.git('rev-parse', 'HEAD'); runner = self.runner(); runner.prepare()
         self.assertEqual(runner.state['commit'], commit)
         self.assertEqual(runner.state['version']['version'], '1.1.0')
 
@@ -420,7 +422,7 @@ class Repository(RepositoryFixture):
         self.commit('perf: Paint sooner')
         runner = self.automatic(); original = runner.git
         def killed(*args, **kwargs):
-            if args[0] == 'commit': raise OSError('power lost before commit')
+            if args[0] == 'update-ref': raise OSError('power lost before commit')
             return original(*args, **kwargs)
         with patch.object(runner, 'git', side_effect=killed):
             with self.assertRaises(OSError): runner.prepare()
@@ -484,6 +486,184 @@ class Repository(RepositoryFixture):
         self.race(runner)
         self.assertEqual((runner.state['id'], runner.state['tag']), (automatic.state['id'], 'v1.0.1'))
         self.assertEqual([item['version'] for item in self.notes()], ['1.0.1'])
+
+
+class SharedCheckout(RepositoryFixture):
+    RELEASE_FILES = ['CHANGELOG.md', 'app-version.json', 'release-notes.json']
+
+    def setUp(self):
+        super().setUp()
+        self.write({'README.md': 'readme\n', 'docs/guide.md': 'guide\n', 'site/index.html': 'site\n',
+                    '.github/workflows/site.yml': 'on: push\n', 'tests/Site/test_site.py': 'pass\n',
+                    'Engine/README.md': 'engine notes\n', 'Engine/patch.diff': 'patch\n',
+                    'Sources/App.swift': 'let app = 1\n', 'scripts/tool.py': 'print(1)\n',
+                    '.githooks/pre-push': 'exit 0\n'})
+        self.git('add', '.'); self.git('commit', '-m', 'docs: Seed shared files'); self.git('push', 'origin', 'main')
+
+    def write(self, files, root=None):
+        for name, text in files.items():
+            path = (root or self.root) / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(text)
+
+    def read(self, name):
+        path = self.root / name
+        return path.read_text() if path.exists() else None
+
+    def push_from_peer(self, files, message):
+        peer = Path(self.tmp.name) / 'peer'
+        subprocess.run(['git', 'clone', '-q', str(self.remote), str(peer)], check=True)
+        self.write(files, peer)
+        for command in (['add', '-A'], ['-c', 'user.name=Peer', '-c', 'user.email=peer@example.invalid', 'commit',
+                                        '-qm', message], ['push', '-q', 'origin', 'main']):
+            subprocess.run(['git', *command], cwd=peer, check=True, capture_output=True)
+
+    def released(self, runner):
+        self.assertEqual(sorted(self.git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD').split()),
+                         self.RELEASE_FILES)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.git('rev-parse', 'origin/main'))
+        self.assertEqual(self.git('rev-parse', 'HEAD'), runner.state['commit'])
+        self.assertTrue(runner.state['source_frozen'])
+
+    def restore(self, name, original, staged):
+        if original is None:
+            if staged: self.git('rm', '-q', '--cached', '--', name)
+            (self.root / name).unlink()
+        else:
+            self.write({name: original})
+            if staged: self.git('add', '--', name)
+
+    def refused(self, pattern, make=None):
+        head, remote = self.git('rev-parse', 'HEAD'), self.git('ls-remote', 'origin', 'refs/heads/main')
+        runner = make() if make else release.Release(self.root, 'minor')
+        try:
+            runner.start()
+            with self.assertRaisesRegex(release.Failure, pattern):
+                runner.refresh_inputs() if make else runner.prepare()
+        finally:
+            for item in runner.locks: item.close()
+        self.assertEqual((self.git('rev-parse', 'HEAD'), self.git('ls-remote', 'origin', 'refs/heads/main')),
+                         (head, remote))
+        return runner
+
+    def test_docs_site_ci_tests_and_markdown_edits_never_block(self):
+        self.push_from_peer({'Resources/icon': 'peer icon'}, 'fix: Brighten the icon')
+        edits = {'README.md': 'readme draft\n', 'docs/guide.md': 'guide draft\n', 'docs/new.md': 'new page\n',
+                 'site/index.html': 'site draft\n', 'site/media/hero.png': 'png', '.github/workflows/site.yml': 'on: pr\n',
+                 'tests/Site/test_site.py': 'assert True\n', 'Engine/README.md': 'engine draft\n'}
+        self.write(edits)
+        self.git('add', 'docs/guide.md', 'docs/new.md', '.github/workflows/site.yml')
+        (self.root / 'tests/Site/test_site.py').unlink(); del edits['tests/Site/test_site.py']
+        staged, unstaged = self.git('diff', '--cached', '--name-only'), self.git('diff', '--name-only')
+        runner = self.runner(); runner.prepare()
+        self.released(runner)
+        self.assertEqual(self.git('show', 'HEAD:Resources/icon'), 'peer icon')
+        self.assertEqual({name: self.read(name) for name in edits}, edits)
+        self.assertIsNone(self.read('tests/Site/test_site.py'))
+        self.assertEqual((self.git('diff', '--cached', '--name-only'), self.git('diff', '--name-only')), (staged, unstaged))
+        source = Path(runner.state['source'])
+        self.assertEqual(((source / 'README.md').read_text(), (source / 'docs/new.md').exists()), ('readme\n', False))
+
+    def test_local_edits_to_release_source_engine_script_or_hook_files_refuse(self):
+        self.write({'README.md': 'allowed draft\n'})
+        tracked = self.RELEASE_FILES + ['Sources/App.swift', 'Engine/patch.diff', 'scripts/tool.py',
+                                        '.githooks/pre-push', 'Resources/icon']
+        for name, staged in [(name, staged) for name in tracked for staged in (False, True)] + [('Sources/New.swift', True)]:
+            with self.subTest(name=name, staged=staged):
+                original = self.read(name)
+                self.write({name: 'peer draft\n'})
+                if staged: self.git('add', '--', name)
+                failure = self.refused('^Start on clean main.*: ' + re.escape(name) + '$')
+                self.assertNotIn('version', failure.state)
+                self.assertEqual(self.read(name), 'peer draft\n')
+                self.restore(name, original, staged)
+        self.git('rm', '-q', '--cached', 'scripts/tool.py'); self.write({'scripts/tool.py': 'peer draft\n'})
+        self.refused('^Start on clean main.*: scripts/tool\\.py$')
+        self.write({'scripts/tool.py': 'print(1)\n'}); self.git('add', 'scripts/tool.py')
+        self.assertEqual(self.git('status', '--porcelain', '--untracked-files=no'), 'M README.md')
+        runner = self.runner(); runner.prepare()
+        self.released(runner)
+
+    def test_peer_work_staged_mid_release_never_joins_the_version_commit(self):
+        runner = self.runner(); original = runner.checkpoint
+        def peer_stages(**values):
+            original(**values)
+            if 'version' in values:
+                self.write({'README.md': 'peer staged\n', 'docs/peer.md': 'peer page\n', 'site/index.html': 'peer\n'})
+                self.git('add', 'README.md', 'docs/peer.md')
+        with patch.object(runner, 'checkpoint', side_effect=peer_stages):
+            runner.prepare()
+        self.released(runner)
+        self.assertEqual(self.git('show', 'origin/main:README.md'), 'readme')
+        self.assertNotIn('docs/peer.md', self.git('ls-tree', '-r', '--name-only', 'origin/main').splitlines())
+        self.assertEqual(self.git('diff', '--cached', '--name-only').splitlines(), ['README.md', 'docs/peer.md'])
+        self.assertEqual(self.git('diff', '--name-only').splitlines(), ['site/index.html'])
+        self.assertEqual((self.read('README.md'), self.read('docs/peer.md')), ('peer staged\n', 'peer page\n'))
+
+    def test_a_source_edit_appearing_mid_release_stops_before_the_version_commit(self):
+        runner = self.runner(); original = runner.checkpoint
+        def peer_stages(**values):
+            original(**values)
+            if 'version' in values:
+                self.write({'Sources/App.swift': 'peer source\n'}); self.git('add', 'Sources/App.swift')
+        head = self.git('rev-parse', 'HEAD')
+        with patch.object(runner, 'checkpoint', side_effect=peer_stages):
+            with self.assertRaisesRegex(release.Failure, 'Unexpected local edits'): runner.prepare()
+        self.assertEqual((self.git('rev-parse', 'HEAD'), self.git('rev-parse', 'origin/main')), (head, head))
+        self.assertEqual(self.git('status', '--porcelain', '--untracked-files=no'), 'M  Sources/App.swift')
+        self.assertNotIn('commit', runner.state)
+
+    def test_fast_forward_onto_a_locally_edited_allowed_path_stops_without_touching_it(self):
+        (self.root / '.git/info/exclude').write_text('site/generated.html\n')
+        self.push_from_peer({'README.md': 'peer readme\n', 'docs/guide.md': 'peer guide\n',
+                             'site/new.html': 'peer page\n', 'site/generated.html': 'peer generated\n'}, 'docs: Peer pages')
+        self.write({'site/index.html': 'untouched draft\n'})
+        for name, staged in (('README.md', False), ('docs/guide.md', True), ('site/new.html', False),
+                             ('site/generated.html', False)):
+            with self.subTest(name=name):
+                original = self.read(name)
+                self.write({name: 'local draft\n'})
+                if staged: self.git('add', '--', name)
+                self.refused('^Main moved under local edits to ' + re.escape(name) + ';')
+                self.assertEqual((self.read(name), self.read('site/index.html')), ('local draft\n', 'untouched draft\n'))
+                self.restore(name, original, staged)
+        self.write({'site/generated.html': 'ignored but mine\n'})
+        with patch.object(release.Release, 'local_changes', return_value={}), \
+                patch.object(release.os.path, 'lexists', return_value=False), patch.object(release.time, 'sleep'):
+            self.refused('^Git refused to fast-forward main')
+        self.assertEqual(self.read('site/generated.html'), 'ignored but mine\n')
+        (self.root / 'site/generated.html').unlink()
+        runner = self.runner(); runner.prepare()
+        self.released(runner)
+        self.assertEqual((self.git('show', 'HEAD:README.md'), self.read('site/index.html')), ('peer readme', 'untouched draft\n'))
+
+    def test_resume_after_a_kill_keeps_peer_edits_out_of_the_version_commit(self):
+        self.commit('perf: Paint sooner')
+        runner = self.automatic(); original = runner.git
+        def killed(*args, **kwargs):
+            if args[0] == 'update-ref': raise OSError('power lost before main moved')
+            return original(*args, **kwargs)
+        with patch.object(runner, 'git', side_effect=killed):
+            with self.assertRaises(OSError): runner.prepare()
+        for item in runner.locks: item.close()
+        self.write({'README.md': 'peer staged\n', 'Sources/App.swift': 'peer source\n'}); self.git('add', 'README.md')
+        resumed = self.automatic()
+        with self.assertRaisesRegex(release.Failure, 'Unexpected local edits'): resumed.prepare()
+        self.assertEqual(self.read('Sources/App.swift'), 'peer source\n')
+        self.write({'Sources/App.swift': 'let app = 1\n'})
+        resumed.prepare()
+        self.released(resumed)
+        self.assertEqual((resumed.state['id'], [item['version'] for item in self.notes()]), (runner.state['id'], ['1.0.1']))
+        self.assertEqual(self.git('status', '--porcelain', '--untracked-files=no'), 'M  README.md')
+
+    def test_source_refresh_tolerates_docs_edits_and_refuses_source_edits(self):
+        self.stopped_patch_release(); self.commit('fix(engine): build with the new SDK')
+        self.write({'Sources/App.swift': 'peer source\n', 'docs/guide.md': 'guide draft\n'})
+        self.refused('^Source refresh requires clean main.*: Sources/App.swift$',
+                     lambda: release.Release(self.root, refresh_source=True))
+        self.write({'Sources/App.swift': 'let app = 1\n'})
+        refreshed = self.refresh(); refreshed.refresh_inputs()
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.git('rev-parse', 'origin/main'))
+        self.assertEqual(self.git('log', '-1', '--format=%s', 'HEAD'), 'chore(release): 1.0.1 notes')
+        self.assertEqual(self.read('docs/guide.md'), 'guide draft\n')
 
 
 

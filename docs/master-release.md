@@ -5,8 +5,9 @@ bash scripts/release.sh
 # Override the bump only when the commits can't choose it: --type patch, minor or major
 ```
 
-Run from main with no uncommitted changes to tracked files on an Apple Silicon
-Mac. This command is **release-only**: engine/app build, production signing,
+Run from main on an Apple Silicon Mac. Local edits the release never reads,
+such as docs and website work, don't stop it (see step 2 of the
+[pipeline](#pipeline)). This command is **release-only**: engine/app build, production signing,
 notarization, GitHub assets and Homebrew cask publication. It never
 installs/replaces/quits/opens Parc, runs startup or browser tests, or installs,
 upgrades or reinstalls Parc with Homebrew. Users run `brew upgrade --cask parc`
@@ -74,10 +75,26 @@ published tag still refuses.
 2. Fast-forward main, commit and immediately push the version, then extract
    verified Git inputs into ignored build storage. This is an immutable input
    archive, not another Git checkout/worktree. Later commits cannot retarget the
-   engine or package. Uncommitted changes to tracked files cause a clear refusal
-   and are never reset, stashed, cleaned or overwritten. Untracked files don't
-   block the release and are left where they are, since the inputs come only
-   from Git objects.
+   engine or package. Nothing in the checkout is ever reset, stashed, cleaned or
+   overwritten, so the release can share it with people editing other files:
+   - Edits it never reads don't block it, whether modified, staged or
+     untracked: anything under `site/`, `docs/`, `tests/` and `.github/`,
+     Markdown (`.md`, `.markdown`, `.mdc`) other than `CHANGELOG.md`, and
+     untracked files anywhere else.
+   - Any other uncommitted change stops it before anything happens and names
+     the paths: the version files (`app-version.json`, `release-notes.json` and
+     `CHANGELOG.md`, even untracked), the scripts and Git hooks the release runs
+     from the checkout, and source, engine and resource files. Those last three
+     couldn't reach the archive either, but an uncommitted source edit usually
+     means a fix meant for this release isn't committed yet.
+   - The version commit is built from Git objects, the fetched main plus the
+     three version files, so staged or unstaged work never joins it and stays
+     as it was. Only the version files are written to the checkout and the
+     index, and main moves only if it still points where the release started.
+   - If main moved and the fast-forward would change a path with local edits,
+     including an untracked or ignored file in the way, the release stops,
+     names the paths and leaves the checkout untouched. A source refresh
+     follows the same rules.
 3. Use `PARC_ENGINE_WORKSPACE` when set. Otherwise choose the first registered
    workspace at `work/engine` or `~/ParcBuild/engine`, falling back to
    `work/engine` if neither is registered. Use the current reviewed cumulative

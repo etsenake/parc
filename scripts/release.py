@@ -31,10 +31,36 @@ TEAM = "94HKA7L2DR"
 REPOSITORY = "etsenake/parc"
 PUBLIC_REPOSITORY = "etsenake/parc-releases"
 TERMINAL = {"complete", "abandoned", "nothing-to-release", "handed-off"}
+RELEASE_FILES = ("app-version.json", "release-notes.json", "CHANGELOG.md")
+INERT_FOLDERS = ("site/", "docs/", "tests/", ".github/")
+MARKDOWN = (".md", ".markdown", ".mdc")
+CHANGE_KEYS = ("type", "scope", "summary", "breaking")
 
 
 class Failure(RuntimeError):
     pass
+
+
+def release_file(path):
+    return path.casefold() in {name.casefold() for name in RELEASE_FILES}
+
+
+def inert(path):
+    return not release_file(path) and (path.startswith(INERT_FOLDERS) or path.casefold().endswith(MARKDOWN))
+
+
+def blocking(changes, own=()):
+    return sorted(path for path, (code, _, _) in changes.items() if path not in own
+                  and (release_file(path) or code == "UU" or (code != "??" and not inert(path))))
+
+
+def overlaps(path, other):
+    path, other = path.rstrip("/"), other.rstrip("/")
+    return path == other or other.startswith(path + "/") or path.startswith(other + "/")
+
+
+def listing(paths):
+    return ", ".join(paths[:10]) + (" and " + str(len(paths) - 10) + " more" if len(paths) > 10 else "")
 
 
 def retargetable(before, after):
@@ -313,13 +339,64 @@ class Release:
                 found.append(state)
         return max(found, key=lambda state: state.get('abandoned_utc', '')) if found else None
 
+    def local_changes(self):
+        raw = subprocess.run(['git', '--no-optional-locks', 'status', '--porcelain=v2', '-z', '--no-renames',
+                              '--untracked-files=all'], cwd=self.root, env=self.env, capture_output=True,
+                             check=True).stdout.split(b'\0')
+        changes = {}
+        records = iter(raw)
+        for record in records:
+            kind, _, rest = record.partition(b' ')
+            if kind == b'?':
+                changes.setdefault(os.fsdecode(rest), ('??', None, None))
+            elif kind in (b'1', b'2', b'u'):
+                fields = rest.split(b' ', {b'1': 7, b'2': 8, b'u': 9}[kind])
+                if kind == b'u':
+                    changes[os.fsdecode(fields[-1])] = ('UU', None, None)
+                    continue
+                changes[os.fsdecode(fields[-1])] = (fields[0].decode(), fields[5].decode(), fields[6].decode())
+                if kind == b'2':
+                    changes[os.fsdecode(next(records))] = ('D.', None, None)
+        return changes
+
+    def require_clean(self, message):
+        blocked = blocking(self.local_changes())
+        if blocked:
+            raise Failure(message + ': ' + listing(blocked))
+
+    def text(self, name):
+        try:
+            return (self.root / name).read_text()
+        except FileNotFoundError:
+            return None
+
+    def fast_forward(self):
+        head, tip = self.git('rev-parse', 'HEAD'), self.git('rev-parse', 'origin/main')
+        if self.ancestor(tip, head):
+            return
+        if not self.ancestor(head, tip):
+            raise Failure('Local main has unpushed commits; preserved without releasing them')
+        raw = subprocess.run(['git', 'diff-tree', '-r', '-z', '--no-renames', '--name-status', head, tip],
+                             cwd=self.root, env=self.env, capture_output=True, check=True).stdout.split(b'\0')
+        changed = dict(zip(map(os.fsdecode, raw[1::2]), map(bytes.decode, raw[0::2])))
+        local = self.local_changes()
+        clashes = sorted({path for path in local for name in changed if overlaps(path, name)}
+                         | {name for name, status in changed.items()
+                            if status == 'A' and os.path.lexists(self.root / name)})
+        if clashes:
+            raise Failure('Main moved under local edits to ' + listing(clashes)
+                          + '; nothing was fast-forwarded or overwritten. Commit or move those edits, then rerun')
+        try:
+            self.git('merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', tip, retries=2)
+        except Failure:
+            raise Failure('Git refused to fast-forward main; local edits were preserved (see ' + str(self.log) + ')') from None
+
     def refresh_inputs(self):
-        if self.git('status', '--porcelain', '--untracked-files=no'):
-            raise Failure('Source refresh requires clean main; local edits were preserved')
+        self.require_clean('Source refresh requires clean main; local edits were preserved')
         if self.git('branch', '--show-current') != 'main':
             raise Failure('Source refresh requires main')
         self.git('fetch', 'origin', 'main', retries=2)
-        self.git('merge', '--ff-only', 'origin/main')
+        self.fast_forward()
         commit = self.source_commit or self.state.get('refresh_commit') or self.git('rev-parse', 'HEAD')
         if not re.fullmatch(r'[0-9a-f]{40}', commit):
             raise Failure('Refreshed source requires a full Git commit SHA')
@@ -357,14 +434,17 @@ class Release:
                         refresh_commit=None)
         self.emit('Refreshed unpublished release inputs to ' + commit + '; previous archive and compiled objects preserved')
 
+    def plumbing(self, args, text):
+        return subprocess.run(['git', *args], cwd=self.root, env=self.env, input=text, capture_output=True,
+                              text=True, check=True).stdout.strip()
+
+    def blob(self, text):
+        return self.plumbing(['hash-object', '-w', '--stdin'], text)
+
     def tree(self, commit, files):
-        def plumbing(args, text):
-            return subprocess.run(['git', *args], cwd=self.root, env=self.env, input=text, capture_output=True,
-                                  text=True, check=True).stdout.strip()
         entries = [line for line in self.git('ls-tree', commit).splitlines() if line.split('\t', 1)[1] not in files]
-        entries += ['100644 blob ' + plumbing(['hash-object', '-w', '--stdin'], text) + '\t' + name
-                    for name, text in files.items()]
-        return plumbing(['mktree'], '\n'.join(entries) + '\n')
+        entries += ['100644 blob ' + self.blob(text) + '\t' + name for name, text in files.items()]
+        return self.plumbing(['mktree'], '\n'.join(entries) + '\n')
 
     def publish_notes(self, source, files):
         message = 'chore(release): ' + self.state['version']['version'] + ' notes'
@@ -389,7 +469,7 @@ class Release:
             self.git('fetch', 'origin', 'main', retries=2)
         if not self.published(notes):
             raise Failure('Could not verify the release notes commit on origin/main')
-        self.git('merge', '--ff-only', 'origin/main')
+        self.fast_forward()
         return notes
 
     def auth(self):
@@ -491,9 +571,12 @@ class Release:
                 raise Failure(unavailable) from None
         self.checkpoint(identity=identity, notary_profile=self.env["PARC_NOTARY_PROFILE"])
 
-    def published(self, commit):
-        return subprocess.run(["git", "merge-base", "--is-ancestor", commit, "origin/main"],
+    def ancestor(self, older, newer):
+        return subprocess.run(["git", "merge-base", "--is-ancestor", older, newer],
                               cwd=self.root, env=self.env, capture_output=True).returncode == 0
+
+    def published(self, commit):
+        return self.ancestor(commit, "origin/main")
 
     def changes(self, revision):
         self.git('fetch', '--no-tags', 'origin', 'refs/tags/v*:refs/tags/v*', retries=2)
@@ -502,8 +585,11 @@ class Release:
 
     def version_files(self, base):
         notes = json.loads(self.git('show', base + ':release-notes.json'))
-        return {'app-version.json': json.dumps(self.state['version'], indent=2) + '\n',
-                **release_notes.files(notes, self.state['notes'], self.state['since'][1:])}
+        version, entry = self.state['version'], self.state['notes']
+        changes = [{**{key: change[key] for key in CHANGE_KEYS if key in change}, **change} for change in entry['changes']]
+        entry = release_notes.entry(entry['version'], entry['build'], entry['date'], changes)
+        return {'app-version.json': json.dumps({'version': version['version'], 'build': version['build']}, indent=2) + '\n',
+                **release_notes.files(notes, entry, self.state['since'][1:])}
 
     def prepare(self):
         if self.git("branch", "--show-current") != "main":
@@ -512,11 +598,10 @@ class Release:
             release_inputs.verify(self.root, self.state["source"], self.state["commit"])
             return
         if not self.state.get("version"):
-            if self.git("status", "--porcelain", "--untracked-files=no"):
-                raise Failure("Start on clean main; never reset/stash/clean local changes")
+            self.require_clean("Start on clean main; never reset/stash/clean local changes")
             self.checkpoint(quiet_seconds=None, quiet_head=None, quiet_since=None)
             self.git("fetch", "origin", "main", retries=2)
-            self.git("merge", "--ff-only", "origin/main")
+            self.fast_forward()
             if self.git('rev-parse', 'HEAD') != self.git('rev-parse', 'origin/main'):
                 raise Failure('Local main has unpushed commits; preserved without releasing them')
             previous = app_version.read(self.root)
@@ -544,14 +629,30 @@ class Release:
                         or any(self.git('show', 'HEAD:' + name) != text.strip() for name, text in files.items())):
                     raise Failure('Source changed during version transaction; preserved for reconciliation')
             else:
-                dirty = {line.split(maxsplit=1)[1] for line in self.git('status', '--porcelain', '--untracked-files=no').splitlines()}
-                if not dirty <= set(files) or any((self.root / name).read_text() != files[name] for name in dirty):
-                    raise Failure('Unexpected local edits during version transaction; preserved')
+                unexpected = Failure('Unexpected local edits during version transaction; preserved')
+                blobs = {name: self.blob(text) for name, text in files.items()}
+                changes = self.local_changes()
+                if blocking(changes, files) or any(
+                        code == 'UU' or self.text(name) != files[name]
+                        or (code != '??' and index not in (committed, blobs[name]))
+                        for name, (code, committed, index) in changes.items() if name in files):
+                    raise unexpected
+                message = 'chore(release): ' + wanted['version']
+                commit = self.git('commit-tree', self.tree(head, files), '-p', head, '-m', message)
                 for name, text in files.items():
-                    (self.root / name).write_text(text)
-                self.git('add', *files)
-                self.git('commit', '-m', 'chore(release): ' + wanted['version'])
-            self.checkpoint(commit=self.git('rev-parse', 'HEAD'))
+                    if self.text(name) != text:
+                        (self.root / name).write_text(text)
+                self.git('add', '--', *files, retries=2)
+                staged = {fields[3]: fields[1] for fields in
+                          map(str.split, self.git('ls-files', '-s', '--', *files).splitlines())}
+                if staged != blobs:
+                    raise unexpected
+                try:
+                    self.git('update-ref', '-m', 'commit: ' + message, 'refs/heads/main', commit, head)
+                except Failure:
+                    raise Failure('Source changed during version transaction; preserved for reconciliation') from None
+                head = commit
+            self.checkpoint(commit=head)
         for attempt in range(4):
             self.git('fetch', 'origin', 'main', retries=2)
             commit = self.state['commit']
@@ -560,8 +661,7 @@ class Release:
             remote_version = json.loads(self.git('show', 'origin/main:app-version.json'))
             if remote_version != self.state['previous_version']:
                 raise Failure('Another release changed the remote version; no retagging or automatic version replacement')
-            if not subprocess.run(['git', 'merge-base', '--is-ancestor', 'origin/main', commit], cwd=self.root,
-                                  env=self.env, capture_output=True).returncode == 0:
+            if not self.ancestor('origin/main', commit):
                 tip = self.git('rev-parse', 'origin/main')
                 ours = self.git('diff-tree', '-r', '--name-only', self.git('merge-base', commit, tip), commit).splitlines()
                 if not set(ours) <= set(self.version_files(tip)):
