@@ -135,6 +135,9 @@ changes belong in the owning guide and release notes, not an ever-growing log he
 - Keep deterministic, locally authored title-cleanup rules; AI renaming remains
   excluded. Keep the Space-name field in onboarding and the current Favorites
   position until the [remaining decision](backlog.md#onboarding) changes it.
+- Both Peek triggers, links to other sites and Shift-click, stay on by default
+  for new users and remain switchable in Settings → Links.
+  See [Peek](peek.md#presentation-and-remaining-scope).
 - Protected video uses the implemented FairPlay route and automatically learned
   site identity; pages remain in Chromium. Do not substitute a fixed site list.
 - Preserve upstream security maintenance through deliberate Chromium pin

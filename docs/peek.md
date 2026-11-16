@@ -137,9 +137,10 @@ Nested Peek is also unavailable: a visible Peek blocks another child, and
 creation requires an original saved parent tab. These are concrete remaining
 presentation and nesting items in [the backlog](backlog.md).
 
-Automatic and Shift-click Peek are enabled by Parc's local defaults and remain
-user-configurable. Keep those defaults until the existing product decision is
-settled; the engine's default-off policy flag is enabled for registered pages.
+Automatic Peek for links to other sites and Shift-click Peek are both on by
+default for new users; this is a settled product decision. Either can be
+switched off in Settings → Links. The engine's default-off policy flag is
+enabled for registered pages.
 
 Parent transfer, orphan preservation, promotion and new-tab provenance already
 use the original page and parent identity. Model/native components cover those

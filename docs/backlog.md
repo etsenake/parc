@@ -153,8 +153,6 @@ workflow, renders first.
   card's clip, so its card is measured from the page card and the parent only
   fades. This needs a Peek host above the page card that keeps window dragging in
   the margins.
-- **PEEK15:** keep the enabled automatic/Shift-click defaults until the product
-  decision changes. [Peek](peek.md).
 
 ## Onboarding
 
