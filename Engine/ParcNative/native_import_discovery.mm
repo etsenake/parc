@@ -267,8 +267,7 @@ std::vector<Installation> Importable(std::vector<Installation> installed,
   for (auto& source : installed) {
     if (source.family != 1) {
       const auto profiles =
-          Load(std::make_shared<const Installation>(source), home,
-               /*listing=*/true);
+          Load(std::make_shared<const Installation>(source), home, true);
       if (!profiles.restricted &&
           std::none_of(profiles.profiles.begin(), profiles.profiles.end(),
                        [](const auto& profile) {
@@ -532,9 +531,9 @@ std::vector<Installation> Importable(std::vector<Installation> installed,
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(
-          &parc::importer::Load, installation,
-          base::FilePath(base::SysNSStringToUTF8(NSHomeDirectory())),
-          /*listing=*/false),
+          &parc::importer::Load,
+          std::make_shared<const parc::importer::Installation>(*installation),
+          base::FilePath(base::SysNSStringToUTF8(NSHomeDirectory())), false),
       base::BindOnce(
           [](std::shared_ptr<std::atomic_bool> cancelled,
              PCNativeImportSource* source,

@@ -40,7 +40,7 @@ the key is always the source browser's own, never Parc's.
 
 | Source | Directly supported data | Deliberate restriction |
 | --- | --- | --- |
-| Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Arc | History; ordered bookmarks/empty folders from the local and account stores, plain or encrypted; cookies; saved passwords, including those saved to the browser account; form entries, current and historical local addresses, local payment cards; explicitly selected Web Store extensions | Actual macOS `v10` AES-CBC formats only. Unknown encryption, absent authorization or invalid encrypted-cookie host binding refuses that category. A source's concrete readable files determine availability. |
+| Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Arc | History; ordered bookmarks/empty folders from the local and account stores, plain or encrypted; cookies; saved passwords, including those saved to the browser account; form entries, current and historical local addresses, local payment cards; explicitly selected Web Store extensions | Actual macOS `v10` AES-CBC formats only, including Chromium's fallback key (below). Unknown encryption, absent authorization or invalid encrypted-cookie host binding refuses that category. A source's concrete readable files determine availability. |
 | Safari | Default-store history and XML/binary-plist bookmarks | This reader supports no direct password/cookie/payment/extension import. Modern separate Safari profile stores are not advertised. Passwords require an explicit OS/source export. |
 | Firefox, Zen | History, bookmark hierarchy and form entries | Pinned macOS excludes the external NSS reader; no direct passwords, cookies, encrypted payment records or add-on installation is advertised. Passwords come from the browser's own CSV export (below). |
 
@@ -57,13 +57,26 @@ Chrome-family source keys come from the browser's actual macOS Keychain service
 and account after that source is selected and an encrypted category requested,
 or bookmarks whose current copy is encrypted (below). The native query preserves
 macOS authorization; it does not create a replacement key, fall back to Parc's
-key or bypass a denial. One authorization serves every profile of that
-discovered source, and a refusal is remembered the same way, so a declined
-prompt is not repeated for the next profile or category; choosing the source
-again asks afresh. A pending OS authorization is owned by macOS: cancelling
-import stops subsequent native work and drops its result but cannot dismiss the
-system's authorization interface. Component checks never call Keychain or
-discover/read personal profiles.
+key or bypass a denial. Loading a source's profiles, which happens each time
+it is chosen, gives them one shared key slot, so an import asks at most once
+per browser. Sessions that need the key while its request is pending, such as
+the background sessions that start together for several profiles, wait for
+that one request instead of raising their own prompts. The key, or a refusal,
+then serves every profile and category of that import, so a declined prompt is
+not repeated; choosing the source again asks afresh. A pending OS authorization
+is owned by macOS: cancelling import stops subsequent native work and drops its
+result but cannot dismiss the system's authorization interface. Component
+checks never call Keychain or discover/read personal profiles.
+
+Decryption matches Chromium's: AES-128-CBC with an IV of sixteen spaces and a
+strict PKCS#7 padding check, so a wrong key almost always fails instead of
+yielding garbage.
+When the browser's key fails on a `v10` value, the reader retries with the
+fixed key Chromium's decryptor falls back to, derived from an empty password
+(PBKDF2-HMAC-SHA1, one iteration, salt `saltysalt`), for rare values written
+without a usable key. As in Chromium, this covers bookmarks, passwords, cookies
+and cards alike, and only after the browser's own key was obtained; without
+that key nothing is decrypted.
 
 ### Chromium-family bookmark stores and account passwords
 
@@ -165,8 +178,9 @@ engine.
 `tests/BrowserImport/run_chromium.py` compiles the actual Chrome reader and snapshot
 helper with the pinned utility target flags and existing Chromium component
 libraries, then runs only temporary SQLite/JSON/encryption fixtures, including
-made-up encrypted, account and merged bookmark stores and an account password
-file encrypted with a test key. Its component libraries must come from the
+made-up encrypted, account and merged bookmark stores, an account password
+file encrypted with a test key, and bookmarks, passwords, cookies and a card
+saved with Chromium's fallback key. Its component libraries must come from the
 pinned Chromium; output built from another milestone is not a valid input.
 `tests/BrowserImport/run_readers.py` does the same for Safari/Firefox XML/binary
 plists, history/bookmarks/forms, WAL, invalid schemas, path/cancel and original

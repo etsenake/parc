@@ -1,5 +1,6 @@
 #include <CommonCrypto/CommonCryptor.h>
 #include <CommonCrypto/CommonDigest.h>
+#include <CommonCrypto/CommonKeyDerivation.h>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -293,6 +294,89 @@ void AccountPasswords(const base::FilePath& root,
   Require(!p.success && p.passwords.empty() && !p.error.empty(),
           "an unreadable account file alone refuses");
 }
+std::string EmptyPasswordKey() {
+  std::array<uint8_t, kCCKeySizeAES128> key;
+  const char salt[] = "saltysalt";
+  Require(CCKeyDerivationPBKDF(kCCPBKDF2, "", 0,
+                               reinterpret_cast<const uint8_t*>(salt),
+                               sizeof(salt) - 1, kCCPRFHmacAlgSHA1, 1,
+                               key.data(), key.size()) == kCCSuccess,
+          "empty-password key derivation");
+  return std::string(reinterpret_cast<const char*>(key.data()), key.size());
+}
+void FallbackKey(const base::FilePath& root,
+                 const parc::importer::Cancellation& stop) {
+  using namespace parc::importer;
+  ReadOptions options;
+  options.family = Family::kChromium;
+  options.source_key = "0123456789abcdef";
+  auto without_key = options;
+  without_key.source_key.clear();
+  const auto fallback = EmptyPasswordKey();
+  options.profile_path = Directory(root, "fallback-key");
+  without_key.profile_path = options.profile_path;
+  Write(options.profile_path.AppendASCII("EncryptedBookmarks2"),
+        Encrypt(Roots(Url("Rescued", "https://rescued.test/")), fallback));
+  auto b = ReadChromiumCategory(options, kBookmarks, stop);
+  Require(b.success && Count(b, "https://rescued.test/") == 1 &&
+              b.warnings.empty(),
+          "bookmarks saved with the fallback key decrypt");
+  Require(!ReadChromiumCategory(without_key, kBookmarks, stop).success,
+          "fallback-key bookmarks still need the browser's key");
+  const auto logins = options.profile_path.AppendASCII("Login Data");
+  LoginTable(logins);
+  Login(logins, "https://rescued.test/", Encrypt("rescued", fallback), 100);
+  auto p = ReadChromiumCategory(options, kPasswords, stop);
+  Require(p.success && p.passwords.size() == 1 &&
+              p.passwords[0].password == u"rescued",
+          "a password saved with the fallback key decrypts");
+  Require(!ReadChromiumCategory(without_key, kPasswords, stop).success,
+          "the fallback key is tried only after the browser's key");
+  Login(logins, "https://normal.test/", Encrypt("normal", options.source_key),
+        200);
+  p = ReadChromiumCategory(options, kPasswords, stop);
+  Require(p.success && p.passwords.size() == 2 &&
+              Find(p, "https://rescued.test/") &&
+              Find(p, "https://rescued.test/")->password == u"rescued" &&
+              Find(p, "https://normal.test/") &&
+              Find(p, "https://normal.test/")->password == u"normal",
+          "fallback-key and ordinary passwords import together");
+  Login(logins, "https://neither.test/",
+        Encrypt("matches neither", "fedcba9876543210"), 300);
+  Require(!ReadChromiumCategory(options, kPasswords, stop).success,
+          "a password matching neither key still refuses");
+  sqlite3* db = Database(options.profile_path.AppendASCII("Cookies"));
+  SQL(db,
+      "CREATE TABLE meta(key TEXT,value INTEGER);INSERT INTO meta "
+      "VALUES('version',24);CREATE TABLE cookies(host_key TEXT,name TEXT,value "
+      "TEXT,path TEXT,creation_utc INTEGER,expires_utc INTEGER,last_access_utc "
+      "INTEGER,is_secure INTEGER,is_httponly INTEGER,encrypted_value BLOB);");
+  std::array<unsigned char, CC_SHA256_DIGEST_LENGTH> digest;
+  const std::string host = ".rescued.test";
+  CC_SHA256(host.data(), host.size(), digest.data());
+  std::string payload(reinterpret_cast<char*>(digest.data()), digest.size());
+  payload += "rescued cookie";
+  Blob(db,
+       "INSERT INTO cookies "
+       "VALUES('.rescued.test','token','','/',1,2,3,1,1,?)",
+       Encrypt(payload, fallback));
+  sqlite3_close(db);
+  auto c = ReadChromiumCategory(options, kCookies, stop);
+  Require(c.success && c.cookies.size() == 1 &&
+              c.cookies[0].value == "rescued cookie",
+          "a cookie saved with the fallback key decrypts");
+  db = Database(options.profile_path.AppendASCII("Web Data"));
+  SQL(db,
+      "CREATE TABLE credit_cards(name_on_card TEXT,expiration_month "
+      "INTEGER,expiration_year INTEGER,card_number_encrypted BLOB);");
+  Blob(db, "INSERT INTO credit_cards VALUES('Rescued',1,2031,?)",
+       Encrypt("5555555555554444", fallback));
+  sqlite3_close(db);
+  auto a = ReadChromiumCategory(options, kAutofill, stop);
+  Require(a.success && a.autofill.size() == 1 &&
+              a.autofill[0].fields["number"] == u"5555555555554444",
+          "a card saved with the fallback key decrypts");
+}
 }
 int main() {
   using namespace parc::importer;
@@ -371,6 +455,7 @@ int main() {
           "later unsupported encryption publishes no partial passwords");
   BookmarkStores(temp.GetPath(), stop);
   AccountPasswords(temp.GetPath(), stop);
+  FallbackKey(temp.GetPath(), stop);
   const auto cookies = temp.GetPath().AppendASCII("Cookies");
   db = Database(cookies);
   SQL(db,

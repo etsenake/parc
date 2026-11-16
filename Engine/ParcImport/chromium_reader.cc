@@ -26,6 +26,33 @@ constexpr size_t kMaxJSON = 64 * 1024 * 1024;
 bool Stopped(const Cancellation& stop) {
   return stop && stop->load();
 }
+constexpr std::array<uint8_t, kCCKeySizeAES128> kEmptyPasswordKey{
+    0xd0, 0xd0, 0xec, 0x9c, 0x7d, 0x77, 0xd4, 0x3a,
+    0xc5, 0x41, 0x87, 0xfa, 0x48, 0x18, 0xd1, 0x7f};
+std::optional<std::string> DecryptCBC(std::string_view ciphertext,
+                                      const void* key) {
+  if (ciphertext.empty() || ciphertext.size() % kCCBlockSizeAES128)
+    return std::nullopt;
+  const std::array<uint8_t, kCCBlockSizeAES128> iv{
+      ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+      ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '};
+  std::string plain(ciphertext.size(), '\0');
+  size_t written = 0;
+  const bool decrypted =
+      CCCrypt(kCCDecrypt, kCCAlgorithmAES, 0, key, kCCKeySizeAES128,
+              iv.data(), ciphertext.data(), ciphertext.size(), plain.data(),
+              plain.size(), &written) == kCCSuccess &&
+      written == plain.size();
+  const size_t padding = decrypted ? static_cast<uint8_t>(plain.back()) : 0;
+  if (padding == 0 || padding > kCCBlockSizeAES128 ||
+      plain.find_first_not_of(static_cast<char>(padding),
+                              plain.size() - padding) != std::string::npos) {
+    std::fill(plain.begin(), plain.end(), '\0');
+    return std::nullopt;
+  }
+  plain.resize(plain.size() - padding);
+  return plain;
+}
 std::optional<std::string> Decrypt(std::string_view encrypted,
                                    std::string_view key) {
   if (encrypted.empty())
@@ -33,20 +60,10 @@ std::optional<std::string> Decrypt(std::string_view encrypted,
   if (!encrypted.starts_with("v10") || key.size() != kCCKeySizeAES128 ||
       encrypted.size() < 19)
     return std::nullopt;
-  const std::array<uint8_t, 16> iv{' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-                                   ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '};
-  std::string plain(encrypted.size(), '\0');
-  size_t written = 0;
-  auto result =
-      CCCrypt(kCCDecrypt, kCCAlgorithmAES, kCCOptionPKCS7Padding, key.data(),
-              key.size(), iv.data(), encrypted.data() + 3, encrypted.size() - 3,
-              plain.data(), plain.size(), &written);
-  if (result != kCCSuccess) {
-    std::fill(plain.begin(), plain.end(), '\0');
-    return std::nullopt;
-  }
-  plain.resize(written);
-  return plain;
+  const auto ciphertext = encrypted.substr(3);
+  if (auto plain = DecryptCBC(ciphertext, key.data()))
+    return plain;
+  return DecryptCBC(ciphertext, kEmptyPasswordKey.data());
 }
 std::optional<base::DictValue> ReadJSON(const base::FilePath& file) {
   std::string json;
@@ -687,7 +704,7 @@ bool ReadExtensions(const ReadOptions& options,
   }
   return true;
 }
-}  // namespace
+}
 bool ChromiumBookmarksNeedKey(const base::FilePath& profile) {
   return UsesEncryptedCopy(profile, kChromiumAccountBookmarks) ||
          UsesEncryptedCopy(profile, kChromiumLocalBookmarks);
@@ -759,4 +776,4 @@ Batch ReadChromiumCategory(const ReadOptions& options,
   }
   return batch;
 }
-}  // namespace parc::importer
+}

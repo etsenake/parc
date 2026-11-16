@@ -86,7 +86,7 @@ std::map<std::string, const void*>& DestinationOwners() {
   static base::NoDestructor<std::map<std::string, const void*>> owners;
   return *owners;
 }
-}  // namespace
+}
 bool ReserveImportDestination(NSString* path, const void* owner) {
   CHECK(NSThread.isMainThread);
   return DestinationOwners().emplace(base::SysNSStringToUTF8(path), owner).second;
@@ -201,6 +201,13 @@ std::map<std::string, std::weak_ptr<Session>>& Active() {
       sessions;
   return *sessions;
 }
+std::map<const Installation*, std::vector<std::weak_ptr<Session>>>&
+KeyRequests() {
+  static base::NoDestructor<
+      std::map<const Installation*, std::vector<std::weak_ptr<Session>>>>
+      requests;
+  return *requests;
+}
 class Session final : public ProfileObserver,
                       public std::enable_shared_from_this<Session> {
  public:
@@ -314,50 +321,69 @@ class Session final : public ProfileObserver,
              ImportError(@"A Profile cannot be imported into itself."));
       return;
     }
-    const bool encrypted =
-        (requested_ & (PCNativeImportCategoryCookies |
-                       PCNativeImportCategoryPasswords |
-                       PCNativeImportCategoryAutofill)) != 0;
+    encrypted_ = (requested_ & (PCNativeImportCategoryCookies |
+                                PCNativeImportCategoryPasswords |
+                                PCNativeImportCategoryAutofill)) != 0;
     const bool bookmarks = (requested_ & PCNativeImportCategoryBookmarks) != 0;
-    auto& cached = source_->source->key;
-    if (source_->source->family != 0 || !(encrypted || bookmarks)) {
+    const auto& cached = source_->source->key;
+    if (source_->source->family != 0 || !(encrypted_ || bookmarks)) {
       Launch();
-    } else if (!cached.bytes.empty()) {
-      key_ = cached.bytes;
-      Launch();
-    } else if (cached.refused) {
-      if (encrypted)
-        [warnings_ addObject:base::SysUTF8ToNSString(kKeychainRefused)];
-      Launch();
+    } else if (encrypted_ || !cached.bytes.empty() || cached.refused) {
+      RequestKey();
     } else {
       base::ThreadPool::PostTaskAndReplyWithResult(
           FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+          base::BindOnce(&ChromiumBookmarksNeedKey, source_->path),
           base::BindOnce(
-              [](Installation source, base::FilePath profile, bool needed) {
-                return (needed || ChromiumBookmarksNeedKey(profile))
-                           ? ReadKey(source)
-                           : KeyResult();
-              },
-              *source_->source, source_->path, encrypted),
-          base::BindOnce(
-              [](std::weak_ptr<Session> weak, bool encrypted, KeyResult key) {
-                if (auto self = weak.lock()) {
-                  if (key.refused)
-                    self->source_->source->key.refused = true;
-                  if (!self->finished_) {
-                    if (!key.bytes.empty())
-                      self->source_->source->key.bytes = key.bytes;
-                    self->key_ = std::move(key.bytes);
-                    if (encrypted && !key.error.empty())
-                      [self->warnings_
-                          addObject:base::SysUTF8ToNSString(key.error)];
+              [](std::weak_ptr<Session> weak, bool needed) {
+                if (auto self = weak.lock(); self && !self->finished_) {
+                  if (needed)
+                    self->RequestKey();
+                  else
                     self->Launch();
-                  }
                 }
-                std::fill(key.bytes.begin(), key.bytes.end(), 0);
               },
-              weak_from_this(), encrypted));
+              weak_from_this()));
     }
+  }
+  void RequestKey() {
+    const auto& cached = source_->source->key;
+    if (!cached.bytes.empty() || cached.refused) {
+      UseKey(cached.bytes, cached.refused ? kKeychainRefused : "");
+      return;
+    }
+    auto& waiting = KeyRequests()[source_->source.get()];
+    waiting.push_back(weak_from_this());
+    if (waiting.size() > 1)
+      return;
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&ReadKey, *source_->source),
+        base::BindOnce(&Session::KeyRead, source_->source));
+  }
+  static void KeyRead(std::shared_ptr<const Installation> source,
+                      KeyResult key) {
+    std::vector<std::weak_ptr<Session>> waiting;
+    if (auto it = KeyRequests().find(source.get());
+        it != KeyRequests().end()) {
+      waiting = std::move(it->second);
+      KeyRequests().erase(it);
+    }
+    if (key.refused)
+      source->key.refused = true;
+    if (!key.bytes.empty())
+      source->key.bytes = key.bytes;
+    for (const auto& weak : waiting) {
+      if (auto self = weak.lock(); self && !self->finished_)
+        self->UseKey(key.bytes, key.error);
+    }
+    std::fill(key.bytes.begin(), key.bytes.end(), 0);
+  }
+  void UseKey(const std::vector<uint8_t>& bytes, const std::string& error) {
+    key_ = bytes;
+    if (encrypted_ && !error.empty())
+      [warnings_ addObject:base::SysUTF8ToNSString(error)];
+    Launch();
   }
   void Launch() {
     if (!remaining_) {
@@ -604,7 +630,8 @@ class Session final : public ProfileObserver,
   NSString* __strong path_;
   NSUInteger requested_, remaining_, active_ = 0, completed_ = 0, failed_ = 0;
   bool written_any_ = false;
-  bool skip_, cancelled_ = false, finished_ = false, observing_ = false;
+  bool skip_, cancelled_ = false, finished_ = false, observing_ = false,
+       encrypted_ = false;
   NSError* __strong failure_;
   Progress __strong progress_;
   Completion __strong completion_;
@@ -619,8 +646,8 @@ class Session final : public ProfileObserver,
   std::shared_ptr<ImportWriter> writer_;
   base::OneShotTimer deadline_;
 };
-}  // namespace
-}  // namespace parc::importer
+}
+}
 @implementation PCNativeImportSession {
   void (^_cancel)(void);
 }
