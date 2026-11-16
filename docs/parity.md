@@ -21,17 +21,15 @@ remaining effort, speed, or additions outside that old checklist.
 | Area | Old headline | Reconciled old checklist |
 |---|---:|---|
 | Link destinations | 92.3% | 12/13, still 92.3%; the open item, overlapping private-window openings/closings, has since been fixed. |
-| Windows | 71.4% | 10/14, still 71.4%; each remaining broad item contains a specific limitation. |
-| Data and credentials | 75.0% | 15/16, 93.8%; additional browser-import formats remain. |
-| Folders | 65.2% | 19/23, 82.6%; copying, selection, document moves and later folder restoration remain. |
+| Windows | 71.4% | 10/14, still 71.4%; the specific limitations inside its remaining broad items have since been fixed or settled as product decisions. |
+| Data and credentials | 75.0% | 15/16, 93.8%; the open item, additional browser-import formats, has since landed. |
+| Folders | 65.2% | 19/23, 82.6%; copying, document moves and later folder restoration remain; the selection gaps have since been fixed or settled. |
 | Archive and history | 70.6% | 15/17, 88.2%; broader previews and deleted-folder reconstruction remain. |
-| Command bar | 82.8% | 26/29, 89.7%; missing commands and covered controls reacting to hover remain. |
+| Command bar | 82.8% | 26/29, 89.7%; missing commands remain; covered controls no longer react to hover. |
 | Recent-tab switcher | 69.2% | 13/13, 100% of that inventory; the old open claims were already implemented. |
-| Peek | 66.7% | At least 16/21, 76.2%; two old open items are complete, while other items overlap remaining cases. |
+| Peek | 66.7% | At least 16/21, 76.2%; two old open items are complete, and the remaining cases the others overlapped have since been fixed or settled. |
 | First-run setup | 75.0% | Its own old rows already said 35/36, 97.2%; the headline had not caught up. |
 | Automation | 69.2% | 9/13, unchanged; additional commands remain explicitly deferred. |
-| Performance | 40.0% | Retired: broad comparison obligations did not describe a measured speed deficit. |
-| Whole-product polish | 0% | Retired: universal review criteria did not mean no polishing had been done. |
 
 The folder count includes answering whether Duplicate had Undo; it did not then.
 Duplicate has since gained Undo, which these figures do not count.
@@ -43,9 +41,8 @@ The old table already marked keyboard navigation, downloads, sidebar, saved tabs
 auto-archive, general navigation, splits, web interactions, extensions, Spaces
 and profiles, icons, settings, capture, Easels, Notes, page tools, media, updates,
 accepted AI cleanup and the independent engine at 100%. That meant their listed
-requirements were accounted for, not that every later corner case was solved.
-The [backlog](backlog.md) remains the authority for actual unfinished behavior;
-never treat these historical numbers as a new whole-product completion score.
+requirements were accounted for, not that every later corner case was solved;
+the [backlog](backlog.md) remains the authority for actual unfinished behavior.
 
 ## Releases and engine
 
@@ -90,8 +87,7 @@ These summarize capabilities missing or stale in the previous ledger. Subsequent
 changes belong in the owning guide and release notes, not an ever-growing log here.
 
 - **Tab picture cards:** hovering another open tab shows its picture, title,
-  site and Split View action. General → Previews Settings has a separate
-  picture-card switch; the old “no off switch” concern is resolved.
+  site and Split View action, with its own off switch in General → Previews Settings.
 - **Updates and What's New:** four-hour update checks, progress that keeps its
   byte count and bar steady, update banners and a bundled release timeline
   that marks versions skipped since the previous installed release.
@@ -107,9 +103,8 @@ changes belong in the owning guide and release notes, not an ever-growing log he
 - **Native interface corrections:** clickable controls use the pointing hand;
   toast, section-heading and update-banner text retain theme/hover contrast;
   the command bar remains inside its browser window with live commands.
-- **Page visibility and sizing:** tabs opened during application activation
-  are shown, and new pages settle their content size before appearing.
-  These corrections fix fresh tabs appearing with hidden or zero-sized content.
+- **Page visibility and sizing:** tabs opened while Parc activates are shown,
+  and new pages settle their size before appearing, never hidden or zero-sized.
 - **Profile-preserving import:** every readable source Profile and its extensions
   are imported; the default Profile uses the captured destination and others
   use suitable existing or new local Profiles. Sidebar data and bookmark
@@ -136,10 +131,10 @@ changes belong in the owning guide and release notes, not an ever-growing log he
   excluded. Keep the Space-name field in onboarding, and Favorites right after the
   browser choice so it runs alongside the [import](onboarding.md#included-setup-order-and-ad-blocker-branch).
 - Both Peek triggers, links to other sites and Shift-click, stay on by default
-  for new users and remain switchable in Settings → Links.
-  See [Peek](peek.md#presentation-and-remaining-scope).
-- Peeks never stack or nest: Shift-click inside a Peek opens the link in that
-  same Peek. See [Peek](peek.md#links-inside-a-peek).
+  for new users and switchable in Settings → Links. Peeks never stack or nest:
+  Shift-click inside a Peek opens the link in that same Peek. See
+  [Peek](peek.md#presentation-and-remaining-scope) and
+  [links inside a Peek](peek.md#links-inside-a-peek).
 - Safari Profiles come from Safari's own export file, and Firefox and Zen
   passwords from the browser's own CSV export. Parc does not read Safari's
   private Profile folders or Firefox's encrypted password store directly. See
@@ -181,23 +176,20 @@ Safe Browsing remains included without a configured Google API key; that does
 not disable every browser security warning. On-device suggestions do not
 require a Google API key. See [engine policy](engine-flags.md#runtime-features).
 
-The existing Chromium AI exclusions are the accepted scope. The broader
-audit/overhead proposal is closed.
-Further scripting remains deferred. The removed cross-Profile created-page
-proposal (ROUTE11) and speculative shutdown task (WIN14) stay out of scope.
+The existing Chromium AI exclusions are the accepted scope; the broader audit/overhead
+proposal is closed. Further scripting remains deferred, and the removed cross-Profile
+created-page proposal (ROUTE11) and speculative shutdown task (WIN14) stay out of scope.
 
 ## Maintenance
 
-The independent engine and picture in picture are implemented. Completed fixes
-stay done unless a new report or concrete defect evidence reopens them.
-
-The [backlog](backlog.md) indexes source-checked unfinished behavior, product
-decisions and explicit deferrals. Recheck an item against current source before
-implementing it. Historical agent names are not
-proof of live ownership; coordinate through the [working contract](../AGENTS.md)
-and [collaboration guide](collaboration.md).
+The independent engine and picture in picture are implemented, and completed fixes
+stay done unless a new report or concrete defect evidence reopens them. The
+[backlog](backlog.md) indexes source-checked unfinished behavior, product decisions
+and explicit deferrals; recheck an item against current source before implementing
+it. Historical agent names are not proof of live ownership; coordinate through the
+[working contract](../AGENTS.md) and [collaboration guide](collaboration.md).
 
 Keep this page below 200 lines and guides below the repository's hard limit
-(changelogs are exempt). Replace stale statements instead of appending corrections, link to the
-single owning document, and remove resolved backlog entries in the delivery
-that resolves them. Documentation policy lives in [AGENTS.md](../AGENTS.md).
+(changelogs are exempt). Replace stale statements instead of appending corrections,
+link to the single owning document and remove resolved backlog entries in the
+delivery that resolves them. Documentation policy lives in [AGENTS.md](../AGENTS.md).

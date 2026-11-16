@@ -22,9 +22,9 @@ Finish assigned work first; explicit deferrals remain deferred.
 
 ## Performance
 
-The specifically deferred Downloads investigation is [below](#deferred).
-New performance work needs a concrete delay or resource problem; a missing
-benchmark is not a defect. [Current implementation](performance-navigation.md).
+There is no separate performance phase. New performance work needs a concrete
+delay or resource problem; a missing benchmark is not a defect.
+[Current implementation](performance-navigation.md).
 
 ## Folders
 
