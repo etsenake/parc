@@ -6,6 +6,7 @@ import io
 from pathlib import Path
 import subprocess
 import sys
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -38,8 +39,12 @@ class CompilerWarningTests(unittest.TestCase):
             "<unknown>:0: warning: unknown option ignored",
             "warning: unknown argument '-frobnicate'",
             "clang: warning: -lfoo: 'linker' input unused [-Wunused-command-line-argument]",
+            "cc: warning: -Wl,-rpath,/a: 'linker' input unused",
+            "c++: warning: -Wl,-rpath,/a: 'linker' input unused",
+            "libtool: warning: 'e.o' has no symbols",
             "Sources/ParcRestart/main.c:12: warning: implicit conversion",
-            "ld: warning: duplicate -rpath ignored",
+            "ld: warning: duplicate -rpath '/a' ignored",
+            "ld: fatal warning(s) induced error (-fatal_warnings)",
             "Sources/ParcApp/App.swift:3:1: error: cannot find 'x' in scope",
             "1 warning generated.",
         ])
@@ -48,7 +53,11 @@ class CompilerWarningTests(unittest.TestCase):
             "<unknown>:0: warning: unknown option ignored",
             "warning: unknown argument '-frobnicate'",
             "clang: warning: -lfoo: 'linker' input unused [-Wunused-command-line-argument]",
+            "cc: warning: -Wl,-rpath,/a: 'linker' input unused",
+            "c++: warning: -Wl,-rpath,/a: 'linker' input unused",
+            "libtool: warning: 'e.o' has no symbols",
             "Sources/ParcRestart/main.c:12: warning: implicit conversion",
+            "ld: warning: duplicate -rpath '/a' ignored",
         ])
 
     def test_undecodable_output_still_reaches_the_scan(self):
@@ -73,12 +82,32 @@ class CompilerWarningTests(unittest.TestCase):
         self.assertEqual(raised.exception.returncode, 3)
         self.assertIn("error: nope", raised.exception.stderr)
 
-    def test_streamed_compile_echoes_everything_and_rejects_a_warning(self):
-        echoed = io.StringIO()
-        with contextlib.redirect_stdout(echoed), self.assertRaises(compiler.Warnings) as raised:
-            compiler.run(tool("swift-frontend -frontend -c", SENDABLE, stream="stderr"), capture=False)
-        self.assertEqual(echoed.getvalue(), f"swift-frontend -frontend -c\n{SENDABLE}\n")
+    def test_streamed_compile_echoes_each_stream_and_rejects_a_warning(self):
+        script = (f"import sys\nprint('swift-frontend -frontend -c', flush=True)\n"
+                  f"print({SENDABLE!r}, file=sys.stderr, flush=True)\n")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
+                self.assertRaises(compiler.Warnings) as raised:
+            compiler.run([sys.executable, "-c", script], capture=False)
+        self.assertEqual(out.getvalue(), "swift-frontend -frontend -c\n")
+        self.assertEqual(err.getvalue(), SENDABLE + "\n")
         self.assertIn(SENDABLE, str(raised.exception))
+
+    def test_a_reader_that_goes_away_cannot_stall_the_compiler(self):
+        class Closed(io.StringIO):
+            def write(self, text):
+                raise BrokenPipeError(32, "Broken pipe")
+
+        script = "import sys\nfor n in range(200000):\n    print('line', n)\nprint('a.c:1:1: warning: late')\n"
+        outcome = []
+        def run():
+            with contextlib.redirect_stdout(Closed()):
+                outcome.append(compiler.forward([sys.executable, "-c", script]))
+        worker = threading.Thread(target=run)
+        worker.start()
+        worker.join(60)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(outcome, [(0, ["a.c:1:1: warning: late"])])
 
     def test_streamed_failure_raises_its_exit_status(self):
         with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(subprocess.CalledProcessError) as raised:

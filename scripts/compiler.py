@@ -5,11 +5,12 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import threading
 
 SWIFT_TARGET = "arm64-apple-macos13.0"
 APP_SWIFT_DIRECTORIES = ("Sources/ParcCore", "Sources/ParcApp")
 WARNING = re.compile(r"^(?:\S[^:]*:\d+(?::\d+)?: |<unknown>:0: "
-                     r"|(?:clang(?:\+\+)?|swiftc?|swift-frontend|swift-driver): )?warning: ")
+                     r"|(?:clang(?:\+\+)?|cc|c\+\+|swiftc?|swift-frontend|swift-driver|ld|ld64\.lld|libtool): )?warning: ")
 
 
 class Warnings(ValueError):
@@ -30,10 +31,40 @@ def warnings(output: str) -> list[str]:
     return [line.rstrip() for line in output.splitlines() if WARNING.match(line)]
 
 
+def message(command: list[str], found: list[str]) -> str:
+    return (f"{' '.join(command[:2])} reported {len(found)} warning(s); "
+            "Parc treats every compiler and linker warning as an error:\n" + "\n".join(found))
+
+
 def require_no_warnings(command: list[str], found: list[str]) -> None:
     if found:
-        raise Warnings(f"{' '.join(command[:2])} reported {len(found)} warning(s); "
-                       "Parc treats every compiler warning as an error:\n" + "\n".join(found))
+        raise Warnings(message(command, found))
+
+
+def forward(command: list[str], *, cwd: Path | None = None) -> tuple[int, list[str]]:
+    found = []
+
+    def pump(source, sink) -> None:
+        writable = True
+        for line in source:
+            if WARNING.match(line):
+                found.append(line.rstrip())
+            if writable:
+                try:
+                    sink.write(line)
+                    sink.flush()
+                except OSError:
+                    writable = False
+
+    with subprocess.Popen(command, cwd=cwd, text=True, errors="replace",
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
+        pumps = [threading.Thread(target=pump, args=(process.stdout, sys.stdout)),
+                 threading.Thread(target=pump, args=(process.stderr, sys.stderr))]
+        for thread in pumps:
+            thread.start()
+        for thread in pumps:
+            thread.join()
+    return process.returncode, found
 
 
 def run(command: list[str], *, capture: bool = True, cwd: Path | None = None) -> str:
@@ -43,15 +74,8 @@ def run(command: list[str], *, capture: bool = True, cwd: Path | None = None) ->
             raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
         require_no_warnings(command, warnings(result.stdout) + warnings(result.stderr))
         return result.stdout
-    found = []
-    with subprocess.Popen(command, cwd=cwd, text=True, errors="replace", stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT) as process:
-        for line in process.stdout:
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            if WARNING.match(line):
-                found.append(line.rstrip())
-    if process.returncode:
-        raise subprocess.CalledProcessError(process.returncode, command)
+    code, found = forward(command, cwd=cwd)
+    if code:
+        raise subprocess.CalledProcessError(code, command)
     require_no_warnings(command, found)
     return ""

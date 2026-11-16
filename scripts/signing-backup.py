@@ -75,7 +75,7 @@ def helper():
     if not output.exists():
         staged = output.with_name(output.name + '.new')
         try:
-            compiler.run(['xcrun','swiftc','-warnings-as-errors',str(source),'-o',str(staged),'-framework','Security'], capture=False)
+            compiler.run(['xcrun','swiftc','-warnings-as-errors','-Xlinker','-fatal_warnings',str(source),'-o',str(staged),'-framework','Security'], capture=False)
         except Exception:
             staged.unlink(missing_ok=True)
             raise

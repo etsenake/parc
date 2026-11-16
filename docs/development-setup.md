@@ -208,13 +208,14 @@ object files, without linking, so it also covers what SIL mode checks. Run it
 before publishing material Swift changes, as required by
 [the working contract](../AGENTS.md), and on the commit you are about to release.
 
-Every compiler warning is an error. `-warnings-as-errors` alone doesn't
-guarantee that: Swift deliberately keeps some downgraded concurrency
+Every compiler and linker warning is an error. `-warnings-as-errors` alone
+doesn't guarantee that: Swift deliberately keeps some downgraded concurrency
 diagnostics, such as a non-Sendable closure handed to a Dispatch API, as
 warnings and exits successfully. The checker fails any run whose compiler log
 holds a warning. Packaging stops the same way for the Swift app, the native
 facade, Dock tile and restart helper (all built with `-Wall -Wextra -Werror`),
-the icon renderer and the signing keychain helper.
+the icon renderer and the signing keychain helper, and every one of their links
+also passes the linker's `-fatal_warnings`.
 
 The script finds its own checkout regardless of the shell's working directory.
 Use `--repo /absolute/other-worktree` to select another checkout. The checker

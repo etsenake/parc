@@ -25,7 +25,7 @@ def package_app_icons(resources: Path) -> str:
             raise FileNotFoundError(icons / (name + ".png"))
     with tempfile.TemporaryDirectory(prefix="parc-app-icons-") as temporary:
         renderer = Path(temporary) / "render-app-icon"
-        compiler.run(["xcrun", "swiftc", "-warnings-as-errors", "-O",
+        compiler.run(["xcrun", "swiftc", "-warnings-as-errors", "-O", "-Xlinker", "-fatal_warnings",
                       str(Path(__file__).with_name("render_app_icon.swift")),
                       "-o", str(renderer)], capture=False)
         for name in variants:

@@ -1030,7 +1030,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         shutil.copy2(helper, stage / "Parc Helper")
         dock_plugin = contents / "PlugIns/ParcDockTile.plugin"
         (dock_plugin / "Contents/MacOS").mkdir(parents=True)
-        run("xcrun", "clang", *common, "-fobjc-arc", "-fblocks", "-bundle",
+        run("xcrun", "clang", *common, "-fobjc-arc", "-fblocks", "-bundle", "-Wl,-fatal_warnings",
             "-framework", "AppKit", repo / "Sources/ParcDockTile/ParcDockTile.m",
             "-o", dock_plugin / "Contents/MacOS/ParcDockTile")
         plugin_info = info_plist("ParcDockTile", "org.parc.Browser.DockTile", version)
@@ -1053,7 +1053,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                 info["CFBundleIconFile"] = icon_file
             plist(helper / "Contents/Info.plist", info)
             helper_apps.append((helper, jit, suffix == CDM_HELPER))
-        run("xcrun", "clang", *common, repo / "Sources/ParcRestart/main.c",
+        run("xcrun", "clang", *common, "-Wl,-fatal_warnings", repo / "Sources/ParcRestart/main.c",
             "-o", contents / "MacOS/ParcRestart")
         swift = [path for directory in compiler.APP_SWIFT_DIRECTORIES for path in sorted((repo / directory).glob("*.swift"))]
         if not swift:
@@ -1062,7 +1062,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         run("xcrun", "swiftc", "-v", *compiler.app_swift_flags(repo, sparkle_release), *optimization, *swift,
             stage / "ParcEngine.o", stage / "VideoPiPWindow.o", "-F", frameworks, "-framework", ENGINE_NAME,
             "-framework", "Sparkle", "-framework", "Cocoa", "-framework", "QuartzCore", "-framework", "AVFoundation", "-framework", "AVKit",
-            "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
+            "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks", "-Xlinker", "-fatal_warnings",
             "-o", contents / "MacOS/Parc", capture=False)
         sparkle_framework = embed_sparkle(sparkle_release, frameworks)
         progress("packaging: copying Swift runtime and signing")

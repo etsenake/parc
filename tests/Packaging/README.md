@@ -27,8 +27,8 @@ python3 scripts/build.py build \
 The application configuration defaults to `release`, preserving this independent packager's original
 optimized Swift build. Add `--configuration debug` for `-g -Onone`; `--configuration release` uses
 `-O` with whole-module optimization (`-whole-module-optimization -num-threads <cores>`, as Xcode's
-Release does), compiling the module once instead of once per file. Both use `-warnings-as-errors`, and any
-warning the compiler still prints stops packaging, as it does for the native pieces and helper tools
+Release does), compiling the module once instead of once per file. Both use `-warnings-as-errors` and link
+with `-fatal_warnings`, and any compiler or linker warning stops packaging, as it does for the native pieces and helper tools
 ([Swift checks](../../docs/development-setup.md#check-swift-without-building-an-engine-or-app)). This option changes only Swift
 optimization, not the sealed Release engine, helper/compiler settings, signing identity or required
 explicit fresh output. Packaging purpose defaults to `development`. Seals and reports record the

@@ -273,6 +273,10 @@ class PackagingIconTests(unittest.TestCase):
             self.assertEqual(compile[compile.index(str(self.sparkle)) - 1], "-F")
             self.assertEqual(compile[compile.index("Sparkle") - 1], "-framework")
         self.assertTrue(all("-v" in cmd and "-warnings-as-errors" in cmd for cmd in compiles))
+        self.assertTrue(all(cmd[cmd.index("-fatal_warnings") - 1] == "-Xlinker" for cmd in compiles))
+        native_links = [cmd for cmd in self.commands if cmd[:2] == ("xcrun", "clang") and "-c" not in cmd and "-M" not in cmd]
+        self.assertEqual(len(native_links), 4)
+        self.assertTrue(all("-Wl,-fatal_warnings" in cmd and "-Werror" in cmd for cmd in native_links))
         self.assertIn("-g", compiles[0]); self.assertIn("-Onone", compiles[0]); self.assertNotIn("-O", compiles[0])
         self.assertIn("-O", compiles[1]); self.assertNotIn("-Onone", compiles[1]); self.assertNotIn("-g", compiles[1])
         self.assertIn("-whole-module-optimization", compiles[1]); self.assertNotIn("-whole-module-optimization", compiles[0])
