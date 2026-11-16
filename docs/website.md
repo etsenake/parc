@@ -35,7 +35,8 @@ tracker or hosted font would make that line untrue.
 
 Each section hands over to the next with its own edge: the squiggle under the
 hills, the Spaces window, the kite-string scribble, the swell into movie night,
-the torn field-guide page, the cut-here line, the clouds over the rules and the
+the torn field-guide page, the stamp perforation above the membership card, the
+menu bar and zigzag of the icons desktop, the clouds over the rules and the
 sunset waves into the footer. Give a new section its own edge rather than
 reusing one. The edges are pseudo-elements, not masks on a section: keep masks
 and filters off `#guide`, because the field-guide overlay is fixed inside it and

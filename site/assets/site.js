@@ -451,6 +451,11 @@ $$('.copy-btn').forEach((b) => b.addEventListener('click', () => {
   sfx(() => chime([1046.5, 1318.51], .06, .08));
 }));
 
+const clock = $('#mbClock');
+if (clock) {
+  const tick = () => { clock.textContent = new Date().toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }); };
+  tick(); setInterval(tick, 30000);
+}
 const scribble = $('.scribble');
 if (scribble && !reduced && 'IntersectionObserver' in window) {
   scribble.classList.add('is-waiting');
