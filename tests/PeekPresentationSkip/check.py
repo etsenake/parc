@@ -128,4 +128,25 @@ assert "let selected = split ? openTabInSplitView(id) : selectTab(id)" in functi
 assert "if let shown = tabPeek?.shownController { _ = shown.refresh() }" in function_body(window, "    func layoutPeeks() {"), \
     "a tab-backed Peek's buttons follow the window's layout like an ordinary Peek's"
 
+
+note = function_body(window, "    func notePeekSplitBlockers() {")
+for token in ("guard let peek = activePeek else { peekSplitBlockers = nil; return }",
+              "windowClosing: windowClosePending || wholeWindowClose",
+              "libraryOpen: libraryView != nil", "fullscreenTabID: nativeFullscreenTabID",
+              "transferringTabIDs: transferringTabIDs", "selectedTabIDs: selectedTabIDs", "grouped: activeSplitLayout != nil",
+              "guard blockers != peekSplitBlockers else { return }", "_ = peek.refresh()"):
+    assert token in note, f"the Split button refresh lost {token!r}"
+for declaration, hook in (
+    ("    var libraryView: LibraryView? {", "if libraryView !== oldValue { notePeekSplitBlockers() }"),
+    ("    var nativeFullscreenTabID: UUID? {", "if nativeFullscreenTabID != oldValue { notePeekSplitBlockers() }"),
+    ("    var transferringTabIDs = Set<UUID>() {", "if transferringTabIDs != oldValue { notePeekSplitBlockers() }"),
+    ("    var windowClosePending = false {", "if windowClosePending != oldValue { notePeekSplitBlockers() }"),
+    ("    var wholeWindowClose = false {", "if wholeWindowClose != oldValue { notePeekSplitBlockers() }"),
+):
+    assert hook in function_body(window, declaration), \
+        f"{declaration.strip()} must refresh the Peek's Split button when it changes"
+rendered = function_body(window, "    func render(_ sharedState: BrowserState) {", "\n    }\n\n")
+assert rendered.index("reconcileTabPeek(displaying: displayedIDs)") < rendered.index("notePeekSplitBlockers()"), \
+    "a split forming or breaking up refreshes the Split button once the Peeks have settled"
+
 print("PeekPresentationSkip check passed")

@@ -1,5 +1,14 @@
 import Foundation
 
+struct PeekSplitBlockers: Equatable {
+    var windowClosing = false
+    var libraryOpen = false
+    var fullscreenTabID: UUID?
+    var transferringTabIDs = Set<UUID>()
+    var selectedTabIDs: [UUID] = []
+    var grouped = false
+}
+
 enum PeekPresentationSkip {
     static func shouldSkip(previous: String?, next: String) -> Bool {
         previous == next

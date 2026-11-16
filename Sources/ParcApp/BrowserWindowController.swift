@@ -251,6 +251,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var libraryContentWidth: CGFloat = 0
     let libraryMotion = SidebarMotionController()
     var lastAppliedChromeGeometryFingerprint: LayoutChromeGeometryFingerprint?
+    var peekSplitBlockers: PeekSplitBlockers?
     var preparingSidebarMotion = false
     enum SidebarChromePass { case full, preparation, geometry }
     var sidebarChromePass = SidebarChromePass.full
@@ -337,7 +338,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var closingTabIDs = Set<UUID>()
     var modelRetirementIDs = Set<UUID>()
     var transferringTabIDs = Set<UUID>() {
-        didSet { if transferringTabIDs.isEmpty, !oldValue.isEmpty { onReturnUnblocked?() } }
+        didSet {
+            if transferringTabIDs.isEmpty, !oldValue.isEmpty { onReturnUnblocked?() }
+            if transferringTabIDs != oldValue { notePeekSplitBlockers() }
+        }
     }
     var collectionTransfer: SidebarWindowTransfer? {
         didSet { if collectionTransfer == nil, oldValue != nil { onReturnUnblocked?() } }
@@ -362,7 +366,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var liveTabModels: [UUID: BrowserTab] = [:]
     var scriptingAuthorization: (() -> Bool)?
     var scriptingWindowCloseCompletions: [(Bool) -> Void] = []
-    var windowClosePending = false
+    var windowClosePending = false {
+        didSet { if windowClosePending != oldValue { notePeekSplitBlockers() } }
+    }
     var windowCloseApproved = false
     var onboardingCloseRequested = false
     var onboardingCloseNotes: [(editor: NoteEditorViewController, bodyEditable: Bool, titleEditable: Bool)]?
@@ -370,12 +376,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         didSet {
             if !wholeWindowClose, oldValue { onReturnUnblocked?() }
             if wholeWindowClose != oldValue { notePeekOwnersClosing() }
+            if wholeWindowClose != oldValue { notePeekSplitBlockers() }
         }
     }
     var pendingApprovedWindowClose = false
     var restoreSettingsAfterCancelledTermination = false
     var nativeFullscreenTabID: UUID? {
-        didSet { if nativeFullscreenTabID == nil, oldValue != nil { onReturnUnblocked?() } }
+        didSet {
+            if nativeFullscreenTabID == nil, oldValue != nil { onReturnUnblocked?() }
+            if nativeFullscreenTabID != oldValue { notePeekSplitBlockers() }
+        }
     }
     var nativeFullscreenPresentation: (sidebar: SidebarPresentation, findHidden: Bool)?
     var extensionSidePanelVisible = false
@@ -465,7 +475,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var commandBarRecentPages: (query: PCNativeHistoryQuery, profileID: UUID, revision: UInt64)?
     var shortcutEssentials: ShortcutEssentialsWindow?
     var settings: SettingsWindow?
-    var libraryView: LibraryView? { didSet { updateLibraryEntryExpansion() } }
+    var libraryView: LibraryView? {
+        didSet {
+            updateLibraryEntryExpansion()
+            if libraryView !== oldValue { notePeekSplitBlockers() }
+        }
+    }
     var paymentFeedbackWork: DispatchWorkItem?
     var shortcutHint: ShortcutPriorityHintView?
     var shortcutHintCommand: PCNativeShortcutCommand?

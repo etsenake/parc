@@ -141,8 +141,8 @@ meanwhile. The round Split button, like Add Peek to Split View in the page
 menus, runs the preview card's own Split View action, so the tab joins a split
 with your page the same way. It dims when no split can form, with its tooltip
 saying why: four pages already showing, where the card's Split View does
-nothing too, or the window busy (a popup, a full screen page, the Library or a
-tab moving between windows). Ordinary Peeks keep their usual Split rule and
+nothing too, or the window busy (a full screen page, the Library or a tab
+moving between windows). Ordinary Peeks keep their usual Split rule and
 tooltip. Switching tabs or Spaces, or closing, archiving or moving the tab,
 puts the page back at once without a motion; closing the window closes it with
 the window's other pages.
@@ -272,10 +272,14 @@ with the Space theme's background-extra colour and drawn in its primary ink (kep
 dark enough on light themes). They lift on hover, shrink when pressed and show
 tooltips to their right. Close confirmation widens Close into a red Close or Hang
 up pill on a 0.25/0.8 spring; entry fades over 0.3 seconds. Reduce Motion
-settles the entry and confirmation animations. Tab and Shift-Tab follow the
-window key-view loop through the Peek's renderer and controls, excluding the
-dimmed parent. Controls have
-accessible names and the close-confirmation state announces its instruction.
+settles the entry and confirmation animations. A dimmed Split button lights up
+again the moment its blocker clears: a page leaving full screen or the split
+changing, and for an Open in Peek card also the Library closing or a tab
+finishing a move between windows. Cancelling a window close brings Expand back,
+and an Open in Peek card's Split too. Tab and Shift-Tab follow the window
+key-view loop through the Peek's renderer and controls, excluding the dimmed
+parent. Controls have accessible names and the close-confirmation state
+announces its instruction.
 
 Automatic Peek for links to other sites and Shift-click Peek are both on by
 default for new users; this is a settled product decision. Either can be

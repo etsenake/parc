@@ -71,6 +71,7 @@ extension BrowserWindowController {
         let displayedIDs = displayed.map(\.id)
         reconcileTabPeek(displaying: displayedIDs)
         preserveHostlessPeeks()
+        notePeekSplitBlockers()
         shownSinceArrival.formIntersection(returnableIDs)
         shownSinceArrival.formUnion(displayedIDs.filter { !placeholderIDs.contains($0) })
         heldReturns.formIntersection(returnableIDs); heldReturns.subtract(displayedIDs)

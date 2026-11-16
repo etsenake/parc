@@ -268,6 +268,17 @@ extension BrowserWindowController {
 
     var leavingTabPeekCards: [PeekController] { tabPeeks.leaving.compactMap(\.controller) }
 
+    func notePeekSplitBlockers() {
+        guard let peek = activePeek else { peekSplitBlockers = nil; return }
+        let blockers = PeekSplitBlockers(windowClosing: windowClosePending || wholeWindowClose,
+                                         libraryOpen: libraryView != nil, fullscreenTabID: nativeFullscreenTabID,
+                                         transferringTabIDs: transferringTabIDs, selectedTabIDs: selectedTabIDs,
+                                         grouped: activeSplitLayout != nil)
+        guard blockers != peekSplitBlockers else { return }
+        peekSplitBlockers = blockers
+        _ = peek.refresh()
+    }
+
     func placePeek(_ peek: PeekController) {
         if peekLayer.frame != rootView.bounds { peekLayer.frame = rootView.bounds }
         peek.view.frame = peekLayer.bounds
