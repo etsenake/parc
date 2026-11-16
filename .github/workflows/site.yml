@@ -1,28 +1,52 @@
 name: Site
+
 on:
   push:
     branches: [main]
     paths:
       - site/**
+      - release-notes.json
+      - scripts/site.py
+      - scripts/whats_new.py
+      - scripts/release_notes.py
+      - Sources/WhatsNew/**
+      - Resources/ThemeTextures/grain.png
+      - tests/Site/**
       - .github/workflows/site.yml
   workflow_dispatch:
+
 permissions:
   contents: read
+
 concurrency:
   group: pages
   cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
+          sparse-checkout-cone-mode: false
           sparse-checkout: |
             /site/
-          sparse-checkout-cone-mode: false
+            /release-notes.json
+            /scripts/site.py
+            /scripts/whats_new.py
+            /scripts/release_notes.py
+            /Sources/WhatsNew/
+            /Resources/ThemeTextures/grain.png
+            /tests/Site/
+            /.github/workflows/site.yml
+      - name: Test the site
+        run: python3 -m unittest discover -s tests/Site -v
+      - name: Build the site
+        run: python3 scripts/site.py build _site
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: _site
+
   deploy:
     needs: build
     runs-on: ubuntu-latest

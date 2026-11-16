@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lost in the park — Parc</title>
+<meta name="description" content="This path wandered off. Head back to Parc, the free, open-source browser for your Mac.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#F4B79A">
+<link rel="icon" href="/assets/favicon.png" sizes="64x64" type="image/png">
+<link rel="preload" href="/assets/fonts/InstrumentSerif.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/InstrumentSerif-Italic.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/InstrumentSans.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/site.css">
+<style>
+body{background:#4C8661}
+.lost{--ink:#1C2440;--ink-soft:rgba(28,36,64,.82);--ink-inv:#FFF4E6;--string:rgba(28,36,64,.5);--cloud:.9;--hill-back:#A9C79B;--hill-mid:#78A982;--hill-front:#4C8661;--tree:#5E9470;--trunk:#5B4632;display:flex;flex-direction:column;min-height:100vh;min-height:100svh;background:linear-gradient(180deg,#F4B79A 0%,#F9D3B4 42%,#FCEBD6 78%,#FFF4E6 100%);color:var(--ink)}
+.lost-sun{position:absolute;left:58%;top:150px;width:130px;height:130px;border-radius:50%;background:#FFF1DA;box-shadow:0 0 0 18px rgba(255,214,170,.55),0 0 0 48px rgba(255,196,150,.32),0 0 180px 40px rgba(255,196,150,.32);animation:breathe 9s ease-in-out infinite}
+.lost .cloud{left:62%}
+.lost .lc1{top:120px;animation:drift 110s linear infinite;animation-delay:-62s}
+.lost .lc2{left:24%;top:380px;transform:scale(.55);animation:drift 150s linear infinite;animation-delay:-40s}
+.lost-main{position:relative;z-index:4;padding-top:clamp(110px,17vh,190px);padding-bottom:48px}
+.lost-h{margin-top:18px;max-width:11em;font:400 clamp(48px,6.4vw,92px)/.95 var(--serif);letter-spacing:-.02em;text-wrap:balance}
+.lost-h em{font-style:italic}
+.lost-line{margin-top:22px;max-width:30em;font-size:clamp(18px,1.6vw,21px);line-height:1.5;color:var(--ink-soft)}
+.lost-cta{display:flex;flex-wrap:wrap;align-items:center;gap:16px 28px;margin-top:34px}
+.lost-link{font-size:17px;font-weight:600;color:var(--ink-soft);text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:5px}
+.lost-link:hover{color:var(--ink)}
+.lost-scene{position:relative;flex:1 0 auto;min-height:460px}
+.lost-tree{position:absolute;right:11%;bottom:112px;z-index:1;width:230px;height:300px;transform-origin:100% 100%}
+.lost-tree .tree-t{left:104px;width:12px;height:204px;border-radius:6px}
+.lt-a{left:30px;width:160px;height:160px}
+.lt-b{top:68px;width:100px;height:100px}
+.lt-c{left:116px;top:56px;width:112px;height:112px}
+.lost-tree .kite-string{position:absolute;left:0;top:0;width:230px;height:300px;overflow:visible}
+.lost-kite-wrap{position:absolute;inset:0;filter:drop-shadow(0 10px 14px rgba(24,32,58,.18))}
+.lost-kite{position:absolute;left:31px;top:-138px;width:84px;height:auto;max-width:none;transform:rotate(100deg);transform-origin:27% 100%;animation:snag 6s ease-in-out infinite}
+@keyframes snag{0%,100%{transform:rotate(100deg)}50%{transform:rotate(104deg)}}
+.lost-note{position:absolute;right:100%;top:118px;margin-right:40px;font-size:26px;white-space:nowrap;color:var(--umber);transform:rotate(-4deg)}
+@media (min-width:900px){.lost-scene{margin-top:-180px}}
+@media (max-width:1099px){.lost-note{display:none}}
+@media (max-width:640px){
+  .lost-sun{left:auto;right:14%;top:84px;width:84px;height:84px;box-shadow:0 0 0 12px rgba(255,214,170,.55),0 0 0 30px rgba(255,196,150,.32),0 0 120px 30px rgba(255,196,150,.32)}
+  .lost .lc1{top:96px}
+  .lost .lc2{top:300px}
+  .lost-main{padding-top:124px;padding-bottom:12px}
+  .lost-h{margin-top:14px}
+  .lost-line{margin-top:16px}
+  .lost-cta{margin-top:28px}
+  .lost-scene{min-height:330px}
+  .lost-tree{right:4%;bottom:96px;transform:scale(.62)}
+}
+@media (prefers-reduced-motion:reduce){.lost-sun,.lost .cloud,.lost-kite{animation:none}}
+</style>
+</head>
+<body>
+<div class="site lost">
+<div class="lost-sun" aria-hidden="true"></div>
+<div class="cloud lc1" aria-hidden="true"></div>
+<div class="cloud lc2" aria-hidden="true"></div>
+
+<nav class="nav sec" aria-label="Main">
+<a class="logo" href="/" aria-label="Parc home"><span class="logo-word" aria-hidden="true"><img src="/assets/p-mark.png" alt="" width="21" height="31">arc</span></a>
+</nav>
+
+<main class="lost-main sec">
+<div class="wrap">
+<p class="eyebrow">404</p>
+<h1 class="lost-h">This path <em>wandered off.</em></h1>
+<p class="lost-line">Even the nicest park has a trail that goes nowhere.</p>
+<div class="lost-cta">
+<a class="btn-ink sky-btn" href="/">Back to Parc</a>
+<a class="lost-link" href="/whats-new/">See what’s new</a>
+</div>
+</div>
+</main>
+
+<div class="lost-scene" aria-hidden="true">
+<div class="lost-tree">
+<div class="tree-t"></div>
+<div class="tree-c lt-a"></div>
+<div class="tree-c lt-b"></div>
+<div class="tree-c lt-c"></div>
+<svg class="kite-string" viewBox="0 0 230 300"><path d="M54 -14 C 4 46, 10 222, -30 422"/></svg>
+<div class="lost-kite-wrap"><img class="lost-kite" src="/assets/p-mark.png" alt="" width="84" height="124"></div>
+<p class="hand lost-note">it’ll come down eventually</p>
+</div>
+<div class="hills">
+<svg viewBox="0 0 1440 300" preserveAspectRatio="none">
+<path class="h-back" d="M0 140 C 200 70, 420 80, 640 120 C 860 160, 1100 60, 1440 100 L1440 300 L0 300 Z"/>
+<path class="h-mid" d="M0 200 C 280 130, 560 180, 820 190 C 1080 200, 1260 150, 1440 170 L1440 300 L0 300 Z"/>
+<path class="h-front" d="M0 250 C 360 205, 720 260, 1080 230 C 1260 218, 1370 236, 1440 240 L1440 300 L0 300 Z"/>
+</svg>
+</div>
+</div>
+</div>
+</body>
+</html>

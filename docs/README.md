@@ -14,7 +14,7 @@ Git and release notes retain history.
   [hooks and kept patches](chromium-hooks.md), [engine flags](engine-flags.md),
   [packaging](../tests/Packaging/README.md).
 - [Production release](master-release.md), [Homebrew delivery](homebrew-release.md),
-  [software updates and What's New](software-update.md).
+  [software updates and What's New](software-update.md), [website](website.md).
 
 ## Everyday browsing
 

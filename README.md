@@ -14,6 +14,7 @@ brew install --cask parc
 
 Upgrade with `brew upgrade --cask parc`. Signed, notarized releases are published
 at [parc-releases](https://github.com/etsenake/parc-releases/releases).
+[parcbrowser.com](https://parcbrowser.com) introduces Parc and lists every release.
 
 ## Product and documentation
 
