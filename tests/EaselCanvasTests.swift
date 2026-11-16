@@ -3,6 +3,14 @@ import ObjectiveC
 
 extension NSPopover {
     @objc fileprivate func easelTestSuppressShow(relativeTo rect: NSRect, of view: NSView, preferredEdge: NSRectEdge) {}
+    @objc fileprivate func easelTestRecordShow(relativeTo rect: NSRect, of view: NSView, preferredEdge: NSRectEdge) {
+        MainActor.assumeIsolated { EaselCanvasTests.shownPopovers.append((self, rect, view)) }
+    }
+}
+
+@MainActor private final class FormatKeyWindow: NSWindow {
+    var key = true
+    override var isKeyWindow: Bool { key }
 }
 
 @MainActor private final class CanvasTextDrop: NSObject, NSDraggingInfo {
@@ -27,6 +35,7 @@ extension NSPopover {
 @main
 struct EaselCanvasTests {
     @MainActor static var count = 0
+    @MainActor static var shownPopovers: [(NSPopover, NSRect, NSView)] = []
     @MainActor static func expect(_ value: @autoclosure () -> Bool, _ message: String) {
         count += 1; if !value() { fatalError(message) }
     }
@@ -164,7 +173,120 @@ struct EaselCanvasTests {
         try await incrementalObjectDisplay()
         try externalClipboard()
         try await accessibleObjects()
+        try formatMenu()
         print("EaselCanvas: \(count) native event assertions passed")
+    }
+    @MainActor static func formatMenu() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-canvas-format-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try EaselStore(directory: directory), session = try store.create()
+        let shape = EaselItem(kind: .rectangle, frame: .init(x: 600, y: 400, width: 60, height: 60))
+        try session.perform("Seed") { $0.items = [shape] }
+        let canvas = EaselCanvasView(session: session)
+        let window = FormatKeyWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = canvas
+        defer { window.contentView = nil; window.close() }
+        var items: [TextFormatCommand: NSMenuItem] = [:]
+        TextFormatMenu.add(to: NSMenu(title: "Edit")) { item, command in items[command] = item }
+        func owner() -> NSResponder? {
+            var responder = window.firstResponder
+            while let current = responder, !current.responds(to: TextFormatCommand.action) { responder = current.nextResponder }
+            return responder
+        }
+        func validate(_ command: TextFormatCommand) -> Bool { (owner() as? NSMenuItemValidation)?.validateMenuItem(items[command]!) ?? false }
+        func state(_ command: TextFormatCommand) -> NSControl.StateValue { _ = validate(command); return items[command]!.state }
+        func perform(_ command: TextFormatCommand) { _ = window.firstResponder?.tryToPerform(TextFormatCommand.action, with: items[command]!) }
+        func mouse(_ type: NSEvent.EventType, _ point: NSPoint) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: canvas.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+                               windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        expect(validate(.bold) == false && validate(.bigger) == false, "Nothing is formatted before a text object is selected")
+        expect(canvas.insert(kind: .text, text: "Format me", edit: true), "A text object enters native editing")
+        let editor = canvas.subviews.compactMap { $0 as? EaselStyledTextView }.first!
+        let bar = canvas.subviews.compactMap { $0 as? EaselTextStyleBar }.first!
+        editor.localUndo.groupsByEvent = false
+        func run(_ command: TextFormatCommand) { editor.localUndo.beginUndoGrouping(); perform(command); editor.localUndo.endUndoGrouping() }
+        let all = NSRange(location: 0, length: 9)
+        expect(window.firstResponder === editor && owner() === canvas && editor.selectedRange() == all, "The canvas owns formatting above its editor")
+        expect(validate(.bold) && state(.bold) == .off, "Bold is available without a checkmark on plain text")
+        run(.bold)
+        let menuBold = NSAttributedString(attributedString: editor.attributedString()), menuUndo = editor.localUndo.undoActionName
+        expect(editor.hasEmphasis(.bold) && state(.bold) == .on && menuUndo == "Bold", "Menu Bold formats the selection and shows its checkmark")
+        editor.undo(nil)
+        editor.localUndo.beginUndoGrouping(); bar.onEmphasis?(.bold); editor.localUndo.endUndoGrouping()
+        expect(editor.attributedString().isEqual(to: menuBold) && editor.localUndo.undoActionName == menuUndo, "Menu Bold and the style bar's B button produce the same text and Undo")
+        run(.bold)
+        expect(!editor.hasEmphasis(.bold) && state(.bold) == .off, "Menu Bold toggles back off")
+        for command in [TextFormatCommand.italic, .underline, .strikethrough] {
+            run(command)
+            expect(editor.hasEmphasis(command.emphasis!) && validate(command) && items[command]!.state == .on, "Menu \(command.title) formats and checks")
+            run(command)
+            expect(!editor.hasEmphasis(command.emphasis!), "Menu \(command.title) toggles off")
+        }
+        expect(validate(.bigger) && !validate(.smaller), "Body-size text offers only Bigger, like the style bar")
+        run(.bigger)
+        let menuBigger = NSAttributedString(attributedString: editor.attributedString())
+        expect(validate(.smaller) && menuBigger.attribute(.font, at: 0, effectiveRange: nil) as? NSFont != EaselTextAppearance.font(EaselTextStyle()), "Bigger steps the selected text up a size")
+        editor.undo(nil)
+        editor.localUndo.beginUndoGrouping(); bar.onResize?(1); editor.localUndo.endUndoGrouping()
+        expect(editor.attributedString().isEqual(to: menuBigger), "Menu Bigger matches the style bar's + button")
+        run(.smaller)
+        expect(!validate(.smaller), "Smaller returns the text to body size")
+        expect(!validate(.increaseIndent), "List indent waits for a list paragraph")
+        run(.bulletedList)
+        expect(editor.paragraphKind() == .bullets && state(.bulletedList) == .on && validate(.increaseIndent), "Bulleted List applies, checks and admits indent")
+        run(.increaseIndent)
+        let nested = editor.attributedString().attribute(.paragraphStyle, at: editor.selectedRange().location, effectiveRange: nil) as? NSParagraphStyle
+        expect(nested?.textLists.count == 2, "Increase indents the list item like Tab")
+        run(.decreaseIndent)
+        let outdented = editor.attributedString().attribute(.paragraphStyle, at: editor.selectedRange().location, effectiveRange: nil) as? NSParagraphStyle
+        expect(outdented?.textLists.count == 1, "Decrease outdents the list item like Shift-Tab")
+        run(.heading2)
+        expect(editor.paragraphKind() == .heading2 && validate(.heading2) && state(.heading2) == .on && state(.heading1) == .off, "Heading 2 applies and checks only itself")
+        run(.body)
+        expect(editor.paragraphKind() == .text && state(.body) == .on, "Body returns to body text")
+        editor.selectedRanges = [NSValue(range: NSRange(location: 0, length: 2)), NSValue(range: NSRange(location: 4, length: 2))]
+        expect(validate(.bold) && !validate(.heading1), "Paragraph styles need one selection, like the style bar")
+
+        editor.setSelectedRange(NSRange(location: 0, length: 6))
+        expect(validate(.link) && items[.link]!.title == TextFormatCommand.addLinkTitle, "Add Link is offered for selected text")
+        let nativeShow = class_getInstanceMethod(NSPopover.self, #selector(NSPopover.show(relativeTo:of:preferredEdge:)))!
+        let recordShow = class_getInstanceMethod(NSPopover.self, #selector(NSPopover.easelTestRecordShow(relativeTo:of:preferredEdge:)))!
+        method_exchangeImplementations(nativeShow, recordShow)
+        shownPopovers = []
+        run(.link)
+        method_exchangeImplementations(nativeShow, recordShow)
+        let shown = shownPopovers.first
+        expect(shown?.2 === editor && shown?.0.contentViewController is EaselLinkEditor, "Menu link opens the shared link editor on the text box")
+        expect(shown.map { !$0.1.isEmpty && editor.bounds.contains($0.1) && $0.1.width < editor.bounds.width } == true, "The link editor points at the selected words, not the whole box")
+        editor.localUndo.beginUndoGrouping(); (shown?.0.contentViewController as? EaselLinkEditor)?.onCommit?("https://example.com/"); editor.localUndo.endUndoGrouping()
+        expect(editor.hasLink() && validate(.link) && items[.link]!.title == TextFormatCommand.editLinkTitle, "A linked selection offers Edit Link")
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        expect(!validate(.link), "Linking needs selected text")
+
+        editor.localUndo.beginUndoGrouping()
+        editor.setMarkedText("か", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: 0, length: 0))
+        expect(!validate(.bold) && !validate(.bigger), "Composition keeps formatting disabled")
+        editor.unmarkText(); editor.localUndo.endUndoGrouping()
+        window.key = false
+        expect(!validate(.bold), "A canvas behind another key window is never formatted")
+        window.key = true
+        let page = EnginePage(frame: NSRect(x: 0, y: 0, width: 50, height: 50)); canvas.addSubview(page)
+        expect(window.makeFirstResponder(page) && owner() === canvas, "An embedded page shares the canvas responder chain")
+        expect(!validate(.bold) && !validate(.heading1) && !validate(.bigger) && !validate(.link), "An embedded web page never receives Parc formatting")
+        page.removeFromSuperview()
+
+        expect(window.makeFirstResponder(editor), "Editor focus returns")
+        _ = canvas.textView(editor, doCommandBy: #selector(NSResponder.cancelOperation(_:)))
+        let text = session.document.items.first { $0.kind == .text }!
+        canvas.mouseDown(with: mouse(.leftMouseDown, NSPoint(x: text.frame.x + 10, y: text.frame.y + 10)))
+        canvas.mouseUp(with: mouse(.leftMouseUp, NSPoint(x: text.frame.x + 10, y: text.frame.y + 10)))
+        expect(window.firstResponder === canvas && !validate(.bold) && validate(.bigger), "A selected text box offers only the size steps its style bar shows")
+        perform(.bigger)
+        expect(session.document.items.first { $0.id == text.id }?.resolvedTextStyle.size == text.resolvedTextStyle.size.shifted(by: 1), "Bigger restyles the whole selected text box")
+        canvas.selectAll(nil)
+        expect(!validate(.bigger), "A mixed selection with shapes has no text size")
+        window.makeFirstResponder(canvas)
     }
     @MainActor static func accessibleObjects() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-canvas-accessibility-" + UUID().uuidString)

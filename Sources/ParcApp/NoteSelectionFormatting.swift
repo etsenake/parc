@@ -169,15 +169,41 @@ final class NoteSelectionFormatting: NSObject {
                 bar.map { first === $0 || first.isDescendant(of: $0) } ?? false
             } == true))
     }
-    func perform(_ emphasis: EaselStyledTextView.Emphasis) {
-        guard let token = target, valid(token), let text else { dismiss(); return }
+    private func apply(_ change: (EaselStyledTextView, [NSRange]) -> Void) -> Bool {
+        guard let token = target, valid(token), let text else { return false }
         let hadKeyboardFocus = owner?.firstResponder === bar
         let selectedIndex = bar?.selectedIndex
         performing = true
-        text.toggle(emphasis, ranges: token.ranges)
+        change(text, token.ranges)
         performing = false
         present(focus: hadKeyboardFocus)
         if hadKeyboardFocus { bar?.restoreKeyboardSelection(selectedIndex) }
+        return true
+    }
+    func perform(_ emphasis: EaselStyledTextView.Emphasis) {
+        if !apply({ $0.toggle(emphasis, ranges: $1) }) { dismiss() }
+    }
+    func performMenuCommand(_ command: TextFormatCommand) -> Bool {
+        if let emphasis = command.emphasis { return apply { $0.toggle(emphasis, ranges: $1) } }
+        if let kind = command.paragraph { return apply { $0.changeParagraph(kind, ranges: $1) } }
+        return false
+    }
+    func editLinkFromMenu() {
+        guard let text else { return }
+        if target.map({ valid($0) }) != true {
+            _ = NoteAccessibility.returnFocus(to: text, in: text.window)
+            if let range = text.selectedRanges.first?.rangeValue { NoteAccessibility.reveal(range, in: text) }
+            present()
+        }
+        if target.map({ valid($0) }) == true { editLink(); return }
+        guard text.window?.firstResponder === text,
+              let token = NoteSelectionTarget(text: text, document: session.document) else { return }
+        dismiss(restoreFocus: false); linkTarget = token
+        text.editLink(relativeTo: text, rect: text.revealedSelectionRect(), ranges: token.ranges, validate: { [weak self] in
+            self?.valid(token, requireCurrent: false) == true
+        })
+        stopLinkPopoverObserver()
+        linkPopoverObserver = NoteAccessibility.observePopoverClose(positioning: text, restore: text)
     }
     func makeParagraphMenu() -> NSMenu? {
         guard let token = target, valid(token), let text else { return nil }

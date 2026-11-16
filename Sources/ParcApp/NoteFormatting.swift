@@ -754,6 +754,16 @@ final class NoteFormattingView: NSView {
         if let paragraph = action.paragraph { text.changeParagraph(paragraph) }
         if let emphasis = action.emphasis { text.toggle(emphasis) }
     }
+    func performMenuCommand(_ command: TextFormatCommand) {
+        guard let text else { return }
+        if formatMenu != nil { dismissParagraph() }
+        if command == .link { selection.editLinkFromMenu(); return }
+        if selection.performMenuCommand(command) { return }
+        let ranges = text.selectedRanges.map(\.rangeValue)
+        if command == .increaseIndent || command == .decreaseIndent { _ = text.changeListIndent(outdent: command == .decreaseIndent) }
+        if let emphasis = command.emphasis { text.toggle(emphasis, ranges: ranges) }
+        if let kind = command.paragraph { text.changeParagraph(kind, ranges: ranges) }
+    }
     private func chooseImage(target: NoteFormattingTarget, window: NSWindow) {
         let panel = NoteImageImport.makePanel()
         let request = UUID(); imageRequest = request; imagePanel = panel

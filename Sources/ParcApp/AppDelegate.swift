@@ -2829,6 +2829,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if let selectAll = edit.items.first(where: { $0.action == #selector(NSText.selectAll(_:)) }) {
             WebpageEditCommands.addTextMenus(to: edit, deleteBefore: selectAll, after: findRoot)
         }
+        edit.addItem(.separator())
+        TextFormatMenu.add(to: edit) { entry, command in
+            KeyboardShortcuts.shared.register(entry, group: "Format", bindingID: command.bindingID,
+                                              title: command.commandTitle, discoverable: false)
+        }
 
         let view = menu("View")
         splitCommandsMenu = view; view.delegate = self

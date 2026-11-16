@@ -574,9 +574,9 @@ final class EaselStyledTextView: LocalContentDropTextView {
         }
         return true
     }
-    func paragraphKind() -> EaselParagraphEditing.Kind? {
-        let value = attributedString(), selection = selectedRange()
-        let ranges = EaselParagraphEditing.ranges(string, selection: selection)
+    func paragraphKind(ranges suppliedRanges: [NSRange]? = nil) -> EaselParagraphEditing.Kind? {
+        let value = attributedString()
+        let ranges = (suppliedRanges ?? [selectedRange()]).flatMap { EaselParagraphEditing.ranges(string, selection: $0) }
         let kinds = ranges.map { range in
             EaselParagraphEditing.kind(range.location < value.length ? value.attributes(at: range.location, effectiveRange: nil) : typingAttributes)
         }
@@ -608,6 +608,20 @@ final class EaselStyledTextView: LocalContentDropTextView {
         textStorage?.setAttributedString(value); selectedRanges = selections.map(NSValue.init(range:)); typingAttributes = typing
         localUndo.enableUndoRegistration()
         didChangeText()
+    }
+    func canChangeListIndent(outdent: Bool) -> Bool {
+        isEditable && !hasMarkedText() && selectedRanges.count == 1 &&
+            EaselParagraphEditing.canIndent(attributedString(), selection: selectedRange(), typing: typingAttributes, outdent: outdent)
+    }
+    func hasLink(ranges suppliedRanges: [NSRange]? = nil) -> Bool {
+        let value = attributedString()
+        guard let range = (suppliedRanges ?? [selectedRange()]).first, range.length > 0, NSMaxRange(range) <= value.length else { return false }
+        return value.attribute(.link, at: range.location, effectiveRange: nil) != nil
+    }
+    func formatState(_ command: TextFormatCommand, ranges: [NSRange]? = nil) -> NSControl.StateValue {
+        if let emphasis = command.emphasis { return hasEmphasis(emphasis, ranges: ranges) ? .on : .off }
+        if let kind = command.paragraph { return paragraphKind(ranges: ranges) == kind ? .on : .off }
+        return .off
     }
     func changeListIndent(outdent: Bool) -> Bool {
         guard isEditable, !hasMarkedText(), selectedRanges.count == 1 else { return false }
@@ -711,7 +725,16 @@ final class EaselStyledTextView: LocalContentDropTextView {
             return next
         }
     }
-    func editLink(relativeTo anchor: NSView, ranges suppliedRanges: [NSRange]? = nil, validate: (() -> Bool)? = nil) {
+    func revealedSelectionRect() -> NSRect {
+        let selection = selectedRange()
+        scrollRangeToVisible(selection)
+        guard let layout = layoutManager, let container = textContainer else { return bounds }
+        let glyphs = layout.glyphRange(forCharacterRange: selection, actualCharacterRange: nil)
+        let rect = layout.boundingRect(forGlyphRange: glyphs, in: container)
+            .offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y).intersection(visibleRect)
+        return rect.isEmpty ? (visibleRect.isEmpty ? bounds : visibleRect) : rect
+    }
+    func editLink(relativeTo anchor: NSView, rect: NSRect? = nil, ranges suppliedRanges: [NSRange]? = nil, validate: (() -> Bool)? = nil) {
         let ranges = suppliedRanges ?? [selectedRange()], originalSelections = selectedRanges
         guard Self.validFormattingRanges(ranges, length: attributedString().length), ranges.allSatisfy({ $0.length > 0 }),
               !hasMarkedText(), window != nil else { return }
@@ -726,7 +749,7 @@ final class EaselStyledTextView: LocalContentDropTextView {
             self.format(link == nil ? "Remove link" : "Edit link", ranges: ranges) { attrs in var next = attrs; next[.link] = link; return next }
             popover?.close(); self.linkPopover = nil
         }
-        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        popover.show(relativeTo: rect ?? anchor.bounds, of: anchor, preferredEdge: rect != nil && anchor.isFlipped ? .minY : .maxY)
     }
 
     @objc func undo(_ sender: Any?) {
@@ -746,6 +769,29 @@ final class EaselStyledTextView: LocalContentDropTextView {
         insertText("", replacementRange: selectedRange())
     }
 
+}
+
+extension TextFormatCommand {
+    var emphasis: EaselStyledTextView.Emphasis? {
+        switch self {
+        case .bold: .bold
+        case .italic: .italic
+        case .underline: .underline
+        case .strikethrough: .strikethrough
+        default: nil
+        }
+    }
+    var paragraph: EaselParagraphEditing.Kind? {
+        switch self {
+        case .heading1: .heading1
+        case .heading2: .heading2
+        case .heading3: .heading3
+        case .body: .text
+        case .bulletedList: .bullets
+        case .numberedList: .numbers
+        default: nil
+        }
+    }
 }
 
 final class EaselTextStyleBar: NSView {
@@ -862,12 +908,11 @@ final class EaselTextStyleBar: NSView {
         fill.isEnabled = editor?.hasMarkedText() != true
         families.selectItem(at: styles.allSatisfy { $0.family == first.family } ? EaselTextStyle.Family.allCases.firstIndex(of: first.family)! : -1)
         sizes.selectItem(at: styles.allSatisfy { $0.size == first.size } ? first.size.index : -1)
-        smaller.isEnabled = styles.contains { $0.size != .body }; larger.isEnabled = styles.contains { $0.size != .ultra }
+        smaller.isEnabled = Self.canResize(by: -1, styles: styles, editor: editor)
+        larger.isEnabled = Self.canResize(by: 1, styles: styles, editor: editor)
         if let editor {
-            var selected: [EaselTextStyle?] = []
+            let selected = Self.selectedStyles(in: editor)
             let range = editor.selectedRange()
-            if range.length == 0 { selected = [(editor.typingAttributes[.font] as? NSFont).flatMap(EaselTextAppearance.paletteStyle)] }
-            else { editor.attributedString().enumerateAttribute(.font, in: range) { face, _, _ in selected.append((face as? NSFont).flatMap(EaselTextAppearance.paletteStyle)) } }
             let first = selected.first.flatMap { $0 }
             var selectedFamilies: [EaselTextStyle.Family?] = []
             if range.length == 0 { selectedFamilies = [(editor.typingAttributes[.font] as? NSFont).flatMap(EaselTextAppearance.paletteFamily)] }
@@ -875,10 +920,20 @@ final class EaselTextStyleBar: NSView {
             let family = selectedFamilies.first.flatMap { $0 }
             families.selectItem(at: family != nil && selectedFamilies.allSatisfy({ $0 == family }) ? EaselTextStyle.Family.allCases.firstIndex(of: family!)! : -1)
             sizes.selectItem(at: first != nil && selected.allSatisfy({ $0?.size == first!.size }) ? first!.size.index : -1)
-            smaller.isEnabled = !editor.hasMarkedText() && !selected.allSatisfy { $0?.size == .body }
-            larger.isEnabled = !editor.hasMarkedText() && !selected.allSatisfy { $0?.size == .ultra }
             families.isEnabled = !editor.hasMarkedText(); sizes.isEnabled = !editor.hasMarkedText()
         } else { families.isEnabled = true; sizes.isEnabled = true }
+    }
+    static func selectedStyles(in editor: EaselStyledTextView) -> [EaselTextStyle?] {
+        let range = editor.selectedRange()
+        if range.length == 0 { return [(editor.typingAttributes[.font] as? NSFont).flatMap(EaselTextAppearance.paletteStyle)] }
+        var selected: [EaselTextStyle?] = []
+        editor.attributedString().enumerateAttribute(.font, in: range) { face, _, _ in selected.append((face as? NSFont).flatMap(EaselTextAppearance.paletteStyle)) }
+        return selected
+    }
+    static func canResize(by delta: Int, styles: [EaselTextStyle], editor: EaselStyledTextView?) -> Bool {
+        let limit: EaselTextStyle.Size = delta < 0 ? .body : .ultra
+        guard let editor else { return styles.contains { $0.size != limit } }
+        return !editor.hasMarkedText() && !selectedStyles(in: editor).allSatisfy { $0?.size == limit }
     }
     @objc private func selectFill() {
         onFill?(displayedFillState == .on ? .none : .contentHugging)

@@ -240,6 +240,7 @@ final class KeyboardShortcuts: ObservableObject {
         var inventoryShortcutDefaults: Int? = 1
         var numberedTargetShortcutDefaults: Int? = 1
         var peekOpenShortcutDefaults: Int? = 1
+        var formatShortcutDefaults: Int? = 1
     }
     private final class MenuReference {
         weak var item: NSMenuItem?
@@ -274,7 +275,8 @@ final class KeyboardShortcuts: ObservableObject {
     private var nativeChords: [KeyboardShortcut: [MenuReference]] = [:]
     private var assignedPhysicalChords: Set<KeyboardShortcut> = []
     private var symbolicDefaults: [KeyboardShortcut: [MenuReference]] = [:]
-    private let textEditingActions: Set<String> = ["undo:", "redo:", "cut:", "copy:", "paste:", "selectAll:"]
+    private let textEditingActions: Set<String> = ["undo:", "redo:", "cut:", "copy:", "paste:", "selectAll:",
+                                                   "formatBold", "formatItalic", "formatUnderline"]
     var commands: [Command] { commandsByID.values.filter { !textEditingActions.contains($0.id) }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending } }
     var hasOverrides: Bool { !overrides.isEmpty || !priorities.isEmpty || loadError != nil }
 
@@ -530,6 +532,18 @@ final class KeyboardShortcuts: ObservableObject {
                         try encoder.encode(document).write(to: fileURL, options: .atomic)
                     } catch { loadError = "Your shortcuts remain available, but their Peek command migration could not be saved: " + error.localizedDescription }
                 }
+                if document.formatShortcutDefaults == nil {
+                    for (id, chord) in Self.formatShortcuts where document.overrides[id] == nil {
+                        if document.overrides.contains(where: { $0.key != id && $0.value.shortcut == chord }) {
+                            document.overrides[id] = Override(shortcut: nil)
+                        }
+                    }
+                    document.formatShortcutDefaults = 1
+                    do {
+                        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                        try encoder.encode(document).write(to: fileURL, options: .atomic)
+                    } catch { loadError = "Your shortcuts remain available, but their Format command migration could not be saved: " + error.localizedDescription }
+                }
                 overrides = document.overrides
                 priorities = document.priorities ?? [:]
                 let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -560,6 +574,16 @@ final class KeyboardShortcuts: ObservableObject {
         "viewLibrary:": .init(key: "l", flags: [.command, .shift]),
         "nextTab": .init(key: "}", flags: .command),
         "previousTab": .init(key: "{", flags: .command)
+    ]
+    static let formatShortcuts: [String: KeyboardShortcut] = [
+        "formatBold": .init(key: "b", flags: .command),
+        "formatItalic": .init(key: "i", flags: .command),
+        "formatUnderline": .init(key: "u", flags: .command),
+        "formatHeading1": .init(key: "h", flags: [.command, .shift]),
+        "formatBody": .init(key: "b", flags: [.command, .shift]),
+        "formatBulletedList": .init(key: "7", flags: [.command, .shift]),
+        "formatNumberedList": .init(key: "9", flags: [.command, .shift]),
+        "formatLink": .init(key: "k", flags: .command)
     ]
     static let symbolicShiftedKeys: Set<String> = ["+", "}", "{"]
     static let numberedTargetShortcuts: [String: KeyboardShortcut] = {
@@ -594,7 +618,7 @@ final class KeyboardShortcuts: ObservableObject {
             default: windowShortcut = nil
             }
             let otherDefault = Self.numberedTargetShortcuts[id] ?? Self.recoveredFindShortcuts[id]
-                ?? Self.recoveredCreationShortcuts[id] ?? Self.recoveredInventoryShortcuts[id]
+                ?? Self.recoveredCreationShortcuts[id] ?? Self.recoveredInventoryShortcuts[id] ?? Self.formatShortcuts[id]
                 ?? Self.recoveredAlternates.first(where: { $0.0 == id })?.2
             let shortcut = windowShortcut ?? otherDefault
                 ?? (item.keyEquivalent.isEmpty ? nil : KeyboardShortcut(key: item.keyEquivalent, flags: item.keyEquivalentModifierMask))

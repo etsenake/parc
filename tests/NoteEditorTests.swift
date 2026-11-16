@@ -1,10 +1,18 @@
 import AppKit
 import CoreText
 import Combine
+import ObjectiveC
+
+extension NSPopover {
+    @objc fileprivate func noteTestRecordShow(relativeTo rect: NSRect, of view: NSView, preferredEdge: NSRectEdge) {
+        MainActor.assumeIsolated { NoteEditorTests.shownPopovers.append((self, view)) }
+    }
+}
 
 @main @MainActor
 struct NoteEditorTests {
     static var assertions = 0
+    static var shownPopovers: [(NSPopover, NSView)] = []
     private final class EditorRef { weak var value: NoteEditorViewController?; init(_ value: NoteEditorViewController) { self.value = value } }
     private static var editors: [EditorRef] = []
     static func makeEditor(directory: URL, documentID: UUID) throws -> NoteEditorViewController {
@@ -976,8 +984,133 @@ struct NoteEditorTests {
         try testGutterIcons()
         try testPublishedFormattingOwner(directory: directory.appendingPathComponent("published-formatting"))
         try testImageAuthoring(directory: directory.appendingPathComponent("image-authoring"))
+        try testFormatMenu(directory: directory.appendingPathComponent("format-menu"))
         try checkNoteMotion(directory: directory.appendingPathComponent("motion"))
         print("NoteEditor: \(assertions) assertions passed (no displayed window)")
+    }
+    static func testFormatMenu(directory: URL) throws {
+        let store = try NoteStore.sharedStore(directory: directory, diskSaveDelay: 0), session = try store.create()
+        let editor = try makeEditor(directory: directory, documentID: session.document.id)
+        editor.loadView()
+        let window = NoteComponentWindow(contentRect: NSRect(x: 0, y: 0, width: 340, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let pane = NSView(frame: NSRect(x: 0, y: 0, width: 340, height: 600)); window.contentView = pane
+        defer { window.contentView = nil; window.close() }
+        pane.addSubview(editor.view); editor.view.frame = pane.bounds; editor.view.layoutSubtreeIfNeeded()
+        let text = editor.text
+        text.localUndo.groupsByEvent = false
+        try expect(window.makeFirstResponder(text), "Note body owns focus")
+        text.localUndo.beginUndoGrouping(); text.insertText("Alpha beta\nSecond line", replacementRange: NSRange(location: 0, length: 0)); text.localUndo.endUndoGrouping()
+        try drainPublications()
+        var items: [TextFormatCommand: NSMenuItem] = [:]
+        TextFormatMenu.add(to: NSMenu(title: "Edit")) { item, command in items[command] = item }
+        func item(_ command: TextFormatCommand) throws -> NSMenuItem { try require(items[command], command.title) }
+        func owner() -> NSResponder? {
+            var responder = window.firstResponder
+            while let current = responder, !current.responds(to: TextFormatCommand.action) { responder = current.nextResponder }
+            return responder
+        }
+        func validate(_ command: TextFormatCommand) throws -> Bool {
+            try (owner() as? NSMenuItemValidation)?.validateMenuItem(item(command)) ?? false
+        }
+        func state(_ command: TextFormatCommand) throws -> NSControl.StateValue {
+            _ = try validate(command); return try item(command).state
+        }
+        func run(_ command: TextFormatCommand) throws {
+            let entry = try item(command)
+            text.localUndo.beginUndoGrouping(); _ = window.firstResponder?.tryToPerform(TextFormatCommand.action, with: entry); text.localUndo.endUndoGrouping()
+        }
+        try expect(owner() === editor, "An embedded Note editor joins the responder chain above its body")
+        try expect(try !validate(.bigger) && !validate(.smaller), "Easel-only size steps stay disabled in Notes")
+
+        let alpha = NSRange(location: 0, length: 5)
+        text.setSelectedRange(alpha); editor.formatting.selection.present()
+        try expect(editor.formatting.selection.isPresenting && validate(.bold) && state(.bold) == .off, "Bold is available without a checkmark on plain text")
+        try run(.bold)
+        let menuBold = NSAttributedString(attributedString: text.attributedString()), menuUndo = text.localUndo.undoActionName
+        try expect(text.hasEmphasis(.bold, ranges: [alpha]) && state(.bold) == .on, "Menu Bold formats the selection and shows its checkmark")
+        try expect(editor.formatting.selection.isPresenting && text.selectedRange() == alpha, "The selection bar stays up with the same selection after a menu format")
+        text.undo(nil)
+        try expect(!text.hasEmphasis(.bold, ranges: [alpha]), "Menu Bold undoes in one step")
+        editor.formatting.selection.present()
+        text.localUndo.beginUndoGrouping(); editor.formatting.selection.perform(.bold); text.localUndo.endUndoGrouping()
+        try expect(text.attributedString().isEqual(to: menuBold) && text.localUndo.undoActionName == menuUndo, "Menu Bold and the bar's B button produce the same text and Undo")
+        try run(.bold)
+        try expect(!text.hasEmphasis(.bold, ranges: [alpha]) && state(.bold) == .off, "Menu Bold toggles back off")
+        for command in [TextFormatCommand.italic, .underline, .strikethrough] {
+            let emphasis = try require(command.emphasis, command.title)
+            try run(command)
+            try expect(text.hasEmphasis(emphasis, ranges: [alpha]) && validate(command) && item(command).state == .on, "Menu \(command.title) formats and checks")
+            try run(command)
+            try expect(!text.hasEmphasis(emphasis, ranges: [alpha]), "Menu \(command.title) toggles off")
+        }
+        let second = NSRange(location: 11, length: 6)
+        text.selectedRanges = [NSValue(range: alpha), NSValue(range: second)]
+        try run(.italic)
+        try expect(text.hasEmphasis(.italic, ranges: [alpha, second]) && !text.hasEmphasis(.italic, ranges: [NSRange(location: 5, length: 6)]), "Menu emphasis formats every selected range like the selection bar")
+        text.undo(nil)
+
+        text.setSelectedRange(NSRange(location: 14, length: 0))
+        try expect(try !validate(.increaseIndent) && !validate(.decreaseIndent), "List indent waits for a list paragraph")
+        try run(.heading1)
+        try expect(text.paragraphKind() == .heading1 && validate(.heading1) && state(.heading1) == .on && state(.body) == .off, "Heading 1 applies and checks only itself")
+        try expect(text.localUndo.undoActionName == EaselParagraphEditing.Kind.heading1.rawValue, "Heading 1 uses the bar's paragraph Undo")
+        try run(.body)
+        try expect(text.paragraphKind() == .text && state(.body) == .on, "Body returns the paragraph to body text")
+        try run(.bulletedList)
+        try expect(text.paragraphKind() == .bullets && validate(.increaseIndent) && validate(.decreaseIndent), "A bulleted paragraph admits list indent")
+        try run(.increaseIndent)
+        let nested = try require(text.attributedString().attribute(.paragraphStyle, at: text.selectedRange().location, effectiveRange: nil) as? NSParagraphStyle, "Nested list style")
+        try expect(nested.textLists.count == 2, "Increase indents the list item like Tab")
+        try run(.decreaseIndent)
+        let outdented = try require(text.attributedString().attribute(.paragraphStyle, at: text.selectedRange().location, effectiveRange: nil) as? NSParagraphStyle, "Outdented list style")
+        try expect(outdented.textLists.count == 1, "Decrease outdents the list item like Shift-Tab")
+        try run(.numberedList)
+        try expect(text.paragraphKind() == .numbers && state(.numberedList) == .on && state(.bulletedList) == .off, "Numbered List replaces bullets and checks itself")
+        try run(.body)
+
+        text.setSelectedRange(NSRange(location: 6, length: 4))
+        try expect(validate(.link) && item(.link).title == TextFormatCommand.addLinkTitle, "Add Link is offered for a word")
+        let nativeShow = try require(class_getInstanceMethod(NSPopover.self, #selector(NSPopover.show(relativeTo:of:preferredEdge:))), "Popover show")
+        let recordShow = try require(class_getInstanceMethod(NSPopover.self, #selector(NSPopover.noteTestRecordShow(relativeTo:of:preferredEdge:))), "Recorded show")
+        method_exchangeImplementations(nativeShow, recordShow)
+        shownPopovers = []
+        try run(.link)
+        method_exchangeImplementations(nativeShow, recordShow)
+        let (popover, anchor) = try require(shownPopovers.first, "Menu link opens the Notes link editor")
+        let linkEditor = try require(popover.contentViewController as? EaselLinkEditor, "Shared link editor")
+        try expect(anchor.isDescendant(of: editor.formatting), "The link editor anchors at the selection like the bar's Link button")
+        text.localUndo.beginUndoGrouping(); linkEditor.onCommit?("https://example.com/"); text.localUndo.endUndoGrouping()
+        try expect(text.hasLink(ranges: [NSRange(location: 6, length: 4)]), "Committing the editor links the word")
+        _ = window.makeFirstResponder(text); text.setSelectedRange(NSRange(location: 6, length: 4))
+        try expect(validate(.link) && item(.link).title == TextFormatCommand.editLinkTitle, "A linked word offers Edit Link")
+        text.setSelectedRange(NSRange(location: 6, length: 0))
+        try expect(try !validate(.link), "Linking needs selected text")
+        editor.view.frame = NSRect(x: 0, y: 0, width: 340, height: 60); editor.view.layoutSubtreeIfNeeded()
+        text.setSelectedRange(alpha)
+        method_exchangeImplementations(nativeShow, recordShow)
+        shownPopovers = []
+        try run(.link)
+        method_exchangeImplementations(nativeShow, recordShow)
+        let (fallback, fallbackAnchor) = try require(shownPopovers.first, "Menu link still opens when the selection bar cannot fit")
+        try expect(fallbackAnchor === text && !editor.formatting.selection.isPresenting, "Without room for the bar the link editor anchors on the body text")
+        text.localUndo.beginUndoGrouping(); (fallback.contentViewController as? EaselLinkEditor)?.onCommit?("https://example.org/"); text.localUndo.endUndoGrouping()
+        try expect(text.hasLink(ranges: [alpha]), "The fallback link editor still links the selection")
+        editor.view.frame = pane.bounds; editor.view.layoutSubtreeIfNeeded()
+
+        text.setSelectedRange(alpha)
+        text.localUndo.beginUndoGrouping()
+        text.setMarkedText("か", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: 0, length: 0))
+        try expect(try !validate(.bold), "Composition keeps formatting disabled")
+        text.unmarkText(); text.localUndo.endUndoGrouping()
+        window.componentKey = false
+        try expect(try !validate(.bold), "A window behind another key window is never formatted")
+        window.componentKey = true
+        try expect(window.makeFirstResponder(editor.titleText) && owner() === editor, "The title shares the editor's responder chain")
+        try expect(try !validate(.bold) && !validate(.heading1) && !validate(.link), "The plain-text title never accepts formatting")
+        let unchanged = text.attributedString()
+        try run(.bold)
+        try expect(text.attributedString().isEqual(to: unchanged), "A refused command changes nothing")
     }
     static func testImageAuthoring(directory: URL) throws {
         let panel = NoteImageImport.makePanel(), defaults = NSOpenPanel()

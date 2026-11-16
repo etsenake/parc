@@ -164,13 +164,18 @@ enum EaselParagraphEditing {
             position = NSMaxRange((edit.text.string as NSString).paragraphRange(for: NSRange(location: position, length: 0)))
         }
     }
+    static func canIndent(_ original: NSAttributedString, selection: NSRange, typing: [NSAttributedString.Key: Any], outdent: Bool) -> Bool {
+        let paragraphs = ranges(original.string, selection: selection)
+        return !paragraphs.isEmpty && paragraphs.allSatisfy { range in
+            let p = style(range.location < original.length ? original.attributes(at: range.location, effectiveRange: nil) : typing)
+            return !p.textLists.isEmpty && (outdent || p.textLists.count < 7)
+        }
+    }
     static func indent(_ original: NSAttributedString, selection: NSRange, typing: [NSAttributedString.Key: Any],
                        outdent: Bool, base: EaselTextStyle) -> Edit? {
+        guard canIndent(original, selection: selection, typing: typing, outdent: outdent) else { return nil }
         var edit = Edit(text: NSMutableAttributedString(attributedString: original), selection: selection, typing: typing)
         let paragraphs = ranges(original.string, selection: selection)
-        guard !paragraphs.isEmpty, paragraphs.allSatisfy({ range in
-            let p = style(attributes(edit, at: range)); return !p.textLists.isEmpty && (outdent || p.textLists.count < 7)
-        }) else { return nil }
         for range in paragraphs.reversed() {
             var attrs = attributes(edit, at: range)
             let p = style(attrs), prefix = markerRange(edit.text, paragraph: range)

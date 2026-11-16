@@ -104,8 +104,6 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 
 ## Other input and surface limits
 
-- Add the generic Edit → Format → Font menu route. Existing document
-  formatting works. [Keyboard](keyboard-navigation.md).
 - Provide blocked-popup chooser/release UI.
   [Web interactions](web-interactions.md#banners-and-blocked-pop-ups).
 - Tooltip shortcut feedback needs the same shifted-symbol matching as command

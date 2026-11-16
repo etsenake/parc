@@ -280,11 +280,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         liveCaptureButton.isHidden = true; addSubview(liveCaptureButton)
         textStyleBar.onFamily = { [weak self] family in self?.changeTextStyle(preservingSize: true) { $0.family = family } }
         textStyleBar.onSize = { [weak self] size in self?.changeTextStyle { $0.size = size } }
-        textStyleBar.onResize = { [weak self] delta in self?.changeTextStyle { $0.size = $0.size.shifted(by: delta) } }
+        textStyleBar.onResize = { [weak self] delta in self?.resizeText(by: delta) }
         textStyleBar.onFill = { [weak self] fill in self?.setTextFill(fill) }
-        textStyleBar.onParagraph = { [weak self] kind in guard let self, !self.session.isClosed else { return }; self.editor?.changeParagraph(kind); self.refreshTextControls() }
-        textStyleBar.onEmphasis = { [weak self] emphasis in guard let self, !self.session.isClosed else { return }; self.editor?.toggle(emphasis); self.refreshTextControls() }
-        textStyleBar.onLink = { [weak self] anchor in guard let self, !self.session.isClosed else { return }; self.editor?.editLink(relativeTo: anchor) }
+        textStyleBar.onParagraph = { [weak self] kind in self?.applyParagraph(kind) }
+        textStyleBar.onEmphasis = { [weak self] emphasis in self?.applyEmphasis(emphasis) }
+        textStyleBar.onLink = { [weak self] anchor in self?.editLink(relativeTo: anchor) }
         subscription = session.$document.receive(on: DispatchQueue.main).sink { [weak self] _ in
             guard let self else { return }
             let document = self.session.document
@@ -1109,6 +1109,56 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         refreshTextControls()
     }
+    private func resizeText(by delta: Int) { changeTextStyle { $0.size = $0.size.shifted(by: delta) } }
+    private func applyParagraph(_ kind: EaselParagraphEditing.Kind) {
+        guard !session.isClosed else { return }
+        editor?.changeParagraph(kind); refreshTextControls()
+    }
+    private func applyEmphasis(_ emphasis: EaselStyledTextView.Emphasis) {
+        guard !session.isClosed else { return }
+        editor?.toggle(emphasis); refreshTextControls()
+    }
+    private func editLink(relativeTo anchor: NSView, rect: NSRect? = nil) {
+        guard !session.isClosed else { return }
+        editor?.editLink(relativeTo: anchor, rect: rect)
+    }
+    private var formattingEditor: EaselStyledTextView? {
+        guard let editor, let window, window.isKeyWindow, window.attachedSheet == nil,
+              !session.isClosed, !session.isDeleted else { return nil }
+        let responder = window.firstResponder
+        guard responder === editor || (responder as? NSView)?.isDescendant(of: textStyleBar) == true else { return nil }
+        return editor
+    }
+    private func canFormat(_ command: TextFormatCommand) -> Bool {
+        if command == .bigger || command == .smaller {
+            guard let window, window.isKeyWindow, window.attachedSheet == nil, !session.isClosed, !session.isDeleted else { return false }
+            let responder = window.firstResponder
+            let selected = session.document.items.filter { selection.contains($0.id) }
+            let canvasFocus = responder === self || (responder as? EaselAccessibleObject)?.canvas === self
+                || (responder as? NSView)?.isDescendant(of: textStyleBar) == true
+            guard !hidesPassiveAnnotations, !selected.isEmpty, selected.allSatisfy({ $0.kind == .text }),
+                  formattingEditor != nil || (editor == nil && canvasFocus) else { return false }
+            return EaselTextStyleBar.canResize(by: command == .bigger ? 1 : -1, styles: selected.map(\.resolvedTextStyle), editor: editor)
+        }
+        guard let editor = formattingEditor, editor.isEditable, !editor.hasMarkedText() else { return false }
+        switch command {
+        case .increaseIndent, .decreaseIndent: return editor.canChangeListIndent(outdent: command == .decreaseIndent)
+        case .link: return editor.selectedRange().length > 0
+        default: return command.paragraph == nil || editor.selectedRanges.count == 1
+        }
+    }
+    @objc func formatText(_ sender: Any?) {
+        guard let command = TextFormatCommand(sender), canFormat(command) else { return }
+        switch command {
+        case .bigger, .smaller: resizeText(by: command == .bigger ? 1 : -1)
+        case .increaseIndent, .decreaseIndent:
+            _ = editor?.changeListIndent(outdent: command == .decreaseIndent); refreshTextControls()
+        case .link: if let editor { editLink(relativeTo: editor, rect: editor.revealedSelectionRect()) }
+        default:
+            if let emphasis = command.emphasis { applyEmphasis(emphasis) }
+            if let kind = command.paragraph { applyParagraph(kind) }
+        }
+    }
     private func refreshTextControls() {
         if textPaletteSelection != selection { textStyleBar.collapse(); textPaletteSelection = selection }
         let selected = session.document.items.filter { selection.contains($0.id) }
@@ -1605,6 +1655,13 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard hasCurrentMenuOwner(menuItem) else { return false }
+        if let command = TextFormatCommand(menuItem) {
+            if let editor = formattingEditor {
+                if command == .link { menuItem.title = editor.hasLink() ? TextFormatCommand.editLinkTitle : TextFormatCommand.addLinkTitle }
+                else { menuItem.state = editor.formatState(command) }
+            }
+            return canFormat(command)
+        }
         if menuItem.action == #selector(toggleAlignmentGuides) {
             menuItem.state = alignmentGuidesEnabled ? .on : .off; return true
         }

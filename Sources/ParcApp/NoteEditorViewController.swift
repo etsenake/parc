@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 @MainActor
-final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
+final class NoteEditorViewController: NSViewController, NSTextViewDelegate, NSMenuItemValidation {
     let session: NoteSession
     let text = EaselStyledTextView(frame: .zero)
     let titleText = NoteTitleTextView(frame: .zero)
@@ -275,6 +275,35 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
         if let current = window.firstResponder as? NSView, current.isDescendant(of: view) { return }
         let target = titleText.string.isEmpty ? titleText : text
         NoteAccessibility.returnFocus(to: target, in: window)
+    }
+    private var ownsFormatting: Bool {
+        guard isViewLoaded, !session.document.deleted, text.isEditable, !text.hasMarkedText(),
+              let window = view.window, window.isKeyWindow, window.attachedSheet == nil else { return false }
+        let responder = window.firstResponder
+        return responder === text || (responder as? NSView)?.isDescendant(of: formatting) == true
+    }
+    private func canFormat(_ command: TextFormatCommand) -> Bool {
+        let ranges = text.selectedRanges.map(\.rangeValue)
+        guard ownsFormatting, EaselStyledTextView.validFormattingRanges(ranges, length: text.attributedString().length) else { return false }
+        switch command {
+        case .bigger, .smaller: return false
+        case .increaseIndent, .decreaseIndent: return text.canChangeListIndent(outdent: command == .decreaseIndent)
+        case .link: return NoteSelectionTarget(text: text, document: session.document) != nil
+        default: return true
+        }
+    }
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard let command = TextFormatCommand(item) else { return true }
+        if ownsFormatting {
+            let ranges = text.selectedRanges.map(\.rangeValue)
+            if command == .link { item.title = text.hasLink(ranges: ranges) ? TextFormatCommand.editLinkTitle : TextFormatCommand.addLinkTitle }
+            else { item.state = text.formatState(command, ranges: ranges) }
+        }
+        return canFormat(command)
+    }
+    @objc func formatText(_ sender: Any?) {
+        guard let command = TextFormatCommand(sender), canFormat(command) else { return }
+        formatting.performMenuCommand(command)
     }
     private func showError(_ error: Error) { self.error = error; updateStatus() }
     private func updateStatus() {

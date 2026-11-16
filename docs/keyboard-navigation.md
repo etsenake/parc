@@ -239,6 +239,36 @@ Rename/reorder updates metadata, removed ordinals leave discovery, and saved
 bindings survive disappearance and return. Menu tracking retains captured
 identities while activation refreshes registrations.
 
+## Text formatting menu
+
+Edit → Format formats a Note body or an Easel text box, grouped like Apple's
+Format menu: Font (Bold, Italic, Underline, Strikethrough, then Bigger and
+Smaller), Heading 1–3 and Body, Bulleted and Numbered List, Indentation and Add
+Link…. Every item calls the code the editor's own controls use: the Notes
+selection bar and paragraph menu, the Easel style bar, and Tab/Shift-Tab for list
+indent, so text and Undo match. Checkmarks show the selection's emphasis and
+paragraph style, and Add Link becomes Edit Link on linked text.
+
+One responder-chain action reaches the Note editor or Easel canvas
+([menu](../Sources/ParcApp/TextFormatMenu.swift)). Items are enabled only while
+that body, edited text box or its style bar has focus in the key window without
+composition. Notes format every selected range, like their selection bar; Easels
+use the first, like their style bar. Bigger and Smaller step Easel sizes, also for
+selected text boxes, and stay disabled in Notes. Titles, the address bar, other
+plain fields and web pages, including pages inside Easels, have no owner, so
+every item is disabled there.
+
+Bold ⌘B, Italic ⌘I and Underline ⌘U use the reserved chords, so they stay fixed
+like Undo and no Parc command can claim them. On a page the engine's editing
+bindings get them first and the menu only sees keys the page ignored. Heading 1
+⇧⌘H, Body ⇧⌘B, Bulleted List ⇧⌘7, Numbered List ⇧⌘9 and Add Link ⌘K are
+editable Prefer Websites defaults; a saved custom chord keeps its owner. Apple's
+other standard keys belong to Parc commands and stay off: Title ⇧⌘T, Subheading
+⇧⌘J, Indentation ⌘] and ⌘[, Bigger and Smaller ⌘+ and ⌘−. Strikethrough has no
+standard key. Show Fonts, Show Colors, alignment, checklists, quotes, highlight,
+monospace and Copy/Paste Style are omitted because these editors lack them;
+Easel typefaces and text fill stay in the style bar.
+
 ## Shortcut key text
 
 `display` and `keyLabel` supply text labels; `symbols` supplies Settings caps;
@@ -277,8 +307,8 @@ Keys on, macOS consumes the keypad before Parc sees it.
 The menu registry includes Blank/New/Private windows, local profiles, Duplicate,
 Reveal Tab, Library/Downloads/Media/Documents, Spaces, Extensions, native Window
 Zoom/Bring All to Front, Stay On Top, page tools, app updates and local What's
-New. Manage Spaces is implemented. Notes and Easels keep
-existing formatting controls. [Typed commands](command-bar.md#typed-type-travel-commands)
+New. Manage Spaces is implemented. Notes and Easels keep their formatting bars
+beside the [Format menu](#text-formatting-menu). [Typed commands](command-bar.md#typed-type-travel-commands)
 add contextual operations without inventing menu command identities.
 
 ### Excluded by the ledger
@@ -311,8 +341,7 @@ Focused suites include `tests/KeyboardNavigation`, `tests/ContentFocusRequest`,
 components. Full Swift typechecking is the iteration check; finished material
 Swift work also needs whole-module SIL under [the working contract](../AGENTS.md).
 
-Edit → Format → Font has no application-menu entry; Notes and Easels retain
-their own formatting controls. The [command-bar guide](command-bar.md#checks-and-remaining-work)
+The [command-bar guide](command-bar.md#checks-and-remaining-work)
 owns the remaining Task Manager, Restore Data and Pinned-section requests.
 
 Frame-focus changes invalidate pending page shortcuts through a Parc-owned
