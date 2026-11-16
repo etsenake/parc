@@ -51,6 +51,10 @@ content::WebContents* PrintInitiator(content::WebContents& preview) {
   return nullptr;
 #endif
 }
+content::WebContents* PrintOwner(content::WebContents& initiator) {
+  auto* responsible = initiator.GetResponsibleWebContents();
+  return responsible ? responsible->GetOutermostWebContents() : nullptr;
+}
 class PrintInitiatorObserver final : public content::WebContentsObserver {
  public:
   PrintInitiatorObserver(content::WebContents& source,
@@ -105,7 +109,7 @@ class NativeFileDialog final : public ui::SelectFileDialog,
         preview_identity_ = initiator;
         preview_document_ =
             initiator->GetPrimaryMainFrame()->GetWeakDocumentPtr();
-        tab = tabs::TabInterface::MaybeGetFromContents(initiator);
+        tab = tabs::TabInterface::MaybeGetFromContents(PrintOwner(*initiator));
         Dialogs()[initiator].insert(this);
         preview_observer_ = std::make_unique<PrintInitiatorObserver>(
             *initiator, base::BindRepeating(&NativeFileDialog::Cancel,
@@ -335,10 +339,11 @@ class NativeFileDialog final : public ui::SelectFileDialog,
   bool ValidPrintPreview() const {
     auto* preview = web_contents();
     auto* initiator = preview_initiator_.get();
+    auto* owner = initiator ? PrintOwner(*initiator) : nullptr;
     if (done_ || !preview || preview->IsBeingDestroyed() || !initiator ||
-        initiator->IsBeingDestroyed() || !parent_ || !tab_ || !browser_ ||
-        !browser_->GetWindow() || !tab_->IsActivated() ||
-        tab_->GetContents() != initiator ||
+        initiator->IsBeingDestroyed() || !owner || owner->IsBeingDestroyed() ||
+        !parent_ || !tab_ || !browser_ || !browser_->GetWindow() ||
+        !tab_->IsActivated() || tab_->GetContents() != owner ||
         tab_->GetBrowserWindowInterface() != browser_.get() ||
         PrintInitiator(*preview) != initiator ||
         preview->GetBrowserContext() != initiator->GetBrowserContext() ||
@@ -350,6 +355,7 @@ class NativeFileDialog final : public ui::SelectFileDialog,
     NSWindow* source_window =
         browser_->GetWindow()->GetNativeWindow().GetNativeNSWindow();
     return source_window &&
+           owner->GetNativeView().GetNativeNSView().window == source_window &&
            initiator->GetNativeView().GetNativeNSView().window ==
                source_window &&
            (parent_ == source_window || parent_.sheetParent == source_window ||
