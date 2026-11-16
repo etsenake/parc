@@ -98,5 +98,5 @@ selection deselects native pages; navigation back waits for the exact page to
 attach. Request generations prevent older callbacks overriding newer commands.
 
 Historical GUI investigation receipts remain in Git history. They are not live
-process records or current assignments. [Product status](../../docs/parity.md)
-and [window lifecycle](../../docs/windows-lifecycle.md) track present behavior.
+process records or current assignments. [Product guide](../../docs/product.md)
+and [window lifecycle](../../docs/windows-lifecycle.md) describe present behavior.

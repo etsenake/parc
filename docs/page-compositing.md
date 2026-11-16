@@ -16,7 +16,10 @@ under the parent compositor.
 The display view lives immediately above the renderer inside `WebContentsView`,
 fills its bounds, and accepts no input, focus or accessibility role. Native
 responder traversal skips it. Attachment must precede showing: once the parent
-compositor is installed, the renderer's own direct drawing is disabled.
+compositor is installed, the renderer's own direct drawing is disabled. An
+arriving page or docked DevTools is always shown, even when Chromium already
+reports it visible, so a tab opened by the click that brings Parc forward never
+stays blank.
 
 Chromium can remove the display view during detachment. `restoreContentView`
 repins the exact hierarchy and hidden state while the host is busy. A busy

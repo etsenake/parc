@@ -3,8 +3,8 @@
 Parc owns a welcome and setup window before creating its first browser window.
 The engine can initialize, but browser creation, Dock reopen, incoming URLs,
 singleton relaunch, popup requests and download-parent creation wait for setup.
-This guide describes current behavior; [product status](parity.md) and the
-[backlog](backlog.md) track product work.
+This guide describes current behavior; the [product guide](product.md) keeps its
+product decisions and the [backlog](backlog.md) holds unfinished work.
 
 ## Ownership and persistence
 

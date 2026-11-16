@@ -4,7 +4,7 @@ Complete this checklist on a new machine before feature work. Use the actual
 checkout paths. Setup does not claim backlog items or authorize a new build.
 
 1. **Read the contract.** Read [AGENTS.md](../AGENTS.md), [README](../README.md),
-   [collaboration](collaboration.md), [product status](parity.md) and
+   [collaboration](collaboration.md), [product guide](product.md) and
    [development setup](development-setup.md). Check current ownership directly;
    an old task note does not prove someone is active.
 

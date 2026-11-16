@@ -2,7 +2,7 @@
 
 This is an index of concrete unfinished work Parc intends to do, checked against
 the implementation on November 10, 2026. Subsystem guides own the details and
-the product decisions; [product status](parity.md) describes what exists. This
+the product decisions; the [product guide](product.md) describes what exists. This
 list does not authorize starting every task.
 
 Completed fixes stay done. Missing test receipts, browser access, user confirmation

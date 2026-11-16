@@ -17,8 +17,8 @@ Chromium call sites remain in the reviewed integration patches.
 ## Status
 
 The production overlay includes CDM registration, GPU renderer and sandbox
-integration, tab mute/audibility and native HLS. Current shipping status is in
-[product status](../../../docs/parity.md).
+integration, tab mute/audibility and native HLS. Shipping history is in the
+[release notes](../../../CHANGELOG.md).
 
 [Native HLS](NATIVE_HLS.md) describes URL playback through AVPlayer. The rest of
 this guide covers demuxed samples and the Chromium/CDM boundary.

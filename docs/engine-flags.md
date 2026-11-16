@@ -3,7 +3,8 @@
 The source of truth is `Engine/source-lock.json`, `SHIPPING_DEFINES` in
 `scripts/engine-source.py` and `Engine/ParcNative/native_startup_policy.h`.
 This guide describes current Parc policy, not a comparison inventory.
-Release/build status belongs in [product status](parity.md).
+Product scope lives in the [product guide](product.md#scope-boundaries) and
+release status in the [release notes](../CHANGELOG.md).
 
 ## Decisions
 

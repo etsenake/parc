@@ -17,8 +17,8 @@ at [parc-releases](https://github.com/etsenake/parc-releases/releases).
 
 ## Product and documentation
 
-- [Product status and scope](docs/parity.md): capabilities and current delivery
-  state, including Parc additions.
+- [Product guide](docs/product.md): what Parc includes, its deliberate product
+  decisions and scope.
 - [Backlog](docs/backlog.md): remaining work Parc intends to do.
 - [Documentation index](docs/README.md): focused product and engineering guides.
 - [Working contract](AGENTS.md) and [collaboration](docs/collaboration.md).

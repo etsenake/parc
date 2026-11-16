@@ -3,8 +3,8 @@
 Native page surfaces use the original Chromium page, document, Profile and
 request lifetime. The app owns presentation and local product choices; native
 security decisions and callbacks remain authoritative. This guide describes
-current source behavior. [Product status](parity.md) and [the backlog](backlog.md)
-carry progress and unfinished work.
+current source behavior. The [product guide](product.md) keeps product decisions
+and scope; [the backlog](backlog.md) carries unfinished work.
 
 ## Site Control Center — WEB14
 

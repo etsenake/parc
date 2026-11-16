@@ -1,6 +1,6 @@
 # Parc documentation
 
-Start with the [project overview](../README.md), [product status](parity.md) and
+Start with the [project overview](../README.md), [product guide](product.md) and
 [backlog](backlog.md). These describe the current product and unfinished work;
 Git and release notes retain history.
 

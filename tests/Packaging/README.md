@@ -70,7 +70,7 @@ python3 scripts/build.py build \
   --configuration release --sign-identity 'Developer ID Application: YOUR IDENTITY'
 ```
 
-The atomically published directory contains a standalone `Parc.app` and its provenance report, with no sibling engine components. Distribution requires release app optimization and certificate-backed signing; normal inside-out hardened signing and strict validation remain unchanged. A non-component engine can also be packaged explicitly for local development with ad-hoc signing. Reports distinguish engine eligibility, intended purpose and actual signing identity, and state `notarized: false`; this command does not submit a notarization request or publish the app. Engine generation/compilation and package production status belong in the [product status](../../docs/parity.md).
+The atomically published directory contains a standalone `Parc.app` and its provenance report, with no sibling engine components. Distribution requires release app optimization and certificate-backed signing; normal inside-out hardened signing and strict validation remain unchanged. A non-component engine can also be packaged explicitly for local development with ad-hoc signing. Reports distinguish engine eligibility, intended purpose and actual signing identity, and state `notarized: false`; this command does not submit a notarization request or publish the app. Release status belongs in the [release notes](../../CHANGELOG.md).
 
 ## Publishing app builds
 

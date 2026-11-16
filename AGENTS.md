@@ -6,7 +6,7 @@ is no longer organized solely around matching another browser.
 
 ## Start here
 
-Read [README](README.md), [product status](docs/parity.md), and
+Read [README](README.md), [product guide](docs/product.md), and
 [collaboration](docs/collaboration.md) before editing; reread the first two
 after context compaction. Read the focused guide for the area you change.
 Current user instructions override older repository guidance. Replace obsolete
@@ -39,7 +39,7 @@ engine builds, packaging or installations.
   preferences, shortcuts, behavior or tests to match another browser. Replay
   onboarding in Settings → General is a protected Parc addition.
 - Preserve the explicit inclusions, exclusions and other product decisions in
-  [product status](docs/parity.md) and the focused guides.
+  [product guide](docs/product.md) and the focused guides.
   Ordinary password/autofill/security behavior and macOS dictation remain.
   Do not reopen accepted AI cleanup or picture-in-picture work without a new
   defect or user request. Generic Chromium/Google networking is outside the
@@ -148,11 +148,11 @@ exact machine records belong in source manifests, Git and ignored check output.
 Technical details should help a reader act, not serve as proof that an agent worked.
 
 - `README.md`: product overview, install/build entry points and navigation.
-- `docs/parity.md`: compact product capabilities, explicit product scope and links.
-  It carries no version or release status; `app-version.json`, the changelog and the
-  release notes do, so no regular doc changes when a release ships. Keep the compact historical progress
-  comparison, with its meaning and limits; do not rebuild the old requirement
-  ledger, completed-row inventory or an invented whole-product percentage.
+- `docs/product.md`: a short orientation to Parc's capabilities, the product
+  decisions and scope to preserve, and links. It carries no version, release
+  status or progress; `app-version.json`, the changelog and the release notes do,
+  so no regular doc changes when a release ships. Do not rebuild the old
+  requirement ledger, completed-row inventory or a whole-product percentage.
 - `docs/backlog.md`: only work Parc intends to do, plus current handoffs.
   Parked, deferred and declined items leave it; a reason, if any, gets a
   sentence or two in the related guide. Remove resolved entries in the same

@@ -3,8 +3,8 @@
 Safari-identity pages use Parc's native HLS route: AVPlayer in the GPU media
 service, with network requests performed by the page's Chromium loader and
 FairPlay keys supplied through the page's CDM. Other pages keep Chromium's HLS
-route. This guide describes current source; [product status](../../../docs/parity.md)
-records release delivery.
+route. This guide describes current source; the [release notes](../../../CHANGELOG.md)
+record release delivery.
 
 ## On for Safari-identity pages
 

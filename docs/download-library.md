@@ -2,8 +2,8 @@
 
 Downloads is a profile-owned catalog in the shared Library. It presents the
 engine's download records and capabilities; it does not construct its list by
-scanning the Downloads folder. Product status and remaining work belong in
-[the product status](parity.md) and [backlog](backlog.md).
+scanning the Downloads folder. The [product guide](product.md) lists what Parc
+includes; remaining work belongs in the [backlog](backlog.md).
 
 ## Source owners
 

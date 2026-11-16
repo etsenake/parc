@@ -33,7 +33,7 @@ controls. See [Library storage and discovery](capture-library.md).
 ## Scope and checks
 
 Standalone video recording is outside this capture workflow. Cloud sharing and
-telemetry remain excluded by [product scope](parity.md#scope-boundaries).
+telemetry remain excluded by [product scope](product.md#scope-boundaries).
 
 Source/model checks cover screenshot types, stream ownership and file
 classification.

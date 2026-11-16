@@ -1,7 +1,7 @@
 # Joining Parc
 
 Read [AGENTS.md](AGENTS.md), [README.md](README.md),
-[product status](docs/parity.md) and [collaboration](docs/collaboration.md).
+[product guide](docs/product.md) and [collaboration](docs/collaboration.md).
 The same working contract applies to every contributor.
 
 Work on the user's current assignment. Read the [backlog](docs/backlog.md) for

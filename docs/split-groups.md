@@ -7,8 +7,9 @@ original child. Split operations preserve live pages and local document editors
 unless an explicit close or cross-Profile move requires native retirement.
 
 This guide describes the model, gesture and lifetime contracts. Menu/keyboard
-entry points also appear in [split navigation](split-navigation.md), while
-[product status](parity.md) and the [backlog](backlog.md) track ongoing work.
+entry points also appear in [split navigation](split-navigation.md), while the
+[product guide](product.md) keeps split decisions and the [backlog](backlog.md)
+holds unfinished work.
 
 ## Ownership and cancellation
 

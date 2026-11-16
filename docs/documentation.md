@@ -28,7 +28,7 @@ Do not replace deleted hex strings with equally unhelpful receipt inventories.
 | Information | Authoritative home |
 |---|---|
 | Product introduction and install/build entry points | [README](../README.md) |
-| Current capability inventory, delivery state and product scope | [Product status](parity.md) |
+| Capability overview, product decisions and scope | [Product guide](product.md) |
 | Concrete work Parc intends to do and current handoffs | [Backlog](backlog.md) |
 | Behavior, architecture, important decisions (with a short reason for a parked or declined idea) and commands | Focused subsystem guide |
 | Cross-cutting agent requirements | [AGENTS.md](../AGENTS.md) |
@@ -37,11 +37,9 @@ Do not replace deleted hex strings with equally unhelpful receipt inventories.
 | Raw check output, temporary plans and diagnostics | Ignored `build/` or `work/` |
 
 Keep one home for each fact. Link to it instead of copying it into README,
-the status page, agent instructions and a subsystem guide. Existing
-`docs/parity.md` is the product-status entry point for compatibility. Its compact
-historical progress comparison preserves useful context without rebuilding the
-old requirement ledger. Keep its counting method and scope clear; do not turn
-old checklist percentages into a whole-product score or remaining-time estimate.
+the product guide, agent instructions and a subsystem guide. The product guide
+carries no version, progress, history or percentage score; do not rebuild the
+old requirement ledger in it or anywhere else.
 
 ## Updating a feature
 

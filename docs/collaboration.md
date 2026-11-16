@@ -1,7 +1,7 @@
 # Working together on Parc
 
 Read [AGENTS.md](../AGENTS.md), [README](../README.md),
-[product status](parity.md) and the [backlog](backlog.md) before editing.
+[product guide](product.md) and the [backlog](backlog.md) before editing.
 Current user instructions determine the task, checkout and delegation scope.
 New-machine setup follows [onboarding](developer-onboarding.md) and ends with
 readiness; it does not assign feature work.
@@ -39,7 +39,7 @@ handoff. Necessary unowned work remains the task owner's responsibility.
 Fix actionable problems within scope. Outside-scope work Parc intends to do needs
 a concrete next action in the backlog and disclosure to the user in the same turn.
 Parked, deferred and declined ideas stay out of the backlog. Preserve existing
-features and the product decisions recorded in guides and [product status](parity.md).
+features and the product decisions recorded in guides and the [product guide](product.md).
 
 For implementation work with authorized delegation, use a fresh read-only
 reviewer on the exact changed source, including new files. Author and reviewer
@@ -71,7 +71,7 @@ report or concrete defect evidence. Separate a failing test setup from a failing
 product before making behavior changes. Do not chase harness uncertainty with
 repeated browser runs or speculative patches.
 
-Update the affected guide, product status or backlog in place. Follow the
+Update the affected guide, product guide or backlog in place. Follow the
 [documentation policy](documentation.md): one home per fact, normal 150–300 lines,
 hard 500-line maximum, no append-only delivery narratives. Changelogs are exempt
 and retain their full history and generation.

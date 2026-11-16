@@ -13,7 +13,7 @@ work recompiles little of Chromium, and behaviour and performance stay exactly a
 
 ## Rules every change keeps
 
-- Settled product decisions stay settled ([product status](parity.md)). Protected and Safari-identity
+- Settled product decisions stay settled ([product guide](product.md#product-decisions-to-preserve)). Protected and Safari-identity
   video stays in Chromium on the FairPlay route, with automatically learned site identity. No
   WKWebView, no fixed site list and no pages moved out of Chromium.
 - Chromium's media parsers and demuxers are never forked or copied, so their security fixes keep
