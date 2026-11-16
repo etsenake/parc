@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 771,
+  "version": 772,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -2069,12 +2069,22 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "5550375b4e59cd1f4408831aa99cc6a8ea2431dcda6d3d6c647f6c63d3578a54"
+      "sha256": "906fcd20a62f471552a54d67dce38bb4ff0636b922ebe68ccdc010561c4e76b2"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
       "target": "parc/generate_product_name_strings.py",
       "sha256": "052845c8f991c5f0c710b9a0aaa7f67687c1aeda9fa2a3111d9d561fb30ad7b2"
+    },
+    {
+      "source": "Engine/ParcChromium/parc_chrome_urls.h",
+      "target": "parc/parc_chrome_urls.h",
+      "sha256": "6353ef0ac096fcc87177fb077fa6a2bc8633444f76f5be0d505ad49938b40121"
+    },
+    {
+      "source": "Engine/ParcChromium/parc_chrome_urls.cc",
+      "target": "parc/parc_chrome_urls.cc",
+      "sha256": "a0906bfb605cebadf4dea4fabdb5d2bef3fc645690d7460ce1b548f8b85472aa"
     },
     {
       "source": "Engine/ParcChromium/generate_error_pages.py",
@@ -2199,7 +2209,7 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.mm",
       "target": "parc/parc_content_clients.mm",
-      "sha256": "58c762785f4b9a6bc478153ba088781150197bacf8822bf0c8c67770dda0b358"
+      "sha256": "6cf4b8d841fd8cb7a9e329dbf7b807cca9d0e7267c4e70423fd35d16bed56e86"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",

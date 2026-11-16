@@ -61,7 +61,8 @@ With CEF gone, Parc owns Chromium's embedder classes and uses them before anythi
 - `ParcContentGpuClient` exposes the FairPlay media service. `ParcContentRendererClient` adds the
   FairPlay key systems, the ALAC answer and Parc's renderer observers. `ParcContentClient` adds the
   internal scheme and the FairPlay CDM entry.
-- `ParcBrowserMainExtraParts` installs the native file-dialog factory and the licence WebUI.
+- `ParcBrowserMainExtraParts` installs the native file-dialog factory and the licence WebUI, and
+  in `PreBrowserStart` replaces Chromium's What's New and internal-page directory controllers.
 - The resource-bundle delegates Parc installs in every process answer more than strings: the
   child delegate serves Parc's network error page template for `IDR_NET_ERROR_HTML`, and the
   browser delegate adds Parc's stylesheet and script to Chromium's own security interstitial

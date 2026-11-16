@@ -58,6 +58,7 @@
 #include "parc/native/webauthn.h"
 #include "parc/parc_bundle_mac.h"
 #include "parc/parc_branding.h"
+#include "parc/parc_chrome_urls.h"
 #include "parc/renderer/website_theme_agent.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 #include "third_party/blink/public/mojom/parc/picture_in_picture_captions.mojom.h"
@@ -92,7 +93,10 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
       client_->initial_profile_ = profile;
     }
   }
-  void PreBrowserStart() override { RegisterWhatsNewWebUI(); }
+  void PreBrowserStart() override {
+    RegisterWhatsNewWebUI();
+    RegisterChromeUrlsWebUI();
+  }
   void PostBrowserStart() override {
     parc_hooks::SetAlreadyRunningCommandLineHandler(
         [](const base::CommandLine& command_line, const base::FilePath& cwd,

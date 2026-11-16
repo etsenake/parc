@@ -4,10 +4,16 @@ Parc accepts `parc://` for Chromium-backed internal destinations, including Sett
 passwords, extensions, flags, version and the internal-page directory. The native
 omnibox uses Chromium’s genuine built-in provider and controller inventory; Parc does
 not maintain a replacement list of fake pages. Unknown hosts receive Chromium’s normal
-controller/error behavior. `arc://` is not a registered or translated alias. Two hosts
-are Parc's own pages behind real controllers: `parc://license`, and `parc://whats-new`,
+controller/error behavior. `arc://` is not a registered or translated alias. Three hosts
+are Parc's own pages behind real controllers: `parc://license`, `parc://whats-new`,
 which replaces Chromium's What's New controller with the bundled release notes
-([software updates](software-update.md#whats-new-page-ownership)).
+([software updates](software-update.md#whats-new-page-ownership)), and `parc://chrome-urls`
+(also reached as `parc://about`), Parc's own directory of internal pages: `parc_chrome_urls.cc`
+replaces Chromium's controller from the same browser-main `PreBrowserStart` callback and
+lists Chromium's real page inventory, `WebUIConfigMap` plus the pages without configs and
+the debug commands, under `parc://` names. It keeps the internal debugging pages switch,
+which sets the same local-state preference through a page message, and links only pages
+the Profile can open.
 
 `parc://easel/<UUID>` and `parc://note/<UUID>` remain app-owned document addresses.
 Malformed document addresses stay in those typed app routes; they cannot acquire WebUI
@@ -41,9 +47,12 @@ internal Chromium URLs. Original link activation reaches the real controller. At
 user boundary, Parc projects native page/navigation-history addresses, omnibox URL
 labels, hover destinations, link copying, bookmarking and exported source metadata to
 `parc://`. Context-menu Copy Link and Copy URL/Markdown preserve the actual Chromium
-clipboard-policy endpoint while projecting only the copied destination. No DOM text,
-arbitrary query, referrer, security origin, extension URL or `chrome-untrusted://`
-origin is rewritten.
+clipboard-policy endpoint while projecting only the copied destination. No query,
+referrer, security origin, extension URL or `chrome-untrusted://` origin is rewritten.
+Chromium's other WebUI pages keep their own text. Parc's network error pages and
+security warnings show `parc://` in their titles and visible text, and Parc's directory
+writes its names that way; their links still lead to the real `chrome://` controller
+([error pages](web-interactions.md#network-error-pages-and-security-warnings)).
 
 The app stores public destinations for normal/native tab adoption, command results and
 navigation updates. Legacy saved sessions migrate current and pinned destinations
