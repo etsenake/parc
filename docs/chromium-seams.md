@@ -165,8 +165,8 @@ Parc's record of each native Browser runs from the start of its constructor to t
 destructor, so features and the window never outlive it. `browser.h`, `browser_manager_service.h`,
 `unload_controller.h` and `profile_manager.h` are Chromium's own.
 
-Deletion drains the native host first, defers off-the-record destruction while a native operation
-needs it, and runs close and transfer as transactions in Parc's unload records. Profile removal and
+Deletion drains the native host first, defers off-the-record destruction while an operation or
+creation needs it, and runs close and transfer as transactions in Parc's unload records. Profile removal and
 embedded sessions move behind final-destruction and restore-omission hooks. Startup keeps
 Chromium's order: the staged content entry stays in Chromium's startup file, resource factories and
 startup policy are installed before Chromium touches installer preferences, crash reporting or root

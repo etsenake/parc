@@ -15,6 +15,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "javascript_dialog_manager.h"
+#include "native_browser.h"
 #include "native_link_routing.h"
 #include "native_page_binding.h"
 #include "native_page_observers.h"
@@ -102,6 +103,10 @@ content::WebContents* NativeBrowserWebContentsDelegate::OpenURLFromTab(
   if (browser_->GetType() == BrowserWindowInterface::Type::TYPE_DEVTOOLS) {
     return BrowserWebContentsDelegate::OpenURLFromTab(
         source, params, std::move(navigation_handle_callback));
+  }
+  if (source && DeferNativePrivateOpen(*source, params,
+                                       navigation_handle_callback)) {
+    return nullptr;
   }
   if (BlockNativeLinkPopup(source, params)) {
     return nullptr;

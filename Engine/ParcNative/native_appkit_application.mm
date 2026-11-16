@@ -11,6 +11,7 @@
 #include "base/check.h"
 #include "native_internal_urls.h"
 #include "base/apple/scoped_cftyperef.h"
+#include "base/auto_reset.h"
 #include "base/base64.h"
 #include "base/callback_list.h"
 #include "base/command_line.h"
@@ -31,7 +32,6 @@
 #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
-#include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/nuke_profile_directory_utils.h"
 #include "chrome/browser/browser_process.h"
@@ -195,8 +195,6 @@ std::vector<base::OnceClosure>& ReadyQueue() {
 NSString* ProfilePath(Profile& profile) {
   return base::SysUTF8ToNSString(profile.GetPath().value());
 }
-// The registry's live persistent Profile at `path`. The lease keeps it
-// through callers' synchronous observers; compare identity, never tokens.
 NativeProfileLeasePtr RegisteredProfile(const base::FilePath& path) {
   Profile* profile =
       g_browser_process->profile_manager()->GetProfileByPath(path);
@@ -208,27 +206,50 @@ NativeProfileLeasePtr RegisteredProfile(const base::FilePath& path) {
 NativeProfileLeasePtr RegisteredProfile(NSString* path) {
   return RegisteredProfile(base::FilePath(base::SysNSStringToUTF8(path)));
 }
-// Closing gates both the shell's requests and the Profile registry's.
 void SetQuitting(bool value) {
   quitting = value;
   SetNativeProfilesClosing(value);
+  SetNativePrivateSessionsClosing(value);
 }
-}  // namespace
+void InstallPrivateDownloads(Profile& profile);
+bool PreparePrivateContext(Profile& profile) {
+  Profile* parent = profile.GetOriginalProfile();
+  if (!ready || quitting || preparing_global_close ||
+      !profile.IsPrimaryOTRProfileWithRegularParent() ||
+      profile.ShutdownStarted() || !GetNativeRoute(*parent) ||
+      IsNativeProfileRemovalBlocked(parent->GetPath()) ||
+      IncognitoModePrefs::GetAvailability(parent) ==
+          policy::IncognitoModeAvailability::kDisabled ||
+      GetBrowserWindowCreationStatusForProfile(profile) !=
+          BrowserWindowInterface::CreationStatus::kOk) {
+    return false;
+  }
+  auto lease = RegisteredProfile(parent->GetPath());
+  if (!lease || lease->profile() != parent) {
+    return false;
+  }
+  if (!GetNativeRoute(profile)) {
+    RegisterNativeRoute(profile);
+  }
+  InitializeNativeSearch(profile);
+  InstallPrivateDownloads(profile);
+  return true;
+}
+}
 class BindingState {
  public:
   NSWindow* __weak window;
   id<PCNativeBrowserWindowClient> __weak client;
   std::map<Profile*, base::WeakPtr<BrowserWindowInterface>> browsers;
   NSString* __strong website_theme_stylesheet;
-  // Immutable context kind; a dead OTR identity never falls back to its parent.
   bool private_mode = false;
+  bool private_creation = false;
   base::WeakPtr<Profile> private_profile;
   std::set<BrowserWindowInterface*> pending_close;
   std::vector<void (^)(BOOL)> close_callbacks;
   uint64_t ownership_epoch = 0;
   uint64_t selection_generation = 0;
   size_t pending_reservations = 0;
-  // Page creations waiting for a delete-scheduled Browser to unregister.
   std::vector<base::OnceClosure> retirement_waiters;
   bool close_in_progress = false;
   bool close_approved = false;
@@ -241,8 +262,6 @@ class BindingState {
     pending_close.clear();
     auto callbacks = std::move(close_callbacks);
     close_callbacks.clear();
-    // Never release the shell/window owner from a Browser teardown callback
-    // stack. All exact Browsers have unregistered before an approval arrives.
     for (auto callback : callbacks) {
       dispatch_async(dispatch_get_main_queue(), ^{
         callback(allow);
@@ -250,7 +269,7 @@ class BindingState {
     }
   }
 };
-}  // namespace parc
+}
 
 @interface PCNativeBrowserWindow ()
 - (instancetype)initWithClient:(id<PCNativeBrowserWindowClient>)client;
@@ -323,7 +342,7 @@ class PreparedAppKitWindow final : public PreparedNativeWindow {
   NSString* __strong path_;
   bool bound_ = false;
 };
-}  // namespace
+}
 base::expected<std::unique_ptr<PreparedNativeWindow>, std::string>
 PrepareAppKitWindow(const NativeWindowRequest& request) {
   if (quitting || IsNativeProfileRemovalBlocked(
@@ -333,6 +352,10 @@ PrepareAppKitWindow(const NativeWindowRequest& request) {
   id<PCNativeBrowserApplicationClient> application = application_client;
   if (!application) {
     return base::unexpected("The native application is not registered.");
+  }
+  if (request.profile.IsOffTheRecord() && !GetNativeRoute(request.profile) &&
+      !PreparePrivateContext(request.profile)) {
+    return base::unexpected("Private browsing is unavailable for this profile.");
   }
   PCNativeWindowKind kind = PCNativeWindowKindBrowser;
   if (request.type == BrowserWindowInterface::TYPE_DEVTOOLS) {
@@ -455,8 +478,6 @@ NSMutableDictionary<NSString*, PCNativePrivateDownloadContext*>* PrivateDownload
   return contexts;
 }
 
-// One observation per actual OTR context. This does not retain the Profile or
-// keep an Incognito Browser alive. Shared presentation retains only its lease.
 class PrivateDownloadLifetime final : public base::SupportsUserData::Data,
                                       public ProfileObserver {
  public:
@@ -515,7 +536,6 @@ void InstallPrivateDownloads(Profile& profile) {
         if (lifetime && [app respondsToSelector:@selector(nativeApplicationPrivateDownloadDidUpdate:context:)])
           [app nativeApplicationPrivateDownloadDidUpdate:values context:lifetime->context()];
         if (!original || original->ShutdownStarted()) return;
-        // Snapshot the bindings; a client may close a window during delivery.
         for (PCNativeBrowserWindow* binding in Windows().objectEnumerator.allObjects) {
           if (!original || original->ShutdownStarted()) return;
           if (PrivateDownloadsProfile(binding) != original.get()) continue;
@@ -556,9 +576,7 @@ void ClearSeededDownloadPrompt(Profile& profile) {
   }, directory));
 }
 
-// The Profile registry's per-Profile setup, once, before its waiters run.
 void InitializeNativeProfile(Profile& profile) {
-  // Register before GetDownloadManager can enumerate restored items.
   if (!GetNativeRoute(profile)) {
     RegisterNativeRoute(profile);
   }
@@ -589,8 +607,6 @@ void PrepareProductBranding() {
     return;
   }
   auto* branding = new ProductBranding;
-  // The light toolbar logo is chrome://theme/current-channel-logo, served by
-  // the browser's ThemeSource.
   branding->light_logo = webui::CurrentChannelLogoResourceId();
   product_branding.store(branding, std::memory_order_release);
 }
@@ -649,8 +665,6 @@ const ProductLogos& ProductLogoResources() {
   static const base::NoDestructor<ProductLogos> logos(MakeProductLogos());
   return *logos;
 }
-// Serves Parc’s immutable logo resources. ResourceBundle may ask from any
-// thread; the light-logo resource ID is published once the context exists.
 class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
  public:
   base::FilePath GetPathForResourcePack(
@@ -719,7 +733,6 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
         (!branding || resource_id != IDR_PRODUCT_LOGO_NAME_22_WHITE)) {
       return false;
     }
-    // Rendered on first use and kept, since the bundle doesn't copy it.
     const auto& logos = ProductLogoResources();
     const bool double_scale =
         ui::GetScaleForResourceScaleFactor(scale_factor) > 1;
@@ -752,7 +765,6 @@ class AppKitApplication final : public NativeApplication {
     InitializeNativeProfile(profile);
   }
   void ProfilesChanged() override {
-    // A quit waiting for idle can proceed once loads and operations end.
     NotifyNativeEngineOwnershipChanged();
     RetryNativeOTRProfileDestruction();
   }
@@ -762,8 +774,6 @@ class AppKitApplication final : public NativeApplication {
   bool AlreadyRunningRelaunch(const base::CommandLine& command_line,
                               const base::FilePath& current_directory) override {
     CHECK(NSThread.isMainThread);
-    // Consume the handoff even while closing: declining it lets Chrome's
-    // startup open a stock window, which is never our native route.
     id<PCNativeBrowserApplicationClient> client = application_client;
     if (!client || quitting || preparing_global_close) {
       return true;
@@ -777,8 +787,6 @@ class AppKitApplication final : public NativeApplication {
                                     currentDirectory:base::SysUTF8ToNSString(
                                                          current_directory
                                                              .value())];
-    // The callback may start close or create work; no borrowed client state
-    // or command line references are used after it returns.
     return true;
   }
   void BrowserReady(Profile& initial_profile) override {
@@ -789,9 +797,6 @@ class AppKitApplication final : public NativeApplication {
     accessibility.initialized = true;
     accessibility.observation_context =
         content::BrowserAccessibilityState::GetInstance();
-    // Consume actual system state and any role/manual requests received while
-    // the engine was starting. No renderer AX mode is requested merely by
-    // startup.
     accessibility.voice_over = NSWorkspace.sharedWorkspace.voiceOverEnabled;
     accessibility.Apply();
     if (!GetNativeRoute(initial_profile)) {
@@ -819,7 +824,7 @@ class AppKitApplication final : public NativeApplication {
  private:
   ProductBrandingDelegate branding_;
 };
-}  // namespace
+}
 std::unique_ptr<NativeApplication> CreateNativeApplication() {
   return std::make_unique<AppKitApplication>();
 }
@@ -834,9 +839,6 @@ bool HasPendingNativeApplicationWork() {
 void PrepareNativeApplicationShutdown() {
   CHECK(NSThread.isMainThread);
   ready = false;
-  // Engine shutdown follows and terminates Chromium's ImageTransportFactory,
-  // which every pane compositor uses; they go first, as BrowserCompositorMac's
-  // do.
   ShutDownPaneCompositors();
   auto& accessibility = Accessibility();
   accessibility.stopped = true;
@@ -845,6 +847,7 @@ void PrepareNativeApplicationShutdown() {
   CHECK(pending_creations == 0);
   CHECK(ReadyQueue().empty());
   CHECK(!NativeProfilesLoading());
+  CHECK(NativePrivateSessionsIdle());
   for (Profile* profile :
        g_browser_process->profile_manager()->GetLoadedProfiles()) {
     auto weak = profile->GetWeakPtr();
@@ -922,8 +925,6 @@ gfx::NativeWindow PrepareNativeDownloadDialogParent(Profile& profile) {
                    @selector(nativeDownloadDialogWindow:representsProfilePath:)]) {
     return {};
   }
-  // Shell construction may reenter the engine. Keep the Profile leased, but
-  // re-resolve its weak identity after the callback.
   auto lease = RegisteredProfile(profile.GetPath());
   if (!lease || lease->profile() != &profile) {
     return {};
@@ -942,9 +943,6 @@ std::shared_ptr<NativeCloseTransaction>& ActiveCloseTransaction() {
   static base::NoDestructor<std::shared_ptr<NativeCloseTransaction>> value;
   return *value;
 }
-// This coordinates genuine UnloadControllers, never a duplicated beforeunload
-// state machine. Like BrowserCloseManager, confirmation runs across every
-// Browser before any BrowserWindow::Close commits actual page unload.
 class NativeCloseTransaction final
     : public std::enable_shared_from_this<NativeCloseTransaction> {
  public:
@@ -971,8 +969,6 @@ class NativeCloseTransaction final
         browsers_.push_back(browser);
       }
     }
-    // Do not interfere with an independently running single-window close.
-    // That operation owns its own beforeunload callback and cannot be adopted.
     for (auto browser : browsers_) {
       if (browser && UnloadController::From(browser.get())
                          ->is_attempting_to_close_browser()) {
@@ -980,14 +976,10 @@ class NativeCloseTransaction final
         return;
       }
     }
-    // AppController normally provides this global Mac shutdown warning. Parc
-    // supplies the existing native host service instead of bypassing downloads.
     const int downloads =
         all_windows_ ? DownloadCoreService::BlockingShutdownCountAllProfiles()
                      : 0;
     if (downloads > 0 && browsers_.empty()) {
-      // A download can outlive the last Browser. There is then no genuine
-      // Browser-bound warning presenter; do not silently approve shutdown.
       NSString* capability =
           @"Quit with active downloads requires a native download warning "
            "presenter. Keep Parc running until the downloads finish.";
@@ -1125,8 +1117,6 @@ class NativeCloseTransaction final
     if (phase_ != Phase::kBeforeUnload || awaiting_) {
       return;
     }
-    // Rescan all genuine controllers after each approval, including new tabs
-    // or newly registered handlers. Chromium remembers already-approved pages.
     for (auto browser : browsers_) {
       if (!browser) {
         continue;
@@ -1212,8 +1202,6 @@ class NativeCloseTransaction final
     awaiting_ = nullptr;
     ++callback_epoch_;
     if (!allow) {
-      // Reset every confirmed Browser, not just the one whose user chose Stay.
-      // Reset can invoke the old confirmation callback; its epoch is invalid.
       for (auto browser : browsers_) {
         if (browser && owned_controllers_.contains(browser.get())) {
           UnloadController::From(browser.get())->ResetBeforeUnloadForShutdown();
@@ -1244,7 +1232,7 @@ class NativeCloseTransaction final
   std::set<BrowserWindowInterface*> owned_controllers_;
   std::set<BrowserWindowInterface*> beforeunload_started_;
   BrowserWindowInterface* awaiting_ =
-      nullptr;  // Identity only; never dereferenced.
+      nullptr;
   size_t warning_index_ = 0;
   uint64_t callback_epoch_ = 0;
   bool all_windows_;
@@ -1265,7 +1253,7 @@ void BeginNativeClose(NSArray<PCNativeBrowserWindow*>* bindings,
   close_transaction_active = true;
   transaction->Start();
 }
-}  // namespace
+}
 void RegisterAppKitBrowser(PCNativeBrowserWindow* binding,
                            BrowserWindowInterface& browser) {
   ++[binding state].ownership_epoch;
@@ -1289,7 +1277,6 @@ void UnregisterAppKitBrowser(PCNativeBrowserWindow* binding,
   if (auto transaction = ActiveCloseTransaction()) {
     transaction->BrowserUnregistered(browser);
   }
-  // Never create the replacement Browser on this teardown stack.
   for (auto& waiter : std::exchange(state.retirement_waiters, {})) {
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, std::move(waiter));
@@ -1297,17 +1284,10 @@ void UnregisterAppKitBrowser(PCNativeBrowserWindow* binding,
   NotifyNativeEngineOwnershipChanged();
 }
 namespace {
-// Closing a Browser's last tab schedules its deletion at once, but it stays
-// registered to this window until its native drain finishes. ~Browser destroys
-// BrowserWindowFeatures before tabs still in its TabStripModel, so a page added
-// meanwhile outlives the window services it observes (its cookie page action
-// observes the window's CookieControlsController). Callers wait for that
-// Browser to unregister; their retry then creates this window's next Browser.
 bool BrowserRetiringForPath(PCNativeBrowserWindow* binding, NSString* path) {
   const base::FilePath profile_path(base::SysNSStringToUTF8(path));
   for (const auto& entry : [binding state].browsers) {
     const auto& browser = entry.second;
-    // An OTR Profile reports its original Profile's path.
     if (browser && browser->IsDeleteScheduled() &&
         browser->GetProfile()->GetPath() == profile_path) {
       return true;
@@ -1315,8 +1295,6 @@ bool BrowserRetiringForPath(PCNativeBrowserWindow* binding, NSString* path) {
   }
   return false;
 }
-// A parked request holds a reservation, so the retiring Browser's
-// unregistration cannot report this window empty before the retry runs.
 void ParkUntilBrowserRetires(PCNativeBrowserWindow* binding,
                              base::OnceClosure retry) {
   ++[binding state].pending_reservations;
@@ -1325,13 +1303,11 @@ void ParkUntilBrowserRetires(PCNativeBrowserWindow* binding,
         CHECK([binding state].pending_reservations);
         --[binding state].pending_reservations;
         std::move(retry).Run();
-        // A retry that failed before reserving leaves the window as empty as
-        // the suppressed notification found it.
         NotifyEmptyBinding(binding, false);
       },
       binding, std::move(retry)));
 }
-}  // namespace
+}
 void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
                               BrowserWindowInterface& browser,
                               bool approved) {
@@ -1339,9 +1315,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   if (!state.close_in_progress || !state.pending_close.contains(&browser)) {
     return;
   }
-  // Approval only authorizes Chromium's actual unload/drain/delete sequence.
-  // The physical NSWindow remains owned until UnregisterAppKitBrowser observes
-  // every corresponding Browser's completed native-service drain.
   if (!approved) {
     if (auto transaction = ActiveCloseTransaction()) {
       transaction->Rejected();
@@ -1351,7 +1324,7 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   }
 }
 
-}  // namespace parc
+}
 
 @interface PCNativeEmbeddedPageRequest ()
 - (instancetype)initWithCompletion:(void (^)(PCNativePage*, NSError*))completion;
@@ -1386,8 +1359,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
 - (void)cancel {
   CHECK(NSThread.isMainThread);
   if (!_pending || _committed) return;
-  // Mark cancellation before posting: a queued Profile callback must not
-  // create content while the cancellation result waits for the next turn.
   _pending = NO;
   auto completion = _completion;
   _completion = nil;
@@ -1421,7 +1392,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   bool regular = false;
   bool off_the_record = false;
   for (const auto& [profile, browser] : _state->browsers) {
-    // Use the live Browser's Profile, never a stale map key or a path lookup.
     if (!browser || browser->GetProfile() != profile) {
       continue;
     }
@@ -1447,7 +1417,9 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   CHECK(NSThread.isMainThread);
   auto* profile = request ? request->_originalProfile.get() : nullptr;
   if (!request.isOffTheRecord || !profile || !profile->IsOffTheRecord() ||
-      !_state->browsers.empty() || _state->private_mode || !self.window ||
+      profile->ShutdownStarted() || !parc::GetNativeRoute(*profile) ||
+      !_state->browsers.empty() || _state->private_mode ||
+      _state->private_creation || !self.window ||
       _state->close_in_progress || _state->close_approved || parc::quitting) {
     if (error) *error = parc::Error(@"The original private window request is no longer available.");
     return NO;
@@ -1462,8 +1434,8 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   auto fail = [&](NSString* message) { if (error) *error = parc::Error(message); return NO; };
   if (!parc::ready || parc::quitting || parc::preparing_global_close ||
       !self.window || !self.client || !_state->browsers.empty() || _state->private_mode ||
-      _state->close_in_progress || _state->close_approved || !path.isAbsolutePath ||
-      ![path isEqualToString:path.stringByStandardizingPath])
+      _state->private_creation || _state->close_in_progress || _state->close_approved ||
+      !path.isAbsolutePath || ![path isEqualToString:path.stringByStandardizingPath])
     return fail(@"Wait for the original profile to finish opening before creating a private window.");
   auto lease = parc::RegisteredProfile(path);
   Profile* parent = lease ? lease->profile() : nullptr;
@@ -1471,34 +1443,35 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     return fail(@"The original profile is not available for private browsing.");
   if (IncognitoModePrefs::GetAvailability(parent) == policy::IncognitoModeAvailability::kDisabled)
     return fail(@"Private browsing is disabled for this profile.");
-  const bool created_profile = !parent->HasPrimaryOTRProfile();
-  Profile* profile = parent->GetPrimaryOTRProfile(/*create_if_needed=*/true);
-  base::ScopedClosureRunner abandon_new_context(base::BindOnce(
-      [](bool created, base::WeakPtr<Profile> weak_profile) {
-        if (created && weak_profile &&
-            ProfileBrowserCollection::GetForProfile(weak_profile.get())->IsEmpty())
-          ProfileDestroyer::DestroyOTRProfileWhenAppropriate(weak_profile.get());
-      }, created_profile, profile ? profile->GetWeakPtr() : base::WeakPtr<Profile>()));
-  if (!profile || !profile->IsOffTheRecord() || profile->ShutdownStarted() ||
-      GetBrowserWindowCreationStatusForProfile(*profile) != BrowserWindowInterface::CreationStatus::kOk)
+  base::AutoReset<bool> creating(&_state->private_creation, true);
+  auto claim = parc::ClaimNativePrivateSession(*parent);
+  if (parent->HasPrimaryOTRProfile() && parent->GetPrimaryOTRProfile(false)->ShutdownStarted())
+    return fail(@"The previous private session is still closing. Try again in a moment.");
+  Profile* profile = parent->GetPrimaryOTRProfile(true);
+  if (!profile || !parc::PreparePrivateContext(*profile)) {
+    if (profile) parc::NominateNativePrivateSession(*profile);
     return fail(@"The private browsing context could not be opened.");
-  if (!parc::GetNativeRoute(*profile)) {
-    parc::RegisterNativeRoute(*profile);
   }
-  parc::InitializeNativeSearch(*profile);
-  // Chromium owns private download items and dialogs. Do not publish their
-  // URLs or filenames into the application's persistent normal download list.
-  parc::InstallPrivateDownloads(*profile);
+  const auto weak_profile = profile->GetWeakPtr();
   _state->private_mode = true;
-  _state->private_profile = profile->GetWeakPtr();
+  _state->private_profile = weak_profile;
   BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL, *profile, true);
   params.should_trigger_session_restore = false;
-  parc::ScopedNativeBrowserCreation creation(
-      nullptr, std::make_unique<parc::PreparedAppKitWindow>(
-                   *profile, BrowserWindowInterface::TYPE_NORMAL, self));
-  auto* browser = CreateBrowserWindow(std::move(params));
-  if (!browser || browser->GetProfile() != profile || parc::AppKitBindingForBrowser(browser) != self) {
+  BrowserWindowInterface* browser = nullptr;
+  {
+    parc::ScopedNativeBrowserCreation creation(
+        nullptr, std::make_unique<parc::PreparedAppKitWindow>(
+                     *profile, BrowserWindowInterface::TYPE_NORMAL, self));
+    browser = CreateBrowserWindow(std::move(params));
+  }
+  if (!browser || !weak_profile || browser->GetProfile() != weak_profile.get() ||
+      parc::AppKitBindingForBrowser(browser) != self) {
     if (browser && !browser->IsDeleteScheduled() && browser->GetTabStripModel()->empty()) browser->GetWindow()->Close();
+    if (!browser) {
+      _state->private_mode = false;
+      _state->private_profile.reset();
+    }
+    if (weak_profile) parc::NominateNativePrivateSession(*weak_profile);
     return fail(@"The private browser window could not be created.");
   }
   return YES;
@@ -1627,7 +1600,7 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
         BrowserWindowInterface* created = nullptr;
         if (GetBrowserWindowCreationStatusForProfile(profile) ==
             BrowserWindowInterface::CreationStatus::kOk) {
-          BrowserWindowCreateParams params(profile, /*from_user_gesture=*/false);
+          BrowserWindowCreateParams params(profile, false);
           parc::ScopedNativeBrowserCreation creation(
               nullptr, std::make_unique<parc::PreparedAppKitWindow>(
                            profile, BrowserWindowInterface::TYPE_NORMAL,
@@ -1636,8 +1609,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
         }
         if (created) {
           const auto created_weak = created->GetWeakPtr();
-          // A window's first Browser is shown before its first tab, as it
-          // was under CEF.
           created->GetWindow()->Show();
           if (created_weak) {
             contents = chrome::AddAndReturnTabAt(
@@ -1663,8 +1634,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
       }
       PCNativePage* page =
           parc::GetOrCreateNativePage(*contents, *page_binding, path);
-      // Page attachment remains an exact owner operation. No URL
-      // reconstruction.
       if (![binding pageDidAttach:page container:destination_container]) {
         [page requestClose:^(PCNativePageCloseResult){
         }];
@@ -1676,8 +1645,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
       completion(page, nil);
     });
     if (search) {
-      // A selected native-page search can belong to an OTR Profile sharing its
-      // persistent parent's path. Never re-resolve it through the path map.
       auto* profile = parc::ProfileForSearchNavigation(search);
       if (!profile) {
         completion(nil,
@@ -1738,9 +1705,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     return;
   }
   __weak NSView* weak_container = container;
-  // The existing routing factory reserves this exact binding during async
-  // Profile acquisition and creates a first Browser without showing/selecting it.
-  // No source WebContents or navigation replay is involved in a saved-item copy.
   auto admitted = base::BindOnce(
       [](PCNativeBrowserWindow* binding, NSView* __weak weak_container,
          NSURL* url, NSString* path, PCNativeSearchNavigation* search,
@@ -1795,7 +1759,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
       std::move(admitted).Run(found->second.get(), false, nil);
       return;
     }
-    // OTR is tied to its original native Browser; never resolve its shared path.
     if (profile->IsOffTheRecord()) {
       std::move(admitted).Run(nullptr, false, parc::Error(@"The private Browser closed."));
       return;
@@ -1835,10 +1798,8 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
           abandon(error ?: parc::Error(@"The restored page's owner changed."));
           return;
         }
-        // Created hidden like every other page: only the host's visibility
-        // pass, after sizing it, can make it VISIBLE and so start its load.
         auto restored = parc::CreateRestoredContents(navigation, *browser->GetProfile(),
-                                                     /*initially_hidden=*/true);
+                                                     true);
         if (!restored) {
           abandon(parc::Error(@"The page's history belongs to another Profile."));
           return;
@@ -1859,15 +1820,11 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
         auto* page_binding = parc::NativePageBinding::FromWebContents(contents);
         if (!page_binding || page_binding->browser() != browser ||
             !parc::GetNativeRoute(*browser->GetProfile())) {
-          // Retire this inserted child through TabStripModel, as an embedded
-          // page's refused creation does, instead of leaving an orphan.
           const int index = tabs->GetIndexOfWebContents(contents);
           if (index != TabStripModel::kNoTab) tabs->CloseWebContentsAt(index, 0);
           completion(nil, inserted_failure(@"The restored page has no native owner."));
           return;
         }
-        // It loads once attached and laid out at its size (AppKitBrowserHost
-        // Attach), as Chrome's AddRestoredTab sizes before LoadIfNecessary.
         PCNativePage* page = parc::GetOrCreateNativePage(*contents, *page_binding, path);
         if (![binding pageDidAttach:page container:destination]) {
           [page requestClose:^(PCNativePageCloseResult) {}];
@@ -1877,7 +1834,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
         completion(page, nil);
       }, self, weak_container, path, navigation, background, [completion copy]);
   if (_state->private_mode) {
-    // A private window restores only into its own living OTR Browser.
     Profile* profile = parc::NativePrivateProfileForWindow(self, path);
     auto found = profile ? _state->browsers.find(profile) : _state->browsers.end();
     BrowserWindowInterface* browser = found == _state->browsers.end() ? nullptr : found->second.get();
@@ -1942,23 +1898,16 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
                 parc::NativeLeaseForProfile(*weak_browser->GetProfile()) &&
                 [parc::ProfilePath(*weak_browser->GetProfile()) isEqualToString:path];
           };
-          // Recheck native ownership after the app query too; it must not be
-          // able to authorize a stale Browser by reentering during validation.
           if (!valid() || !validateOwner() || !valid() || ![request beginCommit]) {
             close_empty();
             [request finishWithPage:nil error:error ?: parc::Error(@"The Easel changed before page creation.")];
             return;
           }
-          // Create the actual empty renderer first, attach and classify it,
-          // then navigate the requested URL exactly once. No web script runs
-          // before the view has an authoritative auxiliary owner.
           auto* contents = chrome::AddAndReturnTabAt(
               browser, GURL(url::kAboutBlankURL), TabStripModel::kNoTab, false);
           auto* page_binding = weak_browser && contents
               ? parc::NativePageBinding::FromWebContents(contents) : nullptr;
           if (!weak_browser || !page_binding || page_binding->browser() != browser) {
-            // No requested navigation has begun. Retire this actual empty
-            // child through TabStripModel instead of leaving an orphan.
             if (weak_browser && contents) {
               const int index = weak_browser->GetTabStripModel()->GetIndexOfWebContents(contents);
               if (index != TabStripModel::kNoTab)
@@ -1981,7 +1930,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
             [request finishWithPage:nil error:parc::Error(@"The embedded renderer has no navigation owner.")];
             return;
           }
-          // The explicit load the shell's own address entry makes.
           contents_weak->GetController().LoadURL(
               GURL(url.absoluteString.UTF8String), content::Referrer(),
               ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED |
@@ -2005,8 +1953,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
 }
 - (void)synchronizeSelectionAndLayout {
   CHECK(NSThread.isMainThread);
-  // Keep only this binding/client alive across callbacks. Browser and page
-  // contents remain weak, and a newer explicit command supersedes this one.
   PCNativeBrowserWindow* binding = self;
   parc::CancelInvalidNativeDownloadFileDialogs(
       gfx::NativeWindow(binding.window));
@@ -2066,8 +2012,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     if (!current_request() || !current_browser()) {
       return;
     }
-    // Activation can invoke shell callbacks. Resolve the same contents again
-    // only while this remains the latest exact shell selection request.
     const int current_index =
         contents
             ? browser->GetTabStripModel()->GetIndexOfWebContents(contents.get())
@@ -2125,7 +2069,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   if (![self pictureInPicturePage]) {
     return NO;
   }
-  // The opener is activated before the PiP page closes, without pausing media.
   return PictureInPictureWindowManager::GetInstance()
       ->ExitPictureInPictureViaWindowUi(
           PictureInPictureWindowManager::UiBehavior::kCloseWindowAndFocusOpener);
@@ -2196,8 +2139,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     _state->close_callbacks.push_back([completion copy]);
     return;
   }
-  // Overlapping aggregates cannot own the same UnloadController callbacks.
-  // A busy refusal leaves every page and model unchanged and can be retried.
   if (parc::ActiveCloseTransaction() || parc::preparing_global_close) {
     dispatch_async(dispatch_get_main_queue(), ^{
       completion(NO);
@@ -2240,17 +2181,11 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   auto finish = ^(PCNativePageTransferResult result, NSString* detail) {
     NSError* error = detail ? parc::Error(detail) : nil;
     dispatch_async(dispatch_get_main_queue(), ^{
-      // Keep the operation reserved through callback reentry. Otherwise a
-      // second transfer could empty an owner and still be awaiting its own
-      // result when this older operation closes that owner below.
       completion(result, error);
       if (owns_operation) {
         owns_operation = NO;
         parc::preparing_live_transfer = false;
       }
-      // Swift has now committed/released the exact page and window claims.
-      // Only then may an emptied source or our newly created empty destination
-      // enter normal Browser close and asynchronous native-service teardown.
       if (*close_empty_source) {
         std::move(*close_empty_source).Run();
       }
@@ -2308,8 +2243,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
              @"The destination Browser cannot be created.");
       return;
     }
-    // Construct only the real empty Browser. No substitute/blank WebContents
-    // exists, and the exact supplied NSWindow is the one-use reservation.
     BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL,
                                      *profile, true);
     params.should_trigger_session_restore = false;
@@ -2404,18 +2337,11 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   auto finish = ^(PCNativePageTransferResult result, NSString* detail) {
     NSError* error = detail ? parc::Error(detail) : nil;
     dispatch_async(dispatch_get_main_queue(), ^{
-      // Keep the operation reserved through callback reentry. Otherwise a
-      // second transfer could empty an owner and still be awaiting its own
-      // result when this older operation closes that owner below.
       completion(result, error);
       if (owns_operation) {
         owns_operation = NO;
         parc::preparing_live_transfer = false;
       }
-      // Both physical windows remain caller-owned. Either may contain local
-      // Notes/Easels or unmaterialized sidebar items even with an empty native
-      // strip. Keep their cached Browsers until the actual window-close owner
-      // approves retirement, including a destination created for this attempt.
       close_empty_sources->clear();
       parc::NotifyNativeEngineOwnershipChanged();
     });
@@ -2486,8 +2412,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
              @"The destination Browser cannot be created.");
       return;
     }
-    // Construct only the real empty Browser. No substitute/blank WebContents
-    // exists, and the exact supplied NSWindow is the one-use reservation.
     BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL,
                                      *profile, true);
     params.should_trigger_session_restore = false;
@@ -2509,8 +2433,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
            @"Native ownership changed before transfer.");
     return;
   }
-  // Browser creation can synchronously notify unrelated owners. Resolve every
-  // original again instead of dereferencing the pre-creation raw pointer list.
   actual_pages.clear();
   for (NSUInteger i = 0; i < pages.count; ++i) {
     auto* actual = parc::ContentsForNativePage(pages[i]);
@@ -2718,16 +2640,14 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
       initWithProfile:profile
                values:ReadNativeDownloadPreferences(profile, *preferences)];
 }
-}  // namespace
-}  // namespace parc
+}
+}
 
 @implementation PCNativeBrowserApplication
 + (NSArray<PCNativePrivateDownloadContext*>*)privateDownloadContexts {
   CHECK(NSThread.isMainThread);
   return [parc::PrivateDownloadContexts().allValues copy];
 }
-// Preparation may load the existing normal parent Profile but creates no page.
-// The receiving app keeps its exact selected profile identity while this runs.
 + (void)preparePrivateBrowsingWithProfilePath:(NSString*)path
     completion:(void (^)(NSError*))completion {
   CHECK(NSThread.isMainThread);
@@ -2743,7 +2663,17 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
           completion(parc::Error(@"Private browsing is disabled for this profile."));
           return;
         }
-        completion(nil);
+        parc::AwaitNativePrivateSession(std::move(lease), base::BindOnce(
+            [](void (^completion)(NSError*), Profile* parent) {
+              if (!parent) {
+                completion(parc::Error(@"The original profile is unavailable."));
+              } else if (IncognitoModePrefs::GetAvailability(parent) ==
+                         policy::IncognitoModeAvailability::kDisabled) {
+                completion(parc::Error(@"Private browsing is disabled for this profile."));
+              } else {
+                completion(nil);
+              }
+            }, completion));
       }, [completion copy]));
 }
 + (void)accessibilityRoleRequested {
@@ -2765,16 +2695,11 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
                                           change:(NSDictionary*)change
                                          context:(void*)context {
   CHECK(NSThread.isMainThread);
-  // Match the exact observer installed by BrowserAccessibilityStateImplMac,
-  // just as ChromeBrowserApplication does. Forward unrelated KVO to AppKit.
   if (![keyPath isEqualToString:@"voiceOverEnabled"] ||
       object != NSWorkspace.sharedWorkspace) {
     return NO;
   }
   auto& accessibility = parc::Accessibility();
-  // The initial notification is sent from the real singleton's constructor.
-  // Cache its exact KVO identity during initialization; do not consult engine
-  // state after shutdown, even if AppKit later delivers that context.
   if (!accessibility.observation_context && !accessibility.stopped) {
     accessibility.observation_context =
         content::BrowserAccessibilityState::GetInstance();
@@ -2850,8 +2775,6 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   parc::WithNativeProfile(profilePath, base::BindOnce(
       [](NSString* path, void (^reply)(PCNativeDownloadPreferences*, NSError*),
          Profile* profile, parc::NativeProfileLeasePtr lease, NSError* error) {
-        // Recheck the registered original identity after asynchronous acquisition
-        // and again at publication; profile removal cannot publish stale settings.
         base::WeakPtr<Profile> original = profile ? profile->GetWeakPtr() : nullptr;
         NSError* failure = error;
         if (!failure && (!lease || !original ||
@@ -2884,8 +2807,6 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   }
   Profile* profile =
       parc::DownloadPreferencesProfile(preferences.profilePath, preferences);
-  // A native folder chooser supplies an absolute local file URL. Do not treat
-  // network URLs, relative URL resolutions or embedded NUL as file paths.
   NSString* path = directoryURL.path;
   const std::string bytes = base::SysNSStringToUTF8(path);
   const bool local_host = !directoryURL.host.length ||
@@ -2898,7 +2819,6 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
     }
     return nil;
   }
-  // Keep the Profile leased across synchronous pref observers.
   auto lease = parc::NativeLeaseForProfile(*profile);
   auto weak_profile = profile->GetWeakPtr();
   auto* values = DownloadPrefs::FromBrowserContext(profile);
@@ -2976,7 +2896,6 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
             }, reply, profile->GetWeakPtr()));
       }, reply));
 }
-// Existing P0 callers keep their API. New Library callers always supply identity.
 + (BOOL)performDownloadAction:(PCNativeDownloadAction)action
                   identifier:(NSString*)identifier
                  profilePath:(NSString*)profilePath {
@@ -3080,7 +2999,6 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
       return NO;
   }
   auto values = [review values];
-  // Passwords are transient call arguments, never snapshots/history/logs.
   return service->PerformReview(values, command, base::SysNSStringToUTF8(password),
                                 base::SysNSStringToUTF16(justification));
 }
@@ -3122,8 +3040,6 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   }
   parc::SetQuitting(true);
   parc::preparing_global_close = true;
-  // Pending pre-initialization closures observe the closing gate and settle
-  // their exact caller; they never acquire a Browser after global approval.
   auto queued = std::move(parc::ReadyQueue());
   parc::ReadyQueue().clear();
   for (auto& request : queued) {
@@ -3349,8 +3265,6 @@ id<PCNativeVideoPiPWindow> CreateAppKitVideoPiPWindow(
     void (^action)(PCVideoPiPAction, double),
     dispatch_block_t changed,
     id<PCNativeBrowserApplicationClient> __strong* owner) {
-  // The Browser entry already performed capability preflight. The concrete
-  // factory needs the captured app service, not a key/frontmost window.
   id<PCNativeBrowserApplicationClient> client = application_client;
   CHECK([client respondsToSelector:@selector
                 (createVideoPictureInPictureWindow:
@@ -3369,7 +3283,7 @@ void ReleaseAppKitVideoPiPWindow(id<PCNativeVideoPiPWindow> window,
   [window invalidate];
   [owner releaseVideoPictureInPictureWindow:window];
 }
-}  // namespace parc
+}
 
 namespace parc {
 Profile* NativePrivateProfileForWindow(PCNativeBrowserWindow* binding, NSString* path) {
@@ -3409,8 +3323,6 @@ void WithNativeRoutingBrowser(PCNativeBrowserWindow* binding, NSString* path,
     return;
   }
   ++pending_creations;
-  // Hold this exact destination through asynchronous Profile acquisition.
-  // Concurrent admitted tab opens must not abort one another's empty shell.
   ++[binding state].ownership_epoch;
   ++[binding state].pending_reservations;
   WithNativeProfile(path, base::BindOnce(
@@ -3532,7 +3444,6 @@ void ReleaseNativeProfileForRemoval(const base::FilePath& path) {
     if (auto* downloads = weak ? NativeDownloads::From(*weak) : nullptr)
       downloads->Shutdown();
   }
-  // Last: the registry's keep-alive release can start Profile shutdown.
   ReleaseNativeProfileRegistry(path);
 }
-}  // namespace parc
+}

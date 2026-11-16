@@ -1,67 +1,139 @@
 # Private navigation creation lifecycle
 
-Ordinary New Incognito Window and a routed private navigation must share the
-same genuine primary off-the-record (OTR) Profile. A URL-only replay or fallback
-to a normal Profile cannot preserve the original request's privacy and ownership.
-The shared Profile-level reservation described below is the remaining ROUTE12
-creation-lifetime work.
+Every private window of a Parc profile shares one genuine primary off-the-record
+(OTR) Profile: the private session that holds its cookies, sign-ins and site
+data. It must exist exactly while something uses it, and Chromium must destroy
+it as soon as nothing does. A URL-only replay or a fallback to the normal
+Profile can never stand in for it.
 
-## Existing source boundaries
+## How private windows are created
 
-`preparePrivateBrowsing(profilePath:completion:)` loads/checks the original
-normal parent without making an OTR Profile, route, Browser or page.
-`AppDelegate.createPrivateWindow` rechecks that parent/path after preparation.
-`beginPrivateBrowsingWithProfilePath:error:` obtains the primary OTR Profile,
-registers its `NativeRoute`, initializes private services and supplies a one-use
-`PreparedAppKitWindow` reservation. The route belongs to the exact OTR Profile;
-it is not inherited from the normal parent.
+- **New Private Window and scripting** go through the app's
+  `createPrivateWindow`. `preparePrivateBrowsing(profilePath:completion:)` loads
+  or checks the normal parent, waits out a session that is still being torn
+  down, and runs its completion, which builds the `BrowserWindowController`
+  whose `beginPrivateBrowsingWithProfilePath:error:` obtains the primary OTR
+  Profile and creates its Browser in the window's one-use reservation.
+- **Chromium-originated opens** keep Chromium's original request: the page
+  menu's Open Link in Incognito Window, an extension's
+  `windows.create({incognito: true})`, Chromium's own new-incognito command, and
+  popups, DevTools and picture in picture from private pages. Chromium creates or
+  finds the primary OTR Profile and calls `Browser::Create`; Parc's admission,
+  `PrepareNativeBrowserWindow`, sends it to `PrepareAppKitWindow`, which prepares
+  the private session (native route, search, private downloads) when this is its
+  first Parc window, and the app's private `BrowserWindowController` adopts the
+  request.
+- The page menu item lands in the right window by Chromium's own choice: the
+  most recently active private window of the same profile gets the link as a
+  front tab; with none, a new private window opens. Another profile's private
+  session is never used. It never reaches a normal window: Chromium disables the
+  item for addresses that cannot open privately and when private browsing is
+  disabled, and a refused private window opens nothing.
 
-Current failure cleanup records whether this attempt created the OTR Profile
-and asks Chromium to destroy it when it has no Browsers. Window reservations
-are per binding. An empty Browser collection alone does not prove that another
-pending or reentrant creation released its Profile-level claim.
+## The claim ledger
 
-## Required shared interface and ownership
+[`private_session_ledger.h`](../Engine/ParcNative/private_session_ledger.h)
+holds the accounting with no Chromium dependency. A claim is a move-only RAII
+token counted per normal parent Profile; it releases exactly once when it is
+destroyed, reset or overwritten. `native_browser.mm` instantiates it with a host
+that reads real Profiles and the Browser collection.
 
-A main-thread owner shared by every OTR creation path must:
+- `beginPrivateBrowsing` holds a claim for its whole body, from before the OTR
+  Profile exists until its Browser is registered or the attempt fails.
+- Admission holds a claim for every Browser of a Parc profile's primary OTR
+  Profile. The claim travels with the window reservation into `NativeBrowser`
+  and is released in `OnRegistered`, after the Browser has joined its
+  collection, or when admission refuses.
+- `preparePrivateBrowsing` and the delayed page-menu open hold a claim and a
+  registry lease on the parent while they wait, and through the continuation
+  that creates the window.
+- Native operations keep using `NativeProfileLease` on the OTR Profile.
 
-1. Acquire an identity-bearing original-Profile claim before callback-capable OTR
-   creation/initialization. Reentry either joins a safely retained operation or
-   refuses before consuming the original navigation; it cannot register twice.
-2. Resolve the exact primary OTR Profile and route with a registry lease,
-   rechecking after callbacks. Existing live registered OTR Browsers remain a
-   reuse path, not a new context factory.
-3. Give every new Browser a separate one-use window reservation bound to the exact
-   Profile/type/window. Keep its Profile claim until actual binding or failure.
-4. Release only the caller's reservation on failure. Destroy a newly created
-   orphan only after all claims resolve and weak identities, Browser counts and
-   shutdown/removal state still permit Chromium's normal teardown. A context
-   predating the operation cannot be destroyed as failed-creator cleanup.
+The existing deferral hook decides last-window teardown. When a private
+session's last Browser leaves, `DeferNativeOTRProfileDestruction` keeps it if any
+claim or lease exists and records it as pending; otherwise Chromium destroys it
+at once, as before. Failed creations and refused admissions do not destroy
+anything themselves: they nominate the session for the same deferred path. The
+profile registry also nominates every new primary OTR Profile of a Parc profile,
+which catches Chromium paths that create a session and then fail before asking
+for a window, such as an extension's malformed `windows.create`. When a pending
+session loses its last claim or lease, one retry is posted. The retry ends it
+only if it is still alive, not already closing, has no Browser, no claim and no
+lease, and it goes through the `DestroyUnusedOTRProfile` call-in, which consults
+the deferral again.
 
-Preserve original `NavigateParams`, source frame/document, request context,
-sanitization, disposition and navigation callback. Parent removal, source loss,
-policy changes or shutdown must complete/refuse once without reconstructed
-navigation or retargeting another request.
+## A session that is still closing
 
-## Last-Browser destruction
+Chromium marks a session as shutting down the moment teardown starts but keeps
+it as the profile's primary OTR Profile until its renderers exit, for up to
+about a second. A window opened on it would be destroyed underneath itself, so
+admission refuses every Browser for a closing session and adoption checks the
+same. New Private Window and the page menu item wait instead: they park with
+their claim, a small marker on the closing Profile posts a notice when Chromium
+destroys it, and the waiter rechecks and continues with a fresh session. A
+notice that arrives while a session is still closing keeps the waiter parked.
+An extension's `windows.create` cannot wait, because Chromium's API answers
+synchronously, so it gets an error during that moment.
 
-`BrowserManagerService` already defers a primary OTR Profile's last-Browser
-teardown while a native operation lease holds it, and retries when the last
-lease ends: the Profile is destroyed only if no Browser reopened it. The shared
-creation owner must hold the same kind of claim, so last-Browser teardown waits
-for it too. Destroying a Browser can release a Profile's last keep-alive,
-reenter creation or destroy the manager/Profile synchronously. Deferred natural
-teardown differs from failure cleanup.
+Quitting closes the ledger to new waits: a request made while quitting fails at
+once. Requests already parked stay parked: if the quit is cancelled at a
+leave-page prompt before the old session ends, they continue; once the old
+session ends during a quit they complete as failed. Their registry leases hold
+the engine's idle check until then, which Chromium's destroyer bounds to about a
+second. The app itself cancels its pending New Private Window requests when a
+quit starts, so this matters for the page menu's delayed open.
 
-An operation lease keeps the parent Profile alive, not the OTR Profile itself.
-Audit every primary-OTR destruction entry, preserve forced-shutdown semantics,
-and never touch a manager/Profile after callbacks may have destroyed it.
+## Invariants
 
-## Completion checks
+1. Every claim is released exactly once, on success, failure, cancellation,
+   quit, a destroyed creator, reentry or a removed or disabled parent.
+2. A session is never torn down while it has a Browser, a claim or a lease, and
+   no window ever opens on a session that is closing.
+3. Nothing outlives its use: once a session has no Browser, claim or lease,
+   its teardown starts within one posted task.
+4. A waiter completes exactly once. It is never told the profile is ready while
+   its old session is still closing or once quitting has started, it runs while
+   still holding its claim, and a page-menu open is dropped if its page has
+   navigated away meanwhile.
+5. Claims for one profile never hold another profile's session, and Parc
+   nominates only primary OTR Profiles; other OTR Profiles stay with their
+   owners.
+6. Hot paths are unchanged: no timer, polling, extra IPC hop or copy. Opening
+   a link adds one disposition comparison; creating a private window adds a
+   counted map entry; waits are event-driven.
 
-Inert/component coverage must exercise existing-context reuse, first creation,
-synchronous reentry, two pending claims, failed/cancelled creators in both
-orders, last-Browser destruction during a claim, a new Browser appearing before
-cleanup, exact one-use window binding, parent/shutdown invalidation and
-exactly-once callback/teardown. The actionable integration remains in
-[the backlog](backlog.md).
+Reentry is safe by construction. `beginPrivateBrowsing` marks its binding as
+creating, so a nested begin or adoption on that binding refuses; a nested
+creation elsewhere takes and releases its own claim; the ledger snapshots its
+state before every host callback and rechecks claims after each one.
+
+## Caller trace
+
+| Path | Claim | Failure | Release |
+|---|---|---|---|
+| `preparePrivateBrowsing` | parent claim and lease across the wait and completion | quit, parent removal or disabled private browsing completes with an error | after the completion returns |
+| `beginPrivateBrowsing` | parent claim for the whole call | nominates the session it obtained | at return |
+| Admission of any private Browser | parent claim inside the reservation | refusal nominates the session | `OnRegistered`, refusal or Browser destruction |
+| Page menu open while closing | parent claim and lease while parked | source page or document gone, quit or removal drops the request | after the reissued open returns |
+| Opening a page in a private window | OTR lease | unchanged | lease destruction retries |
+| Quit | `SetQuitting` refuses new waits; parked waiters complete when the old session ends | a cancelled quit lets them succeed | shutdown checks the ledger is idle |
+
+## Checks
+
+`bash scripts/test-private-session-ledger.sh` compiles the ledger with plain
+clang and runs every listed sequence against a simulated Chromium world:
+overlapping creations, both teardown orders, failure at each step, reentry,
+quits that go ahead or are cancelled, destroyed creators, a disabled parent,
+operation leases, abandoned sessions that are still closing, spurious end
+notices and four thousand randomized interleavings. It checks the invariants
+after every step.
+
+`ParcPrivateSessionsTest.*` in
+[`tests/NativePrivateSessions`](../tests/NativePrivateSessions/private_sessions_unittest.cc)
+exercises the integration with real Profiles: claims deferring last-window
+teardown, abandoned sessions, refused admission of a closing or unservable
+session, and the host's view of a session Chromium is destroying. It reaches
+Chromium's `unit_tests` through `//parc:page_preferences_tests`, so no Chromium
+build file changes. The waiting paths need Parc's profile registry, which
+Chromium's shared unit-test processes cannot host, so the ledger test covers
+them.

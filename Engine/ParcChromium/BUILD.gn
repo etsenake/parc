@@ -109,7 +109,7 @@ source_set("page_preferences") {
 source_set("page_preferences_tests") {
   testonly = true
   sources = [ "page_preferences_unittest.cc" ]
-  deps = [ ":page_preferences", "//content/public/browser", "//content/public/common", "//content/test:test_support", "//testing/gtest", "//third_party/blink/public/common" ]
+  deps = [ ":page_preferences", "//content/public/browser", "//content/public/common", "//content/test:test_support", "//parc/tests/parc_native_private_sessions:unit_tests", "//testing/gtest", "//third_party/blink/public/common" ]
 }
 
 source_set("crash_reporter_client") {
@@ -229,6 +229,7 @@ source_set("browser") {
     "native/native_website_theme.h",
     "native/password_prompt.h",
     "native/password_prompt.mm",
+    "native/private_session_ledger.h",
     "native/sad_tab.h",
     "native/sad_tab.mm",
     "native/video_overlay_window.mm",

@@ -1,0 +1,19 @@
+assert(is_mac)
+
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "private_sessions_unittest.cc" ]
+  include_dirs = [ "//parc/native" ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/profiles:profile_manager",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/test:test_support",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//parc:browser",
+    "//testing/gtest",
+  ]
+}

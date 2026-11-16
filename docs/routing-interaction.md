@@ -30,5 +30,7 @@ destination's selection and visibility; a newly created destination appears
 without taking focus. Once an admitted route starts, failed destination creation
 reports failure rather than reconstructing the navigation from a URL.
 
-Overlapping private-window creation still needs shared Profile-level lifetime
-ownership; see [private navigation lifecycle](private-route-lifecycle.md).
+Private windows from every source, including the page menu's Open Link in
+Incognito Window and extensions, share one private session per profile whose
+lifetime covers each creation; see
+[private navigation lifecycle](private-route-lifecycle.md).

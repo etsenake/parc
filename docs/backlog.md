@@ -26,14 +26,6 @@ Finish assigned work first; explicit deferrals remain deferred.
   window.
   [Resizing](sidebar-resize.md), [Space management](space-management.md).
 
-## Routing
-
-- **ROUTE12:** overlapping private-window creation lacks a shared Profile-lifetime
-  reservation. Failed creation or last-window teardown can retire a context while
-  another creator still needs it. Add shared claims through creation and teardown.
-  Ordinary disposition and missing-destination fallback are implemented.
-  [Private lifecycle](private-route-lifecycle.md).
-
 ## Performance
 
 The specifically deferred Downloads investigation is [below](#deferred).

@@ -64,9 +64,11 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
   keyed-service shutdown requires Parc's ready answer. No observer can delay a deletion. Answered by
   `NativeBrowser`.
 - **`SetOTRProfileDestructionDeferral`** and its call-in **`DestroyUnusedOTRProfile`**: a private
-  window's profile survives while a native operation such as a tab transfer still needs it. Same
-  file; Parc calls the call-in from `native_browser.mm` when the operation ends. Answered by
-  `DeferNativeOTRProfileDestruction`.
+  window's profile survives while a native operation such as a tab transfer, or a private window
+  still being created, needs it. Same file; Parc calls the call-in from `native_browser.mm` when
+  the last operation or creation claim ends, or to end a session that a refused creation or a
+  Chromium request left without a window. Answered by `DeferNativeOTRProfileDestruction`; see
+  [private navigation lifecycle](private-route-lifecycle.md).
 - **`SetNativeProfileRemoval`, `SetNativeProfileDeletion`**: removing a profile in Settings is
   crash-safe and owns its disk cleanup. The hooks sit in `chrome/browser/profiles/profile_manager.cc`
   and `delete_profile_helper.cc`, whose unload, tombstone and destruction-complete steps are private.

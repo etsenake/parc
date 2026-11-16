@@ -10,6 +10,7 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/no_destructor.h"
+#include "base/scoped_observation.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/values.h"
 #include "base/task/sequenced_task_runner.h"
@@ -18,23 +19,37 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
 #include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/translate/core/browser/translate_pref_names.h"
+#include "native_browser.h"
 #include "native_profile_removal.h"
 #include "native_search.h"
 
 namespace parc {
 namespace {
+class PrivateSessionWatch final : public ProfileObserver {
+ public:
+  explicit PrivateSessionWatch(Profile& profile) { observation_.Observe(&profile); }
+  void OnOffTheRecordProfileCreated(Profile* off_the_record) override {
+    NominateNativePrivateSession(*off_the_record);
+  }
+  void OnProfileWillBeDestroyed(Profile*) override { observation_.Reset(); }
+
+ private:
+  base::ScopedObservation<Profile, ProfileObserver> observation_{this};
+};
 struct Record {
   base::WeakPtr<Profile> profile;
   std::unique_ptr<ScopedProfileKeepAlive> keep_alive;
   bool loading = true;
   NSError* failure = nil;
   std::vector<NativeProfileCallback> waiters;
+  std::unique_ptr<PrivateSessionWatch> private_sessions;
 };
 struct Registry {
   base::FilePath root;
@@ -86,15 +101,14 @@ void Initialized(const base::FilePath& path, Profile* profile) {
     record.profile.reset();
     record.keep_alive.reset();
   } else {
-    // Keep Chrome from restoring its own windows and browsing session.
     profile->GetPrefs()->SetInteger(prefs::kRestoreOnStartup,
                                     SessionStartupPref::kPrefValueNewTab);
+    record.private_sessions = std::make_unique<PrivateSessionWatch>(*profile);
     InitializeNativeSearch(*profile);
     if (state.initialize) state.initialize.Run(*profile);
   }
   record.loading = false;
   auto waiters = std::move(record.waiters);
-  // Acquire all deliveries before external callbacks can reenter removal.
   std::vector<NativeProfileLeasePtr> leases;
   for (size_t i = 0; i < waiters.size(); ++i)
     leases.push_back(record.failure ? nullptr : NativeLeaseForProfile(*profile));
@@ -107,7 +121,7 @@ void Initialized(const base::FilePath& path, Profile* profile) {
   }
   Changed();
 }
-}  // namespace
+}
 
 NativeProfileLease::NativeProfileLease(Profile& profile,
     std::unique_ptr<ScopedProfileKeepAlive> keep_alive)
@@ -260,4 +274,4 @@ void RegisterNativeProfilePrefs(PrefRegistrySimple* registry) {
   registry->SetDefaultPrefValue(prefs::kSigninAllowed, base::Value(false));
   registry->SetDefaultPrefValue(translate::prefs::kOfferTranslateEnabled, base::Value(false));
 }
-}  // namespace parc
+}

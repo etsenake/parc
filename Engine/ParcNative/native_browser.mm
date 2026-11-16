@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
+#include "base/supports_user_data.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
@@ -19,7 +20,11 @@
 #include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "components/tabs/public/tab_interface.h"
+#include "content/public/browser/page_navigator.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
+#include "ui/base/window_open_disposition.h"
 #include "native_appkit_host.h"
 #include "native_auxiliary_services.h"
 #include "native_browser_web_contents_delegate.h"
@@ -39,40 +44,76 @@ std::vector<std::unique_ptr<NativeBrowser>>& Records() {
   return *value;
 }
 
-// One entry per Browser construction, waiting for its constructor: admission's
-// accepted reservation, or null for an ordinary or test-built Browser. Creation
-// nests, so the newest belongs to the Browser now being constructed.
-std::vector<std::unique_ptr<PreparedNativeWindow>>& PendingWindows() {
-  static base::NoDestructor<std::vector<std::unique_ptr<PreparedNativeWindow>>>
-      value;
+struct PendingWindow {
+  std::unique_ptr<PreparedNativeWindow> window;
+  NativePrivateSessionClaim claim;
+};
+
+std::vector<PendingWindow>& PendingWindows() {
+  static base::NoDestructor<std::vector<PendingWindow>> value;
   return *value;
 }
 
-std::vector<base::WeakPtr<Profile>>& DeferredOTRProfiles() {
-  static base::NoDestructor<std::vector<base::WeakPtr<Profile>>> value;
-  return *value;
+using PrivateSessions = PrivateSessionLedger<NativePrivateSessionHost>;
+
+PrivateSessions& Sessions() {
+  CHECK(NSThread.isMainThread);
+  static NativePrivateSessionHost host;
+  static base::NoDestructor<PrivateSessions> sessions(host);
+  return *sessions;
 }
+
+bool session_retry_posted = false;
+
+Profile* PrimaryOTRProfileOf(Profile& parent) {
+  return parent.HasPrimaryOTRProfile()
+             ? parent.GetPrimaryOTRProfile(false)
+             : nullptr;
+}
+
+const char kPrivateSessionEndKey = 0;
+
+void PostPrivateSessionEnded(base::WeakPtr<Profile> parent) {
+  if (!base::SingleThreadTaskRunner::HasCurrentDefault()) {
+    return;
+  }
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(
+                     [](base::WeakPtr<Profile> parent) {
+                       if (parent) {
+                         Sessions().Ended(parent.get());
+                       }
+                     },
+                     std::move(parent)));
+}
+
+class PrivateSessionEnd final : public base::SupportsUserData::Data {
+ public:
+  explicit PrivateSessionEnd(Profile& parent) : parent_(parent.GetWeakPtr()) {}
+  ~PrivateSessionEnd() override { PostPrivateSessionEnded(parent_); }
+
+ private:
+  const base::WeakPtr<Profile> parent_;
+};
 
 NativeBrowserWindow& WindowOf(Browser& browser) {
   return *static_cast<NativeBrowserWindow*>(browser.GetWindow());
 }
-}  // namespace
+}
 
 DEFINE_USER_DATA(NativeBrowser);
 
-// static
 void NativeBrowser::OnBrowserCreated(Browser& browser) {
   auto& pending = PendingWindows();
   CHECK(!pending.empty());
-  std::unique_ptr<PreparedNativeWindow> reservation = std::move(pending.back());
+  PendingWindow entry = std::move(pending.back());
   pending.pop_back();
-  if (reservation) {
-    Records().push_back(
-        base::WrapUnique(new NativeBrowser(browser, std::move(reservation))));
+  if (entry.window) {
+    Records().push_back(base::WrapUnique(new NativeBrowser(
+        browser, std::move(entry.window), std::move(entry.claim))));
   }
 }
 
-// static
 void NativeBrowser::OnBrowserDestroyed(Browser& browser) {
   auto& records = Records();
   auto it = std::ranges::find(records, From(&browser),
@@ -80,26 +121,25 @@ void NativeBrowser::OnBrowserDestroyed(Browser& browser) {
   if (it == records.end()) {
     return;
   }
-  // Out of the registry before its destructor notifies engine ownership.
   std::unique_ptr<NativeBrowser> record = std::move(*it);
   records.erase(it);
 }
 
-// static
 NativeBrowser* NativeBrowser::From(BrowserWindowInterface* browser) {
   return browser ? Get(browser->GetUnownedUserDataHost()) : nullptr;
 }
 
-// static
 const NativeBrowser* NativeBrowser::From(
     const BrowserWindowInterface* browser) {
   return browser ? Get(browser->GetUnownedUserDataHost()) : nullptr;
 }
 
 NativeBrowser::NativeBrowser(Browser& browser,
-                             std::unique_ptr<PreparedNativeWindow> reservation)
+                             std::unique_ptr<PreparedNativeWindow> reservation,
+                             NativePrivateSessionClaim claim)
     : browser_(browser),
       reservation_(std::move(reservation)),
+      claim_(std::move(claim)),
       scoped_data_holder_(browser.GetUnownedUserDataHost(), *this) {}
 
 NativeBrowser::~NativeBrowser() {
@@ -107,7 +147,6 @@ NativeBrowser::~NativeBrowser() {
   NotifyNativeEngineOwnershipChanged();
 }
 
-// static
 std::unique_ptr<BrowserWindow, BrowserWindowDeleter>
 NativeBrowser::CreateWindow(BrowserWindowInterface* browser) {
   auto* native = From(browser);
@@ -120,25 +159,23 @@ NativeBrowser::CreateWindow(BrowserWindowInterface* browser) {
                               native->reservation_->Bind(*native->browser_)));
 }
 
-// static
 void NativeBrowser::OnRegistered(BrowserWindowInterface* browser) {
   auto* native = From(browser);
   if (!native) {
     return;
   }
   auto reservation = std::exchange(native->reservation_, {});
+  auto claim = std::move(native->claim_);
   CHECK(reservation);
   CHECK(WindowOf(*native->browser_)
             .AttachToNativeWindow(reservation->GetNativeWindow()));
 }
 
-// static
 bool NativeBrowser::DeletionReady(const BrowserWindowInterface* browser) {
   const auto* native = From(browser);
   return !native || native->deletion_ == Deletion::kReady;
 }
 
-// static
 bool NativeBrowser::DeferDeletion(BrowserWindowInterface* browser) {
   auto* native = From(browser);
   if (!native || native->deletion_ == Deletion::kReady) {
@@ -152,7 +189,6 @@ bool NativeBrowser::DeferDeletion(BrowserWindowInterface* browser) {
       *native->browser_,
       base::BindOnce(
           [](base::WeakPtr<BrowserWindowInterface> browser) {
-            // Never destroy the Browser on the service's final callback stack.
             base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
                 FROM_HERE,
                 base::BindOnce(
@@ -172,14 +208,12 @@ bool NativeBrowser::DeferDeletion(BrowserWindowInterface* browser) {
   return true;
 }
 
-// static
 ui::ColorProviderSource* NativeBrowser::ColorProviderSource(
     BrowserWindowInterface* browser) {
   auto* native = From(browser);
   return native ? &WindowOf(*native->browser_) : nullptr;
 }
 
-// static
 std::unique_ptr<BrowserWebContentsDelegate>
 NativeBrowser::CreateWebContentsDelegate(
     BrowserWindowInterface* browser,
@@ -196,7 +230,6 @@ NativeBrowser::CreateWebContentsDelegate(
       browser_ui_controller);
 }
 
-// static
 void NativeBrowser::SetAsDelegate(Browser& browser,
                                   content::WebContents& contents,
                                   bool set_delegate) {
@@ -214,15 +247,12 @@ void NativeBrowser::SetAsDelegate(Browser& browser,
   binding->SetBrowser(set_delegate ? &browser : nullptr);
 }
 
-// static
 void NativeBrowser::OnWebContentsCreated(BrowserWindowInterface* browser,
                                          content::WebContents& contents) {
   auto* native = From(browser);
   if (!native) {
     return;
   }
-  // Navigate starts the first load before inserting the tab. Its delegate
-  // callbacks during that load already belong to this Browser.
   contents.SetDelegate(BrowserWebContentsDelegate::From(&*native->browser_));
   SetAsDelegate(*native->browser_, contents, true);
 }
@@ -239,7 +269,6 @@ ScopedNativeBrowserCreation::~ScopedNativeBrowserCreation() {
   innermost_creation = outer_;
 }
 
-// static
 ScopedNativeBrowserCreation* ScopedNativeBrowserCreation::Claim() {
   if (!innermost_creation || innermost_creation->claimed_) {
     return nullptr;
@@ -263,33 +292,154 @@ size_t NativeBrowsersAlive() {
   return Records().size();
 }
 
+PrivateSessionUse NativePrivateSessionHost::Use(const Session& session) {
+  if (!session) {
+    return PrivateSessionUse::kGone;
+  }
+  if (session->ShutdownStarted()) {
+    return PrivateSessionUse::kDying;
+  }
+  auto* browsers = ProfileBrowserCollection::GetForProfile(session.get());
+  return browsers && !browsers->IsEmpty() ? PrivateSessionUse::kOpen
+                                          : PrivateSessionUse::kIdle;
+}
+
+bool NativePrivateSessionHost::HasOperations(const Session& session) {
+  return session && NativeProfileHasOperations(*session);
+}
+
+void NativePrivateSessionHost::Destroy(const Session& session) {
+  if (session) {
+    parc_hooks::DestroyUnusedOTRProfile(*session);
+  }
+}
+
+void NativePrivateSessionHost::ScheduleRetry() {
+  if (session_retry_posted ||
+      !base::SingleThreadTaskRunner::HasCurrentDefault()) {
+    return;
+  }
+  session_retry_posted = true;
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce([] {
+        session_retry_posted = false;
+        Sessions().Retry();
+      }));
+}
+
+bool NativePrivateSessionHost::Dying(Key parent) {
+  Profile* off_the_record = PrimaryOTRProfileOf(*parent);
+  return off_the_record && off_the_record->ShutdownStarted();
+}
+
+void NativePrivateSessionHost::WatchEnd(Key parent) {
+  Profile* off_the_record = PrimaryOTRProfileOf(*parent);
+  if (!off_the_record) {
+    PostPrivateSessionEnded(parent->GetWeakPtr());
+    return;
+  }
+  if (!off_the_record->GetUserData(&kPrivateSessionEndKey)) {
+    off_the_record->SetUserData(&kPrivateSessionEndKey,
+                                std::make_unique<PrivateSessionEnd>(*parent));
+  }
+}
+
+void NativePrivateSessionHost::Finish(Waiter waiter, bool settled) {
+  std::move(waiter).Run(settled);
+}
+
 bool DeferNativeOTRProfileDestruction(Profile& profile) {
-  if (!NativeProfileHasOperations(profile)) {
-    return false;
-  }
-  auto& deferred = DeferredOTRProfiles();
-  if (std::ranges::none_of(deferred, [&](const base::WeakPtr<Profile>& entry) {
-        return entry.get() == &profile;
-      })) {
-    deferred.push_back(profile.GetWeakPtr());
-  }
-  return true;
+  return profile.IsOffTheRecord() &&
+         Sessions().Defer(profile.GetOriginalProfile(), profile.GetWeakPtr());
 }
 
 void RetryNativeOTRProfileDestruction() {
-  // Destruction below can reenter the registry and this function.
-  auto deferred = std::exchange(DeferredOTRProfiles(), {});
-  for (auto& profile : deferred) {
-    if (!profile) {
-      continue;
-    }
-    if (NativeProfileHasOperations(*profile)) {
-      DeferredOTRProfiles().push_back(profile);
-    } else if (ProfileBrowserCollection::GetForProfile(profile.get())
-                   ->IsEmpty()) {
-      parc_hooks::DestroyUnusedOTRProfile(*profile);
-    }
+  Sessions().Retry();
+}
+
+NativePrivateSessionClaim ClaimNativePrivateSession(Profile& parent) {
+  CHECK(!parent.IsOffTheRecord());
+  return Sessions().Acquire(&parent);
+}
+
+void AwaitNativePrivateSession(NativeProfileLeasePtr lease,
+                               base::OnceCallback<void(Profile*)> ready) {
+  CHECK(lease);
+  Profile* parent = lease->profile();
+  if (!parent || parent->IsOffTheRecord()) {
+    std::move(ready).Run(nullptr);
+    return;
   }
+  Sessions().Await(
+      ClaimNativePrivateSession(*parent),
+      base::BindOnce(
+          [](NativeProfileLeasePtr lease,
+             base::OnceCallback<void(Profile*)> ready, bool settled) {
+            std::move(ready).Run(settled ? lease->profile() : nullptr);
+          },
+          std::move(lease), std::move(ready)));
+}
+
+void NominateNativePrivateSession(Profile& off_the_record) {
+  if (off_the_record.IsPrimaryOTRProfileWithRegularParent() &&
+      !off_the_record.ShutdownStarted()) {
+    Sessions().Nominate(off_the_record.GetOriginalProfile(),
+                        off_the_record.GetWeakPtr());
+  }
+}
+
+void SetNativePrivateSessionsClosing(bool closing) {
+  Sessions().SetClosing(closing);
+}
+
+bool NativePrivateSessionsIdle() {
+  return Sessions().Idle();
+}
+
+bool DeferNativePrivateOpen(
+    content::WebContents& source,
+    const content::OpenURLParams& params,
+    base::OnceCallback<void(content::NavigationHandle&)>&
+        navigation_handle_callback) {
+  if (params.disposition != WindowOpenDisposition::OFF_THE_RECORD) {
+    return false;
+  }
+  Profile* parent = Profile::FromBrowserContext(source.GetBrowserContext());
+  Profile* off_the_record =
+      parent->IsOffTheRecord() ? nullptr : PrimaryOTRProfileOf(*parent);
+  if (!off_the_record || !off_the_record->ShutdownStarted()) {
+    return false;
+  }
+  content::RenderFrameHost* frame = content::RenderFrameHost::FromID(
+      params.source_render_process_id, params.source_render_frame_id);
+  if (!frame) {
+    frame = source.GetPrimaryMainFrame();
+  }
+  auto lease = NativeLeaseForProfile(*parent);
+  if (!frame || content::WebContents::FromRenderFrameHost(frame) != &source ||
+      !lease || lease->profile() != parent) {
+    return false;
+  }
+  AwaitNativePrivateSession(
+      std::move(lease),
+      base::BindOnce(
+          [](base::WeakPtr<content::WebContents> source,
+             content::WeakDocumentPtr document, content::OpenURLParams params,
+             base::OnceCallback<void(content::NavigationHandle&)> callback,
+             Profile* parent) {
+            content::RenderFrameHost* frame =
+                document.AsRenderFrameHostIfValid();
+            if (parent && source && frame && frame->IsActive() &&
+                content::WebContents::FromRenderFrameHost(frame) ==
+                    source.get() &&
+                Profile::FromBrowserContext(source->GetBrowserContext()) ==
+                    parent) {
+              source->OpenURL(params, std::move(callback));
+            }
+          },
+          source.GetWeakPtr(), frame->GetWeakDocumentPtr(), params,
+          std::move(navigation_handle_callback)));
+  return true;
 }
 
 bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
@@ -300,10 +450,14 @@ bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
   std::unique_ptr<PreparedNativeWindow> window =
       creation ? std::move(creation->window_) : nullptr;
   Profile& profile = *params.profile;
-  if (!GetNativeRoute(profile)) {
+  const bool private_session = profile.IsPrimaryOTRProfileWithRegularParent();
+  if (!GetNativeRoute(profile) &&
+      (!GetNativeRoute(*profile.GetOriginalProfile()) || !private_session ||
+       window)) {
     if (GetNativeRoute(*profile.GetOriginalProfile())) {
       NativeCreationFailed(
           profile, "This private profile has no registered native window route");
+      NominateNativePrivateSession(profile);
       return false;
     }
     if (window) {
@@ -314,7 +468,7 @@ bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
       LOG(ERROR) << "Native opener cannot create an unregistered profile window";
       return false;
     }
-    PendingWindows().push_back(nullptr);
+    PendingWindows().push_back({});
     return true;
   }
   auto weak_profile = profile.GetWeakPtr();
@@ -322,8 +476,18 @@ bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
     if (weak_profile) {
       NativeCreationFailed(*weak_profile, message);
     }
+    if (weak_profile && private_session) {
+      NominateNativePrivateSession(*weak_profile);
+    }
     return false;
   };
+  if (profile.IsOffTheRecord() && profile.ShutdownStarted()) {
+    return fail("This private session is closing");
+  }
+  NativePrivateSessionClaim claim;
+  if (private_session) {
+    claim = ClaimNativePrivateSession(*profile.GetOriginalProfile());
+  }
   if (params.window) {
     return fail("Native route cannot use a supplied Chrome window");
   }
@@ -359,12 +523,12 @@ bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
   if (!weak_profile || !window || !window->CanBind(profile, params.type)) {
     return fail("Native window reservation expired or was already consumed");
   }
-  PendingWindows().push_back(std::move(window));
+  PendingWindows().push_back({std::move(window), std::move(claim)});
   return true;
 }
 
 void SkipNativeBrowserAdmission() {
-  PendingWindows().push_back(nullptr);
+  PendingWindows().push_back({});
 }
 
 void PrepareNativeDevtoolsContents(content::WebContents* inspected,
@@ -394,4 +558,4 @@ std::optional<bool> HandleNativeDevtoolsKey(
   }
   return HandleAppKitDevtoolsKey(inspected, *tools, event);
 }
-}  // namespace parc
+}

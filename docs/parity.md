@@ -20,7 +20,7 @@ remaining effort, speed, or additions outside that old checklist.
 
 | Area | Old headline | Reconciled old checklist |
 |---|---:|---|
-| Link destinations | 92.3% | 12/13, still 92.3%; overlapping private-window openings/closings remain. |
+| Link destinations | 92.3% | 12/13, still 92.3%; the open item, overlapping private-window openings/closings, has since been fixed. |
 | Windows | 71.4% | 10/14, still 71.4%; each remaining broad item contains a specific limitation. |
 | Data and credentials | 75.0% | 15/16, 93.8%; additional browser-import formats remain. |
 | Folders | 65.2% | 19/23, 82.6%; copying, selection, document moves and later folder restoration remain. |
