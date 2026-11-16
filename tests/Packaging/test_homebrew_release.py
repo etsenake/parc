@@ -100,12 +100,31 @@ class HomebrewReleaseTests(unittest.TestCase):
         self.release["assets"].append({"name": "Parc-1.0.1-arm64.dmg", "digest": "sha256:" + digest})
         with patch.object(publisher.dmg_tool, "verify_dmg") as verify:
             self.assertEqual(publisher.verify_dmg_asset(self.release, image, self.report, Path(self.temp.name)), digest)
-            verify.assert_called_once()
+            verify.assert_called_once_with(image, self.report, Path(self.temp.name), layout_expected=True)
         image.write_bytes(b"changed dmg")
         with patch.object(publisher.dmg_tool, "verify_dmg") as verify:
             with self.assertRaisesRegex(ValueError, "DMG differs"):
                 publisher.verify_dmg_asset(self.release, image, self.report, Path(self.temp.name))
             verify.assert_not_called()
+
+    def test_install_window_is_required_when_the_release_source_ships_it(self):
+        source = Path(self.temp.name) / "source"
+        art = source / publisher.dmg_tool.layout.ART_FOLDER / publisher.dmg_tool.layout.ARTWORK[0]
+        git = lambda *args: subprocess.run(["git", "-C", str(source), *args], check=True, capture_output=True,
+                                           text=True).stdout.strip()
+        source.mkdir()
+        git("init", "-q")
+        git("-c", "user.name=Parc", "-c", "user.email=parc@example.invalid", "commit", "-q", "--allow-empty", "-m", "before")
+        before = git("rev-parse", "HEAD")
+        art.parent.mkdir(parents=True)
+        art.write_bytes(b"art")
+        git("add", ".")
+        git("-c", "user.name=Parc", "-c", "user.email=parc@example.invalid", "commit", "-q", "-m", "after")
+        after = git("rev-parse", "HEAD")
+        with patch.object(publisher, "ROOT", source):
+            self.assertFalse(publisher.ships_install_window(before))
+            self.assertTrue(publisher.ships_install_window(after))
+            self.assertFalse(publisher.ships_install_window("f" * 40))
 
     def test_wrong_production_team_rejected_even_if_notary_team_matches(self):
         self.report["signing_team"] = self.report["notarization"]["team"] = "OTHER12345"

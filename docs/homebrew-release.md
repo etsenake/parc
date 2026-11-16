@@ -45,8 +45,9 @@ remain in the normal local Keychain.
 
 The master calls `scripts/publish-homebrew.py` with `--artifact-only --resume`
 and the run's signed `--appcast`. This validates published ZIP/DMG hashes,
-tag/source/version, package report, mounted-app signatures and Apple ticket,
-then promotes the stable release and publishes the cask.
+tag/source/version, package report, mounted-app signatures, Apple ticket and,
+when the release's source includes it, the install window's layout, then
+promotes the stable release and publishes the cask.
 
 The appcast comes from `scripts/appcast.py`, offers the exact public ZIP and is
 mirrored with the ZIP and DMG into `etsenake/parc-releases`. Existing differing

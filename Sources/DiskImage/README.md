@@ -89,5 +89,7 @@ Signing, notarization, stapling and receipts then run exactly as before.
 
 The check runs before submission to Apple and again on the downloaded release
 asset. The DMG receipt records that the image has an install window, so a
-resumed image from before it skips only the layout check. Publishing checks against the current checkout's layout, so change the
+resumed image from before it skips only the layout check, and
+`publish-homebrew.py` does the same for a release whose source predates this
+folder. Publishing checks against the current checkout's layout, so change the
 layout between releases rather than while one is being published.

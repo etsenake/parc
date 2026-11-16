@@ -175,7 +175,12 @@ def promote_verified_artifacts(release, notes):
         raise ValueError("Release promotion changed immutable provenance or did not complete")
 
 
-def verify_dmg_asset(release, dmg, report, folder):
+def ships_install_window(commit):
+    art = f"{commit}:{dmg_tool.layout.ART_FOLDER}/{dmg_tool.layout.ARTWORK[0]}"
+    return subprocess.run(["git", "cat-file", "-e", art], cwd=ROOT, capture_output=True).returncode == 0
+
+
+def verify_dmg_asset(release, dmg, report, folder, layout_expected=True):
     filename = f'Parc-{report["app_version"]["version"]}-arm64.dmg'
     assets = [asset for asset in release["assets"] if asset["name"] == filename]
     if len(assets) != 1 or not re.fullmatch(r"sha256:[0-9a-f]{64}", assets[0].get("digest", "")):
@@ -184,7 +189,7 @@ def verify_dmg_asset(release, dmg, report, folder):
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
     if "sha256:" + digest != assets[0]["digest"]:
         raise ValueError("Downloaded DMG differs from GitHub's digest")
-    dmg_tool.verify_dmg(dmg, report, folder)
+    dmg_tool.verify_dmg(dmg, report, folder, layout_expected=layout_expected)
     return digest
 
 
@@ -295,7 +300,7 @@ def main():
             dmg = Path(temporary) / "Parc.dmg"
             github("release", "download", args.tag, "--repo", REPOSITORY,
                 "--pattern", f'Parc-{app_version["version"]}-arm64.dmg', "--output", str(dmg))
-            digest = verify_dmg_asset(release, dmg, report, Path(temporary))
+            digest = verify_dmg_asset(release, dmg, report, Path(temporary), ships_install_window(commit))
             version = app_version["version"]
             notes = release_notes.text(json.loads(run("git", "show", commit + ":release-notes.json", cwd=ROOT)), version)
             public_dmg = Path(temporary) / f"Parc-{version}-arm64.dmg"
