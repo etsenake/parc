@@ -459,7 +459,7 @@
     {
       "source": "Engine/ParcNative/site_permissions.mm",
       "target": "parc/native/site_permissions.mm",
-      "sha256": "518c584860ecf42c460144b781ce214c4b911c4c175a646db01394d2cdcdc2e3"
+      "sha256": "f51bd6a91f9db8b9f5ca0fd28f694345110ebaf1aa8c507afb09c75fe7b62168"
     },
     {
       "source": "tests/NativeSitePermissions/BUILD.gn",

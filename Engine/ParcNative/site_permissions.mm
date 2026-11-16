@@ -15,9 +15,10 @@
 #include "base/mac/mac_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
-#include "base/scoped_multi_source_observation.h"
+#include "base/scoped_observation.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "chrome/browser/notifications/notification_display_service.h"
 #include "chrome/browser/notifications/notification_display_service_factory.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
@@ -33,7 +34,10 @@
 #include "components/url_formatter/elide_url.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/notification_database_data.h"
+#include "content/public/browser/platform_notification_context.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/visibility.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
@@ -244,8 +248,136 @@ void OpenSystemNotificationSettings() {
       base::SysNSStringToUTF8(NSBundle.mainBundle.bundleIdentifier ?: @""));
 }
 
-class SystemNotificationRequests final
+constexpr base::TimeDelta kHeldNotificationWindow = base::Minutes(1);
+
+bool IsSystemNotificationsPending() {
+  return g_system_notifications_requested ||
+         g_system_notifications == UNAuthorizationStatusNotDetermined;
+}
+
+std::unique_ptr<NotificationCommon::Metadata> CopyNotificationMetadata(
+    const NotificationCommon::Metadata* metadata) {
+  if (auto* persistent = PersistentNotificationMetadata::From(metadata)) {
+    auto copy = std::make_unique<PersistentNotificationMetadata>();
+    copy->service_worker_scope = persistent->service_worker_scope;
+    copy->is_suspicious = persistent->is_suspicious;
+    copy->skip_ua_buttons = persistent->skip_ua_buttons;
+    return copy;
+  }
+  if (auto* page = NonPersistentNotificationMetadata::From(metadata)) {
+    auto copy = std::make_unique<NonPersistentNotificationMetadata>();
+    copy->document_url = page->document_url;
+    return copy;
+  }
+  return nullptr;
+}
+
+class HeldSystemNotifications final
     : public NotificationDisplayService::Observer {
+ public:
+  HeldSystemNotifications(Profile& profile,
+                          NotificationDisplayService& service)
+      : profile_(profile.GetWeakPtr()), service_(&service) {
+    observation_.Observe(&service);
+  }
+
+  NotificationDisplayService* service() const { return service_; }
+
+  void Confirm() {
+    for (auto& held : held_) {
+      held.confirmed = true;
+    }
+  }
+
+  void Drop() { held_.clear(); }
+
+  void Show() {
+    auto held = std::exchange(held_, {});
+    for (auto& entry : held) {
+      if (!entry.confirmed || !service_ || !profile_ ||
+          base::TimeTicks::Now() - entry.held_at > kHeldNotificationWindow) {
+        continue;
+      }
+      entry.notification.set_renotify(true);
+      if (entry.type != NotificationHandler::Type::WEB_PERSISTENT) {
+        Display(std::move(entry), true, content::NotificationDatabaseData());
+        continue;
+      }
+      const GURL origin = entry.notification.origin_url();
+      const std::string id = entry.notification.id();
+      profile_->GetStoragePartitionForUrl(origin)
+          ->GetPlatformNotificationContext()
+          ->ReadNotificationDataAndRecordInteraction(
+              id, origin,
+              content::PlatformNotificationContext::Interaction::NONE,
+              base::BindOnce(&HeldSystemNotifications::Display,
+                             weak_factory_.GetWeakPtr(), std::move(entry)));
+    }
+  }
+
+ private:
+  struct Held {
+    NotificationHandler::Type type;
+    message_center::Notification notification;
+    std::unique_ptr<NotificationCommon::Metadata> metadata;
+    base::TimeTicks held_at;
+    bool confirmed;
+  };
+
+  void Display(Held entry,
+               bool still_open,
+               const content::NotificationDatabaseData&) {
+    if (still_open && service_) {
+      service_->Display(entry.type, entry.notification,
+                        std::move(entry.metadata));
+    }
+  }
+
+  void Forget(const std::string& id) {
+    const base::TimeTicks now = base::TimeTicks::Now();
+    std::erase_if(held_, [&](const Held& held) {
+      return held.notification.id() == id ||
+             now - held.held_at > kHeldNotificationWindow;
+    });
+  }
+
+  void OnNotificationDisplayed(
+      const message_center::Notification& notification,
+      const NotificationCommon::Metadata* const metadata) override {
+    if (notification.notifier_id().type !=
+        message_center::NotifierType::WEB_PAGE) {
+      return;
+    }
+    Forget(notification.id());
+    auto copy = CopyNotificationMetadata(metadata);
+    if (copy && !notification.notifier_id().web_app_id &&
+        !notification.never_timeout() &&
+        notification.type() != message_center::NOTIFICATION_TYPE_PROGRESS &&
+        (IsSystemNotificationsPending() || !g_system_notifications)) {
+      const NotificationHandler::Type type = copy->type;
+      held_.push_back({type, notification, std::move(copy),
+                       base::TimeTicks::Now(), IsSystemNotificationsPending()});
+    }
+    RequestSystemNotificationsIfUndetermined();
+  }
+  void OnNotificationClosed(const std::string& id) override { Forget(id); }
+  void OnNotificationDisplayServiceDestroyed(
+      NotificationDisplayService*) override {
+    observation_.Reset();
+    held_.clear();
+    service_ = nullptr;
+  }
+
+  base::WeakPtr<Profile> profile_;
+  raw_ptr<NotificationDisplayService> service_;
+  std::vector<Held> held_;
+  base::ScopedObservation<NotificationDisplayService,
+                          NotificationDisplayService::Observer>
+      observation_{this};
+  base::WeakPtrFactory<HeldSystemNotifications> weak_factory_{this};
+};
+
+class SystemNotificationRequests final {
  public:
   static SystemNotificationRequests& Get() {
     static base::NoDestructor<SystemNotificationRequests> requests;
@@ -257,29 +389,47 @@ class SystemNotificationRequests final
       return;
     }
     auto* service = NotificationDisplayServiceFactory::GetForProfile(profile);
-    if (service && !observations_.IsObservingSource(service)) {
-      observations_.AddObservation(service);
+    if (!service) {
+      return;
+    }
+    std::erase_if(watches_,
+                  [](const auto& watch) { return !watch->service(); });
+    if (std::ranges::none_of(watches_, [service](const auto& watch) {
+          return watch->service() == service;
+        })) {
+      watches_.push_back(
+          std::make_unique<HeldSystemNotifications>(*profile, *service));
     }
   }
 
  private:
-  void OnNotificationDisplayed(
-      const message_center::Notification& notification,
-      const NotificationCommon::Metadata* const) override {
-    if (notification.notifier_id().type ==
-        message_center::NotifierType::WEB_PAGE) {
-      RequestSystemNotificationsIfUndetermined();
+  friend base::NoDestructor<SystemNotificationRequests>;
+  SystemNotificationRequests()
+      : subscription_(SystemPermissionObservers().Add(base::BindRepeating(
+            &SystemNotificationRequests::Settle, base::Unretained(this)))) {}
+
+  void Settle() {
+    if (!g_system_notifications) {
+      return;
+    }
+    for (auto& watch : watches_) {
+      switch (*g_system_notifications) {
+        case UNAuthorizationStatusNotDetermined:
+          watch->Confirm();
+          break;
+        case UNAuthorizationStatusAuthorized:
+        case UNAuthorizationStatusProvisional:
+          watch->Show();
+          break;
+        default:
+          watch->Drop();
+          break;
+      }
     }
   }
-  void OnNotificationClosed(const std::string&) override {}
-  void OnNotificationDisplayServiceDestroyed(
-      NotificationDisplayService* service) override {
-    observations_.RemoveObservation(service);
-  }
 
-  base::ScopedMultiSourceObservation<NotificationDisplayService,
-                                     NotificationDisplayService::Observer>
-      observations_{this};
+  std::vector<std::unique_ptr<HeldSystemNotifications>> watches_;
+  base::CallbackListSubscription subscription_;
 };
 
 void ShowSystemNotificationsDeniedSheet(NSWindow* window) {

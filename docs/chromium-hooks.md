@@ -53,9 +53,12 @@ rg -n 'EXPORT .*Set\w+\(' Engine/ParcHost/integration/*.h Engine/ParcNative/fair
 python3 -c "import json; print(len(json.load(open('Engine/ParcHost/overlay.json'))['patches']))"
 ```
 
-The second command lists the 64 header setters plus the four layer setters and three AirPlay
-call-ins the patches define; per-object member setters are indented and left out. Blink's
-player-move setter is defined in Parc's own `parc_media_element.cc`, so only the third finds it.
+The first prints 64. The second lists the 65 setters the patches define: 63 header setters plus
+the worker-identity and AirPlay playback-target-handler layer setters; per-object member setters
+are indented and left out. The header's `SetFairPlayCdmCreator`, the Widevine and Safari-identity
+setters and the AirPlay call-ins are defined in Parc's own `parc_media_routing.cc`, and Blink's
+player-move setter in `parc_media_element.cc`. The third prints 8 lines: the five layer setters
+and the three AirPlay call-ins.
 
 ## The areas
 
