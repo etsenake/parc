@@ -1,6 +1,115 @@
 {
   "releases": [
     {
+      "version": "2.9.0",
+      "build": 43,
+      "date": "2026-11-17",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "library",
+          "summary": "Let the Library's menu items glide out one after another instead of sprinting past you",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "command-bar",
+          "summary": "Let \"github\" plus Space be a plain old search instead of teleporting you into GitHub's own search box, while Tab still takes you there",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "search",
+          "summary": "Show the twenty websites cosplaying as search engines out of the search engine menu, and let Tab search LinkedIn and Wikipedia right from their own pages",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "extensions",
+          "summary": "Let extension popups wait until they're drawn, then glide in softly and drift off when closed, instead of blinking in half-ready and vanishing",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "command-bar",
+          "summary": "Fill in just the website when you type part of its address, instead of the clingy sign-in page it forwards you to every day",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "extensions",
+          "summary": "Hang extension popups just below the button you clicked, whether it's in the sidebar, a toolbar or either half of a stacked split, instead of parking them on top of it or over the other pane",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "command-bar",
+          "summary": "Let the bar remember what you actually pick, so typing \"okta\" stops playing dumb and leads with the page you always choose",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "command-bar",
+          "summary": "Trim long result links down to the site and path, light up the bits you typed, and fold repeat sign-in pages into one row instead of a wall of login parameters",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "command-bar",
+          "summary": "Keep what you're typing in view while a long completion trails off softly to the right, with the page's title tagging along in grey",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "extensions",
+          "summary": "Let extension popups stretch and tuck in smoothly when their contents grow or shrink, instead of hiccuping to the new size in one go",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "command-bar",
+          "summary": "Type a few words from any page's title and the bar sniffs it out of your open tabs, your archive or last month's browsing, and archived tabs hop straight back in when you pick them",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "library",
+          "summary": "Let the Library's side tiles take a breath when you click them, with icons that hop at an easy amble, highlights that glide in and out, and pages that fade in instead of slamming the door",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "extensions",
+          "summary": "Light up the extension button you clicked and give its icon a little Dock-style hop until the popup shows up, so slow popups stop pretending they didn't hear you",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "search",
+          "summary": "Let Tab borrow a site's own search right on pages like GitLab, march site-search defaults back to Google, and teach Parc to remember the site searches you binned while quietly restocking the ones it fumbled",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "library",
+          "summary": "Keep the Media grid in two tidy columns however you reopen the Library, and stop thumbnails from ghosting into blank tiles when you hop between Library pages and back",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "extensions",
+          "summary": "Teach pinned extension buttons in page toolbars to glow exactly as bright as the Site Control Center button beside them, so dark mode stops playing favourites",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "media",
+          "summary": "Let videos and calls stay put when you click into the app sharing your split screen, so picture in picture only pops out once Parc is mostly out of sight instead of the moment it blinks",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.8.0",
       "build": 42,
       "date": "2026-11-16",

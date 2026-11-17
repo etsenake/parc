@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.9.0 (2026-11-17)
+
+### New
+
+- **command-bar:** Type a few words from any page's title and the bar sniffs it out of your open tabs, your archive or last month's browsing, and archived tabs hop straight back in when you pick them
+
+### Fixed
+
+- **library:** Let the Library's menu items glide out one after another instead of sprinting past you
+- **command-bar:** Let "github" plus Space be a plain old search instead of teleporting you into GitHub's own search box, while Tab still takes you there
+- **search:** Show the twenty websites cosplaying as search engines out of the search engine menu, and let Tab search LinkedIn and Wikipedia right from their own pages
+- **extensions:** Let extension popups wait until they're drawn, then glide in softly and drift off when closed, instead of blinking in half-ready and vanishing
+- **command-bar:** Fill in just the website when you type part of its address, instead of the clingy sign-in page it forwards you to every day
+- **extensions:** Hang extension popups just below the button you clicked, whether it's in the sidebar, a toolbar or either half of a stacked split, instead of parking them on top of it or over the other pane
+- **command-bar:** Let the bar remember what you actually pick, so typing "okta" stops playing dumb and leads with the page you always choose
+- **command-bar:** Trim long result links down to the site and path, light up the bits you typed, and fold repeat sign-in pages into one row instead of a wall of login parameters
+- **command-bar:** Keep what you're typing in view while a long completion trails off softly to the right, with the page's title tagging along in grey
+- **extensions:** Let extension popups stretch and tuck in smoothly when their contents grow or shrink, instead of hiccuping to the new size in one go
+- **library:** Let the Library's side tiles take a breath when you click them, with icons that hop at an easy amble, highlights that glide in and out, and pages that fade in instead of slamming the door
+- **extensions:** Light up the extension button you clicked and give its icon a little Dock-style hop until the popup shows up, so slow popups stop pretending they didn't hear you
+- **search:** Let Tab borrow a site's own search right on pages like GitLab, march site-search defaults back to Google, and teach Parc to remember the site searches you binned while quietly restocking the ones it fumbled
+- **library:** Keep the Media grid in two tidy columns however you reopen the Library, and stop thumbnails from ghosting into blank tiles when you hop between Library pages and back
+- **extensions:** Teach pinned extension buttons in page toolbars to glow exactly as bright as the Site Control Center button beside them, so dark mode stops playing favourites
+- **media:** Let videos and calls stay put when you click into the app sharing your split screen, so picture in picture only pops out once Parc is mostly out of sight instead of the moment it blinks
+
 ## 2.8.0 (2026-11-16)
 
 ### New
