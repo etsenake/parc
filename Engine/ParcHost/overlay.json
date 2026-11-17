@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 781,
+  "version": 782,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -194,17 +194,17 @@
     {
       "source": "Engine/ParcNative/extension_popup.mm",
       "target": "parc/native/extension_popup.mm",
-      "sha256": "5d6d7de304cf2d9cbb4c20cb386c7174ae8d6520b22aade8c8a6984abe20d491"
+      "sha256": "74fb064c6b6562b1d150f637b845befcb98285b7163c601fd449249b8a836e21"
     },
     {
       "source": "Engine/ParcNative/extension_popup_presenter.h",
       "target": "parc/native/extension_popup_presenter.h",
-      "sha256": "c36be380b08cf8b62ff7af0d3300a4a773f0f40a424fe5ceb1bcd6bdc2fb492b"
+      "sha256": "b1b7ab30c6e88a73cc20f9585e3417dfadbddae562fd9d00c6db807a3202e95e"
     },
     {
       "source": "Engine/ParcNative/extension_popup_presenter.mm",
       "target": "parc/native/extension_popup_presenter.mm",
-      "sha256": "9fd565c678ef604264285e0897ce100515b3dc22428e065e1318282b003518fa"
+      "sha256": "68b96c04dda8e517a3d7ec11ee96acfea70ef5869d7debec4241323b685ba974"
     },
     {
       "source": "tests/NativeExtensionPopup/BUILD.gn",

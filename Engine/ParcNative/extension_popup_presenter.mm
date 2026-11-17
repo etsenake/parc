@@ -12,6 +12,7 @@ constexpr NSTimeInterval kRevealSettle = 0.034;
 constexpr NSTimeInterval kRevealLimit = 0.15;
 constexpr NSTimeInterval kOpenDuration = 0.2;
 constexpr NSTimeInterval kCloseDuration = 0.15;
+constexpr NSTimeInterval kResizeDuration = 0.18;
 constexpr NSTimeInterval kMotionInterval = 1.0 / 120;
 constexpr CGFloat kOpenLift = 8;
 constexpr CGFloat kCloseLift = 4;
@@ -25,6 +26,36 @@ CGFloat EaseOut(NSTimeInterval elapsed, NSTimeInterval duration) {
 }
 NSTimeInterval Now() {
   return NSProcessInfo.processInfo.systemUptime;
+}
+CGFloat Glide(CGFloat from, CGFloat to, CGFloat eased) {
+  if (from == to) {
+    return to;
+  }
+  return std::clamp(std::round(from + (to - from) * eased), std::min(from, to),
+                    std::max(from, to));
+}
+void GlideAxis(CGFloat fromMin,
+               CGFloat fromLength,
+               CGFloat toMin,
+               CGFloat toLength,
+               CGFloat eased,
+               CGFloat* min,
+               CGFloat* length) {
+  const CGFloat fromMax = fromMin + fromLength;
+  const CGFloat toMax = toMin + toLength;
+  if (fromMin == toMin || fromMax == toMax) {
+    *length = Glide(fromLength, toLength, eased);
+    *min = fromMin == toMin ? toMin : toMax - *length;
+    return;
+  }
+  const CGFloat low =
+      std::clamp(std::ceil(fromMin + (toMin - fromMin) * eased),
+                 std::min(fromMin, toMin), std::max(fromMin, toMin));
+  const CGFloat high =
+      std::clamp(std::floor(fromMax + (toMax - fromMax) * eased),
+                 std::min(fromMax, toMax), std::max(fromMax, toMax));
+  *min = low;
+  *length = std::max(high - low, CGFloat(0));
 }
 }
 
@@ -65,6 +96,43 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
     settled = std::max(settled, resized);
   }
   return std::min(limit, settled + kRevealSettle);
+}
+
+PCExtensionPopupResizeFrame PCExtensionPopupResizeMotion(NSTimeInterval elapsed,
+                                                         NSRect from,
+                                                         NSRect to) {
+  if (!std::isfinite(elapsed) || elapsed >= kResizeDuration) {
+    return {to, YES};
+  }
+  const CGFloat eased = EaseOut(elapsed, kResizeDuration);
+  NSRect frame;
+  GlideAxis(NSMinX(from), NSWidth(from), NSMinX(to), NSWidth(to), eased,
+            &frame.origin.x, &frame.size.width);
+  GlideAxis(NSMinY(from), NSHeight(from), NSMinY(to), NSHeight(to), eased,
+            &frame.origin.y, &frame.size.height);
+  return {frame, NO};
+}
+
+PCExtensionPopupResize PCExtensionPopupRetargetResize(
+    PCExtensionPopupResize resize,
+    NSRect resting,
+    NSRect target,
+    NSTimeInterval now,
+    BOOL reduceMotion) {
+  const BOOL moving = std::isfinite(resize.start);
+  if (reduceMotion || !std::isfinite(now)) {
+    return {target, target, NAN};
+  }
+  if (moving && NSEqualRects(resize.to, target)) {
+    return resize;
+  }
+  const NSRect from =
+      moving
+          ? PCExtensionPopupResizeMotion(now - resize.start, resize.from,
+                                         resize.to)
+                .frame
+          : resting;
+  return {from, target, NSEqualRects(from, target) ? NAN : now};
 }
 
 @interface PCExtensionPopupAnchor ()
@@ -115,8 +183,7 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
   NSTimeInterval _paintedAt;
   NSTimeInterval _resizedAt;
   CGFloat _lift;
-  NSPoint _resting;
-  NSPoint _parentResting;
+  PCExtensionPopupResize _resize;
   CGFloat _fromAlpha;
   CGFloat _fromLift;
   NSTimer* _revealTimer;
@@ -126,6 +193,7 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
 @end
 @implementation PCExtensionPopupPresenter
 @synthesize extensionIdentifier = _extensionIdentifier;
+@synthesize backdropColor = _backdropColor;
 - (instancetype)initWithParentWindow:(NSWindow*)parent
                             pageHost:(PCNativePageHost*)page
                               anchor:(PCExtensionPopupAnchor* (^)(void))anchor
@@ -142,6 +210,7 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
     _shownAt = NAN;
     _paintedAt = NAN;
     _resizedAt = NAN;
+    _resize = {NSZeroRect, NSZeroRect, NAN};
   }
   return self;
 }
@@ -157,7 +226,45 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
 - (BOOL)userHasMovedWindow {
   return _userHasMovedWindow;
 }
+- (void)setBackdropColor:(NSColor*)color {
+  _backdropColor = [color copy];
+  [self paintBackdrop];
+}
+- (void)paintBackdrop {
+  NSView* container = _page.superview;
+  if (!container || container.window != _popupWindow) {
+    return;
+  }
+  container.wantsLayer = YES;
+  container.layer.backgroundColor = _backdropColor.CGColor;
+}
+- (BOOL)resizing {
+  return std::isfinite(_resize.start);
+}
+- (NSRect)restingFrame {
+  const NSPoint parent = _parent.frame.origin;
+  return NSOffsetRect(_popupWindow.frame, -parent.x,
+                      -parent.y - (_userHasMovedWindow ? 0 : _lift));
+}
 - (BOOL)position {
+  __attribute__((objc_precise_lifetime)) PCExtensionPopupPresenter* keepAlive =
+      self;
+  (void)keepAlive;
+  NSWindow* popup = _popupWindow;
+  const NSSize size = popup.frame.size;
+  NSPoint origin;
+  if (![self restingOrigin:&origin forSize:size]) {
+    return NO;
+  }
+  const NSPoint parent = _parent.frame.origin;
+  _resize.to = NSMakeRect(origin.x - parent.x, origin.y - parent.y, size.width,
+                          size.height);
+  [popup setFrameOrigin:NSMakePoint(origin.x, origin.y + (_userHasMovedWindow
+                                                              ? 0
+                                                              : _lift))];
+  return !_invalidated;
+}
+- (BOOL)restingOrigin:(NSPoint*)result forSize:(NSSize)size {
   __attribute__((objc_precise_lifetime)) PCExtensionPopupPresenter* keepAlive =
       self;
   (void)keepAlive;
@@ -166,7 +273,6 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
   }
   NSWindow* parent = _parent;
   NSWindow* popup = _popupWindow;
-  NSSize size = popup.frame.size;
   NSString* extension = _extensionIdentifier;
   id controller = parent.windowController;
   SEL placing = @selector(parcExtensionPopupOriginForExtension:popup:size:);
@@ -182,8 +288,8 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
         std::strcmp(placed.objCType, @encode(NSPoint)) == 0) {
       NSPoint origin = placed.pointValue;
       if (std::isfinite(origin.x) && std::isfinite(origin.y)) {
-        [popup setFrameOrigin:[self lifted:origin]];
-        return !_invalidated;
+        *result = origin;
+        return YES;
       }
     }
   }
@@ -191,7 +297,6 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
   if (_invalidated || parent != _parent || popup != _popupWindow) {
     return NO;
   }
-  size = popup.frame.size;
   NSPoint point = NSMakePoint(parent.frame.size.width - size.width - 40,
                               parent.frame.size.height - size.height - 10);
   if (anchor.kind == 1 && std::isfinite(anchor.sidebarWidth)) {
@@ -201,13 +306,8 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
     point = NSMakePoint(NSMaxX(rect) - size.width - 40,
                         NSMaxY(rect) - size.height - 10);
   }
-  [popup setFrameOrigin:[self lifted:[parent convertPointToScreen:point]]];
+  *result = [parent convertPointToScreen:point];
   return !_invalidated;
-}
-- (NSPoint)lifted:(NSPoint)origin {
-  _resting = origin;
-  _parentResting = _parent.frame.origin;
-  return NSMakePoint(origin.x, origin.y + (_userHasMovedWindow ? 0 : _lift));
 }
 - (BOOL)prepare {
   NSAssert(NSThread.isMainThread, @"Main thread required");
@@ -264,13 +364,18 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
                           [strongSelf requestDismiss:NO];
                         }
                       }];
+  NSView* container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 300, 300)];
   NSViewController* content = [[NSViewController alloc] init];
-  content.view = _page;
+  content.view = container;
   _popupWindow.contentViewController = content;
   [_popupWindow setContentSize:NSMakeSize(300, 300)];
-  if (_invalidated || _parent != parent) {
+  _page.frame = container.bounds;
+  _page.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+  [container addSubview:_page];
+  if (_invalidated || _parent != parent || _page.superview != container) {
     return NO;
   }
+  [self paintBackdrop];
   return [self position];
 }
 - (BOOL)show {
@@ -310,20 +415,117 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
       !std::isfinite(size.height) || size.width <= 0 || size.height <= 0) {
     return NO;
   }
-  NSRect frame = _popupWindow.frame;
-  NSRect resized = [_popupWindow
+  NSWindow* popup = _popupWindow;
+  NSRect resized = [popup
       frameRectForContentRect:NSMakeRect(0, 0, size.width, size.height)];
+  if ([self mayGlideResize]) {
+    _resizedAt = Now();
+    return [self glideToFrameSize:resized.size content:size];
+  }
+  _resize.start = NAN;
+  [self pinPage:size];
+  const NSRect frame = popup.frame;
   resized.origin =
       NSMakePoint(NSMinX(frame), NSMaxY(frame) - NSHeight(resized));
-  [_popupWindow setFrame:resized display:YES];
+  [popup setFrame:resized display:YES];
   if (_invalidated) {
     return NO;
   }
+  [self fillPage];
   _resizedAt = Now();
   if (!_revealed) {
     [self scheduleReveal];
   }
   return _userHasMovedWindow || [self position];
+}
+- (BOOL)mayGlideResize {
+  NSWindow* popup = _popupWindow;
+  NSWindow* parent = _parent;
+  return _revealed && _presenting && !_retiring && parent && parent.visible &&
+         !parent.miniaturized && popup.visible &&
+         popup.parentWindow == parent && _page.window == popup &&
+         !popup.attachedSheet && !popup.childWindows.count;
+}
+- (BOOL)glideToFrameSize:(NSSize)frameSize content:(NSSize)content {
+  __attribute__((objc_precise_lifetime)) PCExtensionPopupPresenter* keepAlive =
+      self;
+  (void)keepAlive;
+  NSWindow* popup = _popupWindow;
+  const NSRect resting = [self restingFrame];
+  NSRect target = NSMakeRect(NSMinX(resting),
+                             NSMaxY(resting) - frameSize.height,
+                             frameSize.width, frameSize.height);
+  if (!_userHasMovedWindow) {
+    NSPoint origin;
+    if (![self restingOrigin:&origin forSize:frameSize] ||
+        popup != _popupWindow) {
+      return NO;
+    }
+    const NSPoint parent = _parent.frame.origin;
+    target.origin = NSMakePoint(origin.x - parent.x, origin.y - parent.y);
+  }
+  _resize = PCExtensionPopupRetargetResize(
+      _resize, resting, target, Now(),
+      NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion);
+  [self pinPage:content];
+  if (![self resizing]) {
+    [self placeResting:_resize.to sized:YES];
+    if (!_invalidated) {
+      [self fillPage];
+    }
+    return !_invalidated;
+  }
+  [self stepMotion];
+  if (_invalidated) {
+    return NO;
+  }
+  [self runMotionTimer];
+  return YES;
+}
+- (void)pinPage:(NSSize)size {
+  NSView* container = _page.superview;
+  if (!container || container.window != _popupWindow) {
+    return;
+  }
+  _page.autoresizingMask = NSViewMaxXMargin | NSViewMinYMargin;
+  const NSRect frame = NSMakeRect(0, NSHeight(container.bounds) - size.height,
+                                  size.width, size.height);
+  if (!NSEqualRects(_page.frame, frame)) {
+    const BOOL resized = !NSEqualSizes(_page.frame.size, frame.size);
+    _page.frame = frame;
+    if (resized) {
+      [_page layoutSubtreeIfNeeded];
+    }
+  }
+}
+- (void)fillPage {
+  NSView* container = _page.superview;
+  if (!container || container.window != _popupWindow) {
+    return;
+  }
+  _page.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+  if (!NSEqualRects(_page.frame, container.bounds)) {
+    _page.frame = container.bounds;
+  }
+}
+- (void)settleResize {
+  _resize.start = NAN;
+  [self fillPage];
+}
+- (void)placeResting:(NSRect)resting sized:(BOOL)sized {
+  NSWindow* popup = _popupWindow;
+  NSWindow* parent = _parent;
+  if (!popup || !parent) {
+    return;
+  }
+  const NSPoint origin = parent.frame.origin;
+  const NSRect frame = NSOffsetRect(
+      resting, origin.x, origin.y + (_userHasMovedWindow ? 0 : _lift));
+  if (sized && !NSEqualSizes(frame.size, popup.frame.size)) {
+    [popup setFrame:frame display:YES];
+  } else if (!NSEqualPoints(frame.origin, popup.frame.origin)) {
+    [popup setFrameOrigin:frame.origin];
+  }
 }
 - (void)contentDidPaint {
   if (_invalidated || !std::isnan(_paintedAt)) {
@@ -362,19 +564,23 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
   [self beginMotion:Motion::kOpening];
 }
 - (void)beginMotion:(Motion)motion {
-  [_motionTimer invalidate];
-  _motionTimer = nil;
   _motion = motion;
   _motionStart = Now();
   _reduceMotion =
       NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
   _fromAlpha = _popupWindow.alphaValue;
   _fromLift = _lift;
-  _resting = NSMakePoint(_popupWindow.frame.origin.x,
-                         _popupWindow.frame.origin.y - _lift);
-  _parentResting = _parent.frame.origin;
+  if (![self resizing]) {
+    _resize.to = [self restingFrame];
+  }
   [self stepMotion];
   if (_invalidated || _motion != motion) {
+    return;
+  }
+  [self runMotionTimer];
+}
+- (void)runMotionTimer {
+  if (_motionTimer || _invalidated) {
     return;
   }
   __weak PCExtensionPopupPresenter* weakSelf = self;
@@ -385,48 +591,64 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
                                           }];
   [NSRunLoop.mainRunLoop addTimer:_motionTimer forMode:NSRunLoopCommonModes];
 }
+- (void)stopMotionTimer {
+  [_motionTimer invalidate];
+  _motionTimer = nil;
+}
 - (void)stepMotion {
   __attribute__((objc_precise_lifetime)) PCExtensionPopupPresenter* keepAlive =
       self;
   (void)keepAlive;
   NSWindow* popup = _popupWindow;
-  if (_invalidated || !popup || _motion == Motion::kNone) {
-    [_motionTimer invalidate];
-    _motionTimer = nil;
+  const BOOL resizing = [self resizing];
+  if (_invalidated || !popup || (_motion == Motion::kNone && !resizing)) {
+    [self stopMotionTimer];
     return;
   }
-  const NSTimeInterval elapsed = Now() - _motionStart;
+  const NSTimeInterval now = Now();
   const Motion motion = _motion;
-  const PCExtensionPopupMotionFrame frame =
-      motion == Motion::kOpening
-          ? PCExtensionPopupOpeningMotion(elapsed, _reduceMotion)
-          : PCExtensionPopupClosingMotion(elapsed, _fromAlpha, _fromLift,
-                                          _reduceMotion);
   if (motion == Motion::kClosing &&
       (popup.attachedSheet || popup.childWindows.count)) {
     [self invalidate];
     return;
   }
-  _lift = frame.lift;
-  NSWindow* parent = _parent;
-  if (!_userHasMovedWindow && parent) {
-    const NSPoint parentOrigin = parent.frame.origin;
-    const NSPoint target = NSMakePoint(
-        _resting.x + parentOrigin.x - _parentResting.x,
-        _resting.y + parentOrigin.y - _parentResting.y + frame.lift);
-    if (!NSEqualPoints(target, popup.frame.origin)) {
-      [popup setFrameOrigin:target];
+  PCExtensionPopupMotionFrame fade = {popup.alphaValue, _lift, YES};
+  if (motion == Motion::kOpening) {
+    fade = PCExtensionPopupOpeningMotion(now - _motionStart, _reduceMotion);
+  } else if (motion == Motion::kClosing) {
+    fade = PCExtensionPopupClosingMotion(now - _motionStart, _fromAlpha,
+                                         _fromLift, _reduceMotion);
+  }
+  const NSTimeInterval resizeStart = _resize.start;
+  const BOOL covered = popup.attachedSheet || popup.childWindows.count;
+  const PCExtensionPopupResizeFrame size =
+      resizing && !covered
+          ? PCExtensionPopupResizeMotion(now - resizeStart, _resize.from,
+                                         _resize.to)
+          : PCExtensionPopupResizeFrame{_resize.to, YES};
+  _lift = fade.lift;
+  if (resizing || !_userHasMovedWindow) {
+    [self placeResting:size.frame sized:resizing];
+    if (_invalidated || popup != _popupWindow) {
+      return;
     }
   }
-  popup.alphaValue = frame.alpha;
-  if (!frame.finished || _invalidated || _motion != motion) {
-    return;
+  if (motion != Motion::kNone) {
+    popup.alphaValue = fade.alpha;
   }
-  _motion = Motion::kNone;
-  [_motionTimer invalidate];
-  _motionTimer = nil;
-  if (motion == Motion::kClosing) {
-    [self invalidate];
+  if (resizing && size.finished && _resize.start == resizeStart) {
+    [self settleResize];
+  }
+  if (motion != Motion::kNone && fade.finished && !_invalidated &&
+      _motion == motion) {
+    _motion = Motion::kNone;
+    if (motion == Motion::kClosing) {
+      [self invalidate];
+      return;
+    }
+  }
+  if (_motion == Motion::kNone && ![self resizing]) {
+    [self stopMotionTimer];
   }
 }
 - (BOOL)dismissWithMotion:(void (^)(void))completion {
@@ -498,12 +720,22 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
   if (_invalidated || notification.object != _popupWindow) {
     return;
   }
+  if ([self resizing]) {
+    const NSRect frame = _popupWindow.frame;
+    const NSSize size = _resize.to.size;
+    [_popupWindow setFrame:NSMakeRect(NSMinX(frame), NSMaxY(frame) - size.height,
+                                      size.width, size.height)
+                   display:YES];
+    if (_invalidated) {
+      return;
+    }
+    [self settleResize];
+  }
   _userHasMovedWindow = YES;
   _lift = 0;
   if (_motion == Motion::kOpening) {
     _motion = Motion::kNone;
-    [_motionTimer invalidate];
-    _motionTimer = nil;
+    [self stopMotionTimer];
     _popupWindow.alphaValue = 1;
   }
 }
@@ -515,10 +747,10 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
   _invalidated = YES;
   _presenting = NO;
   _motion = Motion::kNone;
+  _resize.start = NAN;
   [_revealTimer invalidate];
   _revealTimer = nil;
-  [_motionTimer invalidate];
-  _motionTimer = nil;
+  [self stopMotionTimer];
   _anchor = nil;
   _mayDismiss = nil;
   _onDismiss = nil;

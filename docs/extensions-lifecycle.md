@@ -24,20 +24,29 @@ so a chooser cancels when that page hides, closes or moves. A folder upload's
 confirmation uses the same lease, as a child window of the popup or, for a side
 panel, of the browser window.
 
-Popups use native window presentation and terminal detachment. A loaded popup
-is ordered in and made key while still invisible, then waits until its page has
+Popups use native window presentation and terminal detachment. A loaded popup is
+ordered in and made key while still invisible, then waits until its page has
 drawn and its size has held for about two frames, never more than 0.15 seconds,
 so it doesn't flash empty or at a stale size. It fades in over 0.2 seconds while
-easing 8 points down into place. Size changes keep its top edge still. Closing
+easing 8 points down into place. Once revealed, a size change glides over 0.18
+seconds on the same curve. The page takes its new size at once, matching its
+renderer, and only the window's edges move over it, so the page never re-lays
+out mid-glide; while a popup shrinks, the strip its page no longer covers shows
+the page's own background color. The edge facing the button stays still, the
+glide ends where placement puts the new size, even when that switches fallbacks,
+and a change mid-glide sets off from the current size. A popup that is closing,
+sits in a hidden or minimized window or has a sheet or child window resizes at
+once, and a sheet or child window arriving mid-glide finishes it. Closing
 reverses it: the popup stops taking clicks, hands the keyboard back to its
 browser window and fades out over 0.15 seconds while drifting 4 points back up.
 Its real page stays in it until the fade ends, then detaches and closes. Reduce
-Motion keeps both fades and drops the glide. Browser security UI, the parent
-closing, shutdown, the popup's close button, a sheet or child window on the
-popup, an unloaded extension and a popup that never became visible close it at
-once. Becoming key in the popup's own parent dismisses it; another app or window
-becoming active does not substitute that event. Resize repositions only until
-the user moves the popup, and dragging it mid-fade shows it at once. Escape
+Motion keeps both fades, drops the glides and resizes at once. Browser security
+UI, the parent closing, shutdown, the popup's close button, a sheet or child
+window on the popup, an unloaded extension and a popup that never became visible
+close it at once. Becoming key in the popup's own parent dismisses it; another
+app or window becoming active does not substitute that event. Resize repositions
+only until the user moves the popup, then grows from its top left corner;
+dragging it mid-fade shows it at once and mid-resize finishes the resize. Escape
 stays with its real ExtensionViewHost delegate.
 
 ## Site Control Center to extension handoff

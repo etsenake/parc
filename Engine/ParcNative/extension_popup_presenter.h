@@ -9,6 +9,17 @@ typedef struct {
   BOOL finished;
 } PCExtensionPopupMotionFrame;
 
+typedef struct {
+  NSRect frame;
+  BOOL finished;
+} PCExtensionPopupResizeFrame;
+
+typedef struct {
+  NSRect from;
+  NSRect to;
+  NSTimeInterval start;
+} PCExtensionPopupResize;
+
 FOUNDATION_EXTERN PCExtensionPopupMotionFrame
 PCExtensionPopupOpeningMotion(NSTimeInterval elapsed, BOOL reduceMotion);
 FOUNDATION_EXTERN PCExtensionPopupMotionFrame PCExtensionPopupClosingMotion(
@@ -20,6 +31,14 @@ FOUNDATION_EXTERN NSTimeInterval
 PCExtensionPopupRevealTime(NSTimeInterval shown,
                            NSTimeInterval painted,
                            NSTimeInterval resized);
+FOUNDATION_EXTERN PCExtensionPopupResizeFrame
+PCExtensionPopupResizeMotion(NSTimeInterval elapsed, NSRect from, NSRect to);
+FOUNDATION_EXTERN PCExtensionPopupResize
+PCExtensionPopupRetargetResize(PCExtensionPopupResize resize,
+                               NSRect resting,
+                               NSRect target,
+                               NSTimeInterval now,
+                               BOOL reduceMotion);
 
 @interface PCExtensionPopupAnchor : NSObject
 + (instancetype)windowAnchor;
@@ -53,5 +72,6 @@ PCExtensionPopupRevealTime(NSTimeInterval shown,
 @property(nonatomic, readonly, getter=isInvalidated) BOOL invalidated;
 @property(nonatomic, readonly) BOOL userHasMovedWindow;
 @property(nonatomic, copy, nullable) NSString* extensionIdentifier;
+@property(nonatomic, copy, nullable) NSColor* backdropColor;
 @end
 NS_ASSUME_NONNULL_END

@@ -107,7 +107,8 @@ int main() {
     EXPECT(popup.parentWindow == nil);
     EXPECT(page.window == popup);
     EXPECT(page.contentView == original);
-    EXPECT(popup.contentViewController.view == page);
+    EXPECT(page.superview == popup.contentView &&
+           popup.contentViewController.view == popup.contentView);
     EXPECT(Near(page.bounds.size.width, 300));
     EXPECT(popup.styleMask ==
            (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable));
@@ -165,6 +166,7 @@ int main() {
     EXPECT(Near(popup.frame.origin.x, expected.x));
     EXPECT(Near(popup.frame.origin.y, expected.y));
     EXPECT(Near(page.bounds.size.width, 180));
+    EXPECT(NSEqualRects(page.frame, page.superview.bounds));
     EXPECT(![presenter resizeContent:NSMakeSize(NAN, 10)]);
     [NSNotificationCenter.defaultCenter
         postNotificationName:NSWindowWillMoveNotification

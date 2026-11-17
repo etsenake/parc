@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <optional>
 
 #include "base/check.h"
 #include "base/command_line.h"
@@ -377,6 +378,19 @@ void NativeExtensionPopup::Resize(const gfx::Size& requested) {
   gfx::Size size = requested;
   size.SetToMax(extensions::kExtensionPopupMinSize);
   size.SetToMin(extensions::kExtensionPopupMaxSize);
+  content::WebContents* contents = host_->host_contents();
+  std::optional<SkColor> backdrop = contents->GetBackgroundColor();
+  if (auto* view = contents->GetRenderWidgetHostView();
+      view && (!backdrop || !SkColorGetA(*backdrop))) {
+    backdrop = view->GetBackgroundColor();
+  }
+  presenter_.backdropColor =
+      backdrop && SkColorGetA(*backdrop)
+          ? [NSColor colorWithSRGBRed:SkColorGetR(*backdrop) / 255.0
+                                green:SkColorGetG(*backdrop) / 255.0
+                                 blue:SkColorGetB(*backdrop) / 255.0
+                                alpha:SkColorGetA(*backdrop) / 255.0]
+          : nil;
   [presenter_ resizeContent:NSMakeSize(size.width(), size.height())];
 }
 void NativeExtensionPopup::RequestHide(const char* reason) {
