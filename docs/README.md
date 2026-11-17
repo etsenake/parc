@@ -19,7 +19,8 @@ Git and release notes retain history.
 ## Everyday browsing
 
 - [Navigation](navigation.md), [swipe navigation](swipe-navigation.md),
-  [command bar](command-bar.md), [start page](start-page.md),
+  [command bar](command-bar.md), [field and results](command-bar-results.md),
+  [scopes and typed commands](command-bar-scopes.md), [start page](start-page.md),
   [keyboard navigation](keyboard-navigation.md), [tab switcher](tab-switcher.md).
 - [Saved tabs and Favorites](saved-tabs.md), [closed-tab restoration](reopen-closed-tabs.md),
   [folder commands](folder-commands.md), [folder moves](folder-moves.md).

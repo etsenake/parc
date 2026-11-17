@@ -112,7 +112,7 @@ The **Search engine** menu lists Chromium's built-in search engines, any an
 organization recommends and the current default; an engine an organization
 enforces is the only row. Site searches such as YouTube or GitHub, and shortcuts
 Chromium learned from visited sites, stay out because each searches one site; see
-[site searches](command-bar.md#space-entry-and-profile-catalog). Manage search can
+[site searches](command-bar-scopes.md#space-entry-and-profile-catalog). Manage search can
 still make any other engine or shortcut the default. A Space that already uses a
 site search as its default keeps it: Parc never switches it, and the menu shows it
 checked until another engine is chosen, after which it leaves the menu and stays a

@@ -3,7 +3,7 @@
 Parc has one native command registry. Menus, Settings, command search, tooltips
 and education read that registry; each action keeps its original browser, page,
 document or selected-item owner. [Settings](settings.md) describes recording,
-conflict handling and priority controls. [Command bar](command-bar.md) covers
+conflict handling and priority controls. [Command bar](command-bar-results.md) covers
 query editing and result submission.
 
 ## Tab selection
@@ -325,7 +325,7 @@ The menu registry includes Blank/New/Private windows, local profiles, Duplicate,
 Reveal Tab, Library/Downloads/Media/Documents, Spaces, Extensions, native Window
 Zoom/Bring All to Front, Stay On Top, Task Manager, page tools, app updates and local What's
 New. Manage Spaces is implemented. Notes and Easels keep their formatting bars
-beside the [Format menu](#text-formatting-menu). [Typed commands](command-bar.md#typed-type-travel-commands)
+beside the [Format menu](#text-formatting-menu). [Typed commands](command-bar-scopes.md#typed-type-travel-commands)
 add contextual operations without inventing menu command identities.
 
 ### Excluded by the ledger

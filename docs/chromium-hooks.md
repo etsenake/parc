@@ -131,7 +131,7 @@ smallest include that preserves its behaviour.
 Parc's own targets depend on Chromium's public targets as any embedder's do. This
 section lists only the narrow ones added to reproduce one Chromium rule.
 `//parc:browser` depends on the header-only `//chrome/browser:intranet_redirect_detector`
-so the command bar's [shortcut learning](command-bar.md#learning-what-you-pick) asks
+so the command bar's [shortcut learning](command-bar-results.md#learning-what-you-pick) asks
 `IntranetRedirectDetector::RedirectOrigin()` whether a pick landed on the network's
 search page, as Chrome's omnibox navigation observer does. The detector's saved
 preference can lag its live answer, and Chrome's observer would add the

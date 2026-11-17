@@ -53,9 +53,9 @@ saved tree or claim that a page opened.
 
 Command–Option–Return on **Pin to [folder]** copies the eligible original
 collection into that captured same-profile folder through the same fresh-ID
-transaction. See [command bar](command-bar.md). Option-drag places the same
-copies at the drop point and opens pages only for its first five items; see
-[Option-drag copies](folder-moves.md#option-drag-copies).
+transaction. See [command bar](command-bar-scopes.md#typed-type-travel-commands).
+Option-drag places the same copies at the drop point and opens pages only for
+its first five items; see [Option-drag copies](folder-moves.md#option-drag-copies).
 
 ### Duplicate Undo and Redo
 
