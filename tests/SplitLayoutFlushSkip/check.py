@@ -58,8 +58,18 @@ assert "synchronizeDividerPresentation(animated: false)" in af, \
 assert "updateTrackingAreas()" in af, \
     "applyFrames must still refresh tracking/hover"
 
+stacked = re.search(
+    r"private func applyStackedFrames\(_ stacks: BrowserSplitStacks\) \{(?P<body>.*?)\n    \}\n    private func applyFrames",
+    split, re.S)
+assert stacked, "applyStackedFrames not found"
+sf = stacked.group("body")
+assert "if frameChanged { pane.needsLayout = true }" in sf and "SplitLayoutFlushSkip.shouldFlush(" in sf, \
+    "stacked panes follow the same dirty-only-when-moved flush rule"
+assert "if anyFrameChanged { needsDisplay = true }" in sf and "synchronizeDividerPresentation(animated: false)" in sf \
+    and "updateTrackingAreas()" in sf, "stacked layout keeps the display, divider chrome and hover refresh"
+
 configure = re.search(
-    r"func configure\(orientation: SplitOrientation, factors: \[Double\]\) \{(?P<body>.*?)\n    \}\n",
+    r"func configure\(orientation: SplitOrientation, factors: \[Double\], stacks: BrowserSplitStacks\? = nil\) \{(?P<body>.*?)\n    \}\n",
     split, re.S)
 assert configure, "configure not found"
 cf = configure.group("body")
@@ -75,6 +85,8 @@ assert update, "updateDividerResize not found"
 up = update.group("body")
 assert "SplitLayoutFlushSkip.shouldApplyDividerMove(" in up, \
     "updateDividerResize must gate applyFrames on shouldApplyDividerMove"
+assert "applyStackedFrames(level.stacks.replacing(current.factors, inSlot: level.divider.slot))" in up, \
+    "a stacked divider drag lays out through the same move gate"
 assert "current.moved = true\n        resize = current\n        applyFrames(factors: current.factors)" not in up, \
     "updateDividerResize must not applyFrames on every pan move"
 assert "if transitioned { onSnapTransition() }" in up, \

@@ -73,6 +73,59 @@ or fewer. A nested split running the same way joins the main row. A deeper nest
 or a split over four panes flattens into one row, with any tabs past the fourth
 imported as loose tabs, so no tab is dropped.
 
+## Layout and dividers
+
+A stacked split lays its slots out along the main row the way a flat split lays
+out panes, then lays each stack out across its slot the same way: 10-point gaps,
+the 220-point minimum on both axes, deficits taken from the other panes on the
+same level, lengths rounded at the window's scale and edges aligned to whole
+points. Panes in one stack share their slot's edges, and live window resizing
+uses the same geometry. The split's minimum size sums the minimums along each
+axis: every slot along the main row, and the longest stack across it, never
+below a flat split's 382-point height.
+
+There is one divider between each pair of reading-order neighbours. A main-row
+divider spans the whole split and a stack divider spans only its slot. Each
+moves only its two neighbours on its own level, keeping their combined share,
+and double-click evens that pair. Centre snapping and its haptic, the pane input
+lock, the content-resize reason, the 0.2-second evening motion, grips, hover and
+cursor work as in [split groups](split-groups.md#divider-pair-sizing), with each
+divider's grip and cursor following its own direction. A side-by-side divider's
+53-point top exclusion counts from the top of the panes it separates, so a
+divider between two lower panes stays clear of their headers. A top-and-bottom
+divider's 8-point end inset applies within its slot.
+
+Widen and Narrow step the focused pane's whole slot along the main row with the
+flat [step rules](split-groups.md#keyboard-and-voiceover-resizing), measured
+against the main row. Make All Equal is offered until both levels are even.
+Every divider edit and command commits one stacked edit through the store's
+stacked resize; a flat row is never saved over a stacked split.
+
+## VoiceOver and pictures
+
+VoiceOver walks the panes in reading order with a splitter between neighbours,
+numbered in that order. A stack splitter reports its position as a percentage
+of its own slot, with limits that keep both of its panes at the minimum, steps
+within the slot and names it: "Split View Divider 2, inside column 1" in a
+side-by-side split, or "inside row 1" in a top-and-bottom one. Main-row
+splitters keep the flat label. Announcements follow the flat rules, including
+the 0.3-second settle and silence during a drag or live resize.
+
+The Favorites tile and the [tab switcher](tab-switcher.md) thumbnail draw the
+stacked shape: slots along the split's direction, each stack divided the other
+way, at even sizes like their flat pictures. The sidebar row strip is unchanged.
+
+## Pending panes and drops
+
+A pending Add pane renders where its commit would put it: a pending pane in a
+stack appears inside its slot at its stack position, and a pending main-row pane
+beside a stack appears as its own full-length slot. An Add that would change a
+stacked split's direction is unavailable and never opens a pending pane.
+
+Dropping a tab or link on a stacked split uses the flat pane classifier. An edge
+whose insertion lands on a slot boundary reserves room for, and adds, a
+full-length slot; any other edge replaces its pane.
+
 ## Model and store entry points
 
 `BrowserSplitLayout.stacks` holds the shape; `slots`, `position(of:)`,
@@ -93,11 +146,24 @@ with `insertSplitPane` for a new pane in a stack; `moveSplitPane` and
 `resizeSplit(expected:resized:)` for Expand, Make All Equal and either kind of
 divider, which accepts only a change of weights.
 
+`SplitStackGeometry` holds the windowless layout maths: pane frames, divider
+rects and regions in reading order, the container minimum, and splitter values
+and labels. `ParcSplitView.configure(orientation:factors:stacks:)` takes a
+split's stacks, and the view commits a `SplitStackResize` through
+`prepareStackedSplitResize`, which applies `BrowserSplitLayout.resized(by:)`.
+`SplitPaneInsertion.previewLayout` gives the pending pane's shape from the same
+transaction the store commits, so a new stacked insertion only has to create its
+request.
+
 ## Checks
 
 `tests/SplitStacksTests.swift` (in `scripts/test.sh`) is windowless. It pins the
 flat bytes against the previous format, round-trips stacked splits, reads them
 as an older build would, loads corrupt stacks flat, and covers every edit above
 through the model and the store, including reopen, Undo, copies, Favorites,
-window projections, drops and Arc import. The existing split suites listed in
-[split groups](split-groups.md#source-and-validation) cover flat splits unchanged.
+window projections, drops and Arc import. `tests/SplitStackLayoutTests.swift`
+(also windowless, in `scripts/test.sh`) covers the stacked frames, divider rects
+and regions, container minimum, splitter values and labels, the layout commands
+and pending-pane previews. The divider, snap and Favorites tile suites listed in
+[split groups](split-groups.md#source-and-validation) also cover stacked
+dividers and pictures, alongside flat splits unchanged.

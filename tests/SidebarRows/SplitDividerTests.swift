@@ -22,6 +22,10 @@ import AppKit
     static func near(_ values: [Double], _ expected: [Double]) -> Bool {
         values.count == expected.count && zip(values, expected).allSatisfy { abs($0 - $1) < 0.000001 }
     }
+    static func divider(_ change: SplitStackResize?, _ index: Int, slot: Int?, share: Double) -> Bool {
+        guard case .divider(let changed, let changedSlot, let leading)? = change else { return false }
+        return changed == index && changedSlot == slot && abs(leading - share) < 0.000001
+    }
     static func main() { exitOnFailure(runChecks) }
     static func runChecks() throws {
         _ = NSApplication.shared
@@ -761,7 +765,115 @@ import AppKit
         try checkResizeSteps()
         try checkResizeCommands(in: commandWindow)
         try checkDividerAnnouncements(in: commandWindow)
+        try checkStackedSplit(in: commandWindow)
         print("PASS: \(count) original native divider/store checks (no browser)")
+    }
+
+    static func checkStackedSplit(in window: NSWindow) throws {
+        let split = ParcSplitView(frame: NSRect(x: 0, y: 0, width: 1010, height: 710))
+        window.contentView!.addSubview(split)
+        defer { split.removeFromSuperview() }
+        let panes = (0..<3).map { _ in NSView() }
+        for pane in panes {
+            pane.setAccessibilityElement(true); pane.setAccessibilityRole(.group)
+            split.addArrangedSubview(pane)
+        }
+        let start = BrowserSplitStacks(slotSizes: [2, 1], slotFactors: [0.5, 0.5], stackFactors: [[0.5, 0.5], [1]])
+        var layout = BrowserSplitLayout(id: UUID(), spaceID: UUID(), tabIDs: panes.map { _ in UUID() }, orientation: .horizontal,
+                                        widthFactors: start.flattenedFactors, stacks: start)
+        var flatCommits = 0
+        var changes: [SplitStackResize] = []
+        split.prepareDividerResize = { { _ in flatCommits += 1; return true } }
+        split.prepareStackedResize = { { change in
+            changes.append(change)
+            guard let next = layout.resized(by: change) else { return nil }
+            layout = next
+            return next.stacks
+        } }
+        func apply() { split.configure(orientation: layout.orientation, factors: layout.widthFactors, stacks: layout.stacks) }
+        apply()
+        try check(panes.map(\.frame) == [NSRect(x: 0, y: 0, width: 500, height: 350), NSRect(x: 0, y: 360, width: 500, height: 350),
+                                         NSRect(x: 510, y: 0, width: 500, height: 710)],
+                  "A stacked split lays its column out top and bottom beside a full-height pane")
+        let stackPoint = NSPoint(x: 250, y: 355), mainPoint = NSPoint(x: 505, y: 300)
+        try check(split.dividerCursor(atWindowPoint: split.convert(stackPoint, to: nil)) == .resizeUpDown
+                  && split.dividerCursor(atWindowPoint: split.convert(mainPoint, to: nil)) == .resizeLeftRight,
+                  "Each divider shows the cursor for its own direction")
+        try check(!split.beginDividerResize(at: NSPoint(x: 4, y: 355)) && !split.beginDividerResize(at: NSPoint(x: 505, y: 20)),
+                  "The stack divider keeps its end inset inside the column and the main divider keeps the top bar clear")
+
+        try check(split.beginDividerResize(at: stackPoint), "The stack divider admits a drag")
+        split.beginDividerPan(at: stackPoint)
+        try check(split.hitTest(NSPoint(x: 700, y: 300)) === split, "A stack divider pan lets the panes fall through")
+        split.updateDividerResize(at: NSPoint(x: 250, y: 405), velocity: 300)
+        try check(panes[0].frame.height == 400 && panes[1].frame == NSRect(x: 0, y: 410, width: 500, height: 300)
+                  && panes[2].frame == NSRect(x: 510, y: 0, width: 500, height: 710),
+                  "Dragging a stack divider resizes only the two panes in its column")
+        split.finishDividerResize(commit: true)
+        try check(changes.count == 1 && divider(changes.first, 0, slot: 0, share: 400.0 / 700) && flatCommits == 0
+                  && near(layout.stacks!.stackFactors[0], [4.0 / 7, 3.0 / 7]) && near(layout.stacks!.slotFactors, [0.5, 0.5]),
+                  "The stack drag commits one stacked divider edit and never a flat row")
+
+        try check(split.beginDividerResize(at: mainPoint), "The main-row divider admits a drag")
+        split.updateDividerResize(at: NSPoint(x: 405, y: 300), velocity: -300)
+        try check(panes[0].frame.width == 400 && panes[1].frame.width == 400 && panes[2].frame.minX == 410,
+                  "Dragging the main-row divider moves the whole column")
+        split.finishDividerResize(commit: true)
+        try check(divider(changes.last, 0, slot: nil, share: 0.4) && near(layout.stacks!.slotFactors, [0.4, 0.6]),
+                  "The main-row drag commits only the two slots")
+
+        let splitters = (split.accessibilitySplitters() ?? []).compactMap { $0 as? ParcSplitView.DividerAccessibilityElement }
+        let children = NSAccessibility.unignoredChildren(from: [split]).map { $0 as AnyObject }
+        try check(splitters.count == 2 && children.count == 5 && children[0] === panes[0] && children[1] === splitters[0]
+                  && children[2] === panes[1] && children[3] === splitters[1] && children[4] === panes[2],
+                  "VoiceOver walks the panes in reading order with a splitter between neighbours")
+        try check(splitters[0].accessibilityLabel() == "Split View Divider 1, inside column 1"
+                  && splitters[1].accessibilityLabel() == "Split View Divider 2"
+                  && splitters[0].accessibilityOrientation() == .horizontal && splitters[1].accessibilityOrientation() == .vertical,
+                  "The stack splitter says it sits inside the first column and runs across it")
+        func percent(_ value: Any?) -> Double { (value as? NSNumber)?.doubleValue ?? -1 }
+        try check(percent(splitters[0].accessibilityValue()) == 57 && percent(splitters[0].accessibilityMinValue()) == 31
+                  && percent(splitters[0].accessibilityMaxValue()) == 69 && percent(splitters[1].accessibilityValue()) == 40,
+                  "The stack splitter reports its share within its column, bounded by the minimum on either side")
+        try check(splitters[0].accessibilityFrame() == window.convertToScreen(split.convert(NSRect(x: 0, y: 400, width: 400, height: 10), to: nil)),
+                  "The stack splitter covers only its column's divider on screen")
+        try check(splitters[0].accessibilityPerformDecrement()
+                  && divider(changes.last, 0, slot: 0, share: 0.5) && near(layout.stacks!.stackFactors[0], [0.5, 0.5]),
+                  "A decrement steps the stack divider within its column and stops at the even point")
+
+        try check(split.canEqualizePanes && split.equalizePanes() && changes.last == .equal && layout.stacks!.isEven
+                  && !split.canEqualizePanes, "Make All Equal evens both levels and then has nothing left to do")
+        try check(split.canResizePane(panes[1], growing: true) && split.resizePane(panes[1], growing: true)
+                  && near(layout.stacks!.slotFactors, [0.6, 0.4]) && layout.stacks!.stackFactors == [[0.5, 0.5], [1]],
+                  "Widen steps the focused pane's whole slot along the main row only")
+        try check(split.resizePane(panes[2], growing: false) && near(layout.stacks!.slotFactors, [0.7, 0.3]),
+                  "Narrow steps a slot back along the main row")
+
+        layout = layout.expanded(focusing: layout.tabIDs[1])!
+        apply()
+        try check(panes[2].frame.width == 220 && panes[0].frame.height == 220 && panes[1].frame.height == 480,
+                  "Expand leaves the other panes at the 220-point minimum on both axes")
+
+        let rows = BrowserSplitStacks(slotSizes: [1, 2], slotFactors: [0.5, 0.5], stackFactors: [[1], [0.5, 0.5]])
+        layout = BrowserSplitLayout(id: UUID(), spaceID: UUID(), tabIDs: layout.tabIDs, orientation: .vertical,
+                                    widthFactors: rows.flattenedFactors, stacks: rows)
+        apply()
+        try check(panes[1].frame == NSRect(x: 0, y: 360, width: 500, height: 350) && panes[2].frame.minX == 510,
+                  "A top-and-bottom split divides its lower row left and right")
+        try check(!split.beginDividerResize(at: NSPoint(x: 505, y: 380)) && split.beginDividerResize(at: NSPoint(x: 505, y: 500)),
+                  "A divider between two lower panes stays clear of their own headers")
+        split.finishDividerResize(commit: false)
+        try check(splitters.count == 2 && (split.accessibilitySplitters()?.last as? ParcSplitView.DividerAccessibilityElement)?
+                    .accessibilityLabel() == "Split View Divider 2, inside row 2",
+                  "A top-and-bottom split names the row its splitter sits in")
+
+        let host = SplitConstraintHost(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        window.contentView!.addSubview(host)
+        defer { host.removeFromSuperview() }
+        split.removeFromSuperview(); host.addSubview(split); split.constrain(to: host)
+        apply()
+        try check(split.frame.size == NSSize(width: 450, height: 450),
+                  "The container minimum sums the stacked minimums along each axis")
     }
 
     static func checkResizeSteps() throws {

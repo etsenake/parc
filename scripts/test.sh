@@ -178,6 +178,10 @@ step compile_and_run closed-items ClosedItemsTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift"
 step compile_and_run split-stacks SplitStacksTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift"
+step compile_and_run split-stack-layout SplitStackLayoutTests \
+  "$repo_root/Sources/ParcCore/SplitStackLayout.swift" \
+  "$repo_root/Sources/ParcCore/SplitPaneResize.swift" \
+  "$repo_root/Sources/ParcCore/RecentTabOrder.swift"
 step bash "$repo_root/scripts/test-close-undo.sh"
 step bash "$repo_root/scripts/test-tab-history.sh"
 step bash "$repo_root/scripts/test-handoff-activity.sh"

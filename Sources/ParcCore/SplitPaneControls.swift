@@ -39,6 +39,7 @@ struct SplitPaneInsertion: Equatable {
         case .addBelow: before = false; orientation = .vertical
         default: return nil
         }
+        if let layout, layout.stacks != nil, layout.orientation != orientation { return nil }
         let slot = layout?.stacks == nil ? nil : layout?.position(of: paneID).flatMap { layout?.slotRange($0.slot) }
         index = slot.map { before ? $0.lowerBound : $0.upperBound } ?? position + (before ? 0 : 1)
         target = .insert(index)
@@ -69,7 +70,14 @@ struct SplitPaneInsertion: Equatable {
                     && ($0.spaceID == spaceID || $0.kind == .favorite) }) }
     }
 
+    var previewLayout: BrowserSplitLayout? {
+        guard let layout, layout.stacks != nil || target.isStack else { return nil }
+        return SplitDropTransaction.make(source: UUID(), selection: selection, layout: layout, target: target,
+                                         orientation: orientation, spaceID: layout.spaceID)
+    }
+
     var previewFactors: [Double] {
+        if let preview = previewLayout { return preview.widthFactors }
         var factors = layout?.widthFactors ?? [1]
         factors.insert(1 / Double(selection.count), at: index)
         return BrowserSplitLayout.normalized(factors, count: factors.count)!

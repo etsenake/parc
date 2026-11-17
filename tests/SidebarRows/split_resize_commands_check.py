@@ -59,9 +59,20 @@ expect("case .widen:\n            if let pane = panes[targetID] { splitView.resi
        "the commands resize the target window's own split view")
 expect("splitView.prepareDividerResize = { [weak self] in self?.prepareSplitResize() }" in controller,
        "the split view's adjustments commit through the window's resize receipt")
+expect("splitView.prepareStackedResize = { [weak self] in self?.prepareStackedSplitResize() }" in controller,
+       "stacked adjustments commit through the window's stacked resize receipt")
+receipt = body(controller, "private func splitResizeReceipt(stacked: Bool)")
+expect("window.isKeyWindow" in receipt and "(layout.stacks != nil) == stacked" in receipt
+       and "self.performWindowCommand(selectNativePage: false)" in receipt,
+       "both receipts keep the per-window rules and only serve their own kind of split")
 resize = body(controller, "func prepareSplitResize() -> (([Double]) -> Bool)?")
-expect("window.isKeyWindow" in resize and "store.resizeSplit(expected: layout, widthFactors: factors)" in resize,
-       "that receipt keeps the per-window rules and saves through the store")
+expect("splitResizeReceipt(stacked: false)" in resize
+       and "store.resizeSplit(expected: layout, widthFactors: factors)" in resize,
+       "a flat split saves its flat row through the store")
+stacked = body(controller, "func prepareStackedSplitResize() -> ((SplitStackResize) -> BrowserSplitStacks?)?")
+expect("splitResizeReceipt(stacked: true)" in stacked and "layout.resized(by: change)" in stacked
+       and "store.resizeSplit(expected: layout, resized: resized)" in stacked,
+       "a stacked split saves the pure stacked edit through the store")
 presentation = (root / "Sources/ParcCore/CommandBarCommandPresentation.swift").read_text()
 triggers = (root / "Sources/ParcCore/CommandBarMenuItemInfo.swift").read_text()
 settings = (root / "Sources/ParcApp/ShortcutsSettingsView.swift").read_text()

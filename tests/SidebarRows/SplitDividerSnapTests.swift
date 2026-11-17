@@ -65,6 +65,25 @@ import AppKit
         view.updateDividerResize(at: NSPoint(x: newOrigin.x + 40, y: 100), velocity: 1)
         view.removeFromSuperview(); view.finishDividerResize(commit: true)
         try check(commits.count == 1, "Detachment cancels the actual original gesture")
+        let stacked = ParcSplitView(frame: NSRect(x: 0, y: 0, width: 1010, height: 710))
+        win.contentView!.addSubview(stacked); defer { stacked.removeFromSuperview() }
+        let stackedPanes = (0..<3).map { _ in NSView() }
+        stackedPanes.forEach(stacked.addArrangedSubview)
+        let shape = BrowserSplitStacks(slotSizes: [2, 1], slotFactors: [0.5, 0.5], stackFactors: [[0.4, 0.6], [1]])
+        var stackedChanges: [SplitStackResize] = []
+        stacked.prepareStackedResize = { { stackedChanges.append($0); return shape } }
+        stacked.onSnapTransition = { pulses += 1 }
+        stacked.configure(orientation: .horizontal, factors: shape.flattenedFactors, stacks: shape)
+        let stackOrigin = NSPoint(x: 250, y: stackedPanes[0].frame.maxY + 3), before = pulses
+        try check(stacked.beginDividerResize(at: stackOrigin), "A stack divider admits a pan")
+        stacked.updateDividerResize(at: NSPoint(x: 250, y: stackOrigin.y + 100), velocity: 200)
+        stacked.updateDividerResize(at: NSPoint(x: 250, y: stackOrigin.y + 65), velocity: 50)
+        try check(pulses == before + 1 && abs(stackedPanes[0].frame.height - stackedPanes[1].frame.height) < 0.001
+                  && stackedPanes[2].frame == NSRect(x: 510, y: 0, width: 500, height: 710),
+                  "A stack divider snaps to the centre of its own column with one haptic")
+        stacked.finishDividerResize(commit: true)
+        guard case .divider(0, slot: 0, let share)? = stackedChanges.first else { throw NSError(domain: "stacked snap", code: 0) }
+        try check(stackedChanges.count == 1 && abs(share - 0.5) < 0.000001, "The snapped stack divider commits an even pair once")
         print("PASS: \(count) native divider snap/admission/lifetime checks (no browser)")
     }
 }

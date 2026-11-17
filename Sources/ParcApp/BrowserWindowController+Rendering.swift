@@ -88,8 +88,11 @@ extension BrowserWindowController {
         let layout = placeholderIDs.isEmpty ? activeSplitLayout : presentation.displayedSplitLayout
         splitMarginHandle.windowAllows = displayed.count == 1 && layout == nil
             && splitInsertion == nil && spaceCreation == nil && !isPopupWindow
-        splitView.configure(orientation: splitInsertion?.request.orientation ?? layout?.orientation ?? .horizontal,
-                            factors: splitInsertion?.request.previewFactors ?? layout?.widthFactors ?? [1])
+        let pending = splitInsertion?.request
+        let pendingLayout = pending?.previewLayout
+        splitView.configure(orientation: pendingLayout?.orientation ?? pending?.orientation ?? layout?.orientation ?? .horizontal,
+                            factors: pendingLayout?.widthFactors ?? pending?.previewFactors ?? layout?.widthFactors ?? [1],
+                            stacks: pending == nil ? layout?.stacks : pendingLayout?.stacks)
         for tab in selected {
             if placeholderIDs.contains(tab.id) {
                 panes[tab.id]?.showPlaceholder(store.placeholderImages.image(for: tab.id, in: presentationID), title: tab.title) { [weak self] in

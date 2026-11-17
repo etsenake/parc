@@ -82,6 +82,8 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         private let contents: [NSView]
         private let originalOrientation: SplitOrientation
         private let originalFactors: [Double]
+        private let originalStacks: BrowserSplitStacks?
+        private let mainRowCount: Int
         private let hostBounds: NSRect
         private let hostFrame: NSRect
         private let windowFrame: NSRect
@@ -113,6 +115,8 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             panes = owner.arrangedSubviews; self.contents = contents
             originalOrientation = owner.savedOrientation; orientation = owner.savedOrientation
             originalFactors = owner.savedFactors
+            originalStacks = owner.savedStacks
+            mainRowCount = owner.activeStacks?.slotSizes.count ?? owner.arrangedSubviews.count
             hostBounds = host.bounds; hostFrame = host.frame; windowFrame = owner.window?.frame ?? .zero
             scale = owner.paneBackingScale; splitFrame = owner.frame; splitBounds = owner.bounds
             paneFrames = panes.map(\.frame)
@@ -121,14 +125,15 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             region.wantsLayer = true; region.setAccessibilityElement(false); region.setAccessibilityChildren([])
         }
         var incomingPaneSize: NSSize {
-            NSSize(width: splitBounds.width / CGFloat(panes.count + 1), height: splitBounds.height)
+            NSSize(width: splitBounds.width / CGFloat(mainRowCount + 1), height: splitBounds.height)
         }
         var isCurrent: Bool {
             guard !ended, let owner, let host, let window, owner.dropReservation === self,
                   owner.window === window, host.window === window, owner.isDescendant(of: host),
                   host.bounds == hostBounds, host.frame == hostFrame, window.frame == windowFrame,
                   owner.paneBackingScale == scale, owner.savedOrientation == originalOrientation,
-                  owner.savedFactors == originalFactors, panes.count == owner.arrangedSubviews.count,
+                  owner.savedFactors == originalFactors, owner.savedStacks == originalStacks,
+                  panes.count == owner.arrangedSubviews.count,
                   zip(panes, owner.arrangedSubviews).allSatisfy({ $0 === $1 }),
                   contents.enumerated().allSatisfy({ $0.element.isDescendant(of: panes[$0.offset]) }) else { return false }
             if updating { return true }
@@ -311,6 +316,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         onInteractivePaneEditing?(false)
     }
     var prepareDividerResize: (() -> (([Double]) -> Bool)?)?
+    var prepareStackedResize: (() -> ((SplitStackResize) -> BrowserSplitStacks?)?)?
     private var dividerGrips: [CALayer] = []
     private var dividerTrackingAreas: [NSTrackingArea] = []
     private var hoveredDivider: Int?
@@ -463,10 +469,23 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     }
     private var savedOrientation: SplitOrientation = .horizontal
     private var savedFactors: [Double] = [1]
+    private var savedStacks: BrowserSplitStacks?
+    private var activeStacks: BrowserSplitStacks? {
+        savedStacks?.validated(paneCount: arrangedSubviews.count)
+    }
     var onSnapTransition: () -> Void = {
         NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
     }
     private lazy var dividerPan = NSPanGestureRecognizer(target: self, action: #selector(handleDividerPan(_:)))
+    private struct StackLevel {
+        let divider: SplitStackDivider
+        let stacks: BrowserSplitStacks
+        let views: [NSView]
+        let horizontal: Bool
+        let available: CGFloat
+        let rescaled: Bool
+        let commit: (SplitStackResize) -> BrowserSplitStacks?
+    }
     private struct Resize {
         let divider: Int
         let views: [NSView]
@@ -477,9 +496,11 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         let originalFactors: [Double]
         var origin: NSPoint
         let commit: ([Double]) -> Bool
+        var level: StackLevel? = nil
         var snap = SplitDividerSnapState()
         var factors: [Double]
         var moved = false
+        var movesHorizontally: Bool { level?.horizontal ?? (orientation == .horizontal) }
     }
     private var resize: Resize?
     private var isTrackingDivider: Bool { resize != nil }
@@ -524,9 +545,17 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
 
     private func updateContainerMinimum() {
         guard let host = constrainedHost, superview === host else { return }
-        let count = arrangedSubviews.count + (dropReservation?.index == nil ? 0 : 1)
-        let width = count > 1 ? expandedPaneMinimum * CGFloat(count) + dividerThickness * CGFloat(count - 1) : 0
-        let height: CGFloat = count > 1 ? 382 : 0
+        let reserving = dropReservation?.index != nil
+        let count = arrangedSubviews.count + (reserving ? 1 : 0)
+        let width: CGFloat, height: CGFloat
+        if let stacks = activeStacks {
+            let size = SplitStackGeometry.minimumSize(orientation: savedOrientation,
+                slotSizes: stacks.slotSizes + (reserving ? [1] : []), minimum: expandedPaneMinimum, thickness: dividerThickness)
+            width = size.width; height = size.height
+        } else {
+            width = count > 1 ? expandedPaneMinimum * CGFloat(count) + dividerThickness * CGFloat(count - 1) : 0
+            height = count > 1 ? 382 : 0
+        }
         let widthChanged = minimumWidthConstraint?.constant != width
         let heightChanged = minimumHeightConstraint?.constant != height
         if widthChanged { minimumWidthConstraint?.constant = width }
@@ -553,9 +582,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
 
 
     private func alignedPaneFrame(_ frame: NSRect) -> NSRect {
-        let left = frame.minX.rounded(), top = frame.minY.rounded()
-        return NSRect(x: left, y: top, width: max(0, frame.maxX.rounded() - left),
-                      height: max(0, frame.maxY.rounded() - top))
+        SplitStackGeometry.aligned(frame)
     }
 
     private var paneBackingScale: CGFloat {
@@ -580,8 +607,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         return BrowserSplitLayout.normalized(lengths, count: lengths.count) ?? factors
     }
 
-    private func dividerFraction(distance: CGFloat, pairShare: Double) -> Double? {
-        let available = availablePaneLength
+    private func dividerFraction(distance: CGFloat, pairShare: Double, available: CGFloat) -> Double? {
         guard distance.isFinite, available.isFinite, available > 0 else { return nil }
         let minimum = Double(minimumPaneLength / available)
         let fraction = max(minimum, min(Double(distance / available), pairShare - minimum))
@@ -668,7 +694,10 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     }
     private func dividerCursor(topmost: NSPoint?) -> NSCursor? {
         guard topmost != nil || isDividerPanActive else { return nil }
-        return isVertical ? .resizeLeftRight : .resizeUpDown
+        guard let stacked = stackedDividers else { return isVertical ? .resizeLeftRight : .resizeUpDown }
+        let hovered = topmost.flatMap { divider(at: $0) }.flatMap { stacked.indices.contains($0) ? stacked[$0] : nil }
+        let vertical = resize?.movesHorizontally ?? hovered?.isVerticalBar ?? isVertical
+        return vertical ? .resizeLeftRight : .resizeUpDown
     }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -729,8 +758,15 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         hoveredDivider = next
         synchronizeDividerPresentation(animated: animated)
     }
+    private var stackedDividers: [SplitStackGeometry.Divider]? {
+        guard let stacks = activeStacks else { return nil }
+        guard dropReservation?.index == nil else { return [] }
+        return SplitStackGeometry.dividers(paneFrames: arrangedSubviews.map(\.frame), size: bounds.size,
+            orientation: savedOrientation, stacks: stacks, thickness: dividerThickness)
+    }
     private var dividerRects: [NSRect] {
         guard dropReservation?.index == nil else { return [] }
+        if let stacked = stackedDividers { return stacked.map(\.rect) }
         return arrangedSubviews.dropLast().map { pane in
             isVertical
                 ? NSRect(x: pane.frame.maxX, y: 0, width: dividerThickness, height: bounds.height)
@@ -738,7 +774,8 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         }
     }
     private var dividerRegions: [NSRect] {
-        dividerRects.map { rect in
+        if let stacked = stackedDividers { return stacked.map(\.region) }
+        return dividerRects.map { rect in
             isVertical
                 ? NSRect(x: rect.minX, y: rect.minY + draggableTopInset,
                          width: rect.width, height: max(0, rect.height - draggableTopInset))
@@ -758,14 +795,16 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         }
         if let hoveredDivider, !rects.indices.contains(hoveredDivider) { self.hoveredDivider = nil }
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let bars = stackedDividers?.map(\.isVerticalBar)
         for (index, rect) in rects.enumerated() {
             let grip = dividerGrips[index]
+            let vertical = bars.flatMap { $0.indices.contains(index) ? $0[index] : nil } ?? isVertical
             let color = NSColor(srgbRed: dark ? 1 : 0, green: dark ? 1 : 0, blue: dark ? 1 : 0,
                                 alpha: hoveredDivider == index ? 0.5 : 0.2).cgColor
             let previous = grip.presentation()?.backgroundColor ?? grip.backgroundColor
             let changed = grip.backgroundColor != color
             CATransaction.begin(); CATransaction.setDisableActions(true)
-            grip.frame = isVertical
+            grip.frame = vertical
                 ? NSRect(x: rect.midX - 1, y: rect.midY - 12, width: 2, height: 24)
                 : NSRect(x: rect.midX - 12, y: rect.midY - 1, width: 24, height: 2)
             grip.backgroundColor = color
@@ -778,11 +817,12 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         }
     }
 
-    func configure(orientation: SplitOrientation, factors: [Double]) {
-        let changed = savedOrientation != orientation || savedFactors != factors
+    func configure(orientation: SplitOrientation, factors: [Double], stacks: BrowserSplitStacks? = nil) {
+        let changed = savedOrientation != orientation || savedFactors != factors || savedStacks != stacks
         if changed { retireDropReservation() }
         savedOrientation = orientation
         savedFactors = factors
+        savedStacks = stacks
         updateContainerMinimum()
         if changed, isTrackingDivider { finishDividerResize(commit: false) }
         else if !isTrackingDivider { applySavedFrames() }
@@ -800,7 +840,50 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         if !isTrackingDivider { applySavedFrames() }
     }
     private func applySavedFrames() {
-        applyFrames(factors: savedFactors)
+        if let stacks = activeStacks { applyStackedFrames(stacks) } else { applyFrames(factors: savedFactors) }
+    }
+    private func applyStackedFrames(_ stacks: BrowserSplitStacks) {
+        guard !isApplyingLayout else { return }
+        clearLayoutAnimation()
+        isApplyingLayout = true
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let reservation = dropReservation
+        var views = arrangedSubviews
+        var shape = stacks
+        if let reservation, let index = reservation.index {
+            let boundaries = stacks.slotBoundaries
+            let slot = boundaries.lastIndex { $0 <= index } ?? 0
+            shape = stacks.reservingSlot(at: slot)
+            views.insert(reservation.region, at: boundaries[slot])
+        }
+        isVertical = savedOrientation == .horizontal
+        let frames = SplitStackGeometry.paneFrames(size: bounds.size, orientation: savedOrientation, stacks: shape,
+            thickness: dividerThickness, minimum: expandedPaneMinimum, scale: paneBackingScale)
+        var anyFrameChanged = false
+        for (pane, frame) in zip(views, frames) {
+            let frameChanged = pane.frame != frame
+            if frameChanged {
+                pane.frame = frame
+                anyFrameChanged = true
+            }
+            guard pane !== reservation?.region else { continue }
+            if frameChanged { pane.needsLayout = true }
+            if SplitLayoutFlushSkip.shouldFlush(
+                frameChanged: frameChanged,
+                needsLayout: pane.needsLayout,
+                subtreeNeedsLayout: pane.subviews.contains(where: \.needsLayout)
+            ) {
+                pane.layoutSubtreeIfNeeded()
+            }
+        }
+        CATransaction.commit()
+        isApplyingLayout = false
+        if anyFrameChanged { needsDisplay = true }
+        synchronizePaneShadows()
+        synchronizeDividerPresentation(animated: false)
+        updateTrackingAreas()
+        dividerLayoutDidChange()
     }
     private func applyFrames(factors proposedFactors: [Double]) {
         guard !isApplyingLayout else { return }
@@ -888,6 +971,17 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         guard let divider = divider(at: point) else { super.mouseDown(with: event); return }
         guard event.clickCount == 2 else { return }
         finishDividerResize(commit: false)
+        if let stacks = activeStacks {
+            guard let id = stacks.divider(after: divider), let pair = stackedPair(id, in: stacks) else { return }
+            var factors = pair.factors
+            let half = (factors[id.index] + factors[id.index + 1]) / 2
+            factors[id.index] = half; factors[id.index + 1] = half
+            let positions = captureLayoutPresentation()
+            if commitStackedChange(stackedPairChange(id, factors: factors, rescaled: pair.rescaled)) {
+                animateEqualizedLayout(from: positions)
+            }
+            return
+        }
         guard let commit = prepareDividerResize?(),
               var factors = resizableFactors(at: divider) else { return }
         let views = arrangedSubviews, originalBounds = bounds, orientation = savedOrientation
@@ -949,14 +1043,77 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     }
     private var resizeIsCurrent: Bool {
         guard let resize, resize.bounds == bounds, resize.orientation == savedOrientation,
-              resize.backingScale == paneBackingScale, resize.views.count == arrangedSubviews.count else { return false }
+              resize.backingScale == paneBackingScale, resize.views.count == arrangedSubviews.count,
+              resize.level?.stacks.slotSizes == activeStacks?.slotSizes else { return false }
         return zip(resize.views, arrangedSubviews).allSatisfy { $0 === $1 }
+    }
+    private func stackLevel(_ slot: Int?, in stacks: BrowserSplitStacks)
+        -> (views: [NSView], horizontal: Bool, available: CGFloat, factors: [Double])? {
+        guard let factors = stacks.factors(inSlot: slot) else { return nil }
+        let boundaries = stacks.slotBoundaries
+        let views: [NSView]
+        if let slot {
+            guard boundaries.indices.contains(slot + 1), boundaries[slot + 1] <= arrangedSubviews.count else { return nil }
+            views = Array(arrangedSubviews[boundaries[slot]..<boundaries[slot + 1]])
+        } else {
+            views = boundaries.dropLast().compactMap { arrangedSubviews.indices.contains($0) ? arrangedSubviews[$0] : nil }
+        }
+        guard views.count == factors.count, views.count > 1 else { return nil }
+        let horizontal = (slot == nil) == (savedOrientation == .horizontal)
+        let length = horizontal ? bounds.width : bounds.height
+        return (views, horizontal, max(0, length - dividerThickness * CGFloat(views.count - 1)), factors)
+    }
+    private func stackedShares(_ slot: Int?) -> (shares: [Double], minimum: Double)? {
+        guard let stacks = activeStacks, let level = stackLevel(slot, in: stacks) else { return nil }
+        return SplitStackGeometry.adjustableShares(saved: level.factors,
+            shown: level.views.map { Double(level.horizontal ? $0.frame.width : $0.frame.height) },
+            available: Double(level.available), minimum: Double(minimumPaneLength))
+    }
+    private func commitStackedChange(_ change: SplitStackResize?) -> Bool {
+        guard let change, let commit = prepareStackedResize?() else { return false }
+        let views = arrangedSubviews, originalBounds = bounds, orientation = savedOrientation
+        let committed = commit(change)
+        let current = originalBounds == bounds && orientation == savedOrientation
+            && views.count == arrangedSubviews.count
+            && zip(views, arrangedSubviews).allSatisfy { $0 === $1 }
+        if let committed, current, committed.paneCount == arrangedSubviews.count {
+            savedStacks = committed; savedFactors = committed.flattenedFactors
+        }
+        applySavedFrames()
+        return committed != nil && current
+    }
+    private func stackedPair(_ id: SplitStackDivider, in stacks: BrowserSplitStacks)
+        -> (level: (views: [NSView], horizontal: Bool, available: CGFloat, factors: [Double]), factors: [Double], rescaled: Bool)? {
+        guard let level = stackLevel(id.slot, in: stacks),
+              let factors = SplitStackGeometry.resizableFactors(saved: level.factors,
+                  shown: level.views.map { Double(level.horizontal ? $0.frame.width : $0.frame.height) },
+                  divider: id.index, available: Double(level.available), minimum: Double(minimumPaneLength)) else { return nil }
+        let rescaled = !zip(factors, level.factors).allSatisfy { abs($0 - $1) < 1e-9 }
+        return (level, factors, rescaled)
+    }
+    private func stackedPairChange(_ id: SplitStackDivider, factors: [Double], rescaled: Bool) -> SplitStackResize {
+        guard !rescaled else { return .level(slot: id.slot, factors: factors) }
+        let first = factors[id.index]
+        return .divider(id.index, slot: id.slot, leadingShare: first / (first + factors[id.index + 1]))
+    }
+    private func beginStackedResize(at point: NSPoint, divider: Int, stacks: BrowserSplitStacks) -> Bool {
+        guard let id = stacks.divider(after: divider), let pair = stackedPair(id, in: stacks),
+              let commit = prepareStackedResize?() else { return false }
+        let level = pair.level
+        resize = Resize(divider: id.index, views: arrangedSubviews, frames: level.views.map(\.frame), bounds: bounds,
+            orientation: savedOrientation, backingScale: paneBackingScale, originalFactors: pair.factors, origin: point,
+            commit: { _ in false }, level: StackLevel(divider: id, stacks: stacks, views: level.views,
+                horizontal: level.horizontal, available: level.available, rescaled: pair.rescaled, commit: commit),
+            factors: pair.factors)
+        return true
     }
     @discardableResult
     func beginDividerResize(at point: NSPoint) -> Bool {
         clearLayoutAnimation()
         finishDividerResize(commit: false)
-        guard let divider = divider(at: point), let commit = prepareDividerResize?(),
+        guard let divider = divider(at: point) else { return false }
+        if let stacks = activeStacks { return beginStackedResize(at: point, divider: divider, stacks: stacks) }
+        guard let commit = prepareDividerResize?(),
               let factors = resizableFactors(at: divider) else { return false }
         resize = Resize(divider: divider, views: arrangedSubviews,
             frames: arrangedSubviews.map(\.frame), bounds: bounds, orientation: savedOrientation,
@@ -967,18 +1124,19 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     func updateDividerResize(at point: NSPoint, velocity: CGFloat) {
         guard resizeIsCurrent, var current = resize else { finishDividerResize(commit: false); return }
         let first = current.frames[current.divider]
-        let horizontal = current.orientation == .horizontal
+        let horizontal = current.movesHorizontally
         let firstLength = horizontal ? first.width : first.height
         guard point.x.isFinite, point.y.isFinite, velocity.isFinite else { return }
         let delta = horizontal ? point.x - current.origin.x : point.y - current.origin.y
-        let liveFirst = current.views[current.divider].frame
+        let liveFirst = (current.level?.views ?? current.views)[current.divider].frame
         let originShift = horizontal ? liveFirst.minX - first.minX : liveFirst.minY - first.minY
         let proposed = firstLength + delta - originShift
         let pairShare = current.originalFactors[current.divider] + current.originalFactors[current.divider + 1]
-        let center = availablePaneLength * CGFloat(pairShare) / 2
+        let available = current.level?.available ?? availablePaneLength
+        let center = available * CGFloat(pairShare) / 2
         let transitioned = current.snap.update(distance: Double(proposed - center), velocity: Double(velocity))
         let wanted = current.snap.isSnapped ? center : proposed
-        guard let fraction = dividerFraction(distance: wanted, pairShare: pairShare) else { return }
+        guard let fraction = dividerFraction(distance: wanted, pairShare: pairShare, available: available) else { return }
         let nextFirst = fraction
         let nextSecond = pairShare - nextFirst
         let factorsChanged = nextFirst != current.factors[current.divider]
@@ -992,7 +1150,9 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             }
             current.moved = true
             resize = current
-            applyFrames(factors: current.factors)
+            if let level = current.level {
+                applyStackedFrames(level.stacks.replacing(current.factors, inSlot: level.divider.slot))
+            } else { applyFrames(factors: current.factors) }
         } else {
             resize = current
         }
@@ -1003,7 +1163,12 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         guard let current = resize else { return }
         resize = nil
         isPaneInputLocked = false
-        if commit, valid, current.moved, current.commit(current.factors) { savedFactors = current.factors }
+        if commit, valid, current.moved, let level = current.level {
+            if let committed = level.commit(stackedPairChange(level.divider, factors: current.factors, rescaled: level.rescaled)),
+               committed.paneCount == arrangedSubviews.count {
+                savedStacks = committed; savedFactors = committed.flattenedFactors
+            }
+        } else if commit, valid, current.moved, current.commit(current.factors) { savedFactors = current.factors }
         applySavedFrames()
         isDividerPanActive = false
         resampleDividerPointer()
@@ -1015,20 +1180,50 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     }
     @discardableResult
     func moveDivider(_ divider: Int, forward: Bool) -> Bool {
-        commitSteppedResize { SplitPaneResize.movingDivider(divider, in: $0, forward: forward, minimum: $1) }
+        if let stacks = activeStacks { return commitStackedChange(stackedDividerStep(divider, forward: forward, stacks: stacks)) }
+        return commitSteppedResize { SplitPaneResize.movingDivider(divider, in: $0, forward: forward, minimum: $1) }
     }
     @discardableResult
     func resizePane(_ pane: NSView, growing: Bool) -> Bool {
-        commitSteppedResize(paneStep(pane, growing: growing))
+        if let stacks = activeStacks { return commitStackedChange(stackedPaneStep(pane, growing: growing, stacks: stacks)) }
+        return commitSteppedResize(paneStep(pane, growing: growing))
     }
     @discardableResult
     func equalizePanes() -> Bool {
-        commitSteppedResize(equalStep)
+        if let stacks = activeStacks { return commitStackedChange(stackedEqualStep(stacks)) }
+        return commitSteppedResize(equalStep)
     }
     func canResizePane(_ pane: NSView, growing: Bool) -> Bool {
-        steppedFactors(paneStep(pane, growing: growing)) != nil
+        if let stacks = activeStacks { return stackedPaneStep(pane, growing: growing, stacks: stacks) != nil }
+        return steppedFactors(paneStep(pane, growing: growing)) != nil
     }
-    var canEqualizePanes: Bool { steppedFactors(equalStep) != nil }
+    var canEqualizePanes: Bool {
+        if let stacks = activeStacks { return stackedEqualStep(stacks) != nil }
+        return steppedFactors(equalStep) != nil
+    }
+    private func stackedStep(_ slot: Int?, _ adjust: ([Double], Double) -> SplitStackResize?) -> SplitStackResize? {
+        guard !isTrackingDivider, dropReservation == nil, interactivePaneEdit == nil, !isApplyingLayout,
+              window != nil, let shares = stackedShares(slot) else { return nil }
+        return adjust(shares.shares, shares.minimum)
+    }
+    private func stackedDividerStep(_ divider: Int, forward: Bool, stacks: BrowserSplitStacks) -> SplitStackResize? {
+        guard let id = stacks.divider(after: divider) else { return nil }
+        return stackedStep(id.slot) { shares, minimum in
+            SplitPaneResize.movingDivider(id.index, in: shares, forward: forward, minimum: minimum).map {
+                .divider(id.index, slot: id.slot, leadingShare: $0[id.index] / ($0[id.index] + $0[id.index + 1]))
+            }
+        }
+    }
+    private func stackedPaneStep(_ pane: NSView, growing: Bool, stacks: BrowserSplitStacks) -> SplitStackResize? {
+        guard let index = arrangedSubviews.firstIndex(where: { $0 === pane }),
+              let slot = stacks.place(ofPane: index)?.slot else { return nil }
+        return stackedStep(nil) { shares, minimum in
+            SplitPaneResize.resizingPane(slot, in: shares, growing: growing, minimum: minimum).map { .slots($0) }
+        }
+    }
+    private func stackedEqualStep(_ stacks: BrowserSplitStacks) -> SplitStackResize? {
+        stackedStep(nil) { _, _ in stacks.isEven ? nil : .equal }
+    }
     private func paneStep(_ pane: NSView, growing: Bool) -> ([Double], Double) -> [Double]? {
         let index = arrangedSubviews.firstIndex { $0 === pane }
         return { shares, minimum in
@@ -1074,6 +1269,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private struct DividerAnnouncementBasis: Equatable {
         let orientation: SplitOrientation
         let factors: [Double]
+        let stacks: BrowserSplitStacks?
         let panes: [ObjectIdentifier]
     }
     private var dividerAccessibilityElements: [DividerAccessibilityElement] = []
@@ -1082,7 +1278,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private var announcedDividerBasis: DividerAnnouncementBasis?
     private var dividerSettleTimer: Timer?
     private var dividerAnnouncementBasis: DividerAnnouncementBasis {
-        DividerAnnouncementBasis(orientation: savedOrientation, factors: savedFactors,
+        DividerAnnouncementBasis(orientation: savedOrientation, factors: savedFactors, stacks: activeStacks,
                                  panes: arrangedSubviews.map(ObjectIdentifier.init))
     }
     private func canAnnounceDividers(endingLiveResize: Bool = false) -> Bool {
@@ -1168,8 +1364,14 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             self.owner = owner; self.index = index
             super.init()
         }
+        private var stackedDivider: SplitStackDivider? { owner?.activeStacks?.divider(after: index) }
         private var position: (value: Double, minimum: Double, maximum: Double)? {
-            guard isAvailable, let owner, let current = owner.adjustableShares,
+            guard isAvailable, let owner else { return nil }
+            if let divider = stackedDivider {
+                guard let current = owner.stackedShares(divider.slot) else { return nil }
+                return SplitStackGeometry.splitterPosition(shares: current.shares, index: divider.index, minimum: current.minimum)
+            }
+            guard let current = owner.adjustableShares,
                   current.shares.indices.contains(index + 1) else { return nil }
             let before = current.shares[..<index].reduce(0, +)
             let value = before + current.shares[index]
@@ -1179,7 +1381,11 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         override func isAccessibilityElement() -> Bool { isAvailable }
         override func accessibilityRole() -> NSAccessibility.Role? { .splitter }
         override func accessibilityLabel() -> String? {
-            (owner?.dividerRects.count ?? 0) > 1 ? "Split View Divider \(index + 1)" : "Split View Divider"
+            if let owner, let divider = stackedDivider {
+                return SplitStackGeometry.splitterLabel(index: index, count: owner.dividerRects.count,
+                                                        slot: divider.slot, orientation: owner.savedOrientation)
+            }
+            return (owner?.dividerRects.count ?? 0) > 1 ? "Split View Divider \(index + 1)" : "Split View Divider"
         }
         override func accessibilityHelp() -> String? { "Increase or decrease to resize the pages on either side." }
         override func accessibilityValue() -> Any? { reportedValue.map { NSNumber(value: $0) } }
@@ -1189,7 +1395,10 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             position?.value.formatted(.percent.precision(.fractionLength(0)))
         }
         override func accessibilityOrientation() -> NSAccessibilityOrientation {
-            owner?.isVertical == false ? .horizontal : .vertical
+            if let stacked = owner?.stackedDividers, stacked.indices.contains(index) {
+                return stacked[index].isVerticalBar ? .vertical : .horizontal
+            }
+            return owner?.isVertical == false ? .horizontal : .vertical
         }
         override func accessibilityParent() -> Any? { owner.flatMap { NSAccessibility.unignoredAncestor(of: $0) } }
         override func accessibilityFrame() -> NSRect {

@@ -848,6 +848,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         pageHost.layer?.backgroundColor = NSColor.white.cgColor
         pageHost.addSubview(splitView)
         splitView.prepareDividerResize = { [weak self] in self?.prepareSplitResize() }
+        splitView.prepareStackedResize = { [weak self] in self?.prepareStackedSplitResize() }
         splitView.onDividerPanActivity = { [weak self] in self?.setContentResizeReason(.splitDividerResize, active: $0) }
         splitView.onInteractivePaneEditing = { [weak self] active in
             self?.setContentResizeReason(.splitInteractiveEditing, active: active)

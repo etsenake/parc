@@ -531,7 +531,7 @@ extension BrowserWindowController {
             navigationURL: nil, localPage: document.0, localTitle: document.1,
             now: Date(), creation: creation),
             let homes = OriginalSplitDrop.savedHomes(source: id, state: prepared,
-                selection: request.selection, layout: request.layout, target: .insert(request.index),
+                selection: request.selection, layout: request.layout, target: request.target,
                 orientation: request.orientation, spaceID: request.spaceID),
             let plan = splitHomePlan(homes) else {
             cancelSplitInsertion(restoreFocus: true); return
@@ -566,11 +566,11 @@ extension BrowserWindowController {
         focusSelectedContent()
     }
 
-    func beginSplitInsertion(_ operation: SplitPaneOperation, paneID: UUID) {
+    func beginSplitInsertion(paneID: UUID, request makeRequest: (BrowserState) -> SplitPaneInsertion?) {
         guard splitInsertion == nil, commandBar == nil,
               splitCommandsAvailable, let window, window.isKeyWindow,
               PCNativeBrowserApplication.canPresentTabSwitcher(in: window),
-              let request = SplitPaneInsertion(paneID: paneID, operation: operation, state: presentedState),
+              let request = makeRequest(presentedState),
               let index = selectedTabIDs.firstIndex(of: paneID),
               let owner = splitCommandTarget(.focus(index + 1), paneID: paneID) else { return }
         let focus = currentTabID, binding = nativeBinding
@@ -669,7 +669,7 @@ extension BrowserWindowController {
             guard let prepared = request.preparedState(self.presentedState, tabID: id,
                 navigationURL: navigation?.url, now: Date(), creation: creation),
                 let homes = OriginalSplitDrop.savedHomes(source: id, state: prepared,
-                    selection: request.selection, layout: request.layout, target: .insert(request.index),
+                    selection: request.selection, layout: request.layout, target: request.target,
                     orientation: request.orientation, spaceID: request.spaceID) else {
                 self.cancelSplitInsertion(restoreFocus: true); return
             }
@@ -748,14 +748,37 @@ extension BrowserWindowController {
         commandBar = panel; panel.present()
     }
 
+    func beginSplitInsertion(_ operation: SplitPaneOperation, paneID: UUID) {
+        beginSplitInsertion(paneID: paneID) { SplitPaneInsertion(paneID: paneID, operation: operation, state: $0) }
+    }
+
     func prepareSplitResize() -> (([Double]) -> Bool)? {
+        guard let receipt = splitResizeReceipt(stacked: false) else { return nil }
+        return { factors in receipt { store, layout in store.resizeSplit(expected: layout, widthFactors: factors) } }
+    }
+
+    func prepareStackedSplitResize() -> ((SplitStackResize) -> BrowserSplitStacks?)? {
+        guard let receipt = splitResizeReceipt(stacked: true) else { return nil }
+        return { change in
+            var stacks: BrowserSplitStacks?
+            let committed = receipt { store, layout in
+                guard let resized = layout.resized(by: change), let shape = resized.stacks,
+                      store.resizeSplit(expected: layout, resized: resized) else { return false }
+                stacks = shape.validated(paneCount: resized.tabIDs.count)
+                return true
+            }
+            return committed ? stacks : nil
+        }
+    }
+
+    private func splitResizeReceipt(stacked: Bool) -> (((BrowserStore, BrowserSplitLayout) -> Bool) -> Bool)? {
         guard splitInsertion == nil, renderedPaneIDs == selectedTabIDs,
-              let window, window.isKeyWindow, let layout = activeSplitLayout,
+              let window, window.isKeyWindow, let layout = activeSplitLayout, (layout.stacks != nil) == stacked,
               let target = splitCommandTarget(.orientation(layout.orientation)), target.isAvailable,
               PCNativeBrowserApplication.canPresentTabSwitcher(in: window) else { return nil }
         let originalBounds = pageHost.bounds
         var used = false
-        return { [weak self, weak window] factors in
+        return { [weak self, weak window] save in
             guard !used else { return false }; used = true
             guard let self, let window, self.window === window, window.isKeyWindow,
                   target.isAvailable,
@@ -764,7 +787,7 @@ extension BrowserWindowController {
                   PCNativeBrowserApplication.canPresentTabSwitcher(in: window) else { return false }
             var committed = false
             self.performWindowCommand(selectNativePage: false) {
-                committed = self.store.resizeSplit(expected: layout, widthFactors: factors)
+                committed = save(self.store, layout)
             }
             return committed
         }
@@ -781,7 +804,11 @@ extension BrowserWindowController {
         switch command {
         case .focus(let number): return (1...selectedTabIDs.count).contains(number)
         case .next, .previous: return true
-        case .add, .addNew: return selectedTabIDs.count < 4 && splitInsertion == nil
+        case .add(let operation):
+            guard selectedTabIDs.count < 4, splitInsertion == nil else { return false }
+            guard activeSplitLayout?.stacks != nil, let focus = currentTabID else { return true }
+            return SplitPaneInsertion(paneID: focus, operation: operation, state: presentedState) != nil
+        case .addNew: return selectedTabIDs.count < 4 && splitInsertion == nil
         case .widen, .narrow, .equalize: return splitResizeIsAvailable(command)
         default: return selectedTabIDs.count > 1
         }
@@ -950,8 +977,15 @@ extension BrowserWindowController {
     func expandDisplayedSplit() {
         guard !isPopupWindow, presentation.isReady, !isClosing, !wholeWindowClose, !windowClosePending,
               spaceCreation == nil, splitInsertion == nil, nativeFullscreenTabID == nil,
-              transferringTabIDs.isEmpty, let focus = currentTabID, let layout = activeSplitLayout,
-              let factors = layout.expandedFactors(focusing: focus), factors != layout.widthFactors else { return }
+              transferringTabIDs.isEmpty, let focus = currentTabID, let layout = activeSplitLayout else { return }
+        if layout.stacks != nil {
+            guard let expanded = layout.expanded(focusing: focus), expanded != layout else { return }
+            prepareStoreContext()
+            guard store.resizeSplit(expected: layout, resized: expanded) else { return }
+            render(store.state)
+            return
+        }
+        guard let factors = layout.expandedFactors(focusing: focus), factors != layout.widthFactors else { return }
         prepareStoreContext()
         guard store.resizeSplit(expected: layout, widthFactors: factors) else { return }
         render(store.state)
