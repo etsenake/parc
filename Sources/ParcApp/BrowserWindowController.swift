@@ -455,6 +455,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let redo: String?
     }
     func refreshResidentTopDomains(_ bar: CommandBar) {
+        deliverCommandBarTitleIndex(to: bar)
         guard !isPrivateBrowsing, residentTopDomainRevision != store.historyRevision else { return }
         residentTopDomainRevision = store.historyRevision
         deliverCommandBarTopDomains(to: bar, profileID: activeProfileID)
@@ -472,6 +473,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var commandBarHistoryCache: (revision: UInt64, profileID: UUID, currentURL: String?, entries: [BrowserHistoryEntry])?
     var commandBarDocumentCache: (profileID: UUID, stamp: [Date], documents: [CommandBarDocument])?
     var commandBarTopDomainCache: (profileID: UUID, revision: UInt64, domains: [CommandBarRanking.Domain])?
+    let commandBarTitleIndex = CommandBarTitleIndexCache()
     var commandBarRecentPages: (query: PCNativeHistoryQuery, profileID: UUID, revision: UInt64)?
     var shortcutEssentials: ShortcutEssentialsWindow?
     var settings: SettingsWindow?

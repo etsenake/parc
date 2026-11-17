@@ -13,6 +13,7 @@ import SwiftUI
         var isSearch = false
         var url: URL? = nil
         var tabID: UUID? = nil
+        var archivedTabID: UUID? = nil
         var command: KeyboardShortcuts.MenuCommand? = nil
         var spaceAction: CommandBarSpaceAction? = nil
         var folderAction: CommandBarFolderAction? = nil
@@ -69,6 +70,7 @@ import SwiftUI
     private var submissionDepth = 0
     var onManagePasswords: (() -> Void)?
     var onOpenDocument: ((CommandBarDocument) -> Void)?
+    var onRestoreArchived: ((UUID) -> Bool)?
     var onMuteAllTabs: ((Bool) -> Bool)?
     var onManageSiteSearch: (() -> Void)?
     var onSearchSettings: (() -> Void)?
@@ -189,6 +191,13 @@ import SwiftUI
     private lazy var documents: [CommandBarDocument] = documentSource?() ?? []
     private var topDomainList: [CommandBarRanking.Domain] = []
     private var topDomainGeneration = 0
+    private var titleIndex: CommandBarTitleIndex?
+    private var pendingTitleIndex: CommandBarTitleIndex?
+    private var titleIndexGeneration = 0
+    private var historyRemovals: UInt64 = 0
+    private var hiddenPages: Set<String>? = []
+    var removedHistoryURLs: ((UInt64) -> Set<String>?)?
+    private var tabTitleTokens: [UUID: CommandBarTitleTokens] = [:]
     private var typedCommands: [CommandBarTypedCommand]
     private var commands: [KeyboardShortcuts.MenuCommand] = []
     private var commandSearch: [(title: String, text: String)] = []
@@ -705,7 +714,7 @@ import SwiftUI
             lastHistoryScanKey = nil
             cachedHistoryVisits = []
         }
-        self.tabs = tabs; self.spaces = spaces; self.folders = folders
+        self.tabs = tabs; self.spaces = spaces; self.folders = folders; tabTitleTokens = [:]
         refreshResults(requestNative: false)
     }
     func reconcileExtensionActions() {
@@ -798,6 +807,7 @@ import SwiftUI
     }
     private func refreshResults(requestNative: Bool = true, holdsPresentation: Bool = false) {
         guard !dismissed else { return }
+        if explicitSelectionID == nil { adoptTitleIndex() }
         if extensionLaunchSnapshotIsStale {
             extensionLaunchSnapshot = extensionLaunchActions?() ?? []
             extensionLaunchSnapshotIsStale = false
@@ -1000,7 +1010,7 @@ import SwiftUI
             },
             historyTokens: [CommandBarHistoryScanSkip.historyMembershipToken(revision: historyRevision,
                                                                              excludedURL: historyExcludedURL)]
-                + (query.isEmpty ? ["recent-pages:\(recentPagesGeneration)"] : ["top-domains:\(topDomainGeneration)"]),
+                + (query.isEmpty ? ["recent-pages:\(recentPagesGeneration)"] : ["top-domains:\(topDomainGeneration)", "title-index:\(titleIndexGeneration):\(historyRemovals)"]),
             commandTokens: commands.map {
                 CommandBarOpenResultsSkip.commandToken(id: $0.id, title: $0.title, group: $0.group)
             } + typedCommands.filter { canPerformTypedCommand?($0) == true }.map {
@@ -1102,6 +1112,8 @@ import SwiftUI
     private func rankedResults(query: String) -> [Result] {
         var pool: [Result] = []
         var candidates: [CommandBarRanking.Candidate] = []
+        let titleQuery = titleMatchQuery(query), now = Date()
+        var titled: [(index: Int, key: String, score: CommandBarTitleMatch.Score, keepsWeak: Bool)] = []
         func add(_ result: Result, _ candidate: CommandBarRanking.Candidate) {
             var candidate = candidate
             if !result.isSearch, let url = result.url {
@@ -1146,8 +1158,27 @@ import SwiftUI
                 $0.noteID.map { "document:" + $0.uuidString.lowercased() } ?? "easel:" + ($0.easelID?.uuidString.lowercased() ?? "")
             } ?? url.map { CommandBarRanking.pageKey($0, title: tab.title) } ?? "tab:" + tab.id.uuidString
             let row = tabResult(tab)
+            if let titleQuery, let score = CommandBarTitleMatch.score(titleQuery, titleTokens(for: tab, title: row.title), kind: .tab,
+                                                                     lastUsed: tab.lastAccessed, visits: titleIndex?.visits(forKey: key) ?? 0, now: now) {
+                titled.append((candidates.count, key, score, false))
+            }
             add(row, .init(archetype: .tab, key: key, texts: [row.title, tab.title, url?.host ?? "", tab.url],
                            urlKey: url.map(CommandBarRowDiff.pageKey)))
+        }
+        if let titleQuery, let index = titleIndex {
+            let hits = index.search(titleQuery, now: now, includesArchive: !addressOnly, hiddenPages: hiddenPages,
+                                    excludingURLKey: historyExcludedURL.flatMap(URL.init(string:)).map(CommandBarRowDiff.pageKey))
+            for hit in hits.archived {
+                titled.append((candidates.count, hit.entry.key, hit.score, true))
+                add(archivedResult(hit.entry, now: now), .init(archetype: .archived, key: hit.entry.key, urlKey: hit.entry.urlKey))
+            }
+            for hit in hits.pages {
+                titled.append((candidates.count, hit.entry.key, hit.score, true))
+                add(pageResult(hit.entry), .init(archetype: .history, key: hit.entry.key, urlKey: hit.entry.urlKey))
+            }
+        }
+        for (entry, score) in zip(titled, CommandBarTitleMatch.resolve(titled.map { ($0.key, $0.score, $0.keepsWeak) })) {
+            candidates[entry.index].titleScore = score
         }
         for document in (addressOnly ? [] : documents) {
             add(Result(id: document.key, title: document.title.isEmpty ? (document.kind == .note ? "Untitled Note" : "Untitled Easel") : document.title,
@@ -1178,6 +1209,48 @@ import SwiftUI
         typedCommands = list
         lastOpenResultsFingerprint = nil
         refreshResults(requestNative: false)
+    }
+    func updateTitleIndex(_ index: CommandBarTitleIndex?, historyRemovals: UInt64) {
+        guard !dismissed else { return }
+        let hidden = hiddenPages
+        self.historyRemovals = historyRemovals
+        var changed = false
+        if let index, index !== titleIndex {
+            pendingTitleIndex = index
+            if explicitSelectionID == nil || titleIndex.map(index.withdrawsEntries(of:)) == true { adoptTitleIndex(); changed = true }
+        }
+        hidePagesRemovedSinceIndex()
+        if (changed || hiddenPages != hidden) && !editState.query.isEmpty && !isScoped { refreshResults(requestNative: false) }
+    }
+    private func adoptTitleIndex() {
+        guard let pending = pendingTitleIndex else { return }
+        titleIndex = pending; pendingTitleIndex = nil; titleIndexGeneration += 1
+        hidePagesRemovedSinceIndex()
+    }
+    private func hidePagesRemovedSinceIndex() {
+        guard let index = titleIndex, index.historyRemovals != historyRemovals else { hiddenPages = []; return }
+        hiddenPages = removedHistoryURLs?(index.historyRemovals) ?? nil
+    }
+    private func titleMatchQuery(_ query: String) -> CommandBarTitleQuery? {
+        CommandBarTitleMatch.wordsQuery(query, nativeRowsAnswer: nativeHold.nativeRowsAnswer(query),
+                                        defaultIsSearch: nativeResults.first?.search)
+    }
+    private func titleTokens(for tab: BrowserTab, title: String) -> CommandBarTitleTokens {
+        if let tokens = tabTitleTokens[tab.id] { return tokens }
+        let tokens = CommandBarTitleTokens(titles: [title, tab.title], host: URL(string: tab.url)?.host)
+        tabTitleTokens[tab.id] = tokens
+        return tokens
+    }
+    private func archivedResult(_ entry: CommandBarTitleIndex.Entry, now: Date) -> Result {
+        Result(id: "archived:" + (entry.tabID?.uuidString ?? entry.url), title: entry.title, detail: "",
+               symbol: InternalPage.sidebarFallbackSymbol(urlString: entry.url),
+               caption: CommandBarTitleText.archivedCaption(archivedAt: entry.date, now: now),
+               url: URL(string: entry.url), archivedTabID: entry.tabID)
+    }
+    private func pageResult(_ entry: CommandBarTitleIndex.Entry) -> Result {
+        Result(id: "history:" + entry.url, title: entry.title, detail: "", symbol: "clock",
+               subtitle: CommandBarResultText.pageSubtitle(title: entry.pageTitle, url: entry.url),
+               url: URL(string: entry.url), input: entry.url)
     }
     func updateTopDomains(_ domains: [CommandBarRanking.Domain]) {
         guard !dismissed, domains != topDomainList else { return }
@@ -1248,6 +1321,7 @@ import SwiftUI
         }
         if result.managesPasswords { return onManagePasswords != nil }
         if result.document != nil { return onOpenDocument != nil }
+        if result.archivedTabID != nil { return onRestoreArchived != nil }
         if result.muteAllTabs != nil { return onMuteAllTabs != nil }
         if let action = result.spaceAction { return canFocusSpace?(action) == true }
         if let action = result.folderAction { return canOpenFolder?(action) == true }
@@ -1457,7 +1531,7 @@ import SwiftUI
         guard results.indices.contains(row) else { return nil }
         let result = results[row]
         let cell = CommandResultCell(title: result.title, subtitle: result.subtitle, detail: result.detail, accessory: accessoryText(result),
-                                     isTab: result.tabID != nil,
+                                     isTab: result.tabID != nil || result.archivedTabID != nil,
                                      icon: result.extensionLaunch?.icon ?? result.url.flatMap { icons[$0] } ?? Self.iconImage(result.symbol),
                                      spokenAccessory: result.caption?.spoken, spokenSubtitle: CommandBarResultText.spokenSubtitle(result.subtitle),
                                      enabled: enabled(result), spaceAction: result.spaceAction, folderAction: result.folderAction ?? result.folderMove?.folder,
@@ -1473,7 +1547,7 @@ import SwiftUI
     private func accessoryText(_ result: Result) -> String {
         let shortcut = result.favoriteRename != nil
             ? KeyboardShortcuts.shared.activeShortcut(for: "renameCurrentItem:") : result.command?.shortcut
-        return result.tabID != nil ? (result.caption ?? .switchToTab).text : shortcut?.display ?? ""
+        return result.tabID != nil || result.archivedTabID != nil ? (result.caption ?? .switchToTab).text : shortcut?.display ?? ""
     }
     private func isDeletable(_ result: Result) -> Bool {
         if let navigation = result.navigation { return omnibox?.canDeleteResult(navigation) == true }
@@ -1919,6 +1993,13 @@ import SwiftUI
             let launch = onLaunchExtension, stillValid = isOwnerValid
             respond(to: .submitted)
             if stillValid?() == false || launch?(action) != true { NSSound.beep() }
+            return
+        }
+        if let id = result.archivedTabID {
+            guard disposition == .ordinary, !dismissed, isOwnerValid?() != false else { NSSound.beep(); return }
+            let restore = onRestoreArchived, stillValid = isOwnerValid
+            respond(to: .submitted)
+            if stillValid?() == false || restore?(id) != true { NSSound.beep() }
             return
         }
         if let action = result.extensionAction {

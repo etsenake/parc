@@ -87,6 +87,23 @@ extension BrowserWindowController {
             }
         }
     }
+    func deliverCommandBarTitleIndex(to panel: CommandBar) {
+        guard !isPopupWindow, !isPrivateBrowsing, splitInsertion == nil else { return }
+        let removals = store.historyRemovalRevision
+        let stamp = CommandBarTitleIndex.Stamp(profileID: activeProfileID, state: store.stateRevision,
+                                               history: store.historyRevision, removals: removals)
+        let built = commandBarTitleIndex.index(for: stamp)
+        panel.updateTitleIndex(built, historyRemovals: removals)
+        if built != nil { return }
+        commandBarTitleIndex.onBuilt = { [weak self] index in
+            guard let self, index.profileID == self.activeProfileID, self.splitInsertion == nil,
+                  !self.isPopupWindow, !self.isPrivateBrowsing else { return }
+            for bar in [self.commandBar, self.residentCommandBar].compactMap({ $0 }) {
+                bar.updateTitleIndex(index, historyRemovals: self.store.historyRemovalRevision)
+            }
+        }
+        commandBarTitleIndex.request(stamp) { [weak self] in (self?.store.state.tabs ?? [], self?.store.state.history ?? []) }
+    }
     private func deliverCommandBarRecentPages(to panel: CommandBar, profileID: UUID) {
         commandBarRecentPages?.query.invalidate()
         commandBarRecentPages = nil
@@ -142,6 +159,7 @@ extension BrowserWindowController {
                           historyRevision: store.historyRevision,
                           historyExcludedURL: currentURL,
                           spaces: commandBarSpaceActions(), folders: commandBarFolderActions())
+            deliverCommandBarTitleIndex(to: bar)
         }
         CommandBarReconcileInputs.withPresentedBar(residentCommandBar) { bar in
             let profileID = activeProfileID
@@ -158,6 +176,7 @@ extension BrowserWindowController {
                 let commands = commandBarTypedCommands(items: items, profileID: profileID)
                 residentTypedCommands = (items, commands)
                 bar.updateTypedCommands(commands)
+                deliverCommandBarTitleIndex(to: bar)
             }
             if bar.hasFocus { refreshResidentTopDomains(bar) }
         }
@@ -213,6 +232,7 @@ extension BrowserWindowController {
         if !isPopupWindow, !isPrivateBrowsing {
             deliverCommandBarTopDomains(to: panel, profileID: activeProfileID)
             deliverCommandBarRecentPages(to: panel, profileID: activeProfileID)
+            deliverCommandBarTitleIndex(to: panel)
         }
     }
     func makeCommandBar(in window: NSWindow, newTab: Bool, inSidebar: Bool, addressAnchor: NSView?,
@@ -673,6 +693,23 @@ extension BrowserWindowController {
             case .note: self.openNote(id: document.id, title: document.title)
             case .easel: self.openEasel(id: document.id, title: document.title)
             }
+        }
+        panel.removedHistoryURLs = { [weak self] revision in
+            self?.store.removedHistoryURLs(profileID: commandProfile, after: revision)
+        }
+        panel.onRestoreArchived = { [weak self] id in
+            guard isOriginal(), let self, !self.isPrivateBrowsing, !self.isPopupWindow,
+                  let item = self.store.archivedItems(profileID: commandProfile).first(where: { $0.tabs.contains { $0.id == id } })
+            else { return false }
+            if let peek = self.activePeek, let lease = self.archivePreviews[peek.identity],
+               lease.tabs.contains(where: { $0.id == id }) {
+                self.promotePeek(peek, split: false)
+                return true
+            }
+            guard item.tabs.allSatisfy({ self.ownership.canUse($0.id, owner: self.presentationID) }) else { return false }
+            self.restoreArchivedTabs([item.id], profileID: commandProfile,
+                                     destination: .putBack(currentSpaceID: self.activeSpaceID, requestedSpaceID: nil))
+            return self.store.state.containsTab(id, where: { $0.archivedAt == nil })
         }
         panel.onManageSiteSearch = { [weak self] in
             guard isOriginal(), let self, !self.isPrivateBrowsing else { return }

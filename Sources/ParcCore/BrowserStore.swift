@@ -2215,6 +2215,10 @@ final class BrowserStore: ObservableObject {
     var statePublisher: Published<BrowserState>.Publisher { $publishedState }
     private(set) var stateRevision: UInt64 = 0
     private(set) var historyRevision: UInt64 = 0
+    private(set) var historyRemovalRevision: UInt64 = 0
+    private var historyRemovalLog: [(revision: UInt64, profileID: UUID, urls: Set<String>?)] = []
+    private static let historyRemovalLogLimit = 32
+    private static let historyRemovalURLLimit = 1_000
     @Published private(set) var persistenceError: String?
     @Published private(set) var autoArchiveEducationPending = false
     @Published private(set) var transientDownloads: [BrowserDownload] = []
@@ -3790,7 +3794,7 @@ final class BrowserStore: ObservableObject {
         next.settings.topAppsEmptyStateDismissedForProfiles?.removeAll { $0 == record.profileID }
         try commitProfileSettings(next)
         forgetBackups(.profile(record.profileID))
-        if historyChanged { historyRevision &+= 1 }
+        if historyChanged { historyRevision &+= 1; recordHistoryRemoval(profileID: record.profileID, urls: nil) }
     }
 
     func commitProfileSettings(_ next: BrowserState) throws {
@@ -5337,24 +5341,57 @@ final class BrowserStore: ObservableObject {
     func clearHistory(profileID: UUID) {
         state.history.removeAll { $0.profileID == profileID }
         tabHistory?.removeAll()
-        historyRevision &+= 1
+        historyRevision &+= 1; recordHistoryRemoval(profileID: profileID, urls: nil)
         changed()
     }
     func deleteHistory(_ ids: Set<UUID>, profileID: UUID) {
-        state.history.removeAll { ids.contains($0.id) && $0.profileID == profileID }
+        var removed: [UUID: Set<String>] = [:]
+        state.history.removeAll { visit in
+            guard ids.contains(visit.id) && visit.profileID == profileID else { return false }
+            removed[visit.profileID, default: []].insert(visit.url); return true
+        }
         tabHistory?.removeAll()
-        historyRevision &+= 1
+        historyRevision &+= 1; recordHistoryRemovals(removed)
         changed()
     }
     func forgetHistory(_ deletion: ChromiumHistoryDeletion) {
         let profileID = deletion.profilePath.flatMap(profileID(forEnginePath:))
         guard deletion.profilePath == nil || profileID != nil else { return }
         if let pruning = SessionBackups.Pruning(deletion) { forgetBackups(pruning) }
-        let count = state.history.count
-        state.history.removeAll { (profileID == nil || $0.profileID == profileID) && deletion.removes($0) }
-        guard state.history.count != count else { return }
-        historyRevision &+= 1
+        var removed: [UUID: Set<String>] = [:]
+        state.history.removeAll { visit in
+            guard (profileID == nil || visit.profileID == profileID) && deletion.removes(visit) else { return false }
+            removed[visit.profileID, default: []].insert(visit.url); return true
+        }
+        guard !removed.isEmpty else { return }
+        historyRevision &+= 1; recordHistoryRemovals(removed, everything: deletion.all)
         changed()
+    }
+    private func recordHistoryRemovals(_ removed: [UUID: Set<String>], everything: Bool = false) {
+        for (profileID, urls) in removed {
+            if everything { recordHistoryRemoval(profileID: profileID, urls: nil); continue }
+            let remaining = Set(state.history.lazy.filter { $0.profileID == profileID && urls.contains($0.url) }.map(\.url))
+            let gone = urls.subtracting(remaining)
+            if !gone.isEmpty { recordHistoryRemoval(profileID: profileID, urls: gone) }
+        }
+    }
+    private func recordHistoryRemoval(profileID: UUID, urls: Set<String>?) {
+        historyRemovalRevision &+= 1
+        historyRemovalLog.append((historyRemovalRevision, profileID,
+                                  urls.flatMap { $0.count > Self.historyRemovalURLLimit ? nil : $0 }))
+        if historyRemovalLog.count > Self.historyRemovalLogLimit {
+            historyRemovalLog.removeFirst(historyRemovalLog.count - Self.historyRemovalLogLimit)
+        }
+    }
+    func removedHistoryURLs(profileID: UUID, after revision: UInt64) -> Set<String>? {
+        guard revision < historyRemovalRevision else { return [] }
+        guard let oldest = historyRemovalLog.first, oldest.revision <= revision &+ 1 else { return nil }
+        var urls = Set<String>()
+        for entry in historyRemovalLog where entry.revision > revision && entry.profileID == profileID {
+            guard let removed = entry.urls else { return nil }
+            urls.formUnion(removed)
+        }
+        return urls
     }
 
     func save() throws {

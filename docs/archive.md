@@ -3,7 +3,8 @@
 Library's Archived Tabs page belongs to the initiating window and Profile.
 Opening it leaves the selected page attached beside it; changing Profile closes
 Library. History opens Chromium's `parc://history` in a new tab. Parc's separate
-visit index, used by the command bar, follows Chromium history deletions.
+visit index, used by the command bar, follows Chromium history deletions, and the
+bar stops offering deleted pages as soon as they are removed.
 
 ## Archive records and restoration
 
@@ -14,9 +15,11 @@ together retains member IDs, order, orientation and ratios; a partial closure
 stores only the closed tab and cannot restore surviving live panes.
 
 Put Back uses the chosen source-Space filter as destination. With all Spaces
-shown, it uses the initiating window's current Space. A removed or reassigned
-Space falls back only to a current Space in the record's original Profile;
-without one, the archive remains unchanged. An explicit Put Back in Space action
+shown, it uses the initiating window's current Space, as does an archived row
+chosen in the command bar, which promotes an item already open in an archive
+preview instead. A removed or reassigned Space falls back only to a current
+Space in the record's original Profile; without one, the archive remains
+unchanged. An explicit Put Back in Space action
 supplies its own destination. A saved tab restored to its original Space returns
 to its original folder if that folder still exists. Other destinations and Today
 items restore at top level.

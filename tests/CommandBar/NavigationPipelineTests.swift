@@ -82,6 +82,11 @@ struct TabCandidatesFixture {
     var historyRevision: UInt64 = 0
     var historyExcludedURL: String?
     var recentPagesGeneration = 0, topDomainGeneration = 0
+    var titleIndex: CommandBarTitleIndex?, pendingTitleIndex: CommandBarTitleIndex?
+    var titleIndexGeneration = 0, historyRemovals: UInt64 = 0
+    var hiddenPages: Set<String>? = []
+    var removedHistoryURLs: ((UInt64) -> Set<String>?)?
+    var tabTitleTokens: [UUID: CommandBarTitleTokens] = [:]
     var recentPages: [(url: String, title: String)]?
     var rankedHistory: [CommandBarHistoryScanSkip.Visit] = []
     var lastHistoryScanKey: CommandBarHistoryScanSkip.Key?
@@ -178,6 +183,80 @@ struct TabCandidatesFixture {
         expect(recents.results.map(\.id) == ["history:https://recent.example/"], "clearing preserves real recents while removing the seed row")
         recents.submitSelection(.ordinary)
         expect(recents.submitted?.result.input == "https://recent.example/", "Return after clearing selects an actual recent page")
+
+        do {
+            let suggestions = ["dashboard", "dashboard meaning", "dashboard camera", "dashboard lights", "dashboard design", "dashboard ui"]
+            let f = NavigationFixture()
+            let dashboard = tab("https://us.fullscript.com/dashboard", title: "My Apps Dashboard | Fullscript")
+            f.tabs = [tab("https://news.example/", title: "Morning news"), dashboard]
+            f.editState.edit("dashboard")
+            f.publish(suggestions.map(search), input: "dashboard")
+            expect(f.results.first?.id == "native:search:dashboard" && f.results[1].tabID == dashboard.id,
+                   "a word from the middle of an open tab's title puts the tab right below Chromium's default search")
+
+            let archivedAt = Date().addingTimeInterval(-3 * 86_400 - 5)
+            var archived = tab("https://docs.example.com/q3", title: "Q3 Dashboard Review")
+            archived.archivedAt = archivedAt
+            let pastVisits = [BrowserHistoryEntry(id: UUID(), url: "https://wiki.example.com/dash", title: "Team dashboard handbook",
+                                                  visitedAt: Date().addingTimeInterval(-40 * 86_400), profileID: profile),
+                              BrowserHistoryEntry(id: UUID(), url: "https://dashboard.example.org/start", title: "",
+                                                  visitedAt: Date().addingTimeInterval(-50 * 86_400), profileID: profile)]
+            let index = CommandBarTitleIndex.build(profileID: profile, historyRevision: 4, tabs: [dashboard, archived],
+                                                   history: pastVisits, reusing: nil)
+            let before = f.results.map(\.id)
+            f.explicitSelectionID = f.results[2].id
+            f.updateTitleIndex(index, historyRemovals: 0)
+            expect(f.pendingTitleIndex === index && f.titleIndex == nil && f.results.map(\.id) == before,
+                   "an index arriving while the user has picked a row waits instead of moving rows under them")
+            f.explicitSelectionID = nil
+            f.updateTitleIndex(index, historyRemovals: 1)
+            expect(f.titleIndex === index && f.results.contains { $0.archivedTabID == archived.id }
+                   && !f.results.contains { $0.id.hasPrefix("history:") },
+                   "after history is deleted an older index keeps its archived rows but offers no past pages")
+            f.removedHistoryURLs = { _ in ["https://wiki.example.com/dash"] }
+            f.updateTitleIndex(nil, historyRemovals: 2)
+            expect(!f.results.contains { $0.id == "history:https://wiki.example.com/dash" }
+                   && f.results.contains { $0.id == "history:https://dashboard.example.org/start" },
+                   "only the deleted page disappears while the index rebuilds")
+            f.removedHistoryURLs = nil
+            f.updateTitleIndex(nil, historyRemovals: 0)
+            let archivedRow = f.results.first { $0.archivedTabID == archived.id }
+            expect(archivedRow?.caption?.text == "Archived · 3 days ago" && archivedRow?.url?.absoluteString == archived.url,
+                   "an archived tab comes back as its own row that says when it was archived and keeps its address")
+            expect(f.results.contains { $0.id == "history:https://wiki.example.com/dash" && $0.input == "https://wiki.example.com/dash" },
+                   "an older page found by its title opens its own address")
+            let untitled = f.results.first { $0.id == "history:https://dashboard.example.org/start" }
+            expect(untitled?.title == "dashboard.example.org/start" && untitled?.subtitle == nil,
+                   "an untitled past page shows its address once")
+            expect(f.results.first?.id == "native:search:dashboard", "Chromium's default search still leads")
+            f.table.selectedRow = f.results.firstIndex { $0.archivedTabID == archived.id }!
+            f.explicitSelectionID = archivedRow?.id
+            f.submitSelection(.ordinary)
+            expect(f.submitted?.result.archivedTabID == archived.id, "Return on an archived row puts back that archived tab")
+
+            var another = tab("https://docs.example.com/q4", title: "Q4 dashboard plan")
+            another.archivedAt = Date().addingTimeInterval(-60)
+            let grown = CommandBarTitleIndex.build(profileID: profile, historyRevision: 4, tabs: [dashboard, archived, another],
+                                                   history: pastVisits, reusing: index)
+            f.updateTitleIndex(grown, historyRemovals: 0)
+            expect(f.titleIndex === index && f.pendingTitleIndex === grown,
+                   "newly archived matches wait while a row is picked")
+            var restoredTab = archived
+            restoredTab.archivedAt = nil
+            let withdrawn = CommandBarTitleIndex.build(profileID: profile, historyRevision: 4, tabs: [dashboard, restoredTab, another],
+                                                       history: pastVisits, reusing: grown)
+            f.updateTitleIndex(withdrawn, historyRemovals: 0)
+            expect(f.titleIndex === withdrawn && !f.results.contains { $0.archivedTabID == archived.id },
+                   "a tab that left the archive stops showing at once, even while a row is picked")
+
+            let typedAddress = NavigationFixture()
+            typedAddress.titleIndex = index; typedAddress.historyRevision = 4; typedAddress.tabs = [dashboard]
+            typedAddress.editState.edit("us.fullscript.com/dash")
+            typedAddress.publish([PCNativeSearchNavigation("https://us.fullscript.com/dashboard", title: "us.fullscript.com/dashboard"),
+                                  search("us.fullscript.com/dash")], input: "us.fullscript.com/dash")
+            expect(typedAddress.results.first?.tabID == dashboard.id && !typedAddress.results.contains { $0.archivedTabID != nil },
+                   "typing an address keeps the address result first and adds no title rows")
+        }
 
         let websiteTab = tab("https://example.com/", title: "Example")
         let note = CommandBarDocument(kind: .note, id: UUID(), title: "Example Note")

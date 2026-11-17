@@ -208,6 +208,9 @@ step compile_and_run command-bar-ranking CommandBar/RankingTests \
   "$repo_root/Sources/ParcApp/CommandBarRanking.swift" "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift"
 step bash "$repo_root/scripts/test-command-bar-site-search.sh"
 step bash "$repo_root/scripts/test-command-bar-navigation.sh"
+step compile_and_run command-bar-title-search CommandBar/TitleSearchTests \
+  "$repo_root/Sources/ParcApp/CommandBarTitleSearch.swift" "$repo_root/Sources/ParcApp/CommandBarRanking.swift" \
+  "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift" "$repo_root/Sources/ParcCore/CommandBarResultText.swift"
 step compile_and_run command-bar-command-ranking CommandBar/CommandRankingTests \
   "$repo_root/Sources/ParcApp/CommandBarRanking.swift" "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift" \
   "$repo_root/Sources/ParcApp/CommandBarCommandCandidate.swift" \

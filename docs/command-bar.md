@@ -36,8 +36,8 @@ its card the slot passes the mouse through, so the page still drags the window.
 `Sources/ParcApp/CommandBar.swift` owns the surface/session;
 `CommandBarEditState.swift`, `CommandBarScopeEditing.swift` and
 `CommandBarSubmission.swift` separate editing, scope and submission state.
-`CommandBarRanking.swift`, `CommandBarNativeHold.swift` and
-`CommandBarRowDiff.swift` own ordering and updates. Typed action records live in
+`CommandBarRanking.swift`, `CommandBarTitleSearch.swift`, `CommandBarNativeHold.swift`
+and `CommandBarRowDiff.swift` own ordering and updates. Typed action records live in
 `Sources/ParcCore/CommandBar*.swift`. Native search ownership is documented in
 [`tests/NativeSearch`](../tests/NativeSearch/README.md).
 
@@ -48,6 +48,8 @@ its card the slot passes the mouse through, so the page still drags the window.
   consumption. Display strings are not replacement requests.
 - Open-tab rows retain the original tab ID and say **Switch to Tab**. They use
   existing Space/window selection and transfer, without reloading the URL.
+- Archived-tab rows say **Archived · 3 days ago** and Put Back through Library's
+  path into the current Space; they never split or open in the background.
 - Menu-command rows retain the original menu item, owning window and registry
   revision. Availability and execution validate the real target, and the item
   remains the sender, preserving tags and represented objects.
@@ -67,9 +69,8 @@ deactivation, lost key window or field focus invalidate it. The resident bar
 outlives window events: losing key or focus, deactivation, resizing and
 miniaturizing leave it in place, and an unrelated sheet or security prompt closes
 only its own scope menu. An invalid owner blocks its actions until the start page
-dismisses it. Favicon callbacks
-also validate the exact Profile, URL and session. A dismissed session cannot
-clear or update its replacement.
+dismisses it. Favicon callbacks also validate the exact Profile, URL and
+session. A dismissed session cannot clear or update its replacement.
 
 Command–Shift–C copies the highlighted row's actual URL; it is unavailable for
 commands or unresolved input. Command–C remains ordinary native selected-text
@@ -83,8 +84,7 @@ Release Notes and page tools validate live. Choosing a command dismisses the
 bar, revalidates and runs it; refusal beeps. An extension action opens its
 popup at the sidebar's URL row while that row shows, and the row's buttons stay
 revealed until the popup closes, as for one opened from the sidebar; see
-[navigation](navigation.md#sidebar-controls-and-url-pill). Obsolete key-panel
-availability snapshots are no longer used.
+[navigation](navigation.md#sidebar-controls-and-url-pill).
 
 The host receives mouse input only over the bar; shadow/outside presses land
 normally after ending the session. The field uses its own editor and undo in the
@@ -207,23 +207,27 @@ none of these the default keeps the lead: Parc never invents a root request.
 Return uses the root row's own request or address; typing a `/` or more of the
 path hands the lead back to the default.
 
+When Chromium's default is a search, words also match titles of open tabs, the
+1,000 latest archived tabs and 1,000 latest pages of Parc's newest 5,000 visits;
+each must start a title or site word, and order, a leading match, whole words,
+recency and visits score higher. Up to three follow the default, above
+suggestions. A cached index built off the main thread per archive or history
+change bounds each keystroke; new matches wait while a row is picked.
+
 Other commands, native results, tabs, local documents and top domains interleave
 using Parc's scoring and native order. Ordinary results cap actions and tabs at
-five each, documents at three, native rows at eight and top domains at one.
-Duplicates of a page, and rows with its title and path under another query or
-fragment, merge into one row keeping the open-tab action, here and in the empty
-list, but two open tabs never merge; configured title/host sites use their own
-key. Top domains come from that Profile's history, calculated
-off the main thread per history revision, one per host and port, opening the
-root with the latest visit's scheme. A root page title names the row; without
-one its address shows once. Search keys use terms, not URLs with changing query
-metadata.
+five each, documents, archived tabs and past pages at three, native rows at eight
+and top domains at one. Duplicates of a page, and rows with its title and path
+under another query or fragment, merge into one row, preferring an open tab, then
+an archived tab, then Chromium's row at the best merged rank, here and in the
+empty list, but two open tabs never merge; configured title/host sites use their
+own key. Top domains come from that Profile's history, calculated off the main
+thread per history revision, one per host and port, opening the root with the
+latest visit's scheme. A root page title names the row; without one its address
+shows once. Search keys use terms, not URLs with changing query metadata.
 
-The domain regression suite covers native defaults merging with existing tabs,
-search defaults, current publications, varied URLs, explicit user selection and
-a heavily visited deeper page against its site's root. Ranking must not
-substitute a host allowlist, dot detector or reconstructed GET for Chromium
-classification.
+Ranking never substitutes a host allowlist, dot detector or reconstructed GET for
+Chromium classification; regression suites cover each case above.
 
 ## Highlighted result text and ordinary Tab
 
@@ -324,11 +328,10 @@ for `wikipedia.org`) or its parent site (`spotify.com` for `open.spotify.com`).
 An exact host wins; otherwise the most specific template the row is a
 subdomain of; otherwise the first template that is a subdomain of the row. A
 single-label template, such as an intranet `wiki`, never claims hosts under it.
-Search results still require an explicit keyword offer.
-Commands and unclassified text cannot acquire one.
-Space enters only when the text it follows at the end of the field, replacing
-any selected completion, is the engine's whole keyword, such as `github.com`,
-ignoring case, and the originating Profile's
+Search results still require an explicit keyword offer. Commands and
+unclassified text cannot acquire one. Space enters only when the text it follows
+at the end of the field, replacing any selected completion, is the engine's whole
+keyword, such as `github.com`, ignoring case, and the originating Profile's
 `omnibox.keyword_space_triggering_enabled` preference allows it. Only a Space
 keystroke enters; deletions, pastes, Undo and marked text never do. A site name
 or partial address such as `github` followed by Space stays ordinary input, so
