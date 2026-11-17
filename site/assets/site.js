@@ -242,7 +242,7 @@ function pickSpace(i) {
 }
 
 const SPECIMENS = [
-  { no: '01', clip: 'split', name: 'Split View', latin: 'Paginae duae', behavior: 'Up to four pages, side by side or stacked. Drag the edges, or make them all equal. Copy Links grabs the lot.', habitat: 'Comparing, copying, cross-checking.', spot: 'Option-click a link. Or drag a tab onto your page.', note: 'pairs for life.' },
+  { no: '01', clip: 'split', name: 'Split View', latin: 'Paginae duae', behavior: 'Up to four pages, side by side, stacked, or both. Drag the edges, or make them all equal. Copy Links grabs the lot.', habitat: 'Comparing, copying, cross-checking.', spot: 'Option-click a link. Or drag a tab onto your page.', note: 'pairs for life.' },
   { no: '02', clip: 'peek', name: 'Peek', latin: 'Prospectus brevis', behavior: 'Links float over your page so you keep your place. Fling one away with two fingers, or keep it as a tab. Hover a tab in the sidebar and its card can Peek it too. Nothing reloads.', habitat: 'Links to other sites. Anything you Shift-click. Any tab’s preview card.', spot: 'A page floating up front while yours takes a polite step back.', note: 'springs back if you chicken out.' },
   { no: '03', clip: 'commandbar', name: 'Command Bar', latin: 'Imperium clavis', behavior: 'Search, jump to a tab, or run a command. Click any address and it opens right there.', habitat: 'Dead centre.', spot: '⌘T.', note: 'loves a shortcut.' },
   { no: '04', clip: 'easel', name: 'Easels', latin: 'Tabula viva', behavior: 'Live web pages, screenshots, text and arrows on one canvas. The pages keep working.', habitat: 'Moodboards, research walls, trip plans.', spot: 'File → New Easel.', note: 'naps after four hours, like the rest of us.' },
