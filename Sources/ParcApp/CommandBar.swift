@@ -30,7 +30,7 @@ import SwiftUI
         var document: CommandBarDocument? = nil
         var completionHost: String? = nil
     }
-    var onNavigate: ((String) -> Void)?
+    var onNavigate: ((String, String) -> Void)?
     var onSearchNavigation: ((PCNativeSearchNavigation) -> Void)?
     var onSelectTab: ((UUID) -> Void)?
     var tabCaption: ((BrowserTab) -> CommandBarResultText.TabCaption)? {
@@ -53,14 +53,14 @@ import SwiftUI
     var canPerformTypedCommand: ((CommandBarTypedCommand) -> Bool)?
     var onPerformTypedCommand: ((CommandBarTypedCommand) -> Void)?
     var canSplitSelection: ((UUID?) -> Bool)?
-    var onSplitInput: ((String) -> Void)?
+    var onSplitInput: ((String, String) -> Void)?
     var onSplitNavigation: ((PCNativeSearchNavigation) -> Void)?
     var onSplitTab: ((UUID) -> Void)?
     var canSplitCommand: ((KeyboardShortcuts.MenuCommand) -> Bool)?
     var onSplitCommand: ((KeyboardShortcuts.MenuCommand) -> Void)?
     var onBackgroundNavigation: ((PCNativeSearchNavigation, @escaping () -> Bool, @escaping (String?) -> Void) -> Void)?
-    var onBackgroundInput: ((String, @escaping () -> Bool, @escaping (String?) -> Void) -> Void)?
-    var onBackgroundTab: ((UUID, @escaping () -> Bool, @escaping (String?) -> Void) -> Void)?
+    var onBackgroundInput: ((String, String, @escaping () -> Bool, @escaping (String?) -> Void) -> Void)?
+    var onBackgroundTab: ((UUID, String, @escaping () -> Bool, @escaping (String?) -> Void) -> Void)?
     private var backgroundOperation: UUID?
     private var backgroundGeneration: UInt64 = 0
     private var retainedBackgroundHistory: (result: Result, row: Int)?
@@ -1851,6 +1851,7 @@ import SwiftUI
         let performFavorite = onPerformFavorite, moveToFolder = onMoveToFolder, renameFavorite = onRenameFavorite, copyToFolder = onCopyToFolder
         let stillValid = isOwnerValid, rejectDestination = onRejectedDestination
         let isDestination = result.navigation != nil || result.tabID != nil || result.input != nil || result.document != nil || splitCommand != nil
+        let typed = editState.query
         if isDestination { onWillSubmitDestination?() }
         respond(to: .submitted)
         guard stillValid?() != false else {
@@ -1863,7 +1864,7 @@ import SwiftUI
         if inSplit {
             if let navigation = result.navigation { splitNavigation?(navigation) }
             else if let id = result.tabID { splitTab?(id) }
-            else if let input = result.input { splitInput?(input) }
+            else if let input = result.input { splitInput?(input, typed) }
             return
         }
         if let navigation = result.navigation { search?(navigation) }
@@ -1880,7 +1881,7 @@ import SwiftUI
         else if let id = result.tabID { selectTab?(id) }
         else if result.managesPasswords { managePasswords?() }
         else if let document = result.document { openDocument?(document) }
-        else if let input = result.input { navigate?(input) }
+        else if let input = result.input { navigate?(input, typed) }
     }
     private func submitInBackground(_ result: Result, retainsSelection: Bool) {
         guard backgroundOperation == nil, omnibox?.canSubmit == true else { NSSound.beep(); return }
@@ -1907,8 +1908,8 @@ import SwiftUI
             if error != nil { NSSound.beep() }
         }
         if let request = result.navigation, let open = onBackgroundNavigation { open(request, valid, completed) }
-        else if let id = result.tabID, let open = onBackgroundTab { open(id, valid, completed) }
-        else if let input = result.input, let open = onBackgroundInput { open(input, valid, completed) }
+        else if let id = result.tabID, let open = onBackgroundTab { open(id, query, valid, completed) }
+        else if let input = result.input, let open = onBackgroundInput { open(input, query, valid, completed) }
         else { completed("This result cannot open in the background.") }
     }
     private func handleBackgroundReturn(_ event: NSEvent) -> Bool {

@@ -126,6 +126,18 @@ A few kept patches still include a narrow Parc API header from an `//parc/native
 previews, download picker, browser delegate, autofill and the Mac framework path. Each is the
 smallest include that preserves its behaviour.
 
+## Narrow Chromium dependencies
+
+Parc's own targets depend on Chromium's public targets as any embedder's do. This
+section lists only the narrow ones added to reproduce one Chromium rule.
+`//parc:browser` depends on the header-only `//chrome/browser:intranet_redirect_detector`
+so the command bar's [shortcut learning](command-bar.md#learning-what-you-pick) asks
+`IntranetRedirectDetector::RedirectOrigin()` whether a pick landed on the network's
+search page, as Chrome's omnibox navigation observer does. The detector's saved
+preference can lag its live answer, and Chrome's observer would add the
+`//chrome/browser/omnibox` target and its unrelated removal of search engines whose
+results return 404. No Chromium file changes.
+
 ## Keeping this reference current
 
 Every change that adds, changes, moves or removes a hook or a patch updates this reference in the

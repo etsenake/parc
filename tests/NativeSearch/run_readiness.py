@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Run native search-readiness components against the pinned built Chromium.
+"""Run native search components against the pinned built Chromium.
 
-Uses the production queue, actual Chromium ObserverList and task executor. The
-negative control deliberately reproduces the synchronous ObserverList abort in
-an isolated child process. No browser, Profile or user data is opened.
+Uses the production readiness queue, actual Chromium ObserverList and task
+executor, and the production shortcut-learning rule with Chromium's URL and
+registry code. The negative control deliberately reproduces the synchronous
+ObserverList abort in an isolated child process. No browser, Profile or user
+data is opened.
 """
 import argparse
 import hashlib
@@ -40,7 +42,10 @@ def main():
              parc / 'tests/NativeSearch/ReadinessTests.cc',
              chromium / 'base/observer_list.h',
              chromium / 'components/search_engines/template_url_service_observer.h',
-             engine / 'libbase.dylib', engine / 'libc++_chrome.dylib']
+             engine / 'libbase.dylib', engine / 'libc++_chrome.dylib',
+             parc / 'Engine/ParcNative/native_search_shortcuts.h',
+             parc / 'tests/NativeSearch/ShortcutTests.cc',
+             engine / 'libnet.dylib', engine / 'liburl.dylib']
     receipt = {'inputs': {str(p): digest(p) for p in files}, 'commands': []}
 
     def run(command, name, expected=0):
@@ -70,11 +75,12 @@ def main():
         obj = output / 'readiness.o'
         run(flags + ['-c', str(files[1]), '-o', str(obj)], 'compile')
         executable = output / 'readiness'
-        link = [flags[0], '-fuse-ld=lld', '-nostdlib++', '-L' + str(engine), '-Wl,-rpath,' + str(engine),
-            '-o', str(executable), str(obj), '-lbase', '-lc++_chrome']
-        if '-isysroot' in flags:
-            link += ['-isysroot', flags[flags.index('-isysroot') + 1]]
-        run(link, 'link')
+        sysroot = ['-isysroot', flags[flags.index('-isysroot') + 1]] if '-isysroot' in flags else []
+
+        def link(target, objects, libraries, name):
+            run([flags[0], '-fuse-ld=lld', '-nostdlib++', '-L' + str(engine), '-Wl,-rpath,' + str(engine),
+                 '-o', str(target), *map(str, objects), *('-l' + lib for lib in libraries)] + sysroot, name)
+        link(executable, [obj], ['base', 'c++_chrome'], 'link')
         print(run([str(executable)], 'components'), end='')
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         negative = run([str(executable), '--synchronous-negative-control'],
@@ -82,6 +88,11 @@ def main():
         if 'check_reentrancy' not in negative or 'IsOnlyRemainingNode' not in negative:
             raise RuntimeError('negative control did not hit the expected Chromium check')
         print('PASS: synchronous negative control reached Chromium ObserverList CHECK')
+        shortcuts_obj = output / 'shortcuts.o'
+        run(flags + ['-c', str(files[7]), '-o', str(shortcuts_obj)], 'shortcuts-compile')
+        shortcuts = output / 'shortcuts'
+        link(shortcuts, [shortcuts_obj], ['base', 'net', 'url', 'c++_chrome'], 'shortcuts-link')
+        print(run([str(shortcuts)], 'shortcuts'), end='')
         receipt['exit'] = 0
     except (RuntimeError, StopIteration) as error:
         receipt['exit'] = 1

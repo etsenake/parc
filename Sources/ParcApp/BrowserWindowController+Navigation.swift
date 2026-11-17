@@ -37,16 +37,16 @@ extension BrowserWindowController {
         pendingCommandSplitValidation = nil; pendingCommandSplitBrowser = nil
     }
 
-    func openInput(_ input: String) {
+    func openInput(_ input: String, typedText: String? = nil) {
         if isPopupWindow { onRequestBrowserTab?(input); return }
-        resolveInput(input, replacing: nil)
+        resolveInput(input, typedText: typedText, replacing: nil)
     }
 
     func openAddress(_ url: URL) {
         if isPopupWindow { openInput(url.absoluteString) } else { openExactAddress(url) }
     }
 
-    func resolveInput(_ input: String, replacing tabID: UUID?) {
+    func resolveInput(_ input: String, typedText: String? = nil, replacing tabID: UUID?) {
         if openLocalNoteAddress(input) { return }
         if let tabID, !prepareNotesToClose([tabID]) { return }
         let spaceID = activeSpaceID
@@ -55,7 +55,7 @@ extension BrowserWindowController {
         let originalURL = tabID.flatMap { id in store.state.tab(id)?.url }
         let revision = UUID()
         if let tabID { inputRevisions[tabID] = revision }
-        PCNativeBrowserApplication.resolveSearchInput(input,
+        PCNativeBrowserApplication.resolveSearchInput(input, typedText: typedText,
             profilePath: store.independentEngineProfilePath(for: profileID), page: currentBrowser?.nativePage, window: nativeBinding) { [weak self, weak originalPage] navigation, error in
             MainActor.assumeIsolated {
                 guard let self, self.activeSpaceID == spaceID, self.activeProfileID == profileID,

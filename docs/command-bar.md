@@ -265,6 +265,22 @@ Browser; popups refuse. Failure keeps the original request for explicit retry.
 Local Notes/Easels keep exact-ID switching. Typed commands usually retain ordinary
 action/dismissal; Pin to Folder has the dedicated copy behavior below.
 
+## Learning what you pick
+
+As in Chrome, the bar teaches Chromium's shortcuts provider which page you pick
+for what you type, so `okta` soon brings back the page you always choose. Native
+rows carry the text typed when they were published; rows the bar classifies
+itself, such as typed input, top domains and open tabs, carry the current query.
+Return, a chosen row, Command–Return, Option–Return, Add Split and Peek record
+the pair through `ShortcutsBackend::AddOrUpdateShortcut` once the page commits
+with a 2xx, 401 or 407 response, unless the network diverted it to its own
+search page, as Chromium's intranet redirect detector reports. Failed, aborted,
+same-page and empty-input picks don't count, nor do extension keyword actions,
+tab switches, commands, documents, pop-up windows, a Profile being removed or
+private windows, whose Profile has no shortcuts backend. Learned rows always
+offer Delete Suggestion, and deleting a suggestion or history removes their
+shortcuts.
+
 ## Suggestion deletion
 
 Eligible native rows offer **Delete Suggestion** on hover,

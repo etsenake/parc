@@ -728,10 +728,10 @@ extension BrowserWindowController {
                 self.cancelSplitInsertion(restoreFocus: true)
             }
         }
-        let navigate: (String) -> Void = { [weak self, weak session] input in
+        let navigate: (String, String) -> Void = { [weak self, weak session] input, typed in
             guard let self, let session, self.splitInsertion === session else { return }
             guard session.isValid else { self.cancelSplitInsertion(restoreFocus: false); return }
-            PCNativeBrowserApplication.resolveSearchInput(input,
+            PCNativeBrowserApplication.resolveSearchInput(input, typedText: typed,
                 profilePath: self.store.independentEngineProfilePath(for: request.profileID),
                 page: self.selectedNativePage(), window: self.nativeBinding) { [weak self, weak session] navigation, error in
                     MainActor.assumeIsolated {

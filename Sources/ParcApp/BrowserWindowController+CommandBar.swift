@@ -533,11 +533,11 @@ extension BrowserWindowController {
             else if let editor = self.easelEditors[id]?.editor { editor.focusContent() }
             else if self.panes[id]?.showsBlank == true { self.window?.makeFirstResponder(nil) }
         }
-        panel.onNavigate = { [weak self] input in
+        panel.onNavigate = { [weak self] input, typed in
             guard isOriginal(), let self else { return }
-            if let peek = commandPeek { self.resolvePeekInput(input, peek: peek) }
-            else if newTab || commandTab == nil { self.openInput(input) }
-            else { self.resolveInput(input, replacing: commandTab) }
+            if let peek = commandPeek { self.resolvePeekInput(input, typedText: typed, peek: peek) }
+            else if newTab || commandTab == nil { self.openInput(input, typedText: typed) }
+            else { self.resolveInput(input, typedText: typed, replacing: commandTab) }
         }
         panel.onSearchNavigation = { [weak self] navigation in
             guard isOriginal(), let self else { return }
@@ -606,12 +606,12 @@ extension BrowserWindowController {
             guard let self, self.canMovePageHere(id), canSplit(id) else { commitSplit(nil, id); return }
             _ = self.movePagesHere([id]) { guard canSplit(id) else { return false }; commitSplit(nil, id); return true }
         }
-        panel.onSplitInput = { [weak self, weak commandPage] input in
+        panel.onSplitInput = { [weak self, weak commandPage] input, typed in
             guard let self, canSplit(nil) else { return }
             let originalURL = commandBrowser?.url
             self.pendingCommandSplitBrowser = commandBrowser
             self.pendingCommandSplitValidation = { canSplit(nil) && commandBrowser?.url == originalURL }
-            PCNativeBrowserApplication.resolveSearchInput(input,
+            PCNativeBrowserApplication.resolveSearchInput(input, typedText: typed,
                 profilePath: self.store.independentEngineProfilePath(for: commandProfile), page: commandPage, window: self.nativeBinding) { [weak self] navigation, error in
                 MainActor.assumeIsolated {
                     guard let self, canSplit(nil), self.commandBar == nil,
@@ -639,9 +639,9 @@ extension BrowserWindowController {
                 profileID: commandProfile, selection: commandSelection,
                 validate: { backgroundOwner() && valid() }, completion: complete)
         }
-        let classifyBackground: (String, @escaping () -> Bool, @escaping (String?) -> Void) -> Void = { [weak self, weak commandPage] input, valid, complete in
+        let classifyBackground: (String, String, @escaping () -> Bool, @escaping (String?) -> Void) -> Void = { [weak self, weak commandPage] input, typed, valid, complete in
             guard let self, backgroundOwner(), valid() else { complete("The original search owner changed."); return }
-            PCNativeBrowserApplication.resolveSearchInput(input,
+            PCNativeBrowserApplication.resolveSearchInput(input, typedText: typed,
                 profilePath: self.store.independentEngineProfilePath(for: commandProfile), page: commandPage, window: self.nativeBinding) { navigation, error in
                 MainActor.assumeIsolated {
                     guard backgroundOwner(), valid() else { complete("The original search owner changed."); return }
@@ -652,7 +652,7 @@ extension BrowserWindowController {
         }
         panel.onBackgroundNavigation = background
         panel.onBackgroundInput = classifyBackground
-        panel.onBackgroundTab = { [weak self] id, valid, complete in
+        panel.onBackgroundTab = { [weak self] id, typed, valid, complete in
             guard let self, backgroundOwner(), valid(),
                   let original = self.commandBarTabs(profileID: commandProfile, excluding: commandTab).first(where: { $0.id == id }),
                   !InternalPage.isInternal(original.url) else {
@@ -664,7 +664,7 @@ extension BrowserWindowController {
                     $0.id == original.id && $0.spaceID == original.spaceID && $0.profileID == original.profileID && $0.url == original.url
                 }
             }
-            classifyBackground(original.url, stillOriginal, complete)
+            classifyBackground(original.url, typed, stillOriginal, complete)
         }
         panel.onManagePasswords = { [weak self] in if isOriginal() { self?.showPasswordManager() } }
         panel.onOpenDocument = { [weak self] document in
@@ -757,10 +757,11 @@ extension BrowserWindowController {
         attachOwnedPages()
     }
 
-    private func resolvePeekInput(_ input: String, peek: PeekController) {
+    private func resolvePeekInput(_ input: String, typedText: String, peek: PeekController) {
         let revision = UUID(); inputRevisions[peek.identity] = revision
         let originalURL = peek.browser.url
-        PCNativeBrowserApplication.resolveSearchInput(input, profilePath: peek.page.profilePath, page: peek.page) { [weak self, weak peek] navigation, error in
+        PCNativeBrowserApplication.resolveSearchInput(input, typedText: typedText, profilePath: peek.page.profilePath,
+                                                      page: peek.page, window: nil) { [weak self, weak peek] navigation, error in
             MainActor.assumeIsolated {
                 guard let self, let peek, self.activePeek === peek,
                       self.presentedPeek(for: peek.page) === peek, !peek.page.isClosed,

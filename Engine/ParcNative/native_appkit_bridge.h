@@ -1166,6 +1166,11 @@ NS_SWIFT_UI_ACTOR
     page:(nullable PCNativePage*)page window:(nullable PCNativeBrowserWindow*)window
     completion:(void (^)(PCNativeSearchNavigation* _Nullable, NSError* _Nullable))completion
     NS_SWIFT_NAME(resolveSearchInput(_:profilePath:page:window:completion:));
++ (void)resolveSearchInput:(NSString*)input typedText:(nullable NSString*)typedText
+    profilePath:(NSString*)path page:(nullable PCNativePage*)page
+    window:(nullable PCNativeBrowserWindow*)window
+    completion:(void (^)(PCNativeSearchNavigation* _Nullable, NSError* _Nullable))completion
+    NS_SWIFT_NAME(resolveSearchInput(_:typedText:profilePath:page:window:completion:));
 @end
 NS_SWIFT_UI_ACTOR
 @interface PCNativePage (Search)

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 780,
+  "version": 781,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -339,7 +339,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "parc/native/native_appkit_bridge.h",
-      "sha256": "5bf7de8e6e4f16e8c00ba3705b4adf89aea94a8bbdcb470c65c14684dc3595db"
+      "sha256": "77fb9e2341bb17ef216eaed4f84171f69b6583848c401d6f201b694d4d75fc95"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -1084,7 +1084,7 @@
     {
       "source": "Engine/ParcNative/native_search.mm",
       "target": "parc/native/native_search.mm",
-      "sha256": "2281c48af1a42dff5dfb21855a6184986258197028554855a0361798b6cb15c2"
+      "sha256": "5930b84261ff9cdc1b98cbff9a820b17196460fa065f1cc5625b0b12f0528754"
     },
     {
       "source": "Engine/ParcNative/native_page_info.h",
@@ -1425,6 +1425,11 @@
       "source": "Engine/ParcNative/native_search_readiness.h",
       "target": "parc/native/native_search_readiness.h",
       "sha256": "fadeff52a7bdbf733ded7eda663d1019d6a900309335fbb6cd3b4f65d5b1754d"
+    },
+    {
+      "source": "Engine/ParcNative/native_search_shortcuts.h",
+      "target": "parc/native/native_search_shortcuts.h",
+      "sha256": "3ecb43b8eacffb4b77dd4be14a65b29c43449ca1f3840bb3f00b6ea91d402234"
     },
     {
       "source": "Engine/ParcNative/content_drop_bridge.h",
@@ -2099,7 +2104,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "0603d6fb2949b72581784c5a15f219c1940101ba959a66c3b82918f56457b00f"
+      "sha256": "0123d621a4a380d856a32b405547ed5cc42f2c043785f31e404b7b1daf0fab62"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",

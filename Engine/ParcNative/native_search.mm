@@ -26,7 +26,9 @@
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_provider_client.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
+#include "chrome/browser/autocomplete/shortcuts_backend_factory.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
+#include "chrome/browser/intranet_redirect_detector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -42,6 +44,7 @@
 #include "components/omnibox/browser/keyword_provider.h"
 #include "components/omnibox/browser/omnibox_field_trial.h"
 #include "components/omnibox/browser/omnibox_pref_names.h"
+#include "components/omnibox/browser/shortcuts_backend.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
@@ -50,6 +53,8 @@
 #include "components/search_engines/template_url_service.h"
 #include "components/search_engines/template_url_service_observer.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/navigation_handle_user_data.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
@@ -64,8 +69,10 @@
 #include "native_profiles.h"
 #include "window_security_reservation.h"
 #include "native_profile_removal.h"
+#include "native_search_shortcuts.h"
 #include "native_appkit_page.h"
 #include "native_page_retirement.h"
+#include "net/http/http_response_headers.h"
 #include "services/network/public/cpp/resource_request_body.h"
 #include "tab_transfer.h"
 #include "third_party/metrics_proto/omnibox_event.pb.h"
@@ -130,6 +137,8 @@ bool IsUnusedLearnedShortcut(const TemplateURLService& service,
 bool SupportsSuggestionDeletion(const AutocompleteMatch& match) {
   if (!match.deletable || !match.provider)
     return false;
+  if (match.provider->type() == AutocompleteProvider::Type::kShortcuts)
+    return true;
   switch (match.type) {
     case omnibox::AutocompleteMatchType::kSearchWhatYouTyped:
     case omnibox::AutocompleteMatchType::kSearchSuggest:
@@ -153,14 +162,62 @@ struct NavigationData {
   ui::PageTransition transition;
   std::optional<TemplateURLRef::PostContent> post_content;
   std::map<std::string, std::string> extra_headers;
-  explicit NavigationData(const AutocompleteMatch& match)
+  std::u16string shortcut_text;
+  std::optional<AutocompleteMatch> shortcut_match;
+  NavigationData(const AutocompleteMatch& match, std::u16string text)
       : destination_url(match.destination_url),
         transition(match.transition),
-        extra_headers(match.extra_headers) {
+        extra_headers(match.extra_headers),
+        shortcut_text(std::move(text)) {
     if (match.post_content)
       post_content = *match.post_content;
+    if (shortcut_text.empty())
+      return;
+    shortcut_match.emplace(match);
+    shortcut_match->provider = nullptr;
+    shortcut_match->duplicate_matches.clear();
+    shortcut_match->actions.clear();
+    shortcut_match->takeover_action = nullptr;
   }
 };
+class ShortcutRecorder final
+    : public content::NavigationHandleUserData<ShortcutRecorder>,
+      public content::WebContentsObserver {
+ public:
+  ~ShortcutRecorder() override = default;
+  void DidFinishNavigation(content::NavigationHandle* navigation) override {
+    if (navigation->GetNavigationId() != navigation_id_)
+      return;
+    const net::HttpResponseHeaders* headers = navigation->GetResponseHeaders();
+    if (!ShortcutNavigationCounts(
+            navigation->IsInPrimaryMainFrame(), navigation->HasCommitted(),
+            headers ? std::optional<int>(headers->response_code()) : std::nullopt,
+            match_.destination_url, navigation->GetWebContents()->GetVisibleURL(),
+            IntranetRedirectDetector::RedirectOrigin()))
+      return;
+    Profile* profile = Profile::FromBrowserContext(
+        navigation->GetWebContents()->GetBrowserContext());
+    if (IsNativeProfileRemovalBlocked(profile->GetOriginalProfile()->GetPath()))
+      return;
+    if (auto backend = ShortcutsBackendFactory::GetForProfile(profile))
+      backend->AddOrUpdateShortcut(text_, match_);
+  }
+
+ private:
+  friend content::NavigationHandleUserData<ShortcutRecorder>;
+  ShortcutRecorder(content::NavigationHandle& navigation,
+                   const std::u16string& text,
+                   const AutocompleteMatch& match)
+      : content::WebContentsObserver(navigation.GetWebContents()),
+        navigation_id_(navigation.GetNavigationId()),
+        text_(text),
+        match_(match) {}
+  const int64_t navigation_id_;
+  const std::u16string text_;
+  const AutocompleteMatch match_;
+  NAVIGATION_HANDLE_USER_DATA_KEY_DECL();
+};
+NAVIGATION_HANDLE_USER_DATA_KEY_IMPL(ShortcutRecorder);
 class SearchState final : public base::SupportsUserData::Data,
                           public TemplateURLServiceObserver,
                           public ProfileObserver {
@@ -393,7 +450,8 @@ void InitializeNativeSearch(Profile& profile) {
   BOOL _consumed;
 }
 - (instancetype)initWithProfile:(Profile&)profile
-                          match:(const AutocompleteMatch&)match;
+                          match:(const AutocompleteMatch&)match
+                           text:(const std::u16string&)text;
 - (PCNativeSearchNavigation*)requestForRepeatedOpen;
 @property(nonatomic, readwrite, copy, nullable) NSString* inlineCompletionText;
 @end
@@ -423,11 +481,12 @@ void InitializeNativeSearch(Profile& profile) {
 @synthesize matchType = _matchType;
 @synthesize relevance = _relevance;
 - (instancetype)initWithProfile:(Profile&)profile
-                          match:(const AutocompleteMatch&)match {
+                          match:(const AutocompleteMatch&)match
+                           text:(const std::u16string&)text {
   self = [super init];
   if (self) {
     _profile = profile.GetWeakPtr();
-    _match = std::make_unique<parc::NavigationData>(match);
+    _match = std::make_unique<parc::NavigationData>(match, text);
     _profilePath = [base::SysUTF8ToNSString(profile.GetPath().value()) copy];
     _revision = parc::SearchState::Get(profile).revision();
     _URL = [NSURL
@@ -653,6 +712,15 @@ Profile* ProfileForSearchNavigation(PCNativeSearchNavigation* request) {
 + (void)resolveSearchInput:(NSString*)input profilePath:(NSString*)path
                       page:(PCNativePage*)page window:(PCNativeBrowserWindow*)window
                 completion:(void (^)(PCNativeSearchNavigation*, NSError*))completion {
+  [self resolveSearchInput:input typedText:nil profilePath:path page:page window:window
+                completion:completion];
+}
++ (void)resolveSearchInput:(NSString*)input typedText:(NSString*)typedText
+               profilePath:(NSString*)path page:(PCNativePage*)page
+                    window:(PCNativeBrowserWindow*)window
+                completion:(void (^)(PCNativeSearchNavigation*, NSError*))completion {
+  const std::u16string typed = base::SysNSStringToUTF16([typedText
+      stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]);
   NSString* text = [input
       stringByTrimmingCharactersInSet:NSCharacterSet
                                           .whitespaceAndNewlineCharacterSet];
@@ -685,7 +753,8 @@ Profile* ProfileForSearchNavigation(PCNativeSearchNavigation* request) {
             match.destination_url.is_valid() &&
                     (!selected_template || selected_template->type() != TemplateURL::OMNIBOX_API_EXTENSION)
                 ? [[PCNativeSearchNavigation alloc] initWithProfile:*profile
-                                                              match:match]
+                                                              match:match
+                                                               text:typed]
                 : nil;
         completion(request,
                    request ? nil
@@ -724,7 +793,11 @@ Profile* ProfileForSearchNavigation(PCNativeSearchNavigation* request) {
                     {"Content-Type: ", match.post_content->first, "\r\n"});
   }
   request->_consumed = YES;
-  contents->GetController().LoadURLWithParams(params);
+  auto navigation = contents->GetController().LoadURLWithParams(params);
+  if (navigation && match.shortcut_match) {
+    parc::ShortcutRecorder::CreateForNavigationHandle(
+        *navigation, match.shortcut_text, *match.shortcut_match);
+  }
   return YES;
 }
 @end
@@ -1341,6 +1414,8 @@ class OmniboxSession final : public AutocompleteController::Observer,
     NSMutableArray<PCNativeOmniboxExtensionAction*>* actions = [NSMutableArray array];
     NSMutableArray<PCNativeOmniboxScope*>* offers = [NSMutableArray array];
     const uint64_t publication = revision_ + 1;
+    const std::u16string typed = ShortcutsBackendFactory::GetForProfile(profile_.get())
+        ? base::SysNSStringToUTF16(input_) : std::u16string();
     for (const auto& match : controller->result()) {
       if (!match.destination_url.is_valid() || IsNativeAppDocumentURL(match.destination_url) || match.destination_url.SchemeIs("arc"))
         continue;
@@ -1361,7 +1436,7 @@ class OmniboxSession final : public AutocompleteController::Observer,
         }
       } else {
         PCNativeSearchNavigation* navigation = [[PCNativeSearchNavigation alloc]
-            initWithProfile:*profile_ match:match];
+            initWithProfile:*profile_ match:match text:typed];
         if (allows_inline_completion_ && !active_ &&
             &match == controller->result().default_match() &&
             match.allowed_to_be_default_match && !match.inline_autocompletion.empty()) {

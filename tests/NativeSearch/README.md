@@ -1,4 +1,4 @@
-# Native search readiness
+# Native search checks
 
 This isolated component uses the production `NativeSearchReadiness` owner and
 actual pinned Chromium task-executor, weak-callback and non-reentrant
@@ -15,6 +15,13 @@ notifications generated during catalog preparation, nested UI loop exclusion,
 queued preparation canceled by shutdown/destruction, once-only completion and
 client reentry. Preparation-owner destruction verifies the queue's continuation;
 it does not simulate destruction inside `TemplateURLService::Add` itself.
+
+The shortcut fixture checks the production rule for when a command bar pick
+teaches Chromium's shortcuts provider, with Chromium's real URL and registry
+code: 2xx, 401 and 407 responses count; other codes, missing headers, uncommitted
+loads and subframes don't; and a load that ends on the network's search page,
+which the intranet redirect detector reports, counts only when it stays on the
+requested site.
 
 Run using the existing matching Chromium build, with a private output directory:
 
