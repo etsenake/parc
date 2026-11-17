@@ -309,15 +309,25 @@ enum LibraryFlyoutLayout {
     static let captureOutlineRadius: CGFloat = 7
     static let captureOutlinePadding: CGFloat = 1
     static func hiddenOffset(reverseIndex: Int) -> CGFloat { reverseIndex == 0 ? 20 : 56 }
-    static let animationDuration: TimeInterval = 0.15
-    static func stagger(reverseIndex: Int) -> TimeInterval { min(max(Double(reverseIndex) / 4, 0), 1) * 0.05 }
-    static func animation(reverseIndex: Int) -> Animation {
-        .interactiveSpring(response: animationDuration, dampingFraction: 0.86, blendDuration: 0.25).delay(stagger(reverseIndex: reverseIndex))
+    static let openingStep: TimeInterval = 0.04
+    static let closingStep: TimeInterval = 0.03
+    static let openingSettle: TimeInterval = 0.22
+    static let closingSettle: TimeInterval = 0.21
+    static let opening = Animation.spring(response: 0.36, dampingFraction: 0.82, blendDuration: 0.25)
+    static let closing = Animation.spring(response: 0.28, dampingFraction: 0.85, blendDuration: 0.25)
+    static func stagger(reverseIndex: Int, count: Int, expanded: Bool) -> TimeInterval {
+        let last = min(max(count, 1), LibraryFlyoutItems.limit) - 1, place = min(max(reverseIndex, 0), last)
+        return expanded ? Double(place) * openingStep : Double(last - place) * closingStep
+    }
+    static func duration(count: Int, expanded: Bool) -> TimeInterval {
+        stagger(reverseIndex: expanded ? count - 1 : 0, count: count, expanded: expanded) + (expanded ? openingSettle : closingSettle)
+    }
+    static func animation(reverseIndex: Int, count: Int, expanded: Bool) -> Animation {
+        (expanded ? opening : closing).delay(stagger(reverseIndex: reverseIndex, count: count, expanded: expanded))
     }
     static let transition = AnyTransition.asymmetric(
         insertion: .opacity.combined(with: AnyTransition.offset(x: 0, y: -80).combined(with: .scale(scale: 1.5, anchor: .center))),
         removal: .opacity)
-    static let ringRetirement: TimeInterval = 0.25
 }
 
 @MainActor final class LibraryFlyoutHoverTracker {
@@ -443,7 +453,7 @@ enum LibraryFlyoutLayout {
         animationToken &+= 1
         let token = animationToken
         animating = true
-        after(LibraryFlyoutLayout.animationDuration) { [weak self] in
+        after(LibraryFlyoutLayout.duration(count: rows.count, expanded: next)) { [weak self] in
             guard let self, self.animationToken == token else { return }
             self.animating = false
         }
@@ -624,7 +634,7 @@ struct LibraryFlyoutStack: View {
                     .rotationEffect(.zero)
                     .offset(x: 0, y: expanded || still ? 0 : LibraryFlyoutLayout.hiddenOffset(reverseIndex: reverseIndex))
                     .opacity(expanded && drawn ? 1 : 0)
-                    .animation(LibraryFlyoutLayout.animation(reverseIndex: reverseIndex), value: expanded)
+                    .animation(LibraryFlyoutLayout.animation(reverseIndex: reverseIndex, count: count, expanded: expanded), value: expanded)
                     .transition(still ? .opacity : LibraryFlyoutLayout.transition)
             }
         }
@@ -876,6 +886,7 @@ enum LibraryFlyoutCaptureDeletion {
     }
     static func bandColors(_ colors: [CGColor]) -> [CGColor] { Array(colors.dropFirst(2)) }
     static let duration: CFTimeInterval = 0.1
+    static func collapseDelay(count: Int) -> CFTimeInterval { max(0, LibraryFlyoutLayout.duration(count: count, expanded: false) - duration) }
     private(set) var installed = false
     private var generation = 0
     private var dockHeight: CGFloat = 0

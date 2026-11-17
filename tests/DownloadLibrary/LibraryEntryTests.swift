@@ -491,11 +491,21 @@ import UniformTypeIdentifiers
                "Subtitles: a relative date when finished, the Library's download subtitle while running")
 
         expect(LibraryFlyoutLayout.hiddenOffset(reverseIndex: 0) == 20 && LibraryFlyoutLayout.hiddenOffset(reverseIndex: 3) == 56
-               && LibraryFlyoutLayout.stagger(reverseIndex: 0) == 0 && abs(LibraryFlyoutLayout.stagger(reverseIndex: 2) - 0.025) < 1e-12
-               && abs(LibraryFlyoutLayout.stagger(reverseIndex: 7) - 0.05) < 1e-12 && LibraryFlyoutLayout.animationDuration == 0.15
-               && LibraryFlyoutLayout.animation(reverseIndex: 2)
-                    == Animation.interactiveSpring(response: 0.15, dampingFraction: 0.86, blendDuration: 0.25).delay(0.025),
-               "Collapsed rows wait 20/56 below; spring 0.15/0.86/0.25 staggered by min(i/4, 1) × 0.05")
+               && LibraryFlyoutLayout.stagger(reverseIndex: 0, count: 4, expanded: true) == 0
+               && abs(LibraryFlyoutLayout.stagger(reverseIndex: 2, count: 4, expanded: true) - 0.08) < 1e-12
+               && abs(LibraryFlyoutLayout.stagger(reverseIndex: 7, count: 4, expanded: true) - 0.12) < 1e-12
+               && abs(LibraryFlyoutLayout.stagger(reverseIndex: 0, count: 4, expanded: false) - 0.09) < 1e-12
+               && LibraryFlyoutLayout.stagger(reverseIndex: 3, count: 4, expanded: false) == 0
+               && LibraryFlyoutLayout.stagger(reverseIndex: 0, count: 1, expanded: false) == 0
+               && abs(LibraryFlyoutLayout.duration(count: 4, expanded: true) - 0.34) < 1e-12
+               && abs(LibraryFlyoutLayout.duration(count: 4, expanded: false) - 0.3) < 1e-12
+               && abs(LibraryFlyoutLayout.duration(count: 1, expanded: true) - 0.22) < 1e-12
+               && abs(LibraryFlyoutLayout.duration(count: 0, expanded: false) - 0.21) < 1e-12
+               && LibraryFlyoutLayout.animation(reverseIndex: 2, count: 4, expanded: true)
+                    == Animation.spring(response: 0.36, dampingFraction: 0.82, blendDuration: 0.25).delay(0.08)
+               && LibraryFlyoutLayout.animation(reverseIndex: 2, count: 4, expanded: false)
+                    == Animation.spring(response: 0.28, dampingFraction: 0.85, blendDuration: 0.25).delay(0.03),
+               "Collapsed rows wait 20/56 below; opening cascades outward 40 ms apart on a 0.36/0.82 spring, in place by 0.34 s, closing folds back from the top 30 ms apart on 0.28/0.85 in 0.3 s")
         expect(!flyout.expanded && flyout.trackedRegions.isEmpty, "Nothing tracks while the window cannot expand")
         entry.canExpand = true
         expect(flyout.trackedRegions == [.button], "canExpand registers the button region only")
@@ -512,10 +522,10 @@ import UniformTypeIdentifiers
         let regions = entry.hoverRegions
         expect(regions[.dock] == NSRect(x: 40, y: 320, width: 188, height: 32) && regions[.flyout] == NSRect(x: 8, y: 96, width: 220, height: 256),
                "Dock region right of the button, flyout region from its corner")
-        clock.advance(0.149)
-        expect(flyout.animating, "isAnimating lasts animationDuration")
+        clock.advance(0.339)
+        expect(flyout.animating, "isAnimating lasts while the four rows cascade into place")
         clock.advance(0.001)
-        expect(!flyout.animating, "…0.15 s")
+        expect(!flyout.animating, "…0.34 s")
         settle(0.8)
         let frames = flyout.rows.map { flyout.rowFrame($0.id) ?? .zero }
         expect(zip(frames, flyout.rows).allSatisfy { near($0, flyout.measuredRowFrames[$1.id] ?? .zero, 0.5) },
@@ -579,7 +589,7 @@ import UniformTypeIdentifiers
         expect(!flyout.expanded && !flyout.buttonHovered, "Closing the Library leaves the flyout collapsed")
         entry.pointerMoved(to: buttonCentre); clock.advance(0.15)
         expect(flyout.expanded, "Lingering on the button expands it again")
-        clock.advance(0.2); settle(0.4)
+        clock.advance(0.5); settle(0.4)
 
         let openedBefore = opened.count
         expect(entry.tapRow(paperID) && actions.last == "paper.pdf:open", "A finished download opens")
@@ -687,7 +697,7 @@ import UniformTypeIdentifiers
         entry.downloadFileURL = { item in item.status == .completed ? fileURL : nil }
         DraggingSessions.install()
         func expandFlyout() {
-            entry.pointerMoved(to: NSPoint(x: entry.buttonRect.midX, y: entry.buttonRect.midY)); clock.advance(0.15); clock.advance(0.2); settle(0.4)
+            entry.pointerMoved(to: NSPoint(x: entry.buttonRect.midX, y: entry.buttonRect.midY)); clock.advance(0.15); clock.advance(0.5); settle(0.4)
         }
         func dragRow(_ id: String) -> [DraggingStart] {
             guard let frame = flyout.rowFrame(id) else { return [] }
@@ -744,7 +754,7 @@ import UniformTypeIdentifiers
         var photo = publish("holiday.png", status: "completed", received: 100, date: 8_000)
         photo.canOpen = true; photo.canCopyFile = true
         entry.updateFlyoutDownloads([photo, song, paper], profiles: [profile], privateWindow: false)
-        entry.pointerMoved(to: NSPoint(x: entry.buttonRect.midX, y: entry.buttonRect.midY)); clock.advance(0.15); clock.advance(0.2); settle(0.4)
+        entry.pointerMoved(to: NSPoint(x: entry.buttonRect.midX, y: entry.buttonRect.midY)); clock.advance(0.15); clock.advance(0.5); settle(0.4)
         let photoID = "download:" + photo.id
         expect(flyout.expanded && flyout.rows.first?.id == photoID, "The photo is the newest row")
         let actionsBefore = actions.count
@@ -866,7 +876,7 @@ import UniformTypeIdentifiers
         entry.onHover = { hovers += 1 }
         entry.pointerMoved(to: NSPoint(x: entry.buttonRect.midX, y: entry.buttonRect.midY))
         expect(hovers == 0, "Passing over the Library button doesn't ask for folders yet")
-        clock.advance(0.16); clock.advance(0.16)
+        clock.advance(0.16); clock.advance(0.3)
         expect(flyout.expanded && !flyout.animating, "Hover expands once folder files are present")
         expect(hovers == 1, "Settling on the Library button reports one hover: \(hovers)")
         entry.onHover = nil
@@ -923,11 +933,11 @@ import UniformTypeIdentifiers
         entry.pointerMoved(to: nil); clock.advance(0.01)
         expect(!flyout.expanded && entry.badge.activity?.identity == DownloadLibraryIdentity(front) && backdropRing?.activity != nil,
                "Collapsing: the visible renderer travels with its cell; the other row's renderer fades with its row")
-        clock.advance(0.239)
-        expect(backdropRing?.activity != nil, "…still drawing before 0.25 s")
+        clock.advance(0.259)
+        expect(backdropRing?.activity != nil, "…still drawing before the three rows finish folding away at 0.27 s")
         clock.advance(0.001)
         expect(backdropRing?.activity == nil && backdropRing?.subviews.isEmpty == true && entry.badge.activity != nil,
-               "At 0.25 s, once the rows have faded, the other row's renderer retires; the visible one stays")
+               "At 0.27 s, once the rows have faded, the other row's renderer retires; the visible one stays")
         settle(0.5)
         let frontBack = entry.badge.convert(entry.badge.bounds, to: entry)
         expect(near(frontBack, cornerRect, 0.5), "The visible cell is back at the button's top-right: \(frontBack)")
@@ -936,7 +946,7 @@ import UniformTypeIdentifiers
         entry.pointerMoved(to: buttonCentre); clock.advance(0.15)
         let reopenedRing = rings(in: entry.host).first { $0 !== entry.badge }
         expect(flyout.expanded && reopenedRing?.activity?.identity == DownloadLibraryIdentity(backdrop),
-               "Expanding again within 0.25 s keeps the row's renderer")
+               "Expanding again before the close finishes keeps the row's renderer")
         clock.advance(0.5)
         expect(reopenedRing?.activity != nil, "An earlier collapse's retirement never applies to a later expansion")
         entry.pointerMoved(to: nil); clock.advance(1); settle(0.3)
@@ -950,7 +960,7 @@ import UniformTypeIdentifiers
                && near(stillCorner, cornerRect, 0.5), "Reduce Motion: the visible cell stays at the button: \(stillCorner)")
         expect(Set(rowRings.compactMap { $0.activity?.identity }) == [DownloadLibraryIdentity(front), DownloadLibraryIdentity(backdrop)],
                "…and both running rows draw their own renderers, fading in place")
-        entry.pointerMoved(to: nil); clock.advance(0.25)
+        entry.pointerMoved(to: nil); clock.advance(0.3)
         expect(!flyout.expanded && rowRings.allSatisfy { $0.activity == nil } && entry.badge.activity != nil,
                "Both rows' renderers retire once faded; the visible cell's stays")
         SystemOverrides.reduceMotion = false

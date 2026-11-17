@@ -94,7 +94,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
                 "libraryEntry.containerWidth = width",
                 "libraryEntry.onFlyoutExpansion = { [weak self] expanded, count in self?.updateLibraryFlyoutMask(expanded, count: count) }",
                 "libraryFlyoutMask.expand(on: contentSurface, totalHeight: total, dockHeight: SidebarChromeLayout.dockHeight)",
-                "DispatchQueue.main.asyncAfter(deadline: .now() + LibraryFlyoutContentMask.duration)",
+                "DispatchQueue.main.asyncAfter(deadline: .now() + LibraryFlyoutContentMask.collapseDelay(count: count))",
                 "libraryEntry.badge.colors = DownloadBadgeColors(foreground: palette?.foregroundPrimary ?? .labelColor,\n"
                 "            maxContrast: palette?.maxContrastColor ?? .labelColor, cutout: palette?.cutoutColor ?? .windowBackgroundColor)",
                 "libraryEntry.appearance = NSAppearance(named: palette.isDark ? .darkAqua : .aqua)"):

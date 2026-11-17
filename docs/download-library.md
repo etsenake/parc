@@ -212,6 +212,14 @@ Hovering the entry expands up to four newest unique files. Entry dwell is
 dock region uses a 0.5-second delay. Hover within 100 ms of Library closing does
 not reopen it. Removing a hovered region clears its hover registration.
 
+Rows open as a cascade from the entry outward, each 40 ms behind the one below
+it on a soft spring, so four rows reach their places in about a third of a
+second and finish settling by 0.4 seconds. Closing folds them back from the
+top, 30 ms apart on a slightly quicker spring, in about 0.3 seconds. A click
+before the rows reach their places, or while they close, opens Library; running
+rows keep their progress rings and the sidebar behind stays dimmed until the
+close finishes.
+
 Rows show title, status/date, file or capture artwork, live progress and a Cancel
 control for active transfers. Expansion preserves the visible badge's renderer
 while it moves into the row. Reduce Motion fades in place. Menus resolve the

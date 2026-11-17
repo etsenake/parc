@@ -4123,7 +4123,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             return
         }
         let token = libraryFlyoutMaskGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + LibraryFlyoutContentMask.duration) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + LibraryFlyoutContentMask.collapseDelay(count: count)) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.libraryFlyoutMaskGeneration == token else { return }
                 self.libraryFlyoutMask.collapse(totalHeight: total, dockHeight: SidebarChromeLayout.dockHeight)

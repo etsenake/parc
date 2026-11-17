@@ -307,7 +307,8 @@ struct LibraryEntryCanvas: View {
                         .rotationEffect(.degrees(opened ? 0 : pose.rotation))
                         .offset(x: opened ? 0 : pose.x, y: opened ? 0 : pose.y + rise)
                         .opacity(opened ? 1 : expanded ? 0 : pose.opacity)
-                        .animation(LibraryFlyoutLayout.animation(reverseIndex: reverseIndex), value: expanded)
+                        .animation(LibraryFlyoutLayout.animation(reverseIndex: reverseIndex, count: flyout.rows.count, expanded: expanded),
+                                   value: expanded)
                         .offset(x: 0, y: -rise)
                 }
                 .offset(LibraryEntryLayout.overlayOffset)
@@ -651,7 +652,7 @@ struct LibraryEntryCanvas: View {
             ringsShown = true
         } else {
             let token = ringGeneration
-            model.after(LibraryFlyoutLayout.ringRetirement) { [weak self] in
+            model.after(LibraryFlyoutLayout.duration(count: flyout.rows.count, expanded: false)) { [weak self] in
                 guard let self, self.ringGeneration == token else { return }
                 self.ringsShown = false
                 self.refreshRings()
