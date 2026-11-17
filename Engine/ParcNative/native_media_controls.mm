@@ -749,11 +749,10 @@ bool PageCanEnterAutoPictureInPicture(content::WebContents* contents) {
           ->IsPictureInPictureDisabled()) {
     return false;
   }
-  if (PageHandlesAutoPictureInPicture(contents)) {
-    return true;
-  }
   auto* state = MediaState::FromWebContents(contents);
-  return state && state->CanEnterBackgroundPictureInPicture();
+  return (PageHandlesAutoPictureInPicture(contents) ||
+          (state && state->CanEnterBackgroundPictureInPicture())) &&
+         Owner(contents, false);
 }
 
 void SynchronizeAutoPictureInPictureVisibility(

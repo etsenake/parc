@@ -12,6 +12,7 @@
 namespace parc {
 
 inline constexpr int kBackgroundPipNormalWindowLayer = 0;
+inline constexpr int64_t kBackgroundPipHoldRecheckDelayMs = 250;
 inline constexpr int64_t kBackgroundPipHoldWatchIntervalMs = 500;
 inline constexpr int64_t kBackgroundPipHoldReleaseAfterMs = 1000;
 
@@ -182,6 +183,10 @@ inline bool BackgroundPipFocusAwayOccludes(bool focus_away, bool held) {
   return focus_away && !held;
 }
 
+inline bool BackgroundPipPageKept(bool held, bool decided, bool gate_open) {
+  return held || (!decided && gate_open);
+}
+
 struct BackgroundPipHoldGate {
   bool focus_away = false;
   bool page_shown = false;
@@ -208,7 +213,31 @@ inline bool BackgroundPipAtLeastHalfVisible(
 enum class BackgroundPipHoldPass {
   kFocusLost,
   kRecheck,
+  kBecameEligible,
 };
+
+template <typename CanEnter>
+bool BackgroundPipHoldPassMeasures(BackgroundPipHoldPass pass,
+                                   bool held,
+                                   bool releasing,
+                                   bool decided,
+                                   CanEnter can_enter) {
+  switch (pass) {
+    case BackgroundPipHoldPass::kFocusLost:
+      return true;
+    case BackgroundPipHoldPass::kRecheck:
+      return held && !releasing;
+    case BackgroundPipHoldPass::kBecameEligible:
+      return !decided && can_enter();
+  }
+  return false;
+}
+
+inline bool BackgroundPipHoldDecided(BackgroundPipHoldPass pass,
+                                     bool decided,
+                                     bool measured) {
+  return pass == BackgroundPipHoldPass::kRecheck ? decided : measured;
+}
 
 inline bool ShouldHoldBackgroundPip(
     BackgroundPipHoldPass pass,
@@ -233,6 +262,15 @@ bool BackgroundPipHoldWatchRuns(bool window_gate_open,
          std::ranges::any_of(pages, [&](const auto& page) {
            return held(page) && can_enter(page);
          });
+}
+
+template <typename Pages, typename Undecided, typename CanEnter>
+bool BackgroundPipHoldDecisionPending(bool window_gate_open,
+                                      const Pages& pages,
+                                      Undecided undecided,
+                                      CanEnter can_enter) {
+  return BackgroundPipHoldWatchRuns(window_gate_open, pages, undecided,
+                                    can_enter);
 }
 
 inline bool KeepBackgroundPipHold(

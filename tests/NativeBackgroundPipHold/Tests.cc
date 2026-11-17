@@ -103,6 +103,57 @@ Covers FromRecords(const std::vector<BackgroundPipWindowRecord>& records) {
   return parc::BackgroundPipCoveringWindows(records);
 }
 
+struct HostPage {
+  bool held = false;
+  bool decided = false;
+  bool shown = true;
+  bool can_enter = false;
+  bool picture_in_picture_open = false;
+  bool releasing = false;
+  int eligibility_reads = 0;
+
+  BackgroundPipHoldGate PageGate(BackgroundPipHoldGate window) const {
+    window.page_shown = window.page_shown && shown;
+    window.picture_in_picture_open =
+        window.picture_in_picture_open || picture_in_picture_open;
+    return window;
+  }
+  void Pass(BackgroundPipHoldPass pass,
+            const BackgroundPipHoldGate& window,
+            const BackgroundPipRect& page,
+            const std::vector<BackgroundPipRect>& screens,
+            const Covers& covers) {
+    const auto can_enter_now = [this] {
+      ++eligibility_reads;
+      return can_enter;
+    };
+    if (!parc::BackgroundPipHoldPassMeasures(pass, held, releasing, decided,
+                                             can_enter_now)) {
+      return;
+    }
+    const bool window_gate_open = window.focus_away && window.window_visible &&
+                                  !window.displays_asleep &&
+                                  !window.screen_locked;
+    const bool measured = window_gate_open && shown;
+    held = measured && parc::ShouldHoldBackgroundPip(pass, held, PageGate(window),
+                                                     page, screens, covers);
+    decided = parc::BackgroundPipHoldDecided(pass, decided, measured);
+  }
+  bool Occluded(const BackgroundPipHoldGate& window) const {
+    return parc::BackgroundPipFocusAwayOccludes(
+        window.focus_away,
+        parc::BackgroundPipPageKept(
+            held, decided, parc::BackgroundPipHoldGateOpen(PageGate(window))));
+  }
+};
+
+bool DecisionPending(bool window_gate_open, const std::vector<HostPage>& pages) {
+  return parc::BackgroundPipHoldDecisionPending(
+      window_gate_open, pages,
+      [](const HostPage& page) { return !page.decided && page.shown; },
+      [](const HostPage& page) { return page.can_enter; });
+}
+
 }
 
 int main() {
@@ -505,6 +556,248 @@ int main() {
     back.below_half_since = 0;
     PARC_EXPECT(!back.Keep(gate, page, laptop, clear, 500));
     PARC_EXPECT(!back.below_half_since);
+  }
+
+  {
+    PARC_EXPECT(parc::kBackgroundPipHoldRecheckDelayMs == 250);
+    PARC_EXPECT(parc::BackgroundPipPageKept(true, true, false));
+    PARC_EXPECT(parc::BackgroundPipPageKept(true, true, true));
+    PARC_EXPECT(parc::BackgroundPipPageKept(false, false, true));
+    PARC_EXPECT(!parc::BackgroundPipPageKept(false, false, false));
+    PARC_EXPECT(!parc::BackgroundPipPageKept(false, true, true));
+    PARC_EXPECT(parc::BackgroundPipHoldDecided(BackgroundPipHoldPass::kFocusLost,
+                                               false, true));
+    PARC_EXPECT(!parc::BackgroundPipHoldDecided(BackgroundPipHoldPass::kFocusLost,
+                                                true, false));
+    PARC_EXPECT(parc::BackgroundPipHoldDecided(
+        BackgroundPipHoldPass::kBecameEligible, false, true));
+    PARC_EXPECT(!parc::BackgroundPipHoldDecided(
+        BackgroundPipHoldPass::kBecameEligible, false, false));
+    PARC_EXPECT(parc::BackgroundPipHoldDecided(BackgroundPipHoldPass::kRecheck,
+                                               true, false));
+    PARC_EXPECT(!parc::BackgroundPipHoldDecided(BackgroundPipHoldPass::kRecheck,
+                                                false, true));
+    const auto yes = [] { return true; };
+    const auto no = [] { return false; };
+    PARC_EXPECT(parc::BackgroundPipHoldPassMeasures(
+        BackgroundPipHoldPass::kFocusLost, false, false, true, no));
+    PARC_EXPECT(parc::BackgroundPipHoldPassMeasures(
+        BackgroundPipHoldPass::kFocusLost, true, true, true, no));
+    PARC_EXPECT(parc::BackgroundPipHoldPassMeasures(
+        BackgroundPipHoldPass::kRecheck, true, false, true, no));
+    PARC_EXPECT(!parc::BackgroundPipHoldPassMeasures(
+        BackgroundPipHoldPass::kRecheck, true, true, true, yes));
+    PARC_EXPECT(!parc::BackgroundPipHoldPassMeasures(
+        BackgroundPipHoldPass::kRecheck, false, false, false, yes));
+    PARC_EXPECT(parc::BackgroundPipHoldPassMeasures(
+        BackgroundPipHoldPass::kBecameEligible, false, false, false, yes));
+    PARC_EXPECT(!parc::BackgroundPipHoldPassMeasures(
+        BackgroundPipHoldPass::kBecameEligible, false, false, false, no));
+    PARC_EXPECT(!parc::BackgroundPipHoldPassMeasures(
+        BackgroundPipHoldPass::kBecameEligible, false, false, true, yes));
+    PARC_EXPECT(!parc::BackgroundPipHoldPassMeasures(
+        BackgroundPipHoldPass::kBecameEligible, true, false, true, yes));
+  }
+
+  {
+    const FakeWindow first;
+    const FakeWindow second;
+    const bool away_at_attach = !InKeyChain(true, &second, &first);
+    PARC_EXPECT(away_at_attach);
+    PARC_EXPECT(parc::BackgroundPipFocusTransition(
+                    away_at_attach, !InKeyChain(true, &second, &first)) ==
+                BackgroundPipFocusChange::kNone);
+    PARC_EXPECT(parc::BackgroundPipFocusTransition(
+                    away_at_attach, !InKeyChain(false, nullptr, &first)) ==
+                BackgroundPipFocusChange::kNone);
+    PARC_EXPECT(parc::BackgroundPipFocusTransition(
+                    !InKeyChain(false, nullptr, &first),
+                    !InKeyChain(true, nullptr, &first)) ==
+                BackgroundPipFocusChange::kNone);
+
+    const auto gate = GateFor(true, &second, &first);
+    const auto page = Quartz(0, 25, 1440, 875);
+    const Covers clear{{}};
+    HostPage video;
+    PARC_EXPECT(!video.Occluded(gate));
+    PARC_EXPECT(!DecisionPending(true, {video}));
+    video.can_enter = true;
+    PARC_EXPECT(!video.Occluded(gate));
+    PARC_EXPECT(DecisionPending(true, {video}));
+    PARC_EXPECT(!DecisionPending(false, {video}));
+    video.Pass(BackgroundPipHoldPass::kBecameEligible, gate, page, laptop, clear);
+    PARC_EXPECT(video.held && video.decided);
+    PARC_EXPECT(!video.Occluded(gate));
+    PARC_EXPECT(!DecisionPending(true, {video}));
+    PARC_EXPECT(WatchRuns(true, {{video.held, video.can_enter}}));
+    video.Pass(BackgroundPipHoldPass::kRecheck, gate, page, laptop, clear);
+    PARC_EXPECT(video.held && !video.Occluded(gate));
+    Watch watch;
+    for (int64_t now = 0; now <= 5000; now += 500) {
+      PARC_EXPECT(watch.Keep(gate, page, laptop, clear, now));
+    }
+    PARC_EXPECT(!video.Occluded(GateFor(false, nullptr, &first)));
+    PARC_EXPECT(!video.Occluded(GateFor(true, &first, &first)));
+  }
+
+  {
+    const FakeWindow first;
+    const FakeWindow second;
+    const auto gate = GateFor(true, &second, &first);
+    const auto page = Quartz(0, 25, 720, 875);
+    const Covers beside{{Quartz(720, 25, 720, 875)}};
+    const Covers just_over_half{{Quartz(396, 25, 1044, 875)}};
+    const Covers mostly_over{{Quartz(359, 25, 1081, 875)}};
+
+    HostPage half;
+    half.can_enter = true;
+    half.Pass(BackgroundPipHoldPass::kBecameEligible, gate, page, laptop,
+              just_over_half);
+    PARC_EXPECT(half.held && half.decided && !half.Occluded(gate));
+    HostPage clear_side;
+    clear_side.can_enter = true;
+    clear_side.Pass(BackgroundPipHoldPass::kBecameEligible, gate, page, laptop,
+                    beside);
+    PARC_EXPECT(clear_side.held && !clear_side.Occluded(gate));
+
+    HostPage under;
+    under.can_enter = true;
+    PARC_EXPECT(!under.Occluded(gate));
+    under.Pass(BackgroundPipHoldPass::kBecameEligible, gate, page, laptop,
+               mostly_over);
+    PARC_EXPECT(!under.held && under.decided);
+    PARC_EXPECT(under.Occluded(gate));
+    PARC_EXPECT(!DecisionPending(true, {under}));
+    under.Pass(BackgroundPipHoldPass::kBecameEligible, gate, page, laptop,
+               beside);
+    PARC_EXPECT(!under.held && under.Occluded(gate));
+    PARC_EXPECT(under.eligibility_reads == 1);
+
+    HostPage late;
+    late.can_enter = true;
+    late.Pass(BackgroundPipHoldPass::kBecameEligible, gate, page, laptop,
+              beside);
+    PARC_EXPECT(late.held);
+    late.Pass(BackgroundPipHoldPass::kRecheck, gate, page, laptop, mostly_over);
+    PARC_EXPECT(!late.held && late.decided && late.Occluded(gate));
+
+    HostPage watched;
+    watched.can_enter = true;
+    watched.Pass(BackgroundPipHoldPass::kBecameEligible, gate, page, laptop,
+                 beside);
+    Watch grace;
+    PARC_EXPECT(grace.Keep(gate, page, laptop, mostly_over, 0));
+    watched.releasing = grace.below_half_since.has_value();
+    PARC_EXPECT(watched.releasing);
+    HostPage newcomer;
+    newcomer.can_enter = true;
+    newcomer.Pass(BackgroundPipHoldPass::kBecameEligible, gate, page, laptop,
+                  beside);
+    PARC_EXPECT(newcomer.held);
+    watched.Pass(BackgroundPipHoldPass::kRecheck, gate, page, laptop,
+                 mostly_over);
+    newcomer.Pass(BackgroundPipHoldPass::kRecheck, gate, page, laptop,
+                  mostly_over);
+    PARC_EXPECT(watched.held && !watched.Occluded(gate));
+    PARC_EXPECT(!newcomer.held && newcomer.Occluded(gate));
+    PARC_EXPECT(grace.Keep(gate, page, laptop, mostly_over, 500));
+    PARC_EXPECT(!grace.Keep(gate, page, laptop, mostly_over, 1000));
+  }
+
+  {
+    const auto page = Quartz(0, 25, 720, 875);
+    const Covers beside{{Quartz(720, 25, 720, 875)}};
+    const Covers mostly_over{{Quartz(359, 25, 1081, 875)}};
+
+    HostPage measured_paused;
+    measured_paused.Pass(BackgroundPipHoldPass::kFocusLost, Away(), page,
+                         laptop, mostly_over);
+    PARC_EXPECT(measured_paused.decided && !measured_paused.held);
+    PARC_EXPECT(measured_paused.eligibility_reads == 0);
+    measured_paused.can_enter = true;
+    PARC_EXPECT(!DecisionPending(true, {measured_paused}));
+    measured_paused.Pass(BackgroundPipHoldPass::kBecameEligible, Away(), page,
+                         laptop, beside);
+    PARC_EXPECT(measured_paused.Occluded(Away()));
+
+    HostPage background_tab;
+    background_tab.shown = false;
+    background_tab.Pass(BackgroundPipHoldPass::kFocusLost, Away(), page, laptop,
+                        beside);
+    PARC_EXPECT(!background_tab.decided && !background_tab.held);
+    background_tab.can_enter = true;
+    PARC_EXPECT(!DecisionPending(true, {background_tab}));
+    background_tab.shown = true;
+    PARC_EXPECT(!background_tab.Occluded(Away()));
+    PARC_EXPECT(DecisionPending(true, {background_tab}));
+    background_tab.Pass(BackgroundPipHoldPass::kBecameEligible, Away(), page,
+                        laptop, beside);
+    PARC_EXPECT(background_tab.held && !background_tab.Occluded(Away()));
+
+    HostPage covered;
+    covered.can_enter = true;
+    auto hidden = Away();
+    hidden.window_visible = false;
+    PARC_EXPECT(covered.Occluded(hidden));
+    covered.Pass(BackgroundPipHoldPass::kBecameEligible, hidden, page, laptop,
+                 beside);
+    PARC_EXPECT(!covered.decided && !covered.held);
+    PARC_EXPECT(covered.Occluded(hidden));
+    PARC_EXPECT(!covered.Occluded(Away()));
+    PARC_EXPECT(DecisionPending(true, {covered}));
+    covered.Pass(BackgroundPipHoldPass::kBecameEligible, Away(), page, laptop,
+                 mostly_over);
+    PARC_EXPECT(covered.decided && covered.Occluded(Away()));
+
+    for (const auto closed : {&BackgroundPipHoldGate::displays_asleep,
+                              &BackgroundPipHoldGate::screen_locked}) {
+      auto gate = Away();
+      gate.*closed = true;
+      HostPage unmeasured;
+      unmeasured.can_enter = true;
+      PARC_EXPECT(unmeasured.Occluded(gate));
+      unmeasured.Pass(BackgroundPipHoldPass::kFocusLost, gate, page, laptop,
+                      beside);
+      PARC_EXPECT(!unmeasured.decided && unmeasured.Occluded(gate));
+    }
+
+    HostPage untouched;
+    untouched.can_enter = true;
+    untouched.Pass(BackgroundPipHoldPass::kRecheck, Away(), page, laptop,
+                   mostly_over);
+    PARC_EXPECT(!untouched.decided && !untouched.Occluded(Away()));
+
+    HostPage already_open;
+    already_open.can_enter = true;
+    already_open.picture_in_picture_open = true;
+    PARC_EXPECT(already_open.Occluded(Away()));
+    already_open.Pass(BackgroundPipHoldPass::kBecameEligible, Away(), page,
+                      laptop, beside);
+    PARC_EXPECT(already_open.decided && !already_open.held);
+    already_open.picture_in_picture_open = false;
+    PARC_EXPECT(already_open.Occluded(Away()));
+
+    HostPage key_again = measured_paused;
+    key_again.decided = false;
+    auto back = Away();
+    back.focus_away = false;
+    PARC_EXPECT(!key_again.Occluded(back));
+    key_again.Pass(BackgroundPipHoldPass::kFocusLost, Away(), page, laptop,
+                   beside);
+    PARC_EXPECT(key_again.held && key_again.decided);
+  }
+
+  {
+    HostPage paused;
+    HostPage decided;
+    decided.decided = true;
+    decided.can_enter = true;
+    HostPage playing;
+    playing.can_enter = true;
+    PARC_EXPECT(!DecisionPending(true, {paused, decided}));
+    PARC_EXPECT(DecisionPending(true, {paused, decided, playing}));
+    playing.shown = false;
+    PARC_EXPECT(!DecisionPending(true, {paused, decided, playing}));
   }
 
   return 0;

@@ -349,7 +349,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_host.mm",
       "target": "parc/native/native_appkit_host.mm",
-      "sha256": "c1be1bfebd9389448107ce35bb60640282cc94356cd00fb89fe129ae57fdc674"
+      "sha256": "208306df2d00483123df3965f92522cc3008cef843d883199eb60ac3b5ee76da"
     },
     {
       "source": "Engine/ParcNative/native_appkit_page.h",
@@ -1219,7 +1219,7 @@
     {
       "source": "Engine/ParcNative/native_background_picture_in_picture_hold.h",
       "target": "parc/native/native_background_picture_in_picture_hold.h",
-      "sha256": "98cdd534602da05efbffc5b18a50593b113655662da826ef009c868cb3629807"
+      "sha256": "f826d9651690f185cdd1d0fdcaaa5e4e5fab2376751226c4d23e8923ca0383da"
     },
     {
       "source": "Engine/ParcNative/native_media_notify.h",
@@ -1229,7 +1229,7 @@
     {
       "source": "Engine/ParcNative/native_media_controls.mm",
       "target": "parc/native/native_media_controls.mm",
-      "sha256": "1888d19cdd0b690d9e7741b7677e14a5236de6cc4c7f770a6954681c1bb61663"
+      "sha256": "3fc7ec1204fa2717a9ef36cf19ba8d74c2f49259ec4309fce9a39b9080b2c262"
     },
     {
       "source": "Engine/ParcNative/native_applescript.mm",
