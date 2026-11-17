@@ -45,6 +45,10 @@ fills, and carries the `hover-start` (1), `hover-end` (11) and `selection-end`
 `LibraryRailAnimation` renders the files directly; Parc does not bundle a
 Lottie runtime. It colors `primaryColor` and `secondaryColor` layers with the
 theme's `maxContrastColor` and `cutoutColor`. Selection plays `hover-start` to
-`selection-end` once unless Reduce Motion is on. Deselection does not interrupt
-an animation. Completion parks on `selection-end`, which matches frame 0 (`ip`), the pose
-an unplayed page shows.
+`selection-end` once unless Reduce Motion is on, at 60 percent of the
+composition's pace, so the wind-up takes about a quarter second and the whole
+hop a little under one. Deselection does not interrupt a hop, and selecting the
+tile again mid-hop lets it carry on rather than jump back to the start.
+Completion parks on `selection-end`, which matches frame 0 (`ip`), the pose an
+unplayed page shows. `LibraryRailMotion` owns these timings and the tile's
+fades; see [the rail's motion](../../docs/download-library.md#search-filter-and-layout).

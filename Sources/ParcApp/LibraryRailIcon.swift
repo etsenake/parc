@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 
 final class LibraryRailAnimation {
     enum Name: String { case media = "screenshots", downloads, easels, spaces, archive }
@@ -262,7 +263,7 @@ final class LibraryRailAnimation {
             let start = keyframes[next - 1], end = keyframes[next]
             if start.hold { return start.value }
             let linear = (frame - start.time) / max(.ulpOfOne, end.time - start.time)
-            return interpolate(start.value, end.value, Self.ease(linear, start.out, start.in))
+            return interpolate(start.value, end.value, LibraryRailAnimation.ease(linear, start.out, start.in))
         }
         private static func handle(_ value: Any?, default fallback: CGPoint) -> CGPoint {
             guard let object = value as? [String: Any] else { return fallback }
@@ -270,17 +271,6 @@ final class LibraryRailAnimation {
                 (object[key] as? NSNumber)?.doubleValue ?? (object[key] as? [NSNumber])?.first?.doubleValue
             }
             return CGPoint(x: first("x") ?? fallback.x, y: first("y") ?? fallback.y)
-        }
-        private static func ease(_ t: Double, _ c1: CGPoint, _ c2: CGPoint) -> Double {
-            func bezier(_ s: Double, _ a: Double, _ b: Double) -> Double {
-                3 * (1 - s) * (1 - s) * s * a + 3 * (1 - s) * s * s * b + s * s * s
-            }
-            var low = 0.0, high = 1.0, s = t
-            for _ in 0..<24 {
-                s = (low + high) / 2
-                if bezier(s, c1.x, c2.x) < t { low = s } else { high = s }
-            }
-            return bezier(s, c1.y, c2.y)
         }
         private static func interpolator(_ a: Value, _ b: Value, _ t: Double) -> Value {
             switch (a, b) {
@@ -292,6 +282,18 @@ final class LibraryRailAnimation {
             default: return t < 1 ? a : b
             }
         }
+    }
+
+    static func ease(_ t: Double, _ c1: CGPoint, _ c2: CGPoint) -> Double {
+        func bezier(_ s: Double, _ a: Double, _ b: Double) -> Double {
+            3 * (1 - s) * (1 - s) * s * a + 3 * (1 - s) * s * s * b + s * s * s
+        }
+        var low = 0.0, high = 1.0, s = t
+        for _ in 0..<24 {
+            s = (low + high) / 2
+            if bezier(s, c1.x, c2.x) < t { low = s } else { high = s }
+        }
+        return bezier(s, c1.y, c2.y)
     }
 
     fileprivate static func blend(_ a: CGPath, _ b: CGPath, _ t: Double) -> CGPath? {
@@ -330,4 +332,62 @@ final class LibraryRailAnimation {
 
 private extension Array where Element == Double {
     subscript(safe index: Int, or fallback: Double = 0) -> Double { indices.contains(index) ? self[index] : fallback }
+}
+
+enum LibraryRailMotion {
+    static let playbackPace = 0.6
+    static let arrival: CFTimeInterval = 0.34
+    static let departure: CFTimeInterval = 0.26
+    static let pageFade: CFTimeInterval = 0.3
+    static let pressResponse = 0.3, pressDamping = 0.86
+    static let curve = (CGPoint(x: 0.25, y: 0.46), CGPoint(x: 0.45, y: 0.94))
+
+    static func playbackDuration(from: Double, to end: Double, frameRate: Double) -> CFTimeInterval {
+        max(0, end - from) / (frameRate * playbackPace)
+    }
+    static func playbackFrame(from: Double, to end: Double, frameRate: Double, elapsed: CFTimeInterval) -> Double {
+        min(end, from + max(0, elapsed) * frameRate * playbackPace)
+    }
+    static func fadeDuration(rising: Bool) -> CFTimeInterval { rising ? arrival : departure }
+    static func eased(_ progress: Double) -> Double {
+        progress <= 0 ? 0 : progress >= 1 ? 1 : LibraryRailAnimation.ease(progress, curve.0, curve.1)
+    }
+    static var timing: CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: Float(curve.0.x), Float(curve.0.y), Float(curve.1.x), Float(curve.1.y))
+    }
+    static func fade(_ keyPath: String, from value: Any?, to target: Any? = nil, duration: CFTimeInterval) -> CABasicAnimation {
+        let fade = CABasicAnimation(keyPath: keyPath)
+        fade.fromValue = value; fade.toValue = target
+        fade.duration = duration
+        fade.timingFunction = timing
+        return fade
+    }
+    static func pressSpring(_ keyPath: String, from value: Any, to target: Any) -> CASpringAnimation {
+        let spring = CASpringAnimation(keyPath: keyPath)
+        spring.mass = 1; spring.stiffness = pow(2 * Double.pi / pressResponse, 2)
+        spring.damping = 4 * Double.pi * pressDamping / pressResponse
+        spring.duration = spring.settlingDuration
+        spring.fromValue = value; spring.toValue = target
+        return spring
+    }
+
+    struct Fade {
+        private(set) var target: Double
+        private var origin: Double
+        private var start: CFTimeInterval = 0
+        private var duration: CFTimeInterval = 0
+        init(_ value: Double) { target = value; origin = value }
+        func value(at time: CFTimeInterval) -> Double {
+            guard !isSettled(at: time) else { return target }
+            return origin + (target - origin) * LibraryRailMotion.eased((time - start) / duration)
+        }
+        func isSettled(at time: CFTimeInterval) -> Bool { duration <= 0 || time - start >= duration }
+        mutating func retarget(_ value: Double, at time: CFTimeInterval, animated: Bool) {
+            guard value != target || (!animated && !isSettled(at: time)) else { return }
+            let current = self.value(at: time)
+            origin = animated ? current : value
+            target = value; start = time
+            duration = animated && current != value ? LibraryRailMotion.fadeDuration(rising: value > current) : 0
+        }
+    }
 }

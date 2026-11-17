@@ -255,6 +255,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         if self.kind != kind { archiveMenuGeneration &+= 1 }
 
         settleFilterAnimation()
+        let shownKind = renderedKind
         self.kind = kind
         table.allowsMultipleSelection = kind != .archive
         filtersExpanded = false
@@ -263,6 +264,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         table.deselectAll(nil)
         reload()
         reloadRows()
+        if renderedKind != shownKind { fadeInPage() }
         focusSearch()
         if kind == .downloads { onLoadDownloads?() }
         onShowKind?(kind)
@@ -880,6 +882,14 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         let top = 56 + filterHeight
         place(scroll, NSRect(x: railWidth, y: top, width: max(0, bounds.width - railWidth), height: max(0, bounds.height - top)))
         place(empty, NSRect(x: listX + 12, y: top + 45, width: max(0, listWidth - 24), height: 90))
+    }
+    private func fadeInPage() {
+        guard window != nil else { return }
+        for view in subviews where !view.isHidden && view !== depth && view !== rail && view !== windowButtons {
+            guard let layer = view.layer else { continue }
+            layer.add(LibraryRailMotion.fade("opacity", from: 0, to: layer.opacity, duration: LibraryRailMotion.pageFade),
+                      forKey: "parc.library.pageFade")
+        }
     }
     private func restoreCategorySelection() {
         capturesButton.state = kind == .captures ? .on : .off

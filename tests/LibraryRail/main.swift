@@ -47,7 +47,7 @@ func run() {
     }
     var candidates: [String: [UInt8]] = [:]
     func candidate(_ tile: LibraryRailTile, frame: Double) -> [UInt8] {
-        let alpha: CGFloat = tile.state == .on ? 1 : 0.7
+        let alpha = LibraryRailTile.artOpacity(emphasis: tile.currentEmphasis)
         let key = "\(tile.title)|\(alpha)|\(frame)"
         if let cached = candidates[key] { return cached }
         let art = tile.progress!.superview!
@@ -103,6 +103,8 @@ func run() {
 
     let opening = makeClockedTile("Archived Tabs", .archive)
     expect(playTimers { opening.state = .on }.isEmpty, "A page selected before its window schedules no play")
+    expect(opening.subviews[0].layer?.animation(forKey: "parc.rail.fill") == nil && opening.currentEmphasis == 1,
+           "A page selected before its window lights up without fading")
     root.addSubview(opening)
     clock += 0.3
     var drawn = capture(opening)
@@ -113,66 +115,76 @@ func run() {
     let media = makeClockedTile("Media", .media)
     root.addSubview(media)
     let art = media.progress!.superview!
+    let mediaFill = media.subviews[0].layer!
     expect(matches(capture(media), media, frame: 0), "An unplayed page shows the composition's start frame")
     var start = clock
     let play = playTimers { media.state = .on }
     expect(play.count == 1 && play[0].timer?.timeInterval == 1.0 / 60 && play[0].isLive,
-           "Selection drives its frames from one 60-a-second timer")
-    clock = start + 0.25
+           "Selection drives its hop and its fade from one 60-a-second timer")
+    expect((mediaFill.animation(forKey: "parc.rail.fill") as? CABasicAnimation)?.duration == LibraryRailMotion.arrival
+           && media.currentEmphasis == 0, "Selection eases the fill and the tile's ink in instead of snapping")
+    clock = start + LibraryRailMotion.arrival / 2
+    expect(media.currentEmphasis > 0 && media.currentEmphasis < 1, "Halfway through the fade the tile is partly lit")
+    clock = start + 0.375
     let redraws = Redraws.count(art)
     play[0].fire()
-    expect(play[0].isLive && Redraws.count(art) > redraws, "A tick mid-play redraws the art and keeps playing")
+    expect(play[0].isLive && Redraws.count(art) > redraws && media.currentEmphasis == 1,
+           "A tick mid-play redraws the art and keeps playing after the fade settles")
     drawn = capture(media)
-    expect(matches(drawn, media, frame: 16) && score(drawn, media, 0...0) > 10,
-           "Selection plays hover-start to selection-end at the composition's 60 frames a second")
+    expect(matches(drawn, media, frame: 14.5) && score(drawn, media, 0...0) > 10,
+           "Selection plays hover-start to selection-end at 60 percent of the composition's pace")
+    clock = start + 0.4375
     media.state = .off
-    clock = start + 0.375
+    expect((mediaFill.animation(forKey: "parc.rail.fill") as? CABasicAnimation)?.duration == LibraryRailMotion.departure,
+           "Deselection eases the fill out a little quicker than it came in")
     play[0].fire()
     drawn = capture(media)
-    expect(play[0].isLive && matches(drawn, media, frame: 23.5) && score(drawn, media, 0...1) > 10,
+    expect(play[0].isLive && matches(drawn, media, frame: 16.75) && score(drawn, media, 0...1) > 10,
            "Deselection does not stop a play that is still running")
-    let restart = clock
     let replay = playTimers { media.state = .on }
     drawn = capture(media)
-    expect(replay.count == 1 && !play[0].isLive && matches(drawn, media, frame: 1) && score(drawn, media, 23.5...23.5) > 10,
-           "Reselection mid-play restarts from hover-start")
-    clock = restart + 0.125
-    expect(matches(capture(media), media, frame: 8.5), "The restarted play runs at 60 frames a second")
-    clock = restart + 0.5
-    replay[0].fire()
-    expect(replay[0].isLive && matches(capture(media), media, frame: 31), "The play keeps ticking until selection-end")
-    clock = restart + 0.625
-    replay[0].fire()
-    expect(!replay[0].isLive && matches(capture(media), media, frame: 35), "The tick that passes selection-end parks the play there")
+    expect(replay.isEmpty && play[0].isLive && media.currentEmphasis == 1 && matches(drawn, media, frame: 16.75)
+           && score(drawn, media, 1...1) > 10,
+           "Reselection mid-play carries on with the running hop instead of jumping back to hover-start")
+    clock = start + 0.625
+    play[0].fire()
+    expect(play[0].isLive && matches(capture(media), media, frame: 23.5), "The play keeps ticking until selection-end")
+    clock = start + 1
+    play[0].fire()
+    expect(!play[0].isLive && matches(capture(media), media, frame: 35), "The tick that passes selection-end parks the play there")
     media.removeFromSuperview()
 
     let archive = makeClockedTile("Archived Tabs", .archive)
     root.addSubview(archive)
     start = clock
     let finished = playTimers { archive.state = .on }
-    clock = start + 0.75
+    clock = start + 1
     drawn = capture(archive)
     expect(finished.count == 1 && matches(drawn, archive, frame: 35) && matches(drawn, archive, frame: 0),
            "A finished play parks on selection-end, which matches the start frame")
     finished[0].fire()
     expect(!finished[0].isLive, "A finished play stops ticking")
     expect(playTimers { archive.state = .on }.isEmpty, "Reselecting the selected page does not replay")
-    clock = start + 0.85
+    clock = start + 1.1
     expect(matches(capture(archive), archive, frame: 35), "Reselecting the selected page keeps the parked frame")
-    archive.state = .off
-    clock = start + 0.9
+    let fading = playTimers { archive.state = .off }
+    clock = start + 1.15
     drawn = capture(archive)
-    expect(matches(drawn, archive, frame: 35) && matches(drawn, archive, frame: 0),
-           "Deselection keeps the parked selection-end frame")
+    expect(fading.count == 1 && fading[0].isLive && archive.currentEmphasis > 0 && archive.currentEmphasis < 1
+           && matches(drawn, archive, frame: 35) && matches(drawn, archive, frame: 0),
+           "Deselection fades the tile down on the frame timer and keeps the parked selection-end frame")
+    clock = start + 1.15 + LibraryRailMotion.departure
+    fading[0].fire()
+    expect(!fading[0].isLive && archive.currentEmphasis == 0, "The timer stops once the fade settles")
     start = clock
     let again = playTimers { archive.state = .on }
-    clock = start + 0.125
+    clock = start + 0.1875
     again.first?.fire()
     drawn = capture(archive)
-    expect(again.count == 1 && again[0].isLive && matches(drawn, archive, frame: 8.5) && score(drawn, archive, 35...35) > 10,
+    expect(again.count == 1 && again[0].isLive && matches(drawn, archive, frame: 7.75) && score(drawn, archive, 35...35) > 10,
            "Selecting again replays from hover-start")
     archive.removeFromSuperview()
-    expect(!again[0].isLive, "Leaving the window mid-play stops the play")
+    expect(!again[0].isLive && archive.currentEmphasis == 1, "Leaving the window mid-play stops the play and settles the fade")
     root.addSubview(archive)
     drawn = capture(archive)
     clock += 0.25
@@ -184,10 +196,15 @@ func run() {
     let still = makeClockedTile("Archived Tabs", .archive)
     root.addSubview(still)
     SystemOverrides.reduceMotion = true
-    expect(playTimers { still.state = .on }.isEmpty, "Reduce Motion schedules no play")
+    let calm = playTimers { still.state = .on }
     clock += 0.3
+    calm.first?.fire()
     drawn = capture(still)
-    expect(matches(drawn, still, frame: 0) && score(drawn, still, 15...23) > 10, "Reduce Motion keeps the start frame")
+    expect(calm.count == 1 && matches(drawn, still, frame: 0) && score(drawn, still, 15...23) > 10,
+           "Reduce Motion fades the tile in place without the hop")
+    clock += LibraryRailMotion.arrival
+    calm.first?.fire()
+    expect(calm.first?.isLive == false && still.currentEmphasis == 1, "Reduce Motion's fade settles and stops its timer")
     SystemOverrides.reduceMotion = false
     still.removeFromSuperview()
 

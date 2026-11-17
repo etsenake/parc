@@ -81,6 +81,13 @@ the standard 417-point page width, with containment supplied by the shell;
 Search uses the shared 36-point rounded header control and 14-point native
 editor and spans the full header. There is no item-count footer.
 
+Rail tiles move gently: a press sinks the fill 2 points on a soft 0.3-second
+spring, and the selected tile's fill, icon and label brighten over 0.34 seconds
+on the sidebar's easing curve as the old tile dims over 0.26. Hover fades alike,
+and a change of mind turns a fade around mid-way. The icon's
+[hop](../Resources/Library/README.md#animated-rail-icons) takes just under a
+second, the new page fades in over 0.3 seconds, and Reduce Motion keeps fades only.
+
 Rows are 56 points high with 12-point outer insets, a 24-point file image,
 8-point horizontal spacing and 2 points between the 14-point title and 12-point
 subtitle. Progress and missing-file artwork use a separate 32-point accessory

@@ -380,6 +380,8 @@ step swift_test external-media-library -parse-as-library -warnings-as-errors \
 step python3 "$repo_root/tests/CaptureLibraryCatalogSkip/check.py"
 step python3 "$repo_root/tests/DownloadLibrary/check-view.py"
 step python3 "$repo_root/tests/LibraryRail/check.py"
+step swift_test library-rail-motion -warnings-as-errors -parse-as-library "$repo_root/Sources/ParcApp/LibraryRailIcon.swift" \
+  "$repo_root/tests/LibraryRail/MotionTests.swift"
 step python3 "$repo_root/tests/NavigationLoading/check.py"
 step python3 "$repo_root/tests/EaselIdleSleep/check.py"
 step python3 "$repo_root/tests/DownloadLocation/check-picker.py"

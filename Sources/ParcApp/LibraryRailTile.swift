@@ -28,7 +28,10 @@ final class LibraryRailTile: PointingHandButton {
     nonisolated static func fill(opacity: CGFloat) -> NSColor {
         NSColor.labelColor.withAlphaComponent(NSColor.labelColor.alphaComponent * opacity)
     }
-    nonisolated static func artOpacity(selected: Bool) -> CGFloat { selected ? 1 : 0.7 }
+    nonisolated static func artOpacity(emphasis: CGFloat) -> CGFloat { 0.7 + 0.3 * emphasis }
+    nonisolated static func labelOpacity(emphasis: CGFloat, dark: Bool) -> CGFloat {
+        dark ? 0.592 + (0.92 - 0.592) * emphasis : 0.565 + (0.85 - 0.565) * emphasis
+    }
     private final class Cell: NSButtonCell {
         override var nextState: Int { state.rawValue }
     }
@@ -52,11 +55,14 @@ final class LibraryRailTile: PointingHandButton {
     var now: () -> CFTimeInterval = { CACurrentMediaTime() }
     private let fill = NSView()
     private let art = LibraryRailTileArt()
-    private var hovered = false { didSet { if hovered != oldValue { refreshFill() } } }
-    private var pressed = false { didSet { if pressed != oldValue { refreshFill(animated: true) } } }
+    private var hovered = false { didSet { if hovered != oldValue { paintFill(fading: true) } } }
+    private var pressed = false { didSet { if pressed != oldValue { placeFill(springing: true) } } }
     private var tracking: NSTrackingArea?
-    private var playback: (timer: Timer, start: CFTimeInterval, from: Double, end: Double)?
+    private var ticker: Timer?
+    private var playback: (start: CFTimeInterval, from: Double, end: Double)?
     private var parkedFrame: Double?
+    private var fillLevel: CGFloat = 0
+    private var emphasis = LibraryRailMotion.Fade(0)
 
     init(_ title: String, animation: LibraryRailAnimation.Name, hasProgressBadge: Bool = false) {
         animationName = animation
@@ -89,41 +95,63 @@ final class LibraryRailTile: PointingHandButton {
             guard state != oldValue else { return }
             setAccessibilitySelected(state == .on)
             NSAccessibility.post(element: self, notification: .valueChanged)
-            refreshFill(); art.needsDisplay = true
+            paintFill(fading: true)
+            emphasis.retarget(state == .on ? 1 : 0, at: now(), animated: window != nil)
             if state == .on { playSelection() }
+            art.needsDisplay = true
+            if !emphasis.isSettled(at: now()) { startTicking() }
         }
     }
     var animation: LibraryRailAnimation? { LibraryRailAnimation.named(animationName) }
+    var currentEmphasis: CGFloat { CGFloat(emphasis.value(at: now())) }
     fileprivate var currentFrame: Double {
         guard let animation else { return 0 }
         guard let playback else { return parkedFrame ?? animation.startFrame }
-        return min(playback.end, playback.from + (now() - playback.start) * animation.frameRate)
+        return LibraryRailMotion.playbackFrame(from: playback.from, to: playback.end, frameRate: animation.frameRate,
+                                               elapsed: now() - playback.start)
     }
     private func playSelection() {
-        guard window != nil, !reduceMotion, let animation,
+        guard window != nil, !reduceMotion, playback == nil, let animation,
               let from = animation.frame(forMarker: "hover-start"),
               let end = animation.frame(forMarker: "selection-end") else { return }
-        finishPlayback()
-        let duration = max(0, end - from) / animation.frameRate
-        let start = now()
+        playback = (now(), from, end)
+        startTicking()
+    }
+    private func startTicking() {
+        guard ticker == nil, window != nil else { return }
         let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated {
-                guard let self, self.playback?.timer === timer else { return timer.invalidate() }
-                if self.now() - start >= duration { self.finishPlayback() }
-                self.art.needsDisplay = true
+                guard let self, self.ticker === timer else { return timer.invalidate() }
+                self.tick()
             }
         }
         RunLoop.main.add(timer, forMode: .common)
-        playback = (timer, start, from, end)
+        ticker = timer
+    }
+    private func tick() {
+        let time = now()
+        if let playback, let animation,
+           time - playback.start >= LibraryRailMotion.playbackDuration(from: playback.from, to: playback.end, frameRate: animation.frameRate) {
+            finishPlayback()
+        }
+        art.needsDisplay = true
+        if playback == nil && emphasis.isSettled(at: time) { stopTicking() }
+    }
+    private func stopTicking() {
+        ticker?.invalidate(); ticker = nil
     }
     private func finishPlayback() {
         guard let playback else { return }
-        playback.timer.invalidate(); self.playback = nil
+        self.playback = nil
         parkedFrame = playback.end
         art.needsDisplay = true
     }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil { finishPlayback(); hovered = false; pressed = false }
+        if newWindow == nil {
+            finishPlayback(); stopTicking(); hovered = false; pressed = false
+            emphasis.retarget(emphasis.target, at: now(), animated: false)
+            fill.layer?.removeAllAnimations()
+        }
         super.viewWillMove(toWindow: newWindow)
     }
 
@@ -131,7 +159,8 @@ final class LibraryRailTile: PointingHandButton {
         super.layout()
         art.frame = bounds
         progress?.frame = slot().icon
-        refreshFill()
+        placeFill(springing: false)
+        paintFill(fading: false)
     }
     fileprivate func label(color: NSColor) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
@@ -149,31 +178,41 @@ final class LibraryRailTile: PointingHandButton {
         return (NSRect(x: (bounds.width - size) / 2, y: top, width: size, height: size),
                 NSRect(x: (bounds.width - labelWidth) / 2, y: top + size + gap, width: labelWidth, height: labelHeight))
     }
-    private func refreshFill(animated: Bool = false) {
+    private func placeFill(springing: Bool) {
         guard let layer = fill.layer else { return }
         let from = layer.presentation() ?? layer
         let (fromBounds, fromPosition) = (from.bounds, from.position)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         let inset = pressed ? Self.pressedInset : 0
         fill.frame = bounds.insetBy(dx: inset, dy: inset)
+        CATransaction.commit()
+        guard springing, window != nil, !reduceMotion else { return }
+        layer.add(LibraryRailMotion.pressSpring("bounds", from: NSValue(rect: fromBounds), to: NSValue(rect: layer.bounds)), forKey: "bounds")
+        layer.add(LibraryRailMotion.pressSpring("position", from: NSValue(point: fromPosition), to: NSValue(point: layer.position)),
+                  forKey: "position")
+    }
+    private func paintFill(fading: Bool) {
+        guard let layer = fill.layer else { return }
+        let level = Self.fillOpacity(selected: state == .on, hovered: hovered)
+        let shown = (layer.presentation() ?? layer).backgroundColor
+        let rising = level > fillLevel, changed = level != fillLevel
+        fillLevel = level
+        CATransaction.begin(); CATransaction.setDisableActions(true)
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer.backgroundColor = Self.fill(opacity: Self.fillOpacity(selected: state == .on, hovered: hovered)).cgColor
+            layer.backgroundColor = Self.fill(opacity: level).cgColor
         }
         CATransaction.commit()
-        guard animated, window != nil, !reduceMotion else { return }
-        for (key, value, target) in [("bounds", NSValue(rect: fromBounds), NSValue(rect: layer.bounds)),
-                                     ("position", NSValue(point: fromPosition), NSValue(point: layer.position))] {
-            let spring = CASpringAnimation(keyPath: key)
-            spring.mass = 1; spring.stiffness = pow(2 * Double.pi / Self.pressResponse, 2)
-            spring.damping = 4 * Double.pi * Self.pressDamping / Self.pressResponse
-            spring.duration = spring.settlingDuration
-            spring.fromValue = value; spring.toValue = target
-            layer.add(spring, forKey: key)
+        guard changed else { return }
+        if fading, window != nil {
+            layer.add(LibraryRailMotion.fade("backgroundColor", from: shown ?? CGColor(gray: 0, alpha: 0),
+                                             duration: LibraryRailMotion.fadeDuration(rising: rising)), forKey: "parc.rail.fill")
+        } else {
+            layer.removeAnimation(forKey: "parc.rail.fill")
         }
     }
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        refreshFill(); art.needsDisplay = true
+        paintFill(fading: false); art.needsDisplay = true
     }
 
     override func updateTrackingAreas() {
@@ -209,12 +248,12 @@ private final class LibraryRailTileArt: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func draw(_ dirtyRect: NSRect) {
         guard let tile, let context = NSGraphicsContext.current?.cgContext else { return }
-        let selected = tile.state == .on
+        let emphasis = tile.currentEmphasis
         let dark = WindowStandardButtons.isDark(effectiveAppearance)
         let slot = tile.slot()
         if !tile.showsProgress, let animation = tile.animation {
             let colors = tile.iconColors ?? (dark ? .white : .black, dark ? .black : .white)
-            context.saveGState(); context.setAlpha(LibraryRailTile.artOpacity(selected: selected))
+            context.saveGState(); context.setAlpha(LibraryRailTile.artOpacity(emphasis: emphasis))
             context.beginTransparencyLayer(auxiliaryInfo: nil)
             animation.draw(in: context, rect: slot.icon,
                            frame: tile.currentFrame, primary: colors.primary.cgColor, secondary: colors.secondary.cgColor)
@@ -222,7 +261,7 @@ private final class LibraryRailTileArt: NSView {
         }
         guard tile.showsLabel else { return }
         let color = NSColor(srgbRed: dark ? 1 : 0, green: dark ? 1 : 0, blue: dark ? 1 : 0,
-                            alpha: selected ? (dark ? 0.92 : 0.85) : (dark ? 0.592 : 0.565))
+                            alpha: LibraryRailTile.labelOpacity(emphasis: emphasis, dark: dark))
         tile.label(color: color).draw(with: slot.label, options: [.usesLineFragmentOrigin])
     }
 }

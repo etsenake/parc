@@ -1431,6 +1431,10 @@ private final class LiveCloud: ExternalMediaCloudObservation, @unchecked Sendabl
          "A progress tick updates only the ring; the tile relayouts only when the badge appears or retires")
   regularRail.show(.archive)
   expect(downloadsTile.state == .off && !railBadge.isHidden,"The badge stays on the unselected Downloads tile while another page shows")
+  let fadedPages=regularRail.subviews.filter{$0.layer?.animation(forKey:"parc.library.pageFade") != nil}
+  expect(fadedPages.contains{$0 is NSScrollView} && fadedPages.allSatisfy{!$0.isHidden && $0.frame.minX>=LibraryRailLayout.width
+         && !($0 is WindowStandardButtons) && !$0.subviews.contains{$0 is LibraryRailTile}},
+         "Switching pages fades the new page in while the rail stays put")
   regularRail.show(.downloads)
   var pendingFlight=inFlight;pendingFlight.id=profile.uuidString+":pending";pendingFlight.nativeID="pending";pendingFlight.nativeIdentity="pending-1"
   pendingFlight.status = .pending;pendingFlight.receivedBytes=0;pendingFlight.startedAt=Date().addingTimeInterval(60)

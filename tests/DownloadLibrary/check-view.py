@@ -117,7 +117,7 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
                 "self.startLibraryFlyoutFileQuery()",
                 "if libraryView != nil { sidebar.libraryDidClose() }",
                 "recordLibraryPage(view.kind)\n        sidebar.libraryDidOpen()",
-                "var libraryView: LibraryView? { didSet { updateLibraryEntryExpansion() } }",
+                "var libraryView: LibraryView? {\n        didSet {\n            updateLibraryEntryExpansion()\n",
                 "var tabSwitcher: RecentTabSwitcher? { didSet { updateLibraryEntryExpansion() } }",
                 "sidebar.libraryEntryExpansionAllowed = libraryView == nil && tabSwitcher == nil && commandBar == nil",
                 "case let .share(item, share): return shareLibraryFlyoutItem(item, share)",
