@@ -14,7 +14,7 @@ import AppKit
             { if available { performed.append(operation) } }
         }
         check(!menu.autoenablesItems && menu.title == "Split View Controls Menu", "Actual native menu owns explicit availability")
-        check(menu.items.filter { !$0.isSeparatorItem }.map(\.title) == ["Move Left", "Move Right", "Add Right Split", "Add Left Split", "Separate Tab from Split", "Convert to Vertical Split View", "Copy Links"], "Split menu matches the installed pane control list")
+        check(menu.items.filter { !$0.isSeparatorItem }.map(\.title) == ["Move Left", "Move Right", "Add Right Split", "Add Left Split", "Add Above This Pane", "Add Below This Pane", "Separate Tab from Split", "Convert to Vertical Split View", "Copy Links"], "Split menu matches the installed pane control list")
         check(menu.items.first?.isEnabled == false && menu.items[1].isEnabled, "Boundary move is disabled in real NSMenu")
         check(menu.items.filter(\.isSeparatorItem).count == 3, "Menu sections remain native separators")
         let move = menu.items[1]
@@ -27,7 +27,37 @@ import AppKit
         let full = SplitPaneMenu.make(orientation: .vertical, index: 3, count: 4) { operation in { performed.append(operation) } }
         check(full.items.filter { $0.title.hasPrefix("Add ") }.allSatisfy { !$0.isEnabled }, "Four-pane menu has no fifth-pane action")
         check(full.items[0].title == "Move Up" && full.items[0].isEnabled && !full.items[1].isEnabled, "Vertical last-pane neighbor availability")
-        check(full.items[7].title == "Convert to Horizontal Split View" && full.items.last?.title == "Copy Links", "Convert sits above Copy Links")
+        check(full.items.filter { !$0.isSeparatorItem }.map(\.title) == ["Move Up", "Move Down", "Add Top Split", "Add Bottom Split", "Add Left of This Pane", "Add Right of This Pane", "Separate Tab from Split", "Convert to Horizontal Split View", "Copy Links"], "A top-and-bottom split offers sideways stacked adds")
+        check(full.items[9].title == "Convert to Horizontal Split View" && full.items.last?.title == "Copy Links", "Convert sits above Copy Links")
+        let ids = [UUID(), UUID(), UUID()]
+        func stackedLayout(_ orientation: SplitOrientation) -> BrowserSplitLayout {
+            let shape = BrowserSplitLayout.shape(orientation: orientation, sizes: [1, 2], factors: [0.5, 0.5], stackFactors: [[1], [0.5, 0.5]])
+            return BrowserSplitLayout(id: UUID(), spaceID: UUID(), tabIDs: ids, orientation: shape.orientation,
+                                      widthFactors: shape.widthFactors, stacks: shape.stacks)
+        }
+        var stackedPerformed: [SplitPaneOperation] = []
+        let stacked = SplitPaneMenu.make(orientation: .horizontal, index: 2, count: 3, layout: stackedLayout(.horizontal)) { operation in
+            { stackedPerformed.append(operation) }
+        }
+        check(stacked.items.filter { !$0.isSeparatorItem }.map(\.title) == ["Move Left", "Move Right", "Move Up", "Move Down", "Add Right Split", "Add Left Split", "Add Above This Pane", "Add Below This Pane", "Separate Tab from Split", "Convert to Vertical Split View", "Copy Links"], "A pane in a stack also moves within it")
+        check(stacked.items[0].isEnabled && !stacked.items[1].isEnabled && stacked.items[2].isEnabled && !stacked.items[3].isEnabled,
+              "Moves need a neighbour: the column moves left, the bottom pane moves up")
+        check(stacked.items.filter { $0.title.hasPrefix("Add ") }.allSatisfy(\.isEnabled), "Three panes leave room for one more")
+        for item in stacked.items where ["Move Left", "Move Up", "Add Above This Pane", "Add Below This Pane"].contains(item.title) {
+            _ = NSApp.sendAction(item.action!, to: item.target, from: item)
+        }
+        check(stackedPerformed == [.movePrevious, .stackPrevious, .stackBefore, .stackAfter], "Stack rows dispatch their exact operations")
+        let lone = SplitPaneMenu.make(orientation: .horizontal, index: 0, count: 3, layout: stackedLayout(.horizontal)) { operation in
+            { stackedPerformed.append(operation) }
+        }
+        check(!lone.items.contains { $0.title == "Move Up" || $0.title == "Move Down" } && !lone.items[0].isEnabled && lone.items[1].isEnabled,
+              "A pane alone in its slot shows no stack moves and moves its slot like today")
+        let sideways = SplitPaneMenu.make(orientation: .vertical, index: 1, count: 3, layout: stackedLayout(.vertical)) { operation in
+            { stackedPerformed.append(operation) }
+        }
+        check(sideways.items.filter { !$0.isSeparatorItem }.map(\.title).prefix(4) == ["Move Up", "Move Down", "Move Left", "Move Right"]
+              && sideways.items[0].isEnabled && !sideways.items[1].isEnabled && !sideways.items[2].isEnabled && sideways.items[3].isEnabled,
+              "In a top-and-bottom split a pane in a stack moves left and right within it")
         let copyLinks = menu.items.last!
         _ = NSApp.sendAction(copyLinks.action!, to: copyLinks.target, from: copyLinks)
         check(copyLinks.isEnabled && performed == [.moveNext], "Copy Links follows the owner's live refusal like every other row")
@@ -92,16 +122,23 @@ import AppKit
                     && pixels(image, .darkAqua) == pixels(dark, .darkAqua) && pixels(image, .aqua) != pixels(image, .darkAqua)
             }
         }
-        check(shows(menu, ["icon-split-move-left", "icon-split-move-right", nil, "icon-split-add-right", "icon-split-add-left", nil,
+        check(shows(menu, ["icon-split-move-left", "icon-split-move-right", nil, "icon-split-add-right", "icon-split-add-left",
+                           "icon-split-stack-add-top", "icon-split-stack-add-bottom", nil,
                            "icon-separate-from-split", "icon-split-vertical", nil, "icon-split-copy-links-horizontal"]),
               "A horizontal split's items show their artwork, light or dark by appearance")
-        check(shows(full, ["icon-split-move-top", "icon-split-move-bottom", nil, "icon-split-add-top", "icon-split-add-bottom", nil,
+        check(shows(full, ["icon-split-move-top", "icon-split-move-bottom", nil, "icon-split-add-top", "icon-split-add-bottom",
+                           "icon-split-stack-add-left", "icon-split-stack-add-right", nil,
                            "icon-separate-from-split-menu-bottom", "icon-split-horizontal", nil, "icon-split-copy-links-vertical"]),
               "A vertical split takes the vertical Separate, Convert and Copy Links artwork")
+        check(shows(stacked, ["icon-split-move-left", "icon-split-move-right", "icon-split-move-top", "icon-split-move-bottom", nil,
+                              "icon-split-add-right", "icon-split-add-left", "icon-split-stack-add-top", "icon-split-stack-add-bottom", nil,
+                              "icon-separate-from-split", "icon-split-vertical", nil, "icon-split-copy-links-horizontal"]),
+              "Stack moves share the matching Move artwork")
         check(shows(single, ["icon-split-add-left", "icon-split-add-right", nil, "icon-split-add-top", "icon-split-add-bottom"]),
               "A sole pane's Add rows show their artwork")
         check(menu.items.compactMap(\.image).map(\.size) == [NSSize(width: 18, height: 18), NSSize(width: 18, height: 18),
               NSSize(width: 18, height: 18), NSSize(width: 18, height: 18), NSSize(width: 18, height: 18),
+              NSSize(width: 18, height: 18), NSSize(width: 18, height: 18),
               NSSize(width: 22, height: 22), NSSize(width: 18, height: 18)],
               "Artwork draws at its catalog sizes: 18 points, 22 for Convert")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-pane-menu-" + UUID().uuidString)

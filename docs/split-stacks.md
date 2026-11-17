@@ -25,6 +25,32 @@ A split without a stack is a flat split and takes exactly the code paths it
 took before stacks existed. Only a split that actually holds a stack takes the
 stacked paths below.
 
+## Starting a stack
+
+Split This Pane adds a pane inside the focused pane's slot: below it in a
+side-by-side split, or to its right in a top-and-bottom split. It is a View menu
+item and a command search result, with Control–Shift–Backslash as its default
+shortcut. Settings → Shortcuts can change it, and it shares Add Split View's Use
+Both priority. No other Parc command and none of Chromium's own key tables use
+that chord. Someone who already saved it on another command keeps it there, and
+Split This Pane starts with no shortcut.
+
+In a split, each pane's split-button menu also offers Add Above This Pane and
+Add Below This Pane in a side-by-side split, or Add Left of This Pane and Add
+Right of This Pane in a top-and-bottom split, after the main-row Add items.
+Each opens the pending pane and command bar exactly like Add, inside the pane's
+slot, and on a pane already in a stack it adds to that stack. The main-row Add
+items keep adding a full-length pane, and a single page's menu is unchanged.
+
+A pane in a stack also gets Move Up and Move Down, or Move Left and Move Right
+in a top-and-bottom split, after the main-row Move items, which move its whole
+slot. Every Move is disabled without a neighbour in its direction.
+
+The stacked commands are unavailable on a single unsplit page, where Add Split
+View and the pane menu's Add items start a split instead, at four panes, while
+an Add is pending and wherever
+[split commands are refused](split-navigation.md#interaction-and-ownership).
+
 ## Saving and older builds
 
 A flat split saves exactly the bytes it always did. Its stacks entry is absent,
@@ -139,6 +165,13 @@ Pure edits return a new layout: `insertingIntoStack(_:besidePaneAt:after:)`,
 `transposed()`, `expanded(focusing:)`, `equalized()`, `resizingSlots(_:)`,
 `resizingStack(_:factors:)` and `resizingDivider(_:inSlot:leadingShare:)`.
 
+`SplitPaneOperation` names the menu's stacked rows: `stackBefore` and
+`stackAfter` add, `stackPrevious` and `stackNext` move within a stack.
+`isEnabled(index:count:layout:)` reads the pane's slot, so it agrees with the
+store's slot and stack moves. `SplitPaneInsertion(paneID:operation:state:)`
+hands the two adds to the stacking initialiser, and the window's split commands
+carry them as `.add`, with `.moveInStack` for the moves.
+
 The store commits them through the existing validated transactions:
 `SplitDropTarget.stack(_:after:)` for drops and `SplitPaneInsertion(paneID:stackingAfter:state:)`
 with `insertSplitPane` for a new pane in a stack; `moveSplitPane` and
@@ -164,6 +197,12 @@ through the model and the store, including reopen, Undo, copies, Favorites,
 window projections, drops and Arc import. `tests/SplitStackLayoutTests.swift`
 (also windowless, in `scripts/test.sh`) covers the stacked frames, divider rects
 and regions, container minimum, splitter values and labels, the layout commands
-and pending-pane previews. The divider, snap and Favorites tile suites listed in
+and pending-pane previews. `tests/SplitStackCommandsTests.swift` (windowless, in
+`scripts/test.sh`) checks command enabling against the store's moves, Split
+This Pane's targets, previews and commits, and reading order after each.
+`tests/SidebarRows/split_stack_commands_check.py` pins the View command, its
+shortcut, the shared availability gate and the pane menu wiring, and
+`SplitPaneMenuTests` asserts the stacked rows and their artwork. The divider,
+snap and Favorites tile suites listed in
 [split groups](split-groups.md#source-and-validation) also cover stacked
 dividers and pictures, alongside flat splits unchanged.

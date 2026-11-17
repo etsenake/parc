@@ -2,13 +2,25 @@ import Foundation
 
 enum SplitPaneOperation: Int, CaseIterable {
     case movePrevious, moveNext, addBefore, addAfter, addAbove, addBelow, separate, copyLinks, flip
+    case stackBefore, stackAfter, stackPrevious, stackNext
 
-    func isEnabled(index: Int, count: Int) -> Bool {
+    var addsToStack: Bool { self == .stackBefore || self == .stackAfter }
+
+    func isEnabled(index: Int, count: Int, layout: BrowserSplitLayout? = nil) -> Bool {
         guard (0..<count).contains(index) else { return false }
+        var slot = index, slots = count, place = 0, stack = 1
+        if let layout, layout.tabIDs.count == count, let position = layout.position(of: layout.tabIDs[index]) {
+            let shape = layout.slots
+            slot = position.slot; slots = shape.count
+            place = position.index; stack = shape[position.slot].tabIDs.count
+        }
         switch self {
-        case .movePrevious: return count > 1 && index > 0
-        case .moveNext: return count > 1 && index < count - 1
+        case .movePrevious: return count > 1 && slot > 0
+        case .moveNext: return count > 1 && slot < slots - 1
         case .addBefore, .addAfter, .addAbove, .addBelow: return count < 4
+        case .stackBefore, .stackAfter: return (2...3).contains(count)
+        case .stackPrevious: return stack > 1 && place > 0
+        case .stackNext: return stack > 1 && place < stack - 1
         case .separate, .copyLinks, .flip: return count > 1
         }
     }
@@ -25,6 +37,11 @@ struct SplitPaneInsertion: Equatable {
     let target: SplitDropTarget
 
     init?(paneID: UUID, operation: SplitPaneOperation, state: BrowserState) {
+        if operation.addsToStack {
+            guard let stacked = SplitPaneInsertion(paneID: paneID, stackingAfter: operation == .stackAfter, state: state) else { return nil }
+            self = stacked
+            return
+        }
         let selection = state.selectedTabIDs
         guard let position = selection.firstIndex(of: paneID),
               operation.isEnabled(index: position, count: selection.count),

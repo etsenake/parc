@@ -272,6 +272,7 @@ final class KeyboardShortcuts: ObservableObject {
         var numberedTargetShortcutDefaults: Int? = 1
         var peekOpenShortcutDefaults: Int? = 1
         var formatShortcutDefaults: Int? = 1
+        var splitThisPaneShortcutDefaults: Int? = 1
     }
     private final class MenuReference {
         weak var item: NSMenuItem?
@@ -575,6 +576,17 @@ final class KeyboardShortcuts: ObservableObject {
                         try encoder.encode(document).write(to: fileURL, options: .atomic)
                     } catch { loadError = "Your shortcuts remain available, but their Format command migration could not be saved: " + error.localizedDescription }
                 }
+                if document.splitThisPaneShortcutDefaults == nil {
+                    if document.overrides["splitThisPane:"] == nil,
+                       document.overrides.contains(where: {
+                           $0.key != "splitThisPane:" && $0.value.shortcut == Self.splitThisPaneShortcut
+                       }) { document.overrides["splitThisPane:"] = Override(shortcut: nil) }
+                    document.splitThisPaneShortcutDefaults = 1
+                    do {
+                        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                        try encoder.encode(document).write(to: fileURL, options: .atomic)
+                    } catch { loadError = "Your shortcuts remain available, but their Split This Pane migration could not be saved: " + error.localizedDescription }
+                }
                 overrides = document.overrides
                 priorities = document.priorities ?? [:]
                 let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -595,6 +607,7 @@ final class KeyboardShortcuts: ObservableObject {
     private static let peekOpenShortcut = KeyboardShortcut(key: "o", flags: [.command])
     private static let closeWindowShortcut = KeyboardShortcut(key: "w", flags: [.command, .shift])
     private static let pasteStyleShortcut = KeyboardShortcut(key: "v", flags: [.command, .shift])
+    private static let splitThisPaneShortcut = KeyboardShortcut(key: "\\", flags: [.control, .shift])
     private static let recoveredAlternates: [(String, String, KeyboardShortcut)] = [
         ("goBack_Alternate", "goBack:", .init(key: "\u{f702}", flags: .command)),
         ("goForward_Alternate", "goForward:", .init(key: "\u{f703}", flags: .command)),
@@ -646,6 +659,7 @@ final class KeyboardShortcuts: ObservableObject {
             case "openInCurrentSpace:": windowShortcut = Self.peekOpenShortcut
             case "closeWindow:": windowShortcut = Self.closeWindowShortcut
             case "pasteAsPlainText:": windowShortcut = Self.pasteStyleShortcut
+            case "splitThisPane:": windowShortcut = Self.splitThisPaneShortcut
             default: windowShortcut = nil
             }
             let otherDefault = Self.numberedTargetShortcuts[id] ?? Self.recoveredFindShortcuts[id]
@@ -733,7 +747,7 @@ final class KeyboardShortcuts: ObservableObject {
     private func defaultPriority(for id: String) -> Priority {
         if let priority = Self.recoveredMenuPriorities[id] { return priority }
         if ["copyCurrentURL:", "copyCurrentURLAsMarkdown:", "copyCurrentURLAsQuote:", "closeTab:", "closeWindow:"].contains(id) { return .preferParc }
-        if ["developerTools_Alternate", "developerTools:", "viewSource:", "toggleDeveloperMode:", "inspectElements:", "toggleShowToolbar:", "toggleFullScreen:", "exit:", "openInCurrentSpace:"].contains(id) { return .useBoth }
+        if ["developerTools_Alternate", "developerTools:", "viewSource:", "toggleDeveloperMode:", "inspectElements:", "toggleShowToolbar:", "toggleFullScreen:", "exit:", "openInCurrentSpace:", "splitThisPane:"].contains(id) { return .useBoth }
         return .preferWebsites
     }
     func priority(for id: String) -> Priority { priorities[id] ?? defaultPriority(for: id) }

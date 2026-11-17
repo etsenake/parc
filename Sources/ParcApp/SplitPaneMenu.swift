@@ -2,7 +2,7 @@ import AppKit
 
 @MainActor
 enum SplitPaneMenu {
-    static func make(orientation: SplitOrientation, index: Int, count: Int,
+    static func make(orientation: SplitOrientation, index: Int, count: Int, layout: BrowserSplitLayout? = nil,
                      prepare: (SplitPaneOperation) -> (() -> Void)?) -> NSMenu {
         let vertical = orientation == .vertical
         let horizontal: [(String, String, SplitPaneOperation)?] = [
@@ -17,14 +17,29 @@ enum SplitPaneMenu {
             ("Add Top Split", "icon-split-add-top", .addAbove),
             ("Add Bottom Split", "icon-split-add-bottom", .addBelow)
         ]
+        let stackAdds: [(String, String, SplitPaneOperation)?] = vertical ? [
+            ("Add Left of This Pane", "icon-split-stack-add-left", .stackBefore),
+            ("Add Right of This Pane", "icon-split-stack-add-right", .stackAfter)
+        ] : [
+            ("Add Above This Pane", "icon-split-stack-add-top", .stackBefore),
+            ("Add Below This Pane", "icon-split-stack-add-bottom", .stackAfter)
+        ]
+        let stacked = [SplitPaneOperation.stackPrevious, .stackNext].contains { $0.isEnabled(index: index, count: count, layout: layout) }
+        let stackMoves: [(String, String, SplitPaneOperation)?] = !stacked ? [] : vertical ? [
+            ("Move Left", "icon-split-move-left", .stackPrevious),
+            ("Move Right", "icon-split-move-right", .stackNext)
+        ] : [
+            ("Move Up", "icon-split-move-top", .stackPrevious),
+            ("Move Down", "icon-split-move-bottom", .stackNext)
+        ]
         let rows: [(String, String, SplitPaneOperation)?]
         if count == 1 {
             rows = horizontal + [nil] + verticalAdds
         } else if (2...4).contains(count) {
             rows = [
                 (vertical ? "Move Up" : "Move Left", vertical ? "icon-split-move-top" : "icon-split-move-left", .movePrevious),
-                (vertical ? "Move Down" : "Move Right", vertical ? "icon-split-move-bottom" : "icon-split-move-right", .moveNext), nil
-            ] + (vertical ? verticalAdds : populatedHorizontal) + [
+                (vertical ? "Move Down" : "Move Right", vertical ? "icon-split-move-bottom" : "icon-split-move-right", .moveNext)
+            ] + stackMoves + [nil] + (vertical ? verticalAdds : populatedHorizontal) + stackAdds + [
                 nil, ("Separate Tab from Split",
                       vertical ? "icon-separate-from-split-menu-bottom" : "icon-separate-from-split", .separate),
                 (vertical ? "Convert to Horizontal Split View" : "Convert to Vertical Split View",
@@ -38,7 +53,7 @@ enum SplitPaneMenu {
         menu.autoenablesItems = false
         for row in rows {
             guard let (title, artwork, operation) = row else { menu.addItem(.separator()); continue }
-            let action = operation.isEnabled(index: index, count: count) ? prepare(operation) : nil
+            let action = operation.isEnabled(index: index, count: count, layout: layout) ? prepare(operation) : nil
             let target = SplitPaneMenuAction(action)
             let item = NSMenuItem(title: title, action: #selector(SplitPaneMenuAction.invoke), keyEquivalent: "")
             item.target = target; item.representedObject = target

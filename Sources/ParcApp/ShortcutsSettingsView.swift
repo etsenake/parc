@@ -264,6 +264,7 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
                             "captureFullPage:": "Captures the entire webpage as an image.", "cycleToNextRecentTab:": "Switches to a recently used tab.",
                             "cycleToPreviousRecentTab:": "Switches backward through recently used tabs.",
                             "copyCurrentURL:": "Copies the current tab’s URL.", "split:": "Adds a new page to your current Split View.",
+                            "splitThisPane:": "Adds a new page below the Split View page in focus, or to its right in a top-and-bottom Split View.",
                             "closeSplitPane:": "Closes the Split View page that’s currently in focus.",
                             "separateSplitPane:": "Separate Page from Split View.",
                             "widenSplitPane:": "Gives the Split View page in focus more room.",

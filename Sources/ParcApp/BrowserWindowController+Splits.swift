@@ -493,14 +493,18 @@ extension BrowserWindowController {
               let index = selectedTabIDs.firstIndex(of: paneID),
               let pane = panes[paneID], anchor.window === window,
               anchor.isDescendant(of: pane) else { return }
-        let orientation = activeSplitLayout?.orientation ?? .horizontal
-        let menu = SplitPaneMenu.make(orientation: orientation, index: index, count: selectedTabIDs.count) { [weak self] operation in
+        let layout = activeSplitLayout
+        let orientation = layout?.orientation ?? .horizontal
+        let menu = SplitPaneMenu.make(orientation: orientation, index: index, count: selectedTabIDs.count,
+                                      layout: layout) { [weak self] operation in
             guard let self else { return nil }
             let command: SplitCommand
             switch operation {
             case .movePrevious: command = .move(-1)
             case .moveNext: command = .move(1)
-            case .addBefore, .addAfter, .addAbove, .addBelow: command = .add(operation)
+            case .stackPrevious: command = .moveInStack(-1)
+            case .stackNext: command = .moveInStack(1)
+            case .addBefore, .addAfter, .addAbove, .addBelow, .stackBefore, .stackAfter: command = .add(operation)
             case .separate: command = .separate
             case .copyLinks: command = .copyLinks
             case .flip: command = .orientation(orientation == .horizontal ? .vertical : .horizontal)
@@ -806,7 +810,8 @@ extension BrowserWindowController {
         case .next, .previous: return true
         case .add(let operation):
             guard selectedTabIDs.count < 4, splitInsertion == nil else { return false }
-            guard activeSplitLayout?.stacks != nil, let focus = currentTabID else { return true }
+            let stacking = operation.addsToStack
+            guard stacking || activeSplitLayout?.stacks != nil, let focus = currentTabID else { return !stacking }
             return SplitPaneInsertion(paneID: focus, operation: operation, state: presentedState) != nil
         case .addNew: return selectedTabIDs.count < 4 && splitInsertion == nil
         case .widen, .narrow, .equalize: return splitResizeIsAvailable(command)
@@ -853,8 +858,14 @@ extension BrowserWindowController {
         }
         guard selectedTabIDs.contains(target) else { return nil }
         if case .move(let delta) = command {
-            guard let position = selectedTabIDs.firstIndex(of: target), selectedTabIDs.indices.contains(position + delta) else { return nil }
+            guard let position = selectedTabIDs.firstIndex(of: target) else { return nil }
+            if let layout = activeSplitLayout, layout.stacks != nil {
+                guard layout.movingSlot(of: target, by: delta) != nil else { return nil }
+            } else {
+                guard selectedTabIDs.indices.contains(position + delta) else { return nil }
+            }
         }
+        if case .moveInStack(let delta) = command, activeSplitLayout?.movingWithinStack(target, by: delta) == nil { return nil }
         if case .copyLinks = command, splitLinks().isEmpty { return nil }
         var identities: [UUID: SplitPaneIdentity] = [:]
         for id in selectedTabIDs {
@@ -945,6 +956,10 @@ extension BrowserWindowController {
         case .move(let offset):
             guard let layout = activeSplitLayout else { return }
             performWindowCommand { store.moveSplitPane(targetID, offset: offset, expected: layout) }
+            reclaimFocusAfterSplitPresentation()
+        case .moveInStack(let offset):
+            guard let layout = activeSplitLayout else { return }
+            performWindowCommand { store.moveSplitPaneWithinStack(targetID, offset: offset, expected: layout) }
             reclaimFocusAfterSplitPresentation()
         case .addNew: toggleSplit()
         case .add(let operation): beginSplitInsertion(operation, paneID: targetID)

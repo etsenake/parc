@@ -153,6 +153,29 @@ import AppKit
         let gatedCycle = NSMenuItem(title: "Cycle Tab Forward", action: NSSelectorFromString("cycleTabForward:"), keyEquivalent: "\u{f703}")
         gatedCycle.keyEquivalentModifierMask = [.command, .control]; gated.register(gatedCycle, group: "Tabs")
         expect(gated.shortcut(for: "cycleTabForward:") == savedCycle && gatedCycle.keyEquivalent == "y", "Enabling the flag restores the saved custom chord")
+        let splitDirectory = directory.appendingPathComponent("split-this-pane")
+        try FileManager.default.createDirectory(at: splitDirectory, withIntermediateDirectories: true)
+        let splitFile = splitDirectory.appendingPathComponent("keyboard-shortcuts.json")
+        let splitChord = KeyboardShortcut(key: "\\", flags: [.control, .shift])
+        func splitRegistry(_ overrides: [String: Any]) throws -> KeyboardShortcuts {
+            try JSONSerialization.data(withJSONObject: ["version": 3, "overrides": overrides]).write(to: splitFile)
+            let registry = KeyboardShortcuts()
+            registry.configure(directory: splitDirectory)
+            let item = NSMenuItem(title: "Split This Pane", action: NSSelectorFromString("splitThisPane:"), keyEquivalent: "\\")
+            item.keyEquivalentModifierMask = [.control, .shift]; registry.register(item, group: "View")
+            return registry
+        }
+        let fresh = try splitRegistry([:])
+        expect(fresh.activeShortcut(for: "splitThisPane:") == splitChord && fresh.priority(for: "splitThisPane:") == .useBoth,
+               "Split This Pane defaults to Control-Shift-Backslash with Add Split View's Use Both priority")
+        let claimed = try splitRegistry(["other:": encoded(splitChord)])
+        expect(claimed.activeShortcut(for: "splitThisPane:") == nil && claimed.shortcut(for: "other:") == splitChord,
+               "Split This Pane's new default never steals a saved Control-Shift-Backslash")
+        let splitSaved = try JSONSerialization.jsonObject(with: Data(contentsOf: splitFile)) as! [String: Any]
+        expect(splitSaved["splitThisPaneShortcutDefaults"] as? Int == 1, "Split This Pane's migration marker persists")
+        let customSplit = KeyboardShortcut(key: "s", flags: [.control, .option])
+        let kept = try splitRegistry(["splitThisPane:": encoded(customSplit), "other:": encoded(splitChord)])
+        expect(kept.activeShortcut(for: "splitThisPane:") == customSplit, "A saved custom Split This Pane chord survives")
         print("PASS: \(checks) shortcut-migration assertions")
     }
 }

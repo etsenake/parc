@@ -17,9 +17,15 @@ geometry with 8× supersampling. These images are not templates.
 | Move Right / Down | `icon-split-move-right` | `icon-split-move-bottom` |
 | Add Left / Top | `icon-split-add-left` | `icon-split-add-top` |
 | Add Right / Bottom | `icon-split-add-right` | `icon-split-add-bottom` |
+| Add Above / Left of This Pane | `icon-split-stack-add-top` | `icon-split-stack-add-left` |
+| Add Below / Right of This Pane | `icon-split-stack-add-bottom` | `icon-split-stack-add-right` |
 | Separate Tab from Split | `icon-separate-from-split` | `icon-separate-from-split-menu-bottom` |
 | Convert to Vertical / Horizontal Split View | `icon-split-vertical` | `icon-split-horizontal` |
 | Copy Links | `icon-split-copy-links-horizontal` | `icon-split-copy-links-vertical` |
+
+The stacked Add images divide one column or row of the frame, with the plus
+breaking through beside it. A pane's Move Up, Down, Left or Right within a stack
+uses the Move image of the same direction.
 
 Images are 18 × 18 points except the two Convert images, which are 22 × 22.
 `SplitPaneMenuArtwork` combines the two bitmap scales for each appearance and

@@ -1571,7 +1571,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     enum SplitCommand {
         case focus(Int), next, previous, expand, separate, close, widen, narrow, equalize
-        case orientation(SplitOrientation), move(Int), add(SplitPaneOperation), addNew, copyLinks
+        case orientation(SplitOrientation), move(Int), moveInStack(Int), add(SplitPaneOperation), addNew, copyLinks
     }
 
     var copyDropCache: (key: String, revision: UInt64, action: (() -> Bool)?)?

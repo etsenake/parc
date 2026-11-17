@@ -82,6 +82,7 @@ struct CommandBarMenuItemInfo: Equatable, Sendable {
         "showEssentialShortcuts:": .init(triggers: ["Essential Keyboard Shortcuts", "keyboard", "shortcuts"], bump: 0.1),
         "showReleaseNotes:": .init(triggers: ["Changelog", "Whats new", "What's new", "parc updates"]),
         "split:": .init(triggers: ["Add Split View", "Split View", "Create Split View Pane", "New Split View", "Split"]),
+        "splitThisPane:": .init(triggers: ["Split Pane", "Stack Split View", "Add Pane Below", "Add Pane to the Right", "Divide Pane"]),
         "toggleShowToolbar:": .init(triggers: ["Toggle Hide Show Toolbar"]),
         "toggleCollapsedPinnedIcons:": .init(triggers: ["Pinned Icons", "Pinned Favicons", "Screen Sharing"]),
         "toggleDeveloperMode:": .init(triggers: ["Developer Mode", "Enable Developer Mode", "Disable Developer Mode"]),

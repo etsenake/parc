@@ -111,8 +111,9 @@ previous responder; an existing sidebar responder is not stolen.
 ## Original pane menu and Add Split
 
 A single page offers Add Left/Right and Add Top/Bottom. Multiple panes offer
-orientation-appropriate Move and Add commands, Separate, Convert orientation and
-Copy Links. Each menu retains the exact original window, group, ordered pages,
+orientation-appropriate Move and Add commands, the [stacked](split-stacks.md#starting-a-stack)
+Add and Move items, Separate, Convert orientation and Copy Links. Each menu
+retains the exact original window, group, ordered pages,
 focus and geometry. A missing neighbor or fifth pane is disabled. Reorder moves
 original IDs and proportions without navigating.
 

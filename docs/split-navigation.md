@@ -4,10 +4,12 @@ Split focus selects an original page in the current window's ordered pane group.
 It is separate from next/previous tab, the MRU switcher and Chromium's generic
 pane-rotation hook. No page is recreated from a stored URL.
 
-The View menu offers Add Split View, Close this Split Pane, Separate Page from
-Split View and Expand Current Split. Control–Shift–1…4 and Control–Shift–]/[
-select numbered/adjacent panes through the existing shortcut editor, command
-search and native priority pipeline. Widen Current Split, Narrow Current Split
+The View menu offers Add Split View, Split This Pane, Close this Split Pane,
+Separate Page from Split View and Expand Current Split;
+[stacked panes](split-stacks.md#starting-a-stack) owns Split This Pane and its
+shortcut. Control–Shift–1…4 and Control–Shift–]/[ select numbered and adjacent
+panes. All of them run through the existing shortcut editor, command search and
+native priority pipeline. Widen Current Split, Narrow Current Split
 and Make All Split Panes Equal are hidden View commands with no default chord,
 offered in command search and the shortcut editor. Hidden menu commands accept
 shortcuts only when `allowsKeyEquivalentWhenHidden` is set explicitly.
@@ -17,7 +19,7 @@ shortcuts only when `allowsKeyEquivalentWhenHidden` is set explicitly.
 | Action | Behavior |
 |---|---|
 | Numbered focus | Selects a one-based member in [reading order](split-stacks.md#shape-and-reading-order); missing positions are unavailable. A single pane is position 1. |
-| Adjacent focus | Wraps in current group order and preserves group membership. |
+| Adjacent focus | Wraps in reading order and preserves group membership. |
 | Expand | Requires multiple panes. Gives the focused pane the room left after other panes' 220-point minimum, preserving orientation and membership. Each browser window applies it to its own focused split and saves changed weights. It is not a restore toggle; Make All Split Panes Equal evens the panes again. |
 | Widen, Narrow and Make Equal | Require multiple panes, act on the command's own window and are disabled when they would change nothing. Widen and Narrow step the focused pane by a tenth of the split; Make Equal evens every pane. Each commits like a finished divider drag; see [keyboard and VoiceOver resizing](split-groups.md#keyboard-and-voiceover-resizing). |
 | Separate | A separated focused pane remains displayed alone; separating another member preserves the surviving focus. Model/group selection changes atomically without closing pages. |

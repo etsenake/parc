@@ -2407,6 +2407,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         guard let action else { return nil }
         switch action {
         case #selector(split): return .addNew
+        case #selector(splitThisPane): return .add(.stackAfter)
         case #selector(closeSplitPane): return .close
         case #selector(separateSplitPane): return .separate
         case #selector(expandSplitPane): return .expand
@@ -2427,6 +2428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
               let target = item.representedObject as? BrowserWindowController.SplitCommandTarget else { return }
         target.perform()
     }
+    @objc private func splitThisPane(_ sender: Any?) { performSplitMenuCommand(sender) }
     @objc private func closeSplitPane(_ sender: Any?) { performSplitMenuCommand(sender) }
     @objc private func separateSplitPane(_ sender: Any?) { performSplitMenuCommand(sender) }
     @objc private func expandSplitPane(_ sender: Any?) { performSplitMenuCommand(sender) }
@@ -2959,6 +2961,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         alternate("Open Extensions", #selector(openExtensions), "e", in: view, modifiers: .command)
         view.addItem(.separator())
         item("Add Split View", #selector(split), "=", in: view, modifiers: [.control, .shift])
+        item("Split This Pane", #selector(splitThisPane), "\\", in: view, modifiers: [.control, .shift])
         item("Close this Split Pane", #selector(closeSplitPane), "-", in: view, modifiers: [.control, .shift])
         item("Separate Page from Split View", #selector(separateSplitPane), in: view)
         item("Expand Current Split", #selector(expandSplitPane), in: view)
