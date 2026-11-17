@@ -106,6 +106,7 @@ final class ExternalSplitDropSession {
     private weak var host: NSView?
     private let frames: [NSRect]
     private let orientation: SplitOrientation
+    private let slotSizes: [Int]?
     private let canPropose: (SplitDropTarget, SplitOrientation) -> Bool
     private let commit: (SplitDropTarget, SplitOrientation) -> Bool
     private let reservation: ParcSplitView.DropReservation?
@@ -113,6 +114,7 @@ final class ExternalSplitDropSession {
     let targets = SplitDropTargetTracker()
     private weak var info: NSDraggingInfo?
     private var replacedImages: [Int: SplitDropPlaceholderCard.ItemImage] = [:]
+    private var cardSize: NSSize?
     private(set) var ended = false
     var isValid: Bool { !ended && validate() && host?.window === window && window != nil }
 
@@ -124,7 +126,7 @@ final class ExternalSplitDropSession {
         if let value = items[0].string(forType: .URL), let url = ExternalSplitDrop.url(value) { return url }
         return items[0].string(forType: .string).flatMap(ExternalSplitDrop.url)
     }
-    init?(host: NSView, info: NSDraggingInfo, frames: [NSRect], orientation: SplitOrientation,
+    init?(host: NSView, info: NSDraggingInfo, frames: [NSRect], orientation: SplitOrientation, slotSizes: [Int]? = nil,
           reservation: ParcSplitView.DropReservation? = nil, validate: @escaping () -> Bool, insertionColor: @escaping () -> NSColor,
           canPropose: @escaping (SplitDropTarget, SplitOrientation) -> Bool,
           commit: @escaping (SplitDropTarget, SplitOrientation) -> Bool) {
@@ -132,16 +134,28 @@ final class ExternalSplitDropSession {
               info.draggingSourceOperationMask.contains(.copy), let url = Self.readURL(info.draggingPasteboard) else { return nil }
         self.reservation = reservation
         self.host = host; self.window = window; self.url = url; self.frames = frames; self.orientation = orientation
+        self.slotSizes = slotSizes
         sequence = info.draggingSequenceNumber; pasteboard = info.draggingPasteboard; changeCount = pasteboard.changeCount
         self.validate = validate; self.canPropose = canPropose; self.commit = commit; self.info = info
         reservation?.setInsertionColor(insertionColor)
     }
     static let linkGlyph = String(Character(Unicode.Scalar(0xE98A)!))
     func presentPlaceholderCard() {
-        guard replacedImages.isEmpty, let info, matches(info), let reservation, reservation.isCurrent,
-              let image = SplitDropPlaceholderCard.image(icon: SidebarIconCatalog.emojiImage(Self.linkGlyph, size: 22),
-                  title: url.absoluteString, incomingPane: reservation.incomingPaneSize) else { return }
+        guard replacedImages.isEmpty, let info, matches(info), let image = placeholderCard() else { return }
         replacedImages = SplitDropPlaceholderCard.present(image, on: info) { _ in true }
+    }
+    private func placeholderCard() -> NSImage? {
+        guard let reservation, reservation.isCurrent,
+              let image = SplitDropPlaceholderCard.image(icon: SidebarIconCatalog.emojiImage(Self.linkGlyph, size: 22),
+                  title: url.absoluteString, incomingPane: reservation.incomingPaneSize) else { return nil }
+        cardSize = image.size
+        return image
+    }
+    private func refreshPlaceholderCard(_ info: NSDraggingInfo) {
+        guard !replacedImages.isEmpty, let reservation,
+              let size = SplitDropPlaceholderCard.size(forIncomingPane: reservation.incomingPaneSize), size != cardSize,
+              let image = placeholderCard() else { return }
+        SplitDropPlaceholderCard.present(image, on: info) { _ in true }
     }
     private func restoreImages() {
         let images = replacedImages; replacedImages = [:]
@@ -164,10 +178,11 @@ final class ExternalSplitDropSession {
             proposal = reservation.proposal(at: point, canPropose: canPropose)
         } else {
             proposal = SplitDropGeometry.proposal(at: point, frames: frames,
-                orientation: orientation, canPropose: canPropose)
+                orientation: orientation, slotSizes: slotSizes, canPropose: canPropose)
         }
         guard matches(info) else { end(animated: false); return [] }
         targets.update(proposal?.0, reusedRegion: reservation?.reusedRegion ?? false)
+        refreshPlaceholderCard(info)
         return proposal == nil ? [] : .copy
     }
     func refreshAppearance() { reservation?.refreshAppearance() }
@@ -191,8 +206,9 @@ final class ExternalSplitDropSession {
         reservation?.end(animated: animate)
     }
 
-    static func proposal(at point: NSPoint, frames: [NSRect], orientation: SplitOrientation) -> (SplitDropTarget, SplitOrientation, NSRect)? {
-        SplitDropGeometry.proposal(at: point, frames: frames, orientation: orientation)
+    static func proposal(at point: NSPoint, frames: [NSRect], orientation: SplitOrientation,
+                         slotSizes: [Int]? = nil) -> (SplitDropTarget, SplitOrientation, NSRect)? {
+        SplitDropGeometry.proposal(at: point, frames: frames, orientation: orientation, slotSizes: slotSizes)
     }
 
 }

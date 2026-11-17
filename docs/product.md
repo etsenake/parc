@@ -70,7 +70,8 @@ to read more. Subsystem guides own the details.
   unsplit or sidebar drop-to-combine gesture; each duplicates an existing route.
   See [split groups](split-groups.md#split-gesture-and-context-inventory--sp33).
 - Split stacks run perpendicular to the split, two levels deep at most, with four
-  panes in all; an older Parc opens a stacked split as one row. See
+  panes in all; a tab dropped on a pane's perpendicular edge stacks it there, and
+  an older Parc opens a stacked split as one row. See
   [stacked panes](split-stacks.md).
 - Routing rules never move an already-created page into another Profile; the
   page keeps its opener and security context. See

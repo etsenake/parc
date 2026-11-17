@@ -42,6 +42,7 @@ final class SplitDropView: NSView {
     let targets = SplitDropTargetTracker()
     private let perform: ((SplitDropTarget, SplitOrientation) -> Bool)?
     private(set) var showsCard = false
+    private var cardSize: NSSize?
     override var isFlipped: Bool { true }
     init(frame: NSRect, drag: SidebarSplitDrag, reservation: ParcSplitView.DropReservation,
          perform: ((SplitDropTarget, SplitOrientation) -> Bool)? = nil, insertionColor: @escaping () -> NSColor) {
@@ -63,6 +64,8 @@ final class SplitDropView: NSView {
         guard accepts(sender), frame.size == superview?.bounds.size else { proposal = nil; targets.reset(); reservation.end(); return [] }
         proposal = reservation.proposal(at: convert(sender.draggingLocation, from: nil), canPropose: canPropose)
         targets.update(proposal?.0, reusedRegion: reservation.reusedRegion)
+        if showsCard, let size = SplitDropPlaceholderCard.size(forIncomingPane: reservation.incomingPaneSize),
+           size != cardSize { _ = presentPlaceholderCard(sender) }
         return proposal == nil ? [] : .move
     }
     var canPropose: (SplitDropTarget, SplitOrientation) -> Bool = { _, _ in false }
@@ -80,8 +83,10 @@ final class SplitDropView: NSView {
     private func presentPlaceholderCard(_ sender: NSDraggingInfo) -> Bool {
         guard reservation.isCurrent, let row = sender.draggingSource as? SplitDropCardSource,
               let image = SplitDropPlaceholderCard.image(icon: row.splitDropCardContent.icon,
-                  title: row.splitDropCardContent.title, incomingPane: reservation.incomingPaneSize) else { return false }
-        return !SplitDropPlaceholderCard.present(image, on: sender, admits: ownsItem).isEmpty
+                  title: row.splitDropCardContent.title, incomingPane: reservation.incomingPaneSize),
+              !SplitDropPlaceholderCard.present(image, on: sender, admits: ownsItem).isEmpty else { return false }
+        cardSize = image.size
+        return true
     }
     private func restoreRowImage(_ sender: NSDraggingInfo?) {
         guard let sender, let image = (sender.draggingSource as? SplitDropCardSource)?.splitDragImage else { return }

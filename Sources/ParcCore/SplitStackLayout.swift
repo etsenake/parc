@@ -70,6 +70,21 @@ extension BrowserSplitStacks {
         return result
     }
 
+    static func flat(_ factors: [Double]) -> BrowserSplitStacks {
+        BrowserSplitStacks(slotSizes: factors.map { _ in 1 }, slotFactors: factors, stackFactors: factors.map { _ in [1] })
+    }
+
+    func reservingStack(besidePane pane: Int, after: Bool) -> (stacks: BrowserSplitStacks, region: Int)? {
+        guard let place = place(ofPane: pane), stackFactors.indices.contains(place.slot),
+              stackFactors[place.slot].count == slotSizes[place.slot] else { return nil }
+        var factors = stackFactors[place.slot]
+        factors.insert(1 / Double(factors.count), at: place.index + (after ? 1 : 0))
+        var result = self
+        result.slotSizes[place.slot] += 1
+        result.stackFactors[place.slot] = BrowserSplitLayout.settled(factors) ?? factors.map { _ in 1 / Double(factors.count) }
+        return (result, pane + (after ? 1 : 0))
+    }
+
     var isEven: Bool {
         ([slotFactors] + stackFactors).allSatisfy { factors in
             let total = factors.reduce(0, +)

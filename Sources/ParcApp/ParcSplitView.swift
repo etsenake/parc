@@ -84,23 +84,28 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         private let originalFactors: [Double]
         private let originalStacks: BrowserSplitStacks?
         private let mainRowCount: Int
+        private let stacks: BrowserSplitStacks?
         private let hostBounds: NSRect
         private let hostFrame: NSRect
         private let windowFrame: NSRect
         private let scale: CGFloat
         private var splitFrame: NSRect
         private var splitBounds: NSRect
+        private let originalPaneFrames: [NSRect]
         private var paneFrames: [NSRect]
         private var contentFrames: [NSRect]
         private var paneHostFrames: [NSRect]
         private var updating = false
         private(set) var ended = false
         fileprivate let region = DropRegionView()
-        fileprivate var index: Int?
         fileprivate var orientation: SplitOrientation
-        private var target: SplitDropTarget?
+        fileprivate private(set) var target: SplitDropTarget?
+        fileprivate var insertionIndex: Int? {
+            if case .insert(let index)? = target { return index }
+            return nil
+        }
         private(set) var reusedRegion = false
-        private var retiredIndex: Int?
+        private var retiredTarget: SplitDropTarget?
         func setInsertionColor(_ color: @escaping () -> NSColor) {
             region.insertionColor = color; region.refreshAppearance()
         }
@@ -116,16 +121,24 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             originalOrientation = owner.savedOrientation; orientation = owner.savedOrientation
             originalFactors = owner.savedFactors
             originalStacks = owner.savedStacks
-            mainRowCount = owner.activeStacks?.slotSizes.count ?? owner.arrangedSubviews.count
+            stacks = owner.activeStacks
+            mainRowCount = stacks?.slotSizes.count ?? owner.arrangedSubviews.count
             hostBounds = host.bounds; hostFrame = host.frame; windowFrame = owner.window?.frame ?? .zero
             scale = owner.paneBackingScale; splitFrame = owner.frame; splitBounds = owner.bounds
-            paneFrames = panes.map(\.frame)
+            paneFrames = panes.map(\.frame); originalPaneFrames = paneFrames
             contentFrames = contents.map { $0.convert($0.bounds, to: host) }
             paneHostFrames = panes.map { $0.convert($0.bounds, to: host) }
             region.wantsLayer = true; region.setAccessibilityElement(false); region.setAccessibilityChildren([])
         }
         var incomingPaneSize: NSSize {
-            NSSize(width: splitBounds.width / CGFloat(mainRowCount + 1), height: splitBounds.height)
+            guard case .stack(let pane, _)? = target, originalPaneFrames.indices.contains(pane) else {
+                return NSSize(width: splitBounds.width / CGFloat(mainRowCount + 1), height: splitBounds.height)
+            }
+            let count = CGFloat(stacks.flatMap { shape in shape.place(ofPane: pane).map { shape.slotSizes[$0.slot] } } ?? 1) + 1
+            let slot = originalPaneFrames[pane]
+            return originalOrientation == .horizontal
+                ? NSSize(width: slot.width, height: splitBounds.height / count)
+                : NSSize(width: splitBounds.width / count, height: slot.height)
         }
         var isCurrent: Bool {
             guard !ended, let owner, let host, let window, owner.dropReservation === self,
@@ -149,7 +162,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             paneHostFrames = panes.map { $0.convert($0.bounds, to: host) }
         }
         private var regionFrame: NSRect? {
-            guard index != nil, let owner, let host else { return nil }
+            guard target != nil, let owner, let host else { return nil }
             return owner.convert(region.frame, to: host)
         }
         func containsReservedPoint(_ point: NSPoint) -> Bool {
@@ -169,24 +182,22 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             }
             guard isCurrent else { end(); return nil }
             let proposed = SplitDropGeometry.proposal(at: point, frames: paneHostFrames,
-                orientation: orientation, canPropose: canPropose)
+                orientation: orientation, slotSizes: stacks?.slotSizes, canPropose: canPropose)
             guard isCurrent else { end(); return nil }
             guard let proposed else { clear(animated: true); return nil }
-            guard case .insert(let next) = proposed.0 else {
+            if case .replace(let i) = proposed.0 {
                 clear(animated: true)
-                if case .replace(let i) = proposed.0 { return (proposed.0, originalOrientation, paneHostFrames[i]) }
-                return proposed
+                return (proposed.0, originalOrientation, paneHostFrames[i])
             }
-            guard isCurrent, let owner, next >= 0, next <= panes.count else { end(); return nil }
-            if index == next && orientation == proposed.1 { reusedRegion = true }
+            guard isCurrent, let owner, let collapsed = collapsedFrame(for: proposed.0, orientation: proposed.1) else { end(); return nil }
+            if target == proposed.0 && orientation == proposed.1 { reusedRegion = true }
             else {
-                reusedRegion = index == nil && retiredIndex == next && owner.retiringDropRegion === region
+                reusedRegion = target == nil && retiredTarget == proposed.0 && owner.retiringDropRegion === region
                 let positions = owner.captureLayoutPresentation()
                 let visible = owner.captureDropRegion(region)
-                let collapsed = collapsedFrame(at: next, orientation: proposed.1)
                 owner.clearRetiringDropRegion()
                 updating = true
-                index = next; orientation = proposed.1; target = proposed.0
+                orientation = proposed.1; target = proposed.0
                 if region.superview !== owner { owner.addSubview(region) }
                 region.frame = collapsed; region.layer?.opacity = 0
                 let start = visible ?? owner.captureDropRegion(region)
@@ -200,20 +211,31 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             guard isCurrent, let rect = regionFrame else { end(); return nil }
             return (proposed.0, proposed.1, rect)
         }
-        private func collapsedFrame(at index: Int, orientation: SplitOrientation) -> NSRect {
-            guard let owner else { return .zero }
+        private func collapsedFrame(for target: SplitDropTarget, orientation: SplitOrientation) -> NSRect? {
+            guard let owner else { return nil }
             let horizontal = orientation == .horizontal
-            let edge: CGFloat
-            if index == 0 { edge = 0 }
-            else if index >= panes.count { edge = horizontal ? panes.last!.frame.maxX : panes.last!.frame.maxY }
-            else { edge = horizontal ? panes[index].frame.minX : panes[index].frame.minY }
-            return horizontal
-                ? NSRect(x: edge, y: 0, width: 0, height: owner.bounds.height)
-                : NSRect(x: 0, y: edge, width: owner.bounds.width, height: 0)
+            switch target {
+            case .insert(let index):
+                guard index >= 0, index <= panes.count else { return nil }
+                let edge: CGFloat
+                if index == 0 { edge = 0 }
+                else if index >= panes.count { edge = horizontal ? panes.last!.frame.maxX : panes.last!.frame.maxY }
+                else { edge = horizontal ? panes[index].frame.minX : panes[index].frame.minY }
+                return horizontal
+                    ? NSRect(x: edge, y: 0, width: 0, height: owner.bounds.height)
+                    : NSRect(x: 0, y: edge, width: owner.bounds.width, height: 0)
+            case .stack(let pane, let after):
+                guard panes.indices.contains(pane) else { return nil }
+                let frame = panes[pane].frame
+                return horizontal
+                    ? NSRect(x: frame.minX, y: after ? frame.maxY : frame.minY, width: frame.width, height: 0)
+                    : NSRect(x: after ? frame.maxX : frame.minX, y: frame.minY, width: 0, height: frame.height)
+            case .replace: return nil
+            }
         }
         func clear(animated: Bool = false) {
             guard let owner, owner.dropReservation === self, !ended else { return }
-            guard let previousIndex = index else {
+            guard let previousTarget = target else {
                 if !animated { owner.clearLayoutAnimation() }
                 return
             }
@@ -221,15 +243,15 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             let positions = animate ? owner.captureLayoutPresentation() : []
             let border = animate ? owner.captureDropRegion(region) : nil
             let previousOrientation = orientation
-            updating = true; index = nil; target = nil; orientation = originalOrientation
+            updating = true; target = nil; orientation = originalOrientation
             region.removeFromSuperview(); owner.applyDropReserveLayout()
             capture(); updating = false
             guard isCurrent else { return }
             owner.animateReservedLayout(from: positions)
             if animate, let border {
-                region.frame = collapsedFrame(at: previousIndex, orientation: previousOrientation)
+                region.frame = collapsedFrame(for: previousTarget, orientation: previousOrientation) ?? .zero
                 owner.addSubview(region)
-                retiredIndex = previousIndex
+                retiredTarget = previousTarget
                 owner.presentDropRegion(region, from: border, opacity: 0, removing: true)
             }
         }
@@ -239,17 +261,17 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             let animate = animated && current
             let positions = animate ? owner?.captureLayoutPresentation() ?? [] : []
             let border = animate ? owner?.captureDropRegion(region) : nil
-            let previousIndex = index, previousOrientation = orientation
+            let previousTarget = target, previousOrientation = orientation
             ended = true
             guard let owner, owner.dropReservation === self else { region.removeFromSuperview(); return }
             owner.dropReservation = nil
-            if animate, previousIndex == nil { return }
+            if animate, previousTarget == nil { return }
             region.removeFromSuperview()
             owner.applyDropReserveLayout()
             if animate {
                 owner.animateReservedLayout(from: positions)
-                if let previousIndex, let border {
-                    region.frame = collapsedFrame(at: previousIndex, orientation: previousOrientation)
+                if let previousTarget, let border {
+                    region.frame = collapsedFrame(for: previousTarget, orientation: previousOrientation) ?? .zero
                     owner.addSubview(region)
                     owner.presentDropRegion(region, from: border, opacity: 0, removing: true)
                 }
@@ -545,12 +567,13 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
 
     private func updateContainerMinimum() {
         guard let host = constrainedHost, superview === host else { return }
-        let reserving = dropReservation?.index != nil
+        let reserving = dropReservation?.target != nil
         let count = arrangedSubviews.count + (reserving ? 1 : 0)
         let width: CGFloat, height: CGFloat
-        if let stacks = activeStacks {
+        if let stacks = activeStacks ?? reservedFlatStacks {
             let size = SplitStackGeometry.minimumSize(orientation: savedOrientation,
-                slotSizes: stacks.slotSizes + (reserving ? [1] : []), minimum: expandedPaneMinimum, thickness: dividerThickness)
+                slotSizes: reservedStack(in: stacks)?.stacks.slotSizes ?? stacks.slotSizes + (reserving ? [1] : []),
+                minimum: expandedPaneMinimum, thickness: dividerThickness)
             width = size.width; height = size.height
         } else {
             width = count > 1 ? expandedPaneMinimum * CGFloat(count) + dividerThickness * CGFloat(count - 1) : 0
@@ -760,12 +783,12 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     }
     private var stackedDividers: [SplitStackGeometry.Divider]? {
         guard let stacks = activeStacks else { return nil }
-        guard dropReservation?.index == nil else { return [] }
+        guard dropReservation?.target == nil else { return [] }
         return SplitStackGeometry.dividers(paneFrames: arrangedSubviews.map(\.frame), size: bounds.size,
             orientation: savedOrientation, stacks: stacks, thickness: dividerThickness)
     }
     private var dividerRects: [NSRect] {
-        guard dropReservation?.index == nil else { return [] }
+        guard dropReservation?.target == nil else { return [] }
         if let stacked = stackedDividers { return stacked.map(\.rect) }
         return arrangedSubviews.dropLast().map { pane in
             isVertical
@@ -785,7 +808,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     }
     weak var marginHandle: SplitMarginHandleView? { didSet { synchronizeDividerPresentation(animated: false) } }
     private func synchronizeDividerPresentation(animated: Bool) {
-        marginHandle?.splitAllows = arrangedSubviews.count == 1 && dropReservation?.index == nil
+        marginHandle?.splitAllows = arrangedSubviews.count == 1 && dropReservation?.target == nil
         guard let layer else { return }
         let rects = dividerRects
         while dividerGrips.count > rects.count { dividerGrips.removeLast().removeFromSuperlayer() }
@@ -840,7 +863,16 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         if !isTrackingDivider { applySavedFrames() }
     }
     private func applySavedFrames() {
-        if let stacks = activeStacks { applyStackedFrames(stacks) } else { applyFrames(factors: savedFactors) }
+        if let stacks = activeStacks ?? reservedFlatStacks { applyStackedFrames(stacks) } else { applyFrames(factors: savedFactors) }
+    }
+    private var reservedFlatStacks: BrowserSplitStacks? {
+        let count = arrangedSubviews.count
+        guard dropReservation?.target?.isStack == true, count > 1 else { return nil }
+        return .flat(BrowserSplitLayout.normalized(savedFactors, count: count) ?? Array(repeating: 1 / Double(count), count: count))
+    }
+    private func reservedStack(in stacks: BrowserSplitStacks) -> (stacks: BrowserSplitStacks, region: Int)? {
+        guard case .stack(let pane, let after)? = dropReservation?.target else { return nil }
+        return stacks.reservingStack(besidePane: pane, after: after)
     }
     private func applyStackedFrames(_ stacks: BrowserSplitStacks) {
         guard !isApplyingLayout else { return }
@@ -851,11 +883,14 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         let reservation = dropReservation
         var views = arrangedSubviews
         var shape = stacks
-        if let reservation, let index = reservation.index {
+        if let reservation, let index = reservation.insertionIndex {
             let boundaries = stacks.slotBoundaries
             let slot = boundaries.lastIndex { $0 <= index } ?? 0
             shape = stacks.reservingSlot(at: slot)
             views.insert(reservation.region, at: boundaries[slot])
+        } else if let reservation, let reserved = reservedStack(in: stacks) {
+            shape = reserved.stacks
+            views.insert(reservation.region, at: reserved.region)
         }
         isVertical = savedOrientation == .horizontal
         let frames = SplitStackGeometry.paneFrames(size: bounds.size, orientation: savedOrientation, stacks: shape,
@@ -901,8 +936,8 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         let reservation = dropReservation
         var views = arrangedSubviews
         var factors = BrowserSplitLayout.normalized(proposedFactors, count: views.count) ?? Array(repeating: 1 / Double(views.count), count: views.count)
-        let previewOrientation = reservation?.index != nil ? reservation!.orientation : savedOrientation
-        if let reservation, let index = reservation.index {
+        let previewOrientation = reservation?.insertionIndex != nil ? reservation!.orientation : savedOrientation
+        if let reservation, let index = reservation.insertionIndex {
             let share = 1 / Double(views.count + 1)
             factors = factors.map { $0 * (1 - share) }
             factors.insert(share, at: index); views.insert(reservation.region, at: index)

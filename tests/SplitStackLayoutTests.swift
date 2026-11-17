@@ -36,6 +36,7 @@ struct SplitStackLayoutTests {
         try containerMinimum()
         try splitterValuesAndLabels()
         try layoutCommands()
+        try reservedStackShapes()
         try pendingPanePreview()
         try picturesOfASplit()
         print("SplitStackLayoutTests passed \(assertions) checks")
@@ -201,6 +202,80 @@ struct SplitStackLayoutTests {
         try expect(reserved.slotSizes == [2, 1, 1] && close(reserved.slotFactors, [0.4, 1.0 / 3, 0.4 * 2 / 3])
                    && reserved.stackFactors == [[0.3, 0.7], [1], [1]],
                    "A main-row drop reservation makes a whole new slot")
+    }
+
+    static func reservedStackShapes() throws {
+        func committed(_ value: BrowserSplitStacks, _ orientation: SplitOrientation = .horizontal,
+                       pane: Int, after: Bool) -> BrowserSplitStacks? {
+            let layout = BrowserSplitLayout(id: UUID(), spaceID: UUID(), tabIDs: (0..<value.paneCount).map { _ in UUID() },
+                                            orientation: orientation, widthFactors: value.flattenedFactors,
+                                            stacks: value.slotSizes.contains { $0 > 1 } ? value : nil)
+            return layout.insertingIntoStack(UUID(), besidePaneAt: pane, after: after)?.stacks
+        }
+        func matches(_ left: BrowserSplitStacks, _ right: BrowserSplitStacks?) -> Bool {
+            guard let right else { return false }
+            return left.slotSizes == right.slotSizes && close(left.slotFactors, right.slotFactors)
+                && left.stackFactors.count == right.stackFactors.count
+                && zip(left.stackFactors, right.stackFactors).allSatisfy { close($0, $1) }
+        }
+        func inside(_ region: CGRect, slotOf pane: CGRect, _ orientation: SplitOrientation = .horizontal) -> Bool {
+            orientation == .horizontal ? region.minX == pane.minX && region.maxX == pane.maxX
+                                       : region.minY == pane.minY && region.maxY == pane.maxY
+        }
+
+        let pair = BrowserSplitStacks.flat([0.6, 0.4])
+        try expect(pair.slotSizes == [1, 1] && pair.slotFactors == [0.6, 0.4] && pair.stackFactors == [[1], [1]],
+                   "A flat split reads as one pane per slot")
+        let below = pair.reservingStack(besidePane: 0, after: true)!
+        try expect(below.region == 1 && below.stacks.slotSizes == [2, 1] && below.stacks.slotFactors == [0.6, 0.4]
+                   && below.stacks.stackFactors == [[0.5, 0.5], [1]],
+                   "Stacking below the first of two panes halves its column and keeps the slot weights")
+        try expect(matches(below.stacks, committed(pair, pane: 0, after: true)), "The reserved shape is the one the store commits")
+        let belowFrames = frames(below.stacks)
+        try expect(inside(belowFrames[1], slotOf: belowFrames[0]) && belowFrames[1].minY == belowFrames[0].maxY + 10
+                   && belowFrames[2].height == 710,
+                   "The region sits under its pane inside that column while the other column keeps its full height")
+        let above = pair.reservingStack(besidePane: 1, after: false)!
+        let aboveFrames = frames(above.stacks)
+        try expect(above.region == 1 && above.stacks.slotSizes == [1, 2] && above.stacks.stackFactors == [[1], [0.5, 0.5]]
+                   && inside(aboveFrames[1], slotOf: aboveFrames[2]) && aboveFrames[1].maxY + 10 == aboveFrames[2].minY,
+                   "Stacking above the second pane puts the region first in its column")
+
+        let trio = BrowserSplitStacks.flat([0.5, 0.25, 0.25])
+        let middle = trio.reservingStack(besidePane: 1, after: false)!
+        let middleFrames = frames(middle.stacks)
+        try expect(middle.region == 1 && middle.stacks.slotSizes == [1, 2, 1] && middle.stacks.stackFactors == [[1], [0.5, 0.5], [1]]
+                   && matches(middle.stacks, committed(trio, pane: 1, after: false)),
+                   "Three flat panes stack the middle one in place")
+        try expect(inside(middleFrames[1], slotOf: middleFrames[2]) && middleFrames[1].minY == 0
+                   && middleFrames[0].height == 710 && middleFrames[3].height == 710, "Only the middle column divides")
+
+        let column = stacks([2, 1], [0.6, 0.4], [[0.3, 0.7], [1]])
+        let grown = column.reservingStack(besidePane: 0, after: true)!
+        try expect(grown.region == 1 && grown.stacks.slotSizes == [3, 1] && grown.stacks.slotFactors == [0.6, 0.4]
+                   && close(grown.stacks.stackFactors[0], [0.2, 1.0 / 3, 0.7 / 1.5]) && grown.stacks.stackFactors[1] == [1],
+                   "A stack of two grows to three, the newcomer taking an average share before renormalising")
+        try expect(matches(grown.stacks, committed(column, pane: 0, after: true)), "The grown stack matches the store's insertion")
+        let grownFrames = frames(grown.stacks)
+        try expect(inside(grownFrames[1], slotOf: grownFrames[0]) && grownFrames[1].minY == grownFrames[0].maxY + 10
+                   && grownFrames[2].minY == grownFrames[1].maxY + 10,
+                   "The region sits between the stacked panes inside their column")
+        let lone = column.reservingStack(besidePane: 2, after: true)!
+        try expect(lone.region == 3 && lone.stacks.slotSizes == [2, 2] && lone.stacks.stackFactors == [[0.3, 0.7], [0.5, 0.5]],
+                   "Stacking the lone column leaves the other stack alone")
+
+        let rows = BrowserSplitStacks.flat([0.5, 0.5])
+        let right = rows.reservingStack(besidePane: 1, after: true)!
+        let rowFrames = frames(right.stacks, .vertical)
+        try expect(right.region == 2 && right.stacks.slotSizes == [1, 2]
+                   && matches(right.stacks, committed(rows, .vertical, pane: 1, after: true)),
+                   "A top-and-bottom split stacks its lower row left and right")
+        try expect(inside(rowFrames[2], slotOf: rowFrames[1], .vertical) && rowFrames[2].minX == rowFrames[1].maxX + 10
+                   && rowFrames[0].width == 1010, "The region sits to the right of its pane inside that row")
+
+        try expect(column.reservingStack(besidePane: 3, after: false) == nil
+                   && stacks([2, 1], [0.5, 0.5], [[1], [1]]).reservingStack(besidePane: 0, after: true) == nil,
+                   "A pane outside the split or a malformed stack reserves nothing")
     }
 
     static func pendingPanePreview() throws {

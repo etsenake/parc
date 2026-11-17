@@ -148,9 +148,20 @@ stack appears inside its slot at its stack position, and a pending main-row pane
 beside a stack appears as its own full-length slot. An Add that would change a
 stacked split's direction is unavailable and never opens a pending pane.
 
-Dropping a tab or link on a stacked split uses the flat pane classifier. An edge
-whose insertion lands on a slot boundary reserves room for, and adds, a
-full-length slot; any other edge replaces its pane.
+Tab, link and cross-window drops on a split use the
+[pane-drop bands](split-groups.md#pane-drop-target-regions). A pane's main-row
+edges add a full-length slot beside the pane's whole slot, so a pane inside a
+stack offers the same slot insertion as its stack's outer edges. Its other two
+edges insert the dropped page inside its slot, above or below it in a
+side-by-side split and left or right of it in a top-and-bottom one: they start
+a stack on a lone pane and grow an existing stack beside that pane. At four
+panes those edges replace the pane instead, as the centre does.
+
+The preview reserves room inside that one slot: the slot's panes make way for
+the incoming pane at its stack position and share, its outline grows from a line
+at the pane's edge, dividers hide, and the drag's placeholder card takes the
+incoming pane's in-slot shape. The motion, haptics and proposal stability
+match a main-row reservation.
 
 ## Model and store entry points
 
@@ -188,6 +199,12 @@ split's stacks, and the view commits a `SplitStackResize` through
 transaction the store commits, so a new stacked insertion only has to create its
 request.
 
+`SplitDropGeometry.proposal` takes the split's slot sizes and proposes
+`.stack(_:after:)` for a stacking edge, and `.insert` at a slot boundary for a
+main-row edge. A drop reservation holding a stack target lays the split out with
+`BrowserSplitStacks.reservingStack(besidePane:after:)`, reading a flat split as
+`BrowserSplitStacks.flat(_:)`, and its `incomingPaneSize` follows the target.
+
 ## Checks
 
 `tests/SplitStacksTests.swift` (in `scripts/test.sh`) is windowless. It pins the
@@ -196,8 +213,10 @@ as an older build would, loads corrupt stacks flat, and covers every edit above
 through the model and the store, including reopen, Undo, copies, Favorites,
 window projections, drops and Arc import. `tests/SplitStackLayoutTests.swift`
 (also windowless, in `scripts/test.sh`) covers the stacked frames, divider rects
-and regions, container minimum, splitter values and labels, the layout commands
-and pending-pane previews. `tests/SplitStackCommandsTests.swift` (windowless, in
+and regions, container minimum, splitter values and labels, the layout commands,
+pending-pane previews and reserved drop shapes. `scripts/test-split-drop-geometry.sh`
+pins every drop band, corner and four-pane fallback on flat and stacked splits,
+and the original, external and cross-window drop suites commit stack drops. `tests/SplitStackCommandsTests.swift` (windowless, in
 `scripts/test.sh`) checks command enabling against the store's moves, Split
 This Pane's targets, previews and commits, and reading order after each.
 `tests/SidebarRows/split_stack_commands_check.py` pins the View command, its

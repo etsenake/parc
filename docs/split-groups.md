@@ -223,24 +223,32 @@ can end an abandoned outside-window gesture on mouse release.
 
 ## Pane-drop target regions
 
-Original-tab and external-URL drops classify the entire pane, including its
-header and Developer Mode strip. One pane offers horizontal insertion within
-40% of each side and vertical insertion within one-quarter of height, capped at
-50 points. Vertical edges win at corners. Multiple horizontal panes use one-third
-width capped at 80 points; stacked panes use one-third height capped at 50 points.
-Threshold equality belongs to the center; gaps are not pane targets.
+Original-tab, external-URL and cross-window drops classify the entire pane,
+including its header and Developer Mode strip. One pane offers horizontal
+insertion within 40% of each side and vertical insertion within one-quarter of
+height, capped at 50 points. Vertical edges win at corners.
 
-An unavailable edge insertion can fall back to replacement of the same pane.
-A full split can therefore replace a child without exceeding capacity. Preview
-and commit share the classifier and original lease.
+In a split, a pane's main-row edges add a pane beside it: one-third of width
+capped at 80 points in a side-by-side split, one-third of height capped at 50
+points in a top-and-bottom split. Its other two edges split that pane into a
+[stack](split-stacks.md#pending-panes-and-drops): one-quarter of height capped
+at 50 points for the top and bottom of a side-by-side pane, one-third of width
+capped at 80 points for the left and right of a top-and-bottom pane. Main-row
+edges win at corners, and the center replaces the pane. Threshold equality
+belongs to the center; gaps are not pane targets.
+
+An unavailable edge insertion falls back to replacement of the same pane. A full
+split can therefore replace a child without exceeding capacity. Preview and
+commit share the classifier and original lease.
 
 ## Replacement highlight, pending pane and proposal feedback
 
 Replacement draws a highlight on the existing pane, preserving its content.
-Insertion reserves real layout space and presents a placeholder card across the
-whole pane region. Original panes and their pages retain identity while their
-frames adjust. The proposal retains its intended target while the pointer remains
-inside the reservation; reclassification cannot bounce against its own layout.
+Insertion reserves real layout space, and the drag image becomes a placeholder
+card shaped like the incoming pane. Original panes and their pages retain
+identity while their frames adjust. The proposal retains its intended target
+while the pointer remains inside the reservation; reclassification cannot bounce
+against its own layout.
 
 Reserved-region expansion/collapse and border changes own their 0.2-second
 transitions. Transition identities prevent an old completion from removing a

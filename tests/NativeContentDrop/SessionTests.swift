@@ -245,6 +245,57 @@ extension ReservedPane: SplitLayoutFollowing {
               "a pointer over a pane's header targets that pane's edge, since the top bar is inside its pane")
         headerLease.end()
         check(split.arrangedSubviews.map(\.frame) == originalFrames, "header proposal lease restores the original frames")
+        let stackLease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
+        stackLease.setInsertionColor { ink }
+        let stackPoint = NSPoint(x: originalFrames[0].midX, y: originalFrames[0].maxY - 10)
+        let stack = stackLease.proposal(at: stackPoint, canPropose: { _, _ in true })!
+        let stackShape = BrowserSplitStacks(slotSizes: [2, 1], slotFactors: BrowserSplitLayout.normalized([0.75, 0.25], count: 2)!,
+                                            stackFactors: [[0.5, 0.5], [1]])
+        let stackFrames = SplitStackGeometry.paneFrames(size: split.bounds.size, orientation: .horizontal, stacks: stackShape,
+            thickness: split.dividerThickness, minimum: 220, scale: reserveWindow.backingScaleFactor)
+        let stackRegion = split.subviews.first { $0 !== firstPane && $0 !== secondPane }!
+        check(stack.0 == .stack(0, after: true) && stack.1 == .horizontal && !stackLease.reusedRegion && stackLease.isCurrent,
+              "a pane's bottom band reserves a new region inside its column and keeps the lease admitted")
+        check(firstPane.frame == stackFrames[0] && stackRegion.frame == stackFrames[1] && stack.2 == stackFrames[1]
+              && secondPane.frame == stackFrames[2],
+              "a flat split previews the stacked shape the commit would produce, the region below its pane in that column")
+        check(stackRegion.frame.minX == originalFrames[0].minX && stackRegion.frame.maxX == originalFrames[0].maxX
+              && secondPane.frame.height == split.bounds.height, "only the stacked column divides")
+        check(stackLease.incomingPaneSize == NSSize(width: originalFrames[0].width, height: split.bounds.height / 2),
+              "a stacked incoming pane is its column wide and half the split high")
+        check((split.accessibilitySplitters() ?? []).isEmpty, "a stack reservation hides every divider")
+        let stackMotion = stackRegion.layer?.animation(forKey: "Split drop region") as? CAAnimationGroup
+        let stackStart = stackMotion?.animations?.compactMap { $0 as? CABasicAnimation }.first { $0.keyPath == "bounds" }
+        check(stackMotion?.duration == 0.2 && (stackStart?.fromValue as? NSValue)?.rectValue.size == NSSize(width: originalFrames[0].width, height: 0),
+              "the region grows from a zero-height line across only its column")
+        check(firstPane.layer?.animation(forKey: "Split reserved layout") != nil, "the stacked pane eases into its new frame")
+        let stackHeld = stackLease.proposal(at: NSPoint(x: stack.2.midX, y: stack.2.midY), canPropose: { _, _ in true })!
+        check(stackHeld.0 == stack.0 && stackHeld.2 == stack.2 && stackLease.reusedRegion,
+              "pointer in its own stacked region keeps the proposal")
+        let stackRepeat = stackLease.proposal(at: NSPoint(x: stackFrames[0].midX, y: stackFrames[0].maxY - 5), canPropose: { _, _ in true })!
+        check(stackRepeat.0 == stack.0 && stackLease.reusedRegion && firstPane.frame == stackFrames[0],
+              "reclassifying to the same stack target reuses the region without relayout")
+        let mainRow = stackLease.proposal(at: NSPoint(x: stackFrames[0].maxX - 5, y: 100), canPropose: { _, _ in true })!
+        check(mainRow.0 == .insert(1) && !stackLease.reusedRegion && firstPane.frame.height == split.bounds.height
+              && stackRegion.frame.height == split.bounds.height,
+              "a main-row slot at the same reading-order index is a different reservation")
+        check(stackLease.incomingPaneSize == NSSize(width: split.bounds.width / 3, height: split.bounds.height),
+              "a main-row reservation keeps today's incoming pane size")
+        let backToStack = stackLease.proposal(at: NSPoint(x: firstPane.frame.midX, y: firstPane.frame.maxY - 10), canPropose: { _, _ in true })!
+        check(backToStack.0 == stack.0 && !stackLease.reusedRegion && firstPane.frame == stackFrames[0],
+              "moving from a main-row slot back to the stack is a new region")
+        check(stackLease.proposal(at: NSPoint(x: -20, y: -20), canPropose: { _, _ in true }) == nil
+              && split.arrangedSubviews.map(\.frame) == originalFrames, "leaving restores the flat frames")
+        check(stackRegion.frame == NSRect(x: originalFrames[0].minX, y: originalFrames[0].maxY, width: originalFrames[0].width, height: 0)
+              && stackRegion.layer?.opacity == 0, "a retiring stack region collapses to its pane's edge across only its column")
+        check(stackLease.incomingPaneSize == NSSize(width: split.bounds.width / 3, height: split.bounds.height),
+              "with nothing reserved the incoming pane size is today's")
+        _ = stackLease.proposal(at: stackPoint, canPropose: { _, _ in true })
+        check(stackLease.reusedRegion == !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              "returning to the still-collapsing stack region reuses it (no feedback)")
+        stackLease.end()
+        check(split.arrangedSubviews.map(\.frame) == originalFrames && split.subviews.count == 2 && split.isVertical,
+              "ending a stack reservation restores the flat split")
         let staleLease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
         let staleEdit = staleLease.beginInteractivePaneEdit()
         _ = staleLease.proposal(at: NSPoint(x: 1, y: 200), canPropose: { _, _ in true })
@@ -297,6 +348,27 @@ extension ReservedPane: SplitLayoutFollowing {
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.3))
         check(split.subviews.count == 2 && !completeMotion.isCurrent,
               "current passive completion removes its own retired region without a drag owner")
+        let thirdPane = ReservedPane(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
+        split.addArrangedSubview(thirdPane)
+        let column = BrowserSplitStacks(slotSizes: [2, 1], slotFactors: [0.5, 0.5], stackFactors: [[0.5, 0.5], [1]])
+        split.configure(orientation: .horizontal, factors: column.flattenedFactors, stacks: column)
+        reserveHost.layoutSubtreeIfNeeded()
+        let columnFrames = split.arrangedSubviews.map(\.frame)
+        let columnLease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body, thirdPane.body])!
+        let grow = columnLease.proposal(at: NSPoint(x: columnFrames[1].midX, y: columnFrames[1].maxY - 10), canPropose: { _, _ in true })!
+        let grownFrames = SplitStackGeometry.paneFrames(size: split.bounds.size, orientation: .horizontal,
+            stacks: BrowserSplitStacks(slotSizes: [3, 1], slotFactors: [0.5, 0.5], stackFactors: [[1.0 / 3, 1.0 / 3, 1.0 / 3], [1]]),
+            thickness: split.dividerThickness, minimum: 220, scale: reserveWindow.backingScaleFactor)
+        check(grow.0 == .stack(1, after: true) && grow.1 == .horizontal && !columnLease.reusedRegion && columnLease.isCurrent,
+              "a stacked pane's bottom band reserves room inside its own stack")
+        check([firstPane.frame, secondPane.frame, grow.2, thirdPane.frame] == grownFrames,
+              "the stack of two grows to three in the preview while the lone column keeps its frame")
+        check(columnLease.incomingPaneSize == NSSize(width: columnFrames[1].width, height: split.bounds.height / 3),
+              "an incoming pane in a stack of two is its column wide and a third of the split high")
+        check((split.accessibilitySplitters() ?? []).isEmpty, "a stacked split hides its stack and main-row dividers while reserving")
+        columnLease.end()
+        check(split.arrangedSubviews.map(\.frame) == columnFrames && split.subviews.count == 3,
+              "ending the stacked reservation restores the stacked frames")
         let handWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1810, height: 700),
             styleMask: .borderless, backing: .buffered, defer: false)
         let handHost = ExternalSplitDropHost(frame: NSRect(x: 0, y: 0, width: 1810, height: 700))

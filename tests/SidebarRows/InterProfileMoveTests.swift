@@ -9,6 +9,7 @@ import Foundation
     static func runChecks() throws {
         try gateAndPrompt()
         try splitDrop()
+        try stackedSplitDrops()
         try collectionMoves()
         try storeTransaction()
         try sameProfileDrop()
@@ -145,6 +146,70 @@ import Foundation
         try check(propose(request(f, f.today), removal) == nil, "pending Profile removal refuses")
         var sameProfile = f.state; sameProfile.tabs[0].profileID = f.q.id; sameProfile.tabs[0].spaceID = f.d.id
         try check(propose(request(f, sameProfile.tabs[0]), sameProfile)?.tabs.first { $0.id == f.today.id }?.profileID == f.q.id, "same-Space same-Profile drop resolves through the ordinary drop")
+    }
+
+    static func stackedSplitDrops() throws {
+        let f = fixture(), now = Date(timeIntervalSince1970: 99)
+        func propose(_ r: ForeignSplitDrop.Request, _ state: BrowserState) -> BrowserState? {
+            ForeignSplitDrop.proposal(r, state: state, now: now, creation: nil)
+        }
+        var grouped = f.state
+        let flat = BrowserSplitLayout(spaceID: f.d.id, tabIDs: [f.d1.id, f.d2.id], orientation: .horizontal, widthFactors: [0.5, 0.5])
+        grouped.splitLayouts.append(flat); grouped.selectedTabIDs = flat.tabIDs; grouped.selectionBySpace[f.d.id.uuidString] = flat.tabIDs
+        let stacked = try unwrap(propose(request(f, f.today, target: .stack(0, after: true), selection: flat.tabIDs, layout: flat), grouped),
+                                 "a cross-Profile drop stacks onto a flat split")
+        let column = try unwrap(stacked.splitLayouts.first { $0.id == flat.id }, "the destination split keeps its identity")
+        try check(column.tabIDs == [f.d1.id, f.today.id, f.d2.id] && column.stacks?.slotSizes == [2, 1] && column.orientation == .horizontal
+            && stacked.tabs.first { $0.id == f.today.id }?.profileID == f.q.id, "the moved original stacks below its pane in the destination Profile")
+        let joined = try unwrap(propose(request(f, f.g1, target: .stack(1, after: true), selection: column.tabIDs, layout: column), stacked),
+                                "a cross-Profile drop joins an existing stack")
+        let full = try unwrap(joined.splitLayouts.first { $0.id == flat.id }, "the stacked split keeps its identity")
+        try check(full.tabIDs == [f.d1.id, f.today.id, f.g1.id, f.d2.id] && full.stacks?.slotSizes == [3, 1], "it lands below the stacked pane")
+        try check(propose(request(f, f.g2, target: .stack(3, after: false), selection: full.tabIDs, layout: full), joined) == nil
+            && propose(request(f, f.g2, target: .replace(3), selection: full.tabIDs, layout: full), joined) != nil,
+                  "a full split refuses a stack drop but still takes a replacement")
+        var same = f.state
+        let other = BrowserSpace(id: UUID(), name: "Errands", symbol: "circle", color: "AABBCC", profileID: f.p.id)
+        let errands = ["e1", "e2"].map { name in
+            BrowserTab(id: UUID(), spaceID: other.id, profileID: f.p.id, url: "https://live.invalid/" + name, title: name, kind: .today,
+                       folderID: nil, createdAt: .distantPast, lastAccessed: .distantPast, savedURL: "https://live.invalid/" + name, savedTitle: name)
+        }
+        let pair = BrowserSplitLayout(spaceID: other.id, tabIDs: errands.map(\.id), orientation: .vertical, widthFactors: [0.5, 0.5])
+        same.spaces.append(other); same.tabs += errands; same.splitLayouts.append(pair)
+        func local(_ source: BrowserTab, _ target: SplitDropTarget, _ layout: BrowserSplitLayout) -> ForeignSplitDrop.Request {
+            ForeignSplitDrop.Request(source: source, sourceHomeID: UUID(), spaceID: other.id, profileID: f.p.id,
+                selection: layout.tabIDs, layout: layout, target: target, orientation: .vertical, destinationHomeIDs: [:])
+        }
+        let row = try unwrap(propose(local(f.today, .stack(1, after: false), pair), same), "a same-Profile drop stacks onto a flat split")
+        let rowLayout = try unwrap(row.splitLayouts.first { $0.id == pair.id }, "the same-Profile split keeps its identity")
+        try check(rowLayout.tabIDs == [errands[0].id, f.today.id, errands[1].id] && rowLayout.stacks?.slotSizes == [1, 2]
+            && rowLayout.orientation == .vertical && row.tabs.first { $0.id == f.today.id }?.profileID == f.p.id,
+                  "the original keeps its Profile and sits left of the lower pane")
+        let grown = try unwrap(propose(local(f.g1, .stack(2, after: true), rowLayout), row), "a same-Profile drop joins an existing stack")
+        try check(grown.splitLayouts.first { $0.id == pair.id }?.tabIDs == [errands[0].id, f.today.id, errands[1].id, f.g1.id]
+            && grown.splitLayouts.first { $0.id == pair.id }?.stacks?.slotSizes == [1, 3], "it lands right of the stacked pane")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-foreign-stack-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(grouped).write(to: directory.appendingPathComponent("session.json"))
+        let crossStore = try BrowserStore(directory: directory)
+        crossStore.requestPageRetirement = { _, shouldCommit, completion in completion(shouldCommit()) }
+        let crossRequest = request(f, f.today, target: .stack(0, after: true), selection: flat.tabIDs, layout: flat)
+        var result: Result<Bool, Error>?
+        crossStore.moveAcrossProfiles([f.today.id], proposal: { propose(crossRequest, $0) }) { result = $0 }
+        try check((try? result?.get()) == true, "a cross-Profile stack drop commits through the reload transaction")
+        let crossSaved = try BrowserStore(directory: directory).state.splitLayouts.first { $0.id == flat.id }
+        try check(crossSaved?.tabIDs == [f.d1.id, f.today.id, f.d2.id] && crossSaved?.stacks?.slotSizes == [2, 1], "the cross-Profile stack saves with the move")
+        try encoder.encode(same).write(to: directory.appendingPathComponent("session.json"))
+        let sameStore = try BrowserStore(directory: directory)
+        var retired = false
+        sameStore.requestPageRetirement = { _, _, completion in retired = true; completion(false) }
+        try check(try sameStore.commitForeignSplitDrop([f.today.id]) { propose(local(f.today, .stack(1, after: false), pair), $0) } && !retired,
+                  "a same-Profile stack drop commits without a reload")
+        let sameSaved = try BrowserStore(directory: directory).state.splitLayouts.first { $0.id == pair.id }
+        try check(sameSaved?.tabIDs == [errands[0].id, f.today.id, errands[1].id] && sameSaved?.stacks?.slotSizes == [1, 2],
+                  "the same-Profile stack saves with the placement")
     }
 
     static func collectionMoves() throws {

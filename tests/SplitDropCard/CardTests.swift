@@ -217,6 +217,14 @@ import AppKit
         check(sessionItem.draggingFrame.size == expected && sessionItem.draggingFrame.origin == NSPoint(x: 30, y: 40)
               && contents(sessionItem) !== rowImage, "the session's own item becomes the card for the incoming pane")
         check(otherItem.draggingFrame.size == NSSize(width: 206, height: 36), "another item keeps its image")
+        session.draggingLocation = host.convert(NSPoint(x: 300, y: 800), to: nil)
+        let stackCalls = session.calls.count
+        _ = overlay.draggingUpdated(session)
+        let stacked = SplitDropPlaceholderCard.size(forIncomingPane: reservation.incomingPaneSize)!
+        check(stacked != expected && session.calls.count == stackCalls + 1 && sessionItem.draggingFrame.size == stacked
+              && sessionItem.draggingFrame.origin == NSPoint(x: 30, y: 40), "a stack target re-renders the card once at the in-slot pane's size")
+        _ = overlay.draggingUpdated(session)
+        check(session.calls.count == stackCalls + 1, "an unchanged size keeps the card without another render")
         overlay.draggingExited(session)
         check(!overlay.showsCard && sessionItem.draggingFrame == NSRect(x: 30, y: 40, width: 206, height: 36) && contents(sessionItem) === rowImage,
               "exit puts back the row's own image and size at the same bottom-left")

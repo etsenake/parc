@@ -99,7 +99,8 @@ extension BrowserWindowController {
             profileID: profileID, state: store.state)
         var admissions: [(target: SplitDropTarget, orientation: SplitOrientation, allowed: Bool)] = []
         let session = ExternalSplitDropSession(host: pageHost, info: info, frames: frames,
-            orientation: layout?.orientation ?? .horizontal, reservation: reservation, validate: validate,
+            orientation: layout?.orientation ?? .horizontal,
+            slotSizes: layout?.stacks?.validated(paneCount: selection.count)?.slotSizes, reservation: reservation, validate: validate,
             insertionColor: { [weak self] in self.map { ThemeChromePalette.appearanceBasedMaxContrast(theme: $0.rootView.paletteTheme) } ?? .clear },
             canPropose: { [weak self] target, orientation in
                 guard validate(), let self else { return false }

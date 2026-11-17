@@ -33,18 +33,24 @@ import Foundation
             try check(ExternalSplitDrop.url(invalid) == nil, "unowned scheme/credential/relative payload refused")
         }
         try check(ExternalSplitDrop.url(destination.absoluteString) == destination, "literal URL accepted")
-        func proposal(_ state: BrowserState, _ target: SplitDropTarget, _ selection: [UUID], _ layout: BrowserSplitLayout?) -> BrowserState? {
+        func proposal(_ state: BrowserState, _ target: SplitDropTarget, _ selection: [UUID], _ layout: BrowserSplitLayout?,
+                      _ orientation: SplitOrientation = .vertical) -> BrowserState? {
             ExternalSplitDrop.proposal(url: destination, tabID: UUID(), state: state, spaceID: space, profileID: p,
-                selection: selection, layout: layout, target: target, orientation: .vertical, creation: receipt, now: Date())
+                selection: selection, layout: layout, target: target, orientation: orientation, creation: receipt, now: Date())
         }
         let inserted = proposal(original, .insert(1), [a,b], group)!
         try check(inserted.selectedTabIDs.count == 3 && inserted.selectedTabIDs.first == a && inserted.selectedTabIDs.last == b, "insertion order preserves original pair")
         try check(inserted.splitLayouts.first?.orientation == .vertical, "actual requested orientation")
+        let stacked = proposal(original, .stack(0, after: true), [a,b], group, .horizontal)
+        try check(stacked?.selectedTabIDs.count == 3 && stacked?.selectedTabIDs.first == a && stacked?.selectedTabIDs.last == b
+            && stacked?.splitLayouts.first?.id == group.id && stacked?.splitLayouts.first?.orientation == .horizontal
+            && stacked?.splitLayouts.first?.stacks?.slotSizes == [2, 1], "a link on a side-by-side pane's bottom band stacks below it")
         var four = original
         let c = UUID(), d = UUID(); for extra in [c,d] { var t = original.tabs[0]; t.id = extra; four.tabs.append(t) }
         four.selectedTabIDs = [a,b,c,d]; var fourGroup = group; fourGroup.tabIDs = four.selectedTabIDs; fourGroup.widthFactors = [0.25,0.25,0.25,0.25]; four.splitLayouts = [fourGroup]
         try check(proposal(four, .insert(1), four.selectedTabIDs, fourGroup) == nil, "capacity refusal is atomic")
         try check(proposal(four, .replace(2), four.selectedTabIDs, fourGroup)?.selectedTabIDs.count == 4, "replacement at capacity remains available")
+        try check(proposal(four, .stack(2, after: true), four.selectedTabIDs, fourGroup, .horizontal) == nil, "a stack drop refuses at four panes")
         var favorite = original
         let homeSpace = UUID(), homeID = UUID(), urlID = UUID(), now = Date(timeIntervalSince1970: 123456)
         favorite.spaces.append(BrowserSpace(id: homeSpace, name: "Home", symbol: "star", color: "123456", profileID: p))
@@ -153,6 +159,28 @@ import Foundation
             creation: receipt, savedHomeID: homeID), "actual pinned saved-home and split commit is atomic")
         let pinnedReload = try BrowserStore(directory: pinnedRoot)
         try check(SidebarHierarchy.children(in: pinnedContainer, state: pinnedReload.state) == [.tab(b), .tab(homeID), .folder(siblingFolder.id)] && pinnedReload.state.selectedTabIDs == [urlID,a], "pinned home order and live original selection durably reopen together")
+        let stackRoot = root.appendingPathComponent("stack"), stackID = UUID()
+        try FileManager.default.createDirectory(at: stackRoot, withIntermediateDirectories: true)
+        try encoder.encode(original).write(to: stackRoot.appendingPathComponent("session.json"))
+        let stackStore = try BrowserStore(directory: stackRoot), flat = stackStore.activeSplitLayout
+        try check(flat?.id == group.id && flat?.stacks == nil, "the flat pair reopens as a flat split")
+        try check(try stackStore.dropExternalURLIntoSplit(destination, tabID: stackID, spaceID: space, profileID: p,
+            expectedSelection: [a,b], expectedLayout: flat, target: .stack(1, after: false), orientation: .horizontal, creation: receipt),
+            "a link on a flat split's top band commits a stack")
+        let stackReload = try BrowserStore(directory: stackRoot)
+        try check(stackReload.state.selectedTabIDs == [a,stackID,b] && stackReload.activeSplitLayout?.id == group.id
+            && stackReload.activeSplitLayout?.orientation == .horizontal && stackReload.activeSplitLayout?.stacks?.slotSizes == [1, 2]
+            && stackReload.state.tabs.first { $0.id == stackID }?.url == destination.absoluteString, "the new tab and its stack reopen together")
+        let joinID = UUID()
+        try check(try stackStore.dropExternalURLIntoSplit(destination, tabID: joinID, spaceID: space, profileID: p,
+            expectedSelection: [a,stackID,b], expectedLayout: stackStore.activeSplitLayout, target: .stack(2, after: true),
+            orientation: .horizontal, creation: receipt), "a link joins an existing stack")
+        try check(stackStore.state.selectedTabIDs == [a,stackID,b,joinID] && stackStore.activeSplitLayout?.stacks?.slotSizes == [1, 3]
+            && stackStore.activeSplitLayout?.id == group.id, "the link lands below the stacked pane")
+        let fullStack = stackStore.state
+        try check(!(try stackStore.dropExternalURLIntoSplit(destination, tabID: UUID(), spaceID: space, profileID: p,
+            expectedSelection: fullStack.selectedTabIDs, expectedLayout: stackStore.activeSplitLayout, target: .stack(0, after: false),
+            orientation: .horizontal, creation: receipt)) && stackStore.state == fullStack, "a full stacked split refuses another link stack")
         let notes = try NoteStore(directory: root.appendingPathComponent("notes"), diskSaveDelay: 0)
         let note = try notes.create()
         let easels = try EaselStore(directory: root.appendingPathComponent("easels"))

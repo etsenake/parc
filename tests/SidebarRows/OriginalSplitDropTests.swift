@@ -120,6 +120,52 @@ import Foundation
             try check(model.state.tabs.first { $0.id == home }?.url == addresses[index] && model.state.tabs.first { $0.id == a }?.url == addresses[index], "original and home share exact authored document")
         }
         try check(try notes.load(note.document.id) === note && easels.load(easel.document.id) === easel, "original shared sessions never recreated")
+        try stackDrops(root.appendingPathComponent("stacks"))
         print("PASS: \(count) original split placement/store/alias assertions")
+    }
+
+    static func stackDrops(_ directory: URL) throws {
+        let store = try BrowserStore(directory: directory)
+        let t = (0..<13).map { store.open("https://stack\($0).invalid") }
+        func drop(_ source: UUID, _ target: SplitDropTarget, _ orientation: SplitOrientation = .horizontal) -> Bool {
+            store.dropTabIntoSplit(source, expectedSelection: store.state.selectedTabIDs, expectedLayout: store.activeSplitLayout,
+                target: target, orientation: orientation)
+        }
+        func close(_ left: [Double]?, _ right: [Double]?) -> Bool {
+            guard let left, let right else { return false }
+            return left.count == right.count && zip(left, right).allSatisfy { abs($0 - $1) < 1e-9 }
+        }
+        store.setSplit([t[0], t[1]]); _ = store.setSplitLayout(orientation: .horizontal, widthFactors: [0.4, 0.6])
+        let flat = store.activeSplitLayout!
+        try check(drop(t[2], .stack(1, after: true)), "a side-by-side pane's bottom band commits onto a flat split")
+        var layout = store.activeSplitLayout!
+        try check(layout.id == flat.id && layout.tabIDs == [t[0], t[1], t[2]] && layout.orientation == .horizontal
+            && layout.stacks?.slotSizes == [1, 2] && close(layout.stacks?.slotFactors, [0.4, 0.6]),
+            "the tab stacks below its pane, whose column keeps its width")
+        try check(try BrowserStore(directory: directory).activeSplitLayout == layout, "the new stack saves with the drop")
+        try check(drop(t[3], .stack(1, after: false)), "a drop above a stacked pane commits")
+        layout = store.activeSplitLayout!
+        try check(layout.tabIDs == [t[0], t[3], t[1], t[2]] && layout.stacks?.slotSizes == [1, 3]
+            && close(layout.stacks?.stackFactors[1], [1.0 / 3, 1.0 / 3, 1.0 / 3]), "the tab joins the existing stack above that pane")
+        let full = store.state
+        try check(!drop(t[4], .stack(0, after: true)) && store.state == full, "a stack drop refuses at four panes")
+        try check(drop(t[4], .replace(2)) && store.state.selectedTabIDs == [t[0], t[3], t[4], t[2]]
+            && store.activeSplitLayout?.stacks == layout.stacks, "replacement stays available at four panes and keeps the stack")
+        store.setSplit([t[5], t[6]]); _ = store.setSplitLayout(orientation: .vertical, widthFactors: [0.5, 0.5])
+        try check(drop(t[7], .stack(0, after: true), .vertical), "a top-and-bottom pane's right band commits onto a flat split")
+        try check(store.state.selectedTabIDs == [t[5], t[7], t[6]] && store.activeSplitLayout?.orientation == .vertical
+            && store.activeSplitLayout?.stacks?.slotSizes == [2, 1], "the tab sits right of its pane in that row")
+        store.setSplit([t[8], t[9]]); _ = store.setSplitLayout(orientation: .horizontal, widthFactors: [0.4, 0.6])
+        try check(drop(t[10], .insert(1)) && store.state.selectedTabIDs == [t[8], t[10], t[9]] && store.activeSplitLayout?.stacks == nil
+            && close(store.activeSplitLayout?.widthFactors, BrowserSplitLayout.normalized([0.4, 0.5, 0.6], count: 3)),
+            "a flat split's main-row insert still adds a flat pane")
+        let inserted = store.activeSplitLayout!
+        try check(drop(t[11], .replace(1)) && store.state.selectedTabIDs == [t[8], t[11], t[9]] && store.activeSplitLayout?.stacks == nil
+            && store.activeSplitLayout?.widthFactors == inserted.widthFactors, "a flat split's replacement keeps its flat weights")
+        try check(drop(t[10], .insert(3)) && store.activeSplitLayout?.stacks == nil, "a fourth flat pane joins the main row")
+        let four = store.state
+        try check(!drop(t[12], .stack(1, after: true)) && store.state == four, "a full flat split refuses a stack drop")
+        try check(drop(t[12], .replace(1)) && store.state.selectedTabIDs == [t[8], t[12], t[9], t[10]]
+            && store.activeSplitLayout?.stacks == nil, "a full flat split still takes a replacement")
     }
 }
