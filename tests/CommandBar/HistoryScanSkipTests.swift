@@ -65,6 +65,19 @@ struct HistoryScanSkipTests {
         expect(Array(visits.prefix(max(0, 8 - 8))).isEmpty,
                "Eight tab rows leave no history budget")
 
+        let samePage: (String, String) -> String? = { title, url in
+            title.isEmpty ? nil : title + "|" + String(url.prefix { $0 != "?" })
+        }
+        let paged = Skip.emptyQueryVisits(rankedURLsAndTitles: [
+            ("https://a.test/x?login=1", "A"), ("https://a.test/x?login=2", "A"), ("https://a.test/x?v=3", "Other"),
+            ("https://b.test/y?z=1", "Open"), ("https://c.test/?q=1", ""), ("https://c.test/?q=2", ""),
+        ], tabURLs: [], tabPages: ["Open|https://b.test/y"], samePage: samePage, limit: 8)
+        expect(paged.map(\.url) == ["https://a.test/x?login=1", "https://a.test/x?v=3", "https://c.test/?q=1", "https://c.test/?q=2"],
+               "Recents skip the same titled page under other parameters and pages an open tab already shows")
+        expect(Skip.shouldReuse(previous: Skip.key(query: "", historyRevision: 1, excludedURL: nil, tabURLs: ["https://t.test"], tabTitles: ["A"]),
+                                next: Skip.key(query: "", historyRevision: 1, excludedURL: nil, tabURLs: ["https://t.test"], tabTitles: ["B"]))
+               == false, "A tab title change must not reuse")
+
         let tokenA = Skip.historyMembershipToken(revision: 1, excludedURL: nil)
         let tokenB = Skip.historyMembershipToken(revision: 1, excludedURL: nil)
         let tokenRev = Skip.historyMembershipToken(revision: 2, excludedURL: nil)

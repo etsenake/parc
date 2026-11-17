@@ -462,6 +462,50 @@ struct TabCandidatesFixture {
                    "a local server's lead keeps its port")
         }
 
+        let signIn = "https://fullscript.okta.com/app/UserHome?fromHome=true&iss=https%3A%2F%2Ffullscript.okta.com"
+            + "&login_hint=someone%40example.com&session_hint=AUTHENTICATED"
+        let dashboard = "My Apps Dashboard | Fullscript"
+        for open in [false, true] {
+            let f = NavigationFixture(); f.editState.edit("my apps")
+            let visit = PCNativeSearchNavigation(signIn, title: String(signIn.dropFirst(8)), detail: dashboard, type: "history-url")
+            let again = PCNativeSearchNavigation(signIn.replacingOccurrences(of: "AUTHENTICATED", with: "PENDING"),
+                                                 title: "fullscript.okta.com/app/UserHome", detail: dashboard, type: "history-url")
+            if open { f.tabs = [tab("https://fullscript.okta.com/app/UserHome?fromHome=true", title: dashboard)] }
+            f.publish([search("my apps"), visit, again], input: "my apps")
+            let pages = f.results.filter { $0.title == dashboard }
+            expect(pages.count == 1, "open=\(open): the sign-in page shows once")
+            if open {
+                expect(pages.first?.tabID == f.tabs[0].id && pages.first?.navigation == nil, "the open tab keeps its Switch to Tab row")
+                continue
+            }
+            expect(pages.first?.navigation === visit && pages.first?.subtitle == "— fullscript.okta.com",
+                   "the visit names its site instead of its sign-in parameters")
+            f.table.selectedRow = f.results.firstIndex { $0.id == pages.first?.id } ?? 0
+            f.explicitSelectionID = pages.first?.id
+            f.submitSelection(.ordinary)
+            expect(f.submitted?.result.navigation?.url.absoluteString == signIn && f.submitted?.result.navigation?.editText == visit.editText,
+                   "Return and the field still use the full address with its parameters")
+        }
+        do {
+            let f = NavigationFixture(); f.editState.edit("fullscript.okta.com/app")
+            let untitled = PCNativeSearchNavigation(signIn, title: String(signIn.dropFirst(8)), type: "history-url")
+            f.publish([untitled, search("fullscript.okta.com/app")], input: "fullscript.okta.com/app")
+            expect(f.results.first?.title == "fullscript.okta.com/app/UserHome" && f.results.first?.subtitle == nil
+                   && f.results.first?.url?.absoluteString == signIn, "an untitled visit shows its host and path once and keeps its address")
+        }
+        do {
+            let f = NavigationFixture()
+            f.tabs = [tab("https://fullscript.okta.com/app/UserHome?fromHome=true", title: dashboard)]
+            f.refreshResults()
+            f.updateRecentPages([(signIn, dashboard), (signIn + "&again=1", dashboard), ("https://fullscript.okta.com/app/Other?x=1", ""),
+                                 ("https://www.youtube.com/watch?v=1", "First video - YouTube"),
+                                 ("https://www.youtube.com/watch?v=2", "Second video - YouTube")])
+            expect(f.results.map(\.title) == [dashboard, "fullscript.okta.com/app/Other", "First video - YouTube", "Second video - YouTube"],
+                   "recents drop sign-in repeats of the open tab and keep different videos")
+            expect(f.results.first?.tabID != nil && f.results[1].subtitle == nil && f.results[2].subtitle == "— youtube.com"
+                   && f.results[2].input == "https://www.youtube.com/watch?v=1", "recent rows keep their full addresses")
+        }
+
         if failures > 0 { print("NavigationPipelineTests: \(failures) failures / \(checks) checks"); exit(1) }
         print("NavigationPipelineTests: \(checks) checks passed")
     }

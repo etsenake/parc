@@ -1,6 +1,15 @@
 import AppKit
 
 final class CommandResultCell: NSView {
+    struct Marks: Equatable {
+        var host: NSRange? = nil
+        var matches: [NSRange] = []
+    }
+    struct Fit: Equatable {
+        let text: String
+        let matches: [NSRange]
+        let clipped: Bool
+    }
     var onPress: (() -> Bool)?
     var onDelete: (() -> Bool)? {
         didSet {
@@ -37,10 +46,16 @@ final class CommandResultCell: NSView {
     private let subtitle: String?
     private let detail: String
     private let enabled: Bool
+    private var titleMarks = Marks()
+    private var subtitleMarks = Marks()
+    private var titleFit: Fit
+    private var subtitleFit: Fit
     init(title: String, subtitle: String? = nil, detail: String, accessory: String, isTab: Bool, icon: NSImage?,
          spokenAccessory: String? = nil, spokenSubtitle: String? = nil, enabled: Bool,
          spaceAction: CommandBarSpaceAction? = nil, folderAction: CommandBarFolderAction? = nil, isAction: Bool = false) {
         self.title = title; self.subtitle = subtitle; self.detail = detail; self.enabled = enabled; self.isTab = isTab
+        titleFit = Fit(text: title, matches: [], clipped: false)
+        subtitleFit = Fit(text: subtitle ?? "", matches: [], clipped: false)
         self.hasContext = spaceAction != nil || folderAction != nil
         self.isAction = isAction
         super.init(frame: .zero)
@@ -91,14 +106,64 @@ final class CommandResultCell: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     func setIcon(_ image: NSImage) { baseIcon = image; setSelected(isSelected) }
+    func setMarks(title: Marks, subtitle: Marks) {
+        guard title != titleMarks || subtitle != subtitleMarks else { return }
+        titleMarks = title; subtitleMarks = subtitle
+        titleFit = Fit(text: self.title, matches: title.matches, clipped: false)
+        subtitleFit = Fit(text: self.subtitle ?? "", matches: subtitle.matches, clipped: false)
+        renderText(); needsLayout = true
+    }
+    static func fit(_ text: String, marks: Marks, width: CGFloat, measure: (String) -> CGFloat) -> Fit {
+        let whole = Fit(text: text, matches: marks.matches, clipped: false)
+        let string = text as NSString
+        guard let host = marks.host, NSMaxRange(host) <= string.length, measure(text) > width,
+              measure(string.substring(to: NSMaxRange(host)) + "…") > width else { return whole }
+        let head = string.substring(to: host.location)
+        let name = string.substring(with: host) as NSString
+        var starts: [Int] = []
+        name.enumerateSubstrings(in: NSRange(location: 0, length: name.length), options: .byComposedCharacterSequences) { _, range, _, _ in
+            starts.append(range.location)
+        }
+        starts.append(name.length)
+        var low = 0, high = starts.count - 1
+        while low < high {
+            let middle = (low + high) / 2
+            if measure(head + "…" + name.substring(from: starts[middle])) <= width { high = middle } else { low = middle + 1 }
+        }
+        let cut = host.location + starts[low]
+        let shift = (head as NSString).length + 1 - cut
+        let kept = [NSRange(location: 0, length: host.location), NSRange(location: cut, length: NSMaxRange(host) - cut)]
+        let matches = marks.matches.flatMap { match in
+            kept.enumerated().compactMap { index, part -> NSRange? in
+                let overlap = NSIntersectionRange(match, part)
+                guard overlap.length > 0 else { return nil }
+                return NSRange(location: overlap.location + (index == 0 ? 0 : shift), length: overlap.length)
+            }
+        }
+        return Fit(text: head + "…" + name.substring(from: starts[low]), matches: matches, clipped: true)
+    }
+    private static let probe = NSTextField(labelWithString: "")
+    private static func measure(_ text: String) -> CGFloat {
+        probe.attributedStringValue = NSAttributedString(string: text, attributes: [.font: CommandBarTypography.label])
+        return probe.singleLineWidth
+    }
+    private func renderText() {
+        let primary: NSColor = enabled ? (isSelected ? CommandBarPalette.selectedText : CommandBarPalette.textPrimary) : .disabledControlTextColor
+        let emphasis: NSColor = enabled && !isSelected ? CommandBarPalette.textPrimaryMatch : primary
+        let secondary = isSelected ? CommandBarPalette.selectedSecondaryText : CommandBarPalette.textSecondary
+        let secondaryEmphasis = !enabled ? secondary : isSelected ? CommandBarPalette.selectedSecondaryMatchText : CommandBarPalette.textSecondaryMatch
+        let subtitleTruncation: NSLineBreakMode = subtitleMarks.host == nil ? .byTruncatingMiddle : .byTruncatingTail
+        subtitleLabel.lineBreakMode = subtitleTruncation
+        label.attributedStringValue = Self.line(titleFit, color: primary, emphasis: emphasis, truncation: .byTruncatingTail)
+        subtitleLabel.attributedStringValue = Self.line(subtitleFit, color: secondary, emphasis: secondaryEmphasis,
+                                                        truncation: subtitleTruncation)
+    }
     private var showsTile: Bool { isAction || (isSelected && baseIcon?.isTemplate == false) }
     func setSelected(_ value: Bool) {
         isSelected = value
         let primary: NSColor = enabled ? (value ? CommandBarPalette.selectedText : CommandBarPalette.textPrimary) : .disabledControlTextColor
         let secondary = value ? CommandBarPalette.selectedSecondaryText : CommandBarPalette.textSecondary
-        let font = CommandBarTypography.label
-        label.attributedStringValue = Self.line(title, font: font, color: primary, truncation: .byTruncatingTail)
-        subtitleLabel.attributedStringValue = Self.line(subtitle ?? "", font: font, color: secondary, truncation: .byTruncatingMiddle)
+        renderText()
         accessory.textColor = value ? CommandBarPalette.selectedText : CommandBarPalette.textSecondary
         iconTile.isHidden = !showsTile
         if value, showsTile, let base = baseIcon, base.isTemplate {
@@ -165,12 +230,17 @@ final class CommandResultCell: NSView {
             let detailX = spaceCapsule.frame.maxX + 8
             spaceDetail.frame = NSRect(x: detailX, y: 16, width: max(0, Self.titleX + available - detailX), height: 17)
         } else {
-            let titleWidth = min(label.singleLineWidth, 480, available)
+            let titleWidth = min(Self.measure(title), 480, available)
             label.frame = NSRect(x: Self.titleX, y: 16, width: titleWidth, height: 17)
             let subtitleX = label.frame.maxX + 4
             let subtitleWidth = subtitleLabel.isHidden ? 0
-                : min(subtitleLabel.singleLineWidth, 280, max(0, Self.titleX + available - subtitleX))
+                : min(Self.measure(subtitle ?? ""), 280, max(0, Self.titleX + available - subtitleX))
             subtitleLabel.frame = NSRect(x: subtitleX, y: 16, width: subtitleWidth, height: 17)
+            let titleFit = Self.fit(title, marks: titleMarks, width: titleWidth, measure: Self.measure)
+            let subtitleFit = Self.fit(subtitle ?? "", marks: subtitleMarks, width: subtitleWidth, measure: Self.measure)
+            if titleFit != self.titleFit || subtitleFit != self.subtitleFit {
+                self.titleFit = titleFit; self.subtitleFit = subtitleFit; renderText()
+            }
         }
     }
     private static func tinted(_ image: NSImage, _ color: NSColor) -> NSImage {
@@ -180,9 +250,15 @@ final class CommandResultCell: NSView {
         copy.isTemplate = false
         return copy
     }
-    private static func line(_ string: String, font: NSFont, color: NSColor, truncation: NSLineBreakMode) -> NSAttributedString {
-        let style = NSMutableParagraphStyle(); style.lineBreakMode = truncation
-        return NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: style])
+    private static func line(_ fit: Fit, color: NSColor, emphasis: NSColor, truncation: NSLineBreakMode) -> NSAttributedString {
+        let style = NSMutableParagraphStyle(); style.lineBreakMode = fit.clipped ? .byClipping : truncation
+        let text = NSMutableAttributedString(string: fit.text, attributes: [
+            .font: CommandBarTypography.label, .foregroundColor: color, .paragraphStyle: style
+        ])
+        if emphasis != color {
+            for range in fit.matches where NSMaxRange(range) <= text.length { text.addAttribute(.foregroundColor, value: emphasis, range: range) }
+        }
+        return text
     }
     func setHovered(_ value: Bool) {
         isHovered = value; updateDeleteVisibility()

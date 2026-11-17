@@ -51,7 +51,7 @@ for use in ("func focusAddress(anchor: NSView? = nil)",
             "addressOnly: addressAnchor != nil, popup: isPopupWindow,",
             "let commandTab = currentTabID",
             "let commandPeek = newTab ? nil : sourcePeek",
-            "else { self.resolveInput(input, replacing: commandTab) }"):
+            "else { self.resolveInput(input, typedText: typed, replacing: commandTab) }"):
     assert use in window, f"current-tab compact editor wiring changed: {use}"
 assert window.count("focusAddress(anchor:") - window.count("func focusAddress(anchor:") == 2, \
     "only the sidebar address and popup chrome may open the compact editor"

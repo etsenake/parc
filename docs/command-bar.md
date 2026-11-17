@@ -167,11 +167,14 @@ change to the system's scroll bar setting while the bar is open.
 
 ## Result row content
 
-History/navigation rows combine title and subdued display URL; tabs, commands,
-searches and typed input retain their own presentation. Titles truncate at the
-tail, URLs in the middle, without wrapping. Display-only URL cleanup preserves
-underlying requests; file paths retain case and large data URLs are bounded.
-VoiceOver receives the plain URL subtitle without decorative punctuation.
+Page rows show their title, then a dash and just the site, as in
+`Dashboard — fullscript.okta.com`. An empty or address-only title gives way to
+the address, shown once without scheme, `www.`, query, fragment or trailing
+slash, as in `fullscript.okta.com/app/UserHome`. Only the host is lowercased;
+escapes become readable only where Chromium's display rules allow, and hosts
+stay ASCII without a user name. Paths are cut from the end and an over-long host
+shows its end, so the real site always shows. Typed words are drawn slightly
+brighter. VoiceOver reads the plain subtitle without the dash.
 
 Calculator results show the input and answer; Return searches the original
 expression and Tab fills the answer. Public internal addresses display `parc://`
@@ -205,8 +208,10 @@ path hands the lead back to the default.
 Other commands, native results, tabs, local documents and top domains interleave
 using Parc's scoring and native order. Ordinary results cap actions and tabs at
 five each, documents at three, native rows at eight and top domains at one.
-Page duplicates keep the open-tab action; configured title/host sites use their
-specialized dedup key. Top domains come from that Profile's history, calculated
+Duplicates of a page, and rows with its title and path under another query or
+fragment, merge into one row keeping the open-tab action, here and in the empty
+list, but two open tabs never merge; configured title/host sites use their own
+key. Top domains come from that Profile's history, calculated
 off the main thread per history revision, one per host and port, opening the
 root with the latest visit's scheme. A root page title names the row; without
 one its address shows once. Search keys use terms, not URLs with changing query

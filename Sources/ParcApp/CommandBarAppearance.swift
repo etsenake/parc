@@ -35,11 +35,14 @@ struct CommandBarPalette {
     static let rowHover = ink(0.05)
     static let textPrimary = ink(0.8)
     static let textSecondary = ink(0.33)
+    static let textPrimaryMatch = ink(1)
+    static let textSecondaryMatch = ink(0.6)
     static let accessoryBackground = ink(0.05)
     static let accessoryForeground = ink(0.5, dark: 0.66)
     static let hairline = ink(0.1)
     static let selectedText = NSColor.white
     static let selectedSecondaryText = NSColor.white.withAlphaComponent(0.5)
+    static let selectedSecondaryMatchText = NSColor.white.withAlphaComponent(0.8)
     static let selectedTile = NSColor.white
 }
 

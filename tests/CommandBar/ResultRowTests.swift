@@ -96,6 +96,74 @@ import AppKit
                                        spokenAccessory: "Switch to Tab in Work", spokenSubtitle: "docs.com", enabled: true)
         expect(spoken.accessibilityLabel() == "Docs, docs.com, Switch to Tab in Work",
                "VoiceOver reads the plain URL and names the tab's Space")
+        typealias Marks = CommandResultCell.Marks
+        let measure: (String) -> CGFloat = { CGFloat(($0 as NSString).length) * 7 }
+        let address = "fullscript.okta.com/app/UserHome"
+        let hostMarks = Marks(host: NSRange(location: 0, length: 19), matches: [NSRange(location: 11, length: 4)])
+        expect(CommandResultCell.fit(address, marks: hostMarks, width: 400, measure: measure)
+               == .init(text: address, matches: hostMarks.matches, clipped: false), "an address that fits shows whole")
+        let tight = CommandResultCell.fit(address, marks: hostMarks, width: 160, measure: measure)
+        expect(tight == .init(text: address, matches: hostMarks.matches, clipped: false),
+               "a long path is left to the label to cut from its end while the whole host and an ellipsis fit")
+        let lookalike = "— accounts.google.com.example-security-check.ru"
+        let lookalikeMarks = Marks(host: NSRange(location: 2, length: 45),
+                                   matches: [NSRange(location: 2, length: 8), NSRange(location: 39, length: 5)])
+        let elided = CommandResultCell.fit(lookalike, marks: lookalikeMarks, width: 140, measure: measure)
+        expect(elided.clipped && elided.text == "— …security-check.ru", "a host too long to fit keeps its end, the real site")
+        expect(elided.matches.map { (elided.text as NSString).substring(with: $0) } == ["check"], "marks follow the kept end of the host")
+        let narrowTitle = CommandResultCell.fit("averyveryverylonghostname.example.com/path", marks: Marks(host: NSRange(location: 0, length: 37)),
+                                                width: 105, measure: measure)
+        expect(narrowTitle.clipped && narrowTitle.text == "…me.example.com", "an address title too narrow for its host shows the host's end")
+        let plain = CommandResultCell.fit(String(repeating: "Long title ", count: 20), marks: Marks(), width: 50, measure: measure)
+        expect(!plain.clipped, "a page title is cut by the label as before")
+
+        let marked = cell(title: "My Apps Dashboard | Fullscript", subtitle: "— fullscript.okta.com")
+        marked.setMarks(title: Marks(matches: [NSRange(location: 0, length: 2)]),
+                        subtitle: Marks(host: NSRange(location: 2, length: 19), matches: [NSRange(location: 13, length: 4)]))
+        marked.layoutSubtreeIfNeeded()
+        let markedTitle = field(marked, "My Apps Dashboard | Fullscript")!, markedSubtitle = field(marked, "— fullscript.okta.com")!
+        func colour(_ label: NSTextField, _ at: Int) -> NSColor? {
+            label.attributedStringValue.attribute(.foregroundColor, at: at, effectiveRange: nil) as? NSColor
+        }
+        expect(colour(markedTitle, 0) == CommandBarPalette.textPrimaryMatch && colour(markedTitle, 3) == CommandBarPalette.textPrimary,
+               "the typed part of the title is brighter")
+        expect(colour(markedSubtitle, 13) == CommandBarPalette.textSecondaryMatch && colour(markedSubtitle, 2) == CommandBarPalette.textSecondary,
+               "the typed part of the site is brighter")
+        expect(markedSubtitle.lineBreakMode == .byTruncatingTail, "a site subtitle never loses its middle")
+        marked.setSelected(true)
+        expect(colour(markedTitle, 0) == CommandBarPalette.selectedText && colour(markedTitle, 3) == CommandBarPalette.selectedText,
+               "a selected title stays white")
+        expect(colour(markedSubtitle, 13) == CommandBarPalette.selectedSecondaryMatchText
+               && colour(markedSubtitle, 2) == CommandBarPalette.selectedSecondaryText, "a selected subtitle keeps its brighter match")
+        let spokenSite = CommandResultCell(title: "My Apps Dashboard | Fullscript", subtitle: "— fullscript.okta.com", detail: "", accessory: "",
+                                           isTab: false, icon: nil, spokenSubtitle: "fullscript.okta.com", enabled: true)
+        spokenSite.setMarks(title: Marks(matches: [NSRange(location: 0, length: 2)]), subtitle: Marks(host: NSRange(location: 2, length: 19)))
+        expect(spokenSite.accessibilityLabel() == "My Apps Dashboard | Fullscript, fullscript.okta.com", "VoiceOver still reads the plain site")
+
+        let squeezed = cell(title: String(repeating: "Long title ", count: 80), subtitle: lookalike)
+        squeezed.setMarks(title: Marks(), subtitle: lookalikeMarks)
+        squeezed.layoutSubtreeIfNeeded()
+        let squeezedSubtitle = squeezed.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue.hasPrefix("— ") }!
+        expect(squeezedSubtitle.stringValue.hasPrefix("— …") && squeezedSubtitle.stringValue.hasSuffix("security-check.ru"),
+               "a squeezed lookalike host shows where it really leads")
+        expect(squeezedSubtitle.frame.width <= 280, "the subtitle keeps its width cap")
+        let siteText = "— accounts.google.com.example.ru"
+        let regrown = cell(title: String(repeating: "Long title ", count: 80), subtitle: siteText)
+        regrown.setMarks(title: Marks(), subtitle: Marks(host: NSRange(location: 2, length: 30), matches: [NSRange(location: 22, length: 7)]))
+        regrown.frame.size.width = 700; regrown.layoutSubtreeIfNeeded()
+        let regrownSubtitle = regrown.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue.hasPrefix("— ") }!
+        expect(regrownSubtitle.stringValue.hasPrefix("— …") && regrownSubtitle.stringValue.hasSuffix("example.ru"),
+               "a narrow row shows the end of the host")
+        regrown.frame.size.width = 2000; regrown.layoutSubtreeIfNeeded()
+        expect(regrownSubtitle.stringValue == siteText && colour(regrownSubtitle, 22) == CommandBarPalette.textSecondaryMatch,
+               "widening the row brings back the whole host and its marks")
+        let disabled = CommandResultCell(title: "My Apps Dashboard | Fullscript", subtitle: "— fullscript.okta.com", detail: "", accessory: "",
+                                         isTab: false, icon: nil, enabled: false)
+        disabled.setMarks(title: Marks(matches: [NSRange(location: 0, length: 2)]),
+                          subtitle: Marks(host: NSRange(location: 2, length: 19), matches: [NSRange(location: 13, length: 4)]))
+        let disabledSubtitle = field(disabled, "— fullscript.okta.com")!
+        expect(colour(field(disabled, "My Apps Dashboard | Fullscript")!, 0) == .disabledControlTextColor
+               && colour(disabledSubtitle, 13) == CommandBarPalette.textSecondary, "an unavailable row draws no brighter match")
         print("CommandBar result row tests passed (\(count) assertions)")
     }
 }

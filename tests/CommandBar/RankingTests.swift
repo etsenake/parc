@@ -71,6 +71,57 @@ import Foundation
                       tab("Pull requests", "https://github.com/etsenake/parc/pulls")]
         expect(CommandBarRanking.rank(github, query: "pull").count == 1, "listed sites dedup by title and host")
 
+        func titled(_ archetype: CommandBarRanking.Archetype, _ url: String, _ title: String, rank: Int = 0) -> C {
+            let address = URL(string: url)!
+            return C(archetype: archetype, key: CommandBarRanking.pageKey(address, title: title), texts: [title], chromiumRank: rank,
+                     urlKey: CommandBarRowDiff.pageKey(address), samePage: title.lowercased() + "\u{0}" + address.host! + address.path)
+        }
+        let signIn = "https://fullscript.okta.com/app/UserHome", dashboard = "My Apps Dashboard | Fullscript"
+        let reported = [titled(.chromium, signIn + "?fromHome=true&session_hint=AUTHENTICATED", dashboard),
+                        titled(.chromium, signIn + "?fromHome=true&session_hint=PENDING", dashboard, rank: 1),
+                        titled(.tab, signIn + "?login_hint=someone", dashboard)]
+        expect(CommandBarRanking.rank(reported, query: "fullscript") == [2],
+               "sign-in visits that differ only in their parameters merge into the open tab")
+        expect(CommandBarRanking.rank(Array(reported.prefix(2)), query: "fullscript") == [0], "the same page visited twice shows once")
+        let mergedDefault = [titled(.chromium, signIn + "?a=1", dashboard), search("my apps", 1), titled(.tab, signIn + "#top", dashboard)]
+        expect(CommandBarRanking.rank(mergedDefault, query: "my apps") == [2, 1], "the open tab takes the merged default's place")
+        let videos = [titled(.chromium, "https://www.youtube.com/watch?v=1", "First video - YouTube"),
+                      titled(.chromium, "https://www.youtube.com/watch?v=2", "Second video - YouTube", rank: 1),
+                      titled(.tab, "https://www.youtube.com/watch?v=3", "Third video - YouTube")]
+        expect(CommandBarRanking.rank(videos, query: "video").count == 3, "pages whose titles differ stay separate")
+        let twoTabs = [titled(.tab, signIn + "?a=1", dashboard), titled(.tab, signIn + "?a=2", dashboard)]
+        expect(CommandBarRanking.rank(twoTabs, query: "my apps").count == 2, "two open tabs of one page both stay switchable")
+        let otherPath = [titled(.chromium, signIn + "?a=1", dashboard), titled(.tab, "https://fullscript.okta.com/app/Other", dashboard)]
+        expect(CommandBarRanking.rank(otherPath, query: "my apps").count == 2, "another path is another page")
+        let chained = [titled(.chromium, signIn + "?a=1", dashboard), titled(.chromium, signIn + "?a=2", dashboard, rank: 1),
+                       C(archetype: .tab, key: CommandBarRanking.pageKey(URL(string: signIn + "?a=2")!, title: "Renamed"), texts: ["Renamed"],
+                         urlKey: CommandBarRowDiff.pageKey(URL(string: signIn + "?a=2")!))]
+        expect(CommandBarRanking.rank(chained, query: "fullscript") == [2], "an exact tab still claims every row merged with its page")
+        let bridged = [titled(.chromium, signIn + "?b=1", dashboard), titled(.tab, signIn + "?a=1", dashboard),
+                       titled(.tab, signIn + "?b=1", dashboard)]
+        expect(CommandBarRanking.rank(bridged, query: "my apps").sorted() == [1, 2], "a visit never folds one open tab into another")
+        let untitledFirst = [C(archetype: .chromium, key: CommandBarRowDiff.pageKey(URL(string: signIn + "?a=1")!), chromiumRank: 0,
+                               urlKey: CommandBarRowDiff.pageKey(URL(string: signIn + "?a=1")!)),
+                             titled(.chromium, signIn + "?b=1", dashboard, rank: 1), titled(.tab, signIn + "?a=1", dashboard)]
+        expect(CommandBarRanking.rank(untitledFirst, query: "my apps") == [2], "a tab that took over one visit also takes its same-titled twin")
+        let youtube = "youtube\u{0}youtube.com"
+        let desktop = C(archetype: .chromium, key: "page:youtube.com/?app=desktop", urlKey: "page:youtube.com/?app=desktop", samePage: youtube)
+        let site = C(archetype: .topDomain, key: "page:youtube.com", texts: ["youtube.com"], urlKey: "page:youtube.com", samePage: youtube)
+        expect(CommandBarRanking.rank([desktop, site], query: "youtube.com", leadingPage: "page:youtube.com") == [1, 0],
+               "a leading site row is never folded into a same-titled page")
+        let root = C(archetype: .chromium, key: "page:youtube.com", chromiumRank: 1, urlKey: "page:youtube.com", samePage: youtube)
+        expect(CommandBarRanking.rank([desktop, root], query: "youtube.com", leadingPage: "page:youtube.com") == [1, 0],
+               "the site's own root row keeps the lead")
+        let absorbing = [search("okta dashboard", 0), titled(.chromium, signIn + "?a=1", dashboard, rank: 1), titled(.tab, signIn + "?b=2", dashboard)]
+        expect(CommandBarRanking.rank(absorbing, query: "okta dashboard") == [0, 2],
+               "a tab that absorbs a matching visit takes its place even when its own text misses a word")
+        expect(CommandBarRanking.rank([desktop, site], query: "youtube.com").count == 2, "a site row never folds into a page")
+        expect(CommandBarRanking.rank([titled(.tab, signIn + "?a=1", dashboard), titled(.chromium, signIn + "?b=2", dashboard, rank: 1)],
+                                      query: "my apps") == [0], "a tab listed first still takes the visit")
+        let strong = [search("my apps", 0), search("my apps dashboard", 1), titled(.chromium, signIn + "?a=1", dashboard, rank: 5),
+                      titled(.tab, signIn + "?b=2", dashboard)]
+        expect(CommandBarRanking.rank(strong, query: "my apps dashboard") == [0, 3, 1], "a strong tab keeps its own score")
+
         let many = (0..<12).map { command("New Thing \($0)") } + (0..<12).map { search("new \($0)", $0) }
         let capped = CommandBarRanking.rank(many, query: "new")
         expect(capped.count == 13, "five actions and eight Chromium rows")

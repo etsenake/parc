@@ -12,6 +12,7 @@ enum CommandBarRanking {
         var chromiumRank = 0
         var urlKey: String? = nil
         var bump: Double = 0
+        var samePage: String? = nil
     }
     static let limit = 15
     static let caps: [Archetype: Int] = [.tab: 5, .document: 3, .typeTravel: 5, .chromium: 8, .topDomain: 1]
@@ -101,12 +102,36 @@ enum CommandBarRanking {
 
     static func rank(_ candidates: [Candidate], query: String, leadingPage: String? = nil) -> [Int] {
         var kept: [String: Int] = [:]
+        var absorbed: [Int: Double] = [:]
+        var pageKeys: [Int: Set<String>] = [:]
+        func absorb(_ loser: Int, into winner: Int) {
+            let own = candidates[loser].archetype == .chromium ? nativeScore(candidates[loser]) : 0
+            let value = max(absorbed[winner] ?? 0, absorbed[loser] ?? 0, own)
+            if value > 0 { absorbed[winner] = value }
+            pageKeys[winner, default: []].formUnion(pageKeys[loser] ?? [])
+        }
         let pages = Set(candidates.filter { $0.archetype != .topDomain }.compactMap(\.urlKey))
         for (index, candidate) in candidates.enumerated() {
             if candidate.archetype == .topDomain, pages.contains(candidate.key) { continue }
-            if let other = kept[candidate.key], candidates[other].archetype <= candidate.archetype { continue }
+            if let page = candidate.samePage { pageKeys[index] = [page] }
+            if let other = kept[candidate.key] {
+                if candidates[other].archetype <= candidate.archetype { absorb(index, into: other); continue }
+                absorb(other, into: index)
+            }
             kept[candidate.key] = index
         }
+        var samePages: [String: Int] = [:], merged: [Int: Int] = [:]
+        func live(_ index: Int) -> Int { merged[index].map(live) ?? index }
+        for index in Set(kept.values).sorted() where candidates[index].archetype != .topDomain && (leadingPage == nil || candidates[index].urlKey != leadingPage) {
+            for page in (pageKeys[index] ?? []).sorted() {
+                let mine = live(index)
+                guard let other = samePages[page].map(live), other != mine else { samePages[page] = mine; continue }
+                guard candidates[mine].archetype != .tab || candidates[other].archetype != .tab else { continue }
+                let (winner, loser) = candidates[other].archetype <= candidates[mine].archetype ? (other, mine) : (mine, other)
+                merged[loser] = winner; absorb(loser, into: winner); samePages[page] = winner
+            }
+        }
+        kept = kept.mapValues(live)
         let defaultIndex = candidates.first(where: { $0.archetype == .chromium && $0.chromiumRank == 0 })
             .flatMap { kept[$0.key] }
         let siteIndex = leadingPage.flatMap { page in
@@ -115,19 +140,19 @@ enum CommandBarRanking {
         }
         let prepared = Query(query)
         var scored: [(index: Int, score: Double, quality: Double)] = []
-        for index in kept.values {
+        for index in Set(kept.values) {
             let candidate = candidates[index]
             let quality = candidate.archetype == .chromium || index == defaultIndex ? 1 : match(prepared, candidate.texts)
-            guard quality > 0 else { continue }
+            guard quality > 0 || absorbed[index] != nil else { continue }
             let score: Double
             switch candidate.archetype {
-            case .chromium: score = 0.8 - 0.03 * Double(candidate.chromiumRank)
+            case .chromium: score = nativeScore(candidate)
             case .tab: score = 0.95 * quality
             case .typeTravel: score = 0.85 * quality + candidate.bump
             case .document: score = 0.8 * quality
             case .topDomain: score = 0.78 * quality
             }
-            scored.append((index, score, quality))
+            scored.append((index, max(score, absorbed[index] ?? 0), quality))
         }
         scored.sort { lhs, rhs in
             if lhs.score != rhs.score { return lhs.score > rhs.score }
@@ -150,6 +175,8 @@ enum CommandBarRanking {
         for entry in scored { take(entry.index) }
         return order
     }
+
+    private static func nativeScore(_ candidate: Candidate) -> Double { 0.8 - 0.03 * Double(candidate.chromiumRank) }
 
     struct Site: Equatable {
         let host: String

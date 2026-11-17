@@ -842,7 +842,7 @@ import SwiftUI
         }
         results = []
         if showsCurrentAddress, let url = URL(string: initialInput) {
-            results.append(Result(id: "current-address", title: currentPageTitle?.isEmpty == false ? currentPageTitle! : initialInput,
+            results.append(Result(id: "current-address", title: CommandBarResultText.historyTitle(pageTitle: currentPageTitle ?? "", url: initialInput),
                                   detail: "", symbol: "globe", url: url, input: initialInput))
         }
         if actionsScope {
@@ -861,7 +861,8 @@ import SwiftUI
                     query: query,
                     historyRevision: historyRevision,
                     excludedURL: historyExcludedURL,
-                    tabURLs: tabURLs
+                    tabURLs: tabURLs,
+                    tabTitles: tabs.map { CommandBarResultText.tabTitle(customTitle: $0.customTitle, pageTitle: $0.title, url: $0.url) }
                 )
                 let visits: [CommandBarHistoryScanSkip.Visit]
                 if CommandBarHistoryScanSkip.shouldReuse(previous: lastHistoryScanKey, next: scanKey) {
@@ -870,6 +871,11 @@ import SwiftUI
                     visits = CommandBarHistoryScanSkip.emptyQueryVisits(
                         rankedURLsAndTitles: recentPages ?? rankedHistory.map { ($0.url, $0.title) },
                         tabURLs: Set(tabURLs + [historyExcludedURL].compactMap { $0 }),
+                        tabPages: Set(tabs.filter { $0.archivedAt == nil }.compactMap {
+                            CommandBarResultText.samePageKey(title: CommandBarResultText.tabTitle(customTitle: $0.customTitle,
+                                                                                                 pageTitle: $0.title, url: $0.url), url: $0.url)
+                        }),
+                        samePage: CommandBarResultText.samePageKey,
                         limit: 8
                     )
                     lastHistoryScanKey = scanKey
@@ -881,7 +887,8 @@ import SwiftUI
                     results.append(Result(id: "history:" + visit.url,
                                           title: CommandBarResultText.historyTitle(pageTitle: visit.title, url: visit.url),
                                           detail: "", symbol: "clock",
-                                          subtitle: CommandBarResultText.urlSubtitle(visit.url), url: url, input: visit.url))
+                                          subtitle: CommandBarResultText.pageSubtitle(title: visit.title, url: visit.url),
+                                          url: url, input: visit.url))
                 }
             }
         }
@@ -1086,6 +1093,10 @@ import SwiftUI
         var pool: [Result] = []
         var candidates: [CommandBarRanking.Candidate] = []
         func add(_ result: Result, _ candidate: CommandBarRanking.Candidate) {
+            var candidate = candidate
+            if !result.isSearch, let url = result.url {
+                candidate.samePage = CommandBarResultText.samePageKey(title: result.title, url: url.absoluteString)
+            }
             pool.append(result); candidates.append(candidate)
         }
         if !addressOnly && CommandBarScopeKeyboard.matchesPasswords(query: query) {
@@ -1406,11 +1417,22 @@ import SwiftUI
             cell.onDelete = nil
         }
         if result.input != nil && result.url == nil { cell.setAccessibilityHelp("Search or open address") }
+        mark(cell, for: result)
         cell.onPress = { [weak self, weak cell] in
             guard let self, let cell, cell.window === self.parent,
                   !cell.isHiddenOrHasHiddenAncestor else { return false }
             return self.activateResult(result, publication: publication, disposition: .ordinary)
         }
+    }
+    private func mark(_ cell: CommandResultCell, for result: Result) {
+        let url = result.url?.absoluteString ?? ""
+        let query = result.isSearch || url.isEmpty || (addressOnly && !addressWasEdited) ? "" : editState.query
+        func marks(_ text: String?) -> CommandResultCell.Marks {
+            guard let text, !url.isEmpty else { return .init() }
+            return .init(host: CommandBarResultText.hostRange(in: text, url: url),
+                         matches: CommandBarResultText.matchRanges(in: text, query: query))
+        }
+        cell.setMarks(title: marks(result.title), subtitle: marks(result.subtitle))
     }
     private func deleteSuggestion(_ navigation: PCNativeSearchNavigation) -> Bool {
         guard !dismissed, parent?.isKeyWindow == true, isOwnerValid?() != false,

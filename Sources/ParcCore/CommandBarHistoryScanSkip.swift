@@ -21,13 +21,14 @@ enum CommandBarHistoryScanSkip {
         query: String,
         historyRevision: UInt64,
         excludedURL: String?,
-        tabURLs: [String]
+        tabURLs: [String],
+        tabTitles: [String] = []
     ) -> Key {
         Key(
             query: query,
             historyRevision: historyRevision,
             excludedURL: excludedURL ?? "-",
-            tabIdentityFingerprint: tabIdentityFingerprint(urls: tabURLs)
+            tabIdentityFingerprint: tabIdentityFingerprint(urls: tabURLs + tabTitles)
         )
     }
 
@@ -42,9 +43,11 @@ enum CommandBarHistoryScanSkip {
     static func emptyQueryVisits(
         rankedURLsAndTitles: [(url: String, title: String)],
         tabURLs: Set<String>,
+        tabPages: Set<String> = [],
+        samePage: (_ title: String, _ url: String) -> String? = { _, _ in nil },
         limit: Int = 8
     ) -> [Visit] {
-        var seen = tabURLs
+        var seen = tabURLs, seenPages = tabPages
         var out: [Visit] = []
         out.reserveCapacity(min(limit, rankedURLsAndTitles.count))
         for visit in rankedURLsAndTitles {
@@ -52,6 +55,7 @@ enum CommandBarHistoryScanSkip {
             guard seen.insert(visit.url).inserted else { continue }
             guard let url = URL(string: visit.url),
                   ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { continue }
+            if let page = samePage(visit.title, visit.url), !seenPages.insert(page).inserted { continue }
             out.append(Visit(url: visit.url, title: visit.title))
         }
         return out
