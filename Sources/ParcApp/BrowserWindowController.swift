@@ -2061,6 +2061,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var extensionPopupKeyObserver: NSObjectProtocol?
     var extensionPopupAtSidebar = false
     var extensionPopupSource: ExtensionPopupSource?
+    var extensionPopupActivity = ExtensionPopupActivityTracker()
+    var extensionPopupIndicators: [ExtensionPopupActivityIndicator] = []
+    var extensionPopupCloseObserver: NSObjectProtocol?
     func nativeBrowserPaymentActionsDidChange(_ browser: PCNativeBrowserWindow) {
         guard browser === nativeBinding else { return }
         refreshPaymentControls()

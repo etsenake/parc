@@ -42,6 +42,8 @@ final class ActionButton: PointingHandButton {
     var contentAlpha: CGFloat = 1 {
         didSet { if contentAlpha != oldValue { needsDisplay = true } }
     }
+    var activityFill: CGFloat = 0 { didSet { if activityFill != oldValue { needsDisplay = true } } }
+    var glyphLift: CGFloat = 0 { didSet { if glyphLift != oldValue { needsDisplay = true } } }
     private var hoverTracking: NSTrackingArea?
     private(set) var hovered = false {
         didSet {
@@ -151,16 +153,25 @@ final class ActionButton: PointingHandButton {
             }
             return
         }
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let pressedAlpha: CGFloat = dark ? 0.103 : 0.09
+        var fill: CGFloat = 0
         if showsHoverFill, isEnabled, showsSelectedFill || hovered || isHighlighted {
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            let pressed = isHighlighted && !showsSelectedFill
-            NSColor(white: dark ? 1 : 0, alpha: dark ? (pressed ? 0.103 : 0.077) : (pressed ? 0.09 : 0.071)).setFill()
+            fill = isHighlighted && !showsSelectedFill ? pressedAlpha : dark ? 0.077 : 0.071
+        }
+        if isEnabled { fill = max(fill, pressedAlpha * activityFill) }
+        if fill > 0 {
+            NSColor(white: dark ? 1 : 0, alpha: fill).setFill()
             let side = min(24, bounds.width, bounds.height)
             let plate = NSRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
             NSBezierPath(roundedRect: plate, xRadius: 5, yRadius: 5).fill()
         }
-        guard contentAlpha < 1, let context = NSGraphicsContext.current?.cgContext else { super.draw(dirtyRect); return }
-        context.saveGState(); context.setAlpha(contentAlpha)
+        guard contentAlpha < 1 || glyphLift != 0, let context = NSGraphicsContext.current?.cgContext else {
+            super.draw(dirtyRect); return
+        }
+        context.saveGState()
+        if contentAlpha < 1 { context.setAlpha(contentAlpha) }
+        context.translateBy(x: 0, y: isFlipped ? -glyphLift : glyphLift)
         super.draw(dirtyRect)
         context.restoreGState()
     }

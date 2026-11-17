@@ -121,6 +121,10 @@ final class ExtensionActionButton: PointingHandButton {
     private var keyObserver: NSObjectProtocol?
     private let badgeView = ExtensionActionBadgeView()
     var badgeFrame: NSRect? { badgeView.isHidden ? nil : badgeView.frame }
+    var activityFill: CGFloat = 0 { didSet { if activityFill != oldValue { updateHighlight() } } }
+    var glyphLift: CGFloat = 0 {
+        didSet { if glyphLift != oldValue { needsDisplay = true; placeBadge() } }
+    }
 
     init(item: ExtensionControlItem, style: ExtensionControlStyle = .sidebar) {
         self.style = style
@@ -142,11 +146,21 @@ final class ExtensionActionButton: PointingHandButton {
     }
     override func layout() {
         super.layout()
-        if let badge = badgeView.badge {
-            var frame = ExtensionActionBadgeMetrics.frame(text: badge.text, in: bounds)
-            if !isFlipped { frame.origin.y = bounds.height - frame.maxY }
-            badgeView.frame = frame
-        }
+        placeBadge()
+    }
+    private func placeBadge() {
+        guard let badge = badgeView.badge else { return }
+        var frame = ExtensionActionBadgeMetrics.frame(text: badge.text, in: bounds)
+        if !isFlipped { frame.origin.y = bounds.height - frame.maxY }
+        frame.origin.y += isFlipped ? -glyphLift : glyphLift
+        badgeView.frame = frame
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        guard glyphLift != 0, let context = NSGraphicsContext.current?.cgContext else { super.draw(dirtyRect); return }
+        context.saveGState()
+        context.translateBy(x: 0, y: isFlipped ? -glyphLift : glyphLift)
+        super.draw(dirtyRect)
+        context.restoreGState()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     deinit { if let keyObserver { NotificationCenter.default.removeObserver(keyObserver) } }
@@ -261,10 +275,11 @@ final class ExtensionActionButton: PointingHandButton {
     }
     private func updateHighlight() {
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let fill = dark ? NSColor(white: 1, alpha: pressed ? 0.103 : 0.077)
-                        : NSColor(white: 0, alpha: pressed ? 0.09 : 0.071)
+        let pressedAlpha: CGFloat = dark ? 0.103 : 0.09
+        let interaction: CGFloat = pressed ? pressedAlpha : hovered ? (dark ? 0.077 : 0.071) : 0
+        let alpha = available ? max(interaction, pressedAlpha * activityFill) : 0
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        layer?.backgroundColor = (available && (hovered || pressed) ? fill : .clear).cgColor
+        layer?.backgroundColor = (alpha > 0 ? NSColor(white: dark ? 1 : 0, alpha: alpha) : .clear).cgColor
         CATransaction.commit()
     }
     private func setPressed(_ value: Bool) {

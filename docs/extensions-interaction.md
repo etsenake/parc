@@ -13,6 +13,24 @@ from the current presentation transform. Top-bar actions use 32 × 24 points and
 6-point corners, with hover fill but no sidebar press spring. The actual engine
 supplies decorated artwork, tooltip and accessible name.
 
+The button a popup belongs to stays lit with the press fill, like a menu button
+while its menu shows, from the moment its popup starts until the popup starts
+fading away. That's the clicked button, or for a popup opened by a shortcut, the
+command bar or the extension itself, the button it
+[anchors to](extensions-geometry.md#popup-anchor): the extension's pinned
+button, else the Site Control Center button, in the sidebar, any pane or a
+pop-up window's chrome. The fill eases in over 0.18 seconds and out over 0.15
+seconds alongside the popup's own fade. A popup that's refused, fails or closes
+before it appears lets go at once, a replacing popup takes the light to its own
+button, and a popup that moves to another anchor brings it along. While the
+popup loads, the icon hops like a launching Dock icon: a springy 3-point rise
+and soft landing every 0.7 seconds, starting after 0.18 seconds so a popup
+that's quick to appear doesn't hop at all. When the popup appears the icon
+finishes its current hop and lands; a failure brings it straight down in 0.14
+seconds. A pinned badge hops with its icon. Reduce Motion drops the hop and
+keeps the light. VoiceOver hears the button as expanded while it's lit. The
+rules live in [`ExtensionPopupActivity`](../Sources/ParcApp/ExtensionPopupActivity.swift).
+
 A disabled primary action can still open its genuine context menu. Pin/Unpin
 availability comes from `canChangePin`; the engine builds the menu and executes
 its commands while Parc draws the themed menu beside its button. Items an
@@ -72,4 +90,7 @@ continues to draw badges in the extension’s own colors.
 
 Inert extension-control and Site Control Center components cover action/menu
 leases, invalidation, hide/detach, labels, focus bounds, compression, physical
-picker keys and wrap/empty selection. Swift checks cover integration.
+picker keys and wrap/empty selection. The windowless popup activity check
+(`tests/ExtensionPopupActivity/check.py`) covers which button lights, its
+handoff and release, the fill's fade and the hop's rhythm, landing and Reduce
+Motion. Swift checks cover integration.

@@ -47,7 +47,10 @@ close it at once. Becoming key in the popup's own parent dismisses it; another
 app or window becoming active does not substitute that event. Resize repositions
 only until the user moves the popup, then grows from its top left corner;
 dragging it mid-fade shows it at once and mid-resize finishes the resize. Escape
-stays with its real ExtensionViewHost delegate.
+stays with its real ExtensionViewHost delegate. The presenter tells the browser
+window's controller when a popup is revealed, when its closing fade starts and
+when it closes by any path, which drives the
+[lit extension button](extensions-interaction.md#controls).
 
 ## Site Control Center to extension handoff
 

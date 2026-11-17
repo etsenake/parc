@@ -21,6 +21,8 @@ final class SidebarRowActionButton: PointingHandButton {
         }
     }
     var dark = false { didSet { if dark != oldValue { needsDisplay = true } } }
+    var activityFill: CGFloat = 0 { didSet { if activityFill != oldValue { needsDisplay = true } } }
+    var glyphLift: CGFloat = 0 { didSet { if glyphLift != oldValue { needsDisplay = true } } }
     private var hovering = false
     private var pressed = false
     private var trackingPress = false
@@ -143,8 +145,14 @@ final class SidebarRowActionButton: PointingHandButton {
         spring.duration = spring.settlingDuration; layer.add(spring, forKey: "rowActionPress")
     }
     override func draw(_ dirtyRect: NSRect) {
-        if (hovering || pressed) && isEnabled {
-            SidebarRowAppearance.controlFill(pressed: pressed, dark: dark).setFill()
+        var fill = hovering || pressed ? SidebarRowAppearance.controlFill(pressed: pressed, dark: dark) : nil
+        if activityFill > 0 {
+            let active = SidebarRowAppearance.controlFill(pressed: true, dark: dark)
+            let lit = active.withAlphaComponent(active.alphaComponent * activityFill)
+            if lit.alphaComponent > fill?.alphaComponent ?? 0 { fill = lit }
+        }
+        if isEnabled, let fill {
+            fill.setFill()
             NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 5, yRadius: 5).fill()
         }
         if decoration != nil { return }
@@ -154,7 +162,8 @@ final class SidebarRowActionButton: PointingHandButton {
                 symbol.draw(in: rect); tint.set(); rect.fill(using: .sourceAtop); return true
             }
             let size = symbol.size
-            image.draw(in: NSRect(x: ((bounds.width - size.width) / 2).rounded(), y: ((bounds.height - size.height) / 2).rounded(),
+            let lift = isFlipped ? -glyphLift : glyphLift
+            image.draw(in: NSRect(x: ((bounds.width - size.width) / 2).rounded(), y: ((bounds.height - size.height) / 2).rounded() + lift,
                                   width: size.width, height: size.height),
                        from: .zero, operation: .sourceOver, fraction: isEnabled ? 1 : 0.35, respectFlipped: true, hints: nil)
             return

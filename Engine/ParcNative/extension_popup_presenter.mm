@@ -551,6 +551,9 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
   [NSRunLoop.mainRunLoop addTimer:_revealTimer forMode:NSRunLoopCommonModes];
 }
 - (void)reveal {
+  __attribute__((objc_precise_lifetime)) PCExtensionPopupPresenter* keepAlive =
+      self;
+  (void)keepAlive;
   [_revealTimer invalidate];
   _revealTimer = nil;
   if (_invalidated || _revealed || _retiring || !_presenting) {
@@ -559,9 +562,26 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
   _revealed = YES;
   if (_userHasMovedWindow) {
     _popupWindow.alphaValue = 1;
-    return;
+  } else {
+    [self beginMotion:Motion::kOpening];
   }
-  [self beginMotion:Motion::kOpening];
+  if (!_invalidated) {
+    [self reportPhase:PCExtensionPopupPhaseRevealed
+                popup:_popupWindow
+               parent:_parent];
+  }
+}
+- (void)reportPhase:(PCExtensionPopupPhase)phase
+              popup:(NSWindow*)popup
+             parent:(NSWindow*)parent {
+  NSString* extension = _extensionIdentifier;
+  id controller = parent.windowController;
+  SEL reporting = @selector(parcExtensionPopup:forExtension:didChangePhase:);
+  if (popup && extension && [controller respondsToSelector:reporting]) {
+    [(id<PCExtensionPopupPlacing>)controller parcExtensionPopup:popup
+                                                   forExtension:extension
+                                                 didChangePhase:phase];
+  }
 }
 - (void)beginMotion:(Motion)motion {
   _motion = motion;
@@ -688,6 +708,9 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
   if (!_invalidated) {
     [self beginMotion:Motion::kClosing];
   }
+  if (!_invalidated) {
+    [self reportPhase:PCExtensionPopupPhaseClosing popup:popup parent:parent];
+  }
   return YES;
 }
 - (void)requestDismiss:(BOOL)animated {
@@ -744,6 +767,7 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
   if (_invalidated) {
     return;
   }
+  NSWindow* parent = _parent;
   _invalidated = YES;
   _presenting = NO;
   _motion = Motion::kNone;
@@ -771,6 +795,7 @@ PCExtensionPopupResize PCExtensionPopupRetargetResize(
   popup.contentViewController = nil;
   [popup orderOut:nil];
   [popup close];
+  [self reportPhase:PCExtensionPopupPhaseClosed popup:popup parent:parent];
   NSArray<void (^)(void)>* completions = _dismissCompletions;
   _dismissCompletions = nil;
   for (void (^completion)(void) in completions) {

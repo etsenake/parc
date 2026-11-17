@@ -46,10 +46,20 @@ PCExtensionPopupRetargetResize(PCExtensionPopupResize resize,
 + (instancetype)focusedViewAnchor:(NSView*)view;
 @end
 
+typedef NS_ENUM(NSInteger, PCExtensionPopupPhase) {
+  PCExtensionPopupPhaseRevealed = 1,
+  PCExtensionPopupPhaseClosing = 2,
+  PCExtensionPopupPhaseClosed = 3,
+};
+
 @protocol PCExtensionPopupPlacing <NSObject>
 - (nullable NSValue*)parcExtensionPopupOriginForExtension:(NSString*)extensionID
                                                     popup:(NSWindow*)popup
                                                      size:(NSSize)size;
+@optional
+- (void)parcExtensionPopup:(NSWindow*)popup
+              forExtension:(NSString*)extensionID
+            didChangePhase:(PCExtensionPopupPhase)phase;
 @end
 
 @interface PCExtensionPopupPresenter : NSObject

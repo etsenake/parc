@@ -279,6 +279,8 @@ enum BrowserToolbarActionSurfaceLayoutSkip {
     private var optionsObserver: NSObjectProtocol?
     private(set) var isHovered = false
     private(set) var isPressed = false
+    var activityFill: CGFloat = 0 { didSet { if activityFill != oldValue { refresh(animated: false) } } }
+    var glyphLift: CGFloat = 0 { didSet { if glyphLift != oldValue { needsDisplay = true } } }
     override var isEnabled: Bool {
         didSet { guard oldValue != isEnabled else { return }; if isEnabled { sampleHover() } else { clearInteraction() } }
     }
@@ -323,6 +325,13 @@ enum BrowserToolbarActionSurfaceLayoutSkip {
         CATransaction.commit()
     }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); refresh(animated: false) }
+    override func draw(_ dirtyRect: NSRect) {
+        guard glyphLift != 0, let context = NSGraphicsContext.current?.cgContext else { super.draw(dirtyRect); return }
+        context.saveGState()
+        context.translateBy(x: 0, y: isFlipped ? -glyphLift : glyphLift)
+        super.draw(dirtyRect)
+        context.restoreGState()
+    }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let area { removeTrackingArea(area) }; area = nil
@@ -363,7 +372,9 @@ enum BrowserToolbarActionSurfaceLayoutSkip {
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let ink: NSColor = dark ? .white : .black
         contentTintColor = ink.withAlphaComponent(isEnabled ? (dark ? 0.675 : 0.55) : 0.25)
-        let opacity: Float = !isEnabled ? 0 : isPressed ? (dark ? 0.13 : 0.09) : isHovered ? (dark ? 0.09 : 0.05) : 0
+        let pressedOpacity: Float = dark ? 0.13 : 0.09
+        let interaction: Float = isPressed ? pressedOpacity : isHovered ? (dark ? 0.09 : 0.05) : 0
+        let opacity: Float = isEnabled ? max(interaction, pressedOpacity * Float(activityFill)) : 0
         let old = surface.presentation()?.opacity ?? surface.opacity
         CATransaction.begin(); CATransaction.setDisableActions(true)
         surface.backgroundColor = ink.cgColor
