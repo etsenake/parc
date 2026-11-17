@@ -1,7 +1,6 @@
 // Copyright 2026 Parc contributors.
 #include <map>
 #include <algorithm>
-#include <atomic>
 #include <memory>
 #include <set>
 #include <string>
@@ -10,9 +9,7 @@
 
 #include "base/check.h"
 #include "native_internal_urls.h"
-#include "base/apple/scoped_cftyperef.h"
 #include "base/auto_reset.h"
-#include "base/base64.h"
 #include "base/callback_list.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
@@ -46,12 +43,8 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/storage_partition.h"
 #include "chrome/browser/ui/unload_controller.h"
-#include "chrome/browser/ui/webui/current_channel_logo.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/grit/theme_resources.h"
 #include "components/grit/components_resources.h"
-#include "components/grit/metrics_internals_resources.h"
-#include "components/grit/version_ui_resources.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/prefs/pref_service.h"
 #include "components/tabs/public/tab_interface.h"
@@ -82,13 +75,13 @@
 #include "pane_compositor.h"
 #include "parc/error_pages.h"
 #include "parc/product_name_strings.h"
+#include "parc/webui_branding.h"
 #include "tab_transfer.h"
 #include "window_security_reservation.h"
 #include "url/url_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/resource/resource_scale_factor.h"
-#include "ui/webui/resources/grit/webui_resources.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 
@@ -599,74 +592,6 @@ void InitializeNativeProfile(Profile& profile) {
                                            std::move(document), nil);
           }, profile.GetWeakPtr()));
 }
-struct ProductBranding {
-  int light_logo = -1;
-};
-std::atomic<const ProductBranding*> product_branding{nullptr};
-void PrepareProductBranding() {
-  CHECK(NSThread.isMainThread);
-  if (product_branding.load(std::memory_order_relaxed)) {
-    return;
-  }
-  auto* branding = new ProductBranding;
-  branding->light_logo = webui::CurrentChannelLogoResourceId();
-  product_branding.store(branding, std::memory_order_release);
-}
-std::string MarkPNG(CGImageRef mark, CGFloat white, size_t side) {
-  base::apple::ScopedCFTypeRef<CGColorSpaceRef> space(
-      CGColorSpaceCreateWithName(kCGColorSpaceSRGB));
-  base::apple::ScopedCFTypeRef<CGContextRef> context(
-      CGBitmapContextCreate(nullptr, side, side, 8, 0, space.get(),
-                            kCGImageAlphaPremultipliedLast));
-  if (!context) {
-    return std::string();
-  }
-  const CGFloat height = side * 20.0 / 24.0;
-  const CGFloat width =
-      height * CGImageGetWidth(mark) / CGImageGetHeight(mark);
-  const CGRect rect =
-      CGRectMake((side - width) / 2, (side - height) / 2, width, height);
-  CGContextClipToMask(context.get(), rect, mark);
-  CGContextSetRGBFillColor(context.get(), white, white, white, 1);
-  CGContextFillRect(context.get(), rect);
-  base::apple::ScopedCFTypeRef<CGImageRef> image(
-      CGBitmapContextCreateImage(context.get()));
-  NSData* png =
-      image ? [[[NSBitmapImageRep alloc] initWithCGImage:image.get()]
-                  representationUsingType:NSBitmapImageFileTypePNG
-                               properties:@{}]
-            : nil;
-  return png ? std::string(static_cast<const char*>(png.bytes), png.length)
-             : std::string();
-}
-struct ProductLogos {
-  std::string light_1x;
-  std::string light_2x;
-  std::string dark_1x;
-  std::string dark_2x;
-};
-ProductLogos MakeProductLogos() {
-  ProductLogos logos;
-  NSURL* url = [NSBundle.mainBundle URLForResource:@"Monochrome"
-                                     withExtension:@"png"
-                                      subdirectory:@"AppIcons/Marks"];
-  NSImage* image = url ? [[NSImage alloc] initWithContentsOfURL:url] : nil;
-  base::apple::ScopedCFTypeRef<CGImageRef> mark(
-      [image CGImageForProposedRect:nullptr context:nil hints:nil],
-      base::scoped_policy::RETAIN);
-  if (!mark) {
-    return logos;
-  }
-  logos.light_1x = MarkPNG(mark.get(), 0, 32);
-  logos.light_2x = MarkPNG(mark.get(), 0, 64);
-  logos.dark_1x = MarkPNG(mark.get(), 1, 32);
-  logos.dark_2x = MarkPNG(mark.get(), 1, 64);
-  return logos;
-}
-const ProductLogos& ProductLogoResources() {
-  static const base::NoDestructor<ProductLogos> logos(MakeProductLogos());
-  return *logos;
-}
 class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
  public:
   base::FilePath GetPathForResourcePack(
@@ -674,37 +599,16 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
       ui::ResourceScaleFactor scale_factor) override {
     return pack_path;
   }
-  gfx::Image GetImageNamed(int resource_id) override { return gfx::Image(); }
+  gfx::Image GetImageNamed(int resource_id) override {
+    return GetBrandedImage(resource_id);
+  }
   gfx::Image GetNativeImageNamed(int resource_id) override {
-    return gfx::Image();
+    return GetBrandedImage(resource_id);
   }
   bool HasDataResource(int resource_id) const override { return false; }
   scoped_refptr<base::RefCountedMemory> LoadDataResourceBytes(
       int resource_id,
       ui::ResourceScaleFactor scale_factor) override {
-    if (resource_id == IDR_METRICS_INTERNALS_FIELD_TRIALS_HTML_JS) {
-      auto script = ui::ResourceBundle::GetSharedInstance()
-                        .LoadDataResourceStringForScale(resource_id,
-                                                        scale_factor);
-      base::ReplaceFirstSubstringAfterOffset(
-          &script, 0, "the next time you relaunch Chromium.",
-          "the next time you relaunch Parc.");
-      return base::MakeRefCounted<base::RefCountedString>(std::move(script));
-    }
-    if (resource_id == IDR_VERSION_UI_ABOUT_VERSION_HTML) {
-      auto html = ui::ResourceBundle::GetSharedInstance()
-                      .LoadDataResourceStringForScale(resource_id, scale_factor);
-      base::ReplaceFirstSubstringAfterOffset(
-          &html, 0, "<div id=\"copyright\">$i18n{copyright}</div>",
-          "<div id=\"copyright\">$i18n{copyright}<br>"
-          "<a href=\"chrome://license/\">Parc licences</a> | "
-          "<a href=\"chrome://credits/\">Third-party credits</a></div>");
-      base::ReplaceFirstSubstringAfterOffset(
-          &html, 0, "alt=\"$i18n{logo_alt_text}\"", "alt=\"Parc\"");
-      base::ReplaceFirstSubstringAfterOffset(
-          &html, 0, "$i18n{application_label}", "Parc");
-      return base::MakeRefCounted<base::RefCountedString>(std::move(html));
-    }
     if (resource_id == IDR_SECURITY_INTERSTITIAL_HTML ||
         resource_id == IDR_SECURITY_INTERSTITIAL_WITHOUT_PROMO_HTML) {
       auto html = ui::ResourceBundle::GetSharedInstance()
@@ -712,17 +616,7 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
       AddErrorPageSkin(html, InterstitialStyle(), InterstitialScript());
       return base::MakeRefCounted<base::RefCountedString>(std::move(html));
     }
-    if (resource_id == IDR_WEBUI_IMAGES_CHROME_LOGO_DARK_SVG) {
-      const auto& logos = ProductLogoResources();
-      if (logos.dark_2x.empty()) {
-        return nullptr;
-      }
-      return base::MakeRefCounted<base::RefCountedString>(
-          "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\">"
-          "<image width=\"24\" height=\"24\" href=\"data:image/png;base64," +
-          base::Base64Encode(logos.dark_2x) + "\"/></svg>");
-    }
-    return nullptr;
+    return LoadBrandedResource(resource_id, scale_factor);
   }
   std::optional<std::string> LoadDataResourceString(int resource_id) override {
     auto bytes = LoadDataResourceBytes(resource_id, ui::kScaleFactorNone);
@@ -735,24 +629,7 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
   bool GetRawDataResource(int resource_id,
                           ui::ResourceScaleFactor scale_factor,
                           std::string_view* value) const override {
-    const auto* branding = product_branding.load(std::memory_order_acquire);
-    const bool light = branding && branding->light_logo >= 0 &&
-                       resource_id == branding->light_logo;
-    if (!light &&
-        (!branding || resource_id != IDR_PRODUCT_LOGO_NAME_22_WHITE)) {
-      return false;
-    }
-    const auto& logos = ProductLogoResources();
-    const bool double_scale =
-        ui::GetScaleForResourceScaleFactor(scale_factor) > 1;
-    const std::string& bytes =
-        light ? (double_scale ? logos.light_2x : logos.light_1x)
-              : (double_scale ? logos.dark_2x : logos.dark_1x);
-    if (bytes.empty()) {
-      return false;
-    }
-    *value = bytes;
-    return true;
+    return GetBrandedImageBytes(resource_id, scale_factor, value);
   }
   bool GetLocalizedString(int message_id,
                           std::u16string* value) const override {
@@ -800,7 +677,6 @@ class AppKitApplication final : public NativeApplication {
   }
   void BrowserReady(Profile& initial_profile) override {
     CHECK(NSThread.isMainThread);
-    PrepareProductBranding();
     auto& accessibility = Accessibility();
     CHECK(!accessibility.initialized && !accessibility.stopped);
     accessibility.initialized = true;

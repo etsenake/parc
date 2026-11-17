@@ -250,6 +250,9 @@ so releases keep using the current engine:
    version plus one.
 8. Prove it in the copy: `reset-source`, then `overlay-check` and
    `overlay-apply` with the new manifest, then `generate` and `shipping-build`.
+   Then run `python3 tests/WebUIBranding/check.py --chromium
+   <copy>/chromium/src --require-engine`; it fails when Chromium changed text
+   that Parc's page branding replaces, so refit those rules before committing.
    The build stops by name if Chromium renamed or dropped anything the
    [More Settings hide list](../docs/settings.md#more-settings) relies on.
 9. Fetch main, commit the lock, manifest and changed patch and source files in

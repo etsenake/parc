@@ -348,6 +348,7 @@ source_set("browser") {
     "//chrome:resources",
     "//chrome:strings",
     "//chrome/app:command_ids",
+    "//chrome/app/theme:chrome_unscaled_resources",
     "//chrome/browser:chrome_browser_application_mac",
     "//chrome/browser:chrome_browser_main_mac",
     "//chrome/browser:chrome_content_browser_client",

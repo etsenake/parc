@@ -70,7 +70,9 @@ With CEF gone, Parc owns Chromium's embedder classes and uses them before anythi
   Chromium's web-app offline and organization proxy pages, and the
   browser delegate adds Parc's stylesheet and script to Chromium's own security interstitial
   template. Chromium still fills them with its data and runs its own page logic; see
-  [error pages](web-interactions.md#network-error-pages-and-security-warnings).
+  [error pages](web-interactions.md#network-error-pages-and-security-warnings). Both delegates
+  also put Parc's mark on Chromium's pages from one owned rule table; see
+  [Parc's mark on Chromium's pages](app-icon-marks.md#parcs-mark-on-chromiums-pages).
 - Parc's BrowserWindow, Browser record and WebContentsDelegate serve each native window, so
   JavaScript dialogs and new pages reach Parc through Chromium's own interfaces.
 - Blocked pop-ups keep Chromium's own blocker. The browser client swaps the blocker's pop-up delegate
@@ -162,8 +164,7 @@ core-client hook, so `autofill_client.h` and `chrome_autofill_client.h` are Chro
 `parc_bubble_presentation`, using the existing presentation callback and the same controller state.
 The address editor chooses its native modal host through a factory hook after field setup, retaining
 Chromium's editor, acceptance validation and result controller. Product
-names use owned numeric-ID tables in every process. The toolbar and narrow-window drawers share an
-owned dark logo, so they show Parc's logo in dark mode as well as light.
+names use owned numeric-ID tables in every process.
 
 ## Browser and startup ownership
 

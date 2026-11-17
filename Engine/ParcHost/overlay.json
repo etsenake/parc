@@ -334,7 +334,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_application.mm",
       "target": "parc/native/native_appkit_application.mm",
-      "sha256": "991da4c6985cf5bfe05f182bf1bd1da51fd36c0b47b2e47542c6df8caf9ba303"
+      "sha256": "8207ab8398f28a0936de650e9f6d65c4a7f36e499e413aa1b199edcae47afc5f"
     },
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
@@ -2114,7 +2114,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "b2c14d7dd8948b5407d79057513a1379a69990497bee763681aae6d040c7cc6e"
+      "sha256": "12b5501362bfa9a191a86bf724ae10f8b94eb5eabe5ada41525d5c4a0b91db1e"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
@@ -2277,6 +2277,21 @@
       "sha256": "6012474cecc8809d9ed51b76f8cfa02728d5e7843cd253c516375df125a46237"
     },
     {
+      "source": "Engine/ParcChromium/webui_branding.cc",
+      "target": "parc/webui_branding.cc",
+      "sha256": "c6f2bc59e38ef4281d17fdb94e369063257faaf684cfe15600d85fdbef8666d4"
+    },
+    {
+      "source": "Engine/ParcChromium/webui_branding.h",
+      "target": "parc/webui_branding.h",
+      "sha256": "b0f6315ed18443be055b69434c69a47b97a6b0fddd77f137e6d42c010ee823d3"
+    },
+    {
+      "source": "Engine/ParcChromium/webui_branding_rules.h",
+      "target": "parc/webui_branding_rules.h",
+      "sha256": "973390f927eb958148e81195d31b97a585a0f6cb9fb7ac3bf93d773fc3c8f1f8"
+    },
+    {
       "source": "Engine/ParcChromium/parc_content_clients.h",
       "target": "parc/parc_content_clients.h",
       "sha256": "e3d62833754ad3b23bed56be1d2505a9831ec6c39943add8e0d16f469b330a6a"
@@ -2294,7 +2309,7 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.mm",
       "target": "parc/parc_main_delegate.mm",
-      "sha256": "873d5576f1364da9fd8bae67232c6586fa92532050e14866ae74b7037dd59bc1"
+      "sha256": "6b23ba548e82729a3b138ca52f10801a0448da04fa34d8db2bda2af676a98ad1"
     },
     {
       "source": "Engine/ParcNative/native_application.mm",

@@ -13,6 +13,7 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
+#include "base/strings/string_view_util.h"
 #include "base/time/time.h"
 #include "chrome/browser/chrome_browser_main_mac.h"
 #include "chrome/browser/metrics/chrome_feature_list_creator.h"
@@ -36,6 +37,7 @@
 #include "parc/native/native_profile_policy.h"
 #include "parc/native/unload_transactions.h"
 #include "parc/product_name_strings.h"
+#include "parc/webui_branding.h"
 #include "chrome/utility/chrome_content_utility_client.h"
 #include "mojo/public/cpp/bindings/service_factory.h"
 #include "parc/importer/import_service.h"
@@ -91,7 +93,7 @@ class ChildProductBrandingDelegate final
   scoped_refptr<base::RefCountedMemory> LoadDataResourceBytes(
       int resource_id,
       ui::ResourceScaleFactor scale_factor) override {
-    return nullptr;
+    return LoadBrandedResource(resource_id, scale_factor);
   }
   std::optional<std::string> LoadDataResourceString(int resource_id) override {
     if (resource_id == IDR_NET_ERROR_HTML) {
@@ -109,12 +111,15 @@ class ChildProductBrandingDelegate final
       }
       return html;
     }
+    if (auto bytes = LoadBrandedResource(resource_id, ui::kScaleFactorNone)) {
+      return std::string(base::as_string_view(*bytes));
+    }
     return std::nullopt;
   }
   bool GetRawDataResource(int resource_id,
                           ui::ResourceScaleFactor scale_factor,
                           std::string_view* value) const override {
-    return false;
+    return GetBrandedImageBytes(resource_id, scale_factor, value);
   }
   bool GetLocalizedString(int message_id,
                           std::u16string* value) const override {
