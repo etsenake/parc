@@ -7,6 +7,7 @@ enum ExtensionControlStyle {
         self == .sidebar ? NSSize(width: 28, height: 28) : NSSize(width: 32, height: 24)
     }
     var cornerRadius: CGFloat { self == .sidebar ? 9 : 6 }
+    func pressedFill(dark: Bool) -> CGFloat { dark ? (self == .sidebar ? 0.103 : 0.13) : 0.09 }
     static let iconSize: CGFloat = 16
     static let iconCanvas: CGFloat = 32
 }
@@ -275,7 +276,7 @@ final class ExtensionActionButton: PointingHandButton {
     }
     private func updateHighlight() {
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let pressedAlpha: CGFloat = dark ? 0.103 : 0.09
+        let pressedAlpha = style.pressedFill(dark: dark)
         let interaction: CGFloat = pressed ? pressedAlpha : hovered ? (dark ? 0.077 : 0.071) : 0
         let alpha = available ? max(interaction, pressedAlpha * activityFill) : 0
         CATransaction.begin(); CATransaction.setDisableActions(true)

@@ -10,8 +10,10 @@ See [extensions](extensions.md) and [lifecycle](extensions-lifecycle.md).
 Pinned sidebar actions use a 28-point surface, 9-point corners and 16-point icon,
 GrayA4 hover and GrayA5 press. Press scales to 0.95 with response 0.3/damping 0.6
 from the current presentation transform. Top-bar actions use 32 × 24 points and
-6-point corners, with hover fill but no sidebar press spring. The actual engine
-supplies decorated artwork, tooltip and accessible name.
+6-point corners, with hover fill but no sidebar press spring, and light with the
+page toolbar's own press fill, so they match the Site Control Center button
+beside them in light and dark. The actual engine supplies decorated artwork,
+tooltip and accessible name.
 
 The button a popup belongs to stays lit with the press fill, like a menu button
 while its menu shows, from the moment its popup starts until the popup starts

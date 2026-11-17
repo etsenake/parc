@@ -107,6 +107,13 @@ struct ExtensionControlsTests {
                "The distinct topbarAction cell does not acquire the sidebar pressed fill")
         topbarAction.cell!.highlight(false, withFrame: topbarAction.bounds, in: topbarAction)
         expect((topbarAction.cell as? NSButtonCell)?.highlightsBy.isEmpty == true, "AppKit does not add an unrelated pressed-image effect")
+        func litAlpha(_ action: ExtensionActionButton) -> CGFloat {
+            action.appearance = NSAppearance(named: .darkAqua); action.activityFill = 1
+            defer { action.activityFill = 0; action.appearance = NSAppearance(named: .aqua) }
+            return NSColor(cgColor: action.layer!.backgroundColor!)?.alphaComponent ?? 0
+        }
+        expect(abs(litAlpha(topbarAction) - 0.13) < 0.00001, "A lit top-bar pin matches the page toolbar's dark press fill")
+        expect(abs(litAlpha(button) - 0.103) < 0.00001, "A lit sidebar pin keeps the sidebar's dark press fill")
 
         let toolbar = ExtensionToolbarView(frame: NSRect(x: 0, y: 0, width: 56, height: 28))
         var widths = 0
