@@ -480,7 +480,16 @@ void NativeExtensionActionContainer::HostStateChanged() {
   }
   if (!shell_.IsSelectedBrowser()) {
     HideActivePopup();
-  } else if (auto session = popup_) {
+    return;
+  }
+  std::vector<std::shared_ptr<NativeExtensionPopup>> sessions;
+  if (popup_) {
+    sessions.push_back(popup_);
+  }
+  for (const auto& entry : closing_popups_) {
+    sessions.push_back(entry.second);
+  }
+  for (const auto& session : sessions) {
     session->SecurityUIChanged();
   }
 }
@@ -510,6 +519,19 @@ void NativeExtensionActionContainer::OnToolbarActionRemoved(
   auto node = actions_.extract(id);
   commands_.erase(id);
   HidePopupFor(id);
+  if (!weak) {
+    return;
+  }
+  std::vector<std::shared_ptr<NativeExtensionPopup>> retiring;
+  if (popup_ && popup_->closing()) {
+    retiring.push_back(popup_);
+  }
+  for (const auto& entry : closing_popups_) {
+    retiring.push_back(entry.second);
+  }
+  for (const auto& session : retiring) {
+    session->Close(base::OnceClosure());
+  }
   if (weak && !shutdown_) {
     shell_.ExtensionActionsChanged();
   }

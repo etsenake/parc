@@ -3,6 +3,24 @@
 @class PCNativePageHost;
 NS_ASSUME_NONNULL_BEGIN
 
+typedef struct {
+  CGFloat alpha;
+  CGFloat lift;
+  BOOL finished;
+} PCExtensionPopupMotionFrame;
+
+FOUNDATION_EXTERN PCExtensionPopupMotionFrame
+PCExtensionPopupOpeningMotion(NSTimeInterval elapsed, BOOL reduceMotion);
+FOUNDATION_EXTERN PCExtensionPopupMotionFrame PCExtensionPopupClosingMotion(
+    NSTimeInterval elapsed,
+    CGFloat alpha,
+    CGFloat lift,
+    BOOL reduceMotion);
+FOUNDATION_EXTERN NSTimeInterval
+PCExtensionPopupRevealTime(NSTimeInterval shown,
+                           NSTimeInterval painted,
+                           NSTimeInterval resized);
+
 @interface PCExtensionPopupAnchor : NSObject
 + (instancetype)windowAnchor;
 + (instancetype)sidebarAnchorWithWidth:(CGFloat)width;
@@ -18,12 +36,11 @@ NS_ASSUME_NONNULL_BEGIN
     NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
-// Attach without showing; install all engine callbacks before starting load.
 - (BOOL)prepare;
 - (BOOL)show;
 - (BOOL)resizeContent:(NSSize)size;
-// Terminal, idempotent. Suppresses callbacks and explicitly detaches the page.
-// Does not invalidate the page host or destroy its supplied native contents.
+- (void)contentDidPaint;
+- (BOOL)dismissWithMotion:(nullable void (^)(void))completion;
 - (void)invalidate;
 @property(nonatomic, readonly, nullable) NSWindow* popupWindow;
 @property(nonatomic, readonly, getter=isPresenting) BOOL presenting;

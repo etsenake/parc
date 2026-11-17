@@ -20,6 +20,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "native_auxiliary_page.h"
 #import "page_host.h"
 #import "window_security_reservation.h"
@@ -182,6 +183,22 @@ class NativeExtensionPopup::View final : public extensions::ExtensionView {
   std::shared_ptr<NativeExtensionPage> lease_;
 };
 
+class NativeExtensionPopup::PaintObserver final
+    : public content::WebContentsObserver {
+ public:
+  PaintObserver(content::WebContents& contents,
+                std::weak_ptr<NativeExtensionPopup> owner)
+      : content::WebContentsObserver(&contents), owner_(std::move(owner)) {}
+  void DidFirstVisuallyNonEmptyPaint() override {
+    if (auto owner = owner_.lock(); owner && !owner->closing_) {
+      [owner->presenter_ contentDidPaint];
+    }
+  }
+
+ private:
+  std::weak_ptr<NativeExtensionPopup> owner_;
+};
+
 NativeExtensionPopup::NativeExtensionPopup(
     std::unique_ptr<extensions::ExtensionViewHost> host,
     NSWindow* parent,
@@ -255,6 +272,8 @@ bool NativeExtensionPopup::Start() {
       weak));
   view_ = std::make_unique<View>(weak, *host_->host_contents());
   host_->set_view(view_.get());
+  paint_observer_ =
+      std::make_unique<PaintObserver>(*host_->host_contents(), weak);
   presenter_ = [[PCExtensionPopupPresenter alloc] initWithParentWindow:parent_
       pageHost:view_->page()
       anchor:^{
@@ -323,6 +342,9 @@ void NativeExtensionPopup::Loaded() {
   host_->host_contents()->WasShown();
   if (closing_ || hide_queued_ || !host_) {
     return;
+  }
+  if (host_->host_contents()->CompletedFirstVisuallyNonEmptyPaint()) {
+    [presenter_ contentDidPaint];
   }
   if (callbacks_.security_ui_visible.Run() || closing_ || hide_queued_) {
     RequestHide("security-after-show");
@@ -400,6 +422,8 @@ void NativeExtensionPopup::SecurityUIChanged() {
   auto alive = shared_from_this();
   if (!closing_ && callbacks_.security_ui_visible.Run()) {
     RequestHide("security-state-change");
+  } else if (fading_ && callbacks_.security_ui_visible.Run()) {
+    FinishFade();
   }
 }
 void NativeExtensionPopup::FinishCallback(extensions::ExtensionHost* result) {
@@ -421,9 +445,12 @@ void NativeExtensionPopup::Close(base::OnceClosure completion) {
   if (completion) {
     close_completions_.push_back(std::move(completion));
   }
-  Close();
+  BeginClose(false);
 }
 void NativeExtensionPopup::Close() {
+  BeginClose(true);
+}
+void NativeExtensionPopup::BeginClose(bool animate) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   auto alive = shared_from_this();
   Trace("close", "entry");
@@ -437,12 +464,42 @@ void NativeExtensionPopup::Close() {
     if (view_) {
       view_->RevokePage();
     }
+    if (animate && MayFadeOut()) {
+      fading_ = true;
+      if (![presenter_ dismissWithMotion:^{
+            if (alive->fading_) {
+              alive->fading_ = false;
+              alive->deferred_close_ = true;
+              alive->MaybeFinalizeClose();
+            }
+          }]) {
+        fading_ = false;
+      }
+    }
+  }
+  if (fading_ && !animate) {
+    FinishFade();
+    return;
+  }
+  if (!fading_) {
     [presenter_ invalidate];
   }
   MaybeFinalizeClose();
 }
+bool NativeExtensionPopup::MayFadeOut() {
+  NSWindow* popup = presenter_.popupWindow;
+  return shown_ && host_ && host_->extension() && popup &&
+         !callbacks_.security_ui_visible.Run() &&
+         !PCNativeWindowHasSecurityReservation(popup);
+}
+void NativeExtensionPopup::FinishFade() {
+  auto alive = shared_from_this();
+  fading_ = false;
+  [presenter_ invalidate];
+  MaybeFinalizeClose();
+}
 void NativeExtensionPopup::MaybeFinalizeClose() {
-  if (!closing_ || !host_ || engine_calls_ != 0) {
+  if (!closing_ || !host_ || engine_calls_ != 0 || fading_) {
     return;
   }
   if (deferred_close_ || base::message_pump_apple::IsHandlingSendEvent()) {
@@ -475,6 +532,7 @@ void NativeExtensionPopup::FinalizeClose() {
   if (view_) {
     view_->HostWillClose();
   }
+  paint_observer_.reset();
   host_.reset();
   Trace("finalize", "after-host-destruction");
   presenter_ = nil;

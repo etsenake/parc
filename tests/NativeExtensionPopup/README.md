@@ -21,8 +21,8 @@ separate page JavaScript-dialog runner.
 
 ## Source boundaries
 
-- `extension_popup_presenter.{h,mm}` owns only AppKit presentation. Parent/anchor references are explicit; close intent is once-only, terminal invalidation detaches the existing native page, and callbacks cannot remove a replacement popup. It does not own the engine.
-- `extension_popup.{h,mm}` uniquely owns the supplied host and real ExtensionView, keeps the native view alive through host modal-handler destruction, enables actual renderer auto-resize (25×25 through 800×600), and preserves the host's Escape/delegate routing. Real visibility/focus notifications can reenter close: actual host deletion is guarded until owned engine operations return. External callback/sendEvent closure uses the current Mac default-run-loop deferral. `OnLoaded` is posted because upstream `DidStopLoading` continues accessing its host afterward.
+- `extension_popup_presenter.{h,mm}` owns only AppKit presentation and motion. Parent/anchor references are explicit; close intent is once-only, terminal invalidation detaches the existing native page and calls any waiting fade completion, and callbacks cannot remove a replacement popup. It holds a shown popup invisible until its page has drawn and its size has settled, fades it in, and fades a dismissed one out before invalidating. It does not own the engine.
+- `extension_popup.{h,mm}` uniquely owns the supplied host and real ExtensionView, keeps the native view alive through host modal-handler destruction, enables actual renderer auto-resize (25×25 through 800×600), and preserves the host's Escape/delegate routing. Real visibility/focus notifications can reenter close: actual host deletion is guarded until owned engine operations return. External callback/sendEvent closure uses the current Mac default-run-loop deferral. An ordinary close waits for the presenter's fade-out before host deletion; `Close(completion)`, security UI and an unloaded extension skip it. `OnLoaded` is posted because upstream `DidStopLoading` continues accessing its host afterward.
 - `extension_action_container.{h,mm}` observes the actual profile ToolbarActionsModel, owns actual action models, registers on the actual Browser's `ExtensionsContainer` identity, observes real TabList selection, and coordinates one current popup plus terminal sessions awaiting safe destruction. No additional activeTab grants or synthetic user gestures are introduced. Pinned state uses the actual profile model and respects managed/incognito restrictions.
 
 The `NativeExtensionActionHost` interface is a mandatory connection to real native shell services, not a supplied no-op implementation. Const queries are side-effect-free main-thread snapshots. Menu/inspection/change callbacks may reenter. Unsupported context-menu, extension-menu and inspect surfaces report capability failure; they are not silently reported as successful UI. Production must supply actual menu presentation, active Browser selection, anchor geometry, one post-renderer native menu route, and genuine browser-security visibility notifications.
@@ -37,13 +37,13 @@ The `NativeExtensionActionHost` interface is a mandatory connection to real nati
 
 ## Checks
 
-Run the AppKit suite (no installed browser or Chromium required):
+Run the windowless motion check and the AppKit suite (no installed browser or Chromium required):
 
 ```sh
 bash tests/NativeExtensionPopup/run.sh
 ```
 
-The suite covers **57 assertions in seven groups**. The executable uses real NSWindows, supplied NSViews, native close/notification delivery and the main run loop. It covers exact child/page identity and geometry, moved-window resize, parent-specific dismissal with a policy hold, callback reentry/final owner release, replacement during native detachment, invalid attachment, anchor callback invalidation, and a visible parent that must not expose an opening popup.
+The motion check covers the fade and glide curves, Reduce Motion and the reveal timing without creating a window. The AppKit suite covers **78 assertions in eight groups**. The executable uses real NSWindows, supplied NSViews, native close/notification delivery and the main run loop. It covers exact child/page identity and geometry, moved-window resize, stacked panes in a flipped window, the controller's placement answer and its refused answers, parent-specific dismissal with a policy hold, callback reentry/final owner release, replacement during native detachment, invalid attachment, anchor callback invalidation, and a visible parent that must not expose an opening popup.
 
 Syntax-check the three production translation units and six genuine-host browser-test cases using their actual reviewed shared target flags, without generating or building upstream:
 

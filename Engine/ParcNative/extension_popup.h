@@ -21,22 +21,18 @@ class ExtensionViewHost;
 }
 
 namespace parc {
-// A real supplied-host popup. Construct, store under the Browser's owner, then
-// Start(). No duplicated WebContents or URL-based popup recreation.
 class NativeExtensionPopup final
     : public std::enable_shared_from_this<NativeExtensionPopup> {
  public:
   struct Callbacks {
     base::RepeatingCallback<PCExtensionPopupAnchor*()> anchor;
-    // Must reflect actual native browser security UI, not the Views-only
-    // SecurityDialogTracker fallback (which is false for a native Browser).
     base::RepeatingCallback<bool()> security_ui_visible;
     base::RepeatingCallback<bool(content::WebContents*,
                                  const input::NativeWebKeyboardEvent&)>
         menu_key;
     base::RepeatingCallback<bool(content::WebContents*)> inspect;
-    base::RepeatingClosure request_hide;  // real current action HidePopup
-    base::OnceClosure closed;  // reconcile owner before result delivery
+    base::RepeatingClosure request_hide;
+    base::OnceClosure closed;
   };
   NativeExtensionPopup(std::unique_ptr<extensions::ExtensionViewHost> host,
                        NSWindow* parent,
@@ -48,11 +44,7 @@ class NativeExtensionPopup final
   NativeExtensionPopup& operator=(const NativeExtensionPopup&) = delete;
   bool Start();
   void Close();
-  // Always-posted completion after the genuine host and modal handler are
-  // destroyed and pending show-result delivery has returned.
   void Close(base::OnceClosure completion);
-  // Call whenever native browser security UI visibility changes; it must not
-  // wait for an unrelated key event to remove a spoofing surface.
   void SecurityUIChanged();
   bool closing() const;
   extensions::ExtensionViewHost* host() const;
@@ -61,6 +53,10 @@ class NativeExtensionPopup final
  private:
   class View;
   class Operation;
+  class PaintObserver;
+  void BeginClose(bool animate);
+  bool MayFadeOut();
+  void FinishFade();
   void FinalizeClose();
   void MaybeFinalizeClose();
   void Loaded();
@@ -71,12 +67,12 @@ class NativeExtensionPopup final
   void FinishCallback(extensions::ExtensionHost* result);
   std::unique_ptr<extensions::ExtensionViewHost> host_;
   std::unique_ptr<View> view_;
+  std::unique_ptr<PaintObserver> paint_observer_;
   __weak NSWindow* parent_;
   PCExtensionPopupPresenter* __strong presenter_ = nil;
   PopupShowAction action_;
   ShowPopupCallback callback_;
   Callbacks callbacks_;
-  // Diagnostic-only values; never participate in ownership or presentation.
   uint64_t diagnostic_id_ = 0;
   std::string diagnostic_extension_id_;
   bool diagnostic_deferred_logged_ = false;
@@ -87,8 +83,9 @@ class NativeExtensionPopup final
   bool closing_ = false;
   bool hide_queued_ = false;
   bool shown_ = false;
+  bool fading_ = false;
   bool close_complete_ = false;
   std::vector<base::OnceClosure> close_completions_;
 };
-}  // namespace parc
+}
 #endif

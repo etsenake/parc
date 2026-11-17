@@ -184,27 +184,27 @@
     {
       "source": "Engine/ParcNative/extension_action_container.mm",
       "target": "parc/native/extension_action_container.mm",
-      "sha256": "38b19b51a0037fa0894df8d8397cf44ebdfcb8b9f993ca3fb1c09366ace31d9f"
+      "sha256": "d58cc0bb8dc50fdb2272ffde12c4aa622f0127c54ad3cb3eae07f67387789198"
     },
     {
       "source": "Engine/ParcNative/extension_popup.h",
       "target": "parc/native/extension_popup.h",
-      "sha256": "2f578e9f1fb55a7d09113960700331f231c512a54a34e8786e8527fa933ec6fc"
+      "sha256": "e4ac661d3d2e8609400ad5e58ae46e3bb1e57a7ca871663dade50923cabe8a88"
     },
     {
       "source": "Engine/ParcNative/extension_popup.mm",
       "target": "parc/native/extension_popup.mm",
-      "sha256": "9ae4b8d4ad3813f6cc9488c4a9c6a88f204f8979f1754fd9fa687e4e43ff6c52"
+      "sha256": "c811c39f85d2a9650793070fa1bcfc54ec4f8a2e66a467a5207cd1237bddaafe"
     },
     {
       "source": "Engine/ParcNative/extension_popup_presenter.h",
       "target": "parc/native/extension_popup_presenter.h",
-      "sha256": "7d9cf5c7bd8c027d2bd38e48868f0fec2d992a91e5b52c660b2f3ca25ddc5510"
+      "sha256": "5e2e9d6b3d17212f10aae06dc2b9bae7da8496277d4784b52d9b40de9d8e0cfb"
     },
     {
       "source": "Engine/ParcNative/extension_popup_presenter.mm",
       "target": "parc/native/extension_popup_presenter.mm",
-      "sha256": "41de661dbe3fa3d9ba1eb9bca8a1604be79a3d6859a81bdd05f240da438f4c86"
+      "sha256": "b08393a0464c6c79461c12220c401259db19fc2a12640faca3ac19315acdd21f"
     },
     {
       "source": "tests/NativeExtensionPopup/BUILD.gn",
