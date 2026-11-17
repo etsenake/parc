@@ -15,6 +15,7 @@ import AppKit
     var panes: [PaneStandIn] = []
     var tabs: [BrowserTab] = []
     var factors: [Double] = [1]
+    var stacks: BrowserSplitStacks?
     var focused = 0
     let groupID = UUID()
     var log: [String] = []
@@ -81,7 +82,7 @@ import AppKit
         _ = split.reconcileArrangedSubviews(panes)
         let divided = panes.count > 1
         for pane in panes { pane.showsBar = divided }
-        split.configure(orientation: .horizontal, factors: factors)
+        split.configure(orientation: .horizontal, factors: factors, stacks: stacks)
         split.configureBacking(in: host, hasTranslucentPane: false)
         surface.showsCardShadow = !divided
         surface.needsDisplay = true
@@ -145,7 +146,7 @@ import AppKit
         state.tabs = all
         if tabs.count > 1 {
             state.splitLayouts = [BrowserSplitLayout(id: groupID, spaceID: scene.scenario.work.id, tabIDs: tabs.map(\.id),
-                                                     orientation: .horizontal, widthFactors: factors)]
+                                                     orientation: .horizontal, widthFactors: factors, stacks: stacks)]
             state.selectedTabIDs = tabs.map(\.id)
         }
         let sidebar = scene.sidebar
@@ -347,7 +348,7 @@ import AppKit
             } else {
                 factors = lengths.map { Double($0 / total) }
             }
-            split.configure(orientation: .horizontal, factors: factors)
+            split.configure(orientation: .horizontal, factors: factors, stacks: stacks)
             afterLayout(t)
             pointer = dividerPoint(0, y: 430)
         }
