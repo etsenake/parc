@@ -115,6 +115,7 @@ import SwiftUI
     private var scopeMenuLease: PCNativeOmniboxScopeMenu?
     private var scopeAlert: ParcDialog?
     private let scopeOfferButton = CommandBarScopeHint()
+    private var scopeHintOffersSpace = false
     private var scopeColor: NSColor?
     private var scopeColorRequest = 0
     private let extensionDisposition: PCNativeOmniboxExtensionDisposition?
@@ -474,9 +475,12 @@ import SwiftUI
             }
         }
         observe(NSTextView.didChangeSelectionNotification, object: editor) { owner in
-            guard !owner.applyingCompletion, let projection = owner.editState.projection else { return }
-            owner.editState.stopAutomaticCompletion()
-            owner.explicitSelectionID = projection.resultID
+            guard !owner.applyingCompletion else { return }
+            if let projection = owner.editState.projection {
+                owner.editState.stopAutomaticCompletion()
+                owner.explicitSelectionID = projection.resultID
+            }
+            if (owner.input.currentEditor() as? NSTextView)?.string == owner.previousInput { owner.refreshScopeHint() }
         }
     }
     private func observeLifetime(of parent: NSWindow) {
@@ -736,20 +740,36 @@ import SwiftUI
         backgroundGeneration &+= 1
         retainedBackgroundHistory = nil
         let edited = input.stringValue
-        let before = editState.projection?.automatic == true ? editState.query : previousInput
+        let previous = previousInput
+        let deleted = deletingCharacters
         let editor = input.currentEditor() as? NSTextView
         editState.userEdit(edited, selection: editor?.selectedRange() ?? NSRange(location: NSNotFound, length: 0),
                            hasMarkedText: editor?.hasMarkedText() != false,
-                           didBackspace: deletingCharacters)
+                           didBackspace: deleted)
         deletingCharacters = false
         previousInput = edited
-        if (input.currentEditor() as? NSTextView)?.hasMarkedText() != true,
-           !before.isEmpty, edited == before + " ",
-           selectedScopeOffer?.spaceTriggerEnabled == true,
-           enterScope(restoring: before) { return }
+        if editor?.hasMarkedText() != true, !deleted, CommandBarScopeKeyboard.isTypedSpace(NSApp.currentEvent),
+           let typed = CommandBarScopeKeyboard.typedBeforeSpace(previous: previous, edited: edited),
+           let offer = selectedScopeOffer, spaceEnters(offer, typed: typed),
+           enterScope(restoring: typed) { return }
         scopeInvalidated = false; unavailableScopeName = nil
         explicitSelectionID = nil
         refreshResults(holdsPresentation: true)
+        refreshScopeHint()
+    }
+    private func spaceEnters(_ offer: PCNativeOmniboxScope, typed: String?) -> Bool {
+        typed.map { CommandBarScopeKeyboard.spaceEnters(query: $0, keyword: offer.keyword, enabled: offer.spaceTriggerEnabled) } == true
+    }
+    private var typedBeforeSpace: String? {
+        let editor = input.currentEditor() as? NSTextView
+        let text = editor?.string ?? input.stringValue
+        return CommandBarScopeKeyboard.typedBeforeSpace(text: text,
+            selection: editor?.selectedRange() ?? NSRange(location: (text as NSString).length, length: 0))
+    }
+    private func refreshScopeHint() {
+        guard !dismissed, !scopeOfferButton.isHidden,
+              scopeHintOffersSpace != selectedScopeOffer.map({ spaceEnters($0, typed: typedBeforeSpace) }) else { return }
+        layoutScopeHeader()
     }
     private func endNativeHold() {
         nativeHold.end()
@@ -1525,11 +1545,13 @@ import SwiftUI
         }
         let offer = selectedScopeOffer
         scopeOfferButton.isHidden = offer == nil
+        scopeHintOffersSpace = offer.map { spaceEnters($0, typed: typedBeforeSpace) } == true
         var trailing = right
         if let offer {
-            scopeOfferButton.show(site: offer.name, spaceTriggerEnabled: offer.spaceTriggerEnabled)
+            let spaceEnters = scopeHintOffersSpace
+            scopeOfferButton.show(site: offer.name, spaceTriggerEnabled: spaceEnters)
             scopeOfferButton.setAccessibilityLabel("Search \(offer.name)")
-            scopeOfferButton.setAccessibilityHelp(offer.spaceTriggerEnabled ? "Press Space or Tab to enter this search scope." : "Press Tab to enter this search scope.")
+            scopeOfferButton.setAccessibilityHelp(spaceEnters ? "Press Space or Tab to enter this search scope." : "Press Tab to enter this search scope.")
             let size = scopeOfferButton.intrinsicContentSize
             let width = min(size.width, max(0, container.bounds.width * 0.45))
             scopeOfferButton.frame = NSRect(x: container.bounds.width - right - width,

@@ -271,8 +271,13 @@ A scope offer belongs to the selected result and current native publication.
 Tab/the hint button uses its explicit offer, or a host-matched active template
 for an eligible website/tab/history/top-domain row. Search results still require
 an explicit keyword offer. Commands and unclassified text cannot acquire one.
-Space entry additionally requires the exact preceding query plus one space and
-the originating Profile's `omnibox.keyword_space_triggering_enabled` preference.
+Space enters only when the text it follows at the end of the field, replacing
+any selected completion, is the engine's whole keyword, such as `github.com`,
+ignoring case, and the originating Profile's
+`omnibox.keyword_space_triggering_enabled` preference allows it. Only a Space
+keystroke enters; deletions, pastes, Undo and marked text never do. A site name
+or partial address such as `github` followed by Space stays ordinary input, so
+`github some-repo` searches the default engine; Tab still enters the offer.
 
 The active pill uses the actual engine name. Scoped results contain only genuine
 keyword-mode requests: no app-side template expansion, default-search fallback,
@@ -284,9 +289,10 @@ restoration rules; a second Escape dismisses the ordinary session.
 
 Bundled site colors or the approved favicon-derived color replace the theme pill
 color; otherwise it uses the theme. Private profiles do not request favicon
-colors, so unbundled engines retain the theme there. The hint says **Tab** or
-**Space or Tab** from the native preference. Several matching engines resolve in
-TemplateURLService order.
+colors, so unbundled engines retain the theme there. The hint says **Space or
+Tab** only while Space would enter, under the keyword rule above, and otherwise
+**Tab**; it follows each edit and caret move, even while earlier results stay
+on screen. Several matching engines resolve in TemplateURLService order.
 
 ### Space entry and profile catalog
 

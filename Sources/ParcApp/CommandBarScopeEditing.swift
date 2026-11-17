@@ -216,6 +216,24 @@ enum CommandBarScopeKeyboard {
         query.count >= 3 && ["manage passwords", "password manager", "saved passwords"]
             .contains { $0.hasPrefix(query.lowercased()) }
     }
+    static func spaceEnters(query: String, keyword: String, enabled: Bool) -> Bool {
+        enabled && !keyword.isEmpty && query.compare(keyword, options: .caseInsensitive) == .orderedSame
+    }
+    static func isTypedSpace(_ event: NSEvent?) -> Bool {
+        guard let event, event.type == .keyDown else { return false }
+        return event.characters == " " && event.modifierFlags.intersection([.command, .control]).isEmpty
+    }
+    static func typedBeforeSpace(previous: String, edited: String) -> String? {
+        guard edited.hasSuffix(" ") else { return nil }
+        let typed = String(edited.dropLast())
+        return !typed.isEmpty && previous.hasPrefix(typed) ? typed : nil
+    }
+    static func typedBeforeSpace(text: String, selection: NSRange) -> String? {
+        let value = text as NSString
+        guard selection.location != NSNotFound, selection.location > 0, selection.location <= value.length,
+              selection.length == value.length - selection.location else { return nil }
+        return value.substring(to: selection.location)
+    }
     static func tab(query: String, scope: Scope) -> TabAction {
         guard query.isEmpty else { return .complete }
         switch scope {

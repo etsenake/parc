@@ -64,6 +64,60 @@ import AppKit
                       "nonempty Tab keeps native editing/completion, not a command or scope transition")
             }
         }
+        for query in ["github", "git", "github.co", "github.com/etsenake", "www.github.com", " github.com", ""] {
+            check(!CommandBarScopeKeyboard.spaceEnters(query: query, keyword: "github.com", enabled: true),
+                  "a site name or partial address followed by Space stays an ordinary search")
+        }
+        for query in ["github.com", "GitHub.com"] {
+            check(CommandBarScopeKeyboard.spaceEnters(query: query, keyword: "github.com", enabled: true),
+                  "the engine's whole keyword followed by Space enters its scope")
+            check(!CommandBarScopeKeyboard.spaceEnters(query: query, keyword: "github.com", enabled: false),
+                  "the Profile's Space-trigger preference still turns Space entry off")
+        }
+        check(!CommandBarScopeKeyboard.spaceEnters(query: "", keyword: "", enabled: true), "an engine without a keyword never enters by Space")
+        let reported = CommandBarScopeKeyboard.typedBeforeSpace(previous: "github.com", edited: "github ")
+        check(reported == "github", "Space over the inline .com completion follows what was typed")
+        check(!CommandBarScopeKeyboard.spaceEnters(query: reported ?? "", keyword: "github.com", enabled: true),
+              "github then Space stays an ordinary search instead of entering GitHub's scope")
+        check(CommandBarScopeKeyboard.typedBeforeSpace(previous: "github.com/etsenake/parc", edited: "github.com ") == "github.com",
+              "Space over an arrowed row's selected path follows the whole keyword")
+        check(CommandBarScopeKeyboard.typedBeforeSpace(previous: "github.com", edited: "github.com ") == "github.com", "Space at the caret end")
+        for (previous, edited) in [("", "github.com "), ("github.com", "github.com"), ("github.com", " "), ("github.com", "github .com")] {
+            check(CommandBarScopeKeyboard.typedBeforeSpace(previous: previous, edited: edited) == nil,
+                  "a paste, a non-space edit or a mid-text space is not a typed trailing Space")
+        }
+        func key(_ type: NSEvent.EventType, _ characters: String, _ flags: NSEvent.ModifierFlags = []) -> NSEvent? {
+            NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+                             characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: 49)
+        }
+        check(CommandBarScopeKeyboard.isTypedSpace(key(.keyDown, " ")), "a Space keystroke can enter a scope")
+        check(CommandBarScopeKeyboard.isTypedSpace(key(.keyDown, " ", .shift)), "Shift-Space still types a space")
+        check(!CommandBarScopeKeyboard.isTypedSpace(key(.keyDown, "v", .command)), "pasting a space never enters a scope")
+        check(!CommandBarScopeKeyboard.isTypedSpace(key(.keyDown, "z", .command)), "undoing back to a trailing space never enters a scope")
+        check(!CommandBarScopeKeyboard.isTypedSpace(key(.keyDown, " ", .control)), "Control-Space is not a typed space")
+        check(!CommandBarScopeKeyboard.isTypedSpace(key(.keyDown, "\u{A0}", .option)), "Option-Space's no-break space is not a typed space")
+        check(!CommandBarScopeKeyboard.isTypedSpace(key(.keyUp, " ")), "a key release is not a typed space")
+        check(!CommandBarScopeKeyboard.isTypedSpace(NSEvent.mouseEvent(with: .leftMouseUp, location: .zero, modifierFlags: [],
+            timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 0)), "a menu paste or a drop has no Space keystroke")
+        check(!CommandBarScopeKeyboard.isTypedSpace(nil), "an edit without a current event is not a typed space")
+        let pending: [(text: String, selection: NSRange, typed: String?)] = [
+            ("github.com", NSRange(location: 6, length: 4), "github"),
+            ("github.com/etsenake/parc", NSRange(location: 10, length: 14), "github.com"),
+            ("github.com", NSRange(location: 10, length: 0), "github.com"),
+            ("🌌", NSRange(location: 2, length: 0), "🌌"),
+            ("github.com", NSRange(location: 6, length: 0), nil),
+            ("github.com", NSRange(location: 0, length: 10), nil),
+            ("github.com", NSRange(location: NSNotFound, length: 0), nil),
+            ("github.com", NSRange(location: 11, length: 0), nil)]
+        for (text, selection, typed) in pending {
+            let predicted = CommandBarScopeKeyboard.typedBeforeSpace(text: text, selection: selection)
+            check(predicted == typed, "the hint predicts the text a typed Space would follow")
+            if let predicted {
+                let edited = (text as NSString).replacingCharacters(in: selection, with: " ")
+                check(CommandBarScopeKeyboard.typedBeforeSpace(previous: text, edited: edited) == predicted,
+                      "the hint and the typed Space read the same text")
+            }
+        }
         for query in ["man", "Manage Passwords", "password manager", "saved passwords"] {
             check(CommandBarScopeKeyboard.matchesPasswords(query: query), "Actions and ordinary input share the existing password command matching")
         }
