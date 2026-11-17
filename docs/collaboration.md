@@ -116,7 +116,9 @@ Only the explicitly assigned owner operates shared engine apply/build/seal/packa
 Keep active inputs fixed through sealing and packaging. Preserve source changes,
 compiled objects and caches; publish unrelated safe work without retargeting a
 live build. Fetch main before overlay numbering or operations and use current
-manifest hashes. Builds and overlay application require explicit authorization.
+manifest hashes. Running builds and overlay application needs the user's
+go-ahead, normally as part of a release; engine source changes never wait for it
+and land on main as soon as they are checked.
 
 Read real process state and receipts before acting on a lock or old timestamp.
 Never restart, terminate or delete work merely because a session disconnected.

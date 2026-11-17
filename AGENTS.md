@@ -172,9 +172,11 @@ Do not copy an old pending-build note or agent assignment as current fact.
 "runtime acceptance" backlog entries, or append generic "not tested here" caveats
 to feature docs and updates. Record concrete missing/broken behavior, an actionable
 blocker or a genuine product decision. Mention a blocked check only when it is
-material to the requested work, with its specific cause and next action. Do not
-explain that new code is absent from the user's installed release unless release
-status was requested or an actual version mismatch explains the reported issue.
+material to the requested work, with its specific cause and next action. The
+user runs release builds like everyone else and knows changes reach them through
+the next release. Do not say that new code is absent from their app or arrives
+with a build or release, unless release status was requested or an actual version
+mismatch explains the reported issue.
 
 **Completed fixes do not need user sign-off.** Once the implementation and
 applicable permitted checks are complete, mark the work done and remove its
@@ -280,9 +282,13 @@ main's current version plus one at publication; preserve peers' manifest hashes.
 Before applying, verify the manifest belongs to current main or the explicitly
 intended frozen source; before building, verify the applied overlay matches that
 source. Fetching alone does not establish that the build inputs are current.
-Engine apply/build requires explicit authorization and a single owner. Freeze
-active inputs through sealing and packaging; defer only the shared build when
-source work can proceed safely. Never retarget or discard a live build.
+Running an engine apply or build needs the user's go-ahead and a single owner;
+in practice it happens inside a release the user authorizes, not as a separate
+plain build. That gate covers only running it. Engine source work never waits
+for it: write, check and push engine-input changes to main as soon as they are
+ready, and the next authorized release picks them up. Don't defer, park or
+caveat work because of it. Freeze active inputs through sealing and packaging,
+and never retarget or discard a live build.
 
 For new machines, follow [onboarding](docs/developer-onboarding.md) and restore
 the saved [engine workspace](docs/engine-artifacts.md) before considering a fresh

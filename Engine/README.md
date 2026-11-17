@@ -22,9 +22,10 @@ python3 scripts/engine-source.py plan --workspace "$PWD/work/engine"
 python3 scripts/engine-source.py check --workspace "$PWD/work/engine"
 ```
 
-Sync, overlay application and engine builds require the task's explicit engine
-ownership/authorization. Fetch main before choosing an overlay version or applying
-one. Supported commands and sequencing are in
+Running sync, overlay application and engine builds requires the task's explicit
+engine ownership/authorization, normally a release the user authorizes. Engine
+source changes don't wait for it; they land on main once checked. Fetch main
+before choosing an overlay version or applying one. Supported commands and sequencing are in
 [development setup](../docs/development-setup.md). Never hand-edit generated copies
 instead of their manifest-owned inputs.
 
