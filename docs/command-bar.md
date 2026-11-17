@@ -149,7 +149,9 @@ inline sidebar input has its own plain fill before there is a query.
 
 The field is single-line native text: 18 points centered, 13 inline. Selection
 uses the theme subtitle role; caret and input indicators stay system-owned.
-An empty ordinary field keeps its search icon despite selected rows or late
+Cut-off left-to-right text fades over its last 24 points, 17 inline, inside the
+field and clear of its controls, until it fits or is scrolled to its end. An
+empty ordinary field keeps its search icon despite selected rows or late
 favicons. The divider is one device pixel, inset 12 points.
 
 Rows use a theme focus layer rather than table selection. Highlight/hover changes
@@ -239,6 +241,18 @@ Tab prioritizes an actual website scope offer, otherwise accepts completion
 without submission. Up/Down wrap query results and keep input focus. Pointer
 hover has a separate row highlight and does not change the Return/Copy target;
 activation retains the original publication and payload.
+
+An untouched completion keeps the typed text in view, from its start or, if
+longer than the field, its end, then about a dozen completed characters trailing
+off under the fade, through publications, arrowed rows, resizing and the first
+keystroke. After you move the caret, select or scroll, and for marked text, Tab
+and right-to-left text, the field scrolls natively until the next fill. The
+row's page title follows an inline completion in the secondary text colour and
+field font, as in `fullscript.okta.com — My Apps Dashboard`, outside the value,
+selection, copy, undo, submission and Tab. It hides for searches, address-only
+titles, suppressing edits, caret moves, marked text, Tab or under four ems of
+room, else truncates. VoiceOver reads it separately, without the dash, and
+announces it quietly when it changes.
 
 ## Split submission
 
@@ -473,11 +487,11 @@ native. This uses `SidebarTablistBackground`, not another input monitor.
 ## Checks
 
 `tests/CommandBar` covers real app decisions for editing, scope, publication
-identity, default ranking, row diffs, submission, menus, typed targets and the
+identity, default ranking, row diffs, submission, menus, typed targets, the
 compact editor's width, caps and column alignment, the resting Control–Space
-field and permanent scroll bars. Drawn without a window, the pill's and the
-editor's text and icon must start at the same spot and on the same baseline,
-then glide only sideways, for Control–Space, typing and a click. The
-command-bar scripts build focused production components; native search has
-separate owner/lifecycle coverage. Follow [the working contract](../AGENTS.md)
-before running checks.
+field, permanent scroll bars and inline completion anchoring, fade and title.
+Drawn without a window, the pill's and the editor's text and icon must start at
+the same spot and on the same baseline, then glide only sideways, for
+Control–Space, typing and a click. The command-bar scripts build focused
+production components; native search has separate owner/lifecycle coverage.
+Follow [the working contract](../AGENTS.md) before running checks.

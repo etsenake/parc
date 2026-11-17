@@ -108,7 +108,11 @@ import SwiftUI
     var isSidebarSession: Bool { sidebarAnchor != nil && !addressOnly }
     func refreshPosition() { if presented && !dismissed { position() } }
 
-    private let input = NSTextField()
+    private let input = CommandBarInputField()
+    private let completionTitle = CommandBarCompletionTitleLabel.make()
+    private var spokenCompletionTitle: String?
+    private var completionTouched = false
+    private var anchoredFieldSize = NSSize.zero
     private let inputIcon = NSImageView()
     private let scopePill = CommandBarScopePill()
     private var actionsScope = false
@@ -250,6 +254,9 @@ import SwiftUI
             guard let self, !self.dismissed, self.isOwnerValid?() != false else { return }
             self.onCopyText?(text)
         }
+        fieldEditor.anchorsScroll = { [weak self] in self?.anchorField() ?? false }
+        fieldEditor.onClipChange = { [weak self] resized in self?.fieldClipChanged(resized: resized) }
+        fieldEditor.onUserScroll = { [weak self] in self?.completionTouched = true }
         host.addSubview(shadowView)
         host.addSubview(container)
         container.setAccessibilityElement(true)
@@ -273,6 +280,7 @@ import SwiftUI
         input.stringValue = initialEdit?.0 ?? initialInput
         previousInput = input.stringValue
         container.addSubview(input)
+        container.addSubview(completionTitle)
         scopePill.onOpen = { [weak self] in self?.showScopeMenu() }
         scopePill.isHidden = true; container.addSubview(scopePill)
         scopeOfferButton.target = self; scopeOfferButton.action = #selector(enterOfferedScope)
@@ -482,6 +490,7 @@ import SwiftUI
                 owner.explicitSelectionID = projection.resultID
             }
             if (owner.input.currentEditor() as? NSTextView)?.string == owner.previousInput { owner.refreshScopeHint() }
+            owner.fieldSelectionChanged()
         }
     }
     private func observeLifetime(of parent: NSWindow) {
@@ -749,6 +758,7 @@ import SwiftUI
                            didBackspace: deleted)
         deletingCharacters = false
         previousInput = edited
+        refreshCompletionField()
         if editor?.hasMarkedText() != true, !deleted, CommandBarScopeKeyboard.isTypedSpace(NSApp.currentEvent),
            let typed = CommandBarScopeKeyboard.typedBeforeSpace(previous: previous, edited: edited),
            let offer = selectedScopeOffer, spaceEnters(offer, typed: typed),
@@ -1313,7 +1323,85 @@ import SwiftUI
         if let editor = input.currentEditor() as? NSTextView {
             editor.string = input.stringValue
             editor.setSelectedRange(editState.selection)
+            completionTouched = false
+            if !anchorField() { editor.scrollRangeToVisible(editor.selectedRange()) }
         }
+        refreshCompletionField()
+    }
+    private var activeFieldEditor: CommandFieldEditor? {
+        (input.currentEditor() as? CommandFieldEditor).flatMap { $0.superview == nil ? nil : $0 }
+    }
+    @discardableResult private func anchorField() -> Bool {
+        guard !dismissed, let editor = activeFieldEditor,
+              let range = CommandBarFieldAnchor.visibleRange(
+                text: editor.string, displayed: editState.displayedText, selection: editor.selectedRange(),
+                completion: CommandBarFieldAnchor.completion(editState), hasMarkedText: editor.hasMarkedText(),
+                touched: completionTouched) else { return false }
+        editor.reveal(range)
+        return true
+    }
+    private func fieldClipChanged(resized: Bool) {
+        if resized { anchorField() }
+        refreshCompletionField()
+    }
+    private func fieldSelectionChanged() {
+        if let editor = activeFieldEditor, CommandBarFieldAnchor.leavesCompletion(
+            selection: editor.selectedRange(), completion: CommandBarFieldAnchor.completion(editState)) {
+            completionTouched = true
+        }
+        refreshCompletionField()
+    }
+    private func layoutCompletionField() {
+        if input.frame.size != anchoredFieldSize {
+            anchoredFieldSize = input.frame.size
+            anchorField()
+        }
+        refreshCompletionField()
+    }
+    private func refreshCompletionField() {
+        guard !dismissed else { return }
+        let font = input.font ?? CommandBarTypography.field
+        let editor = activeFieldEditor, end = editor?.textEnd
+        let fades: Bool
+        if let editor {
+            fades = CommandBarFieldAnchor.fades(text: editor.string, textEnd: end, visibleEnd: editor.visibleEnd,
+                                                padding: editor.trailingPadding)
+        } else {
+            let text = input.stringValue
+            fades = CommandBarFieldAnchor.fades(
+                text: text, textEnd: text.utf16.count > CommandBarFieldAnchor.measuredLength ? nil : input.singleLineWidth,
+                visibleEnd: input.bounds.width, padding: 0)
+        }
+        input.setTrailingFade(fades, width: CommandBarFieldAnchor.fadeWidth(fieldWidth: input.bounds.width, fontSize: font.pointSize))
+        if editState.query.isEmpty { spokenCompletionTitle = nil }
+        let projected = editState.projection.flatMap { projection in results.first { $0.id == projection.resultID } }
+        guard let editor, let end, let projected,
+              CommandBarCompletionTitle.isInline(query: editState.query, text: editor.string, displayed: editState.displayedText,
+                                                 selection: editor.selectedRange(), completion: CommandBarFieldAnchor.completion(editState),
+                                                 hasMarkedText: editor.hasMarkedText()),
+              let title = CommandBarCompletionTitle.text(title: projected.title, url: projected.url?.absoluteString,
+                                                         isSearch: projected.isSearch, completion: editor.string) else {
+            completionTitle.isHidden = true; return
+        }
+        let shown = CommandBarCompletionTitle.display(title)
+        if completionTitle.font != font { completionTitle.font = font }
+        if completionTitle.stringValue != shown { completionTitle.stringValue = shown }
+        let natural = completionTitle.singleLineWidth
+        let inset = max(0, (natural - (shown as NSString).size(withAttributes: [.font: font]).width) / 2)
+        let gap = (" " as NSString).size(withAttributes: [.font: font]).width - inset
+        guard let frame = CommandBarCompletionTitle.frame(textEnd: container.convert(NSPoint(x: end, y: 0), from: editor).x,
+                                                          fieldEnd: input.frame.maxX, natural: natural, gap: gap,
+                                                          minimum: font.pointSize * 4) else {
+            completionTitle.isHidden = true; return
+        }
+        completionTitle.frame = NSRect(x: frame.x, y: input.frame.minY, width: frame.width, height: input.frame.height)
+        completionTitle.spokenTitle = title
+        completionTitle.isHidden = false
+        let spoken = projected.id + "\u{0}" + title
+        guard spokenCompletionTitle != spoken else { return }
+        spokenCompletionTitle = spoken
+        NSAccessibility.post(element: input, notification: .announcementRequested,
+            userInfo: [.announcement: title, .priority: NSAccessibilityPriorityLevel.low.rawValue])
     }
     private func acceptCompletion() -> Bool {
         guard !dismissed, isOwnerValid?() != false,
@@ -1599,6 +1687,7 @@ import SwiftUI
         }
         input.frame.origin.x = left
         input.frame.size.width = max(24, container.bounds.width - left - trailing)
+        layoutCompletionField()
     }
     private func setScopeInput(_ value: String, selectAll: Bool) {
         backgroundGeneration &+= 1
@@ -1982,7 +2071,7 @@ import SwiftUI
     }
 }
 
-private final class CommandFieldEditor: NSTextView {
+private final class CommandFieldEditor: CommandBarAnchoredEditor {
     var onCopy: ((String) -> Void)?
     private let undo = UndoManager()
     override var undoManager: UndoManager? { undo }

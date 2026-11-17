@@ -242,6 +242,11 @@ step compile_and_run command-bar-result-row CommandBar/ResultRowTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandResultCell.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
+step compile_and_run command-bar-field-anchor CommandBar/FieldAnchorTests \
+  "$repo_root/Sources/ParcApp/CommandBarFieldAnchor.swift" \
+  "$repo_root/Sources/ParcApp/CommandBarCompletionField.swift" \
+  "$repo_root/Sources/ParcApp/CommandBarEditState.swift" \
+  "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 step compile_and_run command-bar-compact-layout CommandBar/CompactLayoutTests \
   "$repo_root/Sources/ParcCore/CommandBarSpaceAction.swift" \
   "$repo_root/Sources/ParcApp/CommandBarCompactLayout.swift" \
