@@ -1476,10 +1476,11 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
                     return
                 }
                 for choice in preferences.engines {
-                    self.engine.addItem(withTitle: choice.name)
-                    self.engine.lastItem?.representedObject = SearchChoice(choice, preferences)
-                    self.engine.lastItem?.isEnabled = choice.canMakeDefault || choice.identifier == preferences.defaultIdentifier
-                    if choice.identifier == preferences.defaultIdentifier { self.engine.select(self.engine.lastItem) }
+                    let item = NSMenuItem(title: choice.name, action: nil, keyEquivalent: "")
+                    item.representedObject = SearchChoice(choice, preferences)
+                    item.isEnabled = choice.canMakeDefault || choice.identifier == preferences.defaultIdentifier
+                    self.engine.menu?.addItem(item)
+                    if choice.identifier == preferences.defaultIdentifier { self.engine.select(item) }
                 }
                 if preferences.defaultIdentifier == nil {
                     self.engine.insertItem(withTitle: "No default search engine", at: 0); self.engine.selectItem(at: 0)

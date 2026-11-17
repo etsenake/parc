@@ -268,9 +268,15 @@ do not become deletable by their labels.
 ## Website search scope
 
 A scope offer belongs to the selected result and current native publication.
-Tab/the hint button uses its explicit offer, or a host-matched active template
-for an eligible website/tab/history/top-domain row. Search results still require
-an explicit keyword offer. Commands and unclassified text cannot acquire one.
+Tab/the hint button uses its explicit offer, or an active template for an
+eligible website/tab/history/top-domain row on the template's search host, one
+of its subdomains (`www.linkedin.com` for `linkedin.com`, `en.wikipedia.org`
+for `wikipedia.org`) or its parent site (`spotify.com` for `open.spotify.com`).
+An exact host wins; otherwise the most specific template the row is a
+subdomain of; otherwise the first template that is a subdomain of the row. A
+single-label template, such as an intranet `wiki`, never claims hosts under it.
+Search results still require an explicit keyword offer.
+Commands and unclassified text cannot acquire one.
 Space enters only when the text it follows at the end of the field, replacing
 any selected completion, is the engine's whole keyword, such as `github.com`,
 ignoring case, and the originating Profile's
@@ -292,7 +298,8 @@ color; otherwise it uses the theme. Private profiles do not request favicon
 colors, so unbundled engines retain the theme there. The hint says **Space or
 Tab** only while Space would enter, under the keyword rule above, and otherwise
 **Tab**; it follows each edit and caret move, even while earlier results stay
-on screen. Several matching engines resolve in TemplateURLService order.
+on screen. Remaining ties between matching engines resolve in TemplateURLService
+order.
 
 ### Space entry and profile catalog
 
@@ -303,6 +310,16 @@ provider. Private services use inherited templates without initiating writes.
 Catalog readiness is prepared on a non-nestable UI task outside the service's
 observer stack. Shutdown cancels preparation and settles waiting clients once,
 without reviving the Profile or recursively notifying its observer list.
+
+The catalog holds site searches, not search engines: Google Drive, Gmail, Google
+Maps, Google Calendar, Google Docs, Dropbox, Amazon, GitHub, Figma, X (as
+`x.com` and `twitter.com`), YouTube, Wikipedia, Reddit, SoundCloud, Asana,
+LinkedIn, Apple Music and Spotify, each using the site's own search page, and
+they work with Tab. Chromium also learns shortcuts from sites that advertise a
+search, such as GitLab. Those stay inactive, with no Tab offer, until the user
+activates or edits one in Manage search or makes it the default. An unused
+learned shortcut with a catalog site's keyword gives way to the catalog entry
+when it installs.
 
 ## Website scope menu
 

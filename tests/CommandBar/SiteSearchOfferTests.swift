@@ -60,6 +60,45 @@ final class PCNativeOmniboxScope {
             fixture.results = [.init(isExpired: true, url: url, tabID: UUID())]
             check(fixture.selectedScopeOffer == nil, "an expired result has no scope offer")
         }
+        for (page, searchHost) in [("https://www.linkedin.com/feed/", "linkedin.com"),
+                                   ("https://en.wikipedia.org/wiki/Chromium", "wikipedia.org"),
+                                   ("https://mobile.twitter.com/home", "twitter.com")] {
+            let scope = PCNativeOmniboxScope(searchHost)
+            fixture.siteScopes = [scope]
+            fixture.results = [.init(url: URL(string: page)!, tabID: UUID())]
+            check(fixture.selectedScopeOffer === scope, "a page on a subdomain of \(searchHost) offers that site's search")
+            fixture.results = [.init(url: URL(string: "https://not\(searchHost)/")!, tabID: UUID())]
+            check(fixture.selectedScopeOffer == nil, "a look-alike of \(searchHost) never acquires its search")
+        }
+        let google = PCNativeOmniboxScope("www.google.com"), gmail = PCNativeOmniboxScope("mail.google.com")
+        let docs = PCNativeOmniboxScope("docs.google.com")
+        fixture.siteScopes = [google, gmail, docs]
+        fixture.results = [.init(url: URL(string: "https://mail.google.com/mail/u/0/")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer === gmail, "Gmail rows offer Gmail, not the Google engine listed first")
+        fixture.results = [.init(url: URL(string: "https://docs.google.com/document/u/0/")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer === docs, "Docs rows offer Docs")
+        fixture.results = [.init(url: URL(string: "https://www.google.com/maps")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer === google, "Google's own pages still offer Google")
+        let broadGoogle = PCNativeOmniboxScope("google.com")
+        fixture.siteScopes = [broadGoogle, gmail]
+        fixture.results = [.init(url: URL(string: "https://mail.google.com/mail/u/0/")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer === gmail, "an exact site beats a broader engine listed first")
+        fixture.results = [.init(url: URL(string: "https://news.google.com/")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer === broadGoogle, "the broader engine still covers its other subdomains")
+        let wikipedia = PCNativeOmniboxScope("wikipedia.org"), english = PCNativeOmniboxScope("en.wikipedia.org")
+        fixture.siteScopes = [wikipedia, english]
+        fixture.results = [.init(url: URL(string: "https://EN.Wikipedia.org/wiki/Chromium")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer === english, "the exact site wins, ignoring case")
+        fixture.results = [.init(url: URL(string: "https://m.en.wikipedia.org/wiki/Chromium")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer === english, "the closest parent site wins over a broader one listed first")
+        let intranet = PCNativeOmniboxScope("wiki")
+        fixture.siteScopes = [intranet]
+        fixture.results = [.init(url: URL(string: "https://minecraft.wiki/")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer == nil, "a single-label intranet engine never claims public sites under that name")
+        let spotify = PCNativeOmniboxScope("open.spotify.com")
+        fixture.siteScopes = [spotify]
+        fixture.results = [.init(url: URL(string: "https://spotify.com/")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer === spotify, "a parent site still offers its search subdomain")
         let youtube = PCNativeOmniboxScope("www.youtube.com")
         fixture.siteScopes = [youtube]
         fixture.results = [.init(url: URL(string: "https://notyoutube.com/"), tabID: UUID())]

@@ -108,6 +108,16 @@ rows load when Edit Space opens and reload when its Space changes, when a Space'
 search preferences change and when the window becomes key. An old settings file that
 still carries the retired app-wide key loads normally and ignores it.
 
+The **Search engine** menu lists Chromium's built-in search engines, any an
+organization recommends and the current default; an engine an organization
+enforces is the only row. Site searches such as YouTube or GitHub, and shortcuts
+Chromium learned from visited sites, stay out because each searches one site; see
+[site searches](command-bar.md#space-entry-and-profile-catalog). Manage search can
+still make any other engine or shortcut the default. A Space that already uses a
+site search as its default keeps it: Parc never switches it, and the menu shows it
+checked until another engine is chosen, after which it leaves the menu and stays a
+site search. Engines that share a name each keep their own row.
+
 Values an organization or extension controls cannot be changed and say so in the
 control's tooltip or the Downloads note. **Manage search** opens the search
 shortcuts page for the edited Space; custom shortcuts remain that Space's data. The

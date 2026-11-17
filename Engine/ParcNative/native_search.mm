@@ -110,6 +110,23 @@ constexpr SiteSearchDefinition kSiteSearchCatalog[] = {
     {"8f9395dc-e84c-56b6-ada1-af1554285442", "Apple Music", "music.apple.com", "https://music.apple.com/us/search?term={searchTerms}", "https://music.apple.com/favicon.ico"},
     {"8bb123a5-6ed4-5338-bfed-568edce910a4", "Spotify", "spotify.com", "https://open.spotify.com/search/{searchTerms}", "https://www.scdn.co/i/_global/favicon.ico"},
 };
+bool CanOfferAsDefault(const TemplateURLService& service,
+                       const TemplateURL* engine) {
+  if (!service.CanMakeDefault(engine) || !service.ShowInDefaultList(engine))
+    return false;
+  const TemplateURL* winner = service.GetTemplateURLForKeyword(engine->keyword());
+  return !winner || winner == engine || !service.ShowInDefaultList(winner);
+}
+bool IsUnusedLearnedShortcut(const TemplateURLService& service,
+                             const TemplateURL& value) {
+  return &value != service.GetDefaultSearchProvider() &&
+         value.type() == TemplateURL::NORMAL && value.safe_for_autoreplace() &&
+         value.usage_count() == 0 &&
+         value.prepopulate_id() == 0 && !value.CreatedByPolicy() &&
+         value.starter_pack_id() ==
+             template_url_starter_pack_data::StarterPackId::kNone &&
+         value.is_active() == TemplateURLData::ActiveStatus::kUnspecified;
+}
 bool SupportsSuggestionDeletion(const AutocompleteMatch& match) {
   if (!match.deletable || !match.provider)
     return false;
@@ -200,8 +217,6 @@ class SearchState final : public base::SupportsUserData::Data,
     if (service_ && !service_->loaded()) {
       service_->Load();
     } else {
-      // The loaded fast path may itself be entered by a service observer.
-      // Never install templates or call clients synchronously from it.
       readiness_.Schedule();
     }
   }
@@ -223,7 +238,6 @@ class SearchState final : public base::SupportsUserData::Data,
     if (!profile_ || IsNativeProfileRemovalBlocked(profile_->GetOriginalProfile()->GetPath()))
       return;
     NSString* path = base::SysUTF8ToNSString(profile_->GetPath().value());
-    // Never reenter settings/native ownership from service or pref observers.
     dispatch_async(dispatch_get_main_queue(), ^{
       [NSNotificationCenter.defaultCenter
           postNotificationName:PCNativeSearchPreferencesDidChangeNotification
@@ -235,8 +249,6 @@ class SearchState final : public base::SupportsUserData::Data,
 
  private:
   void InstallSiteCatalog() {
-    // Only a genuine persistent context may install definitions. An OTR search
-    // can use its native service but never causes writes to its original profile.
     if (installing_catalog_ || !profile_ || profile_->IsOffTheRecord() ||
         !service_ || !service_->loaded() || service_->is_default_search_managed() ||
         IsNativeProfileRemovalBlocked(profile_->GetPath()))
@@ -244,7 +256,6 @@ class SearchState final : public base::SupportsUserData::Data,
     auto* prefs = profile_->GetPrefs();
     if (!prefs->FindPreference(kSiteCatalogPreference))
       return;
-    // Avoid producing a pref write/notification on every later service change.
     const auto& recorded = prefs->GetDict(kSiteCatalogPreference);
     bool has_unrecorded = false;
     for (const auto& definition : kSiteSearchCatalog)
@@ -256,13 +267,11 @@ class SearchState final : public base::SupportsUserData::Data,
     for (const auto& definition : kSiteSearchCatalog) {
       if (installed->contains(definition.guid))
         continue;
-      // Remember collisions as well as additions: subsequent launches must not
-      // resurrect a deleted entry or overwrite a renamed/deactivated user entry.
-      // Check every entry, not only the currently active keyword winner.
       bool existing = false;
       for (const TemplateURL* value : service_->GetTemplateURLs()) {
         if (value->sync_guid() == definition.guid ||
-            value->keyword() == base::UTF8ToUTF16(definition.keyword)) {
+            (value->keyword() == base::UTF8ToUTF16(definition.keyword) &&
+             !IsUnusedLearnedShortcut(*service_, *value))) {
           existing = true;
           break;
         }
@@ -292,7 +301,7 @@ class SearchState final : public base::SupportsUserData::Data,
   base::CallbackListSubscription loaded_subscription_;
   base::WeakPtrFactory<SearchState> weak_factory_{this};
 };
-}  // namespace
+}
 void RegisterNativeSearchPreferences(PrefRegistrySimple& registrar) {
   registrar.RegisterDictionaryPref(kSiteCatalogPreference);
 }
@@ -300,7 +309,7 @@ void InitializeNativeSearch(Profile& profile) {
   if (!profile.IsOffTheRecord())
     SearchState::Get(profile).WhenLoaded(base::DoNothing());
 }
-}  // namespace parc
+}
 
 @interface PCNativeSearchEngine ()
 - (instancetype)initWithTemplate:(const TemplateURL&)value
@@ -359,8 +368,7 @@ void InitializeNativeSearch(Profile& profile) {
         current ? [base::SysUTF8ToNSString(current->sync_guid()) copy] : nil;
     NSMutableArray* engines = [NSMutableArray array];
     for (const TemplateURL* engine : service.GetTemplateURLs()) {
-      // Offer only genuine default choices plus the effective current engine.
-      if (engine == current || service.CanMakeDefault(engine)) {
+      if (engine == current || parc::CanOfferAsDefault(service, engine)) {
         [engines
             addObject:[[PCNativeSearchEngine alloc] initWithTemplate:*engine
                                                              service:service]];
@@ -531,8 +539,8 @@ bool NavigationValid(PCNativeSearchNavigation* request, Profile* profile) {
          SearchState::Get(*profile).service() &&
          SearchState::Get(*profile).revision() == request.revision;
 }
-}  // namespace
-}  // namespace parc
+}
+}
 
 namespace parc {
 namespace {
@@ -549,7 +557,6 @@ void SearchPreferences(NSString* path,
           return;
         }
         auto weak = profile->GetWeakPtr();
-        // Retain the operation through catalogue readiness and reply delivery.
         __weak PCNativeBrowserWindow* originalWindow = window;
         const BOOL isPrivate = window.isPrivateBrowsing;
         parc::SearchState::Get(*profile).WhenLoaded(base::BindOnce(^{
@@ -570,12 +577,12 @@ void SearchPreferences(NSString* path,
         }));
       }), window);
 }
-}  // namespace
+}
 Profile* ProfileForSearchNavigation(PCNativeSearchNavigation* request) {
   Profile* profile = request ? request->_profile.get() : nullptr;
   return NavigationValid(request, profile) ? profile : nullptr;
 }
-}  // namespace parc
+}
 
 @implementation PCNativeBrowserApplication (Search)
 + (void)searchPreferencesForProfilePath:(NSString*)path
@@ -594,7 +601,7 @@ Profile* ProfileForSearchNavigation(PCNativeSearchNavigation* request) {
   auto* service = parc::SearchState::Get(*profile).service();
   auto* engine =
       service->GetTemplateURLForGUID(base::SysNSStringToUTF8(identifier));
-  if (!engine || !service->CanMakeDefault(engine)) {
+  if (!engine || !parc::CanOfferAsDefault(*service, engine)) {
     if (error)
       *error = parc::SearchError(
           @"This search engine cannot be selected as the default.");
@@ -774,8 +781,6 @@ Profile* ProfileForSearchNavigation(PCNativeSearchNavigation* request) {
                parc::SearchError(@"The search result is no longer current."));
     return;
   }
-  // The initial page must not perform a GET of a POST search URL. Attach a
-  // genuine blank page first, then deliver the complete classified request.
   [self openURL:[NSURL URLWithString:@"about:blank"]
            profilePath:request.profilePath
              container:container
@@ -988,8 +993,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
     registry_observation_.Observe(extensions::ExtensionRegistry::Get(&profile));
     if (service_)
       service_->AddObserver(this);
-    // Use the real web/history/keyword providers. Parc commands and local tab
-    // selection remain shell actions; this does not enable excluded AI roots.
     AutocompleteControllerConfig config;
     config.provider_types =
         static_cast<int>(AutocompleteProvider::Type::kSearch |
@@ -1027,8 +1030,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
     for (PCNativeOmniboxExtensionAction* action in extension_actions_)
       affected = affected || action->_extension.get() == extension;
     if (!affected) return;
-    // Registry/TemplateURL notifications can originate in provider work. Revoke
-    // immediately, then stop it outside that stack.
     accepting_results_ = false;
     RevokeExtensionActions();
     offers_ = @[];
@@ -1043,8 +1044,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
   }
   bool HasActiveScope() const { return active_ != nil; }
   void PrimaryPageChanged(content::Page&) override {
-    // A keyword session belongs to the original document, including while its
-    // extension is still preparing asynchronous suggestions.
     accepting_results_ = false;
     RevokeExtensionActions();
     offers_ = @[];
@@ -1063,13 +1062,8 @@ class OmniboxSession final : public AutocompleteController::Observer,
     Fail(@"Search engines are no longer available.", true);
   }
   void OnTemplateURLServiceChanged() override {
-    // Keep the queued scope-loss error deliverable across coalesced template
-    // notifications. There is no active provider or offer left to revoke;
-    // invalidating its generation here would hide the only error from the UI.
     if (scope_invalidated_)
       return;
-    // Service observers may run inside provider work. Revoke leases immediately,
-    // then stop/refresh outside that stack. Never start a provider reentrantly.
     menu_ = nil;
     RevokeDeletions();
     RevokeExtensionActions();
@@ -1091,8 +1085,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
       return;
     }
     const auto current = SearchState::Get(*profile_).revision();
-    // A lost scope must never send its retained query to a different provider
-    // merely because settings change again. Only explicit input releases this.
     if (scope_invalidated_) {
       preferences_revision_ = current;
       return;
@@ -1128,13 +1120,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
       return;
     }
     preferences_revision_ = SearchState::Get(*profile_).revision();
-    // KeywordExtensionsDelegate owns one started/changed/cancelled session.
-    // Stopping on each edit would cancel it and invalidate its asynchronous ID.
-    // Chromium's own omnibox restarts on each edit without clobbering, so
-    // SearchProvider keeps its cached suggestions and the controller carries
-    // matches from still-running providers into the new sync pass. Clobbering
-    // every keystroke dropped those rows until the network answered again.
-    // A new scope, engine revision or empty input still starts fresh.
     const bool continues = started_ && input_.length && active_ == started_scope_ &&
         preferences_revision_ == started_preferences_revision_;
     accepting_results_ = false;
@@ -1151,11 +1136,7 @@ class OmniboxSession final : public AutocompleteController::Observer,
       text_value = base::SysNSStringToUTF16(active_.keyword) + u" " + text_value;
     AutocompleteInput input(text_value, metrics::OmniboxEventProto::OTHER,
                             ChromeAutocompleteSchemeClassifier(profile_.get()));
-    // This flag also prevents HistoryURLProvider from promoting a match that
-    // requires a suffix after Backspace, IME, a mid-string edit or restoration.
     input.set_prevent_inline_autocomplete(!allows_inline_completion_ || active_);
-    // Merely displaying an extension offer must not send its input events.
-    // Explicit scope entry is the consent to the keyword's provider lifecycle.
     const TemplateURL* input_template = controller_->keyword_provider()->GetTemplateUrlForText(text_value, service_);
     input.set_allow_exact_keyword_match(active_ != nil || !input_template ||
         input_template->type() != TemplateURL::OMNIBOX_API_EXTENSION);
@@ -1167,8 +1148,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
     controller_->Start(input);
   }
   bool Enter(PCNativeOmniboxScope* offer) {
-    // Cached site scopes keep their first publication; offers_ holds them only
-    // while the current publication does.
     if (!Available() || active_ || !offer ||
         (offer.revision != revision_ && [site_scopes_ indexOfObjectIdenticalTo:offer] == NSNotFound) ||
         [offers_ indexOfObjectIdenticalTo:offer] == NSNotFound)
@@ -1195,8 +1174,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
       return nil;
     NSMutableArray<PCNativeOmniboxScope*>* choices = [NSMutableArray array];
     for (const TemplateURL* value : service_->GetTemplateURLs()) {
-      // Ask the same real KeywordProvider used at entry. Disabled/extension/
-      // starter-pack and shadowed keyword records cannot become menu choices.
       if (WebsiteTemplate(value->keyword()) != value ||
           value->sync_guid() == active_->_engineGUID)
         continue;
@@ -1243,9 +1220,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
         (editor.ShouldConfirmRemoval(value) && !confirmed))
       return false;
     const auto id = value->id();
-    // Actual deletion synchronously notifies TemplateURL observers. End the
-    // explicit scope first so this intentional mutation cannot become a stale
-    // scoped query or trigger the unrelated-engine fallback prevention path.
     menu_ = nil;
     active_ = nil;
     offers_ = @[];
@@ -1254,7 +1228,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
     accepting_results_ = false;
     controller_->Stop(AutocompleteStopReason::kInteraction);
     editor.RemoveTemplateURL(id);
-    // All shell callbacks are posted. No TemplateURL pointer survives Remove.
     invalidated_scope_ = false;
     preferences_revision_ = SearchState::Get(*profile_).revision();
     Query(@"");
@@ -1288,8 +1261,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
       default: return false;
     }
     if (!ExtensionPresentationValid()) return false;
-    // Retain original payload and consume BEFORE dispatch can reenter. The
-    // watcher clears KeywordExtensionsDelegate before any later cancellation.
     const std::string extension_id = action->_extension->id();
     const std::string content = action->_content;
     action->_consumed = YES;
@@ -1302,8 +1273,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
     extensions::ExtensionOmniboxEventRouter::OnInputEntered(
         web_contents(), extension_id, content, native_disposition);
     if (weak && weak->controller_) {
-      // A completed event is not cancelled. For a background submission the
-      // shell remains, but another request starts a fresh extension session.
       weak->controller_->Stop(AutocompleteStopReason::kInteraction);
       if (disposition == PCNativeOmniboxExtensionDispositionNewBackgroundTab)
         weak->Query(weak->input_);
@@ -1319,9 +1288,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
   }
   bool DeleteExtension(PCNativeOmniboxExtensionAction* action) {
     if (!CanDeleteExtension(action) || !ExtensionPresentationValid()) return false;
-    // Chromium's KeywordProvider removes the retained match by keyword and
-    // fill_into_edit, but its deletion event reads contents. Supply the actual
-    // suggestion content for that API, not the extension's display description.
     const auto index = [extension_actions_ indexOfObjectIdenticalTo:action];
     AutocompleteMatch match = extension_matches_[index];
     match.contents = base::UTF8ToUTF16(action->_content);
@@ -1348,8 +1314,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
     if (!CanDelete(result))
       return false;
     const auto index = [deletion_results_ indexOfObjectIdenticalTo:result];
-    // Copy the actual published match before stopping the query. The owning
-    // controller keeps its providers alive; no provider pointer escapes it.
     AutocompleteMatch match = deletion_matches_[index];
     RevokeDeletions();
     RevokeExtensionActions();
@@ -1359,9 +1323,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
     controller_->Stop(AutocompleteStopReason::kInteraction);
     result->_consumed = YES;
     accepting_results_ = true;
-    // Chromium removes duplicate-provider matches too, persists according to
-    // that provider, and synchronously produces the replacement result set.
-    // Publications reach AppKit only on the next main turn.
     controller_->DeleteMatch(match);
     return true;
   }
@@ -1371,8 +1332,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
       return;
     if (SearchState::Get(*profile_).revision() != preferences_revision_ ||
         (active_ && !Resolve(active_))) {
-      // The service's observer posts the actual refresh. Do not accept a match
-      // produced across an engine/policy revision, even during observer reentry.
       return;
     }
     RevokeDeletions();
@@ -1391,8 +1350,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
         continue;
       const TemplateURL* match_template = match.GetTemplateURL(service_);
       if (match_template && match_template->type() == TemplateURL::OMNIBOX_API_EXTENSION) {
-        // The synthetic chrome-extension URL is a provider implementation detail,
-        // never a page request. Keep the actual fill_into_edit action instead.
         const auto* extension = ExtensionForTemplate(match_template);
         if (extension && ExtensionOwnerValid()) {
           PCNativeOmniboxExtensionAction* action = [[PCNativeOmniboxExtensionAction alloc]
@@ -1408,8 +1365,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
         if (allows_inline_completion_ && !active_ &&
             &match == controller->result().default_match() &&
             match.allowed_to_be_default_match && !match.inline_autocompletion.empty()) {
-          // Use the actual provider suffix, not a guessed editText/title/URL
-          // prefix. The opaque request remains this very published match.
           navigation.inlineCompletionText = [input_ stringByAppendingString:
               base::SysUTF16ToNSString(match.inline_autocompletion)];
         }
@@ -1508,8 +1463,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
     if (!controller_->keyword_provider())
       return nullptr;
     const auto* value = controller_->keyword_provider()->GetTemplateUrlForText(keyword, service_);
-    // Omnibox-extension callbacks and builtin Type Travel scopes have different
-    // dispatch owners. This website scope uses genuine full navigation matches.
     return value && value->type() != TemplateURL::OMNIBOX_API_EXTENSION &&
                    value->starter_pack_id() == template_url_starter_pack_data::StarterPackId::kNone &&
                    !value->sync_guid().empty()
@@ -1544,7 +1497,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
   }
   void Publish(NSArray<PCNativeSearchNavigation*>* values,
                NSArray<PCNativeOmniboxScope*>* offers, NSError* error) {
-    // Site scopes join offers_ so Enter and every invalidation treat them alike.
     NSArray<PCNativeOmniboxScope*>* site_scopes = values.count ? SiteScopes(revision_ + 1) : @[];
     offers_ = [offers arrayByAddingObjectsFromArray:site_scopes];
     PCNativeOmniboxSnapshot* snapshot = [[PCNativeOmniboxSnapshot alloc]
@@ -1578,7 +1530,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
         return;
       }
       weak->delivered_revision_ = snapshot.revision;
-      // The callback may cancel and delete this session. Do not use it afterward.
       weak->changed_(snapshot);
     });
   }
@@ -1635,7 +1586,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
   NSArray<PCNativeOmniboxScope*>* site_scopes_ = @[];
   uint64_t site_scopes_revision_ = UINT64_MAX;
   PCNativeOmniboxScope* active_ = nil;
-  // The scope and engine revision of the controller's running request.
   bool started_ = false;
   PCNativeOmniboxScope* started_scope_ = nil;
   uint64_t started_preferences_revision_ = 0;
@@ -1650,7 +1600,7 @@ class OmniboxSession final : public AutocompleteController::Observer,
   uint64_t revision_ = 0;
   base::WeakPtrFactory<OmniboxSession> weak_factory_{this};
 };
-}  // namespace parc
+}
 
 @implementation PCNativeOmnibox {
   std::unique_ptr<parc::OmniboxSession> _session;
@@ -1704,8 +1654,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
             error = parc::SearchError(@"The original search page is no longer available.");
           }
           if (!profile) {
-            // Initialization can finish synchronously; deliver after callers
-            // have attached their snapshot callback, with the same cancel gate.
             NSError* failure = error ?: parc::SearchError(@"Search is unavailable.");
             dispatch_async(dispatch_get_main_queue(), ^{
               PCNativeOmnibox* owner = weak;

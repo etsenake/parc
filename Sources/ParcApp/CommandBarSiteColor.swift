@@ -24,7 +24,18 @@ enum CommandBarSiteColor {
     ]
 
     static func scope<Scope>(forPageHost pageHost: String, in scopes: [Scope], searchHost: (Scope) -> String?) -> Scope? {
-        scopes.first { scope in searchHost(scope).map { !$0.isEmpty && host($0, matches: pageHost) } == true }
+        let page = pageHost.lowercased()
+        var parent: (scope: Scope, length: Int)?, child: Scope?
+        for scope in scopes {
+            guard let search = searchHost(scope)?.lowercased(), !search.isEmpty else { continue }
+            if search == page { return scope }
+            if search.contains("."), page.hasSuffix("." + search) {
+                if search.count > parent?.length ?? 0 { parent = (scope, search.count) }
+            } else if child == nil, host(search, matches: page) {
+                child = scope
+            }
+        }
+        return parent?.scope ?? child
     }
 
     static func bundledColor(template: String, searchHost: String, prepopulated: Bool) -> NSColor? {
