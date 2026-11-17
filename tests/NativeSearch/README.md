@@ -23,7 +23,24 @@ loads and subframes don't; and a load that ends on the network's search page,
 which the intranet redirect detector reports, counts only when it stays on the
 requested site.
 
-Run using the existing matching Chromium build, with a private output directory:
+The catalog check compiles the production site catalog with the system compiler
+and no Chromium. Every site has its own GUID and keyword and searches over HTTPS,
+and a hand-added engine is never mistaken for a catalog site. It checks which
+engines on a catalog keyword count as the user's own and which block a repair
+(policy, built-in and hand-added engines block it; extension keywords and inactive
+learned shortcuts, used or not, don't). A catalog site going with at most one
+engine is a removal; a catalog site going while several engines are removed, as
+Reset settings does, is a reset; engines going without a catalog site, a skipped
+site and its later repair record nothing. `scripts/test.sh`
+runs it; on its own:
+
+```sh
+xcrun clang++ -std=c++20 -Wall -Wextra -Werror tests/NativeSearch/CatalogTests.cc \
+  -o build/tests/native-search-catalog && build/tests/native-search-catalog
+```
+
+Run the readiness and shortcut fixtures using the existing matching Chromium
+build, with a private output directory:
 
 ```sh
 python3 tests/NativeSearch/run_readiness.py \

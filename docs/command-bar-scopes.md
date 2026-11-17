@@ -15,7 +15,8 @@ for `wikipedia.org`) or its parent site (`spotify.com` for `open.spotify.com`).
 An exact host wins; otherwise the most specific template the row is a
 subdomain of; otherwise the first template that is a subdomain of the row. A
 single-label template, such as an intranet `wiki`, never claims hosts under it.
-Search results still require an explicit keyword offer. Commands and
+When no active template matches, a [learned site search](#learned-site-searches)
+for the row's own site may. Search results still require an explicit keyword offer. Commands and
 unclassified text cannot acquire one. Space enters only when the text it follows
 at the end of the field, replacing any selected completion, is the engine's whole
 keyword, such as `github.com`, ignoring case, and the originating Profile's
@@ -42,10 +43,13 @@ order.
 
 ### Space entry and profile catalog
 
-The source-owned website catalog installs missing active templates once per
-persistent Profile. Existing keyword/GUID collisions, policy, user edits and
-recorded deletions are preserved; installation does not change the default
-provider. Private services use inherited templates without initiating writes.
+Whenever a persistent Profile's engines load or change, Parc installs any
+source-owned catalog site that is missing, as an active template, unless the
+Profile removed it or another engine owns its keyword: a policy engine, a
+built-in engine or one the user added, edited or activated. A shortcut Chromium
+learned and keeps inactive gives way. Installation never changes the default and
+waits while an organization manages the default engine. Private services use
+inherited templates without initiating writes.
 Catalog readiness is prepared on a non-nestable UI task outside the service's
 observer stack. Shutdown cancels preparation and settles waiting clients once,
 without reviving the Profile or recursively notifying its observer list.
@@ -54,11 +58,34 @@ The catalog holds site searches, not search engines: Google Drive, Gmail, Google
 Maps, Google Calendar, Google Docs, Dropbox, Amazon, GitHub, Figma, X (as
 `x.com` and `twitter.com`), YouTube, Wikipedia, Reddit, SoundCloud, Asana,
 LinkedIn, Apple Music and Spotify, each using the site's own search page, and
-they work with Tab. Chromium also learns shortcuts from sites that advertise a
-search, such as GitLab. Those stay inactive, with no Tab offer, until the user
-activates or edits one in Manage search or makes it the default. An unused
-learned shortcut with a catalog site's keyword gives way to the catalog entry
-when it installs.
+they work with Tab. A Space whose default is one of these catalog entries goes
+back to Google without asking; see [Settings](settings.md#search-and-downloads).
+
+Chromium deletes an engine without a trace, so Parc keeps its own record of
+removed catalog sites. When a change takes away one catalog site and removes at
+most one engine, through Remove in the scope menu or in Manage search, or because
+the user deleted or renamed their own engine holding its keyword, Parc records it
+and never puts it back. When a change takes away a catalog site and removes
+several engines at once, as Reset settings does, Parc clears the record instead,
+so the whole catalog returns. Reset can only be recognised that way while a
+catalog site and another engine remain, so a Space that had already removed
+every catalog site keeps them removed. Clearing learned shortcuts with browsing
+data never touches the record. A site missing without a record,
+including one an earlier version skipped or removed before the record existed,
+is installed again.
+
+### Learned site searches
+
+Chromium learns a search from a site that advertises one, such as GitLab, and
+keeps it inactive. Tab offers it only for a row on that same site (`gitlab.com`
+or `www.gitlab.com`, never a subdomain, parent or look-alike), only when its
+keyword is the site its searches go to and no active template matches the row.
+The hint says Tab, never Space, and private windows don't offer it. Entering it
+activates it through Chromium's own activation, as Manage search's Activate does,
+and from then on it is an ordinary active site search. Entering one never makes
+it the default, and learned searches never join Settings' default menu, though
+Manage search can still make one the default. A policy engine, an entry the
+user deactivated or edited, or another engine owning its keyword keeps it out.
 
 ## Website scope menu
 

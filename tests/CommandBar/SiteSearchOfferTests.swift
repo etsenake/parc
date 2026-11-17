@@ -8,10 +8,11 @@ final class PCNativeSearchNavigation {
 final class ExtensionAction {}
 final class PCNativeOmniboxScope {
     let searchHost: String
+    let isLearned: Bool
     var result: PCNativeSearchNavigation?
     var extensionAction: ExtensionAction?
     var isExtension = false
-    init(_ host: String) { searchHost = host }
+    init(_ host: String, learned: Bool = false) { searchHost = host; isLearned = learned }
 }
 @MainActor final class ScopeOfferFixture {
     struct Result {
@@ -33,6 +34,7 @@ final class PCNativeOmniboxScope {
     var scopeOffers: [PCNativeOmniboxScope] = []
     var siteScopes: [PCNativeOmniboxScope] = []
     static func site(of scope: PCNativeOmniboxScope) -> Site? { Site(host: scope.searchHost) }
+    static func isLearned(_ scope: PCNativeOmniboxScope) -> Bool { scope.isLearned }
 }
 
 @main struct SiteSearchOfferTests {
@@ -99,6 +101,42 @@ final class PCNativeOmniboxScope {
         fixture.siteScopes = [spotify]
         fixture.results = [.init(url: URL(string: "https://spotify.com/")!, tabID: UUID())]
         check(fixture.selectedScopeOffer === spotify, "a parent site still offers its search subdomain")
+        let gitlab = PCNativeOmniboxScope("gitlab.com", learned: true)
+        fixture.siteScopes = [gitlab]
+        for page in ["https://gitlab.com/gitlab-org/gitlab", "https://www.gitlab.com/", "https://GitLab.com/explore"] {
+            fixture.results = [.init(url: URL(string: page)!, tabID: UUID())]
+            check(fixture.selectedScopeOffer === gitlab, "a search GitLab advertised is offered on GitLab's own page \(page)")
+        }
+        for page in ["https://docs.gitlab.com/", "https://about.gitlab.com.evil.example/", "https://notgitlab.com/", "https://evil.example/gitlab.com"] {
+            fixture.results = [.init(url: URL(string: page)!, tabID: UUID())]
+            check(fixture.selectedScopeOffer == nil, "a learned search never reaches another site such as \(page)")
+        }
+        let vimeo = PCNativeOmniboxScope("www.vimeo.com", learned: true)
+        fixture.siteScopes = [gitlab, vimeo]
+        fixture.results = [.init(url: URL(string: "https://vimeo.com/channels")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer === vimeo, "a learned search on the www host covers the bare site")
+        let learnedDocs = PCNativeOmniboxScope("docs.github.com", learned: true), github = PCNativeOmniboxScope("github.com")
+        fixture.siteScopes = [learnedDocs, github]
+        fixture.results = [.init(url: URL(string: "https://docs.github.com/en")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer === github, "an engine the Space already uses beats a learned one on the same page")
+        let learnedHub = PCNativeOmniboxScope("github.com", learned: true)
+        fixture.siteScopes = [learnedHub]
+        fixture.results = [.init(url: URL(string: "https://gist.github.com/")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer == nil, "a learned search never claims its subdomains")
+        fixture.siteScopes = [PCNativeOmniboxScope("gist.github.com", learned: true)]
+        fixture.results = [.init(url: URL(string: "https://github.com/")!, tabID: UUID())]
+        check(fixture.selectedScopeOffer == nil, "a learned search never claims its parent site")
+        let learnedPage = PCNativeSearchNavigation("https://gitlab.com/")
+        fixture.siteScopes = [gitlab]
+        fixture.results = [.init(navigation: learnedPage, url: learnedPage.url)]
+        fixture.nativeResults = [learnedPage]
+        check(fixture.selectedScopeOffer === gitlab, "a current native GitLab page offers its learned search")
+        let learnedSearch = PCNativeSearchNavigation("https://gitlab.com/search?search=ci", search: true)
+        fixture.results = [.init(navigation: learnedSearch, url: learnedSearch.url)]
+        fixture.nativeResults = [learnedSearch]
+        check(fixture.selectedScopeOffer == nil, "a search result never gains a learned offer")
+        fixture.nativeResults = []
+
         let youtube = PCNativeOmniboxScope("www.youtube.com")
         fixture.siteScopes = [youtube]
         fixture.results = [.init(url: URL(string: "https://notyoutube.com/"), tabID: UUID())]

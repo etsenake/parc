@@ -1216,6 +1216,7 @@ __attribute__((visibility("default")))
 @property(nonatomic, readonly, copy) NSString* templateURL;
 @property(nonatomic, readonly, copy) NSString* searchHost;
 @property(nonatomic, readonly, getter=isPrepopulated) BOOL prepopulated;
+@property(nonatomic, readonly, getter=isLearned) BOOL learned;
 - (instancetype)init NS_UNAVAILABLE;
 + (instancetype)new NS_UNAVAILABLE;
 @end

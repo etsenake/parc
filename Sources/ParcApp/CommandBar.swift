@@ -1659,11 +1659,15 @@ import SwiftUI
         }
         guard let pageURL, ["http", "https"].contains(pageURL.scheme?.lowercased() ?? ""),
               let host = pageURL.host else { return nil }
-        return CommandBarSiteColor.scope(forPageHost: host, in: siteScopes) { Self.site(of: $0)?.host }
+        return CommandBarSiteColor.scope(forPageHost: host, in: siteScopes.filter { !Self.isLearned($0) }) { Self.site(of: $0)?.host }
+            ?? CommandBarSiteColor.ownSiteScope(forPageHost: host, in: siteScopes.filter { Self.isLearned($0) }) { Self.site(of: $0)?.host }
     }
     private static func site(of scope: PCNativeOmniboxScope) -> (template: String, host: String, prepopulated: Bool)? {
         guard scope.responds(to: #selector(getter: PCNativeOmniboxScope.searchHost)) else { return nil }
         return (scope.templateURL, scope.searchHost, scope.isPrepopulated)
+    }
+    private static func isLearned(_ scope: PCNativeOmniboxScope) -> Bool {
+        scope.responds(to: #selector(getter: PCNativeOmniboxScope.isLearned)) && scope.isLearned
     }
     private var selectedRowColor: NSColor { (isWebsiteScoped ? scopeColor : nil) ?? palette.selected }
     private func refreshScopeColor(for scope: PCNativeOmniboxScope) {

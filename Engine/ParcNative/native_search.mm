@@ -2,9 +2,11 @@
 #import "native_search.h"
 #include "native_search_readiness.h"
 
+#include <array>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -48,6 +50,7 @@
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
+#include "components/search_engines/default_search_manager.h"
 #include "components/search_engines/search_terms_data.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
@@ -69,6 +72,7 @@
 #include "native_profiles.h"
 #include "window_security_reservation.h"
 #include "native_profile_removal.h"
+#include "native_search_catalog.h"
 #include "native_search_shortcuts.h"
 #include "native_appkit_page.h"
 #include "native_page_retirement.h"
@@ -76,6 +80,7 @@
 #include "services/network/public/cpp/resource_request_body.h"
 #include "tab_transfer.h"
 #include "third_party/metrics_proto/omnibox_event.pb.h"
+#include "third_party/search_engines_data/resources/definitions/prepopulated_engines.h"
 #include "ui/base/page_transition_types.h"
 
 NSNotificationName const PCNativeSearchPreferencesDidChangeNotification =
@@ -88,35 +93,9 @@ NSError* SearchError(NSString* message) {
                              code:1
                          userInfo:@{NSLocalizedDescriptionKey : message}];
 }
-constexpr char kSiteCatalogPreference[] = "parc.search.site_catalog";
-struct SiteSearchDefinition {
-  const char* guid;
-  const char* name;
-  const char* keyword;
-  const char* url;
-  const char* favicon;
-};
-constexpr SiteSearchDefinition kSiteSearchCatalog[] = {
-    {"0cf7718d-24a6-5801-9c5b-ecfb44277073", "Google Drive", "drive.google.com", "https://drive.google.com/drive/search?q={searchTerms}", "https://drive.google.com/favicon.ico"},
-    {"20b37e46-d9c6-533e-91ae-32f6d10458b4", "Gmail", "mail.google.com", "https://mail.google.com/mail/ca/u/0/#apps/{searchTerms}", "https://mail.google.com/favicon.ico"},
-    {"167d11c6-3958-5218-8ecc-956dfa6dde80", "Google Maps", "maps.google.com", "https://www.google.com/maps/search/{searchTerms}", "https://www.google.com/images/branding/product/ico/maps15_bnuw3a_32dp.ico"},
-    {"2171baf7-023a-5ff0-a340-459ce48ca7b3", "Google Calendar", "calendar.google.com", "https://calendar.google.com/calendar/u/0/r/search?q={searchTerms}", "https://calendar.google.com/googlecalendar/images/favicons_2020q4/calendar_14.ico"},
-    {"8ff1e208-73b2-589b-8265-68df764e4d9a", "Google Docs", "docs.google.com", "https://docs.google.com/document/u/0/?q={searchTerms}", "https://ssl.gstatic.com/docs/documents/images/kix-favicon7.ico"},
-    {"a41a710c-238d-56ce-b240-ccfa9fb4fa35", "Dropbox", "dropbox.com", "https://www.dropbox.com/search/personal?&query={searchTerms}", "https://cfl.dropboxstatic.com/static/metaserver/static/images/favicon-vfl8lUR9B.ico"},
-    {"030ef70f-7e00-5283-bbca-be7b06657bdc", "Amazon", "amazon.com", "https://www.amazon.com/s?k={searchTerms}", "https://www.amazon.com/favicon.ico"},
-    {"54d73b34-4280-507f-a3d0-eb316c292788", "GitHub", "github.com", "https://github.com/search?q={searchTerms}", "https://github.com/favicon.ico"},
-    {"5bad1bdb-7414-5b7e-9aab-07e73e9bf27e", "Figma", "figma.com", "https://www.figma.com/files/search?q={searchTerms}", "https://static.figma.com/app/icon/1/favicon.png"},
-    {"9ef02093-93f8-56d4-851d-c7fdda08ff4f", "X", "x.com", "https://x.com/search?q={searchTerms}", "https://x.com/favicon.ico"},
-    {"79380b6e-192f-5003-90e1-431771bb58c0", "X", "twitter.com", "https://twitter.com/search?q={searchTerms}", "https://x.com/favicon.ico"},
-    {"64fd37f5-de13-578f-8208-6145c3eca689", "YouTube", "youtube.com", "https://www.youtube.com/results?search_query={searchTerms}", "https://www.youtube.com/s/desktop/9318de79/img/favicon_32x32.png"},
-    {"486bf911-81b2-59f5-bf51-313343d54279", "Wikipedia", "wikipedia.org", "https://wikipedia.org/w/index.php?search={searchTerms}", "https://en.wikipedia.org/favicon.ico"},
-    {"ea825f65-cce5-534a-8732-1540d4eb8631", "Reddit", "reddit.com", "https://www.reddit.com/search/?q={searchTerms}", "https://reddit.com/favicon.ico"},
-    {"85d2c217-155f-5436-a4d5-bd6269548377", "SoundCloud", "soundcloud.com", "https://soundcloud.com/search?q={searchTerms}", "https://soundcloud.com/favicon.ico"},
-    {"4fb3b1aa-d1ad-5578-8235-3264cbaf9eeb", "Asana", "asana.com", "https://app.asana.com/0/search?q={searchTerms}", "https://asana.com/favicon.ico"},
-    {"906387f3-b0c8-57e7-8531-0f1a6aecb3f7", "LinkedIn", "linkedin.com", "https://linkedin.com/search/results/all/?keywords={searchTerms}", "https://www.linkedin.com/favicon.ico"},
-    {"8f9395dc-e84c-56b6-ada1-af1554285442", "Apple Music", "music.apple.com", "https://music.apple.com/us/search?term={searchTerms}", "https://music.apple.com/favicon.ico"},
-    {"8bb123a5-6ed4-5338-bfed-568edce910a4", "Spotify", "spotify.com", "https://open.spotify.com/search/{searchTerms}", "https://www.scdn.co/i/_global/favicon.ico"},
-};
+constexpr char kLegacySiteCatalogPreference[] = "parc.search.site_catalog";
+constexpr char kRemovedSiteSearchesPreference[] =
+    "parc.search.removed_site_searches";
 bool CanOfferAsDefault(const TemplateURLService& service,
                        const TemplateURL* engine) {
   if (!service.CanMakeDefault(engine) || !service.ShowInDefaultList(engine))
@@ -124,15 +103,30 @@ bool CanOfferAsDefault(const TemplateURLService& service,
   const TemplateURL* winner = service.GetTemplateURLForKeyword(engine->keyword());
   return !winner || winner == engine || !service.ShowInDefaultList(winner);
 }
-bool IsUnusedLearnedShortcut(const TemplateURLService& service,
-                             const TemplateURL& value) {
+bool IsInactiveLearnedShortcut(const TemplateURLService& service,
+                               const TemplateURL& value) {
   return &value != service.GetDefaultSearchProvider() &&
          value.type() == TemplateURL::NORMAL && value.safe_for_autoreplace() &&
-         value.usage_count() == 0 &&
          value.prepopulate_id() == 0 && !value.CreatedByPolicy() &&
          value.starter_pack_id() ==
              template_url_starter_pack_data::StarterPackId::kNone &&
          value.is_active() == TemplateURLData::ActiveStatus::kUnspecified;
+}
+bool IsLearnedSiteSearch(const TemplateURLService& service,
+                         const TemplateURL& value) {
+  if (value.type() != TemplateURL::NORMAL || !value.safe_for_autoreplace() ||
+      value.prepopulate_id() != 0 || value.CreatedByPolicy() ||
+      value.CreatedByRegulatoryProgram() ||
+      value.starter_pack_id() !=
+          template_url_starter_pack_data::StarterPackId::kNone ||
+      value.is_active() != TemplateURLData::ActiveStatus::kUnspecified ||
+      value.sync_guid().empty() || &value == service.GetDefaultSearchProvider() ||
+      service.GetTemplateURLForKeyword(value.keyword()) != &value ||
+      !value.url_ref().SupportsReplacement(service.search_terms_data()))
+    return false;
+  const GURL search = value.GenerateSearchURL(service.search_terms_data());
+  return search.is_valid() && search.SchemeIsHTTPOrHTTPS() &&
+         TemplateURL::GenerateKeyword(search) == value.keyword();
 }
 bool SupportsSuggestionDeletion(const AutocompleteMatch& match) {
   if (!match.deletable || !match.provider)
@@ -225,7 +219,7 @@ class SearchState final : public base::SupportsUserData::Data,
   explicit SearchState(Profile& profile)
       : profile_(profile.GetWeakPtr()),
         service_(TemplateURLServiceFactory::GetForProfile(&profile)),
-        readiness_(base::BindRepeating(&SearchState::InstallSiteCatalog,
+        readiness_(base::BindRepeating(&SearchState::PrepareSiteCatalog,
                                       base::Unretained(this))) {
     profile.AddObserver(this);
     if (service_) {
@@ -240,6 +234,7 @@ class SearchState final : public base::SupportsUserData::Data,
     prefs_.Add(
         prefs::kSearchSuggestEnabled,
         base::BindRepeating(&SearchState::Changed, weak_factory_.GetWeakPtr()));
+    TrackSiteCatalog();
   }
   ~SearchState() override {
     if (profile_)
@@ -277,8 +272,12 @@ class SearchState final : public base::SupportsUserData::Data,
       readiness_.Schedule();
     }
   }
-  void Loaded() { readiness_.Schedule(); }
+  void Loaded() {
+    TrackSiteCatalog();
+    readiness_.Schedule();
+  }
   void OnTemplateURLServiceChanged() override {
+    TrackSiteCatalog();
     Changed();
     if (service_ && service_->loaded())
       readiness_.Schedule();
@@ -305,54 +304,117 @@ class SearchState final : public base::SupportsUserData::Data,
   uint64_t revision() const { return revision_; }
 
  private:
-  void InstallSiteCatalog() {
-    if (installing_catalog_ || !profile_ || profile_->IsOffTheRecord() ||
-        !service_ || !service_->loaded() || service_->is_default_search_managed() ||
-        IsNativeProfileRemovalBlocked(profile_->GetPath()))
-      return;
-    auto* prefs = profile_->GetPrefs();
-    if (!prefs->FindPreference(kSiteCatalogPreference))
-      return;
-    const auto& recorded = prefs->GetDict(kSiteCatalogPreference);
-    bool has_unrecorded = false;
-    for (const auto& definition : kSiteSearchCatalog)
-      has_unrecorded |= !recorded.contains(definition.guid);
-    if (!has_unrecorded)
-      return;
-    installing_catalog_ = true;
-    ScopedDictPrefUpdate installed(prefs, kSiteCatalogPreference);
-    for (const auto& definition : kSiteSearchCatalog) {
-      if (installed->contains(definition.guid))
-        continue;
-      bool existing = false;
-      for (const TemplateURL* value : service_->GetTemplateURLs()) {
-        if (value->sync_guid() == definition.guid ||
-            (value->keyword() == base::UTF8ToUTF16(definition.keyword) &&
-             !IsUnusedLearnedShortcut(*service_, *value))) {
-          existing = true;
-          break;
-        }
-      }
-      if (!existing) {
-        TemplateURLData data;
-        data.sync_guid = definition.guid;
-        data.SetShortName(base::UTF8ToUTF16(definition.name));
-        data.SetKeyword(base::UTF8ToUTF16(definition.keyword));
-        data.SetURL(definition.url);
-        data.favicon_url = GURL(definition.favicon);
-        data.safe_for_autoreplace = false;
-        data.is_active = TemplateURLData::ActiveStatus::kTrue;
-        if (!service_->Add(std::make_unique<TemplateURL>(data)))
-          continue;
-      }
-      installed->Set(definition.guid, true);
+  bool CanEditSiteCatalog() const {
+    return profile_ && !profile_->IsOffTheRecord() && service_ &&
+           service_->loaded() &&
+           !IsNativeProfileRemovalBlocked(profile_->GetPath()) &&
+           profile_->GetPrefs()->FindPreference(kRemovedSiteSearchesPreference);
+  }
+  SiteSearchHolder Holder(const TemplateURL& value,
+                          const SiteSearchDefinition& definition) const {
+    return {.normal = value.type() == TemplateURL::NORMAL,
+            .same_guid = value.sync_guid() == definition.guid,
+            .same_keyword =
+                value.keyword() == base::UTF8ToUTF16(definition.keyword),
+            .policy = value.CreatedByPolicy(),
+            .replaceable = value.safe_for_autoreplace(),
+            .learned = IsInactiveLearnedShortcut(*service_, value)};
+  }
+  bool SiteSearchKept(const SiteSearchDefinition& definition) const {
+    for (const TemplateURL* value : service_->GetTemplateURLs()) {
+      if (KeepsSiteSearch(Holder(*value, definition)))
+        return true;
     }
-    installing_catalog_ = false;
+    return false;
+  }
+  bool SiteSearchKeywordTaken(const SiteSearchDefinition& definition) const {
+    for (const TemplateURL* value : service_->GetTemplateURLs()) {
+      if (TakesSiteSearchKeyword(Holder(*value, definition)))
+        return true;
+    }
+    return false;
+  }
+  void TrackSiteCatalog() {
+    if (!CanEditSiteCatalog())
+      return;
+    SiteSearchPresence kept{};
+    for (size_t i = 0; i < kept.size(); ++i)
+      kept[i] = SiteSearchKept(kSiteSearchCatalog[i]);
+    std::set<TemplateURLID> engines;
+    for (const TemplateURL* value : service_->GetTemplateURLs()) {
+      if (value->type() == TemplateURL::NORMAL)
+        engines.insert(value->id());
+    }
+    if (tracking_catalog_) {
+      size_t engines_removed = 0;
+      for (TemplateURLID id : engines_)
+        engines_removed += !engines.contains(id);
+      const auto change = ClassifySiteSearchRemoval(kept_, kept, engines_removed);
+      if (change.reset) {
+        profile_->GetPrefs()->ClearPref(kRemovedSiteSearchesPreference);
+      } else if (change.removed) {
+        ScopedDictPrefUpdate update(profile_->GetPrefs(),
+                                    kRemovedSiteSearchesPreference);
+        update->Set(kSiteSearchCatalog[*change.removed].guid, true);
+      }
+    }
+    kept_ = kept;
+    engines_ = std::move(engines);
+    tracking_catalog_ = true;
+  }
+  void PrepareSiteCatalog() {
+    if (preparing_catalog_ || !CanEditSiteCatalog())
+      return;
+    TrackSiteCatalog();
+    auto weak = weak_factory_.GetWeakPtr();
+    preparing_catalog_ = true;
+    RestoreSiteSearchDefault();
+    if (weak && CanEditSiteCatalog() && !service_->is_default_search_managed())
+      RepairSiteCatalog();
+    if (weak)
+      preparing_catalog_ = false;
+  }
+  void RestoreSiteSearchDefault() {
+    const TemplateURL* current = service_->GetDefaultSearchProvider();
+    if (!current ||
+        service_->default_search_provider_source() !=
+            DefaultSearchManager::FROM_USER ||
+        !IsSiteSearchCatalogGUID(current->sync_guid()))
+      return;
+    service_->SetUserSelectedDefaultSearchProviderByPrepopulateId(
+        TemplateURLPrepopulateData::google.id);
+  }
+  void RepairSiteCatalog() {
+    if (profile_->GetPrefs()->HasPrefPath(kLegacySiteCatalogPreference))
+      profile_->GetPrefs()->ClearPref(kLegacySiteCatalogPreference);
+    auto weak = weak_factory_.GetWeakPtr();
+    for (const auto& definition : kSiteSearchCatalog) {
+      if (!weak || !CanEditSiteCatalog())
+        return;
+      if (profile_->GetPrefs()
+              ->GetDict(kRemovedSiteSearchesPreference)
+              .contains(definition.guid) ||
+          service_->GetTemplateURLForGUID(definition.guid) ||
+          SiteSearchKeywordTaken(definition))
+        continue;
+      TemplateURLData data;
+      data.sync_guid = definition.guid;
+      data.SetShortName(base::UTF8ToUTF16(definition.name));
+      data.SetKeyword(base::UTF8ToUTF16(definition.keyword));
+      data.SetURL(definition.url);
+      data.favicon_url = GURL(definition.favicon);
+      data.safe_for_autoreplace = false;
+      data.is_active = TemplateURLData::ActiveStatus::kTrue;
+      service_->Add(std::make_unique<TemplateURL>(data));
+    }
   }
   base::WeakPtr<Profile> profile_;
   raw_ptr<TemplateURLService> service_;
   PrefChangeRegistrar prefs_;
-  bool installing_catalog_ = false;
+  SiteSearchPresence kept_{};
+  std::set<TemplateURLID> engines_;
+  bool tracking_catalog_ = false;
+  bool preparing_catalog_ = false;
   uint64_t revision_ = 1;
   NativeSearchReadiness readiness_;
   base::CallbackListSubscription loaded_subscription_;
@@ -360,7 +422,8 @@ class SearchState final : public base::SupportsUserData::Data,
 };
 }
 void RegisterNativeSearchPreferences(PrefRegistrySimple& registrar) {
-  registrar.RegisterDictionaryPref(kSiteCatalogPreference);
+  registrar.RegisterDictionaryPref(kLegacySiteCatalogPreference);
+  registrar.RegisterDictionaryPref(kRemovedSiteSearchesPreference);
 }
 void InitializeNativeSearch(Profile& profile) {
   if (!profile.IsOffTheRecord())
@@ -919,6 +982,7 @@ Profile* ProfileForSearchNavigation(PCNativeSearchNavigation* request) {
 @interface PCNativeOmniboxScope () {
  @public
   std::string _engineGUID;
+  BOOL _learned;
   std::string _extensionID;
   scoped_refptr<const extensions::Extension> _extensionOwner;
   uint64_t _preferencesRevision;
@@ -942,6 +1006,7 @@ Profile* ProfileForSearchNavigation(PCNativeSearchNavigation* request) {
 @synthesize templateURL = _templateURL;
 @synthesize searchHost = _searchHost;
 @synthesize prepopulated = _prepopulated;
+@synthesize learned = _learned;
 - (instancetype)initWithTemplate:(const TemplateURL&)value
                        revision:(uint64_t)revision
             preferencesRevision:(uint64_t)preferencesRevision
@@ -1225,7 +1290,7 @@ class OmniboxSession final : public AutocompleteController::Observer,
         (offer.revision != revision_ && [site_scopes_ indexOfObjectIdenticalTo:offer] == NSNotFound) ||
         [offers_ indexOfObjectIdenticalTo:offer] == NSNotFound)
       return false;
-    const auto* value = Resolve(offer);
+    const auto* value = offer.isLearned ? Activate(offer) : Resolve(offer);
     if (!value)
       return false;
     active_ = Scope(*value, revision_ + 2, nil, nil);
@@ -1543,6 +1608,21 @@ class OmniboxSession final : public AutocompleteController::Observer,
                    !value->sync_guid().empty()
                ? value : nullptr;
   }
+  const TemplateURL* Activate(PCNativeOmniboxScope* offer) {
+    if (profile_->IsOffTheRecord() ||
+        offer->_preferencesRevision != SearchState::Get(*profile_).revision())
+      return nullptr;
+    TemplateURL* value = service_->GetTemplateURLForGUID(offer->_engineGUID);
+    if (!value || value->keyword() != base::SysNSStringToUTF16(offer.keyword) ||
+        !IsLearnedSiteSearch(*service_, *value))
+      return nullptr;
+    service_->SetIsActiveTemplateURL(value, true);
+    if (!Available())
+      return nullptr;
+    preferences_revision_ = SearchState::Get(*profile_).revision();
+    const TemplateURL* active = service_->GetTemplateURLForGUID(offer->_engineGUID);
+    return active && WebsiteTemplate(active->keyword()) == active ? active : nullptr;
+  }
   const TemplateURL* Resolve(PCNativeOmniboxScope* token) const {
     if (!token || token->_preferencesRevision != SearchState::Get(*profile_).revision())
       return nullptr;
@@ -1563,8 +1643,14 @@ class OmniboxSession final : public AutocompleteController::Observer,
       return site_scopes_;
     NSMutableArray<PCNativeOmniboxScope*>* scopes = [NSMutableArray array];
     for (const TemplateURL* value : service_->GetTemplateURLs()) {
-      if (value->CanBeUsedForKeywordMatching() && WebsiteTemplate(value->keyword()) == value)
+      if (value->CanBeUsedForKeywordMatching() && WebsiteTemplate(value->keyword()) == value) {
         [scopes addObject:Scope(*value, publication, nil, nil)];
+      } else if (!profile_->IsOffTheRecord() && IsLearnedSiteSearch(*service_, *value)) {
+        auto* token = [[PCNativeOmniboxScope alloc] initWithTemplate:*value revision:publication
+            preferencesRevision:preferences_revision_ spaceTriggerEnabled:NO result:nil];
+        token->_learned = YES;
+        [scopes addObject:token];
+      }
     }
     site_scopes_ = [scopes copy];
     site_scopes_revision_ = preferences_revision_;

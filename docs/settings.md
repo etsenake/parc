@@ -113,10 +113,11 @@ organization recommends and the current default; an engine an organization
 enforces is the only row. Site searches such as YouTube or GitHub, and shortcuts
 Chromium learned from visited sites, stay out because each searches one site; see
 [site searches](command-bar-scopes.md#space-entry-and-profile-catalog). Manage search can
-still make any other engine or shortcut the default. A Space that already uses a
-site search as its default keeps it: Parc never switches it, and the menu shows it
-checked until another engine is chosen, after which it leaves the menu and stays a
-site search. Engines that share a name each keep their own row.
+still make a hand-added engine such as Kagi or a learned shortcut the default, and
+the menu shows it as the current default. Parc's catalog site searches are never
+the default: a Space whose default is one of them, including one just picked in
+Manage search, goes back to Google, Parc's normal default, without asking. Engines
+that share a name each keep their own row.
 
 Values an organization or extension controls cannot be changed and say so in the
 control's tooltip or the Downloads note. **Manage search** opens the search

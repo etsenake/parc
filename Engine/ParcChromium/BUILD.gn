@@ -251,6 +251,7 @@ source_set("browser") {
     "native/native_recent_pages.mm",
     "native/native_search.h",
     "native/native_search.mm",
+    "native/native_search_catalog.h",
     "native/native_search_readiness.h",
     "native/native_search_shortcuts.h",
     "native/native_shortcuts.h",

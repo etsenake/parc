@@ -38,6 +38,16 @@ enum CommandBarSiteColor {
         return parent?.scope ?? child
     }
 
+    static func ownSiteScope<Scope>(forPageHost pageHost: String, in scopes: [Scope], searchHost: (Scope) -> String?) -> Scope? {
+        let page = siteName(pageHost)
+        return scopes.first { scope in searchHost(scope).map { !$0.isEmpty && siteName($0) == page } == true }
+    }
+
+    private static func siteName(_ host: String) -> String {
+        let host = host.lowercased()
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
     static func bundledColor(template: String, searchHost: String, prepopulated: Bool) -> NSColor? {
         guard !prepopulated else { return nil }
         let entry = bundled.first { $0.template == template } ?? bundled.first { entry in

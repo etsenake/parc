@@ -207,6 +207,12 @@ step compile_and_run command-bar-native-hold CommandBar/NativeHoldTests \
 step compile_and_run command-bar-ranking CommandBar/RankingTests \
   "$repo_root/Sources/ParcApp/CommandBarRanking.swift" "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift"
 step bash "$repo_root/scripts/test-command-bar-site-search.sh"
+native_search_catalog() {
+  xcrun clang++ -std=c++20 -Wall -Wextra -Werror "$repo_root/tests/NativeSearch/CatalogTests.cc" \
+    -o "$repo_root/build/tests/native-search-catalog"
+  "$repo_root/build/tests/native-search-catalog"
+}
+step native_search_catalog
 step bash "$repo_root/scripts/test-command-bar-navigation.sh"
 step compile_and_run command-bar-title-search CommandBar/TitleSearchTests \
   "$repo_root/Sources/ParcApp/CommandBarTitleSearch.swift" "$repo_root/Sources/ParcApp/CommandBarRanking.swift" \
