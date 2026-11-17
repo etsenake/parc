@@ -168,6 +168,14 @@ Verify claims against current code and the relevant checks. Be truthful about
 what you ran; do not claim an unperformed check passed.
 Do not copy an old pending-build note or agent assignment as current fact.
 
+**Keep the website accurate.** When a change alters or adds to a feature family
+the [website](docs/website.md) describes, update its words, drawings or clips to
+match in the same delivery. Keep the site's existing design, structure and short
+copy, and change only what must change. A new field-guide card, section or page
+needs the user's explicit approval first; approval given in the task or
+elsewhere counts. When a new feature family might deserve a card, ask instead of
+adding one.
+
 **A missing test record is not a product gap.** Do not create validation-only or
 "runtime acceptance" backlog entries, or append generic "not tested here" caveats
 to feature docs and updates. Record concrete missing/broken behavior, an actionable

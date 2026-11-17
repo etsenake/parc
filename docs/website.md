@@ -130,7 +130,11 @@ the feature guide that owns it, such as [Split View](split-groups.md),
 [keyboard shortcuts](keyboard-navigation.md), [onboarding](onboarding.md) and
 [browser import](browser-import.md).
 When a feature changes, update its guide first and the site to match; link to
-the guides rather than restating their details here. The FAQ says Parc is
+the guides rather than restating their details here. Site copy is short and
+sweet: a changed line keeps the length and tone of the lines around it, and a
+change never adds an essay, a new layout or a new design pattern. New cards,
+sections and pages follow the approval rule in
+[AGENTS](../AGENTS.md#documentation-is-current-state-not-a-diary). The FAQ says Parc is
 independent and not affiliated with The Browser Company; keep it. The font
 licence ships as `assets/fonts/OFL.txt` beside the fonts, so the page carries no
 credit line.
