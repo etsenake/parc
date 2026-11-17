@@ -56,6 +56,7 @@
 #include "focus_manager.h"
 #include "native_appkit_page.h"
 #include "native_background_picture_in_picture_api.h"
+#include "native_background_picture_in_picture_hold.h"
 #include "native_browser_window.h"
 #include "native_capture_picker.h"
 #include "native_confirm_infobars.h"
@@ -120,6 +121,47 @@ class AppKitBrowserHost;
 }
 @end
 
+@interface PCNativeScreenLockObserver : NSObject
+- (instancetype)initWithChange:(void (^)(BOOL locked))change;
+- (void)invalidate;
+@end
+@implementation PCNativeScreenLockObserver {
+  void (^_change)(BOOL);
+}
+- (instancetype)initWithChange:(void (^)(BOOL locked))change {
+  if ((self = [super init])) {
+    _change = [change copy];
+    NSDistributedNotificationCenter* center =
+        NSDistributedNotificationCenter.defaultCenter;
+    [center addObserver:self
+                  selector:@selector(screenLocked:)
+                      name:@"com.apple.screenIsLocked"
+                    object:nil
+        suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
+    [center addObserver:self
+                  selector:@selector(screenUnlocked:)
+                      name:@"com.apple.screenIsUnlocked"
+                    object:nil
+        suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
+  }
+  return self;
+}
+- (void)invalidate {
+  [NSDistributedNotificationCenter.defaultCenter removeObserver:self];
+  _change = nil;
+}
+- (void)screenLocked:(NSNotification*)notification {
+  if (_change) {
+    _change(YES);
+  }
+}
+- (void)screenUnlocked:(NSNotification*)notification {
+  if (_change) {
+    _change(NO);
+  }
+}
+@end
+
 namespace parc {
 namespace {
 std::map<const BrowserWindowInterface*, base::WeakPtr<AppKitBrowserHost>>&
@@ -129,7 +171,6 @@ Hosts() {
       value;
   return *value;
 }
-// One responder domain per actual native window, shared across Profiles.
 PCNativeFocusManager* FocusManager(NSWindow* window) {
   static NSMapTable<NSWindow*, PCNativeFocusManager*>* managers =
       [NSMapTable weakToStrongObjectsMapTable];
@@ -151,14 +192,6 @@ bool MenuKey(const input::NativeWebKeyboardEvent& event) {
           NSEventModifierFlagDeviceIndependentFlagsMask) &&
          [NSApp.mainMenu performKeyEquivalent:native];
 }
-// Chromium's own visibility tracking still runs for Parc's pages:
-// WebContentsViewCocoa re-reads WebContentsOcclusionCheckerMac's flag for its
-// window when its view is shown, hidden or moved and on each checker update,
-// and marks the page occluded a second later. The flag also counts a window
-// fully covered by another of the app's windows, which macOS reports visible,
-// but it follows macOS's occlusion state without the key-window exception
-// WindowCurrentlyOccluded makes, so it can stop the front window's page
-// painting with no pass to follow.
 class PageVisibilityWatch final : public content::WebContentsObserver {
  public:
   PageVisibilityWatch(content::WebContents& contents,
@@ -171,11 +204,7 @@ class PageVisibilityWatch final : public content::WebContentsObserver {
  private:
   base::RepeatingCallback<void(content::Visibility)> changed_;
 };
-// The embedding a page makes when it is shown (DelegatedFrameHost::WasShown)
-// waits this many frames for the page's renderer. The shell holds the page it
-// replaces for the same second.
 constexpr uint32_t kShowDeadlineFrames = 60;
-// A view swapped in meanwhile keeps Chromium's deadlines; the one set is reset.
 class ScopedShowDeadline final {
  public:
   explicit ScopedShowDeadline(content::WebContents* contents) {
@@ -214,7 +243,71 @@ bool ReportPresentedFrame(content::WebContents& contents, PCNativePage* page) {
                                   }
                                 }));
 }
-}  // namespace
+double PrimaryScreenHeight() {
+  return NSHeight(NSScreen.screens.firstObject.frame);
+}
+BackgroundPipRect CocoaScreenRect(NSRect frame, double primary_height) {
+  return BackgroundPipRectFromCocoa(NSMinX(frame), NSMinY(frame), NSWidth(frame),
+                                    NSHeight(frame), primary_height);
+}
+std::vector<BackgroundPipRect> WindowScreenRegions(NSWindow* window,
+                                                   double primary_height) {
+  const auto window_rect = CocoaScreenRect(window.frame, primary_height);
+  std::vector<BackgroundPipRect> regions;
+  for (NSScreen* screen in NSScreen.screens) {
+    regions.push_back(BackgroundPipIntersection(
+        CocoaScreenRect(screen.frame, primary_height), window_rect));
+  }
+  return regions;
+}
+BackgroundPipRect ViewScreenRect(NSView* view, double primary_height) {
+  NSWindow* window = view.window;
+  if (!window) {
+    return {};
+  }
+  return CocoaScreenRect(
+      [window convertRectToScreen:[view convertRect:view.bounds toView:nil]],
+      primary_height);
+}
+std::optional<std::vector<BackgroundPipRect>> WindowsAbove(NSWindow* window) {
+  if (window.windowNumber <= 0) {
+    return std::nullopt;
+  }
+  NSArray* list = CFBridgingRelease(CGWindowListCopyWindowInfo(
+      kCGWindowListOptionOnScreenAboveWindow,
+      static_cast<CGWindowID>(window.windowNumber)));
+  if (!list) {
+    return std::nullopt;
+  }
+  std::vector<BackgroundPipWindowRecord> records;
+  for (id item in list) {
+    NSDictionary* record = base::apple::ObjCCast<NSDictionary>(item);
+    if (!record) {
+      return std::nullopt;
+    }
+    BackgroundPipWindowRecord entry;
+    if (NSNumber* layer = base::apple::ObjCCast<NSNumber>(
+            record[(__bridge NSString*)kCGWindowLayer])) {
+      entry.layer = layer.intValue;
+    }
+    if (NSNumber* alpha = base::apple::ObjCCast<NSNumber>(
+            record[(__bridge NSString*)kCGWindowAlpha])) {
+      entry.alpha = alpha.doubleValue;
+    }
+    NSDictionary* bounds = base::apple::ObjCCast<NSDictionary>(
+        record[(__bridge NSString*)kCGWindowBounds]);
+    CGRect rect = CGRectNull;
+    if (bounds && CGRectMakeWithDictionaryRepresentation(
+                      (__bridge CFDictionaryRef)bounds, &rect)) {
+      entry.bounds = BackgroundPipRectFromQuartz(
+          CGRectGetMinX(rect), CGRectGetMinY(rect), CGRectGetWidth(rect),
+          CGRectGetHeight(rect));
+    }
+    records.push_back(entry);
+  }
+  return BackgroundPipCoveringWindows(records);
+}
+}
 
 class AppKitBrowserHost final : public NativeBrowserWindowHost,
                                 public NativeExtensionActionHost,
@@ -262,8 +355,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   ~AppKitBrowserHost() override { BeginTeardown(); }
   PCNativeBrowserWindow* binding() const { return binding_; }
   bool selected() const { return selected_ && !tearing_down_ && !draining_; }
-  // A delete-scheduled Browser destroys its window features before any tab
-  // still in its TabStripModel, so it takes no page even before its drain.
   bool acceptsNewPages() const {
     return !tearing_down_ && !draining_ && !browser_.IsDeleteScheduled();
   }
@@ -276,12 +367,8 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     focus_ = FocusManager(window_);
     pane_compositors_ = std::make_unique<NativePaneCompositorClaim>(window_);
     RegisterAppKitBrowser(binding_, browser_);
-    // Browser manager registration has completed; real SidePanel registries
-    // exist, and this service is installed before any content/API exposure.
     side_panel_ = std::make_unique<NativeExtensionSidePanel>(browser_, *this);
     InstallAppActivityObservers();
-    // Browser/tab transitions and tab exits post this without a native
-    // window transition or another UpdateUIForTabFullscreen.
     fullscreen_changed_ = ExclusiveAccessManager::From(&browser_)
                               ->fullscreen_controller()
                               ->RegisterOnFullscreenStateChanged(
@@ -317,8 +404,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   }
   void BrowserCloseCancelled(
       BrowserWindowInterface::ClosingStatus status) override {
-    // Chromium reports asynchronous unload progress through this callback too.
-    // It is not a user cancellation and must not release the physical window.
     if (status !=
         BrowserWindowInterface::ClosingStatus::kDeniedUnloadHandlersNeedTime) {
       AppKitBrowserCloseResult(binding_, browser_, false);
@@ -359,14 +444,10 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!weak) {
       return;
     }
-    // The menu owns a scoped action-model dispatch lease. Release that lease
-    // before either service can release its action/coordinator ownership.
     context_menu_->CancelAndWait(
         base::BindOnce(&AppKitBrowserHost::MenuDrained, weak));
   }
   void MenuDrained() {
-    // The direct-action lease also covers callbacks that spin a nested loop;
-    // posting a task alone cannot prove the upstream dispatch has returned.
     action_bridge_->Shutdown(base::BindOnce(
         &AppKitBrowserHost::PaymentDispatchDrain, weak_factory_.GetWeakPtr()));
   }
@@ -390,8 +471,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (--drains_pending_) {
       return;
     }
-    // The BrowserManager still owns the genuine Browser/Profile. Service
-    // callbacks confirm all ExtensionViewHosts have actually been released.
     side_panel_.reset();
     drained_ = true;
     auto completions = std::move(deletion_completions_);
@@ -410,8 +489,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     RemoveAppActivityObservers();
     Hosts().erase(&browser_);
     browser_.GetTabStripModel()->RemoveObserver(this);
-    // No new browser-owned work can enter after invalidation. Dialogs and
-    // menus cancel before their actual Profile/TabList/action owners disappear.
     action_bridge_->BeginShutdown();
     payment_entry_->BeginShutdown();
     context_menu_->Cancel();
@@ -423,9 +500,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     pane_compositors_.reset();
     UnregisterAppKitBrowser(binding_, browser_);
     side_panel_.reset();
-    // NativeBrowserWindow destroys feature-owned FindBar/command controllers
-    // after this callback. Keep their stopped services allocated until the host
-    // destructor, which follows TearDownPreBrowserWindowDestruction.
     weak_factory_.InvalidateWeakPtrs();
   }
   gfx::Rect GetWindowBounds(gfx::NativeWindow window) const override {
@@ -468,8 +542,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                         apps::IntentPickerBubbleType type,
                         const std::optional<url::Origin>& origin,
                         IntentPickerResponse callback) override {
-    // Generic synchronous callers address the Browser's current page. The
-    // asynchronous link-intent producer uses the exact-page route below.
     auto* contents = browser_.GetTabStripModel()->GetActiveWebContents();
     ShowIntentPickerForPage(contents, std::move(apps), stay, remember, type,
                             origin, std::move(callback));
@@ -521,9 +593,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         !ValidActionPage(contents) || !helper || !helper->should_show_icon() ||
         !window_.isKeyWindow || window_.attachedSheet ||
         PCNativeWindowHasSecurityReservation(window_)) return false;
-    // Genuine backend revalidates app eligibility and owns original-tab
-    // reparenting/native launch. It may destroy contents synchronously.
-    helper->ShowIntentPickerBubbleOrLaunchApp(token->url, /*always_show=*/true);
+    helper->ShowIntentPickerBubbleOrLaunchApp(token->url, true);
     return true;
   }
   void ShowBookmarkEditor(const GURL& url, bool) override {
@@ -610,12 +680,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       std::move(callback).Run(FullscreenRequestResult::kRejected);
       return;
     }
-    // FullscreenController already validated the requesting frame's actual
-    // WINDOW_MANAGEMENT permission before supplying an explicit display ID.
-    // Preserve its ownership of permission, nesting, and the prior display.
-    // Acceptance is distinct from the final real native settlement.
     if (browser_.GetType() == BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
-      // Preserve the accepted PiP path; it does not use this window controller.
       if (params.display_id != display::kInvalidDisplayId) {
         std::move(callback).Run(FullscreenRequestResult::kRejected);
         return;
@@ -633,8 +698,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   }
   void UpdateUIForTabFullscreen() override {
     if (tearing_down_) return;
-    // Entry calls this before tab_fullscreen_ is set; the exclusive-access
-    // tab is already the requesting page and is cleared on every exit.
     content::WebContents* contents = ExclusiveAccessManager::From(&browser_)
                                          ->fullscreen_controller()
                                          ->exclusive_access_tab();
@@ -695,7 +758,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!contents || contents->GetBrowserContext() != browser_.GetProfile()) {
       return false;
     }
-    // Keep the supplied ExtensionViewHost contents; it need not be a tab.
     return RequestAppKitDevtools(*contents);
   }
   bool ShowActionContextMenu(ExtensionActionViewModel& model,
@@ -725,8 +787,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     NSArray<PCNativeExtensionAction*>* values =
         action_bridge_->Snapshot(*contents, page.identifier, page.profilePath);
     PCNativeMenuTarget* target = [PCNativeMenuTarget new];
-    // Retain immutable snapshots, never a raw model pointer across AppKit's
-    // nested tracking loop. Every selection revalidates original ownership.
     target.invoke = ^(NSString* identifier) {
       if (!weak || !weak->selected())
         return;
@@ -844,8 +904,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         [binding_.client nativeBrowserWindow] != window_ || !side_panel_ ||
         !side_panel_->IsSidePanelShowing())
       return false;
-    // The service detaches synchronously but drains real hosts out of callback
-    // stacks. Do not access this host after Close can reenter its owner.
     side_panel_->Close();
     return true;
   }
@@ -896,8 +954,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
   }
   void DetachDevtools() {
-    // Feature teardown happens after native service drain. Page bindings own
-    // presentation until their ordinary detach, so no tools objects are freed.
     std::vector<std::shared_ptr<NativeDevToolsPane>> snapshot;
     for (auto& [contents, entry] : pages_) {
       if (entry.pane) {
@@ -908,15 +964,10 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       pane->Detach();
     }
   }
-  // Never deliver shell adoption from SetBrowser/TabStripModel mutation stacks.
-  // External creation binds its exact returned WebContents before this task;
-  // internal creation is adopted only after model and page ownership agree.
   void Synchronize() {
     if (tearing_down_ || draining_) {
       return;
     }
-    // Even a coalesced newer shell request supersedes visibility work that is
-    // currently inside a callback-capable native show/hide operation.
     ++synchronize_generation_;
     if (synchronize_pending_) {
       return;
@@ -982,7 +1033,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         tearing_down_ || container.window != window_) {
       return false;
     }
-    // A detach callback may have moved a still-live contents to another host.
     platform = NativePageBinding::FromWebContents(contents_weak.get());
     if (!platform || platform->browser() != &browser_) {
       return false;
@@ -1010,11 +1060,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       PCNativePage* page =
           GetOrCreateNativePage(*contents, *platform, profile_path_);
       if (!pages_.contains(contents.get())) {
-        // The Easel owner may park/reparent its existing view. Never convert
-        // this auxiliary content into a saved tab after a detach or refusal.
         if (page.isEmbedded) continue;
-        // This describes the actual destination Browser. The incoming page is
-        // still the same Chromium-created WebContents; never reload its URL.
         const bool popup = browser_.GetType() == BrowserWindowInterface::TYPE_POPUP ||
                            browser_.GetType() == BrowserWindowInterface::TYPE_APP_POPUP;
         const auto ordinary_disposition = popup ? PCNativePageDispositionPopup :
@@ -1035,8 +1081,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         if (!contents || !Owns(*contents)) continue;
         if (!container && (disposition == PCNativePageDispositionPeek ||
                            disposition == PCNativePageDispositionSplitTab)) {
-          // A document/selection change or shell refusal consumes only the
-          // presentation request. Adopt the original created page normally.
           AbandonNativeCreatedPagePresentation(*contents);
           container = [binding_.client nativeBrowser:binding_
                                   containerForPage:page
@@ -1073,8 +1117,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
           return;
         }
         selected_page_pending_.reset();
-        // An explicit shell selection has already updated its own state. Do
-        // not echo that command back or steal focus from its address field.
         if (shell_selected != page) {
           [binding_.client nativeBrowser:binding_ didSelectPage:page];
         }
@@ -1089,11 +1131,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     SynchronizeVisibility(snapshot);
   }
-  // The shell has already rearranged its panes when it asks for layout or
-  // selection, so the pages it now shows join their compositors and unhide in
-  // the same Core Animation commit as the new arrangement. A queued pass can
-  // run only after AppKit's run loop has exited and committed that arrangement
-  // with the incoming page still hidden, showing the pane's backing.
   void SynchronizeVisibilityNow() {
     if (tearing_down_ || draining_ || !window_) {
       return;
@@ -1109,8 +1146,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     SynchronizeVisibility(snapshot);
   }
-  // A pass a native callback asks for during another becomes a queued full
-  // pass, which supersedes the outer one.
   void SynchronizeVisibility(
       const std::vector<base::WeakPtr<content::WebContents>>& snapshot) {
     if (tearing_down_ || draining_ || !window_) {
@@ -1127,7 +1162,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     ApplyVisibility(snapshot);
     if (weak) {
       synchronizing_visibility_ = false;
-      // Also after a pass that stopped early without queueing a newer one.
       if (pass_visible_ && !tearing_down_ && !draining_ &&
           visibility_generation == synchronize_generation_) {
         RetryUnsettledVisibility(pass_visible_, pass_occluded_);
@@ -1139,10 +1173,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       const std::vector<base::WeakPtr<content::WebContents>>& snapshot) {
     auto weak = weak_factory_.GetWeakPtr();
     const uint64_t visibility_generation = synchronize_generation_;
-    // Occlusion is read fresh. The cached flag only marks a window that has
-    // stayed covered for a second; a window back on screen whose notification
-    // has not arrived (or never will) shows its pages instead of leaving a
-    // newly attached one occluded and white.
     if (window_occluded_ && !WindowCurrentlyOccluded()) {
       occlusion_timer_.Stop();
       window_occluded_ = false;
@@ -1155,8 +1185,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     pass_visible_ = visible;
     pass_occluded_ = occluded;
-    // Actual shell pane visibility, not TabStripModel's single active index,
-    // determines compositor visibility for independently displayed split pages.
     for (auto contents : snapshot) {
       if (!contents || !Owns(*contents)) {
         continue;
@@ -1198,8 +1226,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       if (!attached_here()) {
         continue;
       }
-      // WebKit's WebPage::updateIsInWindow allows media in an active tab
-      // even when its window is minimised or fully covered.
       const bool in_window = [visible containsObject:page] &&
                              (window.visible || window.miniaturized);
       if (SetPageInWindow(*contents, in_window)) {
@@ -1211,10 +1237,10 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                          page.nativeView.window == window_ &&
                          !page.nativeView.hiddenOrHasHiddenAncestor &&
                          window_.visible && !window_.miniaturized;
-      // A page coming into view makes its compositor wait for the page's own
-      // next frame, instead of Chromium's default four frames after which the
-      // page's gutter colour shows. The shell keeps the page it replaces on
-      // screen until then, having asked for that frame's report.
+      if (auto binding = pages_.find(contents.get());
+          !shown && binding != pages_.end()) {
+        binding->second.pip_hold = false;
+      }
       const bool page_occluded = PageOccluded(*contents, occluded);
       const bool drawn = shown && !page_occluded;
       bool arriving = false;
@@ -1237,8 +1263,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         if (!attached_here()) {
           return;
         }
-        // A hand-off was mid-flight in a native callback: run the pass again
-        // rather than unhide a page that may have nothing to draw through.
         if (compositor == PaneCompositorShow::kBusy) {
           Synchronize();
           return;
@@ -1272,16 +1296,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
           return;
         }
       }
-      // A shown page in a covered window, on another Space or behind
-      // sleeping displays is OCCLUDED, as in Chrome: it stops painting and
-      // its timers throttle. Chromium's own view tracking ignores a page until
-      // it has seen it shown and re-reads only on its own triggers
-      // (PageVisibilityWatch), so without this they rendered at full rate
-      // unseen. An arriving page is shown even when it reports VISIBLE: a
-      // new tab starts VISIBLE with its renderer view hidden until WasShown,
-      // which Chromium sends itself only once its occlusion check finds the
-      // window uncovered (WebContentsImpl::UpdateWebContentsVisibility). A
-      // tab opened by the click that brings Parc forward stayed blank.
       if (shown && !page_occluded &&
           (arriving ||
            contents->GetVisibility() != content::Visibility::VISIBLE)) {
@@ -1311,7 +1325,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
           !shown ? parc::BackgroundPipVisibility::kHidden
                  : ((parc::PageHandlesAutoPictureInPicture(contents.get())
                          ? page_occluded
-                         : !NSApp.isActive)
+                         : !NSApp.isActive && !PictureInPictureHeld(*contents))
                         ? parc::BackgroundPipVisibility::kOccluded
                         : parc::BackgroundPipVisibility::kVisible);
       parc::SyncBackgroundPictureInPicture(contents.get(), pip_visibility);
@@ -1327,26 +1341,112 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       side_panel_->HostStateChanged();
     }
   }
-  // Leaving this window occludes a page whose auto-PiP is Chromium's. Meet's
-  // automatic handler returns while document.hidden is false. A key sheet or
-  // extension popup still belongs to this window's active chain.
-  bool PageOccluded(content::WebContents& contents, bool window_occluded) const {
+  bool PageOccluded(content::WebContents& contents, bool window_occluded) {
     return window_occluded ||
-           (!InActiveKeyChain() &&
+           (!InActiveKeyChain() && !PictureInPictureHeld(contents) &&
             parc::PageHandlesAutoPictureInPicture(&contents));
   }
-  // Every page the shell shows in an on-screen window must end a pass drawing
-  // (or occluded with its window). One that did not — skipped while still
-  // attaching, refused by its host — gets a few short delayed passes, so a
-  // trigger missed on any path corrects itself. A page that can never attach
-  // stops retrying until a clean pass or a new attachment resets the budget.
+  bool WindowOcclusionVisible() const {
+    return window_ && (window_.occlusionState & NSWindowOcclusionStateVisible);
+  }
+  bool PipHoldWindowGateOpen() const {
+    return !NSApp.isActive && WindowOcclusionVisible() && !displays_asleep_ &&
+           !screen_locked_;
+  }
+  bool PageShownInWindow(PCNativePage* page) const {
+    return window_ && page && page.nativeView.window == window_ &&
+           !page.nativeView.hiddenOrHasHiddenAncestor && window_.visible &&
+           !window_.miniaturized;
+  }
+  BackgroundPipHoldGate PipHoldGate(content::WebContents& contents,
+                                    bool shown) const {
+    return {
+        .app_active = static_cast<bool>(NSApp.isActive),
+        .page_shown = shown,
+        .window_visible = WindowOcclusionVisible(),
+        .displays_asleep = displays_asleep_,
+        .screen_locked = screen_locked_,
+        .picture_in_picture_open = contents.HasPictureInPictureVideo() ||
+                                   contents.HasPictureInPictureDocument(),
+    };
+  }
+  bool PictureInPictureHeld(content::WebContents& contents) {
+    const auto found = pages_.find(&contents);
+    if (found == pages_.end() || !found->second.pip_hold) {
+      return false;
+    }
+    if (!BackgroundPipHoldGateOpen(
+            PipHoldGate(contents, PageShownInWindow(found->second.page)))) {
+      found->second.pip_hold = false;
+      return false;
+    }
+    return true;
+  }
+  bool ClearPipHolds() {
+    pip_hold_timer_.Stop();
+    bool released = false;
+    for (auto& [contents, binding] : pages_) {
+      released = released || binding.pip_hold;
+      binding.pip_hold = false;
+    }
+    return released;
+  }
+  void EndPipHoldsUnlessGateOpen() {
+    if (!PipHoldWindowGateOpen()) {
+      ClearPipHolds();
+    }
+  }
+  bool EvaluatePipHolds(BackgroundPipHoldPass pass) {
+    if (tearing_down_ || draining_ || !window_) {
+      return false;
+    }
+    const auto weak = weak_factory_.GetWeakPtr();
+    NSWindow* window = window_;
+    NSArray<PCNativePage*>* visible = [binding_.client visibleNativePages];
+    if (!weak || tearing_down_ || draining_ || window_ != window) {
+      return false;
+    }
+    const bool gate_open = PipHoldWindowGateOpen();
+    const double primary_height = PrimaryScreenHeight();
+    const auto regions = gate_open ? WindowScreenRegions(window, primary_height)
+                                   : std::vector<BackgroundPipRect>();
+    const auto covers = gate_open ? WindowsAbove(window) : std::nullopt;
+    bool held = false;
+    bool released = false;
+    for (auto& [contents, binding] : pages_) {
+      PCNativePage* page = binding.page;
+      const bool shown =
+          gate_open && PageShownInWindow(page) && [visible containsObject:page];
+      const bool hold =
+          shown && ShouldHoldBackgroundPip(
+                       pass, binding.pip_hold, PipHoldGate(*contents, shown),
+                       ViewScreenRect(page.nativeView, primary_height), regions,
+                       covers);
+      released = released || (binding.pip_hold && !hold);
+      held = held || hold;
+      binding.pip_hold = hold;
+    }
+    if (released) {
+      Synchronize();
+    }
+    return held;
+  }
+  void HoldVisiblePictureInPicture() {
+    pip_hold_timer_.Stop();
+    if (EvaluatePipHolds(BackgroundPipHoldPass::kResign)) {
+      pip_hold_timer_.Start(FROM_HERE, base::Milliseconds(250), this,
+                            &AppKitBrowserHost::RecheckPipHolds);
+    }
+  }
+  void RecheckPipHolds() {
+    EvaluatePipHolds(BackgroundPipHoldPass::kRecheck);
+  }
   void RetryUnsettledVisibility(NSArray<PCNativePage*>* visible,
                                 bool occluded) {
     bool unsettled = false;
     if (window_ && window_.visible && !window_.miniaturized) {
       for (PCNativePage* page in visible) {
         content::WebContents* contents = ContentsForNativePage(page);
-        // A host the shell itself hid is meant to stay hidden.
         if (!contents || page.isEmbedded || !Owns(*contents) ||
             (page.nativeView.window == window_ &&
              page.nativeView.hiddenOrHasHiddenAncestor)) {
@@ -1390,8 +1490,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         browser_.GetTabStripModel()->GetActiveWebContents() != &contents) {
       return false;
     }
-    // Keep the existing manager through AppKit/KVO callbacks, not a Browser,
-    // WebContents or host that a responder callback may retire.
     PCNativeFocusManager* manager = focus_;
     return [manager requestFocusForKey:page.identifier] !=
            PCNativeFocusRequestRejected;
@@ -1415,8 +1513,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!selected()) {
       return false;
     }
-    // AppKit child windows are real presentations. Do not invent a Views
-    // widget or use a different physical window's popup.
     for (NSWindow* child in window_.childWindows) {
       if (child.isVisible && child.canBecomeKeyWindow && !child.isKeyWindow) {
         [child makeKeyWindow];
@@ -1434,7 +1530,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     PCNativePage* page = found->second.page;
     found->second.report_frame = false;
-    // As a detach and attach did: no pending or fallback focus returns to it.
     if ([focus_.fallbackKey isEqualToString:page.identifier]) {
       focus_.fallbackKey = nil;
     }
@@ -1481,8 +1576,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     Synchronize();
     return true;
   }
-  // The shell holds the page this one replaces until it hears of this page's
-  // next frame on screen once the page is drawn.
   void ReportNextFrame(content::WebContents& contents) {
     auto found = pages_.find(&contents);
     if (tearing_down_ || draining_ || found == pages_.end()) {
@@ -1543,11 +1636,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     base::CallbackListSubscription discard;
     std::unique_ptr<NativeWebsiteTheme> theme;
     std::unique_ptr<PageVisibilityWatch> visibility;
-    // Drawn (shown, its window not occluded) at the last pass that got past
-    // its WasShown.
     bool shown = false;
-    // The shell waits for this page's next frame on screen once it is drawn.
     bool report_frame = false;
+    bool pip_hold = false;
   };
   PCNativeFocusRegistration* RegisterFocus(PCNativePage* page) {
     auto weak = weak_factory_.GetWeakPtr();
@@ -1589,8 +1680,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
           (!presentation || bound->second.page != page ||
            bound->second.container != container || !bound->second.pane ||
            bound->second.pane->view() != presentation)) {
-        // A native callback installed a newer presentation for these same
-        // contents. The older attachment must not replace that binding.
         return false;
       }
       auto* current = NativePageBinding::FromWebContents(contents_weak.get());
@@ -1613,8 +1702,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!valid()) {
       return false;
     }
-    // Entering the window, a restored page's first VISIBLE report starts its
-    // load (NavigationController::SetActive); give it its size first.
     if (HasRestoredLoadPending(*contents_weak)) {
       SizeRestoredPage(*pane, view);
       if (!valid()) {
@@ -1697,18 +1784,10 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!valid() || !attached_here()) {
       return false;
     }
-    // A page is created hidden. Whatever attached it (the shell's own adoption
-    // included), a full pass follows and shows it if its pane is on screen.
     visibility_retries_ = 0;
     Synchronize();
     return valid() && attached_here();
   }
-  // A restored page (CreateRestoredContents) starts loading only once its
-  // view has the size of the place it is attached to, as Chrome's
-  // AddRestoredTab resizes before LoadIfNecessary. Loaded at 0x0, the page's
-  // first layout has width 0, which a restored load from cache can finish
-  // with, and some pages stay blank until the next resize. Attached at no
-  // size yet (a parked pane), it loads at a later pass that shows it.
   static void LoadRestoredPageIfSized(content::WebContents& contents,
                                       NativeDevToolsPane& pane,
                                       NSView* page_host) {
@@ -1723,9 +1802,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     contents.GetController().LoadIfNecessary();
   }
-  // Frames the page host in its pane (NativeDevToolsPane::Layout) and lays
-  // out the host's constraints, which size the WebContents view, without
-  // waiting for AppKit to mark either view dirty.
   static void SizeRestoredPage(NativeDevToolsPane& pane, NSView* page_host) {
     pane.Layout();
     page_host.needsLayout = YES;
@@ -1738,15 +1814,10 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     PageBinding entry = std::move(found->second);
     pages_.erase(found);
-    entry.theme.reset();  // Revoke before callback-capable owner detachment.
+    entry.theme.reset();
     entry.visibility.reset();
-    // Even reattaching this exact page later cannot revive a snapshot captured
-    // before its native ownership boundary was removed.
     action_bridge_->Changed();
     payment_entry_->Changed();
-    // Docking detaches the real tools tab without destroying its page. The
-    // auxiliary client is itself that page's observer; release only its exact
-    // observation before another auxiliary owner can adopt the same page.
     if (browser_.GetType() == BrowserWindowInterface::TYPE_DEVTOOLS &&
         entry.page.observer == (id)binding_.client) {
       entry.page.observer = nil;
@@ -1781,8 +1852,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!weak || !contents_weak) {
       return;
     }
-    // A cancellation callback may already have adopted this same live view
-    // into another host. Remove only the hierarchy owned by this old entry.
     if (entry.pane) {
       entry.pane->Detach();
     }
@@ -1801,24 +1870,26 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
            NSApplicationDidBecomeActiveNotification,
            NSApplicationDidResignActiveNotification
          ]) {
+      const bool resigned = name == NSApplicationDidResignActiveNotification;
       id observer = [NSNotificationCenter.defaultCenter
           addObserverForName:name
                       object:nil
                        queue:nil
                   usingBlock:^(NSNotification*) {
-                    if (auto* self = weak.get()) {
-                      if (!self->tearing_down_ && !self->draining_) {
-                        // Activation changes whether the key window counts
-                        // as in front (WindowCurrentlyOccluded).
-                        self->WindowOcclusionChanged();
-                        self->Synchronize();
-                      }
+                    auto* self = weak.get();
+                    if (!self || self->tearing_down_ || self->draining_) {
+                      return;
+                    }
+                    self->WindowOcclusionChanged();
+                    if (resigned) {
+                      self->HoldVisiblePictureInPicture();
+                    }
+                    if (auto* host = weak.get()) {
+                      host->Synchronize();
                     }
                   }];
       [app_activity_observers_ addObject:observer];
     }
-    // Key changes anywhere in the app count: an extension popup or sheet
-    // becoming key keeps its parent window in front (WindowCurrentlyOccluded).
     for (NSNotificationName name in @[
            NSWindowDidChangeOcclusionStateNotification,
            NSWindowDidBecomeKeyNotification,
@@ -1833,14 +1904,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                   usingBlock:^(NSNotification*) {
                     if (auto* self = weak.get()) {
                       self->WindowOcclusionChanged();
-                      // A window coming on screen gets a pass even when it was
-                      // never marked occluded: a pass that ran while it was
-                      // off screen hid its pages, and one ordered in without
-                      // becoming key (a restored background window) gets no
-                      // other. Chromium's checker posts this notification for
-                      // the window too whenever its own flag changes.
-                      // Key changes also reconcile site-owned auto-PiP when
-                      // switching between two visible Parc windows.
                       if (any_window || !self->WindowCurrentlyOccluded()) {
                         self->Synchronize();
                       }
@@ -1876,6 +1939,17 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                   }];
       [workspace_observers_ addObject:observer];
     }
+    screen_lock_observer_ = [[PCNativeScreenLockObserver alloc]
+        initWithChange:^(BOOL locked) {
+          auto* self = weak.get();
+          if (!self) {
+            return;
+          }
+          self->screen_locked_ = locked;
+          if (locked && self->ClearPipHolds()) {
+            self->Synchronize();
+          }
+        }];
     WindowOcclusionChanged();
   }
   void RemoveAppActivityObservers() {
@@ -1884,6 +1958,10 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     visibility_retries_ = 0;
     window_occluded_ = false;
     displays_asleep_ = false;
+    [screen_lock_observer_ invalidate];
+    screen_lock_observer_ = nil;
+    screen_locked_ = false;
+    ClearPipHolds();
     for (id observer in workspace_observers_) {
       [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:observer];
     }
@@ -1894,8 +1972,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     app_activity_observers_ = nil;
   }
-  // A native fullscreen transition reports spurious occlusion (Chromium's
-  // checker ignores it too, crbug.com/1081229); its settlement re-checks.
   bool WindowCurrentlyOccluded() const {
     if (!window_ || NativeFullscreenTransitioning(window_)) {
       return false;
@@ -1903,13 +1979,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (displays_asleep_) {
       return true;
     }
-    // The active app's key window is in front, and so is the window an
-    // extension popup or sheet that is key belongs to. A link from another app
-    // activates Parc with its new page already attached to a window that was
-    // covered; the occlusion notification only follows the window server's
-    // next draw, so the page started occluded (no paint, background priority)
-    // and stayed white. A window covered by other apps or behind another
-    // Parc window is not in the key window's chain and still goes occluded.
     if (InActiveKeyChain()) {
       return false;
     }
@@ -1927,16 +1996,12 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     return false;
   }
-  // Uncovering shows pages at once. Covering waits a second, like Chromium's
-  // WebContentsViewCocoa, so a window dragged across does not hide and
-  // reshow them.
   void WindowOcclusionChanged() {
     if (tearing_down_ || draining_) {
       return;
     }
+    EndPipHoldsUnlessGateOpen();
     if (!WindowCurrentlyOccluded()) {
-      // A cover cancelled before the timer may still have let Chromium
-      // occlude a page (PageVisibilityChanged leaves that to the timer).
       const bool covering = occlusion_timer_.IsRunning();
       occlusion_timer_.Stop();
       if (window_occluded_ || covering) {
@@ -1950,11 +2015,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                              &AppKitBrowserHost::ApplyWindowOcclusion);
     }
   }
-  // A visibility change no pass made (PageVisibilityWatch) is followed by a
-  // pass, which applies Parc's decision again. Chromium's occlusion stands
-  // unless the window is in the active key window's chain: one Parc also
-  // counts as covered is left to the occlusion timer, and one covered by
-  // another of the app's windows stays occluded.
   void PageVisibilityChanged(content::Visibility visibility) {
     if (synchronizing_visibility_ || tearing_down_ || draining_ || !window_) {
       return;
@@ -2016,7 +2076,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   NSMenu* __strong extensions_menu_;
   NSMutableArray* __strong app_activity_observers_;
   NSMutableArray* __strong workspace_observers_;
+  PCNativeScreenLockObserver* __strong screen_lock_observer_;
   base::OneShotTimer occlusion_timer_;
+  base::OneShotTimer pip_hold_timer_;
   static constexpr int kVisibilityRetryLimit = 4;
   base::OneShotTimer visibility_retry_timer_;
   int visibility_retries_ = 0;
@@ -2024,6 +2086,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   bool pass_occluded_ = false;
   bool window_occluded_ = false;
   bool displays_asleep_ = false;
+  bool screen_locked_ = false;
   NSInteger attention_ = 0;
   bool selected_ = false;
   bool was_attached_ = false;
@@ -2060,8 +2123,6 @@ class AppKitFocusController final : public BrowserFocusController {
  private:
   base::WeakPtr<AppKitBrowserHost> host_;
 };
-// A controller exists only for a Browser Parc hosts. Chromium's hooks consult
-// this registry, and a missing entry keeps Chrome's Views behavior.
 namespace {
 std::map<const DevtoolsUIController*, base::WeakPtr<AppKitBrowserHost>>&
 DevtoolsHosts() {
@@ -2070,7 +2131,7 @@ DevtoolsHosts() {
       value;
   return *value;
 }
-}  // namespace
+}
 std::unique_ptr<DevtoolsUIController> CreateAppKitDevtoolsController(
     BrowserWindowInterface& browser) {
   auto controller = std::make_unique<DevtoolsUIController>(
@@ -2149,9 +2210,6 @@ bool HandleAppKitDevtoolsKey(content::WebContents* inspected,
       found->second->binding().window != window) {
     return false;
   }
-  // Tools' own delegate has already handled frontend shortcuts. The ordinary
-  // inspected-page Browser path still retains its separate DevTools-first
-  // route.
   return BrowserWindow::FromBrowser(browser)->HandleKeyboardEvent(event);
 }
 NSView* AppKitPageContainer(BrowserWindowInterface& browser,
@@ -2182,10 +2240,6 @@ bool RotateAppKitPaneFocus(ui::BaseWindow* window, bool forward) {
 }
 void AppKitPageOwnerChanged(BrowserWindowInterface* browser,
                             content::WebContents& contents) {
-  // Ownership notifications are delivered while Chromium changes delegates.
-  // Queue reconciliation; actual TabInterface WillDetach handles detachment.
-  // An auxiliary lease never follows another Browser implicitly. Publish the
-  // changed owner after this stack so its Easel can retire the exact child.
   PCNativePage* page = ExistingNativePage(&contents);
   if (page.isEmbedded) NotifyNativePageChanged(&contents);
   if (browser) {
@@ -2327,7 +2381,7 @@ bool ExecuteOpenAppActionForBinding(PCNativeBrowserWindow* binding,
       found->second->ExecuteOpenAppAction(action, *contents);
 }
 
-}  // namespace parc
+}
 
 @implementation PCNativeBrowserWindow (PageFocus)
 - (BOOL)requestFocusForPage:(PCNativePage*)page {
@@ -2497,7 +2551,7 @@ struct NativeFullscreenExitToken {
                ? fullscreen : nullptr;
   }
 };
-}  // namespace parc
+}
 @interface PCNativeFullscreenExit () {
  @package
   std::shared_ptr<parc::NativeFullscreenExitToken> _token;
@@ -2518,9 +2572,9 @@ struct NativeFullscreenExitToken {
   auto token = _token;
   auto* fullscreen = token ? token->Current(true) : nullptr;
   if (!fullscreen) return NO;
-  token->consumed = true;  // Consume before Chromium can reenter the shell.
+  token->consumed = true;
   fullscreen->ExitFullscreenModeForTab(token->contents.get());
-  return YES;  // Accepted dispatch; native state/notifications are authoritative.
+  return YES;
 }
 @end
 
@@ -2538,9 +2592,6 @@ struct NativeFullscreenExitToken {
   token->browser = browser->GetWeakPtr(); token->contents = contents->GetWeakPtr();
   token->document = contents->GetPrimaryMainFrame()->GetWeakDocumentPtr();
   token->binding = self; token->page = page; token->window = self.window; token->mode = mode;
-  // A known content mode retains its identity even while unavailable. The
-  // shell must not interpret a denied/transitioning page exit as permission to
-  // toggle the enclosing browser window instead.
   return [[PCNativeFullscreenExit alloc] initWithToken:std::move(token)];
 }
 + (void)prepareNativeWindowFullscreen:(NSWindow*)window {

@@ -195,6 +195,7 @@ source_set("browser") {
     "native/native_appkit_host.mm",
     "native/native_appkit_page.h",
     "native/native_appkit_page.mm",
+    "native/native_background_picture_in_picture_hold.h",
     "native/native_blocked_popups.h",
     "native/native_blocked_popups.mm",
     "native/native_browser.h",
