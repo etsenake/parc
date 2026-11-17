@@ -86,8 +86,82 @@ import Foundation
                                                        ("https://example.com/a", ""), ("ftp://files.example.com/", "")]
         let domains = CommandBarRanking.topDomains(visits)
         expect(domains.map(\.host) == ["youtube.com"], "top domains need two visits and an http(s) page")
-        expect(domains.first?.siteName == "YouTube" && domains.first?.url.absoluteString == "https://youtube.com/",
+        expect(domains.first?.title == "YouTube" && domains.first?.url.absoluteString == "https://youtube.com/",
                "a top domain opens its root with the root page's title")
+        let served = CommandBarRanking.topDomains([("http://localhost:3000/a", ""), ("http://localhost:3000/b", "Dashboard"),
+                                                   ("http://localhost:8080/", ""), ("http://example.com/", "Old"),
+                                                   ("https://www.example.com/", "New"), ("https://example.com/x", ""),
+                                                   ("http://[::1]:8080/a", ""), ("http://[::1]:8080/b", "")])
+        expect(served.map(\.host) == ["example.com", "[::1]:8080", "localhost:3000"], "each port is its own site")
+        expect(served.first { $0.host == "localhost:3000" }?.url.absoluteString == "http://localhost:3000/"
+               && served.first { $0.host == "[::1]:8080" }?.url.absoluteString == "http://[::1]:8080/",
+               "a top domain keeps its port and IPv6 brackets")
+        expect(served.first?.url.absoluteString == "https://example.com/" && served.first?.title == "New",
+               "a top domain follows the latest visit's scheme and the latest root title")
+        expect(served.first { $0.host == "localhost:3000" }?.title == "", "a deeper page's title never names the site")
+
+        let completions: [(String, String, String?)] = [
+            ("fullscript.ok", "fullscript.okta.com", "fullscript.okta.com"),
+            ("Fullscript.OK", "fullscript.okta.com", "Fullscript.OKta.com"),
+            ("www.fullscript.ok", "fullscript.okta.com", "www.fullscript.okta.com"),
+            ("fullscript.okta.com", "fullscript.okta.com", "fullscript.okta.com"),
+            ("fullscript.okta.com/", "fullscript.okta.com", nil), ("fullscript.okta.com/app", "fullscript.okta.com", nil),
+            ("w", "fullscript.okta.com", nil), ("www", "fullscript.okta.com", nil), ("www.", "fullscript.okta.com", nil), ("okta", "fullscript.okta.com", nil),
+            ("full script", "fullscript.okta.com", nil), ("", "fullscript.okta.com", nil),
+            ("localhost:30", "localhost:3000", "localhost:3000"), ("münch", "münchen.de", "münchen.de")
+        ]
+        for (typed, host, expected) in completions {
+            expect(CommandBarRanking.domainCompletion(typed: typed, host: host) == expected,
+                   "\(typed) completes \(host) to \(expected ?? "nothing")")
+        }
+
+        let okta = URL(string: "https://fullscript.okta.com/app/UserHome?iss=https%3A%2F%2Ffullscript.okta.com&session_hint=AUTHENTICATED")!
+        expect(CommandBarRanking.siteLead(typed: "fullscript.ok", defaultURL: okta).map { [$0.host, $0.page] }
+               == ["fullscript.okta.com", "page:fullscript.okta.com"], "a deeper default page hands the lead to its site")
+        expect(CommandBarRanking.siteLead(typed: "www.fullscript.okta.com", defaultURL: okta)?.host == "fullscript.okta.com",
+               "typing the www form still leads with the site")
+        for url in ["https://fullscript.okta.com/", "https://www.fullscript.okta.com", "http://fullscript.okta.com/"] {
+            expect(CommandBarRanking.siteLead(typed: "fullscript.ok", defaultURL: URL(string: url)!) == nil,
+                   "\(url): a root default already leads with the site")
+        }
+        for url in ["https://fullscript.okta.com/?from=1", "https://fullscript.okta.com/#top"] {
+            expect(CommandBarRanking.siteLead(typed: "fullscript.ok", defaultURL: URL(string: url)!) != nil,
+                   "\(url): a root with a query or fragment is a deeper page")
+        }
+        for typed in ["fullscript.okta.com/", "fullscript.okta.com/app", "okta", "fullscript ok", "https://fullscript.ok"] {
+            expect(CommandBarRanking.siteLead(typed: typed, defaultURL: okta) == nil, "\(typed): Chromium's default keeps the lead")
+        }
+        expect(CommandBarRanking.siteLead(typed: "fullscript.ok", defaultURL: nil) == nil
+               && CommandBarRanking.siteLead(typed: "local", defaultURL: URL(string: "file:///local/a")!) == nil,
+               "only a web default can hand over the lead")
+        expect(CommandBarRanking.siteLead(typed: "localhost:30", defaultURL: URL(string: "http://localhost:3000/dashboard")!)?.page
+               == "page:localhost:3000", "the lead keeps the default's port")
+        let punycode = CommandBarRanking.siteLead(typed: "münch", defaultURL: URL(string: "https://xn--mnchen-3ya.de/wiki")!)
+        expect(punycode?.host == "münchen.de" && punycode?.page == CommandBarRowDiff.pageKey(URL(string: "https://xn--mnchen-3ya.de/")!),
+               "an international site leads with the same root key as Chromium's own root row")
+        expect(CommandBarRanking.siteLead(typed: "www.", defaultURL: okta) == nil, "typing just www. names no site")
+
+        let oktaDefault = C(archetype: .chromium, key: CommandBarRowDiff.pageKey(okta), chromiumRank: 0, urlKey: CommandBarRowDiff.pageKey(okta))
+        let oktaDomain = C(archetype: .topDomain, key: "page:fullscript.okta.com", texts: ["fullscript.okta.com"], urlKey: "page:fullscript.okta.com")
+        let suggestions = (1...5).map { search("fullscript.ok \($0)", $0) }
+        let redirected = [oktaDefault] + suggestions + [oktaDomain]
+        let unled = CommandBarRanking.rank(redirected, query: "fullscript.ok")
+        expect(unled.first == 0 && (unled.firstIndex(of: 6) ?? 0) >= 4,
+               "without a lead, the deeper default fills in first and the site trails the suggestions")
+        let led = CommandBarRanking.rank(redirected, query: "fullscript.ok", leadingPage: "page:fullscript.okta.com")
+        expect(led.prefix(2).elementsEqual([6, 0]), "the site leads and Chromium's deeper default follows it")
+        let rootRow = C(archetype: .chromium, key: "page:fullscript.okta.com", chromiumRank: 3, urlKey: "page:fullscript.okta.com")
+        let nativeRoot = CommandBarRanking.rank([oktaDefault, rootRow, oktaDomain], query: "fullscript.ok", leadingPage: "page:fullscript.okta.com")
+        expect(nativeRoot == [1, 0], "Chromium's own root row takes the lead when it covers the site")
+        let rootTab = C(archetype: .tab, key: "page:fullscript.okta.com", texts: ["Okta"], urlKey: "page:fullscript.okta.com")
+        expect(CommandBarRanking.rank([oktaDefault, rootRow, oktaDomain, rootTab], query: "fullscript.ok",
+                                      leadingPage: "page:fullscript.okta.com").prefix(2).elementsEqual([3, 0]),
+               "an open tab on the site's root leads as Switch to Tab")
+        expect(CommandBarRanking.rank([oktaDefault] + suggestions, query: "fullscript.ok", leadingPage: "page:fullscript.okta.com").first == 0,
+               "with no row for the site, Chromium's default keeps the lead")
+        let commanded = CommandBarRanking.rank([oktaDefault, oktaDomain, command("Fullscript.ok Helper")], query: "fullscript.ok",
+                                               leadingPage: "page:fullscript.okta.com")
+        expect(commanded == [2, 1, 0], "an action named by the query still leads, then the site, then the default")
         let domainRank = CommandBarRanking.rank([search("you", 0), C(archetype: .topDomain, key: CommandBarRowDiff.pageKey(domains[0].url), texts: ["youtube.com"]),
                                                  page("https://youtube.com/", 1)], query: "you")
         expect(domainRank == [0, 2], "Chromium's own row for the domain wins over the top-domain row")

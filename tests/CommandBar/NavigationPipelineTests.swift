@@ -7,6 +7,7 @@ final class PCNativeSearchNavigation {
     let detail: String
     let editText: String
     let matchType: String?
+    var inlineCompletionText: String?
     init(_ url: String, search: Bool = false, title: String = "", detail: String = "", type: String? = "url-what-you-typed") {
         self.url = URL(string: url)!; self.search = search; self.title = title
         self.detail = detail; editText = title; matchType = type
@@ -347,6 +348,119 @@ struct TabCandidatesFixture {
         expect(extensionFirst.results.first?.extensionAction === action, "the leading extension action stays first")
         expect(!extensionFirst.results.contains(where: { $0.navigation?.matchType == "bookmark-title" }),
                "non-leading filtered results stay filtered when an extension owns the first position")
+
+        let okta = "https://fullscript.okta.com/app/UserHome?iss=https%3A%2F%2Ffullscript.okta.com&login_hint=someone%40example.com&session_hint=AUTHENTICATED"
+        let oktaShown = String(okta.dropFirst("https://".count)), oktaRoot = "https://fullscript.okta.com/"
+        let oktaVisits = Array(repeating: (url: okta, title: "Fullscript - My Apps"), count: 40) + [(url: oktaRoot, title: "")]
+        func end(_ text: String) -> NSRange { NSRange(location: (text as NSString).length, length: 0) }
+        func redirected(_ typed: String, backspace: Bool = false, visits: [(url: String, title: String)]? = nil,
+                        tabs: [BrowserTab] = [], leading: [PCNativeSearchNavigation] = [],
+                        extra: [PCNativeSearchNavigation] = []) -> (NavigationFixture, PCNativeSearchNavigation) {
+            let f = NavigationFixture()
+            f.editState.userEdit(typed, selection: end(typed), hasMarkedText: false, didBackspace: backspace)
+            f.topDomainList = CommandBarRanking.topDomains(visits ?? oktaVisits)
+            f.tabs = tabs
+            let deep = PCNativeSearchNavigation(okta, title: oktaShown, detail: "Fullscript - My Apps", type: "history-url")
+            if oktaShown.hasPrefix(typed.lowercased()) { deep.inlineCompletionText = typed + oktaShown.dropFirst(typed.count) }
+            f.publish(leading + [deep, search(typed)] + (1...4).map { search("\(typed) \($0)") } + extra, input: typed)
+            return (f, deep)
+        }
+        for (typed, filled) in [("fullscript.ok", "fullscript.okta.com"), ("Fullscript.OK", "Fullscript.OKta.com"),
+                                ("www.fullscript.ok", "www.fullscript.okta.com"), ("fullscript.okta.com", "fullscript.okta.com")] {
+            let (f, deep) = redirected(typed)
+            expect(f.results.first?.id == "top-domain:fullscript.okta.com",
+                   "\(typed): the site leads although Okta's forwarded page has forty times the visits")
+            expect(f.results.first?.title == "fullscript.okta.com" && f.results.first?.subtitle == nil,
+                   "\(typed): an untitled site row shows its address once, like a typed address")
+            expect(f.results.dropFirst().first?.navigation === deep, "\(typed): Chromium's deeper default stays one arrow away")
+            expect(f.automaticCompletion(for: f.results[0]) == filled, "\(typed): inline completion fills only the domain")
+            let projected = f.editState.projectInline(resultID: f.results[0].id, text: filled, selection: end(typed), hasMarkedText: false)
+            expect(projected == (filled != typed) && f.editState.displayedText == filled,
+                   "\(typed): the field shows \(filled) with only the completed part selected")
+            expect(f.editState.selection == NSRange(location: (typed as NSString).length, length: (filled as NSString).length - (typed as NSString).length),
+                   "\(typed): typing on replaces just the filled-in part")
+            f.editState.accept()
+            expect(f.editState.displayedText == filled && f.editState.selection == end(filled), "\(typed): Tab accepts the domain")
+            expect(f.results.first?.url?.absoluteString == oktaRoot, "\(typed): Copy takes the site's real address")
+            f.submitSelection(.ordinary)
+            expect(f.submitted?.result.input == oktaRoot && f.submitted?.result.navigation == nil,
+                   "\(typed): Return sends the site's address to Chromium's classifier")
+        }
+        for typed in ["fullscript.okta.com/", "fullscript.okta.com/app", "fullscript.okta.com/app/UserHome?iss"] {
+            let (f, deep) = redirected(typed)
+            expect(f.results.first?.navigation === deep && !f.results.contains { $0.id.hasPrefix("top-domain:") },
+                   "\(typed): past the domain Chromium's default leads as before")
+            expect(f.automaticCompletion(for: f.results[0]) == deep.inlineCompletionText,
+                   "\(typed): past the domain Chromium's own inline completion returns")
+        }
+        do {
+            let (f, _) = redirected("fullscript.ok", backspace: true)
+            let filled = f.automaticCompletion(for: f.results[0]) ?? ""
+            expect(f.results.first?.id == "top-domain:fullscript.okta.com" && filled == "fullscript.okta.com",
+                   "deleting keeps the site in the lead with its domain on offer")
+            expect(!f.editState.projectInline(resultID: f.results[0].id, text: filled, selection: end("fullscript.ok"), hasMarkedText: false)
+                   && f.editState.displayedText == "fullscript.ok", "deleting suppresses the domain completion")
+            f.editState.userEdit("fullscript.ok", selection: NSRange(location: 4, length: 0), hasMarkedText: false, didBackspace: false)
+            expect(!f.editState.projectInline(resultID: f.results[0].id, text: filled, selection: NSRange(location: 4, length: 0), hasMarkedText: false),
+                   "an edit that leaves the caret mid-string suppresses the domain completion")
+            f.editState.userEdit("fullscript.ok", selection: end("fullscript.ok"), hasMarkedText: false, didBackspace: false)
+            expect(!f.editState.projectInline(resultID: f.results[0].id, text: filled, selection: end("fullscript.ok"), hasMarkedText: true),
+                   "marked text suppresses the domain completion")
+            expect(f.editState.projectInline(resultID: f.results[0].id, text: filled, selection: end("fullscript.ok"), hasMarkedText: false)
+                   && f.editState.displayedText == "fullscript.okta.com", "typing on at the end lets the domain complete again")
+        }
+        do {
+            let (f, deep) = redirected("fullscript.ok")
+            expect(f.selectedCompletion(for: f.results[0]) == "fullscript.okta.com", "arrowing onto the site shows its domain")
+            expect(f.selectedCompletion(for: f.results[1]) == oktaShown, "arrowing onto Chromium's row shows its own address")
+            f.table.selectedRow = 1; f.explicitSelectionID = f.results[1].id
+            f.submitSelection(.ordinary)
+            expect(f.submitted?.result.navigation === deep, "an explicitly chosen deeper page keeps its own request")
+        }
+        for visits in [oktaVisits, []] {
+            let root = PCNativeSearchNavigation(oktaRoot, title: "fullscript.okta.com/", detail: "Okta", type: "history-url")
+            let (f, deep) = redirected("fullscript.ok", visits: visits, extra: [root])
+            expect(f.results.first?.navigation === root && f.results.dropFirst().first?.navigation === deep,
+                   "Chromium's own root row leads with \(visits.count) site visits, then the deeper default")
+            if !visits.isEmpty {
+                expect(!f.results.contains { $0.id.hasPrefix("top-domain:") }, "Chromium's root row covers the site row")
+            }
+            expect(f.automaticCompletion(for: f.results[0]) == "fullscript.okta.com", "Chromium's root row fills in only the domain")
+            expect(f.selectedCompletion(for: f.results[0]) == "fullscript.okta.com/", "arrowing onto it shows Chromium's own text")
+            f.submitSelection(.ordinary)
+            expect(f.submitted?.result.navigation === root, "Return keeps Chromium's real root request")
+        }
+        do {
+            let open = tab(oktaRoot, title: "Okta")
+            let (f, deep) = redirected("fullscript.ok", tabs: [open])
+            expect(f.results.first?.tabID == open.id && f.results.dropFirst().first?.navigation === deep,
+                   "a tab already on the site's root leads as Switch to Tab")
+            expect(f.automaticCompletion(for: f.results[0]) == nil, "a tab never gains inline completion")
+        }
+        do {
+            let (f, deep) = redirected("fullscript.ok", visits: [])
+            expect(f.results.first?.navigation === deep, "with no row for the site, Chromium's default keeps the lead")
+            expect(f.automaticCompletion(for: f.results[0]) == deep.inlineCompletionText, "and keeps its own inline completion")
+        }
+        do {
+            let (f, _) = redirected("fullscript.ok", leading: [search("fullscript.ok things")])
+            expect(f.results.first?.navigation?.search == true, "a search default is never displaced by a site")
+        }
+        do {
+            let visits = oktaVisits + Array(repeating: (url: "https://fullscript.com/", title: "Fullscript"), count: 60)
+            let (f, _) = redirected("fullscript.", visits: visits)
+            expect(f.results.first?.id == "top-domain:fullscript.okta.com", "the lead belongs to the default's own site, not the busiest match")
+        }
+        do {
+            let f = NavigationFixture()
+            f.editState.userEdit("localhost:30", selection: end("localhost:30"), hasMarkedText: false, didBackspace: false)
+            f.topDomainList = CommandBarRanking.topDomains([("http://localhost:3000/a", ""), ("http://localhost:3000/b", "")]
+                + Array(repeating: ("http://localhost:8080/", "Other"), count: 5))
+            let dashboard = PCNativeSearchNavigation("http://localhost:3000/dashboard", title: "localhost:3000/dashboard", type: "history-url")
+            f.publish([dashboard, search("localhost:30")], input: "localhost:30")
+            expect(f.results.first?.id == "top-domain:localhost:3000" && f.results.first?.input == "http://localhost:3000/",
+                   "a local server's lead keeps its port")
+        }
 
         if failures > 0 { print("NavigationPipelineTests: \(failures) failures / \(checks) checks"); exit(1) }
         print("NavigationPipelineTests: \(checks) checks passed")

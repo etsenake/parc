@@ -99,7 +99,7 @@ enum CommandBarRanking {
         return false
     }
 
-    static func rank(_ candidates: [Candidate], query: String) -> [Int] {
+    static func rank(_ candidates: [Candidate], query: String, leadingPage: String? = nil) -> [Int] {
         var kept: [String: Int] = [:]
         let pages = Set(candidates.filter { $0.archetype != .topDomain }.compactMap(\.urlKey))
         for (index, candidate) in candidates.enumerated() {
@@ -109,6 +109,10 @@ enum CommandBarRanking {
         }
         let defaultIndex = candidates.first(where: { $0.archetype == .chromium && $0.chromiumRank == 0 })
             .flatMap { kept[$0.key] }
+        let siteIndex = leadingPage.flatMap { page in
+            kept.values.filter { candidates[$0].urlKey == page }
+                .min { (candidates[$0].archetype, $0) < (candidates[$1].archetype, $1) }
+        }
         let prepared = Query(query)
         var scored: [(index: Int, score: Double, quality: Double)] = []
         for index in kept.values {
@@ -141,31 +145,60 @@ enum CommandBarRanking {
         if let lead = scored.first(where: { candidates[$0.index].archetype == .typeTravel && $0.quality >= 0.9 }) {
             take(lead.index)
         }
+        if let siteIndex { take(siteIndex) }
         if let defaultIndex { take(defaultIndex) }
         for entry in scored { take(entry.index) }
         return order
     }
 
+    struct Site: Equatable {
+        let host: String
+        let root: URL
+        init?(_ url: URL) {
+            guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  let scheme = parts.scheme?.lowercased(), ["http", "https"].contains(scheme),
+                  var host = parts.host?.lowercased(), var encoded = parts.percentEncodedHost?.lowercased(),
+                  !host.isEmpty else { return nil }
+            if host.hasPrefix("www.") { host.removeFirst(4) }
+            if encoded.hasPrefix("www.") { encoded.removeFirst(4) }
+            var root = URLComponents()
+            root.scheme = scheme; root.percentEncodedHost = encoded; root.port = parts.port; root.path = "/"
+            guard let rootURL = root.url else { return nil }
+            self.host = parts.port.map { "\(host):\($0)" } ?? host
+            self.root = rootURL
+        }
+    }
+    static func domainCompletion(typed: String, host: String) -> String? {
+        let lowered = typed.lowercased()
+        guard !lowered.isEmpty, lowered.count == typed.count, !lowered.contains(where: \.isWhitespace) else { return nil }
+        let form = lowered.count > 4 && lowered.hasPrefix("www.") ? "www." + host : host
+        guard form.hasPrefix(lowered) else { return nil }
+        return typed + form.dropFirst(lowered.count)
+    }
+    static func siteLead(typed: String, defaultURL: URL?) -> (host: String, page: String)? {
+        guard let defaultURL, let site = Site(defaultURL), domainCompletion(typed: typed, host: site.host) != nil else { return nil }
+        let page = CommandBarRowDiff.pageKey(site.root)
+        return CommandBarRowDiff.pageKey(defaultURL) == page ? nil : (site.host, page)
+    }
+
     struct Domain: Equatable {
         let host: String
         let url: URL
-        let siteName: String
+        let title: String
         let visits: Int
     }
     static func topDomains(_ visits: [(url: String, title: String)], minimumVisits: Int = 2) -> [Domain] {
-        var counts: [String: (count: Int, scheme: String, title: String)] = [:]
+        var counts: [String: (count: Int, root: URL, title: String)] = [:]
         for visit in visits {
-            guard let url = URL(string: visit.url), let scheme = url.scheme?.lowercased(),
-                  ["http", "https"].contains(scheme), var host = url.host?.lowercased(), !host.isEmpty else { continue }
-            if host.hasPrefix("www.") { host.removeFirst(4) }
-            var entry = counts[host] ?? (0, scheme, "")
+            guard let url = URL(string: visit.url), let site = Site(url) else { continue }
+            var entry = counts[site.host] ?? (0, site.root, "")
             entry.count += 1
+            entry.root = site.root
             if (url.path.isEmpty || url.path == "/"), !visit.title.isEmpty { entry.title = visit.title }
-            counts[host] = entry
+            counts[site.host] = entry
         }
         return counts.compactMap { host, entry in
-            guard entry.count >= minimumVisits, let url = URL(string: "\(entry.scheme)://\(host)/") else { return nil }
-            return Domain(host: host, url: url, siteName: entry.title.isEmpty ? host : entry.title, visits: entry.count)
+            entry.count >= minimumVisits ? Domain(host: host, url: entry.root, title: entry.title, visits: entry.count) : nil
         }.sorted { $0.visits != $1.visits ? $0.visits > $1.visits : $0.host < $1.host }
     }
 }

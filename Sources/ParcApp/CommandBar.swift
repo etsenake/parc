@@ -28,6 +28,7 @@ import SwiftUI
         var managesPasswords = false
         var muteAllTabs: Bool? = nil
         var document: CommandBarDocument? = nil
+        var completionHost: String? = nil
     }
     var onNavigate: ((String) -> Void)?
     var onSearchNavigation: ((PCNativeSearchNavigation) -> Void)?
@@ -1105,14 +1106,18 @@ import SwiftUI
                        symbol: "magnifyingglass", subtitle: nativeError, isSearch: true, input: query),
                 .init(archetype: .chromium, key: "query:" + query))
         }
+        let lead = CommandBarRanking.siteLead(typed: query,
+                                              defaultURL: nativeRows.first?.navigation.flatMap { $0.search ? nil : $0.url })
         for (rank, result) in nativeRows.enumerated() {
             let key = result.navigation.map { navigation in
                 navigation.search
                     ? CommandBarRowDiff.searchKey(navigation.editText.isEmpty ? navigation.title : navigation.editText)
                     : CommandBarRanking.pageKey(navigation.url, title: navigation.title)
             } ?? result.id
-            add(result, .init(archetype: .chromium, key: key, chromiumRank: rank,
-                              urlKey: result.navigation.flatMap { $0.search ? nil : CommandBarRowDiff.pageKey($0.url) }))
+            let urlKey = result.navigation.flatMap { $0.search ? nil : CommandBarRowDiff.pageKey($0.url) }
+            var row = result
+            if let lead, urlKey == lead.page { row.completionHost = lead.host }
+            add(row, .init(archetype: .chromium, key: key, chromiumRank: rank, urlKey: urlKey))
         }
         for tab in tabs where tab.archivedAt == nil && (!addressOnly || Self.isAddressSuggestion(tab.url)) {
             let url = URL(string: tab.url)
@@ -1130,17 +1135,22 @@ import SwiftUI
                        document: document),
                 .init(archetype: .document, key: document.key, texts: [document.title]))
         }
-        let typed = query.lowercased()
-        if !typed.contains(where: \.isWhitespace) {
-            for domain in topDomainList where domain.host.hasPrefix(typed) {
-                add(Result(id: "top-domain:" + domain.host, title: domain.siteName, detail: "", symbol: "globe",
-                           subtitle: CommandBarResultText.urlSubtitle(domain.url.absoluteString),
-                           url: domain.url, input: domain.url.absoluteString),
-                    .init(archetype: .topDomain, key: CommandBarRowDiff.pageKey(domain.url), texts: [domain.host],
-                          urlKey: CommandBarRowDiff.pageKey(domain.url)))
-            }
+        for domain in topDomainList where CommandBarRanking.domainCompletion(typed: query, host: domain.host) != nil {
+            add(Result(id: "top-domain:" + domain.host, title: domain.title.isEmpty ? domain.host : domain.title, detail: "",
+                       symbol: "globe", subtitle: domain.title.isEmpty ? nil : CommandBarResultText.urlSubtitle(domain.url.absoluteString),
+                       url: domain.url, input: domain.url.absoluteString, completionHost: domain.host),
+                .init(archetype: .topDomain, key: CommandBarRowDiff.pageKey(domain.url), texts: [domain.host, "www." + domain.host],
+                      urlKey: CommandBarRowDiff.pageKey(domain.url)))
         }
-        return CommandBarRanking.rank(candidates, query: query).map { pool[$0] }
+        return CommandBarRanking.rank(candidates, query: query, leadingPage: lead?.page).map { pool[$0] }
+    }
+    private func automaticCompletion(for result: Result) -> String? {
+        guard let host = result.completionHost else { return result.navigation?.inlineCompletionText }
+        return CommandBarRanking.domainCompletion(typed: editState.query, host: host)
+    }
+    private func selectedCompletion(for result: Result) -> String? {
+        if let navigation = result.navigation { return navigation.editText.isEmpty ? nil : navigation.editText }
+        return result.completionHost.flatMap { CommandBarRanking.domainCompletion(typed: editState.query, host: $0) }
     }
     func updateTypedCommands(_ list: [CommandBarTypedCommand]) {
         guard !dismissed, list != typedCommands else { return }
@@ -1259,17 +1269,15 @@ import SwiftUI
         guard !dismissed, isOwnerValid?() != false, !isScoped, !scopeInvalidated,
               (input.currentEditor() as? NSTextView)?.hasMarkedText() != true,
               results.indices.contains(table.selectedRow),
-              let navigation = results[table.selectedRow].navigation,
-              !navigation.editText.isEmpty else { clearCompletion(); return }
-        editState.project(resultID: results[table.selectedRow].id, text: navigation.editText)
+              let text = selectedCompletion(for: results[table.selectedRow]) else { clearCompletion(); return }
+        editState.project(resultID: results[table.selectedRow].id, text: text)
         applyCompletion(preserveEditorSelection: preserveEditorSelection)
     }
     private func projectDefaultCompletion() {
         guard explicitSelectionID == nil, !dismissed, parent?.isKeyWindow == true,
               isOwnerValid?() != false, omnibox?.canSubmit == true,
               !isScoped, !scopeInvalidated, table.selectedRow == 0,
-              let result = results.first, let navigation = result.navigation,
-              let text = navigation.inlineCompletionText,
+              let result = results.first, let text = automaticCompletion(for: result),
               let editor = input.currentEditor() as? NSTextView else { return }
         if editState.projection?.resultID == result.id, editState.displayedText == text { return }
         if editState.projectInline(resultID: result.id, text: text,

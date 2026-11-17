@@ -193,25 +193,39 @@ open-tab row. The default survives display-type filtering. Identical-looking new
 publications still replace request payloads and scope/deletion offers; retaining
 a row view cannot retain stale actions.
 
+When the input has no spaces, is still a prefix of a site's host (with or
+without `www.`) and that default is a deeper page on the same site, such as the
+page a sign-in service forwards every login to, the site's root takes the
+default's position and the default follows it. The root is that site's top-domain
+row, or Chromium's own row or an open tab for the root when one covers it. With
+none of these the default keeps the lead: Parc never invents a root request.
+Return uses the root row's own request or address; typing a `/` or more of the
+path hands the lead back to the default.
+
 Other commands, native results, tabs, local documents and top domains interleave
 using Parc's scoring and native order. Ordinary results cap actions and tabs at
 five each, documents at three, native rows at eight and top domains at one.
 Page duplicates keep the open-tab action; configured title/host sites use their
 specialized dedup key. Top domains come from that Profile's history, calculated
-off the main thread per history revision. Search keys use terms, not URLs with
-changing query metadata.
+off the main thread per history revision, one per host and port, opening the
+root with the latest visit's scheme. A root page title names the row; without
+one its address shows once. Search keys use terms, not URLs with changing query
+metadata.
 
 The domain regression suite covers native defaults merging with existing tabs,
-search defaults, current publications, varied URLs and explicit user selection.
-Ranking must not substitute a host allowlist, dot detector or reconstructed GET
-for Chromium classification.
+search defaults, current publications, varied URLs, explicit user selection and
+a heavily visited deeper page against its site's root. Ranking must not
+substitute a host allowlist, dot detector or reconstructed GET for Chromium
+classification.
 
 ## Highlighted result text and ordinary Tab
 
 The typed query is distinct from displayed completion. Explicit native selection
-can project `fill_into_edit`; automatic default completion uses only the native
-default match's actual inline suffix. Commands, tabs and local documents never
-acquire completion from their titles.
+can project `fill_into_edit` and a selected top-domain row its domain. Automatic
+default completion uses only the native default match's actual inline suffix,
+except that a leading site root fills in just the domain: `fullscript.ok`
+completes to `fullscript.okta.com`. Commands, tabs and local documents never
+acquire completion, including a tab leading for a site root.
 
 End-of-field insertion may complete; deletion, mid-string edits, explicit caret
 selection and marked text suppress it. Unchanged publications preserve the
