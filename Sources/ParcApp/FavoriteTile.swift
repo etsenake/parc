@@ -71,6 +71,7 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
     private let outlineMask = CAShapeLayer()
     private var cells: [FavoriteTileCell] = []
     private var orientation: SplitOrientation = .horizontal
+    private var slotSizes: [Int]?
     private var customGlyph = false
     private var hovered = false
     private var tracking: NSTrackingArea?
@@ -136,7 +137,7 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         setAccessibilityTitle(title); setAccessibilityHelp(url)
     }
 
-    func setPages(_ monograms: [String], orientation: SplitOrientation) {
+    func setPages(_ monograms: [String], orientation: SplitOrientation, slotSizes: [Int]? = nil) {
         let count = max(1, monograms.count)
         if customGlyph || cells.count != count || self.orientation != orientation {
             customGlyph = false
@@ -146,6 +147,7 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
             for cell in cells { layer?.insertSublayer(cell.fill, below: outlineLayer) }
             needsLayout = true
         }
+        if self.slotSizes != slotSizes { self.slotSizes = slotSizes; needsLayout = true }
         for (cell, monogram) in zip(cells, monograms) { cell.monogram = monogram }
         cells.forEach(refreshCell)
         applyState(hoverChanged: false)
@@ -198,9 +200,9 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         let local = CGRect(origin: .zero, size: bounds.size)
         let shadowPath = FavoriteTilePaths.roundedRect(bounds, radius: m.cornerRadius)
         let outlinePath = FavoriteTilePaths.selectionRing(bounds: local, count: cells.count,
-                                                          orientation: orientation)
+                                                          orientation: orientation, slotSizes: slotSizes)
         let layouts = FavoriteChildLayouts.layouts(count: cells.count, size: bounds.size, gap: m.childGap,
-                                                   orientation: orientation)
+                                                   orientation: orientation, slotSizes: slotSizes)
         let side = cells.count > 1 ? m.childIconSide : m.iconSide
         let single = cells.count == 1
         var expectedCells: [FavoriteTileLayerLayoutSkip.CellGeometry] = []
@@ -464,7 +466,7 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         guard selected, bounds.width > 0, bounds.height > 0 else { return }
         let icons = customGlyph ? [] : cells.map(\.favicon)
         let key = FavoriteWashKey(icons: icons.map { $0.map(ObjectIdentifier.init) }, size: bounds.size,
-                                  orientation: orientation)
+                                  orientation: orientation, slotSizes: slotSizes)
         guard key != washKey else { return }
         let wait = washGeneratedAt + FavoriteTileMetrics.washRefreshInterval - CACurrentMediaTime()
         if wait > 0 {
@@ -480,7 +482,8 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         }
         washKey = key; washGeneratedAt = CACurrentMediaTime()
         let layouts = FavoriteChildLayouts.layouts(count: cells.count, size: bounds.size,
-                                                   gap: FavoriteTileMetrics.childGap, orientation: orientation)
+                                                   gap: FavoriteTileMetrics.childGap, orientation: orientation,
+                                                   slotSizes: slotSizes)
         let side = cells.count > 1 ? FavoriteTileMetrics.childIconSide : FavoriteTileMetrics.iconSide
         let sources = zip(icons, layouts).compactMap { icon, item in icon.map { ($0, item.rect) } }
         let image = FavoriteWash.image(icons: sources, renderSide: side, size: bounds.size)
@@ -534,6 +537,7 @@ private struct FavoriteWashKey: Equatable {
     let icons: [ObjectIdentifier?]
     let size: CGSize
     let orientation: SplitOrientation
+    let slotSizes: [Int]?
 }
 
 private final class FavoriteTileCell {

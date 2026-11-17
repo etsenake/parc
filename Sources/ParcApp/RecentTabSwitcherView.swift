@@ -28,6 +28,16 @@ final class RecentTabSwitcherView: NSView {
         var customInfo: CustomInfo? = nil
         var overlay: Component? = nil
         var isHidden = false
+        var slotSizes: [Int]? = nil
+        var slots: [[Component]]? {
+            guard let slotSizes, slotSizes.count > 1, slotSizes.allSatisfy({ $0 > 0 }),
+                  slotSizes.contains(where: { $0 > 1 }), slotSizes.reduce(0, +) == components.count else { return nil }
+            var start = 0
+            return slotSizes.map { size in
+                defer { start += size }
+                return Array(components[start..<start + size])
+            }
+        }
     }
     enum Metrics {
         static let height: CGFloat = 190
@@ -410,18 +420,28 @@ private struct RecentSwitcherCard: View {
         let inset = !single || (item.components.first.map { $0.image == nil && $0.template != nil } ?? false)
         let radius: CGFloat = inset ? 4 : 6
         return Group {
-            if item.vertical {
-                VStack(spacing: 4) { panes(radius: radius) }
+            if let slots = item.slots {
+                if item.vertical {
+                    VStack(spacing: 4) {
+                        ForEach(slots.indices, id: \.self) { slot in HStack(spacing: 4) { panes(slots[slot], radius: radius) } }
+                    }
+                } else {
+                    HStack(spacing: 4) {
+                        ForEach(slots.indices, id: \.self) { slot in VStack(spacing: 4) { panes(slots[slot], radius: radius) } }
+                    }
+                }
+            } else if item.vertical {
+                VStack(spacing: 4) { panes(item.components, radius: radius) }
             } else {
-                HStack(spacing: 4) { panes(radius: radius) }
+                HStack(spacing: 4) { panes(item.components, radius: radius) }
             }
         }
         .padding(inset ? 4 : 0)
         .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(RecentSwitcherColors.gray1(isDark)))
     }
-    private func panes(radius: CGFloat) -> some View {
+    private func panes(_ components: [RecentTabSwitcherView.Component], radius: CGFloat) -> some View {
         let single = item.components.count == 1
-        return ForEach(item.components) { component in
+        return ForEach(components) { component in
             RecentSwitcherSnapshot(component: component, cornerRadius: radius, stroke: single,
                                    isDark: isDark, maxContrast: maxContrast)
                 .overlay(item.overlay == nil ? Color.clear : Color.black.opacity(0.5))

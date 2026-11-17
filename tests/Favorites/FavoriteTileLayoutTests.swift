@@ -43,6 +43,25 @@ import AppKit
         check(stacked.map(\.rect) == [CGRect(x: 0, y: 0, width: 55, height: 22.5), CGRect(x: 0, y: 24.5, width: 55, height: 22.5)],
               "Vertical splits stack into two rows")
         check(FavoriteChildLayouts.layouts(count: 2, size: .zero, gap: 2, orientation: .horizontal).isEmpty, "Empty size has no cells")
+        let tileSize = CGSize(width: 55, height: 47)
+        let rightColumn = FavoriteChildLayouts.layouts(count: 3, size: tileSize, gap: 2, orientation: .horizontal, slotSizes: [1, 2])
+        check(rightColumn.map(\.rect) == [CGRect(x: 0, y: 0, width: 26.5, height: 47), CGRect(x: 28.5, y: 0, width: 26.5, height: 22.5),
+                                         CGRect(x: 28.5, y: 24.5, width: 26.5, height: 22.5)]
+              && rightColumn.map(\.corners.rawValue) == [5, 2, 8],
+              "A stacked right column draws a full-height pane beside two stacked panes")
+        let lowerRow = FavoriteChildLayouts.layouts(count: 3, size: tileSize, gap: 2, orientation: .vertical, slotSizes: [1, 2])
+        check(lowerRow.map(\.rect) == [CGRect(x: 0, y: 0, width: 55, height: 22.5), CGRect(x: 0, y: 24.5, width: 26.5, height: 22.5),
+                                      CGRect(x: 28.5, y: 24.5, width: 26.5, height: 22.5)]
+              && lowerRow.map(\.corners.rawValue) == [3, 4, 8],
+              "A divided lower row draws a full-width pane above two side-by-side panes")
+        check(FavoriteChildLayouts.layouts(count: 3, size: tileSize, gap: 2, orientation: .horizontal, slotSizes: [1, 1]) == three
+              && FavoriteChildLayouts.layouts(count: 3, size: tileSize, gap: 2, orientation: .horizontal, slotSizes: [1, 1, 1]) == three,
+              "A shape that doesn't match the pages, or has no stack, draws the flat icon")
+        let stackedRing = FavoriteTilePaths.selectionRing(bounds: CGRect(origin: .zero, size: tileSize), count: 3,
+                                                          orientation: .horizontal, slotSizes: [1, 2])
+        let flatRing = FavoriteTilePaths.selectionRing(bounds: CGRect(origin: .zero, size: tileSize), count: 3, orientation: .horizontal)
+        check(stackedRing.contains(CGPoint(x: 40, y: 23.5), using: .evenOdd) && !flatRing.contains(CGPoint(x: 40, y: 23.5), using: .evenOdd),
+              "The selection ring carves the stacked column's own divider")
 
         let ring = FavoriteTilePaths.selectionRing(bounds: CGRect(x: 0, y: 0, width: 55, height: 47), count: 1, orientation: .horizontal)
         check(ring.contains(CGPoint(x: 27, y: 1), using: .evenOdd), "Ring covers the outer two points")

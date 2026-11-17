@@ -7,6 +7,7 @@ struct RecentTabOrder {
         var spaceID: UUID
         var profileID: UUID
         var orientation: SplitOrientation
+        var slotSizes: [Int]? = nil
         var id: String { tabIDs.map(\.uuidString).joined(separator: ":") }
     }
     private var recency: [String] = []
@@ -24,7 +25,7 @@ struct RecentTabOrder {
         let tabs = Dictionary(uniqueKeysWithValues: state.openTabs(where: { available($0.id) }).map { ($0.id, $0) })
         let spaces = Dictionary(uniqueKeysWithValues: state.spaces.map { ($0.id, $0) })
         var result: [Item] = [], assigned = Set<UUID>()
-        func append(_ ids: [UUID], spaceID: UUID, orientation: SplitOrientation) {
+        func append(_ ids: [UUID], spaceID: UUID, orientation: SplitOrientation, slotSizes: [Int]? = nil) {
             guard !ids.isEmpty, Set(ids).count == ids.count,
                   let space = spaces[spaceID], ids.allSatisfy({ id in
                       guard let tab = tabs[id] else { return false }
@@ -33,13 +34,14 @@ struct RecentTabOrder {
                   }) else { return }
             let key = ids.map(\.uuidString).joined(separator: ":")
             result.append(Item(tabIDs: ids, focusedTabID: lastFocus[key].flatMap { ids.contains($0) ? $0 : nil } ?? ids[0],
-                               spaceID: spaceID, profileID: space.profileID, orientation: orientation))
+                               spaceID: spaceID, profileID: space.profileID, orientation: orientation, slotSizes: slotSizes))
             assigned.formUnion(ids)
         }
         let selectedLayout = SidebarSplitItems.groups(in: state, spaceID: currentSpace).first { $0.tabIDs == selected }
-        append(selected, spaceID: currentSpace, orientation: selectedLayout?.orientation ?? .horizontal)
+        append(selected, spaceID: currentSpace, orientation: selectedLayout?.orientation ?? .horizontal,
+               slotSizes: selectedLayout?.stacks?.slotSizes)
         for layout in state.splitLayouts.reversed() where layout.tabIDs.count > 1 {
-            append(layout.tabIDs, spaceID: layout.spaceID, orientation: layout.orientation)
+            append(layout.tabIDs, spaceID: layout.spaceID, orientation: layout.orientation, slotSizes: layout.stacks?.slotSizes)
         }
         for tab in state.tabs { append([tab.id], spaceID: tab.spaceID, orientation: .horizontal) }
         let keys = Set(result.map(\.id))

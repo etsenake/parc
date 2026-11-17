@@ -38,6 +38,14 @@ import AppKit
                 spaceName: "Space 1", vertical: false,
                 components: [.init(id: id, title: "Page \(index + 1)", image: nil)])
         }
+        let paneIDs = (0..<3).map { _ in UUID() }
+        let stacked = RecentTabSwitcherView.Item(id: "stacked", title: "Stacked", spaceName: "Space 1", vertical: false,
+            components: paneIDs.map { .init(id: $0, title: "Pane", image: nil) }, slotSizes: [2, 1])
+        check(stacked.slots?.map { $0.map(\.id) } == [[paneIDs[0], paneIDs[1]], [paneIDs[2]]],
+              "a stacked split thumbnail groups its panes by slot in reading order")
+        var mismatched = stacked
+        mismatched.slotSizes = [1, 1]
+        check(mismatched.slots == nil && items[0].slots == nil, "a shape that doesn't match its panes draws flat")
         view.configure(isDark: false, focus: .systemPurple, hover: .systemGray, maxContrast: .black, cutout: .white)
         view.setItems(items, focused: 1)
         window.orderFront(nil); view.layoutSubtreeIfNeeded(); settle(0.3)

@@ -2645,7 +2645,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             } else {
                 let orientation = group?.orientation ?? .horizontal
                 let arm = FavoriteFaviconIdentity(pageURLs: pages.map(\.url), orientation: orientation)
-                button.setPages(pages.map(monogram), orientation: orientation)
+                button.setPages(pages.map(monogram), orientation: orientation, slotSizes: group?.stacks?.slotSizes)
                 let skipArm = !urlsChanged
                     && favoriteFaviconArms[id] == arm
                     && button.hasSettledPageFavicons(count: pages.count)
@@ -2891,7 +2891,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 let pages = group.map { $0.tabIDs.compactMap { id in visible.first { $0.id == id } } } ?? [tab]
                 let orientation = group?.orientation ?? .horizontal
                 let arm = FavoriteFaviconIdentity(pageURLs: pages.map(\.url), orientation: orientation)
-                button.setPages(pages.map(monogram), orientation: orientation)
+                button.setPages(pages.map(monogram), orientation: orientation, slotSizes: group?.stacks?.slotSizes)
                 let skipArm = favoriteFaviconArms[tab.id] == arm
                     && button.hasSettledPageFavicons(count: pages.count)
                 if !skipArm {

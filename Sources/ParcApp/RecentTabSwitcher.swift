@@ -181,7 +181,7 @@ final class RecentTabSwitcher {
         return .init(id: item.id, title: item.customInfo?.title ?? item.components.map(\.title).joined(separator: " · "),
                      spaceName: item.spaceName, vertical: item.selection.orientation == .vertical,
                      components: item.components.map(component), customInfo: item.customInfo,
-                     overlay: item.overlay.map(component), isHidden: hidden)
+                     overlay: item.overlay.map(component), isHidden: hidden, slotSizes: item.selection.slotSizes)
     }
     private func requestFavicons() {
         for component in items.flatMap(\.components) where !requestedFavicons.contains(component.id) {

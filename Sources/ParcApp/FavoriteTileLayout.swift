@@ -63,10 +63,14 @@ struct FavoriteChildLayout: Equatable {
 
 enum FavoriteChildLayouts {
     static func layouts(count: Int, size: CGSize, gap: CGFloat,
-                        orientation: SplitOrientation) -> [FavoriteChildLayout] {
+                        orientation: SplitOrientation, slotSizes: [Int]? = nil) -> [FavoriteChildLayout] {
         guard count > 0, size.width.isFinite, size.height.isFinite,
               size.width > 0, size.height > 0 else { return [] }
         guard count > 1 else { return [cell(CGRect(origin: .zero, size: size), in: size, gap: gap)] }
+        if let slotSizes, slotSizes.count > 1, slotSizes.allSatisfy({ $0 > 0 }),
+           slotSizes.contains(where: { $0 > 1 }), slotSizes.reduce(0, +) == count {
+            return stacked(slotSizes, size: size, orientation: orientation).map { cell($0, in: size, gap: gap) }
+        }
         var cells: [CGRect] = []
         switch orientation {
         case .horizontal:
@@ -98,6 +102,19 @@ enum FavoriteChildLayouts {
             }
         }
         return cells.map { cell($0, in: size, gap: gap) }
+    }
+
+    private static func stacked(_ slotSizes: [Int], size: CGSize, orientation: SplitOrientation) -> [CGRect] {
+        let horizontal = orientation == .horizontal
+        let slotLength = (horizontal ? size.width : size.height) / CGFloat(slotSizes.count)
+        return slotSizes.enumerated().flatMap { slot, panes in
+            let paneLength = (horizontal ? size.height : size.width) / CGFloat(panes)
+            return (0..<panes).map { pane in
+                horizontal
+                    ? CGRect(x: CGFloat(slot) * slotLength, y: CGFloat(pane) * paneLength, width: slotLength, height: paneLength)
+                    : CGRect(x: CGFloat(pane) * paneLength, y: CGFloat(slot) * slotLength, width: paneLength, height: slotLength)
+            }
+        }
     }
 
     private static func cell(_ raw: CGRect, in size: CGSize, gap: CGFloat) -> FavoriteChildLayout {
@@ -173,14 +190,14 @@ enum FavoriteTilePaths {
                            radius: m.cornerRadius - m.highlightRingInset)
     }
 
-    static func selectionRing(bounds: CGRect, count: Int, orientation: SplitOrientation) -> CGPath {
+    static func selectionRing(bounds: CGRect, count: Int, orientation: SplitOrientation, slotSizes: [Int]? = nil) -> CGPath {
         let m = FavoriteTileMetrics.self
         let path = CGMutablePath()
         path.addPath(roundedRect(bounds, radius: m.cornerRadius))
         let inner = bounds.insetBy(dx: m.outlineWidth, dy: m.outlineWidth)
         let radius = m.cornerRadius - m.outlineWidth
         let holes = FavoriteChildLayouts.layouts(count: count, size: inner.size, gap: m.outlineWidth,
-                                                 orientation: orientation)
+                                                 orientation: orientation, slotSizes: slotSizes)
         for hole in holes {
             let rect = hole.rect.offsetBy(dx: inner.minX, dy: inner.minY)
             if hole.corners == [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner] {
