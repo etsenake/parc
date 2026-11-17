@@ -36,17 +36,48 @@ See [Site Control Center](web-interactions.md).
 
 ## Popup anchor
 
-The anchor uses the visible sidebar placeholder, otherwise the actual focused
-pane or Peek card, otherwise the original window. A toolbar button does not
-replace the content anchor. With full popup size `(W,H)`, parent frame `(Pw,Ph)`,
-sidebar width `S`, and focused view rect `R` converted into parent content:
+A popup opens just below the control that opened it and never covers that
+control or the bar it sits in. Each time the presenter places or resizes a
+popup it asks the browser window's controller for an origin, passing the
+extension, the popup window and its full frame size; the controller answers in
+screen coordinates ([`ExtensionPopupPlacement`](../Sources/ParcApp/ExtensionPopupPlacement.swift)).
+The presenter's own sidebar, focused-view and window anchors remain for windows
+whose controller gives no answer.
 
-- Sidebar origin: `(max(S-W-40,40), Ph-H-10)`.
-- Focused content: `(R.maxX-W-40, R.maxY-H-10)`.
-- Window fallback: `(Pw-W-40, Ph-H-10)`.
+The controller picks the anchor in this order:
 
-Convert through the same parent window into screen coordinates. Native host
-initialization and resize validation remain responsible for actual page size.
+1. The button that was clicked for that extension, while it's still visible:
+   a pinned button in the sidebar's URL bar or any pane's or Peek's toolbar, or,
+   for an extension launched from the Site Control Center or its held-Command
+   picker, the button that opened the Site Control Center. The popup that
+   click's action opens claims it and only that popup reuses it; a click whose
+   action opens no popup is forgotten at once. So a later popup from the
+   command bar, a shortcut or the extension itself never lands on an old
+   button.
+2. The address area that owns extension buttons: the sidebar's URL bar while
+   it's presented and shows the address, else the focused pane's or Peek's
+   toolbar, else a pop-up window's chrome. Within it the extension's own pinned
+   button, else the Site Control Center button.
+3. A point 40 points in from the top trailing corner of the focused page, or of
+   the window when there's no page.
+
+The popup's trailing edge lines up with the button's and its top sits 6 points
+below the lower of the button and its bar, so a toolbar click opens beside its
+button whether or not the sidebar is open, and a sidebar click opens below the
+URL bar. It keeps 8 points inside the window's visible part, sliding inward
+horizontally. Without room below it flips up 6 points above the bar, then opens
+beside the bar, level with its top and leading side first. When none of those
+fits in the window it tries them on the screen's visible frame, hanging past
+the window's edge rather than covering the bar; then beside the button, which
+keeps the button clear; and only then slides up over the bar. In a stacked split
+the lower pane's popup drops into the lower pane when it fits and flips up over
+the upper pane when it doesn't.
+
+Anchor frames reach the screen through AppKit's window conversion, and the
+presenter's focused-view anchor converts through window coordinates too, so the
+flipped window content can't swap a stacked split's panes. A popup the user
+drags keeps its place across resizes. Native host initialization and resize
+validation remain responsible for actual page size.
 
 ## Side-panel compatibility adaptation
 

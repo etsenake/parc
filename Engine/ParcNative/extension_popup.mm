@@ -289,6 +289,7 @@ bool NativeExtensionPopup::Start() {
           self->RequestHide("presenter-dismiss");
         }
       }];
+  presenter_.extensionIdentifier = @(host_->extension_id().c_str());
   if (![presenter_ prepare] || closing_ || hide_queued_) {
     Trace("start-refused", "prepare-or-terminal");
     Close();

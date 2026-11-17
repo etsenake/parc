@@ -18,7 +18,7 @@ struct ExtensionControlsTests {
             precondition(condition(), message)
         }
         func item(_ id: String, pin: Int? = nil, canPin: Bool = true,
-                  execute: @escaping () -> Void = {},
+                  execute: @escaping (NSView?) -> Void = { _ in },
                   context: @escaping (NSView) -> Void = { _ in },
                   setPinned: @escaping (Bool) -> Void = { _ in }) -> ExtensionControlItem {
             ExtensionControlItem(identifier: id, name: "Action " + id, tooltip: "Title " + id,
@@ -30,7 +30,7 @@ struct ExtensionControlsTests {
         var menus = 0
         let window = ControlWindow(contentRect: NSRect(x: 0, y: 0, width: 160, height: 80),
                               styleMask: [.titled], backing: .buffered, defer: false)
-        let button = ExtensionActionButton(item: item("a", execute: { dispatches += 1 }))
+        let button = ExtensionActionButton(item: item("a", execute: { _ in dispatches += 1 }))
         window.contentView?.addSubview(button)
         button.frame = NSRect(x: 0, y: 0, width: 28, height: 28)
         expect(button.isEnabled, "Action controls preserve the engine's disabled-action fallback")
@@ -38,15 +38,16 @@ struct ExtensionControlsTests {
         expect(button.accessibilityLabel() == "Accessible a", "Native accessibility uses actual action label")
         button.performClick(nil)
         expect(dispatches == 1, "Native activation dispatches once")
-        button.update(item("a", execute: { button.invalidate(); dispatches += 1 }))
+        button.update(item("a", execute: { _ in button.invalidate(); dispatches += 1 }))
         button.performClick(nil)
         expect(dispatches == 2, "Synchronous self invalidation completes the current callback")
         button.performClick(nil)
         expect(dispatches == 2, "Invalidated controls cannot dispatch a second action")
 
-        button.update(item("a", execute: { dispatches += 1 }, context: { control in menus += control === button ? 1 : 100 }))
+        button.update(item("a", execute: { control in dispatches += control === button ? 1 : 100 },
+                           context: { control in menus += control === button ? 1 : 100 }))
         expect(button.accessibilityPerformShowMenu() && menus == 1, "AX Show Menu dispatches the original native context action")
-        expect(button.accessibilityPerformPress() && dispatches == 3, "AX press reaches the same original action")
+        expect(button.accessibilityPerformPress() && dispatches == 3, "AX press reaches the same original action and names its own button")
         button.isHidden = true
         expect(!button.isAccessibilityEnabled() && !button.accessibilityPerformPress()
                && !button.accessibilityPerformShowMenu(), "Hidden pins neither advertise availability nor dispatch accessibility actions")
@@ -55,7 +56,7 @@ struct ExtensionControlsTests {
         button.isHidden = false
         button.isEnabled = false
         expect(!button.accessibilityPerformPress() && !button.accessibilityPerformShowMenu(), "Invalid controls reject both AX actions")
-        button.update(item("a", execute: { dispatches += 1 }))
+        button.update(item("a", execute: { _ in dispatches += 1 }))
         button.removeFromSuperview()
         expect(!button.accessibilityPerformPress() && !button.isAccessibilityEnabled(), "Detached actions cannot dispatch")
         expect(button.focusRingMaskBounds == button.bounds, "The focus mask follows the actual pin surface")
@@ -144,7 +145,7 @@ struct ExtensionControlsTests {
                "Sidebar pins retain their independent square radius-nine surface")
         let artwork = NSImage(size: NSSize(width: 32, height: 32))
         let artItem = ExtensionControlItem(identifier: "art", name: "Artwork", tooltip: "", accessibilityLabel: "",
-            image: artwork, pinnedIndex: 0, canChangePin: true, execute: {}, showContextMenu: { _ in }, setPinned: { _ in })
+            image: artwork, pinnedIndex: 0, canChangePin: true, execute: { _ in }, showContextMenu: { _ in }, setPinned: { _ in })
         let artButton = ExtensionActionButton(item: artItem, style: .toolbar)
         artButton.frame = NSRect(origin: .zero, size: NSSize(width: 32, height: 24))
         expect(artButton.cell?.imageRect(forBounds: artButton.bounds) == NSRect(x: 0, y: -4, width: 32, height: 32),
@@ -157,7 +158,7 @@ struct ExtensionControlsTests {
                "The canvas's badge may overhang the 24-point toolbar surface inside the pane bar")
         let other = ExtensionActionButton(item: ExtensionControlItem(identifier: "other", name: "Other", tooltip: "",
             accessibilityLabel: "", image: NSImage(size: NSSize(width: 64, height: 64)), pinnedIndex: 0,
-            canChangePin: true, execute: {}, showContextMenu: { _ in }, setPinned: { _ in }), style: .toolbar)
+            canChangePin: true, execute: { _ in }, showContextMenu: { _ in }, setPinned: { _ in }), style: .toolbar)
         other.frame = NSRect(origin: .zero, size: NSSize(width: 32, height: 24))
         expect(other.cell?.imageRect(forBounds: other.bounds) == NSRect(x: 8, y: 4, width: 16, height: 16),
                "An image that is not the action canvas keeps the centred 16-point rect")
@@ -190,7 +191,7 @@ struct ExtensionControlsTests {
             let host = NSView(frame: NSRect(x: 0, y: 0, width: 48, height: 48))
             let rendered = ExtensionActionButton(item: ExtensionControlItem(identifier: "padded", name: "Padded",
                 tooltip: "", accessibilityLabel: "", image: padded, pinnedIndex: 0, canChangePin: true,
-                execute: {}, showContextMenu: { _ in }, setPinned: { _ in }), style: style)
+                execute: { _ in }, showContextMenu: { _ in }, setPinned: { _ in }), style: style)
             rendered.frame = NSRect(origin: NSPoint(x: 8, y: 8), size: style.surfaceSize)
             host.addSubview(rendered)
             for scale in [1, 2] {
@@ -204,7 +205,7 @@ struct ExtensionControlsTests {
         func badged(_ text: String, style: ExtensionControlStyle) -> ExtensionActionButton {
             let button = ExtensionActionButton(item: ExtensionControlItem(identifier: "badged", name: "Badged",
                 tooltip: "", accessibilityLabel: "", image: artwork, pinnedIndex: 0, canChangePin: true,
-                execute: {}, showContextMenu: { _ in }, setPinned: { _ in },
+                execute: { _ in }, showContextMenu: { _ in }, setPinned: { _ in },
                 pinnedArtwork: ExtensionPinnedArtwork(unbadged: padded, badgeText: text, textColor: white,
                                                       backgroundColor: green), badgeText: text), style: style)
             button.frame = NSRect(origin: .zero, size: style.surfaceSize)
@@ -247,7 +248,7 @@ struct ExtensionControlsTests {
                    "The \(style) badge overhangs the icon's top-right corner by 4 points at 2x")
         }
         let baked = ExtensionActionButton(item: ExtensionControlItem(identifier: "baked", name: "Baked", tooltip: "",
-            accessibilityLabel: "", image: artwork, pinnedIndex: 0, canChangePin: true, execute: {},
+            accessibilityLabel: "", image: artwork, pinnedIndex: 0, canChangePin: true, execute: { _ in },
             showContextMenu: { _ in }, setPinned: { _ in }, badgeText: "7"), style: .toolbar)
         expect(baked.image === artwork && baked.badgeFrame == nil,
                "Without the unbadged canvas the baked canvas shows alone, with Chromium's badge and no second one")
@@ -260,7 +261,7 @@ struct ExtensionControlsTests {
         expect(plain?.image === padded && plain?.badge == nil, "An empty badge shows the unbadged canvas alone")
         let cleared = badged("3", style: .sidebar)
         cleared.update(ExtensionControlItem(identifier: "badged", name: "Badged", tooltip: "", accessibilityLabel: "",
-            image: artwork, pinnedIndex: 0, canChangePin: true, execute: {}, showContextMenu: { _ in }, setPinned: { _ in },
+            image: artwork, pinnedIndex: 0, canChangePin: true, execute: { _ in }, showContextMenu: { _ in }, setPinned: { _ in },
             pinnedArtwork: plain))
         expect(cleared.badgeFrame == nil && cleared.image === padded, "Clearing the badge text hides the shell badge")
         expect(cleared.accessibilityValue() == nil, "An action without badge text has no badge value")

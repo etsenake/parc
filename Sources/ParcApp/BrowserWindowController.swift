@@ -2058,6 +2058,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var addressPromptHolds: [ObjectIdentifier: AddressPopoverRevealHold] = [:]
     var extensionPopupKeyObserver: NSObjectProtocol?
     var extensionPopupAtSidebar = false
+    var extensionPopupSource: ExtensionPopupSource?
     func nativeBrowserPaymentActionsDidChange(_ browser: PCNativeBrowserWindow) {
         guard browser === nativeBinding else { return }
         refreshPaymentControls()

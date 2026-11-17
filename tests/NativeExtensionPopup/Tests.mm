@@ -30,6 +30,31 @@ static int assertions = 0;
 - (void)pageHostDidAttemptDeferredFocus:(PCNativePageHost*)host {
 }
 @end
+@interface FlippedContentView : NSView
+@end
+@implementation FlippedContentView
+- (BOOL)isFlipped {
+  return YES;
+}
+@end
+@interface PlacingController : NSWindowController <PCExtensionPopupPlacing>
+@property(copy) NSString* extension;
+@property(weak) NSWindow* popup;
+@property NSSize size;
+@property(strong) NSValue* origin;
+@property NSInteger calls;
+@end
+@implementation PlacingController
+- (NSValue*)parcExtensionPopupOriginForExtension:(NSString*)extensionID
+                                           popup:(NSWindow*)popup
+                                            size:(NSSize)size {
+  ++_calls;
+  _extension = [extensionID copy];
+  _popup = popup;
+  _size = size;
+  return _origin;
+}
+@end
 static NSWindow* Window() {
   NSWindow* result = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(100, 100, 900, 700)
@@ -310,9 +335,73 @@ int main() {
     EXPECT(!presenter.popupWindow.keyWindow);
     [presenter invalidate];
     [page invalidate];
+    NSWindow* stacked = Window();
+    stacked.contentView =
+        [[FlippedContentView alloc] initWithFrame:stacked.contentView.frame];
+    NSView* upper = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 900, 350)];
+    NSView* lower =
+        [[NSView alloc] initWithFrame:NSMakeRect(0, 350, 900, 350)];
+    [stacked.contentView addSubview:upper];
+    [stacked.contentView addSubview:lower];
+    NSRect upperOnScreen =
+        [stacked convertRectToScreen:[upper convertRect:upper.bounds
+                                                 toView:nil]];
+    NSRect lowerOnScreen =
+        [stacked convertRectToScreen:[lower convertRect:lower.bounds
+                                                 toView:nil]];
+    EXPECT(NSMinY(upperOnScreen) > NSMinY(lowerOnScreen));
+    __block NSView* focused = upper;
+    page = Page(nil);
+    presenter = [[PCExtensionPopupPresenter alloc] initWithParentWindow:stacked
+        pageHost:page
+        anchor:^{
+          return [PCExtensionPopupAnchor focusedViewAnchor:focused];
+        }
+        mayDismissForParentKey:^{
+          return YES;
+        }
+        onDismiss:^{
+        }];
+    EXPECT([presenter prepare]);
+    popup = presenter.popupWindow;
+    EXPECT(Near(NSMaxY(popup.frame), NSMaxY(upperOnScreen) - 10));
+    focused = lower;
+    EXPECT([presenter resizeContent:NSMakeSize(200, 120)]);
+    EXPECT(Near(NSMaxY(popup.frame), NSMaxY(lowerOnScreen) - 10));
+    PlacingController* placing =
+        [[PlacingController alloc] initWithWindow:stacked];
+    placing.origin = [NSValue valueWithPoint:NSMakePoint(123, 456)];
+    EXPECT([presenter resizeContent:NSMakeSize(220, 140)]);
+    EXPECT(placing.calls == 0);
+    presenter.extensionIdentifier = @"abcdefghijklmnopabcdefghijklmnop";
+    EXPECT([presenter resizeContent:NSMakeSize(240, 160)]);
+    EXPECT(placing.calls == 1);
+    EXPECT([placing.extension
+        isEqualToString:@"abcdefghijklmnopabcdefghijklmnop"]);
+    EXPECT(placing.popup == popup);
+    EXPECT(Near(placing.size.width, popup.frame.size.width));
+    EXPECT(Near(placing.size.height, popup.frame.size.height));
+    EXPECT(Near(popup.frame.origin.x, 123));
+    EXPECT(Near(popup.frame.origin.y, 456));
+    for (NSValue* refused in @[
+           [NSValue valueWithRect:NSMakeRect(1, 2, 3, 4)],
+           [NSValue valueWithPoint:NSMakePoint(NAN, 0)],
+         ]) {
+      placing.origin = refused;
+      EXPECT([presenter resizeContent:NSMakeSize(260, 160)]);
+      EXPECT(Near(NSMaxY(popup.frame), NSMaxY(lowerOnScreen) - 10));
+    }
+    placing.origin = nil;
+    focused = upper;
+    EXPECT([presenter resizeContent:NSMakeSize(280, 160)]);
+    EXPECT(Near(NSMaxY(popup.frame), NSMaxY(upperOnScreen) - 10));
+    EXPECT(placing.calls == 4);
+    [presenter invalidate];
+    [page invalidate];
+    [stacked close];
     [other close];
     [parent close];
-    printf("NativeExtensionPopup AppKit: %d assertions passed in 7 groups\n",
+    printf("NativeExtensionPopup AppKit: %d assertions passed in 8 groups\n",
            assertions);
   }
 }

@@ -34,7 +34,7 @@ struct ExtensionControlItem {
     let image: NSImage?
     let pinnedIndex: Int?
     let canChangePin: Bool
-    let execute: () -> Void
+    let execute: (_ control: NSView?) -> Void
     let showContextMenu: (_ control: NSView) -> Void
     let setPinned: (Bool) -> Void
     var pinnedArtwork: ExtensionPinnedArtwork? = nil
@@ -111,9 +111,9 @@ enum ExtensionActionBadgeMetrics {
 @MainActor
 final class ExtensionActionButton: PointingHandButton {
     let style: ExtensionControlStyle
-    private var invokeAction: (() -> Void)?
+    private var invokeAction: ((NSView?) -> Void)?
     private var contextAction: ((NSView) -> Void)?
-    private var mouseDownAction: (() -> Void)?
+    private var mouseDownAction: ((NSView?) -> Void)?
     private var trackingMouseDown = false
     private var trackingArea: NSTrackingArea?
     private var hovered = false
@@ -181,7 +181,7 @@ final class ExtensionActionButton: PointingHandButton {
     @objc private func invoke() {
         guard available else { return }
         let perform = trackingMouseDown ? mouseDownAction : invokeAction
-        perform?()
+        perform?(self)
     }
     override func accessibilityPerformPress() -> Bool {
         guard available else { return false }
@@ -302,6 +302,7 @@ final class ExtensionToolbarView: NSView {
     var onButtonsChange: (() -> Void)?
     private(set) var desiredWidth: CGFloat = 0
     var orderedButtons: [NSView] { orderedIDs.compactMap { buttons[$0] } }
+    func button(for identifier: String) -> NSView? { buttons[identifier].flatMap { $0.isHidden ? nil : $0 } }
     override var isFlipped: Bool { true }
     var hitTestsWhenTransparent = true
     override func hitTest(_ point: NSPoint) -> NSView? {

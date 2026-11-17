@@ -857,7 +857,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     private var closing = false
     private(set) var isAwaitingNativeClose = false
     private var pickerSelection: ((String) -> Void)?
-    private weak var anchorView: NSView?
+    private(set) weak var anchorView: NSView?
     private weak var anchorWindow: NSWindow?
     private var resignActiveObserver: NSObjectProtocol?
     nonisolated(unsafe) private var observers: [NSObjectProtocol] = []

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #import "page_host.h"
 
@@ -124,6 +125,7 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
 }
 @end
 @implementation PCExtensionPopupPresenter
+@synthesize extensionIdentifier = _extensionIdentifier;
 - (instancetype)initWithParentWindow:(NSWindow*)parent
                             pageHost:(PCNativePageHost*)page
                               anchor:(PCExtensionPopupAnchor* (^)(void))anchor
@@ -164,19 +166,38 @@ NSTimeInterval PCExtensionPopupRevealTime(NSTimeInterval shown,
   }
   NSWindow* parent = _parent;
   NSWindow* popup = _popupWindow;
+  NSSize size = popup.frame.size;
+  NSString* extension = _extensionIdentifier;
+  id controller = parent.windowController;
+  SEL placing = @selector(parcExtensionPopupOriginForExtension:popup:size:);
+  if (extension && [controller respondsToSelector:placing]) {
+    NSValue* placed = [(id<PCExtensionPopupPlacing>)controller
+        parcExtensionPopupOriginForExtension:extension
+                                       popup:popup
+                                        size:size];
+    if (_invalidated || parent != _parent || popup != _popupWindow) {
+      return NO;
+    }
+    if ([placed isKindOfClass:NSValue.class] &&
+        std::strcmp(placed.objCType, @encode(NSPoint)) == 0) {
+      NSPoint origin = placed.pointValue;
+      if (std::isfinite(origin.x) && std::isfinite(origin.y)) {
+        [popup setFrameOrigin:[self lifted:origin]];
+        return !_invalidated;
+      }
+    }
+  }
   PCExtensionPopupAnchor* anchor = _anchor();
   if (_invalidated || parent != _parent || popup != _popupWindow) {
     return NO;
   }
-  NSSize size = popup.frame.size;
+  size = popup.frame.size;
   NSPoint point = NSMakePoint(parent.frame.size.width - size.width - 40,
                               parent.frame.size.height - size.height - 10);
   if (anchor.kind == 1 && std::isfinite(anchor.sidebarWidth)) {
     point.x = std::max(anchor.sidebarWidth - size.width - 40, CGFloat(40));
-  } else if (anchor.kind == 2 && anchor.view && anchor.view.window == parent &&
-             parent.contentView) {
-    NSRect rect = [anchor.view convertRect:anchor.view.bounds
-                                    toView:parent.contentView];
+  } else if (anchor.kind == 2 && anchor.view && anchor.view.window == parent) {
+    NSRect rect = [anchor.view convertRect:anchor.view.bounds toView:nil];
     point = NSMakePoint(NSMaxX(rect) - size.width - 40,
                         NSMaxY(rect) - size.height - 10);
   }

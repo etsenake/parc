@@ -1524,6 +1524,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         for (id, tile) in favoriteTiles { tile.setOverlays(overlays[id] ?? .none) }
     }
     var pageControlsAnchor: NSView { pageActions }
+    var addressBarAnchor: NSView { addressBackground }
     var keyboardSearchAnchor: NSView { addressButton }
     private var keyboardHighlightedItem: SidebarItemReference?
     private let keyboardHighlight = SidebarKeyboardHighlightView()

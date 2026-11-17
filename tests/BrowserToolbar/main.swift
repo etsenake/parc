@@ -322,7 +322,7 @@ MainActor.assumeIsolated { exitOnFailure {
     let toolbar = BrowserToolbarView(frame: .zero)
     var invocations = 0
     let item = ExtensionControlItem(identifier: "test", name: "Test", tooltip: "Test", accessibilityLabel: "Test",
-        image: nil, pinnedIndex: 0, canChangePin: true, execute: { invocations += 1 }, showContextMenu: { _ in }, setPinned: { _ in })
+        image: nil, pinnedIndex: 0, canChangePin: true, execute: { _ in invocations += 1 }, showContextMenu: { _ in }, setPinned: { _ in })
     @MainActor func update(enabled: Bool) {
         toolbar.update(url: url, fullURL: true, enabled: enabled, canBack: true, canForward: false,
             loading: false, canReload: true, canCopy: true, canShowSiteInfo: true, canSplit: true,

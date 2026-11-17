@@ -4,9 +4,11 @@ The production extension route uses source-owned Chromium integration. It contai
 
 ## Presentation and lifecycle
 
-The actual supplied page view is hosted in an AppKit child window anchored to
-the owning page/sidebar/window. Resize preserves its anchor until the user moves
-it. Attachment to a visible parent waits for load readiness; preparing a popup
+The actual supplied page view is hosted in an AppKit child window placed where
+the browser window's controller answers for that popup, extension and size, otherwise
+anchored to the owning page/sidebar/window
+([popup anchor](../../docs/extensions-geometry.md#popup-anchor)). Resize
+preserves its anchor until the user moves it. Attachment to a visible parent waits for load readiness; preparing a popup
 must not show it prematurely.
 
 `ExtensionActionViewModel` and `ExtensionActionDelegate` preserve upstream grants.
@@ -43,7 +45,7 @@ Run the windowless motion check and the AppKit suite (no installed browser or Ch
 bash tests/NativeExtensionPopup/run.sh
 ```
 
-The motion check covers the fade and glide curves, Reduce Motion and the reveal timing without creating a window. The AppKit suite covers **78 assertions in eight groups**. The executable uses real NSWindows, supplied NSViews, native close/notification delivery and the main run loop. It covers exact child/page identity and geometry, moved-window resize, stacked panes in a flipped window, the controller's placement answer and its refused answers, parent-specific dismissal with a policy hold, callback reentry/final owner release, replacement during native detachment, invalid attachment, anchor callback invalidation, and a visible parent that must not expose an opening popup.
+The motion check covers the fade and glide curves, Reduce Motion and the reveal timing without creating a window. The AppKit suite covers **79 assertions in eight groups**. The executable uses real NSWindows, supplied NSViews, native close/notification delivery and the main run loop. It covers exact child/page identity and geometry, moved-window resize, stacked panes in a flipped window, the controller's placement answer and its refused answers, parent-specific dismissal with a policy hold, callback reentry/final owner release, replacement during native detachment, invalid attachment, anchor callback invalidation, and a visible parent that must not expose an opening popup.
 
 Syntax-check the three production translation units and six genuine-host browser-test cases using their actual reviewed shared target flags, without generating or building upstream:
 

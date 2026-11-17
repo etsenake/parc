@@ -82,6 +82,9 @@ assert "var extensionPopupsAnchorToSidebar: Bool { sidebar.isPresented && sideba
         "            followExtensionPopupsForAddressHold()\n            holdAddressButtonsForLoadingExtensionPopups()\n" \
         "            return .sidebar(" \
     in controller, "extension popups no longer anchor at, and hold from their first load, the visible sidebar URL bar"
+assert "extensionPopupAtSidebar = anchor?.bar === sidebar.addressBarAnchor\n        if extensionPopupAtSidebar {\n" \
+    "            followExtensionPopupsForAddressHold()\n            holdAddressButtonsForLoadingExtensionPopups()\n" \
+    in controller, "a popup placed below the sidebar URL bar no longer holds its buttons from its first load"
 loading = controller[controller.index("func holdAddressButtonsForLoadingExtensionPopups() {"):]
 loading = loading[:loading.index("\n    }\n")]
 assert "for popup in NSApp.windows where addressPromptHolds[ObjectIdentifier(popup)] == nil && Self.extensionPopupLoading(popup) {" \

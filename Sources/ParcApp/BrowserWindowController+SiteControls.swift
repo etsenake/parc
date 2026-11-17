@@ -221,14 +221,14 @@ extension BrowserWindowController {
             case .captureVisiblePage: self.dismissSiteControlCenter(when: current) { [weak self] in self?.capturePage(.viewport) }
             }
         }
-        model.onExtension = { [weak self] id in
+        model.onExtension = { [weak self, weak controller] id in
             guard currentPresentation(), let self else { return }
-            self.siteControlCenterItems[id]?.execute()
+            self.siteControlCenterItems[id]?.execute(controller?.anchorView)
         }
-        controller.preparePickerSelection = { [weak self] in
+        controller.preparePickerSelection = { [weak self, weak controller] in
             guard currentPresentation(), let self else { return nil }
             let items = self.siteControlCenterItems
-            return { id in items[id]?.execute() }
+            return { [weak anchor = controller?.anchorView] id in items[id]?.execute(anchor) }
         }
         model.onExtensionContextMenu = { [weak self, weak controller] id in
             guard currentPresentation(), let self, let tile = controller?.tile(for: id) else { return }

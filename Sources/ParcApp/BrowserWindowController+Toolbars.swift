@@ -790,12 +790,14 @@ extension BrowserWindowController {
                 tooltip: action.tooltip, accessibilityLabel: action.accessibilityLabel,
                 image: action.icon, pinnedIndex: action.pinnedIndex == NSNotFound ? nil : Int(action.pinnedIndex),
                 canChangePin: action.canChangePin,
-                execute: { [weak self, weak binding, weak page] in
+                execute: { [weak self, weak binding, weak page] control in
                     guard let self, let binding, let page,
                           self.nativeBinding === binding, self.currentBrowser?.nativePage === page,
                           !self.isClosing, !page.isClosed else { return }
-                    self.performExtensionActionAfterDismissingControls {
+                    self.performExtensionActionAfterDismissingControls { [weak self] in
+                        self?.extensionPopupSource = control.map { ExtensionPopupSource(identifier: action.identifier, control: $0) }
                         _ = binding.executeExtensionAction(action, for: page)
+                        if self?.extensionPopupSource?.claimed == false { self?.extensionPopupSource = nil }
                     }
                 }, showContextMenu: { [weak self, weak binding, weak page] control in
                     guard let self, let binding, let page,

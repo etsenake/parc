@@ -27,6 +27,12 @@ PCExtensionPopupRevealTime(NSTimeInterval shown,
 + (instancetype)focusedViewAnchor:(NSView*)view;
 @end
 
+@protocol PCExtensionPopupPlacing <NSObject>
+- (nullable NSValue*)parcExtensionPopupOriginForExtension:(NSString*)extensionID
+                                                    popup:(NSWindow*)popup
+                                                     size:(NSSize)size;
+@end
+
 @interface PCExtensionPopupPresenter : NSObject
 - (instancetype)initWithParentWindow:(NSWindow*)parent
                             pageHost:(PCNativePageHost*)page
@@ -46,5 +52,6 @@ PCExtensionPopupRevealTime(NSTimeInterval shown,
 @property(nonatomic, readonly, getter=isPresenting) BOOL presenting;
 @property(nonatomic, readonly, getter=isInvalidated) BOOL invalidated;
 @property(nonatomic, readonly) BOOL userHasMovedWindow;
+@property(nonatomic, copy, nullable) NSString* extensionIdentifier;
 @end
 NS_ASSUME_NONNULL_END
