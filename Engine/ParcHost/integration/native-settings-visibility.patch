@@ -1,0 +1,8 @@
+--- a/chrome/browser/resources/settings/page_visibility.ts
++++ b/chrome/browser/resources/settings/page_visibility.ts
+@@ -45,2 +45,5 @@
+ function createPageVisibility(): PageVisibility|undefined {
++  if (loadTimeData.valueExists('parcPageVisibility')) {
++    return loadTimeData.getValue<PageVisibility>('parcPageVisibility');
++  }
+   if (!loadTimeData.getBoolean('isGuest')) {

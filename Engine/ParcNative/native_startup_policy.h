@@ -1,4 +1,3 @@
-// Copyright 2026 Parc contributors.
 #ifndef PARC_NATIVE_STARTUP_POLICY_H_
 #define PARC_NATIVE_STARTUP_POLICY_H_
 
@@ -45,6 +44,8 @@ inline constexpr const char* kBaselineDisabledFeatures[] = {
     "TailoredSecurityIntegration",
     "CredentialManagementUnifiedUi",
     "ExtensionsPinnedByDefault",
+    "SkillsEnabled",
+    "GoogleSearchAiModeWorkspace",
 };
 
 inline void AppendFeature(std::string& list, std::string_view feature) {

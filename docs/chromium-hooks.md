@@ -33,14 +33,14 @@ Each patch entry says what it changes, which files it touches and why it must st
 
 ## Counts
 
-The reference covers 69 hooks and 74 patches:
+The reference covers 69 hooks and 75 patches:
 
 - 64 setters in `parc/chromium_hooks.h`, plus its one call-in, `DestroyUnusedOTRProfile`.
 - 5 setters in layer headers: the Widevine request observer, the Safari-identity query, worker
   identity, the AirPlay playback-target handler and Blink's player move. Their 5 call-ins are the
   Safari-identity check, the three AirPlay answers and picture-in-picture scrubbing. One more
   call-in, `content::NotifyNativeDeferredOpenURL`, lives in `content/public/browser/parc_native_links.h`.
-- 74 patches in [`overlay.json`](../Engine/ParcHost/overlay.json): 73 in
+- 75 patches in [`overlay.json`](../Engine/ParcHost/overlay.json): 74 in
   `Engine/ParcHost/integration/` and `extension_context_menu_native` in `Engine/ParcNative/`.
 
 To recheck the counts after a change, compare the setters the header declares with the ones the
@@ -66,7 +66,7 @@ and the three AirPlay call-ins.
 |---|---|---|---|
 | Browser and startup | 23 | 14 | [browser, pages and windows](chromium-hooks-browser.md#browser-and-startup-hooks) |
 | Page and window | 18 | 8 | [browser, pages and windows](chromium-hooks-browser.md#page-and-window-hooks) |
-| Interface routing and prompts | 19 | 28 | [interface and prompts](chromium-hooks-interface.md) |
+| Interface routing and prompts | 19 | 29 | [interface and prompts](chromium-hooks-interface.md) |
 | Media and FairPlay | 8 | 16 | [media and Blink](chromium-hooks-media.md#media-and-fairplay-hooks) |
 | Blink and renderer | 1 | 4 | [media and Blink](chromium-hooks-media.md#blink-and-renderer-hooks) |
 | Build and tests | 0 | 4 | [below](#build-and-test-patches) |
@@ -91,8 +91,8 @@ Patches by area:
   `native-constrained-window`, `native-extension-install`, `native-webauthn`,
   `native-autofill-capabilities-direct`,
   `native-autofill-controllers-direct`, `native-address-editor`, `native-address-account`,
-  `native-protocol-handler-request`, `native-current-tab-picker`, `native-delegated-picker` and
-  `native-file-dialogs-direct-overlay`.
+  `native-protocol-handler-request`, `native-current-tab-picker`, `native-delegated-picker`,
+  `native-settings-visibility` and `native-file-dialogs-direct-overlay`.
 - Media and FairPlay: `cdm-helper`, `fairplay-media`, `fairplay-compositing-direct`,
   `fairplay-identity-workers`, `fairplay-playback-controls`, `native-media-controls`, `native-cast`,
   `native-presentation`, `native-gmc-presentation`, `platform-codecs`, `webaudio-aac`,

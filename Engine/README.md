@@ -179,7 +179,7 @@ the overlay together: the overlay records the exact Chromium commit it fits, so
 every bump needs a new overlay version even when no patch breaks. Never commit
 the lock alone; the next release would move its engine to the new version and
 then stop at the overlay check. A minor bump (same milestone, new patch number)
-usually breaks a few of the 74 patches and keeps the compiler, so the build is
+usually breaks a few of the 75 patches and keeps the compiler, so the build is
 incremental. A major bump (new milestone) breaks many patches, adds and drops
 dependencies and usually rolls the compiler, so the next build recompiles
 nearly everything; also check the new version's required macOS SDK in its
@@ -250,6 +250,8 @@ so releases keep using the current engine:
    version plus one.
 8. Prove it in the copy: `reset-source`, then `overlay-check` and
    `overlay-apply` with the new manifest, then `generate` and `shipping-build`.
+   The build stops by name if Chromium renamed or dropped anything the
+   [More Settings hide list](../docs/settings.md#more-settings) relies on.
 9. Fetch main, commit the lock, manifest and changed patch and source files in
    one commit, and push. The next release on any Mac upgrades its engine in
    place and builds. Delete the copy afterwards.

@@ -64,10 +64,14 @@ Defaults applied only when the command line has not explicitly named a feature:
   `AutofillServerCommunication`, `PreloadMediaEngagementData`, `BrowsingTopics`,
   `NetworkTimeServiceQuerying`, `LiveCaption`, `MerchantTrust`,
   `PageInfoAboutThisSite`, `PageInfoAboutThisSiteMoreLangs`,
-  `TailoredSecurityIntegration`, `CredentialManagementUnifiedUi` and
-  `ExtensionsPinnedByDefault`. The last two keep automatic sign-in on Parc's
-  password prompt instead of Chromium's toast, and keep newly installed
-  extensions unpinned.
+  `TailoredSecurityIntegration`, `CredentialManagementUnifiedUi`,
+  `ExtensionsPinnedByDefault`, `SkillsEnabled` and `GoogleSearchAiModeWorkspace`.
+  `CredentialManagementUnifiedUi` and `ExtensionsPinnedByDefault` keep automatic
+  sign-in on Parc's password prompt instead of Chromium's toast, and keep newly
+  installed extensions unpinned. `SkillsEnabled` turns off Gemini skills, whose
+  per-tab helpers and page Parc never uses, and `GoogleSearchAiModeWorkspace`
+  only adds a Connected Apps row; together they kept Chromium's AI page in
+  [More Settings](settings.md#more-settings).
 
 Back/forward cache, ServiceWorkerAutoPreload and Privacy Sandbox attestation
 retain upstream defaults. On-device omnibox suggestions and the web Translator

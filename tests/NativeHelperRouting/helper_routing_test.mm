@@ -39,7 +39,7 @@ constexpr char kPolicyDisabled[] =
     "NetworkTimeServiceQuerying,LiveCaption,MerchantTrust,"
     "PageInfoAboutThisSite,PageInfoAboutThisSiteMoreLangs,"
     "TailoredSecurityIntegration,CredentialManagementUnifiedUi,"
-    "ExtensionsPinnedByDefault";
+    "ExtensionsPinnedByDefault,SkillsEnabled,GoogleSearchAiModeWorkspace";
 constexpr char kPolicyEnabled[] =
     "CertificateTransparencyAskBeforeEnabling,WebContentsDiscard";
 void CheckStartupPolicy() {
@@ -104,11 +104,14 @@ void CheckStartupPolicy() {
              "CertificateTransparencyAskBeforeEnabling,HistoryEmbeddings,"
              "Glic,GlicActorUi,AutofillActorMode,LensOverlay,"
              "TranslateRankerQuery,TranslateRankerEnforcement,"
+             "CentralizedInfoBarFramework,TranslateTrigger,"
              "MacAppCodeSignClone,MacAppCodeSignCloneRenameAsBundle,"
              "AutofillServerCommunication,PreloadMediaEngagementData,"
              "BrowsingTopics,NetworkTimeServiceQuerying,"
              "PageInfoAboutThisSite,PageInfoAboutThisSiteMoreLangs,"
-             "TailoredSecurityIntegration",
+             "TailoredSecurityIntegration,CredentialManagementUnifiedUi,"
+             "ExtensionsPinnedByDefault,SkillsEnabled,"
+             "GoogleSearchAiModeWorkspace",
          "named features skip default disables; product exclusions remain");
 
   base::CommandLine spaced(base::FilePath("/fixture/Parc"));

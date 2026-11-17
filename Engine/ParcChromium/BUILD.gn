@@ -129,6 +129,29 @@ action("product_name_strings") {
   deps = [ grit_resource_id_target ]
 }
 
+action("settings_page_contract") {
+  script = "settings_page_contract.py"
+  inputs = [
+    "native/native_startup_policy.h",
+    "parc_settings_page.cc",
+  ]
+  outputs = [ "$target_gen_dir/settings_page_contract.stamp" ]
+  depfile = "$target_gen_dir/settings_page_contract.d"
+  args = [
+    "--chromium",
+    rebase_path("//", root_build_dir),
+    "--values",
+    rebase_path("parc_settings_page.cc", root_build_dir),
+    "--startup-policy",
+    rebase_path("native/native_startup_policy.h", root_build_dir),
+    "--applied",
+    "--stamp",
+    rebase_path(outputs[0], root_build_dir),
+    "--depfile",
+    rebase_path(depfile, root_build_dir),
+  ]
+}
+
 bundle_data("internal_extension_resources") {
   sources = [ "internal_extension/manifest.json", "internal_extension/background.js" ]
   outputs = [ "{{bundle_resources_dir}}/parc_internal_extension/{{source_file_part}}" ]
@@ -174,6 +197,9 @@ source_set("browser") {
     "frame_focus.h",
     "web_push.cc",
     "web_push.h",
+    "webui_branding.cc",
+    "webui_branding.h",
+    "webui_branding_rules.h",
     "native/extension_keybinding_registry.cc",
     "native/extension_keybinding_registry.h",
     "native/fairplay_identity.h",
@@ -282,6 +308,8 @@ source_set("browser") {
     "parc_content_clients.mm",
     "parc_main_delegate.h",
     "parc_main_delegate.mm",
+    "parc_settings_page.cc",
+    "parc_settings_page.h",
   ]
 
   if (is_component_build) {
@@ -306,6 +334,7 @@ source_set("browser") {
     ":error_pages",
     ":internal_extension_manifest",
     ":product_name_strings",
+    ":settings_page_contract",
     "//chrome/browser/extensions",
     "//components/gcm_driver",
     "//google_apis/gcm",
@@ -328,6 +357,7 @@ source_set("browser") {
     "//chrome/browser:startup_data",
     "//chrome/browser/lifetime",
     "//chrome/browser/mac",
+    "//chrome/browser/resources/settings:resources",
     "//chrome/common:buildflags",
     "//chrome/common:version_header",
     "//chrome/common/profiler",
@@ -336,6 +366,7 @@ source_set("browser") {
     "//components/metrics/debug:resources",
     "//components/policy:generated",
     "//components/resources:components_resources",
+    "//components/resources:components_scaled_resources",
     "//components/webui/chrome_urls",
     "//components/webapps/isolated_web_apps:scheme",
     "//content/public/app",
@@ -414,6 +445,7 @@ source_set("browser") {
     "//chrome/browser/ui/views/media_router",
     "//chrome/browser/ui/login",
     "//chrome/browser/ui/views/tab_sharing",
+    "//chrome/browser/ui/webui/settings",
     "//chrome/browser/webauthn",
     "//chrome/common:mojo_bindings",
     "//chrome/renderer:process_state",
@@ -442,6 +474,7 @@ source_set("browser") {
     "//media",
     "//media/mojo/mojom",
     "//services/media_session/public/cpp",
+    "//skia",
     "//sql",
     "//ui/accelerated_widget_mac",
     "//ui/actions",

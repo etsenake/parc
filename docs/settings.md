@@ -145,11 +145,59 @@ Settings/browser owner remains the destination when another window becomes
 frontmost. Normal security, close/transfer and sheet gates still apply. Success
 closes Settings; refusal leaves it open with feedback.
 
-Advanced's **More Settings…** opens the genuine engine Settings page and can reuse
+There is no translated-site reset, AI/cloud account control, native blocker
+placeholder or external New Documents provider picker. Local Notes, extensions
+and native security controls remain.
+
+## More Settings
+
+Advanced's **More Settings…** opens Chromium's own Settings page and can reuse
 any existing Settings subpage in that Space without resetting it. Neither route
-takes a tab from a different physical window. There is no translated-site reset,
-AI/cloud account control, native blocker placeholder or external New Documents
-provider picker. Local Notes, extensions and native security controls remain.
+takes a tab from a different physical window.
+
+The page hides what does nothing in Parc, misleads or needs Google.
+`Engine/ParcChromium/parc_settings_page.cc` holds the list: Chromium's own
+section and row hide list, which the `native-settings-visibility` patch reads,
+plus Chromium's per-row switches. A Parc subclass of Settings' registration adds
+them to the page's load-time data right after Chromium builds the page, before
+its frame exists; a guest profile keeps Chromium's own guest list. Two startup
+feature defaults turn off what kept the AI page
+([engine policy](engine-flags.md#runtime-features)).
+
+- **Hidden:** On startup (Parc resets it on every profile load; Restore previous
+  windows is the control), the AI page, Privacy Guide and its promo card, the
+  sign-in promo and Allow sign-in toggle, Autocomplete searches and URLs (each
+  Space's suggestions switch is the control), extended Safe Browsing reporting,
+  Appearance's theme, home button and page, bookmarks bar, glass, Ctrl+Tab order,
+  tab scroll buttons, everything menu, both tab group rows and hover card rows,
+  Show downloads when finished, autofill's Gemini suggestions, Wallet shopping and
+  pass detection, pay over time and enhanced autofill's re-check toggle, and the
+  Offer writing help site setting.
+- **Kept**, because they work: privacy, cookies, security, HTTPS-First, Secure
+  DNS, certificates, site settings, passwords, addresses, local cards and their
+  device-lock check, languages and spell check, Memory Saver, Energy Saver,
+  preloading, hardware acceleration, proxy, fonts, page zoom, Tab highlights
+  links, delete browsing data, Reset settings, extensions, Safety Hub, and the
+  search engine, default browser and download location rows, which stay in sync
+  with Parc's own.
+- **Still shown**, because Chromium has no switch for them: You and Google's
+  profile row, Sync or Google services link (with Make searches and browsing
+  better) and Import bookmarks, since hiding that section breaks the page's home
+  view and search; Appearance's Mode, Customize toolbar, tab strip position, one
+  organizer panel button toggle (Chromium's swap for its tab search toggle, which
+  also drops the tab group rows), side panel, split view and Warn before
+  quitting; performance alerts, inactive tab appearance and its hover card link;
+  the Translate switch; enhanced Safe Browsing; the Google Wallet, Google
+  Account, Google Pay and card benefits rows and the enhanced autofill toggle;
+  System's Restart button; Safety Hub's version card; and About's update status.
+  Each needs another Chromium change to hide.
+
+Every Parc link into the page (Privacy and Security, Credit Cards,
+Notifications, Manage search, Clear Browsing Data, site and pop-up settings, More
+Settings itself and download warnings' Safe Browsing link) lands on a section
+that stays. The engine build runs `settings_page_contract.py`, which stops by
+name if Chromium renames or drops a key, switch or feature the list relies on;
+`tests/EngineSource/test_settings_page.py` checks the list and the guard.
 
 ## Application Settings from Incognito
 

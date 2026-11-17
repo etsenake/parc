@@ -1,4 +1,3 @@
-// Copyright 2026 Parc contributors.
 #include "parc/parc_content_clients.h"
 
 #include <utility>
@@ -61,6 +60,7 @@
 #include "parc/parc_bundle_mac.h"
 #include "parc/parc_branding.h"
 #include "parc/parc_chrome_urls.h"
+#include "parc/parc_settings_page.h"
 #include "parc/renderer/error_page_history.h"
 #include "parc/renderer/website_theme_agent.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
@@ -99,6 +99,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
   void PreBrowserStart() override {
     RegisterWhatsNewWebUI();
     RegisterChromeUrlsWebUI();
+    RegisterSettingsWebUI();
   }
   void PostBrowserStart() override {
     parc_hooks::SetAlreadyRunningCommandLineHandler(

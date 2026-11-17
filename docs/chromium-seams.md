@@ -63,7 +63,8 @@ With CEF gone, Parc owns Chromium's embedder classes and uses them before anythi
   network error page whether there is history to go back to. `ParcContentClient` adds the
   internal scheme and the FairPlay CDM entry.
 - `ParcBrowserMainExtraParts` installs the native file-dialog factory and the licence WebUI, and
-  in `PreBrowserStart` replaces Chromium's What's New and internal-page directory controllers.
+  in `PreBrowserStart` replaces Chromium's What's New and internal-page directory controllers and
+  re-registers Settings so Parc's hide list reaches the page ([More Settings](settings.md#more-settings)).
 - The resource-bundle delegates Parc installs in every process answer more than strings: the
   child delegate serves Parc's network error page template for `IDR_NET_ERROR_HTML` and skins
   Chromium's web-app offline and organization proxy pages, and the

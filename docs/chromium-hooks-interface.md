@@ -150,6 +150,13 @@ which an embedder cannot override without replacing that file.
   destruction and hiding, and the macOS system picker keeps only an accepted session. Touches the
   share-this-tab dialog and nine desktop-capture list, controller and WebRTC files. Both are
   upstream candidates.
+- **`native-settings-visibility`**: Chromium's Settings page takes its section and row hide list
+  from a `parcPageVisibility` load-time value when one is present, before its guest check, in
+  `chrome/browser/resources/settings/page_visibility.ts`. Chromium builds that list once, as the
+  page's script loads, only for guest profiles; no embedder input reaches it, and styling or
+  scripting the page from outside would break with every redesign. Parc's `parc_settings_page.cc`
+  supplies the value and the per-row switches through Settings' own registration
+  ([More Settings](settings.md#more-settings)).
 - **`native-file-dialogs-direct-overlay`**: background downloads and print preview get native parent
   windows, and a directory listing releases its delegate before reporting completion, so the
   delegate may go away in that call. Touches `download_file_picker.cc`,
