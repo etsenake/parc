@@ -2,11 +2,13 @@
 #include "../Support/TestFailure.h"
 
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <vector>
 
 #include "native_background_picture_in_picture_hold.h"
 
+using parc::BackgroundPipFocusChange;
 using parc::BackgroundPipHoldGate;
 using parc::BackgroundPipHoldPass;
 using parc::BackgroundPipRect;
@@ -30,7 +32,7 @@ BackgroundPipRect Quartz(double x, double y, double width, double height) {
 
 BackgroundPipHoldGate Away() {
   BackgroundPipHoldGate gate;
-  gate.app_active = false;
+  gate.focus_away = true;
   gate.page_shown = true;
   gate.window_visible = true;
   return gate;
@@ -40,8 +42,8 @@ bool Holds(const BackgroundPipHoldGate& gate,
            const BackgroundPipRect& page,
            const std::vector<BackgroundPipRect>& screens,
            const Covers& covers) {
-  return parc::ShouldHoldBackgroundPip(BackgroundPipHoldPass::kResign, false,
-                                       gate, page, screens, covers);
+  return parc::ShouldHoldBackgroundPip(BackgroundPipHoldPass::kFocusLost,
+                                       false, gate, page, screens, covers);
 }
 
 bool Recheck(bool held,
@@ -51,6 +53,54 @@ bool Recheck(bool held,
              const Covers& covers) {
   return parc::ShouldHoldBackgroundPip(BackgroundPipHoldPass::kRecheck, held,
                                        gate, page, screens, covers);
+}
+
+struct FakeWindow {
+  const FakeWindow* sheet_parent = nullptr;
+  const FakeWindow* parent = nullptr;
+};
+
+bool InKeyChain(bool app_active, const FakeWindow* key, const FakeWindow* window) {
+  return parc::BackgroundPipWindowInActiveKeyChain(
+      app_active, key, window, [](const FakeWindow* candidate) {
+        return candidate->sheet_parent ? candidate->sheet_parent
+                                       : candidate->parent;
+      });
+}
+
+BackgroundPipHoldGate GateFor(bool app_active,
+                              const FakeWindow* key,
+                              const FakeWindow* window) {
+  auto gate = Away();
+  gate.focus_away = !InKeyChain(app_active, key, window);
+  return gate;
+}
+
+struct WatchPage {
+  bool held = false;
+  bool can_enter = false;
+};
+
+bool WatchRuns(bool gate_open, const std::vector<WatchPage>& pages) {
+  return parc::BackgroundPipHoldWatchRuns(
+      gate_open, pages, [](const WatchPage& page) { return page.held; },
+      [](const WatchPage& page) { return page.can_enter; });
+}
+
+struct Watch {
+  std::optional<int64_t> below_half_since;
+  bool Keep(const BackgroundPipHoldGate& gate,
+            const BackgroundPipRect& page,
+            const std::vector<BackgroundPipRect>& screens,
+            const Covers& covers,
+            int64_t now_ms) {
+    return parc::KeepBackgroundPipHold(below_half_since, gate, page, screens,
+                                       covers, now_ms);
+  }
+};
+
+Covers FromRecords(const std::vector<BackgroundPipWindowRecord>& records) {
+  return parc::BackgroundPipCoveringWindows(records);
 }
 
 }
@@ -167,7 +217,7 @@ int main() {
     const Covers clear{{}};
     auto gate = Away();
     PARC_EXPECT(parc::BackgroundPipHoldGateOpen(gate));
-    gate.app_active = true;
+    gate.focus_away = false;
     PARC_EXPECT(!Holds(gate, page, laptop, clear));
     PARC_EXPECT(!Recheck(true, gate, page, laptop, clear));
     gate = Away();
@@ -224,6 +274,237 @@ int main() {
     PARC_EXPECT(Holds(Away(), Quartz(0, 25, 720, 875), laptop, covers));
     PARC_EXPECT(!Holds(Away(), Quartz(0, 25, 1440, 875), laptop,
                        Covers{{Quartz(0, 25, 1440, 875)}}));
+  }
+
+  {
+    const FakeWindow first;
+    const FakeWindow second;
+    const FakeWindow sheet{&first, nullptr};
+    const FakeWindow child{nullptr, &first};
+    const FakeWindow grandchild{nullptr, &child};
+    const FakeWindow sheet_on_child{&child, nullptr};
+    const FakeWindow other_app_panel;
+    PARC_EXPECT(InKeyChain(true, &first, &first));
+    PARC_EXPECT(!InKeyChain(true, &second, &first));
+    PARC_EXPECT(InKeyChain(true, &sheet, &first));
+    PARC_EXPECT(InKeyChain(true, &child, &first));
+    PARC_EXPECT(InKeyChain(true, &grandchild, &first));
+    PARC_EXPECT(InKeyChain(true, &sheet_on_child, &first));
+    PARC_EXPECT(!InKeyChain(true, &sheet, &second));
+    PARC_EXPECT(!InKeyChain(true, &other_app_panel, &first));
+    PARC_EXPECT(!InKeyChain(true, nullptr, &first));
+    PARC_EXPECT(!InKeyChain(false, &first, &first));
+    PARC_EXPECT(!InKeyChain(false, &sheet, &first));
+    PARC_EXPECT(!InKeyChain(true, &first, nullptr));
+
+    const auto page = Quartz(0, 25, 720, 875);
+    const Covers beside{{Quartz(720, 25, 720, 875)}};
+    PARC_EXPECT(Holds(GateFor(false, &first, &first), page, laptop, beside));
+    PARC_EXPECT(Holds(GateFor(true, &second, &first), page, laptop, beside));
+    PARC_EXPECT(Holds(GateFor(true, nullptr, &first), page, laptop, beside));
+    PARC_EXPECT(!Holds(GateFor(true, &first, &first), page, laptop, beside));
+    PARC_EXPECT(!Holds(GateFor(true, &sheet, &first), page, laptop, beside));
+    PARC_EXPECT(!Holds(GateFor(true, &child, &first), page, laptop, beside));
+    PARC_EXPECT(!Recheck(true, GateFor(true, &sheet, &first), page, laptop, beside));
+    PARC_EXPECT(parc::BackgroundPipHoldGateOpen(GateFor(true, &second, &first)));
+    PARC_EXPECT(!parc::BackgroundPipHoldGateOpen(GateFor(true, &grandchild, &first)));
+  }
+
+  {
+    using parc::BackgroundPipFocusTransition;
+    PARC_EXPECT(BackgroundPipFocusTransition(false, true) ==
+                BackgroundPipFocusChange::kLost);
+    PARC_EXPECT(BackgroundPipFocusTransition(true, false) ==
+                BackgroundPipFocusChange::kRegained);
+    PARC_EXPECT(BackgroundPipFocusTransition(false, false) ==
+                BackgroundPipFocusChange::kNone);
+    PARC_EXPECT(BackgroundPipFocusTransition(true, true) ==
+                BackgroundPipFocusChange::kNone);
+
+    const FakeWindow first;
+    const FakeWindow second;
+    const FakeWindow sheet{&first, nullptr};
+    const bool key_here = !InKeyChain(true, &first, &first);
+    const bool other_parc_window = !InKeyChain(true, &second, &first);
+    const bool parc_resigned = !InKeyChain(false, nullptr, &first);
+    const bool sheet_key = !InKeyChain(true, &sheet, &first);
+    PARC_EXPECT(BackgroundPipFocusTransition(key_here, parc_resigned) ==
+                BackgroundPipFocusChange::kLost);
+    PARC_EXPECT(BackgroundPipFocusTransition(key_here, other_parc_window) ==
+                BackgroundPipFocusChange::kLost);
+    PARC_EXPECT(BackgroundPipFocusTransition(other_parc_window, parc_resigned) ==
+                BackgroundPipFocusChange::kNone);
+    PARC_EXPECT(BackgroundPipFocusTransition(parc_resigned, other_parc_window) ==
+                BackgroundPipFocusChange::kNone);
+    PARC_EXPECT(BackgroundPipFocusTransition(key_here, sheet_key) ==
+                BackgroundPipFocusChange::kNone);
+    PARC_EXPECT(BackgroundPipFocusTransition(other_parc_window, key_here) ==
+                BackgroundPipFocusChange::kRegained);
+
+    PARC_EXPECT(parc::BackgroundPipFocusAwayOccludes(true, false));
+    PARC_EXPECT(!parc::BackgroundPipFocusAwayOccludes(true, true));
+    PARC_EXPECT(!parc::BackgroundPipFocusAwayOccludes(false, false));
+    PARC_EXPECT(!parc::BackgroundPipFocusAwayOccludes(false, true));
+  }
+
+  {
+    PARC_EXPECT(parc::kBackgroundPipHoldWatchIntervalMs == 500);
+    PARC_EXPECT(parc::kBackgroundPipHoldReleaseAfterMs == 1000);
+    const int64_t tick = parc::kBackgroundPipHoldWatchIntervalMs;
+    const auto page = Quartz(0, 25, 720, 875);
+    const Covers clear{{}};
+    const Covers full{{Quartz(0, 0, 1440, 900)}};
+
+    Watch watch;
+    PARC_EXPECT(watch.Keep(Away(), page, laptop, clear, 0));
+    PARC_EXPECT(!watch.below_half_since);
+    PARC_EXPECT(watch.Keep(Away(), page, laptop, full, tick));
+    PARC_EXPECT(watch.below_half_since && *watch.below_half_since == tick);
+    PARC_EXPECT(watch.Keep(Away(), page, laptop, full, 2 * tick));
+    PARC_EXPECT(!watch.Keep(Away(), page, laptop, full, 3 * tick));
+    PARC_EXPECT(!watch.below_half_since);
+
+    Watch exact;
+    PARC_EXPECT(exact.Keep(Away(), page, laptop, full, 10000));
+    PARC_EXPECT(exact.Keep(Away(), page, laptop, full, 10999));
+    PARC_EXPECT(!exact.Keep(Away(), page, laptop, full, 11000));
+
+    Watch reset;
+    PARC_EXPECT(reset.Keep(Away(), page, laptop, full, 0));
+    PARC_EXPECT(reset.Keep(Away(), page, laptop, full, tick));
+    PARC_EXPECT(reset.Keep(Away(), page, laptop, clear, 2 * tick));
+    PARC_EXPECT(!reset.below_half_since);
+    PARC_EXPECT(reset.Keep(Away(), page, laptop, full, 3 * tick));
+    PARC_EXPECT(reset.Keep(Away(), page, laptop, full, 4 * tick));
+    PARC_EXPECT(!reset.Keep(Away(), page, laptop, full, 5 * tick));
+
+    Watch at_half;
+    const Covers half_over{{Quartz(360, 25, 1080, 875)}};
+    PARC_EXPECT(at_half.Keep(Away(), page, laptop, full, 0));
+    PARC_EXPECT(at_half.Keep(Away(), page, laptop, half_over, tick));
+    PARC_EXPECT(!at_half.below_half_since);
+    for (int64_t reading = 2; reading < 20; ++reading) {
+      PARC_EXPECT(at_half.Keep(Away(), page, laptop, half_over, reading * tick));
+    }
+
+    int readings = 0;
+    Watch cadence;
+    int64_t now = 0;
+    while (cadence.Keep(Away(), page, laptop, full, now)) {
+      ++readings;
+      now += tick;
+    }
+    PARC_EXPECT(readings == 2);
+    PARC_EXPECT(now == parc::kBackgroundPipHoldReleaseAfterMs);
+  }
+
+  {
+    PARC_EXPECT(!WatchRuns(true, {}));
+    PARC_EXPECT(!WatchRuns(true, {{false, false}, {false, true}}));
+    PARC_EXPECT(!WatchRuns(true, {{true, false}, {true, false}}));
+    PARC_EXPECT(!WatchRuns(true, {{true, false}, {false, true}}));
+    PARC_EXPECT(WatchRuns(true, {{true, false}, {true, true}}));
+    PARC_EXPECT(!WatchRuns(false, {{true, true}}));
+    int asked = 0;
+    const std::vector<WatchPage> pages{{false, true}, {false, true}};
+    PARC_EXPECT(!parc::BackgroundPipHoldWatchRuns(
+        true, pages, [](const WatchPage& page) { return page.held; },
+        [&](const WatchPage&) {
+          ++asked;
+          return true;
+        }));
+    PARC_EXPECT(asked == 0);
+  }
+
+  {
+    const auto page = Quartz(0, 25, 720, 875);
+    const Covers beside{{Quartz(720, 25, 720, 875)}};
+    PARC_EXPECT(Holds(Away(), page, laptop, beside));
+    const auto grown = FromRecords({{0, 1.0, Quartz(0, 0, 1440, 900)}});
+    auto gate = Away();
+    PARC_EXPECT(gate.window_visible);
+    Watch watch;
+    PARC_EXPECT(watch.Keep(gate, page, laptop, grown, 0));
+    PARC_EXPECT(watch.Keep(gate, page, laptop, grown, 500));
+    PARC_EXPECT(!watch.Keep(gate, page, laptop, grown, 1000));
+    const auto translucent_grown =
+        FromRecords({{0, 0.9, Quartz(0, 0, 1440, 900)}});
+    Watch translucent;
+    PARC_EXPECT(translucent.Keep(gate, page, laptop, translucent_grown, 0));
+    PARC_EXPECT(!translucent.Keep(gate, page, laptop, translucent_grown, 1000));
+    const auto floating_pip = FromRecords({{3, 1.0, Quartz(0, 25, 720, 875)}});
+    Watch floating;
+    for (int64_t now = 0; now <= 3000; now += 500) {
+      PARC_EXPECT(floating.Keep(gate, page, laptop, floating_pip, now));
+    }
+    gate.window_visible = false;
+    Watch hidden;
+    PARC_EXPECT(!hidden.Keep(gate, page, laptop, Covers{{}}, 0));
+  }
+
+  {
+    const FakeWindow first;
+    const FakeWindow second;
+    const auto page = Quartz(0, 25, 1440, 875);
+    const auto gate = GateFor(true, &second, &first);
+    const auto full_parc = FromRecords({{0, 1.0, Quartz(0, 0, 1440, 900)}});
+    const auto half_parc = FromRecords({{0, 1.0, Quartz(720, 0, 720, 900)}});
+    const auto most_parc = FromRecords({{0, 1.0, Quartz(719, 0, 721, 900)}});
+    PARC_EXPECT(!Holds(gate, page, laptop, full_parc));
+    PARC_EXPECT(Holds(gate, page, laptop, half_parc));
+    PARC_EXPECT(!Holds(gate, page, laptop, most_parc));
+    PARC_EXPECT(!Recheck(true, gate, page, laptop, full_parc));
+    PARC_EXPECT(Recheck(true, gate, page, laptop, half_parc));
+    Watch half;
+    for (int64_t now = 0; now <= 5000; now += 500) {
+      PARC_EXPECT(half.Keep(gate, page, laptop, half_parc, now));
+    }
+    Watch full;
+    PARC_EXPECT(full.Keep(gate, page, laptop, half_parc, 0));
+    PARC_EXPECT(full.Keep(gate, page, laptop, full_parc, 500));
+    PARC_EXPECT(full.Keep(gate, page, laptop, full_parc, 1000));
+    PARC_EXPECT(!full.Keep(gate, page, laptop, full_parc, 1500));
+  }
+
+  {
+    const auto page = Quartz(0, 25, 720, 875);
+    const Covers clear{{}};
+    PARC_EXPECT(Holds(Away(), page, laptop, clear));
+    Watch away;
+    for (int64_t now = 0; now <= 5000; now += 500) {
+      PARC_EXPECT(away.Keep(Away(), page, laptop, clear, now));
+    }
+    auto gate = Away();
+    gate.picture_in_picture_open = true;
+    PARC_EXPECT(!Holds(gate, page, laptop, clear));
+    Watch open;
+    PARC_EXPECT(!open.Keep(gate, page, laptop, clear, 0));
+    gate = Away();
+    gate.screen_locked = true;
+    PARC_EXPECT(!Holds(gate, page, laptop, clear));
+    Watch locked;
+    PARC_EXPECT(!locked.Keep(gate, page, laptop, clear, 0));
+    gate = Away();
+    gate.displays_asleep = true;
+    PARC_EXPECT(!Holds(gate, page, laptop, clear));
+    Watch asleep;
+    PARC_EXPECT(!asleep.Keep(gate, page, laptop, clear, 0));
+    gate = Away();
+    gate.page_shown = false;
+    Watch hidden;
+    PARC_EXPECT(!hidden.Keep(gate, page, laptop, clear, 0));
+    Watch collapsed;
+    PARC_EXPECT(collapsed.Keep(Away(), Quartz(0, 25, 0, 0), laptop, clear, 0));
+    PARC_EXPECT(!collapsed.Keep(Away(), Quartz(0, 25, 0, 0), laptop, clear, 1000));
+    Watch no_display;
+    PARC_EXPECT(no_display.Keep(Away(), page, {}, clear, 0));
+    PARC_EXPECT(!no_display.Keep(Away(), page, {}, clear, 1000));
+    gate = Away();
+    gate.focus_away = false;
+    Watch back;
+    back.below_half_since = 0;
+    PARC_EXPECT(!back.Keep(gate, page, laptop, clear, 500));
+    PARC_EXPECT(!back.below_half_since);
   }
 
   return 0;

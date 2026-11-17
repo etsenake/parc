@@ -5,6 +5,7 @@
 #include "native_link_routing.h"
 
 #include <cmath>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -358,6 +359,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   bool acceptsNewPages() const {
     return !tearing_down_ && !draining_ && !browser_.IsDeleteScheduled();
   }
+  void PictureInPictureEligibilityChanged() { UpdatePipHoldWatch(); }
   void DidAttachWindow(gfx::NativeWindow window) override {
     CHECK(window.GetNativeNSWindow() == binding_.window);
     window_ = window.GetNativeNSWindow();
@@ -1325,7 +1327,8 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
           !shown ? parc::BackgroundPipVisibility::kHidden
                  : ((parc::PageHandlesAutoPictureInPicture(contents.get())
                          ? page_occluded
-                         : !NSApp.isActive && !PictureInPictureHeld(*contents))
+                         : BackgroundPipFocusAwayOccludes(
+                               FocusAway(), PictureInPictureHeld(*contents)))
                         ? parc::BackgroundPipVisibility::kOccluded
                         : parc::BackgroundPipVisibility::kVisible);
       parc::SyncBackgroundPictureInPicture(contents.get(), pip_visibility);
@@ -1343,14 +1346,15 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   }
   bool PageOccluded(content::WebContents& contents, bool window_occluded) {
     return window_occluded ||
-           (!InActiveKeyChain() && !PictureInPictureHeld(contents) &&
+           (BackgroundPipFocusAwayOccludes(FocusAway(),
+                                           PictureInPictureHeld(contents)) &&
             parc::PageHandlesAutoPictureInPicture(&contents));
   }
   bool WindowOcclusionVisible() const {
     return window_ && (window_.occlusionState & NSWindowOcclusionStateVisible);
   }
   bool PipHoldWindowGateOpen() const {
-    return !NSApp.isActive && WindowOcclusionVisible() && !displays_asleep_ &&
+    return FocusAway() && WindowOcclusionVisible() && !displays_asleep_ &&
            !screen_locked_;
   }
   bool PageShownInWindow(PCNativePage* page) const {
@@ -1361,7 +1365,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   BackgroundPipHoldGate PipHoldGate(content::WebContents& contents,
                                     bool shown) const {
     return {
-        .app_active = static_cast<bool>(NSApp.isActive),
+        .focus_away = FocusAway(),
         .page_shown = shown,
         .window_visible = WindowOcclusionVisible(),
         .displays_asleep = displays_asleep_,
@@ -1384,6 +1388,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   }
   bool ClearPipHolds() {
     pip_hold_timer_.Stop();
+    StopPipHoldWatch();
     bool released = false;
     for (auto& [contents, binding] : pages_) {
       released = released || binding.pip_hold;
@@ -1425,6 +1430,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       released = released || (binding.pip_hold && !hold);
       held = held || hold;
       binding.pip_hold = hold;
+      if (!hold) {
+        binding.pip_hold_below_half_since.reset();
+      }
     }
     if (released) {
       Synchronize();
@@ -1433,13 +1441,86 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   }
   void HoldVisiblePictureInPicture() {
     pip_hold_timer_.Stop();
-    if (EvaluatePipHolds(BackgroundPipHoldPass::kResign)) {
+    StopPipHoldWatch();
+    const auto weak = weak_factory_.GetWeakPtr();
+    const bool held = EvaluatePipHolds(BackgroundPipHoldPass::kFocusLost);
+    if (!weak) {
+      return;
+    }
+    if (held) {
       pip_hold_timer_.Start(FROM_HERE, base::Milliseconds(250), this,
                             &AppKitBrowserHost::RecheckPipHolds);
     }
+    UpdatePipHoldWatch();
   }
   void RecheckPipHolds() {
+    const auto weak = weak_factory_.GetWeakPtr();
     EvaluatePipHolds(BackgroundPipHoldPass::kRecheck);
+    if (weak) {
+      UpdatePipHoldWatch();
+    }
+  }
+  void UpdatePipHoldWatch() {
+    if (tearing_down_ || draining_ || !window_ ||
+        !BackgroundPipHoldWatchRuns(
+            PipHoldWindowGateOpen(), pages_,
+            [](const auto& entry) { return entry.second.pip_hold; },
+            [](const auto& entry) {
+              return parc::PageCanEnterAutoPictureInPicture(entry.first);
+            })) {
+      StopPipHoldWatch();
+      return;
+    }
+    if (!pip_hold_watch_.IsRunning()) {
+      pip_hold_watch_.Start(
+          FROM_HERE, base::Milliseconds(kBackgroundPipHoldWatchIntervalMs),
+          this, &AppKitBrowserHost::WatchPipHolds);
+    }
+  }
+  void StopPipHoldWatch() {
+    pip_hold_watch_.Stop();
+    for (auto& [contents, binding] : pages_) {
+      binding.pip_hold_below_half_since.reset();
+    }
+  }
+  void WatchPipHolds() {
+    if (tearing_down_ || draining_ || !window_) {
+      StopPipHoldWatch();
+      return;
+    }
+    if (!PipHoldWindowGateOpen()) {
+      ClearPipHolds();
+      return;
+    }
+    const auto weak = weak_factory_.GetWeakPtr();
+    NSWindow* window = window_;
+    NSArray<PCNativePage*>* visible = [binding_.client visibleNativePages];
+    if (!weak || tearing_down_ || draining_ || window_ != window) {
+      return;
+    }
+    const double primary_height = PrimaryScreenHeight();
+    const auto regions = WindowScreenRegions(window, primary_height);
+    const auto covers = WindowsAbove(window);
+    const int64_t now_ms =
+        (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds();
+    bool released = false;
+    for (auto& [contents, binding] : pages_) {
+      if (!binding.pip_hold) {
+        continue;
+      }
+      PCNativePage* page = binding.page;
+      const bool shown =
+          PageShownInWindow(page) && [visible containsObject:page];
+      binding.pip_hold = KeepBackgroundPipHold(
+          binding.pip_hold_below_half_since, PipHoldGate(*contents, shown),
+          ViewScreenRect(page.nativeView, primary_height), regions, covers,
+          now_ms);
+      released = released || !binding.pip_hold;
+    }
+    UpdatePipHoldWatch();
+    if (released) {
+      Synchronize();
+    }
   }
   void RetryUnsettledVisibility(NSArray<PCNativePage*>* visible,
                                 bool occluded) {
@@ -1639,6 +1720,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     bool shown = false;
     bool report_frame = false;
     bool pip_hold = false;
+    std::optional<int64_t> pip_hold_below_half_since;
   };
   PCNativeFocusRegistration* RegisterFocus(PCNativePage* page) {
     auto weak = weak_factory_.GetWeakPtr();
@@ -1870,7 +1952,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
            NSApplicationDidBecomeActiveNotification,
            NSApplicationDidResignActiveNotification
          ]) {
-      const bool resigned = name == NSApplicationDidResignActiveNotification;
       id observer = [NSNotificationCenter.defaultCenter
           addObserverForName:name
                       object:nil
@@ -1881,8 +1962,8 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                       return;
                     }
                     self->WindowOcclusionChanged();
-                    if (resigned) {
-                      self->HoldVisiblePictureInPicture();
+                    if (auto* host = weak.get()) {
+                      host->FocusChanged();
                     }
                     if (auto* host = weak.get()) {
                       host->Synchronize();
@@ -1902,11 +1983,18 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
                       object:any_window ? nil : window_
                        queue:nil
                   usingBlock:^(NSNotification*) {
-                    if (auto* self = weak.get()) {
-                      self->WindowOcclusionChanged();
-                      if (any_window || !self->WindowCurrentlyOccluded()) {
-                        self->Synchronize();
-                      }
+                    auto* self = weak.get();
+                    if (!self) {
+                      return;
+                    }
+                    self->WindowOcclusionChanged();
+                    if (auto* host = weak.get(); host && any_window) {
+                      host->FocusChanged();
+                    }
+                    if (auto* host = weak.get();
+                        host &&
+                        (any_window || !host->WindowCurrentlyOccluded())) {
+                      host->Synchronize();
                     }
                   }];
       [app_activity_observers_ addObject:occlusion];
@@ -1950,6 +2038,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
             self->Synchronize();
           }
         }];
+    focus_away_ = FocusAway();
     WindowOcclusionChanged();
   }
   void RemoveAppActivityObservers() {
@@ -1961,6 +2050,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     [screen_lock_observer_ invalidate];
     screen_lock_observer_ = nil;
     screen_locked_ = false;
+    focus_away_ = false;
     ClearPipHolds();
     for (id observer in workspace_observers_) {
       [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:observer];
@@ -1985,16 +2075,27 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     return !(window_.occlusionState & NSWindowOcclusionStateVisible);
   }
   bool InActiveKeyChain() const {
-    if (!window_ || !NSApp.isActive) {
-      return false;
+    NSWindow* window = window_;
+    NSWindow* key = NSApp.keyWindow;
+    return BackgroundPipWindowInActiveKeyChain(
+        static_cast<bool>(NSApp.isActive), key, window,
+        [](NSWindow* candidate) -> NSWindow* {
+          return candidate.sheetParent ?: candidate.parentWindow;
+        });
+  }
+  bool FocusAway() const { return !InActiveKeyChain(); }
+  void FocusChanged() {
+    if (tearing_down_ || draining_ || !window_) {
+      return;
     }
-    for (NSWindow* key = NSApp.keyWindow; key;
-         key = key.sheetParent ?: key.parentWindow) {
-      if (key == window_) {
-        return true;
-      }
+    const bool away = FocusAway();
+    const auto change = BackgroundPipFocusTransition(focus_away_, away);
+    focus_away_ = away;
+    if (change == BackgroundPipFocusChange::kLost) {
+      HoldVisiblePictureInPicture();
+    } else if (change == BackgroundPipFocusChange::kRegained) {
+      ClearPipHolds();
     }
-    return false;
   }
   void WindowOcclusionChanged() {
     if (tearing_down_ || draining_) {
@@ -2079,6 +2180,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   PCNativeScreenLockObserver* __strong screen_lock_observer_;
   base::OneShotTimer occlusion_timer_;
   base::OneShotTimer pip_hold_timer_;
+  base::RepeatingTimer pip_hold_watch_;
   static constexpr int kVisibilityRetryLimit = 4;
   base::OneShotTimer visibility_retry_timer_;
   int visibility_retries_ = 0;
@@ -2087,6 +2189,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   bool window_occluded_ = false;
   bool displays_asleep_ = false;
   bool screen_locked_ = false;
+  bool focus_away_ = false;
   NSInteger attention_ = 0;
   bool selected_ = false;
   bool was_attached_ = false;
@@ -2293,6 +2396,14 @@ void SynchronizeAppKitBrowserVisibility(BrowserWindowInterface& browser) {
   auto found = Hosts().find(&browser);
   if (found != Hosts().end() && found->second) {
     found->second->SynchronizeVisibilityNow();
+  }
+}
+void AutoPictureInPictureEligibilityChanged(content::WebContents& contents) {
+  auto* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(&contents);
+  auto found = Hosts().find(browser);
+  if (found != Hosts().end() && found->second) {
+    found->second->PictureInPictureEligibilityChanged();
   }
 }
 bool AppKitBrowserAcceptsNewPages(BrowserWindowInterface& browser) {

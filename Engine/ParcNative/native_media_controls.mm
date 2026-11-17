@@ -101,8 +101,6 @@ bool Has(content::MediaSession* session, Action action) {
   const auto actions = session->GetMediaSessionActionsSync();
   return std::ranges::find(actions, action) != actions.end();
 }
-// This is an in-window player for background pages. Selection/renderer focus
-// is intentionally not required; exact owner and security admission still are.
 BrowserWindowInterface* Owner(content::WebContents* contents, bool action, bool allow_crashed = false) {
   PCNativePage* page = contents ? ExistingNativePage(contents) : nil;
   auto* browser = contents ? GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(contents) : nullptr;
@@ -157,7 +155,6 @@ bool AutoPictureInPictureAllowed(content::WebContents* contents) {
   if (!url.SchemeIs(url::kHttpsScheme) && !url.SchemeIsFile()) return false;
   ContentSetting setting = map->GetContentSetting(
       url, url, ContentSettingsType::AUTO_PICTURE_IN_PICTURE);
-  // ASK counts as allowed, matching Site Control Center / PageInfo toggle-on.
   return setting == CONTENT_SETTING_ALLOW || setting == CONTENT_SETTING_ASK;
 }
 
@@ -171,9 +168,6 @@ class MediaState final : public content::WebContentsObserver,
     auto* browser = Owner(contents, false);
     auto* session = contents ? content::MediaSession::GetIfExists(contents) : nullptr;
     ObserveSession(session);
-    // Presentation ownership can disappear temporarily during transfer or
-    // window teardown. It is not a media-session transition and must not
-    // resurrect a control that the user dismissed on the original page.
     if (!Held()) { Registry().Remove(this); active_ = false; dismissed_ = false; return nil; }
     if (!browser) return nil;
     if (dismissed_) return nil;
@@ -197,9 +191,6 @@ class MediaState final : public content::WebContentsObserver,
     return [[PCNativeMediaState alloc] initWithContents:contents browser:browser identity:identity_
                                     admissionSequence:Registry().Sequence(this)];
   }
-  // Chromium's own session state for this exact page. It never consults
-  // Eligible() or the dismissed episode, and never changes either; every
-  // transition already republishes through MediaSessionInfoChanged.
   PCNativeMediaSessionStatus Status() {
     auto* contents = web_contents();
     auto* session = contents ? content::MediaSession::GetIfExists(contents) : nullptr;
@@ -268,7 +259,6 @@ class MediaState final : public content::WebContentsObserver,
         session->EnterPictureInPicture(); break;
       default: return false;
     }
-    // Commands can synchronously replace their owner. Never read it afterwards.
     return true;
   }
   PCNativeMediaPresentationLease* CapturePresentationLease() {
@@ -293,7 +283,7 @@ class MediaState final : public content::WebContentsObserver,
         lease->document_.AsRenderFrameHostIfValid() == contents->GetPrimaryMainFrame();
     if (!lease->fence_->Consume(suppression_fence_, valid)) return;
     if (!Held()) {
-      Snapshot(true);  // Preserve the existing inactive-episode reset.
+      Snapshot(true);
       return;
     }
     if (AdmitAfterPresentationRemoval(active_, dismissed_, [this] { return Snapshot(true) != nil; }))
@@ -326,6 +316,9 @@ class MediaState final : public content::WebContentsObserver,
     return ShowNativeMediaCastChooser(web_contents(), view, rect, std::move(valid), dismissed);
   }
   void RouteChanged() { Changed(); }
+  bool CanEnterBackgroundPictureInPicture() const {
+    return BackgroundPipMediaIsEligible();
+  }
   void Withdraw() {
     if (!active_ || dismissed_) return;
     Registry().Remove(this);
@@ -354,7 +347,6 @@ class MediaState final : public content::WebContentsObserver,
     pending_enter_at_ = std::nullopt;
     silent_enter_retries_remaining_ = 0;
     shell_visibility_.reset();
-    // A replacement document does not inherit a previous document's UI volume.
     if (content::MediaSession::GetIfExists(web_contents()))
       content::MediaSessionImpl::Get(web_contents())->SetUserVolumeMultiplier(1.0);
     Changed();
@@ -373,8 +365,6 @@ class MediaState final : public content::WebContentsObserver,
   uint64_t ControlsRevision() const { return controls_revision_; }
   void TitleWasSet(content::NavigationEntry*) override { Changed(); }
   void OnVisibilityChanged(content::Visibility visibility) override {
-    // Prefer shell policy when the host has reported it; paint visibility can
-    // stay VISIBLE while resign-active is treated as occluded for auto-PiP.
     ApplyBackgroundPictureInPicture(shell_visibility_.value_or(
         PipVisibility(visibility)));
   }
@@ -396,8 +386,6 @@ class MediaState final : public content::WebContentsObserver,
                                     BackgroundPipSignal::kPictureInPictureChanged);
   }
   void MediaSessionInfoChanged(media_session::mojom::MediaSessionInfoPtr) override {
-    // Read authoritative current state; an older queued Mojo notification must
-    // not end a newer episode. A real inactive interval permits a new row.
     ReconcileEligibility();
     ApplyBackgroundPictureInPicture(CurrentShellVisibility());
     Changed();
@@ -406,7 +394,6 @@ class MediaState final : public content::WebContentsObserver,
   void MediaSessionActionsChanged(const std::vector<Action>&) override { ReconcileEligibility(); Changed(); }
   void MediaSessionImagesChanged(const base::flat_map<media_session::mojom::MediaSessionImageType,
       std::vector<media_session::MediaImage>>&) override { Changed(); }
-  // Cast needs more than 15 seconds of media (CastSource()).
   void MediaSessionPositionChanged(const std::optional<media_session::MediaPosition>&) override { Changed(); }
  private:
   BackgroundPipVisibility CurrentShellVisibility() const {
@@ -426,9 +413,6 @@ class MediaState final : public content::WebContentsObserver,
     if (!contents) return false;
     auto* session = content::MediaSession::GetIfExists(contents);
     if (!session) return false;
-    // Chromium owns this session's automatic reason, scoped activation and
-    // lifecycle ordering. Manual Enter also grants activation, but must not
-    // compete with that automatic path or suppress its occlusion notification.
     if (PageHandlesAutoPictureInPicture(contents)) return false;
     const auto info = session->GetMediaSessionInfoSync();
     using AudioVideoState = media_session::mojom::MediaAudioVideoState;
@@ -444,8 +428,6 @@ class MediaState final : public content::WebContentsObserver,
                                       controllable, playing,
                                       contents->IsAudioMuted(), has_video);
   }
-  // Chromium often completes Enter asynchronously without a false edge on
-  // failure. After this wait, pending re-issues Enter (or drops if ineligible).
   static constexpr base::TimeDelta kPendingEnterTimeout = base::Milliseconds(750);
 
   void ApplyBackgroundPictureInPicture(
@@ -495,7 +477,6 @@ class MediaState final : public content::WebContentsObserver,
       silent_enter_retries_remaining_ = 0;
       session->ExitPictureInPicture();
     } else if (step.command == BackgroundPipCommand::kEnter) {
-      // Fresh attempt from Idle or resumed after CancelPending settle.
       if (prior_state == BackgroundPipSessionState::kIdle ||
           prior_state == BackgroundPipSessionState::kCancelPending) {
         silent_enter_retries_remaining_ = 1;
@@ -505,8 +486,6 @@ class MediaState final : public content::WebContentsObserver,
       }
       pending_enter_at_ = base::TimeTicks::Now();
       session->EnterPictureInPicture();
-      // Silent Enter failures often never flip the PiP bit. Reconcile after the
-      // timeout so pending can retry once (or CancelPending can settle).
       base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
           FROM_HERE,
           base::BindOnce(&MediaState::OnPendingEnterTimeout,
@@ -515,10 +494,6 @@ class MediaState final : public content::WebContentsObserver,
     }
     if (!weak) return;
   }
-  // Chromium's auto-PiP (calls through Meet's handler, registered video) learns
-  // window occlusion only from Views windows, and only its own entry may open a
-  // document PiP without a gesture. Leaving Parc counts as occluded, as for
-  // video; video the rule above is already entering is not entered twice.
   void ReportHostOcclusion(BackgroundPipVisibility shell) {
     auto* helper = AutoPictureInPictureTabHelper::FromWebContents(web_contents());
     if (!helper || !Owner(web_contents(), false)) return;
@@ -694,10 +669,17 @@ class MediaState final : public content::WebContentsObserver,
     if (!contents) {
       return;
     }
-    // ObserveSession so Mojo keeps delivering; same as Snapshot/Status reads.
     ObserveSession(content::MediaSession::GetIfExists(contents));
-    // A cast's end, reported by the router, drops a row only it kept.
     ReconcileEligibility();
+    if (const bool could_enter = PageCanEnterAutoPictureInPicture(contents);
+        could_enter != could_enter_auto_pip_) {
+      could_enter_auto_pip_ = could_enter;
+      auto weak = weak_factory_.GetWeakPtr();
+      AutoPictureInPictureEligibilityChanged(*contents);
+      if (!weak || web_contents() != contents) {
+        return;
+      }
+    }
     NativeMediaNotifyState current = CurrentMediaNotifyState();
     if (!ShouldNotifyMediaPayloadChange(last_media_notify_, current)) {
       return;
@@ -712,6 +694,7 @@ class MediaState final : public content::WebContentsObserver,
   bool active_ = false;
   bool dismissed_ = false;
   bool pending_ = false;
+  bool could_enter_auto_pip_ = false;
   NativeMediaNotifyState last_media_notify_;
   BackgroundPipSessionState background_pip_ = BackgroundPipSessionState::kIdle;
   std::optional<base::TimeTicks> pending_enter_at_;
@@ -744,7 +727,7 @@ void SyncBackgroundPictureInPictureContents(
     }
   }
 }
-}  // namespace
+}
 
 void SyncBackgroundPictureInPicture(content::WebContents* contents) {
   SyncBackgroundPictureInPictureContents(contents, std::nullopt);
@@ -758,6 +741,19 @@ void SyncBackgroundPictureInPicture(content::WebContents* contents,
 bool PageHandlesAutoPictureInPicture(content::WebContents* contents) {
   return contents && Has(content::MediaSession::GetIfExists(contents),
                          Action::kEnterAutoPictureInPicture);
+}
+
+bool PageCanEnterAutoPictureInPicture(content::WebContents* contents) {
+  if (!contents || contents->IsBeingDestroyed() ||
+      PictureInPictureWindowManager::GetInstance()
+          ->IsPictureInPictureDisabled()) {
+    return false;
+  }
+  if (PageHandlesAutoPictureInPicture(contents)) {
+    return true;
+  }
+  auto* state = MediaState::FromWebContents(contents);
+  return state && state->CanEnterBackgroundPictureInPicture();
 }
 
 void SynchronizeAutoPictureInPictureVisibility(
@@ -814,7 +810,7 @@ void NativeMediaCastChanged(content::WebContents* contents) {
     state->RouteChanged();
   }
 }
-}  // namespace parc
+}
 
 @implementation PCNativeTabAudioState
 @synthesize audible = _audible, muted = _muted;
@@ -923,8 +919,6 @@ void NativeMediaCastChanged(content::WebContents* contents) {
 }
 - (PCNativeMediaSessionStatus)mediaSessionStatus {
   CHECK(NSThread.isMainThread);
-  // The first read creates this page's observer, so later transitions reach
-  // nativePageDidChange even if the Mini Player never read mediaState.
   auto* state = parc::State(self);
   return state ? state->Status() : PCNativeMediaSessionStatusInactive;
 }

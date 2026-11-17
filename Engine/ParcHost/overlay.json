@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 785,
+  "version": 786,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -349,7 +349,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_host.mm",
       "target": "parc/native/native_appkit_host.mm",
-      "sha256": "a8b1bc01fba8a0e372d1dd57caf9300b1761d73051f2575a1199c1f7ce671328"
+      "sha256": "c1be1bfebd9389448107ce35bb60640282cc94356cd00fb89fe129ae57fdc674"
     },
     {
       "source": "Engine/ParcNative/native_appkit_page.h",
@@ -1214,12 +1214,12 @@
     {
       "source": "Engine/ParcNative/native_background_picture_in_picture_api.h",
       "target": "parc/native/native_background_picture_in_picture_api.h",
-      "sha256": "f8b438d7b7936ab33d384bbb61d25b8abf8fa3101bc297003eb09995e5137283"
+      "sha256": "422a37805924ba747ecc5209f3e1cbc63c875b81705fe3ed599f4fa87c66247c"
     },
     {
       "source": "Engine/ParcNative/native_background_picture_in_picture_hold.h",
       "target": "parc/native/native_background_picture_in_picture_hold.h",
-      "sha256": "7a5adea4f11a6c7e8a85cdad0b352ccf1111d2cd7050eddae46288ced32eda5b"
+      "sha256": "98cdd534602da05efbffc5b18a50593b113655662da826ef009c868cb3629807"
     },
     {
       "source": "Engine/ParcNative/native_media_notify.h",
@@ -1229,7 +1229,7 @@
     {
       "source": "Engine/ParcNative/native_media_controls.mm",
       "target": "parc/native/native_media_controls.mm",
-      "sha256": "d9b8acff65b9b8981d1c78e097f930c785ebf184cadfb57f96c2be0eaadcdd9d"
+      "sha256": "1888d19cdd0b690d9e7741b7677e14a5236de6cc4c7f770a6954681c1bb61663"
     },
     {
       "source": "Engine/ParcNative/native_applescript.mm",
