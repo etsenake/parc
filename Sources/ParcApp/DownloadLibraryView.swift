@@ -21,7 +21,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     private var operations: [DownloadLibraryIdentity: String] = [:]
     private var loadingCount = 0
     private var loadMessage: String?
-    var palette: ThemeChromePalette? { didSet { applyPalette() } }
+    var palette: ThemeChromePalette? { didSet { if palette != oldValue { applyPalette() } } }
     private let searchBackdrop = DownloadSearchBackdrop()
     private let search = DownloadSearchField(frame: .zero)
     private let scroll = NSScrollView()
@@ -43,6 +43,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     private var previewItem: BrowserDownload?
     private var previewURL: URL?
     private var activationGeneration: UInt64 = 0
+    private var suspended = false
     override var isFlipped: Bool { true }
 
     init(store: BrowserStore, ownerValid: @escaping () -> Bool) {
@@ -99,16 +100,37 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         reload(force: true); applyPalette()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    func invalidate() {
+    func invalidate() { retireContext(); thumbnails.invalidate() }
+    func suspend() { retireContext(); thumbnails.cancelPending(); suspended = true }
+    private func retireContext() {
         contextGeneration &+= 1
         activationGeneration &+= 1; table.retireOriginalClick()
         emptyContent.settle()
         retireFileDrags()
         closePreview()
-        thumbnails.invalidate()
         table.enumerateAvailableRowViews { row, _ in
             (row.view(atColumn: 0) as? DownloadLibraryCell)?.retirePresentation()
         }
+    }
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        if suspended { resume() }
+    }
+    private func resume() {
+        guard window != nil, ownerValid() else { return }
+        suspended = false
+        var current = true
+        table.enumerateAvailableRowViews { row, index in
+            if let cell = row.view(atColumn: 0) as? DownloadLibraryCell {
+                guard rows.indices.contains(index), case let .item(item) = rows[index],
+                      cell.identity == DownloadLibraryIdentity(item) else { current = false; return }
+                cell.resumePresentation()
+                configure(cell, item: item)
+            }
+            (row as? DownloadLibraryRow)?.resampleHover()
+        }
+        if current { renderedContextGeneration = contextGeneration }
+        else { reloadRows(selecting: table.selectedRowIndexes) }
     }
     private func retireFileDrags() {
         fileDrags.forEach { $0.invalidate() }; fileDrags.removeAll()
@@ -172,7 +194,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         window?.makeFirstResponder(search); search.selectText(nil)
     }
     override func cancelOperation(_ sender: Any?) { escape() }
-    func controlTextDidChange(_ obj: Notification) { actionMessage = nil; invalidate(); reload(force: true) }
+    func controlTextDidChange(_ obj: Notification) { actionMessage = nil; retireContext(); thumbnails.cancelPending(); reload(force: true) }
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         guard !textView.hasMarkedText() else { return false }
         if selector == #selector(NSResponder.cancelOperation(_:)) { escape(); return true }
@@ -184,7 +206,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     }
     private func escape() {
         if preview?.window?.isVisible == true { closePreview(restoringFocus: true); window?.makeFirstResponder(table) }
-        else if !search.stringValue.isEmpty { invalidate(); search.stringValue = ""; reload(force: true) }
+        else if !search.stringValue.isEmpty { retireContext(); thumbnails.cancelPending(); search.stringValue = ""; reload(force: true) }
         else { onClose?() }
     }
     private var selectedItems: [BrowserDownload] {
@@ -311,12 +333,13 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
             guard let self, let cell, self.contextGeneration == generation, self.ownerValid(),
                   let current = self.resolve([item])?.first, current.canCopyFile, let url = self.fileURL?(current) else { return }
             let key = DownloadThumbnailProvider.Key(item: DownloadLibraryIdentity(current), url: url, bytes: current.receivedBytes)
+            guard cell.finishedThumbnail != key else { return }
             cell.thumbnailToken = self.thumbnails.request(key, valid: { [weak self, weak cell] in
                 guard let self, let cell, cell.window === self.window, cell.window != nil,
                   self.contextGeneration == generation, self.ownerValid(),
                   let live = self.resolve([item])?.first else { return false }
                 return key.admits(live, url: self.fileURL?(live))
-            }, completion: { [weak cell] image in cell?.setThumbnail(image) })
+            }, delivery: { [weak cell] image, finished in cell?.setThumbnail(image, key: key, finished: finished) })
         }
         cell.cancelThumbnail = { [weak self] token in self?.thumbnails.cancel(token) }
         cell.makeMenu = { [weak self] in
@@ -1097,6 +1120,7 @@ enum LibraryPageHeader {
     var configureThumbnail: (() -> Void)?
     var cancelThumbnail: ((UUID?) -> Void)?
     var thumbnailToken: UUID?
+    private(set) var finishedThumbnail: DownloadThumbnailProvider.Key?
     private let more = DownloadRowButton()
     var previewSourceBounds: NSRect { icon.convert(icon.bounds, to: nil) }
     func previewSourceImage() -> NSImage? {
@@ -1146,6 +1170,7 @@ enum LibraryPageHeader {
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         icon.kind = DownloadRowArtwork.kind(for: item)
         icon.image = item.requiresReview ? NSImage(systemSymbolName: "exclamationmark.shield", accessibilityDescription: nil) : nil
+        finishedThumbnail = nil
         icon.contentTintColor = detail.textColor
         icon.isHidden = !item.requiresReview && (item.status == .downloading || item.status == .paused)
         progress.colors = DownloadBadgeColors(foreground: palette?.foregroundPrimary ?? .labelColor,
@@ -1171,6 +1196,7 @@ enum LibraryPageHeader {
         retired = true; progress.reset()
         cancelThumbnail?(thumbnailToken); thumbnailToken = nil
     }
+    func resumePresentation() { retired = false; refreshProgress() }
     private func refreshProgress() {
         guard !retired, item.status == .downloading, !item.requiresReview, let profile = item.profileID else {
             progress.reset(); return
@@ -1185,9 +1211,10 @@ enum LibraryPageHeader {
             ancestor = view.superview
         }
     }
-    func setThumbnail(_ image: NSImage?) {
+    func setThumbnail(_ image: NSImage?, key: DownloadThumbnailProvider.Key, finished: Bool) {
         guard let image else { return }; icon.image = image; icon.contentTintColor = nil
         icon.imageScaling = .scaleAxesIndependently
+        if finished { finishedThumbnail = key }
     }
     func setHighlighted(_ value: Bool) { highlighted = value; refreshTitleColor() }
     override func viewDidChangeEffectiveAppearance() {
@@ -1386,6 +1413,7 @@ enum LibraryPageHeader {
         scrolling = false; resamplePointer(); updatePresentation()
     }
     @objc private func windowFocusChanged(_ notification: Notification) { resamplePointer(); updatePresentation() }
+    func resampleHover() { resamplePointer(); updatePresentation() }
     private func resamplePointer() {
         hovered = window.map {
             let point = $0.mouseLocationOutsideOfEventStream

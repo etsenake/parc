@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 struct MediaLibraryNavigation: Equatable {
     let index: Int?
@@ -90,4 +90,104 @@ final class MediaLibraryLatestWork<Value: Sendable> {
         }
     }
     func cancel() { ticket &+= 1; task?.cancel(); task = nil; replaced = 0; queued = nil }
+}
+
+@MainActor
+final class MediaLibraryGridLayout: NSCollectionViewFlowLayout {
+    private var styleObserver: NSObjectProtocol?
+    override init() {
+        super.init()
+        styleObserver = NotificationCenter.default.addObserver(forName: NSScroller.preferredScrollerStyleDidChangeNotification,
+                                                               object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.remeasure() }
+        }
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    deinit { if let styleObserver { NotificationCenter.default.removeObserver(styleObserver) } }
+    func remeasure() {
+        guard side(width: gridWidth) != itemSize.width else { return }
+        let context = NSCollectionViewFlowLayoutInvalidationContext()
+        context.invalidateFlowLayoutDelegateMetrics = true
+        invalidateLayout(with: context)
+    }
+    nonisolated static func side(width: CGFloat, insets: CGFloat, spacing: CGFloat) -> CGFloat {
+        max(1, (width - insets - spacing) / 2)
+    }
+    private func side(width: CGFloat) -> CGFloat {
+        Self.side(width: width, insets: sectionInset.left + sectionInset.right, spacing: minimumInteritemSpacing)
+    }
+    private var gridWidth: CGFloat {
+        guard let collectionView else { return 0 }
+        guard let scroll = collectionView.enclosingScrollView else { return collectionView.bounds.width }
+        func content(scrolling: Bool) -> NSSize {
+            NSScrollView.contentSize(forFrameSize: scroll.frame.size,
+                horizontalScrollerClass: scroll.hasHorizontalScroller ? NSScroller.self : nil,
+                verticalScrollerClass: scrolling ? NSScroller.self : nil, borderType: scroll.borderType,
+                controlSize: scroll.verticalScroller?.controlSize ?? .regular, scrollerStyle: scroll.scrollerStyle)
+        }
+        let insets = scroll.contentInsets, full = content(scrolling: false)
+        let width = full.width - insets.left - insets.right
+        let visible = scroll.contentView.bounds.width - insets.left - insets.right
+        let reserved = content(scrolling: true).width - insets.left - insets.right
+        guard scroll.hasVerticalScroller, reserved < width else { return min(width, visible) }
+        guard scroll.autohidesScrollers else { return min(reserved, visible) }
+        let count = collectionView.numberOfSections > 0 ? collectionView.numberOfItems(inSection: 0) : 0
+        let rows = CGFloat((count + 1) / 2), tile = side(width: width)
+        let height = sectionInset.top + sectionInset.bottom + rows * tile + max(0, rows - 1) * minimumLineSpacing
+        return min(height > full.height - insets.top - insets.bottom - 1 ? reserved : width, visible)
+    }
+    override func shouldInvalidateLayout(forBoundsChange newBounds: NSRect) -> Bool {
+        super.shouldInvalidateLayout(forBoundsChange: newBounds) || side(width: gridWidth) != itemSize.width
+    }
+    override func invalidationContext(forBoundsChange newBounds: NSRect) -> NSCollectionViewLayoutInvalidationContext {
+        let context = super.invalidationContext(forBoundsChange: newBounds)
+        if side(width: gridWidth) != itemSize.width {
+            (context as? NSCollectionViewFlowLayoutInvalidationContext)?.invalidateFlowLayoutDelegateMetrics = true
+        }
+        return context
+    }
+    override func prepare() {
+        let next = side(width: gridWidth)
+        if itemSize != NSSize(width: next, height: next) { itemSize = NSSize(width: next, height: next) }
+        super.prepare()
+    }
+}
+
+struct MediaLibraryThumbnails<Key: Hashable, Image> {
+    enum Fill { case show(Image), load(UInt64) }
+    let capacity: Int
+    private var images: [Key: Image] = [:]
+    private var recency: [Key] = []
+    private var loading: [Key: UInt64] = [:]
+    private var serial: UInt64 = 0
+    init(capacity: Int) { self.capacity = max(1, capacity) }
+    var count: Int { images.count }
+    func peek(_ key: Key) -> Image? { images[key] }
+    func isLoading(_ key: Key) -> Bool { loading[key] != nil }
+    mutating func fill(_ key: Key, live: Bool) -> Fill? {
+        if let image = images[key] { touch(key); return .show(image) }
+        guard live, loading[key] == nil else { return nil }
+        serial &+= 1; loading[key] = serial
+        return .load(serial)
+    }
+    mutating func finish(_ key: Key, ticket: UInt64, image: Image) -> Bool {
+        guard loading[key] == ticket else { return false }
+        loading[key] = nil; images[key] = image; touch(key)
+        while recency.count > capacity { images[recency.removeFirst()] = nil }
+        return true
+    }
+    mutating func abandon(_ key: Key, ticket: UInt64) {
+        if loading[key] == ticket { loading[key] = nil }
+    }
+    mutating func forget<S: Sequence>(_ keys: S) where S.Element == Key {
+        let gone = Set(keys)
+        guard !gone.isEmpty else { return }
+        for key in gone { images[key] = nil; loading[key] = nil }
+        recency.removeAll { gone.contains($0) }
+    }
+    mutating func reset() { images = [:]; recency = []; loading = [:] }
+    private mutating func touch(_ key: Key) {
+        if let index = recency.lastIndex(of: key) { recency.remove(at: index) }
+        recency.append(key)
+    }
 }

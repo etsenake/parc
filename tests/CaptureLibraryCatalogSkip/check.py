@@ -32,7 +32,8 @@ for gone in ("reloadData", ".sort", ".map", "firstIndex"):
 
 schedule = body(source, "private func scheduleRebuild() {")
 for needle in ("planner.start { [weak self] in",
-               "let base = self.items, version = self.listVersion, captures = self.store.items, files = self.media.items",
+               "let base = self.items, version = self.listVersion, ready = self.catalogReady",
+               "let captures = ready ? self.store.items : [], files = ready ? self.media.items : []",
                "return (work: { try Self.plan(from: base, captures: captures, files: files, query: query) }, finish:",
                "if self.listVersion == version { self.apply(plan) } else { self.scheduleRebuild() }"):
     assert needle in schedule, f"catalog changes must be planned off the main thread by the latest-wins planner: {needle}"
@@ -125,9 +126,9 @@ assert "reload(force: true)" in source.split("collection.setAccessibilityLabel(\
 assert "private var presentationGeneration: UInt64 = 0" in source, \
     "missing presentation lifetime distinct from operation generation"
 assert source.count("presentationGeneration &+= 1") == 1, \
-    "only invalidate() may retire the presentation lifetime"
-assert "generation &+= 1; presentationGeneration &+= 1" in source, \
-    "invalidate() must retire both operation and presentation work"
+    "only suspend(), which invalidate() runs first, may retire the presentation lifetime"
+assert "generation &+= 1; presentationGeneration &+= 1" in body(source, "func suspend() {"), \
+    "leaving Media must retire both operation and presentation work"
 preview = re.search(
     r"private func openFilePreview\(.*?\n    \}\n    private func prepareFocusReturn",
     source, re.S)
@@ -149,5 +150,40 @@ assert "if shouldSkipCatalogReload() { return }" in library, \
 downloads = (root / "Sources/ParcApp/DownloadLibraryView.swift").read_text()
 assert "if !force && shouldSkipCatalogReload() { return }" in downloads, \
     "DownloadLibraryView catalog fingerprint skip missing after rebase"
+
+suspend = body(source, "func suspend() {")
+for gone in ("media.deactivate", "thumbnails", "thumbnailTasks"):
+    assert gone not in suspend, f"switching Library sections keeps Media's files and thumbnails: {gone}"
+for needle in ("suspend(); media.deactivate(mediaClient)", "thumbnails.reset()"):
+    assert needle in invalidate, f"closing the Library releases Media's files and thumbnails: {needle}"
+assert "refreshVisibleThumbnails()" in body(source, "func activate() {"), "showing Media again fills every visible tile still missing its thumbnail"
+refresh = body(source, "private func refreshVisibleThumbnails(_ only: CacheKey? = nil) {")
+assert "where cell.image == nil" in refresh and "contains(items[index])" in refresh and "fillThumbnail(cell, item: items[index])" in refresh, \
+    "only visible tiles without a thumbnail, showing a current item, are filled when Media shows again"
+assert "guard self.contains(item) else { self.thumbnails.abandon(key, ticket: ticket); self.refreshVisibleThumbnails(key); return }" in source, \
+    "a load for a file whose record changed mid-load refills its tile from the current record"
+assert "switch thumbnails.fill(item.cacheKey, live: ownerValid()) {" in source, "tiles filled while Media is hidden wait for it to show"
+assert "self.generation == generation" not in source, "opening a preview must not throw away thumbnails that are still loading"
+assert "let flow = MediaLibraryGridLayout()" in source and "itemSize" not in source, \
+    "the grid layout sizes its own tiles from the width it lays out at"
+rebuild = body(source, "private func rebuildItems() {")
+assert "let ready = catalogReady" in rebuild and "captures: ready ? store.items : [], files: ready ? media.items : []" in rebuild, \
+    "the grid waits for saved captures and the first folder scan so files never pop in around captures"
+assert "catalogReady != observedCatalogReady" in changed, "the grid fills in once both catalogs are ready"
+assert "hasCatalog = false; clear()" in media and "self.clear(); self.hasCatalog = true" in media and "        hasCatalog = true\n        publish(snapshot.catalog)" in media, \
+    "Media reports when its first folder scan has landed"
+for needle in ("privateMediaView?.suspend() } else { capturesView.suspend() }",
+               "if self.kind == .downloads && kind != .downloads { downloadsView.suspend() }"):
+    assert needle in library, f"switching Library sections suspends the page instead of closing it: {needle}"
+assert "func suspend() { retireContext(); thumbnails.cancelPending(); suspended = true }" in downloads, \
+    "leaving Downloads keeps its thumbnails"
+assert "if suspended { resume() }" in body(downloads, "override func viewDidUnhide() {"), "showing Downloads again revives its rows"
+assert "actionMessage = nil; retireContext(); thumbnails.cancelPending(); reload(force: true)" in downloads, \
+    "typing a Downloads search keeps thumbnails instead of reloading every one"
+escape = body(downloads, "    private func escape() {")
+assert "retireContext(); thumbnails.cancelPending(); search.stringValue = \"\"" in escape and "invalidate()" not in escape, \
+    "clearing a Downloads search with Escape keeps thumbnails"
+assert "guard cell.finishedThumbnail != key else { return }" in downloads, "a row already showing its thumbnail never flashes back to its file icon"
+assert "didSet { if palette != oldValue { applyPalette() } }" in downloads, "returning to Downloads with the same theme does not rebuild every row"
 
 print("CaptureLibraryCatalogSkip: ok")

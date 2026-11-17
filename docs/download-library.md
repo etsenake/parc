@@ -153,12 +153,14 @@ filenames, paths and actions remain unchanged. Failed, canceled and missing
 items use secondary title ink. Transfer subtitles come from actual status, MIME,
 byte counts and time remaining. Security review keeps its warning state.
 
-Thumbnail and native-file-icon requests share the exact file/item lease. The
-icon may display provisionally; a successful Quick Look thumbnail wins. Requests
-and cache insertion revalidate policy, path, byte count and owner even if the
-incarnation is unchanged. Detachment or context replacement cancels both
-producers. The per-Library cache is bounded to 64 entries, and native icon
-lookup runs off the main queue.
+Thumbnail and native-file-icon requests share the exact file/item lease, and icon
+lookup runs off the main queue. The icon may display provisionally; a finished
+Quick Look thumbnail wins and is never re-requested, so it cannot flash back to
+the icon. Requests and cache insertion revalidate policy, path, byte count and
+owner even if the incarnation is unchanged. Detachment or context replacement
+cancels both producers. Search and other Library pages keep the cache of the 64
+latest thumbnails; returning revives on-screen rows and restarts cut-short loads,
+and closing the Library empties it.
 
 <a id="original-artwork-to-preview-transition"></a>
 ## Parent-owned media preview

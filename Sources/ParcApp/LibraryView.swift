@@ -249,9 +249,9 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         guard !store.isEphemeral || kind == .downloads || (kind == .captures && privateMediaContext?.isValid() == true) else { return }
         if self.kind == .spaces && kind != .spaces { spaceManager.cancelEditing(); onLeaveSpaces?() }
         if self.kind == .captures && kind != .captures {
-            if store.isEphemeral { privateMediaView?.invalidate() } else { capturesView.invalidate() }
+            if store.isEphemeral { privateMediaView?.suspend() } else { capturesView.suspend() }
         }
-        if self.kind == .downloads && kind != .downloads { downloadsView.invalidate() }
+        if self.kind == .downloads && kind != .downloads { downloadsView.suspend() }
         if self.kind != kind { archiveMenuGeneration &+= 1 }
 
         settleFilterAnimation()

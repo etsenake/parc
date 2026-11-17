@@ -26,8 +26,15 @@ import QuickLookThumbnailing
 
     @discardableResult func request(_ key: Key, valid: @escaping () -> Bool,
                                     completion: @escaping (NSImage?) -> Void) -> UUID? {
+        request(key, valid: valid, delivery: { image, _ in completion(image) })
+    }
+    @discardableResult func request(_ key: Key, valid: @escaping () -> Bool,
+                                    delivery completion: @escaping (NSImage?, Bool) -> Void) -> UUID? {
         guard valid() else { return nil }
-        if let image = cache[key] { completion(image); return nil }
+        if let image = cache[key] {
+            order.removeAll { $0 == key }; order.append(key)
+            completion(image, true); return nil
+        }
         let token = UUID(), originalGeneration = generation
         pending[token] = {}
         let cancel = loader(key.url) { [weak self] delivery in
@@ -35,18 +42,18 @@ import QuickLookThumbnailing
                   self.pending[token] != nil else { return }
             guard valid() else { self.cancel(token); return }
             guard self.generation == originalGeneration, self.pending[token] != nil else { return }
-            let image: NSImage?
+            let image: NSImage?, finished: Bool
             switch delivery {
-            case let .provisional(value): image = value
+            case let .provisional(value): image = value; finished = false
             case let .finished(value):
                 self.pending.removeValue(forKey: token)
-                image = value
+                image = value; finished = true
                 if let image {
                     self.cache[key] = image; self.order.removeAll { $0 == key }; self.order.append(key)
                     while self.order.count > 64 { self.cache.removeValue(forKey: self.order.removeFirst()) }
                 }
             }
-            completion(image)
+            completion(image, finished)
         }
         if pending[token] != nil { pending[token] = cancel } else { cancel() }
         return token
@@ -55,10 +62,12 @@ import QuickLookThumbnailing
         guard let token, let cancel = pending.removeValue(forKey: token) else { return }
         cancel()
     }
-    func invalidate() {
+    func invalidate() { retire(clearingCache: true) }
+    func cancelPending() { retire(clearingCache: false) }
+    private func retire(clearingCache: Bool) {
         generation &+= 1
         let requests = pending.values; pending.removeAll()
-        cache.removeAll(); order.removeAll()
+        if clearingCache { cache.removeAll(); order.removeAll() }
         for cancel in requests { cancel() }
     }
     private static func quickLook(_ url: URL, completion: @escaping @MainActor (Delivery) -> Void) -> () -> Void {

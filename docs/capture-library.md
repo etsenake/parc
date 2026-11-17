@@ -72,7 +72,9 @@ Stop Showing This Folder removes its retained bookmark/items for this Profile;
 OS-level revocation remains in macOS Settings. This is file access, not Screen
 Recording permission.
 
-Only visible clients keep observation active. One file-level FSEvents stream
+Media keeps observing while its Library is open, even while another Library page
+shows, so coming back needs no rescan and the grid never empties and refills.
+Closing the Library or its window stops it. One file-level FSEvents stream
 covers every shown folder, including missing or unreadable ones, so a file that
 appears, is renamed or is removed reaches Media within about a third of a second,
 and so does a file's first in-place write or screenshot marker after a quiet second.
@@ -94,8 +96,8 @@ changed. Network folders are the one case events
 miss, because macOS reports only changes made on this Mac; while one is shown, that
 check rescans all folders once a minute. It does the same if the stream cannot
 start. Last-client retirement cancels work, releases the stream and scopes and
-clears results. Owned sheets, previews and thumbnail requests carry
-window/generation. Cancellation settles once even if Quick Look never answers, and
+clears results. Owned sheets and previews carry window/generation; leaving Media
+closes them. Cancellation settles once even if Quick Look never answers, and
 late callbacks cannot restore retired work.
 
 iCloud download status has its own source. While Media is shown, each shown folder
@@ -127,9 +129,11 @@ position stays put, tiles under a still pointer resample hover, finished thumbna
 find their tile among the visible ones and preview navigation reads the planned
 positions. Typing a search still rebuilds the grid immediately. Loading,
 folder-access and error changes update only the message and status line.
-**Loading Media…** appears for the first load and for refreshes a person starts
-(Refresh, folder access and visibility); hiding a file removes just its tile, and
-event, activation and once-a-minute rescans stay quiet.
+**Loading Media…** shows on opening until both saved captures and the first folder
+scan are in, so the grid appears whole instead of files popping in around
+captures, and for refreshes a person starts (Refresh, folder access and
+visibility); hiding a file removes just its tile, and event, activation and
+once-a-minute rescans stay quiet.
 
 File revisions include device/inode, size, nanosecond modification/change times,
 kind and local-file state. Reads validate source/catalog/revision; no-follow file
@@ -144,7 +148,12 @@ why. Corrupt `MediaFolders.json` is preserved and refuses writes.
 
 ### Grid tile and hover
 
-Cells have a radius-12 primary plate inset four points at rest, 5% fill and a
+The grid's own layout sizes its two square columns from the width it is laid out
+at, so narrowing from the wider Spaces page resizes the tiles instead of stacking
+one tall column. Tiles never outgrow the visible width, and an always-shown scroll
+bar has its width reserved whenever the grid is taller than the page, so tiles
+never jump as it comes and goes. Cells have a radius-12 primary plate inset four
+points at rest, 5% fill and a
 centered thumbnail capped at 120 points (cell width minus 20 in narrower grids).
 Thumbnails rest at 95% scale. Files use white radius-2 paper and a subtle downward
 shadow; captures use a two-point dashed white outline. Videos add a centered play
@@ -155,6 +164,10 @@ Hover/selection expands plate to the cell edge at 15%, grows the thumbnail to
 handles both directions; Reduce Motion snaps. A live scroll preserves existing
 hover until pointer exit but refuses new hover until scrolling ends. Loss of key
 status clears hover. Arrival of a thumbnail updates in place without losing state.
+The 128 most recently shown thumbnails stay cached while another Library page
+shows, and opening a preview never drops loads in flight. A tile filled while Media
+was hidden, or whose load was cut short, loads when Media shows again; closing the
+Library releases them all.
 Only the drawn plate is interactive; its outer ring is grid space. Preview opens
 from the drawn thumbnail rectangle. Increase Contrast adds the selected focus edge.
 
@@ -186,9 +199,13 @@ in flight. Library view checks cover thumbnail geometry, hover, scrolling,
 selection, source rectangles, mixed capture/file navigation, a loading flip that
 leaves the grid alone, and arrivals, in-place changes, renames, removals and iCloud
 status changes that make at most two tiles while selection, scroll position and
-hover stay correct. `tests/CaptureLibraryCatalogSkip` pins the skip, off-main and
-cancellable planning, settling, iCloud status and event structure; `scripts/test.sh`
-runs both Media checks.
+hover stay correct. `tests/MediaLibraryGridTests.swift` checks, without a window,
+that the grid keeps two columns sized to its width as it widens, narrows, gains
+items past the page height or switches scroll bar style, and that thumbnails filled
+while hidden load on return while loads answering after the Library closed cannot
+land. `tests/CaptureLibraryCatalogSkip` pins the skip,
+off-main and cancellable planning, settling, iCloud status, event structure and
+how pages suspend and resume; `scripts/test.sh` runs these Media checks.
 
 ## Private Media ownership
 

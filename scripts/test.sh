@@ -384,6 +384,8 @@ step swift_test external-media-library -parse-as-library -warnings-as-errors \
   "$repo_root/Sources/ParcApp/ExternalMediaLibrary.swift" \
   "$repo_root/Sources/ParcApp/MediaLibraryContext.swift" \
   "$repo_root/tests/ExternalMediaLibraryTests.swift"
+step swift_test media-library-grid -warnings-as-errors -parse-as-library \
+  "$repo_root/Sources/ParcApp/MediaLibraryContext.swift" "$repo_root/tests/MediaLibraryGridTests.swift"
 step python3 "$repo_root/tests/CaptureLibraryCatalogSkip/check.py"
 step python3 "$repo_root/tests/DownloadLibrary/check-view.py"
 step python3 "$repo_root/tests/LibraryRail/check.py"

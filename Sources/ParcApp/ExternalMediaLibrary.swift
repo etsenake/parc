@@ -167,6 +167,7 @@ final class ExternalMediaLibrary: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var isLoading = false
     private(set) var revision: UInt64 = 0
+    private(set) var hasCatalog = false
     private var index: [String: ExternalMediaFile] = [:]
     private var appliedVersion: UInt64?
     private let disk: ExternalMediaDisk
@@ -243,7 +244,7 @@ final class ExternalMediaLibrary: ObservableObject {
         cancelRefresh(); updateTask?.cancel(); updateTask = nil; settleTask?.cancel(); settleTask = nil; stopWatching()
         safetyTimer?.cancel(); safetyTimer = nil
         observers.forEach { $0.center.removeObserver($0.token) }; observers = []; screenshotObserver = nil
-        clear()
+        hasCatalog = false; clear()
         if !folders.isEmpty { folders = [] }
         if isLoading { isLoading = false }
     }
@@ -262,7 +263,7 @@ final class ExternalMediaLibrary: ObservableObject {
             } catch {
                 guard !Task.isCancelled, self.generation == token else { return }
                 let message = error.localizedDescription
-                self.clear()
+                self.clear(); self.hasCatalog = true
                 if self.error != message { self.error = message }
                 self.stopWatching()
             }
@@ -298,6 +299,7 @@ final class ExternalMediaLibrary: ObservableObject {
         if (watchedRoots ?? []).contains(where: { $0 == volume || $0.hasPrefix(prefix) }) { requestRescan() }
     }
     private func apply(_ snapshot: ExternalMediaDisk.Snapshot, since mark: FSEventStreamEventId) {
+        hasCatalog = true
         publish(snapshot.catalog); observeCloud(snapshot.catalog.cloudFolders)
         if folders != snapshot.folders { folders = snapshot.folders }
         if error != snapshot.warning { error = snapshot.warning }

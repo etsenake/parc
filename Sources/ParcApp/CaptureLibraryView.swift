@@ -54,8 +54,9 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private var observedMediaFolders: [ExternalMediaFolder] = []
     private var observedMediaError: String?
     private var observedMediaLoading = false
-    private var thumbnails: [CacheKey: NSImage] = [:]
-    private var thumbnailTasks: [CacheKey: (id: UUID, task: Task<Void, Never>)] = [:]
+    private var observedCatalogReady = false
+    private var thumbnails = MediaLibraryThumbnails<CacheKey, NSImage>(capacity: 128)
+    private var thumbnailTasks: [CacheKey: (ticket: UInt64, task: Task<Void, Never>)] = [:]
     private var generation: UInt64 = 0
     private var presentationGeneration: UInt64 = 0
     private var captureSharing: CaptureLibrarySharing?
@@ -85,7 +86,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
             (search as? NSSearchField)?.sendsSearchStringImmediately = true
             addSubview(search)
         }
-        let flow = NSCollectionViewFlowLayout()
+        let flow = MediaLibraryGridLayout()
         flow.minimumInteritemSpacing = 10; flow.minimumLineSpacing = 10
         flow.sectionInset = NSEdgeInsets(top: LibraryPageHeader.contentTop - LibraryPageHeader.top - LibraryPageHeader.height,
                                          left: 10, bottom: 10, right: 10)
@@ -135,17 +136,24 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     deinit { (windowObservers + scrollObservers).forEach { NotificationCenter.default.removeObserver($0) } }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     func focusSearch() { window?.makeFirstResponder(search); search.selectText(nil) }
-    func activate() { if window != nil, ownerValid() { media.activate(mediaClient) } }
-    func invalidate() {
+    func activate() {
+        guard window != nil, ownerValid() else { return }
+        media.activate(mediaClient)
+        refreshVisibleThumbnails()
+    }
+    func suspend() {
         focusReturn?.cancel(); focusReturn = nil
         shareFocusReturn?.cancel(); shareFocusReturn = nil
         generation &+= 1; presentationGeneration &+= 1
         captureSharing?.detach(); captureSharing = nil; shareRequest = nil
         preview?.close(); preview = nil; closeFilePreview()
         if let ownedSheet, window?.attachedSheet === ownedSheet { window?.endSheet(ownedSheet, returnCode: .cancel) }
-        ownedSheet = nil; media.deactivate(mediaClient); thumbnails = [:]
-        thumbnailTasks.values.forEach { $0.task.cancel() }; thumbnailTasks = [:]
+        ownedSheet = nil
         if actionError != nil { actionError = nil; setAccessStatus(statusText()) }
+    }
+    func invalidate() {
+        suspend(); media.deactivate(mediaClient)
+        thumbnailTasks.values.forEach { $0.task.cancel() }; thumbnailTasks = [:]; thumbnails.reset()
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -204,11 +212,10 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         planner.cancel()
         let selected = selectedItem?.id
         appliedQuery = search.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let next = Self.sortedItems(captures: store.items, files: media.items, query: appliedQuery, check: {})
+        let ready = catalogReady
+        let next = Self.sortedItems(captures: ready ? store.items : [], files: ready ? media.items : [], query: appliedQuery, check: {})
         guard next != items else { return }
         items = next; positions = nil; listVersion &+= 1
-        let keys = Set(items.map(\.cacheKey)); thumbnails = thumbnails.filter { keys.contains($0.key) }
-        for (key, pending) in thumbnailTasks where !keys.contains(key) { pending.task.cancel(); thumbnailTasks[key] = nil }
         collection.reloadData()
         if let selected, let index = items.firstIndex(where: { $0.id == selected }) { collection.selectionIndexPaths = [IndexPath(item: index, section: 0)] }
     }
@@ -216,7 +223,8 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private func scheduleRebuild() {
         planner.start { [weak self] in
             guard let self else { return nil }
-            let base = self.items, version = self.listVersion, captures = self.store.items, files = self.media.items
+            let base = self.items, version = self.listVersion, ready = self.catalogReady
+            let captures = ready ? self.store.items : [], files = ready ? self.media.items : []
             let query = self.search.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             return (work: { try Self.plan(from: base, captures: captures, files: files, query: query) }, finish: { [weak self] plan in
                 guard let self else { return }
@@ -267,7 +275,8 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private func apply(_ plan: ListPlan) {
         let selected = selectedItem?.id
         appliedQuery = plan.query
-        for key in plan.evicted { thumbnails[key] = nil; thumbnailTasks.removeValue(forKey: key)?.task.cancel() }
+        thumbnails.forget(plan.evicted)
+        for key in plan.evicted { thumbnailTasks.removeValue(forKey: key)?.task.cancel() }
         positions = plan.positions; listVersion &+= 1
         if plan.reload {
             items = plan.items; collection.reloadData()
@@ -293,7 +302,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private func refreshMessage() {
         let nextMessage: String
         if let error = store.loadError { nextMessage = error }
-        else if store.isLoading || media.isLoading || (planner.isRunning && items.isEmpty) { nextMessage = "Loading Media…" }
+        else if !catalogReady || media.isLoading || (planner.isRunning && items.isEmpty) { nextMessage = "Loading Media…" }
         else if appliedQuery.isEmpty { nextMessage = "Saved captures and media in your folders appear here." }
         else { nextMessage = "No matching media" }
         let nextAccess = statusText()
@@ -314,8 +323,10 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         }
     }
 
+    private var catalogReady: Bool { !store.isLoading && media.hasCatalog }
+
     private func catalogItemsChanged() -> Bool {
-        store.items != observedCaptures || media.revision != observedMediaRevision
+        store.items != observedCaptures || media.revision != observedMediaRevision || catalogReady != observedCatalogReady
     }
 
     private func catalogStatusChanged() -> Bool {
@@ -334,6 +345,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         observedMediaFolders = media.folders
         observedMediaError = media.error
         observedMediaLoading = media.isLoading
+        observedCatalogReady = catalogReady
     }
     private func position(of id: String) -> Int? {
         guard let positions else { return items.firstIndex { $0.id == id } }
@@ -352,27 +364,44 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         let item = items[indexPath.item]
         let kind: CaptureLibraryTile.Kind = { if case .file(let file) = item { return file.kind == .movie ? .video : .image }; return .capture }()
         cell.cacheKey = item.cacheKey
-        cell.configure(title: item.title, date: item.date, kind: kind, image: thumbnails[item.cacheKey], scrolling: isScrolling,
+        cell.configure(title: item.title, date: item.date, kind: kind, image: thumbnails.peek(item.cacheKey), scrolling: isScrolling,
                        action: { [weak self] in self?.open(item) })
-        if ownerValid(), thumbnails[item.cacheKey] == nil, thumbnailTasks[item.cacheKey] == nil {
-            let generation = generation; let taskID = UUID()
-            let task = Task { [weak self] in
-                guard let self else { return }
-                defer { if self.thumbnailTasks[item.cacheKey]?.id == taskID { self.thumbnailTasks[item.cacheKey] = nil } }
-                do {
-                    let data: Data
-                    switch item { case .capture(let capture): data = try await self.store.thumbnail(for: capture)
-                    case .file(let file): data = try await self.media.thumbnail(file) }
-                    guard !Task.isCancelled, self.generation == generation, self.contains(item), let image = NSImage(data: data) else { return }
-                    if self.thumbnails.count >= 128, let key = self.thumbnails.keys.first { self.thumbnails.removeValue(forKey: key) }
-                    self.thumbnails[item.cacheKey] = image
-                    for case let cell as CaptureLibraryCell in self.collection.visibleItems() where cell.cacheKey == item.cacheKey { cell.setImage(image) }
-                } catch {
-                }
-            }
-            thumbnailTasks[item.cacheKey] = (taskID, task)
-        }
+        fillThumbnail(cell, item: item)
         return cell
+    }
+    private func fillThumbnail(_ cell: CaptureLibraryCell, item: Item) {
+        switch thumbnails.fill(item.cacheKey, live: ownerValid()) {
+        case .show(let image): if cell.image !== image { cell.setImage(image) }
+        case .load(let ticket): loadThumbnail(item, ticket: ticket)
+        case nil: break
+        }
+    }
+    private func refreshVisibleThumbnails(_ only: CacheKey? = nil) {
+        for case let cell as CaptureLibraryCell in collection.visibleItems() where cell.image == nil {
+            guard let key = cell.cacheKey, only == nil || key == only, let index = collection.indexPath(for: cell)?.item,
+                  items.indices.contains(index), items[index].cacheKey == key, contains(items[index]) else { continue }
+            fillThumbnail(cell, item: items[index])
+        }
+    }
+    private func loadThumbnail(_ item: Item, ticket: UInt64) {
+        let key = item.cacheKey, store = store, media = media
+        let task = Task { [weak self] in
+            let data: Data?
+            do {
+                switch item {
+                case .capture(let capture): data = try await store.thumbnail(for: capture)
+                case .file(let file): data = try await media.thumbnail(file)
+                }
+            } catch { data = nil }
+            guard let self else { return }
+            if self.thumbnailTasks[key]?.ticket == ticket { self.thumbnailTasks[key] = nil }
+            guard !Task.isCancelled else { self.thumbnails.abandon(key, ticket: ticket); return }
+            guard self.contains(item) else { self.thumbnails.abandon(key, ticket: ticket); self.refreshVisibleThumbnails(key); return }
+            guard let data, let image = NSImage(data: data),
+                  self.thumbnails.finish(key, ticket: ticket, image: image) else { self.thumbnails.abandon(key, ticket: ticket); return }
+            for case let cell as CaptureLibraryCell in self.collection.visibleItems() where cell.cacheKey == item.cacheKey { cell.setImage(image) }
+        }
+        thumbnailTasks[key] = (ticket, task)
     }
     private var selectedItem: Item? {
         guard let index = collection.selectionIndexPaths.first?.item, items.indices.contains(index) else { return nil }; return items[index]
@@ -390,7 +419,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
             })
         prepareFocusReturn()
         controller.sourceRect = { [weak self] in self?.previewSourceRect(selected) }
-        controller.sourceImage = thumbnails[selected.cacheKey]
+        controller.sourceImage = thumbnailImage(selected)
         controller.onOpenSource = { [weak self] url in self?.onOpenSource?(url) }
         controller.onToast = { [weak self] in self?.onToast?($0) }
         controller.onClose = { [weak self, weak controller] in
@@ -720,7 +749,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
                 self.prepareFocusReturn()
                 let controller = DownloadLibraryPreview(itemName: "media file")
                 controller.sourceRect = { [weak self] in self?.previewSourceRect(.file(file)) }
-                controller.sourceImage = self.thumbnails[Item.file(file).cacheKey]
+                controller.sourceImage = self.thumbnailImage(.file(file))
                 self.fileAccess = access; self.filePreview = controller; self.previewedFile = file
                 controller.onClosed = { [weak self, weak controller] in
                     guard let self, self.filePreview === controller else { return }
@@ -750,12 +779,16 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         })
     }
     private func previewSourceRect(_ item: Item) -> NSRect? {
-        guard ownerValid(), contains(item), let index = index(of: item),
-              thumbnails[item.cacheKey] != nil,
-              let cell = collection.item(at: IndexPath(item: index, section: 0)) as? CaptureLibraryCell,
-              cell.view.window === window else { return nil }
+        guard ownerValid(), contains(item), let cell = visibleCell(item), cell.view.window === window else { return nil }
         return cell.previewSourceRect()
     }
+    private func visibleCell(_ item: Item) -> CaptureLibraryCell? {
+        guard let index = index(of: item),
+              let cell = collection.item(at: IndexPath(item: index, section: 0)) as? CaptureLibraryCell,
+              cell.cacheKey == item.cacheKey else { return nil }
+        return cell
+    }
+    private func thumbnailImage(_ item: Item) -> NSImage? { thumbnails.peek(item.cacheKey) ?? visibleCell(item)?.image }
     override func layout() {
         super.layout()
         let listTop: CGFloat
@@ -769,8 +802,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         }
         let statusHeight: CGFloat = accessStatus.isHidden ? 0 : 28
         scroll.frame = NSRect(x: 0, y: listTop, width: bounds.width, height: max(0, bounds.height - listTop - statusHeight))
-        let width = max(1, (scroll.contentSize.width - 30) / 2)
-        (collection.collectionViewLayout as? NSCollectionViewFlowLayout)?.itemSize = NSSize(width: width, height: width)
         message.frame = NSRect(x: 22, y: 100, width: max(0, bounds.width - 44), height: 140)
         accessStatus.frame = NSRect(x: 12, y: bounds.height - 24, width: max(0, bounds.width - 24), height: 18)
     }
@@ -794,6 +825,7 @@ private final class CaptureLibraryCell: NSCollectionViewItem {
         button.setAccessibilityLabel(title.isEmpty ? "Saved capture" : title)
         button.setAccessibilityHelp("Preview media, \(date.formatted(date: .abbreviated, time: .shortened))")
     }
+    var image: NSImage? { tile.image }
     func setImage(_ image: NSImage) { tile.setImage(image) }
     func previewSourceRect() -> NSRect? {
         guard let artwork = tile.artworkRect,
@@ -810,7 +842,7 @@ private final class CaptureLibraryTile: NSView {
     var isSelected = false { didSet { apply(animated: true) } }
     private(set) var artworkRect: NSRect?
     private var kind = Kind.image
-    private var image: NSImage?
+    private(set) var image: NSImage?
     private var area: NSTrackingArea?
     private var hovered = false
     private var shouldHighlight = false
