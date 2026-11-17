@@ -179,7 +179,7 @@ struct CommandBarFolderCopy {
                 }
                 let copy = BrowserSplitLayout(id: UUID(), sidebarAnchorID: map[anchor], customTitle: group.customTitle, customIcon: group.customIcon,
                     spaceID: spaceID, tabIDs: group.tabIDs.compactMap { map[$0] },
-                    orientation: group.orientation, widthFactors: group.widthFactors)
+                    orientation: group.orientation, widthFactors: group.widthFactors, stacks: group.stacks)
                 copiedGroups.append(copy)
                 return .split(copy.id)
             }

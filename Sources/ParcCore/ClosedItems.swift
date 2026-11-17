@@ -75,6 +75,7 @@ struct ClosedSplitMembership: Equatable {
                   current.tabIDs.allSatisfy(live),
                   let factors = BrowserSplitLayout.normalized(current.widthFactors, count: current.tabIDs.count)
             else { return nil }
+            if layout.stacks != nil || current.stacks != nil { return rejoining(id, into: current) }
             let returned = current.tabIDs.filter { member in
                 closedSiblings.contains(member) && (layout.tabIDs.firstIndex(of: member) ?? position) < position
             }.count
@@ -98,8 +99,47 @@ struct ClosedSplitMembership: Equatable {
         var group = layout
         group.tabIDs = members
         group.widthFactors = factors
+        group.restack(from: layout)
         if group.sidebarAnchorID.map({ members.contains($0) }) != true { group.sidebarAnchorID = members.first }
         return group
+    }
+
+    private func rejoining(_ id: UUID, into current: BrowserSplitLayout) -> BrowserSplitLayout? {
+        let original = layout.slots
+        guard let origin = layout.position(of: id) else { return nil }
+        let home = original[origin.slot], share = home.stackFactors[origin.index]
+        var base = current, slots = current.slots
+        let sources = current.tabIDs.map { member in original.firstIndex { $0.tabIDs.contains(member) } }
+        if current.stacks == nil, current.orientation != layout.orientation, current.tabIDs.count > 1,
+           let first = sources.first, first != nil, sources.allSatisfy({ $0 == first }) {
+            base.orientation = layout.orientation
+            slots = [BrowserSplitSlot(tabIDs: current.tabIDs, factor: 1, stackFactors: current.widthFactors)]
+        }
+        let preceding = Array(home.tabIDs[..<origin.index].reversed()), following = Array(home.tabIDs[(origin.index + 1)...])
+        for mate in preceding + following {
+            guard let slot = slots.firstIndex(where: { $0.tabIDs.contains(mate) }),
+                  let index = slots[slot].tabIDs.firstIndex(of: mate) else { continue }
+            let known = slots[slot].tabIDs.compactMap { member in
+                home.tabIDs.firstIndex(of: member).map { home.stackFactors[$0] }
+            }.reduce(0, +)
+            let at = index + (preceding.contains(mate) ? 1 : 0)
+            var weights = slots[slot].stackFactors.map { $0 * (known > 0 ? known : 1 - share) }
+            weights.insert(share, at: at)
+            slots[slot].stackFactors = weights
+            slots[slot].tabIDs.insert(id, at: at)
+            var result = base
+            result.arrange(slots)
+            return result
+        }
+        let earlier = Set(original[..<origin.slot].flatMap(\.tabIDs))
+        let at = slots.lastIndex(where: { $0.tabIDs.contains(where: earlier.contains) }).map { $0 + 1 } ?? 0
+        let homes = slots.flatMap(\.tabIDs).compactMap { member in original.firstIndex { $0.tabIDs.contains(member) } }
+        let known = original.indices.filter(homes.contains).map { original[$0].factor }.reduce(0, +)
+        for slot in slots.indices { slots[slot].factor *= known > 0 ? known : 1 - home.factor }
+        slots.insert(BrowserSplitSlot(tabIDs: [id], factor: home.factor, stackFactors: [1]), at: at)
+        var result = base
+        result.arrange(slots)
+        return result
     }
 }
 

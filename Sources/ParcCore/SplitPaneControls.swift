@@ -22,6 +22,7 @@ struct SplitPaneInsertion: Equatable {
     let paneID: UUID
     let index: Int
     let orientation: SplitOrientation
+    let target: SplitDropTarget
 
     init?(paneID: UUID, operation: SplitPaneOperation, state: BrowserState) {
         let selection = state.selectedTabIDs
@@ -30,13 +31,30 @@ struct SplitPaneInsertion: Equatable {
               let space = state.spaces.first(where: { $0.id == state.activeSpaceID }) else { return nil }
         let layout = SidebarSplitItems.groups(in: state, spaceID: space.id).first { $0.tabIDs == selection }
         guard selection.count == 1 || layout != nil else { return nil }
+        let before: Bool
         switch operation {
-        case .addBefore: index = position; orientation = .horizontal
-        case .addAfter: index = position + 1; orientation = .horizontal
-        case .addAbove: index = position; orientation = .vertical
-        case .addBelow: index = position + 1; orientation = .vertical
+        case .addBefore: before = true; orientation = .horizontal
+        case .addAfter: before = false; orientation = .horizontal
+        case .addAbove: before = true; orientation = .vertical
+        case .addBelow: before = false; orientation = .vertical
         default: return nil
         }
+        let slot = layout?.stacks == nil ? nil : layout?.position(of: paneID).flatMap { layout?.slotRange($0.slot) }
+        index = slot.map { before ? $0.lowerBound : $0.upperBound } ?? position + (before ? 0 : 1)
+        target = .insert(index)
+        spaceID = space.id; profileID = space.profileID
+        self.selection = selection; self.layout = layout; self.paneID = paneID
+    }
+
+    init?(paneID: UUID, stackingAfter after: Bool, state: BrowserState) {
+        let selection = state.selectedTabIDs
+        guard let position = selection.firstIndex(of: paneID), (2...3).contains(selection.count),
+              let space = state.spaces.first(where: { $0.id == state.activeSpaceID }),
+              let layout = SidebarSplitItems.groups(in: state, spaceID: space.id).first(where: { $0.tabIDs == selection })
+        else { return nil }
+        index = position + (after ? 1 : 0)
+        orientation = layout.orientation
+        target = .stack(position, after: after)
         spaceID = space.id; profileID = space.profileID
         self.selection = selection; self.layout = layout; self.paneID = paneID
     }

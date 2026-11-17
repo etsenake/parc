@@ -2,7 +2,8 @@
 
 A split is a persistent container with an opaque ID, ordered original tab IDs,
 orientation, pane proportions, optional name/icon and a sidebar anchor. Parc
-supports up to four panes. Selecting a child displays its group and focuses that
+supports up to four panes, and a slot can hold a perpendicular stack; see
+[stacked panes](split-stacks.md). Selecting a child displays its group and focuses that
 original child. Split operations preserve live pages and local document editors
 unless an explicit close or cross-Profile move requires native retirement.
 

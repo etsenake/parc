@@ -25,7 +25,7 @@ import Foundation
         let today = tab(.today), retained = tab(.pinned), favorite = tab(.favorite)
         state.tabs = [a,b,c,today,retained,favorite]; state.folders = [folder,nested]
         let group = BrowserSplitLayout(id: UUID(), sidebarAnchorID: b.id, customTitle: "Split", customIcon: .emoji("📚"),
-            spaceID: source.id, tabIDs: [a.id,b.id], orientation: .vertical, widthFactors: [0.3,0.7])
+            spaceID: source.id, tabIDs: [a.id,b.id], orientation: .vertical, widthFactors: [0.3,0.7], stacks: nil)
         state.splitLayouts = [group]; state.selectedTabIDs = group.tabIDs
         state.selectionBySpace = [source.id.uuidString: group.tabIDs]
         func container(_ space: UUID, _ parent: UUID? = nil, _ kind: TabKind = .pinned) -> SidebarContainerLocation {

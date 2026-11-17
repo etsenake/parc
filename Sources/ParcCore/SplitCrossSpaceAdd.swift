@@ -38,7 +38,7 @@ enum SplitCrossSpaceAdd {
         } else if let parent = parents.first, let stored = next.splitLayouts.firstIndex(where: { $0.id == parent.id }),
                   let child = parent.tabIDs.firstIndex(of: source) {
             var kept = parent
-            kept.tabIDs.remove(at: child); kept.widthFactors.remove(at: child)
+            kept.removePane(at: child)
             if let factors = BrowserSplitLayout.normalized(kept.widthFactors, count: kept.tabIDs.count) {
                 kept.widthFactors = factors
                 if kept.sidebarAnchorID.map({ kept.tabIDs.contains($0) }) != true { kept.sidebarAnchorID = kept.tabIDs.first }

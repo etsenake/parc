@@ -741,16 +741,23 @@ struct BrowserSplitLayout: Codable, Equatable, Identifiable {
     var tabIDs: [UUID]
     var orientation: SplitOrientation = .horizontal
     var widthFactors: [Double]
+    var stacks: BrowserSplitStacks?
 
     private enum CodingKeys: String, CodingKey {
-        case id, sidebarAnchorID, customTitle, customIcon, spaceID, tabIDs, orientation, widthFactors
+        case id, sidebarAnchorID, customTitle, customIcon, spaceID, tabIDs, orientation, widthFactors, stacks
     }
-    init(id: UUID = UUID(), sidebarAnchorID: UUID? = nil, customTitle: String? = nil, customIcon: SidebarGroupIcon? = nil, spaceID: UUID,
+    init(sidebarAnchorID: UUID? = nil, customTitle: String? = nil, customIcon: SidebarGroupIcon? = nil, spaceID: UUID,
          tabIDs: [UUID], orientation: SplitOrientation = .horizontal, widthFactors: [Double]) {
+        self.init(id: UUID(), sidebarAnchorID: sidebarAnchorID, customTitle: customTitle, customIcon: customIcon,
+                  spaceID: spaceID, tabIDs: tabIDs, orientation: orientation, widthFactors: widthFactors, stacks: nil)
+    }
+    init(id: UUID, sidebarAnchorID: UUID? = nil, customTitle: String? = nil, customIcon: SidebarGroupIcon? = nil, spaceID: UUID,
+         tabIDs: [UUID], orientation: SplitOrientation = .horizontal, widthFactors: [Double], stacks: BrowserSplitStacks?) {
         self.id = id; self.sidebarAnchorID = sidebarAnchorID ?? tabIDs.first
         self.customTitle = customTitle; self.customIcon = customIcon
         self.spaceID = spaceID; self.tabIDs = tabIDs
         self.orientation = orientation; self.widthFactors = widthFactors
+        self.stacks = stacks
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -762,6 +769,8 @@ struct BrowserSplitLayout: Codable, Equatable, Identifiable {
         customIcon = SidebarGroupIcon.decodeIfValid(c, forKey: .customIcon)
         orientation = try c.decodeIfPresent(SplitOrientation.self, forKey: .orientation) ?? .horizontal
         widthFactors = try c.decode([Double].self, forKey: .widthFactors)
+        stacks = ((try? c.decodeIfPresent(BrowserSplitStacks.self, forKey: .stacks)) ?? nil)?.validated(paneCount: tabIDs.count)
+        if let stacks { widthFactors = stacks.flattenedFactors }
     }
 
     static func normalized(_ factors: [Double], count: Int) -> [Double]? {
@@ -777,6 +786,258 @@ struct BrowserSplitLayout: Codable, Equatable, Identifiable {
     func expandedFactors(focusing id: UUID) -> [Double]? {
         guard tabIDs.contains(id) else { return nil }
         return Self.normalized(tabIDs.map { $0 == id ? 1 : 1e-9 }, count: tabIDs.count)
+    }
+}
+
+struct BrowserSplitStacks: Codable, Equatable {
+    var slotSizes: [Int]
+    var slotFactors: [Double]
+    var stackFactors: [[Double]]
+
+    var flattenedFactors: [Double] {
+        zip(slotFactors, stackFactors).flatMap { slot, stack in stack.map { slot * $0 } }
+    }
+
+    func validated(paneCount: Int) -> BrowserSplitStacks? {
+        guard (2...3).contains(slotSizes.count), slotFactors.count == slotSizes.count,
+              stackFactors.count == slotSizes.count, slotSizes.allSatisfy({ (1...3).contains($0) }),
+              slotSizes.contains(where: { $0 > 1 }), slotSizes.reduce(0, +) == paneCount, paneCount <= 4,
+              zip(slotSizes, stackFactors).allSatisfy({ $0 == $1.count }),
+              let slots = BrowserSplitLayout.settled(slotFactors) else { return nil }
+        var stacks: [[Double]] = []
+        for factors in stackFactors {
+            guard let settled = BrowserSplitLayout.settled(factors) else { return nil }
+            stacks.append(settled)
+        }
+        let result = BrowserSplitStacks(slotSizes: slotSizes, slotFactors: slots, stackFactors: stacks)
+        let row = result.flattenedFactors
+        guard BrowserSplitLayout.normalized(row, count: paneCount) != nil, abs(row.reduce(0, +) - 1) < 1e-9 else { return nil }
+        return result
+    }
+}
+
+struct BrowserSplitSlot: Equatable {
+    var tabIDs: [UUID]
+    var factor: Double
+    var stackFactors: [Double]
+}
+
+extension BrowserSplitLayout {
+    static func settled(_ factors: [Double]) -> [Double]? {
+        guard !factors.isEmpty, factors.allSatisfy({ $0.isFinite && $0 > 0 }) else { return nil }
+        if factors.count == 1 { return [1] }
+        if abs(factors.reduce(0, +) - 1) <= 1e-12 { return factors }
+        return normalized(factors, count: factors.count)
+    }
+
+    private static func settledOrEqual(_ factors: [Double]) -> [Double] {
+        settled(factors) ?? Array(repeating: 1 / Double(max(factors.count, 1)), count: factors.count)
+    }
+
+    static func shape(orientation: SplitOrientation, sizes: [Int], factors: [Double], stackFactors: [[Double]])
+        -> (orientation: SplitOrientation, widthFactors: [Double], stacks: BrowserSplitStacks?) {
+        if sizes.count == 1, sizes[0] > 1, let stack = stackFactors.first {
+            return (orientation == .horizontal ? .vertical : .horizontal, settledOrEqual(stack), nil)
+        }
+        let main = settledOrEqual(factors)
+        guard sizes.contains(where: { $0 > 1 }) else { return (orientation, main, nil) }
+        let stacks = BrowserSplitStacks(slotSizes: sizes, slotFactors: main,
+            stackFactors: zip(sizes, stackFactors).map { size, stack in size == 1 ? [1] : settledOrEqual(stack) })
+        return (orientation, stacks.flattenedFactors, stacks)
+    }
+
+    var slots: [BrowserSplitSlot] {
+        guard let stacks = stacks?.validated(paneCount: tabIDs.count) else {
+            return tabIDs.indices.map { index in
+                BrowserSplitSlot(tabIDs: [tabIDs[index]],
+                    factor: widthFactors.indices.contains(index) ? widthFactors[index] : 1 / Double(tabIDs.count),
+                    stackFactors: [1])
+            }
+        }
+        var result: [BrowserSplitSlot] = [], start = 0
+        for (slot, size) in stacks.slotSizes.enumerated() {
+            result.append(BrowserSplitSlot(tabIDs: Array(tabIDs[start..<start + size]),
+                                           factor: stacks.slotFactors[slot], stackFactors: stacks.stackFactors[slot]))
+            start += size
+        }
+        return result
+    }
+
+    var slotBoundaries: [Int] {
+        slots.reduce(into: [0]) { boundaries, slot in boundaries.append(boundaries[boundaries.count - 1] + slot.tabIDs.count) }
+    }
+
+    func position(of id: UUID) -> (slot: Int, index: Int)? {
+        for (slot, item) in slots.enumerated() {
+            if let index = item.tabIDs.firstIndex(of: id) { return (slot, index) }
+        }
+        return nil
+    }
+
+    func slotRange(_ slot: Int) -> Range<Int>? {
+        let boundaries = slotBoundaries
+        guard slot >= 0, slot < boundaries.count - 1 else { return nil }
+        return boundaries[slot]..<boundaries[slot + 1]
+    }
+
+    func paneID(slot: Int, index: Int) -> UUID? {
+        let all = slots
+        guard all.indices.contains(slot), all[slot].tabIDs.indices.contains(index) else { return nil }
+        return all[slot].tabIDs[index]
+    }
+
+    func mainRowInsertionIndex(after id: UUID) -> Int? {
+        position(of: id).flatMap { slotRange($0.slot)?.upperBound }
+    }
+
+    mutating func arrange(_ slots: [BrowserSplitSlot]) {
+        let kept = slots.filter { !$0.tabIDs.isEmpty }
+        let shaped = Self.shape(orientation: orientation, sizes: kept.map(\.tabIDs.count),
+                                factors: kept.map(\.factor), stackFactors: kept.map(\.stackFactors))
+        tabIDs = kept.flatMap(\.tabIDs)
+        orientation = shaped.orientation
+        widthFactors = shaped.widthFactors
+        stacks = shaped.stacks
+    }
+
+    mutating func restack(from previous: BrowserSplitLayout) {
+        let old = previous.slots
+        guard previous.stacks != nil, !old.isEmpty else { return }
+        var home: [UUID: (slot: Int, share: Double)] = [:]
+        for (slot, item) in old.enumerated() {
+            for (index, id) in item.tabIDs.enumerated() { home[id] = (slot, item.stackFactors[index]) }
+        }
+        var runs: [(source: Int?, slot: BrowserSplitSlot)] = []
+        for id in tabIDs {
+            guard let place = home[id] else {
+                runs.append((nil, BrowserSplitSlot(tabIDs: [id], factor: 1 / Double(old.count), stackFactors: [1])))
+                continue
+            }
+            if let last = runs.last, last.source == place.slot {
+                runs[runs.count - 1].slot.tabIDs.append(id)
+                runs[runs.count - 1].slot.stackFactors.append(place.share)
+            } else {
+                runs.append((place.slot, BrowserSplitSlot(tabIDs: [id], factor: 0, stackFactors: [place.share])))
+            }
+        }
+        var covered: [Int: Double] = [:]
+        for run in runs { if let source = run.source { covered[source, default: 0] += run.slot.stackFactors.reduce(0, +) } }
+        for index in runs.indices {
+            guard let source = runs[index].source, let total = covered[source], total > 0 else { continue }
+            runs[index].slot.factor = old[source].factor * runs[index].slot.stackFactors.reduce(0, +) / total
+        }
+        arrange(runs.map(\.slot))
+    }
+
+    mutating func removePane(at position: Int) {
+        guard stacks != nil else {
+            tabIDs.remove(at: position); widthFactors.remove(at: position)
+            return
+        }
+        let previous = self
+        tabIDs.remove(at: position)
+        restack(from: previous)
+    }
+
+    func insertingIntoStack(_ id: UUID, besidePaneAt position: Int, after: Bool) -> BrowserSplitLayout? {
+        guard (2...3).contains(tabIDs.count), tabIDs.indices.contains(position), !tabIDs.contains(id),
+              let place = self.position(of: tabIDs[position]) else { return nil }
+        var slots = self.slots
+        let at = place.index + (after ? 1 : 0)
+        slots[place.slot].stackFactors.insert(1 / Double(slots[place.slot].tabIDs.count), at: at)
+        slots[place.slot].tabIDs.insert(id, at: at)
+        var result = self
+        result.arrange(slots)
+        return result
+    }
+
+    func movingSlot(of id: UUID, by offset: Int) -> BrowserSplitLayout? {
+        var slots = self.slots
+        guard offset == -1 || offset == 1, let place = position(of: id),
+              slots.indices.contains(place.slot + offset) else { return nil }
+        slots.swapAt(place.slot, place.slot + offset)
+        var result = self
+        result.arrange(slots)
+        return result
+    }
+
+    func movingWithinStack(_ id: UUID, by offset: Int) -> BrowserSplitLayout? {
+        var slots = self.slots
+        guard offset == -1 || offset == 1, let place = position(of: id), slots[place.slot].tabIDs.count > 1,
+              slots[place.slot].tabIDs.indices.contains(place.index + offset) else { return nil }
+        slots[place.slot].tabIDs.swapAt(place.index, place.index + offset)
+        slots[place.slot].stackFactors.swapAt(place.index, place.index + offset)
+        var result = self
+        result.arrange(slots)
+        return result
+    }
+
+    func transposed() -> BrowserSplitLayout {
+        var result = self
+        result.orientation = orientation == .horizontal ? .vertical : .horizontal
+        return result
+    }
+
+    func expanded(focusing id: UUID) -> BrowserSplitLayout? {
+        var slots = self.slots
+        guard tabIDs.count > 1, let place = position(of: id) else { return nil }
+        for slot in slots.indices { slots[slot].factor = slot == place.slot ? 1 : 1e-9 }
+        if slots[place.slot].tabIDs.count > 1 {
+            slots[place.slot].stackFactors = slots[place.slot].tabIDs.indices.map { $0 == place.index ? 1 : 1e-9 }
+        }
+        var result = self
+        result.arrange(slots)
+        return result
+    }
+
+    func equalized() -> BrowserSplitLayout? {
+        var slots = self.slots
+        guard tabIDs.count > 1 else { return nil }
+        for slot in slots.indices {
+            slots[slot].factor = 1
+            slots[slot].stackFactors = Array(repeating: 1, count: slots[slot].tabIDs.count)
+        }
+        var result = self
+        result.arrange(slots)
+        return result
+    }
+
+    func resizingSlots(_ factors: [Double]) -> BrowserSplitLayout? {
+        var slots = self.slots
+        guard factors.count == slots.count, Self.normalized(factors, count: factors.count) != nil else { return nil }
+        for slot in slots.indices { slots[slot].factor = factors[slot] }
+        var result = self
+        result.arrange(slots)
+        return result
+    }
+
+    func resizingStack(_ slot: Int, factors: [Double]) -> BrowserSplitLayout? {
+        var slots = self.slots
+        guard slots.indices.contains(slot), slots[slot].tabIDs.count > 1, factors.count == slots[slot].tabIDs.count,
+              Self.normalized(factors, count: factors.count) != nil else { return nil }
+        slots[slot].stackFactors = factors
+        var result = self
+        result.arrange(slots)
+        return result
+    }
+
+    func resizingDivider(_ divider: Int, inSlot slot: Int?, leadingShare: Double) -> BrowserSplitLayout? {
+        guard leadingShare.isFinite, leadingShare > 0, leadingShare < 1 else { return nil }
+        let all = slots
+        var factors: [Double]
+        if let slot {
+            guard all.indices.contains(slot), let stack = Self.settled(all[slot].stackFactors) else { return nil }
+            factors = stack
+        } else {
+            guard let main = Self.settled(all.map(\.factor)) else { return nil }
+            factors = main
+        }
+        guard divider >= 0, divider < factors.count - 1 else { return nil }
+        let pair = factors[divider] + factors[divider + 1]
+        factors[divider] = pair * leadingShare
+        factors[divider + 1] = pair - factors[divider]
+        if let slot { return resizingStack(slot, factors: factors) }
+        return resizingSlots(factors)
     }
 }
 
@@ -2633,6 +2894,7 @@ final class BrowserStore: ObservableObject {
                     let weights = positions.map { layout.widthFactors[$0] }
                     guard let factors = BrowserSplitLayout.normalized(weights, count: positions.count) else { return nil }
                     layout.tabIDs = positions.map { original.tabIDs[$0] }; layout.widthFactors = factors
+                    layout.restack(from: original)
                     if layout.sidebarAnchorID.map({ layout.tabIDs.contains($0) }) != true { layout.sidebarAnchorID = layout.tabIDs.first }
                     return layout
                 }
@@ -2771,8 +3033,8 @@ final class BrowserStore: ObservableObject {
         guard let index = expectedSelection.firstIndex(of: focusedID), expectedSelection.count < 4,
               !expectedSelection.contains(tabID) else { return nil }
         var ids = expectedSelection
-        ids.insert(tabID, at: index + 1)
         let previous = activeSplitLayout.flatMap { $0.tabIDs == expectedSelection ? $0 : nil }
+        ids.insert(tabID, at: previous?.mainRowInsertionIndex(after: focusedID) ?? index + 1)
         return SplitMembership.savedHomeSources(joining: ids, existing: previous, added: isNew ? tabID : nil, state: state)
     }
 
@@ -2793,8 +3055,9 @@ final class BrowserStore: ObservableObject {
         if newURL == nil, let foreign = state.tab(tabID, where: { $0.archivedAt == nil
             && $0.kind != .favorite && $0.profileID == activeSpace.profileID && $0.spaceID != activeSpaceID }) {
             if let documents {
-                var planned = expectedSelection; planned.insert(tabID, at: index + 1)
                 let previous = activeSplitLayout.flatMap { $0.tabIDs == expectedSelection ? $0 : nil }
+                var planned = expectedSelection
+                planned.insert(tabID, at: previous?.mainRowInsertionIndex(after: focusedID) ?? index + 1)
                 guard SidebarDocumentReference.validates(SplitMembership.savedHomeSources(joining: planned, existing: previous,
                     added: nil, state: state), references: documents) else { return false }
                 validatedBeforeMove = true
@@ -2817,16 +3080,17 @@ final class BrowserStore: ObservableObject {
                 && ($0.kind == .favorite ? $0.profileID == activeSpace.profileID : $0.spaceID == activeSpaceID) }) else { return false }
         }
         var ids = expectedSelection
-        ids.insert(tabID, at: index + 1)
         let previous = activeSplitLayout.flatMap { $0.tabIDs == expectedSelection ? $0 : nil }
+        ids.insert(tabID, at: previous?.mainRowInsertionIndex(after: focusedID) ?? index + 1)
         let factors = ids.map { id in
             previous.flatMap { layout in
                 layout.tabIDs.firstIndex(of: id).map { layout.widthFactors[$0] }
             } ?? (1.0 / Double(expectedSelection.count))
         }
-        let group = BrowserSplitLayout(id: previous?.id ?? UUID(), sidebarAnchorID: previous?.sidebarAnchorID, customTitle: previous?.customTitle, customIcon: previous?.customIcon,
+        var group = BrowserSplitLayout(id: previous?.id ?? UUID(), sidebarAnchorID: previous?.sidebarAnchorID, customTitle: previous?.customTitle, customIcon: previous?.customIcon,
             spaceID: previous?.spaceID ?? activeSpaceID, tabIDs: ids, orientation: previous?.orientation ?? .horizontal,
-            widthFactors: BrowserSplitLayout.normalized(factors, count: ids.count)!)
+            widthFactors: BrowserSplitLayout.normalized(factors, count: ids.count)!, stacks: nil)
+        if let previous { group.restack(from: previous) }
         let added = newURL == nil ? nil : tabID
         let homes = SplitMembership.savedHomeSources(joining: ids, existing: previous, added: added, state: next)
         if let documents, !validatedBeforeMove, !SidebarDocumentReference.validates(homes, references: documents) { return false }
@@ -2963,6 +3227,8 @@ final class BrowserStore: ObservableObject {
             guard layout.spaceID == spaceID, layout.tabIDs == selected,
                   let factors = BrowserSplitLayout.normalized(layout.widthFactors, count: selected.count) else { return false }
             layout.widthFactors = factors
+            layout.stacks = layout.stacks?.validated(paneCount: selected.count)
+            if let stacks = layout.stacks { layout.widthFactors = stacks.flattenedFactors }
             if let original = SidebarSplitItems.groups(in: state, spaceID: spaceID).first(where: { $0.id == layout.id && $0.tabIDs == selected }) {
                 layout.customTitle = original.customTitle
                 layout.customIcon = original.customIcon
@@ -3036,8 +3302,7 @@ final class BrowserStore: ObservableObject {
             if let layoutIndex = next.splitLayouts.firstIndex(where: { $0.id == displayedGroupID && $0.tabIDs == next.selectedTabIDs && !retainedSavedGroups.contains($0.id) }),
                let pane = next.splitLayouts[layoutIndex].tabIDs.firstIndex(of: id) {
                 var layout = next.splitLayouts.remove(at: layoutIndex)
-                layout.tabIDs.remove(at: pane)
-                layout.widthFactors.remove(at: pane)
+                layout.removePane(at: pane)
                 next.splitLayouts.append(layout)
             }
             if isEphemeral {
@@ -3059,7 +3324,7 @@ final class BrowserStore: ObservableObject {
             if layout.widthFactors.count == layout.tabIDs.count {
                 for pane in layout.tabIDs.indices.reversed() where closing.contains(layout.tabIDs[pane])
                     && !next.containsTab(layout.tabIDs[pane], where: { $0.archivedAt == nil }) {
-                    layout.tabIDs.remove(at: pane); layout.widthFactors.remove(at: pane)
+                    layout.removePane(at: pane)
                 }
             }
             if layout.sidebarAnchorID.map(layout.tabIDs.contains) != true { layout.sidebarAnchorID = layout.tabIDs.first }
@@ -4235,7 +4500,8 @@ final class BrowserStore: ObservableObject {
             let children = group.tabIDs.compactMap { tabMap[$0] }
             guard children.count == group.tabIDs.count else { return nil }
             next.splitLayouts.append(BrowserSplitLayout(id: id, sidebarAnchorID: newAnchor, customTitle: group.customTitle, customIcon: group.customIcon,
-                spaceID: group.spaceID, tabIDs: children, orientation: group.orientation, widthFactors: group.widthFactors))
+                spaceID: group.spaceID, tabIDs: children, orientation: group.orientation, widthFactors: group.widthFactors,
+                stacks: group.stacks))
         }
         for id in folderIDs {
             let sourceLocation = SidebarContainerLocation(spaceID: spaceID, folderID: id, section: .pinned)
@@ -4589,8 +4855,9 @@ final class BrowserStore: ObservableObject {
     @discardableResult
     func setSplitLayout(orientation: SplitOrientation, widthFactors: [Double]) -> Bool {
         guard let factors = BrowserSplitLayout.normalized(widthFactors, count: state.selectedTabIDs.count) else { return false }
+        let stacks = activeSplitLayout?.stacks
         let layout = BrowserSplitLayout(id: activeSplitLayout?.id ?? UUID(), sidebarAnchorID: activeSplitLayout?.sidebarAnchorID, customTitle: activeSplitLayout?.customTitle, customIcon: activeSplitLayout?.customIcon, spaceID: activeSplitLayout?.spaceID ?? activeSpaceID, tabIDs: state.selectedTabIDs,
-                                        orientation: orientation, widthFactors: factors)
+                                        orientation: orientation, widthFactors: stacks?.flattenedFactors ?? factors, stacks: stacks)
         if let index = state.splitLayouts.firstIndex(where: { $0.id == layout.id }) {
             if state.splitLayouts[index] == layout { return true }
             state.splitLayouts[index] = layout
@@ -4632,7 +4899,7 @@ final class BrowserStore: ObservableObject {
               let index = state.splitLayouts.firstIndex(of: expected),
               expected.tabIDs.allSatisfy({ !retiringTabIDs.contains($0) }) else { return false }
         var next = state
-        next.splitLayouts[index].orientation = expected.orientation == .horizontal ? .vertical : .horizontal
+        next.splitLayouts[index] = expected.transposed()
         do { try commitProfileSettings(next); return true }
         catch { return false }
     }
@@ -4663,13 +4930,50 @@ final class BrowserStore: ObservableObject {
         guard activeSplitLayout == expected, state.selectedTabIDs == expected.tabIDs,
               !isProfileRemovalPending(activeSpace.profileID),
               SidebarSplitItems.groups(in: state, spaceID: activeSpaceID).contains(expected),
-              expected.tabIDs.allSatisfy({ !retiringTabIDs.contains($0) }),
+              expected.tabIDs.allSatisfy({ !retiringTabIDs.contains($0) }), expected.stacks == nil,
               let factors = BrowserSplitLayout.normalized(widthFactors, count: expected.tabIDs.count),
               let index = state.splitLayouts.firstIndex(of: expected) else { return false }
         var next = state
         next.splitLayouts[index].widthFactors = factors
         do { try commitProfileSettings(next); return true }
         catch { return false }
+    }
+
+    @discardableResult
+    func resizeSplit(expected: BrowserSplitLayout, resized: BrowserSplitLayout) -> Bool {
+        var unchanged = resized
+        unchanged.widthFactors = expected.widthFactors; unchanged.stacks = expected.stacks
+        guard unchanged == expected, resized.stacks?.slotSizes == expected.stacks?.slotSizes,
+              let index = editableSplitIndex(expected),
+              let factors = BrowserSplitLayout.normalized(resized.widthFactors, count: resized.tabIDs.count) else { return false }
+        var layout = resized
+        if let stacks = resized.stacks {
+            guard let settled = stacks.validated(paneCount: resized.tabIDs.count) else { return false }
+            layout.stacks = settled; layout.widthFactors = settled.flattenedFactors
+        } else { layout.widthFactors = factors }
+        guard layout != expected else { return true }
+        var next = state
+        next.splitLayouts[index] = layout
+        do { try commitProfileSettings(next); return true }
+        catch { return false }
+    }
+
+    @discardableResult
+    func moveSplitPaneWithinStack(_ id: UUID, offset: Int, expected: BrowserSplitLayout) -> Bool {
+        guard let index = editableSplitIndex(expected), let layout = expected.movingWithinStack(id, by: offset) else { return false }
+        var next = state
+        next.splitLayouts[index] = layout
+        next.selectedTabIDs = layout.tabIDs
+        next.selectionBySpace[activeSpaceID.uuidString] = layout.tabIDs
+        do { try commitProfileSettings(next); return true } catch { return false }
+    }
+
+    private func editableSplitIndex(_ expected: BrowserSplitLayout) -> Int? {
+        guard activeSplitLayout == expected, state.selectedTabIDs == expected.tabIDs,
+              !isProfileRemovalPending(activeSpace.profileID),
+              SidebarSplitItems.groups(in: state, spaceID: activeSpaceID).contains(expected),
+              expected.tabIDs.allSatisfy({ !retiringTabIDs.contains($0) }) else { return nil }
+        return state.splitLayouts.firstIndex(of: expected)
     }
 
     @discardableResult
@@ -4680,11 +4984,16 @@ final class BrowserStore: ObservableObject {
               SidebarSplitItems.groups(in: state, spaceID: activeSpaceID).contains(expected),
               expected.tabIDs.allSatisfy({ !retiringTabIDs.contains($0) }),
               let index = expected.tabIDs.firstIndex(of: id),
-              expected.tabIDs.indices.contains(index + offset),
               let stored = state.splitLayouts.firstIndex(of: expected) else { return false }
         var next = state, layout = expected
-        layout.tabIDs.swapAt(index, index + offset)
-        layout.widthFactors.swapAt(index, index + offset)
+        if expected.stacks != nil {
+            guard let moved = expected.movingSlot(of: id, by: offset) else { return false }
+            layout = moved
+        } else {
+            guard expected.tabIDs.indices.contains(index + offset) else { return false }
+            layout.tabIDs.swapAt(index, index + offset)
+            layout.widthFactors.swapAt(index, index + offset)
+        }
         next.splitLayouts[stored] = layout
         next.selectedTabIDs = layout.tabIDs
         next.selectionBySpace[activeSpaceID.uuidString] = layout.tabIDs
@@ -4704,13 +5013,13 @@ final class BrowserStore: ObservableObject {
               let current = request.preparedState(state, tabID: tabID, navigationURL: navigationURL,
                   localPage: localPage, localTitle: localTitle, now: clock(), creation: creation),
               let homes = OriginalSplitDrop.savedHomes(source: tabID, state: current,
-                  selection: request.selection, layout: request.layout, target: .insert(request.index),
+                  selection: request.selection, layout: request.layout, target: request.target,
                   orientation: request.orientation, spaceID: request.spaceID),
               SidebarDocumentReference.validates(homes, references: documents),
               let prepared = foreign ? SplitCrossSpaceAdd.relocated(current, source: tabID, into: request.spaceID,
                   profileID: request.profileID, pane: request.paneID, homeID: foreignHomeID, now: clock()) : current,
               let next = OriginalSplitDrop.proposal(source: tabID, state: prepared,
-                  selection: request.selection, layout: request.layout, target: .insert(request.index),
+                  selection: request.selection, layout: request.layout, target: request.target,
                   orientation: request.orientation, spaceID: request.spaceID, profileID: request.profileID,
                   now: clock(), savedHomeIDs: savedHomeIDs, creation: creation) else { return false }
         do { try commitProfileSettings(next); return true } catch { return false }
@@ -4742,7 +5051,7 @@ final class BrowserStore: ObservableObject {
               focusedID.map({ state.selectedTabIDs.contains($0) }) ?? true else { return false }
         var next = state, remaining = expected
         let position = remaining.tabIDs.firstIndex(of: id)!
-        remaining.tabIDs.remove(at: position); remaining.widthFactors.remove(at: position)
+        remaining.removePane(at: position)
         if let weights = BrowserSplitLayout.normalized(remaining.widthFactors, count: remaining.tabIDs.count) {
             remaining.widthFactors = weights
             if remaining.sidebarAnchorID == id { remaining.sidebarAnchorID = remaining.tabIDs.first }
@@ -4787,8 +5096,9 @@ final class BrowserStore: ObservableObject {
             }
         }
         let retained = previous.flatMap { old in ids.contains(where: { old.tabIDs.contains($0) }) ? old : nil }
-        let group = BrowserSplitLayout(id: retained?.id ?? UUID(), sidebarAnchorID: retained?.sidebarAnchorID, customTitle: retained?.customTitle, customIcon: retained?.customIcon, spaceID: retained?.spaceID ?? spaceID, tabIDs: ids,
-            orientation: orientation, widthFactors: BrowserSplitLayout.normalized(factors, count: ids.count)!)
+        var group = BrowserSplitLayout(id: retained?.id ?? UUID(), sidebarAnchorID: retained?.sidebarAnchorID, customTitle: retained?.customTitle, customIcon: retained?.customIcon, spaceID: retained?.spaceID ?? spaceID, tabIDs: ids,
+            orientation: orientation, widthFactors: BrowserSplitLayout.normalized(factors, count: ids.count)!, stacks: nil)
+        if let retained { group.restack(from: retained) }
         var homeIDs = savedHomeIDs
         for home in SplitMembership.savedHomeSources(joining: ids, existing: retained, added: added, state: next)
             where homeIDs[home.id] == nil { homeIDs[home.id] = UUID() }
@@ -4805,8 +5115,7 @@ final class BrowserStore: ObservableObject {
         guard let original = activeSplitLayout, let index = state.splitLayouts.firstIndex(of: original),
               let pane = state.splitLayouts[index].tabIDs.firstIndex(of: id) else { return }
         var layout = state.splitLayouts.remove(at: index)
-        layout.tabIDs.remove(at: pane)
-        layout.widthFactors.remove(at: pane)
+        layout.removePane(at: pane)
         state.splitLayouts.append(layout)
     }
 
@@ -4864,10 +5173,18 @@ final class BrowserStore: ObservableObject {
             let ids = positions.map { layout.tabIDs[$0] }
             let weights = positions.map { layout.widthFactors[$0] }
             guard let factors = BrowserSplitLayout.normalized(weights, count: ids.count) else { continue }
+            let original = layout
             layout.tabIDs = ids
             if layout.sidebarAnchorID.map({ ids.contains($0) }) != true { layout.sidebarAnchorID = ids.first }
             if weights.count != layout.widthFactors.count || abs(weights.reduce(0, +) - 1) > 1e-12 {
                 layout.widthFactors = factors
+            }
+            if let stacks = original.stacks {
+                if stacks.validated(paneCount: original.tabIDs.count) == nil {
+                    layout.stacks = nil
+                } else if ids != original.tabIDs {
+                    layout.restack(from: original)
+                }
             }
             if layouts.contains(where: { $0.id == layout.id }) { layout.id = UUID() }
             for id in ids {
@@ -5576,6 +5893,12 @@ enum ProfileSettingsError: LocalizedError {
 enum SplitDropTarget: Equatable {
     case insert(Int)
     case replace(Int)
+    case stack(Int, after: Bool)
+
+    var isStack: Bool {
+        if case .stack = self { return true }
+        return false
+    }
 }
 
 enum ExternalSplitDrop {
@@ -5655,6 +5978,10 @@ enum SplitDropTransaction {
               layout == nil || (layout?.spaceID == spaceID && layout?.tabIDs == selection),
               selection.count == 1 || layout != nil,
               layout == nil || BrowserSplitLayout.normalized(layout!.widthFactors, count: selection.count) != nil else { return nil }
+        if let layout, layout.stacks != nil || target.isStack {
+            return stacked(source: source, selection: selection, layout: layout, target: target,
+                           orientation: orientation, spaceID: spaceID)
+        }
         var ids = selection
         switch target {
         case .insert(let index):
@@ -5663,6 +5990,8 @@ enum SplitDropTransaction {
         case .replace(let index):
             guard ids.indices.contains(index) else { return nil }
             ids[index] = source
+        case .stack:
+            return nil
         }
         guard ids != selection || (ids.count > 1 && orientation != layout?.orientation) else { return nil }
         let previous = layout?.widthFactors ?? [1]
@@ -5675,7 +6004,27 @@ enum SplitDropTransaction {
         guard let factors else { return nil }
         let anchor = layout?.sidebarAnchorID ?? selection.first
         return BrowserSplitLayout(id: layout?.id ?? UUID(), sidebarAnchorID: anchor.flatMap { ids.contains($0) ? $0 : nil }, customTitle: layout?.customTitle, customIcon: layout?.customIcon,
-            spaceID: spaceID, tabIDs: ids, orientation: orientation, widthFactors: factors)
+            spaceID: spaceID, tabIDs: ids, orientation: orientation, widthFactors: factors, stacks: nil)
+    }
+
+    private static func stacked(source: UUID, selection: [UUID], layout: BrowserSplitLayout,
+                                target: SplitDropTarget, orientation: SplitOrientation, spaceID: UUID) -> BrowserSplitLayout? {
+        var group = layout
+        switch target {
+        case .stack(let index, let after):
+            guard let inserted = layout.insertingIntoStack(source, besidePaneAt: index, after: after) else { return nil }
+            group = inserted
+        case .insert(let index):
+            guard orientation == layout.orientation, selection.count < 4, layout.slotBoundaries.contains(index) else { return nil }
+            group.tabIDs.insert(source, at: index)
+            group.restack(from: layout)
+        case .replace(let index):
+            guard orientation == layout.orientation, selection.indices.contains(index) else { return nil }
+            group.tabIDs[index] = source
+        }
+        group.spaceID = spaceID
+        if group.sidebarAnchorID.map(group.tabIDs.contains) != true { group.sidebarAnchorID = group.tabIDs.first }
+        return group
     }
 }
 

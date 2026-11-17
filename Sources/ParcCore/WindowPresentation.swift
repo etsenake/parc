@@ -76,8 +76,10 @@ struct WindowPresentation {
         guard positions.map({ layout.tabIDs[$0] }) == selectedTabIDs,
               let factors = BrowserSplitLayout.normalized(positions.map({ layout.widthFactors[$0] }),
                                                           count: selectedTabIDs.count) else { return nil }
-        return BrowserSplitLayout(id: layout.id, sidebarAnchorID: layout.sidebarAnchorID, customTitle: layout.customTitle, customIcon: layout.customIcon, spaceID: activeSpaceID, tabIDs: selectedTabIDs,
-                                  orientation: layout.orientation, widthFactors: factors)
+        var projected = BrowserSplitLayout(id: layout.id, sidebarAnchorID: layout.sidebarAnchorID, customTitle: layout.customTitle, customIcon: layout.customIcon, spaceID: activeSpaceID, tabIDs: selectedTabIDs,
+                                           orientation: layout.orientation, widthFactors: factors, stacks: nil)
+        projected.restack(from: layout)
+        return projected
     }
 
     private mutating func rememberSplitLayout(_ state: BrowserState) {
@@ -396,9 +398,11 @@ struct WindowPresentation {
                         let factors = BrowserSplitLayout.normalized(
                             layout.tabIDs.indices.filter { restored.contains(layout.tabIDs[$0]) }.map { layout.widthFactors[$0] },
                             count: restored.count), restored.count > 1 {
-                    splitLayoutBySpace[spaceID] = BrowserSplitLayout(id: layout.id, sidebarAnchorID: layout.sidebarAnchorID,
+                    var projected = BrowserSplitLayout(id: layout.id, sidebarAnchorID: layout.sidebarAnchorID,
                         customTitle: layout.customTitle, customIcon: layout.customIcon, spaceID: spaceID, tabIDs: restored,
-                        orientation: layout.orientation, widthFactors: factors)
+                        orientation: layout.orientation, widthFactors: factors, stacks: nil)
+                    projected.restack(from: layout)
+                    splitLayoutBySpace[spaceID] = projected
                 }
             }
             if slot.placeholders.isEmpty { placeholdersBySpace.removeValue(forKey: spaceID) }

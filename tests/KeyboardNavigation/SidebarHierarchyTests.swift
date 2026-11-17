@@ -20,7 +20,7 @@ import Foundation
         let favorite = tab("Favorite", .favorite), a = tab("A", .pinned, outer.id), b = tab("B", .pinned, outer.id)
         let hidden = tab("Hidden", .pinned, inner.id), today = tab("Today", .today)
         let group = BrowserSplitLayout(id: UUID(), sidebarAnchorID: b.id, spaceID: space.id,
-            tabIDs: [a.id, b.id], orientation: .vertical, widthFactors: [0.35, 0.65])
+            tabIDs: [a.id, b.id], orientation: .vertical, widthFactors: [0.35, 0.65], stacks: nil)
         state.tabs = [favorite, a, b, hidden, today]; state.folders = [outer, inner, empty]
         state.splitLayouts = [group]; state.selectedTabIDs = group.tabIDs
         state.selectionBySpace[space.id.uuidString] = group.tabIDs

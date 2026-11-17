@@ -49,7 +49,7 @@ import Foundation
                     return .split(title: title, icon: icon, tabs: tabs, orientation: orientation,
                                   widthFactors: factors.map { ($0 * 1e6).rounded() / 1e6 })
                 case let .folder(title, icon, children): return .folder(title: title, icon: icon, children: roundingFactors(children))
-                case .tab: return item
+                case .tab, .stackedSplit: return item
                 }
             }
         }

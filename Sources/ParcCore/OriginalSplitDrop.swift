@@ -166,7 +166,7 @@ enum SplitMembership {
             guard old.id != existing?.id, old.tabIDs.contains(where: { joining.contains($0) }) else { return old }
             var kept = old
             for index in kept.tabIDs.indices.reversed() where joining.contains(kept.tabIDs[index]) {
-                kept.tabIDs.remove(at: index); kept.widthFactors.remove(at: index)
+                kept.removePane(at: index)
             }
             guard let factors = BrowserSplitLayout.normalized(kept.widthFactors, count: kept.tabIDs.count) else { return nil }
             kept.widthFactors = factors
@@ -282,8 +282,7 @@ enum SplitMembership {
             guard let winner = holders.max(by: { rank($0) < rank($1) }) else { continue }
             for index in holders where index != winner {
                 guard let position = next.splitLayouts[index].tabIDs.firstIndex(of: favorite) else { continue }
-                next.splitLayouts[index].tabIDs.remove(at: position)
-                next.splitLayouts[index].widthFactors.remove(at: position)
+                next.splitLayouts[index].removePane(at: position)
                 if next.splitLayouts[index].sidebarAnchorID == favorite {
                     next.splitLayouts[index].sidebarAnchorID = next.splitLayouts[index].tabIDs.first
                 }

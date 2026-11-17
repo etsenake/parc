@@ -25,7 +25,7 @@ Git and release notes retain history.
 - [Saved tabs and Favorites](saved-tabs.md), [closed-tab restoration](reopen-closed-tabs.md),
   [folder commands](folder-commands.md), [folder moves](folder-moves.md).
 - [Split groups](split-groups.md), [split navigation](split-navigation.md),
-  [Peek](peek.md), [web interactions](web-interactions.md).
+  [stacked panes](split-stacks.md), [Peek](peek.md), [web interactions](web-interactions.md).
 - [Automatic archive](archive.md), [archive previews](archive-preview.md),
   [downloads](download-library.md).
 - [Routing](routing-interaction.md), [private routing](private-route-lifecycle.md),

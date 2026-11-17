@@ -339,7 +339,7 @@ enum ForeignSplitDrop {
             if let parent = parents.first, let index = next.splitLayouts.firstIndex(where: { $0.id == parent.id }),
                let child = parent.tabIDs.firstIndex(of: tab.id) {
                 var kept = parent
-                kept.tabIDs.remove(at: child); kept.widthFactors.remove(at: child)
+                kept.removePane(at: child)
                 if kept.tabIDs.count < 2 {
                     next.splitLayouts.remove(at: index)
                     if parent.sidebarAnchorID == tab.id, let survivor = kept.tabIDs.first {

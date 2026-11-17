@@ -22,7 +22,7 @@ struct SidebarSpaceMoveTests {
         let c = tab(source.id, .pinned, folder.id), today = tab(source.id, .today), pinned = tab(source.id, .pinned)
         let existing = tab(destination.id, .pinned), favorite = tab(source.id, .favorite)
         state.tabs = [a, b, c, today, pinned, existing, favorite]; state.folders = [folder, nested]
-        let group = BrowserSplitLayout(id: UUID(), sidebarAnchorID: b.id, spaceID: source.id, tabIDs: [a.id, b.id], orientation: .horizontal, widthFactors: [0.3, 0.7])
+        let group = BrowserSplitLayout(id: UUID(), sidebarAnchorID: b.id, spaceID: source.id, tabIDs: [a.id, b.id], orientation: .horizontal, widthFactors: [0.3, 0.7], stacks: nil)
         state.splitLayouts = [group]; state.activeSpaceID = source.id; state.selectedTabIDs = group.tabIDs
         state.selectionBySpace = [source.id.uuidString: group.tabIDs, destination.id.uuidString: [existing.id]]
         func location(_ space: UUID, _ parent: UUID?, _ kind: TabKind = .pinned) -> SidebarContainerLocation { .init(spaceID: space, folderID: parent, section: kind) }

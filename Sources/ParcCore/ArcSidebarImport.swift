@@ -14,6 +14,14 @@ struct ArcSidebarImport: Equatable {
         case tab(Tab)
         case folder(title: String, icon: SidebarGroupIcon?, children: [Item])
         case split(title: String?, icon: SidebarGroupIcon?, tabs: [Tab], orientation: SplitOrientation, widthFactors: [Double])
+        case stackedSplit(title: String?, icon: SidebarGroupIcon?, tabs: [Tab], orientation: SplitOrientation, stacks: BrowserSplitStacks)
+
+        var splitTabs: [Tab]? {
+            switch self {
+            case .split(_, _, let tabs, _, _), .stackedSplit(_, _, let tabs, _, _): return tabs
+            case .tab, .folder: return nil
+            }
+        }
     }
 
     struct Space: Equatable {
@@ -249,27 +257,98 @@ struct ArcSidebarImport: Equatable {
                                 children: children(of: item, depth: depth, inFavorites: false))]
             }
             if let split = Self.data(item, "splitView") {
-                var tabs: [(id: String, tab: Tab)] = []
+                var entries: [SplitEntry] = []
                 for child in item["childrenIds"] as? [Any] ?? [] {
                     guard let taken = take(child) else { continue }
-                    if Self.data(taken.item, "tab") == nil { drop(taken.item, depth: depth + 1) }
-                    else if let tab = tab(taken.item) { tabs.append((taken.id, tab)) }
+                    if let nested = Self.data(taken.item, "splitView"), depth + 1 < ArcSidebarImport.maximumDepth {
+                        let found = nestedTabs(of: taken.item, depth: depth + 1)
+                        if found.tabs.isEmpty { skipped += 1; continue }
+                        entries.append(SplitEntry(id: taken.id, tabs: found.tabs, orientation: Self.orientation(nested),
+                                                  weights: Self.weights(nested), deeper: found.deeper))
+                    } else if Self.data(taken.item, "tab") == nil { drop(taken.item, depth: depth + 1) }
+                    else if let tab = tab(taken.item) {
+                        entries.append(SplitEntry(id: taken.id, tabs: [(taken.id, tab)], orientation: nil, weights: [:], deeper: false))
+                    }
                 }
+                let tabs = entries.flatMap(\.tabs)
                 let members = Array(tabs.prefix(4)), rest = tabs.dropFirst(4).map { Item.tab($0.tab) }
                 guard members.count > 1 else { return members.map { .tab($0.tab) } }
-                var weights: [String: Double] = [:]
-                for (key, value) in Self.pairs(split["itemWidthFactors"]) {
-                    if let key = key as? String, let value = value as? Double { weights[key] = value }
+                let weights = Self.weights(split)
+                let orientation = Self.orientation(split)
+                let icon = ArcSidebarImport.icon((split["customInfo"] as? [String: Any])?["iconType"])
+                if entries.contains(where: { $0.orientation != nil }) {
+                    return Self.nestedSplit(title: title, icon: icon, orientation: orientation, weights: weights, entries: entries)
                 }
                 let factors = BrowserSplitLayout.normalized(members.map { weights[$0.id] ?? 1 }, count: members.count)
                     ?? Array(repeating: 1 / Double(members.count), count: members.count)
-                let orientation = (split["layoutOrientation"] as? String).flatMap(SplitOrientation.init(rawValue:)) ?? .horizontal
-                let icon = ArcSidebarImport.icon((split["customInfo"] as? [String: Any])?["iconType"])
                 return [.split(title: title, icon: icon, tabs: members.map(\.tab), orientation: orientation,
                                widthFactors: factors)] + rest
             }
             drop(item, depth: depth)
             return []
+        }
+
+        private struct SplitEntry {
+            let id: String
+            let tabs: [(id: String, tab: Tab)]
+            let orientation: SplitOrientation?
+            let weights: [String: Double]
+            let deeper: Bool
+        }
+
+        private static func weights(_ split: [String: Any]) -> [String: Double] {
+            var weights: [String: Double] = [:]
+            for (key, value) in pairs(split["itemWidthFactors"]) {
+                if let key = key as? String, let value = value as? Double { weights[key] = value }
+            }
+            return weights
+        }
+
+        private static func orientation(_ split: [String: Any]) -> SplitOrientation {
+            (split["layoutOrientation"] as? String).flatMap(SplitOrientation.init(rawValue:)) ?? .horizontal
+        }
+
+        private mutating func nestedTabs(of item: [String: Any], depth: Int) -> (tabs: [(id: String, tab: Tab)], deeper: Bool) {
+            var tabs: [(id: String, tab: Tab)] = [], deeper = false
+            for child in item["childrenIds"] as? [Any] ?? [] {
+                guard let taken = take(child) else { continue }
+                if Self.data(taken.item, "splitView") != nil, depth + 1 < ArcSidebarImport.maximumDepth {
+                    let found = nestedTabs(of: taken.item, depth: depth + 1).tabs
+                    if found.isEmpty { skipped += 1 } else { tabs += found; deeper = true }
+                } else if Self.data(taken.item, "tab") == nil { drop(taken.item, depth: depth + 1) }
+                else if let tab = tab(taken.item) { tabs.append((taken.id, tab)) }
+            }
+            return (tabs, deeper)
+        }
+
+        private static func nestedSplit(title: String?, icon: SidebarGroupIcon?, orientation: SplitOrientation,
+                                        weights: [String: Double], entries: [SplitEntry]) -> [Item] {
+            var units: [(tabs: [Tab], factor: Double, stack: [Double])] = []
+            for entry in entries where !entry.tabs.isEmpty {
+                let outer = weights[entry.id] ?? 1
+                guard let nested = entry.orientation else { units.append(([entry.tabs[0].tab], outer, [1])); continue }
+                let raw = entry.tabs.map { entry.weights[$0.id] ?? 1 }
+                let inner = BrowserSplitLayout.settled(raw) ?? Array(repeating: 1 / Double(raw.count), count: raw.count)
+                if nested == orientation {
+                    for (offset, member) in entry.tabs.enumerated() { units.append(([member.tab], outer * inner[offset], [1])) }
+                } else {
+                    units.append((entry.tabs.map(\.tab), outer, inner))
+                }
+            }
+            if units.reduce(0, { $0 + $1.tabs.count }) <= 4, !entries.contains(where: \.deeper) {
+                let shaped = BrowserSplitLayout.shape(orientation: orientation, sizes: units.map(\.tabs.count),
+                                                      factors: units.map(\.factor), stackFactors: units.map(\.stack))
+                let tabs = units.flatMap(\.tabs)
+                if let stacks = shaped.stacks {
+                    return [.stackedSplit(title: title, icon: icon, tabs: tabs, orientation: shaped.orientation, stacks: stacks)]
+                }
+                return [.split(title: title, icon: icon, tabs: tabs, orientation: shaped.orientation, widthFactors: shaped.widthFactors)]
+            }
+            let flat = units.flatMap { unit in unit.tabs.indices.map { (tab: unit.tabs[$0], weight: unit.factor * unit.stack[$0]) } }
+            let members = Array(flat.prefix(4)), rest = flat.dropFirst(4).map { Item.tab($0.tab) }
+            let factors = BrowserSplitLayout.normalized(members.map(\.weight), count: members.count)
+                ?? Array(repeating: 1 / Double(members.count), count: members.count)
+            return [.split(title: title, icon: icon, tabs: members.map(\.tab), orientation: orientation, widthFactors: factors)] + rest
         }
 
         private mutating func drop(_ item: [String: Any], depth: Int) {
@@ -345,10 +424,11 @@ extension ArcSidebarImport {
             return id
         }
         func makeSplit(title: String?, icon: SidebarGroupIcon?, tabs: [Tab], orientation: SplitOrientation,
-                       factors: [Double], spaceID: UUID, profileID: UUID, kind: TabKind, folderID: UUID?) -> SidebarItemReference {
+                       factors: [Double], stacks: BrowserSplitStacks? = nil,
+                       spaceID: UUID, profileID: UUID, kind: TabKind, folderID: UUID?) -> SidebarItemReference {
             let ids = tabs.map { makeTab($0, spaceID: spaceID, profileID: profileID, kind: kind, folderID: folderID) }
-            next.splitLayouts.append(BrowserSplitLayout(customTitle: title, customIcon: icon, spaceID: spaceID,
-                tabIDs: ids, orientation: orientation, widthFactors: factors))
+            next.splitLayouts.append(BrowserSplitLayout(id: UUID(), customTitle: title, customIcon: icon, spaceID: spaceID,
+                tabIDs: ids, orientation: orientation, widthFactors: stacks?.flattenedFactors ?? factors, stacks: stacks))
             return .tab(ids[0])
         }
         func insertPinned(_ items: [Item], spaceID: UUID, profileID: UUID, folderID: UUID?) {
@@ -365,6 +445,10 @@ extension ArcSidebarImport {
                     insertPinned(children, spaceID: spaceID, profileID: profileID, folderID: folder.id)
                 case let .split(title, icon, tabs, orientation, factors):
                     order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation, factors: factors,
+                                           spaceID: spaceID, profileID: profileID, kind: .pinned, folderID: folderID))
+                case let .stackedSplit(title, icon, tabs, orientation, stacks):
+                    order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation,
+                                           factors: stacks.flattenedFactors, stacks: stacks,
                                            spaceID: spaceID, profileID: profileID, kind: .pinned, folderID: folderID))
                 }
             }
@@ -383,6 +467,10 @@ extension ArcSidebarImport {
                     case let .split(title, icon, tabs, orientation, factors):
                         order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation, factors: factors,
                                                spaceID: spaceID, profileID: profileID, kind: .today, folderID: nil))
+                    case let .stackedSplit(title, icon, tabs, orientation, stacks):
+                        order.append(makeSplit(title: title, icon: icon, tabs: tabs, orientation: orientation,
+                                               factors: stacks.flattenedFactors, stacks: stacks,
+                                               spaceID: spaceID, profileID: profileID, kind: .today, folderID: nil))
                     }
                 }
             }
@@ -394,7 +482,7 @@ extension ArcSidebarImport {
                 switch item {
                 case .tab(let tab): return [SavedTabURLComparison.key(tab.url)]
                 case .folder(_, _, let children): return pinnedKeys(children)
-                case .split(_, _, let tabs, _, _): return tabs.map { SavedTabURLComparison.key($0.url) }
+                case .split(_, _, let tabs, _, _), .stackedSplit(_, _, let tabs, _, _): return tabs.map { SavedTabURLComparison.key($0.url) }
                 }
             }.sorted()
         }
@@ -459,8 +547,7 @@ extension ArcSidebarImport {
                 .map { SavedTabURLComparison.key($0.savedURL) })
             for item in items {
                 if case .tab(let tab) = item, existing.contains(SavedTabURLComparison.key(tab.url)) { continue }
-                if case .split(_, _, let tabs, _, _) = item,
-                   tabs.allSatisfy({ existing.contains(SavedTabURLComparison.key($0.url)) }) { continue }
+                if let tabs = item.splitTabs, tabs.allSatisfy({ existing.contains(SavedTabURLComparison.key($0.url)) }) { continue }
                 guard order.count < 12 else { continue }
                 switch item {
                 case .tab(let tab):
@@ -476,6 +563,23 @@ extension ArcSidebarImport {
                             : Array(repeating: 1 / Double(fresh.count), count: fresh.count)
                         order.append(makeSplit(title: title, icon: icon, tabs: fresh.map { tabs[$0] }, orientation: orientation,
                             factors: widths, spaceID: destination.spaceID, profileID: profileID, kind: .favorite, folderID: nil))
+                    }
+                case let .stackedSplit(title, icon, tabs, orientation, stacks):
+                    let fresh = tabs.indices.filter { existing.insert(SavedTabURLComparison.key(tabs[$0].url)).inserted }
+                    if fresh.count == 1 {
+                        order.append(.tab(makeTab(tabs[fresh[0]], spaceID: destination.spaceID, profileID: profileID,
+                                                  kind: .favorite, folderID: nil)))
+                    } else {
+                        let shape = tabs.map { _ in UUID() }
+                        let whole = BrowserSplitLayout(id: UUID(), spaceID: destination.spaceID, tabIDs: shape,
+                            orientation: orientation, widthFactors: stacks.flattenedFactors, stacks: stacks)
+                        var part = BrowserSplitLayout(id: whole.id, spaceID: destination.spaceID, tabIDs: fresh.map { shape[$0] },
+                            orientation: orientation, widthFactors: Array(repeating: 1 / Double(fresh.count), count: fresh.count),
+                            stacks: nil)
+                        part.restack(from: whole)
+                        order.append(makeSplit(title: title, icon: icon, tabs: fresh.map { tabs[$0] }, orientation: part.orientation,
+                            factors: part.widthFactors, stacks: part.stacks,
+                            spaceID: destination.spaceID, profileID: profileID, kind: .favorite, folderID: nil))
                     }
                 case .folder: break
                 }

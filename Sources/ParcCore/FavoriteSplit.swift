@@ -56,7 +56,9 @@ struct FavoriteSplitRequest {
 
     var paneIDs: [UUID] {
         var ids = selection
-        if !ids.contains(targetID), let index = ids.firstIndex(of: focusedID) { ids.insert(targetID, at: index + 1) }
+        if !ids.contains(targetID), let index = ids.firstIndex(of: focusedID) {
+            ids.insert(targetID, at: layout?.mainRowInsertionIndex(after: focusedID) ?? index + 1)
+        }
         return ids
     }
 
@@ -92,10 +94,11 @@ struct FavoriteSplitRequest {
                     ?? (1 / Double(selection.count))
             }
             guard let factors = BrowserSplitLayout.normalized(weights, count: ids.count) else { return nil }
-            let group = BrowserSplitLayout(id: layout?.id ?? UUID(),
+            var group = BrowserSplitLayout(id: layout?.id ?? UUID(),
                 sidebarAnchorID: layout?.sidebarAnchorID, customTitle: layout?.customTitle, customIcon: layout?.customIcon,
                 spaceID: layout?.spaceID ?? spaceID, tabIDs: ids, orientation: layout?.orientation ?? .horizontal,
-                widthFactors: factors)
+                widthFactors: factors, stacks: nil)
+            if let layout { group.restack(from: layout) }
             let homes = savedHomeSources(in: next)
             guard homes.allSatisfy({ homeIDs[$0.id] != nil }),
                   let admitted = SplitMembership.admitting(group, existing: layout,

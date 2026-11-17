@@ -16,7 +16,7 @@ to read more. Subsystem guides own the details.
 | Folders and moves | Nested folders and moves across Spaces and windows; Option-drag copies of any sidebar item, duplication and bulk archive/delete come with window Undo and close consent. | [Folder moves](folder-moves.md), [folder commands](folder-commands.md) |
 | Navigation and command bar | History navigation with swipe-and-hold, site search, address editing, contextual actions and live typed commands; an empty Space shows a start page with a resident command bar, and closing its last tab fades the page into it. | [Navigation](navigation.md), [swipe navigation](swipe-navigation.md), [command bar](command-bar.md), [start page](start-page.md) |
 | Keyboard and switching | Custom shortcuts and website priorities, Essentials, positional/history navigation and the recent-tab switcher. | [Keyboard](keyboard-navigation.md), [tab switcher](tab-switcher.md) |
-| Split views | Grouped splits with pane navigation, pointer, keyboard and VoiceOver resizing, tab and link drops, and Copy Links for the whole split. | [Splits](split-groups.md), [split navigation](split-navigation.md) |
+| Split views | Grouped splits with pane navigation, pointer, keyboard and VoiceOver resizing, tab and link drops, and Copy Links for the whole split. | [Splits](split-groups.md), [split navigation](split-navigation.md), [stacked panes](split-stacks.md) |
 | Peek | Temporary pages float above the whole window from links to other sites, Shift-click or a folder preview's Open in Peek, close with a two-finger swipe and expand into normal tabs. | [Peek](peek.md), [swipe dismissal](swipe-navigation.md#peek-dismissal) |
 | Archive, history and downloads | Automatic archive protections, a searchable Library, live archive previews over any page, Put Back that rebuilds deleted folders and real download controls with normal/private ownership. | [Archive](archive.md), [archive preview](archive-preview.md), [downloads](download-library.md) |
 | Local documents | Editable Notes and Easels with a text formatting menu, embedded pages and captures, local persistence, export and Library cards. | [Notes](notes.md), [Easels](easels.md), [documents Library](documents-library-grid.md) |
@@ -69,6 +69,9 @@ to read more. Subsystem guides own the details.
 - Split View offers no pane-handle drag, double-click separation, Option-click
   unsplit or sidebar drop-to-combine gesture; each duplicates an existing route.
   See [split groups](split-groups.md#split-gesture-and-context-inventory--sp33).
+- Split stacks run perpendicular to the split, two levels deep at most, with four
+  panes in all; an older Parc opens a stacked split as one row. See
+  [stacked panes](split-stacks.md).
 - Routing rules never move an already-created page into another Profile; the
   page keeps its opener and security context. See
   [routing](settings.md#internal-original-request-routing).

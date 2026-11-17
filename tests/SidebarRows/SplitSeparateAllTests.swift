@@ -39,7 +39,7 @@ import Foundation
         let placements = store.state.tabs.map { ($0.id, $0.kind, $0.folderID, $0.url) }
 
         let stale = BrowserSplitLayout(id: group.id, sidebarAnchorID: group.sidebarAnchorID, spaceID: group.spaceID,
-                                       tabIDs: [a,b], orientation: group.orientation, widthFactors: [0.5, 0.5])
+                                       tabIDs: [a,b], orientation: group.orientation, widthFactors: [0.5, 0.5], stacks: nil)
         let before = store.state
         try check(!store.separateAllTabsFromSplit(expected: stale, focusedID: b) && store.state == before,
                   "A stale membership receipt refuses without mutation")

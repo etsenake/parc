@@ -16,7 +16,7 @@ shortcuts only when `allowsKeyEquivalentWhenHidden` is set explicitly.
 
 | Action | Behavior |
 |---|---|
-| Numbered focus | Selects a one-based member; missing positions are unavailable. A single pane is position 1. |
+| Numbered focus | Selects a one-based member in [reading order](split-stacks.md#shape-and-reading-order); missing positions are unavailable. A single pane is position 1. |
 | Adjacent focus | Wraps in current group order and preserves group membership. |
 | Expand | Requires multiple panes. Gives the focused pane the room left after other panes' 220-point minimum, preserving orientation and membership. Each browser window applies it to its own focused split and saves changed weights. It is not a restore toggle; Make All Split Panes Equal evens the panes again. |
 | Widen, Narrow and Make Equal | Require multiple panes, act on the command's own window and are disabled when they would change nothing. Widen and Narrow step the focused pane by a tenth of the split; Make Equal evens every pane. Each commits like a finished divider drag; see [keyboard and VoiceOver resizing](split-groups.md#keyboard-and-voiceover-resizing). |

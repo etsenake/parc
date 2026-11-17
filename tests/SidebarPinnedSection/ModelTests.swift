@@ -23,7 +23,7 @@ import Foundation
         let deep = tab("Deep", .pinned, inner.id), left = tab("Left", .pinned), right = tab("Right", .pinned)
         let news = tab("News", .today), weather = tab("Weather", .today), elsewhere = tab("Elsewhere", .today, in: other.id)
         let split = BrowserSplitLayout(id: UUID(), sidebarAnchorID: left.id, spaceID: space.id,
-                                       tabIDs: [left.id, right.id], widthFactors: [0.5, 0.5])
+                                       tabIDs: [left.id, right.id], widthFactors: [0.5, 0.5], stacks: nil)
         state.tabs = [mail, calendar, docs, deep, left, right, news, weather, elsewhere]
         state.folders = [work, inner]; state.splitLayouts = [split]
         let root = SidebarContainerLocation(spaceID: space.id, folderID: nil, section: .pinned)
