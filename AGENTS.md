@@ -176,6 +176,14 @@ needs the user's explicit approval first; approval given in the task or
 elsewhere counts. When a new feature family might deserve a card, ask instead of
 adding one.
 
+**Copy gets its own reviewer.** Any change to words people read (the website,
+What's New, onboarding, and in-app labels, menus and notices) gets a dedicated,
+fresh copy reviewer alongside the code review. Give it the new words, the copy
+around them and the site. It checks that they keep Parc's voice (short, casual,
+playful), match the site's look and feel and the names already in use, and say
+truthfully what the feature does. Fix its findings before publishing, so the
+user never has to send copy back.
+
 **A missing test record is not a product gap.** Do not create validation-only or
 "runtime acceptance" backlog entries, or append generic "not tested here" caveats
 to feature docs and updates. Record concrete missing/broken behavior, an actionable
