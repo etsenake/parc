@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.10.1 (2026-11-18)
+
+### Fixed
+
+- **settings:** Sweep the last Google-only and do-nothing rows out of More Settings, and teach Reset to keep its settings report to itself
+- **settings:** Stop wearing Chrome's brand badge, show Enhanced protection only to people already on it, hush its warning-page upsell, and tuck away Live Caption, which never heard a word
+- **privacy:** Stop sharing Chrome's install-tracking drawer, and take the do-nothing Live Caption switches out of the media popup and picture in picture
+
 ## 2.10.0 (2026-11-18)
 
 ### New

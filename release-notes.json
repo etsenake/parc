@@ -1,6 +1,31 @@
 {
   "releases": [
     {
+      "version": "2.10.1",
+      "build": 45,
+      "date": "2026-11-18",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "settings",
+          "summary": "Sweep the last Google-only and do-nothing rows out of More Settings, and teach Reset to keep its settings report to itself",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "settings",
+          "summary": "Stop wearing Chrome's brand badge, show Enhanced protection only to people already on it, hush its warning-page upsell, and tuck away Live Caption, which never heard a word",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "privacy",
+          "summary": "Stop sharing Chrome's install-tracking drawer, and take the do-nothing Live Caption switches out of the media popup and picture in picture",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.10.0",
       "build": 44,
       "date": "2026-11-18",
