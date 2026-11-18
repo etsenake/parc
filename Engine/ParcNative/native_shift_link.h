@@ -30,6 +30,20 @@ inline NativeShiftLink ClassifyNativeShiftLink(const NativeShiftLinkClick& click
   return click.can_open_peek ? NativeShiftLink::kPeek : NativeShiftLink::kOrdinary;
 }
 
+struct NativeShiftCreatedPage {
+  NativeShiftLinkClick click;
+  bool user_gesture = false;
+  bool web_url = false;
+  bool new_window = false;
+  bool popup = false;
+  bool sized_by_page = false;
+};
+
+inline bool NativeShiftCreatedPageOpensPeek(const NativeShiftCreatedPage& page) {
+  return page.user_gesture && page.web_url && page.new_window && !page.popup &&
+      !page.sized_by_page && ClassifyNativeShiftLink(page.click) == NativeShiftLink::kPeek;
+}
+
 inline PCNativeStatusLinkOutcome NativeShiftLinkOutcome(NativeShiftLink link) {
   switch (link) {
     case NativeShiftLink::kPeek: return PCNativeStatusLinkOutcomePeek;

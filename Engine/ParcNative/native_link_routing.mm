@@ -32,6 +32,7 @@
 #include "ui/base/page_transition_types.h"
 #include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
+#include "third_party/blink/public/mojom/window_features/window_features.mojom.h"
 #include "url/gurl.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 
@@ -886,42 +887,67 @@ void CaptureNativeCreatedPage(content::WebContents* source,
   created->SetUserData(&kCreatedPageKey,
       std::make_unique<CreatedPage>(*source, *opener, *browser));
 }
-static void PrepareCreatedPeek(BrowserWindowInterface& browser,
+static bool PrepareCreatedPeek(BrowserWindowInterface& browser,
     content::WebContents* source, content::WebContents& created,
-    const GURL& target, WindowOpenDisposition disposition, bool user_gesture) {
+    const GURL& target, WindowOpenDisposition disposition,
+    const blink::mojom::WindowFeatures& features, bool user_gesture) {
   auto* state = Creation(created);
   if (!state || state->source_.get() != source ||
-      state->browser_.get() != &browser || state->offered_) return;
+      state->browser_.get() != &browser || state->offered_) return false;
   state->peek_ = false;
 
-  if (!user_gesture || disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB ||
-      !target.SchemeIsHTTPOrHTTPS()) return;
+  const bool new_window = disposition == WindowOpenDisposition::NEW_WINDOW;
+  if (!user_gesture || !target.SchemeIsHTTPOrHTTPS() ||
+      (!new_window && disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB)) return false;
   PCNativePage* parent = state->Parent(created);
   PCNativeBrowserWindow* binding = AppKitBindingForBrowser(&browser);
-  if (!parent || !binding || (state->modifiers_ & NSEventModifierFlagCommand)) return;
+  if (!parent || !binding || (state->modifiers_ & NSEventModifierFlagCommand)) return false;
   NSURL* url = [NSURL URLWithString:@(target.spec().c_str())];
-  if (!url || IsMeetingURL(url)) return;
+  if (!url || IsMeetingURL(url)) return false;
   const auto child = created.GetWeakPtr();
   const auto valid = [&]() {
     return child && Creation(*child) == state && state->Parent(*child) == parent;
   };
+  if (new_window) {
+    NativeShiftCreatedPage page{.click = {.modifiers = state->modifiers_},
+        .user_gesture = user_gesture, .web_url = target.SchemeIsHTTPOrHTTPS(),
+        .new_window = new_window, .popup = features.is_popup,
+        .sized_by_page = features.has_x || features.has_y || features.has_width ||
+            features.has_height};
+    page.click.shift_peek_enabled =
+        [binding.client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] &&
+        [binding.client nativeBrowser:binding allowsPeekWithShift:YES];
+    if (!valid() || !page.click.shift_peek_enabled) return false;
+    page.click.in_shown_peek =
+        [binding.client respondsToSelector:@selector(nativeBrowser:canNavigatePeekLinkFromPage:)] &&
+        [binding.client nativeBrowser:binding canNavigatePeekLinkFromPage:parent];
+    if (!valid()) return false;
+    page.click.can_open_peek = !page.click.in_shown_peek && state->CanPresent(*child);
+    if (!valid() || !NativeShiftCreatedPageOpensPeek(page)) return false;
+    state->peek_ = true;
+    return true;
+  }
   const bool shift = (state->modifiers_ & (NSEventModifierFlagShift |
       NSEventModifierFlagControl | NSEventModifierFlagOption)) == NSEventModifierFlagShift;
   if (![binding.client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] ||
-      ![binding.client nativeBrowser:binding allowsPeekWithShift:shift] || !valid()) return;
+      ![binding.client nativeBrowser:binding allowsPeekWithShift:shift] || !valid()) return false;
 
   if (![binding.client respondsToSelector:@selector(nativeBrowser:shouldOpenNewPageInPeekFrom:targetURL:)] ||
       ![binding.client nativeBrowser:binding shouldOpenNewPageInPeekFrom:parent
                            targetURL:url] || !valid() ||
-      !state->CanPresent(*child) || !valid()) return;
+      !state->CanPresent(*child) || !valid()) return false;
   state->peek_ = true;
+  return true;
 }
 void PrepareNativeCreatedPage(BrowserWindowInterface& browser,
     content::WebContents* source, content::WebContents& created,
-    const GURL& target, WindowOpenDisposition disposition, bool user_gesture) {
+    const GURL& target, WindowOpenDisposition& disposition,
+    const blink::mojom::WindowFeatures& features, bool user_gesture) {
   const auto child = created.GetWeakPtr();
 
-  PrepareCreatedPeek(browser, source, created, target, disposition, user_gesture);
+  if (PrepareCreatedPeek(browser, source, created, target, disposition, features,
+                         user_gesture))
+    disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
   if (!child) return;
   auto* state = Creation(*child);
   if (state && state->source_.get() == source && state->browser_.get() == &browser &&

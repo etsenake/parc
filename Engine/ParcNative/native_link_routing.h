@@ -9,6 +9,7 @@
 #include "base/functional/callback.h"
 
 #include "content/public/browser/global_routing_id.h"
+#include "third_party/blink/public/mojom/window_features/window_features.mojom-forward.h"
 #include "ui/base/window_open_disposition.h"
 class BrowserWindowInterface;
 class GURL;
@@ -52,7 +53,8 @@ void CaptureNativeCreatedPage(content::WebContents* source,
     content::GlobalRenderFrameHostId opener, content::WebContents* created);
 void PrepareNativeCreatedPage(BrowserWindowInterface& browser,
     content::WebContents* source, content::WebContents& created,
-    const GURL& target, WindowOpenDisposition disposition, bool user_gesture);
+    const GURL& target, WindowOpenDisposition& disposition,
+    const blink::mojom::WindowFeatures& features, bool user_gesture);
 }
 #ifdef __OBJC__
 #import "native_appkit_bridge.h"

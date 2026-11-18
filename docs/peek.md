@@ -312,6 +312,14 @@ shown, interactive Peek (`canNavigatePeekLinkFrom`). Otherwise a Shift-click in
 a Peek opens a new window, as it did before. A private window's Peek stays in its private
 Profile, and Space routing rules never apply to Shift-click.
 
+Some sites open the page themselves on a click instead of letting the link
+navigate. When a Shift-click makes such a site ask for a new window, the page
+opens in a Peek as a Shift-clicked link would, unless the site asks for a pop-up,
+sets the window's size or position, or opens a video meeting. Inside a Peek that
+page still opens a new window, even where the hover capsule promised this Peek:
+the site keeps hold of the page it opened, so it can't become a navigation of the
+same Peek.
+
 Links in ordinary embedded frames take the same route as the page's own, inside
 and outside a Peek; fenced ad frames keep Chromium's behaviour. Inside a Peek, an
 embedded frame sandboxed against navigating the page keeps the new window, and

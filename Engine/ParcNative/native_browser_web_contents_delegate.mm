@@ -221,7 +221,7 @@ content::WebContents* NativeBrowserWebContentsDelegate::AddNewContents(
     const bool native_owner =
         source && HasNativeSplitOwner(browser_.get(), *source);
     PrepareNativeCreatedPage(browser_.get(), source, *new_contents, target_url,
-                             disposition, user_gesture);
+                             disposition, window_features, user_gesture);
     if (!child_weak) {
 
       new_contents.release();

@@ -6,6 +6,8 @@
 
 using parc::ClassifyNativeShiftLink;
 using parc::NativeFrameCanNavigatePage;
+using parc::NativeShiftCreatedPage;
+using parc::NativeShiftCreatedPageOpensPeek;
 using parc::NativeShiftLink;
 using parc::NativeShiftLinkClick;
 using parc::NativeShiftLinkOutcome;
@@ -91,6 +93,57 @@ int main() {
   Check(hint(false, NativeFrameCanNavigatePage(false, true, true)) ==
             PCNativeStatusLinkOutcomePeek,
         "outside a Peek, the hint over a sandboxed frame still promises a Peek");
+
+  const auto opened = [&](NSEventModifierFlags modifiers, bool in_shown_peek) {
+    return NativeShiftCreatedPage{.click = Click(modifiers, in_shown_peek), .user_gesture = true,
+                                  .web_url = true, .new_window = true};
+  };
+  Check(NativeShiftCreatedPageOpensPeek(opened(shift, false)),
+        "a page a site opens in a new window from a Shift-click opens in a Peek");
+  Check(NativeShiftCreatedPageOpensPeek(opened(shift | NSEventModifierFlagCapsLock, false)),
+        "Caps Lock does not change a script-opened Shift-click");
+  for (const NSEventModifierFlags other : {NSEventModifierFlags(0),
+           NSEventModifierFlags(NSEventModifierFlagCommand),
+           NSEventModifierFlags(NSEventModifierFlagOption),
+           NSEventModifierFlags(NSEventModifierFlagControl),
+           NSEventModifierFlags(shift | NSEventModifierFlagCommand),
+           NSEventModifierFlags(shift | NSEventModifierFlagOption),
+           NSEventModifierFlags(shift | NSEventModifierFlagControl)}) {
+    Check(!NativeShiftCreatedPageOpensPeek(opened(other, false)),
+          "a script-opened page from any other modifier click keeps its window");
+  }
+  auto opened_disabled = opened(shift, false);
+  opened_disabled.click.shift_peek_enabled = false;
+  Check(!NativeShiftCreatedPageOpensPeek(opened_disabled),
+        "turning off Shift-click Peek keeps a script-opened page's window");
+  auto opened_without_gesture = opened(shift, false);
+  opened_without_gesture.user_gesture = false;
+  Check(!NativeShiftCreatedPageOpensPeek(opened_without_gesture),
+        "a page opened without a user gesture keeps its window");
+  auto opened_other_scheme = opened(shift, false);
+  opened_other_scheme.web_url = false;
+  Check(!NativeShiftCreatedPageOpensPeek(opened_other_scheme),
+        "a script-opened page that is not HTTP(S) keeps its window");
+  auto opened_refused = opened(shift, false);
+  opened_refused.click.can_open_peek = false;
+  Check(!NativeShiftCreatedPageOpensPeek(opened_refused),
+        "a window that cannot present a Peek keeps a script-opened page's window");
+  auto opened_tab = opened(shift, false);
+  opened_tab.new_window = false;
+  Check(!NativeShiftCreatedPageOpensPeek(opened_tab),
+        "only a page asking for a new window takes the Shift-click Peek route");
+  auto opened_popup = opened(shift, false);
+  opened_popup.popup = true;
+  Check(!NativeShiftCreatedPageOpensPeek(opened_popup),
+        "a page asking for popup window features stays a popup");
+  auto opened_sized = opened(shift, false);
+  opened_sized.sized_by_page = true;
+  Check(!NativeShiftCreatedPageOpensPeek(opened_sized),
+        "a page that sizes or places its own window keeps it");
+  auto opened_in_peek = opened(shift, true);
+  opened_in_peek.click.can_open_peek = true;
+  Check(!NativeShiftCreatedPageOpensPeek(opened_in_peek),
+        "a script-opened page from inside a shown Peek never stacks a second Peek");
 
   Check(NativeShiftLinkOutcome(NativeShiftLink::kSamePeek) == PCNativeStatusLinkOutcomeThisPeek,
         "the hint says a same-Peek link opens in this Peek");
