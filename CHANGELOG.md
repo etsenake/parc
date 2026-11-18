@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.10.0 (2026-11-18)
+
+### New
+
+- **splits:** Give split panes bunk beds, stacking a new page below or beside any pane from its menu or Control-Shift-Backslash
+- **splits:** Let a tab or link dropped near a pane's top or bottom edge, or its sides in a top-and-bottom split, bunk right there with it while the panes scoot over to save its seat
+
+### Fixed
+
+- **media:** Let videos and calls keep their seat while half the window still peeks out, and hop into picture in picture once another app or Parc window swallows the rest, even if it creeps over later
+- **media:** Let videos in a Parc window that never had focus stay put while you can plainly see them, instead of bolting into picture in picture the moment they start
+- **settings:** Give More Settings a spring clean, tucking away the switches that do nothing in Parc or only work with a Google account
+- **branding:** Put Parc's P on every Chromium page Parc opens, dark mode included, so Settings, its About page and the version page stop moonlighting as Chromium
+- **settings:** Make a cancelled Restart truly stand down, so your next Quit just quits instead of sneaking Parc back open
+- **splits:** Let the divider between top and bottom panes snap to the middle from either direction, and only when you ease into it, instead of grabbing everything from above
+- **splits:** Squeeze split panes into a cramped window instead of shoving the end ones off the page, with drop previews and drag cards that match where a new pane really lands
+- **splits:** Teach drop previews some patience, so a tab or link flying across a split stops shoving panes around for every spot it passes on the way
+
 ## 2.9.0 (2026-11-17)
 
 ### New
