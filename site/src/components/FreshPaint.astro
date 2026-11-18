@@ -1,0 +1,39 @@
+---
+import { display, glance, highlights, latestRelease, longDate, scopeLabel } from '../lib/releases';
+
+const release = await latestRelease();
+const counts = release ? glance(release.changes) : '';
+---
+{release && (
+<section id="fresh" class="fresh sec" aria-labelledby="fresh-title">
+<div class="wrap fresh-panel">
+<div>
+<p class="eyebrow">Fresh paint</p>
+<h2 class="h2" id="fresh-title">Parc {release.version} is out.</h2>
+<p class="fresh-meta">{counts ? `${longDate(release.date)} · ${counts}` : longDate(release.date)}</p>
+<a class="btn-ink fresh-btn" href="whats-new/">Read what’s new<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></a>
+</div>
+<ul class="fresh-list">
+{highlights(release).map((change) => <li>{change.scope && <span>{scopeLabel(change.scope)}</span>}{display(change.summary)}</li>)}
+</ul>
+</div>
+</section>
+)}
+
+<style>
+.fresh{padding-block:40px 120px;background:var(--page)}
+.fresh-panel{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:40px 64px;padding:64px 64px 76px;color:#FFFCEC;background:#484FFF;border-radius:28px 28px 0 0;-webkit-mask:linear-gradient(#000 0 0) top/100% calc(100% - 6px) no-repeat,url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 6'%3E%3Cpath d='M0 0V3.5C4.07.17 5.93.17 10 3.5S15.93 6.83 20 3.5V0Z'/%3E%3C/svg%3E") left bottom/20px 6px repeat-x;mask:linear-gradient(#000 0 0) top/100% calc(100% - 6px) no-repeat,url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 6'%3E%3Cpath d='M0 0V3.5C4.07.17 5.93.17 10 3.5S15.93 6.83 20 3.5V0Z'/%3E%3C/svg%3E") left bottom/20px 6px repeat-x}
+.fresh .eyebrow{color:#C9CCFF}
+.fresh .h2{color:#FFFCEC}
+.fresh-meta{margin-top:18px;font:500 13px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:#D9DBFF}
+.fresh-list{display:flex;flex-direction:column;gap:14px;padding:0;list-style:none}
+.fresh-list li{padding:16px 18px;border-radius:16px;background:rgba(255,252,236,.1);font-size:16px;line-height:1.5;color:#FFFCEC;text-wrap:pretty}
+.fresh-list span{display:inline-block;margin:0 10px 6px 0;padding:3px 9px;border-radius:999px;background:#FFFCEC;color:#3139FB;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;vertical-align:1px}
+.fresh-btn{margin-top:30px;background:#FFFCEC;color:#3139FB;font-size:16px;padding:14px 24px}
+a.fresh-btn,a.fresh-btn:hover{color:#3139FB}
+.fresh-btn svg{width:17px;height:17px}
+@media (max-width:1100px){.fresh-panel{grid-template-columns:minmax(0,1fr);padding:56px 40px 68px}}
+@media (max-width:640px){
+  .fresh-panel{padding:44px 24px 56px;border-radius:22px 22px 0 0}
+}
+</style>

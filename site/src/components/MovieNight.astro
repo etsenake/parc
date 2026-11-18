@@ -1,0 +1,96 @@
+---
+import { Image } from 'astro:assets';
+import mark from '../assets/images/p-mark.png';
+
+const goodies = ['Dolby Vision', 'Surround sound', 'AirPlay to your TV', 'Picture in picture'];
+const services = ['Netflix', 'Apple TV', 'Prime Video', 'Disney+', 'Spotify', 'Apple Music'];
+const bulbs: [number, number][] = [[30, 16.7], [75, 25.3], [120, 32.4], [165, 37.9], [210, 41.9], [255, 44.2], [300, 45], [345, 44.2], [390, 41.9], [435, 37.9], [480, 32.4], [525, 25.3], [570, 16.7]];
+---
+<section id="movie" class="movie sec">
+<div class="wrap movie-grid">
+<div class="movie-copy">
+<p class="eyebrow">Movie night</p>
+<h2 class="h2">Netflix works.</h2>
+<p class="body">Grab the popcorn. Your shows play right here, the pretty version, surround sound and all.</p>
+<div class="goodies">{goodies.map((goody) => <span>{goody}</span>)}</div>
+<div class="tickets" role="group" aria-label="Plays">
+{services.map((service) => <span class="ticket"><small>Admit one</small>{service}</span>)}
+</div>
+<p class="hand note" aria-hidden="true">this one took me a while</p>
+<p class="fine">Something won’t play? <a href="https://github.com/etsenake/parc/issues/new?title=Won%E2%80%99t%20play%3A%20">Tell me</a>.</p>
+</div>
+<div class="movie-art" aria-hidden="true">
+<svg class="lights" viewBox="0 0 600 90" preserveAspectRatio="none">
+<path d="M0 10 Q300 80 600 10" fill="none" stroke="#4A3D5C" stroke-width="1.5"/>
+{bulbs.map(([cx, cy]) => <circle cx={cx} cy={cy} r="4"/>)}
+</svg>
+<div class="beam"></div>
+<div class="screen">
+<div class="film">
+<svg class="film-hills" viewBox="0 0 400 100" preserveAspectRatio="none"><path d="M0 58 C 80 28, 160 38, 240 56 C 300 68, 350 48, 400 44 L400 100 L0 100 Z" fill="rgba(24,24,48,.35)"/><path d="M0 80 C 120 62, 240 92, 400 74 L400 100 L0 100 Z" fill="rgba(24,24,48,.55)"/></svg>
+<Image class="film-kite" src={mark} alt="" width={34} height={50} densities={[1, 2]} format="png" loading="eager" decoding="auto" />
+</div>
+</div>
+<div class="poles"><i></i><i></i></div>
+<svg class="projector" viewBox="0 0 84 62">
+<g class="reel"><circle cx="24" cy="14" r="11" fill="none" stroke="#CFC4D9" stroke-width="2.5"/><path d="M24 4 V24 M14 14 H34" stroke="#CFC4D9" stroke-width="2"/></g>
+<g class="reel"><circle cx="50" cy="14" r="11" fill="none" stroke="#CFC4D9" stroke-width="2.5"/><path d="M50 4 V24 M40 14 H60" stroke="#CFC4D9" stroke-width="2"/></g>
+<rect x="8" y="24" width="58" height="26" rx="5" fill="#3A3448"/>
+<circle cx="72" cy="37" r="7" fill="#FFE7A0"/>
+<path d="M18 50 L12 62 M56 50 L62 62" stroke="#3A3448" stroke-width="3" stroke-linecap="round"/>
+</svg>
+<div class="lawn"></div>
+</div>
+</div>
+<div class="movie-floor"></div>
+</section>
+
+<style>
+.movie{position:relative;overflow:hidden;padding-top:130px;background:linear-gradient(180deg,#3B2A52 0,#21183A 40%,#1A1430 100%);color:#F4EFE4}
+.movie .eyebrow{color:#F7C08A}
+.movie .body{color:#D9CFE6}
+.movie .note{color:#F7C08A}
+.movie-grid{display:flex;flex-wrap:wrap;align-items:center;gap:64px}
+.movie-copy{position:relative;z-index:2;flex:1 1 380px;max-width:520px}
+.movie-art{position:relative;flex:999 1 520px;min-width:0;height:460px}
+.goodies{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.goodies span{padding:6px 12px;border:1px solid rgba(244,239,228,.25);border-radius:999px;font-size:13px;font-weight:600}
+.tickets{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+.ticket{position:relative;padding:9px 16px 9px 18px;border-radius:3px;background:#F4E6C8;color:#4A2E1E;font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;-webkit-mask:radial-gradient(circle 5px at 0 50%,transparent 98%,#000) left/51% 100% no-repeat,radial-gradient(circle 5px at 100% 50%,transparent 98%,#000) right/51% 100% no-repeat;mask:radial-gradient(circle 5px at 0 50%,transparent 98%,#000) left/51% 100% no-repeat,radial-gradient(circle 5px at 100% 50%,transparent 98%,#000) right/51% 100% no-repeat;transition:transform .4s var(--spring)}
+.ticket:nth-child(odd){transform:rotate(-2deg)}
+.ticket:nth-child(even){transform:rotate(1.5deg)}
+.ticket:hover{transform:translateY(-4px) rotate(0)}
+.ticket small{display:block;font-size:9px;letter-spacing:.14em;opacity:.7}
+.fine{max-width:34em;margin-top:22px;font-size:14px;line-height:1.5;color:#B9AECB}
+.fine a{color:#F7C08A;text-underline-offset:3px}
+.fine a:hover{color:#FFE7A0}
+.lights{position:absolute;left:-4%;right:-4%;top:0;height:90px}
+.lights circle{fill:#FFE7A0;filter:drop-shadow(0 0 6px rgba(255,214,120,.9))}
+@keyframes bulb{0%,100%{opacity:1}50%{opacity:.35}}
+.lights circle:nth-child(3n){animation:bulb 2.4s ease-in-out infinite}
+.lights circle:nth-child(3n+1){animation:bulb 3.1s ease-in-out .6s infinite}
+@keyframes flicker{0%,100%{opacity:.18}45%{opacity:.24}50%{opacity:.14}55%{opacity:.22}}
+.beam{position:absolute;left:0;top:96px;width:100%;height:330px;clip-path:polygon(4% 92%,14% 6%,94% 0%,94% 100%,6% 98%);background:linear-gradient(80deg,rgba(255,240,210,.55),rgba(255,240,210,0) 85%);animation:flicker 3.2s steps(4) infinite;pointer-events:none}
+.screen{position:absolute;left:14%;right:6%;top:70px;height:250px;overflow:hidden;border-radius:6px;background:#0B0A12;box-shadow:0 0 0 8px #F1ECE1,0 30px 80px rgba(0,0,0,.55),0 0 120px rgba(255,214,170,.18)}
+@keyframes film{0%{background-position:0% 50%}100%{background-position:100% 50%}}
+.film{position:absolute;left:0;right:0;top:22px;bottom:22px;background:linear-gradient(110deg,#F4B79A,#F9D3B4,#E9805B,#8A3A5E,#3A1E52,#160F33,#3A1E52,#E9805B,#F4B79A);background-size:400% 100%;animation:film 24s linear infinite}
+.film-hills{position:absolute;left:0;right:0;bottom:0;width:100%;height:46%}
+@keyframes filmKite{0%,100%{transform:translate(0,0) rotate(-6deg)}50%{transform:translate(-26px,-10px) rotate(6deg)}}
+.film-kite{position:absolute;right:22%;top:18%;width:34px;animation:filmKite 6s ease-in-out infinite;transform-origin:30% 100%}
+.poles{position:absolute;left:16%;right:8%;top:320px;height:84px;display:flex;justify-content:space-between}
+.poles i{display:block;width:8px;border-radius:2px;background:#5B4632}
+.projector{position:absolute;left:0;bottom:62px;width:84px;height:62px}
+@keyframes reelSpin{to{transform:rotate(360deg)}}
+.reel{transform-box:fill-box;transform-origin:center;animation:reelSpin 3s linear infinite}
+.lawn{position:absolute;left:-10%;right:-10%;bottom:0;height:90px;border-radius:50% 50% 0 0/30px 30px 0 0;background:linear-gradient(180deg,#1F3A2E,#162B22)}
+.movie-floor{height:64px;margin-left:calc(-1 * max(40px,env(safe-area-inset-left,0px)));margin-right:calc(-1 * max(40px,env(safe-area-inset-right,0px)));background:linear-gradient(180deg,#1A1430,#2A4636)}
+@media (max-width:640px){
+  .movie{padding-top:96px}
+  .movie-grid{gap:36px}
+  .movie-floor{margin-left:calc(-1 * max(20px,env(safe-area-inset-left,0px)));margin-right:calc(-1 * max(20px,env(safe-area-inset-right,0px)))}
+  .movie-art{height:340px}
+  .screen{height:180px}
+  .poles{top:250px}
+  .beam{height:220px}
+}
+</style>

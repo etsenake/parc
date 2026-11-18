@@ -1,0 +1,32 @@
+---
+import Sketch from './Sketch.astro';
+import type { Specimen } from '../../data/specimens';
+
+interface Props {
+  specimen: Specimen;
+  index: number;
+}
+
+const { specimen, index } = Astro.props;
+---
+<article class="card">
+<button class="card-hit" type="button" data-open={index} aria-label={`Open the page on ${specimen.label}`}></button>
+<div class="card-art" aria-hidden="true"><Sketch id={specimen.id} kind="card" /></div>
+<p class="card-no">No. {specimen.no}</p>
+<h3>{specimen.name}</h3>
+<p class="card-latin">{specimen.latin}</p>
+<p class="card-line">{specimen.line}</p>
+</article>
+
+<style>
+.card{position:relative;display:flex;flex-direction:column;gap:8px;padding:20px;border:1.5px solid var(--paper-line);border-radius:20px;background:var(--paper);transition:transform .5s cubic-bezier(.3,1.5,.5,1),box-shadow .35s,border-color .3s}
+.card:hover{transform:translateY(-6px) rotate(-1deg);box-shadow:0 22px 44px rgba(24,32,58,.12)}
+.card-hit{position:absolute;inset:0;z-index:2;padding:0;border:0;border-radius:20px;background:transparent}
+.card-hit:focus-visible{outline:3px solid var(--blue);outline-offset:4px}
+.card-art{display:flex;align-items:center;justify-content:center;height:136px;margin-bottom:8px;border-radius:12px;background:var(--paper-deep)}
+.card-art svg{width:200px;height:120px}
+.card-no{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--tan)}
+.card h3{font:400 32px/1 var(--serif)}
+.card-latin{font:italic 19px var(--serif);color:var(--latin)}
+.card-line{font-size:15px;line-height:1.5;color:var(--text)}
+</style>

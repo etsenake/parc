@@ -6,7 +6,6 @@ on:
     paths:
       - site/**
       - release-notes.json
-      - scripts/site.py
       - scripts/whats_new.py
       - scripts/release_notes.py
       - Sources/WhatsNew/**
@@ -32,17 +31,28 @@ jobs:
           sparse-checkout: |
             /site/
             /release-notes.json
-            /scripts/site.py
             /scripts/whats_new.py
             /scripts/release_notes.py
             /Sources/WhatsNew/
             /Resources/ThemeTextures/grain.png
             /tests/Site/
             /.github/workflows/site.yml
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Install the site's tools
+        run: npm ci
+        working-directory: site
+      - name: Check the site's types
+        run: npm run check
+        working-directory: site
       - name: Test the site
         run: python3 -m unittest discover -s tests/Site -v
       - name: Build the site
-        run: python3 scripts/site.py build _site
+        run: npm run build -- --outDir "$GITHUB_WORKSPACE/_site"
+        working-directory: site
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site

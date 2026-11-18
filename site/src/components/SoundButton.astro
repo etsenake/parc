@@ -1,0 +1,30 @@
+<button class="icon-btn" id="soundBtn" type="button" aria-pressed="false" aria-label="Park sounds">
+<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><g class="off"><path d="M17 10l4 4"/><path d="M21 10l-4 4"/></g><g class="on"><path d="M16 9a4 4 0 0 1 0 6"/><path class="w2" d="M19 6a8 8 0 0 1 0 12"/></g></svg>
+</button>
+
+<style>
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;flex:none;width:42px;height:42px;padding:0;border:1px solid var(--chip-border);border-radius:50%;background:var(--chip-bg);color:var(--ink);transition:transform .35s var(--spring),background-color .3s}
+.icon-btn:hover{transform:translateY(-1px) scale(1.05)}
+.icon-btn:active{transform:scale(.92)}
+.icon-btn svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.icon-btn .on,.icon-btn[aria-pressed="true"] .off{display:none}
+.icon-btn[aria-pressed="true"] .on{display:block}
+@keyframes wavePulse{0%,100%{opacity:1}50%{opacity:.35}}
+.icon-btn[aria-pressed="true"] .w2{animation:wavePulse 1.6s ease-in-out infinite}
+</style>
+
+<script>
+import { $ } from '../scripts/dom';
+import { onSky, type Sky } from '../scripts/sky';
+import { setSound, soundOn } from '../scripts/sound';
+
+const soundBtn = $<HTMLButtonElement>('#soundBtn');
+let sky: Sky;
+onSky((painted) => { sky = painted; });
+
+soundBtn.addEventListener('click', () => {
+  const next = !soundOn();
+  soundBtn.setAttribute('aria-pressed', String(next));
+  setSound(next, sky.scape);
+});
+</script>

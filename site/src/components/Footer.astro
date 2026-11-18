@@ -1,0 +1,38 @@
+---
+import { DOWNLOAD, SOURCE } from '../lib/links';
+
+const links = [
+  { href: 'whats-new/', text: 'What’s new' },
+  { href: SOURCE, text: 'Source' },
+  { href: DOWNLOAD, text: 'Download' },
+  { href: '#top', text: 'Back to the top' },
+];
+---
+<footer class="foot sec">
+<div class="wrap foot-top">
+<div class="foot-def">
+<p>parc <span>/pärk/</span> noun</p>
+<p>1. A browser one guy built instead of sleeping. 2. A nice place to sit.</p>
+</div>
+<nav class="foot-links" aria-label="Footer">
+{links.map((link) => <a href={link.href}>{link.text}</a>)}
+</nav>
+</div>
+<p class="foot-word" aria-hidden="true">parc</p>
+</footer>
+
+<style>
+.foot{padding-top:110px;overflow:hidden;background:url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%201440%20100%27%3E%3Cg%20fill=%27%23FFF6DE%27%3E%3Ccircle%20cx=%27895%27%20cy=%2771%27%20r=%271.6%27%20fill-opacity=%270.92%27/%3E%3Ccircle%20cx=%271062%27%20cy=%2786%27%20r=%270.7%27%20fill-opacity=%270.85%27/%3E%3Ccircle%20cx=%271113%27%20cy=%2730%27%20r=%270.7%27%20fill-opacity=%270.89%27/%3E%3Ccircle%20cx=%27169%27%20cy=%2748%27%20r=%270.8%27%20fill-opacity=%270.58%27/%3E%3Ccircle%20cx=%27153%27%20cy=%2730%27%20r=%271.6%27%20fill-opacity=%270.48%27/%3E%3Ccircle%20cx=%27406%27%20cy=%2785%27%20r=%271.1%27%20fill-opacity=%270.45%27/%3E%3Ccircle%20cx=%271143%27%20cy=%2721%27%20r=%271.3%27%20fill-opacity=%270.62%27/%3E%3Ccircle%20cx=%27196%27%20cy=%2790%27%20r=%270.7%27%20fill-opacity=%270.48%27/%3E%3Ccircle%20cx=%27315%27%20cy=%2791%27%20r=%270.8%27%20fill-opacity=%270.52%27/%3E%3Ccircle%20cx=%271377%27%20cy=%2754%27%20r=%271.6%27%20fill-opacity=%270.73%27/%3E%3Ccircle%20cx=%27267%27%20cy=%2789%27%20r=%270.8%27%20fill-opacity=%270.93%27/%3E%3Ccircle%20cx=%271281%27%20cy=%2735%27%20r=%271%27%20fill-opacity=%270.60%27/%3E%3Ccircle%20cx=%271341%27%20cy=%2732%27%20r=%271%27%20fill-opacity=%270.53%27/%3E%3Ccircle%20cx=%27867%27%20cy=%2710%27%20r=%271.6%27%20fill-opacity=%270.77%27/%3E%3Ccircle%20cx=%27102%27%20cy=%2739%27%20r=%271%27%20fill-opacity=%270.64%27/%3E%3Ccircle%20cx=%27458%27%20cy=%2749%27%20r=%271.6%27%20fill-opacity=%270.46%27/%3E%3Ccircle%20cx=%27373%27%20cy=%2787%27%20r=%271.6%27%20fill-opacity=%270.56%27/%3E%3Ccircle%20cx=%27584%27%20cy=%2755%27%20r=%271.1%27%20fill-opacity=%270.57%27/%3E%3Ccircle%20cx=%27832%27%20cy=%2711%27%20r=%270.7%27%20fill-opacity=%270.77%27/%3E%3Ccircle%20cx=%27896%27%20cy=%2788%27%20r=%270.7%27%20fill-opacity=%270.80%27/%3E%3Ccircle%20cx=%271332%27%20cy=%2787%27%20r=%271%27%20fill-opacity=%270.66%27/%3E%3Ccircle%20cx=%271279%27%20cy=%2731%27%20r=%271.1%27%20fill-opacity=%270.41%27/%3E%3Ccircle%20cx=%271074%27%20cy=%2775%27%20r=%271%27%20fill-opacity=%270.37%27/%3E%3Ccircle%20cx=%271355%27%20cy=%2717%27%20r=%271%27%20fill-opacity=%270.66%27/%3E%3Ccircle%20cx=%27524%27%20cy=%2722%27%20r=%271%27%20fill-opacity=%270.90%27/%3E%3Ccircle%20cx=%27784%27%20cy=%2736%27%20r=%271%27%20fill-opacity=%270.53%27/%3E%3Ccircle%20cx=%271145%27%20cy=%2761%27%20r=%271.6%27%20fill-opacity=%270.76%27/%3E%3Ccircle%20cx=%271427%27%20cy=%2723%27%20r=%270.7%27%20fill-opacity=%270.40%27/%3E%3C/g%3E%3C/svg%3E") center top/1440px 100px repeat-x,var(--navy);color:var(--page)}
+.foot-top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:40px}
+.foot-def{max-width:420px}
+.foot-def p:first-child{font:30px/1.1 var(--serif)}
+.foot-def p:first-child span{font-style:italic;color:#C9C2D9}
+.foot-def p + p{margin-top:12px;font-size:16px;line-height:1.6;color:#D9D2C3}
+.foot-links{display:flex;flex-wrap:wrap;gap:28px;font-size:15px;font-weight:500}
+.foot-links a{color:var(--page)}
+.foot-links a:hover{color:#FFE7A0}
+.foot-word{max-width:1280px;margin:40px auto 0;font:clamp(180px,30vw,440px)/.74 var(--serif);letter-spacing:-.04em;color:var(--page)}
+@media (max-width:640px){
+  .foot{padding-top:96px;background-size:900px 62px,auto}
+}
+</style>

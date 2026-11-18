@@ -1,0 +1,77 @@
+---
+const TRAIL = ['#FF4A57', '#2D5BFF', '#7DB36B', '#FFB347', '#B0408F', '#2D5BFF', '#FF4A57'];
+
+const dots = TRAIL.map((color, i) => ({
+  shape: i % 2 ? 'petal' : 'leaf',
+  style: { width: `${12 - i}px`, height: `${12 - i}px`, background: color },
+}));
+---
+<div id="trail" aria-hidden="true">{dots.map(({ shape, style }) => <span class:list={['trail-dot', shape]} style={style}></span>)}</div>
+
+<style>
+#trail{position:absolute;inset:0;pointer-events:none;z-index:60}
+.trail-dot{position:absolute;left:0;top:0;margin:-6px 0 0 -6px;opacity:0;transition:opacity .6s;will-change:transform}
+.leaf{border-radius:0 80% 0 80%}
+.petal{border-radius:50%}
+.trail-night{background:#FFE7A0!important;border-radius:50%!important;box-shadow:0 0 10px 3px rgba(255,214,120,.55)}
+</style>
+
+<script>
+import { $, $$, reduced } from '../scripts/dom';
+import { onSky } from '../scripts/sky';
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+const root = $('#root');
+const trailEls = $$('.trail-dot', $('#trail'));
+const tp: Point[] = trailEls.map(() => ({ x: -200, y: -200 }));
+let mouse: Point | null = null;
+let lastMove = 0;
+let trailShown = false;
+let trailRunning = false;
+
+onSky((sky) => {
+  trailEls.forEach((dot) => dot.classList.toggle('trail-night', sky.night));
+});
+
+function trailFrame() {
+  if (!mouse || performance.now() - lastMove > 1400) {
+    if (trailShown) {
+      trailEls.forEach((dot) => { dot.style.opacity = '0'; });
+      trailShown = false;
+    }
+    trailRunning = false;
+    return;
+  }
+  let tx = mouse.x, ty = mouse.y;
+  tp.forEach((p, i) => {
+    const k = i === 0 ? .4 : .32;
+    p.x += (tx - p.x) * k;
+    p.y += (ty - p.y) * k;
+    tx = p.x;
+    ty = p.y;
+    trailEls[i].style.transform = `translate3d(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px, 0) rotate(${Math.round(i * 40 + p.x * .6)}deg)`;
+  });
+  requestAnimationFrame(trailFrame);
+}
+
+root.addEventListener('mousemove', (e) => {
+  if (reduced) return;
+  const r = root.getBoundingClientRect();
+  mouse = { x: e.clientX - r.left, y: e.clientY - r.top };
+  lastMove = performance.now();
+  if (!trailShown) {
+    trailEls.forEach((dot, i) => { dot.style.opacity = String(1 - i * .1); });
+    trailShown = true;
+  }
+  if (!trailRunning) {
+    trailRunning = true;
+    requestAnimationFrame(trailFrame);
+  }
+});
+
+root.addEventListener('mouseleave', () => { mouse = null; });
+</script>

@@ -1,0 +1,19 @@
+.banner.site{position:relative;padding-top:120px}
+.site-nav{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:16px;max-width:1120px;margin:0 auto;padding:24px 32px}
+.site-nav a{color:#FFFCEC;text-decoration:none}
+.home{display:inline-flex;align-items:center;gap:10px;font:italic 600 30px/1 var(--display)}
+.home .mark{width:17px;height:25px;margin:0}
+.get{display:inline-flex;align-items:center;padding:11px 20px;border-radius:999px;background:#FFFCEC;font:600 15px/1 var(--body);text-decoration:none;transition:transform .3s cubic-bezier(.3,1.6,.5,1)}
+.site-nav .get{color:#3139FB}
+.get:hover{transform:translateY(-1px) scale(1.03)}
+.site-foot{padding:0 0 96px;text-align:center}
+.site-foot .squiggle{margin:0 0 56px}
+.site-foot h2{font:italic 600 46px/1 var(--display);letter-spacing:-.01em;color:var(--ink)}
+.site-foot p{max-width:440px;margin:16px auto 0;font-size:16px}
+.site-foot .site-cta{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px 18px;max-width:none;margin-top:28px}
+.site-foot .get{background:var(--new);color:#FFFCEC}
+.site-cta code{font:13px var(--mono);color:var(--muted)}
+.site-foot .site-links{display:flex;justify-content:center;gap:22px;margin-top:36px;font-size:14px}
+.site-links a{color:var(--muted)}
+.site-links a:hover{color:var(--new)}
+@media (max-width:640px){.banner.site{padding-top:104px}.site-nav{padding:18px 24px}.home{font-size:26px}}

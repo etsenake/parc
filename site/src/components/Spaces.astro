@@ -1,0 +1,152 @@
+---
+import { SPACES } from '../data/spaces';
+---
+<section id="spaces" class="spaces sec">
+<div class="wrap split">
+<div class="copy">
+<p class="eyebrow">Spaces</p>
+<h2 class="h2">Profiles? Never heard of them.</h2>
+<p class="body">Each Space keeps its own logins, or shares them with another. That’s the whole setting.</p>
+<div role="group" aria-label="Pick a Space" id="swatches" class="swatches">{SPACES.map((space) => <button class="swatch" type="button"><i style={`background:${space.color}`} aria-hidden="true"></i><span>{space.name}</span></button>)}</div>
+<p class="hand note" aria-hidden="true">an old Arc gripe, fixed</p>
+</div>
+<div class="mock" aria-hidden="true">
+<div class="mock-side" id="sbar">
+<div class="traffic"><i></i><i></i><i></i></div>
+<div class="mock-url" id="sUrl"></div>
+<div class="mock-pins" id="sPins"></div>
+<div class="mock-space"><i></i><span id="sName"></span><b>•••</b></div>
+<div class="mock-today" id="sToday"></div>
+<div class="mock-dots" id="sDots">{SPACES.map((space) => <button class="dot-btn" type="button" tabindex="-1" aria-label={`Switch to ${space.name}`}></button>)}</div>
+</div>
+<div class="mock-page" id="sPage">
+<span class="mock-pill" id="sPill"></span>
+<p class="mock-title" id="sTitle"></p>
+<div class="swho"><i id="sAv">Y</i><span id="sWho"></span></div>
+<div class="mock-lines"><i></i><i></i><i></i><i></i></div>
+<div class="mock-img" id="sImg">
+<i id="sCircle"></i>
+<svg viewBox="0 0 400 120" preserveAspectRatio="none"><path d="M0 70 C 90 30, 170 50, 250 70 C 320 88, 360 60, 400 56 L400 120 L0 120 Z" fill="#FFFFFF" opacity=".7"/></svg>
+</div>
+</div>
+<div id="sMenu" class="smenu">
+<p class="smenu-h">Share data with</p>
+<div id="sMenuRows"></div>
+<i class="smenu-sep"></i>
+<div class="smenu-row" id="sKeep"><span class="smenu-check">✓</span>Keep separate</div>
+</div>
+</div>
+</div>
+</section>
+
+<style>
+.spaces{margin-inline:clamp(10px,1.8vw,28px);padding-block:128px;border-radius:clamp(28px,3.4vw,52px);background-color:#E3E8FC;transition:background-color .8s ease}
+.spaces .copy{flex:1 1 360px;max-width:470px}
+.swatches{display:flex;flex-wrap:wrap;gap:10px;margin-top:30px}
+.swatch{display:inline-flex;align-items:center;gap:10px;min-height:44px;padding:9px 18px 9px 9px;border:1.5px solid rgba(24,32,58,.18);border-radius:999px;background:rgba(255,255,255,.6);color:var(--navy);font-size:15px;font-weight:600;transition:transform .4s var(--spring),border-color .3s,background-color .3s,box-shadow .3s}
+.swatch:hover{transform:translateY(-2px)}
+.swatch.is-on{border-color:var(--navy);background:#FFFFFF;box-shadow:0 0 0 4px rgba(24,32,58,.1)}
+.swatch i{width:26px;height:26px;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(255,255,255,.45)}
+.mock{position:relative;flex:999 1 560px;min-width:0;height:540px;display:flex;border-radius:18px;overflow:hidden;background:#FFFDF9;box-shadow:0 40px 90px rgba(24,32,58,.18),0 0 0 1px rgba(24,32,58,.06)}
+.mock-side{position:relative;flex:none;width:252px;padding:16px 14px;display:flex;flex-direction:column;gap:16px;color:#FFFFFF;background-color:#3D63F0;transition:background-color .8s ease}
+.mock-side::before{content:"";position:absolute;inset:0;background:linear-gradient(165deg,rgba(255,255,255,.16),rgba(255,255,255,0) 45%,rgba(0,0,0,.14));pointer-events:none}
+.mock-side > *{position:relative}
+.traffic{display:flex;gap:8px;padding:4px 4px 0}
+.traffic i{width:12px;height:12px;border-radius:50%;background:#FF5F57}
+.traffic i:nth-child(2){background:#FEBC2E}.traffic i:nth-child(3){background:#28C840}
+.mock-url{padding:9px 12px;border-radius:10px;background:rgba(255,255,255,.2);font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mock-pins{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.mock-pins :global(div){height:44px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:rgba(255,255,255,.22);font-size:16px;font-weight:700}
+.mock-space{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700}
+.mock-space i{width:10px;height:10px;border-radius:3px;background:#FFFFFF}
+.mock-space b{margin-left:auto;letter-spacing:2px;opacity:.85}
+.mock-today{display:flex;flex-direction:column;gap:4px}
+.mock-today :global(div){display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;font-size:14px;font-weight:500}
+.mock-today :global(div:first-child){background:rgba(255,255,255,.28)}
+.mock-today :global(i){flex:none;width:16px;height:16px;border-radius:5px;background:rgba(255,255,255,.55)}
+.mock-today :global(span){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mock-dots{margin-top:auto;display:flex;justify-content:center;gap:12px;padding-bottom:4px}
+.dot-btn{width:12px;height:12px;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.42);transition:transform .3s var(--spring)}
+.dot-btn:hover{transform:scale(1.4)}
+.dot-btn.is-on{background:#FFFFFF}
+.mock-page{flex:1;min-width:0;padding:34px 36px;display:flex;flex-direction:column;gap:16px}
+.mock-pill{align-self:flex-start;padding:5px 12px;border-radius:999px;color:#FFFFFF;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.mock-title{font:40px/1 var(--serif)}
+.swho{display:flex;align-items:center;gap:10px;min-width:0;font-size:13px;font-weight:600;color:var(--text)}
+.swho i{display:flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px;border-radius:50%;color:#FFFFFF;font-style:normal;font-size:12px;font-weight:700;transition:background-color .6s}
+.swho span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mock-lines{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+.mock-lines i{height:10px;border-radius:5px;background:#ECE6DA}
+.mock-lines i:nth-child(1){width:92%}.mock-lines i:nth-child(2){width:84%}.mock-lines i:nth-child(3){width:88%}.mock-lines i:nth-child(4){width:52%}
+.mock-img{position:relative;flex:1;min-height:120px;border-radius:14px;overflow:hidden;transition:background-color .8s ease}
+.mock-img i{position:absolute;right:12%;top:22%;width:74px;height:74px;border-radius:50%;opacity:.85;transition:background-color .8s ease}
+.mock-img svg{position:absolute;left:0;bottom:0;width:100%;height:60%}
+.smenu{position:absolute;left:178px;top:178px;z-index:3;width:214px;padding:6px;border-radius:12px;background:rgba(255,255,255,.95);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);box-shadow:0 0 0 .5px rgba(24,32,58,.2),0 18px 40px rgba(24,32,58,.22);color:var(--navy);font-size:13.5px;transform-origin:top left}
+.smenu-h{padding:6px 10px 4px;font-size:11.5px;font-weight:700;color:#6F6452}
+:global(.smenu-row){position:relative;display:flex;align-items:center;gap:8px;padding:6px 10px 6px 28px;border-radius:7px;font-weight:500}
+:global(.smenu-row i){flex:none;width:10px;height:10px;border-radius:3px}
+:global(.smenu-check){position:absolute;left:10px;font-size:12px;font-weight:700;opacity:0;transition:opacity .3s}
+:global(.smenu-row.on .smenu-check){opacity:1}
+.smenu-sep{display:block;height:1px;margin:5px 8px;background:rgba(24,32,58,.12)}
+@keyframes fadeA{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes fadeB{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.fade-a{animation:fadeA .6s cubic-bezier(.2,.8,.2,1) both}
+.fade-b{animation:fadeB .6s cubic-bezier(.2,.8,.2,1) both}
+@keyframes menuA{from{opacity:0;transform:scale(.9) translateY(-6px)}to{opacity:1;transform:none}}
+@keyframes menuB{from{opacity:0;transform:scale(.9) translateY(-6px)}to{opacity:1;transform:none}}
+.menu-a{animation:menuA .5s cubic-bezier(.2,1.25,.4,1) .12s both}
+.menu-b{animation:menuB .5s cubic-bezier(.2,1.25,.4,1) .12s both}
+@media (max-width:640px){
+  .spaces{padding-top:88px;padding-bottom:88px}
+  .mock{height:440px}
+  .mock-side{width:136px;padding:12px 10px;gap:12px}
+  .mock-page{padding:20px 18px;gap:12px}
+  .mock-title{font-size:26px}
+  .smenu{left:92px;top:168px;width:190px;font-size:12.5px}
+}
+</style>
+
+<script>
+import { $, $$, el } from '../scripts/dom';
+import { chime, sfx } from '../scripts/sound';
+import { ACCOUNTS, SPACES } from '../data/spaces';
+
+const section = $('#spaces');
+const swatches = $$<HTMLButtonElement>('.swatch', $('#swatches'));
+const dots = $$<HTMLButtonElement>('.dot-btn', $('#sDots'));
+const pins = $('#sPins'), today = $('#sToday'), page = $('#sPage'), menu = $('#sMenu');
+let current = 0;
+let fadeFlip = false;
+
+function renderSpace() {
+  const sp = SPACES[current], fade = fadeFlip ? 'fade-b' : 'fade-a', account = ACCOUNTS[sp.account];
+  section.style.backgroundColor = sp.tint; $('#sbar').style.backgroundColor = sp.color;
+  $('#sUrl').textContent = sp.url; $('#sName').textContent = sp.name;
+  pins.classList.remove('fade-a', 'fade-b'); pins.classList.add(fade); pins.replaceChildren(...sp.pins.map((g) => el('div', '', g)));
+  today.classList.remove('fade-a', 'fade-b'); today.classList.add(fade);
+  today.replaceChildren(...sp.today.map((t) => { const row = el('div'); row.append(el('i'), el('span', '', t)); return row; }));
+  page.classList.remove('fade-a', 'fade-b'); page.classList.add(fade); $('#sPill').style.backgroundColor = sp.color; $('#sPill').textContent = sp.name; $('#sTitle').textContent = sp.title;
+  $('#sImg').style.backgroundColor = sp.tint; $('#sCircle').style.backgroundColor = sp.color;
+  $('#sAv').style.backgroundColor = account.av; $('#sWho').textContent = account.who;
+  const others = SPACES.filter((o) => o !== sp);
+  $('#sMenuRows').replaceChildren(...others.map((o) => {
+    const row = el('div', 'smenu-row' + (o.account === sp.account ? ' on' : ''));
+    const swatch = el('i'); swatch.style.background = o.color;
+    row.append(el('span', 'smenu-check', '✓'), swatch, document.createTextNode(o.name));
+    return row;
+  }));
+  $('#sKeep').classList.toggle('on', !others.some((o) => o.account === sp.account));
+  menu.classList.remove('menu-a', 'menu-b'); menu.classList.add(fadeFlip ? 'menu-b' : 'menu-a');
+  swatches.forEach((b, i) => { b.classList.toggle('is-on', i === current); b.setAttribute('aria-pressed', String(i === current)); });
+  dots.forEach((d, i) => d.classList.toggle('is-on', i === current));
+}
+
+function pickSpace(i: number) {
+  const sp = SPACES[i]; sfx(() => chime([sp.note, sp.note * 1.5], .08, .1));
+  if (i === current) return; current = i; fadeFlip = !fadeFlip; renderSpace();
+}
+
+swatches.forEach((b, i) => b.addEventListener('click', () => pickSpace(i)));
+dots.forEach((d, i) => d.addEventListener('click', () => pickSpace(i)));
+renderSpace();
+</script>

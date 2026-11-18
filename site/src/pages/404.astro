@@ -1,19 +1,51 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Lost in the park — Parc</title>
-<meta name="description" content="This path wandered off. Head back to Parc, the free, open-source browser for your Mac.">
-<meta name="robots" content="noindex">
-<meta name="theme-color" content="#F4B79A">
-<link rel="icon" href="/assets/favicon.png" sizes="64x64" type="image/png">
-<link rel="preload" href="/assets/fonts/InstrumentSerif.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/assets/fonts/InstrumentSerif-Italic.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/assets/fonts/InstrumentSans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/site.css">
+---
+import { Image } from 'astro:assets';
+import Base from '../layouts/Base.astro';
+import Hills from '../components/Hills.astro';
+import Nav from '../components/Nav.astro';
+import mark from '../assets/images/p-mark.png';
+---
+<Base
+  title="Lost in the park — Parc"
+  description="This path wandered off. Head back to Parc, the free, open-source browser for your Mac."
+  robots="noindex"
+>
+<div class="site lost">
+<div class="lost-sun" aria-hidden="true"></div>
+<div class="cloud lc1" aria-hidden="true"></div>
+<div class="cloud lc2" aria-hidden="true"></div>
+
+<Nav home="/" />
+
+<main class="lost-main sec">
+<div class="wrap">
+<p class="eyebrow">404</p>
+<h1 class="lost-h">This path <em>wandered off.</em></h1>
+<p class="lost-line">Even the nicest park has a trail that goes nowhere.</p>
+<div class="lost-cta">
+<a class="btn-ink sky-btn" href="/">Back to Parc</a>
+<a class="lost-link" href="/whats-new/">See what’s new</a>
+</div>
+</div>
+</main>
+
+<div class="lost-scene" aria-hidden="true">
+<div class="lost-tree">
+<div class="tree-t"></div>
+<div class="tree-c lt-a"></div>
+<div class="tree-c lt-b"></div>
+<div class="tree-c lt-c"></div>
+<svg class="kite-string" viewBox="0 0 230 300"><path d="M54 -14 C 4 46, 10 222, -30 422"/></svg>
+<div class="lost-kite-wrap"><Image class="lost-kite" src={mark} alt="" width={84} height={124} densities={[1, 2]} format="png" loading="eager" decoding="auto" /></div>
+<p class="hand lost-note">it’ll come down eventually</p>
+</div>
+<Hills />
+</div>
+</div>
+</Base>
+
 <style>
-body{background:#4C8661}
+:global(body){background:#4C8661}
 .lost{--ink:#1C2440;--ink-soft:rgba(28,36,64,.82);--ink-inv:#FFF4E6;--string:rgba(28,36,64,.5);--cloud:.9;--hill-back:#A9C79B;--hill-mid:#78A982;--hill-front:#4C8661;--tree:#5E9470;--trunk:#5B4632;display:flex;flex-direction:column;min-height:100vh;min-height:100svh;background:linear-gradient(180deg,#F4B79A 0%,#F9D3B4 42%,#FCEBD6 78%,#FFF4E6 100%);color:var(--ink)}
 .lost-sun{position:absolute;left:58%;top:150px;width:130px;height:130px;border-radius:50%;background:#FFF1DA;box-shadow:0 0 0 18px rgba(255,214,170,.55),0 0 0 48px rgba(255,196,150,.32),0 0 180px 40px rgba(255,196,150,.32);animation:breathe 9s ease-in-out infinite}
 .lost .cloud{left:62%}
@@ -52,47 +84,3 @@ body{background:#4C8661}
 }
 @media (prefers-reduced-motion:reduce){.lost-sun,.lost .cloud,.lost-kite{animation:none}}
 </style>
-</head>
-<body>
-<div class="site lost">
-<div class="lost-sun" aria-hidden="true"></div>
-<div class="cloud lc1" aria-hidden="true"></div>
-<div class="cloud lc2" aria-hidden="true"></div>
-
-<nav class="nav sec" aria-label="Main">
-<a class="logo" href="/" aria-label="Parc home"><span class="logo-word" aria-hidden="true"><img src="/assets/p-mark.png" alt="" width="21" height="31">arc</span></a>
-</nav>
-
-<main class="lost-main sec">
-<div class="wrap">
-<p class="eyebrow">404</p>
-<h1 class="lost-h">This path <em>wandered off.</em></h1>
-<p class="lost-line">Even the nicest park has a trail that goes nowhere.</p>
-<div class="lost-cta">
-<a class="btn-ink sky-btn" href="/">Back to Parc</a>
-<a class="lost-link" href="/whats-new/">See what’s new</a>
-</div>
-</div>
-</main>
-
-<div class="lost-scene" aria-hidden="true">
-<div class="lost-tree">
-<div class="tree-t"></div>
-<div class="tree-c lt-a"></div>
-<div class="tree-c lt-b"></div>
-<div class="tree-c lt-c"></div>
-<svg class="kite-string" viewBox="0 0 230 300"><path d="M54 -14 C 4 46, 10 222, -30 422"/></svg>
-<div class="lost-kite-wrap"><img class="lost-kite" src="/assets/p-mark.png" alt="" width="84" height="124"></div>
-<p class="hand lost-note">it’ll come down eventually</p>
-</div>
-<div class="hills">
-<svg viewBox="0 0 1440 300" preserveAspectRatio="none">
-<path class="h-back" d="M0 140 C 200 70, 420 80, 640 120 C 860 160, 1100 60, 1440 100 L1440 300 L0 300 Z"/>
-<path class="h-mid" d="M0 200 C 280 130, 560 180, 820 190 C 1080 200, 1260 150, 1440 170 L1440 300 L0 300 Z"/>
-<path class="h-front" d="M0 250 C 360 205, 720 260, 1080 230 C 1260 218, 1370 236, 1440 240 L1440 300 L0 300 Z"/>
-</svg>
-</div>
-</div>
-</div>
-</body>
-</html>

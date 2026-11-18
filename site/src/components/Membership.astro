@@ -1,0 +1,125 @@
+---
+import { Image } from 'astro:assets';
+import mono from '../assets/images/p-mono.png';
+
+const blobs = ['ba b1', 'bb b2', 'bb b3', 'ba b4', 'ba b5'];
+---
+<section id="yours" class="yours sec">
+<div class="wrap split">
+<div class="copy">
+<p class="eyebrow">Membership</p>
+<h2 class="h2">No accounts. <em>Here’s your card anyway.</em></h2>
+<p class="body">It lives in Settings. Shuffle it till you love it.</p>
+<label class="field-label" for="cardName">Name on the card</label>
+<input id="cardName" class="field" type="text" autocomplete="off" maxlength="64" placeholder="Your name">
+<div class="shuffle-row">
+<button class="ghost" id="shuffle" type="button">
+<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg>
+Shuffle
+</button>
+<p class="hand note" aria-hidden="true">it’s shiny</p>
+</div>
+</div>
+<div class="card-stage">
+<div class="tilt" id="tiltZone">
+<div id="mcard" class="mcard" role="img" aria-label="Parc membership card">
+<div class="mcard-art" id="cardArt">
+{blobs.map((blob) => <span class:list={['blob', blob]}></span>)}
+<Image src={mono} alt="" width={26} height={38} densities={[1, 2]} format="png" loading="eager" decoding="auto" />
+</div>
+<div class="mcard-who">
+<p class="mcard-title" id="cardTitle"></p>
+<p class="mcard-name" id="cardShow">Your Name</p>
+</div>
+<div class="mcard-foot">
+<div><small>CARD CREATED</small><b id="cardDate"></b></div>
+<p>PARC</p>
+</div>
+<div id="sheen" class="sheen"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<style>
+.yours{position:relative;padding-block:128px;background:#FFE08A}
+.yours::before{content:"";position:absolute;left:0;right:0;top:0;height:12px;background:radial-gradient(circle at 16px 0,#EFE5D2 11px,transparent 11.5px) 0 0/32px 12px repeat-x;pointer-events:none}
+.yours .split{gap:72px}
+.yours .copy{flex:1 1 360px;max-width:500px}
+.field-label{display:block;margin-top:30px;font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--umber)}
+.field{width:100%;min-height:52px;margin-top:10px;padding:12px 16px;border:1.5px solid rgba(24,32,58,.2);border-radius:14px;background:#FFFFFF;color:var(--navy);font:inherit;font-size:18px;outline:none;transition:border-color .2s,box-shadow .2s}
+.field:focus{border-color:var(--blue);box-shadow:0 0 0 4px rgba(45,91,255,.18)}
+.shuffle-row{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:16px}
+.shuffle-row .note{margin-top:0;font-size:25px}
+.card-stage{flex:1 1 360px;display:flex;justify-content:center}
+.tilt{padding:30px;perspective:1100px}
+.mcard{position:relative;width:320px;max-width:78vw;height:480px;overflow:hidden;border-radius:26px;background:#FFFDF8;color:var(--navy);box-shadow:0 40px 90px rgba(24,32,58,.28),0 0 0 1px rgba(24,32,58,.06);transition:transform .18s ease-out}
+.mcard-art{position:relative;height:250px;margin:16px;overflow:hidden;border-radius:18px;transition:background-color .6s}
+.mcard-art img{position:absolute;right:16px;bottom:16px;width:26px;height:auto;opacity:.9;filter:brightness(0) invert(1)}
+@keyframes blobA{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(34px,-24px) scale(1.18)}}
+@keyframes blobB{0%,100%{transform:translate(0,0) scale(1.1)}50%{transform:translate(-30px,26px) scale(.9)}}
+.blob{position:absolute;border-radius:50%;filter:blur(26px);opacity:.95}
+.ba{animation:blobA 9s ease-in-out infinite}
+.bb{animation:blobB 11s ease-in-out infinite}
+.b1{left:-12%;top:-14%;width:190px;height:190px}
+.b2{left:48%;top:4%;width:170px;height:170px;animation-delay:-2s}
+.b3{left:8%;top:42%;width:200px;height:200px;animation-delay:-4s}
+.b4{left:58%;top:52%;width:160px;height:160px;animation-delay:-6s}
+.b5{left:-6%;top:70%;width:150px;height:150px;animation-delay:-3s}
+.mcard-who{padding:4px 26px 0}
+.mcard-title{font:11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:#5A5568}
+.mcard-name{margin-top:8px;font-size:34px;font-weight:700;line-height:1.02;letter-spacing:-.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mcard-foot{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:flex-end;padding:18px 26px 22px;border-top:1.5px dashed rgba(24,32,58,.25);font-family:var(--mono)}
+.mcard-foot small{display:block;font-size:10px;letter-spacing:.14em;color:#5A5568}
+.mcard-foot b{display:block;margin-top:4px;font-size:14px;font-weight:600}
+.mcard-foot p{font-size:14px;font-weight:600;letter-spacing:.2em}
+.sheen{position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;background:linear-gradient(115deg,rgba(255,255,255,0) 25%,rgba(255,255,255,.55) 42%,rgba(160,210,255,.45) 50%,rgba(255,170,230,.35) 58%,rgba(255,255,255,0) 72%);background-size:260% 260%;background-position:50% 50%}
+@media (max-width:640px){
+  .yours{padding-top:88px;padding-bottom:88px}
+  .yours{padding-block:88px}
+  .tilt{padding:10px}
+}
+</style>
+
+<script>
+import { $, $$, reduced } from '../scripts/dom';
+import { onSky, TIMES, type Sky } from '../scripts/sky';
+import { chime, sfx } from '../scripts/sound';
+
+const TITLES = ['Professional Bench Sitter', 'Chief Kite Officer', 'Keeper of the Archive', 'Certified Tab Gardener', 'Regional Duck Liaison', 'Sunday Navigator', 'Friend of the Fireflies'];
+const PALETTES = [
+  { base: '#F7C9B0', colors: ['#FF8A6B', '#FFD27A', '#9CC8F5', '#FF4A57', '#F4B79A'] },
+  { base: '#BFE0FA', colors: ['#2D5BFF', '#7DB36B', '#FFE7A0', '#6FA9EE', '#FFFFFF'] },
+  { base: '#F4A26C', colors: ['#FF4A57', '#FFD27A', '#8E5C9E', '#E9805B', '#FCE3B6'] },
+  { base: '#18205A', colors: ['#FFE7A0', '#7550E6', '#3D63F0', '#FF9DB0', '#2C2F6E'] },
+];
+
+const nameIn = $<HTMLInputElement>('#cardName'), mcard = $('#mcard'), sheen = $('#sheen'), cardArt = $('#cardArt');
+let sky: Sky;
+let shuffle = 0;
+
+function paintCard() {
+  const pal = PALETTES[(TIMES.indexOf(sky.scape) + shuffle) % PALETTES.length];
+  cardArt.style.backgroundColor = pal.base;
+  $$('.blob', cardArt).forEach((b, i) => { b.style.background = pal.colors[i]; });
+  $('#cardTitle').textContent = TITLES[(shuffle * 3 + 1) % TITLES.length];
+  const n = nameIn.value.trim() || 'Your Name';
+  $('#cardShow').textContent = n;
+  mcard.setAttribute('aria-label', 'Parc membership card for ' + n);
+}
+
+onSky((next) => { sky = next; paintCard(); });
+$('#cardDate').textContent = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+nameIn.addEventListener('input', paintCard);
+$('#shuffle').addEventListener('click', () => { sfx(() => chime([880, 1174.66, 1318.51, 1760], .05, .05)); shuffle += 1; paintCard(); });
+
+const tiltZone = $('#tiltZone');
+tiltZone.addEventListener('mousemove', (e) => {
+  if (reduced) return;
+  const r = tiltZone.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+  mcard.style.transform = `rotateX(${(-y * 16).toFixed(2)}deg) rotateY(${(x * 20).toFixed(2)}deg) scale(1.03)`;
+  sheen.style.backgroundPosition = `${(50 + x * 70).toFixed(1)}% ${(50 + y * 70).toFixed(1)}%`;
+});
+tiltZone.addEventListener('mouseleave', () => { mcard.style.transform = ''; sheen.style.backgroundPosition = '50% 50%'; });
+</script>

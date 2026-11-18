@@ -1,0 +1,80 @@
+---
+interface Row {
+  top: string;
+  color: string;
+  title: string;
+  age: string;
+  fall?: 'l1' | 'l2' | 'l3';
+}
+
+const rows: Row[] = [
+  { top: '0', color: '#3D63F0', title: 'Team calendar', age: 'now' },
+  { top: '62px', color: '#F0A35E', title: 'A newsletter from March', age: '13 h', fall: 'l1' },
+  { top: '124px', color: '#237A51', title: 'Pull request #212', age: '2 min' },
+  { top: '186px', color: '#E86A5A', title: 'That recipe you might make', age: '14 h', fall: 'l2' },
+  { top: '248px', color: '#7550E6', title: 'Standup notes', age: '1 h' },
+  { top: '310px', color: '#3AA0C8', title: 'Weather in Lisbon', age: '16 h', fall: 'l3' },
+];
+---
+<section class="arch sec">
+<svg class="scribble" viewBox="0 0 1000 110" aria-hidden="true"><defs><linearGradient id="scribbleInk" x1="0" x2="1"><stop offset="0" stop-color="#FF4A57"/><stop offset=".5" stop-color="#B0408F"/><stop offset="1" stop-color="#2D5BFF"/></linearGradient></defs><path pathLength="1" d="M20 64C70 34 120 34 170 60S270 88 320 62S420 34 470 58C520 82 590 92 628 66C660 44 650 14 616 16C584 18 576 50 604 66C640 86 700 84 740 62S840 36 890 58S960 74 984 52"/></svg>
+<div class="wrap split">
+<div class="arch-art">
+<div class="arch-box" aria-hidden="true">
+{rows.map((row) => <div class:list={['arow', row.fall]} style={`top:${row.top}`}><span style={`background:${row.color}`}></span><b>{row.title}</b><em>{row.age}</em></div>)}
+<div class="archive-bin">
+<svg viewBox="0 0 24 24"><path d="M3 7h18v4H3z"/><path d="M5 11v9h14v-9"/><path d="M10 15h4"/></svg>
+<p>Archive<small>Still here.</small></p>
+</div>
+</div>
+</div>
+<div class="copy">
+<p class="eyebrow">Auto-archive</p>
+<h2 class="h2">Hi, I’m a tab hoarder.</h2>
+<p class="body">100+ tabs across 10 windows, one very tired Mac. Arc got me clean, and Parc keeps me that way: untouched tabs tuck themselves away after 12 hours.</p>
+<p class="hand note" aria-hidden="true">relax, hoarders. nothing’s gone.</p>
+</div>
+</div>
+</section>
+
+<style>
+.arch{position:relative;padding-block:128px;background:var(--page)}
+.arch::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:61px;background:#3B2A52;pointer-events:none;-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%201440%2060%27%20preserveAspectRatio=%27none%27%3E%3Cpath%20d=%27M0%2041.6%20L12%2043.3%20L24%2044.4%20L36%2045.0%20L48%2045.2%20L60%2045.0%20L72%2044.5%20L84%2043.6%20L96%2042.7%20L108%2041.7%20L120%2040.7%20L132%2039.8%20L144%2039.2%20L156%2038.7%20L168%2038.5%20L180%2038.6%20L192%2038.8%20L204%2039.3%20L216%2039.7%20L228%2040.2%20L240%2040.5%20L252%2040.7%20L264%2040.6%20L276%2040.1%20L288%2039.2%20L300%2037.8%20L312%2036.1%20L324%2033.9%20L336%2031.4%20L348%2028.7%20L360%2025.8%20L372%2022.8%20L384%2019.9%20L396%2017.2%20L408%2014.8%20L420%2012.9%20L432%2011.4%20L444%2010.4%20L456%2010.0%20L468%2010.2%20L480%2010.8%20L492%2012.0%20L504%2013.5%20L516%2015.2%20L528%2017.1%20L540%2019.1%20L552%2021.1%20L564%2022.9%20L576%2024.4%20L588%2025.8%20L600%2026.8%20L612%2027.5%20L624%2027.9%20L636%2028.1%20L648%2028.2%20L660%2028.2%20L672%2028.2%20L684%2028.3%20L696%2028.6%20L708%2029.2%20L720%2030.1%20L732%2031.3%20L744%2032.8%20L756%2034.6%20L768%2036.7%20L780%2038.9%20L792%2041.2%20L804%2043.5%20L816%2045.7%20L828%2047.6%20L840%2049.1%20L852%2050.2%20L864%2050.7%20L876%2050.7%20L888%2050.2%20L900%2049.0%20L912%2047.4%20L924%2045.3%20L936%2042.9%20L948%2040.3%20L960%2037.5%20L972%2034.8%20L984%2032.2%20L996%2029.7%20L1008%2027.6%20L1020%2025.8%20L1032%2024.5%20L1044%2023.5%20L1056%2022.9%20L1068%2022.6%20L1080%2022.6%20L1092%2022.7%20L1104%2022.9%20L1116%2023.1%20L1128%2023.2%20L1140%2023.2%20L1152%2022.9%20L1164%2022.4%20L1176%2021.6%20L1188%2020.6%20L1200%2019.4%20L1212%2018.0%20L1224%2016.7%20L1236%2015.3%20L1248%2014.1%20L1260%2013.2%20L1272%2012.7%20L1284%2012.5%20L1296%2012.9%20L1308%2013.8%20L1320%2015.1%20L1332%2017.0%20L1344%2019.4%20L1356%2022.0%20L1368%2025.0%20L1380%2028.1%20L1392%2031.2%20L1404%2034.2%20L1416%2037.0%20L1428%2039.5%20L1440%2041.6%20V60%20H0Z%27/%3E%3C/svg%3E") left bottom/1440px 61px repeat-x;mask:url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%201440%2060%27%20preserveAspectRatio=%27none%27%3E%3Cpath%20d=%27M0%2041.6%20L12%2043.3%20L24%2044.4%20L36%2045.0%20L48%2045.2%20L60%2045.0%20L72%2044.5%20L84%2043.6%20L96%2042.7%20L108%2041.7%20L120%2040.7%20L132%2039.8%20L144%2039.2%20L156%2038.7%20L168%2038.5%20L180%2038.6%20L192%2038.8%20L204%2039.3%20L216%2039.7%20L228%2040.2%20L240%2040.5%20L252%2040.7%20L264%2040.6%20L276%2040.1%20L288%2039.2%20L300%2037.8%20L312%2036.1%20L324%2033.9%20L336%2031.4%20L348%2028.7%20L360%2025.8%20L372%2022.8%20L384%2019.9%20L396%2017.2%20L408%2014.8%20L420%2012.9%20L432%2011.4%20L444%2010.4%20L456%2010.0%20L468%2010.2%20L480%2010.8%20L492%2012.0%20L504%2013.5%20L516%2015.2%20L528%2017.1%20L540%2019.1%20L552%2021.1%20L564%2022.9%20L576%2024.4%20L588%2025.8%20L600%2026.8%20L612%2027.5%20L624%2027.9%20L636%2028.1%20L648%2028.2%20L660%2028.2%20L672%2028.2%20L684%2028.3%20L696%2028.6%20L708%2029.2%20L720%2030.1%20L732%2031.3%20L744%2032.8%20L756%2034.6%20L768%2036.7%20L780%2038.9%20L792%2041.2%20L804%2043.5%20L816%2045.7%20L828%2047.6%20L840%2049.1%20L852%2050.2%20L864%2050.7%20L876%2050.7%20L888%2050.2%20L900%2049.0%20L912%2047.4%20L924%2045.3%20L936%2042.9%20L948%2040.3%20L960%2037.5%20L972%2034.8%20L984%2032.2%20L996%2029.7%20L1008%2027.6%20L1020%2025.8%20L1032%2024.5%20L1044%2023.5%20L1056%2022.9%20L1068%2022.6%20L1080%2022.6%20L1092%2022.7%20L1104%2022.9%20L1116%2023.1%20L1128%2023.2%20L1140%2023.2%20L1152%2022.9%20L1164%2022.4%20L1176%2021.6%20L1188%2020.6%20L1200%2019.4%20L1212%2018.0%20L1224%2016.7%20L1236%2015.3%20L1248%2014.1%20L1260%2013.2%20L1272%2012.7%20L1284%2012.5%20L1296%2012.9%20L1308%2013.8%20L1320%2015.1%20L1332%2017.0%20L1344%2019.4%20L1356%2022.0%20L1368%2025.0%20L1380%2028.1%20L1392%2031.2%20L1404%2034.2%20L1416%2037.0%20L1428%2039.5%20L1440%2041.6%20V60%20H0Z%27/%3E%3C/svg%3E") left bottom/1440px 61px repeat-x}
+.scribble{position:absolute;left:50%;top:8px;width:min(1000px,88%);height:auto;transform:translateX(-50%);overflow:visible;pointer-events:none}
+.scribble path{fill:none;stroke:url(#scribbleInk);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:0;transition:stroke-dashoffset 2.4s cubic-bezier(.65,0,.25,1)}
+.scribble.is-waiting path{stroke-dashoffset:1}
+.arch .split{flex-wrap:wrap-reverse;gap:72px}
+.arch-art{flex:1 1 380px;display:flex;justify-content:center}
+.arch-box{position:relative;width:340px;height:570px}
+.arch .copy{flex:1 1 360px;max-width:500px}
+.arow{position:absolute;left:0;right:0;z-index:2;height:52px;display:flex;align-items:center;gap:12px;padding:0 16px;border-radius:14px;background:#FFFFFF;box-shadow:0 1px 0 rgba(24,32,58,.06),0 8px 20px rgba(24,32,58,.06)}
+.arow span{flex:none;width:20px;height:20px;border-radius:6px}
+.arow b{flex:1;min-width:0;font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arow em{font-style:normal;font-size:12px;color:#6F6452}
+.archive-bin{position:absolute;left:18px;right:18px;top:470px;z-index:3;height:96px;display:flex;align-items:center;gap:18px;padding:0 24px;border-radius:22px;background:var(--navy);color:var(--page);box-shadow:0 24px 44px rgba(24,32,58,.28)}
+.archive-bin svg{flex:none;width:34px;height:34px;fill:none;stroke:#FFE7A0;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.archive-bin p{font:30px/1 var(--serif)}
+.archive-bin small{display:block;margin-top:4px;font:13px var(--sans);color:#D9D2C3}
+@keyframes fall1{0%{opacity:0;transform:translateY(-10px)}6%{opacity:1;transform:none}46%{opacity:1;transform:none}54%{transform:translate(10px,18px) rotate(-7deg)}66%{transform:translate(-30px,150px) rotate(12deg)}78%{transform:translate(20px,290px) rotate(-10deg);opacity:1}90%{transform:translate(-6px,410px) rotate(4deg) scale(.82);opacity:0}100%{transform:translate(-6px,410px) scale(.82);opacity:0}}
+@keyframes fall2{0%{opacity:0;transform:translateY(-10px)}6%{opacity:1;transform:none}46%{opacity:1;transform:none}54%{transform:translate(-10px,16px) rotate(6deg)}66%{transform:translate(26px,110px) rotate(-12deg)}78%{transform:translate(-16px,210px) rotate(9deg);opacity:1}90%{transform:translate(4px,300px) rotate(-3deg) scale(.82);opacity:0}100%{transform:translate(4px,300px) scale(.82);opacity:0}}
+@keyframes fall3{0%{opacity:0;transform:translateY(-10px)}6%{opacity:1;transform:none}46%{opacity:1;transform:none}54%{transform:translate(8px,14px) rotate(-5deg)}66%{transform:translate(-20px,64px) rotate(10deg)}78%{transform:translate(14px,122px) rotate(-8deg);opacity:1}90%{transform:translate(0,176px) rotate(3deg) scale(.82);opacity:0}100%{transform:translate(0,176px) scale(.82);opacity:0}}
+.l1{animation:fall1 10s ease-in-out infinite}
+.l2{animation:fall2 10s ease-in-out infinite;animation-delay:3.3s}
+.l3{animation:fall3 10s ease-in-out infinite;animation-delay:6.6s}
+@media (max-width:640px){
+  .arch{padding-top:88px;padding-bottom:88px}
+  .arch-box{width:min(340px,100%)}
+  .arch::after{height:43px;-webkit-mask-size:760px 43px;mask-size:760px 43px}
+  .scribble path{stroke-width:11}
+}
+</style>
+
+<script>
+import { $, reduced } from '../scripts/dom';
+
+const scribble = $<SVGSVGElement>('.arch .scribble');
+if (!reduced && 'IntersectionObserver' in window) {
+  scribble.classList.add('is-waiting');
+  new IntersectionObserver((entries, seen) => entries.forEach((e) => { if (e.isIntersecting) { scribble.classList.remove('is-waiting'); seen.disconnect(); } }), { threshold: .6 }).observe(scribble);
+}
+</script>

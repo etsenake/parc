@@ -1,0 +1,56 @@
+---
+import { SOURCE } from '../lib/links';
+
+interface Link {
+  href: string;
+  text: string;
+}
+
+interface Entry {
+  question: string;
+  answer: (string | Link)[];
+}
+
+const entries: Entry[] = [
+  { question: 'Is it really free?', answer: ['Yes. No account, no subscription, no catch. Parc is open source under the AGPL, so every line is ', { href: SOURCE, text: 'on GitHub' }, '.'] },
+  { question: 'Which Macs does it run on?', answer: ['Apple Silicon Macs on macOS 13 Ventura or later. It updates itself, security fixes included.'] },
+  { question: 'Can I bring my Arc stuff?', answer: ['Yes. Your Arc Spaces, pinned tabs and Favorites move in the way you left them. Bookmarks, passwords, history and extensions come along from Chrome, Safari, Firefox and the rest.'] },
+  { question: 'Do my extensions work?', answer: ['Yes. Parc runs on its own build of Chromium, so extensions from the Chrome Web Store install the normal way.'] },
+  { question: 'Is anyone watching?', answer: ['No analytics, no telemetry, no account. Your Notes and Easels live on your Mac, and so does your membership card.'] },
+  { question: 'Is this made by The Browser Company?', answer: ['No. Parc is an independent project, built by one person who missed Arc. It isn’t affiliated with The Browser Company.'] },
+];
+---
+<section id="faq" class="faq sec">
+<div class="wrap split">
+<div class="copy">
+<p class="eyebrow">Before you go in</p>
+<h2 class="h2">Questions at the gate.</h2>
+</div>
+<div class="faq-list">
+{entries.map((entry) => (
+<details>
+<summary>{entry.question}</summary>
+<p>{entry.answer.map((part) => typeof part === 'string' ? part : <a href={part.href}>{part.text}</a>)}</p>
+</details>
+))}
+</div>
+</div>
+</section>
+
+<style>
+.faq{padding-block:40px 128px;background:var(--page)}
+.faq .split{align-items:flex-start;gap:40px 72px}
+.faq .copy{flex:1 1 300px;max-width:420px}
+.faq-list{flex:999 1 560px;min-width:0;border-top:1.5px solid rgba(24,32,58,.14)}
+.faq-list details{border-bottom:1.5px solid rgba(24,32,58,.14)}
+.faq-list summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 4px;font:400 clamp(24px,2.4vw,30px)/1.15 var(--serif);cursor:pointer;list-style:none}
+.faq-list summary::-webkit-details-marker{display:none}
+.faq-list summary::after{content:"";flex:none;width:28px;height:28px;border-radius:50%;background:var(--navy) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M7 3v8M3 7h8' fill='none' stroke='%23F5EFE4' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") center/14px no-repeat;transition:transform .35s var(--spring)}
+.faq-list details[open] summary::after{transform:rotate(45deg)}
+.faq-list summary:hover{color:var(--blue)}
+.faq-list p{max-width:40em;padding:0 4px 24px;font-size:17px;line-height:1.6;color:var(--text)}
+@media (max-width:640px){
+  .faq{padding-bottom:88px}
+  .faq-list summary{font-size:23px}
+}
+</style>

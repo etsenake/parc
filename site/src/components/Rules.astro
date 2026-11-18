@@ -1,0 +1,48 @@
+---
+const rules = [
+  'Walk right in. No account.',
+  'Nobody’s counting visitors.',
+  'Notes and Easels stay on your Mac.',
+  'The code’s on GitHub.',
+  'Leave your tabs wherever. Parc tidies up.',
+];
+---
+<section id="rules" class="rules sec">
+<div class="sign">
+<p class="hand sign-aside" aria-hidden="true">(dogs welcome)</p>
+<div class="sign-board">
+<div class="sign-inner">
+<p>Official Parc rules</p>
+<h2>Please enjoy the internet.</h2>
+<ol>
+{rules.map((rule, i) => <li><span>{i + 1}</span><span>{rule}</span></li>)}
+</ol>
+</div>
+</div>
+<div class="sign-posts" aria-hidden="true"><i></i><i></i></div>
+</div>
+</section>
+
+<style>
+.rules{position:relative;padding-top:128px;background:linear-gradient(180deg,#D4E6CC 0%,#D4E6CC 76%,#8DBA86 76%,#78A982 100%)}
+.rules::before{content:"";position:absolute;left:0;right:0;top:0;height:56px;background:url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%201440%2056%27%3E%3Cg%20fill=%27%23FFFFFF%27%20fill-opacity=%27.72%27%3E%3Crect%20width=%271440%27%20height=%278%27/%3E%3Ccircle%20cx=%270%27%20cy=%27-1%27%20r=%2722%27/%3E%3Ccircle%20cx=%2733%27%20cy=%276%27%20r=%2722%27/%3E%3Ccircle%20cx=%2761%27%20cy=%271%27%20r=%2734%27/%3E%3Ccircle%20cx=%2790%27%20cy=%276%27%20r=%2732%27/%3E%3Ccircle%20cx=%27118%27%20cy=%274%27%20r=%2728%27/%3E%3Ccircle%20cx=%27152%27%20cy=%279%27%20r=%2722%27/%3E%3Ccircle%20cx=%27178%27%20cy=%278%27%20r=%2727%27/%3E%3Ccircle%20cx=%27208%27%20cy=%272%27%20r=%2727%27/%3E%3Ccircle%20cx=%27251%27%20cy=%271%27%20r=%2724%27/%3E%3Ccircle%20cx=%27287%27%20cy=%274%27%20r=%2737%27/%3E%3Ccircle%20cx=%27328%27%20cy=%273%27%20r=%2724%27/%3E%3Ccircle%20cx=%27369%27%20cy=%279%27%20r=%2721%27/%3E%3Ccircle%20cx=%27409%27%20cy=%278%27%20r=%2732%27/%3E%3Ccircle%20cx=%27439%27%20cy=%277%27%20r=%2733%27/%3E%3Ccircle%20cx=%27468%27%20cy=%275%27%20r=%2724%27/%3E%3Ccircle%20cx=%27495%27%20cy=%272%27%20r=%2726%27/%3E%3Ccircle%20cx=%27528%27%20cy=%275%27%20r=%2735%27/%3E%3Ccircle%20cx=%27571%27%20cy=%279%27%20r=%2738%27/%3E%3Ccircle%20cx=%27611%27%20cy=%272%27%20r=%2723%27/%3E%3Ccircle%20cx=%27649%27%20cy=%274%27%20r=%2732%27/%3E%3Ccircle%20cx=%27676%27%20cy=%271%27%20r=%2737%27/%3E%3Ccircle%20cx=%27713%27%20cy=%276%27%20r=%2722%27/%3E%3Ccircle%20cx=%27746%27%20cy=%278%27%20r=%2732%27/%3E%3Ccircle%20cx=%27790%27%20cy=%271%27%20r=%2728%27/%3E%3Ccircle%20cx=%27831%27%20cy=%273%27%20r=%2734%27/%3E%3Ccircle%20cx=%27867%27%20cy=%270%27%20r=%2722%27/%3E%3Ccircle%20cx=%27910%27%20cy=%270%27%20r=%2723%27/%3E%3Ccircle%20cx=%27943%27%20cy=%276%27%20r=%2735%27/%3E%3Ccircle%20cx=%27977%27%20cy=%274%27%20r=%2734%27/%3E%3Ccircle%20cx=%271008%27%20cy=%273%27%20r=%2731%27/%3E%3Ccircle%20cx=%271046%27%20cy=%27-1%27%20r=%2722%27/%3E%3Ccircle%20cx=%271074%27%20cy=%276%27%20r=%2732%27/%3E%3Ccircle%20cx=%271118%27%20cy=%277%27%20r=%2725%27/%3E%3Ccircle%20cx=%271157%27%20cy=%279%27%20r=%2726%27/%3E%3Ccircle%20cx=%271184%27%20cy=%273%27%20r=%2725%27/%3E%3Ccircle%20cx=%271213%27%20cy=%27-1%27%20r=%2722%27/%3E%3Ccircle%20cx=%271254%27%20cy=%27-1%27%20r=%2731%27/%3E%3Ccircle%20cx=%271284%27%20cy=%271%27%20r=%2735%27/%3E%3Ccircle%20cx=%271315%27%20cy=%271%27%20r=%2728%27/%3E%3Ccircle%20cx=%271354%27%20cy=%274%27%20r=%2735%27/%3E%3Ccircle%20cx=%271387%27%20cy=%274%27%20r=%2733%27/%3E%3Ccircle%20cx=%271421%27%20cy=%276%27%20r=%2728%27/%3E%3Ccircle%20cx=%271440%27%20cy=%27-1%27%20r=%2722%27/%3E%3Ccircle%20cx=%271473%27%20cy=%276%27%20r=%2722%27/%3E%3Ccircle%20cx=%271501%27%20cy=%271%27%20r=%2734%27/%3E%3Ccircle%20cx=%27-53%27%20cy=%274%27%20r=%2733%27/%3E%3Ccircle%20cx=%27-19%27%20cy=%276%27%20r=%2728%27/%3E%3C/g%3E%3Cg%20fill=%27%23F5EFE4%27%3E%3Crect%20width=%271440%27%20height=%274%27/%3E%3Ccircle%20cx=%270%27%20cy=%27-6%27%20r=%2742%27/%3E%3Ccircle%20cx=%2739%27%20cy=%27-8%27%20r=%2741%27/%3E%3Ccircle%20cx=%2775%27%20cy=%27-4%27%20r=%2728%27/%3E%3Ccircle%20cx=%2799%27%20cy=%27-7%27%20r=%2741%27/%3E%3Ccircle%20cx=%27127%27%20cy=%27-6%27%20r=%2732%27/%3E%3Ccircle%20cx=%27165%27%20cy=%27-2%27%20r=%2734%27/%3E%3Ccircle%20cx=%27205%27%20cy=%27-10%27%20r=%2742%27/%3E%3Ccircle%20cx=%27243%27%20cy=%27-9%27%20r=%2740%27/%3E%3Ccircle%20cx=%27276%27%20cy=%27-1%27%20r=%2730%27/%3E%3Ccircle%20cx=%27308%27%20cy=%27-2%27%20r=%2739%27/%3E%3Ccircle%20cx=%27337%27%20cy=%27-10%27%20r=%2745%27/%3E%3Ccircle%20cx=%27369%27%20cy=%27-1%27%20r=%2729%27/%3E%3Ccircle%20cx=%27406%27%20cy=%27-3%27%20r=%2744%27/%3E%3Ccircle%20cx=%27430%27%20cy=%27-7%27%20r=%2727%27/%3E%3Ccircle%20cx=%27466%27%20cy=%27-7%27%20r=%2745%27/%3E%3Ccircle%20cx=%27496%27%20cy=%27-3%27%20r=%2743%27/%3E%3Ccircle%20cx=%27524%27%20cy=%27-5%27%20r=%2745%27/%3E%3Ccircle%20cx=%27556%27%20cy=%27-7%27%20r=%2731%27/%3E%3Ccircle%20cx=%27593%27%20cy=%27-9%27%20r=%2738%27/%3E%3Ccircle%20cx=%27626%27%20cy=%27-5%27%20r=%2729%27/%3E%3Ccircle%20cx=%27660%27%20cy=%27-2%27%20r=%2732%27/%3E%3Ccircle%20cx=%27690%27%20cy=%27-2%27%20r=%2738%27/%3E%3Ccircle%20cx=%27718%27%20cy=%27-11%27%20r=%2741%27/%3E%3Ccircle%20cx=%27748%27%20cy=%27-6%27%20r=%2731%27/%3E%3Ccircle%20cx=%27782%27%20cy=%27-4%27%20r=%2732%27/%3E%3Ccircle%20cx=%27807%27%20cy=%27-1%27%20r=%2744%27/%3E%3Ccircle%20cx=%27831%27%20cy=%27-5%27%20r=%2740%27/%3E%3Ccircle%20cx=%27862%27%20cy=%27-4%27%20r=%2745%27/%3E%3Ccircle%20cx=%27895%27%20cy=%27-7%27%20r=%2730%27/%3E%3Ccircle%20cx=%27923%27%20cy=%27-9%27%20r=%2728%27/%3E%3Ccircle%20cx=%27951%27%20cy=%27-3%27%20r=%2737%27/%3E%3Ccircle%20cx=%27987%27%20cy=%27-2%27%20r=%2742%27/%3E%3Ccircle%20cx=%271012%27%20cy=%27-2%27%20r=%2728%27/%3E%3Ccircle%20cx=%271049%27%20cy=%27-3%27%20r=%2739%27/%3E%3Ccircle%20cx=%271079%27%20cy=%27-10%27%20r=%2728%27/%3E%3Ccircle%20cx=%271113%27%20cy=%27-9%27%20r=%2737%27/%3E%3Ccircle%20cx=%271141%27%20cy=%27-9%27%20r=%2732%27/%3E%3Ccircle%20cx=%271177%27%20cy=%27-6%27%20r=%2734%27/%3E%3Ccircle%20cx=%271209%27%20cy=%27-5%27%20r=%2736%27/%3E%3Ccircle%20cx=%271240%27%20cy=%27-1%27%20r=%2741%27/%3E%3Ccircle%20cx=%271268%27%20cy=%27-8%27%20r=%2730%27/%3E%3Ccircle%20cx=%271297%27%20cy=%27-11%27%20r=%2741%27/%3E%3Ccircle%20cx=%271331%27%20cy=%27-7%27%20r=%2744%27/%3E%3Ccircle%20cx=%271360%27%20cy=%27-5%27%20r=%2745%27/%3E%3Ccircle%20cx=%271393%27%20cy=%27-5%27%20r=%2733%27/%3E%3Ccircle%20cx=%271433%27%20cy=%27-3%27%20r=%2732%27/%3E%3Ccircle%20cx=%271440%27%20cy=%27-6%27%20r=%2742%27/%3E%3Ccircle%20cx=%271479%27%20cy=%27-8%27%20r=%2741%27/%3E%3Ccircle%20cx=%27-47%27%20cy=%27-5%27%20r=%2733%27/%3E%3Ccircle%20cx=%27-7%27%20cy=%27-3%27%20r=%2732%27/%3E%3C/g%3E%3C/svg%3E") left top/1440px 56px repeat-x;pointer-events:none}
+@keyframes sway{0%,100%{transform:rotate(-1.2deg)}50%{transform:rotate(1.2deg)}}
+.sign{position:relative;max-width:740px;margin:0 auto;transform-origin:50% 0;animation:sway 8s ease-in-out infinite}
+.sign-aside{position:absolute;right:-150px;top:30px;font-size:30px;transform:rotate(8deg)}
+.sign-board{padding:14px;border-radius:24px;background:#1F4D36;box-shadow:0 30px 60px rgba(20,50,35,.3)}
+.sign-inner{padding:44px 48px 48px;border:3px solid #F3EAD6;border-radius:15px;color:#F3EAD6}
+.sign-inner > p{font-size:13px;font-weight:700;letter-spacing:.24em;text-transform:uppercase}
+.sign-inner h2{margin-top:14px;font:400 clamp(42px,5vw,64px)/1 var(--serif)}
+.sign-inner ol{display:flex;flex-direction:column;gap:14px;margin-top:30px;padding:0;list-style:none;font:clamp(22px,2.4vw,28px)/1.2 var(--serif)}
+.sign-inner li{display:flex;gap:18px}
+.sign-inner li span:first-child{min-width:22px;font-style:italic;color:#F7C08A}
+.sign-posts{display:flex;justify-content:space-around;padding:0 120px}
+.sign-posts i{width:26px;height:150px;border-radius:0 0 4px 4px;background:#6B4A2E}
+@media (max-width:900px){.sign-aside{display:none}}
+@media (max-width:640px){
+  .rules{padding-top:88px}
+  .rules::before{height:42px;background-size:1080px 42px}
+  .sign-inner{padding:28px 22px 30px}
+  .sign-posts{padding:0 56px}
+}
+</style>

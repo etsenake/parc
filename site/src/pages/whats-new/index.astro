@@ -1,0 +1,22 @@
+---
+import SiteFooter from '../../components/whats-new/SiteFooter.astro';
+import SiteMeta from '../../components/whats-new/SiteMeta.astro';
+import SiteNav from '../../components/whats-new/SiteNav.astro';
+import { renderWhatsNew, splitOnce } from '../../lib/whats-new';
+import siteStyles from '../../styles/whats-new.css?raw';
+
+const TITLE = '<title>What’s New in Parc</title>';
+const APP_LEAD = 'Thanks for using Parc! Here’s what’s new in this version.';
+const SITE_LEAD = 'Every Parc release, in plain words. Here’s the newest one.';
+
+const page = renderWhatsNew().replace(APP_LEAD, SITE_LEAD);
+const [top, afterTitle] = splitOnce(page, TITLE);
+const [head, afterStyle] = splitOnce(afterTitle, '</style>');
+const [beforeBanner, afterBanner] = splitOnce(afterStyle, '<header class="banner">');
+const [main, end] = splitOnce(afterBanner, '</main>');
+---
+<Fragment set:html={top + TITLE} />
+<SiteMeta />
+<Fragment set:html={`${head}\n${siteStyles}</style>${beforeBanner}<header class="banner site">`} />
+<SiteNav /><Fragment set:html={main} /><SiteFooter />
+<Fragment set:html={`</main>${end}`} />

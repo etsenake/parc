@@ -1,0 +1,280 @@
+---
+import Card from './guide/Card.astro';
+import Sketch from './guide/Sketch.astro';
+import { specimens } from '../data/specimens';
+
+const facts = [
+  { title: 'Where it lives', id: 'plateHabitat' },
+  { title: 'How to spot it', id: 'plateSpot' },
+];
+
+const steps = [
+  { step: -1, label: 'Previous page', path: 'M15 6l-6 6 6 6' },
+  { step: 1, label: 'Next page', path: 'M9 6l6 6-6 6' },
+];
+---
+<section id="guide" class="guide sec">
+<div class="wrap">
+<div class="guide-head">
+<div>
+<p class="eyebrow">The little things</p>
+<h2 class="h2">A field guide to what lives here.</h2>
+</div>
+<p class="hand note" aria-hidden="true">tap one</p>
+</div>
+
+<div class="guide-grid" id="guideGrid">
+{specimens.map((specimen, index) => <Card specimen={specimen} index={index} />)}
+</div>
+<p class="hand guide-more">And more for you to discover.</p>
+</div>
+
+<div id="guideOverlay" class="g-overlay" hidden>
+<div class="g-backdrop" id="gBackdrop"></div>
+<div class="g-shell" id="gShell" aria-hidden="true"></div>
+<div id="plate" class="plate" role="dialog" aria-modal="true" aria-labelledby="plateName">
+<button class="plate-x" id="plateClose" type="button" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+<div class="plate-body">
+<div id="plateL" class="plate-l plate-a">
+<div class="plate-top">
+<p class="mono">Plate <span id="plateNo">01</span></p>
+<p class="hand" id="plateTag">spotted in the wild</p>
+</div>
+<div id="plateStage" class="stage"></div>
+</div>
+<div id="plateR" class="plate-r plate-a">
+<div>
+<h3 id="plateName" class="plate-name"></h3>
+<p id="plateLatin" class="plate-latin"></p>
+</div>
+<p id="plateBehavior" class="plate-behavior"></p>
+<div class="plate-facts">
+{facts.map(({ title, id }) => <div><h4>{title}</h4><p id={id}></p></div>)}
+</div>
+<p id="plateNote" class="hand plate-note"></p>
+<div class="plate-nav">
+{steps.map(({ step, label, path }) => <button class="plate-step" type="button" data-step={step} aria-label={label}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={path}/></svg></button>)}
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+{specimens.map((specimen, index) => <template id={`scene-${index}`}><Sketch id={specimen.id} kind="scene" /></template>)}
+
+<script>
+import { $, $$, el, reduced } from '../scripts/dom';
+import { chime, sfx, whoosh } from '../scripts/sound';
+import { specimens, type Clip } from '../data/specimens';
+
+const plate = $('#plate'), plateL = $('#plateL'), plateR = $('#plateR'), stage = $('#plateStage');
+const overlay = $('#guideOverlay'), shell = $('#gShell'), backdrop = $('#gBackdrop'), plateBody = $('.plate-body', plate);
+const grid = $('#guideGrid'), closer = $('#plateClose');
+const guideCards = $$('.card', grid);
+const OPEN_EASE = 'cubic-bezier(.2,.9,.25,1)', SHUT_EASE = 'cubic-bezier(.4,0,.2,1)', CARD_RADIUS = '20px';
+let current: number | null = null;
+let plateFlip = false, busy = false;
+let fade: Animation | null = null;
+let swipe: [number, number] | null = null;
+
+function flipPages() {
+  plateFlip = !plateFlip;
+  [plateL, plateR].forEach((p) => { p.classList.remove('plate-a', 'plate-b'); p.classList.add(plateFlip ? 'plate-b' : 'plate-a'); });
+}
+
+function fillPlate(i: number) {
+  const sp = specimens[i];
+  current = i;
+  $('#plateNo').textContent = sp.no;
+  $('#plateName').textContent = sp.name; $('#plateLatin').textContent = sp.latin; $('#plateBehavior').textContent = sp.behavior;
+  $('#plateHabitat').textContent = sp.habitat; $('#plateSpot').textContent = sp.spot; $('#plateNote').textContent = 'field note: ' + sp.note;
+  $('#plateTag').textContent = sp.clip ? 'spotted in the wild' : 'sketched from life';
+  unmountPlateClip();
+  plate.classList.toggle('wide', !!sp.clip);
+  stage.classList.toggle('has-clip', !!sp.clip);
+  if (sp.clip) mountPlateClip(sp.clip, sp.name + ' in Parc');
+  else stage.replaceChildren($<HTMLTemplateElement>('#scene-' + i).content.cloneNode(true));
+  plateBody.scrollTop = 0;
+  flipPages();
+}
+
+function mountPlateClip(clip: Clip, label: string) {
+  const frame = el('div', 'stage-window');
+  const v = el('video');
+  v.muted = true; v.defaultMuted = true; v.loop = true; v.playsInline = true; v.preload = 'auto';
+  v.setAttribute('muted', ''); v.setAttribute('playsinline', '');
+  v.poster = clip.poster; v.src = clip.video;
+  v.setAttribute('aria-label', label);
+  v.addEventListener('click', () => { if (v.paused) v.play().catch(() => {}); else v.pause(); });
+  frame.appendChild(v);
+  stage.replaceChildren(frame);
+  if (!reduced) v.play().catch(() => {});
+}
+
+function unmountPlateClip() {
+  const v = stage.querySelector('video');
+  if (!v) return;
+  v.pause(); v.removeAttribute('src'); v.load();
+}
+
+const rect = (r: DOMRect) => ({ left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
+const onScreen = (r: DOMRect) => r.bottom > 0 && r.top < innerHeight && r.width > 0;
+
+function morph(from: DOMRect, to: DOMRect, r0: string, r1: string, duration: number, easing: string, o0 = 1, o1 = 1): Promise<Animation> {
+  shell.style.display = 'block';
+  const anim = shell.animate([{ ...rect(from), borderRadius: r0, opacity: o0 }, { ...rect(to), borderRadius: r1, opacity: o1 }], { duration, easing, fill: 'forwards' });
+  return anim.finished.then(() => anim, () => anim);
+}
+
+function fadeBackdrop(show: boolean) {
+  if (fade) fade.cancel();
+  fade = backdrop.animate([{ opacity: show ? 0 : 1 }, { opacity: show ? 1 : 0 }], { duration: show ? 320 : 280, easing: show ? 'ease-out' : 'ease-in', fill: 'forwards' });
+}
+
+async function openPlate(i: number) {
+  if (busy || current !== null) return;
+  const card = guideCards[i];
+  fillPlate(i);
+  overlay.hidden = false;
+  document.documentElement.classList.add('g-locked');
+  sfx(() => { whoosh(true); chime([783.99, 1174.66], .1, .07); });
+  if (reduced) { closer.focus({ preventScroll: true }); return; }
+  busy = true;
+  plate.classList.add('is-ghost');
+  const from = card.getBoundingClientRect(), to = plate.getBoundingClientRect(), radius = getComputedStyle(plate).borderRadius;
+  card.style.visibility = 'hidden';
+  fadeBackdrop(true);
+  const anim = await morph(from, to, CARD_RADIUS, radius, 480, OPEN_EASE);
+  plate.classList.remove('is-ghost');
+  flipPages();
+  shell.style.display = 'none'; anim.cancel();
+  busy = false;
+  closer.focus({ preventScroll: true });
+}
+
+async function closePlate() {
+  if (busy || current === null) return;
+  const card = guideCards[current];
+  current = null;
+  sfx(() => whoosh(false));
+  const finish = () => {
+    overlay.hidden = true; plate.classList.remove('is-ghost'); shell.style.display = 'none';
+    unmountPlateClip();
+    if (fade) { fade.cancel(); fade = null; }
+    guideCards.forEach((c) => { c.style.visibility = ''; });
+    document.documentElement.classList.remove('g-locked');
+    $('[data-open]', card).focus({ preventScroll: true });
+    busy = false;
+  };
+  if (reduced) { finish(); return; }
+  busy = true;
+  const from = plate.getBoundingClientRect(), to = card.getBoundingClientRect(), radius = getComputedStyle(plate).borderRadius;
+  plate.classList.add('is-ghost');
+  fadeBackdrop(false);
+  const anim = onScreen(to) ? await morph(from, to, radius, CARD_RADIUS, 400, SHUT_EASE) : await morph(from, from, radius, radius, 240, 'ease-in', 1, 0);
+  anim.cancel();
+  finish();
+}
+
+function step(dir: number) {
+  if (busy || current === null) return;
+  const n = (current + dir + specimens.length) % specimens.length;
+  guideCards[current].style.visibility = '';
+  fillPlate(n);
+  if (!reduced) guideCards[n].style.visibility = 'hidden';
+  sfx(() => whoosh(dir > 0));
+}
+
+$$('[data-open]', grid).forEach((b) => b.addEventListener('click', () => openPlate(Number(b.dataset.open))));
+$$('[data-step]', plate).forEach((b) => b.addEventListener('click', () => step(Number(b.dataset.step))));
+closer.addEventListener('click', closePlate);
+overlay.addEventListener('click', (e) => { if (e.target === overlay || e.target === backdrop) closePlate(); });
+document.addEventListener('keydown', (e) => {
+  if (current === null) return;
+  if (e.key === 'Escape') closePlate();
+  else if (e.key === 'ArrowRight') step(1);
+  else if (e.key === 'ArrowLeft') step(-1);
+  else if (e.key === 'Tab') {
+    const focusable = $$('button', plate).filter((b) => b.offsetParent !== null);
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (!plate.contains(document.activeElement)) { e.preventDefault(); first.focus(); return; }
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+});
+plate.addEventListener('pointerdown', (e) => { swipe = e.pointerType === 'mouse' ? null : [e.clientX, e.clientY]; });
+plate.addEventListener('pointercancel', () => { swipe = null; });
+plate.addEventListener('pointerup', (e) => {
+  if (!swipe) return;
+  const dx = e.clientX - swipe[0], dy = e.clientY - swipe[1];
+  swipe = null;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+});
+</script>
+
+<style>
+.stage.has-clip{aspect-ratio:auto;padding:14px;background:var(--paper-deep)}
+:global(.stage-window){aspect-ratio:1280/840;border-radius:1.25%/1.905%;overflow:hidden;background:#DCE3F2;box-shadow:0 0 0 .5px rgba(24,32,58,.18),0 8px 22px rgba(24,32,58,.16)}
+:global(.stage-window video){display:block;width:100%;height:100%;object-fit:cover;cursor:pointer}
+.plate.wide{width:min(1180px,100%)}
+.plate.wide .plate-body{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)}
+.guide{position:relative;padding-block:128px;background-color:#EFE5D2;background-image:radial-gradient(rgba(24,32,58,.09) 1.2px,transparent 1.6px);background-size:22px 22px}
+.guide::before,.guide::after{content:"";position:absolute;left:0;right:0;top:-18px;height:18px;pointer-events:none}
+.guide::before{background:#FBF8F1;-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%201440%2018%27%20preserveAspectRatio=%27none%27%3E%3Cpath%20d=%27M0%2011.1L10%2012.7L20%2012.9L34%2011.1L44%2010.9L54%2010.0L65%207.7L72%207.1L82%206.8L93%2010.7L106%209.8L112%2011.1L120%207.1L126%209.9L139%209.5L151%2010.8L156%209.1L171%2012.1L186%207.7L198%209.4L209%209.6L215%209.9L220%208.8L231%207.9L236%207.9L243%207.9L251%204.9L256%206.0L266%206.4L275%205.8L288%203.5L299%205.1L310%205.7L320%204.7L332%205.6L341%205.1L349%206.5L364%207.5L379%206.1L392%209.1L404%2010.9L412%2010.6L420%209.9L428%208.4L433%209.8L446%209.0L455%208.2L469%209.8L477%206.5L492%209.5L505%206.6L510%209.3L518%209.0L532%208.6L541%2011.1L556%2010.9L565%2011.8L571%2013.0L582%2010.6L595%209.5L603%2010.6L608%2012.1L617%209.7L631%208.6L644%2010.9L650%209.3L658%207.7L664%209.2L669%206.3L682%206.9L689%204.5L700%205.0L709%206.4L716%206.8L728%206.7L735%204.6L746%205.7L752%204.8L761%204.3L769%206.1L776%207.9L791%208.4L804%208.0L812%209.1L826%206.1L833%205.5L842%206.5L856%205.5L867%205.0L873%205.8L888%206.6L895%206.1L903%205.5L915%208.2L924%209.3L932%207.4L937%206.1L943%206.4L954%2010.9L961%207.8L972%2011.5L981%2011.4L991%2010.8L1005%2013.0L1015%2010.0L1026%2010.4L1040%2011.4L1046%209.2L1053%2012.4L1067%208.9L1080%207.6L1088%206.7L1095%208.9L1107%207.5L1121%207.9L1128%207.8L1143%208.5L1157%209.2L1168%208.2L1177%206.2L1183%207.5L1188%206.3L1203%205.6L1210%207.5L1222%208.3L1230%205.8L1243%205.6L1254%205.4L1262%206.6L1269%205.5L1281%205.3L1287%205.8L1294%204.0L1305%205.6L1318%206.2L1329%202.9L1337%207.0L1351%206.9L1358%204.8L1363%206.6L1371%208.0L1381%2010.1L1386%208.2L1393%209.5L1402%2011.5L1412%2011.7L1419%2012.6L1427%2010.7L1440%2011.1V18H0Z%27/%3E%3C/svg%3E") left top/1440px 18px repeat-x;mask:url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%201440%2018%27%20preserveAspectRatio=%27none%27%3E%3Cpath%20d=%27M0%2011.1L10%2012.7L20%2012.9L34%2011.1L44%2010.9L54%2010.0L65%207.7L72%207.1L82%206.8L93%2010.7L106%209.8L112%2011.1L120%207.1L126%209.9L139%209.5L151%2010.8L156%209.1L171%2012.1L186%207.7L198%209.4L209%209.6L215%209.9L220%208.8L231%207.9L236%207.9L243%207.9L251%204.9L256%206.0L266%206.4L275%205.8L288%203.5L299%205.1L310%205.7L320%204.7L332%205.6L341%205.1L349%206.5L364%207.5L379%206.1L392%209.1L404%2010.9L412%2010.6L420%209.9L428%208.4L433%209.8L446%209.0L455%208.2L469%209.8L477%206.5L492%209.5L505%206.6L510%209.3L518%209.0L532%208.6L541%2011.1L556%2010.9L565%2011.8L571%2013.0L582%2010.6L595%209.5L603%2010.6L608%2012.1L617%209.7L631%208.6L644%2010.9L650%209.3L658%207.7L664%209.2L669%206.3L682%206.9L689%204.5L700%205.0L709%206.4L716%206.8L728%206.7L735%204.6L746%205.7L752%204.8L761%204.3L769%206.1L776%207.9L791%208.4L804%208.0L812%209.1L826%206.1L833%205.5L842%206.5L856%205.5L867%205.0L873%205.8L888%206.6L895%206.1L903%205.5L915%208.2L924%209.3L932%207.4L937%206.1L943%206.4L954%2010.9L961%207.8L972%2011.5L981%2011.4L991%2010.8L1005%2013.0L1015%2010.0L1026%2010.4L1040%2011.4L1046%209.2L1053%2012.4L1067%208.9L1080%207.6L1088%206.7L1095%208.9L1107%207.5L1121%207.9L1128%207.8L1143%208.5L1157%209.2L1168%208.2L1177%206.2L1183%207.5L1188%206.3L1203%205.6L1210%207.5L1222%208.3L1230%205.8L1243%205.6L1254%205.4L1262%206.6L1269%205.5L1281%205.3L1287%205.8L1294%204.0L1305%205.6L1318%206.2L1329%202.9L1337%207.0L1351%206.9L1358%204.8L1363%206.6L1371%208.0L1381%2010.1L1386%208.2L1393%209.5L1402%2011.5L1412%2011.7L1419%2012.6L1427%2010.7L1440%2011.1V18H0Z%27/%3E%3C/svg%3E") left top/1440px 18px repeat-x}
+.guide::after{background-color:#EFE5D2;background-image:radial-gradient(rgba(24,32,58,.09) 1.2px,transparent 1.6px);background-size:22px 22px;background-position:0 18px;-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%201440%2018%27%20preserveAspectRatio=%27none%27%3E%3Cpath%20d=%27M0%2013.6L10%2015.7L20%2014.8L34%2014.2L44%2014.2L54%2013.0L65%2010.8L72%209.0L82%2010.4L93%2014.4L106%2013.6L112%2013.8L120%2010.4L126%2012.1L139%2013.1L151%2014.3L156%2011.3L171%2013.7L186%2010.2L198%2012.1L209%2012.8L215%2012.5L220%2010.3L231%2011.3L236%209.4L243%2011.2L251%206.7L256%208.2L266%209.7L275%207.6L288%205.3L299%207.8L310%208.8L320%208.2L332%208.6L341%208.7L349%209.0L364%2011.2L379%207.7L392%2011.0L404%2013.6L412%2012.6L420%2013.1L428%2011.3L433%2012.5L446%2012.4L455%2011.0L469%2012.0L477%208.8L492%2012.9L505%2010.2L510%2011.2L518%2012.5L532%2012.3L541%2013.8L556%2013.7L565%2013.7L571%2015.7L582%2013.2L595%2012.4L603%2012.1L608%2015.8L617%2012.3L631%2011.0L644%2014.2L650%2012.1L658%2010.3L664%2012.3L669%207.9L682%209.6L689%206.8L700%208.7L709%2010.0L716%208.8L728%209.2L735%206.3L746%208.2L752%208.1L761%207.9L769%208.7L776%2010.1L791%2010.2L804%2010.9L812%2012.7L826%207.8L833%208.7L842%208.0L856%207.3L867%206.9L873%208.8L888%208.8L895%208.4L903%208.4L915%209.9L924%2012.4L932%209.1L937%208.8L943%208.4L954%2012.7L961%2010.4L972%2013.9L981%2013.7L991%2013.2L1005%2015.7L1015%2011.8L1026%2012.3L1040%2014.3L1046%2012.1L1053%2015.0L1067%2012.3L1080%2010.5L1088%2010.2L1095%2010.8L1107%2010.7L1121%2011.2L1128%2011.4L1143%2010.6L1157%2011.4L1168%2011.8L1177%208.1L1183%2011.3L1188%209.8L1203%207.3L1210%209.5L1222%2011.5L1230%207.8L1243%207.3L1254%208.8L1262%209.0L1269%208.8L1281%207.1L1287%208.1L1294%207.0L1305%207.0L1318%208.0L1329%205.9L1337%2010.5L1351%2010.6L1358%206.5L1363%209.3L1371%2011.2L1381%2012.7L1386%2011.2L1393%2011.4L1402%2013.0L1412%2013.3L1419%2014.1L1427%2013.5L1440%2013.6V18H0Z%27/%3E%3C/svg%3E") left top/1440px 18px repeat-x;mask:url("data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%201440%2018%27%20preserveAspectRatio=%27none%27%3E%3Cpath%20d=%27M0%2013.6L10%2015.7L20%2014.8L34%2014.2L44%2014.2L54%2013.0L65%2010.8L72%209.0L82%2010.4L93%2014.4L106%2013.6L112%2013.8L120%2010.4L126%2012.1L139%2013.1L151%2014.3L156%2011.3L171%2013.7L186%2010.2L198%2012.1L209%2012.8L215%2012.5L220%2010.3L231%2011.3L236%209.4L243%2011.2L251%206.7L256%208.2L266%209.7L275%207.6L288%205.3L299%207.8L310%208.8L320%208.2L332%208.6L341%208.7L349%209.0L364%2011.2L379%207.7L392%2011.0L404%2013.6L412%2012.6L420%2013.1L428%2011.3L433%2012.5L446%2012.4L455%2011.0L469%2012.0L477%208.8L492%2012.9L505%2010.2L510%2011.2L518%2012.5L532%2012.3L541%2013.8L556%2013.7L565%2013.7L571%2015.7L582%2013.2L595%2012.4L603%2012.1L608%2015.8L617%2012.3L631%2011.0L644%2014.2L650%2012.1L658%2010.3L664%2012.3L669%207.9L682%209.6L689%206.8L700%208.7L709%2010.0L716%208.8L728%209.2L735%206.3L746%208.2L752%208.1L761%207.9L769%208.7L776%2010.1L791%2010.2L804%2010.9L812%2012.7L826%207.8L833%208.7L842%208.0L856%207.3L867%206.9L873%208.8L888%208.8L895%208.4L903%208.4L915%209.9L924%2012.4L932%209.1L937%208.8L943%208.4L954%2012.7L961%2010.4L972%2013.9L981%2013.7L991%2013.2L1005%2015.7L1015%2011.8L1026%2012.3L1040%2014.3L1046%2012.1L1053%2015.0L1067%2012.3L1080%2010.5L1088%2010.2L1095%2010.8L1107%2010.7L1121%2011.2L1128%2011.4L1143%2010.6L1157%2011.4L1168%2011.8L1177%208.1L1183%2011.3L1188%209.8L1203%207.3L1210%209.5L1222%2011.5L1230%207.8L1243%207.3L1254%208.8L1262%209.0L1269%208.8L1281%207.1L1287%208.1L1294%207.0L1305%207.0L1318%208.0L1329%205.9L1337%2010.5L1351%2010.6L1358%206.5L1363%209.3L1371%2011.2L1381%2012.7L1386%2011.2L1393%2011.4L1402%2013.0L1412%2013.3L1419%2014.1L1427%2013.5L1440%2013.6V18H0Z%27/%3E%3C/svg%3E") left top/1440px 18px repeat-x}
+.guide-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:56px}
+.guide-head > div{max-width:680px}
+.guide-head .note{margin-top:10px}
+.guide-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:22px}
+.guide-more{margin-top:56px;text-align:center;font-size:32px;color:var(--umber);transform:rotate(-1.5deg)}
+
+.g-overlay{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;padding:24px}
+.g-backdrop{position:absolute;inset:0;background:rgba(24,32,58,.42);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.g-shell{position:fixed;z-index:1;display:none;border:1.5px solid #CDBB9C;border-radius:26px;background:var(--paper);box-shadow:0 50px 100px rgba(24,32,58,.25);pointer-events:none}
+.plate{position:relative;z-index:2;display:flex;width:min(1040px,100%);max-height:calc(100vh - 48px);max-height:calc(100dvh - 48px);overflow:hidden;border:1.5px solid #CDBB9C;border-radius:26px;background:var(--paper);box-shadow:0 50px 100px rgba(24,32,58,.25);touch-action:pan-y}
+.plate.is-ghost{visibility:hidden}
+.plate-body{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);width:100%;perspective:1800px}
+.plate-l{position:relative;min-width:0;padding:24px 26px 26px;border-right:1.5px dashed #CDBB9C;background:var(--paper-deep);transform-origin:right center}
+.plate-r{display:flex;flex-direction:column;gap:14px;min-width:0;padding:34px 38px 30px;transform-origin:left center}
+.plate-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:16px}
+.plate-top .mono{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--tan)}
+.plate-top .hand{font-size:24px;color:var(--umber)}
+.stage{position:relative;width:100%;aspect-ratio:520/340;overflow:hidden;border:1.5px solid var(--paper-line);border-radius:16px;background:#FFFDF6}
+.stage svg{display:block;width:100%;height:100%}
+.plate-r > div:first-child{padding-right:44px}
+.plate-name{font:400 clamp(38px,3.6vw,54px)/.95 var(--serif)}
+.plate-latin{margin-top:6px;font:italic 24px var(--serif);color:var(--latin)}
+.plate-behavior{font-size:17px;line-height:1.55;color:#2E2A38}
+.plate-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:18px;padding-top:16px;border-top:1.5px dashed var(--paper-line)}
+.plate-facts h4{margin:0;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--tan)}
+.plate-facts p{margin-top:6px;font-size:15px;line-height:1.5;color:var(--text)}
+.plate-note{font-size:25px;line-height:1.15;transform:rotate(-1.5deg)}
+.plate-nav{display:flex;gap:8px;margin-top:auto}
+.plate-step{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;border:1.5px solid #CDBB9C;border-radius:50%;background:#FFFDF6;transition:transform .3s var(--spring),background-color .2s}
+.plate-step:hover{background:#FFFFFF;transform:scale(1.06)}
+.plate-step svg,.plate-x svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.plate-x{position:absolute;top:14px;right:14px;z-index:4;display:flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;border:1.5px solid #CDBB9C;border-radius:50%;background:#FFFDF6;transition:transform .3s var(--spring),background-color .2s}
+.plate-x:hover{transform:rotate(90deg);background:#FFFFFF}
+:global(html.g-locked){overflow:hidden}
+@keyframes openL{from{opacity:0;transform:rotateY(70deg)}to{opacity:1;transform:none}}
+@keyframes openL2{from{opacity:0;transform:rotateY(70deg)}to{opacity:1;transform:none}}
+@keyframes openR{from{opacity:0;transform:rotateY(-70deg)}to{opacity:1;transform:none}}
+@keyframes openR2{from{opacity:0;transform:rotateY(-70deg)}to{opacity:1;transform:none}}
+.plate-l.plate-a{animation:openL .95s cubic-bezier(.2,.9,.25,1) both}
+.plate-l.plate-b{animation:openL2 .95s cubic-bezier(.2,.9,.25,1) both}
+.plate-r.plate-a{animation:openR .95s cubic-bezier(.2,.9,.25,1) .08s both}
+.plate-r.plate-b{animation:openR2 .95s cubic-bezier(.2,.9,.25,1) .08s both}
+@media (max-width:1100px){.guide-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.guide-grid{grid-template-columns:minmax(0,1fr)}}
+@media (max-height:600px) and (min-width:761px){.plate-body{overflow-y:auto;overscroll-behavior:contain}}
+@media (max-width:760px){.plate-body{display:block;overflow-y:auto;overscroll-behavior:contain}.plate-l{border-right:0;border-bottom:1.5px dashed #CDBB9C;padding:18px 16px 20px}.plate-l .plate-top{padding-right:48px}.plate-r{padding:22px 20px 26px}.plate-r > div:first-child{padding-right:0}.plate-name{font-size:40px}}
+@media (max-width:640px){
+  .guide{padding-top:88px;padding-bottom:88px}
+  .g-overlay{padding:0;align-items:flex-end}
+  .plate{width:100%;max-height:92vh;max-height:92dvh;border-bottom:0;border-radius:24px 24px 0 0}
+  .g-shell{border-radius:24px 24px 0 0}
+  .plate-l{padding-bottom:24px}
+  .plate-r{padding:26px 22px}
+}
+</style>

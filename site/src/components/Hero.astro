@@ -1,0 +1,177 @@
+---
+import { Image } from 'astro:assets';
+import mark from '../assets/images/p-mark.png';
+import { DOWNLOAD } from '../lib/links';
+import Hills from './Hills.astro';
+import Nav from './Nav.astro';
+import SoundButton from './SoundButton.astro';
+
+let seed = 7;
+const rnd = () => {
+  seed = (seed * 9301 + 49297) % 233280;
+  return seed / 233280;
+};
+
+const stars = Array.from({ length: 48 }, () => {
+  const z = (1 + rnd() * 2.4).toFixed(1) + 'px';
+  return { left: (rnd() * 100).toFixed(2) + '%', top: (rnd() * 60).toFixed(2) + '%', width: z, height: z, animationDelay: (rnd() * -6).toFixed(2) + 's', animationDuration: (2.4 + rnd() * 4).toFixed(2) + 's' };
+});
+
+const flies = ['fa', 'fb', 'fc'].flatMap((path) => Array.from({ length: 6 }, () => {
+  const wander = { left: (rnd() * 100).toFixed(2) + '%', top: Math.round(470 + rnd() * 360) + 'px', animationDuration: (10 + rnd() * 10).toFixed(1) + 's', animationDelay: (rnd() * -20).toFixed(1) + 's' };
+  const z = (3 + rnd() * 3).toFixed(1) + 'px';
+  const glow = { width: z, height: z, animationDuration: (2 + rnd() * 3).toFixed(1) + 's', animationDelay: (rnd() * -5).toFixed(1) + 's' };
+  return { path, wander, glow };
+}));
+
+const clouds = ['c1', 'c2', 'c3'];
+const trees = ['t1', 't2', 't3'];
+const headline = { lead: 'Not ready to let go of Arc?', big: 'Same.' };
+---
+<header id="top">
+<div class="sky-bg" aria-hidden="true"></div>
+<div class="layer stars" id="stars" aria-hidden="true">{stars.map((style) => <span class="star" style={style}></span>)}</div>
+<span class="shoot" aria-hidden="true"></span>
+<div id="pxSun" class="layer px">
+<button class="sun" id="sun" type="button" aria-label="Move the sun to another time of day"></button>
+</div>
+<div id="pxClouds" class="layer px" aria-hidden="true">
+{clouds.map((cloud) => <div class:list={['cloud', cloud]}></div>)}
+</div>
+<div id="pxKite" class="layer px hide-md" aria-hidden="true">
+<div class="kite-box">
+<svg viewBox="0 0 480 560"><path class="kite-string" d="M466 10 C 430 190, 280 380, 40 560"/></svg>
+<Image class="kite" src={mark} alt="" width={170} height={251} densities={[1, 2]} format="png" loading="eager" decoding="auto" />
+</div>
+</div>
+<div id="pxTrees" class="layer px" aria-hidden="true">
+{trees.map((tree) => <div class:list={['tree', tree]}><div class="tree-t"></div><div class="tree-c"></div></div>)}
+</div>
+<Hills id="pxHills" class="px" aria-hidden="true" />
+<div class="layer flies" id="flies" aria-hidden="true">{flies.map(({ path, wander, glow }) => <span class={path} style={wander}><span class="fly" style={glow}></span></span>)}</div>
+<div class="lamp hide-md" aria-hidden="true">
+<div class="lamp-glow"></div>
+<div class="lamp-post"></div>
+<div class="lamp-head"></div>
+<svg viewBox="0 0 70 40"><rect x="4" y="6" width="62" height="7" rx="3" fill="#6B4A2E"/><rect x="2" y="18" width="66" height="7" rx="3" fill="#7E5835"/><rect x="8" y="24" width="5" height="16" rx="2" fill="#4E3420"/><rect x="57" y="24" width="5" height="16" rx="2" fill="#4E3420"/></svg>
+</div>
+
+<Nav home="./" note>
+<SoundButton />
+</Nav>
+
+<div class="hero-pad pe-none sec">
+<div class="hero-title rise">
+<h1 class="hero-h1"><span class="lead">{headline.lead}</span><span class="big">{headline.big}</span></h1>
+<p id="reveal" class="reveal hero-h1" aria-hidden="true"><span class="lead">{headline.lead}</span><span class="big">{headline.big}</span></p>
+</div>
+<p class="hero-sub rise r2">So I built Parc.</p>
+<div class="hero-cta rise r3">
+<a class="btn-ink sky-btn" href={DOWNLOAD}>
+<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
+Download for Mac
+</a>
+</div>
+</div>
+</header>
+
+<style>
+#top{--sky:#F9D3B4;--sun:#FFF1DA;--sun-shadow:none;--sun-top:330px;--ink:#1C2440;--ink-soft:rgba(28,36,64,.82);--ink-inv:#FFF4E6;--string:rgba(28,36,64,.5);--cloud:.9;--chip-bg:rgba(255,255,255,.55);--chip-border:rgba(28,36,64,.16);--hill-back:#A9C79B;--hill-mid:#78A982;--hill-front:#4C8661;--tree:#5E9470;--trunk:#5B4632;--lamp-head:#F3EAD6;--lamp-glow:transparent;--reveal:linear-gradient(100deg,#FF4A57,#B0408F,#2D5BFF);position:relative;height:880px;overflow:hidden;color:var(--ink)}
+.sky-bg{position:absolute;inset:0;background:var(--sky)}
+.layer{position:absolute;inset:0;pointer-events:none}
+.px{transition:transform .8s cubic-bezier(.2,.8,.2,1);will-change:transform}
+.stars,.flies,.shoot{display:none}
+#top.has-stars .stars,#top.has-flies .flies,#top.has-shoot .shoot{display:block}
+.star{position:absolute;border-radius:50%;background:#FFF8E7;animation:twinkle 3s ease-in-out infinite}
+.shoot{position:absolute;left:10%;top:80px;width:150px;height:2px;border-radius:2px;background:linear-gradient(90deg,rgba(255,255,255,0),#FFFFFF);opacity:0;animation:shoot 7s ease-in 2s infinite}
+.sun{position:absolute;left:56%;top:var(--sun-top);width:150px;height:150px;padding:0;border:0;border-radius:50%;background:var(--sun);box-shadow:var(--sun-shadow);color:var(--ink);cursor:pointer;pointer-events:auto;transition:top 1.2s cubic-bezier(.3,1.2,.4,1),background-color 1s,box-shadow 1s,filter .3s;animation:breathe 9s ease-in-out infinite}
+.sun:hover{filter:brightness(1.08)}
+.sun:focus-visible{outline:3px dashed currentColor;outline-offset:10px}
+.moon{background:transparent!important;box-shadow:inset -34px 10px 0 0 #F2EEDC!important}
+.moon-bright{box-shadow:inset -34px 10px 0 0 #F7F3E3,0 0 70px 6px rgba(247,243,227,.12)!important}
+.c1{top:170px;animation:drift 75s linear infinite;animation-delay:-28s}
+.c2{top:300px;animation:drift 105s linear infinite;animation-delay:-70s;transform:scale(.62)}
+.c3{top:96px;animation:drift 130s linear infinite;animation-delay:-8s;transform:scale(1.15)}
+.kite-box{position:absolute;right:13%;top:112px;width:170px}
+.kite-box svg{position:absolute;left:-420px;top:240px;width:480px;height:560px;overflow:visible}
+.kite-box img{position:relative;display:block;width:170px;height:auto;filter:drop-shadow(0 18px 24px rgba(24,32,58,.18))}
+.tree{position:absolute}
+.t1{left:7%;bottom:120px;width:74px;height:150px}.t1 .tree-t{left:33px;height:110px}.t1 .tree-c{width:74px;height:74px}
+.t2{left:11.5%;bottom:126px;width:54px;height:120px}.t2 .tree-t{left:23px;height:90px}.t2 .tree-c{width:54px;height:54px}
+.t3{left:66%;bottom:128px;width:64px;height:140px}.t3 .tree-t{left:28px;height:100px}.t3 .tree-c{width:64px;height:64px}
+#pxKite,#pxTrees{z-index:1}
+.flies{z-index:3}
+.fa,.fb,.fc{position:absolute}
+.fa{animation:fa 14s ease-in-out infinite}.fb{animation:fb 16s ease-in-out infinite}.fc{animation:fc 12s ease-in-out infinite}
+.fly{display:block;border-radius:50%;background:#FFE7A0;box-shadow:0 0 10px 3px rgba(255,214,120,.55),0 0 26px 8px rgba(255,190,90,.2);animation:blink 3s ease-in-out infinite}
+.lamp{position:absolute;left:20%;bottom:58px;z-index:3;width:120px;height:150px}
+.lamp-glow{position:absolute;left:4px;top:-18px;width:60px;height:60px;border-radius:50%;background:var(--lamp-glow);animation:lampglow 4s ease-in-out infinite}
+.lamp-post{position:absolute;left:30px;top:18px;width:6px;height:132px;border-radius:3px;background:#2A2B3A}
+.lamp-head{position:absolute;left:22px;top:6px;width:22px;height:18px;border-radius:6px 6px 3px 3px;background:var(--lamp-head);box-shadow:0 0 0 3px #2A2B3A}
+.lamp svg{position:absolute;left:50px;bottom:0;width:70px;height:40px}
+.hero-pad{position:relative;z-index:4;max-width:1280px;margin:0 auto;padding-top:196px}
+.hero-title{position:relative;max-width:940px}
+.hero-h1{font-family:var(--serif);font-weight:400;line-height:.92;letter-spacing:-.02em}
+.hero-h1 .lead{display:block;max-width:15em;font-size:clamp(30px,3.6vw,52px);line-height:1.05;letter-spacing:-.01em}
+.hero-h1 .big{display:block;margin-top:4px;font-style:italic;font-size:clamp(96px,14vw,210px);line-height:.88}
+.reveal{position:absolute;inset:0;margin:0;color:transparent;background-image:var(--reveal);-webkit-background-clip:text;background-clip:text;-webkit-mask-image:radial-gradient(circle,#000 0,#000 34%,rgba(0,0,0,0) 70%);mask-image:radial-gradient(circle,#000 0,#000 34%,rgba(0,0,0,0) 70%);-webkit-mask-size:340px 340px;mask-size:340px 340px;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:-999px -999px;mask-position:-999px -999px;opacity:0;transition:opacity .45s;pointer-events:none}
+.hero-sub{max-width:540px;margin-top:22px;font-size:21px;line-height:1.5;color:var(--ink-soft)}
+.hero-cta{display:flex;flex-wrap:wrap;align-items:center;gap:14px 22px;margin-top:36px}
+@media (max-width:640px){
+  #top{height:auto;min-height:720px;padding-bottom:250px}
+  .hero-pad{padding-top:108px}
+  .hero-h1 .lead{font-size:28px}
+  .hero-sub{font-size:18px}
+  .tree{bottom:86px}
+  .sun{left:62%;width:96px;height:96px}
+  .moon{box-shadow:inset -22px 7px 0 0 #F2EEDC!important}
+  .moon-bright{box-shadow:inset -22px 7px 0 0 #F7F3E3,0 0 50px 4px rgba(247,243,227,.12)!important}
+}
+@media (max-width:380px){.hero-h1 .big{font-size:84px}}
+</style>
+
+<script>
+import { $, reduced } from '../scripts/dom';
+import { nextSky, onSky } from '../scripts/sky';
+import { chime, followScape, sfx } from '../scripts/sound';
+
+const hero = $('#top'), sun = $<HTMLButtonElement>('#sun'), reveal = $('#reveal');
+const DEPTH: Record<string, [number, number]> = { pxSun: [-36, -24], pxClouds: [-60, -18], pxKite: [46, 28], pxTrees: [-14, 0], pxHills: [-10, 0] };
+const layers = Object.entries(DEPTH).map(([id, depth]) => ({ layer: $(`#${id}`), depth }));
+
+onSky((sky) => {
+  const vars: Record<string, string> = {
+    '--sky': sky.sky, '--sun': sky.sun, '--sun-shadow': sky.sunShadow, '--sun-top': sky.sunY + 'px',
+    '--ink': sky.ink, '--ink-soft': sky.inkSoft, '--ink-inv': sky.inkInv, '--string': sky.string, '--cloud': String(sky.cloud), '--chip-bg': sky.chipBg, '--chip-border': sky.chipBorder,
+    '--hill-back': sky.hills[0], '--hill-mid': sky.hills[1], '--hill-front': sky.hills[2], '--tree': sky.tree, '--trunk': sky.trunk, '--lamp-head': sky.lampHead, '--lamp-glow': sky.lampGlow, '--reveal': sky.reveal,
+  };
+  for (const [name, value] of Object.entries(vars)) hero.style.setProperty(name, value);
+  hero.classList.toggle('has-stars', sky.stars);
+  hero.classList.toggle('has-flies', sky.flies);
+  hero.classList.toggle('has-shoot', sky.shoot);
+  const orb = sky.orb.split(' ');
+  sun.classList.toggle('moon', orb.includes('moon'));
+  sun.classList.toggle('moon-bright', orb.includes('moon-bright'));
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', sky.night ? '#0B1030' : '#F4B79A');
+  followScape(sky.scape);
+});
+
+sun.addEventListener('click', () => {
+  sfx(() => chime([523.25, 659.25, 783.99, 1046.5], 0.08, 0.07));
+  nextSky();
+});
+
+hero.addEventListener('mousemove', (e) => {
+  const r = hero.getBoundingClientRect(), nx = (e.clientX - r.left) / r.width - .5, ny = (e.clientY - r.top) / r.height - .5;
+  if (!reduced) layers.forEach(({ layer, depth: [dx, dy] }) => { layer.style.transform = `translate(${(nx * dx).toFixed(1)}px, ${(ny * dy).toFixed(1)}px)`; });
+  const rr = reveal.getBoundingClientRect(), pos = `${(e.clientX - rr.left - 170).toFixed(0)}px ${(e.clientY - rr.top - 170).toFixed(0)}px`;
+  reveal.style.setProperty('-webkit-mask-position', pos);
+  reveal.style.maskPosition = pos;
+  reveal.style.opacity = '1';
+});
+
+hero.addEventListener('mouseleave', () => {
+  layers.forEach(({ layer }) => { layer.style.transform = ''; });
+  reveal.style.opacity = '0';
+});
+</script>

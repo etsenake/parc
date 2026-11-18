@@ -1,0 +1,16 @@
+---
+import og from '../../assets/images/og.png';
+
+const description = 'Every Parc release, in plain words: what’s new, what’s fixed and what got faster.';
+const url = 'https://parcbrowser.com/whats-new/';
+const image = new URL(og.src, Astro.site).href;
+---
+<meta name="description" content={description}>
+<link rel="canonical" href={url}>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Parc">
+<meta property="og:title" content="What’s New in Parc">
+<meta property="og:description" content={description}>
+<meta property="og:url" content={url}>
+<meta property="og:image" content={image}>
+<meta name="twitter:card" content="summary_large_image">

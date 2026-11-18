@@ -1,0 +1,47 @@
+---
+import Base from '../layouts/Base.astro';
+import Trail from '../components/Trail.astro';
+import Hero from '../components/Hero.astro';
+import Film from '../components/Film.astro';
+import Spaces from '../components/Spaces.astro';
+import Archive from '../components/Archive.astro';
+import MovieNight from '../components/MovieNight.astro';
+import FieldGuide from '../components/FieldGuide.astro';
+import Membership from '../components/Membership.astro';
+import Icons from '../components/Icons.astro';
+import FreshPaint from '../components/FreshPaint.astro';
+import Faq from '../components/Faq.astro';
+import Rules from '../components/Rules.astro';
+import Download from '../components/Download.astro';
+import Footer from '../components/Footer.astro';
+
+const share = {
+  title: 'Parc',
+  description: 'Not ready to let go of Arc? Same. So I built Parc.',
+  imageAlt: 'Parc: not ready to let go of Arc? Same.',
+};
+---
+<Base
+  title="Parc — a free, open-source browser for your Mac"
+  description="Not ready to let go of Arc? Same. Parc is a free, open-source Mac browser with Spaces, Split View, Peek, Easels and a sidebar that tidies itself."
+  canonical="https://parcbrowser.com/"
+  share={share}
+>
+  <a class="skip" href="#spaces">Skip to the good part</a>
+  <div class="site" id="root">
+    <Trail />
+    <Hero />
+    <Film />
+    <Spaces />
+    <Archive />
+    <MovieNight />
+    <FieldGuide />
+    <Membership />
+    <Icons />
+    <FreshPaint />
+    <Faq />
+    <Rules />
+    <Download />
+    <Footer />
+  </div>
+</Base>

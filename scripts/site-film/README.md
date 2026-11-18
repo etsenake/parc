@@ -67,9 +67,10 @@ write `out/plates/<name>.mp4` and `.jpg`. Change the order, trims and camera in
 `Hero/main.swift` and `cuts.json`, or a card's crop in `plates.json`.
 
 After the result has been reviewed, copy `hero-web.mp4` to
-`site/media/hero.mp4`, `hero-web-hevc.mp4` to `site/media/hero-hevc.mp4`,
-`hero-poster.jpg` to `site/media/hero.jpg` and the plates into
-`site/media/plates/`, then publish the site as usual.
+`site/src/assets/media/hero.mp4`, `hero-web-hevc.mp4` to
+`site/src/assets/media/hero-hevc.mp4`, `hero-poster.jpg` to
+`site/src/assets/media/hero.jpg` and the plates into
+`site/src/assets/media/plates/`, then publish the site as usual.
 
 ## Rules
 

@@ -1,0 +1,31 @@
+---
+import { Image } from 'astro:assets';
+import mark from '../assets/images/p-mark.png';
+
+interface Props {
+  home: string;
+  note?: boolean;
+}
+
+const { home, note = false } = Astro.props;
+---
+<nav class="nav sec" aria-label="Main">
+<a class="logo" href={home} aria-label="Parc home"><span class="logo-word" aria-hidden="true"><Image src={mark} alt="" width={21} height={31} densities={[1, 2]} format="png" loading="eager" decoding="auto" />arc</span>{note && <span class="hand logo-note" aria-hidden="true">pronounced park</span>}</a>
+{Astro.slots.has('default') && <div class="nav-right"><slot /></div>}
+</nav>
+
+<style>
+.nav{position:absolute;top:0;left:0;right:0;z-index:6;display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:26px;padding-bottom:26px}
+.nav a{color:var(--ink)}
+.logo{position:relative;display:flex;align-items:center;gap:10px;text-decoration:none}
+.logo-word{font:32px/1 var(--serif);white-space:nowrap}
+.logo-word img{display:inline-block;width:auto;height:.74em;margin-right:.03em;vertical-align:baseline}
+.logo-note{position:absolute;left:4px;top:46px;font-size:22px;white-space:nowrap;transform:rotate(-4deg);pointer-events:none;color:var(--ink)}
+.nav-right{display:flex;align-items:center;gap:22px}
+@media (max-width:900px){.logo-note{display:none}}
+@media (max-width:640px){
+  .nav{padding-top:18px;padding-bottom:18px}
+  .nav-right{gap:10px}
+  .logo-word{font-size:28px}
+}
+</style>
