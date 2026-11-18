@@ -129,8 +129,9 @@ the feature guide that owns it, such as [Split View](split-groups.md),
 [Notes](notes.md), the [mini-player](media-mini-player.md),
 [keyboard shortcuts](keyboard-navigation.md), [onboarding](onboarding.md) and
 [browser import](browser-import.md).
-When a feature changes, update its guide first and the site to match; link to
-the guides rather than restating their details here. Site copy is short and
+When a feature changes, update its guide first and the site once a release
+ships the change, following the `site-next` rule in AGENTS; link to the guides
+rather than restating their details here. Site copy is short and
 sweet: a changed line keeps the length and tone of the lines around it, and a
 change never adds an essay, a new layout or a new design pattern. New cards,
 sections and pages follow the approval rule, and every copy change gets the

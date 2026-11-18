@@ -168,9 +168,12 @@ Verify claims against current code and the relevant checks. Be truthful about
 what you ran; do not claim an unperformed check passed.
 Do not copy an old pending-build note or agent assignment as current fact.
 
-**Keep the website accurate.** When a change alters or adds to a feature family
-the [website](docs/website.md) describes, update its words, drawings or clips to
-match in the same delivery. Keep the site's existing design, structure and short
+**Keep the website accurate.** The [website](docs/website.md) describes the
+latest release, and it publishes as soon as a change reaches `main`. When a
+change alters or adds to a feature family the site describes, prepare the
+matching words, drawings or clips with the feature, but keep them on the
+`site-next` branch and merge it into `main` only after the release that ships
+the feature has published. Keep the site's existing design, structure and short
 copy, and change only what must change. A new field-guide card, section or page
 needs the user's explicit approval first; approval given in the task or
 elsewhere counts. When a new feature family might deserve a card, ask instead of
