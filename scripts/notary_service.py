@@ -12,9 +12,13 @@ INTERVAL = 120
 LIMIT = 2 * 60 * 60
 EXIT_DOWN = 75
 EXIT_CREDENTIALS = 3
+EXIT_AGREEMENT = 77
 UPLOAD_TIMEOUT = 60 * 60
-OK, UNAVAILABLE, CREDENTIALS, FAILED = "ok", "unavailable", "credentials", "failed"
+OK, UNAVAILABLE, CREDENTIALS, AGREEMENT, FAILED = "ok", "unavailable", "credentials", "agreement", "failed"
 STATUS = re.compile(r"(?:statusCode:\s*(?:Optional\()?|HTTP status code:?\s*|<title>\s*)(\d{3})\b")
+EXPIRED_AGREEMENT = re.compile(r"required\s+agreement\s+is\s+missing\s+or\s+has\s+expired"
+                               r"|in-effect\s+agreement\s+that\s+has\s+not\s+been\s+signed"
+                               r"|REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED", re.I)
 CREDENTIAL = re.compile(r"No Keychain password item found|errSecItemNotFound|could not be found in the keychain"
                         r"|Unable to authenticate|Invalid credentials", re.I)
 TIMEOUT = re.compile(r"timed out|NSURLErrorTimedOut", re.I)
@@ -24,6 +28,8 @@ NETWORK = re.compile(r"NSURLErrorDomain Code=-10(?:03|04|05|09)\b|Internet conne
 DOWN = ("Apple's notary service is down{reason} and stayed unavailable for 2 hours; nothing is wrong with the "
         "notary profile or the release. Rerun the same command once Apple's service is back and the release "
         "resumes where it stopped")
+ACCEPT_AGREEMENT = ("Apple needs you to accept an updated developer agreement at developer.apple.com "
+                    "(Account → Agreements). Then rerun the same command.")
 
 
 class Refusal(RuntimeError):
@@ -34,6 +40,17 @@ class Unavailable(Refusal):
     def __init__(self, reason=None):
         super().__init__(DOWN.format(reason=" (" + reason + ")" if reason else ""))
         self.reason = reason
+
+
+class Agreement(Refusal):
+    def __init__(self):
+        super().__init__(ACCEPT_AGREEMENT)
+
+
+def exit_status(error):
+    if isinstance(error, Unavailable):
+        return EXIT_DOWN
+    return EXIT_AGREEMENT if isinstance(error, Agreement) else 1
 
 
 def announce(message):
@@ -49,9 +66,13 @@ def classify(code, output):
         status = int(found.group(1))
         if 500 <= status <= 599 or status == 429:
             return UNAVAILABLE, "HTTP " + str(status)
+        if status == 403 and EXPIRED_AGREEMENT.search(output):
+            return AGREEMENT, "HTTP 403"
         if status in (401, 403):
             return CREDENTIALS, "HTTP " + str(status)
         return FAILED, "HTTP " + str(status)
+    if EXPIRED_AGREEMENT.search(output):
+        return AGREEMENT, None
     if CREDENTIAL.search(output):
         return CREDENTIALS, None
     if TIMEOUT.search(output):
@@ -70,6 +91,8 @@ def wait(attempt, log=announce, started=None, limit=LIMIT, interval=INTERVAL):
     while True:
         result = attempt()
         kind, reason = classify(result.returncode, result.stdout + result.stderr)
+        if kind == AGREEMENT:
+            raise Agreement()
         if kind != UNAVAILABLE:
             return kind, result
         waited = time.monotonic() - started
@@ -150,10 +173,12 @@ def submit(path, profile, log, receipt, record, unconfirmed, report=announce):
             raise Refusal("notarytool submit failed after Apple confirmed submission " + identity
                           + "; see " + str(log) + ". Rerun to resume it without uploading again")
         kind, reason = classify(result.returncode, result.stdout + result.stderr)
-        if kind not in (UNAVAILABLE, CREDENTIALS):
+        if kind not in (UNAVAILABLE, CREDENTIALS, AGREEMENT):
             raise Refusal(unconfirmed)
         receipt["submit_failure"] = reason or kind
         record(receipt)
+        if kind == AGREEMENT:
+            raise Agreement()
         if kind == CREDENTIALS:
             raise Refusal("notarytool could not use its Keychain profile for the upload; see " + str(log)
                           + ". Fix the profile and rerun; the rerun checks notarytool history before uploading again")
@@ -171,9 +196,9 @@ def main():
     args = parser.parse_args()
     try:
         kind, result = call(history(args.profile))
-    except Unavailable as error:
+    except Refusal as error:
         print(error, file=sys.stderr)
-        return EXIT_DOWN
+        return exit_status(error)
     if kind == OK:
         return 0
     sys.stderr.write(result.stdout + result.stderr)

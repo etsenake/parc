@@ -17,6 +17,11 @@ OUTAGE = ('Error: invalidJSONResponse(statusCode: Optional(503), data: "<html>\\
           'Unavailable</title>\\n</head>\\n<body>\\n<div id=\\"desc\\">It appears no upstream tasks are announcing '
           'via service discovery.</div>\\n<span class=\\"value\\">1e2b0fba-51fc-479f-a1f3-a4b78cec220c</span>'
           '\\n</body>\\n</html>\\n")\n')
+AGREEMENT = ('Error: HTTP status code: 403. A required agreement is missing or has expired. This request requires an '
+             'in-effect agreement that has not been signed or has expired. Ensure your team has signed the necessary '
+             'legal agreements and that they are not expired.\n')
+TEAM_403 = ('Error: HTTP status code: 403. Invalid or inaccessible developer team ID for the provided Apple ID. Ensure '
+            'the Team ID is correct and that you are a member of that team.\n')
 
 
 class Clock:
@@ -54,11 +59,32 @@ class Classifier(unittest.TestCase):
 
     def test_only_authentication_and_profile_errors_are_credential_problems(self):
         for output in ('Error: HTTP status code: 401. Invalid credentials. Username or password is incorrect.',
-                       'Error: HTTP status code: 403. A required agreement is missing or has expired.',
+                       TEAM_403, 'Error: HTTP status code: 403. Forbidden',
                        'Error: No Keychain password item found for profile: parc-notary',
                        'Error: errSecItemNotFound: The specified item could not be found in the keychain.'):
             with self.subTest(output=output[:60]):
                 self.assertEqual(service.classify(69, output)[0], service.CREDENTIALS)
+
+    def test_apple_agreement_403_is_its_own_stop_and_never_a_credential_problem(self):
+        cases = {
+            AGREEMENT: 'HTTP 403',
+            'Error: HTTP status code: 403. ' + AGREEMENT: 'HTTP 403',
+            'Error: HTTP status code: 403. This request requires an in-effect agreement that has not been signed or '
+            'has expired.': 'HTTP 403',
+            'Error: HTTP status code: 403. A required agreement\nis missing or has expired.': 'HTTP 403',
+            'Error: invalidJSONResponse(statusCode: Optional(403), data: "{\\"errors\\":[{\\"status\\":\\"403\\",'
+            '\\"code\\":\\"FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED\\"}]}")': 'HTTP 403',
+            '{"errors": [{"status": "403", "code": "FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED", '
+            '"title": "A required agreement is missing or has expired."}]}': None,
+        }
+        for output, reason in cases.items():
+            with self.subTest(output=output[:80]):
+                self.assertEqual(service.classify(69, output), (service.AGREEMENT, reason))
+        self.assertEqual(service.classify(69, 'Error: HTTP status code: 401. A required agreement is missing or has '
+                                              'expired.'), (service.CREDENTIALS, 'HTTP 401'))
+        self.assertEqual(service.classify(1, 'Error: HTTP status code: 503. A required agreement is missing or has '
+                                             'expired.'), (service.UNAVAILABLE, 'HTTP 503'))
+        self.assertEqual(service.classify(0, AGREEMENT), (service.OK, None))
 
     def test_success_and_unrecognised_failures(self):
         self.assertEqual(service.classify(0, '{"history": []}'), (service.OK, None))
@@ -105,8 +131,21 @@ class Waiting(unittest.TestCase):
                 self.assertEqual(service.wait(lambda: result(69, output), self.lines.append)[0], kind)
         self.assertEqual((self.clock.sleeps, self.lines), ([], []))
 
+    def test_apple_agreement_stops_at_once_with_the_accept_message(self):
+        attempts = []
+        with self.assertRaises(service.Agreement) as raised:
+            service.wait(lambda: attempts.append(1) or result(69, AGREEMENT), self.lines.append)
+        self.assertEqual(str(raised.exception), 'Apple needs you to accept an updated developer agreement at '
+                                                'developer.apple.com (Account → Agreements). Then rerun the same '
+                                                'command.')
+        self.assertIsInstance(raised.exception, service.Refusal)
+        self.assertEqual((len(attempts), self.clock.sleeps, self.lines), (1, [], []))
+        self.assertEqual(service.exit_status(raised.exception), 77)
+        self.assertEqual(service.wait(lambda: result(69, TEAM_403), self.lines.append)[0], service.CREDENTIALS)
+
     def test_check_command_exit_codes(self):
         for replies, code in (([result(0, '{}')], 0), ([result(69, 'Error: HTTP status code: 401.')], 3),
+                              ([result(69, TEAM_403)], 3), ([result(69, AGREEMENT)], 77),
                               ([result(1, 'Error: Unexpected argument')], 2), ([result(1, OUTAGE)] * 61, 75)):
             with self.subTest(code=code), \
                     patch.object(service.subprocess, 'run', side_effect=lambda *args, **kwargs: replies.pop(0)), \
@@ -115,6 +154,8 @@ class Waiting(unittest.TestCase):
                 self.assertEqual(service.main(), code)
                 if code == 75:
                     self.assertIn("Apple's notary service is down", errors.getvalue())
+                if code == 77:
+                    self.assertEqual(errors.getvalue(), service.ACCEPT_AGREEMENT + '\n')
 
     def test_hung_notarytool_counts_as_a_timeout(self):
         with patch.object(service.subprocess, 'run', side_effect=subprocess.TimeoutExpired(['xcrun'], 300)):
@@ -146,6 +187,8 @@ class Submitting(unittest.TestCase):
                 return result(1, OUTAGE, args)
             if reply == 'locked':
                 return result(1, 'Error: No Keychain password item found for profile: parc-notary', args)
+            if reply == 'unsigned':
+                return result(69, AGREEMENT, args)
             return result(0, json.dumps({'id': reply}), args)
         entries = self.listed.pop(0) if self.listed else []
         return result(0, entries if isinstance(entries, str) else json.dumps({'history': entries}), args)
@@ -201,6 +244,18 @@ class Submitting(unittest.TestCase):
             {'name': 'Parc-package.zip', 'createdDate': None, 'id': 'undated'}]]
         self.assertEqual(self.submit(), 'd00d0000-0000-4000-8000-000000000000')
         self.assertEqual(self.count('submit'), 2)
+
+    def test_apple_agreement_during_upload_stops_without_retrying_and_the_rerun_checks_history(self):
+        self.submits = ['unsigned']
+        with self.assertRaises(service.Agreement):
+            self.submit()
+        self.assertEqual((self.count('submit'), self.count('history')), (1, 0))
+        self.assertEqual((self.receipt['submit_failure'], self.saved[-1]['submit_failure'], self.clock.sleeps),
+                         ('HTTP 403', 'HTTP 403', []))
+        self.calls.clear()
+        self.submits = ['e0e00000-0000-4000-8000-000000000000']
+        self.assertEqual(self.submit(), 'e0e00000-0000-4000-8000-000000000000')
+        self.assertEqual([call[2] for call in self.calls], ['history', 'submit'])
 
     def test_history_check_looks_back_to_the_first_unconfirmed_attempt(self):
         first = service.utc() - datetime.timedelta(hours=2)

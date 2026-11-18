@@ -589,7 +589,7 @@ class Release:
                 return subprocess.CompletedProcess(history, error.code, error.output, "")
         try:
             return notary_service.wait(attempt, self.emit)[0]
-        except notary_service.Unavailable as error:
+        except notary_service.Refusal as error:
             raise Failure(str(error)) from None
 
     def ancestor(self, older, newer):
@@ -895,6 +895,8 @@ class Release:
         except Failure as error:
             if error.code == notary_service.EXIT_DOWN:
                 raise Failure(notary_service.Unavailable().args[0]) from None
+            if error.code == notary_service.EXIT_AGREEMENT:
+                raise Failure(notary_service.ACCEPT_AGREEMENT) from None
             raise
         self.checkpoint(package=str(package_run / "development"))
 

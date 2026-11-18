@@ -239,8 +239,7 @@ def main():
     try:
         package_dmg(args.package, args.output, args.sign_identity, args.profile, args.team)
     except (Refusal, OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
-        parser.exit(notary.service.EXIT_DOWN if isinstance(error, notary.service.Unavailable) else 1,
-                    "DMG packaging refused: " + str(error) + "\n")
+        parser.exit(notary.service.exit_status(error), "DMG packaging refused: " + str(error) + "\n")
 
 
 if __name__ == "__main__":

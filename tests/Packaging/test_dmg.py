@@ -21,6 +21,9 @@ layout = dmg.layout
 REAL_RUN = subprocess.run
 TEAM = "TEAM123456"
 SUBMISSION = "b6743aa6-df42-48cb-bd8e-cbbebee591fd"
+AGREEMENT = ("Error: HTTP status code: 403. A required agreement is missing or has expired. This request requires an "
+             "in-effect agreement that has not been signed or has expired. Ensure your team has signed the necessary "
+             "legal agreements and that they are not expired.\n")
 
 
 class DmgTests(unittest.TestCase):
@@ -63,6 +66,7 @@ class DmgTests(unittest.TestCase):
         self.layout_error = None
         self.attached = []
         self.outages = 0
+        self.unsigned = set()
 
     def run_tool(self, args, **kwargs):
         args = list(map(str, args))
@@ -91,6 +95,8 @@ class DmgTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 16, "", "reported busy after unmounting")
         elif args[:2] == ["codesign", "-dv"]:
             err = f"Authority=Developer ID Application: Fixture\nTeamIdentifier={self.actual_team}\nTimestamp=Today\nCDHash={self.cdhash}\n"
+        elif args[:2] == ["xcrun", "notarytool"] and args[2] in self.unsigned:
+            return subprocess.CompletedProcess(args, 69, "", AGREEMENT)
         elif args[:3] == ["xcrun", "notarytool", "submit"] and self.outages:
             self.outages -= 1
             return subprocess.CompletedProcess(args, 1, "", 'Error: invalidJSONResponse(statusCode: Optional(503))')
@@ -342,6 +348,34 @@ class DmgTests(unittest.TestCase):
             dmg.main()
         self.assertEqual(stopped.exception.code, 75)
         self.assertIn("Apple's notary service is down (HTTP 503)", errors.getvalue())
+
+    def test_unaccepted_apple_agreement_stops_the_upload_and_the_rerun_checks_history_first(self):
+        self.unsigned = {"submit"}
+        with self.assertRaisesRegex(dmg.notary.service.Agreement, "^Apple needs you to accept"):
+            self.execute()
+        self.assertEqual((self.count(["xcrun", "notarytool", "submit"]), self.count(["xcrun", "notarytool", "history"])),
+                         (1, 0))
+        self.unsigned, self.calls = set(), []
+        self.assertEqual(self.execute()["phase"], "complete")
+        operations = [call[2] for call in self.calls if call[:2] == ["xcrun", "notarytool"]]
+        self.assertEqual(operations[:2], ["history", "submit"])
+
+    def test_unaccepted_apple_agreement_while_waiting_resumes_the_same_submission(self):
+        self.unsigned = {"info"}
+        with self.assertRaises(dmg.notary.service.Agreement):
+            self.execute()
+        self.unsigned = set()
+        self.assertEqual(self.execute()["phase"], "complete")
+        self.assertEqual(self.count(["xcrun", "notarytool", "submit"]), 1)
+
+    def test_unaccepted_apple_agreement_exits_with_its_own_status(self):
+        with (patch.object(dmg, "package_dmg", side_effect=dmg.notary.service.Agreement()),
+              patch.object(sys, "argv", ["package-dmg.py", str(self.package), "--output", str(self.output),
+                                             "--sign-identity", "i", "--profile", "p", "--team", TEAM]),
+              contextlib.redirect_stderr(io.StringIO()) as errors, self.assertRaises(SystemExit) as stopped):
+            dmg.main()
+        self.assertEqual(stopped.exception.code, 77)
+        self.assertEqual(errors.getvalue(), "DMG packaging refused: " + dmg.notary.service.ACCEPT_AGREEMENT + "\n")
 
     def test_changed_app_report_or_completed_image_cannot_resume(self):
         self.execute()

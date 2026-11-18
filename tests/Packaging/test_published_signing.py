@@ -91,6 +91,8 @@ class PublishedSigningTests(unittest.TestCase):
             if os.environ.get('FIXTURE_MISSING_NOTARY'):
                 sys.exit('Error: No Keychain password item found for profile: parc-notary')
             if os.environ.get('FIXTURE_NOTARY_ODD'): sys.exit('Error: Unexpected argument')
+            if os.environ.get('FIXTURE_NOTARY_AGREEMENT'):
+                sys.exit('Error: HTTP status code: 403. A required agreement is missing or has expired.')
         """)
         (self.repo / "scripts/notarize-app.py").write_text(textwrap.dedent("""
             import json, os, pathlib, sys
@@ -168,6 +170,14 @@ class PublishedSigningTests(unittest.TestCase):
         result = self.run_package()
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn('Unexpected argument', result.stderr)
+        self.assertNotIn('store this Mac', result.stderr)
+        self.assertFalse((self.root / 'built').exists())
+
+    def test_unaccepted_apple_agreement_stops_before_building_without_blaming_credentials(self):
+        self.env['FIXTURE_NOTARY_AGREEMENT'] = '1'
+        result = self.run_package()
+        self.assertEqual(result.returncode, 77, result.stderr)
+        self.assertIn('Apple needs you to accept an updated developer agreement at developer.apple.com', result.stderr)
         self.assertNotIn('store this Mac', result.stderr)
         self.assertFalse((self.root / 'built').exists())
 

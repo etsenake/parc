@@ -167,7 +167,7 @@ def main():
         return 0
     except (Refusal, OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         print('Notarization refused: ' + str(error), file=sys.stderr)
-        return service.EXIT_DOWN if isinstance(error, service.Unavailable) else 1
+        return service.exit_status(error)
 
 
 if __name__ == '__main__':

@@ -21,6 +21,11 @@ import release_lease
 MISSING_PROFILE = 'Error: No Keychain password item found for profile: parc-notary'
 OUTAGE = ('Error: invalidJSONResponse(statusCode: Optional(503), data: "<html>\\n<title>503 Service Unavailable</title>'
           '\\nIt appears no upstream tasks are announcing via service discovery.\\n</html>")')
+AGREEMENT = ('Error: HTTP status code: 403. A required agreement is missing or has expired. This request requires an '
+             'in-effect agreement that has not been signed or has expired. Ensure your team has signed the necessary '
+             'legal agreements and that they are not expired.')
+ACCEPT = ('^Apple needs you to accept an updated developer agreement at developer\\.apple\\.com '
+          '\\(Account → Agreements\\)\\. Then rerun the same command\\.$')
 
 
 class Clock:
@@ -1391,7 +1396,8 @@ class Pipeline(RepositoryFixture):
 
     def test_preflight_restores_only_for_authentication_or_profile_errors(self):
         for error, restores in (('Error: HTTP status code: 401. Invalid credentials.', 1),
-                                ('Error: HTTP status code: 403. A required agreement is missing or has expired.', 1),
+                                ('Error: HTTP status code: 403. Invalid or inaccessible developer team ID for the '
+                                 'provided Apple ID.', 1),
                                 (MISSING_PROFILE, 1), ('Error: unexpected notarytool output', 0)):
             with self.subTest(error=error):
                 runner, commands, histories, clock = self.outage([error, 'ok'])
@@ -1405,10 +1411,24 @@ class Pipeline(RepositoryFixture):
                 for handle in runner.locks: handle.close()
                 runner.locks.clear()
 
+    def test_preflight_stops_for_an_unaccepted_apple_agreement_without_restoring(self):
+        for replies in ([AGREEMENT], ['Error: HTTP status code: 403. Forbidden', AGREEMENT]):
+            with self.subTest(replies=len(replies)):
+                runner, commands, histories, clock = self.outage(list(replies))
+                with self.assertRaisesRegex(release.Failure, ACCEPT):
+                    runner.preflight()
+                restores = len(replies) - 1
+                self.assertEqual(len([args for args in commands if args[-1] == 'restore']), restores)
+                self.assertEqual((len(histories), clock.sleeps), (len(replies), []))
+                self.assertNotIn('notary_profile', runner.state)
+                for handle in runner.locks: handle.close()
+                runner.locks.clear()
+
     def test_package_stage_names_an_apple_outage_instead_of_a_bare_exit_code(self):
         runner = self.runner()
         runner.checkpoint(source=str(self.root), commit='f' * 40, workspace=str(self.root), manifest='/run/engine.json')
-        for code, expected in ((75, "^Apple's notary service is down and stayed unavailable"), (1, '^Command failed \\(1\\)')):
+        for code, expected in ((75, "^Apple's notary service is down and stayed unavailable"), (77, ACCEPT),
+                               (1, '^Command failed \\(1\\)')):
             runner.command = Mock(side_effect=release.Failure('Command failed (' + str(code) + ')', code))
             with self.subTest(code=code), self.assertRaisesRegex(release.Failure, expected):
                 runner.package()

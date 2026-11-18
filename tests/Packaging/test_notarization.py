@@ -16,6 +16,9 @@ spec.loader.exec_module(notarize)
 TEAM = 'TEAM123456'
 SUBMISSION = 'b6743aa6-df42-48cb-bd8e-cbbebee591fd'
 OUTAGE = 'Error: invalidJSONResponse(statusCode: Optional(503), data: "<title>503 Service Unavailable</title>")\n'
+AGREEMENT = ('Error: HTTP status code: 403. A required agreement is missing or has expired. This request requires an '
+             'in-effect agreement that has not been signed or has expired. Ensure your team has signed the necessary '
+             'legal agreements and that they are not expired.\n')
 
 
 class Clock:
@@ -54,6 +57,7 @@ class NotarizationTests(unittest.TestCase):
         self.actual_team = TEAM
         self.authority = 'Developer ID Application: Fixture'
         self.outages = {}
+        self.unsigned = set()
         self.history = []
         self.clock = Clock()
 
@@ -66,6 +70,8 @@ class NotarizationTests(unittest.TestCase):
         if args[:2] == ['xcrun', 'notarytool'] and self.outages.get(args[2]):
             self.outages[args[2]] -= 1
             return subprocess.CompletedProcess(args, 1, '', OUTAGE)
+        if args[:2] == ['xcrun', 'notarytool'] and args[2] in self.unsigned:
+            return subprocess.CompletedProcess(args, 69, '', AGREEMENT)
         if args[:2] == ['codesign', '-dv']:
             err = f'Authority={self.authority}\nTeamIdentifier={self.actual_team}\nTimestamp=Today\n'
         elif args[0] == 'ditto':
@@ -185,6 +191,40 @@ class NotarizationTests(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()) as errors:
             self.assertEqual(notarize.main(), 75)
         self.assertIn("Apple's notary service is down (HTTP 503)", errors.getvalue())
+
+    def stop_for_agreement_then_resume(self, operation):
+        self.unsigned = {operation}
+        with self.assertRaisesRegex(notarize.service.Agreement, '^Apple needs you to accept'):
+            self.execute()
+        self.assertEqual((self.count('submit'), self.count(operation), self.clock.sleeps), (1, 1, []))
+        self.unsigned = set()
+        self.assertEqual(self.execute()['phase'], 'complete')
+        self.assertEqual(self.count('submit'), 1)
+
+    def test_unaccepted_apple_agreement_while_polling_stops_and_resumes_the_same_submission(self):
+        self.stop_for_agreement_then_resume('info')
+
+    def test_unaccepted_apple_agreement_while_fetching_the_log_stops_and_resumes_the_same_submission(self):
+        self.stop_for_agreement_then_resume('log')
+
+    def test_unaccepted_apple_agreement_during_upload_stops_and_the_rerun_checks_history_first(self):
+        self.unsigned = {'submit'}
+        with self.assertRaises(notarize.service.Agreement):
+            self.execute()
+        self.assertEqual((self.count('submit'), self.count('history'), self.clock.sleeps), (1, 0, []))
+        self.assert_unpublished()
+        self.unsigned = set()
+        self.calls.clear()
+        self.assertEqual(self.execute()['phase'], 'complete')
+        operations = [call[2] for call in self.calls if call[:2] == ['xcrun', 'notarytool']]
+        self.assertEqual(operations[:2], ['history', 'submit'])
+
+    def test_unaccepted_apple_agreement_exits_with_its_own_status(self):
+        with patch.object(notarize, 'notarize', side_effect=notarize.service.Agreement()), \
+                patch.object(notarize.sys, 'argv', ['notarize-app.py', str(self.package), '--profile', 'p', '--team', TEAM]), \
+                contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(notarize.main(), 77)
+        self.assertEqual(errors.getvalue(), 'Notarization refused: ' + notarize.service.ACCEPT_AGREEMENT + '\n')
 
     def test_receipt_from_an_older_unconfirmed_upload_refuses_without_calling_apple(self):
         folder = self.package.parent / 'notarization'

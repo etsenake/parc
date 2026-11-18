@@ -76,9 +76,13 @@ published tag still refuses.
    service is down, never a credential problem: the preflight logs "Apple's notary service
    is unavailable (HTTP 503); waiting and retrying", tries again every 2
    minutes for up to 2 hours, then stops saying the service is down, and
-   rerunning the command resumes. Only an authentication or profile error
-   (HTTP 401 or 403, or a missing profile or Keychain item) restores from
-   1Password; anything else stops and names the log.
+   rerunning the command resumes. Apple's 403 saying a required agreement is
+   missing or has expired never restores: the preflight stops at once with
+   "Apple needs you to accept an updated developer agreement at
+   developer.apple.com (Account → Agreements). Then rerun the same command."
+   Only an authentication or profile error (any other HTTP 401 or 403, or a
+   missing profile or Keychain item) restores from 1Password; anything else
+   stops and names the log.
 2. Fast-forward main and check the exact fetched commit before committing
    anything. The overlay check compares `Engine/ParcHost/overlay.json` and the
    engine inputs it lists with the newest published tag by the engine stage's
@@ -193,11 +197,13 @@ Returned network failures retry unchanged inputs. Pending Apple submissions
 resume their stored IDs rather than uploading again. An ambiguous upload with no
 confirmed ID stops for reconciliation instead of duplicating it. During
 packaging, the profile check, uploads, status polls and log downloads wait out
-an Apple notary outage the way the preflight does. An upload that failed
-because the service was down, timed out or was refused its credentials is
-submitted again only when `notarytool history` lists no upload of that file
-since its first unconfirmed attempt began; a listed one stops for
-reconciliation. After 2 hours the package stage stops saying Apple's notary
+an Apple notary outage the way the preflight does, and stop with the same
+accept-the-agreement message when Apple reports a missing or expired developer
+agreement. An upload that failed because the service was down, timed out, was
+refused its credentials or hit that agreement stop is submitted again only when
+`notarytool history` lists no upload of that file since its first unconfirmed
+attempt began; a listed one stops for reconciliation. After 2 hours the package
+stage stops saying Apple's notary
 service is down, and a rerun resumes the stored submission. Interrupted
 GitHub uploads compare existing SHA-256 digests and upload only missing assets.
 The appcast's pubDate is saved in the run state and Ed25519 signatures are
@@ -330,7 +336,8 @@ terminal that prompt reads standard input, so both commands run in a new session
 and receive the password on stdin. The release preflight runs `restore` only when
 `notarytool history` reports an authentication or profile error, installing the
 1Password CLI first when it is missing, rechecks the profile, and stops if it
-still fails. An Apple outage never triggers a restore.
+still fails. An Apple outage or a missing developer agreement never triggers a
+restore.
 `store-credentials --sync` remains Apple's separate iCloud Keychain route; it
 cannot combine with `--keychain`. The script checks credentials before starting
 compilation. One-time provisioning or a locked Keychain can require the user's
