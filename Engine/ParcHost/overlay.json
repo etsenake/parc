@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 786,
+  "version": 787,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -2139,12 +2139,12 @@
     {
       "source": "Engine/ParcChromium/parc_settings_page.cc",
       "target": "parc/parc_settings_page.cc",
-      "sha256": "7cf9f07b4087c6318dce3f979e51cca36fc646e8e50cda453e501baa3be9d700"
+      "sha256": "dae5b1893375e31a43970c8ccd98088ff86a8f5e4a65ea0883cdfad67a86372b"
     },
     {
       "source": "Engine/ParcChromium/settings_page_contract.py",
       "target": "parc/settings_page_contract.py",
-      "sha256": "e21a53d52f211352fa354c2b2f71a280cd11bb247c6388705e9df828835e944f"
+      "sha256": "0b9df9c7c40d60de78ab3f507bfc02307acd18969a634020e28a22da767abdc7"
     },
     {
       "source": "Engine/ParcChromium/generate_error_pages.py",
@@ -6919,12 +6919,37 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-settings-visibility.patch",
-      "sha256": "ffaa53639e4cefeeeef412819a46ef6a2860ed810527a5892366f62076fc656f",
+      "sha256": "b5b4533eb97c9cdcc2d59b42f55cf85fe8dbe1c3a2dfc4b0a2694a41293b7fba",
       "files": [
         {
           "target": "chrome/browser/resources/settings/page_visibility.ts",
           "before_sha256": "eaa718e2697908bd55613a6f9909ac469f9e9d9b7d465d66aa69869fe82112ee",
-          "after_sha256": "a7800f86822291564bc3ead96cc28b0e83addde3d24d7bbb025948698221d643"
+          "after_sha256": "862f223a4e3edd01f75d7a9947732b8f2cfc8edc1229b846e232062a6c22fad5"
+        },
+        {
+          "target": "chrome/browser/resources/settings/route.ts",
+          "before_sha256": "5ea93bd5c4a0eb9fc405c388306cd4f0f9fc44bbe03d391f79038dc28b307335",
+          "after_sha256": "6cbe38dc62c49e49b26780e1653a8809ee649f34275a0d07943870ca90729990"
+        },
+        {
+          "target": "chrome/browser/resources/settings/search_settings.ts",
+          "before_sha256": "ad2d92fbc6e580f9d740ff6bc01089a8031981e9d9e3e709612f87c4b5bbf020",
+          "after_sha256": "095ef70a83848c5be887de7f7f340fdd7c86c12601270b62d1962e92d6c4f90d"
+        },
+        {
+          "target": "chrome/browser/resources/settings/settings_page/settings_section.ts",
+          "before_sha256": "d34d659356b60417d0bfcd49074529af6e8ce20e0cc12e3cad2689dd163efb3d",
+          "after_sha256": "9c57051a39de40f637068baee55c51cd31ef0933bba2a6c610e008c42d52c4b8"
+        },
+        {
+          "target": "chrome/browser/resources/settings/settings_page/settings_subpage.ts",
+          "before_sha256": "37ecf0be726303b0c8553c7ba8f0da2701b50458aad7e75409322e8fdf9ea8b7",
+          "after_sha256": "083e01125a8097076133fb73ead97ed8dce05b149f9c991b3e97f56f9886edf1"
+        },
+        {
+          "target": "chrome/browser/resources/settings/reset_page/reset_profile_dialog.ts",
+          "before_sha256": "563627333927fb9ccb2ac2bbf5b4441cce59f09ee3615f8e11675ed00130c952",
+          "after_sha256": "cfbb2e55beb724b45deb001f2008e54c1a6d5b44be45fbfaed8abc8baa8a4cba"
         }
       ]
     }

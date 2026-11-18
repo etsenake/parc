@@ -151,11 +151,16 @@ which an embedder cannot override without replacing that file.
   share-this-tab dialog and nine desktop-capture list, controller and WebRTC files. Both are
   upstream candidates.
 - **`native-settings-visibility`**: Chromium's Settings page takes its section and row hide list
-  from a `parcPageVisibility` load-time value when one is present, before its guest check, in
-  `chrome/browser/resources/settings/page_visibility.ts`. Chromium builds that list once, as the
-  page's script loads, only for guest profiles; no embedder input reaches it, and styling or
-  scripting the page from outside would break with every redesign. Parc's `parc_settings_page.cc`
-  supplies the value and the per-row switches through Settings' own registration
+  from a `parcPageVisibility` load-time value when one is present, before its guest check, and
+  turns Parc's `parcHiddenRows` (page elements and selectors for their rows) into a stylesheet and
+  a search filter, in `chrome/browser/resources/settings/page_visibility.ts`. `settings_section.ts`
+  and `settings_subpage.ts` apply it to their page as they appear, `search_settings.ts` skips those
+  rows, `route.ts` sends the page's home to Your saved info while You and Google is hidden, and
+  `reset_profile_dialog.ts` applies it and unticks the report checkbox. Chromium builds the list
+  once, only for guest profiles, and no embedder input reaches a page element's shadow tree;
+  styling or scripting the page from outside would break with every redesign. Parc's
+  `parc_settings_page.cc` supplies the values through Settings' own registration, and its
+  Settings controller subclass turns the reset report off before Chromium's handler sees it
   ([More Settings](settings.md#more-settings)).
 - **`native-file-dialogs-direct-overlay`**: background downloads and print preview get native parent
   windows, and a directory listing releases its delegate before reporting completion, so the

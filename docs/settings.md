@@ -155,49 +155,63 @@ Advanced's **More Settings…** opens Chromium's own Settings page and can reuse
 any existing Settings subpage in that Space without resetting it. Neither route
 takes a tab from a different physical window.
 
-The page hides what does nothing in Parc, misleads or needs Google.
-`Engine/ParcChromium/parc_settings_page.cc` holds the list: Chromium's own
-section and row hide list, which the `native-settings-visibility` patch reads,
-plus Chromium's per-row switches. A Parc subclass of Settings' registration adds
-them to the page's load-time data right after Chromium builds the page, before
-its frame exists; a guest profile keeps Chromium's own guest list. Two startup
-feature defaults turn off what kept the AI page
-([engine policy](engine-flags.md#runtime-features)).
+The page hides what does nothing in Parc, misleads, contradicts Parc's own
+controls or needs Google. `Engine/ParcChromium/parc_settings_page.cc` holds three
+lists: Chromium's own section and row hide list, Chromium's per-row switches, and
+Parc's rows by name, each a page element with selectors for the rows it hides. A
+Parc subclass of Settings' registration adds them to the page's load-time data
+right after Chromium builds the page, before its frame exists; a guest profile
+keeps Chromium's own section list. The `native-settings-visibility` patch reads
+them: each settings section and subpage hides its page's named rows as it
+appears, search skips them, and the page's home falls back to Your saved info
+while You and Google is hidden. Two startup feature defaults turn off what kept
+the AI page ([engine policy](engine-flags.md#runtime-features)).
 
-- **Hidden:** On startup (Parc resets it on every profile load; Restore previous
-  windows is the control), the AI page, Privacy Guide and its promo card, the
-  sign-in promo and Allow sign-in toggle, Autocomplete searches and URLs (each
-  Space's suggestions switch is the control), extended Safe Browsing reporting,
-  Appearance's theme, home button and page, bookmarks bar, glass, Ctrl+Tab order,
-  tab scroll buttons, everything menu, both tab group rows and hover card rows,
-  Show downloads when finished, autofill's Gemini suggestions, Wallet shopping and
-  pass detection, pay over time and enhanced autofill's re-check toggle, and the
-  Offer writing help site setting.
-- **Kept**, because they work: privacy, cookies, security, HTTPS-First, Secure
-  DNS, certificates, site settings, passwords, addresses, local cards and their
-  device-lock check, languages and spell check, Memory Saver, Energy Saver,
-  preloading, hardware acceleration, proxy, fonts, page zoom, Tab highlights
-  links, delete browsing data, Reset settings, extensions, Safety Hub, and the
-  search engine, default browser and download location rows, which stay in sync
-  with Parc's own.
-- **Still shown**, because Chromium has no switch for them: You and Google's
-  profile row, Sync or Google services link (with Make searches and browsing
-  better) and Import bookmarks, since hiding that section breaks the page's home
-  view and search; Appearance's Mode, Customize toolbar, tab strip position, one
-  organizer panel button toggle (Chromium's swap for its tab search toggle, which
-  also drops the tab group rows), side panel, split view and Warn before
-  quitting; performance alerts, inactive tab appearance and its hover card link;
-  the Translate switch; enhanced Safe Browsing; the Google Wallet, Google
-  Account, Google Pay and card benefits rows and the enhanced autofill toggle;
-  System's Restart button; Safety Hub's version card; and About's update status.
-  Each needs another Chromium change to hide.
+- **Hidden:** You and Google (profile, Sync and Google services with Make
+  searches and browsing better, Import bookmarks); On startup (Parc resets it on
+  every profile load; Restore previous windows is the control); the AI page;
+  Privacy Guide and its promo card; the sign-in promo and Allow sign-in toggle;
+  Autocomplete searches and URLs (each Space's suggestions switch is the
+  control); enhanced Safe Browsing, extended reporting and the Advanced
+  Protection Program link; Appearance's theme, home button, bookmarks bar, Mode,
+  Customize toolbar, tab strip position, glass, Ctrl+Tab order, tab scroll
+  buttons, everything menu, organizer button, tab group, hover card and side
+  panel rows, split view and Warn before quitting (General has Parc's own);
+  Performance's alerts, inactive tab appearance and hover card link; the Google
+  Translate card and its translation note under each language; Show downloads
+  when finished; Google Wallet, Google Account, Google Pay, card benefits, pay
+  over time and Wallet shopping and pass detection; the Autofill settings card
+  (enhanced autofill), identity documents and travel, which need a Google account;
+  autofill's Gemini suggestions; Offer writing help; System's Relaunch button;
+  Safety Hub's version card; About's update status (Parc updates through
+  Sparkle); Accessibility's copy confirmations (Chromium's toasts never show in
+  Parc) and Google image descriptions; and the Reset dialog's report checkbox.
+- **Kept**, because they work: privacy, cookies, security, Standard and No
+  protection, HTTPS-First, Secure DNS, certificates, site settings, passwords,
+  addresses, local cards and their device-lock check, languages and spell check,
+  Memory Saver, Energy Saver, preloading, hardware acceleration, proxy, fonts,
+  page zoom, Tab highlights links, delete browsing data, Reset settings,
+  extensions, Safety Hub, and the search engine, default browser and download
+  location rows, which stay in sync with Parc's own.
+- **Still shown:** Live Caption's Live Translate option, which needs a Google
+  key but sits inside the caption control, out of reach of the page's named
+  rows; the Related Google services heading above the local Password Manager;
+  and the identity documents and travel pages, which only a typed address
+  reaches; search skips them.
+
+Reset settings never sends Chromium's settings report to Google: the dialog's
+checkbox starts unticked and hidden, and Parc's Settings controller turns the
+report choice off before Chromium's reset handler sees it. A user who picked
+enhanced Safe Browsing before it was hidden keeps it, with neither visible option
+selected, until they choose one.
 
 Every Parc link into the page (Privacy and Security, Credit Cards,
 Notifications, Manage search, Clear Browsing Data, site and pop-up settings, More
-Settings itself and download warnings' Safe Browsing link) lands on a section
-that stays. The engine build runs `settings_page_contract.py`, which stops by
-name if Chromium renames or drops a key, switch or feature the list relies on;
-`tests/EngineSource/test_settings_page.py` checks the list and the guard.
+Settings itself and download warnings' Safe Browsing link, which opens Security)
+lands on a section that stays. The engine build runs `settings_page_contract.py`,
+which stops by name if Chromium renames or drops a key, switch, feature, named row
+or its page, a hook point, the home fallback or the reset handler's report choice;
+`tests/EngineSource/test_settings_page.py` checks the lists and the guard.
 
 ## Application Settings from Incognito
 

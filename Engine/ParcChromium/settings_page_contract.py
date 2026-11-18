@@ -3,14 +3,37 @@ import argparse
 import json
 import re
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 SETTINGS_JS = 'chrome/browser/resources/settings'
 SETTINGS_CC = 'chrome/browser/ui/webui/settings'
 PAGE_VISIBILITY = f'{SETTINGS_JS}/page_visibility.ts'
 ROUTES = f'{SETTINGS_JS}/route.ts'
+SEARCH = f'{SETTINGS_JS}/search_settings.ts'
+SECTION = f'{SETTINGS_JS}/settings_page/settings_section.ts'
+SUBPAGE = f'{SETTINGS_JS}/settings_page/settings_subpage.ts'
+RESET_DIALOG = f'{SETTINGS_JS}/reset_page/reset_profile_dialog.ts'
+RESET_DIALOG_HTML = f'{SETTINGS_JS}/reset_page/reset_profile_dialog.html.ts'
+RESET_HANDLER = f'{SETTINGS_CC}/reset_settings_handler.cc'
 SETTINGS_UI = f'{SETTINGS_CC}/settings_ui.cc'
 SETTINGS_UI_HEADER = f'{SETTINGS_CC}/settings_ui.h'
+VISIBILITY_KEY = 'parcPageVisibility'
+ROWS_KEY = 'parcHiddenRows'
+HOME_FALLBACK = 'return routes.PEOPLE || routes.AUTOFILL || routes.SEARCH;'
+HOME_SECTIONS = ('AUTOFILL', 'SEARCH')
+PATCH_MARKERS = {
+    PAGE_VISIBILITY: ("loadTimeData.valueExists('parcPageVisibility')",
+                      "loadTimeData.valueExists('parcHiddenRows')",
+                      'export function hideParcRows(node: Node)',
+                      'export function isParcHiddenRow(element: Element)'),
+    ROUTES: (HOME_FALLBACK,),
+    SEARCH: ('isParcHiddenRow(element)',),
+    SECTION: ('hideParcRows(this);',),
+    SUBPAGE: ('hideParcRows(this);',),
+    RESET_DIALOG: ('hideParcRows(this.$.dialog);', 'this.$.sendSettings.checked = false;'),
+}
+SELF_HIDING_HOSTS = {'settings-reset-profile-dialog': RESET_DIALOG}
 NESTED_INTERFACES = {
     'appearance': 'AppearancePageVisibility',
     'privacy': 'PrivacyPageVisibility',
@@ -27,6 +50,11 @@ FEATURES = {
         ('kGoogleSearchAiModeWorkspace', 'chrome/common/chrome_features.cc'),
 }
 VALUES = re.compile(r'R"json\((.*?)\)json"', re.S)
+NAME = r'[A-Za-z][\w-]*'
+ATTRIBUTE = r'\[([a-z][\w-]*)(?:="([^"\\]*)")?\]'
+SIMPLE = re.compile(rf'#({NAME})|\.({NAME})|{ATTRIBUTE}|:has\(')
+VOID_TAGS = {'area', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'wbr'}
+SCOPE = {}
 
 
 class Contract:
@@ -34,6 +62,7 @@ class Contract:
         self.chromium = chromium
         self.read_paths = set()
         self.problems = []
+        self.trees = {}
 
     def text(self, relative: str) -> str:
         path = self.chromium / relative
@@ -43,17 +72,30 @@ class Contract:
             return ''
         return path.read_text(encoding='utf-8')
 
-    def tree(self, relative: str, suffixes: tuple) -> str:
+    def files(self, relative: str, suffixes: tuple) -> dict:
+        key = (relative, suffixes)
+        if key not in self.trees:
+            root = self.chromium / relative
+            found = {}
+            if not root.is_dir():
+                self.problems.append(f'{relative} is missing')
+            else:
+                for path in sorted(root.rglob('*')):
+                    if path.suffix in suffixes and path.is_file() and 'test' not in path.name:
+                        self.read_paths.add(path)
+                        found[path] = path.read_text(encoding='utf-8')
+            self.trees[key] = found
+        return self.trees[key]
+
+    def watch(self, relative: str):
         root = self.chromium / relative
-        if not root.is_dir():
-            self.problems.append(f'{relative} is missing')
-            return ''
-        parts = []
-        for path in sorted(root.rglob('*')):
-            if path.suffix in suffixes and path.is_file() and 'test' not in path.name:
-                self.read_paths.add(path)
-                parts.append(path.read_text(encoding='utf-8'))
-        return '\n'.join(parts)
+        self.read_paths.update([root, *(path for path in root.rglob('*') if path.is_dir())])
+
+    def tree(self, relative: str, suffixes: tuple) -> str:
+        return '\n'.join(self.files(relative, suffixes).values())
+
+    def relative(self, path: Path) -> str:
+        return path.relative_to(self.chromium).as_posix()
 
     def fail(self, message: str):
         self.problems.append(message)
@@ -75,24 +117,40 @@ def load_values(path: Path) -> dict:
     if not match:
         raise ValueError(f'{path} has no R"json(...)json" settings values')
     values = json.loads(match.group(1))
-    if not isinstance(values, dict) or not isinstance(values.get('parcPageVisibility'), dict):
-        raise ValueError(f'{path} values need a parcPageVisibility dictionary')
+    if not isinstance(values, dict) or not isinstance(values.get(VISIBILITY_KEY), dict):
+        raise ValueError(f'{path} values need a {VISIBILITY_KEY} dictionary')
+    if not isinstance(values.get(ROWS_KEY, {}), dict):
+        raise ValueError(f'{path} values need {ROWS_KEY} to be a dictionary')
     return values
+
+
+def check_patch(contract: Contract, applied: bool):
+    if not applied:
+        return
+    for relative, markers in PATCH_MARKERS.items():
+        source = contract.text(relative)
+        for marker in markers:
+            if marker not in source:
+                contract.fail(f'{relative} no longer carries Parc\'s settings hook: {marker}')
 
 
 def check_visibility(contract: Contract, visibility: dict, applied: bool):
     source = contract.text(PAGE_VISIBILITY)
     routes = contract.text(ROUTES)
-    if applied and "loadTimeData.valueExists('parcPageVisibility')" not in source:
-        contract.fail(f'{PAGE_VISIBILITY} no longer reads parcPageVisibility')
     if "if (!loadTimeData.getBoolean('isGuest')) {" not in source:
         contract.fail(f'{PAGE_VISIBILITY} lost the guest check the Parc patch precedes')
     keys = interface_keys(source, 'PageVisibility')
     if keys is None:
         contract.fail(f'{PAGE_VISIBILITY} no longer exports interface PageVisibility')
         return
-    if visibility.get('people') is False and 'return routes.PEOPLE;' in routes:
-        contract.fail('people cannot be hidden: route.ts still sends the settings home page and search to it')
+    if visibility.get('people') is False:
+        if HOME_FALLBACK not in routes and (applied or 'return routes.PEOPLE;' not in routes):
+            contract.fail('people cannot be hidden: route.ts no longer lets the settings home page '
+                          'fall back from it')
+        for name in HOME_SECTIONS:
+            if f'r.{name} = r.BASIC.createSection(' not in routes:
+                contract.fail(f'route.ts no longer creates the {name} section the settings home '
+                              'page falls back to')
     for key, value in sorted(visibility.items()):
         if key not in keys:
             contract.fail(f'page visibility key {key} is no longer in PageVisibility')
@@ -120,6 +178,245 @@ def check_visibility(contract: Contract, visibility: dict, applied: bool):
                 contract.fail(f'{key}.{nested_key} is no longer in {interface}')
             elif nested_value is False and not reads(consumer_source, pattern.format(key=nested_key)):
                 contract.fail(f'{consumer} no longer reads {key}.{nested_key}')
+
+
+class Element:
+    def __init__(self, tag: str, attributes: dict, parent):
+        self.tag = tag
+        self.attributes = attributes
+        self.parent = parent
+        self.children = []
+
+
+class TemplateTree(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.root = Element('', {}, None)
+        self.open = [self.root]
+
+    def add(self, tag: str, attributes: list) -> Element:
+        element = Element(tag, {name: value or '' for name, value in attributes}, self.open[-1])
+        self.open[-1].children.append(element)
+        return element
+
+    def handle_starttag(self, tag, attrs):
+        if tag != 'if':
+            element = self.add(tag, attrs)
+            if tag not in VOID_TAGS:
+                self.open.append(element)
+
+    def handle_startendtag(self, tag, attrs):
+        if tag != 'if':
+            self.add(tag, attrs)
+
+    def handle_endtag(self, tag):
+        for index in range(len(self.open) - 1, 0, -1):
+            if self.open[index].tag == tag:
+                del self.open[index:]
+                return
+
+
+def template_tree(template: str) -> Element:
+    start = template.find('<!--_html_template_start_-->')
+    end = template.find('<!--_html_template_end_-->')
+    parser = TemplateTree()
+    parser.feed(template[start:end] if 0 <= start < end else template)
+    parser.close()
+    return parser.root
+
+
+def parse_selector(text: str) -> list:
+    parts, end = parse_complex(text, 0, False)
+    if end != len(text):
+        raise ValueError(text)
+    return parts
+
+
+def parse_complex(text: str, index: int, relative: bool):
+    parts = []
+    if relative:
+        lead = re.match(r'\s*([>+~]?)\s*', text[index:])
+        parts.append(lead.group(1) or ' ')
+        index += lead.end()
+    while True:
+        compound, index = parse_compound(text, index)
+        parts.append(compound)
+        combinator = re.match(r'\s*([>+~])\s*|\s+(?=[^\s)])', text[index:])
+        if not combinator:
+            return parts, index
+        parts.append(combinator.group(1) or ' ')
+        index += combinator.end()
+
+
+def parse_compound(text: str, index: int):
+    compound = {'tag': None, 'id': [], 'class': [], 'attribute': [], 'has': []}
+    tag = re.match(r'[a-z][a-z0-9-]*', text[index:])
+    if tag:
+        compound['tag'] = tag.group(0)
+        index += tag.end()
+    start = index
+    while match := SIMPLE.match(text, index):
+        if match.group(0) == ':has(':
+            inner, index = parse_complex(text, match.end(), True)
+            close = re.match(r'\s*\)', text[index:])
+            if not close:
+                raise ValueError(text)
+            compound['has'].append(inner)
+            index += close.end()
+        elif match.group(1):
+            compound['id'].append(match.group(1))
+            index = match.end()
+        elif match.group(2):
+            compound['class'].append(match.group(2))
+            index = match.end()
+        else:
+            compound['attribute'].append((match.group(3), match.group(4)))
+            index = match.end()
+    if compound['tag'] is None and index == start:
+        raise ValueError(text)
+    return compound, index
+
+
+def supported(selector: str) -> bool:
+    try:
+        parse_selector(selector)
+    except ValueError:
+        return False
+    return True
+
+
+def descendants(element: Element):
+    for child in element.children:
+        yield child
+        yield from descendants(child)
+
+
+def compound_matches(element: Element, compound: dict, scope, root: Element) -> bool:
+    if compound is SCOPE:
+        return element is scope
+    attributes = element.attributes
+    return ((compound['tag'] is None or element.tag == compound['tag'])
+            and all(attributes.get('id') == name for name in compound['id'])
+            and all(name in attributes.get('class', '').split() for name in compound['class'])
+            and all(name in attributes and (value is None or attributes[name] == value)
+                    for name, value in compound['attribute'])
+            and all(any(complex_matches(candidate, [SCOPE, *inner], element, root)
+                        for candidate in descendants(root))
+                    for inner in compound['has']))
+
+
+def complex_matches(element: Element, parts: list, scope, root: Element) -> bool:
+    if element is None or not compound_matches(element, parts[-1], scope, root):
+        return False
+    if len(parts) == 1:
+        return True
+    combinator, rest = parts[-2], parts[:-2]
+    siblings = element.parent.children[:element.parent.children.index(element)]
+    if combinator == '>':
+        return complex_matches(element.parent, rest, scope, root)
+    if combinator == '+':
+        return bool(siblings) and complex_matches(siblings[-1], rest, scope, root)
+    if combinator == '~':
+        return any(complex_matches(sibling, rest, scope, root) for sibling in siblings)
+    ancestor = element.parent
+    while ancestor is not None:
+        if complex_matches(ancestor, rest, scope, root):
+            return True
+        ancestor = ancestor.parent
+    return False
+
+
+def matches_in(template: str, selector: str) -> bool:
+    root = template_tree(template)
+    parts = parse_selector(selector)
+    return any(complex_matches(element, parts, None, root) for element in descendants(root))
+
+
+def selector_parts(selector: str) -> list:
+    plain = re.sub(r'\[[^\]]*\]', ' ', selector)
+    parts = [('id', name, None) for name in re.findall(rf'#({NAME})', plain)]
+    parts += [('class', name, None) for name in re.findall(rf'\.({NAME})', plain)]
+    parts += [('attribute', name, value or None) for name, value in re.findall(ATTRIBUTE, selector)]
+    parts += [('tag', name, None) for name in re.findall(r'(?:^|[\s>+~(])([a-z][a-z0-9-]*)', plain)]
+    return parts
+
+
+def renders(template: str, kind: str, name: str, value) -> bool:
+    if kind == 'id':
+        pattern = rf'(?<![\w-])id="{re.escape(name)}"'
+    elif kind == 'class':
+        pattern = rf'(?<![\w-])class="[^"]*(?<![\w-]){re.escape(name)}(?![\w-])'
+    elif kind == 'attribute' and value is not None:
+        pattern = rf'(?<![\w-]){re.escape(name)}="{re.escape(value)}"'
+    elif kind == 'attribute':
+        pattern = rf'(?<![\w-]){re.escape(name)}[\s=>]'
+    else:
+        pattern = rf'<{re.escape(name)}[\s>]'
+    return re.search(pattern, template) is not None
+
+
+def child_view(template: str, selector: str) -> bool:
+    match = re.fullmatch(rf'#({NAME})', selector)
+    if not match:
+        return False
+    tag = re.search(rf'<[a-z][\w-]*\s[^>]*?(?<![\w-])id="{match.group(1)}"[^>]*>', template)
+    return tag is not None and 'data-parent-view-id=' in tag.group(0)
+
+
+def host_sources(contract: Contract) -> dict:
+    hosts = {}
+    for path, text in contract.files(SETTINGS_JS, ('.ts',)).items():
+        for tag in re.findall(r"static get is\(\) \{\s*return '([a-z][a-z0-9-]*)';", text):
+            hosts.setdefault(tag, []).append(path)
+    return hosts
+
+
+def template_for(contract: Contract, source: Path):
+    stem = source.name[:-len('.ts')]
+    for name in (f'{stem}.html.ts', f'{stem}.html'):
+        path = source.with_name(name)
+        if path.is_file():
+            relative = contract.relative(path)
+            return relative, contract.text(relative)
+    return None
+
+
+def check_rows(contract: Contract, rows: dict):
+    contract.watch(SETTINGS_JS)
+    hosts = host_sources(contract)
+    for host, selectors in sorted(rows.items()):
+        if (not isinstance(selectors, list) or not selectors
+                or not all(isinstance(selector, str) for selector in selectors)):
+            contract.fail(f'{ROWS_KEY}.{host} must be a list of selectors')
+            continue
+        sources = hosts.get(host, [])
+        if len(sources) != 1:
+            contract.fail(f'{SETTINGS_JS} no longer defines {host} exactly once')
+            continue
+        found = template_for(contract, sources[0])
+        if found is None:
+            contract.fail(f'{contract.relative(sources[0])} has no template beside it for {host}')
+            continue
+        relative, template = found
+        for selector in selectors:
+            if not supported(selector):
+                contract.fail(f'{host} row {selector!r} is not a selector Parc\'s hide list supports')
+                continue
+            missing = [(kind, name, value) for kind, name, value in selector_parts(selector)
+                       if not renders(template, kind, name, value)]
+            for kind, name, value in missing:
+                shown = f'{name}="{value}"' if value is not None else name
+                contract.fail(f'{relative} no longer renders the {kind} {shown} that Parc\'s '
+                              f'{host} row {selector!r} names')
+            if not missing and not matches_in(template, selector):
+                contract.fail(f'{relative} no longer has a row shaped like Parc\'s {host} row '
+                              f'{selector!r}')
+        hooked = (re.search(r'<settings-(?:section|subpage)[\s>]', template) is not None
+                  or host in SELF_HIDING_HOSTS
+                  or all(child_view(template, selector) for selector in selectors))
+        if not hooked:
+            contract.fail(f'{host} renders no settings-section or settings-subpage, so Parc\'s hide '
+                          'list never reaches its rows')
 
 
 def check_flags(contract: Contract, flags: dict):
@@ -156,22 +453,51 @@ def check_mechanism(contract: Contract):
     header = contract.text(SETTINGS_UI_HEADER)
     if 'class SettingsUIConfig : public content::DefaultWebUIConfig<SettingsUI>' not in header:
         contract.fail(f'{SETTINGS_UI_HEADER} changed how SettingsUIConfig builds SettingsUI')
+    if re.search(r'class SettingsUI\s+final\b', header):
+        contract.fail(f'{SETTINGS_UI_HEADER} made SettingsUI final; Parc\'s reset guard subclasses it')
     source = contract.text(SETTINGS_UI)
+    if 'OverrideHandleWebUIMessage' in header or 'OverrideHandleWebUIMessage' in source:
+        contract.fail(f'{SETTINGS_UI_HEADER} now filters page messages itself, which Parc\'s reset '
+                      'guard would replace')
     constructor = source.find('SettingsUI::SettingsUI(content::WebUI* web_ui)')
     body = source[constructor:constructor + 800] if constructor >= 0 else ''
     if 'content::WebUIDataSource::CreateAndAdd(' not in body or 'chrome::kChromeUISettingsHost' not in body:
         contract.fail(f'{SETTINGS_UI} no longer creates the settings data source in its constructor')
 
 
+def check_reset(contract: Contract, values_source: str):
+    handler = contract.text(RESET_HANDLER)
+    if not re.search(r'"performResetProfileSettings",\s*base::BindRepeating\(\s*'
+                     r'&ResetSettingsHandler::HandleResetProfileSettings', handler):
+        contract.fail(f'{RESET_HANDLER} no longer handles performResetProfileSettings')
+    if ('CHECK_EQ(3U, args.size());' not in handler
+            or 'const bool& send_settings = args[1].GetBool();' not in handler):
+        contract.fail(f'{RESET_HANDLER} no longer reads the report choice as the second of three '
+                      'arguments, which Parc\'s reset guard turns off')
+    if 'if (send_feedback && setting_snapshot_) {' not in handler:
+        contract.fail(f'{RESET_HANDLER} no longer sends the settings report only when asked')
+    if 'kResetProfileSettings[] = "performResetProfileSettings";' not in values_source:
+        contract.fail('Parc\'s reset guard no longer names performResetProfileSettings')
+    if not re.search(r'performResetProfileSettings\(\s*this\.\$\.sendSettings\.checked,',
+                     contract.text(RESET_DIALOG)):
+        contract.fail(f'{RESET_DIALOG} no longer sends the report choice from #sendSettings')
+    if not re.search(r'<div slot="footer">\s*<cr-checkbox id="sendSettings"',
+                     contract.text(RESET_DIALOG_HTML)):
+        contract.fail(f'{RESET_DIALOG_HTML} moved the report checkbox out of the footer Parc hides')
+
+
 def run(chromium: Path, values_path: Path, startup_policy: Path, applied: bool) -> Contract:
     contract = Contract(chromium)
     contract.read_paths.add(values_path)
     values = load_values(values_path)
-    flags = {key: value for key, value in values.items() if key != 'parcPageVisibility'}
-    check_visibility(contract, values['parcPageVisibility'], applied)
+    flags = {key: value for key, value in values.items() if key not in (VISIBILITY_KEY, ROWS_KEY)}
+    check_patch(contract, applied)
+    check_visibility(contract, values[VISIBILITY_KEY], applied)
+    check_rows(contract, values.get(ROWS_KEY, {}))
     check_flags(contract, flags)
     check_features(contract, startup_policy)
     check_mechanism(contract)
+    check_reset(contract, values_path.read_text(encoding='utf-8'))
     return contract
 
 

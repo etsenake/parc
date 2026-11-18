@@ -16,7 +16,7 @@ The suite uses temporary files, fixture Git repositories and mocked process/host
 boundaries. It does not download dependencies, compile Chromium, inspect real
 Keychain data or launch an application.
 `test_settings_page.py` checks the [More Settings](../../docs/settings.md#more-settings)
-hide list and its build guard, and reads the pinned Chromium source from
+hide lists and their build guard, and reads the pinned Chromium source from
 `PARC_ENGINE_WORKSPACE` or `work/engine` when one is present.
 
 ## Shared compile cache

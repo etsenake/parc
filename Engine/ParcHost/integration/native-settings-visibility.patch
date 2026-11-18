@@ -6,3 +6,97 @@
 +    return loadTimeData.getValue<PageVisibility>('parcPageVisibility');
 +  }
    if (!loadTimeData.getBoolean('isGuest')) {
+@@ -110 +113,39 @@
+ }
++
++const parcHiddenRows = new Map<string, string>();
++if (loadTimeData.valueExists('parcHiddenRows')) {
++  const rows =
++      loadTimeData.getValue<Record<string, string[]>>('parcHiddenRows');
++  for (const [host, selectors] of Object.entries(rows)) {
++    parcHiddenRows.set(host, selectors.join(', '));
++  }
++}
++const parcHiddenRoots = new WeakSet<ShadowRoot>();
++
++export function hideParcRows(node: Node) {
++  const root = node.getRootNode();
++  if (!(root instanceof ShadowRoot) || parcHiddenRoots.has(root)) {
++    return;
++  }
++  const rows = parcHiddenRows.get(root.host.localName);
++  if (!rows) {
++    return;
++  }
++  parcHiddenRoots.add(root);
++  const sheet = new CSSStyleSheet();
++  sheet.replaceSync(`${rows} { display: none !important; }`);
++  root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
++  for (const row of root.querySelectorAll<HTMLElement>(rows)) {
++    row.hidden = true;
++  }
++}
++
++export function isParcHiddenRow(element: Element): boolean {
++  if (!parcHiddenRows.size) {
++    return false;
++  }
++  const root = element.getRootNode();
++  const rows =
++      root instanceof ShadowRoot && parcHiddenRows.get(root.host.localName);
++  return !!rows && element.matches(rows);
++}
+--- a/chrome/browser/resources/settings/route.ts
++++ b/chrome/browser/resources/settings/route.ts
+@@ -343,3 +343,3 @@
+   if (!loadTimeData.getBoolean('isGuest')) {
+-    return routes.PEOPLE;
++    return routes.PEOPLE || routes.AUTOFILL || routes.SEARCH;
+   }
+--- a/chrome/browser/resources/settings/search_settings.ts
++++ b/chrome/browser/resources/settings/search_settings.ts
+@@ -10,2 +10,3 @@
+ import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
++import {isParcHiddenRow} from './page_visibility.js';
+ import {createEmptySearchBubble, findAndRemoveHighlights, highlight, removeHighlights, stripDiacritics} from 'chrome://resources/js/search_highlight_utils.js';
+@@ -91,3 +92,4 @@
+       if (element.hasAttribute(SKIP_SEARCH_CSS_ATTRIBUTE) ||
+-          element.hasAttribute('hidden') || element.style.display === 'none') {
++          element.hasAttribute('hidden') || element.style.display === 'none' ||
++          isParcHiddenRow(element)) {
+         return;
+--- a/chrome/browser/resources/settings/settings_page/settings_section.ts
++++ b/chrome/browser/resources/settings/settings_page/settings_section.ts
+@@ -22,2 +22,3 @@
+ import {getCss} from './settings_section.css.js';
++import {hideParcRows} from '../page_visibility.js';
+ import {getHtml} from './settings_section.html.js';
+@@ -71,2 +72,7 @@
+   }
++
++  override connectedCallback() {
++    super.connectedCallback();
++    hideParcRows(this);
++  }
+ }
+--- a/chrome/browser/resources/settings/settings_page/settings_subpage.ts
++++ b/chrome/browser/resources/settings/settings_page/settings_subpage.ts
+@@ -27,2 +27,3 @@
+ import {loadTimeData} from '../i18n_setup.js';
++import {hideParcRows} from '../page_visibility.js';
+ import type {Route} from '../router.js';
+@@ -114,2 +115,3 @@
+     }
++    hideParcRows(this);
+   }
+--- a/chrome/browser/resources/settings/reset_page/reset_profile_dialog.ts
++++ b/chrome/browser/resources/settings/reset_page/reset_profile_dialog.ts
+@@ -24,2 +24,3 @@
+ import {loadTimeData} from '../i18n_setup.js';
++import {hideParcRows} from '../page_visibility.js';
+ import {routes} from '../route.js';
+@@ -77,2 +78,4 @@
+   override firstUpdated() {
++    hideParcRows(this.$.dialog);
++    this.$.sendSettings.checked = false;
+     this.addEventListener('cancel', () => {

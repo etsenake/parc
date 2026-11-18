@@ -1,6 +1,7 @@
 #include "parc/parc_settings_page.h"
 
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "base/check.h"
@@ -22,6 +23,7 @@ namespace parc {
 namespace {
 
 constexpr char kPageVisibility[] = "parcPageVisibility";
+constexpr char kResetProfileSettings[] = "performResetProfileSettings";
 constexpr char kSettingsPageValues[] = R"json({
   "parcPageVisibility": {
     "ai": false,
@@ -34,10 +36,73 @@ constexpr char kSettingsPageValues[] = R"json({
       "sidePanel": true
     },
     "onStartup": false,
+    "people": false,
     "privacy": {
       "networkPrediction": true,
       "searchPrediction": false
     }
+  },
+  "parcHiddenRows": {
+    "settings-a11y-page": [
+      "#toastToggle",
+      "[pref-key=\"settings.a11y.enable_accessibility_image_labels\"]"
+    ],
+    "settings-about-page": [
+      ".icon-container:has(#throbber)",
+      "#updateStatusMessage",
+      ".separator:has(+ #buttonContainer)",
+      "#buttonContainer"
+    ],
+    "settings-appearance-page": [
+      "#toolbarRow",
+      "#colorSchemeModeRow",
+      ".cr-row:has(> #tabStripPosition)",
+      ".cr-row:has(> #tabStripPosition) + .list-frame",
+      "#showOrganizerPanelButton",
+      ".cr-row:has(+ .list-frame #sidePanelPosition)",
+      ".list-frame:has(#sidePanelPosition)",
+      "[pref-key=\"browser.confirm_to_quit\"]",
+      "#splitViewDragAndDrop"
+    ],
+    "settings-autofill-page": [
+      "#identityManagerButton",
+      "#travelManagerButton",
+      "settings-section:has(> collapsible-autofill-settings-card)",
+      "#googleWalletButton",
+      "#googleAccountButton"
+    ],
+    "settings-autofill-page-index": [
+      "#identityDocs",
+      "#travel"
+    ],
+    "settings-languages-page": [
+      ".target-info"
+    ],
+    "settings-payments-page": [
+      "#cardBenefitsToggle",
+      "#manageLink"
+    ],
+    "settings-performance-page": [
+      "#performanceInterventionToggleButton",
+      "#discardRingTreatmentToggleButton",
+      "cr-link-row:has(+ #exceptionList)"
+    ],
+    "settings-reset-profile-dialog": [
+      "[slot=\"footer\"]"
+    ],
+    "settings-safety-hub-page": [
+      "#version"
+    ],
+    "settings-security-page": [
+      "#safeBrowsingEnhanced",
+      "#advancedProtectionProgramLink"
+    ],
+    "settings-system-page": [
+      "#hardwareAcceleration > cr-button"
+    ],
+    "settings-translate-page": [
+      "settings-section"
+    ]
   },
   "autofillAiReauthOnViewingSensitiveDataEnabled": false,
   "downloadBubblePartialViewControlledByPref": false,
@@ -58,13 +123,30 @@ constexpr char kSettingsPageValues[] = R"json({
   "tabStripUnificationEnabled": false
 })json";
 
+class ParcSettingsUI final : public settings::SettingsUI {
+ public:
+  using settings::SettingsUI::SettingsUI;
+
+  bool OverrideHandleWebUIMessage(const GURL& source_url,
+                                  const std::string& message,
+                                  const base::ListValue& args) override {
+    if (message != kResetProfileSettings || args.size() != 3 ||
+        args[1] == false) {
+      return false;
+    }
+    base::ListValue quiet = args.Clone();
+    quiet[1] = base::Value(false);
+    web_ui()->ProcessWebUIMessage(source_url, message, std::move(quiet));
+    return true;
+  }
+};
+
 class ParcSettingsUIConfig final : public settings::SettingsUIConfig {
  public:
   std::unique_ptr<content::WebUIController> CreateWebUIController(
       content::WebUI* web_ui,
-      const GURL& url) override {
-    auto controller =
-        settings::SettingsUIConfig::CreateWebUIController(web_ui, url);
+      const GURL&) override {
+    auto controller = std::make_unique<ParcSettingsUI>(web_ui);
     base::DictValue values = SettingsPageValues();
     if (Profile::FromWebUI(web_ui)->IsGuestSession()) {
       values.Remove(kPageVisibility);
