@@ -449,6 +449,7 @@ source_set("browser") {
     "//chrome/browser/ui/webui/settings",
     "//chrome/browser/google",
     "//chrome/browser/webauthn",
+    "//rlz:rlz_lib_no_network",
     "//chrome/common:mojo_bindings",
     "//chrome/renderer:process_state",
     "//parc/importer:interfaces",

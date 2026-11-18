@@ -83,7 +83,9 @@ With CEF gone, Parc owns Chromium's embedder classes and uses them before anythi
   [web interactions](web-interactions.md#banners-and-blocked-pop-ups).
 - Parc reports no brand code. The browser client sets Chromium's only brand seam, a testing
   override, to an empty brand before anything asks, so Chromium never reads Google Chrome's brand
-  files and Reset, component updates and RLZ claim no brand
+  files and Reset, component updates and RLZ claim no brand. The main delegate likewise points
+  RLZ's store at Parc's user-data folder through its testing override before the browser starts,
+  so Parc never reads or writes Google Chrome's shared RLZ store
   ([More Settings](settings.md#more-settings)).
 
 ## The hook pattern

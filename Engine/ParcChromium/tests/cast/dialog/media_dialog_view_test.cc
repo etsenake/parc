@@ -1,5 +1,3 @@
-// Copyright 2026 Parc contributors.
-
 #include "chrome/browser/ui/views/global_media_controls/media_dialog_view.h"
 
 #include <memory>
@@ -8,16 +6,23 @@
 #include "base/memory/raw_ptr.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/unguessable_token.h"
+#include "chrome/browser/accessibility/live_caption/live_caption_controller_factory.h"
 #include "chrome/browser/accessibility/soda_installer_impl.h"
 #include "chrome/browser/media/router/chrome_media_router_factory.h"
 #include "chrome/browser/ui/global_media_controls/media_notification_service.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/views/chrome_views_test_base.h"
+#include "components/keyed_service/core/keyed_service.h"
+#include "components/live_caption/pref_names.h"
 #include "components/media_router/browser/media_router_factory.h"
 #include "components/media_router/browser/test/mock_media_router.h"
+#include "components/prefs/pref_service.h"
+#include "components/soda/constants.h"
+#include "components/soda/soda_installer.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_renderer_host.h"
 #include "content/public/test/web_contents_tester.h"
+#include "media/base/media_switches.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/views/bubble/bubble_anchor.h"
 #include "ui/views/test/widget_test.h"
@@ -64,8 +69,6 @@ class ParcMediaDialogViewTest : public ChromeViewsTestBase {
             : nullptr;
     MediaDialogView::HideDialog();
     view_ = nullptr;
-    // Widget::Close() is asynchronous, so the dialog would otherwise outlive
-    // the objects it points at.
     if (widget) {
       views::test::WidgetDestroyedWaiter(widget).Wait();
     }
@@ -89,9 +92,6 @@ class ParcMediaDialogViewTest : public ChromeViewsTestBase {
   std::unique_ptr<speech::SodaInstallerImpl> soda_installer_impl_;
 };
 
-// Parc: an empty token opens the page's media session dialog without a
-// presentation request (the Mini Player's Cast); any other token must be the
-// service's prepared native presentation.
 TEST_F(ParcMediaDialogViewTest, ParcNativePageDialogWithoutPresentation) {
   HideDialog();
   auto create = [&](base::UnguessableToken token) {
@@ -107,4 +107,30 @@ TEST_F(ParcMediaDialogViewTest, ParcNativePageDialogWithoutPresentation) {
   MediaDialogView::CloseNativeDialog(widget);
   destroyed.Wait();
   EXPECT_FALSE(create(base::UnguessableToken::Create()));
+}
+
+TEST_F(ParcMediaDialogViewTest, LiveCaptionOffLeavesOutTheCaptionSection) {
+  HideDialog();
+  base::test::ScopedFeatureList live_caption_off;
+  live_caption_off.InitAndDisableFeature(media::kLiveCaption);
+  captions::LiveCaptionControllerFactory::GetInstance()->SetTestingFactory(
+      profile(),
+      base::BindRepeating(
+          [](content::BrowserContext*) -> std::unique_ptr<KeyedService> {
+            return nullptr;
+          }));
+  MediaDialogView::ShowDialogFromToolbar(
+      views::BubbleAnchor(anchor_widget()->GetContentsView()),
+      notification_service(), profile());
+  MediaDialogView* view = MediaDialogView::GetDialogViewForTesting();
+  ASSERT_TRUE(view);
+  EXPECT_EQ(view->children().size(), 1u);
+
+  profile()->GetPrefs()->SetBoolean(prefs::kLiveCaptionEnabled, true);
+  profile()->GetPrefs()->SetBoolean(prefs::kLiveTranslateEnabled, true);
+  speech::SodaInstaller* soda = speech::SodaInstaller::GetInstance();
+  soda->NotifySodaProgressForTesting(50, speech::LanguageCode::kNone);
+  soda->NotifySodaErrorForTesting();
+  soda->NotifySodaInstalledForTesting();
+  EXPECT_EQ(view->children().size(), 1u);
 }

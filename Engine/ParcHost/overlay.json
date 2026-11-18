@@ -2114,7 +2114,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "737e323fb6df579fe5526c80e8c4ac2b1b4b2fa13fbafe6a403500cb7cf862ce"
+      "sha256": "b7693f7025c49ba4d0950bb00d6332951d5dc6b87f078a7550acb9e9e70548eb"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
@@ -2134,17 +2134,17 @@
     {
       "source": "Engine/ParcChromium/parc_settings_page.h",
       "target": "parc/parc_settings_page.h",
-      "sha256": "9b86a2763ce6429f5a1a78e1fd41040abf3c4ba8c9994648464285cc5d189cc4"
+      "sha256": "9a95d76abe2849d1555b16c49141eeb22a81c5c8420a895b1a8f04687cfe78fc"
     },
     {
       "source": "Engine/ParcChromium/parc_settings_page.cc",
       "target": "parc/parc_settings_page.cc",
-      "sha256": "944849f528283fcbc4352f27f446cf2e44330fc46a3b7ccd5bb27292fb51c18a"
+      "sha256": "fc05dd5ef0ec98a8348f28b7b09afc6622c63d8fd699f9c25c94a9cb1b4a2f99"
     },
     {
       "source": "Engine/ParcChromium/settings_page_contract.py",
       "target": "parc/settings_page_contract.py",
-      "sha256": "9606f3a045701e2fb0b3a88007b4bc96076b0096bbb041df56808bfe45bd18d0"
+      "sha256": "7c0c2ca0f30a31c49b99d5a9ec2f2105de19ed0da3188a0ae886297f5099867d"
     },
     {
       "source": "Engine/ParcChromium/generate_error_pages.py",
@@ -2309,7 +2309,7 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.mm",
       "target": "parc/parc_main_delegate.mm",
-      "sha256": "6b23ba548e82729a3b138ca52f10801a0448da04fa34d8db2bda2af676a98ad1"
+      "sha256": "a7eff5adca33bfc3cae85ce1f8942a8e6a0963b019c6b78533ac725fdca15eff"
     },
     {
       "source": "Engine/ParcNative/native_application.mm",
@@ -2974,12 +2974,12 @@
     {
       "source": "Engine/ParcChromium/tests/cast/dialog/BUILD.gn",
       "target": "chrome/browser/ui/views/global_media_controls/parc_tests/BUILD.gn",
-      "sha256": "a3398f48c303d75f6adee19c53a102ed9199caf07e11223554a44e751ff20b85"
+      "sha256": "20574bf9b1623ff7d1e548a01f74a6f9342b298f4c265d064595ea94ce36675b"
     },
     {
       "source": "Engine/ParcChromium/tests/cast/dialog/media_dialog_view_test.cc",
       "target": "chrome/browser/ui/views/global_media_controls/parc_tests/media_dialog_view_test.cc",
-      "sha256": "976cfef439678fec288adf7efa4e8ce8d37d7884b365965c631fc6689aaa5151"
+      "sha256": "76f033034148034842b6d2741b79f8892f929f63719b6370040f7f27de561d43"
     },
     {
       "source": "Engine/ParcChromium/tests/cast/router/BUILD.gn",
@@ -3969,7 +3969,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
-      "sha256": "5945e0e850645537811e515be20a253ea92449e51d6c2eec1ad83f95c047dbe2",
+      "sha256": "64f02022393d69be34f26dcb8fede10e27c83fcbdc57f65dcd95fd45f1d8ce29",
       "files": [
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",
@@ -4014,7 +4014,7 @@
         {
           "target": "chrome/browser/ui/views/global_media_controls/media_dialog_view.cc",
           "before_sha256": "33469f080e7b8392bfe86581898114f6800bcdbb41607caad287cbf542e3e0f6",
-          "after_sha256": "4b4d8d2f076648ad9c7002cf4753780b6c5f48ee5afb00e4f76f8c138c7a5fba"
+          "after_sha256": "d23e6889ea99c0a888c9deb446c938b4094f578b0532ee013651da7fb8a7738e"
         },
         {
           "target": "chrome/browser/ui/views/global_media_controls/media_dialog_view.h",
@@ -6105,7 +6105,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-video-pip-direct.patch",
-      "sha256": "e1b746102a40b6a0b340e9ad82fa6d58a7eff5607287f27e4450fcfcb14e48ee",
+      "sha256": "d2341c056fefe6339aa165939e161ccbf563c4c08ec2b0893c97d6f5fabaf203",
       "files": [
         {
           "target": "chrome/browser/ui/browser_web_contents_delegate/BUILD.gn",
@@ -6141,6 +6141,11 @@
           "target": "third_party/blink/renderer/core/animation/compositor_animations.cc",
           "before_sha256": "21c56c445a634195c39e807f26f70a7ef219a6e44f06eba63bb1e7c5daf86f2a",
           "after_sha256": "c2fb48e822f3f2eb5b19d60a33053484eca1e6ad9dc62bb8dfc04f8f6480d666"
+        },
+        {
+          "target": "chrome/browser/ui/views/overlay/video_overlay_window_views.cc",
+          "before_sha256": "a33dfde44770c24aa7c41a6e59a1fdc6e90b11b59ef0967d331ad496fd2e107b",
+          "after_sha256": "99786d2911fef747d7ca15ebadf670144ada9f4f54e5ed795c8c31d843803d79"
         }
       ]
     },

@@ -933,7 +933,41 @@
 -
 +
  gfx::Size MediaDialogView::CalculatePreferredSize(
-@@ -465,6 +486,8 @@
+@@ -377,7 +398,7 @@
+-
++
+ void MediaDialogView::UpdateBubbleSize() {
+   SizeToContents();
+-  if (!captions::IsLiveCaptionFeatureSupported()) {
++  if (!live_caption_container_) {
+     return;
+   }
+   const int width = active_sessions_view_->GetPreferredSize().width();
+@@ -411,6 +432,9 @@
+ }
+-
++
+ void MediaDialogView::OnLiveCaptionEnabledChanged() {
++  if (!live_caption_button_) {
++    return;
++  }
+   bool enabled = profile_->GetPrefs()->GetBoolean(prefs::kLiveCaptionEnabled);
+-
++
+   // Do not update the title if SODA is currently downloading.
+@@ -433,6 +457,9 @@
+ }
+-
++
+ void MediaDialogView::OnLiveTranslateEnabledChanged() {
++  if (!live_translate_button_) {
++    return;
++  }
+   bool enabled = profile_->GetPrefs()->GetBoolean(prefs::kLiveTranslateEnabled);
+   live_translate_button_->SetIsOn(enabled);
+-
++
+@@ -465,6 +492,8 @@
  }
 -
 +
@@ -943,7 +977,17 @@
    static_cast<LiveTranslateComboboxModel*>(
        target_language_combobox_->GetModel())
        ->UpdateTargetLanguageIndex(
-@@ -552,13 +575,16 @@
+@@ -532,7 +561,8 @@
+ void MediaDialogView::Init() {
+   // Remove margins.
+   set_margins(gfx::Insets());
+-  if (!captions::IsLiveCaptionFeatureSupported()) {
++  if (!base::FeatureList::IsEnabled(media::kLiveCaption) ||
++      !captions::IsLiveCaptionFeatureSupported()) {
+     SetLayoutManager(std::make_unique<views::FillLayout>());
+     return;
+   }
+@@ -552,13 +582,16 @@
 -
 +
  void MediaDialogView::WindowClosing() {
@@ -963,7 +1007,7 @@
    bool enabled = !profile_->GetPrefs()->GetBoolean(prefs::kLiveCaptionEnabled);
    profile_->GetPrefs()->SetBoolean(prefs::kLiveCaptionEnabled, enabled);
    base::UmaHistogramBoolean(
-@@ -566,6 +592,8 @@
+@@ -566,6 +599,8 @@
  }
 -
 +
@@ -973,7 +1017,7 @@
    bool enabled =
        !profile_->GetPrefs()->GetBoolean(prefs::kLiveTranslateEnabled);
    profile_->GetPrefs()->SetBoolean(prefs::kLiveTranslateEnabled, enabled);
-@@ -574,6 +602,8 @@
+@@ -574,6 +609,8 @@
  }
 -
 +
@@ -983,7 +1027,18 @@
    NavigateParams navigate_params(profile_,
                                   GURL(captions::GetCaptionSettingsUrl()),
                                   ui::PAGE_TRANSITION_LINK);
-@@ -812,8 +842,8 @@
+@@ -799,6 +836,9 @@
+ }
+-
++
+ void MediaDialogView::SetLiveCaptionTitle(const std::u16string& new_text) {
++  if (!live_caption_title_) {
++    return;
++  }
+   live_caption_title_->SetText(new_text);
+   UpdateBubbleSize();
+ }
+@@ -812,8 +852,8 @@
    return std::make_unique<global_media_controls::MediaItemUIUpdatedView>(
        id, item, media_color_theme_,
        BuildDeviceSelector(id, item, service_, service_, profile_, entry_point_,

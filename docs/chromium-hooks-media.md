@@ -106,8 +106,11 @@ immediately after the cue box receives its default CSS; cue mutation notificatio
   `media_session_impl.{h,cc}`.
 - **`native-cast`**, **`native-presentation`**, **`native-gmc-presentation`**: the Cast device dialog
   and presentation requests honor native page revocation and Parc's cast flow. The presentation patch
-  adds a per-request success validator and token, and the media-controls patch an interaction guard;
-  the cast route each player's notification uses is chosen in Parc's `native_cast_route.cc`.
+  adds a per-request success validator and token, and the media-controls patch an interaction guard
+  and builds the dialog's Live Caption section only while Chromium's `LiveCaption` feature is on;
+  the dialog decides that in its own `Init` from a hardware and OS check Parc can't set from
+  outside, so only a patch can hide it. The cast route each player's notification uses is chosen in
+  Parc's `native_cast_route.cc`.
 - **`platform-codecs`**, **`webaudio-aac`**: format support inside Chromium's parsers and the
   AudioToolbox decoder, and pipelined MojoAudioDecoder decodes for `decodeAudioData`. Parsers are
   never forked, so these stay patches across 33 media, FFmpeg configuration, WebRTC and Web Audio
@@ -115,7 +118,9 @@ immediately after the cue box receives its default CSS; cue mutation notificatio
 - **`native-viz-capture-direct`**: a capture fix; failed or stale copies complete the capture oracle's
   frame, in `frame_sink_video_capturer_impl.cc` and its test.
 - **`native-video-pip-direct`**: split links and repost warnings in Chromium's web-contents delegate,
-  plus caption notifications, style, paint and animation integration in Blink, across seven files.
+  caption notifications, style, paint and animation integration in Blink, and the Live Caption
+  button of Chromium's own picture-in-picture window, which Chromium always builds while laying out
+  its controls, so the patch shows it only while `LiveCaption` is on; eight files in all.
   Native video admission runs in Parc's existing web-contents delegate override before Chromium
   enters its picture-in-picture manager. Caption bitmap painting lives in `parc_page_captions.cc`
   and uses the existing container and public layout and paint APIs; TextTrackContainer is stock.

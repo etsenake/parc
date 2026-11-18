@@ -206,7 +206,11 @@ report choice off before Chromium's reset handler sees it. Parc's browser client
 also sets Chromium's brand override to no brand at startup, so Chromium never
 reads Google Chrome's brand files: opening Settings never fetches a Chrome
 partner's reset defaults from Google, and component updates and RLZ carry no
-brand.
+brand. RLZ, Chromium's install-tracking store, lives in Parc's own data folder,
+so Parc never reads or writes the one Google Chrome shares. With no brand and an
+empty store,
+a visit to Google's home page carries no RLZ header and Parc sends no RLZ ping.
+Protected video's device ID doesn't use the store and is unchanged.
 
 Someone who chose enhanced Safe Browsing keeps it, shown and selected. The patch
 ties the row's visibility to the Safe Browsing choice, so it disappears once they
@@ -218,7 +222,8 @@ Settings itself and download warnings' Safe Browsing link, which opens Security)
 lands on a section that stays. The engine build runs `settings_page_contract.py`,
 which stops by name if Chromium renames or drops a key, switch, feature, named row
 or its page, a hook point, the home fallback, the reset handler's report choice,
-the Enhanced row's binding or the brand override;
+the Enhanced row's binding, the brand override, or RLZ's store-folder override,
+empty-header rule and ping gate;
 `tests/EngineSource/test_settings_page.py` checks the lists and the guard.
 
 ## Application Settings from Incognito

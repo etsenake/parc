@@ -255,7 +255,8 @@ so releases keep using the current engine:
    that Parc's page branding replaces, so refit those rules before committing.
    The build stops by name if Chromium renamed or dropped anything the
    [More Settings hide lists](../docs/settings.md#more-settings) rely on, down
-   to a hidden row's page or name, or the brand override Parc empties; refit
+   to a hidden row's page or name, the brand override Parc empties, or the RLZ
+   store folder override, empty-header rule and ping gate Parc relies on; refit
    the list, the patch or the override before committing.
 9. Fetch main, commit the lock, manifest and changed patch and source files in
    one commit, and push. The next release on any Mac upgrades its engine in

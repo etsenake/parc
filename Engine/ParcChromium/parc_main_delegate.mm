@@ -1,4 +1,3 @@
-// Copyright 2026 Parc contributors.
 #include "parc/parc_main_delegate.h"
 
 #include <optional>
@@ -36,6 +35,7 @@
 #include "parc/native/native_internal_urls.h"
 #include "parc/native/native_profile_policy.h"
 #include "parc/native/unload_transactions.h"
+#include "parc/parc_settings_page.h"
 #include "parc/product_name_strings.h"
 #include "parc/webui_branding.h"
 #include "chrome/utility/chrome_content_utility_client.h"
@@ -236,6 +236,9 @@ void ParcMainDelegate::PreSandboxStartup() {
     base::PathService::OverrideAndCreateIfNeeded(
         chrome::DIR_APP_DICTIONARIES, root.Append("Dictionaries"),
         /*is_absolute=*/true, /*create=*/browser);
+    if (browser) {
+      UseParcRlzStore(root);
+    }
   }
   ChromeMainDelegate::PreSandboxStartup();
 }

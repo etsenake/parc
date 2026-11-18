@@ -26,6 +26,13 @@ BRAND_HEADER = 'chrome/browser/google/google_brand.h'
 BRAND_SOURCE = 'chrome/browser/google/google_brand.cc'
 BRAND_MAC = 'chrome/browser/google/google_brand_mac.mm'
 RESETTER = 'chrome/browser/profile_resetter/profile_resetter.cc'
+RLZ_ROOT = 'rlz'
+RLZ_STORE = f'{RLZ_ROOT}/lib/rlz_value_store.h'
+RLZ_STORE_MAC = f'{RLZ_ROOT}/mac/lib/rlz_value_store_mac.mm'
+RLZ_TRACKER = 'components/rlz/rlz_tracker.cc'
+RLZ_DELEGATE = 'chrome/browser/rlz/chrome_rlz_tracker_delegate.cc'
+RLZ_DEFAULT_PATHS = ('NSApplicationSupportDirectory', '@"~/Library/Application Support"',
+                     '@"Google/RLZ"')
 SETTINGS_UI = f'{SETTINGS_CC}/settings_ui.cc'
 SETTINGS_UI_HEADER = f'{SETTINGS_CC}/settings_ui.h'
 VISIBILITY_KEY = 'parcPageVisibility'
@@ -35,6 +42,7 @@ HOME_SECTIONS = ('AUTOFILL', 'SEARCH')
 ENHANCED_ROW = '#safeBrowsingEnhanced'
 ENHANCED_SHOWN = '?hidden="${this.safeBrowsingPref_?.value !== SafeBrowsingSetting.ENHANCED}"'
 NO_BRAND = 'google_brand::g_brand_for_testing = "";'
+PARC_RLZ_STORE = 'rlz_lib::testing::SetRlzStoreDirectory(user_data_dir);'
 PATCH_MARKERS = {
     PAGE_VISIBILITY: ("loadTimeData.valueExists('parcPageVisibility')",
                       "loadTimeData.valueExists('parcHiddenRows')",
@@ -63,6 +71,7 @@ FEATURES = {
     'GoogleSearchAiModeWorkspace':
         ('kGoogleSearchAiModeWorkspace', 'chrome/common/chrome_features.cc'),
 }
+LIVE_CAPTION = ('LiveCaption', 'kLiveCaption', 'media/base/media_switches.cc')
 VALUES = re.compile(r'R"json\((.*?)\)json"', re.S)
 NAME = r'[A-Za-z][\w-]*'
 ATTRIBUTE = r'\[([a-z][\w-]*)(?:="([^"\\]*)")?\]'
@@ -445,20 +454,25 @@ def check_flags(contract: Contract, flags: dict):
             contract.fail(f'{SETTINGS_JS} no longer reads the load-time value {key}')
 
 
+def check_disabled_feature(contract: Contract, disabled, name: str, identifier: str, relative: str):
+    if not disabled or f'"{name}"' not in disabled.group(1):
+        contract.fail(f'Parc startup policy no longer turns {name} off by default')
+    definition = re.search(r'BASE_FEATURE\(\s*' + identifier + r'\s*,\s*(?:"([^"]+)"\s*,)?',
+                           contract.text(relative))
+    if not definition:
+        contract.fail(f'{relative} no longer defines {identifier}')
+    elif (definition.group(1) or identifier[1:]) != name:
+        contract.fail(f'{identifier} is now named {definition.group(1) or identifier[1:]}, not {name}')
+
+
 def check_features(contract: Contract, startup_policy: Path):
     policy = startup_policy.read_text(encoding='utf-8')
     contract.read_paths.add(startup_policy)
     disabled = re.search(r'kBaselineDisabledFeatures\[\] = \{(.*?)\};', policy, re.S)
     settings_ui = contract.text(SETTINGS_UI)
+    check_disabled_feature(contract, disabled, *LIVE_CAPTION)
     for name, (identifier, relative) in sorted(FEATURES.items()):
-        if not disabled or f'"{name}"' not in disabled.group(1):
-            contract.fail(f'Parc startup policy no longer turns {name} off by default')
-        definition = re.search(r'BASE_FEATURE\(\s*' + identifier + r'\s*,\s*(?:"([^"]+)"\s*,)?',
-                               contract.text(relative))
-        if not definition:
-            contract.fail(f'{relative} no longer defines {identifier}')
-        elif (definition.group(1) or identifier[1:]) != name:
-            contract.fail(f'{identifier} is now named {definition.group(1) or identifier[1:]}, not {name}')
+        check_disabled_feature(contract, disabled, name, identifier, relative)
         if not reads(settings_ui, identifier):
             contract.fail(f'{SETTINGS_UI} no longer shows the AI page through {identifier}')
 
@@ -555,6 +569,88 @@ def check_brand(contract: Contract, values_source: str):
         contract.fail('Parc no longer clears the brand code')
 
 
+def function_body(source: str, signature: str) -> tuple:
+    start = source.find(signature)
+    if start < 0:
+        return -1, -1
+    end = source.find('\n}\n', start)
+    return start, end if end >= 0 else len(source)
+
+
+def check_rlz_store(contract: Contract, values_source: str):
+    if not re.search(r'#if BUILDFLAG\(IS_POSIX\)\s*namespace testing \{[^}]*?'
+                     r'void SetRlzStoreDirectory\(const base::FilePath& directory\);',
+                     contract.text(RLZ_STORE)):
+        contract.fail(f'{RLZ_STORE} no longer declares the RLZ store folder override Parc sets')
+    mac = contract.text(RLZ_STORE_MAC)
+    if (not re.search(r'void SetRlzStoreDirectory\(const base::FilePath& directory\) \{\s*'
+                      r'@autoreleasepool \{\s*if \(directory\.empty\(\)\) \{\s*g_test_folder = nil;\s*'
+                      r'\} else \{\s*g_test_folder = base::apple::FilePathToNSString\(directory\);', mac)
+            or mac.count('g_test_folder =') != 2):
+        contract.fail(f'{RLZ_STORE_MAC} no longer keeps the RLZ store folder Parc sets')
+    start, end = function_body(mac, 'NSURL* CreateRlzDirectory() {')
+    if start < 0 or not re.match(r'NSURL\* CreateRlzDirectory\(\) \{\s*NSString\* folder = nil;\s*'
+                                 r'if \(g_test_folder\) \{\s*folder = \[g_test_folder '
+                                 r'stringByAppendingPathComponent:@"Google/RLZ"\];\s*\} else \{',
+                                 mac[start:end]):
+        contract.fail(f'{RLZ_STORE_MAC} no longer puts the RLZ store in the folder Parc sets')
+    elif any(not start < match.start() < end
+             for path in RLZ_DEFAULT_PATHS for match in re.finditer(re.escape(path), mac)):
+        contract.fail(f'{RLZ_STORE_MAC} finds Chrome\'s RLZ store outside the folder override Parc sets')
+    if (not re.search(r'NSString\* const kRlzFile = @"RlzStore\.plist";\s*'
+                      r'return \[CreateRlzDirectory\(\) URLByAppendingPathComponent:kRlzFile\];', mac)
+            or not re.search(r'NSString\* const kRlzLockfile = @"flockfile";\s*'
+                             r'return \[CreateRlzDirectory\(\) URLByAppendingPathComponent:kRlzLockfile\];',
+                             mac)
+            or mac.count('CreateRlzDirectory()') != 3
+            or not re.search(r'g_recursive_lock\.TryGetCrossProcessLock\(\s*'
+                             r'base::apple::NSURLToFilePath\(RlzLockFileURL\(\)\)\);', mac)
+            or 'NSURL* plist = RlzPlistPathURL();' not in mac
+            or 'VERIFY([dict writeToURL:RlzPlistPathURL() error:nil]);' not in mac):
+        contract.fail(f'{RLZ_STORE_MAC} no longer keeps the RLZ store and its lock in one folder')
+    for path, text in contract.files(RLZ_ROOT, ('.cc', '.h', '.mm')).items():
+        relative = contract.relative(path)
+        if relative != RLZ_STORE_MAC and any(literal in text for literal in RLZ_DEFAULT_PATHS):
+            contract.fail(f'{relative} finds Chrome\'s RLZ store outside the folder override Parc sets')
+    contract.watch(RLZ_ROOT)
+    if PARC_RLZ_STORE not in values_source:
+        contract.fail('Parc no longer keeps the RLZ store in its own folder')
+
+
+def check_rlz_requests(contract: Contract):
+    tracker = contract.text(RLZ_TRACKER)
+    if (not re.search(r'RLZTracker::GetAccessPointRlz\(point, &rlz_string\);\s*'
+                      r'if \(!rlz_string\.empty\(\)\) \{\s*'
+                      r'return base::StringPrintf\("X-Rlz-String: %s\\r\\n",', tracker)
+            or tracker.count('X-Rlz-String') != 1
+            or 'std::optional<std::string> str_rlz = rlz_lib::GetAccessPointRlz(point);' not in tracker):
+        contract.fail(f'{RLZ_TRACKER} no longer leaves the X-Rlz-String header out when the store '
+                      'holds no RLZ string')
+    if (not re.search(r'if \(!delegate_->IsBrandOrganic\(brand_\)\) \{\s*RecordProductEvents\([^;]*;\s*'
+                      r'schedule_ping = true;', tracker)
+            or tracker.count('ScheduleFinancialPing();') != 1
+            or not re.search(r'if \(!delegate_->IsBrandOrganic\(brand_\) &&\s*'
+                             r'SendFinancialPing\(brand_, lang, referral\)\) \{', tracker)
+            or not re.search(r'if \(!delegate_->IsBrandOrganic\(reactivation_brand_\)\) \{\s*'
+                             r'rlz_lib::SupplementaryBranding branding\(reactivation_brand_\.c_str\(\)\);\s*'
+                             r'SendFinancialPing\(reactivation_brand_, lang, referral\);', tracker)
+            or len(re.findall(r'(?<![:\w])SendFinancialPing\((?!const)', tracker)) != 2
+            or tracker.count('SendFinancialPing(') != 6):
+        contract.fail(f'{RLZ_TRACKER} no longer sends RLZ pings only for a non-organic brand')
+    delegate = contract.text(RLZ_DELEGATE)
+    if ('return google_brand::GetRlzBrand(brand);' not in delegate
+            or 'return google_brand::IsOrganic(brand);' not in delegate
+            or 'return google_brand::GetReactivationBrand(brand);' not in delegate):
+        contract.fail(f'{RLZ_DELEGATE} no longer takes the RLZ brand and its organic check from '
+                      'google_brand')
+    if not re.search(r'bool IsOrganic\(const std::string& brand\) \{\s*if \(brand\.empty\(\)\) \{'
+                     r'(?:\s*//[^\n]*)*\s*return true;', contract.text(BRAND_SOURCE)):
+        contract.fail(f'{BRAND_SOURCE} no longer treats no brand as organic')
+    if not re.search(r'bool GetReactivationBrand\(std::string\* brand\) \{\s*brand->clear\(\);\s*'
+                     r'return true;', contract.text(BRAND_MAC)):
+        contract.fail(f'{BRAND_MAC} no longer leaves the reactivation brand empty')
+
+
 def run(chromium: Path, values_path: Path, startup_policy: Path, applied: bool) -> Contract:
     contract = Contract(chromium)
     contract.read_paths.add(values_path)
@@ -570,6 +666,8 @@ def run(chromium: Path, values_path: Path, startup_policy: Path, applied: bool) 
     check_reset(contract, values_source)
     check_enhanced(contract, values.get(ROWS_KEY, {}), applied)
     check_brand(contract, values_source)
+    check_rlz_store(contract, values_source)
+    check_rlz_requests(contract)
     return contract
 
 

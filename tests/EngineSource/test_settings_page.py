@@ -13,6 +13,7 @@ VALUES = REPO / 'Engine/ParcChromium/parc_settings_page.cc'
 POLICY = REPO / 'Engine/ParcNative/native_startup_policy.h'
 PATCH = REPO / 'Engine/ParcHost/integration/native-settings-visibility.patch'
 CLIENTS = REPO / 'Engine/ParcChromium/parc_content_clients.mm'
+MAIN_DELEGATE = REPO / 'Engine/ParcChromium/parc_main_delegate.mm'
 BUILD = REPO / 'Engine/ParcChromium/BUILD.gn'
 spec = importlib.util.spec_from_file_location(
     'settings_page_contract', REPO / 'Engine/ParcChromium/settings_page_contract.py')
@@ -139,6 +140,12 @@ BRAND_SOURCE = """bool GetRlzBrand(std::string* brand) {
   return GetBrand(brand);
 #endif
 }
+
+bool IsOrganic(const std::string& brand) {
+  if (brand.empty()) {
+    // An empty brand string is considered the same as GGLS, which is organic.
+    return true;
+  }
 """
 BRAND_MAC = """std::string GetBrandInternal() {
   NSString* system_brand_file =
@@ -158,12 +165,134 @@ bool GetBrand(std::string* brand) {
   *brand = *s_brand_code;
   return true;
 }
+
+bool GetReactivationBrand(std::string* brand) {
+  brand->clear();
+  return true;
+}
 """
 RESETTER = """  google_brand::GetBrand(&brandcode_);
   if (brandcode_.empty()) {
     return;
   }
   config_fetcher_ = std::make_unique<BrandcodeConfigFetcher>(
+"""
+RLZ_STORE = """#if BUILDFLAG(IS_POSIX)
+namespace testing {
+// Prefix |directory| to the path where the RLZ data file lives, for tests.
+void SetRlzStoreDirectory(const base::FilePath& directory);
+"""
+RLZ_STORE_MAC = """// directory instead of the user's Application Support folder.
+NSString* __strong g_test_folder;
+
+NSURL* CreateRlzDirectory() {
+  NSString* folder = nil;
+  if (g_test_folder) {
+    folder = [g_test_folder stringByAppendingPathComponent:@"Google/RLZ"];
+  } else {
+    NSArray* paths = NSSearchPathForDirectoriesInDomains(
+        NSApplicationSupportDirectory, NSUserDomainMask, /*expandTilde=*/YES);
+    if (!folder) {
+      folder = [@"~/Library/Application Support" stringByStandardizingPath];
+    }
+    folder = [folder stringByAppendingPathComponent:@"Google/RLZ"];
+  }
+  return [NSURL fileURLWithPath:folder];
+}
+
+NSURL* RlzPlistPathURL() {
+  NSString* const kRlzFile = @"RlzStore.plist";
+  return [CreateRlzDirectory() URLByAppendingPathComponent:kRlzFile];
+}
+
+NSURL* RlzLockFileURL() {
+  NSString* const kRlzLockfile = @"flockfile";
+  return [CreateRlzDirectory() URLByAppendingPathComponent:kRlzLockfile];
+}
+
+ScopedRlzValueStoreLock::ScopedRlzValueStoreLock() {
+  bool got_distributed_lock = g_recursive_lock.TryGetCrossProcessLock(
+      base::apple::NSURLToFilePath(RlzLockFileURL()));
+  NSURL* plist = RlzPlistPathURL();
+}
+
+ScopedRlzValueStoreLock::~ScopedRlzValueStoreLock() {
+  VERIFY([dict writeToURL:RlzPlistPathURL() error:nil]);
+}
+
+void SetRlzStoreDirectory(const base::FilePath& directory) {
+  @autoreleasepool {
+    if (directory.empty()) {
+      g_test_folder = nil;
+    } else {
+      g_test_folder = base::apple::FilePathToNSString(directory);
+    }
+  }
+}
+"""
+RLZ_TRACKER = """bool SendFinancialPing(const std::string& brand,
+                       const std::u16string& lang,
+                       const std::u16string& referral) {
+  return rlz_lib::SendFinancialPing(rlz_lib::CHROME, points, product_signature,
+                                    brand, referral_ascii, lang_ascii, false,
+                                    true);
+}
+
+void RLZTracker::DelayedInit() {
+  if (!delegate_->IsBrandOrganic(brand_)) {
+    RecordProductEvents(first_run_, is_google_default_search_,
+                        app_list_used_);
+    schedule_ping = true;
+  }
+  if (schedule_ping)
+    ScheduleFinancialPing();
+}
+
+void RLZTracker::PingNowImpl() {
+  if (!delegate_->IsBrandOrganic(brand_) &&
+      SendFinancialPing(brand_, lang, referral)) {
+    delegate_->ClearReferral();
+  }
+
+  if (!delegate_->IsBrandOrganic(reactivation_brand_)) {
+    rlz_lib::SupplementaryBranding branding(reactivation_brand_.c_str());
+    SendFinancialPing(reactivation_brand_, lang, referral);
+  }
+}
+
+bool RLZTracker::SendFinancialPing(const std::string& brand,
+                                   const std::u16string& lang,
+                                   const std::u16string& referral) {
+  return ::rlz::SendFinancialPing(brand, lang, referral);
+}
+
+std::string RLZTracker::GetAccessPointHttpHeader(rlz_lib::AccessPoint point) {
+  std::string extra_headers;
+  std::u16string rlz_string;
+  RLZTracker::GetAccessPointRlz(point, &rlz_string);
+  if (!rlz_string.empty()) {
+    return base::StringPrintf("X-Rlz-String: %s\\r\\n",
+                              base::UTF16ToUTF8(rlz_string).c_str());
+  }
+  return extra_headers;
+}
+
+bool RLZTracker::GetAccessPointRlzImpl(rlz_lib::AccessPoint point,
+                                       std::u16string* rlz) {
+  std::optional<std::string> str_rlz = rlz_lib::GetAccessPointRlz(point);
+}
+"""
+RLZ_DELEGATE = """bool ChromeRLZTrackerDelegate::GetBrand(std::string* brand) {
+  return google_brand::GetRlzBrand(brand);
+}
+
+bool ChromeRLZTrackerDelegate::IsBrandOrganic(const std::string& brand) {
+  return google_brand::IsOrganic(brand);
+}
+
+bool ChromeRLZTrackerDelegate::GetReactivationBrand(std::string* brand) {
+  return google_brand::GetReactivationBrand(brand);
+}
 """
 RESET_DIALOG_HTML = """<cr-dialog id="dialog">
   <div slot="footer">
@@ -292,6 +421,25 @@ class SettingsPageValuesTests(unittest.TestCase):
         self.assertIn('  ReportNoBrandCode();\n', body)
         self.assertIn('    "//chrome/browser/google",\n', BUILD.read_text(encoding='utf-8'))
 
+    def test_parc_keeps_rlz_in_its_own_folder_before_chromium_starts(self):
+        self.assertIn(f'  {contract.PARC_RLZ_STORE}\n', VALUES.read_text(encoding='utf-8'))
+        delegate = MAIN_DELEGATE.read_text(encoding='utf-8')
+        start = delegate.find('void ParcMainDelegate::PreSandboxStartup() {')
+        self.assertGreaterEqual(start, 0)
+        body = delegate[start:delegate.find('\n}\n', start)]
+        override = body.find('chrome::DIR_USER_DATA, root,')
+        call = body.find('    if (browser) {\n      UseParcRlzStore(root);\n    }\n')
+        self.assertGreaterEqual(override, 0)
+        self.assertGreater(call, override)
+        self.assertLess(call, body.find('ChromeMainDelegate::PreSandboxStartup();'))
+        self.assertEqual(delegate.count('UseParcRlzStore('), 1)
+        self.assertIn('    "//rlz:rlz_lib_no_network",\n', BUILD.read_text(encoding='utf-8'))
+
+    def test_live_caption_stays_off_by_default(self):
+        disabled = re.search(r'kBaselineDisabledFeatures\[\] = \{(.*?)\};',
+                             POLICY.read_text(encoding='utf-8'), re.S)
+        self.assertIn(f'"{contract.LIVE_CAPTION[0]}"', disabled.group(1))
+
     def test_every_hidden_row_is_a_supported_selector(self):
         for host, selectors in hidden_rows().items():
             self.assertRegex(host, r'^[a-z]+(?:-[a-z0-9]+)+$')
@@ -363,6 +511,11 @@ class SettingsPageContractTests(unittest.TestCase):
             contract.BRAND_SOURCE: BRAND_SOURCE,
             contract.BRAND_MAC: BRAND_MAC,
             contract.RESETTER: RESETTER,
+            contract.RLZ_STORE: RLZ_STORE,
+            contract.RLZ_STORE_MAC: RLZ_STORE_MAC,
+            contract.RLZ_TRACKER: RLZ_TRACKER,
+            contract.RLZ_DELEGATE: RLZ_DELEGATE,
+            contract.LIVE_CAPTION[2]: 'BASE_FEATURE(kLiveCaption, base::FEATURE_ENABLED_BY_DEFAULT);\n',
             contract.NESTED_CONSUMERS['appearance'][0]: APPEARANCE,
             contract.NESTED_CONSUMERS['privacy'][0]: PERSONALIZATION,
             contract.SETTINGS_UI_HEADER: SETTINGS_UI_HEADER,
@@ -682,6 +835,115 @@ class SettingsPageContractTests(unittest.TestCase):
     def test_parc_no_longer_clearing_the_brand_fails(self):
         values = self.values(contract.NO_BRAND, 'google_brand::g_brand_for_testing = nullptr;')
         self.assertIn('Parc no longer clears the brand code', self.problems(values=values))
+
+    def test_rlz_folder_override_gone_fails(self):
+        self.edit(contract.RLZ_STORE, 'void SetRlzStoreDirectory(', 'void SetRlzStorePath(')
+        self.assertIn(f'{contract.RLZ_STORE} no longer declares the RLZ store folder override Parc sets',
+                      self.problems())
+
+    def test_rlz_folder_override_dropped_fails(self):
+        self.edit(contract.RLZ_STORE_MAC, '      g_test_folder = base::apple::FilePathToNSString(directory);\n',
+                  '')
+        self.assertIn(f'{contract.RLZ_STORE_MAC} no longer keeps the RLZ store folder Parc sets',
+                      self.problems())
+
+    def test_rlz_store_ignoring_the_folder_fails(self):
+        self.edit(contract.RLZ_STORE_MAC, '  if (g_test_folder) {\n', '  if (g_test_folder && false) {\n')
+        self.assertIn(f'{contract.RLZ_STORE_MAC} no longer puts the RLZ store in the folder Parc sets',
+                      self.problems())
+
+    def test_chrome_rlz_store_found_outside_the_override_fails(self):
+        self.edit(contract.RLZ_STORE_MAC, 'NSURL* RlzPlistPathURL() {',
+                  'NSString* SharedFolder() {\n  return NSSearchPathForDirectoriesInDomains(\n'
+                  '      NSApplicationSupportDirectory, NSUserDomainMask, YES)[0];\n}\n\n'
+                  'NSURL* RlzPlistPathURL() {')
+        self.assertIn(f"{contract.RLZ_STORE_MAC} finds Chrome's RLZ store outside the folder override "
+                      'Parc sets', self.problems())
+
+    def test_rlz_lock_outside_the_store_folder_fails(self):
+        self.edit(contract.RLZ_STORE_MAC,
+                  'return [CreateRlzDirectory() URLByAppendingPathComponent:kRlzLockfile];',
+                  'return [NSURL fileURLWithPath:@"/tmp/flockfile"];')
+        self.assertIn(f'{contract.RLZ_STORE_MAC} no longer keeps the RLZ store and its lock in one folder',
+                      self.problems())
+
+    def test_rlz_store_read_from_another_path_fails(self):
+        self.edit(contract.RLZ_STORE_MAC, 'NSURL* plist = RlzPlistPathURL();',
+                  'NSURL* plist = SharedPlistURL();')
+        self.assertIn(f'{contract.RLZ_STORE_MAC} no longer keeps the RLZ store and its lock in one folder',
+                      self.problems())
+
+    def test_other_rlz_source_finding_chrome_store_fails(self):
+        other = self.root / contract.RLZ_ROOT / 'mac/lib/shared_store.mm'
+        other.write_text('NSString* const kFolder = @"Google/RLZ";\n', encoding='utf-8')
+        self.assertIn(f"{contract.RLZ_ROOT}/mac/lib/shared_store.mm finds Chrome's RLZ store outside the "
+                      'folder override Parc sets', self.problems())
+
+    def test_parc_no_longer_moving_the_rlz_store_fails(self):
+        values = self.values(contract.PARC_RLZ_STORE, 'static_cast<void>(user_data_dir);')
+        self.assertIn('Parc no longer keeps the RLZ store in its own folder', self.problems(values=values))
+
+    def test_rlz_header_sent_without_a_string_fails(self):
+        self.edit(contract.RLZ_TRACKER, '  if (!rlz_string.empty()) {\n', '  {\n')
+        self.assertIn(f'{contract.RLZ_TRACKER} no longer leaves the X-Rlz-String header out when the '
+                      'store holds no RLZ string', self.problems())
+
+    def test_rlz_header_added_elsewhere_fails(self):
+        self.edit(contract.RLZ_TRACKER, 'std::string extra_headers;',
+                  'std::string extra_headers = "X-Rlz-String: \\r\\n";')
+        self.assertIn(f'{contract.RLZ_TRACKER} no longer leaves the X-Rlz-String header out when the '
+                      'store holds no RLZ string', self.problems())
+
+    def test_rlz_ping_without_a_brand_gate_fails(self):
+        self.edit(contract.RLZ_TRACKER, '  if (!delegate_->IsBrandOrganic(brand_) &&\n      ', '  if (')
+        self.assertIn(f'{contract.RLZ_TRACKER} no longer sends RLZ pings only for a non-organic brand',
+                      self.problems())
+
+    def test_rlz_ping_from_another_caller_fails(self):
+        self.edit(contract.RLZ_TRACKER, '    delegate_->ClearReferral();\n',
+                  '    delegate_->ClearReferral();\n    SendFinancialPing(brand_, lang, referral);\n')
+        self.assertIn(f'{contract.RLZ_TRACKER} no longer sends RLZ pings only for a non-organic brand',
+                      self.problems())
+
+    def test_rlz_ping_through_rlz_lib_from_another_caller_fails(self):
+        self.edit(contract.RLZ_TRACKER, '    delegate_->ClearReferral();\n',
+                  '    delegate_->ClearReferral();\n'
+                  '    rlz_lib::SendFinancialPing(rlz_lib::CHROME, points, "chrome", brand_, "", "",\n'
+                  '                               false, true);\n')
+        self.assertIn(f'{contract.RLZ_TRACKER} no longer sends RLZ pings only for a non-organic brand',
+                      self.problems())
+
+    def test_rlz_ping_scheduled_from_another_path_fails(self):
+        self.edit(contract.RLZ_TRACKER, 'void RLZTracker::PingNowImpl() {',
+                  'void RLZTracker::RecordFirstSearch() {\n  ScheduleFinancialPing();\n}\n\n'
+                  'void RLZTracker::PingNowImpl() {')
+        self.assertIn(f'{contract.RLZ_TRACKER} no longer sends RLZ pings only for a non-organic brand',
+                      self.problems())
+
+    def test_rlz_brand_from_another_source_fails(self):
+        self.edit(contract.RLZ_DELEGATE, 'return google_brand::IsOrganic(brand);', 'return false;')
+        self.assertIn(f'{contract.RLZ_DELEGATE} no longer takes the RLZ brand and its organic check '
+                      'from google_brand', self.problems())
+
+    def test_empty_brand_no_longer_organic_fails(self):
+        self.edit(contract.BRAND_SOURCE, '  if (brand.empty()) {\n', '  if (brand == "GGLS") {\n')
+        self.assertIn(f'{contract.BRAND_SOURCE} no longer treats no brand as organic', self.problems())
+
+    def test_reactivation_brand_read_from_disk_fails(self):
+        self.edit(contract.BRAND_MAC, '  brand->clear();\n', '  *brand = ReadReactivationBrand();\n')
+        self.assertIn(f'{contract.BRAND_MAC} no longer leaves the reactivation brand empty',
+                      self.problems())
+
+    def test_live_caption_renamed_fails(self):
+        self.edit(contract.LIVE_CAPTION[2], 'kLiveCaption,', 'kLiveCaption, "LiveCaptions",')
+        self.assertIn('kLiveCaption is now named LiveCaptions, not LiveCaption', self.problems())
+
+    def test_live_caption_missing_from_startup_policy_fails(self):
+        policy = self.root / 'policy.h'
+        policy.write_text(POLICY.read_text(encoding='utf-8').replace('"LiveCaption",\n', ''),
+                          encoding='utf-8')
+        self.assertIn('Parc startup policy no longer turns LiveCaption off by default',
+                      self.problems(policy=policy))
 
     def test_lost_guest_fallback_fails(self):
         self.edit(contract.PAGE_VISIBILITY, "if (!loadTimeData.getBoolean('isGuest')) {",

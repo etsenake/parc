@@ -17,6 +17,7 @@
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/webui_config_map.h"
 #include "content/public/common/url_constants.h"
+#include "rlz/lib/rlz_value_store.h"
 #include "url/gurl.h"
 #include "url/url_constants.h"
 
@@ -171,6 +172,10 @@ base::DictValue SettingsPageValues() {
 
 void ReportNoBrandCode() {
   google_brand::g_brand_for_testing = "";
+}
+
+void UseParcRlzStore(const base::FilePath& user_data_dir) {
+  rlz_lib::testing::SetRlzStoreDirectory(user_data_dir);
 }
 
 void RegisterSettingsWebUI() {

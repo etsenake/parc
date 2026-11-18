@@ -71,7 +71,11 @@ Defaults applied only when the command line has not explicitly named a feature:
   installed extensions unpinned. `SkillsEnabled` turns off Gemini skills, whose
   per-tab helpers and page Parc never uses, and `GoogleSearchAiModeWorkspace`
   only adds a Connected Apps row; together they kept Chromium's AI page in
-  [More Settings](settings.md#more-settings).
+  [More Settings](settings.md#more-settings). Turning off `LiveCaption` hides
+  Live Caption and Live Translate in Chromium's media controls dialog and in
+  Chromium's own picture-in-picture window, which extension pages still use:
+  signed Parc can't load the speech library Chromium downloads for them. Nothing
+  else in Chromium on Mac reads the feature; Parc's two media patches check it.
 
 Back/forward cache, ServiceWorkerAutoPreload and Privacy Sandbox attestation
 retain upstream defaults. On-device omnibox suggestions and the web Translator
