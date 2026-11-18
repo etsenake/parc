@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.11.0 (2026-11-18)
+
+### New
+
+- **files:** Put Parc on Finder's Open With list for the PDFs, pictures, text, music and videos it can already show, and name a local file's tab after the file while it loads
+- **history:** Find pages you've visited in Parc straight from Spotlight, like Safari, with deleted history leaving Spotlight too
+
 ## 2.10.2 (2026-11-18)
 
 ### Fixed

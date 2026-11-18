@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "version": "2.11.0",
+      "build": 47,
+      "date": "2026-11-18",
+      "changes": [
+        {
+          "type": "feat",
+          "scope": "files",
+          "summary": "Put Parc on Finder's Open With list for the PDFs, pictures, text, music and videos it can already show, and name a local file's tab after the file while it loads",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "history",
+          "summary": "Find pages you've visited in Parc straight from Spotlight, like Safari, with deleted history leaving Spotlight too",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.10.2",
       "build": 46,
       "date": "2026-11-18",
