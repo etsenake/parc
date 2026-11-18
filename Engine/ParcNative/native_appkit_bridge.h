@@ -1042,6 +1042,7 @@ __attribute__((visibility("default")))
 + (void)setApplicationClient:(id<PCNativeBrowserApplicationClient>)client;
 + (NSArray<PCNativePrivateDownloadContext*>*)privateDownloadContexts;
 + (void)requestCloseAllWindows:(void (^)(BOOL allow))completion;
++ (void)cancelQuit;
 @end
 NS_SWIFT_UI_ACTOR
 @interface PCNativeBrowserApplication (CookieStore)

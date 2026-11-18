@@ -43,6 +43,13 @@ required Profile are ready.
 Quit, Dock termination and system termination enter the same application
 termination coordinator. It saves window/history state, waits for genuine page
 consent and native-service drain, then lets AppKit finish termination.
+Chromium's own restart requests, such as System's Restart button in More
+Settings, take the same path without the **Quit Parc?** warning; once it
+finishes, Chromium relaunches Parc through Parc Helper with the same data. When
+a quit stops short (the warning's Cancel, Notes or settings that can't close, a
+page that refuses to leave, or a refused onboarding replay close), Parc tells the
+engine it is no longer quitting. That drops any pending restart, so the next
+Quit only quits.
 
 ## Saved sidebar backups and startup rescue
 
@@ -209,4 +216,5 @@ Window presentation/session storage, `LaunchContinuity`, the native page
 transfer registry and `BrowserWindowController` own these paths. Focused model
 coverage includes `WindowPresentation`, `ClosedItems`, `CloseUndo`,
 `PagePlaceholder`, `PagePlaceholderImages` and session-store tests. Native/compiler checks validate their
-interfaces when run.
+interfaces when run. `tests/TerminationRestart/check.py` runs the real
+termination coordinator against stand-ins for every way a quit can stop short.

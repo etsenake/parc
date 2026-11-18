@@ -32,6 +32,8 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/nuke_profile_directory_utils.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/lifetime/application_lifetime_desktop.h"
+#include "chrome/browser/lifetime/browser_shutdown.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -2933,6 +2935,17 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   parc::preparing_global_close = false;
   parc::BeginNativeClose(parc::Windows().objectEnumerator.allObjects, true,
                          completion);
+}
++ (void)cancelQuit {
+  CHECK(NSThread.isMainThread);
+  if (!g_browser_process) {
+    return;
+  }
+  browser_shutdown::SetTryingToQuit(false);
+  if (PrefService* local_state = g_browser_process->local_state()) {
+    local_state->ClearPref(prefs::kRestartInBackgroundOnShutdown);
+  }
+  chrome::OnClosingAllBrowsers(false);
 }
 @end
 @implementation PCNativeBrowserApplication (CookieStore)

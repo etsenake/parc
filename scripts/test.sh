@@ -89,6 +89,7 @@ step python3 "$repo_root/tests/SettingsPrettyJSONPersistSkip/check.py"
 step python3 "$repo_root/tests/PointingHand/check.py"
 step python3 "$repo_root/tests/ErrorPages/check.py"
 step python3 "$repo_root/tests/WebUIBranding/check.py"
+step python3 "$repo_root/tests/TerminationRestart/check.py"
 
 step swift_test native-messaging-hosts -parse-as-library \
   "$repo_root/Sources/ParcCore/NativeMessagingHosts.swift" \

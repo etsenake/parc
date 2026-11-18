@@ -104,6 +104,7 @@ final class AppDelegate {
     var deferredReplayTermination: (() -> Void)?, replayRestoreError: Error?
     var quitCommandPending = false, quitWarningApprovalPending = false
     var globalQuitRequests = 0, recordsWritten = 0, recoveryPrompts = 0, failsRestoration = false
+    var abandonedTerminations = 0
     func add(_ owner: BrowserWindowController) {
         windows.append(owner); NSApp.orderedWindows.append(owner.window!)
         owner.onClose = { [weak self, weak owner] in self?.windows.removeAll { $0 === owner } }
@@ -111,6 +112,7 @@ final class AppDelegate {
     func recordWindowSessions() { if !replaySessionActive { recordsWritten += 1 } }
     func persistTabHistory() {}
     func cancelApplicationRestart(_ message: String) {}
+    func abandonApplicationTermination(_ message: String) { abandonedTerminations += 1 }
     func presentReplayRestoreFailure() { recoveryPrompts += 1 }
     func deliverPendingBrowserRequests(to owner: BrowserWindowController) {}
     func refreshVisibleActivity() {}
@@ -138,7 +140,7 @@ do {
     origin.nativeBinding?.resolve(false); drain()
     precondition(editor.text.isEditable && editor.titleText.isEditable)
     precondition(app.onboarding == nil && !flow.presented && other.window!.isVisible)
-    precondition(app.globalQuitRequests == 0 && app.replayReturnOwner == nil)
+    precondition(app.globalQuitRequests == 0 && app.replayReturnOwner == nil && app.abandonedTerminations == 1)
 }
 do {
     let (app, origin, other, flow) = fixture(), editor = NoteEditorViewController()

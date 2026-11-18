@@ -573,7 +573,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 self.replayCloseInProgress = false
                 if !approved {
                     self.deferredReplayTermination = nil
-                    self.cancelApplicationRestart("Restart cancelled. Your browser is still open.")
+                    self.abandonApplicationTermination("Restart cancelled. Your browser is still open.")
                     self.finishOnboardingReplay()
                 } else if self.deferredReplayTermination != nil {
                     self.finishOnboardingReplay()
@@ -1170,7 +1170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 guard let self, self.quitWarning === warning else { return }
                 self.quitWarning = nil
                 guard approved else {
-                    self.cancelApplicationRestart("Restart cancelled.")
+                    self.abandonApplicationTermination("Restart cancelled.")
                     self.resumeOnboardingAfterCancelledTermination()
                     return
                 }
@@ -1206,19 +1206,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return
         }
         guard windows.allSatisfy({ $0.prepareNotesToClose() }) else {
-            cancelApplicationRestart("Restart cancelled. Your notes are still open.")
+            abandonApplicationTermination("Restart cancelled. Your notes are still open.")
             resumeOnboardingAfterCancelledTermination()
             return
         }
         do { try NoteStore.flushAllSharedDelayedDiskSaves() }
         catch {
-            cancelApplicationRestart("Quit cancelled. A note could not be saved on this Mac.")
+            abandonApplicationTermination("Quit cancelled. A note could not be saved on this Mac.")
             resumeOnboardingAfterCancelledTermination()
             return
         }
         guard applicationSettings?.prepareForTermination() ?? true,
               windows.allSatisfy({ $0.prepareSettingsForTermination() }) else {
-            cancelApplicationRestart("Quit cancelled. Air Traffic Control changes could not be saved.")
+            abandonApplicationTermination("Quit cancelled. Air Traffic Control changes could not be saved.")
             resumeOnboardingAfterCancelledTermination()
             return
         }
@@ -1235,7 +1235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             resumePendingAppKitRestorations()
             finishInitialLaunchIfReady()
             drainInitialActions()
-            cancelApplicationRestart("Quit cancelled. Settings could not be closed.")
+            abandonApplicationTermination("Quit cancelled. Settings could not be closed.")
             resumeOnboardingAfterCancelledTermination()
             return
         }
@@ -1262,7 +1262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 self.resumePendingAppKitRestorations()
                 self.finishInitialLaunchIfReady()
                 self.drainInitialActions()
-                self.cancelApplicationRestart("Restart cancelled. Your browser is still open.")
+                self.abandonApplicationTermination("Restart cancelled. Your browser is still open.")
             }
         }
     }
@@ -2192,6 +2192,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 self.cancelApplicationRestart("Finish the open dialog before restarting Parc.")
             }
         }
+    }
+
+    private func abandonApplicationTermination(_ message: String) {
+        PCNativeBrowserApplication.cancelQuit()
+        cancelApplicationRestart(message)
     }
 
     private func cancelApplicationRestart(_ message: String) {
