@@ -28,7 +28,7 @@ import AppKit
     static let keys: [(Double, String)] = [(2.30, "m"), (2.43, "me"), (2.56, "mea"), (2.77, "mead")]
     static let menuAt = 0.85, chooseAt = 1.50, pendingAt = 1.75, returnAt = 3.25, paintAt = 3.50
     static let reachAt = 4.15, hoverAt = 4.70, pressAt = 4.85, liftAt = 4.92, arriveAt = 5.95, dropAt = 6.50, dropPaintAt = 6.70
-    static let handles = (NSPoint(x: 500, y: 0), NSPoint(x: -350, y: 0))
+    static let bow: [(along: CGFloat, off: CGFloat)] = [(0.36, 60), (0.72, 60)]
 
     let scene: BrowserScene
     let host: NSView
@@ -68,6 +68,8 @@ import AppKit
     var card: (image: NSImage, size: NSSize)?
     var drop: StackDrop?
     var path: (start: NSPoint, first: NSPoint, second: NSPoint, end: NSPoint)?
+    var arc: [(length: CGFloat, point: NSPoint)] = []
+    var trail: [[Double]] = []
     var homes: [UUID: UUID] = [:]
     var creation: TabCreationProvenance?
 
@@ -222,13 +224,34 @@ import AppKit
                                           savedHomeIDs: homes, creation: creation) != nil
     }
 
-    func dragPoint(_ t: Double) -> NSPoint {
+    func curvePoint(_ u: CGFloat) -> NSPoint {
         guard let path else { return pointer }
-        let u = CGFloat(easeInOut((t - Self.liftAt) / (Self.arriveAt - Self.liftAt)))
         let v = 1 - u
         let a = path.start, b = path.first, c = path.second, d = path.end
         return NSPoint(x: v * v * v * a.x + 3 * v * v * u * b.x + 3 * v * u * u * c.x + u * u * u * d.x,
                        y: v * v * v * a.y + 3 * v * v * u * b.y + 3 * v * u * u * c.y + u * u * u * d.y)
+    }
+
+    func layPath(from start: NSPoint, to end: NSPoint) {
+        let dx = end.x - start.x, dy = end.y - start.y, length = max(1, hypot(dx, dy))
+        let handles = Self.bow.map { NSPoint(x: start.x + dx * $0.along + dy / length * $0.off,
+                                             y: start.y + dy * $0.along - dx / length * $0.off) }
+        path = (start, handles[0], handles[1], end)
+        arc = [(0, start)]
+        for step in 1...1000 {
+            let point = curvePoint(CGFloat(step) / 1000)
+            arc.append((arc[arc.count - 1].length + hypot(point.x - arc[arc.count - 1].point.x, point.y - arc[arc.count - 1].point.y), point))
+        }
+    }
+
+    func dragPoint(_ t: Double) -> NSPoint {
+        guard let total = arc.last?.length, total > 0 else { return pointer }
+        let u = clamp01((t - Self.liftAt) / (Self.arriveAt - Self.liftAt))
+        let travel = CGFloat(20 * pow(u, 3) - 45 * pow(u, 4) + 36 * pow(u, 5) - 10 * pow(u, 6)) * total
+        let index = max(1, arc.firstIndex { $0.length >= travel } ?? arc.count - 1)
+        let a = arc[index - 1], b = arc[index]
+        let w = b.length > a.length ? (travel - a.length) / (b.length - a.length) : 0
+        return NSPoint(x: a.point.x + (b.point.x - a.point.x) * w, y: a.point.y + (b.point.y - a.point.y) * w)
     }
 
     func dropEnd() -> NSPoint {
@@ -332,10 +355,8 @@ import AppKit
             creation = TabCreationProvenance(referrerID: nil, activeTabID: tabs[focused ?? 0].id, profileID: scene.scenario.work.profileID, state: state)
             drop = StackDrop(split: split, stacks: layout.stacks!, orientation: layout.orientation,
                              canPropose: { [unowned self] in canPropose($0, $1) })
-            let end = dropEnd()
-            path = (pointer, NSPoint(x: pointer.x + Self.handles.0.x, y: pointer.y + Self.handles.0.y),
-                    NSPoint(x: end.x + Self.handles.1.x, y: end.y + Self.handles.1.y), end)
-            log.append("drag path \(String(describing: path)) row \(rowFrame)")
+            layPath(from: pointer, to: dropEnd())
+            log.append("drag path \(String(describing: path)) length \(arc.last?.length ?? 0) row \(rowFrame)")
         }
         at(Self.dropAt, "Release: the tab drops into the reserved seat under the picnic plan") { [unowned self] in commitDrop() }
         at(Self.dropPaintAt, "Q4 planning pane first paint (cut)") { [unowned self] in
@@ -387,6 +408,7 @@ import AppKit
         let local = split.convert(point, from: surface)
         let inside = split.bounds.contains(local)
         let wasReplace = drop.replace
+        let hadAppeared = drop.appeared
         if inside {
             if card == nil, let row {
                 if let image = SplitDropPlaceholderCard.image(icon: row.splitDropCardContent.icon, title: row.splitDropCardContent.title,
@@ -397,6 +419,9 @@ import AppKit
                 }
             }
             drop.update(at: local, t)
+            if hadAppeared == nil, let appeared = drop.appeared, let target = drop.intent.shown?.target {
+                beats.append((appeared, "The pointer eases onto the picnic plan's bottom edge: hover intent opens \(target) and the panes make room"))
+            }
             if let row, let card, let size = SplitDropPlaceholderCard.size(forIncomingPane: drop.incomingPaneSize), size != card.size,
                let image = SplitDropPlaceholderCard.image(icon: row.splitDropCardContent.icon, title: row.splitDropCardContent.title,
                                                           incomingPane: drop.incomingPaneSize) {
@@ -412,6 +437,9 @@ import AppKit
             if let new = drop.replace { fadeRing(new, to: 1, t, width: 3) }
         }
         let frames = drop.presentedPanes(t)
+        let shift = zip(frames, drop.original).map { max(abs($0.minX - $1.minX), abs($0.minY - $1.minY),
+                                                         abs($0.width - $1.width), abs($0.height - $1.height)) }.max() ?? 0
+        trail.append([t, Double(point.x), Double(point.y), Double(shift), drop.presentedRegion(t) == nil ? 0 : 1].map { ($0 * 1000).rounded() / 1000 })
         for (view, frame) in zip(drop.panes, frames) where view.frame != frame {
             view.frame = frame
             view.needsLayout = true

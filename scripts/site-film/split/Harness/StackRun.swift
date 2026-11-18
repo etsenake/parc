@@ -37,7 +37,7 @@ import AppKit
         }
         let json: [String: Any] = ["scene": "split view stacks", "fps": Int(fps), "duration": StackFilm.duration, "frames": total,
                                    "size": [2880, 1800], "points": [1440, 900], "window": [80, 18, 1280, 840],
-                                   "beats": beats, "log": film.log, "drop": film.drop?.log ?? film.dropLog]
+                                   "beats": beats, "log": film.log, "drop": film.drop?.log ?? film.dropLog, "trail": film.trail]
         let data = try! JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
         try! data.write(to: URL(fileURLWithPath: out + (stills == nil ? "/stacks-beats.json" : "/stacks-proof-beats.json")))
         print(film.log.joined(separator: "\n"))

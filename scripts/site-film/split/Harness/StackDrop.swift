@@ -15,7 +15,10 @@ import AppKit
     let canPropose: (SplitDropTarget, SplitOrientation) -> Bool
     let original: [NSRect]
     private(set) var target: SplitDropTarget?
-    private(set) var replace: Int?
+    private(set) var intent = SplitDropIntent()
+    private(set) var appeared: Double?
+    private var lastPoint: NSPoint?
+    private var lastPlace: String?
     private var hostFrames: [NSRect]
     private var model: [NSRect]
     private var slot: NSRect?
@@ -33,6 +36,11 @@ import AppKit
 
     var reserving: Bool { target != nil }
 
+    var replace: Int? {
+        if case .replace(let index)? = intent.shown?.target { return index }
+        return nil
+    }
+
     var incomingPaneSize: NSSize {
         let bounds = split.bounds
         guard case .stack(let pane, _)? = target, original.indices.contains(pane) else {
@@ -45,30 +53,58 @@ import AppKit
     }
 
     func update(at point: NSPoint, _ t: Double) {
-        if let target, let slot, slot.contains(point), canPropose(target, orientation) { return }
-        guard let proposed = SplitDropGeometry.proposal(at: point, frames: hostFrames, orientation: orientation,
-                                                        slotSizes: stacks.slotSizes, canPropose: canPropose) else {
-            clear(t); note(t, "none"); replace = nil; return
+        if let lastPoint {
+            for _ in 0..<4 {
+                guard let deadline = intent.deadline, deadline < t - 1e-9 else { break }
+                evaluate(at: lastPoint, deadline)
+                if let next = intent.deadline, next <= deadline { break }
+            }
         }
-        if case .replace(let index) = proposed.0 {
+        evaluate(at: point, t)
+        lastPoint = point
+    }
+
+    private func evaluate(at point: NSPoint, _ t: Double) {
+        let place: SplitDropIntent.Place
+        if let target, let slot, slot.contains(point), canPropose(target, orientation) {
+            place = .preview
+        } else if hostFrames.contains(where: { $0.contains(point) }) {
+            let proposed = SplitDropGeometry.proposal(at: point, frames: hostFrames, orientation: orientation,
+                                                      slotSizes: stacks.slotSizes, canPropose: canPropose)
+            place = .pane(proposed.map { SplitDropIntent.Zone(target: $0.0, orientation: $0.1) })
+        } else if let shown = intent.shown, !canPropose(shown.target, shown.orientation) {
+            place = .pane(nil)
+        } else {
+            place = .preview
+        }
+        let label: String
+        switch place {
+        case .pane(let zone): label = zone.map { "\($0.target)" } ?? "nothing"
+        case .preview: label = target == nil ? "gap" : "seat"
+        }
+        if label != lastPlace { note(t, "over \(label)"); lastPlace = label }
+        let step = intent.move(to: place, x: Double(point.x), y: Double(point.y), at: t)
+        guard step.changed else { return }
+        if step.appeared { appeared = t }
+        if let zone = step.shown, zone.target.reservesRoom { open(zone.target, t) }
+        else {
             clear(t)
-            if replace != index { note(t, "replace \(index)") }
-            replace = index
-            return
+            if case .replace(let index)? = step.shown?.target { note(t, "replace \(index)") }
         }
-        replace = nil
-        guard target != proposed.0, let collapsed = collapsedFrame(proposed.0),
-              let reserved = reservedFrames(proposed.0) else { return }
+    }
+
+    private func open(_ next: SplitDropTarget, _ t: Double) {
+        guard target != next, let collapsed = collapsedFrame(next), let reserved = reservedFrames(next) else { return }
         let positions = presentedPanes(t)
         let visible = presentedRegion(t)
-        target = proposed.0
+        target = next
         model = reserved.panes
         slot = reserved.slot
         hostFrames = model
         motion = Motion(from: positions, to: model, start: t)
         regionMotion = RegionMotion(from: visible ?? Region(frame: collapsed, opacity: 0), to: Region(frame: reserved.slot, opacity: 1),
                                     start: t, removing: false)
-        note(t, "reserve \(proposed.0) slot \(NSStringFromRect(reserved.slot))")
+        note(t, "reserve \(next) slot \(NSStringFromRect(reserved.slot))")
     }
 
     func clear(_ t: Double) {
@@ -87,11 +123,14 @@ import AppKit
     }
 
     func leave(_ t: Double) {
+        _ = intent.leave()
+        lastPoint = nil; lastPlace = nil
         clear(t)
-        replace = nil
     }
 
     func finish() {
+        intent.reset()
+        lastPoint = nil
         motion = nil; regionMotion = nil; target = nil; slot = nil
     }
 
