@@ -42,7 +42,7 @@ From the scene's folder, build once, then render:
 | `crank` | `./render out crank ../pages/png/article.png` |
 | `peek` | `./render out peek ../pages/png/article.png ../pages/png/kite.png` |
 | `preview` | `./render out preview ../pages/png/article.png ../pages/png/kite.png` |
-| `split` | `./render out split` |
+| `split` | `./render out split` (the film) and `./render out stacks` (the card) |
 | `commandbar-easel` | `./render out commandbar ../pages/png` and `./render out easel ../pages/png` |
 | `capture-archive` | `./render out capture` and `./render out archive` |
 | `mini-card` | `./render out mini ../pages/png` and `./render out card 10 "Sam Rivera"` |

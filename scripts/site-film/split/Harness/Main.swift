@@ -21,6 +21,13 @@ import AppKit
         let mode = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "all"
         try? FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
         requireNoWindows("at start")
+        if mode == "stacks" || mode == "stackstills" {
+            let times = mode == "stackstills" ? (CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "0").split(separator: ",").compactMap { Double($0) } : nil
+            StackRun.run(out: out, stills: times)
+            requireNoWindows("at exit")
+            print("windows at exit: \(NSApp.windows.count)")
+            return
+        }
         if mode == "split" || mode == "splitproof" {
             let stills = mode == "splitproof" ? (CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "0").split(separator: ",").compactMap { Double($0) } : nil
             SplitRun.run(out: out, stills: stills)

@@ -9,9 +9,9 @@
    "name": "split",
    "segments": [
     {
-     "source": "../split/out/split.mov",
-     "in": 0.35,
-     "out": 9.0
+     "source": "../split/out/stacks.mov",
+     "in": 0.25,
+     "out": 8.9
     }
    ],
    "camera": [

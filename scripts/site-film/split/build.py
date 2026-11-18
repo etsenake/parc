@@ -41,7 +41,8 @@ path = gen / "ParcToastCard.swift"
 path.write_text(cut)
 extracted.append(path)
 extras = ["BrowserToolbar.swift", "BrowserToolbarPreferences.swift", "PaneTitleControl.swift", "SplitPaneControl.swift",
-          "PaneTopBarColor.swift", "SplitPaneHighlight.swift", "SplitPaneMenu.swift"]
+          "PaneTopBarColor.swift", "SplitPaneHighlight.swift", "SplitPaneMenu.swift",
+          "CommandResultRowView.swift", "CommandResultCell.swift", "CommandBarAppearance.swift", "PopoverBackgroundView.swift"]
 names = names + [name for name in extras if name not in names]
 sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [app / name for name in names] + extracted
 sources += [root / "tests/KeyboardNavigation/NativeShortcutStub.swift", root / "tests/SpaceManager/NativeHostStub.swift",
