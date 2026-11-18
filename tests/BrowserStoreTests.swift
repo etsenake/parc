@@ -88,6 +88,16 @@ struct BrowserStoreTests {
         }
     }
 
+    static func testLocalFileOpensTitledByName() throws {
+        try withDirectory { directory in
+            let store = try BrowserStore(directory: directory)
+            let id = store.openResolvedURL(URL(fileURLWithPath: "/Users/me/Desktop/Lease Agreement.pdf"))
+            try expect(store.state.tab(id)?.title == "Lease Agreement.pdf", "A local file opens titled by its file name")
+            let web = store.openResolvedURL(URL(string: "https://example.test/start")!)
+            try expect(store.state.tab(web)?.title == "example.test", "A web page still opens titled by its host")
+        }
+    }
+
     static func testNavigationMetadataPublication() throws {
         try withDirectory { directory in
             let now = Date(timeIntervalSince1970: 1_000)
@@ -3842,6 +3852,7 @@ struct BrowserStoreTests {
         try testWindowCommandContext()
         try testNativeArchiveConsentAndRevalidation()
         try testPublicInternalAddresses()
+        try testLocalFileOpensTitledByName()
         try testNavigationMetadataPublication()
         try testHistoryNewestFirstMatchesDateSort()
         try testHistoryFileSplit()

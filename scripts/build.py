@@ -66,6 +66,25 @@ CHROMIUM_USAGE_DESCRIPTIONS = "chrome/tools/build/mac/infoplist_strings_util.cc"
 PINNED_INPUTS = (("chromium", "LICENSE"),
                  ("chromium", "chrome/app/app-entitlements.plist"),
                  ("chromium", CHROMIUM_USAGE_DESCRIPTIONS))
+DOCUMENT_TYPES = (
+    ("Web page", ("public.html", "public.xhtml", "org.ietf.mhtml")),
+    ("PDF document", ("com.adobe.pdf",)),
+    ("Image", ("com.compuserve.gif", "public.jpeg", "public.png", "public.svg-image",
+               "org.webmproject.webp", "public.avif", "com.microsoft.bmp", "com.microsoft.ico")),
+    ("Text", ("public.plain-text", "public.json", "public.xml", "public.css")),
+    ("Audio", ("public.mp3", "com.apple.m4a-audio", "com.microsoft.waveform-audio",
+               "org.xiph.flac", "org.xiph.ogg-audio")),
+    ("Video", ("public.mpeg-4", "org.webmproject.webm", "org.xiph.ogv")),
+)
+IMPORTED_TYPES = (
+    ("org.ietf.mhtml", "MHTML web archive", ["public.data", "public.content"], ["mht", "mhtml"], "multipart/related"),
+    ("public.avif", "AVIF image", ["public.heif-standard"], ["avif"], "image/avif"),
+    ("public.css", "CSS style sheet", ["public.text"], ["css"], "text/css"),
+    ("org.xiph.flac", "FLAC audio", ["public.audio"], ["flac"], "audio/flac"),
+    ("org.xiph.ogg-audio", "Ogg audio", ["public.audio"], ["ogg", "oga", "opus"], "audio/ogg"),
+    ("org.webmproject.webm", "WebM video", ["public.movie"], ["webm"], "video/webm"),
+    ("org.xiph.ogv", "Ogg video", ["public.movie"], ["ogv", "ogm"], "video/ogg"),
+)
 RELEASE_FRAMEWORK = "Parc.app/Contents/Frameworks/" + FRAMEWORK
 SPARKLE = "Sparkle.framework"
 LOAD_COMMANDS = {"LC_LOAD_DYLIB", "LC_LOAD_WEAK_DYLIB", "LC_REEXPORT_DYLIB",
@@ -1090,14 +1109,15 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                     CFBundleURLTypes=[{"CFBundleTypeRole": "Viewer", "CFBundleURLName": "Webpage URL",
                                        "CFBundleURLSchemes": ["http", "https"]}],
                     CFBundleDocumentTypes=[
-                        {"CFBundleTypeName": "HTML document", "CFBundleTypeRole": "Viewer",
-                         "LSHandlerRank": "Alternate", "LSItemContentTypes": ["public.html"],
-                         "CFBundleTypeExtensions": ["html", "htm", "shtml"],
-                         "CFBundleTypeMIMETypes": ["text/html"]},
-                        {"CFBundleTypeName": "XHTML document", "CFBundleTypeRole": "Viewer",
-                         "LSHandlerRank": "Alternate", "LSItemContentTypes": ["public.xhtml"],
-                         "CFBundleTypeExtensions": ["xhtml", "xht"],
-                         "CFBundleTypeMIMETypes": ["application/xhtml+xml"]}],
+                        {"CFBundleTypeName": name, "CFBundleTypeRole": "Viewer",
+                         "LSHandlerRank": "Alternate", "LSItemContentTypes": list(kinds)}
+                        for name, kinds in DOCUMENT_TYPES],
+                    UTImportedTypeDeclarations=[
+                        {"UTTypeIdentifier": kind, "UTTypeDescription": description,
+                         "UTTypeConformsTo": conforms,
+                         "UTTypeTagSpecification": {"public.filename-extension": extensions,
+                                                    "public.mime-type": mime}}
+                        for kind, description, conforms, extensions, mime in IMPORTED_TYPES],
                     LSApplicationCategoryType="public.app-category.productivity",
                     NSUserActivityTypes=["NSUserActivityTypeBrowsingWeb"],
                     NSCameraUsageDescription="Allow camera access for websites you choose.",

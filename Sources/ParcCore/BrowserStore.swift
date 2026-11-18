@@ -2993,7 +2993,7 @@ final class BrowserStore: ObservableObject {
     func openResolvedURL(_ url: URL, id: UUID = UUID(), kind: TabKind = .today, creation: TabCreationProvenance? = nil) -> UUID {
         let creation = creation?.validated(profileID: activeSpace.profileID, state: state)
         let resolved = BrowserInternalURL.publicString(url.absoluteString)
-        let title = url.host ?? "New Tab"
+        let title = url.isFileURL ? url.lastPathComponent : url.host ?? "New Tab"
         var next = state
         next.tabs.append(BrowserTab(id: id, spaceID: activeSpaceID, profileID: activeSpace.profileID,
                                      url: resolved, title: title, kind: kind, createdAt: clock(), lastAccessed: clock(),

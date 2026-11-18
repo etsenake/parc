@@ -190,10 +190,21 @@ class PackagingIconTests(unittest.TestCase):
             self.assertEqual(info["LSApplicationCategoryType"], "public.app-category.productivity")
             documents = {kind for document in info["CFBundleDocumentTypes"]
                          for kind in document["LSItemContentTypes"]}
-            self.assertEqual(documents, {"public.html", "public.xhtml"})
+            self.assertEqual(documents, {
+                "public.html", "public.xhtml", "org.ietf.mhtml", "com.adobe.pdf",
+                "com.compuserve.gif", "public.jpeg", "public.png", "public.svg-image",
+                "org.webmproject.webp", "public.avif", "com.microsoft.bmp", "com.microsoft.ico",
+                "public.plain-text", "public.json", "public.xml", "public.css",
+                "public.mp3", "com.apple.m4a-audio", "com.microsoft.waveform-audio",
+                "org.xiph.flac", "org.xiph.ogg-audio",
+                "public.mpeg-4", "org.webmproject.webm", "org.xiph.ogv"})
             self.assertTrue(all(document["CFBundleTypeRole"] == "Viewer"
                                 and document["LSHandlerRank"] == "Alternate"
                                 for document in info["CFBundleDocumentTypes"]))
+            imported = {kind["UTTypeIdentifier"] for kind in info["UTImportedTypeDeclarations"]}
+            self.assertLessEqual(imported, documents)
+            self.assertTrue(all(kind["UTTypeTagSpecification"]["public.filename-extension"]
+                                for kind in info["UTImportedTypeDeclarations"]))
             for folder in ("Desktop", "Documents", "Downloads"):
                 self.assertIn(folder, info[f"NS{folder}FolderUsageDescription"])
             for key in ("NSAudioCaptureUsageDescription", "NSBluetoothAlwaysUsageDescription",
