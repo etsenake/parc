@@ -2,6 +2,7 @@
 #ifndef PARC_NATIVE_NATIVE_SHIFT_LINK_H_
 #define PARC_NATIVE_NATIVE_SHIFT_LINK_H_
 #import <AppKit/AppKit.h>
+#include <string>
 #import "status_text.h"
 
 namespace parc {
@@ -13,7 +14,6 @@ struct NativeShiftLinkClick {
   bool in_shown_peek = false;
   bool frame_can_navigate_page = true;
   bool can_open_peek = false;
-  bool sends_body = false;
 };
 
 inline bool NativeFrameCanNavigatePage(bool main_frame, bool top_navigation_sandboxed,
@@ -28,7 +28,7 @@ inline bool NativeShiftHeld(NSEventModifierFlags modifiers) {
 }
 
 inline NativeShiftLink ClassifyNativeShiftLink(const NativeShiftLinkClick& click) {
-  if (!NativeShiftHeld(click.modifiers) || !click.shift_peek_enabled || click.sends_body)
+  if (!NativeShiftHeld(click.modifiers) || !click.shift_peek_enabled)
     return NativeShiftLink::kOrdinary;
   if (click.in_shown_peek)
     return click.frame_can_navigate_page ? NativeShiftLink::kSamePeek : NativeShiftLink::kOrdinary;
@@ -62,6 +62,38 @@ inline NativeCreatedPageRoute ChooseNativeCreatedPageRoute(NSEventModifierFlags 
   if ((modifiers & NSEventModifierFlagCommand) || meeting || !main_frame_opener)
     return NativeCreatedPageRoute::kNone;
   return NativeCreatedPageRoute::kAutomatic;
+}
+
+template <typename Params, typename Disposition>
+void RetargetNativeShiftLink(Params& params, NativeShiftLink link, Disposition current_tab,
+                             Disposition foreground_tab) {
+  if (link == NativeShiftLink::kSamePeek) {
+    params.disposition = current_tab;
+    params.frame_tree_node_id = {};
+  } else if (link == NativeShiftLink::kPeek) {
+    params.disposition = foreground_tab;
+  }
+}
+
+struct NativeHeldShiftNavigation {
+  bool web_url = false;
+  bool from_opener = false;
+  bool post = false;
+  bool has_body = false;
+  bool peek_takes_link = false;
+};
+
+inline bool NativeHeldShiftNavigationJoinsPeek(const NativeHeldShiftNavigation& navigation) {
+  return navigation.web_url && navigation.from_opener && navigation.peek_takes_link &&
+      (!navigation.post || navigation.has_body);
+}
+
+template <typename Params, typename Referrer, typename Body>
+void CarryNativeShiftRequest(Params& params, const Referrer& referrer, const Body& body,
+                             const std::string& content_type) {
+  params.referrer = referrer;
+  params.post_data = body;
+  if (body && !content_type.empty()) params.extra_headers = "Content-Type: " + content_type;
 }
 
 inline PCNativeStatusLinkOutcome NativeShiftLinkOutcome(NativeShiftLink link) {

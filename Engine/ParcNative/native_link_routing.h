@@ -15,7 +15,7 @@
 class BrowserWindowInterface;
 class ExtensionFunction;
 class GURL;
-namespace content { class WebContents; class RenderFrameHost; class NavigationHandle; struct OpenURLParams; }
+namespace content { class WebContents; class RenderFrameHost; class NavigationHandle; class NavigationThrottleRegistry; struct OpenURLParams; }
 namespace parc {
 void EnableNativeLinkNavigation(content::WebContents&);
 void UpdateNativeLinkURL(content::WebContents&, const GURL&);
@@ -53,10 +53,13 @@ std::unique_ptr<content::OpenURLParams> TakeNativeOptionLink(
     content::WebContents* source, const content::OpenURLParams&);
 void CaptureNativeCreatedPage(content::WebContents* source,
     content::GlobalRenderFrameHostId opener, content::WebContents* created);
-std::unique_ptr<content::OpenURLParams> PrepareNativeCreatedPage(
+bool PrepareNativeCreatedPage(
     BrowserWindowInterface& browser, content::WebContents* source,
     content::WebContents& created, const GURL& target, WindowOpenDisposition& disposition,
     const blink::mojom::WindowFeatures& features, bool user_gesture);
+std::unique_ptr<content::WebContents> HoldNativeCreatedPage(
+    content::WebContents& source, std::unique_ptr<content::WebContents> created);
+void AddNativeShiftOpeningThrottle(content::NavigationThrottleRegistry& registry);
 bool OpenNativePdfLinkInPeek(const ExtensionFunction& function, const std::vector<GURL>& urls);
 }
 #ifdef __OBJC__

@@ -220,12 +220,11 @@ content::WebContents* NativeBrowserWebContentsDelegate::AddNewContents(
     const auto child_weak = new_contents->GetWeakPtr();
     const bool native_owner =
         source && HasNativeSplitOwner(browser_.get(), *source);
-    auto same_peek = PrepareNativeCreatedPage(browser_.get(), source,
-                                              *new_contents, target_url,
-                                              disposition, window_features,
-                                              user_gesture);
+    const bool hold = PrepareNativeCreatedPage(browser_.get(), source,
+                                               *new_contents, target_url,
+                                               disposition, window_features,
+                                               user_gesture);
     if (!child_weak) {
-
       new_contents.release();
       return nullptr;
     }
@@ -234,13 +233,12 @@ content::WebContents* NativeBrowserWebContentsDelegate::AddNewContents(
          !HasNativeSplitOwner(*browser_weak, *source_weak))) {
       return nullptr;
     }
-    if (same_peek) {
-      new_contents.reset();
-      if (browser_weak && source_weak) {
-        BrowserWebContentsDelegate::OpenURLFromTab(source_weak.get(), *same_peek,
-                                                   {});
+    if (hold && source_weak) {
+      new_contents =
+          HoldNativeCreatedPage(*source_weak, std::move(new_contents));
+      if (!new_contents) {
+        return nullptr;
       }
-      return nullptr;
     }
   }
   return BrowserWebContentsDelegate::AddNewContents(

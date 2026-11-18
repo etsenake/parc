@@ -6,6 +6,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/functional/bind.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
@@ -13,6 +14,8 @@
 #include "content/public/browser/frame_tree_node_id.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/navigation_throttle.h"
+#include "content/public/browser/navigation_throttle_registry.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "base/supports_user_data.h"
 #include "chrome/browser/profiles/profile.h"
@@ -39,6 +42,7 @@
 #include "third_party/blink/public/mojom/window_features/window_features.mojom.h"
 #include "url/gurl.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "net/http/http_request_headers.h"
 
 namespace parc {
 namespace {
@@ -51,7 +55,8 @@ const char kCreatedRouteKey = 0;
 const char kCreatedRouteAttemptKey = 0;
 const char kURLLockKey = 0;
 const char kOpenedPageKey = 0;
-const char kOpenedPageObserverKey = 0;
+const char kShiftOpeningHoldKey = 0;
+const char kHeldShiftOpeningsKey = 0;
 class CreatedPage;
 CreatedPage* Creation(content::WebContents& contents);
 
@@ -247,24 +252,6 @@ class OpenedPage final : public base::SupportsUserData::Data {
       : document(opener.GetWeakDocumentPtr()), modifiers(NSEvent.modifierFlags) {}
   const content::WeakDocumentPtr document;
   const NSEventModifierFlags modifiers;
-  std::optional<content::Referrer> referrer;
-};
-class OpenedPageObserver final : public base::SupportsUserData::Data,
-                                 public content::WebContentsObserver {
- public:
-  explicit OpenedPageObserver(content::WebContents& contents)
-      : content::WebContentsObserver(&contents) {}
-  void DidOpenRequestedURL(content::WebContents* new_contents,
-                           content::RenderFrameHost* source_render_frame_host,
-                           const GURL& url, const content::Referrer& referrer,
-                           WindowOpenDisposition disposition, ui::PageTransition transition,
-                           bool started_from_context_menu, bool renderer_initiated) override {
-    auto* opened = new_contents ?
-        static_cast<OpenedPage*>(new_contents->GetUserData(&kOpenedPageKey)) : nullptr;
-    if (opened && source_render_frame_host &&
-        opened->document.AsRenderFrameHostIfValid() == source_render_frame_host)
-      opened->referrer = referrer;
-  }
 };
 
 class CurrentLinkSequence final : public base::SupportsUserData::Data {
@@ -477,6 +464,162 @@ bool AllowsCurrentLink(CreatedPage& creation, const GURL& target) {
       [binding.client nativeBrowser:binding shouldOpenCurrentLinkInPeekFrom:parent targetURL:url] &&
       CanPresentSource(creation);
 }
+
+class HeldShiftOpening final : public content::WebContentsObserver {
+ public:
+  HeldShiftOpening(content::WebContents& source, const content::WeakDocumentPtr& opener,
+                   BrowserWindowInterface& browser, const GURL& target,
+                   WindowOpenDisposition disposition,
+                   const blink::mojom::WindowFeatures& features, bool user_gesture)
+      : source_(source.GetWeakPtr()), opener_(opener), browser_(browser.GetWeakPtr()),
+        target_(target), disposition_(disposition), features_(features.Clone()),
+        user_gesture_(user_gesture) {}
+  ~HeldShiftOpening() override {
+    if (auto contents = Unhold())
+      base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(FROM_HERE, std::move(contents));
+  }
+  content::WebContents* source() const { return source_.get(); }
+  base::WeakPtr<HeldShiftOpening> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
+  void Hold(std::unique_ptr<content::WebContents> contents) {
+    contents_ = std::move(contents);
+    Observe(contents_.get());
+  }
+  bool Capture(content::NavigationHandle& navigation) {
+    if (settled_ || !contents_ || navigation.GetWebContents() != contents_.get() ||
+        !navigation.IsInPrimaryMainFrame()) return false;
+    settled_ = true;
+    auto params = SamePeekParams(navigation);
+    if (!params) {
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
+          base::BindOnce(&HeldShiftOpening::Release, weak_factory_.GetWeakPtr()));
+      return false;
+    }
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
+        base::BindOnce(&HeldShiftOpening::Finish, weak_factory_.GetWeakPtr(),
+                       std::move(params)));
+    return true;
+  }
+  void DidFinishNavigation(content::NavigationHandle* navigation) override {
+    if (settled_ || !navigation->IsInPrimaryMainFrame()) return;
+    settled_ = true;
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(FROM_HERE,
+        base::BindOnce(&HeldShiftOpening::Release, weak_factory_.GetWeakPtr()));
+  }
+
+ private:
+  std::unique_ptr<content::WebContents> Unhold() {
+    Observe(nullptr);
+    if (contents_) contents_->RemoveUserData(&kShiftOpeningHoldKey);
+    return std::move(contents_);
+  }
+  std::unique_ptr<content::OpenURLParams> SamePeekParams(content::NavigationHandle& navigation) {
+    auto* opener = opener_.AsRenderFrameHostIfValid();
+    const auto& initiator = navigation.GetInitiatorFrameToken();
+    NativeHeldShiftNavigation held{
+        .web_url = navigation.GetURL().SchemeIsHTTPOrHTTPS(),
+        .from_opener = source_ && browser_ && opener && initiator &&
+            content::WebContents::FromRenderFrameHost(opener) == source_.get() &&
+            opener->GetGlobalFrameToken() == content::GlobalRenderFrameHostToken(
+                navigation.GetInitiatorProcessId(), *initiator),
+        .post = navigation.IsPost(),
+        .has_body = static_cast<bool>(navigation.GetPostData())};
+    if (held.from_opener) {
+      CreatedPage admission(*source_, *source_->GetPrimaryMainFrame(), *browser_);
+      held.peek_takes_link = CanNavigatePeekSource(admission);
+    }
+    opener = opener_.AsRenderFrameHostIfValid();
+    if (!opener || !source_ || !NativeHeldShiftNavigationJoinsPeek(held)) return nullptr;
+    auto params = std::make_unique<content::OpenURLParams>(
+        content::OpenURLParams::CreateRendererInitiated(navigation.GetURL(),
+            WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_LINK, content::Referrer(),
+            opener->GetCurrentInitiatorNavigationState()));
+    params->user_gesture = true;
+    params->initiator_origin = opener->GetLastCommittedOrigin();
+    params->initiator_frame_token = opener->GetFrameToken();
+    params->initiator_process_id = opener->GetProcess()->GetDeprecatedID();
+    params->source_site_instance = opener->GetSiteInstance();
+    CarryNativeShiftRequest(*params, content::Referrer(navigation.GetReferrer()),
+        held.post ? navigation.GetPostData() : nullptr,
+        held.post ? navigation.GetRequestHeaders()
+                        .GetHeader(net::HttpRequestHeaders::kContentType)
+                        .value_or(std::string())
+                  : std::string());
+    return params;
+  }
+  void Finish(std::unique_ptr<content::OpenURLParams> params) {
+    const auto self = weak_factory_.GetWeakPtr();
+    Unhold().reset();
+    const auto source = source_;
+    const auto browser = browser_;
+    if (source && browser) {
+      CreatedPage admission(*source, *source->GetPrimaryMainFrame(), *browser);
+      if (!CanNavigatePeekSource(admission))
+        params->disposition = WindowOpenDisposition::NEW_WINDOW;
+      auto* delegate = source && browser ?
+          BrowserWebContentsDelegate::From(browser.get()) : nullptr;
+      if (delegate)
+        delegate->BrowserWebContentsDelegate::OpenURLFromTab(source.get(), *params, {});
+    }
+    if (self) Done();
+  }
+  void Release() {
+    const auto self = weak_factory_.GetWeakPtr();
+    auto contents = Unhold();
+    const auto source = source_;
+    const auto browser = browser_;
+    const GURL target = target_;
+    const auto disposition = disposition_;
+    const auto features = features_->Clone();
+    const bool user_gesture = user_gesture_;
+    auto* delegate = browser ? BrowserWebContentsDelegate::From(browser.get()) : nullptr;
+    if (contents && source && delegate) {
+      delegate->BrowserWebContentsDelegate::AddNewContents(source.get(), std::move(contents),
+          target, disposition, *features, user_gesture, nullptr);
+    }
+    if (self) Done();
+  }
+  void Done();
+
+  const base::WeakPtr<content::WebContents> source_;
+  const content::WeakDocumentPtr opener_;
+  const base::WeakPtr<BrowserWindowInterface> browser_;
+  const GURL target_;
+  const WindowOpenDisposition disposition_;
+  const blink::mojom::WindowFeaturesPtr features_;
+  const bool user_gesture_;
+  std::unique_ptr<content::WebContents> contents_;
+  bool settled_ = false;
+  base::WeakPtrFactory<HeldShiftOpening> weak_factory_{this};
+};
+class ShiftOpeningHold final : public base::SupportsUserData::Data {
+ public:
+  explicit ShiftOpeningHold(std::unique_ptr<HeldShiftOpening> opening)
+      : pending(std::move(opening)) {}
+  std::unique_ptr<HeldShiftOpening> pending;
+  base::WeakPtr<HeldShiftOpening> held;
+};
+class HeldShiftOpenings final : public base::SupportsUserData::Data {
+ public:
+  std::vector<std::unique_ptr<HeldShiftOpening>> openings;
+};
+void HeldShiftOpening::Done() {
+  auto* list = source_ ? static_cast<HeldShiftOpenings*>(
+      source_->GetUserData(&kHeldShiftOpeningsKey)) : nullptr;
+  if (list)
+    std::erase_if(list->openings, [this](const auto& opening) { return opening.get() == this; });
+}
+class ShiftOpeningThrottle final : public content::NavigationThrottle {
+ public:
+  using content::NavigationThrottle::NavigationThrottle;
+  ThrottleCheckResult WillStartRequest() override {
+    auto* hold = static_cast<ShiftOpeningHold*>(
+        navigation_handle()->GetWebContents()->GetUserData(&kShiftOpeningHoldKey));
+    base::WeakPtr<HeldShiftOpening> opening;
+    if (hold) opening = hold->held;
+    return opening && opening->Capture(*navigation_handle()) ? CANCEL_AND_IGNORE : PROCEED;
+  }
+  const char* GetNameForLogging() override { return "ParcShiftOpeningThrottle"; }
+};
 }
 void UpdateNativeLinkURL(content::WebContents& contents, const GURL& url) {
   auto* state = static_cast<URLLockState*>(contents.GetUserData(&kURLLockKey));
@@ -485,8 +628,6 @@ void UpdateNativeLinkURL(content::WebContents& contents, const GURL& url) {
 void EnableNativeLinkNavigation(content::WebContents& contents) {
   if (!contents.GetUserData(&kURLLockKey))
     contents.SetUserData(&kURLLockKey, std::make_unique<URLLockState>(contents));
-  if (!contents.GetUserData(&kOpenedPageObserverKey))
-    contents.SetUserData(&kOpenedPageObserverKey, std::make_unique<OpenedPageObserver>(contents));
   contents.GetMutableRendererPrefs()->native_main_frame_link_policy = true;
   contents.SyncRendererPrefs();
 }
@@ -722,20 +863,15 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
       frame->GetOutermostMainFrame() != main_frame ||
       source->GetBrowserContext() != browser.GetProfile()) return nullptr;
   auto creation = std::make_unique<CreatedPage>(*source, *main_frame, browser);
-  auto click = NativeShiftClick(*creation, *source, *frame, creation->modifiers_);
-  click.sends_body = static_cast<bool>(params.post_data);
-  const auto link = ClassifyNativeShiftLink(click);
+  const auto link = ClassifyNativeShiftLink(
+      NativeShiftClick(*creation, *source, *frame, creation->modifiers_));
   if (link == NativeShiftLink::kOrdinary ||
       !(link == NativeShiftLink::kSamePeek ? CanNavigatePeekSource(*creation)
                                            : CanPresentSource(*creation))) return nullptr;
   auto state = std::make_unique<NativePeekNavigation::State>(std::move(creation), params);
-  if (link == NativeShiftLink::kSamePeek) {
-    state->peek = false;
-    state->params.disposition = WindowOpenDisposition::CURRENT_TAB;
-    state->params.frame_tree_node_id = content::FrameTreeNodeId();
-  } else {
-    state->params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
-  }
+  state->peek = link == NativeShiftLink::kPeek;
+  RetargetNativeShiftLink(state->params, link, WindowOpenDisposition::CURRENT_TAB,
+                          WindowOpenDisposition::NEW_FOREGROUND_TAB);
   return std::unique_ptr<NativePeekNavigation>(
       new NativePeekNavigation(std::move(state)));
 }
@@ -956,7 +1092,7 @@ static void PrepareAutomaticCreatedPeek(BrowserWindowInterface& browser,
       !state->CanPresent(*child) || !valid()) return;
   state->peek_ = true;
 }
-static std::unique_ptr<content::OpenURLParams> PrepareShiftCreatedPage(
+static bool PrepareShiftCreatedPage(
     BrowserWindowInterface& browser, content::WebContents* source,
     content::WebContents& created, const OpenedPage& opened, const GURL& target,
     WindowOpenDisposition& disposition, const blink::mojom::WindowFeatures& features,
@@ -966,7 +1102,7 @@ static std::unique_ptr<content::OpenURLParams> PrepareShiftCreatedPage(
       frame->GetOutermostMainFrame() != source->GetPrimaryMainFrame() ||
       source->GetBrowserContext() != browser.GetProfile() ||
       created.GetBrowserContext() != source->GetBrowserContext() ||
-      !AppKitBrowserAcceptsNewPages(browser)) return nullptr;
+      !AppKitBrowserAcceptsNewPages(browser)) return false;
   const auto source_lease = source->GetWeakPtr();
   const auto child = created.GetWeakPtr();
   const bool fenced_frame = frame->IsNestedWithinFencedFrame();
@@ -981,7 +1117,7 @@ static std::unique_ptr<content::OpenURLParams> PrepareShiftCreatedPage(
           features.has_height,
       .fenced_frame = fenced_frame};
   const auto link = ClassifyNativeShiftCreatedPage(page);
-  if (!source_lease || !child || link == NativeShiftLink::kOrdinary) return nullptr;
+  if (!source_lease || !child || link == NativeShiftLink::kOrdinary) return false;
   if (link == NativeShiftLink::kPeek) {
     const bool admitted = !Creation(*child);
     if (admitted)
@@ -991,27 +1127,20 @@ static std::unique_ptr<content::OpenURLParams> PrepareShiftCreatedPage(
     if (state->source_.get() != source || state->browser_.get() != &browser ||
         state->offered_ || !state->CanPresent(*child) || !child || Creation(*child) != state) {
       if (admitted && child && Creation(*child) == state) child->RemoveUserData(&kCreatedPageKey);
-      return nullptr;
+      return false;
     }
     state->peek_ = true;
     disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
-    return nullptr;
+    return false;
   }
-  if (!opened.referrer || !CanNavigatePeekSource(admission) || !source_lease) return nullptr;
-  frame = opened.document.AsRenderFrameHostIfValid();
-  if (!frame) return nullptr;
-  auto params = std::make_unique<content::OpenURLParams>(
-      content::OpenURLParams::CreateRendererInitiated(target,
-          WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_LINK, *opened.referrer,
-          frame->GetCurrentInitiatorNavigationState()));
-  params->user_gesture = true;
-  params->initiator_origin = frame->GetLastCommittedOrigin();
-  params->initiator_frame_token = frame->GetFrameToken();
-  params->initiator_process_id = frame->GetProcess()->GetDeprecatedID();
-  params->source_site_instance = frame->GetSiteInstance();
-  return params;
+  if (!CanNavigatePeekSource(admission) || !source_lease || !child ||
+      !opened.document.AsRenderFrameHostIfValid()) return false;
+  child->SetUserData(&kShiftOpeningHoldKey, std::make_unique<ShiftOpeningHold>(
+      std::make_unique<HeldShiftOpening>(*source_lease, opened.document, browser, target,
+                                         disposition, features, user_gesture)));
+  return true;
 }
-std::unique_ptr<content::OpenURLParams> PrepareNativeCreatedPage(
+bool PrepareNativeCreatedPage(
     BrowserWindowInterface& browser, content::WebContents* source,
     content::WebContents& created, const GURL& target, WindowOpenDisposition& disposition,
     const blink::mojom::WindowFeatures& features, bool user_gesture) {
@@ -1027,13 +1156,13 @@ std::unique_ptr<content::OpenURLParams> PrepareNativeCreatedPage(
       opened ? opened->modifiers : main_frame_opener ? captured->modifiers_ : 0,
       target_url && IsMeetingURL(target_url), main_frame_opener);
   if (opening == NativeCreatedPageRoute::kShift && opened) {
-    if (auto same_peek = PrepareShiftCreatedPage(browser, source, created, *opened, target,
-                                                 disposition, features, user_gesture))
-      return same_peek;
+    if (PrepareShiftCreatedPage(browser, source, created, *opened, target, disposition,
+                                features, user_gesture))
+      return true;
   } else if (opening == NativeCreatedPageRoute::kAutomatic) {
     PrepareAutomaticCreatedPeek(browser, source, created, target, disposition, user_gesture);
   }
-  if (!child) return nullptr;
+  if (!child) return false;
   auto* state = Creation(*child);
   if (state && state->source_.get() == source && state->browser_.get() == &browser &&
       !state->offered_ && !state->peek_ && !state->split_lease_ && user_gesture &&
@@ -1042,12 +1171,12 @@ std::unique_ptr<content::OpenURLParams> PrepareNativeCreatedPage(
     auto* frame = state->document_.AsRenderFrameHostIfValid();
     auto origin = CaptureSplitOrigin(browser, source, frame, *child);
     if (!child || Creation(*child) != state || state->offered_ || state->split_lease_ ||
-        child->GetUserData(&kCreatedRouteKey) || !origin || !origin->Parent(*child)) return nullptr;
+        child->GetUserData(&kCreatedRouteKey) || !origin || !origin->Parent(*child)) return false;
 
     NSString* space = RoutingSourceSpace(*origin);
     PCNativeLinkRoute* route = space ? MatchedRoute(*origin, target) : nil;
     if (!child || Creation(*child) != state || state->offered_ || state->split_lease_ ||
-        child->GetUserData(&kCreatedRouteKey) || !origin->Parent(*child)) return nullptr;
+        child->GetUserData(&kCreatedRouteKey) || !origin->Parent(*child)) return false;
     std::unique_ptr<CreatedRoute> route_intent;
     if (space && SameProfileRoute(*origin, route) &&
         [space isEqualToString:RoutingSourceSpace(*origin)] && child &&
@@ -1059,20 +1188,20 @@ std::unique_ptr<content::OpenURLParams> PrepareNativeCreatedPage(
       }
     }
     if (!child || Creation(*child) != state || state->offered_ || state->split_lease_ ||
-        child->GetUserData(&kCreatedRouteKey) || !origin->Parent(*child)) return nullptr;
+        child->GetUserData(&kCreatedRouteKey) || !origin->Parent(*child)) return false;
     state->split_source_url_ = origin->split_source_url_;
     state->split_lease_ = origin->split_lease_;
     state->split_observer_ = std::move(origin->split_observer_);
     if (route_intent) child->SetUserData(&kCreatedRouteKey, std::move(route_intent));
-    return nullptr;
+    return false;
   }
   if (!state || state->source_.get() != source || state->browser_.get() != &browser ||
       state->offered_ || state->peek_ || child->GetUserData(&kCreatedRouteKey) ||
       !target.SchemeIsHTTPOrHTTPS() ||
       (disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB &&
-       disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB) || !state->Parent(*child)) return nullptr;
+       disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB) || !state->Parent(*child)) return false;
   auto* frame = state->document_.AsRenderFrameHostIfValid();
-  if (!frame) return nullptr;
+  if (!frame) return false;
 
   auto origin = std::make_unique<CreatedPage>(*source, *frame, browser);
   const GURL source_url = source->GetLastCommittedURL();
@@ -1081,11 +1210,37 @@ std::unique_ptr<content::OpenURLParams> PrepareNativeCreatedPage(
   if (!child || Creation(*child) != state || !space || !SameProfileRoute(*origin, route) ||
       !origin->source_ || origin->source_->GetLastCommittedURL() != source_url ||
       !origin->Parent(*child) || ![space isEqualToString:RoutingSourceSpace(*origin)] ||
-      !child || Creation(*child) != state) return nullptr;
+      !child || Creation(*child) != state) return false;
   child->SetUserData(&kCreatedRouteKey, std::make_unique<CreatedRoute>(
       std::move(origin), route, space, target,
       disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB));
+  return false;
+}
+std::unique_ptr<content::WebContents> HoldNativeCreatedPage(
+    content::WebContents& source, std::unique_ptr<content::WebContents> created) {
+  auto* hold = created ?
+      static_cast<ShiftOpeningHold*>(created->GetUserData(&kShiftOpeningHoldKey)) : nullptr;
+  if (!hold || !hold->pending || hold->pending->source() != &source) {
+    if (created) created->RemoveUserData(&kShiftOpeningHoldKey);
+    return created;
+  }
+  auto opening = std::move(hold->pending);
+  hold->held = opening->GetWeakPtr();
+  opening->Hold(std::move(created));
+  auto* list = static_cast<HeldShiftOpenings*>(source.GetUserData(&kHeldShiftOpeningsKey));
+  if (!list) {
+    auto value = std::make_unique<HeldShiftOpenings>();
+    list = value.get();
+    source.SetUserData(&kHeldShiftOpeningsKey, std::move(value));
+  }
+  list->openings.push_back(std::move(opening));
   return nullptr;
+}
+void AddNativeShiftOpeningThrottle(content::NavigationThrottleRegistry& registry) {
+  auto& navigation = registry.GetNavigationHandle();
+  if (navigation.IsInPrimaryMainFrame() &&
+      navigation.GetWebContents()->GetUserData(&kShiftOpeningHoldKey))
+    registry.AddThrottle(std::make_unique<ShiftOpeningThrottle>(registry));
 }
 bool OpenNativePdfLinkInPeek(const ExtensionFunction& function,
                              const std::vector<GURL>& urls) {

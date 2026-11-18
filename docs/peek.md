@@ -312,30 +312,39 @@ shown, interactive Peek (`canNavigatePeekLinkFrom`). Otherwise a Shift-click in
 a Peek opens a new window, as it did before. A private window's Peek stays in its private
 Profile, and Space routing rules never apply to Shift-click.
 
-The same rules cover every deliberate Shift-click, inside and outside a Peek. A
-search form sent with Shift, from a Shift-clicked submit button or Shift-Return
-in its field, opens its results like a Shift-clicked link. A form that sends a
-body, such as a sign-in or checkout, keeps Chromium's new window, so nothing is
-ever submitted into a Peek. A Shift-clicked link in a PDF opens over the tab or
-Peek showing the PDF the same way: the PDF viewer asks the extensions windows API
-for a new window, and a hook there hands only the built-in viewer's request to
-this routing ([hooks](chromium-hooks-interface.md#interface-hooks)).
+The same rules cover every deliberate Shift-click, inside and outside a Peek.
+Shift-submitted forms follow the Shift-click rule too, including ones that send
+data such as a sign-in or checkout: from a Shift-clicked submit button or
+Shift-Return in a field, the results open in a Peek, or in the Peek you're in,
+with the form's data, content type and referrer intact. A Shift-clicked link in
+a PDF opens over the tab or Peek showing the PDF the same way: the PDF viewer
+asks the extensions windows API for a new window, and a hook there hands only the
+built-in viewer's request to this routing
+([hooks](chromium-hooks-interface.md#interface-hooks)). The click inside the PDF
+counts as the user's gesture for that request, as it does for Chromium's own
+window.
 
 Some sites open the page themselves on a click instead of letting the link
-navigate. When the keys held as the site opens it are exactly Shift, that page
-follows the same rules, whether the site asks for a new window or, after a
-moment's work, a new tab. It opens in a Peek from any tab that can show one.
-Inside a Peek the engine closes the page the site made and navigates the Peek
-there with the opening frame's referrer, so it joins the Peek's history, the
-hover capsule's promise holds, and the site loses its handle to that window.
-Pages from ordinary embedded frames follow those frames' links, and meeting
-pages open like Shift-clicked meeting links. The site keeps its window when it
-asks for a pop-up, sets the window's size or position, opens a blank page first,
-or opens it from a fenced ad frame or, inside a Peek, from an embedded frame
-sandboxed against navigating the page. Without Shift, the automatic Peek keeps
-its own rules. A form that a site's script submits into a new window looks like
-any other opened page, so inside a Peek it arrives as a plain visit to the
-form's address.
+navigate, and single sign-on portals often launch an app by posting a sign-in
+form into a new window. When the keys held as the site opens the page are
+exactly Shift, it follows the same rules, whether the site asks for a new window
+or, after a moment's work, a new tab. Outside a Peek the page the site made
+becomes the Peek, so its own visit or form submission lands there with its data.
+Inside a Peek the engine keeps the site's page out of sight until its first
+navigation is about to send its request, cancels it before anything is sent and
+navigates the Peek there instead, carrying that request's referrer and, for a
+form that sends data, its body and content type. The page joins the Peek's
+history, the hover capsule's promise holds, and the site loses its handle to
+that window. If by then the Peek can't take it, or the held page goes somewhere
+its opener didn't send it, the page opens in Chromium's new window instead.
+`HeldShiftOpening` in `native_link_routing.mm` holds the page for the opening
+tab, and a navigation throttle that Parc's browser client registers catches the
+first request. Pages from ordinary embedded frames follow those frames' links,
+and meeting pages open like Shift-clicked meeting links. The site keeps its
+window when it asks for a pop-up, sets the window's size or position, opens a
+blank page first, or opens it from a fenced ad frame or, inside a Peek, from an
+embedded frame sandboxed against navigating the page. Without Shift, the
+automatic Peek keeps its own rules.
 
 Links in ordinary embedded frames take the same route as the page's own, inside
 and outside a Peek; fenced ad frames keep Chromium's behaviour. Inside a Peek, an

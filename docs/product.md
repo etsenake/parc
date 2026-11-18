@@ -51,7 +51,8 @@ to read more. Subsystem guides own the details.
   [import](onboarding.md#included-setup-order-and-ad-blocker-branch).
 - Both Peek triggers, links to other sites and Shift-click, stay on by default
   for new users and switchable in Settings → Links. Peeks never stack or nest: Shift-click
-  inside a Peek opens the link in that same Peek. See
+  inside a Peek opens the link in that same Peek. Shift-submitted forms, including ones
+  that send data, follow the same rule with their data intact. See
   [Peek](peek.md#presentation-and-remaining-scope) and
   [links inside a Peek](peek.md#links-inside-a-peek).
 - Safari Profiles come from Safari's own export file, and Firefox and Zen

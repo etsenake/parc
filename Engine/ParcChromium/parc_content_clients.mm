@@ -192,6 +192,12 @@ void ParcContentBrowserClient::OverrideWebPreferences(
   ApplyPagePreferences(*contents, *prefs);
 }
 
+void ParcContentBrowserClient::CreateThrottlesForNavigation(
+    content::NavigationThrottleRegistry& registry) {
+  AddNativeShiftOpeningThrottle(registry);
+  ChromeContentBrowserClient::CreateThrottlesForNavigation(registry);
+}
+
 ParcContentBrowserClient::~ParcContentBrowserClient() {
   g_browser_client = nullptr;
 }

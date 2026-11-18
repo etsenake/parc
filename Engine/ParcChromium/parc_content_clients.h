@@ -51,6 +51,8 @@ class ParcContentBrowserClient final : public ChromeContentBrowserClient {
                               content::SiteInstance& main_frame_site,
                               blink::web_pref::WebPreferences* prefs) override;
   bool IsHandledURL(const GURL& url) override;
+  void CreateThrottlesForNavigation(
+      content::NavigationThrottleRegistry& registry) override;
   void BrowserURLHandlerCreated(content::BrowserURLHandler* handler) override;
   std::unique_ptr<content::WebContentsViewDelegate> GetWebContentsViewDelegate(
       content::WebContents* web_contents) override;
