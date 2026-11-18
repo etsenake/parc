@@ -120,7 +120,10 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         }
         var incomingPaneSize: NSSize {
             guard case .stack(let pane, _)? = target, originalPaneFrames.indices.contains(pane) else {
-                return NSSize(width: splitBounds.width / CGFloat(mainRowCount + 1), height: splitBounds.height)
+                let share = CGFloat(mainRowCount + 1)
+                return orientation == .horizontal
+                    ? NSSize(width: splitBounds.width / share, height: splitBounds.height)
+                    : NSSize(width: splitBounds.width, height: splitBounds.height / share)
             }
             let count = CGFloat(stacks.flatMap { shape in shape.place(ofPane: pane).map { shape.slotSizes[$0.slot] } } ?? 1) + 1
             let slot = originalPaneFrames[pane]
@@ -531,8 +534,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private let draggableEndInset: CGFloat = 8
     private weak var constrainedHost: NSView?
     private var hostConstraints: [NSLayoutConstraint] = []
-    private var minimumWidthConstraint: NSLayoutConstraint?
-    private var minimumHeightConstraint: NSLayoutConstraint?
 
     func constrain(to host: NSView) {
         guard superview === host else { return }
@@ -540,48 +541,24 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             NSLayoutConstraint.deactivate(hostConstraints)
             constrainedHost = host
             translatesAutoresizingMaskIntoConstraints = false
-            let trailing = trailingAnchor.constraint(equalTo: host.trailingAnchor)
-            let bottom = bottomAnchor.constraint(equalTo: host.bottomAnchor)
-            trailing.priority = .defaultHigh; bottom.priority = .defaultHigh
-            let width = widthAnchor.constraint(greaterThanOrEqualToConstant: 0)
-            let height = heightAnchor.constraint(greaterThanOrEqualToConstant: 0)
-            minimumWidthConstraint = width; minimumHeightConstraint = height
             hostConstraints = [leadingAnchor.constraint(equalTo: host.leadingAnchor),
-                topAnchor.constraint(equalTo: host.topAnchor), trailing, bottom, width, height]
+                topAnchor.constraint(equalTo: host.topAnchor),
+                trailingAnchor.constraint(equalTo: host.trailingAnchor),
+                bottomAnchor.constraint(equalTo: host.bottomAnchor)]
             NSLayoutConstraint.activate(hostConstraints)
         }
-        updateContainerMinimum()
+        flushHostLayout()
     }
 
-    private func updateContainerMinimum() {
-        guard let host = constrainedHost, superview === host else { return }
-        let reserving = dropReservation?.target != nil
-        let count = arrangedSubviews.count + (reserving ? 1 : 0)
-        let width: CGFloat, height: CGFloat
-        if let stacks = activeStacks ?? reservedFlatStacks {
-            let size = SplitStackGeometry.minimumSize(orientation: savedOrientation,
-                slotSizes: reservedStack(in: stacks)?.stacks.slotSizes ?? stacks.slotSizes + (reserving ? [1] : []),
-                minimum: expandedPaneMinimum, thickness: dividerThickness)
-            width = size.width; height = size.height
-        } else {
-            width = count > 1 ? expandedPaneMinimum * CGFloat(count) + dividerThickness * CGFloat(count - 1) : 0
-            height = count > 1 ? 382 : 0
-        }
-        let widthChanged = minimumWidthConstraint?.constant != width
-        let heightChanged = minimumHeightConstraint?.constant != height
-        if widthChanged { minimumWidthConstraint?.constant = width }
-        if heightChanged { minimumHeightConstraint?.constant = height }
-        if SplitLayoutFlushSkip.shouldFlush(
-            frameChanged: widthChanged || heightChanged,
-            needsLayout: host.needsLayout,
-            subtreeNeedsLayout: host.subviews.contains(where: \.needsLayout)
-        ) {
-            host.layoutSubtreeIfNeeded()
-        }
+    private func flushHostLayout() {
+        guard let host = constrainedHost, superview === host,
+              SplitLayoutFlushSkip.shouldFlush(needsLayout: host.needsLayout,
+                  subtreeNeedsLayout: host.subviews.contains(where: \.needsLayout)) else { return }
+        host.layoutSubtreeIfNeeded()
     }
 
     fileprivate func applyDropReserveLayout() {
-        updateContainerMinimum()
+        flushHostLayout()
         applySavedFrames()
         if SplitLayoutFlushSkip.shouldFlush(
             needsLayout: needsLayout,
@@ -589,11 +566,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         ) {
             layoutSubtreeIfNeeded()
         }
-    }
-
-
-    private func alignedPaneFrame(_ frame: NSRect) -> NSRect {
-        SplitStackGeometry.aligned(frame)
     }
 
     private var paneBackingScale: CGFloat {
@@ -606,21 +578,30 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         return max(0, total - dividerThickness * CGFloat(max(0, arrangedSubviews.count - 1)))
     }
 
+    private func fittedMinimum(count: Int, available: CGFloat) -> CGFloat {
+        SplitStackGeometry.fittedMinimum(count: count, available: available, minimum: expandedPaneMinimum)
+    }
+
+    private var flatPaneMinimum: CGFloat {
+        fittedMinimum(count: arrangedSubviews.count, available: availablePaneLength)
+    }
+
     private func resizableFactors(at divider: Int) -> [Double]? {
         guard arrangedSubviews.indices.contains(divider), arrangedSubviews.indices.contains(divider + 1),
               let factors = BrowserSplitLayout.normalized(savedFactors, count: arrangedSubviews.count) else { return nil }
-        guard CGFloat(factors[divider] + factors[divider + 1]) * availablePaneLength < 2 * minimumPaneLength else { return factors }
+        let minimum = flatPaneMinimum
+        guard CGFloat(factors[divider] + factors[divider + 1]) * availablePaneLength < 2 * minimum else { return factors }
         var lengths = arrangedSubviews.map { Double(isVertical ? $0.frame.width : $0.frame.height) }
         let pair = lengths[divider] + lengths[divider + 1]
         let room = Double(availablePaneLength) - (lengths.reduce(0, +) - pair)
-        guard pair > 2 * Double(minimumPaneLength), room > 2 * Double(minimumPaneLength) else { return factors }
+        guard pair > 2 * Double(minimum), room > 2 * Double(minimum) else { return factors }
         lengths[divider] *= room / pair; lengths[divider + 1] *= room / pair
         return BrowserSplitLayout.normalized(lengths, count: lengths.count) ?? factors
     }
 
-    private func dividerFraction(distance: CGFloat, pairShare: Double, available: CGFloat) -> Double? {
+    private func dividerFraction(distance: CGFloat, pairShare: Double, available: CGFloat, minimum length: CGFloat) -> Double? {
         guard distance.isFinite, available.isFinite, available > 0 else { return nil }
-        let minimum = Double(minimumPaneLength / available)
+        let minimum = Double(length / available)
         let fraction = max(minimum, min(Double(distance / available), pairShare - minimum))
         guard fraction.isFinite, fraction > 0, pairShare - fraction > 0 else { return nil }
         return fraction
@@ -834,7 +815,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         savedOrientation = orientation
         savedFactors = factors
         savedStacks = stacks
-        updateContainerMinimum()
+        flushHostLayout()
         if changed, isTrackingDivider { finishDividerResize(commit: false) }
         else if !isTrackingDivider { applySavedFrames() }
     }
@@ -931,36 +912,15 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             factors.insert(share, at: index); views.insert(reservation.region, at: index)
         }
         isVertical = previewOrientation == .horizontal
-        let count = views.count
-        let available = max(0, (isVertical ? bounds.width : bounds.height) - dividerThickness * CGFloat(count - 1))
-        var lengths = Array(repeating: CGFloat(0), count: count)
-        var remaining = available
-        var pending = Array(0..<count)
-        let minimum = count > 1 ? expandedPaneMinimum : 0
-        while !pending.isEmpty {
-            let weight = pending.reduce(0.0) { $0 + factors[$1] }
-            let small = pending.filter { CGFloat(factors[$0] / weight) * remaining < minimum }
-            if small.isEmpty {
-                for index in pending { lengths[index] = CGFloat(factors[index] / weight) * remaining }
-                break
-            }
-            for index in small { lengths[index] = minimum; remaining -= minimum }
-            pending.removeAll { small.contains($0) }
-        }
-        let scale = paneBackingScale
-        var position: CGFloat = 0
+        let frames = SplitStackGeometry.flatFrames(size: bounds.size, orientation: previewOrientation, factors: factors,
+            thickness: dividerThickness, minimum: expandedPaneMinimum, scale: paneBackingScale)
         var anyFrameChanged = false
-        for (index, pane) in views.enumerated() {
-            let length = max(minimum, (lengths[index] * scale).rounded() / scale)
-            let frame = alignedPaneFrame(isVertical
-                ? NSRect(x: position, y: 0, width: length, height: bounds.height)
-                : NSRect(x: 0, y: position, width: bounds.width, height: length))
+        for (pane, frame) in zip(views, frames) {
             let frameChanged = pane.frame != frame
             if frameChanged {
                 pane.frame = frame
                 anyFrameChanged = true
             }
-            position += length + dividerThickness
             guard pane !== reservation?.region else { continue }
             if frameChanged { pane.needsLayout = true }
             if SplitLayoutFlushSkip.shouldFlush(
@@ -1027,7 +987,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         if newSuperview !== superview { retireDropReservation() }
         if newSuperview !== constrainedHost {
             NSLayoutConstraint.deactivate(hostConstraints)
-            hostConstraints = []; minimumWidthConstraint = nil; minimumHeightConstraint = nil
+            hostConstraints = []
             constrainedHost = nil
         }
         super.viewWillMove(toSuperview: newSuperview)
@@ -1090,7 +1050,8 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         guard let stacks = activeStacks, let level = stackLevel(slot, in: stacks) else { return nil }
         return SplitStackGeometry.adjustableShares(saved: level.factors,
             shown: level.views.map { Double(level.horizontal ? $0.frame.width : $0.frame.height) },
-            available: Double(level.available), minimum: Double(minimumPaneLength))
+            available: Double(level.available),
+            minimum: Double(fittedMinimum(count: level.views.count, available: level.available)))
     }
     private func commitStackedChange(_ change: SplitStackResize?) -> Bool {
         guard let change, let commit = prepareStackedResize?() else { return false }
@@ -1110,7 +1071,8 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         guard let level = stackLevel(id.slot, in: stacks),
               let factors = SplitStackGeometry.resizableFactors(saved: level.factors,
                   shown: level.views.map { Double(level.horizontal ? $0.frame.width : $0.frame.height) },
-                  divider: id.index, available: Double(level.available), minimum: Double(minimumPaneLength)) else { return nil }
+                  divider: id.index, available: Double(level.available),
+                  minimum: Double(fittedMinimum(count: level.views.count, available: level.available))) else { return nil }
         let rescaled = !zip(factors, level.factors).allSatisfy { abs($0 - $1) < 1e-9 }
         return (level, factors, rescaled)
     }
@@ -1160,10 +1122,13 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         let proposed = firstLength + delta - originShift
         let pairShare = current.originalFactors[current.divider] + current.originalFactors[current.divider + 1]
         let available = current.level?.available ?? availablePaneLength
+        let minimum = fittedMinimum(count: (current.level?.views ?? current.views).count, available: available)
+        guard minimum >= expandedPaneMinimum, CGFloat(pairShare) * available >= 2 * minimum - 0.5 else { return }
         let center = available * CGFloat(pairShare) / 2
         let transitioned = current.snap.update(distance: Double(proposed - center), velocity: Double(velocity))
         let wanted = current.snap.isSnapped ? center : proposed
-        guard let fraction = dividerFraction(distance: wanted, pairShare: pairShare, available: available) else { return }
+        guard let fraction = dividerFraction(distance: wanted, pairShare: pairShare, available: available,
+                                             minimum: minimum) else { return }
         let nextFirst = fraction
         let nextSecond = pairShare - nextFirst
         let factorsChanged = nextFirst != current.factors[current.divider]
@@ -1199,9 +1164,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         applySavedFrames()
         isDividerPanActive = false
         resampleDividerPointer()
-    }
-    private var minimumPaneLength: CGFloat {
-        expandedPaneMinimum
     }
     func drawDivider(in rect: NSRect) {
     }
@@ -1262,7 +1224,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         return SplitPaneResize.equal(count: shares.count)
     }
     private var adjustableShares: (shares: [Double], minimum: Double)? {
-        let available = Double(availablePaneLength), minimum = Double(minimumPaneLength)
+        let available = Double(availablePaneLength), minimum = Double(flatPaneMinimum)
         guard available.isFinite, available > 0 else { return nil }
         if let saved = BrowserSplitLayout.normalized(savedFactors, count: arrangedSubviews.count),
            saved.allSatisfy({ $0 * available >= minimum - 0.5 }) {
@@ -1398,11 +1360,8 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                 guard let current = owner.stackedShares(divider.slot) else { return nil }
                 return SplitStackGeometry.splitterPosition(shares: current.shares, index: divider.index, minimum: current.minimum)
             }
-            guard let current = owner.adjustableShares,
-                  current.shares.indices.contains(index + 1) else { return nil }
-            let before = current.shares[..<index].reduce(0, +)
-            let value = before + current.shares[index]
-            return (value, before + current.minimum, value + current.shares[index + 1] - current.minimum)
+            guard let current = owner.adjustableShares else { return nil }
+            return SplitStackGeometry.splitterPosition(shares: current.shares, index: index, minimum: current.minimum)
         }
         private var isAvailable: Bool { owner?.dividerRects.indices.contains(index) == true }
         override func isAccessibilityElement() -> Bool { isAvailable }

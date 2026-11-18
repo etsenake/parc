@@ -316,7 +316,10 @@ extension ReservedPane: SplitLayoutFollowing {
         check(editing == [true, false, true] && split.isInteractivePaneEditing, "a replaced edit's late end changes nothing")
         nextEdit?.end()
         check(editing == [true, false, true, false], "the current drag's end clears the reason")
-        _ = resizeLease.proposal(at: NSPoint(x: 200, y: 41), canPropose: { _, _ in true })
+        let topEdge = resizeLease.proposal(at: NSPoint(x: 200, y: 41), canPropose: { _, _ in true })
+        check(topEdge?.0 == .insert(0) && topEdge?.1 == .vertical
+              && resizeLease.incomingPaneSize == NSSize(width: split.bounds.width, height: split.bounds.height / 3),
+              "an incoming pane at a top-and-bottom split's top edge is the split wide and a third of it high")
         reserveHost.frame.size.width += 30
         check(!resizeLease.isCurrent, "outside host resize is never accepted as owned preview geometry")
         resizeLease.end()

@@ -153,6 +153,19 @@ pane does not absorb all rounding remainder. Live resize uses the same geometry
 as committed layout. Nonfinite/invalid scale falls back safely; nonpositive
 persisted weights refuse.
 
+The minimum is a preference, never an overflow. The split is pinned to the page
+area's edges and has no size minimum of its own, so it never grows past the page
+area or the window. When panes lined up in one direction can't each get 220
+points along it, they share that length evenly, rounded down at the window's
+scale, so no pane is cut off. Each direction counts on its own: a top-and-bottom
+split shares its height and puts no minimum on its width. Drop previews and
+pending panes lay out the same way, so a preview in a tight window shows the
+panes the drop will. While squeezed, every pane is already at the shared
+minimum, so dividers, steps and VoiceOver's limits treat that shared length as
+the minimum and nothing moves. Dragging a divider whose two panes can't both keep
+the minimum, squeezed or not, changes nothing, so it never saves weights nobody
+can see, and a splitter's limits never cross its value.
+
 ## Keyboard and VoiceOver resizing
 
 Each divider is a VoiceOver splitter, so VoiceOver walks pane, splitter, pane.
@@ -442,6 +455,6 @@ Relevant existing checks are `test-split-context.sh`, `test-split-dividers.sh`,
 `test-split-appearance.sh`, `test-external-split-drop.sh`,
 `test-inter-profile-move.sh`, the model/store suites and `tests/NativeContentDrop`.
 The windowless `tests/SplitStackLayoutTests.swift` also covers the snap rule on
-each divider's axis, and `tests/SplitLayoutFlushSkip/check.py` pins the divider
-pan to that axis.
+each divider's axis and flat and stacked layouts in tight page areas, and
+`tests/SplitLayoutFlushSkip/check.py` pins the divider pan to that axis.
 Inspect their entry points and obey [AGENTS.md](../AGENTS.md) before running them.

@@ -33,7 +33,7 @@ struct SplitStackLayoutTests {
     static func runChecks() throws {
         try frameMaths()
         try dividerRectsAndRegions()
-        try containerMinimum()
+        try tightPageArea()
         try dividerSnapAlongItsAxis()
         try splitterValuesAndLabels()
         try layoutCommands()
@@ -106,15 +106,98 @@ struct SplitStackLayoutTests {
                    "Frames that don't match the stack give no dividers")
     }
 
-    static func containerMinimum() throws {
-        try expect(SplitStackGeometry.minimumSize(orientation: .horizontal, slotSizes: [2, 1], minimum: 220, thickness: 10)
-                   == CGSize(width: 450, height: 450), "Two columns and a two-pane stack need 450 points each way")
-        try expect(SplitStackGeometry.minimumSize(orientation: .horizontal, slotSizes: [3, 1], minimum: 220, thickness: 10)
-                   == CGSize(width: 450, height: 680), "A three-pane stack sums three minimums down the column")
-        try expect(SplitStackGeometry.minimumSize(orientation: .vertical, slotSizes: [1, 1, 2], minimum: 220, thickness: 10)
-                   == CGSize(width: 450, height: 680), "Three rows sum down the split and the divided row sums across")
-        try expect(SplitStackGeometry.minimumSize(orientation: .horizontal, slotSizes: [2, 1, 1], minimum: 220, thickness: 10)
-                   == CGSize(width: 680, height: 450), "A reserved main-row slot adds one minimum along the row")
+    static func tightPageArea() throws {
+        func flat(_ factors: [Double], _ orientation: SplitOrientation, _ size: CGSize) -> [CGRect] {
+            SplitStackGeometry.flatFrames(size: size, orientation: orientation, factors: factors,
+                                          thickness: 10, minimum: 220, scale: 2)
+        }
+        func fits(_ frames: [CGRect], _ size: CGSize) -> Bool {
+            frames.allSatisfy { CGRect(origin: .zero, size: size).contains($0) }
+        }
+        let roomy = CGSize(width: 1010, height: 710), page = CGSize(width: 500, height: 520)
+
+        try expect(SplitStackGeometry.fittedLengths([0.7, 0.2, 0.1], available: 1000, minimum: 220, scale: 2) == [560, 220, 220]
+                   && SplitStackGeometry.fittedLengths([0.6, 0.2, 0.2], available: 660, minimum: 220, scale: 2) == [220, 220, 220],
+                   "With room, every pane keeps the 220-point minimum and the deficit redistributes as before")
+        try expect(flat([0.25, 0.75], .horizontal, roomy) == [CGRect(x: 0, y: 0, width: 250, height: 710),
+                                                              CGRect(x: 260, y: 0, width: 750, height: 710)]
+                   && flat([0.3, 0.7], .vertical, roomy) == [CGRect(x: 0, y: 0, width: 1010, height: 220),
+                                                             CGRect(x: 0, y: 230, width: 1010, height: 480)],
+                   "A roomy flat split keeps its weights, with the minimum on the axis it runs")
+        try expect(flat([1], .horizontal, CGSize(width: 180, height: 140)) == [CGRect(x: 0, y: 0, width: 180, height: 140)],
+                   "A single page fills its page area with no split minimum")
+
+        try expect(SplitStackGeometry.fittedLengths([0.6, 0.2, 0.2], available: 480, minimum: 220, scale: 2) == [160, 160, 160],
+                   "Short of room for every minimum, the panes share what there is evenly")
+        let odd = SplitStackGeometry.fittedLengths([1, 1, 1], available: 500, minimum: 220, scale: 1)
+        try expect(odd == [166, 166, 166] && odd.reduce(0, +) <= 500, "Even shares round down at the window's scale so they never add up past the room")
+        try expect(flat([0.6, 0.2, 0.2], .horizontal, page) == [CGRect(x: 0, y: 0, width: 160, height: 520),
+                                                               CGRect(x: 170, y: 0, width: 160, height: 520),
+                                                               CGRect(x: 340, y: 0, width: 160, height: 520)],
+                   "Three side-by-side panes in a 500-point page area share it instead of spilling past its right edge")
+        try expect(flat([1, 1, 1], .vertical, page) == [CGRect(x: 0, y: 0, width: 500, height: 167),
+                                                       CGRect(x: 0, y: 177, width: 500, height: 166),
+                                                       CGRect(x: 0, y: 353, width: 500, height: 167)],
+                   "Three top-and-bottom panes in a 520-point page area share its height instead of spilling below it")
+        try expect(flat([1, 1, 1], .vertical, CGSize(width: 300, height: 860)) == [CGRect(x: 0, y: 0, width: 300, height: 280),
+                                                                                  CGRect(x: 0, y: 290, width: 300, height: 280),
+                                                                                  CGRect(x: 0, y: 580, width: 300, height: 280)],
+                   "A top-and-bottom split puts no width minimum on a narrow page area")
+        let short = CGSize(width: 600, height: 300)
+        try expect(flat([0.5, 0.5], .horizontal, short).allSatisfy { $0.height == 300 },
+                   "A side-by-side split fills a page area shorter than the old 382-point floor")
+
+        let three = stacks([3, 1], [0.5, 0.5], [[1, 1, 1], [1]])
+        let wide = CGSize(width: 1000, height: 520)
+        let committed = frames(three, size: wide)
+        try expect(fits(committed, wide) && committed[0...2].allSatisfy { $0.width == 495 && abs($0.height - 500.0 / 3) < 1 }
+                   && committed[3] == CGRect(x: 505, y: 0, width: 495, height: 520),
+                   "A three-pane stack in a 520-point page area shares the column while the main row keeps its room")
+        let fourSlots = frames(BrowserSplitStacks.flat([0.4, 0.2, 0.2, 0.2]), size: CGSize(width: 700, height: 520))
+        try expect(fits(fourSlots, CGSize(width: 700, height: 520)) && fourSlots.allSatisfy { abs($0.width - 167.5) <= 0.5 },
+                   "Four slots in a 700-point page area share its width")
+
+        let column = stacks([2, 1], [0.5, 0.5], [[0.5, 0.5], [1]])
+        let reserved = column.reservingStack(besidePane: 1, after: true)!.stacks
+        let grownLayout = BrowserSplitLayout(id: UUID(), spaceID: UUID(), tabIDs: [UUID(), UUID(), UUID()], orientation: .horizontal,
+                                             widthFactors: column.flattenedFactors, stacks: column)
+            .insertingIntoStack(UUID(), besidePaneAt: 1, after: true)!
+        try expect(fits(frames(reserved, size: wide), wide) && frames(reserved, size: wide) == frames(grownLayout.stacks!, size: wide),
+                   "A stack drop preview in a short page area fits and shows exactly the frames the drop commits")
+        let lone = BrowserSplitStacks.flat([0.5, 0.5]).reservingStack(besidePane: 0, after: true)!.stacks
+        try expect(fits(frames(lone, size: CGSize(width: 1000, height: 400)), CGSize(width: 1000, height: 400)),
+                   "Starting a stack in a short flat split previews inside the page area")
+
+        let ids = [UUID(), UUID()], source = UUID(), space = UUID()
+        let pair = BrowserSplitLayout(id: UUID(), spaceID: space, tabIDs: ids, orientation: .horizontal,
+                                      widthFactors: [0.75, 0.25], stacks: nil)
+        let dropped = SplitDropTransaction.make(source: source, selection: ids, layout: pair, target: .insert(1),
+                                                orientation: .horizontal, spaceID: space)!
+        let preview = BrowserSplitStacks.flat(pair.widthFactors).reservingSlot(at: 1).slotFactors
+        try expect(flat(preview, .horizontal, page) == flat(dropped.widthFactors, .horizontal, page) && fits(flat(preview, .horizontal, page), page),
+                   "A main-row drop preview in a narrow page area fits, laid out just as the dropped split will be")
+
+        try expect(SplitStackGeometry.fittedMinimum(count: 3, available: 1000, minimum: 220) == 220
+                   && SplitStackGeometry.fittedMinimum(count: 3, available: 480, minimum: 220) == 160
+                   && SplitStackGeometry.fittedMinimum(count: 1, available: 100, minimum: 220) == 220,
+                   "Dividers and steps use the minimum the layout can actually give")
+        for (saved, available, scale) in [([1.0 / 3, 1.0 / 3, 1.0 / 3], CGFloat(480), CGFloat(2)), ([0.6, 0.2, 0.2], 500, 1),
+                                          ([0.6, 0.2, 0.2], 481, 2)] {
+            let shown = SplitStackGeometry.fittedLengths(saved, available: available, minimum: 220, scale: scale).map { Double($0) }
+            let minimum = SplitStackGeometry.fittedMinimum(count: 3, available: available, minimum: 220)
+            let squeezed = SplitStackGeometry.adjustableShares(saved: saved, shown: shown, available: Double(available),
+                                                               minimum: Double(minimum))!
+            let positions = (0..<2).compactMap { SplitStackGeometry.splitterPosition(shares: squeezed.shares, index: $0,
+                                                                                     minimum: squeezed.minimum) }
+            try expect(SplitPaneResize.resizingPane(0, in: squeezed.shares, growing: true, minimum: squeezed.minimum) == nil
+                       && SplitPaneResize.resizingPane(1, in: squeezed.shares, growing: false, minimum: squeezed.minimum) == nil
+                       && SplitPaneResize.movingDivider(0, in: squeezed.shares, forward: true, minimum: squeezed.minimum) == nil
+                       && positions.count == 2 && positions.allSatisfy { abs($0.minimum - $0.value) < 1e-9 && abs($0.maximum - $0.value) < 1e-9 },
+                       "Squeezed panes saved as \(saved) in \(available) points have no room to give, so steps stay put and VoiceOver's limits meet")
+        }
+        let crossing = SplitStackGeometry.splitterPosition(shares: [0.3, 0.3, 0.4], index: 0, minimum: 0.31)!
+        try expect(crossing.minimum <= crossing.value && crossing.maximum >= crossing.value,
+                   "A splitter's limits never cross its value")
     }
 
     static func dividerSnapAlongItsAxis() throws {

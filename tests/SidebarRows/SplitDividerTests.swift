@@ -140,30 +140,50 @@ import AppKit
         let constraintPanes = (0..<3).map { _ in NSView() }
         constraintPanes.forEach(constrained.addArrangedSubview)
         constrained.configure(orientation: .horizontal, factors: [1, 2, 3])
-        try check(constrained.frame == NSRect(x: 0, y: 0, width: 680, height: 382),
-                  "Native required split minimum yields only its softer trailing and bottom edges")
+        try check(constrained.frame == host.bounds, "A split never grows past a page area too small for its minimums")
         try check(host.frame == NSRect(x: 20, y: 30, width: 500, height: 300) && constraintWindow.frame == windowFrame,
                   "Split minimum does not enlarge or reposition the original host/window")
-        try check(constraintPanes.allSatisfy { $0.frame.width == 220 } && constraintPanes.last?.frame.maxX == 680,
-                  "All original expanded panes keep minimum width in a small original host")
+        try check(constraintPanes.map(\.frame) == [NSRect(x: 0, y: 0, width: 160, height: 300), NSRect(x: 170, y: 0, width: 160, height: 300),
+                                                   NSRect(x: 340, y: 0, width: 160, height: 300)],
+                  "Panes short of room for the 220-point minimum share the page area evenly instead of spilling")
+        var squeezedCommits = 0
+        constrained.prepareDividerResize = { { _ in squeezedCommits += 1; return true } }
+        let squeezedFrames = constraintPanes.map(\.frame)
+        let squeezedOrigin = NSPoint(x: constraintPanes[0].frame.maxX + 5, y: 200)
+        try check(constrained.beginDividerResize(at: squeezedOrigin), "A squeezed divider still admits a drag")
+        constrained.updateDividerResize(at: NSPoint(x: squeezedOrigin.x + 30, y: 200), velocity: 200)
+        constrained.finishDividerResize(commit: true)
+        let wideOrigin = NSPoint(x: constraintPanes[1].frame.maxX + 5, y: 200)
+        try check(constrained.beginDividerResize(at: wideOrigin), "A squeezed pair with a large saved share admits a drag")
+        constrained.updateDividerResize(at: NSPoint(x: wideOrigin.x + 60, y: 200), velocity: 200)
+        constrained.updateDividerResize(at: NSPoint(x: wideOrigin.x + 45, y: 200), velocity: -30)
+        constrained.finishDividerResize(commit: true)
+        try check(squeezedCommits == 0 && constraintPanes.map(\.frame) == squeezedFrames,
+                  "Dragging between squeezed panes moves nothing and quietly saves nothing, whatever their saved weights")
+        let squeezedSplitter = (constrained.accessibilitySplitters() ?? []).first as? ParcSplitView.DividerAccessibilityElement
+        let squeezedValues = [squeezedSplitter?.accessibilityValue(), squeezedSplitter?.accessibilityMinValue(),
+                              squeezedSplitter?.accessibilityMaxValue()].map { ($0 as? NSNumber)?.doubleValue }
+        try check(squeezedValues == [33, 33, 33] && !constrained.canResizePane(constraintPanes[0], growing: true)
+                  && !constrained.canResizePane(constraintPanes[0], growing: false)
+                  && squeezedSplitter?.accessibilityPerformIncrement() == false && squeezedCommits == 0,
+                  "Squeezed panes offer no steps and VoiceOver's limits meet at the divider")
         let originalConstraints = (host.constraints + constrained.constraints).filter {
             ($0.firstItem as? NSView) === constrained || ($0.secondItem as? NSView) === constrained
         }
-        try check(originalConstraints.filter { $0.isActive && ($0.firstAttribute == .trailing || $0.firstAttribute == .bottom) }
-                    .allSatisfy { $0.priority == .defaultHigh }
-                  && originalConstraints.filter { $0.isActive && ($0.firstAttribute == .leading || $0.firstAttribute == .top) }
-                    .allSatisfy { $0.priority == .required },
-                  "Native parent edge priority matches original required versus 750 contract")
+        try check(originalConstraints.filter(\.isActive).count == 4
+                  && originalConstraints.filter(\.isActive).allSatisfy { $0.priority == .required
+                      && [.leading, .top, .trailing, .bottom].contains($0.firstAttribute) },
+                  "The split is pinned to its page area's four edges with no size minimum")
         host.frame.size = NSSize(width: 1200, height: 900); host.layoutSubtreeIfNeeded()
         try check(constrained.frame == host.bounds && constraintPanes.last?.frame.maxX == 1200,
                   "The same constrained container fills a larger original host")
         let roomyFrames = constraintPanes.map(\.frame)
         constrained.configure(orientation: .vertical, factors: [1, 2, 3])
         host.frame.size = NSSize(width: 500, height: 300); host.layoutSubtreeIfNeeded()
-        try check(constrained.frame == NSRect(x: 0, y: 0, width: 680, height: 382)
-                  && constraintPanes.allSatisfy { $0.frame.height == 220 }
-                  && constraintPanes.last?.frame.maxY == 680,
-                  "Original width constraint remains orientation independent; vertical panes do not shrink below minimum")
+        try check(constrained.frame == host.bounds
+                  && constraintPanes.map(\.frame) == [NSRect(x: 0, y: 0, width: 500, height: 93), NSRect(x: 0, y: 103, width: 500, height: 93),
+                                                      NSRect(x: 0, y: 206, width: 500, height: 93)],
+                  "A short top-and-bottom split shares its height and takes no width minimum")
         host.frame.size = NSSize(width: 1200, height: 900); host.layoutSubtreeIfNeeded()
         constrained.configure(orientation: .horizontal, factors: [1, 2, 3])
         try check(constraintPanes.map(\.frame) == roomyFrames && zip(constrained.arrangedSubviews, constraintPanes).allSatisfy { $0 === $1 },
@@ -872,8 +892,11 @@ import AppKit
         defer { host.removeFromSuperview() }
         split.removeFromSuperview(); host.addSubview(split); split.constrain(to: host)
         apply()
-        try check(split.frame.size == NSSize(width: 450, height: 450),
-                  "The container minimum sums the stacked minimums along each axis")
+        try check(split.frame == host.bounds && panes.allSatisfy { host.bounds.contains($0.frame) }
+                  && panes[0].frame == NSRect(x: 0, y: 0, width: 300, height: 95)
+                  && panes[1].frame == NSRect(x: 0, y: 105, width: 145, height: 95)
+                  && panes[2].frame == NSRect(x: 155, y: 105, width: 145, height: 95),
+                  "A stacked split in a tiny page area shares each axis instead of spilling")
     }
 
     static func checkResizeSteps() throws {

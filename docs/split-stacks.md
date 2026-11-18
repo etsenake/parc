@@ -106,9 +106,10 @@ out panes, then lays each stack out across its slot the same way: 10-point gaps,
 the 220-point minimum on both axes, deficits taken from the other panes on the
 same level, lengths rounded at the window's scale and edges aligned to whole
 points. Panes in one stack share their slot's edges, and live window resizing
-uses the same geometry. The split's minimum size sums the minimums along each
-axis: every slot along the main row, and the longest stack across it, never
-below a flat split's 382-point height.
+uses the same geometry. The main row and each stack are judged on their own
+against the [tight-window rule](split-groups.md#divider-pair-sizing): a stack too
+short for its panes' minimums shares its slot evenly while the main row keeps
+its room, and the split never grows past the page area.
 
 There is one divider between each pair of reading-order neighbours. A main-row
 divider spans the whole split and a stack divider spans only its slot. Each
@@ -190,9 +191,9 @@ with `insertSplitPane` for a new pane in a stack; `moveSplitPane` and
 `resizeSplit(expected:resized:)` for Expand, Make All Equal and either kind of
 divider, which accepts only a change of weights.
 
-`SplitStackGeometry` holds the windowless layout maths: pane frames, divider
-rects and regions in reading order, the container minimum, and splitter values
-and labels. `ParcSplitView.configure(orientation:factors:stacks:)` takes a
+`SplitStackGeometry` holds the windowless layout maths: flat and stacked pane
+frames, the even sharing in a tight page area, divider rects and regions in
+reading order, and splitter values and labels. `ParcSplitView.configure(orientation:factors:stacks:)` takes a
 split's stacks, and the view commits a `SplitStackResize` through
 `prepareStackedSplitResize`, which applies `BrowserSplitLayout.resized(by:)`.
 `SplitPaneInsertion.previewLayout` gives the pending pane's shape from the same
@@ -213,7 +214,7 @@ as an older build would, loads corrupt stacks flat, and covers every edit above
 through the model and the store, including reopen, Undo, copies, Favorites,
 window projections, drops and Arc import. `tests/SplitStackLayoutTests.swift`
 (also windowless, in `scripts/test.sh`) covers the stacked frames, divider rects
-and regions, container minimum, splitter values and labels, the layout commands,
+and regions, tight page areas, splitter values and labels, the layout commands,
 pending-pane previews and reserved drop shapes. `scripts/test-split-drop-geometry.sh`
 pins every drop band, corner and four-pane fallback on flat and stacked splits,
 and the original, external and cross-window drop suites commit stack drops. `tests/SplitStackCommandsTests.swift` (windowless, in

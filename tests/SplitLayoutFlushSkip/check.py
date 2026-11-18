@@ -33,8 +33,8 @@ helper = re.search(
     split, re.S)
 assert helper, "applyDropReserveLayout body not found"
 body = helper.group("body")
-assert "updateContainerMinimum()" in body and "applySavedFrames()" in body, \
-    "applyDropReserveLayout must still update minimum and apply frames"
+assert "flushHostLayout()" in body and "applySavedFrames()" in body, \
+    "applyDropReserveLayout must still flush the page area and apply frames"
 assert "SplitLayoutFlushSkip.shouldFlush(" in body, \
     "applyDropReserveLayout must gate layoutSubtree on shouldFlush"
 assert "layoutSubtreeIfNeeded()" in body, \
@@ -106,15 +106,15 @@ assert "if commit, valid, current.moved, current.commit(current.factors) { saved
 assert "shouldCommitResize" not in fn, \
     "finishDividerResize must not gate away performWindowCommand side effects"
 
-minimum = re.search(
-    r"private func updateContainerMinimum\(\) \{(?P<body>.*?)\n    \}\n\n    fileprivate func applyDropReserveLayout\(\) \{",
+flush = re.search(
+    r"private func flushHostLayout\(\) \{(?P<body>.*?)\n    \}\n\n    fileprivate func applyDropReserveLayout\(\) \{",
     split, re.S)
-assert minimum, "updateContainerMinimum not found"
-mn = minimum.group("body")
-assert "SplitLayoutFlushSkip.shouldFlush(" in mn, \
-    "updateContainerMinimum must gate host layoutSubtree"
-assert "host.layoutSubtreeIfNeeded()" in mn, \
-    "updateContainerMinimum must still flush the host when constraints move"
+assert flush, "flushHostLayout not found"
+fl = flush.group("body")
+assert "SplitLayoutFlushSkip.shouldFlush(" in fl, \
+    "flushHostLayout must gate host layoutSubtree"
+assert "host.layoutSubtreeIfNeeded()" in fl, \
+    "flushHostLayout must still flush a dirty page area"
 
 assert "Timer(timeInterval: 0.05, repeats: true)" in split, \
     "InteractivePaneEdit 50ms fallback timer must remain"

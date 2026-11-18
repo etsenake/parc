@@ -112,7 +112,6 @@ struct SplitDividerSnapState {
 struct SplitStackGeometry {
     static let dividerTopInset: CGFloat = 53
     static let dividerEndInset: CGFloat = 8
-    static let splitHeightMinimum: CGFloat = 382
 
     struct Divider: Equatable {
         let id: SplitStackDivider
@@ -138,15 +137,40 @@ struct SplitStackGeometry {
         return lengths
     }
 
+    static func fittedMinimum(count: Int, available: CGFloat, minimum: CGFloat) -> CGFloat {
+        count > 1 ? min(minimum, max(0, available) / CGFloat(count)) : minimum
+    }
+
+    static func fittedLengths(_ factors: [Double], available: CGFloat, minimum: CGFloat,
+                              scale: CGFloat) -> [CGFloat] {
+        guard factors.count > 1, available < minimum * CGFloat(factors.count) else {
+            return lengths(factors, available: available, minimum: minimum).map { max(minimum, ($0 * scale).rounded() / scale) }
+        }
+        let share = (max(0, available) / CGFloat(factors.count) * scale).rounded(.down) / scale
+        return factors.map { _ in share }
+    }
+
     static func runs(_ factors: [Double], length: CGFloat, thickness: CGFloat, minimum: CGFloat,
                      scale: CGFloat) -> [(start: CGFloat, length: CGFloat)] {
         guard factors.count > 1 else { return factors.isEmpty ? [] : [(0, length)] }
         let available = max(0, length - thickness * CGFloat(factors.count - 1))
         var position: CGFloat = 0
-        return lengths(factors, available: available, minimum: minimum).map { raw in
-            let rounded = max(minimum, (raw * scale).rounded() / scale)
-            defer { position += rounded + thickness }
-            return (position, rounded)
+        return fittedLengths(factors, available: available, minimum: minimum, scale: scale).map { fitted in
+            defer { position += fitted + thickness }
+            return (position, fitted)
+        }
+    }
+
+    static func flatFrames(size: CGSize, orientation: SplitOrientation, factors: [Double],
+                           thickness: CGFloat, minimum: CGFloat, scale: CGFloat) -> [CGRect] {
+        guard !factors.isEmpty else { return [] }
+        let horizontal = orientation == .horizontal
+        let available = max(0, (horizontal ? size.width : size.height) - thickness * CGFloat(factors.count - 1))
+        var position: CGFloat = 0
+        return fittedLengths(factors, available: available, minimum: factors.count > 1 ? minimum : 0, scale: scale).map { length in
+            defer { position += length + thickness }
+            return aligned(horizontal ? CGRect(x: position, y: 0, width: length, height: size.height)
+                                      : CGRect(x: 0, y: position, width: size.width, height: length))
         }
     }
 
@@ -198,16 +222,6 @@ struct SplitStackGeometry {
         }
     }
 
-    static func minimumSize(orientation: SplitOrientation, slotSizes: [Int], minimum: CGFloat,
-                            thickness: CGFloat) -> CGSize {
-        func run(_ count: Int) -> CGFloat { minimum * CGFloat(count) + thickness * CGFloat(max(0, count - 1)) }
-        let main = run(slotSizes.count)
-        let cross = slotSizes.map(run).max() ?? 0
-        return orientation == .horizontal
-            ? CGSize(width: main, height: max(splitHeightMinimum, cross))
-            : CGSize(width: cross, height: max(splitHeightMinimum, main))
-    }
-
     static func adjustableShares(saved: [Double], shown: [Double], available: Double,
                                  minimum: Double) -> (shares: [Double], minimum: Double)? {
         guard available.isFinite, available > 0 else { return nil }
@@ -238,7 +252,7 @@ struct SplitStackGeometry {
         guard index >= 0, shares.indices.contains(index + 1) else { return nil }
         let before = shares[..<index].reduce(0, +)
         let value = before + shares[index]
-        return (value, before + minimum, value + shares[index + 1] - minimum)
+        return (value, min(value, before + minimum), max(value, value + shares[index + 1] - minimum))
     }
 
     static func splitterLabel(index: Int, count: Int, slot: Int?, orientation: SplitOrientation) -> String {
