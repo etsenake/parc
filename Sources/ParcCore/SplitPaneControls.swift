@@ -6,6 +6,10 @@ enum SplitPaneOperation: Int, CaseIterable {
 
     var addsToStack: Bool { self == .stackBefore || self == .stackAfter }
 
+    func startsSplitView(paneCount: Int, isSplit: Bool) -> Bool {
+        self == .stackAfter && paneCount == 1 && !isSplit
+    }
+
     func isEnabled(index: Int, count: Int, layout: BrowserSplitLayout? = nil) -> Bool {
         guard (0..<count).contains(index) else { return false }
         var slot = index, slots = count, place = 0, stack = 1

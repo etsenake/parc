@@ -28,12 +28,14 @@ stacked paths below.
 ## Starting a stack
 
 Split This Pane adds a pane inside the focused pane's slot: below it in a
-side-by-side split, or to its right in a top-and-bottom split. It is a View menu
-item and a command search result, with Control–Shift–Backslash as its default
-shortcut. Settings → Shortcuts can change it, and it shares Add Split View's Use
-Both priority. No other Parc command and none of Chromium's own key tables use
-that chord. Someone who already saved it on another command keeps it there, and
-Split This Pane starts with no shortcut.
+side-by-side split, or to its right in a top-and-bottom split. On a single
+unsplit page it acts as Add Split View: it opens the pending pane to the right
+of the page, with the command bar. It is a View menu item and a command search
+result, with Control–Shift–Backslash as its default shortcut. Settings →
+Shortcuts can change it, and it shares Add Split View's Use Both priority. No
+other Parc command and none of Chromium's own key tables use that chord.
+Someone who already saved it on another command keeps it there, and Split This
+Pane starts with no shortcut.
 
 In a split, each pane's split-button menu also offers Add Above This Pane and
 Add Below This Pane in a side-by-side split, or Add Left of This Pane and Add
@@ -46,10 +48,12 @@ A pane in a stack also gets Move Up and Move Down, or Move Left and Move Right
 in a top-and-bottom split, after the main-row Move items, which move its whole
 slot. Every Move is disabled without a neighbour in its direction.
 
-The stacked commands are unavailable on a single unsplit page, where Add Split
-View and the pane menu's Add items start a split instead, at four panes, while
-an Add is pending and wherever
-[split commands are refused](split-navigation.md#interaction-and-ownership).
+The stacked commands are unavailable at four panes, while an Add is pending and
+wherever [split commands are refused](split-navigation.md#interaction-and-ownership).
+On a single page Split This Pane is available exactly when Add Split View is.
+While the [Essentials](keyboard-navigation.md#essentials) window is in front,
+only the shortcuts on its rows reach the browser, so Split This Pane does
+nothing there, split or not.
 
 ## Saving and older builds
 
@@ -185,6 +189,9 @@ Pure edits return a new layout: `insertingIntoStack(_:besidePaneAt:after:)`,
 store's slot and stack moves. `SplitPaneInsertion(paneID:operation:state:)`
 hands the two adds to the stacking initialiser, and the window's split commands
 carry them as `.add`, with `.moveInStack` for the moves.
+`startsSplitView(paneCount:isSplit:)` tells the window's `resolvedSplitCommand`
+when Split This Pane on a single page becomes `.addNew`, before availability is
+judged or a target is prepared.
 
 The store commits them through the existing validated transactions:
 `SplitDropTarget.stack(_:after:)` for drops and `SplitPaneInsertion(paneID:stackingAfter:state:)`
@@ -221,9 +228,10 @@ pending-pane previews and reserved drop shapes. `scripts/test-split-drop-geometr
 pins every drop band, corner and four-pane fallback on flat and stacked splits,
 and the original, external and cross-window drop suites commit stack drops. `tests/SplitStackCommandsTests.swift` (windowless, in
 `scripts/test.sh`) checks command enabling against the store's moves, Split
-This Pane's targets, previews and commits, and reading order after each.
-`tests/SidebarRows/split_stack_commands_check.py` pins the View command, its
-shortcut, the shared availability gate and the pane menu wiring, and
+This Pane's targets, previews and commits, its single-page start of a split,
+and reading order after each. `tests/SidebarRows/split_stack_commands_check.py`
+pins the View command, its shortcut, the shared availability gate, the
+single-page route to Add Split View and the pane menu wiring, and
 `SplitPaneMenuTests` asserts the stacked rows and their artwork. The divider,
 snap and Favorites tile suites listed in
 [split groups](split-groups.md#source-and-validation) also cover stacked

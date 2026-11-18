@@ -46,7 +46,7 @@ expect(available.index("guard splitCommandsAvailable else { return false }") < a
 expect("guard selectedTabIDs.count < 4, splitInsertion == nil else { return false }" in available
        and "guard stacking || activeSplitLayout?.stacks != nil, let focus = currentTabID else { return !stacking }" in available
        and "return SplitPaneInsertion(paneID: focus, operation: operation, state: presentedState) != nil" in available,
-       "stacked adds are unavailable at four panes, while an Add is pending and on a single unsplit page")
+       "stacked adds are unavailable at four panes and while an Add is pending, and need a split to stack in")
 gate = body(controller, "var splitCommandsAvailable: Bool")
 expect("spaceCommandsAvailable && activePeek == nil && libraryView == nil" in gate, "the shared gate still refuses Peek and Library")
 perform = body(body(controller, "@MainActor final class SplitCommandTarget"), "func perform()")
@@ -65,6 +65,19 @@ expect("case .moveInStack(let offset):" in execute
        "a stack move commits through the store's stack move")
 expect("case .add(let operation): beginSplitInsertion(operation, paneID: targetID)" in execute,
        "stacked adds open the pending pane with the command bar like today's Add")
+resolve = body(controller, "func resolvedSplitCommand(_ command: SplitCommand) -> SplitCommand")
+expect("guard case .add(let operation) = command," in resolve
+       and "operation.startsSplitView(paneCount: selectedTabIDs.count, isSplit: activeSplitLayout != nil) else { return command }" in resolve
+       and "return .addNew" in resolve, "on a single unsplit page Split This Pane becomes Add Split View's command")
+expect("switch resolvedSplitCommand(command) {" in available,
+       "availability judges Split This Pane by the command it will run, behind the same shared gate")
+expect(target.index("let command = resolvedSplitCommand(command)") < target.index("guard splitCommandIsAvailable(command)"),
+       "the prepared target holds Add Split View's command, so it revalidates and runs exactly like Add Split View")
+expect("case .addNew: toggleSplit()" in execute, "Add Split View's command opens its pending pane and command bar")
+toggle = body(controller, "func toggleSplit()")
+expect("guard let last = selectedTabIDs.last else { return }" in toggle
+       and "beginSplitInsertion(activeSplitLayout?.orientation == .vertical ? .addBelow : .addAfter, paneID: last)" in toggle,
+       "Add Split View on a single page opens its pending pane to the right of the page")
 menu = body(controller, "func showSplitPaneMenu(_ paneID: UUID, from anchor: NSView)")
 expect("case .stackPrevious: command = .moveInStack(-1)" in menu and "case .stackNext: command = .moveInStack(1)" in menu
        and "case .addBefore, .addAfter, .addAbove, .addBelow, .stackBefore, .stackAfter: command = .add(operation)" in menu

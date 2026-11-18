@@ -18,6 +18,7 @@ struct SplitStackCommandsTests {
         try flatEnablingIsUnchanged()
         try stackedEnablingMatchesTheStore()
         try splitThisPaneTargets()
+        try splitThisPaneStartsASplitOnASinglePage()
         try committedPanesFollowReadingOrder()
         try topAndBottomSplitsStackSideways()
         print("SplitStackCommandsTests passed \(assertions) checks")
@@ -99,7 +100,7 @@ struct SplitStackCommandsTests {
         let a = store.open("https://a.test")
         try expect(SplitPaneInsertion(paneID: a, operation: .stackAfter, state: store.state) == nil
                    && SplitPaneInsertion(paneID: a, operation: .stackBefore, state: store.state) == nil,
-                   "A single unsplit page can't be split this way")
+                   "A single unsplit page has no stack to add to")
         try expect(SplitPaneInsertion(paneID: a, operation: .addBelow, state: store.state) != nil,
                    "A single page keeps today's Add items to start a split")
         let b = store.open("https://b.test")
@@ -144,6 +145,44 @@ struct SplitStackCommandsTests {
             try expect(SplitPaneInsertion(paneID: pane, operation: .stackAfter, state: store.state) == nil
                        && SplitPaneInsertion(paneID: pane, operation: .stackBefore, state: store.state) == nil,
                        "Split This Pane refuses at four panes")
+        }
+    }
+
+    static func splitThisPaneStartsASplitOnASinglePage() throws {
+        for count in 0...5 {
+            for isSplit in [false, true] {
+                try expect(SplitPaneOperation.stackAfter.startsSplitView(paneCount: count, isSplit: isSplit) == (count == 1 && !isSplit),
+                           "Split This Pane starts a Split View only on a single unsplit page, not with \(count) panes, split \(isSplit)")
+                for operation in SplitPaneOperation.allCases where operation != .stackAfter {
+                    try expect(!operation.startsSplitView(paneCount: count, isSplit: isSplit),
+                               "Only Split This Pane is redirected, never \(operation) with \(count) panes")
+                }
+            }
+        }
+        let (store, root) = try store("single-page")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = store.open("https://a.test")
+        try expect(store.state.selectedTabIDs == [a] && store.activeSplitLayout == nil
+                   && SplitPaneOperation.stackAfter.startsSplitView(paneCount: store.state.selectedTabIDs.count,
+                                                                    isSplit: store.activeSplitLayout != nil),
+                   "On a single page Split This Pane runs as Add Split View")
+        let started = SplitPaneInsertion(paneID: a, operation: .addAfter, state: store.state)
+        try expect(started?.target == .insert(1) && started?.orientation == .horizontal && started?.layout == nil
+                   && started?.previewLayout == nil && close(started!.previewFactors, [0.5, 0.5]),
+                   "It opens Add Split View's pending pane to the right of the page")
+        let id = UUID()
+        try expect(store.insertSplitPane(started!, tabID: id, navigationURL: URL(string: "https://new.test/"), creation: nil,
+                                         savedHomeIDs: [:], documents: [:]), "The new Split View commits like Add Split View's")
+        let split = store.activeSplitLayout
+        try expect(split?.tabIDs == [a, id] && split?.orientation == .horizontal && split?.stacks == nil,
+                   "The page and the new pane sit side by side with no stack")
+        for (index, pane) in [a, id].enumerated() {
+            try expect(!SplitPaneOperation.stackAfter.startsSplitView(paneCount: store.state.selectedTabIDs.count,
+                                                                     isSplit: store.activeSplitLayout != nil),
+                       "Once there is a split, Split This Pane stacks again")
+            let below = SplitPaneInsertion(paneID: pane, operation: .stackAfter, state: store.state)
+            try expect(below?.target == .stack(index, after: true) && below?.previewLayout?.stacks?.slotSizes == (index == 0 ? [2, 1] : [1, 2]),
+                       "In the new split Split This Pane adds below the pane in focus")
         }
     }
 

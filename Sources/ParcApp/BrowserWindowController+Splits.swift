@@ -812,9 +812,15 @@ extension BrowserWindowController {
             && (selectedTabIDs.count == 1 || activeSplitLayout != nil)
     }
 
+    func resolvedSplitCommand(_ command: SplitCommand) -> SplitCommand {
+        guard case .add(let operation) = command,
+              operation.startsSplitView(paneCount: selectedTabIDs.count, isSplit: activeSplitLayout != nil) else { return command }
+        return .addNew
+    }
+
     func splitCommandIsAvailable(_ command: SplitCommand) -> Bool {
         guard splitCommandsAvailable else { return false }
-        switch command {
+        switch resolvedSplitCommand(command) {
         case .focus(let number): return (1...selectedTabIDs.count).contains(number)
         case .next, .previous: return true
         case .add(let operation):
@@ -854,6 +860,7 @@ extension BrowserWindowController {
     }
 
     func splitCommandTarget(_ command: SplitCommand, paneID: UUID? = nil) -> SplitCommandTarget? {
+        let command = resolvedSplitCommand(command)
         guard splitCommandIsAvailable(command), let focus = currentTabID,
               let index = selectedTabIDs.firstIndex(of: focus) else { return nil }
         let target: UUID
