@@ -1,6 +1,37 @@
 {
   "releases": [
     {
+      "version": "2.10.2",
+      "build": 46,
+      "date": "2026-11-18",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "splits",
+          "summary": "Teach Split This Pane to start a Split View on a lone page instead of just shrugging",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "peek",
+          "summary": "Let Shift-click Peek catch pages that sites pop open themselves, so dashboard tiles stop sneaking off into new windows",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "peek",
+          "summary": "Round up the Shift-click strays, so PDF links, search forms and pages sites open themselves land in a Peek, or the Peek you're in, instead of new windows",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "peek",
+          "summary": "Let Shift-clicked forms keep their paperwork, so sign-ins and app launches that post data open in a Peek, or the Peek you're in, with everything they sent",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.10.1",
       "build": 45,
       "date": "2026-11-18",

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.10.2 (2026-11-18)
+
+### Fixed
+
+- **splits:** Teach Split This Pane to start a Split View on a lone page instead of just shrugging
+- **peek:** Let Shift-click Peek catch pages that sites pop open themselves, so dashboard tiles stop sneaking off into new windows
+- **peek:** Round up the Shift-click strays, so PDF links, search forms and pages sites open themselves land in a Peek, or the Peek you're in, instead of new windows
+- **peek:** Let Shift-clicked forms keep their paperwork, so sign-ins and app launches that post data open in a Peek, or the Peek you're in, with everything they sent
+
 ## 2.10.1 (2026-11-18)
 
 ### Fixed
