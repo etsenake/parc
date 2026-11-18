@@ -34,6 +34,7 @@ struct SplitStackLayoutTests {
         try frameMaths()
         try dividerRectsAndRegions()
         try containerMinimum()
+        try dividerSnapAlongItsAxis()
         try splitterValuesAndLabels()
         try layoutCommands()
         try reservedStackShapes()
@@ -114,6 +115,46 @@ struct SplitStackLayoutTests {
                    == CGSize(width: 450, height: 680), "Three rows sum down the split and the divided row sums across")
         try expect(SplitStackGeometry.minimumSize(orientation: .horizontal, slotSizes: [2, 1, 1], minimum: 220, thickness: 10)
                    == CGSize(width: 680, height: 450), "A reserved main-row slot adds one minimum along the row")
+    }
+
+    static func dividerSnapAlongItsAxis() throws {
+        func run(_ steps: [(distance: Double, x: CGFloat, y: CGFloat)], horizontal: Bool = false) -> (state: SplitDividerSnapState, haptics: [Bool]) {
+            var state = SplitDividerSnapState()
+            let haptics = steps.map { step in
+                state.update(distance: step.distance,
+                             velocity: SplitDividerSnapState.velocity(CGPoint(x: step.x, y: step.y), movingHorizontally: horizontal))
+            }
+            return (state, haptics)
+        }
+        try expect(SplitDividerSnapState.velocity(CGPoint(x: -80, y: 500), movingHorizontally: true) == -80
+                   && SplitDividerSnapState.velocity(CGPoint(x: -80, y: 500), movingHorizontally: false) == 500,
+                   "A side-by-side divider reads sideways speed and an up-and-down divider reads vertical speed")
+        let fromAbove = run([(-30, 2, 400), (-6, -1, 80)])
+        try expect(fromAbove.state.isSnapped && fromAbove.haptics == [false, true],
+                   "An up-and-down divider eased down onto the centre snaps with one haptic")
+        let fromBelow = run([(30, -2, -400), (6, 3, -80)])
+        try expect(fromBelow.state.isSnapped && fromBelow.haptics == [false, true],
+                   "Eased up onto the centre from below, it snaps too")
+        try expect(run([(30, 0, -400), (6, 0, -120)]).state.isSnapped && run([(-30, 0, 400), (-6, 0, 120)]).state.isSnapped,
+                   "120 points per second along the divider's own axis still snaps from either side")
+        let fastDown = run([(-30, 0, 400), (-6, 0, 121)]), fastUp = run([(30, 0, -400), (6, 0, -121)])
+        try expect(!fastDown.state.isSnapped && !fastUp.state.isSnapped && fastDown.haptics == [false, false]
+                   && fastUp.haptics == [false, false], "A quick drag through the centre passes straight through from either side")
+        let awayUp = run([(-30, 0, 900), (-4, 0, 900), (-6, 0, -50)])
+        let awayDown = run([(30, 0, -900), (4, 0, -900), (6, 0, 50)])
+        try expect(!awayUp.state.isSnapped && !awayDown.state.isSnapped && awayUp.haptics == [false, false, false]
+                   && awayDown.haptics == [false, false, false], "Easing away from the centre never snaps, from either side")
+        try expect(!run([(-6, 0, 30)]).state.isSnapped, "Snapping waits until the divider has moved 14 points away")
+        var held = fromBelow.state
+        let stay = held.update(distance: -10, velocity: SplitDividerSnapState.velocity(CGPoint(x: 0, y: -900), movingHorizontally: false))
+        let release = held.update(distance: -14, velocity: SplitDividerSnapState.velocity(CGPoint(x: 0, y: -900), movingHorizontally: false))
+        let beyond = held.update(distance: -40, velocity: SplitDividerSnapState.velocity(CGPoint(x: 0, y: -900), movingHorizontally: false))
+        try expect(!stay && release && !beyond && !held.isSnapped,
+                   "A snapped divider holds inside the band, then releases with one haptic as it leaves")
+        let sideways = run([(30, -400, 0), (6, -80, 900)], horizontal: true)
+        let sidewaysAway = run([(-30, 900, 0), (-4, 900, 0), (-6, -50, 900)], horizontal: true)
+        try expect(sideways.state.isSnapped && sideways.haptics == [false, true] && !sidewaysAway.state.isSnapped,
+                   "A side-by-side divider still snaps on its sideways speed alone, whatever the vertical speed")
     }
 
     static func splitterValuesAndLabels() throws {

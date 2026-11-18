@@ -93,6 +93,22 @@ extension BrowserSplitStacks {
     }
 }
 
+struct SplitDividerSnapState {
+    private(set) var canSnap = false
+    private(set) var isSnapped = false
+    static func velocity(_ pan: CGPoint, movingHorizontally horizontal: Bool) -> Double {
+        Double(horizontal ? pan.x : pan.y)
+    }
+    mutating func update(distance: Double, velocity: Double) -> Bool {
+        guard distance.isFinite, velocity.isFinite else { return false }
+        let previous = isSnapped
+        if abs(distance) >= 14 { canSnap = true; isSnapped = false }
+        else if canSnap, !isSnapped, abs(velocity) <= 120,
+                (distance < 0) == (velocity >= 0) { isSnapped = true }
+        return previous != isSnapped
+    }
+}
+
 struct SplitStackGeometry {
     static let dividerTopInset: CGFloat = 53
     static let dividerEndInset: CGFloat = 8

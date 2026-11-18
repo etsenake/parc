@@ -91,6 +91,10 @@ assert "current.moved = true\n        resize = current\n        applyFrames(fact
     "updateDividerResize must not applyFrames on every pan move"
 assert "if transitioned { onSnapTransition() }" in up, \
     "snap haptic must stay outside the applyFrames gate"
+assert "updateDividerResize(at: recognizer.location(in: self), panVelocity: recognizer.velocity(in: self))" in split, \
+    "the divider pan must hand over its whole velocity, not just its sideways part"
+assert "panVelocity, movingHorizontally: resize?.movesHorizontally ?? isVertical)))" in split, \
+    "snapping must read the velocity along the axis the dragged divider moves"
 
 finish = re.search(
     r"func finishDividerResize\(commit: Bool\) \{(?P<body>.*?)\n    \}\n",

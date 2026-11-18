@@ -54,9 +54,11 @@ import AppKit
         view.configure(orientation: .vertical, factors: [0.3,0.3,0.4])
         let vertical = originals.map(\.frame), verticalOrigin = NSPoint(x: 100, y: originals[0].frame.maxY + 3)
         try check(view.beginDividerResize(at: verticalOrigin), "Vertical native divider admits")
-        view.updateDividerResize(at: NSPoint(x: 100, y: verticalOrigin.y + 40), velocity: 0)
-        view.updateDividerResize(at: NSPoint(x: 100, y: verticalOrigin.y + 6), velocity: -30)
-        try check(abs(originals[0].frame.height - originals[1].frame.height) < 0.001 && originals[2].frame == vertical[2], "Vertical original pair uses same recovered state")
+        let verticalPulses = pulses
+        view.updateDividerResize(at: NSPoint(x: 100, y: verticalOrigin.y + 40), panVelocity: NSPoint(x: -2, y: 300))
+        view.updateDividerResize(at: NSPoint(x: 100, y: verticalOrigin.y + 6), panVelocity: NSPoint(x: 3, y: -30))
+        try check(abs(originals[0].frame.height - originals[1].frame.height) < 0.001 && originals[2].frame == vertical[2]
+                  && pulses == verticalPulses + 1, "An up-and-down divider eased up onto the centre snaps on its vertical speed")
         view.configure(orientation: .horizontal, factors: [0.2,0.3,0.5])
         view.finishDividerResize(commit: true)
         try check(commits.count == 1 && view.isVertical, "Changed authoritative orientation cancels old native completion")
@@ -84,6 +86,17 @@ import AppKit
         stacked.finishDividerResize(commit: true)
         guard case .divider(0, slot: 0, let share)? = stackedChanges.first else { throw NSError(domain: "stacked snap", code: 0) }
         try check(stackedChanges.count == 1 && abs(share - 0.5) < 0.000001, "The snapped stack divider commits an even pair once")
+        let belowOrigin = NSPoint(x: 250, y: stackedPanes[0].frame.maxY + 3), belowPulses = pulses
+        try check(stacked.beginDividerResize(at: belowOrigin), "The stack divider admits another pan")
+        stacked.updateDividerResize(at: NSPoint(x: 250, y: belowOrigin.y + 100), panVelocity: NSPoint(x: -2, y: 300))
+        stacked.updateDividerResize(at: NSPoint(x: 250, y: belowOrigin.y + 75), panVelocity: NSPoint(x: 2, y: -60))
+        try check(pulses == belowPulses + 1 && abs(stackedPanes[0].frame.height - stackedPanes[1].frame.height) < 0.001,
+                  "A stack divider eased up onto its column's centre from below snaps too")
+        stacked.updateDividerResize(at: NSPoint(x: 250, y: belowOrigin.y + 120), panVelocity: NSPoint(x: 0, y: 900))
+        stacked.updateDividerResize(at: NSPoint(x: 250, y: belowOrigin.y + 75), panVelocity: NSPoint(x: 0, y: -400))
+        try check(pulses == belowPulses + 2 && stackedPanes[0].frame.height != stackedPanes[1].frame.height,
+                  "A quick drag back through the centre releases once and passes straight through")
+        stacked.finishDividerResize(commit: false)
         print("PASS: \(count) native divider snap/admission/lifetime checks (no browser)")
     }
 }

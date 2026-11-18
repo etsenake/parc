@@ -188,8 +188,9 @@ splitter as created or destroyed, with a layout change on the split's parent.
 
 A native pan starts only within the actual divider region. Snapping arms after
 moving at least 14 points away from the pair center. Approaching within that band
-snaps when the absolute native x velocity is at most 120 points per second and
-points toward the center, including for vertical layouts. Crossing the band
+snaps when the pointer's speed along the divider's own direction of travel is at
+most 120 points per second and heads toward the center: sideways for a side-by-side
+divider, up or down for one between top-and-bottom panes. Crossing the band
 releases an existing snap. Engage/release each emit one generic native haptic,
 independent of the tab-reordering preference.
 
@@ -440,4 +441,7 @@ Relevant existing checks are `test-split-context.sh`, `test-split-dividers.sh`,
 `test-split-divider-snap.sh`, `test-split-pane-controls.sh`,
 `test-split-appearance.sh`, `test-external-split-drop.sh`,
 `test-inter-profile-move.sh`, the model/store suites and `tests/NativeContentDrop`.
+The windowless `tests/SplitStackLayoutTests.swift` also covers the snap rule on
+each divider's axis, and `tests/SplitLayoutFlushSkip/check.py` pins the divider
+pan to that axis.
 Inspect their entry points and obey [AGENTS.md](../AGENTS.md) before running them.

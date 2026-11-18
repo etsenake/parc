@@ -1,17 +1,5 @@
 import AppKit
 
-struct SplitDividerSnapState {
-    private(set) var canSnap = false
-    private(set) var isSnapped = false
-    mutating func update(distance: Double, velocity: Double) -> Bool {
-        guard distance.isFinite, velocity.isFinite else { return false }
-        let previous = isSnapped
-        if abs(distance) >= 14 { canSnap = true; isSnapped = false }
-        else if canSnap, !isSnapped, abs(velocity) <= 120,
-                (distance < 0) == (velocity >= 0) { isSnapped = true }
-        return previous != isSnapped
-    }
-}
 final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private(set) var arrangedSubviews: [NSView] = []
     private(set) var isVertical = true
@@ -1064,7 +1052,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         switch recognizer.state {
         case .began: beginDividerPan(at: recognizer.location(in: self))
         case .changed:
-            updateDividerResize(at: recognizer.location(in: self), velocity: recognizer.velocity(in: self).x)
+            updateDividerResize(at: recognizer.location(in: self), panVelocity: recognizer.velocity(in: self))
         case .ended: finishDividerResize(commit: true)
         case .cancelled, .failed: finishDividerResize(commit: false)
         default: break
@@ -1155,6 +1143,10 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             backingScale: paneBackingScale, originalFactors: factors,
             origin: point, commit: commit, factors: factors)
         return true
+    }
+    func updateDividerResize(at point: NSPoint, panVelocity: NSPoint) {
+        updateDividerResize(at: point, velocity: CGFloat(SplitDividerSnapState.velocity(
+            panVelocity, movingHorizontally: resize?.movesHorizontally ?? isVertical)))
     }
     func updateDividerResize(at point: NSPoint, velocity: CGFloat) {
         guard resizeIsCurrent, var current = resize else { finishDividerResize(commit: false); return }
