@@ -1081,6 +1081,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         run("xcrun", "swiftc", "-v", *compiler.app_swift_flags(repo, sparkle_release), *optimization, *swift,
             stage / "ParcEngine.o", stage / "VideoPiPWindow.o", "-F", frameworks, "-framework", ENGINE_NAME,
             "-framework", "Sparkle", "-framework", "Cocoa", "-framework", "QuartzCore", "-framework", "AVFoundation", "-framework", "AVKit",
+            "-framework", "CoreSpotlight",
             "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks", "-Xlinker", "-fatal_warnings",
             "-o", contents / "MacOS/Parc", capture=False)
         sparkle_framework = embed_sparkle(sparkle_release, frameworks)
@@ -1119,7 +1120,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                                                     "public.mime-type": mime}}
                         for kind, description, conforms, extensions, mime in IMPORTED_TYPES],
                     LSApplicationCategoryType="public.app-category.productivity",
-                    NSUserActivityTypes=["NSUserActivityTypeBrowsingWeb"],
+                    NSUserActivityTypes=["NSUserActivityTypeBrowsingWeb", "com.apple.corespotlightitem"],
                     NSCameraUsageDescription="Allow camera access for websites you choose.",
                     NSMicrophoneUsageDescription="Allow microphone access for websites you choose.",
                     NSBluetoothAlwaysUsageDescription="Websites you allow can use Bluetooth, for example to sign in with a passkey on your phone.",

@@ -78,6 +78,7 @@ step compile_and_run browser-store BrowserStoreTests \
 step compile_and_run session-backups SessionBackupTests "$repo_root/Sources/ParcApp/SidebarRescue.swift"
 step compile_and_run browser-tab-lookup BrowserTabLookupTests "$repo_root/Sources/ParcCore/FolderLinks.swift"
 step compile_and_run whats-new-page WhatsNewPageTests
+step compile_and_run history-spotlight HistorySpotlightTests "$repo_root/Sources/ParcCore/HistorySpotlight.swift"
 step compile_and_run link-routing-store LinkRoutingStoreTests
 step bash "$repo_root/scripts/test-link-routing-fallback.sh"
 step compile_and_run link-routing-editor LinkRoutingEditorTests

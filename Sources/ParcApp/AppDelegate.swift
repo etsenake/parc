@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private let popupTabHandoff = PopupTabHandoffCoordinator()
     private var started = false
     private var historyDeletionObserver: NSObjectProtocol?
+    private var historySpotlight: HistorySpotlightIndexer?
     private var terminationInProgress = false
     private var applicationRestart: ApplicationRestart?
     private var restartCompletion: ((String?) -> Void)?
@@ -320,6 +321,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 pendingImportResume = try? BrowserImportRestartIntent.take(from: root)
                 if pendingImportResume?.replay != true { Self.removeReplayRestartDraft(in: root) }
                 ProfileRemovalController.shared.configure(store: store)
+                if isolatedProfilePath == nil, !arguments.contains("--parc-smoke") {
+                    historySpotlight = HistorySpotlightIndexer(store: store)
+                }
                 let presentImportFailures = { [weak self] in
                     guard NSApp.isActive, let front = self?.front, front.window?.isKeyWindow == true else { return }
                     front.showImportFailures()
@@ -979,12 +983,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func application(_ application: NSApplication, willContinueUserActivityWithType userActivityType: String) -> Bool {
-        userActivityType == NSUserActivityTypeBrowsingWeb
+        userActivityType == NSUserActivityTypeBrowsingWeb || userActivityType == HistorySpotlightIndexer.activityType
     }
 
     func application(_ application: NSApplication, continue userActivity: NSUserActivity,
                      restorationHandler: @escaping ([NSUserActivityRestoring]) -> Void) -> Bool {
-        guard let url = HandoffActivity.webpageURL(of: userActivity) else { return false }
+        guard let url = HandoffActivity.webpageURL(of: userActivity)
+                ?? HistorySpotlightIndexer.url(continuing: userActivity) else { return false }
         self.application(application, open: [url])
         return true
     }
@@ -1252,6 +1257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 self.browserImport?.close(); self.onboarding?.closeBrowserImport()
                 self.restartCompletion = nil
                 if !self.armedReplayRestart { Self.removeReplayRestartDraft(in: self.store.directory) }
+                self.historySpotlight?.flush()
                 self.finishShutdown()
                 (NSApp as? ParcApplication)?.finishApprovedTermination(sender)
             } else {

@@ -6,6 +6,30 @@ Library. History opens Chromium's `parc://history` in a new tab. Parc's separate
 visit index, used by the command bar, follows Chromium history deletions, and the
 bar stops offering deleted pages as soon as they are removed.
 
+## History in Spotlight
+
+`HistorySpotlightIndexer` lists the visit index in macOS Spotlight, as Safari
+does, so searching there (or after choosing Parc as Spotlight's app filter)
+finds pages by title or site with when they were last visited. Each http or
+https address appears once across every Profile, titled by its newest real
+title or else its site, and ranked by how often it was visited. Private
+windows, `--parc-profile` and automation stores, and smoke runs add nothing.
+Choosing a result opens the page like a link from another app, so
+[Air Traffic Control](routing-interaction.md#link-destinations) picks its Space.
+
+The index follows the visit list itself rather than individual deletions:
+`HistorySpotlightSync` compares the current pages with what it last sent and
+adds, updates or removes the difference in one batch, so clearing history,
+deleting visits, Chromium's clear browsing data and Profile removal all leave
+Spotlight too. New visits wait a couple of seconds to share a batch; a deletion
+syncs at once, ahead of any waiting retry, and quitting sends any waiting
+update first, waiting at most two seconds. Each batch saves a fingerprint of
+the full list in the index. At launch a matching fingerprint skips work; any
+mismatch, failed batch or request from macOS to rebuild deletes Parc's items
+and sends the whole list again. A failed batch wipes Parc's items at once and
+retries after a minute, backing off to an hour. People who don't want these
+results can turn Parc off in System Settings → Spotlight.
+
 ## Archive records and restoration
 
 `ArchiveProvenance` retains closure reason and source Space identity/name.

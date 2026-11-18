@@ -188,6 +188,7 @@ class PackagingIconTests(unittest.TestCase):
                 self.assertEqual((embedded / "Versions/B" / binary).read_bytes(), b"thin fixture")
             self.assertEqual(info["CFBundleURLTypes"][0]["CFBundleURLSchemes"], ["http", "https"])
             self.assertEqual(info["LSApplicationCategoryType"], "public.app-category.productivity")
+            self.assertEqual(info["NSUserActivityTypes"], ["NSUserActivityTypeBrowsingWeb", "com.apple.corespotlightitem"])
             documents = {kind for document in info["CFBundleDocumentTypes"]
                          for kind in document["LSItemContentTypes"]}
             self.assertEqual(documents, {
