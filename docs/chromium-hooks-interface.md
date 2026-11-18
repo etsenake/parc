@@ -57,6 +57,16 @@ which an embedder cannot override without replacing that file.
   for that window and extension. The command is handled inside
   `chrome/browser/extensions/extension_context_menu_model.cc`. Answered by `BeginExtensionUninstall`
   in `extension_uninstall.mm`.
+- **`SetExtensionWindowCreateHandler`**: a Shift-clicked link in a PDF opens in a Peek, or in the
+  Peek already showing the PDF ([Peek](peek.md#links-inside-a-peek)). Chromium's PDF viewer asks
+  the extensions `windows.create` API for the window, which creates it before any page delegate
+  sees the address; Chromium's function class can't be subclassed or wrapped for one caller, and
+  window creation doesn't know who asked. The point is `WindowsCreateFunction::Run` in
+  `chrome/browser/extensions/api/tabs/windows_api.cc`, after the addresses are validated and
+  before any window exists; a taken request answers with no window. Answered by
+  `OpenNativePdfLinkInPeek` in `native_link_routing.mm`, which takes only the built-in PDF
+  viewer's one-address requests. `pdf_link_contract.py` stops the build, naming what changed, if the
+  viewer stops opening Shift-clicked links this way or asks for a window anywhere else.
 - **`SetFolderUploadConfirmation`**: choosing a folder to upload asks in Parc's sheet and is
   cancelled if the asking frame navigates or goes away. `chrome/browser/file_select_helper.cc`
   hands over the dialog model and frame. Answered by `ShowFolderUploadConfirmation` in
@@ -93,6 +103,9 @@ which an embedder cannot override without replacing that file.
   target's build edit adding Parc's build flags and, on Mac, the native picture-in-picture API.
 - **`extension_context_menu_native`**: the uninstall hook, plus a pin action that skips its optional
   feedback when a native window registers no Views element.
+- **`native-extension-window-create`**: only its hook, in `windows_api.cc`, after
+  `native-browser-overlay`'s window-state change to the same file. Unhooked, Chromium's path runs
+  unchanged.
 - **`native-page-context-menu-direct-overlay`**: the menu hook, plus the first-observer member in
   `render_view_context_menu.h` that `chromium-direct-shared` uses.
 - **`native-password-prompt-direct`**: the password hook, plus a presentation-unavailable result in

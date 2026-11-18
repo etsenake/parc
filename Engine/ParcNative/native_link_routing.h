@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <vector>
 #include "native_split_link_api.h"
 #include "base/unguessable_token.h"
 #include "base/functional/callback.h"
@@ -12,6 +13,7 @@
 #include "third_party/blink/public/mojom/window_features/window_features.mojom-forward.h"
 #include "ui/base/window_open_disposition.h"
 class BrowserWindowInterface;
+class ExtensionFunction;
 class GURL;
 namespace content { class WebContents; class RenderFrameHost; class NavigationHandle; struct OpenURLParams; }
 namespace parc {
@@ -51,10 +53,11 @@ std::unique_ptr<content::OpenURLParams> TakeNativeOptionLink(
     content::WebContents* source, const content::OpenURLParams&);
 void CaptureNativeCreatedPage(content::WebContents* source,
     content::GlobalRenderFrameHostId opener, content::WebContents* created);
-void PrepareNativeCreatedPage(BrowserWindowInterface& browser,
-    content::WebContents* source, content::WebContents& created,
-    const GURL& target, WindowOpenDisposition& disposition,
+std::unique_ptr<content::OpenURLParams> PrepareNativeCreatedPage(
+    BrowserWindowInterface& browser, content::WebContents* source,
+    content::WebContents& created, const GURL& target, WindowOpenDisposition& disposition,
     const blink::mojom::WindowFeatures& features, bool user_gesture);
+bool OpenNativePdfLinkInPeek(const ExtensionFunction& function, const std::vector<GURL>& urls);
 }
 #ifdef __OBJC__
 #import "native_appkit_bridge.h"

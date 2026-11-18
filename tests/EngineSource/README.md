@@ -18,6 +18,8 @@ Keychain data or launch an application.
 `test_settings_page.py` checks the [More Settings](../../docs/settings.md#more-settings)
 hide lists and their build guard, and reads the pinned Chromium source from
 `PARC_ENGINE_WORKSPACE` or `work/engine` when one is present.
+`test_pdf_link_contract.py` checks the build guard that stops when Chromium's PDF
+viewer stops opening Shift-clicked links through `chrome.windows.create`.
 
 ## Shared compile cache
 

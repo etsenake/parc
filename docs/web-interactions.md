@@ -247,8 +247,8 @@ insecure/mail icons where appropriate. Modifier descriptions explain background
 or foreground tabs, Peek, the same Peek, new-window and Split View destinations
 without changing the link. **Open … in Split View** (Option, Option–Command),
 **Open … in Peek** (Shift) and, inside a Peek, **Open … in this Peek** (Shift)
-appear only when the link itself would do that from the hovered page. The app
-answers read-only, for the pane under the pointer as the click's press leaves the
+appear only when the click would do that from the hovered page. The app answers
+read-only, for the pane under the pointer as the click's press leaves the
 window: that pane focused and the command bar closed (`canSplitLinkFrom`,
 `canPeekLinkFrom`), or for a Peek, that Peek shown and interactive in the key
 window (`canNavigatePeekLinkFrom`). Links in fenced ad frames never

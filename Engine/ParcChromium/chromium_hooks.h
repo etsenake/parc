@@ -35,6 +35,7 @@ class ChromeBrowserMainParts;
 class DesktopBrowserWindowCapabilities;
 class DevtoolsUIController;
 class ExclusiveAccessManager;
+class ExtensionFunction;
 class ExtensionInstallPromptShowParams;
 class LoginHandler;
 class PrefRegistrySimple;
@@ -168,6 +169,10 @@ using ExtensionUninstallHandler =
     void (*)(BrowserWindowInterface* browser,
              const extensions::Extension* extension);
 void SetExtensionUninstallHandler(ExtensionUninstallHandler handler);
+
+using ExtensionWindowCreateHandler = bool (*)(const ExtensionFunction& function,
+                                              const std::vector<GURL>& urls);
+void SetExtensionWindowCreateHandler(ExtensionWindowCreateHandler handler);
 
 using FolderUploadConfirmation =
     void (*)(std::unique_ptr<ui::DialogModel> model,

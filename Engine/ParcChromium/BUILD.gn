@@ -152,6 +152,20 @@ action("settings_page_contract") {
   ]
 }
 
+action("pdf_link_contract") {
+  script = "pdf_link_contract.py"
+  outputs = [ "$target_gen_dir/pdf_link_contract.stamp" ]
+  depfile = "$target_gen_dir/pdf_link_contract.d"
+  args = [
+    "--chromium",
+    rebase_path("//", root_build_dir),
+    "--stamp",
+    rebase_path(outputs[0], root_build_dir),
+    "--depfile",
+    rebase_path(depfile, root_build_dir),
+  ]
+}
+
 bundle_data("internal_extension_resources") {
   sources = [ "internal_extension/manifest.json", "internal_extension/background.js" ]
   outputs = [ "{{bundle_resources_dir}}/parc_internal_extension/{{source_file_part}}" ]
@@ -333,6 +347,7 @@ source_set("browser") {
     ":crash_reporter_client",
     ":error_pages",
     ":internal_extension_manifest",
+    ":pdf_link_contract",
     ":product_name_strings",
     ":settings_page_contract",
     "//chrome/browser/extensions",

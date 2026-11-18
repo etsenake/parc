@@ -48,6 +48,7 @@
 #include "parc/native/native_blocked_popups.h"
 #include "parc/native/native_device_delegates.h"
 #include "parc/native/native_internal_urls.h"
+#include "parc/native/native_link_routing.h"
 #include "parc/native/native_page_context_menu.h"
 #include "parc/native/native_tab_sharing.h"
 #include "parc/native/native_web_contents_view_delegate.h"
@@ -120,6 +121,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
     parc_hooks::SetExtensionInstallCapture(
         &NativeExtensionInstallService::CaptureFor);
     parc_hooks::SetExtensionUninstallHandler(&BeginExtensionUninstall);
+    parc_hooks::SetExtensionWindowCreateHandler(&OpenNativePdfLinkInPeek);
     parc_hooks::SetFolderUploadConfirmation(&ShowFolderUploadConfirmation);
     parc_hooks::SetConstrainedWindowPresenters(&PresentNativeWebModal,
                                                &CreateNativeBrowserModal);

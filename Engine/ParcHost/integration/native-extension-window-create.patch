@@ -1,0 +1,47 @@
+--- a/chrome/browser/extensions/api/tabs/windows_api.cc
++++ b/chrome/browser/extensions/api/tabs/windows_api.cc
+@@ -73,6 +73,16 @@
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+-
++
+ static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
++
++namespace parc_hooks {
++using ExtensionWindowCreateHandler = bool (*)(const ExtensionFunction& function,
++                                              const std::vector<GURL>& urls);
++void SetExtensionWindowCreateHandler(ExtensionWindowCreateHandler handler);
++}
++
++namespace {
++parc_hooks::ExtensionWindowCreateHandler g_parc_extension_window_create_handler = nullptr;
++}
+-
++
+ namespace extensions {
+-
++
+@@ -539,6 +549,11 @@
+     }
+   }
+-
++
++  if (g_parc_extension_window_create_handler &&
++      g_parc_extension_window_create_handler(*this, urls_)) {
++    return RespondNow(NoArguments());
++  }
++
+   std::string error;
+-
++
+ #if !BUILDFLAG(IS_ANDROID)
+@@ -1272,3 +1287,9 @@
+ }
+-
++
+ }  // namespace extensions
++
++namespace parc_hooks {
++void SetExtensionWindowCreateHandler(ExtensionWindowCreateHandler handler) {
++  g_parc_extension_window_create_handler = handler;
++}
++}

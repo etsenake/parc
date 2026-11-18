@@ -1,8 +1,6 @@
 // Copyright 2026 Parc contributors.
 #include "native_link_routing.h"
 
-#include "native_link_routing.h"
-
 #include <memory>
 
 #include "base/memory/weak_ptr.h"
@@ -23,8 +21,14 @@
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/parc_native_links.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/weak_document_ptr.h"
+#include "content/public/common/referrer.h"
+#include "extensions/browser/extension_function.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 #include "native_appkit_host.h"
 #include "native_appkit_page.h"
 #import "native_shift_link.h"
@@ -46,6 +50,8 @@ const char kRoutedPageKey = 0;
 const char kCreatedRouteKey = 0;
 const char kCreatedRouteAttemptKey = 0;
 const char kURLLockKey = 0;
+const char kOpenedPageKey = 0;
+const char kOpenedPageObserverKey = 0;
 class CreatedPage;
 CreatedPage* Creation(content::WebContents& contents);
 
@@ -235,6 +241,32 @@ class CreatedPage final : public base::SupportsUserData::Data {
   base::WeakPtr<BrowserWindowInterface> destination_;
 };
 
+class OpenedPage final : public base::SupportsUserData::Data {
+ public:
+  explicit OpenedPage(content::RenderFrameHost& opener)
+      : document(opener.GetWeakDocumentPtr()), modifiers(NSEvent.modifierFlags) {}
+  const content::WeakDocumentPtr document;
+  const NSEventModifierFlags modifiers;
+  std::optional<content::Referrer> referrer;
+};
+class OpenedPageObserver final : public base::SupportsUserData::Data,
+                                 public content::WebContentsObserver {
+ public:
+  explicit OpenedPageObserver(content::WebContents& contents)
+      : content::WebContentsObserver(&contents) {}
+  void DidOpenRequestedURL(content::WebContents* new_contents,
+                           content::RenderFrameHost* source_render_frame_host,
+                           const GURL& url, const content::Referrer& referrer,
+                           WindowOpenDisposition disposition, ui::PageTransition transition,
+                           bool started_from_context_menu, bool renderer_initiated) override {
+    auto* opened = new_contents ?
+        static_cast<OpenedPage*>(new_contents->GetUserData(&kOpenedPageKey)) : nullptr;
+    if (opened && source_render_frame_host &&
+        opened->document.AsRenderFrameHostIfValid() == source_render_frame_host)
+      opened->referrer = referrer;
+  }
+};
+
 class CurrentLinkSequence final : public base::SupportsUserData::Data {
  public:
   uint64_t value = 0;
@@ -289,6 +321,24 @@ bool CanNavigatePeekSource(CreatedPage& state) {
       [binding.client respondsToSelector:@selector(nativeBrowser:canNavigatePeekLinkFromPage:)] &&
       [binding.client nativeBrowser:binding canNavigatePeekLinkFromPage:page] &&
       source && state.Parent(*source) == page;
+}
+NativeShiftLinkClick NativeShiftClick(CreatedPage& creation, content::WebContents& source,
+                                      content::RenderFrameHost& frame,
+                                      NSEventModifierFlags modifiers) {
+  using Sandbox = network::mojom::WebSandboxFlags;
+  NativeShiftLinkClick click{.modifiers = modifiers,
+      .frame_can_navigate_page = NativeFrameCanNavigatePage(
+          &frame == source.GetPrimaryMainFrame(), frame.IsSandboxed(Sandbox::kTopNavigation),
+          frame.IsSandboxed(Sandbox::kTopNavigationByUserActivation))};
+  PCNativeBrowserWindow* binding = creation.browser_ ?
+      AppKitBindingForBrowser(creation.browser_.get()) : nil;
+  click.shift_peek_enabled = creation.Parent(source) && binding &&
+      [binding.client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] &&
+      [binding.client nativeBrowser:binding allowsPeekWithShift:YES];
+  click.in_shown_peek = click.shift_peek_enabled && CanNavigatePeekSource(creation);
+  click.can_open_peek = click.shift_peek_enabled && !click.in_shown_peek &&
+      CanPresentSource(creation);
+  return click;
 }
 bool CanRouteSource(CreatedPage& state) {
   auto source = state.source_;
@@ -435,6 +485,8 @@ void UpdateNativeLinkURL(content::WebContents& contents, const GURL& url) {
 void EnableNativeLinkNavigation(content::WebContents& contents) {
   if (!contents.GetUserData(&kURLLockKey))
     contents.SetUserData(&kURLLockKey, std::make_unique<URLLockState>(contents));
+  if (!contents.GetUserData(&kOpenedPageObserverKey))
+    contents.SetUserData(&kOpenedPageObserverKey, std::make_unique<OpenedPageObserver>(contents));
   contents.GetMutableRendererPrefs()->native_main_frame_link_policy = true;
   contents.SyncRendererPrefs();
 }
@@ -669,20 +721,9 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
   if (!frame || frame->IsNestedWithinFencedFrame() ||
       frame->GetOutermostMainFrame() != main_frame ||
       source->GetBrowserContext() != browser.GetProfile()) return nullptr;
-  using Sandbox = network::mojom::WebSandboxFlags;
-  const bool frame_can_navigate_page = NativeFrameCanNavigatePage(frame == main_frame,
-      frame->IsSandboxed(Sandbox::kTopNavigation),
-      frame->IsSandboxed(Sandbox::kTopNavigationByUserActivation));
   auto creation = std::make_unique<CreatedPage>(*source, *main_frame, browser);
-  PCNativeBrowserWindow* binding = AppKitBindingForBrowser(&browser);
-  NativeShiftLinkClick click{.modifiers = creation->modifiers_,
-      .frame_can_navigate_page = frame_can_navigate_page};
-  click.shift_peek_enabled = creation->Parent(*source) && binding &&
-      [binding.client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] &&
-      [binding.client nativeBrowser:binding allowsPeekWithShift:YES];
-  click.in_shown_peek = click.shift_peek_enabled && CanNavigatePeekSource(*creation);
-  click.can_open_peek = click.shift_peek_enabled && !click.in_shown_peek &&
-      CanPresentSource(*creation);
+  auto click = NativeShiftClick(*creation, *source, *frame, creation->modifiers_);
+  click.sends_body = static_cast<bool>(params.post_data);
   const auto link = ClassifyNativeShiftLink(click);
   if (link == NativeShiftLink::kOrdinary ||
       !(link == NativeShiftLink::kSamePeek ? CanNavigatePeekSource(*creation)
@@ -875,6 +916,9 @@ void CaptureNativeCreatedPage(content::WebContents* source,
     content::GlobalRenderFrameHostId opener_id, content::WebContents* created) {
   if (!source || !created || source == created || Creation(*created)) return;
   auto* opener = content::RenderFrameHost::FromID(opener_id);
+  if (opener && content::WebContents::FromRenderFrameHost(opener) == source &&
+      !created->GetUserData(&kOpenedPageKey))
+    created->SetUserData(&kOpenedPageKey, std::make_unique<OpenedPage>(*opener));
   PCNativePage* page = ExistingNativePage(source);
   PCNativeBrowserWindow* binding = page ?
       [PCNativeBrowserApplication ownerForPage:page] : nil;
@@ -887,68 +931,109 @@ void CaptureNativeCreatedPage(content::WebContents* source,
   created->SetUserData(&kCreatedPageKey,
       std::make_unique<CreatedPage>(*source, *opener, *browser));
 }
-static bool PrepareCreatedPeek(BrowserWindowInterface& browser,
+static void PrepareAutomaticCreatedPeek(BrowserWindowInterface& browser,
     content::WebContents* source, content::WebContents& created,
-    const GURL& target, WindowOpenDisposition disposition,
-    const blink::mojom::WindowFeatures& features, bool user_gesture) {
+    const GURL& target, WindowOpenDisposition disposition, bool user_gesture) {
   auto* state = Creation(created);
-  if (!state || state->source_.get() != source ||
-      state->browser_.get() != &browser || state->offered_) return false;
-  state->peek_ = false;
-
-  const bool new_window = disposition == WindowOpenDisposition::NEW_WINDOW;
-  if (!user_gesture || !target.SchemeIsHTTPOrHTTPS() ||
-      (!new_window && disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB)) return false;
+  if (!state || state->source_.get() != source || state->browser_.get() != &browser ||
+      state->offered_ || !user_gesture ||
+      disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB ||
+      !target.SchemeIsHTTPOrHTTPS()) return;
   PCNativePage* parent = state->Parent(created);
   PCNativeBrowserWindow* binding = AppKitBindingForBrowser(&browser);
-  if (!parent || !binding || (state->modifiers_ & NSEventModifierFlagCommand)) return false;
   NSURL* url = [NSURL URLWithString:@(target.spec().c_str())];
-  if (!url || IsMeetingURL(url)) return false;
+  if (!parent || !binding || !url) return;
   const auto child = created.GetWeakPtr();
   const auto valid = [&]() {
     return child && Creation(*child) == state && state->Parent(*child) == parent;
   };
-  if (new_window) {
-    NativeShiftCreatedPage page{.click = {.modifiers = state->modifiers_},
-        .user_gesture = user_gesture, .web_url = target.SchemeIsHTTPOrHTTPS(),
-        .new_window = new_window, .popup = features.is_popup,
-        .sized_by_page = features.has_x || features.has_y || features.has_width ||
-            features.has_height};
-    page.click.shift_peek_enabled =
-        [binding.client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] &&
-        [binding.client nativeBrowser:binding allowsPeekWithShift:YES];
-    if (!valid() || !page.click.shift_peek_enabled) return false;
-    page.click.in_shown_peek =
-        [binding.client respondsToSelector:@selector(nativeBrowser:canNavigatePeekLinkFromPage:)] &&
-        [binding.client nativeBrowser:binding canNavigatePeekLinkFromPage:parent];
-    if (!valid()) return false;
-    page.click.can_open_peek = !page.click.in_shown_peek && state->CanPresent(*child);
-    if (!valid() || !NativeShiftCreatedPageOpensPeek(page)) return false;
-    state->peek_ = true;
-    return true;
-  }
-  const bool shift = (state->modifiers_ & (NSEventModifierFlagShift |
-      NSEventModifierFlagControl | NSEventModifierFlagOption)) == NSEventModifierFlagShift;
   if (![binding.client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] ||
-      ![binding.client nativeBrowser:binding allowsPeekWithShift:shift] || !valid()) return false;
+      ![binding.client nativeBrowser:binding allowsPeekWithShift:NO] || !valid()) return;
 
   if (![binding.client respondsToSelector:@selector(nativeBrowser:shouldOpenNewPageInPeekFrom:targetURL:)] ||
       ![binding.client nativeBrowser:binding shouldOpenNewPageInPeekFrom:parent
                            targetURL:url] || !valid() ||
-      !state->CanPresent(*child) || !valid()) return false;
+      !state->CanPresent(*child) || !valid()) return;
   state->peek_ = true;
-  return true;
 }
-void PrepareNativeCreatedPage(BrowserWindowInterface& browser,
-    content::WebContents* source, content::WebContents& created,
-    const GURL& target, WindowOpenDisposition& disposition,
+static std::unique_ptr<content::OpenURLParams> PrepareShiftCreatedPage(
+    BrowserWindowInterface& browser, content::WebContents* source,
+    content::WebContents& created, const OpenedPage& opened, const GURL& target,
+    WindowOpenDisposition& disposition, const blink::mojom::WindowFeatures& features,
+    bool user_gesture) {
+  auto* frame = opened.document.AsRenderFrameHostIfValid();
+  if (!source || !frame || content::WebContents::FromRenderFrameHost(frame) != source ||
+      frame->GetOutermostMainFrame() != source->GetPrimaryMainFrame() ||
+      source->GetBrowserContext() != browser.GetProfile() ||
+      created.GetBrowserContext() != source->GetBrowserContext() ||
+      !AppKitBrowserAcceptsNewPages(browser)) return nullptr;
+  const auto source_lease = source->GetWeakPtr();
+  const auto child = created.GetWeakPtr();
+  const bool fenced_frame = frame->IsNestedWithinFencedFrame();
+  CreatedPage admission(*source, *source->GetPrimaryMainFrame(), browser);
+  NativeShiftCreatedPage page{
+      .click = NativeShiftClick(admission, *source, *frame, opened.modifiers),
+      .user_gesture = user_gesture, .web_url = target.SchemeIsHTTPOrHTTPS(),
+      .new_window = disposition == WindowOpenDisposition::NEW_WINDOW,
+      .foreground_tab = disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB,
+      .popup = features.is_popup,
+      .sized_by_page = features.has_x || features.has_y || features.has_width ||
+          features.has_height,
+      .fenced_frame = fenced_frame};
+  const auto link = ClassifyNativeShiftCreatedPage(page);
+  if (!source_lease || !child || link == NativeShiftLink::kOrdinary) return nullptr;
+  if (link == NativeShiftLink::kPeek) {
+    const bool admitted = !Creation(*child);
+    if (admitted)
+      child->SetUserData(&kCreatedPageKey, std::make_unique<CreatedPage>(
+          *source, *source->GetPrimaryMainFrame(), browser));
+    auto* state = Creation(*child);
+    if (state->source_.get() != source || state->browser_.get() != &browser ||
+        state->offered_ || !state->CanPresent(*child) || !child || Creation(*child) != state) {
+      if (admitted && child && Creation(*child) == state) child->RemoveUserData(&kCreatedPageKey);
+      return nullptr;
+    }
+    state->peek_ = true;
+    disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+    return nullptr;
+  }
+  if (!opened.referrer || !CanNavigatePeekSource(admission) || !source_lease) return nullptr;
+  frame = opened.document.AsRenderFrameHostIfValid();
+  if (!frame) return nullptr;
+  auto params = std::make_unique<content::OpenURLParams>(
+      content::OpenURLParams::CreateRendererInitiated(target,
+          WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_LINK, *opened.referrer,
+          frame->GetCurrentInitiatorNavigationState()));
+  params->user_gesture = true;
+  params->initiator_origin = frame->GetLastCommittedOrigin();
+  params->initiator_frame_token = frame->GetFrameToken();
+  params->initiator_process_id = frame->GetProcess()->GetDeprecatedID();
+  params->source_site_instance = frame->GetSiteInstance();
+  return params;
+}
+std::unique_ptr<content::OpenURLParams> PrepareNativeCreatedPage(
+    BrowserWindowInterface& browser, content::WebContents* source,
+    content::WebContents& created, const GURL& target, WindowOpenDisposition& disposition,
     const blink::mojom::WindowFeatures& features, bool user_gesture) {
   const auto child = created.GetWeakPtr();
-
-  if (PrepareCreatedPeek(browser, source, created, target, disposition, features,
-                         user_gesture))
-    disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
-  if (!child) return;
+  auto opened_data = created.TakeUserData(&kOpenedPageKey);
+  auto* opened = static_cast<OpenedPage*>(opened_data.get());
+  auto* captured = Creation(created);
+  const bool main_frame_opener = captured && captured->source_.get() == source &&
+      captured->browser_.get() == &browser && !captured->offered_;
+  if (main_frame_opener) captured->peek_ = false;
+  NSURL* target_url = [NSURL URLWithString:@(target.spec().c_str())];
+  const auto opening = ChooseNativeCreatedPageRoute(
+      opened ? opened->modifiers : main_frame_opener ? captured->modifiers_ : 0,
+      target_url && IsMeetingURL(target_url), main_frame_opener);
+  if (opening == NativeCreatedPageRoute::kShift && opened) {
+    if (auto same_peek = PrepareShiftCreatedPage(browser, source, created, *opened, target,
+                                                 disposition, features, user_gesture))
+      return same_peek;
+  } else if (opening == NativeCreatedPageRoute::kAutomatic) {
+    PrepareAutomaticCreatedPeek(browser, source, created, target, disposition, user_gesture);
+  }
+  if (!child) return nullptr;
   auto* state = Creation(*child);
   if (state && state->source_.get() == source && state->browser_.get() == &browser &&
       !state->offered_ && !state->peek_ && !state->split_lease_ && user_gesture &&
@@ -957,12 +1042,12 @@ void PrepareNativeCreatedPage(BrowserWindowInterface& browser,
     auto* frame = state->document_.AsRenderFrameHostIfValid();
     auto origin = CaptureSplitOrigin(browser, source, frame, *child);
     if (!child || Creation(*child) != state || state->offered_ || state->split_lease_ ||
-        child->GetUserData(&kCreatedRouteKey) || !origin || !origin->Parent(*child)) return;
+        child->GetUserData(&kCreatedRouteKey) || !origin || !origin->Parent(*child)) return nullptr;
 
     NSString* space = RoutingSourceSpace(*origin);
     PCNativeLinkRoute* route = space ? MatchedRoute(*origin, target) : nil;
     if (!child || Creation(*child) != state || state->offered_ || state->split_lease_ ||
-        child->GetUserData(&kCreatedRouteKey) || !origin->Parent(*child)) return;
+        child->GetUserData(&kCreatedRouteKey) || !origin->Parent(*child)) return nullptr;
     std::unique_ptr<CreatedRoute> route_intent;
     if (space && SameProfileRoute(*origin, route) &&
         [space isEqualToString:RoutingSourceSpace(*origin)] && child &&
@@ -974,20 +1059,20 @@ void PrepareNativeCreatedPage(BrowserWindowInterface& browser,
       }
     }
     if (!child || Creation(*child) != state || state->offered_ || state->split_lease_ ||
-        child->GetUserData(&kCreatedRouteKey) || !origin->Parent(*child)) return;
+        child->GetUserData(&kCreatedRouteKey) || !origin->Parent(*child)) return nullptr;
     state->split_source_url_ = origin->split_source_url_;
     state->split_lease_ = origin->split_lease_;
     state->split_observer_ = std::move(origin->split_observer_);
     if (route_intent) child->SetUserData(&kCreatedRouteKey, std::move(route_intent));
-    return;
+    return nullptr;
   }
   if (!state || state->source_.get() != source || state->browser_.get() != &browser ||
       state->offered_ || state->peek_ || child->GetUserData(&kCreatedRouteKey) ||
       !target.SchemeIsHTTPOrHTTPS() ||
       (disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB &&
-       disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB) || !state->Parent(*child)) return;
+       disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB) || !state->Parent(*child)) return nullptr;
   auto* frame = state->document_.AsRenderFrameHostIfValid();
-  if (!frame) return;
+  if (!frame) return nullptr;
 
   auto origin = std::make_unique<CreatedPage>(*source, *frame, browser);
   const GURL source_url = source->GetLastCommittedURL();
@@ -996,10 +1081,39 @@ void PrepareNativeCreatedPage(BrowserWindowInterface& browser,
   if (!child || Creation(*child) != state || !space || !SameProfileRoute(*origin, route) ||
       !origin->source_ || origin->source_->GetLastCommittedURL() != source_url ||
       !origin->Parent(*child) || ![space isEqualToString:RoutingSourceSpace(*origin)] ||
-      !child || Creation(*child) != state) return;
+      !child || Creation(*child) != state) return nullptr;
   child->SetUserData(&kCreatedRouteKey, std::make_unique<CreatedRoute>(
       std::move(origin), route, space, target,
       disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB));
+  return nullptr;
+}
+bool OpenNativePdfLinkInPeek(const ExtensionFunction& function,
+                             const std::vector<GURL>& urls) {
+  const auto* extension = function.extension();
+  auto* frame = function.render_frame_host();
+  if (!extension || extension->id() != extension_misc::kPdfExtensionId ||
+      urls.size() != 1 || !frame) return false;
+  auto* source = content::WebContents::FromRenderFrameHost(frame);
+  auto* browser = source ?
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(source) : nullptr;
+  if (!browser) return false;
+  auto params = content::OpenURLParams::CreateRendererInitiated(urls.front(),
+      WindowOpenDisposition::NEW_WINDOW, ui::PAGE_TRANSITION_LINK, content::Referrer(),
+      frame->GetCurrentInitiatorNavigationState());
+  params.user_gesture = function.user_gesture();
+  params.initiator_origin = frame->GetLastCommittedOrigin();
+  params.initiator_frame_token = frame->GetFrameToken();
+  params.initiator_process_id = frame->GetProcess()->GetDeprecatedID();
+  params.source_site_instance = frame->GetSiteInstance();
+  const auto source_lease = source->GetWeakPtr();
+  const auto browser_lease = browser->GetWeakPtr();
+  auto peek = PrepareNativePeekNavigation(*browser, source, params);
+  auto* delegate = peek && source_lease && browser_lease ?
+      BrowserWebContentsDelegate::From(browser_lease.get()) : nullptr;
+  if (!delegate) return false;
+  peek->DidNavigate(delegate->BrowserWebContentsDelegate::OpenURLFromTab(
+      source, peek->params(), {}));
+  return true;
 }
 bool PrepareNativeCreatedSplit(BrowserWindowInterface& browser,
                                content::WebContents* source,
