@@ -25,6 +25,7 @@ class PublishedSigningTests(unittest.TestCase):
         shutil.copy2(REPO / "scripts/package-app.sh", self.repo / "scripts/package-app.sh")
         shutil.copy2(REPO / "scripts/app_version.py", self.repo / "scripts/app_version.py")
         shutil.copy2(REPO / "scripts/release_notes.py", self.repo / "scripts/release_notes.py")
+        shutil.copy2(REPO / "scripts/notary_service.py", self.repo / "scripts/notary_service.py")
         (self.repo / "release-notes.json").write_text(json.dumps({"releases": [{
             "version": "1.0.0", "build": 1, "date": "2026-11-10", "changes": [
                 {"type": "feat", "scope": "updates", "summary": "Show What’s New", "breaking": False}]}]}))
@@ -87,12 +88,15 @@ class PublishedSigningTests(unittest.TestCase):
         """)
         self.tool("xcrun", """
             import os, sys
-            if os.environ.get('FIXTURE_MISSING_NOTARY'): sys.exit(1)
+            if os.environ.get('FIXTURE_MISSING_NOTARY'):
+                sys.exit('Error: No Keychain password item found for profile: parc-notary')
+            if os.environ.get('FIXTURE_NOTARY_ODD'): sys.exit('Error: Unexpected argument')
         """)
         (self.repo / "scripts/notarize-app.py").write_text(textwrap.dedent("""
             import json, os, pathlib, sys
             root = pathlib.Path(os.environ['FIXTURE_ROOT'])
             if os.environ.get('FIXTURE_NOTARY_FAIL'): sys.exit(1)
+            if os.environ.get('FIXTURE_NOTARY_DOWN'): sys.exit(75)
             path = pathlib.Path(sys.argv[1]) / 'package-report.json'
             report = json.loads(path.read_text())
             report['notarized'] = not bool(os.environ.get('FIXTURE_MISSING_TICKET'))
@@ -158,6 +162,20 @@ class PublishedSigningTests(unittest.TestCase):
     def test_missing_notarization_credentials_never_builds(self):
         self.env['FIXTURE_MISSING_NOTARY'] = '1'
         self.rejected('store this Mac\'s credentials')
+
+    def test_unrecognised_notary_failure_never_builds_or_blames_credentials(self):
+        self.env['FIXTURE_NOTARY_ODD'] = '1'
+        result = self.run_package()
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('Unexpected argument', result.stderr)
+        self.assertNotIn('store this Mac', result.stderr)
+        self.assertFalse((self.root / 'built').exists())
+
+    def test_apple_outage_during_notarization_keeps_its_resumable_status(self):
+        self.env['FIXTURE_NOTARY_DOWN'] = '1'
+        result = self.run_package()
+        self.assertEqual(result.returncode, 75, result.stderr)
+        self.assertFalse((self.root / 'published').exists())
 
     def test_failed_notarization_never_publishes(self):
         self.env['FIXTURE_NOTARY_FAIL'] = '1'

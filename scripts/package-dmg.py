@@ -188,27 +188,16 @@ def package_dmg(package, output, identity, profile, team, poll_seconds=20):
             return receipt
         if receipt["phase"] != "stapling" and notary.digest(output) != receipt["archive_sha256"]:
             raise Refusal("DMG changed since its notarization input was recorded")
-        if receipt["phase"] == "prepared":
-            receipt["phase"] = "submitting"
-            notary.save(receipt_path, receipt)
-            result = subprocess.run(["xcrun", "notarytool", "submit", str(output), "--keychain-profile", profile,
-                                     "--output-format", "json"], capture_output=True, text=True)
-            (folder / "submit.log").write_text(result.stdout + result.stderr)
-            try:
-                submitted = json.loads(result.stdout)
-            except ValueError:
-                submitted = {}
-            if submitted.get("id"):
-                receipt.update(submission_id=submitted["id"], phase="submitted")
-                notary.save(receipt_path, receipt)
-            if result.returncode or not receipt.get("submission_id"):
-                raise Refusal("DMG upload has no confirmed success; reconcile notarytool history before retrying")
         if not receipt.get("submission_id"):
-            raise Refusal("An earlier DMG upload has no confirmed ID; reconcile notarytool history before retrying")
+            if receipt["phase"] != "prepared" and not receipt.get("submit_failure"):
+                raise Refusal("An earlier DMG upload has no confirmed ID; reconcile notarytool history before retrying")
+            notary.service.submit(output, profile, folder / "submit.log", receipt,
+                                  lambda value: notary.save(receipt_path, value),
+                                  "DMG upload has no confirmed success; reconcile notarytool history before retrying")
         submission = receipt["submission_id"]
         while True:
-            info = json.loads(notary.command(["xcrun", "notarytool", "info", submission, "--keychain-profile", profile,
-                                             "--output-format", "json"], folder / "status.json"))
+            info = json.loads(notary.notarytool(["xcrun", "notarytool", "info", submission, "--keychain-profile",
+                                                 profile, "--output-format", "json"], folder / "status.json"))
             status = info.get("status")
             if status in ("Accepted", "Invalid", "Rejected"):
                 break
@@ -216,8 +205,8 @@ def package_dmg(package, output, identity, profile, team, poll_seconds=20):
                 raise Refusal("Unexpected DMG notarization status: " + repr(status))
             print("Apple DMG notarization pending: " + submission, flush=True)
             time.sleep(poll_seconds)
-        notary.command(["xcrun", "notarytool", "log", submission, "--keychain-profile", profile,
-                        folder / "apple-log.json"], folder / "download-log.log")
+        notary.notarytool(["xcrun", "notarytool", "log", submission, "--keychain-profile", profile,
+                           folder / "apple-log.json"], folder / "download-log.log")
         apple_log = json.loads((folder / "apple-log.json").read_text())
         if (status != "Accepted" or apple_log.get("status") != "Accepted"
                 or apple_log.get("jobId") != submission or apple_log.get("sha256") != receipt["archive_sha256"]):
@@ -250,7 +239,8 @@ def main():
     try:
         package_dmg(args.package, args.output, args.sign_identity, args.profile, args.team)
     except (Refusal, OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
-        parser.exit(1, "DMG packaging refused: " + str(error) + "\n")
+        parser.exit(notary.service.EXIT_DOWN if isinstance(error, notary.service.Unavailable) else 1,
+                    "DMG packaging refused: " + str(error) + "\n")
 
 
 if __name__ == "__main__":

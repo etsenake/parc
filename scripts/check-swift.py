@@ -105,6 +105,9 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--label", help="Fresh receipt subdirectory name (default: unique timestamp and PID)")
     result.add_argument("--plan", action="store_true",
                         help="Print validated paths, compiler argv and input hashes; no compiler or file writes")
+    result.add_argument("--source-archive", action="store_true",
+                        help="--repo is an extracted release source archive, not a Git checkout; skip the Git "
+                             "HEAD checks and rely on the input hashes")
     return result
 
 
@@ -112,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         repo = args.repo.expanduser().resolve()
-        state = git_state(repo)
+        state = None if args.source_archive else git_state(repo)
         bridge_headers = repo / "Engine/ParcNative"
         protocol_header = bridge_headers / "native_application_protocols.h"
         for required in (repo / "Sources/ParcEngine/ParcEngine.h",
@@ -172,8 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             after_sources, after = snapshot(repo, bridge_headers, sparkle_release)
             unchanged = after == before and after_sources == sources
-            after_state = git_state(repo)
-            head_unchanged = after_state["head"] == state["head"]
+            after_state = None if args.source_archive else git_state(repo)
+            head_unchanged = args.source_archive or after_state["head"] == state["head"]
         except (Refusal, OSError, subprocess.CalledProcessError) as exc:
             error = str(exc)
         passed = compiler_exit == 0 and not warnings and unchanged and head_unchanged and error is None

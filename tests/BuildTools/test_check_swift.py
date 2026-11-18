@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -235,6 +236,21 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertNotIn(str(added), receipt["inputs"])
         self.assertNotIn(str(added), receipt["command"])
         self.assertEqual(receipt["source_count"], 2)
+
+    def test_release_archive_without_git_compiles_by_input_hashes(self):
+        archive = Path(self.temp.name).resolve() / "release archive"
+        shutil.copytree(self.repo, archive, ignore=shutil.ignore_patterns(".git"))
+        self.repo = archive
+        self.assertEqual(self.run_check("--mode", "release", "--label", "plain").returncode, 2)
+        result = self.run_check("--mode", "release", "--source-archive")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        receipt = self.receipt()
+        self.assertTrue(receipt["passed"])
+        self.assertIsNone(receipt["git_before"])
+        self.assertIn(str(archive / "Sources/ParcApp/App.swift"), receipt["inputs"])
+        self.env["FAKE_MUTATE_INPUT"] = str(archive / "Sources/ParcApp/App.swift")
+        changed = self.run_check("--mode", "release", "--source-archive", "--label", "changed")
+        self.assertEqual(changed.returncode, 2, changed.stderr)
 
     def test_receipts_are_never_overwritten(self):
         first = self.run_check()

@@ -133,10 +133,14 @@ fi
 notary_profile=""
 if [ -z "$local_test" ] && [[ "$sign_name" == 'Developer ID Application: '* ]]; then
   notary_profile="${PARC_NOTARY_PROFILE:-parc-notary}"
-  if ! xcrun notarytool history --keychain-profile "$notary_profile" >/dev/null 2>&1; then
+  notary_status=0
+  python3 scripts/notary_service.py check --profile "$notary_profile" || notary_status=$?
+  if [ "$notary_status" = 3 ]; then
     echo "error: Developer ID builds are notarized before publishing; store this Mac's credentials once with" >&2
     echo "  xcrun notarytool store-credentials $notary_profile --apple-id <Apple ID> --team-id $sign_team" >&2
     exit 1
+  elif [ "$notary_status" != 0 ]; then
+    exit "$notary_status"
   fi
 fi
 

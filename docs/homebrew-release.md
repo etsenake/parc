@@ -37,7 +37,8 @@ objects/caches.
 Notarization logs remain next to the package in `notarization/` and
 `dmg-notarization/`. Resume the same frozen operation after interrupted status or
 staple checks. An upload without a confirmed submission ID requires reconciliation
-with notarization history before another submission. Never overwrite published
+with notarization history before another submission, unless Apple's service was
+down for it and its history lists no such upload. Never overwrite published
 assets, retag a release or recompile merely to resolve a pending job. Secrets
 remain in the normal local Keychain.
 

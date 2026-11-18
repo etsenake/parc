@@ -15,6 +15,20 @@ notarize = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(notarize)
 TEAM = 'TEAM123456'
 SUBMISSION = 'b6743aa6-df42-48cb-bd8e-cbbebee591fd'
+OUTAGE = 'Error: invalidJSONResponse(statusCode: Optional(503), data: "<title>503 Service Unavailable</title>")\n'
+
+
+class Clock:
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
 
 
 class NotarizationTests(unittest.TestCase):
@@ -39,6 +53,9 @@ class NotarizationTests(unittest.TestCase):
         self.wrong_approval_hash = False
         self.actual_team = TEAM
         self.authority = 'Developer ID Application: Fixture'
+        self.outages = {}
+        self.history = []
+        self.clock = Clock()
 
     def run_tool(self, args, **kwargs):
         args = [str(arg) for arg in args]
@@ -46,6 +63,9 @@ class NotarizationTests(unittest.TestCase):
         out = ''
         err = ''
         code = int(self.fail is not None and args[:len(self.fail)] == self.fail)
+        if args[:2] == ['xcrun', 'notarytool'] and self.outages.get(args[2]):
+            self.outages[args[2]] -= 1
+            return subprocess.CompletedProcess(args, 1, '', OUTAGE)
         if args[:2] == ['codesign', '-dv']:
             err = f'Authority={self.authority}\nTeamIdentifier={self.actual_team}\nTimestamp=Today\n'
         elif args[0] == 'ditto':
@@ -54,6 +74,8 @@ class NotarizationTests(unittest.TestCase):
             out = json.dumps({} if self.no_submission_id else {'id': SUBMISSION})
         elif args[:3] == ['xcrun', 'notarytool', 'info']:
             out = json.dumps({'id': SUBMISSION, 'status': self.status})
+        elif args[:3] == ['xcrun', 'notarytool', 'history']:
+            out = json.dumps({'history': self.history})
         elif args[:3] == ['xcrun', 'notarytool', 'log']:
             Path(args[-1]).write_text(json.dumps({'status': self.status, 'issues': None,
                 'jobId': SUBMISSION, 'sha256': 'wrong' if self.wrong_approval_hash else
@@ -65,8 +87,11 @@ class NotarizationTests(unittest.TestCase):
 
     def execute(self):
         with patch.object(notarize.subprocess, 'run', side_effect=self.run_tool), \
-                contextlib.redirect_stdout(io.StringIO()):
+                patch.object(notarize.service, 'time', self.clock), contextlib.redirect_stdout(io.StringIO()):
             return notarize.notarize(self.package, 'fixture-profile', TEAM, poll_seconds=0)
+
+    def count(self, operation):
+        return sum(call[:3] == ['xcrun', 'notarytool', operation] for call in self.calls)
 
     def assert_unpublished(self):
         self.assertFalse(json.loads(self.report_path.read_text())['notarized'])
@@ -126,6 +151,63 @@ class NotarizationTests(unittest.TestCase):
         with self.assertRaisesRegex(notarize.Refusal, 'earlier upload'):
             self.execute()
         self.assertEqual(sum(call[:3] == ['xcrun', 'notarytool', 'submit'] for call in self.calls), 1)
+
+    def test_apple_outage_while_waiting_keeps_polling_the_same_submission(self):
+        self.outages = {'info': 2, 'log': 1}
+        self.assertEqual(self.execute()['phase'], 'complete')
+        self.assertEqual((self.count('submit'), self.count('info'), self.count('log')), (1, 3, 2))
+        self.assertEqual(self.clock.sleeps, [120] * 3)
+
+    def test_apple_outage_during_upload_submits_again_only_when_apple_never_registered_it(self):
+        self.outages = {'submit': 1}
+        self.assertEqual(self.execute()['submission_id'], SUBMISSION)
+        self.assertEqual((self.count('submit'), self.count('history')), (2, 1))
+
+    def test_apple_outage_during_an_upload_apple_registered_never_uploads_twice(self):
+        self.outages = {'submit': 1}
+        self.history = [{'name': 'Parc-' + self.package.parent.name + '.zip', 'id': 'registered',
+                         'createdDate': notarize.service.utc().isoformat().replace('+00:00', 'Z')}]
+        for _ in range(2):
+            with self.assertRaisesRegex(notarize.Refusal, 'lists registered'):
+                self.execute()
+        self.assertEqual((self.count('submit'), self.count('history')), (1, 2))
+        self.assert_unpublished()
+
+    def test_apple_outage_lasting_two_hours_stops_with_a_resumable_exit(self):
+        self.outages = {'info': 61}
+        with self.assertRaises(notarize.service.Unavailable):
+            self.execute()
+        self.clock.now = 0
+        self.assertEqual(self.execute()['phase'], 'complete')
+        self.assertEqual(self.count('submit'), 1)
+        with patch.object(notarize, 'notarize', side_effect=notarize.service.Unavailable('HTTP 503')), \
+                patch.object(notarize.sys, 'argv', ['notarize-app.py', str(self.package), '--profile', 'p', '--team', TEAM]), \
+                contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(notarize.main(), 75)
+        self.assertIn("Apple's notary service is down (HTTP 503)", errors.getvalue())
+
+    def test_receipt_from_an_older_unconfirmed_upload_refuses_without_calling_apple(self):
+        folder = self.package.parent / 'notarization'
+        folder.mkdir()
+        invariant = {key: value for key, value in self.report.items() if key not in ('notarized', 'notarization')}
+        fingerprint = notarize.hashlib.sha256(json.dumps(invariant, sort_keys=True).encode()).hexdigest()
+        (folder / 'submission.json').write_text(json.dumps({'team': TEAM, 'package_fingerprint': fingerprint,
+                                                            'phase': 'submitting', 'archive': 'Parc-run.zip',
+                                                            'archive_sha256': 'a' * 64}))
+        with self.assertRaisesRegex(notarize.Refusal, 'earlier upload has no confirmed ID'):
+            self.execute()
+        self.assertFalse([call for call in self.calls if call[:2] == ['xcrun', 'notarytool']])
+
+    def test_upload_outage_lasting_two_hours_reruns_through_history_once(self):
+        self.outages = {'submit': 61}
+        with self.assertRaises(notarize.service.Unavailable):
+            self.execute()
+        self.clock.now = 0
+        self.calls.clear()
+        self.assertEqual(self.execute()['phase'], 'complete')
+        operations = [call[2] for call in self.calls if call[:2] == ['xcrun', 'notarytool']]
+        self.assertEqual(operations[:2], ['history', 'submit'])
+        self.assertEqual(self.count('submit'), 1)
 
     def test_changed_report_cannot_resume_a_submission(self):
         self.fail = ['xcrun', 'notarytool', 'info']

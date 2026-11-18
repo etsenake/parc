@@ -62,6 +62,7 @@ class DmgTests(unittest.TestCase):
         self.build_error = None
         self.layout_error = None
         self.attached = []
+        self.outages = 0
 
     def run_tool(self, args, **kwargs):
         args = list(map(str, args))
@@ -90,6 +91,11 @@ class DmgTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args, 16, "", "reported busy after unmounting")
         elif args[:2] == ["codesign", "-dv"]:
             err = f"Authority=Developer ID Application: Fixture\nTeamIdentifier={self.actual_team}\nTimestamp=Today\nCDHash={self.cdhash}\n"
+        elif args[:3] == ["xcrun", "notarytool", "submit"] and self.outages:
+            self.outages -= 1
+            return subprocess.CompletedProcess(args, 1, "", 'Error: invalidJSONResponse(statusCode: Optional(503))')
+        elif args[:3] == ["xcrun", "notarytool", "history"]:
+            out = json.dumps({"history": []})
         elif args[:3] == ["xcrun", "notarytool", "submit"]:
             self.upload_hash = hashlib.sha256(Path(args[3]).read_bytes()).hexdigest()
             out = json.dumps({} if self.no_id else {"id": SUBMISSION})
@@ -305,6 +311,37 @@ class DmgTests(unittest.TestCase):
         with self.assertRaisesRegex(dmg.Refusal, "earlier DMG upload"):
             self.execute()
         self.assertEqual(self.count(["xcrun", "notarytool", "submit"]), 1)
+
+    def test_apple_outage_during_the_upload_submits_again_once_apple_shows_nothing_registered(self):
+        self.outages = 1
+        self.assertEqual(self.execute()["phase"], "complete")
+        uploads = [index for index, call in enumerate(self.calls) if call[:3] == ["xcrun", "notarytool", "submit"]]
+        self.assertEqual(len(uploads), 2)
+        self.assertEqual(self.count(["xcrun", "notarytool", "history"]), 1)
+        self.assertTrue(uploads[0] < self.position(["xcrun", "notarytool", "history"]) < uploads[1])
+
+    def test_receipt_from_an_older_unconfirmed_upload_refuses_without_calling_apple(self):
+        self.outages = 1
+        with patch.object(dmg.notary.service, "LIMIT", 0):
+            with self.assertRaises(dmg.notary.service.Unavailable):
+                self.execute()
+        receipt_path = self.package.parent / "dmg-notarization/submission.json"
+        receipt = json.loads(receipt_path.read_text())
+        del receipt["submit_failure"]
+        receipt_path.write_text(json.dumps(receipt))
+        self.calls = []
+        with self.assertRaisesRegex(dmg.Refusal, "earlier DMG upload"):
+            self.execute()
+        self.assertFalse([call for call in self.calls if call[:2] == ["xcrun", "notarytool"]])
+
+    def test_apple_outage_exits_with_the_resumable_status(self):
+        with (patch.object(dmg, "package_dmg", side_effect=dmg.notary.service.Unavailable("HTTP 503")),
+              patch.object(sys, "argv", ["package-dmg.py", str(self.package), "--output", str(self.output),
+                                             "--sign-identity", "i", "--profile", "p", "--team", TEAM]),
+              contextlib.redirect_stderr(io.StringIO()) as errors, self.assertRaises(SystemExit) as stopped):
+            dmg.main()
+        self.assertEqual(stopped.exception.code, 75)
+        self.assertIn("Apple's notary service is down (HTTP 503)", errors.getvalue())
 
     def test_changed_app_report_or_completed_image_cannot_resume(self):
         self.execute()

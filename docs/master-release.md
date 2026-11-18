@@ -6,7 +6,7 @@ bash scripts/release.sh
 ```
 
 Run from main on an Apple Silicon Mac. Local edits the release never reads,
-such as docs and website work, don't stop it (see step 2 of the
+such as docs and website work, don't stop it (see step 3 of the
 [pipeline](#pipeline)). This command is **release-only**: engine/app build, production signing,
 notarization, GitHub assets and Homebrew cask publication. It never
 installs/replaces/quits/opens Parc, runs startup or browser tests, or installs,
@@ -71,8 +71,32 @@ published tag still refuses.
    first (see [credentials](#credentials-on-another-mac)). It stops and names
    the next step for what needs a person: installing Homebrew, `gh auth login`,
    Xcode selection and first-launch setup (both need `sudo`) or unlocking
-   1Password. Keychain approval stays macOS's own prompt.
-2. Fast-forward main, commit and immediately push the version, then extract
+   1Password. Keychain approval stays macOS's own prompt. An HTTP 5xx or 429,
+   network error or timeout from `notarytool history` means Apple's notary
+   service is down, never a credential problem: the preflight logs "Apple's notary service
+   is unavailable (HTTP 503); waiting and retrying", tries again every 2
+   minutes for up to 2 hours, then stops saying the service is down, and
+   rerunning the command resumes. Only an authentication or profile error
+   (HTTP 401 or 403, or a missing profile or Keychain item) restores from
+   1Password; anything else stops and names the log.
+2. Fast-forward main and check the exact fetched commit before committing
+   anything. The overlay check compares `Engine/ParcHost/overlay.json` and the
+   engine inputs it lists with the newest published tag by the engine stage's
+   overlay-check rules: the ID stays, the upstream matches the source lock, a
+   changed overlay raises its version and every changed input matches its
+   checksum. It stops naming the file and the
+   version needed, and never bumps it. Then the release-mode Swift compile
+   (`check-swift.py --mode release --source-archive`) runs on a Git archive of
+   that commit under the run's `swift-check/`; a failure stops and names its
+   `compiler.log`. A passed compile is recorded against the commit's Swift
+   inputs (`Sources`, `Engine/ParcNative`, the source lock and `scripts`), so a
+   resumed run, or a newer main that changed none of them, skips it; a different
+   Swift compiler compiles again. If main moves or a local edit appears during
+   the checks, the release fast-forwards and checks the newest commit, for up to
+   five rounds. Commits that land between the checks and the push are checked
+   the same way before the merged version commit is pushed, and
+   `--refresh-source` checks its new commit before freezing it.
+3. Commit and immediately push the version, then extract
    verified Git inputs into ignored build storage. This is an immutable input
    archive, not another Git checkout/worktree. Later commits cannot retarget the
    engine or package. Nothing in the checkout is ever reset, stashed, cleaned or
@@ -95,7 +119,7 @@ published tag still refuses.
      including an untracked or ignored file in the way, the release stops,
      names the paths and leaves the checkout untouched. A source refresh
      follows the same rules.
-3. Use `PARC_ENGINE_WORKSPACE` when set. Otherwise choose the first registered
+4. Use `PARC_ENGINE_WORKSPACE` when set. Otherwise choose the first registered
    workspace at `work/engine` or `~/ParcBuild/engine`, falling back to
    `work/engine` if neither is registered. Use the current reviewed cumulative
    overlay, not every intermediate overlay. Fetch
@@ -112,20 +136,20 @@ published tag still refuses.
    interrupted move resumes toward the same lock. Only another repository
    origin, target platform or lock schema gets a separate versioned workspace
    and a fresh sync.
-4. Seal, build the optimized app, timestamp-sign app/helpers, notarize/staple the
+5. Seal, build the optimized app, timestamp-sign app/helpers, notarize/staple the
    app, create/sign/notarize/staple the DMG, and publish the ZIP
    (`Parc-<version>-arm64.zip`) and the DMG (`Parc-arm64.dmg`, the same name
    every release) through `package-app.sh`. Verify actual release/tag,
    pristine signatures, stable Team and requirement, signed-image hashes,
    source/overlay identity and Apple acceptance. Existing version tags and
    uploaded bytes are immutable.
-5. Sign the notarized ZIP with Sparkle's `sign_update` (Keychain account `parc`,
+6. Sign the notarized ZIP with Sparkle's `sign_update` (Keychain account `parc`,
    after checking that key's public half is the app's `SUPublicEDKey`), verify
    the signature with `sign_update --verify`, and write the run's one-item
    `appcast.xml` (`scripts/appcast.py`): build, version, minimum macOS, the
    public ZIP URL, its length and signature, and this version's release notes as
    HTML from the frozen `release-notes.json`.
-6. Download/verify the published ZIP and DMG, including the mounted app's actual
+7. Download/verify the published ZIP and DMG, including the mounted app's actual
    signatures and ticket and the DMG's install window. Mirror the DMG, ZIP and
    `appcast.xml` together to the public `etsenake/parc-releases` release and
    make it latest, so Sparkle's feed `releases/latest/download/appcast.xml`
@@ -167,7 +191,14 @@ lease; this command cannot prove a remote machine is dead.
 
 Returned network failures retry unchanged inputs. Pending Apple submissions
 resume their stored IDs rather than uploading again. An ambiguous upload with no
-confirmed ID stops for reconciliation instead of duplicating it. Interrupted
+confirmed ID stops for reconciliation instead of duplicating it. During
+packaging, the profile check, uploads, status polls and log downloads wait out
+an Apple notary outage the way the preflight does. An upload that failed
+because the service was down, timed out or was refused its credentials is
+submitted again only when `notarytool history` lists no upload of that file
+since its first unconfirmed attempt began; a listed one stops for
+reconciliation. After 2 hours the package stage stops saying Apple's notary
+service is down, and a rerun resumes the stored submission. Interrupted
 GitHub uploads compare existing SHA-256 digests and upload only missing assets.
 The appcast's pubDate is saved in the run state and Ed25519 signatures are
 deterministic, so a rerun of the appcast stage writes identical bytes and the
@@ -186,11 +217,7 @@ are reused when app packaging resumes. Tooling corrections are committed on
 canonical main and the same command is rerun; no manual receipt edits or cache
 cleanup are needed.
 
-The app compile treats every compiler warning as an error and runs only after
-the engine is sealed, so check main with
-`python3 scripts/check-swift.py --mode release` before starting a release.
-
-If compilation exposes a source bug, fix, check and publish the source on main,
+If the engine or app compilation still exposes a source bug, fix, check and publish the source on main,
 then run `bash scripts/release.sh --refresh-source`, which keeps the saved
 release type. This explicitly freezes a new published source archive for the
 same version and retains the failed archive, source history and compiled objects.
@@ -300,9 +327,10 @@ recreates the profile with `notarytool store-credentials`, which checks the
 password with Apple before saving, then checks it again. notarytool only takes
 the password in argv or at its `getpass` prompt, and with no controlling
 terminal that prompt reads standard input, so both commands run in a new session
-and receive the password on stdin. The release preflight runs `restore` when the
-profile fails, installing the 1Password CLI first when it is missing, rechecks
-the profile, and stops if it still fails.
+and receive the password on stdin. The release preflight runs `restore` only when
+`notarytool history` reports an authentication or profile error, installing the
+1Password CLI first when it is missing, rechecks the profile, and stops if it
+still fails. An Apple outage never triggers a restore.
 `store-credentials --sync` remains Apple's separate iCloud Keychain route; it
 cannot combine with `--keychain`. The script checks credentials before starting
 compilation. One-time provisioning or a locked Keychain can require the user's

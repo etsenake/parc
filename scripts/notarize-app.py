@@ -4,6 +4,7 @@ import argparse
 import datetime
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -12,9 +13,10 @@ import subprocess
 import sys
 import time
 
-
-class Refusal(RuntimeError):
-    pass
+spec = importlib.util.spec_from_file_location("parc_notary_service", Path(__file__).with_name("notary_service.py"))
+service = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(service)
+Refusal = service.Refusal
 
 
 def digest(path):
@@ -35,6 +37,15 @@ def command(args, log):
     result = subprocess.run([str(arg) for arg in args], capture_output=True, text=True)
     log.write_text(result.stdout + result.stderr)
     if result.returncode:
+        raise Refusal(f'{args[0]} failed; see {log}')
+    return result.stdout
+
+
+def notarytool(args, log):
+    kind, result = service.call(args, log)
+    if kind == service.CREDENTIALS:
+        raise Refusal('notarytool could not use its Keychain profile with Apple; see ' + str(log))
+    if kind != service.OK:
         raise Refusal(f'{args[0]} failed; see {log}')
     return result.stdout
 
@@ -88,32 +99,25 @@ def notarize(package, profile, team, poll_seconds=20):
             archive = folder / ('Parc-' + package.parent.name + '.zip')
             command(['ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', app, archive],
                     folder / 'archive.log')
-            receipt = {'team': team, 'package_fingerprint': fingerprint, 'phase': 'submitting',
+            receipt = {'team': team, 'package_fingerprint': fingerprint, 'phase': 'archived',
                        'started_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                        'archive': archive.name, 'archive_sha256': digest(archive)}
             save(receipt_path, receipt)
-            result = subprocess.run(['xcrun', 'notarytool', 'submit', str(archive),
-                                     '--keychain-profile', profile, '--output-format', 'json'],
-                                    capture_output=True, text=True)
-            (folder / 'submit.log').write_text(result.stdout + result.stderr)
-            try:
-                submitted = json.loads(result.stdout)
-            except ValueError:
-                submitted = {}
-            if submitted.get('id'):
-                receipt.update(submission_id=submitted['id'], phase='submitted')
-                save(receipt_path, receipt)
-            if result.returncode or not receipt.get('submission_id'):
-                raise Refusal('Submission did not return a confirmed ID; inspect submit.log and notarytool '
-                              'history before retrying. Do not submit another copy automatically.')
         if not receipt.get('submission_id'):
-            raise Refusal('An earlier upload has no confirmed ID; reconcile it with notarytool history '
-                          'and record its submission_id before resuming')
+            if receipt['phase'] != 'archived' and not receipt.get('submit_failure'):
+                raise Refusal('An earlier upload has no confirmed ID; reconcile it with notarytool history '
+                              'and record its submission_id before resuming')
+            archive = folder / receipt['archive']
+            if digest(archive) != receipt['archive_sha256']:
+                raise Refusal('The notarization archive changed before its upload; preserve the original inputs')
+            service.submit(archive, profile, folder / 'submit.log', receipt, lambda value: save(receipt_path, value),
+                           'Submission did not return a confirmed ID; inspect submit.log and notarytool history '
+                           'before retrying. Do not submit another copy automatically.')
         submission_id = receipt['submission_id']
         while True:
-            info = json.loads(command(['xcrun', 'notarytool', 'info', submission_id,
-                                      '--keychain-profile', profile, '--output-format', 'json'],
-                                     folder / 'status.json'))
+            info = json.loads(notarytool(['xcrun', 'notarytool', 'info', submission_id,
+                                          '--keychain-profile', profile, '--output-format', 'json'],
+                                         folder / 'status.json'))
             status = info.get('status')
             receipt.update(status=status, phase='processing')
             save(receipt_path, receipt)
@@ -123,8 +127,8 @@ def notarize(package, profile, team, poll_seconds=20):
                 raise Refusal('Unrecognized notarization status: ' + repr(status))
             print('Apple notarization pending: ' + submission_id, flush=True)
             time.sleep(poll_seconds)
-        command(['xcrun', 'notarytool', 'log', submission_id, '--keychain-profile', profile,
-                 str(folder / 'apple-log.json')], folder / 'download-log.log')
+        notarytool(['xcrun', 'notarytool', 'log', submission_id, '--keychain-profile', profile,
+                    str(folder / 'apple-log.json')], folder / 'download-log.log')
         apple_log = json.loads((folder / 'apple-log.json').read_text())
         if status != 'Accepted' or apple_log.get('status') != 'Accepted':
             receipt.update(phase='rejected')
@@ -163,7 +167,7 @@ def main():
         return 0
     except (Refusal, OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         print('Notarization refused: ' + str(error), file=sys.stderr)
-        return 1
+        return service.EXIT_DOWN if isinstance(error, service.Unavailable) else 1
 
 
 if __name__ == '__main__':

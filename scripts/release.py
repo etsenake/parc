@@ -20,6 +20,7 @@ import traceback
 import uuid
 
 import developer_id
+import notary_service
 import release_inputs
 import release_lease
 import release_notes
@@ -35,10 +36,16 @@ RELEASE_FILES = ("app-version.json", "release-notes.json", "CHANGELOG.md")
 INERT_FOLDERS = ("site/", "docs/", "tests/", ".github/")
 MARKDOWN = (".md", ".markdown", ".mdc")
 CHANGE_KEYS = ("type", "scope", "summary", "breaking")
+OVERLAY = "Engine/ParcHost/overlay.json"
+LOCK = "Engine/source-lock.json"
+SWIFT_INPUTS = ("Sources", "Engine/ParcNative", LOCK, "scripts")
+CHECK_ROUNDS = 5
 
 
 class Failure(RuntimeError):
-    pass
+    def __init__(self, message, code=None, output=""):
+        super().__init__(message)
+        self.code, self.output = code, output
 
 
 def release_file(path):
@@ -216,7 +223,7 @@ class Release:
             if attempt < retries:
                 self.emit("Transient operation failed; retrying unchanged inputs", exit_code=code)
                 time.sleep(min(10 * (attempt + 1), 30))
-        raise Failure(f"Command failed ({code}); see {self.log}")
+        raise Failure(f"Command failed ({code}); see {self.log}", code, "".join(output))
 
     def git(self, *args, **kwargs):
         return self.command(["git", *args], capture=True, **kwargs)
@@ -419,6 +426,7 @@ class Release:
         if outgrown and not self.state.get('type_override'):
             raise Failure('Refreshed source would ship a ' + kind + ' change in ' + version['version']
                           + '; pin --source-commit before it, or release ' + raised + ' with --type ' + kind)
+        self.check_source(commit, since, 'The stopped release was not changed.')
         notes = release_notes.entry(version['version'], version['build'], self.state['notes']['date'], found)
         files = release_notes.files(json.loads(self.git('show', commit + ':release-notes.json')), notes, since[1:])
         if any(self.git('show', commit + ':' + name) != text.strip() for name, text in files.items()):
@@ -538,8 +546,8 @@ class Release:
                         identities = self.identities()
                 except (ValueError, OSError, subprocess.SubprocessError) as error:
                     self.emit("Could not install Apple's Developer ID intermediate certificate: " + str(error))
-        missing = not developer_id.IDENTITY.search(identities) or not sparkle.has_key()
-        if missing and self.restore_credentials("restore-signing-keys"):
+        if not developer_id.IDENTITY.search(identities) or not sparkle.has_key():
+            self.restore_credentials("restore-signing-keys")
             identities = self.identities()
         if not sparkle.has_key():
             raise Failure("Sparkle's update signing key (login Keychain, account parc) is missing and was not restored; "
@@ -557,19 +565,32 @@ class Release:
             raise Failure("Configured signing identity/private key is unavailable or expired on this Mac")
         self.env["PARC_SIGN_IDENTITY"] = identity
         profile = self.env["PARC_NOTARY_PROFILE"] = os.environ.get("PARC_NOTARY_PROFILE", "parc-notary")
-        history = ["xcrun", "notarytool", "history", "--keychain-profile", profile, "--output-format", "json"]
-        unavailable = ("The notarytool profile " + profile + " is missing or failing and was not restored; "
-                       "unlock 1Password and rerun the release")
-        try:
-            self.command(history, capture=True, retries=2)
-        except Failure:
+        missing = ("The notarytool profile " + profile + " is missing or failing and was not restored; "
+                   "unlock 1Password and rerun the release")
+        found = self.notary_profile(profile)
+        if found == notary_service.CREDENTIALS:
             if not self.restore_credentials("restore-notary-profile"):
-                raise Failure(unavailable) from None
-            try:
-                self.command(history, capture=True)
-            except Failure:
-                raise Failure(unavailable) from None
+                raise Failure(missing)
+            found = self.notary_profile(profile)
+            if found == notary_service.CREDENTIALS:
+                raise Failure(missing)
+        if found != notary_service.OK:
+            raise Failure("notarytool history failed with the " + profile + " profile, and the error is neither an "
+                          "Apple outage nor a credential problem; see " + str(self.log))
         self.checkpoint(identity=identity, notary_profile=self.env["PARC_NOTARY_PROFILE"])
+
+    def notary_profile(self, profile):
+        history = notary_service.history(profile)
+
+        def attempt():
+            try:
+                return subprocess.CompletedProcess(history, 0, self.command(history, capture=True), "")
+            except Failure as error:
+                return subprocess.CompletedProcess(history, error.code, error.output, "")
+        try:
+            return notary_service.wait(attempt, self.emit)[0]
+        except notary_service.Unavailable as error:
+            raise Failure(str(error)) from None
 
     def ancestor(self, older, newer):
         return subprocess.run(["git", "merge-base", "--is-ancestor", older, newer],
@@ -582,6 +603,80 @@ class Release:
         self.git('fetch', '--no-tags', 'origin', 'refs/tags/v*:refs/tags/v*', retries=2)
         tag = release_notes.last_release(self.root, revision)
         return tag, release_notes.changes(self.root, tag, revision)
+
+    def contents(self, revision, path):
+        result = subprocess.run(['git', 'cat-file', 'blob', revision + ':' + path], cwd=self.root, env=self.env,
+                                capture_output=True)
+        return result.stdout if result.returncode == 0 else None
+
+    def swift_inputs(self, revision):
+        try:
+            compiler = subprocess.run(['xcrun', '--sdk', 'macosx', 'swiftc', '--version'], env=self.env,
+                                      capture_output=True, text=True).stdout.strip()
+        except OSError:
+            compiler = ''
+        return self.git('ls-tree', revision, '--', *SWIFT_INPUTS) + '\n' + compiler
+
+    def check_source(self, commit, tag, untouched):
+        self.check_overlay(commit, tag, untouched)
+        self.check_swift(commit, untouched)
+
+    def check_overlay(self, commit, tag, untouched):
+        raw, published = self.contents(commit, OVERLAY), self.contents(tag, OVERLAY)
+        if raw is None or published is None:
+            return
+        spec, before = json.loads(raw), json.loads(published)
+        lock = json.loads(self.contents(commit, LOCK) or b'{}')
+
+        def inputs(manifest):
+            prefix = '' if manifest.get('source_root', 'manifest') == 'repository' else OVERLAY.rpartition('/')[0] + '/'
+            return {prefix + item['source']: item['sha256'] for item in [*manifest.get('files', []), *manifest.get('patches', [])]}
+        current, earlier = inputs(spec), inputs(before)
+        diff = subprocess.run(['git', 'diff', '--name-only', '--no-renames', '-z', tag, commit], cwd=self.root,
+                              env=self.env, capture_output=True, check=True).stdout.split(b'\0')
+        changed = (set(current) | set(earlier)) & {os.fsdecode(name) for name in diff if name}
+        stale = sorted(path for path in changed if path in current
+                       and hashlib.sha256(self.contents(commit, path) or b'').hexdigest() != current[path])
+        needed = before['version'] + 1
+        unraised = spec['version'] < needed
+        if spec['id'] != before['id']:
+            raise Failure(OVERLAY + ' changed its ID since ' + tag + ', and an overlay update must keep its ID. ' + untouched)
+        if lock and spec.get('upstream') != {'chromium': lock.get('chromium', {}).get('commit')}:
+            raise Failure(OVERLAY + "'s upstream Chromium commit doesn't match " + LOCK + '; update the overlay for '
+                          'that lock on main and rerun the release. ' + untouched)
+        if stale:
+            raise Failure(listing(stale) + ' changed since ' + tag + ' without a matching checksum in ' + OVERLAY
+                          + '; refresh the overlay manifest' + (', raising its version to ' + str(needed) if unraised else '')
+                          + ', on main and rerun the release. ' + untouched)
+        if (raw != published or changed) and unraised:
+            raise Failure('Engine inputs changed since ' + tag + ' but ' + OVERLAY + ' is still version '
+                          + str(spec['version']) + '; raise it to ' + str(needed) + ' on main and rerun the release. '
+                          + untouched)
+
+    def check_swift(self, commit, untouched):
+        key = self.swift_inputs(commit)
+        if self.state.get('swift_checked') == key:
+            self.emit('Reusing the release-mode Swift compile that passed for these sources')
+            return
+        folder = Path(self.state['run']) / 'swift-check' / commit
+        source = folder / 'source'
+        release_inputs.create(self.root, source, commit)
+        cache, link = self.root / 'build/sparkle', source / 'build/sparkle'
+        cache.mkdir(parents=True, exist_ok=True)
+        if not link.exists() and not link.is_symlink():
+            link.parent.mkdir(exist_ok=True)
+            link.symlink_to(cache)
+        label = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8]
+        self.emit('Compiling ' + commit + ' in release mode before the version commit')
+        try:
+            self.command([sys.executable, source / 'scripts/check-swift.py', '--repo', source, '--source-archive',
+                          '--mode', 'release', '--output-dir', folder, '--label', label], name='swift-check')
+        except Failure:
+            log = folder / label / 'compiler.log'
+            raise Failure('The release-mode Swift compile of ' + commit + ' failed; see '
+                          + str(log if log.exists() else Path(self.state['run']) / 'swift-check.log') + '. ' + untouched) from None
+        shutil.rmtree(source)
+        self.checkpoint(swift_checked=key)
 
     def version_files(self, base):
         notes = json.loads(self.git('show', base + ':release-notes.json'))
@@ -598,25 +693,36 @@ class Release:
             release_inputs.verify(self.root, self.state["source"], self.state["commit"])
             return
         if not self.state.get("version"):
-            self.require_clean("Start on clean main; never reset/stash/clean local changes")
-            self.checkpoint(quiet_seconds=None, quiet_head=None, quiet_since=None)
-            self.git("fetch", "origin", "main", retries=2)
-            self.fast_forward()
-            if self.git('rev-parse', 'HEAD') != self.git('rev-parse', 'origin/main'):
-                raise Failure('Local main has unpushed commits; preserved without releasing them')
-            previous = app_version.read(self.root)
-            if previous['build'] >= 9999:
-                raise Failure("Apple bundle build number exhausted")
-            tag, found = self.changes('HEAD')
-            kind = self.kind or release_notes.bump(found)
-            if not kind:
-                raise Failure('Nothing to release since ' + tag + '; main changed after the release check')
+            for _ in range(CHECK_ROUNDS):
+                self.require_clean("Start on clean main; never reset/stash/clean local changes")
+                self.checkpoint(quiet_seconds=None, quiet_head=None, quiet_since=None)
+                self.git("fetch", "origin", "main", retries=2)
+                self.fast_forward()
+                head = self.git('rev-parse', 'HEAD')
+                if head != self.git('rev-parse', 'origin/main'):
+                    raise Failure('Local main has unpushed commits; preserved without releasing them')
+                previous = app_version.read(self.root)
+                if previous['build'] >= 9999:
+                    raise Failure("Apple bundle build number exhausted")
+                tag, found = self.changes(head)
+                kind = self.kind or release_notes.bump(found)
+                if not kind:
+                    raise Failure('Nothing to release since ' + tag + '; main changed after the release check')
+                self.check_source(head, tag, 'Nothing was committed or pushed.')
+                self.git("fetch", "origin", "main", retries=2)
+                if (self.git('rev-parse', 'HEAD') == head == self.git('rev-parse', 'origin/main')
+                        and not blocking(self.local_changes())):
+                    break
+                self.emit('Main changed during the release checks; checking its newest commit')
+            else:
+                raise Failure('Main kept changing release inputs during ' + str(CHECK_ROUNDS) + ' rounds of release '
+                              'checks; nothing was committed or pushed, so rerun the release')
             version = {"version": next_version(previous["version"], kind), "build": previous["build"] + 1}
             date = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
             self.checkpoint(release_type=kind, type_override=self.kind, previous_version=previous, version=version,
                             since=tag, notes=release_notes.entry(version['version'], version['build'], date, found),
-                            base_commit=self.git('rev-parse', 'HEAD'),
-                            tag='v' + version['version'], source=str(Path(self.state['run']) / 'source'))
+                            base_commit=head, tag='v' + version['version'],
+                            source=str(Path(self.state['run']) / 'source'))
             self.kind = kind
         wanted = self.state['version']
         if not self.state.get('commit'):
@@ -667,6 +773,7 @@ class Release:
                 if not set(ours) <= set(self.version_files(tip)):
                     raise Failure('The version commit carries changes main lacks; preserved for reconciliation')
                 since, found = self.changes(tip)
+                self.check_source(tip, since, 'The version commit was not pushed.')
                 kind = self.state.get('type_override') or release_notes.bump(found) or self.kind
                 raised = next_version(self.state['previous_version']['version'], kind)
                 if release_notes.number(raised) > release_notes.number(wanted['version']):
@@ -783,7 +890,12 @@ class Release:
         source = Path(self.state["source"]); package_run = Path(self.state["run"]) / "package"
         self.env.update(PARC_RELEASE_REPOSITORY=str(self.root), PARC_RELEASE_COMMIT=self.state["commit"],
                         PARC_PACKAGE_RUN=str(package_run), PARC_ENGINE_WORKSPACE=self.state["workspace"])
-        self.command(["bash", source / "scripts/package-app.sh", "--stable", self.state["manifest"]], name="package-publish")
+        try:
+            self.command(["bash", source / "scripts/package-app.sh", "--stable", self.state["manifest"]], name="package-publish")
+        except Failure as error:
+            if error.code == notary_service.EXIT_DOWN:
+                raise Failure(notary_service.Unavailable().args[0]) from None
+            raise
         self.checkpoint(package=str(package_run / "development"))
 
     def appcast(self):

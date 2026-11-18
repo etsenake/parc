@@ -206,7 +206,8 @@ typechecking omits, including definite initialization. `--mode release` is the
 release's optimized app compile (`-O`, whole-module, one thread per core) through
 object files, without linking, so it also covers what SIL mode checks. Run it
 before publishing material Swift changes, as required by
-[the working contract](../AGENTS.md), and on the commit you are about to release.
+[the working contract](../AGENTS.md). The [release command](master-release.md#pipeline)
+runs it on the commit it is about to release before committing the version.
 
 Every compiler and linker warning is an error. `-warnings-as-errors` alone
 doesn't guarantee that: Swift deliberately keeps some downgraded concurrency
@@ -218,8 +219,10 @@ the icon renderer and the signing keychain helper, and every one of their links
 also passes the linker's `-fatal_warnings`.
 
 The script finds its own checkout regardless of the shell's working directory.
-Use `--repo /absolute/other-worktree` to select another checkout. The checker
-uses self-contained declarations in `Engine/ParcNative`.
+Use `--repo /absolute/other-worktree` to select another checkout, or add
+`--source-archive` for an extracted source tree that isn't a Git checkout, as the
+release does; that skips the Git HEAD checks and relies on the input hashes. The
+checker uses self-contained declarations in `Engine/ParcNative`.
 
 Each execution creates a fresh directory under `build/swift-checks` containing
 `start.json`, `compiler.log` and `result.json`. Use `--output-dir` and `--label`

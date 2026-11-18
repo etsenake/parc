@@ -18,9 +18,32 @@ import release_inputs
 import release_install
 import release_lease
 
+MISSING_PROFILE = 'Error: No Keychain password item found for profile: parc-notary'
+OUTAGE = ('Error: invalidJSONResponse(statusCode: Optional(503), data: "<html>\\n<title>503 Service Unavailable</title>'
+          '\\nIt appears no upstream tasks are announcing via service discovery.\\n</html>")')
+
+
+class Clock:
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
 
 class RepositoryFixture(unittest.TestCase):
+    checks = False
+
     def setUp(self):
+        if not self.checks:
+            checks = patch.object(release.Release, 'check_source')
+            checks.start()
+            self.addCleanup(checks.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name) / 'repo'; self.root.mkdir()
@@ -667,6 +690,256 @@ class SharedCheckout(RepositoryFixture):
 
 
 
+class PreCommitChecks(RepositoryFixture):
+    checks = True
+
+    def setUp(self):
+        super().setUp()
+        self.hook = self.root / 'Engine/ParcNative/hook.cc'
+        self.write({'Engine/ParcNative/hook.cc': 'int hook = 1;\n', 'Sources/ParcApp/App.swift': 'let app = 1\n',
+                    'scripts/check-swift.py': 'raise SystemExit(0)\n',
+                    release.LOCK: json.dumps({'chromium': {'commit': 'a' * 40}}) + '\n'})
+        self.manifest(1)
+        self.git('add', '.'); self.git('commit', '-qm', 'chore: Seed engine inputs'); self.git('tag', '-f', 'v1.0.0')
+        self.git('push', '-qf', 'origin', 'main', 'refs/tags/v1.0.0')
+        self.events, self.failing, self.peers = [], False, 0
+
+    def write(self, files, root=None):
+        for name, text in files.items():
+            path = (root or self.root) / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(text)
+
+    def manifest(self, version, hook=None):
+        text = self.manifest_text(version, self.hook.read_text() if hook is None else hook)
+        self.write({release.OVERLAY: text})
+        return text
+
+    def manifest_text(self, version, hook):
+        return json.dumps({
+            'schema_version': 1, 'id': 'parc-fixture', 'version': version, 'source_root': 'repository', 'patches': [],
+            'upstream': {'chromium': 'a' * 40}, 'files': [{'source': 'Engine/ParcNative/hook.cc', 'target': 'parc/hook.cc',
+                                                          'sha256': hashlib.sha256(hook.encode()).hexdigest()}]},
+            indent=2) + '\n'
+
+    def land(self, message, files, manifest=None):
+        self.write(files)
+        if manifest:
+            self.manifest(manifest)
+        self.git('add', '.'); self.git('commit', '-qm', message); self.git('push', '-q', 'origin', 'main')
+        return self.git('rev-parse', 'HEAD')
+
+    def peer(self, files, message):
+        self.peers += 1
+        peer = Path(self.tmp.name) / ('peer' + str(self.peers))
+        subprocess.run(['git', 'clone', '-q', str(self.remote), str(peer)], check=True)
+        self.write(files, peer)
+        for command in (['add', '-A'], ['-c', 'user.name=Peer', '-c', 'user.email=peer@example.invalid', 'commit', '-qm',
+                                        message], ['push', '-q', 'origin', 'main']):
+            subprocess.run(['git', *command], cwd=peer, check=True, capture_output=True)
+        return subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=peer, text=True).strip()
+
+    def watched(self, runner, during=(), before_push=None):
+        original, during = runner.command, list(during)
+        def command(args, **kwargs):
+            args = [str(arg) for arg in args]
+            if kwargs.get('name') == 'swift-check':
+                source = Path(args[args.index('--repo') + 1])
+                self.events.append(('swift', source.parent.name, sorted(path.name for path in (source / 'Sources/ParcApp').iterdir())))
+                receipt = Path(args[args.index('--output-dir') + 1]) / args[args.index('--label') + 1]
+                receipt.mkdir(parents=True); (receipt / 'compiler.log').write_text('App.swift:1:1: warning: fixture\n')
+                if during:
+                    during.pop(0)()
+                if self.failing:
+                    raise release.Failure('Command failed (1)', 1)
+                return ''
+            if args[:2] in (['git', 'commit-tree'], ['git', 'update-ref'], ['git', 'push']):
+                self.events.append((args[1],))
+                if args[1] == 'push' and before_push:
+                    before_push()
+            return original(args, **kwargs)
+        return patch.object(runner, 'command', side_effect=command)
+
+    def kinds(self):
+        return [event[0] for event in self.events]
+
+    def test_unraised_overlay_stops_before_the_compile_and_any_commit(self):
+        head = self.land('fix(engine): Tweak the hook', {'Engine/ParcNative/hook.cc': 'int hook = 2;\n'}, manifest=1)
+        runner = self.runner()
+        with self.watched(runner), self.assertRaisesRegex(release.Failure, re.escape(
+                'Engine inputs changed since v1.0.0 but Engine/ParcHost/overlay.json is still version 1; raise it to 2 '
+                'on main and rerun the release. Nothing was committed or pushed.')):
+            runner.prepare()
+        self.assertEqual(self.events, [])
+        self.assertEqual((self.git('rev-parse', 'HEAD'), self.git('rev-parse', 'origin/main')), (head, head))
+        self.assertNotIn('version', runner.state)
+
+    def test_engine_input_without_its_new_checksum_names_the_file_and_version(self):
+        self.land('fix(engine): Tweak the hook', {'Engine/ParcNative/hook.cc': 'int hook = 2;\n'})
+        runner = self.runner()
+        with self.watched(runner), self.assertRaisesRegex(release.Failure, re.escape(
+                'Engine/ParcNative/hook.cc changed since v1.0.0 without a matching checksum in '
+                'Engine/ParcHost/overlay.json; refresh the overlay manifest, raising its version to 2, on main')):
+            runner.prepare()
+        self.assertEqual(self.events, [])
+
+    def test_release_compile_checks_the_fetched_main_before_the_version_commit(self):
+        head = self.land('fix(engine): Tweak the hook', {'Engine/ParcNative/hook.cc': 'int hook = 2;\n'}, manifest=2)
+        (self.root / 'Sources/ParcApp/Peer.swift').write_text('let peer = 1\n')
+        runner = self.runner()
+        with self.watched(runner):
+            runner.prepare()
+        self.assertEqual(self.events[0], ('swift', head, ['App.swift']))
+        self.assertEqual(self.kinds()[1:], ['commit-tree', 'update-ref', 'push'])
+        self.assertEqual(runner.state['base_commit'], head)
+        self.assertEqual(runner.state['swift_checked'], runner.swift_inputs(head))
+        self.assertFalse((Path(runner.state['run']) / 'swift-check' / head / 'source').exists())
+        self.assertEqual(self.git('log', '-1', '--format=%s', 'origin/main'), 'chore(release): 1.1.0')
+
+    def test_failed_compile_names_its_log_commits_nothing_and_a_fixed_main_passes(self):
+        self.commit('fix: Keep tabs'); head = self.git('rev-parse', 'HEAD')
+        runner = self.runner(); self.failing = True
+        with self.watched(runner), self.assertRaisesRegex(
+                release.Failure, '^The release-mode Swift compile of ' + head + ' failed; see /.*/swift-check/' + head
+                + '/[^/]+/compiler.log. Nothing was committed or pushed.$'):
+            runner.prepare()
+        self.assertEqual(self.kinds(), ['swift'])
+        self.assertEqual(self.git('rev-parse', 'origin/main'), head)
+        self.assertNotIn('version', runner.state)
+        fixed = self.land('fix(app): Silence the warning', {'Sources/ParcApp/App.swift': 'let app = 2\n'})
+        self.failing = False; self.events.clear()
+        with self.watched(runner):
+            runner.prepare()
+        self.assertEqual(self.kinds(), ['swift', 'commit-tree', 'update-ref', 'push'])
+        self.assertEqual((self.events[0][1], runner.state['base_commit']), (fixed, fixed))
+
+    def test_resume_skips_a_compile_that_already_passed_for_the_same_sources(self):
+        self.commit('fix: Keep tabs')
+        runner = self.runner(); original = runner.checkpoint
+        def crash(**values):
+            if 'version' in values:
+                raise OSError('power lost after the compile')
+            return original(**values)
+        with self.watched(runner), patch.object(runner, 'checkpoint', side_effect=crash):
+            with self.assertRaises(OSError):
+                runner.prepare()
+        for item in runner.locks: item.close()
+        self.commit('docs: Explain the bunk beds')
+        resumed = self.runner()
+        with self.watched(resumed):
+            resumed.prepare()
+        self.assertEqual(resumed.state['id'], runner.state['id'])
+        self.assertEqual(self.kinds(), ['swift', 'commit-tree', 'update-ref', 'push'])
+        self.assertIn('Reusing the release-mode Swift compile that passed for these sources', resumed.log.read_text())
+
+    def test_swift_change_landing_during_the_compile_is_checked_before_the_version_commit(self):
+        self.commit('fix: Keep tabs')
+        landed = []
+        runner = self.runner()
+        with self.watched(runner, during=[lambda: landed.append(self.peer({'Sources/ParcApp/App.swift': 'let app = 4\n'},
+                                                                          'fix(app): Land late'))]):
+            runner.prepare()
+        self.assertEqual(self.kinds(), ['swift', 'swift', 'commit-tree', 'update-ref', 'push'])
+        self.assertEqual((self.events[1][1], runner.state['base_commit']), (landed[0], landed[0]))
+        self.assertIn('Main changed during the release checks', runner.log.read_text())
+
+    def test_docs_landing_during_the_compile_are_rechecked_without_another_compile(self):
+        self.commit('fix: Keep tabs'); head = self.git('rev-parse', 'HEAD')
+        runner = self.runner()
+        with self.watched(runner, during=[lambda: self.peer({'docs/notes.md': 'notes\n'}, 'docs: Land late notes')]):
+            runner.prepare()
+        self.assertEqual(self.kinds(), ['swift', 'commit-tree', 'update-ref', 'push'])
+        self.assertEqual(self.git('rev-parse', runner.state['base_commit'] + '^'), head)
+        self.assertEqual(self.git('show', 'origin/main:docs/notes.md'), 'notes')
+        self.assertIn('Reusing the release-mode Swift compile that passed for these sources', runner.log.read_text())
+
+    def test_peer_edit_appearing_during_the_compile_stops_before_any_version_state(self):
+        self.commit('fix: Keep tabs')
+        runner = self.runner()
+        with self.watched(runner, during=[lambda: self.write({'Sources/ParcApp/App.swift': 'let app = 8\n'})]), \
+                self.assertRaisesRegex(release.Failure, '^Start on clean main.*: Sources/ParcApp/App.swift$'):
+            runner.prepare()
+        self.assertNotIn('version', runner.state)
+        self.write({'Sources/ParcApp/App.swift': 'let app = 1\n'})
+        with self.watched(runner):
+            runner.prepare()
+        self.assertEqual(self.kinds(), ['swift', 'commit-tree', 'update-ref', 'push'])
+
+    def test_unraised_engine_change_landing_during_the_compile_stops_before_the_version_commit(self):
+        self.commit('fix: Keep tabs')
+        runner, hook = self.runner(), 'int hook = 9;\n'
+        landed = []
+        with self.watched(runner, during=[lambda: landed.append(self.peer(
+                {'Engine/ParcNative/hook.cc': hook, release.OVERLAY: self.manifest_text(1, hook)}, 'fix(engine): Land unraised'))]), \
+                self.assertRaisesRegex(release.Failure, 'raise it to 2 on main and rerun the release. Nothing was committed'):
+            runner.prepare()
+        self.assertEqual(self.kinds(), ['swift'])
+        self.assertEqual((self.git('rev-parse', 'HEAD'), self.git('rev-parse', 'origin/main')), (landed[0], landed[0]))
+
+    def test_overlay_upstream_must_match_the_source_lock(self):
+        self.land('fix(engine): Move to a new Chromium', {release.LOCK: json.dumps({'chromium': {'commit': 'b' * 40}})},
+                  manifest=2)
+        runner = self.runner()
+        with self.watched(runner), self.assertRaisesRegex(release.Failure, "upstream Chromium commit doesn't match"):
+            runner.prepare()
+        self.assertEqual(self.events, [])
+
+    def test_a_new_swift_compiler_compiles_again(self):
+        runner = self.runner()
+        keys = []
+        for version in ('Swift 6.2', 'Swift 6.3'):
+            with patch.object(release.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, version, '')):
+                keys.append(runner.swift_inputs('HEAD'))
+        self.assertNotEqual(*keys)
+
+    def test_source_refresh_checks_its_new_commit_before_freezing_it(self):
+        self.commit('fix: Keep tabs')
+        runner = self.runner()
+        with self.watched(runner):
+            runner.prepare()
+        runner.checkpoint(status='stopped', stage='engine', completed=['source'], command_pid=None, error='compiler error',
+                          engine_seal_path=str(Path(runner.state['run']) / 'engine-artifacts.json'))
+        for item in runner.locks: item.close()
+        fixed = self.land('fix(app): Fix the build', {'Sources/ParcApp/App.swift': 'let app = 7\n'})
+        refreshed = release.Release(self.root, refresh_source=True); refreshed.start()
+        self.addCleanup(lambda: [item.close() for item in refreshed.locks])
+        frozen = (refreshed.state['commit'], refreshed.state['source'])
+        self.failing = True
+        with self.watched(refreshed), self.assertRaisesRegex(
+                release.Failure, 'compile of ' + fixed + ' failed; .*The stopped release was not changed.$'):
+            refreshed.refresh_inputs()
+        self.assertEqual((refreshed.state['commit'], refreshed.state['source']), frozen)
+        self.assertEqual(self.git('rev-parse', 'origin/main'), fixed)
+        self.failing = False
+        with self.watched(refreshed):
+            refreshed.refresh_inputs()
+        self.assertEqual([event[1] for event in self.events if event[0] == 'swift'][-2:], [fixed, fixed])
+        self.assertEqual(self.git('rev-parse', refreshed.state['commit'] + '^'), fixed)
+
+    def test_swift_change_landing_before_the_push_is_compiled_before_the_merge_is_pushed(self):
+        self.commit('fix: Keep tabs')
+        landed, runner = [], self.runner()
+        def land_once():
+            if not landed:
+                landed.append(self.peer({'Sources/ParcApp/App.swift': 'let app = 5\n'}, 'fix(app): Land at the push'))
+        with self.watched(runner, before_push=land_once):
+            runner.prepare()
+        self.assertEqual(self.kinds(), ['swift', 'commit-tree', 'update-ref', 'push', 'swift', 'commit-tree', 'push'])
+        self.assertEqual(self.events[4][1], landed[0])
+        self.assertEqual(self.git('rev-parse', 'origin/main'), runner.state['commit'])
+
+    def test_failing_compile_of_commits_landing_before_the_push_keeps_the_version_unpublished(self):
+        self.commit('fix: Keep tabs')
+        landed, runner = [], self.runner()
+        def land_once():
+            if not landed:
+                landed.append(self.peer({'Sources/ParcApp/App.swift': 'let app = 6\n'}, 'fix(app): Land broken'))
+                self.failing = True
+        with self.watched(runner, before_push=land_once), self.assertRaisesRegex(
+                release.Failure, 'The release-mode Swift compile of ' + '[0-9a-f]{40}' + ' failed; .*The version commit was not pushed.$'):
+            runner.prepare()
+        self.assertEqual(self.git('rev-parse', 'origin/main'), landed[0])
+        self.assertFalse(runner.published(runner.state['commit']))
+
+
 class EngineWorkspaceChoice(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -1002,7 +1275,7 @@ class Pipeline(RepositoryFixture):
                 if commands[-1][-1] == 'restore':
                     profile['works'] = restored
                 if 'history' in commands[-1] and not profile['works']:
-                    raise release.Failure('Command failed (69)')
+                    raise release.Failure('Command failed (69)', 69, MISSING_PROFILE)
                 return '1) ABC "' + identity + '"' if 'find-identity' in commands[-1] else ''
             runner.command = command
             with self.subTest(op=tool, works=works, restored=restored), \
@@ -1037,7 +1310,7 @@ class Pipeline(RepositoryFixture):
                 if profile is not None:
                     profile['works'] = True
             if 'history' in commands[-1] and profile is not None and not profile['works']:
-                raise release.Failure('Command failed (69)')
+                raise release.Failure('Command failed (69)', 69, MISSING_PROFILE)
             if 'find-identity' in commands[-1] and keychain['identity']:
                 if '-v' in commands[-1]:
                     return '1) ABC "' + identity + '"' if keychain['valid'] else '0 valid identities found'
@@ -1076,6 +1349,69 @@ class Pipeline(RepositoryFixture):
                 self.assertEqual(len(restores), 1 if installable else 0)
                 self.assertTrue(all(index > install for index in restores))
             for handle in runner.locks: handle.close()
+
+    def outage(self, replies):
+        home = Path(self.tmp.name)
+        keychain = {'identity': True, 'valid': True, 'key': True}
+        tools = {'brew': '/opt/homebrew/bin/brew', 'gh': '/opt/homebrew/bin/gh', 'op': '/opt/homebrew/bin/op'}
+        commands, histories, clock = [], [], Clock()
+        runner = self.runner(); runner.auth = Mock()
+        self.addCleanup(lambda: [handle.close() for handle in runner.locks])
+        identity, signing = self.signing(keychain, tools, commands)
+        def command(args, **kwargs):
+            if 'history' in [str(arg) for arg in args]:
+                histories.append(clock.now)
+                reply = replies.pop(0) if replies else OUTAGE
+                if reply != 'ok':
+                    raise release.Failure('Command failed (69)', 69, reply)
+                return '{"history": []}'
+            return signing(args, **kwargs)
+        runner.command = command
+        stack = contextlib.ExitStack(); self.addCleanup(stack.close)
+        for patcher in (*self.preflight_patches(home, keychain, tools), patch.object(release.notary_service, 'time', clock)):
+            stack.enter_context(patcher)
+        return runner, commands, histories, clock
+
+    def test_preflight_waits_out_an_apple_outage_without_touching_credentials(self):
+        runner, commands, histories, clock = self.outage([OUTAGE, OUTAGE, OUTAGE, 'ok'])
+        runner.preflight()
+        self.assertEqual((len(histories), clock.sleeps), (4, [120] * 3))
+        self.assertEqual(runner.state['notary_profile'], 'parc-notary')
+        self.assertFalse([args for args in commands if args[-1] == 'restore' or args[:2] == ['brew', 'install']])
+        self.assertEqual(runner.log.read_text().count(
+            "Apple's notary service is unavailable (HTTP 503); waiting and retrying"), 3)
+
+    def test_preflight_stops_plainly_when_apple_stays_down_for_two_hours(self):
+        runner, commands, histories, clock = self.outage([])
+        with self.assertRaisesRegex(release.Failure, "^Apple's notary service is down \\(HTTP 503\\).*Rerun the same command"):
+            runner.preflight()
+        self.assertEqual((len(histories), histories[-1]), (61, 7200))
+        self.assertFalse([args for args in commands if args[-1] == 'restore'])
+        self.assertNotIn('1Password', runner.log.read_text())
+
+    def test_preflight_restores_only_for_authentication_or_profile_errors(self):
+        for error, restores in (('Error: HTTP status code: 401. Invalid credentials.', 1),
+                                ('Error: HTTP status code: 403. A required agreement is missing or has expired.', 1),
+                                (MISSING_PROFILE, 1), ('Error: unexpected notarytool output', 0)):
+            with self.subTest(error=error):
+                runner, commands, histories, clock = self.outage([error, 'ok'])
+                if restores:
+                    runner.preflight()
+                else:
+                    with self.assertRaisesRegex(release.Failure, 'neither an Apple outage nor a credential problem'):
+                        runner.preflight()
+                self.assertEqual(len([args for args in commands if args[-1] == 'restore']), restores)
+                self.assertEqual((len(histories), clock.sleeps), (1 + restores, []))
+                for handle in runner.locks: handle.close()
+                runner.locks.clear()
+
+    def test_package_stage_names_an_apple_outage_instead_of_a_bare_exit_code(self):
+        runner = self.runner()
+        runner.checkpoint(source=str(self.root), commit='f' * 40, workspace=str(self.root), manifest='/run/engine.json')
+        for code, expected in ((75, "^Apple's notary service is down and stayed unavailable"), (1, '^Command failed \\(1\\)')):
+            runner.command = Mock(side_effect=release.Failure('Command failed (' + str(code) + ')', code))
+            with self.subTest(code=code), self.assertRaisesRegex(release.Failure, expected):
+                runner.package()
 
     def test_preflight_installs_a_missing_developer_id_intermediate(self):
         home = Path(self.tmp.name)
