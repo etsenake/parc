@@ -447,6 +447,7 @@ source_set("browser") {
     "//chrome/browser/ui/login",
     "//chrome/browser/ui/views/tab_sharing",
     "//chrome/browser/ui/webui/settings",
+    "//chrome/browser/google",
     "//chrome/browser/webauthn",
     "//chrome/common:mojo_bindings",
     "//chrome/renderer:process_state",

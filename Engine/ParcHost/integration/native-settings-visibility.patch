@@ -100,3 +100,11 @@
 +    hideParcRows(this.$.dialog);
 +    this.$.sendSettings.checked = false;
      this.addEventListener('cancel', () => {
+--- a/chrome/browser/resources/settings/privacy_page/security/security_page.html
++++ b/chrome/browser/resources/settings/privacy_page/security/security_page.html
+@@ -15,4 +15,5 @@
+         <settings-collapse-radio-button id="safeBrowsingEnhanced"
+             name="${SafeBrowsingSetting.ENHANCED}"
++            ?hidden="${this.safeBrowsingPref_?.value !== SafeBrowsingSetting.ENHANCED}"
+             pref-key="generated.safe_browsing"
+             label="$i18n{safeBrowsingEnhanced}"

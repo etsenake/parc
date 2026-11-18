@@ -174,6 +174,7 @@ ParcContentBrowserClient::ParcContentBrowserClient(
   parc_hooks::SetFrameFocusNotifier(&NotifyFrameFocus);
   parc_hooks::SetWebPushFactory(&CreateWebPushClient);
   InstallNativeBlockedPopups();
+  ReportNoBrandCode();
   parc_hooks::SetInternalExtensionInstaller([](extensions::ComponentLoader* loader) {
     loader->Add(kInternalExtensionManifest,
                 base::FilePath(FILE_PATH_LITERAL("parc_internal_extension")));

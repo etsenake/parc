@@ -2114,7 +2114,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "12b5501362bfa9a191a86bf724ae10f8b94eb5eabe5ada41525d5c4a0b91db1e"
+      "sha256": "737e323fb6df579fe5526c80e8c4ac2b1b4b2fa13fbafe6a403500cb7cf862ce"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
@@ -2134,17 +2134,17 @@
     {
       "source": "Engine/ParcChromium/parc_settings_page.h",
       "target": "parc/parc_settings_page.h",
-      "sha256": "61010303f9e3ddd4ca706eca7c802e05bb1f8fb94c7ad63337e726d6a5c7ccaa"
+      "sha256": "9b86a2763ce6429f5a1a78e1fd41040abf3c4ba8c9994648464285cc5d189cc4"
     },
     {
       "source": "Engine/ParcChromium/parc_settings_page.cc",
       "target": "parc/parc_settings_page.cc",
-      "sha256": "dae5b1893375e31a43970c8ccd98088ff86a8f5e4a65ea0883cdfad67a86372b"
+      "sha256": "944849f528283fcbc4352f27f446cf2e44330fc46a3b7ccd5bb27292fb51c18a"
     },
     {
       "source": "Engine/ParcChromium/settings_page_contract.py",
       "target": "parc/settings_page_contract.py",
-      "sha256": "0b9df9c7c40d60de78ab3f507bfc02307acd18969a634020e28a22da767abdc7"
+      "sha256": "9606f3a045701e2fb0b3a88007b4bc96076b0096bbb041df56808bfe45bd18d0"
     },
     {
       "source": "Engine/ParcChromium/generate_error_pages.py",
@@ -2164,7 +2164,7 @@
     {
       "source": "Engine/ParcChromium/error_pages/interstitial.css",
       "target": "parc/error_pages/interstitial.css",
-      "sha256": "2d5dc5e5e7a7a44a3a205c9bc111cedea378d63c2e1824136d2c8c13b0692c4b"
+      "sha256": "e926977d6d8e2f855bdf4be1c73689e42bdb89885e543f3fddf72840386e9b4c"
     },
     {
       "source": "Engine/ParcChromium/error_pages/interstitial.js",
@@ -2299,7 +2299,7 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.mm",
       "target": "parc/parc_content_clients.mm",
-      "sha256": "fb9c7ec26e30de1c368d0fadfafb8f2c03575ca491efeddf1e67677162da80c7"
+      "sha256": "208853118ab4e2a20371c71dc883b059dc66d005b04707df77c338d7d573c295"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",
@@ -6919,7 +6919,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-settings-visibility.patch",
-      "sha256": "b5b4533eb97c9cdcc2d59b42f55cf85fe8dbe1c3a2dfc4b0a2694a41293b7fba",
+      "sha256": "6b35abb3197854448acb80ca82bc9f71779c89cbbc5a6de32e2cad65b823c422",
       "files": [
         {
           "target": "chrome/browser/resources/settings/page_visibility.ts",
@@ -6950,6 +6950,11 @@
           "target": "chrome/browser/resources/settings/reset_page/reset_profile_dialog.ts",
           "before_sha256": "563627333927fb9ccb2ac2bbf5b4441cce59f09ee3615f8e11675ed00130c952",
           "after_sha256": "cfbb2e55beb724b45deb001f2008e54c1a6d5b44be45fbfaed8abc8baa8a4cba"
+        },
+        {
+          "target": "chrome/browser/resources/settings/privacy_page/security/security_page.html",
+          "before_sha256": "a7d3855832eac4d4dccdb7a119660dbfb85d92b4f19e49f78304170d9459b00b",
+          "after_sha256": "4fee4bf5877b28e2d98c94a2a9553ad0cd659d4daf53f50a005e897e9114debf"
         }
       ]
     }

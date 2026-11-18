@@ -206,7 +206,7 @@ html { font-size: 15px; }
 
 #body #error-debugging-info.hidden { display: none; }
 
-#body #blocked-site-message, #body #extended-reporting-opt-in, #body #enhanced-protection-message {
+#body #blocked-site-message, #body #extended-reporting-opt-in {
   max-width: 460px;
   margin: 18px auto 0;
   color: var(--text);
@@ -214,16 +214,14 @@ html { font-size: 15px; }
   line-height: 19px;
 }
 
-#body #extended-reporting-opt-in label, #body #enhanced-protection-message label {
+#body #extended-reporting-opt-in label {
   display: inline-grid;
   max-width: 420px;
   text-align: start;
 }
 
-#body #enhanced-protection-message { padding: 10px 14px; border-radius: 14px; background: var(--card); }
-
-#body #blocked-site-message.hidden, #body #extended-reporting-opt-in.hidden,
-#body #enhanced-protection-message.hidden { display: none; }
+#body #blocked-site-message.hidden, #body #extended-reporting-opt-in.hidden { display: none; }
+#body #enhanced-protection-message { display: none; }
 
 #body .nav-wrapper {
   display: flex;

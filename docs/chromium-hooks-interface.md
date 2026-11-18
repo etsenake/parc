@@ -155,8 +155,10 @@ which an embedder cannot override without replacing that file.
   turns Parc's `parcHiddenRows` (page elements and selectors for their rows) into a stylesheet and
   a search filter, in `chrome/browser/resources/settings/page_visibility.ts`. `settings_section.ts`
   and `settings_subpage.ts` apply it to their page as they appear, `search_settings.ts` skips those
-  rows, `route.ts` sends the page's home to Your saved info while You and Google is hidden, and
-  `reset_profile_dialog.ts` applies it and unticks the report checkbox. Chromium builds the list
+  rows, `route.ts` sends the page's home to Your saved info while You and Google is hidden,
+  `reset_profile_dialog.ts` applies it and unticks the report checkbox, and `security_page.html`
+  binds the Enhanced Safe Browsing radio's `hidden` to the Safe Browsing choice, so it shows only
+  while it's the current choice and the keyboard skips it otherwise. Chromium builds the list
   once, only for guest profiles, and no embedder input reaches a page element's shadow tree;
   styling or scripting the page from outside would break with every redesign. Parc's
   `parc_settings_page.cc` supplies the values through Settings' own registration, and its

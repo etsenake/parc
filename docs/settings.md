@@ -172,11 +172,12 @@ the AI page ([engine policy](engine-flags.md#runtime-features)).
   every profile load; Restore previous windows is the control); the AI page;
   Privacy Guide and its promo card; the sign-in promo and Allow sign-in toggle;
   Autocomplete searches and URLs (each Space's suggestions switch is the
-  control); enhanced Safe Browsing, extended reporting and the Advanced
-  Protection Program link; Appearance's theme, home button, bookmarks bar, Mode,
-  Customize toolbar, tab strip position, glass, Ctrl+Tab order, tab scroll
-  buttons, everything menu, organizer button, tab group, hover card and side
-  panel rows, split view and Warn before quitting (General has Parc's own);
+  control); enhanced Safe Browsing unless it's the current choice, extended
+  reporting and the Advanced Protection Program link; Appearance's theme, home
+  button, bookmarks bar, Mode, Customize toolbar, tab strip position, glass,
+  Ctrl+Tab order, tab scroll buttons, everything menu, organizer button, tab
+  group, hover card and side panel rows, split view and Warn before quitting
+  (General has Parc's own);
   Performance's alerts, inactive tab appearance and hover card link; the Google
   Translate card and its translation note under each language; Show downloads
   when finished; Google Wallet, Google Account, Google Pay, card benefits, pay
@@ -185,7 +186,9 @@ the AI page ([engine policy](engine-flags.md#runtime-features)).
   autofill's Gemini suggestions; Offer writing help; System's Relaunch button;
   Safety Hub's version card; About's update status (Parc updates through
   Sparkle); Accessibility's copy confirmations (Chromium's toasts never show in
-  Parc) and Google image descriptions; and the Reset dialog's report checkbox.
+  Parc), Google image descriptions and Live Caption with its Live Translate
+  (signed Parc can't load the speech library Chromium downloads for it); and the
+  Reset dialog's report checkbox.
 - **Kept**, because they work: privacy, cookies, security, Standard and No
   protection, HTTPS-First, Secure DNS, certificates, site settings, passwords,
   addresses, local cards and their device-lock check, languages and spell check,
@@ -193,24 +196,29 @@ the AI page ([engine policy](engine-flags.md#runtime-features)).
   page zoom, Tab highlights links, delete browsing data, Reset settings,
   extensions, Safety Hub, and the search engine, default browser and download
   location rows, which stay in sync with Parc's own.
-- **Still shown:** Live Caption's Live Translate option, which needs a Google
-  key but sits inside the caption control, out of reach of the page's named
-  rows; the Related Google services heading above the local Password Manager;
-  and the identity documents and travel pages, which only a typed address
-  reaches; search skips them.
+- **Still shown:** the Related Google services heading above the local Password
+  Manager, and the identity documents and travel pages, which only a typed
+  address reaches; search skips them.
 
 Reset settings never sends Chromium's settings report to Google: the dialog's
 checkbox starts unticked and hidden, and Parc's Settings controller turns the
-report choice off before Chromium's reset handler sees it. A user who picked
-enhanced Safe Browsing before it was hidden keeps it, with neither visible option
-selected, until they choose one.
+report choice off before Chromium's reset handler sees it. Parc's browser client
+also sets Chromium's brand override to no brand at startup, so Chromium never
+reads Google Chrome's brand files: opening Settings never fetches a Chrome
+partner's reset defaults from Google, and component updates and RLZ carry no
+brand.
+
+Someone who chose enhanced Safe Browsing keeps it, shown and selected. The patch
+ties the row's visibility to the Safe Browsing choice, so it disappears once they
+pick Standard or No protection; nothing changes their protection for them.
 
 Every Parc link into the page (Privacy and Security, Credit Cards,
 Notifications, Manage search, Clear Browsing Data, site and pop-up settings, More
 Settings itself and download warnings' Safe Browsing link, which opens Security)
 lands on a section that stays. The engine build runs `settings_page_contract.py`,
 which stops by name if Chromium renames or drops a key, switch, feature, named row
-or its page, a hook point, the home fallback or the reset handler's report choice;
+or its page, a hook point, the home fallback, the reset handler's report choice,
+the Enhanced row's binding or the brand override;
 `tests/EngineSource/test_settings_page.py` checks the lists and the guard.
 
 ## Application Settings from Incognito

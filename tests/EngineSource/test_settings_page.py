@@ -12,6 +12,8 @@ REPO = Path(__file__).resolve().parents[2]
 VALUES = REPO / 'Engine/ParcChromium/parc_settings_page.cc'
 POLICY = REPO / 'Engine/ParcNative/native_startup_policy.h'
 PATCH = REPO / 'Engine/ParcHost/integration/native-settings-visibility.patch'
+CLIENTS = REPO / 'Engine/ParcChromium/parc_content_clients.mm'
+BUILD = REPO / 'Engine/ParcChromium/BUILD.gn'
 spec = importlib.util.spec_from_file_location(
     'settings_page_contract', REPO / 'Engine/ParcChromium/settings_page_contract.py')
 contract = importlib.util.module_from_spec(spec)
@@ -110,6 +112,59 @@ RESET_DIALOG = """  static get is() {
         .performResetProfileSettings(
             this.$.sendSettings.checked, this.resetRequestOrigin_)
 """
+SECURITY_PAGE = """      safeBrowsingPref_: {type: Object},
+      'generated.safe_browsing': 'safeBrowsingPref_',
+"""
+SECURITY_PAGE_HTML = """      <settings-radio-group id="safeBrowsingRadioGroup" no-set-pref
+          pref-key="generated.safe_browsing"
+"""
+SECURITY_PAGE_CSS = """ * #include=cr-shared-style-lit settings-shared-lit settings-columned-section-lit
+"""
+SHARED_STYLE = """ * #include=cr-hidden-style-lit cr-icons-lit
+"""
+HIDDEN_STYLE = """[hidden],
+:host([hidden]) {
+  display: none !important;
+}
+"""
+RADIO_GROUP = """function isEnabled(radio: HTMLElement): boolean {
+  return radio.matches(':not([disabled]):not([hidden])') &&
+"""
+BRAND_HEADER = "extern const char* g_brand_for_testing;\n"
+BRAND_SOURCE = """bool GetRlzBrand(std::string* brand) {
+#if BUILDFLAG(IS_CHROMEOS)
+  brand->assign(google_brand::chromeos::GetRlzBrand());
+  return true;
+#else
+  return GetBrand(brand);
+#endif
+}
+"""
+BRAND_MAC = """std::string GetBrandInternal() {
+  NSString* system_brand_file =
+      [@"/Library/Google/Google Chrome Brand.plist" stringByStandardizingPath];
+  NSString* user_brand_file =
+      [@"~/Library/Google/Google Chrome Brand.plist" stringByStandardizingPath];
+  return {};
+}
+
+bool GetBrand(std::string* brand) {
+  if (g_brand_for_testing) {
+    *brand = g_brand_for_testing;
+    return true;
+  }
+
+  static base::NoDestructor<std::string> s_brand_code(GetBrandInternal());
+  *brand = *s_brand_code;
+  return true;
+}
+"""
+RESETTER = """  google_brand::GetBrand(&brandcode_);
+  if (brandcode_.empty()) {
+    return;
+  }
+  config_fetcher_ = std::make_unique<BrandcodeConfigFetcher>(
+"""
 RESET_DIALOG_HTML = """<cr-dialog id="dialog">
   <div slot="footer">
     <cr-checkbox id="sendSettings" checked>
@@ -197,6 +252,8 @@ class SettingsPageValuesTests(unittest.TestCase):
         for key in ('bookmarksBar', 'homeButton', 'hoverCard', 'setTheme'):
             self.assertIs(appearance[key], False, key)
         self.assertIs(flags()['showPrivacyGuide'], False)
+        self.assertIs(flags()['enableLiveCaption'], False)
+        self.assertIs(flags()['enableLiveTranslate'], False)
         expected = {
             'settings-about-page': ('#updateStatusMessage', '#buttonContainer'),
             'settings-appearance-page': ('#toolbarRow', '#colorSchemeModeRow',
@@ -213,7 +270,7 @@ class SettingsPageValuesTests(unittest.TestCase):
                                           'cr-link-row:has(+ #exceptionList)'),
             'settings-reset-profile-dialog': ('[slot="footer"]',),
             'settings-safety-hub-page': ('#version',),
-            'settings-security-page': ('#safeBrowsingEnhanced',),
+            'settings-security-page': ('#advancedProtectionProgramLink',),
             'settings-system-page': ('#hardwareAcceleration > cr-button',),
             'settings-translate-page': ('settings-section',),
         }
@@ -221,6 +278,19 @@ class SettingsPageValuesTests(unittest.TestCase):
         for host, selectors in expected.items():
             for selector in selectors:
                 self.assertIn(selector, rows.get(host, []), host)
+
+    def test_enhanced_protection_shows_only_while_chosen(self):
+        self.assertNotIn(contract.ENHANCED_ROW, hidden_rows().get('settings-security-page', []))
+        self.assertIn(f'+            {contract.ENHANCED_SHOWN}\n', PATCH.read_text(encoding='utf-8'))
+
+    def test_parc_reports_no_brand_code_before_chromium_asks(self):
+        self.assertIn(f'  {contract.NO_BRAND}\n', VALUES.read_text(encoding='utf-8'))
+        clients = CLIENTS.read_text(encoding='utf-8')
+        constructor = clients.find('ParcContentBrowserClient::ParcContentBrowserClient(')
+        self.assertGreaterEqual(constructor, 0)
+        body = clients[constructor:clients.find('\n}\n', constructor)]
+        self.assertIn('  ReportNoBrandCode();\n', body)
+        self.assertIn('    "//chrome/browser/google",\n', BUILD.read_text(encoding='utf-8'))
 
     def test_every_hidden_row_is_a_supported_selector(self):
         for host, selectors in hidden_rows().items():
@@ -283,6 +353,16 @@ class SettingsPageContractTests(unittest.TestCase):
             contract.RESET_DIALOG: context[contract.RESET_DIALOG] + RESET_DIALOG,
             contract.RESET_DIALOG_HTML: RESET_DIALOG_HTML,
             contract.RESET_HANDLER: RESET_HANDLER,
+            contract.SECURITY_PAGE: SECURITY_PAGE,
+            contract.SECURITY_PAGE_HTML: SECURITY_PAGE_HTML + context[contract.SECURITY_PAGE_HTML],
+            contract.SECURITY_PAGE_CSS: SECURITY_PAGE_CSS,
+            contract.SHARED_STYLE: SHARED_STYLE,
+            contract.HIDDEN_STYLE: HIDDEN_STYLE,
+            contract.RADIO_GROUP: RADIO_GROUP,
+            contract.BRAND_HEADER: BRAND_HEADER,
+            contract.BRAND_SOURCE: BRAND_SOURCE,
+            contract.BRAND_MAC: BRAND_MAC,
+            contract.RESETTER: RESETTER,
             contract.NESTED_CONSUMERS['appearance'][0]: APPEARANCE,
             contract.NESTED_CONSUMERS['privacy'][0]: PERSONALIZATION,
             contract.SETTINGS_UI_HEADER: SETTINGS_UI_HEADER,
@@ -512,6 +592,96 @@ class SettingsPageContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('route.ts no longer removes the onStartup section', result.stderr)
         self.assertFalse(stamp.exists())
+
+    def test_hiding_enhanced_protection_again_fails(self):
+        values = self.values('"#advancedProtectionProgramLink"',
+                             '"#safeBrowsingEnhanced",\n      "#advancedProtectionProgramLink"')
+        self.assertIn("Parc's settings-security-page list hides #safeBrowsingEnhanced, which leaves "
+                      'Security with nothing selected for people on Enhanced protection',
+                      self.problems(values=values))
+
+    def test_hiding_enhanced_protection_by_another_selector_fails(self):
+        values = self.values('"#advancedProtectionProgramLink"',
+                             '"settings-collapse-radio-button#safeBrowsingEnhanced",\n'
+                             '      "#advancedProtectionProgramLink"')
+        self.assertIn("Parc's settings-security-page list hides #safeBrowsingEnhanced, which leaves "
+                      'Security with nothing selected for people on Enhanced protection',
+                      self.problems(values=values))
+
+    def test_enhanced_visibility_bound_to_another_radio_fails(self):
+        self.apply_patch()
+        self.assertEqual(self.problems(applied=True), [])
+        line = f'            {contract.ENHANCED_SHOWN}\n'
+        self.edit(contract.SECURITY_PAGE_HTML, line, '')
+        self.edit(contract.SECURITY_PAGE_HTML, '          pref-key="generated.safe_browsing"\n',
+                  '          pref-key="generated.safe_browsing"\n'
+                  '        <settings-collapse-radio-button id="safeBrowsingStandard"\n' + line)
+        self.assertIn(f"{contract.SECURITY_PAGE_HTML} binds Parc's Enhanced visibility to some other "
+                      'element', self.problems(applied=True))
+
+    def test_hidden_radios_left_visible_fails(self):
+        self.edit(contract.SECURITY_PAGE_CSS, 'cr-shared-style-lit ', '')
+        self.assertIn(f'{contract.SECURITY_PAGE_CSS} no longer hides [hidden] radios', self.problems())
+
+    def test_moved_enhanced_radio_fails(self):
+        self.edit(contract.SECURITY_PAGE_HTML, 'id="safeBrowsingEnhanced"', 'id="enhancedRadio"')
+        self.assertIn(f'{contract.SECURITY_PAGE_HTML} no longer renders the Enhanced radio Parc shows '
+                      'only while it is chosen', self.problems())
+
+    def test_radio_group_off_the_safe_browsing_pref_fails(self):
+        self.edit(contract.SECURITY_PAGE_HTML, 'generated.safe_browsing', 'generated.safety')
+        self.assertIn(f'{contract.SECURITY_PAGE_HTML} no longer binds its radio group to '
+                      'generated.safe_browsing', self.problems())
+
+    def test_safe_browsing_choice_kept_elsewhere_fails(self):
+        self.edit(contract.SECURITY_PAGE, "'safeBrowsingPref_'", "'safeBrowsing_'")
+        self.assertIn(f'{contract.SECURITY_PAGE} no longer keeps the Safe Browsing choice in '
+                      'safeBrowsingPref_', self.problems())
+
+    def test_radio_group_reaching_hidden_radios_fails(self):
+        self.edit(contract.RADIO_GROUP, ':not([disabled]):not([hidden])', ':not([disabled])')
+        self.assertIn(f'{contract.RADIO_GROUP} no longer skips hidden radios, so the keyboard could '
+                      'pick a hidden Enhanced radio', self.problems())
+
+    def test_brand_override_gone_fails(self):
+        self.edit(contract.BRAND_HEADER, 'g_brand_for_testing', 'g_test_brand')
+        self.assertIn(f'{contract.BRAND_HEADER} no longer exposes the brand override Parc clears',
+                      self.problems())
+
+    def test_brand_files_read_before_the_override_fails(self):
+        self.edit(contract.BRAND_MAC, '  if (g_brand_for_testing) {\n    *brand = g_brand_for_testing;\n'
+                  '    return true;\n  }\n\n', '')
+        self.assertIn(f'{contract.BRAND_MAC} no longer reads the brand files only after the override '
+                      'Parc sets', self.problems())
+
+    def test_brand_files_read_by_a_caller_other_than_get_brand_fails(self):
+        self.edit(contract.BRAND_MAC, 's_brand_code(GetBrandInternal());', 's_brand_code(Cached());')
+        self.edit(contract.BRAND_MAC, 'bool GetBrand(std::string* brand) {',
+                  'std::string Cached() {\n  return GetBrandInternal();\n}\n\n'
+                  'bool GetBrand(std::string* brand) {')
+        self.assertIn(f'{contract.BRAND_MAC} no longer reads the brand files only after the override '
+                      'Parc sets', self.problems())
+
+    def test_brand_files_read_outside_the_override_fails(self):
+        self.edit(contract.BRAND_MAC, '  *brand = *s_brand_code;\n  return true;\n}\n',
+                  '  *brand = *s_brand_code;\n  return true;\n}\n\nbool GetReactivationBrand() {\n'
+                  '  return ReadBrandFile(@"/Library/Google/Google Chrome Brand.plist");\n}\n')
+        self.assertIn(f"{contract.BRAND_MAC} reads Chrome's brand files outside the override Parc sets",
+                      self.problems())
+
+    def test_rlz_brand_from_elsewhere_fails(self):
+        self.edit(contract.BRAND_SOURCE, 'return GetBrand(brand);', 'return GetRlzBrandFile(brand);')
+        self.assertIn(f'{contract.BRAND_SOURCE} no longer takes the RLZ brand from GetBrand',
+                      self.problems())
+
+    def test_brand_download_without_a_brand_fails(self):
+        self.edit(contract.RESETTER, '  if (brandcode_.empty()) {\n    return;\n  }\n', '')
+        self.assertIn(f'{contract.RESETTER} no longer skips the brand code download when there is no '
+                      'brand', self.problems())
+
+    def test_parc_no_longer_clearing_the_brand_fails(self):
+        values = self.values(contract.NO_BRAND, 'google_brand::g_brand_for_testing = nullptr;')
+        self.assertIn('Parc no longer clears the brand code', self.problems(values=values))
 
     def test_lost_guest_fallback_fails(self):
         self.edit(contract.PAGE_VISIBILITY, "if (!loadTimeData.getBoolean('isGuest')) {",

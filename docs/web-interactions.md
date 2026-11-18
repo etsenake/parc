@@ -406,12 +406,12 @@ the resource-bundle delegates Parc already installs in every process
   Parc's headline and lede and labels the details button Details. Chromium's
   own paragraph keeps its links and specifics: it moves into Details (the date
   on a clock warning, the app on a security-software warning) or stays as a
-  quieter note when a warning has no Details (the network on a captive
-  portal, the reason on HTTPS-Only, an organization's own message). Safe
-  Browsing says "this site" because Chromium doesn't give it the address.
-  Chromium 157 wires no command to the monitoring warning's Back to safety
-  button, so Parc hides it and leaves Details as that page's control, as on
-  the security-software warning.
+  quieter note when a warning has no Details (the network on a captive portal,
+  the reason on HTTPS-Only, an organization's own message). Safe Browsing says
+  "this site" because Chromium doesn't give it the address. Chromium 157 wires
+  no command to the monitoring warning's Back to safety button, so Parc hides
+  it and Details takes over, as on the security-software warning. Parc hides
+  the enhanced protection promo, which Settings offers only to people on it.
 - Chromium's two rarer error templates get Parc's look the same way: a web
   app's offline page (its icon, Parc's plug and Chromium's message) and an
   organization proxy's sign-in page (the warning skin over Chromium's page and

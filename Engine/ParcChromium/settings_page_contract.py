@@ -16,12 +16,25 @@ SUBPAGE = f'{SETTINGS_JS}/settings_page/settings_subpage.ts'
 RESET_DIALOG = f'{SETTINGS_JS}/reset_page/reset_profile_dialog.ts'
 RESET_DIALOG_HTML = f'{SETTINGS_JS}/reset_page/reset_profile_dialog.html.ts'
 RESET_HANDLER = f'{SETTINGS_CC}/reset_settings_handler.cc'
+SECURITY_PAGE = f'{SETTINGS_JS}/privacy_page/security/security_page.ts'
+SECURITY_PAGE_HTML = f'{SETTINGS_JS}/privacy_page/security/security_page.html'
+SECURITY_PAGE_CSS = f'{SETTINGS_JS}/privacy_page/security/security_page.css'
+SHARED_STYLE = 'ui/webui/resources/cr_elements/cr_shared_style_lit.css'
+HIDDEN_STYLE = 'ui/webui/resources/cr_elements/cr_hidden_style_lit.css'
+RADIO_GROUP = 'ui/webui/resources/cr_elements/cr_radio_group/cr_radio_group.ts'
+BRAND_HEADER = 'chrome/browser/google/google_brand.h'
+BRAND_SOURCE = 'chrome/browser/google/google_brand.cc'
+BRAND_MAC = 'chrome/browser/google/google_brand_mac.mm'
+RESETTER = 'chrome/browser/profile_resetter/profile_resetter.cc'
 SETTINGS_UI = f'{SETTINGS_CC}/settings_ui.cc'
 SETTINGS_UI_HEADER = f'{SETTINGS_CC}/settings_ui.h'
 VISIBILITY_KEY = 'parcPageVisibility'
 ROWS_KEY = 'parcHiddenRows'
 HOME_FALLBACK = 'return routes.PEOPLE || routes.AUTOFILL || routes.SEARCH;'
 HOME_SECTIONS = ('AUTOFILL', 'SEARCH')
+ENHANCED_ROW = '#safeBrowsingEnhanced'
+ENHANCED_SHOWN = '?hidden="${this.safeBrowsingPref_?.value !== SafeBrowsingSetting.ENHANCED}"'
+NO_BRAND = 'google_brand::g_brand_for_testing = "";'
 PATCH_MARKERS = {
     PAGE_VISIBILITY: ("loadTimeData.valueExists('parcPageVisibility')",
                       "loadTimeData.valueExists('parcHiddenRows')",
@@ -32,6 +45,7 @@ PATCH_MARKERS = {
     SECTION: ('hideParcRows(this);',),
     SUBPAGE: ('hideParcRows(this);',),
     RESET_DIALOG: ('hideParcRows(this.$.dialog);', 'this.$.sendSettings.checked = false;'),
+    SECURITY_PAGE_HTML: (ENHANCED_SHOWN,),
 }
 SELF_HIDING_HOSTS = {'settings-reset-profile-dialog': RESET_DIALOG}
 NESTED_INTERFACES = {
@@ -486,6 +500,61 @@ def check_reset(contract: Contract, values_source: str):
         contract.fail(f'{RESET_DIALOG_HTML} moved the report checkbox out of the footer Parc hides')
 
 
+def check_enhanced(contract: Contract, rows: dict, applied: bool):
+    if any(('id', ENHANCED_ROW[1:], None) in selector_parts(selector)
+           for selector in rows.get('settings-security-page', [])):
+        contract.fail(f'Parc\'s settings-security-page list hides {ENHANCED_ROW}, which leaves Security '
+                      'with nothing selected for people on Enhanced protection')
+    if not re.search(r'<settings-radio-group id="safeBrowsingRadioGroup" no-set-pref\s+'
+                     r'pref-key="generated\.safe_browsing"', contract.text(SECURITY_PAGE_HTML)):
+        contract.fail(f'{SECURITY_PAGE_HTML} no longer binds its radio group to generated.safe_browsing')
+    radio = (r'<settings-collapse-radio-button id="safeBrowsingEnhanced"\s+'
+             r'name="\$\{SafeBrowsingSetting\.ENHANCED\}"')
+    if not re.search(radio, contract.text(SECURITY_PAGE_HTML)):
+        contract.fail(f'{SECURITY_PAGE_HTML} no longer renders the Enhanced radio Parc shows only '
+                      'while it is chosen')
+    elif applied and not re.search(radio + r'\s+' + re.escape(ENHANCED_SHOWN),
+                                   contract.text(SECURITY_PAGE_HTML)):
+        contract.fail(f'{SECURITY_PAGE_HTML} binds Parc\'s Enhanced visibility to some other element')
+    if ('#include=cr-shared-style-lit' not in contract.text(SECURITY_PAGE_CSS)
+            or '#include=cr-hidden-style-lit' not in contract.text(SHARED_STYLE)
+            or not re.search(r'\[hidden\],\s*:host\(\[hidden\]\) \{\s*display: none !important;',
+                             contract.text(HIDDEN_STYLE))):
+        contract.fail(f'{SECURITY_PAGE_CSS} no longer hides [hidden] radios')
+    page = contract.text(SECURITY_PAGE)
+    if ("'generated.safe_browsing': 'safeBrowsingPref_'" not in page
+            or 'safeBrowsingPref_: {type: Object}' not in page):
+        contract.fail(f'{SECURITY_PAGE} no longer keeps the Safe Browsing choice in safeBrowsingPref_')
+    if "radio.matches(':not([disabled]):not([hidden])')" not in contract.text(RADIO_GROUP):
+        contract.fail(f'{RADIO_GROUP} no longer skips hidden radios, so the keyboard could pick '
+                      'a hidden Enhanced radio')
+
+
+def check_brand(contract: Contract, values_source: str):
+    if 'extern const char* g_brand_for_testing;' not in contract.text(BRAND_HEADER):
+        contract.fail(f'{BRAND_HEADER} no longer exposes the brand override Parc clears')
+    mac = contract.text(BRAND_MAC)
+    internal = mac.find('std::string GetBrandInternal() {')
+    getter = re.search(r'bool GetBrand\(std::string\* brand\) \{\s*if \(g_brand_for_testing\) \{\s*'
+                       r'\*brand = g_brand_for_testing;\s*return true;\s*\}', mac)
+    call = mac.find('GetBrandInternal()', internal + len('std::string GetBrandInternal() {'))
+    if (internal < 0 or not getter or mac.count('GetBrandInternal(') != 2
+            or not getter.end() <= call < mac.find('\n}\n', getter.end())):
+        contract.fail(f'{BRAND_MAC} no longer reads the brand files only after the override Parc sets')
+    elif any(not internal < match.start() < getter.start()
+             for match in re.finditer(r'Brand\.plist', mac)):
+        contract.fail(f'{BRAND_MAC} reads Chrome\'s brand files outside the override Parc sets')
+    if not re.search(r'bool GetRlzBrand\(std::string\* brand\) \{(?:(?!\n\}).)*#else\s*'
+                     r'return GetBrand\(brand\);', contract.text(BRAND_SOURCE), re.S):
+        contract.fail(f'{BRAND_SOURCE} no longer takes the RLZ brand from GetBrand')
+    if not re.search(r'google_brand::GetBrand\(&brandcode_\);\s*if \(brandcode_\.empty\(\)\) \{\s*'
+                     r'return;\s*\}\s*config_fetcher_ = std::make_unique<BrandcodeConfigFetcher>',
+                     contract.text(RESETTER)):
+        contract.fail(f'{RESETTER} no longer skips the brand code download when there is no brand')
+    if NO_BRAND not in values_source:
+        contract.fail('Parc no longer clears the brand code')
+
+
 def run(chromium: Path, values_path: Path, startup_policy: Path, applied: bool) -> Contract:
     contract = Contract(chromium)
     contract.read_paths.add(values_path)
@@ -497,7 +566,10 @@ def run(chromium: Path, values_path: Path, startup_policy: Path, applied: bool) 
     check_flags(contract, flags)
     check_features(contract, startup_policy)
     check_mechanism(contract)
-    check_reset(contract, values_path.read_text(encoding='utf-8'))
+    values_source = values_path.read_text(encoding='utf-8')
+    check_reset(contract, values_source)
+    check_enhanced(contract, values.get(ROWS_KEY, {}), applied)
+    check_brand(contract, values_source)
     return contract
 
 

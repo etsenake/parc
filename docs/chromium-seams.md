@@ -81,6 +81,10 @@ With CEF gone, Parc owns Chromium's embedder classes and uses them before anythi
   WebContentsDelegate records renderer-link pop-ups with the same blocker before its own routing. A
   released pop-up opens through the source window's delegate, like an allowed one; see
   [web interactions](web-interactions.md#banners-and-blocked-pop-ups).
+- Parc reports no brand code. The browser client sets Chromium's only brand seam, a testing
+  override, to an empty brand before anything asks, so Chromium never reads Google Chrome's brand
+  files and Reset, component updates and RLZ claim no brand
+  ([More Settings](settings.md#more-settings)).
 
 ## The hook pattern
 

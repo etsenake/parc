@@ -7,6 +7,7 @@
 #include "base/check.h"
 #include "base/json/json_reader.h"
 #include "base/strings/strcat.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/settings/settings_ui.h"
 #include "chrome/common/webui_url_constants.h"
@@ -94,7 +95,6 @@ constexpr char kSettingsPageValues[] = R"json({
       "#version"
     ],
     "settings-security-page": [
-      "#safeBrowsingEnhanced",
       "#advancedProtectionProgramLink"
     ],
     "settings-system-page": [
@@ -107,6 +107,8 @@ constexpr char kSettingsPageValues[] = R"json({
   "autofillAiReauthOnViewingSensitiveDataEnabled": false,
   "downloadBubblePartialViewControlledByPref": false,
   "enableComposeProactiveNudge": false,
+  "enableLiveCaption": false,
+  "enableLiveTranslate": false,
   "extendedReportingRemovePrefDependency": true,
   "hashPrefixRealTimeLookupsSamplePing": true,
   "isUserEligibleForWalletablePassDetection": false,
@@ -165,6 +167,10 @@ base::DictValue SettingsPageValues() {
       base::JSONReader::ReadDict(kSettingsPageValues, base::JSON_PARSE_RFC);
   CHECK(values);
   return std::move(*values);
+}
+
+void ReportNoBrandCode() {
+  google_brand::g_brand_for_testing = "";
 }
 
 void RegisterSettingsWebUI() {

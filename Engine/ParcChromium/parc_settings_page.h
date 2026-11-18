@@ -6,6 +6,7 @@
 namespace parc {
 
 base::DictValue SettingsPageValues();
+void ReportNoBrandCode();
 void RegisterSettingsWebUI();
 
 }  // namespace parc
