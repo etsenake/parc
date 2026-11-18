@@ -249,11 +249,15 @@ points in a top-and-bottom split. Its other two edges split that pane into a
 at 50 points for the top and bottom of a side-by-side pane, one-third of width
 capped at 80 points for the left and right of a top-and-bottom pane. Main-row
 edges win at corners, and the center replaces the pane. Threshold equality
-belongs to the center; gaps are not pane targets.
+belongs to the center. Gaps are not pane targets: a pointer over one keeps
+whatever preview is showing, and a release there drops into it, or nowhere when
+nothing shows. Leaving the split's own bounds clears the preview at once.
 
 An unavailable edge insertion falls back to replacement of the same pane. A full
 split can therefore replace a child without exceeding capacity. Preview and
-commit share the classifier and original lease.
+commit share the classifier and original lease. A release drops into the zone
+under the pointer, as its preview shows, even when that preview hasn't appeared
+yet; the drop classifies without presenting, so it never moves panes first.
 
 ## Replacement highlight, pending pane and proposal feedback
 
@@ -264,9 +268,26 @@ identity while their frames adjust. The proposal retains its intended target
 while the pointer remains inside the reservation; reclassification cannot bounce
 against its own layout.
 
+Previews wait for hover intent, so a drag passing through on its way somewhere
+else moves nothing. A zone's preview appears once the pointer moves slower than
+250 points a second over the last 50 ms, or has stayed in that zone for 120 ms
+without moving faster than 500 points a second. Easing onto an edge opens it at
+once and stopping opens it 50 ms later, while sweeping over bands, centres or a
+single page's wide side bands opens nothing. The dwell clock restarts while the
+pointer moves fast, because a pane's centre or a single page's side band takes
+longer than 120 ms to cross. The replacement ring waits too, so it doesn't flash
+over every centre crossed, and an open slot isn't swapped for a ring in passing.
+
+From an open preview, the next zone leaves that preview up until it qualifies,
+then the same region moves straight to its new place. Leaving the split, Escape
+and the drag's end still clear at once. A link dragged between pages keeps one
+session: gaps and headers keep it in the split, and entering another page's
+content carries the same preview on rather than starting over.
+
 Reserved-region expansion/collapse and border changes own their 0.2-second
 transitions. Transition identities prevent an old completion from removing a
-new reservation. Drag proposal changes and divider snaps have separate haptics.
+new reservation. A preview appearing, ring included, gives one haptic; a zone
+merely crossed gives none, and divider snaps keep their own.
 Pending Add panes use the empty-content backing/highlight and immediate logical
 insertion/removal. No real pane uses the dormant fixed/collapsing drag-source path.
 
@@ -444,7 +465,7 @@ target would crowd reordering and folder drops in the busiest drag code.
 
 ## Source and validation
 
-Core owners include `SplitMembership`, `BrowserSplitLayout`, `SplitPaneResize`,
+Core owners include `SplitMembership`, `BrowserSplitLayout`, `SplitPaneResize`, `SplitDropIntent`,
 `SplitCrossSpaceAdd`, `SidebarWindowMove`, `SidebarFolderFromItems` and
 `BrowserStore` transactions.
 Presentation owners include `ParcSplitView`, `SplitDropView`, `SplitDragView`,
@@ -455,6 +476,7 @@ Relevant existing checks are `test-split-context.sh`, `test-split-dividers.sh`,
 `test-split-appearance.sh`, `test-external-split-drop.sh`,
 `test-inter-profile-move.sh`, the model/store suites and `tests/NativeContentDrop`.
 The windowless `tests/SplitStackLayoutTests.swift` also covers the snap rule on
-each divider's axis and flat and stacked layouts in tight page areas, and
+each divider's axis and flat and stacked layouts in tight page areas,
+`tests/SplitDropIntentTests.swift` covers hover intent with a fake clock, and
 `tests/SplitLayoutFlushSkip/check.py` pins the divider pan to that axis.
 Inspect their entry points and obey [AGENTS.md](../AGENTS.md) before running them.

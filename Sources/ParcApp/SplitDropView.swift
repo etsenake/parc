@@ -51,6 +51,7 @@ final class SplitDropView: NSView {
         super.init(frame: frame)
         registerForDraggedTypes([SidebarSplitDrag.pasteboardType])
         setAccessibilityElement(false)
+        reservation.onIntentDue = { [weak self] in self?.refreshIntent() }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     private func accepts(_ sender: NSDraggingInfo) -> Bool {
@@ -60,13 +61,20 @@ final class SplitDropView: NSView {
               sender.draggingPasteboard.string(forType: SidebarSplitDrag.pasteboardType) == drag.identifier.uuidString else { return false }
         return true
     }
-    private func update(_ sender: NSDraggingInfo) -> NSDragOperation {
+    private func update(_ sender: NSDraggingInfo, presenting: Bool = true, refreshingCard: Bool = true) -> NSDragOperation {
         guard accepts(sender), frame.size == superview?.bounds.size else { proposal = nil; targets.reset(); reservation.end(); return [] }
-        proposal = reservation.proposal(at: convert(sender.draggingLocation, from: nil), canPropose: canPropose)
-        targets.update(proposal?.0, reusedRegion: reservation.reusedRegion)
-        if showsCard, let size = SplitDropPlaceholderCard.size(forIncomingPane: reservation.incomingPaneSize),
+        proposal = reservation.proposal(at: convert(sender.draggingLocation, from: nil), canPropose: canPropose, presenting: presenting)
+        guard presenting else { return proposal == nil ? [] : .move }
+        lastSender = sender
+        targets.update(reservation.shownTarget, feedback: reservation.appeared)
+        if refreshingCard, showsCard, let size = SplitDropPlaceholderCard.size(forIncomingPane: reservation.incomingPaneSize),
            size != cardSize { _ = presentPlaceholderCard(sender) }
         return proposal == nil ? [] : .move
+    }
+    private var lastSender: NSDraggingInfo?
+    private func refreshIntent() {
+        guard let lastSender else { return }
+        _ = update(lastSender, refreshingCard: false)
     }
     var canPropose: (SplitDropTarget, SplitOrientation) -> Bool = { _, _ in false }
     private var edit: ParcSplitView.InteractivePaneEdit?
@@ -92,25 +100,25 @@ final class SplitDropView: NSView {
         guard let sender, let image = (sender.draggingSource as? SplitDropCardSource)?.splitDragImage else { return }
         SplitDropPlaceholderCard.present(image, on: sender, admits: ownsItem)
     }
-    override func draggingEnded(_ sender: NSDraggingInfo) { showsCard = false; endEdit() }
+    override func draggingEnded(_ sender: NSDraggingInfo) { showsCard = false; lastSender = nil; endEdit() }
     private func endEdit() { let old = edit; edit = nil; old?.end() }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { update(sender) }
     override func draggingExited(_ sender: NSDraggingInfo?) {
-        proposal = nil; targets.reset(); reservation.clear(animated: true)
+        proposal = nil; lastSender = nil; targets.reset(); reservation.clear(animated: true)
         edit?.isDragInside = false
         if showsCard { showsCard = false; restoreRowImage(sender) }
     }
-    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { !update(sender).isEmpty }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { !update(sender, presenting: false).isEmpty }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        showsCard = false
-        guard !update(sender).isEmpty, let proposal, accepts(sender) else { return false }
+        showsCard = false; lastSender = nil
+        guard !update(sender, presenting: false).isEmpty, let proposal, accepts(sender) else { return false }
         reservation.clear()
         let result = (perform ?? drag.commit)(proposal.0, proposal.1)
         drag.end()
         return result
     }
     override func viewWillMove(toSuperview newSuperview: NSView?) {
-        if superview != nil, newSuperview !== superview { reservation.end(); endEdit() }
+        if superview != nil, newSuperview !== superview { lastSender = nil; reservation.end(); endEdit() }
         super.viewWillMove(toSuperview: newSuperview)
     }
     func refreshAppearance() { reservation.refreshAppearance() }

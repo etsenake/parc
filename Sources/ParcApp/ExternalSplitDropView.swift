@@ -23,10 +23,21 @@ final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, L
     private var edit: ParcSplitView.InteractivePaneEdit?
     private var editSequence = 0
     private var endingRouter = false
+    private weak var releasedSession: ExternalSplitDropSession?
     private func endEdit() { let old = edit; edit = nil; old?.end() }
     private func syncEditPresence() { edit?.isDragInside = session != nil || handoffRouter != nil }
     func contentView(_ view: NSView, beginDrop info: NSDraggingInfo) -> NSDragOperation {
         defer { syncEditPresence() }
+        if let session, session.continues(info, into: view) {
+            let router = view === sourceView ? nil : handoffRouter
+            handoffRouter = nil; sourceView = view; releasedSession = nil
+            endingRouter = true; router?.end(); endingRouter = false
+            if edit?.ended != false || editSequence != info.draggingSequenceNumber {
+                edit = session.beginInteractivePaneEdit(); editSequence = info.draggingSequenceNumber
+                session.targets.republish()
+            }
+            return session.update(info)
+        }
         tearDown(animated: true)
         guard let next = makeSession?(view, info) else { return [] }
         sourceView = view; session = next
@@ -37,17 +48,36 @@ final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, L
         return next.update(info)
     }
     func contentView(_ view: NSView, updateDrop info: NSDraggingInfo) -> NSDragOperation { view === sourceView ? session?.update(info) ?? [] : [] }
-    func contentView(_ view: NSView, prepareDrop info: NSDraggingInfo) -> Bool { view === sourceView && !(session?.update(info).isEmpty ?? true) }
+    func contentView(_ view: NSView, prepareDrop info: NSDraggingInfo) -> Bool {
+        view === sourceView && !(session?.update(info, presenting: false).isEmpty ?? true)
+    }
     func contentView(_ view: NSView, performDrop info: NSDraggingInfo) -> Bool { view === sourceView && (session?.perform(info) ?? false) }
     func contentViewDidEndDrop(_ view: NSView) {
         defer { syncEditPresence() }
+        if view === sourceView, deferRelease(endingEdit: !endingRouter) { return }
         if view === sourceView { tearDown(animated: true) }
-        if !endingRouter { endEdit() }
+        if !endingRouter, view === sourceView || session == nil { endEdit() }
+    }
+    private func deferRelease(endingEdit: Bool) -> Bool {
+        guard let session, session.canContinue else { return false }
+        releasedSession = session
+        DispatchQueue.main.async { [weak self, weak session] in
+            guard let self, let session, self.session === session, self.releasedSession === session else { return }
+            self.tearDown(animated: true)
+            if endingEdit { self.endEdit() }
+            self.syncEditPresence()
+        }
+        return true
     }
     func contentView(_ view: NSView, handoffDrop info: NSDraggingInfo, router: PCNativeContentDropRouting) -> Bool {
         defer { syncEditPresence() }
         guard view === sourceView, router.claimed else { return false }
         if session?.canHandoff(info) == true, handoffRouter == nil || handoffRouter === router {
+            handoffRouter = router; releasedSession = nil
+            return true
+        }
+        if handoffRouter == nil || handoffRouter === router, entersAnotherPage(info, leaving: view),
+           deferRelease(endingEdit: false) {
             handoffRouter = router
             return true
         }
@@ -61,7 +91,11 @@ final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, L
     private func updateHandoff(_ sender: NSDraggingInfo) -> NSDragOperation {
         defer { syncEditPresence() }
         guard let router = handoffRouter, router.claimed, session?.canHandoff(sender) == true else { tearDown(animated: false); return [] }
+        releasedSession = nil
         return router.update(sender)
+    }
+    private func entersAnotherPage(_ info: NSDraggingInfo, leaving view: NSView) -> Bool {
+        session?.entersContent(info, outside: view) == true
     }
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
         !updateHandoff(sender).isEmpty && handoffRouter?.prepare(sender) == true
@@ -71,7 +105,10 @@ final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, L
         return router.perform(sender)
     }
     override func draggingExited(_ sender: NSDraggingInfo?) {
-        handoffRouter = nil; endSession(animated: true); syncEditPresence()
+        defer { syncEditPresence() }
+        if let sender, handoffRouter?.claimed == true, session?.entersContent(sender) == true,
+           deferRelease(endingEdit: false) { return }
+        handoffRouter = nil; endSession(animated: true)
     }
     override func draggingEnded(_ sender: NSDraggingInfo) { cancelDrop(); endEdit() }
     override func concludeDragOperation(_ sender: NSDraggingInfo?) { cancelDrop(); endEdit() }
@@ -87,7 +124,7 @@ final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, L
     func cancelDrop(animated: Bool = true) { tearDown(animated: animated); syncEditPresence() }
     private func tearDown(animated: Bool) {
         let router = handoffRouter
-        handoffRouter = nil
+        handoffRouter = nil; releasedSession = nil
         endSession(animated: animated)
         endingRouter = true; router?.end(); endingRouter = false
     }
@@ -117,6 +154,12 @@ final class ExternalSplitDropSession {
     private var cardSize: NSSize?
     private(set) var ended = false
     var isValid: Bool { !ended && validate() && host?.window === window && window != nil }
+    var admitsReceiver: ((NSView, NSDraggingInfo) -> Bool)?
+    var canContinue: Bool { reservation != nil && admitsReceiver != nil && isValid }
+    func continues(_ info: NSDraggingInfo, into view: NSView) -> Bool {
+        guard canContinue, matches(info), let admitsReceiver else { return false }
+        return admitsReceiver(view, info)
+    }
 
     static func readURL(_ pasteboard: NSPasteboard) -> URL? {
         guard let items = pasteboard.pasteboardItems, items.count == 1,
@@ -138,6 +181,10 @@ final class ExternalSplitDropSession {
         sequence = info.draggingSequenceNumber; pasteboard = info.draggingPasteboard; changeCount = pasteboard.changeCount
         self.validate = validate; self.canPropose = canPropose; self.commit = commit; self.info = info
         reservation?.setInsertionColor(insertionColor)
+        reservation?.onIntentDue = { [weak self] in
+            guard let self, let info = self.intentInfo else { return }
+            _ = self.update(info, refreshingCard: false)
+        }
     }
     static let linkGlyph = String(Character(Unicode.Scalar(0xE98A)!))
     func presentPlaceholderCard() {
@@ -171,26 +218,38 @@ final class ExternalSplitDropSession {
         guard matches(info), let host, let reservation else { return false }
         return reservation.containsHandoffPoint(host.convert(info.draggingLocation, from: nil))
     }
-    func update(_ info: NSDraggingInfo) -> NSDragOperation {
+    func entersContent(_ info: NSDraggingInfo, outside view: NSView? = nil) -> Bool {
+        guard matches(info), let host, let reservation else { return false }
+        return reservation.containsContentPoint(host.convert(info.draggingLocation, from: nil), outside: view)
+    }
+    private var intentInfo: NSDraggingInfo?
+    func update(_ info: NSDraggingInfo, presenting: Bool = true, refreshingCard: Bool = true) -> NSDragOperation {
         guard matches(info), let host else { end(animated: false); return [] }
         let point = host.convert(info.draggingLocation, from: nil)
         if let reservation {
-            proposal = reservation.proposal(at: point, canPropose: canPropose)
+            proposal = reservation.proposal(at: point, canPropose: canPropose, presenting: presenting)
         } else {
             proposal = SplitDropGeometry.proposal(at: point, frames: frames,
                 orientation: orientation, slotSizes: slotSizes, canPropose: canPropose)
         }
         guard matches(info) else { end(animated: false); return [] }
-        targets.update(proposal?.0, reusedRegion: reservation?.reusedRegion ?? false)
-        refreshPlaceholderCard(info)
+        guard presenting else { return proposal == nil ? [] : .copy }
+        self.info = info; intentInfo = info
+        if let reservation {
+            targets.update(reservation.shownTarget, feedback: reservation.appeared)
+        } else {
+            let next = proposal?.0
+            targets.update(next, feedback: next != nil && next != targets.target)
+        }
+        if refreshingCard { refreshPlaceholderCard(info) }
         return proposal == nil ? [] : .copy
     }
     func refreshAppearance() { reservation?.refreshAppearance() }
     func perform(_ info: NSDraggingInfo) -> Bool {
-        guard !update(info).isEmpty, let p = proposal, matches(info) else { end(animated: false); return false }
+        guard !update(info, presenting: false).isEmpty, let p = proposal, matches(info) else { end(animated: false); return false }
         reservation?.clear()
         guard matches(info) else { end(animated: false); return false }
-        ended = true; proposal = nil; replacedImages = [:]
+        ended = true; proposal = nil; replacedImages = [:]; intentInfo = nil
         targets.reset()
         let result = commit(p.0, p.1)
         reservation?.end()
@@ -199,7 +258,7 @@ final class ExternalSplitDropSession {
     func end(animated: Bool = true) {
         guard !ended else { return }
         let attached = window != nil && host?.window === window
-        ended = true; proposal = nil
+        ended = true; proposal = nil; intentInfo = nil
         targets.reset()
         restoreImages()
         let animate = animated && attached && validate()

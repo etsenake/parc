@@ -161,8 +161,10 @@ panes those edges replace the pane instead, as the centre does.
 The preview reserves room inside that one slot: the slot's panes make way for
 the incoming pane at its stack position and share, its outline grows from a line
 at the pane's edge, dividers hide, and the drag's placeholder card takes the
-incoming pane's in-slot shape. The motion, haptics and proposal stability
-match a main-row reservation.
+incoming pane's in-slot shape. The motion, haptics, proposal stability and
+[hover intent](split-groups.md#replacement-highlight-pending-pane-and-proposal-feedback)
+match a main-row reservation, so a stack seat opens only once the pointer
+settles on it, and an open column slides straight into the seat.
 
 ## Model and store entry points
 

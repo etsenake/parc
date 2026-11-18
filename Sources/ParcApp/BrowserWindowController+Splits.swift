@@ -47,15 +47,7 @@ extension BrowserWindowController {
         let selection = selectedTabIDs, layout = activeSplitLayout
         let contents = selection.compactMap(externalSplitDropContent)
         guard contents.count == selection.count,
-              let receiver = contents.first(where: { nativeView === $0.view || nativeView.isDescendant(of: $0.view) }) else { return nil }
-        if receiver.local {
-            let richTypes: [NSPasteboard.PasteboardType] = [EaselStyledText.pasteboardType,
-                EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType,
-                .rtfd, .rtf, .png, .tiff]
-            guard info.draggingPasteboard.availableType(from: richTypes) == nil else { return nil }
-            if let source = info.draggingSource as? NSView,
-               source === receiver.view || source.isDescendant(of: receiver.view) { return nil }
-        }
+              Self.admitsExternalSplitDrop(into: nativeView, info: info, contents: contents) else { return nil }
         let spaceID = activeSpaceID, profileID = activeProfileID, focusID = currentTabID
         let bounds = pageHost.bounds, hostFrame = pageHost.frame, windowFrame = window.frame
         let identities = selection.compactMap { splitPaneIdentity($0) }
@@ -138,7 +130,23 @@ extension BrowserWindowController {
             })
         if session == nil { reservation.end() }
         session?.targets.onChange = { [weak self] target in self?.setSplitDropProposal(target, selection: selection) }
+        session?.admitsReceiver = { view, info in
+            validate() && Self.admitsExternalSplitDrop(into: view, info: info, contents: contents)
+        }
         return session
+    }
+
+    private static func admitsExternalSplitDrop(into nativeView: NSView, info: NSDraggingInfo,
+                                                contents: [(view: NSView, local: Bool, valid: () -> Bool)]) -> Bool {
+        guard let receiver = contents.first(where: { nativeView === $0.view || nativeView.isDescendant(of: $0.view) }) else { return false }
+        guard receiver.local else { return true }
+        let richTypes: [NSPasteboard.PasteboardType] = [EaselStyledText.pasteboardType,
+            EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType,
+            .rtfd, .rtf, .png, .tiff]
+        guard info.draggingPasteboard.availableType(from: richTypes) == nil else { return false }
+        if let source = info.draggingSource as? NSView,
+           source === receiver.view || source.isDescendant(of: receiver.view) { return false }
+        return true
     }
 
     private func beginSplitDrag(_ sourceID: UUID) -> SidebarSplitDrag? {

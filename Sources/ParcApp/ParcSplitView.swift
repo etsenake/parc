@@ -83,6 +83,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         private var paneFrames: [NSRect]
         private var contentFrames: [NSRect]
         private var paneHostFrames: [NSRect]
+        private var splitHostFrame: NSRect
         private var updating = false
         private(set) var ended = false
         fileprivate let region = DropRegionView()
@@ -93,7 +94,13 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             return nil
         }
         private(set) var reusedRegion = false
+        private(set) var appeared = false
         private var retiredTarget: SplitDropTarget?
+        var hoverIntent = SplitDropIntent()
+        var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+        var onIntentDue: (() -> Void)?
+        private var intentTimer: Timer?
+        var shownTarget: SplitDropTarget? { hoverIntent.shown?.target }
         func setInsertionColor(_ color: @escaping () -> NSColor) {
             region.insertionColor = color; region.refreshAppearance()
         }
@@ -116,6 +123,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             paneFrames = panes.map(\.frame); originalPaneFrames = paneFrames
             contentFrames = contents.map { $0.convert($0.bounds, to: host) }
             paneHostFrames = panes.map { $0.convert($0.bounds, to: host) }
+            splitHostFrame = owner.convert(owner.bounds, to: host)
             region.wantsLayer = true; region.setAccessibilityElement(false); region.setAccessibilityChildren([])
         }
         var incomingPaneSize: NSSize {
@@ -151,6 +159,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             paneFrames = panes.map(\.frame)
             contentFrames = contents.map { $0.convert($0.bounds, to: host) }
             paneHostFrames = panes.map { $0.convert($0.bounds, to: host) }
+            splitHostFrame = owner.convert(owner.bounds, to: host)
         }
         private var regionFrame: NSRect? {
             guard target != nil, let owner, let host else { return nil }
@@ -159,48 +168,109 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         func containsReservedPoint(_ point: NSPoint) -> Bool {
             isCurrent && regionFrame?.contains(point) == true
         }
+        func containsContentPoint(_ point: NSPoint, outside view: NSView? = nil) -> Bool {
+            isCurrent && zip(contents, contentFrames).contains { content, frame in
+                frame.contains(point) && !(view.map { $0 === content || $0.isDescendant(of: content) } ?? false)
+            }
+        }
         func containsHandoffPoint(_ point: NSPoint) -> Bool {
             guard isCurrent else { return false }
             if regionFrame?.contains(point) == true { return true }
-            return zip(paneHostFrames, contentFrames).contains { $0.contains(point) && !$1.contains(point) }
+            return splitHostFrame.contains(point) && !contentFrames.contains { $0.contains(point) }
         }
-        @MainActor func proposal(at point: NSPoint, canPropose: (SplitDropTarget, SplitOrientation) -> Bool) -> SplitDropGeometry.Proposal? {
+        @MainActor func proposal(at point: NSPoint, canPropose: (SplitDropTarget, SplitOrientation) -> Bool,
+                                 presenting: Bool = true) -> SplitDropGeometry.Proposal? {
             guard isCurrent else { end(); return nil }
-            reusedRegion = false
+            if presenting { reusedRegion = false; appeared = false }
+            let place: SplitDropIntent.Place
+            var drop: SplitDropGeometry.Proposal?
             if let target, let rect = regionFrame, rect.contains(point), canPropose(target, orientation), isCurrent {
-                reusedRegion = true
-                return (target, orientation, rect)
+                place = .preview; drop = (target, orientation, rect)
+                if presenting { reusedRegion = true }
+            } else {
+                guard isCurrent else { end(); return nil }
+                guard splitHostFrame.contains(point) else {
+                    if presenting { leave() }
+                    return nil
+                }
+                if paneHostFrames.contains(where: { $0.contains(point) }) {
+                    drop = SplitDropGeometry.proposal(at: point, frames: paneHostFrames,
+                        orientation: orientation, slotSizes: stacks?.slotSizes, canPropose: canPropose)
+                    if case .replace(let index)? = drop?.0 { drop = (.replace(index), originalOrientation, paneHostFrames[index]) }
+                    place = .pane(drop.map { SplitDropIntent.Zone(target: $0.0, orientation: $0.1) })
+                } else if let shown = hoverIntent.shown, !canPropose(shown.target, shown.orientation) {
+                    place = .pane(nil)
+                } else {
+                    place = .preview
+                    drop = hoverIntent.shown.map { ($0.target, $0.orientation, splitHostFrame) }
+                }
+                guard isCurrent else { end(); return nil }
             }
-            guard isCurrent else { end(); return nil }
-            let proposed = SplitDropGeometry.proposal(at: point, frames: paneHostFrames,
-                orientation: orientation, slotSizes: stacks?.slotSizes, canPropose: canPropose)
-            guard isCurrent else { end(); return nil }
-            guard let proposed else { clear(animated: true); return nil }
-            if case .replace(let i) = proposed.0 {
-                clear(animated: true)
-                return (proposed.0, originalOrientation, paneHostFrames[i])
+            if presenting {
+                present(hoverIntent.move(to: place, x: Double(point.x), y: Double(point.y), at: clock()))
+                guard isCurrent else { end(); return nil }
             }
-            guard isCurrent, let owner, let collapsed = collapsedFrame(for: proposed.0, orientation: proposed.1) else { end(); return nil }
-            if target == proposed.0 && orientation == proposed.1 { reusedRegion = true }
-            else {
-                reusedRegion = target == nil && retiredTarget == proposed.0 && owner.retiringDropRegion === region
-                let positions = owner.captureLayoutPresentation()
-                let visible = owner.captureDropRegion(region)
-                owner.clearRetiringDropRegion()
-                updating = true
-                orientation = proposed.1; target = proposed.0
-                if region.superview !== owner { owner.addSubview(region) }
-                region.frame = collapsed; region.layer?.opacity = 0
-                let start = visible ?? owner.captureDropRegion(region)
-                owner.applyDropReserveLayout()
-                capture(); updating = false
-                if isCurrent {
-                    owner.animateReservedLayout(from: positions)
-                    owner.presentDropRegion(region, from: start, opacity: 1, removing: false)
+            guard let drop else { return nil }
+            return (drop.0, drop.1, frame(for: drop))
+        }
+        private func frame(for drop: SplitDropGeometry.Proposal) -> NSRect {
+            if drop.0 == target, drop.1 == orientation, let rect = regionFrame { return rect }
+            if case .replace(let index) = drop.0, paneHostFrames.indices.contains(index) { return paneHostFrames[index] }
+            return drop.2
+        }
+        @MainActor private func present(_ step: SplitDropIntent.Step) {
+            scheduleIntent()
+            guard step.changed else {
+                if target != nil { reusedRegion = true }
+                return
+            }
+            if let zone = step.shown, zone.target.reservesRoom { open(zone) } else { collapse(animated: true) }
+            appeared = !ended && step.appeared && !reusedRegion
+        }
+        @MainActor private func open(_ zone: SplitDropIntent.Zone) {
+            guard isCurrent, let owner, let collapsed = collapsedFrame(for: zone.target, orientation: zone.orientation) else { end(); return }
+            guard target != zone.target || orientation != zone.orientation else { reusedRegion = true; return }
+            reusedRegion = target == nil && retiredTarget == zone.target && owner.retiringDropRegion === region
+            let positions = owner.captureLayoutPresentation()
+            let visible = owner.captureDropRegion(region)
+            owner.clearRetiringDropRegion()
+            updating = true
+            orientation = zone.orientation; target = zone.target
+            if region.superview !== owner { owner.addSubview(region) }
+            region.frame = collapsed; region.layer?.opacity = 0
+            let start = visible ?? owner.captureDropRegion(region)
+            owner.applyDropReserveLayout()
+            capture(); updating = false
+            if isCurrent {
+                owner.animateReservedLayout(from: positions)
+                owner.presentDropRegion(region, from: start, opacity: 1, removing: false)
+            }
+        }
+        private func leave() {
+            _ = hoverIntent.leave()
+            scheduleIntent()
+            collapse(animated: true)
+        }
+        private func resetIntent() {
+            hoverIntent.reset(); appeared = false
+            intentTimer?.invalidate(); intentTimer = nil
+        }
+        private func scheduleIntent() {
+            guard !ended, let deadline = hoverIntent.deadline else {
+                intentTimer?.invalidate(); intentTimer = nil
+                return
+            }
+            let date = Date(timeIntervalSinceNow: max(0, deadline - clock()))
+            if let intentTimer, intentTimer.isValid { intentTimer.fireDate = date; return }
+            let timer = Timer(fire: date, interval: 0, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.intentTimer = nil
+                    if !self.ended { self.onIntentDue?() }
                 }
             }
-            guard isCurrent, let rect = regionFrame else { end(); return nil }
-            return (proposed.0, proposed.1, rect)
+            RunLoop.main.add(timer, forMode: .common)
+            intentTimer = timer
         }
         private func collapsedFrame(for target: SplitDropTarget, orientation: SplitOrientation) -> NSRect? {
             guard let owner else { return nil }
@@ -225,6 +295,10 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             }
         }
         func clear(animated: Bool = false) {
+            resetIntent()
+            collapse(animated: animated)
+        }
+        private func collapse(animated: Bool) {
             guard let owner, owner.dropReservation === self, !ended else { return }
             guard let previousTarget = target else {
                 if !animated { owner.clearLayoutAnimation() }
@@ -248,6 +322,7 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         }
         func end(animated: Bool = false) {
             guard !ended else { return }
+            resetIntent()
             let current = isCurrent
             let animate = animated && current
             let positions = animate ? owner?.captureLayoutPresentation() ?? [] : []

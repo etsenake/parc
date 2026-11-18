@@ -185,6 +185,7 @@ step compile_and_run split-stack-layout SplitStackLayoutTests \
   "$repo_root/Sources/ParcCore/SplitPaneResize.swift" \
   "$repo_root/Sources/ParcCore/RecentTabOrder.swift"
 step compile_and_run split-stack-commands SplitStackCommandsTests
+step compile_and_run split-drop-intent SplitDropIntentTests "$repo_root/Sources/ParcCore/SplitDropIntent.swift"
 step python3 "$repo_root/tests/SidebarRows/split_stack_commands_check.py"
 step bash "$repo_root/scripts/test-close-undo.sh"
 step bash "$repo_root/scripts/test-tab-history.sh"

@@ -199,6 +199,7 @@ import AppKit
         host.layoutSubtreeIfNeeded()
         let drag = SidebarSplitDrag(tabID: UUID(), window: window, validate: { true }, commit: { _, _ in true }, finish: {})
         guard let reservation = split.prepareDropReservation(in: host, contents: panes.map(\.body)) else { fatalError("no reservation") }
+        reservation.hoverIntent = SplitDropIntent(dwell: 0)
         let overlay = SplitDropView(frame: host.bounds, drag: drag, reservation: reservation, insertionColor: { .black })
         overlay.canPropose = { _, _ in true }
         host.addSubview(overlay)

@@ -64,11 +64,10 @@ final class SplitDropTargetTracker {
     var performFeedback: () -> Void = {
         NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
     }
-    func update(_ next: SplitDropTarget?, reusedRegion: Bool) {
-        guard next != target else { return }
-        target = next
-        onChange?(next)
-        if next != nil, !reusedRegion { performFeedback() }
+    func update(_ next: SplitDropTarget?, feedback: Bool) {
+        if next != target { target = next; onChange?(next) }
+        if feedback { performFeedback() }
     }
-    func reset() { update(nil, reusedRegion: true) }
+    func republish() { onChange?(target) }
+    func reset() { update(nil, feedback: false) }
 }

@@ -45,6 +45,11 @@ extension ReservedPane: SplitLayoutFollowing {
     func cancelSplitLayoutFollow() { Self.cancelled += 1 }
 }
 
+@MainActor func immediate(_ lease: ParcSplitView.DropReservation) -> ParcSplitView.DropReservation {
+    lease.hoverIntent = SplitDropIntent(dwell: 0)
+    return lease
+}
+
 @main @MainActor struct SessionTests {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ reason: String) {
@@ -136,7 +141,7 @@ extension ReservedPane: SplitLayoutFollowing {
         split.addArrangedSubview(firstPane); split.addArrangedSubview(secondPane)
         split.configure(orientation: .horizontal, factors: [0.75, 0.25]); split.constrain(to: reserveHost)
         let originalFrames = split.arrangedSubviews.map(\.frame)
-        let lease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
+        let lease = immediate(split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!)
         check(lease.isCurrent && split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body]) == nil,
               "one presentation lease admits only the exact original surfaces")
         lease.setInsertionColor { ink }
@@ -234,18 +239,18 @@ extension ReservedPane: SplitLayoutFollowing {
         check(lease.beginInteractivePaneEdit() == nil, "an ended lease cannot begin an edit")
         edit?.end(); edit?.end()
         check(editing == [true, false] && !split.isInteractivePaneEditing, "only the drag's terminal end clears it, once")
-        let refusedLease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
+        let refusedLease = immediate(split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!)
         let replace = refusedLease.proposal(at: NSPoint(x: 1, y: 200), canPropose: { target, _ in if case .replace = target { return true }; return false })!
         check(replace.0 == .replace(0) && split.arrangedSubviews.map(\.frame) == originalFrames, "refused insertion keeps genuine original replacement without reservation")
         check(!refusedLease.reusedRegion, "replacement has no drop region")
         refusedLease.end()
-        let headerLease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
+        let headerLease = immediate(split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!)
         let header = headerLease.proposal(at: NSPoint(x: 1, y: 20), canPropose: { _, _ in true })
         check(header?.0 == .insert(0) && header?.2.minY == 0 && header?.2.height == 700,
               "a pointer over a pane's header targets that pane's edge, since the top bar is inside its pane")
         headerLease.end()
         check(split.arrangedSubviews.map(\.frame) == originalFrames, "header proposal lease restores the original frames")
-        let stackLease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
+        let stackLease = immediate(split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!)
         stackLease.setInsertionColor { ink }
         let stackPoint = NSPoint(x: originalFrames[0].midX, y: originalFrames[0].maxY - 10)
         let stack = stackLease.proposal(at: stackPoint, canPropose: { _, _ in true })!
@@ -296,7 +301,7 @@ extension ReservedPane: SplitLayoutFollowing {
         stackLease.end()
         check(split.arrangedSubviews.map(\.frame) == originalFrames && split.subviews.count == 2 && split.isVertical,
               "ending a stack reservation restores the flat split")
-        let staleLease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
+        let staleLease = immediate(split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!)
         let staleEdit = staleLease.beginInteractivePaneEdit()
         _ = staleLease.proposal(at: NSPoint(x: 1, y: 200), canPropose: { _, _ in true })
         split.configure(orientation: .vertical, factors: [0.5, 0.5])
@@ -308,7 +313,7 @@ extension ReservedPane: SplitLayoutFollowing {
         check(!split.isVertical, "stale region cleanup cannot restore the old orientation")
         check(firstPane.layer?.animation(forKey: "Split reserved layout") == nil,
               "authoritative orientation replacement retires original-layer transition")
-        let resizeLease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
+        let resizeLease = immediate(split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!)
         let nextEdit = resizeLease.beginInteractivePaneEdit()
         check(staleEdit?.ended == true && nextEdit?.ended == false && editing == [true, false, true],
               "a new drag's edit replaces an unterminated one without a gap")
@@ -323,14 +328,14 @@ extension ReservedPane: SplitLayoutFollowing {
         reserveHost.frame.size.width += 30
         check(!resizeLease.isCurrent, "outside host resize is never accepted as owned preview geometry")
         resizeLease.end()
-        let reentrant = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
+        let reentrant = immediate(split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!)
         let invalidatedProposal = reentrant.proposal(at: NSPoint(x: 200, y: 41), canPropose: { _, _ in
             split.configure(orientation: .horizontal, factors: [0.75, 0.25]); return true
         })
         check(invalidatedProposal == nil && reentrant.ended && split.subviews.count == 2,
               "admission callback retirement cannot attach an orphan region or publish an old proposal")
         let beforeReorder = split.arrangedSubviews.map(\.frame)
-        let terminalMotion = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
+        let terminalMotion = immediate(split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!)
         _ = terminalMotion.proposal(at: NSPoint(x: 1, y: 200), canPropose: { _, _ in true })
         terminalMotion.end(animated: true)
         check(terminalMotion.ended && !terminalMotion.isCurrent && split.arrangedSubviews.map(\.frame) == beforeReorder,
@@ -338,13 +343,13 @@ extension ReservedPane: SplitLayoutFollowing {
         NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: reserveWindow)
         check(firstPane.layer?.animation(forKey: "Split reserved layout") == nil && split.subviews.count == 2,
               "original window resignation clears terminal border and remaining layer transition")
-        let hiddenMotion = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
+        let hiddenMotion = immediate(split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!)
         _ = hiddenMotion.proposal(at: NSPoint(x: 1, y: 200), canPropose: { _, _ in true })
         split.isHidden = true
         check(hiddenMotion.ended && split.subviews.count == 2 && firstPane.layer?.animation(forKey: "Split reserved layout") == nil,
               "native hiding revokes gesture and border presentation without waiting for completion")
         split.isHidden = false
-        let completeMotion = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
+        let completeMotion = immediate(split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!)
         _ = completeMotion.proposal(at: NSPoint(x: 1, y: 200), canPropose: { _, _ in true })
         completeMotion.end(animated: true)
         CATransaction.flush()
@@ -357,7 +362,7 @@ extension ReservedPane: SplitLayoutFollowing {
         split.configure(orientation: .horizontal, factors: column.flattenedFactors, stacks: column)
         reserveHost.layoutSubtreeIfNeeded()
         let columnFrames = split.arrangedSubviews.map(\.frame)
-        let columnLease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body, thirdPane.body])!
+        let columnLease = immediate(split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body, thirdPane.body])!)
         let grow = columnLease.proposal(at: NSPoint(x: columnFrames[1].midX, y: columnFrames[1].maxY - 10), canPropose: { _, _ in true })!
         let grownFrames = SplitStackGeometry.paneFrames(size: split.bounds.size, orientation: .horizontal,
             stacks: BrowserSplitStacks(slotSizes: [3, 1], slotFactors: [0.5, 0.5], stackFactors: [[1.0 / 3, 1.0 / 3, 1.0 / 3], [1]]),
@@ -372,6 +377,63 @@ extension ReservedPane: SplitLayoutFollowing {
         columnLease.end()
         check(split.arrangedSubviews.map(\.frame) == columnFrames && split.subviews.count == 3,
               "ending the stacked reservation restores the stacked frames")
+        var now: TimeInterval = 100
+        var intentDue = 0
+        let intentLease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body, thirdPane.body])!
+        intentLease.setInsertionColor { ink }
+        intentLease.clock = { now }
+        intentLease.onIntentDue = { intentDue += 1 }
+        func intentSweep(from start: NSPoint, to end: NSPoint, steps: Int, each: (SplitDropGeometry.Proposal?) -> Void) {
+            for step in 1...steps {
+                let progress = CGFloat(step) / CGFloat(steps)
+                now += 0.008
+                each(intentLease.proposal(at: NSPoint(x: start.x + (end.x - start.x) * progress, y: start.y + (end.y - start.y) * progress),
+                                          canPropose: { _, _ in true }))
+            }
+        }
+        let seatPoint = NSPoint(x: columnFrames[2].midX, y: columnFrames[2].maxY - 10)
+        var sweptOpen = false
+        intentSweep(from: NSPoint(x: 1, y: 200), to: seatPoint, steps: 40) { _ in
+            sweptOpen = sweptOpen || intentLease.shownTarget != nil || intentLease.appeared
+                || split.arrangedSubviews.map(\.frame) != columnFrames
+        }
+        check(!sweptOpen && split.subviews.count == 3,
+              "a fast sweep from the left edge to the lone column's bottom band opens nothing and moves no pane on the way")
+        check(intentLease.hoverIntent.isPending && intentLease.hoverIntent.deadline == now + 0.05,
+              "the seat under the pointer waits, due one sample window after the pointer's last movement")
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.15))
+        check(intentDue == 1, "the waiting seat schedules one re-check at its deadline")
+        let early = intentLease.proposal(at: seatPoint, canPropose: { _, _ in true }, presenting: false)
+        check(early?.0 == .stack(2, after: true) && early?.1 == .horizontal && split.arrangedSubviews.map(\.frame) == columnFrames,
+              "a release before the seat appears drops into the seat under the pointer and moves nothing first")
+        now += 0.05
+        let settled = intentLease.proposal(at: seatPoint, canPropose: { _, _ in true })
+        let seatFrames = split.arrangedSubviews.map(\.frame)
+        check(settled?.0 == .stack(2, after: true) && intentLease.shownTarget == .stack(2, after: true) && intentLease.appeared
+              && seatFrames != columnFrames, "once the pointer settles the seat opens and asks for its haptic")
+        let seatRegion = split.subviews.first { $0 !== firstPane && $0 !== secondPane && $0 !== thirdPane }!
+        let seatRect = settled!.2
+        var collapsed = false
+        intentSweep(from: seatPoint, to: NSPoint(x: 1, y: 200), steps: 40) { proposal in
+            collapsed = collapsed || intentLease.shownTarget != .stack(2, after: true) || intentLease.appeared
+                || split.arrangedSubviews.map(\.frame) != seatFrames || seatRegion.superview !== split
+                || seatRegion.layer?.opacity != 1 || proposal == nil
+        }
+        check(!collapsed, "sweeping on towards the left edge keeps the open seat, with no collapse, and every point still drops somewhere")
+        now += 0.05
+        let edge = intentLease.proposal(at: NSPoint(x: 1, y: 200), canPropose: { _, _ in true })
+        let move = seatRegion.layer?.animation(forKey: "Split drop region") as? CAAnimationGroup
+        let moveBounds = move?.animations?.compactMap { $0 as? CABasicAnimation }.first { $0.keyPath == "bounds" }
+        check(edge?.0 == .insert(0) && intentLease.shownTarget == .insert(0) && intentLease.appeared
+              && seatRegion.superview === split && seatRegion.layer?.opacity == 1
+              && (moveBounds?.fromValue as? NSValue)?.rectValue.size == seatRect.size,
+              "settling on the left edge moves the same region straight from the seat to the new column")
+        check(intentLease.proposal(at: NSPoint(x: -20, y: -20), canPropose: { _, _ in true }) == nil
+              && intentLease.shownTarget == nil && split.arrangedSubviews.map(\.frame) == columnFrames,
+              "leaving the split clears the preview at once")
+        intentLease.end()
+        check(split.arrangedSubviews.map(\.frame) == columnFrames && split.subviews.count == 3 && !intentLease.hoverIntent.isPending,
+              "ending the intent lease restores the stacked frames and forgets the intent")
         let handWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1810, height: 700),
             styleMask: .borderless, backing: .buffered, defer: false)
         let handHost = ExternalSplitDropHost(frame: NSRect(x: 0, y: 0, width: 1810, height: 700))
@@ -390,7 +452,7 @@ extension ReservedPane: SplitLayoutFollowing {
         var handCommits = 0, handAdmits = 0, handValid = true, handCommitResult = true
         handHost.makeSession = { _, info in
             handAdmits += 1
-            let reservation = handSplit.prepareDropReservation(in: handHost, contents: [handA.body, handB.body])!
+            let reservation = immediate(handSplit.prepareDropReservation(in: handHost, contents: [handA.body, handB.body])!)
             return ExternalSplitDropSession(host: handHost, info: info,
                 frames: [handA.body, handB.body].map { $0.convert($0.bounds, to: handHost) }, orientation: .horizontal,
                 reservation: reservation, validate: { handValid && reservation.isCurrent }, insertionColor: { .black },
@@ -474,6 +536,50 @@ extension ReservedPane: SplitLayoutFollowing {
         check(handHost.draggingUpdated(handDrag).isEmpty && handSplit.subviews.count == 2, "foreign sequence cannot enter old reserved region")
         handCommitResult = false; beginHandoff()
         check(!handHost.performDragOperation(handDrag) && handCommits == 2 && handSplit.subviews.count == 2, "real commit refusal removes reservation and reports failure")
+        handCommitResult = true
+        let plainSession = handHost.makeSession
+        handHost.makeSession = { view, info in
+            let session = plainSession?(view, info)
+            session?.admitsReceiver = { _, _ in true }
+            return session
+        }
+        let admitsBeforeContinuing = handAdmits, commitsBeforeContinuing = handCommits
+        handDrag.draggingLocation = handHost.convert(NSPoint(x: 1, y: 200), to: nil)
+        check(handRouter.begin(handDrag) && handAdmits == admitsBeforeContinuing + 1, "a continuing link session starts on the first page")
+        let continuingRegion = handSplit.subviews.first { $0 !== handA && $0 !== handB }
+        let gapPoint = NSPoint(x: handA.frame.maxX + 5, y: 200)
+        handDrag.draggingLocation = handHost.convert(gapPoint, to: nil)
+        handRouter.exit(handDrag)
+        check(handHost.draggingEntered(handDrag) == .copy && continuingRegion?.superview === handSplit && continuingRegion?.layer?.opacity == 1,
+              "the gap between pages keeps the link drag and its open preview in the split")
+        let editsBeforeReentry = handEditing
+        handDrag.draggingLocation = handHost.convert(NSPoint(x: handA.frame.minX + 40, y: 200), to: nil)
+        handHost.draggingExited(handDrag)
+        check(continuingRegion?.superview === handSplit && continuingRegion?.layer?.opacity == 1,
+              "the host's exit into a page's content leaves the session for that page to carry on")
+        check(handRouter.begin(handDrag) && handRouter.claimed && handRouter.operation == .copy
+              && handAdmits == admitsBeforeContinuing + 1 && continuingRegion?.layer?.opacity == 1
+              && handSplit.isInteractivePaneEditing && handEditing == editsBeforeReentry,
+              "coming back into the same page continues the session, keeps its router claimed and never restarts the edit")
+        settle()
+        check(continuingRegion?.superview === handSplit && continuingRegion?.layer?.opacity == 1
+              && handHost.contentView(handA.body, updateDrop: handDrag) == .copy && handEditing == editsBeforeReentry,
+              "the deferred teardowns are cancelled once the same drag carries on")
+        handDrag.draggingLocation = handHost.convert(NSPoint(x: handB.frame.maxX - 10, y: 200), to: nil)
+        handRouter.exit(handDrag)
+        check(handRouter.claimed && continuingRegion?.layer?.opacity == 1,
+              "jumping straight from one page into the next keeps the session for the next page to carry on")
+        check(handBRouter.begin(handDrag) && handBRouter.operation == .copy && handAdmits == admitsBeforeContinuing + 1
+              && continuingRegion?.superview === handSplit && continuingRegion?.layer?.opacity == 1
+              && handSplit.isInteractivePaneEditing && handEditing == editsBeforeReentry && !handRouter.claimed,
+              "entering the next page continues the same session, moving its open preview and ending the old page's router")
+        settle()
+        check(continuingRegion?.layer?.opacity == 1 && handHost.contentView(handB.body, updateDrop: handDrag) == .copy,
+              "the next page keeps the continued session after the deferred teardown would have run")
+        handDrag.draggingLocation = handHost.convert(NSPoint(x: handB.frame.maxX - 10, y: 200), to: nil)
+        check(handBRouter.perform(handDrag) && handCommits == commitsBeforeContinuing + 1 && handSplit.subviews.count == 2,
+              "the continued session drops through the page it moved into")
+        handHost.makeSession = plainSession
         let localReceiver = LocalContentDropView(frame: handA.body.bounds)
         localReceiver.autoresizingMask = [.width, .height]; handA.body.addSubview(localReceiver)
         handCommitResult = true
@@ -481,7 +587,7 @@ extension ReservedPane: SplitLayoutFollowing {
         check(localReceiver.draggingEntered(handDrag) == .copy, "actual local document forwarder admits same native reservation")
         handDrag.draggingLocation = handHost.convert(NSPoint(x: 200, y: 200), to: nil)
         localReceiver.draggingExited(handDrag)
-        check(handHost.draggingEntered(handDrag) == .copy && handHost.performDragOperation(handDrag) && handCommits == 3,
+        check(handHost.draggingEntered(handDrag) == .copy && handHost.performDragOperation(handDrag) && handCommits == 4,
               "actual local exit forwards exact router instead of terminating before host entry")
         localReceiver.draggingEnded(handDrag)
         check(handSplit.subviews.count == 2 && handSplit.arrangedSubviews.map(\.frame) == handFrames,
@@ -495,7 +601,7 @@ extension ReservedPane: SplitLayoutFollowing {
         textReceiver.draggingExited(handDrag)
         check(handHost.draggingEntered(handDrag) == .copy, "text receiver exit retains original handoff")
         textReceiver.draggingEnded(handDrag)
-        check(handHost.draggingUpdated(handDrag).isEmpty && handCommits == 3 && handSplit.arrangedSubviews.map(\.frame) == handFrames,
+        check(handHost.draggingUpdated(handDrag).isEmpty && handCommits == 4 && handSplit.arrangedSubviews.map(\.frame) == handFrames,
               "optional native text terminal cleanup cancels same handoff and restores authority without superclass exception")
         CATransaction.flush()
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.3))
@@ -504,7 +610,7 @@ extension ReservedPane: SplitLayoutFollowing {
         textReceiver.removeFromSuperview()
 
         beginHandoff(); handA.removeFromSuperview()
-        check(handHost.draggingUpdated(handDrag).isEmpty && !handHost.performDragOperation(handDrag) && handCommits == 3,
+        check(handHost.draggingUpdated(handDrag).isEmpty && !handHost.performDragOperation(handDrag) && handCommits == 4,
               "original native receiver detachment cannot retarget remaining pane")
         let headWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1810, height: 700), styleMask: .borderless, backing: .buffered, defer: false)
         let headHost = ExternalSplitDropHost(frame: NSRect(x: 0, y: 0, width: 1810, height: 700)); headWindow.contentView = headHost
@@ -522,7 +628,7 @@ extension ReservedPane: SplitLayoutFollowing {
         headDrag.items = [linkDragItem]
         var headTargets: [(SplitDropTarget, SplitOrientation)] = []
         headHost.makeSession = { _, info in
-            let reservation = headSplit.prepareDropReservation(in: headHost, contents: [headA.body])!
+            let reservation = immediate(headSplit.prepareDropReservation(in: headHost, contents: [headA.body])!)
             return ExternalSplitDropSession(host: headHost, info: info, frames: [], orientation: .horizontal,
                 reservation: reservation, validate: { reservation.isCurrent }, insertionColor: { .black },
                 canPropose: { _, _ in true }, commit: { target, orientation in headTargets.append((target, orientation)); return true })
