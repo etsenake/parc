@@ -299,54 +299,22 @@ final class NoteDragController: NSObject, NSDraggingSource {
 
     private func makeSnapshot(of ids: [NoteBlockID], around point: NSPoint) -> (image: NSImage, frame: NSRect)? {
         let canvas = editor.canvas!
-        let page = editor.session.page
         var union: NSRect?
-        var pieces: [(view: NoteBlockView, frame: NSRect)] = []
-        var fills: [(rect: NSRect, color: NSColor)] = []
+        var pieces: [NoteDragGhostRenderer.Piece] = []
         for id in ids {
             guard let frame = canvas.frame(of: id) else { continue }
             let outer = canvas.outerFrame(of: id) ?? frame
             union = union.map { $0.union(outer) } ?? outer
-            if let view = canvas.existingBlockView(for: id), !view.isHidden { pieces.append((view, view.frame)) }
-            if let block = page.block(id) {
-                if case .background(let color) = block.color { fills.append((outer, NoteTheme.color(.background(color)))) }
-                else if block.kind == .callout { fills.append((outer, NoteTheme.calloutFill)) }
-            }
+            if let view = canvas.existingBlockView(for: id), !view.isHidden { pieces.append(.init(view: view, frame: view.frame)) }
         }
+        let decorations = canvas.decorations(of: ids)
+        for decoration in decorations { union = union.map { $0.union(decoration.rect) } ?? decoration.rect }
         guard var rect = union?.integral, rect.width >= 1, rect.height >= 1 else { return nil }
         let reach: CGFloat = 360
         rect = rect.intersection(NSRect(x: rect.minX, y: point.y - reach, width: rect.width, height: reach * 2))
         guard rect.width >= 1, rect.height >= 1 else { return nil }
         let scale = canvas.window?.backingScaleFactor ?? 2
-        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(ceil(rect.width * scale)),
-                                         pixelsHigh: Int(ceil(rect.height * scale)), bitsPerSample: 8, samplesPerPixel: 4,
-                                         hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-              let bitmap = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
-        rep.size = rect.size
-        let context = bitmap.cgContext
-        context.translateBy(x: 0, y: rect.height)
-        context.scaleBy(x: 1, y: -1)
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
-        canvas.effectiveAppearance.performAsCurrentDrawingAppearance {
-            for fill in fills {
-                fill.color.setFill()
-                NSBezierPath(roundedRect: fill.rect.offsetBy(dx: -rect.minX, dy: -rect.minY),
-                             xRadius: NoteTheme.blockRadius, yRadius: NoteTheme.blockRadius).fill()
-            }
-        }
-        for piece in pieces {
-            let visible = piece.frame.intersection(rect)
-            guard visible.width >= 1, visible.height >= 1 else { continue }
-            let local = piece.view.convert(visible, from: canvas)
-            guard let capture = piece.view.bitmapImageRepForCachingDisplay(in: local) else { continue }
-            piece.view.cacheDisplay(in: local, to: capture)
-            capture.draw(in: visible.offsetBy(dx: -rect.minX, dy: -rect.minY), from: .zero, operation: .sourceOver,
-                         fraction: 1, respectFlipped: true, hints: nil)
-        }
-        NSGraphicsContext.restoreGraphicsState()
-        let image = NSImage(size: rect.size)
-        image.addRepresentation(rep)
+        guard let image = NoteDragGhostRenderer.render(pieces, decorations: decorations, clip: rect, in: canvas, scale: scale) else { return nil }
         return (image, rect)
     }
 
@@ -370,5 +338,46 @@ final class NoteDragController: NSObject, NSDraggingSource {
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         .copy
+    }
+}
+
+@MainActor
+enum NoteDragGhostRenderer {
+    struct Piece {
+        var view: NSView
+        var frame: NSRect
+    }
+
+    static func render(_ pieces: [Piece], decorations: [NoteCanvasDecoration], clip rect: NSRect, in container: NSView,
+                       scale: CGFloat) -> NSImage? {
+        guard rect.width >= 1, rect.height >= 1,
+              let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(ceil(rect.width * scale)),
+                                         pixelsHigh: Int(ceil(rect.height * scale)), bitsPerSample: 8, samplesPerPixel: 4,
+                                         hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let bitmap = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+        rep.size = rect.size
+        let context = bitmap.cgContext
+        context.translateBy(x: 0, y: rect.height)
+        context.scaleBy(x: 1, y: -1)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        container.effectiveAppearance.performAsCurrentDrawingAppearance {
+            for decoration in decorations {
+                NoteCanvasDecorationView.draw(decoration.style, in: decoration.rect.offsetBy(dx: -rect.minX, dy: -rect.minY))
+            }
+        }
+        for piece in pieces {
+            let visible = piece.frame.intersection(rect)
+            guard visible.width >= 1, visible.height >= 1 else { continue }
+            let local = piece.view.convert(visible, from: piece.view.superview ?? container)
+            guard let capture = piece.view.bitmapImageRepForCachingDisplay(in: local) else { continue }
+            piece.view.cacheDisplay(in: local, to: capture)
+            capture.draw(in: visible.offsetBy(dx: -rect.minX, dy: -rect.minY), from: .zero, operation: .sourceOver,
+                         fraction: 1, respectFlipped: true, hints: nil)
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: rect.size)
+        image.addRepresentation(rep)
+        return image
     }
 }

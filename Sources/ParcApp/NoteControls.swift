@@ -219,7 +219,7 @@ enum NoteKeycapRenderer {
     }
 
     static func isNamedKey(_ shortcut: String) -> Bool {
-        named[shortcut.lowercased()] != nil
+        named[shortcut.lowercased()] != nil || (shortcut.count <= 3 && named.values.contains(shortcut))
     }
 
     static func resolvedStyle(_ style: Style, for shortcut: String) -> Style {
@@ -332,7 +332,7 @@ final class NoteKeycapLabel: NSView {
         let names: [String: String] = ["⌃": "Control", "⌥": "Option", "⇧": "Shift", "⌘": "Command", "↩": "Return",
                                        "⎵": "Space", "⌫": "Delete", "↑": "Up Arrow", "↓": "Down Arrow",
                                        "←": "Left Arrow", "→": "Right Arrow", "TAB": "Tab", "ESC": "Escape"]
-        guard NoteKeycapRenderer.hasModifiers(shortcut) else { return shortcut }
+        guard NoteKeycapRenderer.hasModifiers(shortcut) || NoteKeycapRenderer.isNamedKey(shortcut) else { return shortcut }
         return NoteKeycapRenderer.keys(in: shortcut).map { names[$0] ?? $0 }.joined(separator: "-")
     }
 }

@@ -54,33 +54,49 @@ final class NoteCanvasDecorationView: NSView {
         needsDisplay = true
     }
 
+    struct Paint {
+        var fill: NSColor
+        var border: NSColor?
+        var radius: CGFloat
+    }
+
+    static func paint(for look: Look, spaceFocus: NSColor? = nil) -> Paint {
+        switch look {
+        case .wash:
+            return Paint(fill: NoteTheme.blockSelectionWash(spaceFocus: spaceFocus), border: nil, radius: NoteTheme.blockRadius)
+        case .decoration(.callout(let style)):
+            switch style {
+            case .background(let color)?: return Paint(fill: NoteTheme.color(.background(color)), border: nil, radius: NoteTheme.blockRadius)
+            case .text?: return Paint(fill: .clear, border: NoteTheme.separator, radius: NoteTheme.blockRadius)
+            case nil: return Paint(fill: NoteTheme.calloutFill, border: nil, radius: NoteTheme.blockRadius)
+            }
+        case .decoration(.background(let color)):
+            return Paint(fill: NoteTheme.color(.background(color)), border: nil, radius: NoteTheme.blockRadius - 2)
+        case .decoration(.quoteBar(let color)):
+            return Paint(fill: color.map { NoteTheme.color(.text($0)) } ?? NoteTheme.quoteBar, border: nil, radius: 0)
+        }
+    }
+
+    static func draw(_ style: NoteCanvasDecoration.Style, in rect: NSRect) {
+        let paint = paint(for: .decoration(style))
+        let path = NSBezierPath(roundedRect: rect, xRadius: paint.radius, yRadius: paint.radius)
+        paint.fill.setFill()
+        path.fill()
+        guard let border = paint.border else { return }
+        let inset = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: max(0, paint.radius - 0.5), yRadius: max(0, paint.radius - 0.5))
+        inset.lineWidth = 1
+        border.setStroke()
+        inset.stroke()
+    }
+
     override func updateLayer() {
         guard let layer else { return }
         layer.cornerCurve = .continuous
-        layer.borderWidth = 0
-        switch look {
-        case .wash:
-            layer.cornerRadius = NoteTheme.blockRadius
-            layer.backgroundColor = NoteTheme.blockSelectionWash(spaceFocus: spaceFocus).cgColor
-        case .decoration(.callout(let style)):
-            layer.cornerRadius = NoteTheme.blockRadius
-            switch style {
-            case .background(let color)?:
-                layer.backgroundColor = NoteTheme.color(.background(color)).cgColor
-            case .text?:
-                layer.backgroundColor = NSColor.clear.cgColor
-                layer.borderWidth = 1
-                layer.borderColor = NoteTheme.separator.cgColor
-            case nil:
-                layer.backgroundColor = NoteTheme.calloutFill.cgColor
-            }
-        case .decoration(.background(let color)):
-            layer.cornerRadius = NoteTheme.blockRadius - 2
-            layer.backgroundColor = NoteTheme.color(.background(color)).cgColor
-        case .decoration(.quoteBar(let color)):
-            layer.cornerRadius = 0
-            layer.backgroundColor = (color.map { NoteTheme.color(.text($0)) } ?? NoteTheme.quoteBar).cgColor
-        }
+        let paint = Self.paint(for: look, spaceFocus: spaceFocus)
+        layer.cornerRadius = paint.radius
+        layer.backgroundColor = paint.fill.cgColor
+        layer.borderWidth = paint.border == nil ? 0 : 1
+        layer.borderColor = paint.border?.cgColor
     }
 }
 

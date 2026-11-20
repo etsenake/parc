@@ -1,69 +1,6 @@
 import AppKit
 
 @MainActor
-final class NoteMenuSearchBar: NSView {
-    let field = NSTextField()
-    private let icon = NoteIconView(icon: .symbol("magnifyingglass"), pointSize: 12)
-
-    init(placeholder: String) {
-        super.init(frame: NSRect(x: 0, y: 0, width: 240, height: NoteTheme.fieldHeight))
-        wantsLayer = true
-        layer?.cornerRadius = NoteTheme.controlRadius + 2
-        layer?.cornerCurve = .continuous
-        icon.tint = NoteTheme.menuTertiaryInk
-        icon.weight = .bold
-        icon.setAccessibilityElement(false)
-        addSubview(icon)
-        field.isBezeled = false
-        field.isBordered = false
-        field.drawsBackground = false
-        field.focusRingType = .none
-        field.font = NoteTheme.menuTitleFont()
-        field.textColor = NoteTheme.menuInk
-        field.lineBreakMode = .byTruncatingTail
-        field.usesSingleLineMode = true
-        field.cell?.isScrollable = true
-        field.cell?.wraps = false
-        field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
-            .font: NoteTheme.menuTitleFont(), .foregroundColor: NoteTheme.menuTertiaryInk,
-        ])
-        field.setAccessibilityLabel(placeholder)
-        addSubview(field)
-        refreshFill()
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    override var isFlipped: Bool { true }
-
-    override func layout() {
-        super.layout()
-        let iconSide: CGFloat = 16
-        icon.frame = NSRect(x: 9, y: (bounds.height - iconSide) / 2, width: iconSide, height: iconSide)
-        let height = ceil(field.intrinsicContentSize.height)
-        field.frame = NSRect(x: icon.frame.maxX + 6, y: floor((bounds.height - height) / 2),
-                             width: max(0, bounds.width - icon.frame.maxX - 6 - 9), height: height)
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        refreshFill()
-    }
-
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .iBeam)
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(field)
-    }
-
-    private func refreshFill() {
-        NoteAnimation.withoutAnimation { layer?.backgroundColor = NoteTheme.resolved(NoteTheme.fieldFill, in: self) }
-    }
-}
-
-@MainActor
 final class NoteMenuFooter: NSView {
     var text = "" { didSet { needsDisplay = true; setAccessibilityLabel(text) } }
 
@@ -86,7 +23,7 @@ final class NoteSearchableMenuView: NSView, NoteFloatingPanelContent {
     static let width: CGFloat = 264
     static let footerHeight: CGFloat = 30
 
-    let search: NoteMenuSearchBar
+    let search: NoteSearchField
     let list = NoteMenuList()
     let footer = NoteMenuFooter()
     var preferredSizeDidChange: (() -> Void)?
@@ -100,8 +37,9 @@ final class NoteSearchableMenuView: NSView, NoteFloatingPanelContent {
     }
 
     init(placeholder: String) {
-        search = NoteMenuSearchBar(placeholder: placeholder)
+        search = NoteSearchField(placeholder: placeholder)
         super.init(frame: NSRect(x: 0, y: 0, width: Self.width, height: 200))
+        search.bind(to: list)
         list.fixedWidth = Self.width
         list.maximumHeight = 360
         list.preferredSizeDidChange = { [weak self] in
@@ -147,6 +85,7 @@ extension NoteMenuList.Item {
         section = entry.section
         isChecked = entry.isChecked
         isDestructive = entry.isDestructive
+        isEnabled = entry.isEnabled
         hasSubmenu = entry.hasSubmenu
         keywords = entry.keywords
         switch entry.icon {
@@ -166,7 +105,7 @@ extension NoteMenuList.Item {
 }
 
 @MainActor
-final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
+final class NoteBlockMenuController: NSObject {
     unowned let editor: NotePageEditor
     private(set) var targets: [NoteBlockID] = []
     private var entries: [NoteBlockMenuEntry] = []
@@ -193,8 +132,8 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
         let page = editor.session.page
         let top = page.topLevelSelection(ids)
         let blocks = top.compactMap { page.block($0) }
-        let context = NoteBlockMenuContext(blocks: blocks, isReadOnly: editor.isReadOnly,
-                                           canMoveToNotes: canMoveToNotes, supportsBlockLinks: false)
+        let context = NoteBlockMenuContext(blocks: blocks, isReadOnly: editor.isReadOnly, canMoveToNotes: canMoveToNotes,
+                                           supportsBlockLinks: editor.canLinkBlocks, tableEntries: Self.tableEntries(for: blocks))
         let available = NoteBlockMenuModel.entries(for: context)
         guard !blocks.isEmpty, !available.isEmpty else { return }
         targets = top
@@ -202,7 +141,7 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
         restoreSelection = previousSelection
         restoreResponder = editor.canvas.window?.firstResponder
         let view = NoteSearchableMenuView(placeholder: NoteBlockMenuModel.searchPlaceholder)
-        view.search.field.delegate = self
+        wire(view.search)
         view.list.origin = keyboard ? .keyboard : .pointer
         view.list.onActivate = { [weak self] item in self?.activate(item, inFlyout: false) }
         view.list.onHighlight = { [weak self] item in self?.mainHighlightChanged(item) }
@@ -215,7 +154,7 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
         card.onDismiss = { [weak self, weak card] in self?.panelDidDismiss(card) }
         panel = card
         card.present(in: editor.canvas.overlayView, anchor: anchor, edge: .below)
-        editor.canvas.window?.makeFirstResponder(view.search.field)
+        view.search.focus()
         installMonitor()
         if startInMoveTo, let move = shown.first(where: { $0.action == .moveTo }) {
             view.list.highlight(id: move.id, animated: false)
@@ -233,7 +172,7 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
         let view = menu
         menu = nil
         panel.dismiss(animated: animated)
-        if let field = view?.search.field, editor.canvas.window?.firstResponder === field.currentEditor() {
+        if let field = view?.search.textField, editor.canvas.window?.firstResponder === field.currentEditor() {
             editor.canvas.window?.makeFirstResponder(nil)
         }
         if restore { restoreFocus() }
@@ -380,7 +319,7 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
 
     private func openMover(keyboard: Bool) {
         if mover != nil {
-            if keyboard, let field = mover?.view.search.field { editor.canvas.window?.makeFirstResponder(field) }
+            if keyboard { mover?.view.search.focus() }
             return
         }
         guard let menu, let anchor = highlightedRowFrame(of: menu.list) else { return }
@@ -391,7 +330,7 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
         view.list.onCancel = { [weak self] in self?.closeMover(animated: true) }
         view.list.onCollapse = { [weak self] in self?.closeMover(animated: true) }
         view.list.onHighlight = { [weak self] item in if item != nil { self?.pendingFlyoutClose?.cancel() } }
-        view.search.field.delegate = self
+        wire(view.search)
         let card = NoteFloatingPanel(content: view)
         card.onDismiss = { [weak self, weak card] in
             guard let self, let card, self.mover?.panel === card else { return }
@@ -401,15 +340,15 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
         refreshNotes("")
         view.list.prepare(origin: keyboard ? .keyboard : .pointer)
         card.present(in: editor.canvas.overlayView, anchor: anchor, edge: .trailing)
-        if keyboard { editor.canvas.window?.makeFirstResponder(view.search.field) }
+        if keyboard { view.search.focus() }
     }
 
     private func closeMover(animated: Bool) {
         guard let mover else { return }
         self.mover = nil
-        let wasEditing = editor.canvas.window?.firstResponder === mover.view.search.field.currentEditor()
+        let wasEditing = editor.canvas.window?.firstResponder === mover.view.search.textField.currentEditor()
         mover.panel.dismiss(animated: animated)
-        if wasEditing, let field = menu?.search.field { editor.canvas.window?.makeFirstResponder(field) }
+        if wasEditing { menu?.search.focus() }
     }
 
     private func refreshNotes(_ query: String) {
@@ -433,12 +372,7 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
 
     private func highlightedRowFrame(of list: NoteMenuList) -> NSRect? {
         let overlay = editor.canvas.overlayView
-        if let element = list.accessibilitySelectedChildren()?.first as? NSAccessibilityElement, let window = list.window {
-            let screen = element.accessibilityFrame()
-            if screen.width > 0, screen.height > 0 {
-                return overlay.convert(window.convertFromScreen(screen), from: nil)
-            }
-        }
+        if let row = list.highlightedRowFrame { return overlay.convert(row, from: list) }
         if let pointer = list.window?.mouseLocationOutsideOfEventStream {
             let local = overlay.convert(pointer, from: nil)
             let listFrame = overlay.convert(list.bounds, from: list)
@@ -447,21 +381,33 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
         return panel?.frame
     }
 
-    func controlTextDidChange(_ notification: Notification) {
-        guard let field = notification.object as? NSTextField else { return }
-        if let mover, field === mover.view.search.field {
-            refreshNotes(field.stringValue)
+    private func wire(_ search: NoteSearchField) {
+        search.onChange = { [weak self, weak search] text in
+            guard let self, let search else { return }
+            self.searchChanged(text, in: search)
+        }
+        search.onCommand = { [weak self, weak search] selector in
+            guard let self, let search else { return false }
+            return self.searchCommand(selector, in: search)
+        }
+    }
+
+    private func searchChanged(_ text: String, in search: NoteSearchField) {
+        if let mover, search === mover.view.search {
+            refreshNotes(text)
             return
         }
         closeFlyout(animated: true)
         closeMover(animated: true)
-        applyFilter(field.stringValue)
+        applyFilter(text)
     }
 
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-        let inMover = mover.map { control === $0.view.search.field } ?? false
-        let atStart = textView.selectedRange().location == 0 && textView.selectedRange().length == 0
-        let atEnd = textView.selectedRange().location == (textView.string as NSString).length
+    private func searchCommand(_ selector: Selector, in search: NoteSearchField) -> Bool {
+        let inMover = mover.map { search === $0.view.search } ?? false
+        let editor = search.textField.currentEditor() as? NSTextView
+        let range = editor?.selectedRange() ?? NSRange(location: 0, length: 0)
+        let atStart = range.location == 0 && range.length == 0
+        let atEnd = range.location == ((editor?.string ?? search.text) as NSString).length
         switch selector {
         case #selector(NSResponder.cancelOperation(_:)):
             if inMover { closeMover(animated: true); return true }
@@ -487,6 +433,29 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
                 return true
             }
             return list?.handle(command: selector) ?? false
+        }
+    }
+
+    private static let tableKeywords: [String: [String]] = [
+        "table.headerRow": ["header", "first row"],
+        "table.headerColumn": ["header", "first column"],
+        "table.fitWidth": ["width", "fit", "reset", "columns"],
+    ]
+
+    static func tableEntries(for blocks: [NoteBlock]) -> [NoteBlockMenuEntry] {
+        guard let first = blocks.first, blocks.allSatisfy({ $0.kind == .table }) else { return [] }
+        let perTable = blocks.map { NoteTableBlockView.tableMenuItems(for: $0) }
+        return NoteTableBlockView.tableMenuItems(for: first).map { item in
+            let states = perTable.compactMap { items in items.first { $0.id == item.id } }
+            var entry = NoteBlockMenuEntry(id: item.id, title: item.title, keywords: tableKeywords[item.id] ?? [], group: 1,
+                                           isChecked: states.allSatisfy(\.isChecked), isEnabled: states.contains(where: \.isEnabled),
+                                           action: .tableItem(item.id))
+            switch item.icon {
+            case .symbol(let name)?: entry.icon = .symbol(name)
+            case .glyph(let text)?: entry.icon = .glyph(text)
+            default: break
+            }
+            return entry
         }
     }
 
@@ -551,6 +520,7 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
             session.turnInto(live, kind: style.kind) { style.configure(&$0) }
         case .color(let style):
             session.setColor(style, in: .blocks(live))
+            if let style { NoteColorRecents.record(style) }
         case .language(let language):
             update(live, name: "Code Language") { $0.props.language = language }
         case .wrapCode:
@@ -558,19 +528,16 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
             update(live, name: wrap ? "Wrap Code" : "Unwrap Code") { $0.props.wrap = wrap }
         case .align(let alignment):
             update(live, name: "Align") { $0.props.alignment = alignment }
-        case .headerRow:
-            let on = !live.allSatisfy { page.block($0)?.props.table?.headerRow == true }
-            update(live, name: "Header Row") { block in
-                guard var table = block.props.table else { return }
-                table.headerRow = on
-                block.props.table = table
-            }
-        case .headerColumn:
-            let on = !live.allSatisfy { page.block($0)?.props.table?.headerColumn == true }
-            update(live, name: "Header Column") { block in
-                guard var table = block.props.table else { return }
-                table.headerColumn = on
-                block.props.table = table
+        case .tableItem(let id):
+            let tables = live.compactMap { page.block($0) }.filter { $0.kind == .table }
+            let states = tables.map { table in NoteTableBlockView.tableMenuItems(for: table).first { $0.id == id } }
+            let turnOn = !states.allSatisfy { $0?.isChecked == true }
+            let name = states.compactMap { $0?.title }.first ?? "Table"
+            session.group(name) {
+                for (table, state) in zip(tables, states) {
+                    guard let state, state.isEnabled, state.isChecked != turnOn else { continue }
+                    NoteTableBlockView.performTableMenuItem(id, on: table.id, session: session)
+                }
             }
         case .download:
             if let source = page.block(live[0])?.props.source { editor.handles.download(source) }
@@ -596,7 +563,9 @@ final class NoteBlockMenuController: NSObject, NSTextFieldDelegate {
             openMover(keyboard: true)
             return
         case .copyLink:
-            break
+            dismiss(animated: true, restore: true)
+            editor.copyLink(toBlock: live[0])
+            return
         }
         dismiss(animated: true, restore: true)
     }

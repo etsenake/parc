@@ -725,6 +725,17 @@ final class NoteMenuList: NSView, NoteFloatingPanelContent {
     fileprivate var pressedRow: Int? { pressedIndex }
     fileprivate var showsIconColumn: Bool { hasIcons }
 
+    func rowFrame(forItemID id: String) -> NSRect? {
+        layoutSubtreeIfNeeded()
+        guard let index = items.firstIndex(where: { $0.id == id }), visibleIndices.contains(index),
+              let frame = frame(forItem: index) else { return nil }
+        return convert(frame, from: documentView)
+    }
+
+    var highlightedRowFrame: NSRect? {
+        highlightedItem.flatMap { rowFrame(forItemID: $0.id) }
+    }
+
     fileprivate func frame(forItem index: Int) -> NSRect? {
         for row in placed { if case .item(let candidate) = row.row, candidate == index { return row.frame } }
         return nil

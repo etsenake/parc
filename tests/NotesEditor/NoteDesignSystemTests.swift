@@ -179,6 +179,8 @@ struct NoteDesignSystemTests {
         expect(NoteKeycapRenderer.resolvedStyle(.automatic, for: "##") == .text, "Markdown hints stay text")
         expect(NoteKeycapRenderer.size(for: "⌘B").height == NoteKeycapRenderer.minimumSide, "caps are 19 points tall")
         expect(NoteKeycapLabel.spoken("⌘⇧S") == "Shift-Command-S", "shortcuts read aloud")
+        expect(NoteKeycapRenderer.resolvedStyle(.automatic, for: "⌫") == .caps && NoteKeycapRenderer.keys(in: "⌫") == ["⌫"], "a lone ⌫ is a keycap")
+        expect(NoteKeycapLabel.spoken("⌫") == "Delete", "and reads aloud as Delete")
     }
 
     static func panelLifecycle() {

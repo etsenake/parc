@@ -381,31 +381,42 @@ struct NoteCanvasLayout {
     }
 
     func decorations(in region: CGRect) -> [NoteCanvasDecoration] {
-        var result: [NoteCanvasDecoration] = []
-        let outset = metrics.washOutsetY * metrics.scale
-        for entry in entries where entry.isRow && entry.outerFrame.insetBy(dx: -8, dy: -8).intersects(region) {
-            guard let block = blocks[entry.id] else { continue }
-            if entry.kind == .callout {
-                result.append(NoteCanvasDecoration(key: .init(owner: entry.id, slot: 0), style: .callout(block.color),
-                                                   rect: entry.outerFrame, depth: entry.depth))
-            } else if case .background(let color) = block.color, entry.kind != .columns {
-                result.append(NoteCanvasDecoration(key: .init(owner: entry.id, slot: 0), style: .background(color),
-                                                   rect: entry.outerFrame.insetBy(dx: -metrics.washOutsetX, dy: -outset),
-                                                   depth: entry.depth))
-            }
-            if entry.kind == .quote, entry.hasVisibleChildren, entry.outerFrame.maxY > entry.frame.maxY {
-                var ink: NoteColor?
-                if case .text(let color) = block.color { ink = color }
-                let bar = CGRect(x: entry.frame.minX + metrics.quoteBarInset, y: entry.frame.maxY, width: metrics.quoteBarWidth,
-                                 height: entry.outerFrame.maxY - entry.frame.maxY)
-                result.append(NoteCanvasDecoration(key: .init(owner: entry.id, slot: 1), style: .quoteBar(ink), rect: bar,
-                                                   depth: entry.depth))
-            }
-        }
-        return result.sorted { lhs, rhs in
+        let result = entries.filter { $0.isRow && $0.outerFrame.insetBy(dx: -8, dy: -8).intersects(region) }.flatMap(decorations(for:))
+        return Self.paintingOrder(result)
+    }
+
+    func decorations(of ids: some Sequence<NoteBlockID>) -> [NoteCanvasDecoration] {
+        Self.paintingOrder(ids.compactMap { entry($0) }.filter(\.isRow).flatMap(decorations(for:)))
+    }
+
+    private static func paintingOrder(_ decorations: [NoteCanvasDecoration]) -> [NoteCanvasDecoration] {
+        decorations.sorted { lhs, rhs in
             let left = lhs.key.slot == 1 ? 1 : 0, right = rhs.key.slot == 1 ? 1 : 0
             return left != right ? left < right : lhs.depth < rhs.depth
         }
+    }
+
+    private func decorations(for entry: NoteCanvasEntry) -> [NoteCanvasDecoration] {
+        guard let block = blocks[entry.id] else { return [] }
+        var result: [NoteCanvasDecoration] = []
+        let outset = metrics.washOutsetY * metrics.scale
+        if entry.kind == .callout {
+            result.append(NoteCanvasDecoration(key: .init(owner: entry.id, slot: 0), style: .callout(block.color),
+                                               rect: entry.outerFrame, depth: entry.depth))
+        } else if case .background(let color) = block.color, entry.kind != .columns {
+            result.append(NoteCanvasDecoration(key: .init(owner: entry.id, slot: 0), style: .background(color),
+                                               rect: entry.outerFrame.insetBy(dx: -metrics.washOutsetX, dy: -outset),
+                                               depth: entry.depth))
+        }
+        if entry.kind == .quote, entry.hasVisibleChildren, entry.outerFrame.maxY > entry.frame.maxY {
+            var ink: NoteColor?
+            if case .text(let color) = block.color { ink = color }
+            let bar = CGRect(x: entry.frame.minX + metrics.quoteBarInset, y: entry.frame.maxY, width: metrics.quoteBarWidth,
+                             height: entry.outerFrame.maxY - entry.frame.maxY)
+            result.append(NoteCanvasDecoration(key: .init(owner: entry.id, slot: 1), style: .quoteBar(ink), rect: bar,
+                                               depth: entry.depth))
+        }
+        return result
     }
 
     func dropTarget(at point: CGPoint, dragging ids: [NoteBlockID], leadingX: CGFloat? = nil) -> NoteCanvasDropTarget? {
@@ -769,7 +780,7 @@ enum NoteCanvasEstimate {
                 + padding + hint
         case .code:
             let count = CGFloat(max(1, block.text.string.split(separator: "\n", omittingEmptySubsequences: false).count))
-            return count * metrics.codeLineHeight + 48 * scale + caption
+            return count * metrics.codeLineHeight + 36 * scale + caption
         case .html, .raw:
             let count = CGFloat(max(1, block.text.string.split(separator: "\n", omittingEmptySubsequences: false).count))
             return count * metrics.codeLineHeight + 16 * scale

@@ -45,8 +45,7 @@ enum NoteBlockAction: Hashable {
     case download
     case viewOriginal
     case copyOriginalLink
-    case headerRow
-    case headerColumn
+    case tableItem(String)
 }
 
 struct NoteBlockMenuEntry: Hashable {
@@ -59,6 +58,7 @@ struct NoteBlockMenuEntry: Hashable {
     var group = 0
     var section: String?
     var isChecked = false
+    var isEnabled = true
     var isDestructive = false
     var action: NoteBlockAction?
     var children: [NoteBlockMenuEntry] = []
@@ -71,6 +71,7 @@ struct NoteBlockMenuContext {
     var isReadOnly = false
     var canMoveToNotes = false
     var supportsBlockLinks = false
+    var tableEntries: [NoteBlockMenuEntry] = []
 }
 
 enum NoteBlockMenuModel {
@@ -114,6 +115,13 @@ enum NoteBlockMenuModel {
         block.kind.hasRichText || block.kind == .code || block.kind == .equation
     }
 
+    static func linkable(_ block: NoteBlock) -> Bool {
+        switch block.kind {
+        case .html, .raw, .column, .columns: return false
+        default: return true
+        }
+    }
+
     static func colorable(_ block: NoteBlock) -> Bool {
         block.kind.hasRichText || block.kind == .tableOfContents
     }
@@ -131,7 +139,7 @@ enum NoteBlockMenuModel {
         let editable = !context.isReadOnly
         var result: [NoteBlockMenuEntry] = []
         if editable {
-            result.append(NoteBlockMenuEntry(id: "delete", title: "Delete", icon: .symbol("trash"), shortcut: "Del",
+            result.append(NoteBlockMenuEntry(id: "delete", title: "Delete", icon: .symbol("trash"), shortcut: "⌫",
                                              keywords: ["remove", "erase", "trash"], group: 0, isDestructive: true, action: .delete))
             result.append(NoteBlockMenuEntry(id: "duplicate", title: "Duplicate", icon: .symbol("plus.square.on.square"), shortcut: "⌘D",
                                              keywords: ["copy", "clone"], group: 0, action: .duplicate))
@@ -141,7 +149,8 @@ enum NoteBlockMenuModel {
             }
         }
         if sameKind { result += kindEntries(for: blocks, kind: first.kind, editable: editable, single: single) }
-        if single && context.supportsBlockLinks {
+        if sameKind, first.kind == .table, editable { result += context.tableEntries.map { entry in var copy = entry; copy.group = 1; return copy } }
+        if single && context.supportsBlockLinks && linkable(first) {
             result.append(NoteBlockMenuEntry(id: "link", title: "Copy Link to Block", icon: .symbol("link"), shortcut: "⌃⌘L",
                                              keywords: ["url", "anchor", "share"], group: 2, action: .copyLink))
         }
@@ -239,13 +248,6 @@ enum NoteBlockMenuModel {
                 result.append(NoteBlockMenuEntry(id: "original", title: "View Original", icon: .symbol("arrow.up.forward.square"),
                                                  keywords: ["open", "visit"], group: 1, action: .viewOriginal))
             }
-        case .table where editable:
-            result.append(NoteBlockMenuEntry(id: "headerRow", title: "Header Row", icon: .symbol("tablecells"),
-                                             keywords: ["header", "first row"], group: 1,
-                                             isChecked: blocks.allSatisfy { $0.props.table?.headerRow == true }, action: .headerRow))
-            result.append(NoteBlockMenuEntry(id: "headerColumn", title: "Header Column", icon: .symbol("tablecells"),
-                                             keywords: ["header", "first column"], group: 1,
-                                             isChecked: blocks.allSatisfy { $0.props.table?.headerColumn == true }, action: .headerColumn))
         default:
             break
         }
@@ -269,7 +271,7 @@ enum NoteBlockMenuModel {
         guard !needle.isEmpty else { return entries }
         var result: [NoteBlockMenuEntry] = []
         for entry in entries {
-            if entry.action != nil, matches(entry, needle) {
+            if entry.action != nil, entry.isEnabled, matches(entry, needle) {
                 var flat = entry
                 flat.section = nil
                 result.append(flat)
@@ -277,7 +279,7 @@ enum NoteBlockMenuModel {
         }
         for entry in entries where !entry.children.isEmpty {
             let parentMatches = matches(entry, needle)
-            for child in entry.children where parentMatches || matches(child, needle) {
+            for child in entry.children where child.isEnabled && (parentMatches || matches(child, needle)) {
                 var flat = child
                 flat.section = entry.title
                 result.append(flat)

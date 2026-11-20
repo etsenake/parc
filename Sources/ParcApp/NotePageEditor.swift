@@ -32,6 +32,7 @@ final class NotePageEditor {
     private var isApplying = false
     private var pasteMenu: NotePasteLinkMenu?
     private var lastReadOnly: Bool?
+    private var pendingReveal: String?
 
     init(session: NotePageSession, environment: NoteEnvironment) {
         self.session = session
@@ -158,6 +159,10 @@ final class NotePageEditor {
         formatBar.layoutDidChange()
         handles.layoutDidChange()
         onCanvasLayout?()
+        if let anchor = pendingReveal, canRevealNow {
+            pendingReveal = nil
+            DispatchQueue.main.async { [weak self] in self?.reveal(anchor: anchor) }
+        }
     }
 
     private func applyReadOnly() {
@@ -212,6 +217,7 @@ final class NotePageEditor {
     }
 
     func handleTextCommand(_ selector: Selector, in host: NoteTextHost) -> Bool {
+        if slashMenu.isOpen, slashMenu.handleTextCommand(selector) { return true }
         let view = host.textView
         guard !view.hasMarkedText() else { return false }
         if selection.handleTextCommand(selector, in: host) { return true }
@@ -400,6 +406,7 @@ final class NotePageEditor {
         if slashMenu.handleKey(event) { return true }
         if formatBar.handleKey(event) { return true }
         if handles.handleKey(event) { return true }
+        if handleMediaPreviewKey(event) { return true }
         if event.modifierFlags.intersection([.command, .control, .option]).isEmpty == false || host == nil,
            performKeyEquivalent(event) { return true }
         guard host == nil || session.selection.isBlockSelection || selectedTableView != nil else { return false }
@@ -441,6 +448,87 @@ final class NotePageEditor {
             return true
         default:
             return false
+        }
+    }
+
+    private func handleMediaPreviewKey(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        let space = event.keyCode == 49 && flags.isEmpty
+        let commandReturn = (event.keyCode == 36 || event.keyCode == 76) && flags == .command
+        guard space || commandReturn, case .blocks(let ids) = session.selection, ids.count == 1,
+              let block = session.page.block(ids[0]), Self.previewableKinds.contains(block.kind),
+              let view = canvas.blockView(for: ids[0]) as? NoteMediaBlockView else { return false }
+        return view.presentPreview()
+    }
+
+    static let previewableKinds: Set<NoteBlockKind> = [.image, .video, .audio, .file]
+
+    var canLinkBlocks: Bool {
+        guard let url = environment.documentURL, url.isFileURL, NoteFileKind(url: url) == .markdown else { return false }
+        return !isPlainText
+    }
+
+    func link(toAnchor anchor: String) -> URL? {
+        guard let document = environment.documentURL, var components = URLComponents(url: document, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        components.fragment = anchor
+        return components.url
+    }
+
+    @discardableResult
+    func copyLink(toBlock id: NoteBlockID) -> Bool {
+        guard canLinkBlocks, let block = session.page.block(id), NoteBlockMenuModel.linkable(block) else { return false }
+        guard let anchor = session.ensureAnchor(for: id) ?? headingSlug(for: id), let url = link(toAnchor: anchor) else {
+            handles.presentToast?(.standard("This note is read-only, so its blocks can’t get links."))
+            return false
+        }
+        pasteboard.declareTypes([.URL, .string], owner: nil)
+        pasteboard.setString(url.absoluteString, forType: .URL)
+        pasteboard.setString(url.absoluteString, forType: .string)
+        handles.presentToast?(.standard("Copied link to block", icon: "link"))
+        return true
+    }
+
+    private func headingSlug(for id: NoteBlockID) -> String? {
+        session.page.headingSlugs().first { $0.id == id }?.slug
+    }
+
+    private var canRevealNow: Bool {
+        canvas.window != nil && canvas.bounds.width > 0
+    }
+
+    @discardableResult
+    func reveal(anchor: String) -> Bool {
+        guard let id = session.page.block(forAnchor: anchor) else { return false }
+        guard canRevealNow else {
+            pendingReveal = anchor
+            return true
+        }
+        pendingReveal = nil
+        dismissOverlays()
+        revealHiddenAncestors(of: id)
+        canvas.revealBlock(id)
+        canvas.layoutSubtreeIfNeeded()
+        guard let block = session.page.block(id) else { return true }
+        if block.kind.hasRichText || block.kind.hasPlainText {
+            let caret = NotePosition(id, 0)
+            session.setSelection(.caret(caret))
+            focus(caret)
+        } else {
+            session.setSelection(.blocks([id]))
+            restoreFocus()
+        }
+        if let view = canvas.blockView(for: id) { NoteBlockWash.flash(view) }
+        return true
+    }
+
+    private func revealHiddenAncestors(of id: NoteBlockID) {
+        let page = session.page
+        let collapsed = page.ancestors(of: id).filter { page.block($0)?.isCollapsed == true }
+        guard !collapsed.isEmpty, !isReadOnly else { return }
+        session.edit("Expand", affected: Set(collapsed), selection: session.selection) { page in
+            for ancestor in collapsed { page.update(ancestor) { $0.props.expanded = true } }
         }
     }
 
@@ -674,23 +762,28 @@ final class NotePageEditor {
         guard let document = environment.documentURL, !isPlainText else { return false }
         let folder = document.deletingLastPathComponent()
         var replacements: [NoteBlockID: NoteBlock] = [:]
+        var created: [NoteCreatedFile] = []
         for id in ids {
             guard let block = session.page.block(id), block.kind.hasRichText else { continue }
             let title = Self.fileTitle(block.text.plainText)
             let url = Self.uniqueNoteURL(in: folder, title: title)
-            let body = NoteMarkdown.serialize(NotePage(blocks: block.children))
+            let body = Data(NoteMarkdown.serialize(NotePage(blocks: block.children)).utf8)
             do {
-                try Data(body.utf8).write(to: url, options: .withoutOverwriting)
+                try body.write(to: url, options: .withoutOverwriting)
             } catch {
                 onError?(error)
                 continue
             }
+            created.append(NoteCreatedFile(url: url, contents: body))
             var props = NoteBlockProps()
             props.target = environment.linkTarget(for: url)
+            props.anchor = block.props.anchor
             replacements[id] = NoteBlock(.pageLink, text: NoteText(url.deletingPathExtension().lastPathComponent), props: props, id: id)
         }
         guard !replacements.isEmpty else { return true }
-        session.edit("Turn Into Page", affected: Set(replacements.keys), selection: .blocks(Array(replacements.keys))) { page in
+        let effect = NoteUndoEffect(undo: { for file in created.reversed() { file.withdraw() } },
+                                    redo: { for file in created { file.restore() } })
+        session.edit("Turn Into Page", affected: Set(replacements.keys), selection: .blocks(Array(replacements.keys)), effect: effect) { page in
             for (id, block) in replacements { page.update(id) { $0 = block } }
         }
         return true

@@ -27,7 +27,7 @@ struct NoteHandlesModelTests {
         paragraph.color = .background(.yellow)
         let entries = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [paragraph], canMoveToNotes: true))
         expect(ids(entries) == ["delete", "duplicate", "turn", "move", "color"], "a paragraph gets Notion's order without block links")
-        expect(entries[0].shortcut == "Del" && entries[0].isDestructive, "Delete shows Del and reads as destructive")
+        expect(entries[0].shortcut == "⌫" && entries[0].isDestructive, "Delete shows a ⌫ keycap and reads as destructive")
         expect(entries[1].shortcut == "⌘D", "Duplicate shows ⌘D")
         expect(entries[3].shortcut == "⇧⌘P" && entries[3].hasSubmenu, "Move To shows ⇧⌘P and opens a note picker")
         let turn = entries[2].children
@@ -45,6 +45,9 @@ struct NoteHandlesModelTests {
         expect(headingTurn.filter(\.isChecked).map(\.title) == ["Toggle Heading 2"], "a toggle heading checks its toggle style")
         let linked = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [paragraph], supportsBlockLinks: true))
         expect(ids(linked).contains("link") && linked.first { $0.id == "link" }?.shortcut == "⌃⌘L", "block links appear when the format can anchor them")
+        let raw = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [NoteBlock(.html, text: "<div></div>")], supportsBlockLinks: true))
+        expect(!ids(raw).contains("link"), "raw HTML can't carry an anchor, so it gets no block link")
+        expect(NoteBlockMenuModel.linkable(NoteBlock(.code)) && !NoteBlockMenuModel.linkable(NoteBlock(.column)), "code links, a bare column doesn't")
         let locked = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [paragraph], isReadOnly: true, canMoveToNotes: true, supportsBlockLinks: true))
         expect(ids(locked) == ["link"], "a locked page only offers the link")
     }
@@ -77,9 +80,14 @@ struct NoteHandlesModelTests {
         expect(ids(divider) == ["delete", "duplicate", "move"], "dividers can only go away, double or move")
         var tableProps = NoteBlockProps()
         tableProps.table = .empty()
-        let table = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [NoteBlock(.table, props: tableProps)]))
-        expect(ids(table) == ["delete", "duplicate", "headerRow", "headerColumn"], "tables toggle their header row and column")
-        expect(table[2].isChecked && !table[3].isChecked, "header toggles reflect the table")
+        let tableItems = [NoteBlockMenuEntry(id: "table.headerRow", title: "Header Row", isChecked: true, action: .tableItem("table.headerRow")),
+                          NoteBlockMenuEntry(id: "table.fitWidth", title: "Fit to Width", isEnabled: false, action: .tableItem("table.fitWidth"))]
+        let table = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [NoteBlock(.table, props: tableProps)], tableEntries: tableItems))
+        expect(ids(table) == ["delete", "duplicate", "table.headerRow", "table.fitWidth"], "tables show the table's own actions")
+        expect(table[2].isChecked && table[2].group == 1 && !table[3].isEnabled, "and keep their state in the kind group")
+        expect(NoteBlockMenuModel.filter(table, query: "fit").isEmpty, "disabled actions stay out of search")
+        let lockedTable = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [NoteBlock(.table, props: tableProps)], isReadOnly: true, tableEntries: tableItems))
+        expect(!ids(lockedTable).contains("table.headerRow"), "a locked table offers no table actions")
         let toc = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [NoteBlock(.tableOfContents)]))
         expect(ids(toc) == ["delete", "duplicate", "color"], "a table of contents can be coloured but not turned")
     }

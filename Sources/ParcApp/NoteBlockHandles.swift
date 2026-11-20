@@ -301,6 +301,7 @@ final class NoteBlockHandleController {
         let key = event.charactersIgnoringModifiers?.lowercased()
         if modifiers == .command, key == "/" { return openBlockActions() }
         if modifiers == [.command, .shift], key == "p" { return openBlockActions(startInMoveTo: true) }
+        if modifiers == [.command, .control], event.keyCode == 37 { return copyLinkToSelectedBlock() }
         if modifiers.contains(.command) || modifiers.contains(.control) { return false }
         if let characters = event.characters, !characters.isEmpty { hideForTyping() }
         return false
@@ -320,6 +321,13 @@ final class NoteBlockHandleController {
         menu.open(for: ids, anchor: anchor, keyboard: true, previousSelection: selection, startInMoveTo: startInMoveTo)
         if !menu.isOpen { pin(nil) }
         return true
+    }
+
+    @discardableResult
+    func copyLinkToSelectedBlock() -> Bool {
+        let ids = blocksForMenu(editor.session.selection)
+        guard ids.count == 1, editor.canLinkBlocks else { return false }
+        return editor.copyLink(toBlock: ids[0])
     }
 
     func pin(_ id: NoteBlockID?) {

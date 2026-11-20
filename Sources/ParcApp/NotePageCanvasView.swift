@@ -296,6 +296,37 @@ final class NotePageCanvasView: NSView {
     func listOrdinal(of id: NoteBlockID) -> Int? { canvasLayout.listOrdinal(of: id) }
 
     func scrollBlockToVisible(_ id: NoteBlockID) {
+        measureBeforeScrolling(to: id)
+        guard let frame = canvasLayout.frame(of: id) else { return }
+        let target = NSRect(x: frame.minX, y: frame.minY - 40, width: frame.width, height: min(frame.height, 400) + 80)
+        if !visibleRect.contains(target) { scrollToVisible(target) }
+        materializeVisibleRegion()
+    }
+
+    func revealBlock(_ id: NoteBlockID) {
+        measureBeforeScrolling(to: id)
+        guard let frame = canvasLayout.frame(of: id) else { return }
+        let visible = visibleRect
+        guard visible.height > 0, enclosingScrollView != nil else { scrollBlockToVisible(id); return }
+        let margin = frame.height <= visible.height * 0.6 ? max(48, (visible.height * 0.22).rounded()) : 48
+        let top = max(bounds.minY, min(frame.minY - margin, bounds.maxY - visible.height))
+        if abs(top - visible.minY) > 0.5 {
+            scroll(NSPoint(x: visible.minX, y: top))
+            if let scrollView = enclosingScrollView { scrollView.reflectScrolledClipView(scrollView.contentView) }
+        }
+        materializeVisibleRegion()
+    }
+
+    func decorations(of ids: some Sequence<NoteBlockID>) -> [NoteCanvasDecoration] {
+        updateLayoutIfNeeded()
+        return canvasLayout.decorations(of: ids)
+    }
+
+    func decoration(of id: NoteBlockID) -> NoteCanvasDecoration? {
+        decorations(of: [id]).first { $0.key.slot == 0 }
+    }
+
+    private func measureBeforeScrolling(to id: NoteBlockID) {
         updateLayoutIfNeeded()
         if views[id] == nil, let entry = canvasLayout.entry(id), let block = canvasLayout.blocks[id],
            measurer.cachedHeight(of: block, width: entry.frame.width) == nil,
@@ -303,10 +334,6 @@ final class NotePageCanvasView: NSView {
             invalidateCanvasLayout()
             updateLayoutIfNeeded()
         }
-        guard let frame = canvasLayout.frame(of: id) else { return }
-        let target = NSRect(x: frame.minX, y: frame.minY - 40, width: frame.width, height: min(frame.height, 400) + 80)
-        if !visibleRect.contains(target) { scrollToVisible(target) }
-        materializeVisibleRegion()
     }
 
     func showDropIndicator(_ target: NoteCanvasDropTarget?) {
