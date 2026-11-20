@@ -1,5 +1,96 @@
 # Changelog
 
+## 2.13.0 (2026-11-20)
+
+### New
+
+- **notes:** Teach equation macros TeX's sneakier tricks: delimited \def parameters, \expandafter, \noexpand, \csname, and cells that keep their definitions to themselves
+- **notes:** Teach tabs to remember a note opened over a page, so Back and Forward can hop between them
+- **notes:** Chemistry speaks the rest of mhchem: every \bond flavour, radical dots, italic variables, upright braces, and \pu with comma decimals, written-out powers of ten and ranges
+- **notes:** Emoji and CJK in equation scripts borrow a properly shrunk system font instead of wobbling off the baseline
+- **notes:** Open a page's Markdown links right in its tab, with Back returning to the page just as you left it and Forward hopping back to the note
+- **notes:** Live embeds in notes take your very first click and let scrolls spill into the note once the page runs out of road
+- **notes:** Equations number themselves across the whole note, and \label, \eqref and \ref link up so a click jumps to the right one
+- **notes:** Escape hops out of a live embed back to your note, and retired notes now tuck their pages in for good
+- **notes:** Swipe forward from a page right into the note you just left, and ⌘-click Forward to pop that note open in a background tab
+- **notes:** A live embed in a split pane you weren't using still takes your very first click
+- **notes:** Swipe back off a note to its page, hold Back or Forward to see the note in the list, and ⌘-click Back to fork the page behind it into a new tab
+- **notes:** Nest blocks under any text, like Notion, saved as tidy ::: indent fences that read fine on GitHub
+- **notes:** Equations learn KaTeX's size dial, raisebox, smash, substack, genfrac, colour boxes, clickable \href and \url links and over/undergroups, and mhchem's dashed bonds finally draw like KaTeX instead of a dash pileup
+- **notes:** Equations learn alignat, multline, subarray, dcases, darray, starred matrices and dashed array lines, numbering right along with the rest of the note
+- **notes:** Commutative diagrams arrive: \begin{CD} draws @>>>, @<<<, @VVV, @AAA, @= and @| arrows with labels riding above, below and beside them
+- **notes:** Equations pick up the rest of KaTeX's symbol zoo, mathtools colons, \char, \verb, \mathchoice, \vcenter, \pmb, the TeX logos and the dd/cc/sp units nobody remembers
+- **notes:** Equations stretch \utilde, \Overrightarrow, harpoons and line segments over anything, draw \phase and actuarial \angl, and two-headed and long-equals x-arrows finally grow with their labels
+- **notes:** \text grows up with accents, nested bold and italics, colours, sizes, links, \(…\) math and proper curly quotes and dashes
+- **notes:** Physicists get \bra, \ket, \braket and friends, and set-builder \set and \Set put the bar where it belongs
+- **notes:** Mermaid joins the language list with highlighting, remembers Code, Preview or Split in invisible metadata, and HTML exports can carry the drawings in light and dark
+- **notes:** Heading 4 and Toggle heading 4 join the slash menu (/h4, /####) and every Turn into list, and the table of contents now lists H4s too
+- **notes:** Typing ->, <-, <->, =>, >=, <= or -- turns into proper arrows, comparisons and an em dash, never in code or equations, and one ⌘Z brings back exactly what you typed
+- **notes:** Photo credits ride along with images and covers, saved quietly in the note and shown with links in HTML and PDF exports
+- **notes:** Notes remember inline PDFs with their size, alignment and caption, plain-text notes keep them as file references, and HTML exports show them in place
+- **notes:** Select a few blocks and Turn into 2 to 5 columns lays them out side by side, from the block menu, the format bar or the keyboard
+- **notes:** Custom emoji get a Markdown home, so :name: shortcodes read, write and export to HTML as little images while escaped ones stay text
+- **notes:** Notes read and write synced blocks as invisible comment markers, so the file still reads like plain Markdown on GitHub
+- **notes:** Images remember a crop and a shape in the note's Markdown, and HTML exports draw both
+- **notes:** Mermaid code blocks draw live diagrams with Code, Preview and Split views, crossfading between them and keeping the last good drawing when the diagram breaks
+- **notes:** The block menu gets a View submenu for Mermaid diagrams, so Code, Preview and Split are a right-click away
+- **notes:** Date mentions take ranges like @Jan 3 → Jan 5 or @Jan 3 - 5, remember their end, reminder lead, time zone and format in the file, and Jan 3 typed in November means the coming one
+- **notes:** HTML exports embed Mermaid diagrams as SVG for light and dark, and PDF exports wait for the drawings and print them as crisp vectors
+- **notes:** Image blocks and the cover picker get an Unsplash tab to search free photos, save the pick into Attachments and credit the photographer under it
+- **notes:** Notes keep a live index of every note that links or mentions them, and renaming or moving a note rewrites those links so nothing breaks
+- **notes:** Tables keep merged cells and cell colours in the file, export them as real colspan and rowspan, and read merges back from pasted HTML
+- **notes:** Notes show how many notes link to them under the title, with a popup or an inline list of each linking note and the sentence around the link, and the page menu picks Expanded, Show in Popup or Off
+- **notes:** PDFs read right in the note, from /pdf, a dropped file or a pasted link, with scrolling pages, a page indicator, zoom, full screen, download, resizing and password unlock
+- **notes:** The date picker gets an End date toggle with a range band on the calendar, Format and Time zone pages, a full Remind list, reminders turn red the day they're due, and relative dates redraw themselves as days pass
+- **notes:** Make your own emoji with the picker's plus button, then use them inline with :name:, as page and callout icons, and rename or delete them, all saved in the notes folder
+- **notes:** Synced blocks stay live across notes: edit any copy and the original and every other copy follow, undo works from either side, and copies find originals that moved
+- **notes:** Crop images with a draggable frame, clip them to circles, hearts and six other shapes, and give them alt text with an ALT badge, all from the image's ••• menu
+- **notes:** /bread adds a breadcrumb that shows where the note lives, keeps up when it moves or gets renamed, and opens any folder on the path in Easels & Notes
+- **notes:** Merge and unmerge table cells and colour them from a cell's ••• menu, fill down with ⌘D and right with ⌘R, and drag a table's corner to add or drop rows and columns
+- **notes:** Button blocks: /button makes a pill that adds blocks below, above, at the top or bottom of the note, asks first or opens a note or link, saved as GitHub-friendly details and undone one press at a time
+- **notes:** The button's gear opens its editor: name and emoji, a list of actions to add, reorder or delete, and the blocks it inserts edited right there with the full note editor, every change saved as you go and undone as one step
+- **notes:** Make synced blocks from the block menu or /synced, copy them anywhere, and see where else they live from a border that lights up while you edit
+- **notes:** Synced copies stay live while the original's note is closed, which quietly opens in the background and lets go when you're done
+- **notes:** Copies in closed notes catch up a couple of seconds after the original changes, so their files read right on GitHub too
+- **notes:** Releases carry the Unsplash key from the packager's keychain, so the Unsplash tab works without a key in the repo
+
+### Fixed
+
+- **notes:** Read-only locked notes stop dangling a dud Unlock button, ⌘↩ opens page links even when locked, and Redo finally admits it's ⇧⌘Z
+- **notes:** Underscores and stars right after an emoji italicize again instead of mistaking half an emoji for a word
+- **notes:** Selections respect their field, IME never eats keys, and Replace All stops fibbing about its count
+- **notes:** Moving blocks to another note is one honest action now: undo from either note puts them back, and unrelated undos stop raiding the other note
+- **notes:** Tab icons notice swapped pictures and closed notes, and imports chase notes that wander off mid-copy
+- **notes:** Typing over a vanished block selection lands in the nearest text instead of the void
+- **notes:** Note links now say exactly how they were clicked, and target=_blank ones skip the raw-text detour
+- **notes:** A note that moves mid-import takes its picture along instead of leaving a twin in the old Attachments
+- **notes:** Moved blocks stay findable even after the other note closes and reopens, and a redo that can't reach it leaves them home
+- **notes:** Keep the emoji grid's last column out from under the scroller, with matching margins on both sides
+- **notes:** Exported equations keep counting across the note, and their references link straight to the labelled one, while open drafts renumber everything live
+- **notes:** Undo a move in one note and Redo works from the other, since both notes now share the same step instead of one starting fresh
+- **notes:** Tabs forked from the page behind a note now line up after their source, and picking from the note's history list refreshes the page like the usual list
+- **notes:** Keep the Mermaid view mode beside the block model so every windowless notes test builds again
+- **notes:** Drop the duplicate Mermaid view enum so the block model's copy is the only one
+- **notes:** Rename the Unsplash thumbnail's picture so it stops clashing with the button's own image
+- **notes:** Spell out the Unsplash tile's photographer link so it builds cleanly
+- **notes:** Notes renamed or moved in Finder keep their backlinks and links to them follow, and a rename never makes the backlink count blink
+- **notes:** Wrap the synced-note search in parentheses so the guard parses
+- **notes:** Keep the custom emoji picker pieces self-contained so the picker's windowless checks build them too
+- **notes:** The crop bar swaps to icons cleanly on narrow pages, and VoiceOver's grow and shrink keep the crop inside the picture
+- **notes:** Button heights measure off the main actor so the canvas estimate compiles
+- **notes:** Synced blocks dropped from another note stay live, and dropping one inside another unwraps it instead of nesting
+- **notes:** Editing a button's blocks never touches the note's date reminders, and closing the editor stops its timers
+- **notes:** Give the synced block's header controls their own property names so they stop colliding with the button's
+- **notes:** Backspace at the start of a synced block selects it instead of spilling its lines out, and joins lines inside like anywhere else
+- **notes:** Clearing out a synced block leaves one empty line to type in, everywhere it's synced and in the same undo step
+- **notes:** Look for the Original Again really searches again, even in notes it already checked
+- **notes:** Parc claims Markdown and text files as a default editor, so they open in Parc unless you've picked another app
+- **notes:** Mermaid treats Windows line endings like any other, and the button, emoji, image menu and diagram test suites build and pass again
+
+### Faster
+
+- **notes:** Typing in notes without synced blocks skips the synced bookkeeping, and the border stops rescanning the page on every keystroke
+
 ## 2.12.0 (2026-11-20)
 
 ### New
