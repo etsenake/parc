@@ -19,6 +19,7 @@ struct NoteTabIconArtTests {
             try thumbnails()
             try art(icons)
             try waiting(icons)
+            try refreshing(icons)
             print("NoteTabIconArtTests passed")
         }
     }
@@ -94,6 +95,40 @@ struct NoteTabIconArtTests {
         expect(NoteFileTestSupport.spin(timeout: 5) { emojiDone && symbolDone && picture != nil }, "waiting requests settle")
         expect(emoji != nil, "the emoji arrives")
         expectEqual(picture?.size, NSSize(width: 16, height: 16), "the thumbnail arrives after its own read")
+    }
+
+    static func refreshing(_ icons: NoteTabIcons) throws {
+        icons.forget()
+        icons.folderChanges = { _ in nil }
+        let art = NoteTabIconArt(icons: icons)
+        _ = try png("Attachments/swap.png", width: 40, height: 40)
+        let swapped = note("Swapped.md", icon: "Attachments/swap.png")
+        guard case .image(let first) = art.art(forNote: swapped) else { failTest("the first picture thumbnails") }
+        guard case .image(let again) = art.art(forNote: swapped), again === first else { failTest("an unchanged picture reuses its art") }
+        _ = try png("Attachments/swap.png", width: 120, height: 60)
+        clock.advance(NoteTabIconArt.restampInterval + 0.5)
+        guard case .image(let replaced) = art.art(forNote: swapped) else { failTest("the replaced picture thumbnails") }
+        expect(replaced !== first, "a replaced picture refreshes its thumbnail")
+
+        let pending = folder.appendingPathComponent("Attachments/later.png")
+        let waiting = note("Waiting.md", icon: "Attachments/later.png")
+        guard case .symbol = art.art(forNote: waiting) else { failTest("a missing picture shows the symbol") }
+        _ = try png("Attachments/later.png", width: 20, height: 20)
+        guard case .symbol = art.art(forNote: waiting) else { failTest("the file isn't restamped on every request") }
+        clock.advance(NoteTabIconArt.restampInterval + 0.5)
+        guard case .image = art.art(forNote: waiting) else { failTest("a picture that shows up later is picked up") }
+        expect(FileManager.default.fileExists(atPath: pending.path), "the late picture is on disk")
+
+        let locked = try png("Attachments/locked.png", width: 20, height: 20)
+        let lockedNote = note("Locked.md", icon: "Attachments/locked.png")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: locked.path) }
+        guard case .symbol = art.art(forNote: lockedNote) else { failTest("an unreadable picture shows the symbol") }
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: locked.path)
+        clock.advance(NoteTabIconArt.restampInterval + 0.5)
+        guard case .symbol = art.art(forNote: lockedNote) else { failTest("an unreadable picture isn't retried right away") }
+        clock.advance(NoteTabIconArt.unreadableRetryDelay)
+        guard case .image = art.art(forNote: lockedNote) else { failTest("an unreadable picture is retried after a short wait") }
     }
 
     static func XCTUnwrap<Value>(_ value: Value?, _ message: String) throws -> Value {

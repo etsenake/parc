@@ -50,6 +50,7 @@ final class NoteTabIcons {
 
     private var known: [String: NoteTabIcon?] = [:]
     private var reading: [String: Bool] = [:]
+    private var generations: [String: Int] = [:]
     private var followed: [ObjectIdentifier: Followed] = [:]
     private var watchedFolders: Set<String> = []
     private var folderSubscriptions: [AnyCancellable] = []
@@ -95,13 +96,14 @@ final class NoteTabIcons {
             session.urlChanges.sink { [weak self] _ in self?.refresh(id) },
         ]
         followed[id] = Followed(session: session, raw: raw, url: session.url, icon: icon, subscriptions: subscriptions)
-        remember(icon, for: Self.key(session.url))
+        rememberLive(icon, for: session.url)
         return icon
     }
 
     func forget() {
         known.removeAll()
         reading.removeAll()
+        generations.removeAll()
         followed.removeAll()
         watchedFolders.removeAll()
         folderSubscriptions.removeAll()
@@ -128,12 +130,22 @@ final class NoteTabIcons {
         entry.url = session.url
         entry.icon = NoteTabIcon(raw, resolve: session.environment.resolve)
         followed[id] = entry
-        remember(entry.icon, for: Self.key(session.url))
+        rememberLive(entry.icon, for: session.url)
         if entry.icon != previous { announce(nil) }
     }
 
+    private func rememberLive(_ icon: NoteTabIcon?, for note: URL) {
+        let key = Self.key(note)
+        generations[key, default: 0] += 1
+        remember(icon, for: key)
+        watchFolder(of: note)
+    }
+
     private func remember(_ icon: NoteTabIcon?, for key: String) {
-        if known.count >= Self.rememberedNotes, known[key] == nil { known.removeAll() }
+        if known.count >= Self.rememberedNotes, known[key] == nil {
+            known.removeAll()
+            generations = generations.filter { reading[$0.key] != nil }
+        }
         known[key] = .some(icon)
     }
 
@@ -144,12 +156,19 @@ final class NoteTabIcons {
         }
         reading[key] = false
         watchFolder(of: note)
-        let reader = readIcon
-        Self.worker.perform({ reader(note) }) { [weak self] raw in self?.finishRead(note, key: key, raw: raw) }
+        let reader = readIcon, generation = generations[key, default: 0]
+        Self.worker.perform({ reader(note) }) { [weak self] raw in
+            self?.finishRead(note, key: key, raw: raw, generation: generation)
+        }
     }
 
-    private func finishRead(_ note: URL, key: String, raw: String?) {
+    private func finishRead(_ note: URL, key: String, raw: String?, generation: Int) {
         guard let again = reading.removeValue(forKey: key) else { return }
+        guard generations[key, default: 0] == generation, NoteFileSession.session(for: note) == nil else {
+            announce([key])
+            if again, NoteFileSession.session(for: note) == nil { read(note, key: key, again: false) }
+            return
+        }
         let icon = NoteTabIcon(raw, resolve: NoteFileEnvironment(documentURL: note, isPlainText: false).resolve)
         let previous = known[key]
         remember(icon, for: key)

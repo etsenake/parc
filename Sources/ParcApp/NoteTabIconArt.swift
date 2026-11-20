@@ -10,6 +10,31 @@ final class NoteTabIconArt {
         case pending
     }
 
+    struct ThumbnailStamp: Hashable {
+        var path: String
+        var modified: Date?
+        var bytes: Int?
+
+        init(path: String, modified: Date?, bytes: Int?) {
+            self.path = path
+            self.modified = modified
+            self.bytes = bytes
+        }
+
+        init(_ file: URL) {
+            let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
+            self.init(path: file.path, modified: attributes?[.modificationDate] as? Date,
+                      bytes: (attributes?[.size] as? NSNumber)?.intValue)
+        }
+
+        var id: String { "\(path)|\(modified?.timeIntervalSinceReferenceDate ?? -1)|\(bytes ?? -1)" }
+    }
+
+    private struct Sighting {
+        var stamp: ThumbnailStamp
+        var checked: Date
+    }
+
     private struct Waiter {
         var note: URL
         var size: CGFloat
@@ -20,13 +45,16 @@ final class NoteTabIconArt {
     nonisolated static let side: CGFloat = 16
     nonisolated static let thumbnailPixels = 96
     nonisolated static let thumbnailBytes = 40 * 1024 * 1024
+    nonisolated static let restampInterval: TimeInterval = 1
+    nonisolated static let unreadableRetryDelay: TimeInterval = 5
 
     let changes: AnyPublisher<Set<String>?, Never>
     private let icons: NoteTabIcons
     private let thumbnailsChanged = PassthroughSubject<Set<String>?, Never>()
-    private let thumbnails = NSCache<NSURL, CGImage>()
-    private var unreadableThumbnails: Set<URL> = []
-    private var loadingThumbnails: [URL: Set<String>] = [:]
+    private let thumbnails = NSCache<NSString, CGImage>()
+    private var sightings: [String: Sighting] = [:]
+    private var unreadableThumbnails: [ThumbnailStamp: Date] = [:]
+    private var loadingThumbnails: [ThumbnailStamp: Set<String>] = [:]
     private var images: [String: NSImage] = [:]
     private var waiters: [Int: Waiter] = [:]
     private var waiterCounter = 0
@@ -90,31 +118,55 @@ final class NoteTabIconArt {
     }
 
     private func thumbnailArt(_ file: URL, note: URL, size: CGFloat) -> Art {
-        if let thumbnail = thumbnails.object(forKey: file as NSURL) {
-            let key = "image|\(size)|\(file.path)"
+        let stamp = currentStamp(of: file)
+        if let thumbnail = thumbnails.object(forKey: stamp.id as NSString) {
+            let key = "image|\(size)|\(stamp.id)"
             if let image = images[key] { return .image(image) }
             let image = Self.rounded(thumbnail, size: size)
             remember(image, key: key)
             return .image(image)
         }
-        if unreadableThumbnails.contains(file) { return .symbol }
+        if let failed = unreadableThumbnails[stamp] {
+            if NoteTabIcons.clock.now.timeIntervalSince(failed) < Self.unreadableRetryDelay { return .symbol }
+            unreadableThumbnails[stamp] = nil
+        }
         let key = NoteTabIcons.key(note)
-        if loadingThumbnails[file] != nil {
-            loadingThumbnails[file]?.insert(key)
+        if loadingThumbnails[stamp] != nil {
+            loadingThumbnails[stamp]?.insert(key)
             return .pending
         }
-        loadingThumbnails[file] = [key]
+        loadingThumbnails[stamp] = [key]
         NoteTabIcons.worker.perform({ Self.thumbnail(file) }) { [weak self] thumbnail in
             guard let self else { return }
-            let notes = self.loadingThumbnails.removeValue(forKey: file) ?? [key]
+            let notes = self.loadingThumbnails.removeValue(forKey: stamp) ?? [key]
             if let thumbnail {
-                self.thumbnails.setObject(thumbnail, forKey: file as NSURL)
+                self.thumbnails.setObject(thumbnail, forKey: stamp.id as NSString)
             } else {
-                self.unreadableThumbnails.insert(file)
+                if self.unreadableThumbnails.count >= 1_024 { self.unreadableThumbnails.removeAll() }
+                self.unreadableThumbnails[stamp] = NoteTabIcons.clock.now
             }
             self.thumbnailsChanged.send(notes)
         }
-        return loadingThumbnails[file] == nil ? thumbnailArt(file, note: note, size: size) : .pending
+        return loadingThumbnails[stamp] == nil ? thumbnailArt(file, note: note, size: size) : .pending
+    }
+
+    private func currentStamp(of file: URL) -> ThumbnailStamp {
+        let now = NoteTabIcons.clock.now
+        if let sighting = sightings[file.path], abs(now.timeIntervalSince(sighting.checked)) < Self.restampInterval {
+            return sighting.stamp
+        }
+        let stamp = ThumbnailStamp(file)
+        if let previous = sightings[file.path]?.stamp, previous != stamp { forget(previous) }
+        if sightings.count >= 1_024, sightings[file.path] == nil { sightings.removeAll() }
+        sightings[file.path] = Sighting(stamp: stamp, checked: now)
+        return stamp
+    }
+
+    private func forget(_ stamp: ThumbnailStamp) {
+        thumbnails.removeObject(forKey: stamp.id as NSString)
+        unreadableThumbnails[stamp] = nil
+        let suffix = "|" + stamp.id
+        images = images.filter { !($0.key.hasPrefix("image|") && $0.key.hasSuffix(suffix)) }
     }
 
     private func remember(_ image: NSImage, key: String) {

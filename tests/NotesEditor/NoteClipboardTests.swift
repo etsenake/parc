@@ -48,6 +48,7 @@ struct NoteClipboardTests {
         quitMidCopy()
         failedImportKeepsOriginal()
         crossNotePaste()
+        movedMidImport()
         stagedResume()
         asyncReplace()
         offlineRichText()
@@ -373,6 +374,45 @@ struct NoteClipboardTests {
         let refused = NoteClipboard.rebase(forged, into: second.environment)
         expect(refused[0].props.source == secret.absoluteString && !imports.isPending(secret.absoluteString, in: second.page),
                "a pasted file link Parc never imported isn't copied anywhere")
+    }
+
+    static func movedMidImport() {
+        let root = folder("moved")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let photo = root.appendingPathComponent("Shared/Sunset.png")
+        try? FileManager.default.createDirectory(at: photo.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47, 5, 5, 5])
+        try? bytes.write(to: photo)
+        let file = note(root.appendingPathComponent("Old/Trip.md"))
+        let imports = NoteAttachmentImports.shared
+        let release = stallImports()
+        let dropped = NoteClipboard.blocks(forFiles: [photo], environment: file.environment).blocks
+        guard let source = dropped.first?.props.source else { failTest("the drop makes a block") }
+        file.page.insertBlocks(dropped, .top(file.page.page.blocks.count))
+        let newFolder = root.appendingPathComponent("New", isDirectory: true)
+        try? FileManager.default.createDirectory(at: newFolder, withIntermediateDirectories: true)
+        let destination = newFolder.appendingPathComponent("Trip.md")
+        try? FileManager.default.moveItem(at: root.appendingPathComponent("Old/Trip.md"), to: destination)
+        file.handle(.moved(destination))
+        expect(NoteFilePaths.key(for: file.url) == NoteFilePaths.key(for: destination), "the session follows the note to its new folder")
+        release()
+        wait { !imports.isPending(source, in: file.page) }
+        let landed = file.page.page.block(dropped[0].id)?.props.source
+        expect(landed == "Attachments/Sunset.png", "the finished copy is linked from the note's new folder: \(landed ?? "nil")")
+        expect((try? Data(contentsOf: newFolder.appendingPathComponent("Attachments/Sunset.png"))) == bytes,
+               "and the picture lives in the new folder's Attachments")
+        let resolved = landed.flatMap { file.environment.resolve($0) }
+        expect(resolved.map { FileManager.default.fileExists(atPath: $0.path) } ?? false, "so the link resolves")
+
+        let stranded = root.appendingPathComponent("Old/Attachments/Kept.png")
+        try? FileManager.default.createDirectory(at: stranded.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? bytes.write(to: stranded)
+        let readOnly = root.appendingPathComponent("Locked/Note.md")
+        try? FileManager.default.createDirectory(at: readOnly.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: readOnly.deletingLastPathComponent().path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: readOnly.deletingLastPathComponent().path) }
+        expect((try? NoteAttachmentImports.rebase(stranded, into: readOnly)) == "../Old/Attachments/Kept.png",
+               "when the copy can't be made, the link points back to where the picture landed")
     }
 
     static func stagedResume() {

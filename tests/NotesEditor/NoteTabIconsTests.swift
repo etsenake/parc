@@ -23,6 +23,8 @@ struct NoteTabIconsTests {
             try coalescedAnnouncements()
             try liveSessions()
             try backgroundReads()
+            try followedFolders()
+            try staleReads()
             print("NoteTabIconsTests passed")
         }
     }
@@ -209,6 +211,65 @@ struct NoteTabIconsTests {
         expectEqual(icons.lookup(url), .known(.emoji("🐇")), "with the new icon")
         _ = NoteFileTestSupport.spin(timeout: 0.3) { false }
         expectEqual(heard.count, 2, "two quick folder changes still announce once")
+    }
+}
+
+extension NoteTabIconsTests {
+    static func followedFolders() throws {
+        let icons = freshIcons()
+        let url = note("Followed/Open.md", iconNote("🦉"))
+        let folderKey = (NoteTabIcons.key(url) as NSString).deletingLastPathComponent
+        let session = try NoteFileSession.open(url)
+        session.retain()
+        expectEqual(icons.follow(session), .emoji("🦉"), "following reads the live icon")
+        expect(folderSignals[folderKey] != nil, "following a session watches its folder")
+        session.release()
+        expect(NoteFileSession.session(for: url) == nil, "the session closes")
+        _ = note("Followed/Open.md", iconNote("🦅"))
+        signalFolder(of: url)
+        expectEqual(icons.lookup(url), .known(.emoji("🦅")), "an outside change after closing is noticed")
+        let moving = try NoteFileSession.open(note("Followed/Mover.md", iconNote("🐝")))
+        moving.retain()
+        icons.follow(moving)
+        let renamed = try moving.rename(to: "Moved")
+        expectEqual(icons.lookup(renamed), .known(.emoji("🐝")), "a renamed session keeps its icon")
+        moving.release()
+        _ = note("Followed/Moved.md", iconNote("🦋"))
+        signalFolder(of: renamed)
+        expectEqual(icons.lookup(renamed), .known(.emoji("🦋")), "the renamed note's folder stays watched")
+        clock.advance(0)
+    }
+
+    static func staleReads() throws {
+        let icons = freshIcons()
+        let gate = DispatchSemaphore(value: 0)
+        NoteTabIcons.clock = NoteFileSystemClock.shared
+        NoteTabIcons.worker = NoteFileWorker(label: "org.parc.tests.tab-icons.stale")
+        defer {
+            NoteTabIcons.clock = clock
+            NoteTabIcons.worker = .inline
+        }
+        var heard: [Set<String>?] = []
+        let watch = icons.changes.sink { heard.append($0) }
+        defer { watch.cancel() }
+        let url = note("Stale.md", iconNote("🔥"))
+        icons.readIcon = { note in
+            gate.wait()
+            return NoteTabIcons.frontMatterIcon(note)
+        }
+        expectEqual(icons.lookup(url), .pending, "the cold read is stuck in the background")
+        let session = try NoteFileSession.open(url)
+        session.retain()
+        session.page.edit("Change Icon", kind: .settings) { $0.settings.icon = "💧" }
+        expectEqual(icons.follow(session), .emoji("💧"), "the open session has a newer icon")
+        gate.signal()
+        expect(NoteFileTestSupport.spin(timeout: 5) { !heard.isEmpty }, "the stale read still settles waiters")
+        expectEqual(icons.lookup(url), .known(.emoji("💧")), "the stale read doesn't beat the session")
+        icons.readIcon = { NoteTabIcons.frontMatterIcon($0) }
+        try session.flush()
+        session.release()
+        expect(NoteFileSession.session(for: url) == nil, "the session closes")
+        expectEqual(icons.lookup(url), .known(.emoji("💧")), "after closing, the session's icon is remembered, not the stale read")
     }
 }
 

@@ -176,6 +176,11 @@ final class NoteAttachmentImports {
 
     private func finish(_ source: String, _ result: Result<String, Error>, from origin: NotePageSession?, note: URL) {
         ledgers = ledgers.filter { $0.value.session != nil }
+        if case .success(let path) = result, let target = Self.liveSession(origin, note: note),
+           let moved = Self.movedNote(of: target, from: note) {
+            follow(source, path: path, from: note, to: moved, origin: origin)
+            return
+        }
         if let origin, let ledger = existingLedger(for: origin), let count = ledger.pending[source] {
             ledger.pending[source] = count > 1 ? count - 1 : nil
         }
@@ -190,6 +195,30 @@ final class NoteAttachmentImports {
             if let origin { ledger(for: origin).failures[source] = error }
         }
         changes.send(source)
+    }
+
+    private func follow(_ source: String, path: String, from note: URL, to moved: URL, origin: NotePageSession?) {
+        let landed = note.deletingLastPathComponent().appendingPathComponent(path.removingPercentEncoding ?? path)
+        worker.perform({ Result { try Self.rebase(landed, into: moved) } }) { [weak self, weak origin] result in
+            self?.finish(source, result, from: origin, note: moved)
+        }
+    }
+
+    nonisolated static func rebase(_ landed: URL, into note: URL) throws -> String {
+        do {
+            return try NoteAttachments.importFile(landed, into: note)
+        } catch {
+            guard NoteFilePaths.itemExists(landed),
+                  let relative = NoteFilePaths.relativePath(from: note.deletingLastPathComponent(), to: landed) else { throw error }
+            return relative
+        }
+    }
+
+    private static func movedNote(of session: NotePageSession, from note: URL) -> URL? {
+        guard let current = NoteFileSession.openSessions.first(where: { $0.page === session })?.url,
+              NoteFilePaths.key(for: current.deletingLastPathComponent()) != NoteFilePaths.key(for: note.deletingLastPathComponent())
+        else { return nil }
+        return current
     }
 
     func adoptOrphans(of note: URL, in session: NotePageSession) {
