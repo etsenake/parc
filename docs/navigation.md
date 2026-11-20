@@ -79,16 +79,30 @@ has no sidebar referrer, while Peek Reload/history use the parent item.
 
 ## Links to Markdown and text files
 
-Clicking a page's link to a local Markdown or text file opens it as a [note](notes.md) without
-the page going anywhere: it keeps its place and its Back and Forward history, and the note opens
-in its own tab right after it, or comes forward if it already has one. Closing a new note tab
-returns to the page, as closing any tab a link opened does. A Command-click or middle-click opens
-the note tab the way it opens any link, in the background unless Shift is held. A private window
-hands the note to a regular window.
+Clicking a page's link to a local Markdown or text file opens it as a [note](notes.md) in the
+same tab. The page stays alive behind the note, hidden, with its history, scroll position and
+form state, so Back (the sidebar or toolbar arrow, ⌘[ or the Go menu) puts it back exactly as it
+was, and Forward then shows the note again. A new navigation on the page, a typed address or a
+Back past it drops that Forward step. The tab's address, title and URL pill follow whatever
+shows, and the session saves both steps: after a restart, or when the tab comes back from the
+archive, it shows the note and Back loads the page with its saved history. Closing the tab asks
+the hidden page before it leaves, as closing any page does. A Command-click or middle-click opens
+the note in its own tab, in the background unless Shift is held. A private window hands the note
+to a regular window.
+
+`TabNoteVisit` on the tab holds the page and note steps and which one shows; the store is the
+source of truth and each render covers or uncovers the tab's live page to match. If the hidden
+page can't stay (the tab moves to another window or Profile), Parc closes it and keeps its
+history, so Back reloads it with that history. Renaming the note moves the note step with it;
+trashing it sends a tab showing it back to its page. Swipes and the held-arrow history list don't
+know the note step yet: a swipe over a note does nothing, and Forward's list on the page shows
+only the page's own entries.
 
 The file types match the note editor's. For a same-tab click, Parc's navigation throttle holds the
 navigation for one task and asks the window through `openNoteFile`; for a new-tab click, Parc's
-web-contents delegate asks before Chromium creates the tab. Only user-initiated link navigations
+web-contents delegate asks before Chromium creates the tab. Both arrive as the same request, so
+the window treats it as a same-tab click while the page is mid-navigation; a Shift-Command-click
+on a page that's still loading opens the note in place too. Only user-initiated link navigations
 from a page that has already loaded are offered, never history moves, reloads or form posts. A
 link that opens a new window, such as `target="_blank"`, still opens a tab that turns into the
 note, and so does any click while the window can't take a note, such as with a Peek or sheet open.
