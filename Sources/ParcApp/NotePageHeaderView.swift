@@ -10,7 +10,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
     unowned let editor: NotePageEditor
     let file: NoteFileSession?
     var onTitleChange: ((String) -> Void)?
-    var onTitleCommit: ((String) -> Void)?
+    var onTitleCommit: ((String) throws -> Void)?
     let titleView = NotePageTitleView()
     let errorView = NotePageTitleErrorView()
     let coverView: NotePageCoverView
@@ -416,16 +416,16 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         }
         let previous = committedTitle
         committedTitle = value
-        if let onTitleCommit {
-            onTitleCommit(value)
-        } else if let file {
-            do {
+        do {
+            if let onTitleCommit {
+                try onTitleCommit(value)
+            } else if let file {
                 _ = try file.rename(to: value)
-            } catch {
-                committedTitle = previous
-                rejectTitle(error, ending: ending)
-                return
             }
+        } catch {
+            committedTitle = previous
+            rejectTitle(error, ending: ending)
+            return
         }
         if let file { committedTitle = file.title }
         showTitleError(nil)

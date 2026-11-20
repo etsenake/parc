@@ -19,6 +19,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
     private var pageMenuButton: NotePageMenuButton?
     private var lease: NoteFileLease?
     private var isTornDown = false
+    private var isPreparingPrint = false
     private static var openEditors: [ObjectIdentifier: Int] = [:]
     static let pageMenuInset = NSPoint(x: 14, y: 12)
     private var subscriptions = Set<AnyCancellable>()
@@ -74,7 +75,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         root.addSubview(scroll)
 
         let header = NotePageHeaderView(editor: editor, file: file)
-        header.onTitleCommit = { [weak self] title in self?.commitTitle(title) }
+        header.onTitleCommit = { [weak self] title in try self?.commitTitle(title) }
         self.header = header
         editor.canvas.headerView = header
 
@@ -321,17 +322,11 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         title.range(of: "^Untitled( [0-9]+)?$", options: .regularExpression) != nil
     }
 
-    private func commitTitle(_ title: String) {
+    private func commitTitle(_ title: String) throws {
         guard !isReadOnly else { return }
         let before = file.title
-        do {
-            _ = try file.rename(to: title)
-            if file.title != before { reportTitle() }
-        } catch {
-            showTransientError(error)
-            NSAccessibility.post(element: header ?? view, notification: .announcementRequested,
-                                 userInfo: [.announcement: error.localizedDescription, .priority: NSAccessibilityPriorityLevel.high.rawValue])
-        }
+        _ = try file.rename(to: title)
+        if file.title != before { reportTitle() }
     }
 
     private func fileDidMove(to url: URL) {
@@ -422,29 +417,17 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
     }
 
     func printPage() {
-        guard isViewLoaded, let window = view.window else { return }
-        let info = NSPrintInfo.shared.copy() as? NSPrintInfo ?? NSPrintInfo()
-        info.horizontalPagination = .fit
-        info.verticalPagination = .automatic
-        info.isVerticallyCentered = false
-        let width = info.paperSize.width - info.leftMargin - info.rightMargin
-        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 100))
-        text.textContainerInset = .zero
-        text.textContainer?.lineFragmentPadding = 0
-        text.isEditable = false
-        text.drawsBackground = false
-        text.appearance = NSAppearance(named: .aqua)
-        var document = NSAttributedString()
-        (NSAppearance(named: .aqua) ?? text.effectiveAppearance).performAsCurrentDrawingAppearance {
-            document = NotePagePrintDocument.render(title: file.title, page: editor.session.page, plainText: file.kind == .plainText)
+        guard isViewLoaded, view.window?.attachedSheet == nil, !isPreparingPrint else { return }
+        isPreparingPrint = true
+        NotePagePrintView.prepare(page: editor.session.page, title: file.title, environment: editor.environment) { [weak self] printView in
+            guard let self else { return }
+            self.isPreparingPrint = false
+            guard !self.isTornDown, let window = self.view.window, window.attachedSheet == nil else { return }
+            let operation = printView.printOperation(info: printView.printInfo())
+            operation.showsPrintPanel = true
+            operation.showsProgressPanel = true
+            operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
         }
-        text.textStorage?.setAttributedString(document)
-        text.sizeToFit()
-        let operation = NSPrintOperation(view: text, printInfo: info)
-        operation.jobTitle = file.title
-        operation.showsPrintPanel = true
-        operation.showsProgressPanel = true
-        operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
     }
 }
 
@@ -744,109 +727,5 @@ final class NotePageStatusButton: PointingHandButton {
             .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
             .foregroundColor: NoteTheme.accent,
         ])
-    }
-}
-
-enum NotePagePrintDocument {
-    @MainActor
-    static func render(title: String, page: NotePage, plainText: Bool) -> NSAttributedString {
-        let output = NSMutableAttributedString()
-        let ink = NSColor.black
-        let secondary = NSColor(white: 0.4, alpha: 1)
-        func paragraph(spacingBefore: CGFloat = 2, after: CGFloat = 6, indent: CGFloat = 0) -> NSParagraphStyle {
-            let style = NSMutableParagraphStyle()
-            style.paragraphSpacingBefore = spacingBefore
-            style.paragraphSpacing = after
-            style.lineHeightMultiple = 1.2
-            style.firstLineHeadIndent = indent
-            style.headIndent = indent
-            return style
-        }
-        output.append(NSAttributedString(string: title + "\n", attributes: [
-            .font: NoteTheme.titleFont(page.settings.font), .foregroundColor: ink, .paragraphStyle: paragraph(after: 14),
-        ]))
-        let body = NoteTheme.bodyFont(plainText ? .mono : page.settings.font, small: page.settings.smallText)
-        func styled(_ text: NoteText, font: NSFont, color: NSColor) -> NSAttributedString {
-            let result = NSMutableAttributedString()
-            for run in text.runs() {
-                var value = run.marks.atom?.fallbackText ?? (text.string as NSString).substring(with: NSRange(location: run.range.lowerBound, length: run.range.count))
-                if case .equation? = run.marks.atom { value = "$" + value + "$" }
-                var runFont = font
-                if run.marks.code { runFont = NoteTheme.codeFont(size: font.pointSize * 0.88) }
-                else if run.marks.bold || run.marks.italic {
-                    runFont = NoteTheme.bodyFont(page.settings.font, small: page.settings.smallText, bold: run.marks.bold, italic: run.marks.italic)
-                    if font.pointSize != runFont.pointSize { runFont = NSFontManager.shared.convert(runFont, toSize: font.pointSize) }
-                }
-                var attributes: [NSAttributedString.Key: Any] = [.font: runFont, .foregroundColor: color]
-                if run.marks.underline || run.marks.link != nil { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
-                if run.marks.strikethrough { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
-                if let style = run.marks.color {
-                    if style.isBackground { attributes[.backgroundColor] = NoteTheme.color(style).usingColorSpace(.sRGB) }
-                    else { attributes[.foregroundColor] = NoteTheme.color(style).usingColorSpace(.sRGB) ?? color }
-                }
-                result.append(NSAttributedString(string: value, attributes: attributes))
-            }
-            return result
-        }
-        var numbers: [Int: Int] = [:]
-        func walk(_ blocks: [NoteBlock], depth: Int) {
-            for block in blocks {
-                let indent = CGFloat(depth) * 22
-                if block.kind != .numberedItem { numbers[depth] = nil }
-                var prefix = ""
-                var font = body
-                var color = ink
-                var style = paragraph(indent: indent)
-                switch block.kind {
-                case .heading:
-                    font = NoteTheme.headingFont(block.props.level, font: page.settings.font, small: page.settings.smallText)
-                    style = paragraph(spacingBefore: 12, after: 4, indent: indent)
-                case .bulletedItem: prefix = "•  "
-                case .numberedItem:
-                    let number = (numbers[depth] ?? (block.props.listStart ?? 1) - 1) + 1
-                    numbers[depth] = number
-                    prefix = "\(number).  "
-                case .todo:
-                    prefix = block.props.checked ? "☑  " : "☐  "
-                    if block.props.checked { color = secondary }
-                case .toggle: prefix = block.props.expanded ? "▾  " : "▸  "
-                case .quote: prefix = "┃  "
-                case .callout: prefix = (block.props.icon ?? "💡") + "  "
-                case .code, .equation, .html, .raw:
-                    font = NoteTheme.codeFont(size: max(10, body.pointSize - 3))
-                case .divider:
-                    output.append(NSAttributedString(string: "———\n", attributes: [.font: body, .foregroundColor: secondary, .paragraphStyle: style]))
-                    continue
-                case .image, .video, .audio, .file, .bookmark, .embed, .pageLink:
-                    let label = block.kind == .pageLink ? block.text.plainText : (block.props.caption.isEmpty ? (block.props.source ?? "") : block.props.caption.plainText)
-                    output.append(NSAttributedString(string: "↗ " + label + "\n", attributes: [.font: body, .foregroundColor: secondary, .paragraphStyle: style]))
-                    continue
-                case .table:
-                    let rows = block.props.table?.rows ?? []
-                    for row in rows {
-                        output.append(NSAttributedString(string: row.map(\.plainText).joined(separator: "  │  ") + "\n",
-                                                         attributes: [.font: body, .foregroundColor: ink, .paragraphStyle: style]))
-                    }
-                    continue
-                case .tableOfContents, .columns, .column, .paragraph:
-                    break
-                }
-                if block.kind.hasRichText || block.kind.hasPlainText {
-                    let line = NSMutableAttributedString(string: prefix, attributes: [.font: body, .foregroundColor: secondary])
-                    line.append(block.kind.hasPlainText ? NSAttributedString(string: block.text.string, attributes: [.font: font, .foregroundColor: color])
-                                                        : styled(block.text, font: font, color: color))
-                    line.append(NSAttributedString(string: "\n"))
-                    line.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: line.length))
-                    if block.kind == .todo && block.props.checked {
-                        line.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue,
-                                          range: NSRange(location: prefix.utf16.count, length: max(0, line.length - prefix.utf16.count - 1)))
-                    }
-                    output.append(line)
-                }
-                if block.showsChildren { walk(block.children, depth: block.kind == .columns || block.kind == .column ? depth : depth + 1) }
-            }
-        }
-        walk(page.blocks, depth: 0)
-        return output
     }
 }
