@@ -148,10 +148,13 @@ and top domains at one. Duplicates of a page, and rows with its title and path
 under another query or fragment, merge into one row, preferring an open tab, then
 an archived tab, then Chromium's row at the best merged rank, here and in the
 empty list, but two open tabs never merge; configured title/host sites use their
-own key. Top domains come from that Profile's history, calculated off the main
-thread per history revision, one per host and port, opening the root with the
-latest visit's scheme. A root page title names the row; without one its address
-shows once. Search keys use terms, not URLs with changing query metadata.
+own key. Notes come from the Space's Notes folder: titles match like any document,
+and from three letters on, words in a note's text find it too, ranked below title
+matches. A note already open in a tab shows once, as that tab. Private and pop-up
+windows offer no notes. Top domains come from that Profile's history, calculated
+off the main thread per history revision, one per host and port, opening the root
+with the latest visit's scheme. A root page title names the row; without one its
+address shows once. Search keys use terms, not URLs with changing query metadata.
 
 Ranking never substitutes a host allowlist, dot detector or reconstructed GET for
 Chromium classification; regression suites cover each case above.
@@ -212,7 +215,7 @@ An existing web-tab result is classified into a new page, not transferred.
 Only one operation may be pending. Editing, changed selection/scope, retirement,
 transfer or replaced documents cancel it. Private requests keep the actual OTR
 Browser; popups refuse. Failure keeps the original request for explicit retry.
-Local Notes/Easels keep exact-ID switching. Typed commands usually retain ordinary
+Notes open by file and Easels by exact ID. Typed commands usually retain ordinary
 action/dismissal; Pin to Folder has the dedicated
 [copy behavior](command-bar-scopes.md#typed-type-travel-commands).
 

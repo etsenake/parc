@@ -1208,7 +1208,8 @@ import SwiftUI
     }
     private func noteContentMatches(_ query: String) -> [CommandBarDocument] {
         if let noteMatches, noteMatches.query == query { return noteMatches.notes }
-        let notes = CommandBarNotes.contentMatches(query, in: noteLibrary)
+        let open = noteLibrary == nil ? [] : tabs.compactMap { InternalPage(urlString: $0.url)?.noteURL }
+        let notes = CommandBarNotes.contentMatches(query, in: noteLibrary, openNotes: open)
         noteMatches = (query, notes)
         return notes
     }
