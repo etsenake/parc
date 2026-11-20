@@ -250,7 +250,7 @@ enum NotePagePreviewRenderer {
                 paragraph.headIndent = indent + 14
                 base[.foregroundColor] = NoteTheme.secondaryInk
                 prefix = "▎ "
-            case .callout: prefix = (block.props.icon ?? "💡") + "  "
+            case .callout: prefix = (block.calloutDisplayIcon ?? "💡") + "  "
             case .code, .equation, .html, .raw:
                 base[.font] = NoteTheme.codeFont(size: 12.5)
                 base[.backgroundColor] = NoteTheme.codeBackground

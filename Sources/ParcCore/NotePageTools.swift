@@ -7,6 +7,8 @@ struct NoteFindOptions: Hashable {
 }
 
 struct NoteFindMatch: Hashable {
+    static let titleBlock = NoteBlockID(UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)))
+
     var position: NotePosition
     var length: Int
 
@@ -15,9 +17,14 @@ struct NoteFindMatch: Hashable {
         self.length = length
     }
 
+    static func title(offset: Int, length: Int) -> NoteFindMatch {
+        NoteFindMatch(titleBlock, offset: offset, length: length)
+    }
+
     var block: NoteBlockID { position.block }
     var field: NoteTextField { position.field }
     var range: Range<Int> { position.offset..<(position.offset + length) }
+    var isTitle: Bool { position.block == Self.titleBlock }
 }
 
 struct NoteFindOrder {
@@ -28,6 +35,7 @@ struct NoteFindOrder {
     }
 
     func key(_ position: NotePosition) -> (Int, Int, Int) {
+        if position.block == NoteFindMatch.titleBlock { return (-1, 0, position.offset) }
         let field: Int
         switch position.field {
         case .body: field = 0
@@ -68,9 +76,15 @@ enum NotePageFinder {
         return result
     }
 
-    static func matches(of query: String, in page: NotePage, options: NoteFindOptions = NoteFindOptions()) -> [NoteFindMatch] {
+    static func matches(of query: String, in page: NotePage, title: String? = nil,
+                        options: NoteFindOptions = NoteFindOptions()) -> [NoteFindMatch] {
         guard !query.isEmpty else { return [] }
         var result: [NoteFindMatch] = []
+        if let title, !title.isEmpty {
+            for range in ranges(of: query, in: title, options: options) {
+                result.append(.title(offset: range.lowerBound, length: range.count))
+            }
+        }
         for id in page.documentOrder(includingCollapsed: true) {
             guard let block = page.block(id) else { continue }
             for field in fields(of: block) {
@@ -94,7 +108,7 @@ enum NotePageFinder {
     @discardableResult
     static func replace(_ targets: [NoteFindMatch], with replacement: String, in page: inout NotePage) -> Set<NoteBlockID> {
         var grouped: [NotePosition: [NoteFindMatch]] = [:]
-        for match in targets {
+        for match in targets where !match.isTitle {
             grouped[NotePosition(match.block, 0, field: match.field), default: []].append(match)
         }
         var touched = Set<NoteBlockID>()
@@ -120,6 +134,120 @@ enum NotePageFinder {
 
     static func positionAfterReplacing(_ match: NoteFindMatch, with replacement: String) -> NotePosition {
         NotePosition(match.block, match.position.offset + (replacement as NSString).length, field: match.field)
+    }
+
+    static func replacingTitle(_ title: String, matches targets: [NoteFindMatch], with replacement: String) -> String {
+        let text = NSMutableString(string: title)
+        var last = Int.max
+        for match in targets.filter(\.isTitle).sorted(by: { $0.position.offset > $1.position.offset }) {
+            let range = match.range
+            guard range.lowerBound >= 0, range.upperBound <= text.length, range.upperBound <= last else { continue }
+            text.replaceCharacters(in: NSRange(location: range.lowerBound, length: range.count), with: replacement)
+            last = range.lowerBound
+        }
+        return text as String
+    }
+}
+
+enum NotePageTitleCheck {
+    static func problem(renaming url: URL, to proposed: String) -> NoteFileError? {
+        let trimmed = proposed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if NoteFileNaming.sanitizedTitle(trimmed).isEmpty { return .invalidName }
+        do {
+            _ = try NoteFileNaming.renameTarget(for: url, to: trimmed)
+        } catch let error as NoteFileError {
+            return error
+        } catch {
+            return nil
+        }
+        return nil
+    }
+}
+
+struct NotePageHeaderGeometry: Equatable {
+    struct Layout: Equatable {
+        var cover: CGRect?
+        var icon: CGRect?
+        var affordances: CGRect
+        var title: CGRect
+        var error: CGRect?
+        var properties: CGRect?
+        var height: CGFloat
+    }
+
+    static let iconSide: CGFloat = 80
+    static let iconLead: CGFloat = 6
+    static let topPadding: CGFloat = 52
+    static let plainTextTop: CGFloat = 56
+    static let inkGap: CGFloat = 14
+    static let affordanceGap: CGFloat = 8
+    static let coverAffordanceGap: CGFloat = 14
+    static let errorGap: CGFloat = 4
+    static let propertiesGap: CGFloat = 8
+    static let bottomPadding: CGFloat = 14
+
+    var width: CGFloat
+    var column: CGRect
+    var coverHeight: CGFloat?
+    var hasIcon = false
+    var isPlainText = false
+    var iconInkInset: CGFloat = 11
+    var titleHeight: CGFloat
+    var titleCapInset: CGFloat = 0
+    var affordanceHeight: CGFloat = 26
+    var errorHeight: CGFloat?
+    var propertiesHeight: CGFloat?
+    var propertiesGutter: CGFloat = 0
+
+    var hasCover: Bool { (coverHeight ?? 0) > 0 && !isPlainText }
+
+    func layout() -> Layout {
+        let column = self.column.width > 0 ? self.column : CGRect(x: 0, y: 0, width: width, height: 0)
+        var cover: CGRect?
+        var icon: CGRect?
+        let affordances: CGRect
+        let titleTop: CGFloat
+        let showsIcon = hasIcon && !isPlainText
+        if hasCover, let height = coverHeight {
+            cover = CGRect(x: 0, y: 0, width: width, height: height)
+        }
+        let side = Self.iconSide
+        if isPlainText {
+            titleTop = Self.plainTextTop
+            affordances = CGRect(x: column.minX, y: max(0, titleTop - affordanceHeight - Self.affordanceGap), width: column.width,
+                                 height: affordanceHeight)
+        } else if showsIcon {
+            let top = cover.map { $0.maxY - side / 2 } ?? Self.topPadding
+            let box = CGRect(x: column.minX - Self.iconLead, y: top, width: side, height: side)
+            icon = box
+            titleTop = box.maxY - iconInkInset + Self.inkGap - titleCapInset
+            let foot = side / 2
+            let x = box.maxX + Self.affordanceGap
+            affordances = CGRect(x: x, y: box.maxY - foot + (foot - affordanceHeight) / 2, width: max(0, column.maxX - x),
+                                 height: affordanceHeight)
+        } else {
+            let rowTop = cover.map { $0.maxY + Self.coverAffordanceGap } ?? Self.topPadding
+            affordances = CGRect(x: column.minX, y: rowTop, width: column.width, height: affordanceHeight)
+            titleTop = affordances.maxY + Self.inkGap - titleCapInset
+        }
+        let title = CGRect(x: column.minX, y: titleTop.rounded(), width: column.width, height: titleHeight)
+        var y = title.maxY
+        var error: CGRect?
+        if let errorHeight, errorHeight > 0 {
+            let frame = CGRect(x: column.minX, y: y + Self.errorGap, width: column.width, height: errorHeight)
+            error = frame
+            y = frame.maxY
+        }
+        var properties: CGRect?
+        if let propertiesHeight, !isPlainText {
+            y += Self.propertiesGap
+            let frame = CGRect(x: column.minX - propertiesGutter, y: y, width: column.width + propertiesGutter, height: propertiesHeight)
+            properties = frame
+            y = frame.maxY
+        }
+        return Layout(cover: cover, icon: icon, affordances: affordances, title: title, error: error, properties: properties,
+                      height: (y + Self.bottomPadding).rounded(.up))
     }
 }
 
@@ -506,5 +634,62 @@ enum NotePageExport {
         var value = text.replacingOccurrences(of: "\r\n", with: " ")
         for separator in ["\n", "\r", "\u{2028}", "\u{2029}", "\t"] { value = value.replacingOccurrences(of: separator, with: " ") }
         return value
+    }
+}
+
+struct NoteCalloutAlert: Hashable {
+    var icon: String
+    var color: NoteColor
+
+    private static let table: [String: NoteCalloutAlert] = {
+        let groups: [([String], String, NoteColor)] = [
+            (["note"], "\u{2139}\u{FE0F}", .blue),
+            (["tip", "hint"], "\u{1F4A1}", .green),
+            (["important"], "\u{2757}\u{FE0F}", .purple),
+            (["warning", "attention"], "\u{26A0}\u{FE0F}", .yellow),
+            (["caution"], "\u{1F6D1}", .red),
+            (["info"], "\u{2139}\u{FE0F}", .blue),
+            (["todo"], "\u{2611}\u{FE0F}", .blue),
+            (["abstract", "summary", "tldr"], "\u{1F4CB}", .blue),
+            (["success", "check", "done"], "\u{2705}", .green),
+            (["question", "help", "faq"], "\u{2753}", .orange),
+            (["failure", "fail", "missing"], "\u{274C}", .red),
+            (["danger", "error"], "\u{26A1}\u{FE0F}", .red),
+            (["bug"], "\u{1F41B}", .red),
+            (["example"], "\u{1F4DD}", .purple),
+            (["quote", "cite"], "\u{1F4AC}", .gray),
+        ]
+        var result: [String: NoteCalloutAlert] = [:]
+        for (names, icon, color) in groups {
+            for name in names { result[name] = NoteCalloutAlert(icon: icon, color: color) }
+        }
+        return result
+    }()
+
+    static func defaults(for alert: String?) -> NoteCalloutAlert? {
+        guard let alert else { return nil }
+        return table[alert.lowercased()]
+    }
+}
+
+extension NoteBlock {
+    var calloutAlert: NoteCalloutAlert? {
+        kind == .callout ? NoteCalloutAlert.defaults(for: props.alert) : nil
+    }
+
+    var calloutDisplayIcon: String? {
+        guard kind == .callout else { return nil }
+        if let icon = props.icon { return icon.isEmpty ? nil : icon }
+        return calloutAlert?.icon
+    }
+
+    var calloutDisplayColor: NoteColorStyle? {
+        guard kind == .callout else { return color }
+        if let color { return color }
+        return calloutAlert.map { .background($0.color) }
+    }
+
+    var calloutIconRemoval: String? {
+        calloutAlert == nil ? nil : ""
     }
 }

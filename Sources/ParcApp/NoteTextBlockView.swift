@@ -32,7 +32,7 @@ struct NoteTextBlockMetrics: Equatable {
             let insets = NoteTheme.calloutPadding
             metrics.top = insets.top
             metrics.bottom = block.children.isEmpty || !block.showsChildren ? insets.bottom : 4
-            metrics.leading = block.props.icon == nil ? insets.left : insets.left + calloutIconSide + 6
+            metrics.leading = block.calloutDisplayIcon == nil ? insets.left : insets.left + calloutIconSide + 6
             metrics.trailing = insets.right
         default:
             break
@@ -305,7 +305,7 @@ final class NoteTextBlockView: NoteBlockView, NoteTextHost {
         }
         disclosure?.setExpanded(block.props.expanded, animated: animated)
 
-        if block.kind == .callout, let icon = block.props.icon {
+        if block.kind == .callout, let icon = block.calloutDisplayIcon {
             if calloutIcon == nil {
                 let button = NoteCalloutIconButton()
                 button.target = self
@@ -412,7 +412,7 @@ final class NoteTextBlockView: NoteBlockView, NoteTextHost {
             panel?.dismiss(animated: true)
         }
         picker.onRemove = { [weak editor, weak panel] in
-            editor?.session.updateBlock(id, name: "Callout Icon") { $0.props.icon = nil }
+            editor?.session.updateBlock(id, name: "Callout Icon") { $0.props.icon = $0.calloutIconRemoval }
             panel?.dismiss(animated: true)
         }
         picker.onCancel = { [weak panel] in panel?.dismiss(animated: true) }

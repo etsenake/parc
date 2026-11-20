@@ -8,7 +8,11 @@ struct NotePageToolsTests {
 
     static func main() {
         finding()
+        findingTitles()
         replacing()
+        titleChecks()
+        headerGeometry()
+        calloutAlerts()
         stats()
         properties()
         history()
@@ -71,6 +75,174 @@ struct NotePageToolsTests {
         let emoji = NotePage(blocks: [.paragraph("👋 park 👋 park")])
         let emojiMatches = NotePageFinder.matches(of: "park", in: emoji)
         expect(emojiMatches.map(\.position.offset) == [3, 11], "offsets are UTF-16, so emoji count twice")
+    }
+
+    static func findingTitles() {
+        let (page, ids) = samplePage()
+        let matches = NotePageFinder.matches(of: "park", in: page, title: "Park day at the park")
+        expect(matches.count == 12, "the title adds its two parks to the ten in the body (got \(matches.count))")
+        expect(matches[0].isTitle && matches[0].position.offset == 0 && matches[1].isTitle && matches[1].position.offset == 16,
+               "title matches come first, in order")
+        expect(!matches[2].isTitle && matches[2].block == ids[0], "the body follows the title")
+        expect(matches.filter(\.isTitle).allSatisfy { $0.field == .body && $0.length == 4 }, "title matches carry plain ranges")
+        expect(NotePageFinder.matches(of: "park", in: page, title: "").count == 10, "an empty title adds nothing")
+        expect(NotePageFinder.matches(of: "park", in: page, title: nil).count == 10, "no title means body only")
+        expect(NotePageFinder.firstIndex(atOrAfter: nil, in: matches, page: page) == 0, "no caret starts at the title")
+        let inBody = NotePosition(ids[0], 0)
+        expect(NotePageFinder.firstIndex(atOrAfter: inBody, in: matches, page: page) == 2, "a caret in the body skips the title")
+        let titleCaret = NotePosition(NoteFindMatch.titleBlock, 5)
+        expect(NotePageFinder.firstIndex(atOrAfter: titleCaret, in: matches, page: page) == 1, "a caret in the title finds the next title match")
+        let end = NotePosition(ids[6], 99)
+        expect(NotePageFinder.firstIndex(atOrAfter: end, in: matches, page: page) == 0, "wrapping past the end lands back on the title")
+        var touched = page
+        expect(NotePageFinder.replace(matches.filter(\.isTitle), with: "x", in: &touched).isEmpty && touched == page,
+               "page replace leaves title matches to the header")
+        expect(NotePageFinder.replacingTitle("Park day at the park", matches: matches, with: "Garden") == "Garden day at the Garden",
+               "title replace rewrites every title match")
+        expect(NotePageFinder.replacingTitle("Park day at the park", matches: [matches[1]], with: "beach") == "Park day at the beach",
+               "title replace can swap just the current match")
+        expect(NotePageFinder.replacingTitle("tiny", matches: [.title(offset: 2, length: 10)], with: "x") == "tiny",
+               "a stale title match past the end is ignored")
+        let cased = NotePageFinder.matches(of: "Park", in: page, title: "Park park", options: NoteFindOptions(matchCase: true))
+        expect(cased.filter(\.isTitle).count == 1, "match case applies to the title too")
+        let after = NotePageFinder.positionAfterReplacing(matches[0], with: "Garden")
+        expect(after.block == NoteFindMatch.titleBlock && after.offset == 6, "the caret after a title replace stays in the title")
+    }
+
+    static func titleChecks() {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("title-checks-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let note = folder.appendingPathComponent("Groceries.md")
+        let neighbour = folder.appendingPathComponent("Errands.md")
+        try? Data("a".utf8).write(to: note)
+        try? Data("b".utf8).write(to: neighbour)
+        expect(NotePageTitleCheck.problem(renaming: note, to: "Errands") == .nameTaken("Errands"), "a taken name is caught before renaming")
+        expect(NotePageTitleCheck.problem(renaming: note, to: "Errands")?.errorDescription == "There’s already a note called “Errands” here.",
+               "the collision reads in Parc's voice")
+        expect(NotePageTitleCheck.problem(renaming: note, to: "Weekend plans") == nil, "a fresh name is fine")
+        expect(NotePageTitleCheck.problem(renaming: note, to: "Groceries") == nil, "keeping the name is fine")
+        expect(NotePageTitleCheck.problem(renaming: note, to: "groceries") == nil, "changing only the case of its own name is fine")
+        expect(NotePageTitleCheck.problem(renaming: note, to: "...") == .invalidName, "a name made only of dots can't be a file")
+        expect(NotePageTitleCheck.problem(renaming: note, to: "...")?.errorDescription == "Notes can’t be named that.", "invalid names explain themselves")
+        expect(NotePageTitleCheck.problem(renaming: note, to: "   ") == nil, "a blank title just keeps the old name")
+        expect(NotePageTitleCheck.problem(renaming: note, to: "a/b") == nil, "slashes become dashes instead of failing")
+    }
+
+    static func headerGeometry() {
+        let column = CGRect(x: 140, y: 0, width: 720, height: 0)
+        var base = NotePageHeaderGeometry(width: 1000, column: column, titleHeight: 55)
+        base.titleCapInset = 12
+        base.iconInkInset = 11
+        base.affordanceHeight = 26
+
+        var both = base
+        both.coverHeight = 228
+        both.hasIcon = true
+        let full = both.layout()
+        expect(full.cover == CGRect(x: 0, y: 0, width: 1000, height: 228), "the cover runs edge to edge")
+        guard let icon = full.icon else { failTest("an icon is laid out") }
+        expect(icon.minY == 228 - icon.height / 2 && icon.height == NotePageHeaderGeometry.iconSide, "the icon overlaps the cover by half")
+        expect(icon.minX == column.minX - NotePageHeaderGeometry.iconLead, "the icon sits on the text column")
+        let inkGap = (full.title.minY + 12) - (icon.maxY - 11)
+        expect(inkGap >= 12 && inkGap <= 16, "the title's caps sit 12 to 16 pt under the icon's ink (got \(inkGap))")
+        expect(full.title.minY - icon.maxY < 8, "the title hugs the icon box (gap \(full.title.minY - icon.maxY))")
+        expect(full.affordances.minX >= icon.maxX && full.affordances.minY >= 228 && full.affordances.maxY <= icon.maxY,
+               "the hover row sits beside the icon's foot, below the cover")
+        expect(full.height == (full.title.maxY + NotePageHeaderGeometry.bottomPadding).rounded(.up), "the header ends just under the title")
+
+        var iconOnly = base
+        iconOnly.hasIcon = true
+        let plainIcon = iconOnly.layout()
+        expect(plainIcon.cover == nil && plainIcon.icon?.minY == NotePageHeaderGeometry.topPadding, "without a cover the icon starts at the top padding")
+        expect(plainIcon.title.minY - (plainIcon.icon?.maxY ?? 0) == full.title.minY - icon.maxY, "the icon to title rhythm holds without a cover")
+
+        var coverOnly = base
+        coverOnly.coverHeight = 228
+        let banner = coverOnly.layout()
+        expect(banner.icon == nil && banner.affordances.minY > 228 && banner.affordances.maxY < banner.title.minY + 12,
+               "with only a cover, the hover row rests between the cover and the title's caps")
+        expect(banner.title.minY - 228 < 60, "the title stays close under a bare cover (gap \(banner.title.minY - 228))")
+
+        let neither = base.layout()
+        expect(neither.icon == nil && neither.cover == nil && neither.affordances.minY == NotePageHeaderGeometry.topPadding,
+               "a bare page keeps its hover row in the top padding")
+        expect(neither.title.minY + 12 - neither.affordances.maxY == NotePageHeaderGeometry.inkGap, "the bare title sits one ink gap under the row")
+
+        var withError = both
+        withError.errorHeight = 20
+        let erring = withError.layout()
+        expect(erring.title == full.title, "an error never moves the title")
+        expect(erring.error == CGRect(x: column.minX, y: full.title.maxY + NotePageHeaderGeometry.errorGap, width: 720, height: 20),
+               "the error sits right under the title")
+        expect(erring.height == full.height + 20 + NotePageHeaderGeometry.errorGap, "the error makes room for itself")
+
+        var withProperties = withError
+        withProperties.propertiesHeight = 120
+        withProperties.propertiesGutter = 24
+        let listed = withProperties.layout()
+        expect(listed.properties == CGRect(x: column.minX - 24, y: erring.error!.maxY + NotePageHeaderGeometry.propertiesGap, width: 744, height: 120),
+               "properties follow the error, hanging into the gutter")
+
+        var plain = base
+        plain.isPlainText = true
+        plain.coverHeight = 228
+        plain.hasIcon = true
+        let text = plain.layout()
+        expect(text.cover == nil && text.icon == nil && text.title.minY == NotePageHeaderGeometry.plainTextTop,
+               "plain text pages skip the cover and icon")
+        var narrow = base
+        narrow.column = .zero
+        expect(narrow.layout().title.width == 1000, "a missing column falls back to the full width")
+    }
+
+    static func calloutAlerts() {
+        func callout(alert: String?, icon: String? = nil, color: NoteColorStyle? = nil) -> NoteBlock {
+            var block = NoteBlock(.callout, text: "Heads up")
+            block.props.alert = alert
+            block.props.icon = icon
+            block.color = color
+            return block
+        }
+        let expected: [(String, String, NoteColor)] = [
+            ("TIP", "💡", .green), ("IMPORTANT", "❗️", .purple), ("WARNING", "⚠️", .yellow), ("CAUTION", "🛑", .red),
+            ("note", "ℹ️", .blue), ("info", "ℹ️", .blue), ("success", "✅", .green), ("question", "❓", .orange),
+            ("failure", "❌", .red), ("danger", "⚡️", .red), ("bug", "🐛", .red), ("example", "📝", .purple),
+            ("quote", "💬", .gray), ("abstract", "📋", .blue), ("todo", "☑️", .blue),
+        ]
+        for (alert, icon, color) in expected {
+            let block = callout(alert: alert)
+            expect(block.calloutDisplayIcon == icon, "\(alert) shows \(icon) (got \(block.calloutDisplayIcon ?? "nothing"))")
+            expect(block.calloutDisplayColor == .background(color), "\(alert) gets a \(color) box")
+            expect(block.props.icon == nil && block.color == nil, "\(alert) defaults stay display only")
+        }
+        expect(callout(alert: "tip").calloutDisplayIcon == "💡", "alert names ignore case")
+        expect(callout(alert: "mystery").calloutDisplayIcon == nil && callout(alert: "mystery").calloutDisplayColor == nil,
+               "unknown alerts keep the plain grey box")
+        expect(callout(alert: nil).calloutDisplayIcon == nil, "plain callouts without an icon stay iconless")
+        expect(callout(alert: "TIP", icon: "🌳").calloutDisplayIcon == "🌳", "a picked icon wins")
+        expect(callout(alert: "TIP", icon: "").calloutDisplayIcon == nil, "a removed icon stays removed")
+        expect(callout(alert: "TIP", color: .background(.pink)).calloutDisplayColor == .background(.pink), "a picked colour wins")
+        expect(callout(alert: "TIP", color: .text(.red)).calloutDisplayColor == .text(.red), "a picked text colour wins too")
+        expect(callout(alert: "TIP").calloutIconRemoval == "" && callout(alert: nil).calloutIconRemoval == nil,
+               "removing an alert's icon writes an explicit none, a plain callout just drops it")
+        var paragraph = NoteBlock.paragraph("Hi")
+        paragraph.props.alert = "TIP"
+        expect(paragraph.calloutDisplayIcon == nil && paragraph.calloutDisplayColor == nil, "only callouts get alert defaults")
+
+        let source = "> [!TIP]\n> Try the shortcut.\n"
+        var page = NoteMarkdown.parse(source)
+        expect(NoteMarkdown.serialize(page) == source, "showing an alert's defaults never rewrites the file")
+        page.blocks[0].props.icon = page.blocks[0].calloutIconRemoval
+        let reread = NoteMarkdown.parse(NoteMarkdown.serialize(page))
+        expect(reread.blocks[0].props.alert == "TIP" && reread.blocks[0].calloutDisplayIcon == nil,
+               "a removed alert icon survives the file round trip without losing the alert")
+        let html = NotePageHTML.document(NotePage(blocks: [callout(alert: "WARNING")]), title: "T", assets: { _ in nil }, embedImages: false)
+        expect(html.contains("⚠️") && html.contains("var(--yellow-bg)") && html.contains("<aside class=\"callout\" data-block"),
+               "HTML export shows the alert's look without claiming a picked colour")
+        let fragment = NotePageHTML.fragment([callout(alert: "WARNING")])
+        expect(fragment.contains("data-default-icon") && !fragment.contains("data-color") && !fragment.contains("data-icon="),
+               "copied callouts mark alert defaults so pasting doesn't adopt them")
     }
 
     static func replacing() {

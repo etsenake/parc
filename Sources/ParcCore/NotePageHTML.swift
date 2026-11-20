@@ -326,32 +326,25 @@ struct NotePageHTMLWriter {
         output += "</details>"
     }
 
-    private static func alertIcon(_ alert: String?) -> String {
-        switch alert?.uppercased() {
-        case "NOTE": return "\u{2139}\u{FE0F}"
-        case "TIP": return "\u{1F4A1}"
-        case "IMPORTANT": return "\u{2757}"
-        case "WARNING": return "\u{26A0}\u{FE0F}"
-        case "CAUTION": return "\u{1F6D1}"
-        default: return "\u{1F4A1}"
-        }
-    }
-
     private mutating func callout(_ block: NoteBlock) {
-        let icon = block.props.icon ?? Self.alertIcon(block.props.alert)
-        var attributes = " data-block=\"callout\"" + (block.props.icon.map { " data-icon=\"" + Self.attribute($0) + "\"" } ?? "")
+        let explicitIcon = block.props.icon.flatMap { $0.isEmpty ? nil : $0 }
+        let icon = block.props.icon == "" ? "" : block.calloutDisplayIcon ?? "\u{1F4A1}"
+        let fallbackColor = block.color == nil ? block.calloutDisplayColor : nil
+        var attributes = " data-block=\"callout\"" + (explicitIcon.map { " data-icon=\"" + Self.attribute($0) + "\"" } ?? "")
         if let alert = block.props.alert { attributes += " data-alert=\"" + Self.attribute(alert) + "\"" }
         if mode == .fragment {
-            let palette = block.color.flatMap { NotePageHTMLStyle.palette[$0.color] } ?? NotePageHTMLStyle.palette[.gray]!
+            let shown = block.color ?? fallbackColor
+            let palette = shown.flatMap { NotePageHTMLStyle.palette[$0.color] } ?? NotePageHTMLStyle.palette[.gray]!
             if let style = block.color { attributes += " data-color=\"" + NoteHTMLColor.token(style) + "\"" }
-            let ink = block.color.map { $0.isBackground ? "" : "color:#" + palette.text + ";" } ?? ""
-            let fill = block.color?.isBackground == false ? "border:1px solid #E3E2E0;" : "background-color:#" + palette.background + ";"
+            let ink = shown.map { $0.isBackground ? "" : "color:#" + palette.text + ";" } ?? ""
+            let fill = shown?.isBackground == false ? "border:1px solid #E3E2E0;" : "background-color:#" + palette.background + ";"
             attributes += " style=\"display:flex;gap:10px;padding:12px 16px;border-radius:8px;margin:4px 0;" + fill + ink + "\""
             output += "<aside class=\"callout\"" + attributes + ">"
         } else {
-            output += "<aside" + colorClass(block.color, adding: ["callout"]) + attributes + ">"
+            let tint = fallbackColor.map { " style=\"background:var(--" + $0.color.rawValue + "-bg)\"" } ?? ""
+            output += "<aside" + colorClass(block.color, adding: ["callout"]) + attributes + tint + ">"
         }
-        let fallback = block.props.icon == nil ? " data-default-icon=\"true\"" : ""
+        let fallback = explicitIcon == nil ? " data-default-icon=\"true\"" : ""
         if Self.isImageReference(icon) {
             output += "<img class=\"callout-icon\"" + fallback + " alt=\"\" src=\"" + Self.attribute(source(icon)) + "\">"
         } else {
