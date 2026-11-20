@@ -5,6 +5,7 @@ struct NoteReference: Hashable, Identifiable {
     var title: String
     var icon: String?
     var modifiedAt: Date
+    var snippet: String? = nil
     var id: URL { url }
 }
 

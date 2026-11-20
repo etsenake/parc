@@ -1,0 +1,2 @@
+Sources/ParcCore/*.swift
+tests/NotesEditor/NoteFileTestSupport.swift
