@@ -180,6 +180,53 @@ final class NoteCodeCard: NSView {
 }
 
 @MainActor
+final class NoteCodeBar: NSView {
+    static let platePadding: CGFloat = 2
+    static let plateRadius: CGFloat = 9
+
+    let plate = NSView()
+    var isShown = false
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        plate.wantsLayer = true
+        plate.layer?.cornerRadius = Self.plateRadius
+        plate.layer?.cornerCurve = .continuous
+        plate.layer?.borderWidth = 1
+        plate.layer?.shadowOpacity = 1
+        plate.layer?.shadowRadius = 6
+        plate.layer?.shadowOffset = CGSize(width: 0, height: -1)
+        plate.setAccessibilityElement(false)
+        addSubview(plate)
+        setAccessibilityElement(false)
+        refreshPlate()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard isShown, let hit = super.hitTest(point), hit !== self, hit !== plate else { return nil }
+        return hit
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshPlate()
+    }
+
+    private func refreshPlate() {
+        NoteAnimation.withoutAnimation {
+            plate.layer?.backgroundColor = NoteTheme.resolved(NoteTheme.menuFill, in: self)
+            plate.layer?.borderColor = NoteTheme.resolved(NoteTheme.menuHairline, in: self)
+            plate.layer?.shadowColor = NoteTheme.resolved(NoteTheme.menuShadow, in: self)
+        }
+    }
+}
+
+@MainActor
 final class NoteCodeCaptionHost: NoteTextHost {
     let blockID: NoteBlockID
     let field: NoteTextField = .caption
@@ -194,7 +241,7 @@ final class NoteCodeCaptionHost: NoteTextHost {
 @MainActor
 final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     static let cornerRadius: CGFloat = 8
-    static let barInset: CGFloat = 4
+    static let barInset: CGFloat = 6
     static let barSpacing: CGFloat = 2
     static let captionGap: CGFloat = 6
     static let copiedDuration: TimeInterval = 1.5
@@ -207,7 +254,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     private lazy var captionHost = NoteCodeCaptionHost(blockID: blockID, textView: captionView)
     private let card = NoteCodeCard()
     private let scrollView = NoteCodeScrollView()
-    private let bar = NSView()
+    private let bar = NoteCodeBar()
     private let languageButton = NoteToolbarButton(.text(NoteCodeLanguage.plainText.name), label: "Change language")
     private let captionButton = NoteChip("Caption", icon: .symbol("captions.bubble"))
     private let wrapButton = NoteChip("Wrap", icon: .symbol("arrow.turn.down.left"))
@@ -273,7 +320,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     }
     private var padding: NSEdgeInsets {
         var insets = NoteTheme.codePadding
-        insets.top = max(insets.top, NoteTheme.chipHeight + Self.barInset * 2)
+        insets.top = insets.bottom
         return insets
     }
 
@@ -340,9 +387,9 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     }
 
     private func configureBar() {
-        bar.wantsLayer = true
         bar.alphaValue = 0
         bar.layer?.opacity = 0
+        bar.isHidden = true
         card.addSubview(bar)
         languageButton.showsDisclosure = true
         languageButton.onPress = { [weak self] in self?.toggleLanguagePicker() }
@@ -353,6 +400,24 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         captionButton.setAccessibilityHelp("Adds a caption under the code")
         wrapButton.setAccessibilityHelp("Wraps long lines instead of scrolling sideways")
         copyButton.setAccessibilityLabel("Copy code")
+    }
+
+    private func refreshAccessibilityActions() {
+        var actions = [NSAccessibilityCustomAction(name: "Copy code") { [weak self] in self?.copyCode(); return true }]
+        if !isReadOnly {
+            actions.append(NSAccessibilityCustomAction(name: "Change language") { [weak self] in
+                self?.toggleLanguagePicker()
+                return true
+            })
+            actions.append(NSAccessibilityCustomAction(name: block.props.wrap ? "Stop wrapping lines" : "Wrap long lines") { [weak self] in
+                self?.toggleWrap()
+                return true
+            })
+            if !showsCaption {
+                actions.append(NSAccessibilityCustomAction(name: "Add caption") { [weak self] in self?.addCaption(); return true })
+            }
+        }
+        setAccessibilityCustomActions(actions)
     }
 
     override func update(_ block: NoteBlock) {
@@ -416,6 +481,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         wrapButton.isEnabled = editable
         captionButton.isHidden = !editable || showsCaption
         layoutBar()
+        refreshAccessibilityActions()
     }
 
     override func readOnlyDidChange() {
@@ -511,20 +577,23 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         }
     }
 
+    private var barButtons: [NSView] { [copyButton, wrapButton, captionButton, languageButton].filter { !$0.isHidden } }
+
     private func layoutBar() {
         let width = card.bounds.width
-        bar.frame = NSRect(x: 0, y: 0, width: width, height: padding.top)
-        let y = Self.barInset
         let height = NoteTheme.chipHeight
-        let languageWidth = languageButton.intrinsicContentSize.width
-        languageButton.frame = NSRect(x: padding.left - 8, y: y, width: languageWidth, height: height)
-        var x = width - Self.barInset - 2
-        for button in [copyButton, wrapButton, captionButton] where !button.isHidden {
+        let pad = NoteCodeBar.platePadding
+        bar.frame = NSRect(x: 0, y: 0, width: width, height: Self.barInset * 2 + height + pad * 2)
+        let y = Self.barInset + pad
+        var x = width - Self.barInset - pad
+        for button in barButtons {
             let buttonWidth = button.intrinsicContentSize.width
             x -= buttonWidth
             button.frame = NSRect(x: x, y: y, width: buttonWidth, height: height)
             x -= Self.barSpacing
         }
+        let left = x + Self.barSpacing - pad
+        bar.plate.frame = NSRect(x: left, y: Self.barInset, width: max(0, width - Self.barInset - left), height: height + pad * 2)
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -627,7 +696,12 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         let visible = isHovering || picker != nil || copiedWork != nil
         guard visible != barVisible else { return }
         barVisible = visible
-        NoteAnimation.fade(bar, visible: visible, duration: NoteAnimation.hoverDuration)
+        bar.isShown = visible
+        if visible { bar.isHidden = false }
+        NoteAnimation.fade(bar, visible: visible, duration: NoteAnimation.hoverDuration) { [weak self] in
+            guard let self, !self.barVisible else { return }
+            self.bar.isHidden = true
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -716,14 +790,14 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     }
 
     private func glideBar() {
-        let buttons = [copyButton, wrapButton, captionButton].filter { !$0.isHidden }
-        let before = buttons.map(\.frame)
+        let views = barButtons + [bar.plate]
+        let before = views.map(\.frame)
         layoutBar()
-        guard window != nil else { return }
-        for (button, previous) in zip(buttons, before) where previous != button.frame && !previous.isEmpty {
-            let goal = button.frame
-            NoteAnimation.withoutAnimation { button.frame = previous }
-            _ = NoteAnimation.slide(button, to: goal, spring: .highlight)
+        guard window != nil, !NoteAnimation.reduceMotion else { return }
+        for (view, previous) in zip(views, before) where previous != view.frame && !previous.isEmpty {
+            let goal = view.frame
+            NoteAnimation.withoutAnimation { view.frame = previous }
+            _ = NoteAnimation.slide(view, to: goal, spring: .highlight)
         }
     }
 
