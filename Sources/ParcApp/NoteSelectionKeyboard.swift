@@ -299,16 +299,20 @@ extension NoteSelectionController {
         guard !editor.isReadOnly, !string.isEmpty else { return }
         switch session.selection {
         case .blocks(let ids):
-            replaceBlocks(ids, with: NoteText(string))
+            if replaceBlocks(ids, with: NoteText(string)) == nil { typeIntoNearestText(string) }
         case .text:
             session.insertText(NoteText(string))
         case .none, .cells:
-            guard let target = compositionTarget(), let window = canvas.window else { return }
-            goal.reset()
-            editor.focus(target)
-            guard let client = window.firstResponder as? NoteTextView, client !== responder else { return }
-            client.insertText(string, replacementRange: NSRange(location: NSNotFound, length: 0))
+            typeIntoNearestText(string)
         }
+    }
+
+    private func typeIntoNearestText(_ string: String) {
+        guard let target = compositionTarget(), let window = canvas.window else { return }
+        goal.reset()
+        editor.focus(target)
+        guard let client = window.firstResponder as? NoteTextView else { return }
+        client.insertText(string, replacementRange: NSRange(location: NSNotFound, length: 0))
     }
 
     @discardableResult
