@@ -191,13 +191,16 @@ struct NoteSelectionNavigator {
 
     func marks(from anchor: NotePosition, to head: NotePosition, length: (NoteBlockID) -> Int) -> [NoteBlockID: NoteSelectionMark] {
         let (start, end) = ordered(anchor, head)
-        if start.block == end.block { return [start.block: .text(start.offset..<max(start.offset, end.offset))] }
+        if start.block == end.block {
+            return start.offset == end.offset ? [:] : [start.block: .text(start.offset..<end.offset)]
+        }
         guard let s = index(of: start.block), let e = index(of: end.block) else { return [:] }
         var result: [NoteBlockID: NoteSelectionMark] = [:]
         for index in s...e {
             let item = items[index]
             switch item.role {
             case .text:
+                if index == e && end.offset == 0 { continue }
                 let lower = index == s ? start.offset : 0
                 let upper = index == e ? end.offset : length(item.id)
                 result[item.id] = .text(lower..<max(lower, upper))

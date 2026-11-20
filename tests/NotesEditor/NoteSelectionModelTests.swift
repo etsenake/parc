@@ -167,6 +167,9 @@ struct NoteSelectionModelTests {
         expect(marks[c.id] == .text(0..<3), "head block highlights its start")
         let single = nav.marks(from: NotePosition(b.id, 4), to: NotePosition(b.id, 1)) { _ in 0 }
         expect(single == [b.id: .text(1..<4)], "single block range is ordered")
+        expect(nav.marks(from: NotePosition(b.id, 2), to: NotePosition(b.id, 2)) { _ in 0 }.isEmpty, "a caret draws nothing")
+        let touching = nav.marks(from: NotePosition(a.id, 11), to: NotePosition(c.id, 0)) { layout.length(of: NotePosition($0, 0)) }
+        expect(touching[a.id] == .text(11..<11) && touching[c.id] == nil, "the start keeps its line end and a touched end block draws nothing")
         expect(nav.covered(from: NotePosition(a.id, 2), to: NotePosition(b.id, 1)) == [a.id, image.id, b.id], "covered blocks")
     }
 
