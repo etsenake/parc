@@ -364,7 +364,8 @@ final class NoteFileSession {
     }
 
     private func pageChanged(_ change: NotePageChange) {
-        guard change.kind != .selection, !applyingDisk, !isClosed else { return }
+        guard change.kind != .selection, !applyingDisk else { return }
+        if isClosed { reopen() }
         hasUnsavedChanges = true
         if firstUnsavedEdit == nil { firstUnsavedEdit = Self.clock.now }
         refreshState()
@@ -480,8 +481,13 @@ final class NoteFileSession {
         diskCheckTimer = nil
         watcher?.stop()
         watcher = nil
-        changeSubscription = nil
         if Self.sessions[url.path] === self { Self.sessions[url.path] = nil }
+    }
+
+    private func reopen() {
+        isClosed = false
+        if Self.sessions[url.path] == nil { Self.sessions[url.path] = self }
+        startWatching()
     }
 }
 

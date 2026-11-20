@@ -389,6 +389,19 @@ struct NoteFileSessionTests {
         expect(reopened !== a, "reopening makes a fresh session")
         expectEqual(texts(reopened), ["a3"], "with the saved text")
 
+        setText(a, "edited after the last release")
+        clock.advance(1)
+        expectEqual(NoteFileTestSupport.read(a.url), "edited after the last release\n", "a late edit on a released session still saves")
+        expect(NoteFileSession.session(for: a.url) === reopened, "without stealing the newer session's spot")
+
+        let lonely = try NoteFileSession.open(file("lonely.txt", "x\n"))
+        lonely.retain()
+        lonely.release()
+        setText(lonely, "revived")
+        expect(NoteFileSession.session(for: lonely.url) === lonely, "a revived session registers again when nobody else has the file")
+        clock.advance(1)
+        expectEqual(NoteFileTestSupport.read(lonely.url), "revived\n", "and saves")
+
         let stuck = try NoteFileSession.open(file("stuck.txt", "x\n"))
         stuck.retain()
         setText(stuck, "mine")
