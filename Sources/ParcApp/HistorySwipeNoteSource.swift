@@ -59,13 +59,13 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
 
     private static func scrollsHorizontally(_ event: NSEvent) -> Bool {
         guard let content = event.window?.contentView,
-              var view = content.hitTest(content.convert(event.locationInWindow, from: nil)) else { return false }
-        while true {
-            if let scroll = view as? NSScrollView, let document = scroll.documentView,
-               document.frame.width > scroll.contentView.bounds.width + 0.5 { return true }
-            guard let parent = view.superview else { return false }
-            view = parent
+              let hit = content.hitTest(content.convert(event.locationInWindow, from: nil)) else { return false }
+        let rooms = sequence(first: hit, next: \.superview).compactMap { view -> HistorySwipeTargets.ScrollRoom? in
+            guard let scroll = view as? NSScrollView, let document = scroll.documentView else { return nil }
+            return HistorySwipeTargets.ScrollRoom(content: Double(document.frame.width),
+                                                  visible: Double(scroll.contentView.bounds.width))
         }
+        return HistorySwipeTargets.scrollsHorizontally(rooms)
     }
 
     private var visit: TabNoteVisit? {

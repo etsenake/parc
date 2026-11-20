@@ -73,6 +73,16 @@ glue = "".join((root / path).read_text() for path in (
 require(glue, "the swipe forwarder's Swift half", present=("source.navigate(back:", "source?.allowsHistorySwipe"),
         absent=focus + ("performNavigation", "navigationHistory("))
 
+forwarder = (root / "Sources/ParcApp/HistorySwipeForwarder.swift").read_text()
+require(forwarder, "the forward swipe into a note", present=(
+    "noteVisitTarget(.forward)", "HistorySwipeNoteStep.entries(", "HistorySwipeNoteStep.step(",
+    "stepNoteVisit(noteStep.tabID, forward: true)", "HistorySwipeNoteSource.shared.install()"), absent=focus)
+note_source = (root / "Sources/ParcApp/HistorySwipeNoteSource.swift").read_text()
+require(note_source, "the swipe back off a note", present=(
+    "noteVisitTarget(.back)", "HistorySwipeNoteStep.entries(", "HistorySwipeTargets.scrollsHorizontally(",
+    "stepNoteVisit(tabID, forward: false)", "navigationHistory == nil", "trackSwipeEvent("),
+    absent=focus + ("performNavigation", "navigationHistory("))
+
 with tempfile.TemporaryDirectory(prefix="parc-history-swipe-") as directory:
     executable = Path(directory) / "checks"
     subprocess.run(["xcrun", "swiftc", str(root / "tests/Support/TestFailure.swift"), "-warnings-as-errors", "-target", "arm64-apple-macos13.0",

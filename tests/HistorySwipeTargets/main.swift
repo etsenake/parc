@@ -32,4 +32,12 @@ expect(same(HistorySwipeTargets.pages(peek: nil, peekShown: true, panes: [web(ot
        "without a Peek the shown flag changes nothing")
 expect(HistorySwipeTargets.pages(peek: nil, peekShown: false, panes: [Pane]()).isEmpty,
        "no visible page leaves nothing to swipe")
-precondition(checks == 9)
+typealias Room = HistorySwipeTargets.ScrollRoom
+expect(!HistorySwipeTargets.scrollsHorizontally([]), "a note with no scroll views lets a sideways swipe through")
+expect(!HistorySwipeTargets.scrollsHorizontally([Room(content: 640, visible: 640), Room(content: 640, visible: 700)]),
+       "a note that fits its width never eats a history swipe")
+expect(HistorySwipeTargets.scrollsHorizontally([Room(content: 1200, visible: 600), Room(content: 600, visible: 600)]),
+       "a wide table or code block keeps the sideways scroll for itself")
+expect(!HistorySwipeTargets.scrollsHorizontally([Room(content: 600.4, visible: 600)]),
+       "sub-point rounding doesn't count as room to scroll")
+precondition(checks == 13)
