@@ -156,7 +156,8 @@ The link is the note's `file://` URL with `#k3x9qa` on the end. Opening it
 scrolls to that block. Headings also answer to their GitHub-style slug, so
 `Plans.md#next-steps` and `Plans.md#Next%20Steps` both find `## Next steps`,
 and an `id` on a heading doesn't change its slug. Copies of a block don't keep
-its `id`.
+its `id`, except a [synced block](#synced-blocks)'s original, so cutting and
+pasting moves it.
 
 ## Callouts
 
@@ -242,6 +243,31 @@ line:
 link to a note. A button with no actions closes its `<details>` right after the
 summary, and `open` on `<details>` is kept as you wrote it. Blocks written before
 the first action line count as inserted below.
+
+## Synced blocks
+
+A synced block's original sits between two comments and carries its `id`. A
+copy names it with `from`, a link relative to the copy's note (just `#k3x9qa`
+in the same note), and keeps a snapshot of the content, so other apps show
+plain Markdown:
+
+```markdown
+<!-- parc synced id="k3x9qa" -->
+
+Weekly goals
+
+<!-- parc /synced -->
+
+<!-- parc synced from="Plans.md#k3x9qa" -->
+
+Weekly goals
+
+<!-- parc /synced -->
+```
+
+Parc refreshes a copy's snapshot whenever its note is open and rewrites `from`
+when the original's note moves or is renamed. An opener without a closer stays
+as written.
 
 ## Columns
 

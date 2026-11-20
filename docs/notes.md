@@ -140,6 +140,19 @@ Blocks, brings them out again. A locked note still opens links from its buttons
 but won't let them add anything. The file keeps buttons as
 [GitHub-friendly details](notes-format.md#buttons).
 
+Synced blocks work like Notion's. Turn blocks into one from the block menu's Turn
+Into, or type `/synced`. The copy button on its border, Copy and Sync, or plain
+⌘C copies it, and pasting into any note, or elsewhere in the same one, makes a
+copy that shows the original's live content; cutting moves the original. Editing
+any copy edits the original and every other copy, and undo works from either
+note. While you edit, the border lights up with "Editing in ↙ N other notes",
+which lists them and opens one, and the original wears an ORIGINAL badge. A
+copy's `•••` offers Go to Original and Unsync, which leaves ordinary blocks; the
+original's Unsync All frees every copy, even in closed notes. An open copy keeps
+its original's note open in the background and finds an original that moved by
+its id; if it's gone, the copy shows its last content and "Can't find the
+original". Copies keep a [Markdown snapshot](notes-format.md#synced-blocks).
+
 Any text block can hold nested blocks, as in Notion: paragraphs, headings, list
 items, to-dos, toggles, quotes and callouts, plus columns. Tab on a line after a
 paragraph nests it there, Shift-Tab takes the lines after it along as its
