@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import IOKit
 import IOKit.pwr_mgt
+import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation, PCNativeBrowserApplicationClient {
@@ -383,6 +384,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let nanoseconds = IORegistryEntryCreateCFProperty(system, "HIDIdleTime" as CFString, kCFAllocatorDefault, 0)?
             .takeRetainedValue() as? NSNumber
         return (nanoseconds?.doubleValue ?? 0) / 1_000_000_000
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        guard Bundle.main.bundleIdentifier != nil, Bundle.main.bundlePath.hasSuffix(".app") else { return }
+        UNUserNotificationCenter.current().delegate = NoteReminderCenter.shared
+        NoteReminderCenter.shared.onOpenNote = { [weak self] url in
+            guard let self, !self.terminationInProgress else { return }
+            self.application(NSApp, open: [url])
+        }
     }
 
     func openInitialWindow() {
