@@ -18,6 +18,10 @@ final class NoteSyncedHold {
         self.engine = engine
         self.session = session
         engine.changes.sink { [weak self] in self?.refresh() }.store(in: &subscriptions)
+        engine.retries.sink { [weak self] in
+            self?.tried.removeAll()
+            self?.refresh()
+        }.store(in: &subscriptions)
         session.settled
             .filter { $0.kind == .structure || $0.kind == .replaced }
             .sink { [weak self] _ in self?.refresh() }

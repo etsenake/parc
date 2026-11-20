@@ -284,8 +284,8 @@ final class NoteSyncedController {
     private func originalAnchor(of id: NoteBlockID) -> String? { info(for: id)?.anchor }
 
     private func lookAgain() {
-        engine.reconcileAll()
         infos.removeAll()
+        engine.searchAgain()
         refresh()
     }
 

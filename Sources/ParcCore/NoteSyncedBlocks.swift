@@ -197,6 +197,7 @@ final class NoteSyncedBlocks {
     }
 
     let changes = PassthroughSubject<Void, Never>()
+    let retries = PassthroughSubject<Void, Never>()
     var opener: @MainActor (URL) -> NoteSyncedLease? = { _ in nil }
     var originalFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
     var noteFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
@@ -373,6 +374,12 @@ final class NoteSyncedBlocks {
 
     func hold(_ session: NotePageSession) -> NoteSyncedHold {
         NoteSyncedHold(engine: self, session: session)
+    }
+
+    func searchAgain() {
+        retries.send()
+        reconcileAll()
+        changes.send()
     }
 
     func reconcileAll() {
