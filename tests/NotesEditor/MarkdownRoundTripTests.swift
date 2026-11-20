@@ -56,8 +56,18 @@ struct MarkdownPageGenerator {
         case 1:
             if random.chance(50) { return .page(target: "Folder/My Note.md", title: "My Note") }
             return .page(target: random.pick(["Ideas", "Daily/2026-11-20"]), title: random.pick(["Ideas", "Today", "A | B"]))
-        case 2: return .date(NoteDateMention(year: 2026, month: random.int(1...12), day: random.int(1...28), hour: random.chance(50) ? random.int(0...23) : nil,
-                                             minute: nil, remind: random.chance(30)).withMinute(random.chance(50)))
+        case 2:
+            var date = NoteDateMention(year: 2026, month: random.int(1...12), day: random.int(1...28), hour: random.chance(50) ? random.int(0...23) : nil,
+                                       minute: nil, remind: random.chance(30)).withMinute(random.chance(50))
+            if random.chance(30) {
+                date.end = NoteDateEnd(year: 2026, month: date.month, day: min(28, date.day + random.int(0...3)), hour: date.hour.map { min(23, $0 + 1) },
+                                       minute: date.minute)
+            }
+            if date.remind, random.chance(50) { date.remindBefore = random.pick([5, 30, 60, 90, 1440, 10080]) }
+            if date.hour != nil, random.chance(25) { date.timeZone = random.pick(["Europe/Paris", "America/New_York", "Asia/Kolkata"]) }
+            if random.chance(20) { date.format = random.pick(NoteDateFormat.allCases) }
+            if random.chance(20) { date.timeFormat = random.pick(NoteTimeFormat.allCases) }
+            return .date(date)
         case 3: return .link(url: random.pick(["https://example.com", "https://a.b/c?d=e&f=g"]), title: plainString(maxWords: 3))
         default: return .raw(random.pick(["<kbd>", "</kbd>", "![img](pic.png)", "<sup>", "<wbr>"]))
         }

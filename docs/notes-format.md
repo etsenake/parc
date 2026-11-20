@@ -292,7 +292,21 @@ A **page link** is a link to another note on its own line:
   links, or a relative link whose text is the note's name, such as
   `[Roadmap](Roadmap.md)`.
 - **Date mentions** are `<time datetime="2026-11-20">2026-11-20</time>`. Add a
-  time with `T09:30` and a reminder with `data-remind`.
+  time with `T09:30` and a reminder with `data-remind`. More settings are
+  attributes, written in this order, and left out when they're the default:
+
+  ```markdown
+  <time datetime="2027-01-03T09:00" data-end="2027-01-05T17:30" data-timezone="America/New_York" data-remind="30m" data-format="full" data-clock="24h">2027-01-03 09:00 → 2027-01-05 17:30</time>
+  ```
+
+  `data-end` makes a range. `data-remind="30m"` rings that long before the
+  start (`m`, `h`, `d` or `w`; a bare `data-remind` rings at the start, or at
+  9 AM for a whole day). `data-timezone` pins the time to an IANA zone.
+  `data-format` is `full`, `short`, `mdy`, `dmy` or `ymd` instead of the
+  default, which says Today, Tomorrow or Yesterday when it can, and
+  `data-clock` is `12h` or `24h`. The text between the tags is a fallback for
+  other apps. A `<time>` tag with anything Parc doesn't recognise is kept as
+  written.
 - **Link mentions** are `<a href="https://…" data-mention>Page title</a>`.
 - **Table of contents** is `<!-- toc -->` on its own line.
 

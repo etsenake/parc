@@ -803,7 +803,17 @@ struct NoteDateParser {
     }()
 
     func parse(_ input: String) -> NoteDateMention? {
-        var text = Self.clean(input)
+        let text = Self.clean(input)
+        guard !text.isEmpty else { return nil }
+        if let parts = Self.rangeParts(text) {
+            guard !parts.end.isEmpty else { return nil }
+            return range(parts.start, parts.end)
+        }
+        return single(text)
+    }
+
+    private func single(_ input: String) -> NoteDateMention? {
+        var text = input
         guard !text.isEmpty else { return nil }
         if let relative = relativeTime(text) { return relative }
         var time: (hour: Int, minute: Int)?
@@ -833,7 +843,20 @@ struct NoteDateParser {
             }
             if !found.contains(mention) { found.append(mention) }
         }
-        if text.isEmpty {
+        if let parts = Self.rangeParts(text) {
+            if let whole = parts.end.isEmpty ? nil : range(parts.start, parts.end) {
+                add(whole)
+            } else {
+                var endings = Self.completions.filter { $0.hasPrefix(parts.end) && parts.end.count >= 2 }
+                if let month = completingMonth(parts.end) { endings.append(month) }
+                for ending in endings.prefix(3) {
+                    guard let candidate = range(parts.start, ending), let first = date(of: candidate),
+                          let last = candidate.endDate(in: calendar), last.timeIntervalSince(first) <= 366 * 86_400 else { continue }
+                    add(candidate)
+                }
+                add(single(parts.start))
+            }
+        } else if text.isEmpty {
             if remind {
                 add(calendar.date(byAdding: .day, value: 1, to: now).flatMap { mention(on: $0, time: nil) })
                 add(mention(on: now, time: nil))
@@ -861,6 +884,8 @@ struct NoteDateParser {
         for (index, token) in tokens.enumerated() {
             let isLast = index == tokens.count - 1 && !query.hasSuffix(" ")
             if token.allSatisfy({ $0.isNumber || "/-.:,".contains($0) }) { continue }
+            if Self.rangeWords.contains(token) { continue }
+            if token.range(of: #"^\d{1,2}(:\d{2})?(am|pm|a|p)?[-\x{2013}\x{2014}]\d{0,2}(:\d{0,2})?(am|pm|a|p)?$"#, options: .regularExpression) != nil { continue }
             if token.range(of: #"^\d{1,2}(st|nd|rd|th|am|pm|a|p)?$"#, options: .regularExpression) != nil { continue }
             if token.range(of: #"^\d{1,2}:\d{0,2}(am|pm|a|p)?$"#, options: .regularExpression) != nil { continue }
             if Self.vocabulary.contains(token) { continue }
@@ -884,6 +909,20 @@ struct NoteDateParser {
     }
 
     func reminderVersion(of mention: NoteDateMention) -> NoteDateMention {
+        var value = timedReminder(mention)
+        guard var end = value.end else { return value }
+        if end.hour == nil {
+            end.hour = value.hour
+            end.minute = value.minute
+        }
+        value.end = end
+        if !value.isOrdered(in: calendar) {
+            value.end = NoteDateEnd(year: value.year, month: value.month, day: value.day, hour: value.hour, minute: value.minute)
+        }
+        return value
+    }
+
+    private func timedReminder(_ mention: NoteDateMention) -> NoteDateMention {
         var value = mention
         value.remind = true
         guard value.hour == nil else { return value }
@@ -905,20 +944,103 @@ struct NoteDateParser {
     }
 
     func fireDate(for mention: NoteDateMention) -> Date? {
-        var parts = DateComponents(year: mention.year, month: mention.month, day: mention.day)
-        parts.hour = mention.hour ?? 9
-        parts.minute = mention.hour == nil ? 0 : (mention.minute ?? 0)
-        return calendar.date(from: parts)
+        mention.reminderDate(in: calendar)
     }
 
     func date(of mention: NoteDateMention) -> Date? {
-        calendar.date(from: DateComponents(year: mention.year, month: mention.month, day: mention.day, hour: mention.hour ?? 0, minute: mention.minute ?? 0))
+        mention.startDate(in: calendar)
     }
 
     func mention(on date: Date, time: (hour: Int, minute: Int)?) -> NoteDateMention? {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         guard let year = parts.year, let month = parts.month, let day = parts.day else { return nil }
         return NoteDateMention(year: year, month: month, day: day, hour: time?.hour, minute: time.map { $0.minute })
+    }
+
+    static let rangeWords: Set<String> = ["to", "until", "till", "til", "through", "thru", "\u{2192}", "->", "\u{2013}", "\u{2014}", "-"]
+
+    static func rangeParts(_ text: String) -> (start: String, end: String)? {
+        if let groups = match(#"^([a-z]{3,}\s+\d{1,2})(?:st|nd|rd|th)?\s*[-\x{2013}\x{2014}]\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?$"#, text),
+           let first = groups[1], let last = groups[2] {
+            let year = groups[3].map { " " + $0 } ?? ""
+            return (first + year, last)
+        }
+        if let groups = match(#"^(\d{1,2})(?:st|nd|rd|th)?\s*[-\x{2013}\x{2014}]\s*(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([a-z]{3,})(?:\s+(\d{4}))?$"#, text),
+           let first = groups[1], let last = groups[2], let month = groups[3] {
+            let year = groups[4].map { " " + $0 } ?? ""
+            return (first + " " + month + year, last + " " + month + year)
+        }
+        if let groups = match(#"^(.*?)\s*\b(\d{1,2}(?::\d{2})?)\s*(am|pm)?\s*[-\x{2013}\x{2014}]\s*(\d{1,2}(?::\d{2})?)\s*(am|pm)$"#, text),
+           let prefix = groups[1], let first = groups[2], let last = groups[4], let lastMeridiem = groups[5] {
+            var firstMeridiem = groups[3] ?? lastMeridiem
+            if groups[3] == nil, lastMeridiem == "pm", let open = Int(first.prefix { $0 != ":" }), let close = Int(last.prefix { $0 != ":" }),
+               open % 12 > close % 12 {
+                firstMeridiem = "am"
+            }
+            let lead = prefix.isEmpty ? "" : prefix + " "
+            return (lead + first + firstMeridiem, last + lastMeridiem)
+        }
+        for separator in ["\u{2192}", "->", "\u{2013}", "\u{2014}"] {
+            if let found = text.range(of: separator) {
+                return (text[..<found.lowerBound].trimmingCharacters(in: .whitespaces), text[found.upperBound...].trimmingCharacters(in: .whitespaces))
+            }
+        }
+        let tokens = text.split(separator: " ").map(String.init)
+        for (index, token) in tokens.enumerated() where index > 0 && ["-", "to", "until", "till", "til", "through", "thru"].contains(token) {
+            return (tokens[..<index].joined(separator: " "), tokens[(index + 1)...].joined(separator: " "))
+        }
+        return nil
+    }
+
+    private func range(_ first: String, _ second: String) -> NoteDateMention? {
+        guard var start = single(first) else { return nil }
+        let startHasYear = Self.hasYear(first), endHasYear = Self.hasYear(second)
+        var end: NoteDateMention
+        if let groups = Self.match(#"^(\d{1,2})(?:st|nd|rd|th)?$"#, second), let dayText = groups[1], let day = Int(dayText) {
+            var month = start.month, year = start.year
+            if day < start.day {
+                month += 1
+                if month > 12 { month = 1; year += 1 }
+            }
+            guard valid(year: year, month: month, day: day) != nil else { return nil }
+            end = NoteDateMention(year: year, month: month, day: day, hour: start.hour, minute: start.minute)
+        } else if let found = extractTime(from: second), Self.strip(found.remainder, words: ["at", "on", "the", "by"]).isEmpty {
+            end = NoteDateMention(year: start.year, month: start.month, day: start.day, hour: found.time.hour, minute: found.time.minute)
+        } else {
+            guard let parsed = single(second) else { return nil }
+            end = parsed
+            if !endHasYear, Self.mentionsCalendarDay(second) {
+                end.year = start.year
+                if Self.order(end) < Self.order(start), end.month < start.month { end.year += 1 }
+            } else if endHasYear, !startHasYear, Self.mentionsCalendarDay(first) {
+                start.year = end.year
+                if Self.order(start) > Self.order(end) { start.year -= 1 }
+            }
+        }
+        if start.hour == nil, let hour = end.hour {
+            start.hour = hour
+            start.minute = end.minute
+        } else if end.hour == nil, let hour = start.hour {
+            end.hour = hour
+            end.minute = start.minute
+        }
+        guard valid(year: start.year, month: start.month, day: start.day) != nil, valid(year: end.year, month: end.month, day: end.day) != nil,
+              Self.order(start) <= Self.order(end) else { return nil }
+        start.end = NoteDateEnd(year: end.year, month: end.month, day: end.day, hour: end.hour, minute: end.minute)
+        return start
+    }
+
+    private static func order(_ mention: NoteDateMention) -> Int {
+        (((mention.year * 13 + mention.month) * 32 + mention.day) * 24 + (mention.hour ?? 0)) * 60 + (mention.minute ?? 0)
+    }
+
+    private static func hasYear(_ text: String) -> Bool {
+        text.range(of: #"(^|[^\d])\d{4}($|[^\d])|\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}"#, options: .regularExpression) != nil
+    }
+
+    private static func mentionsCalendarDay(_ text: String) -> Bool {
+        if text.range(of: #"\d{1,2}[/.\-]\d{1,2}"#, options: .regularExpression) != nil { return true }
+        return text.split(separator: " ").contains { token in token.count >= 3 && months.contains { $0.hasPrefix(token) } }
     }
 
     private static func clean(_ input: String) -> String {
@@ -1020,16 +1142,19 @@ struct NoteDateParser {
         if let groups = Self.match(#"^(\d{1,2})([/.\-])(\d{1,2})(?:[/.\-](\d{2,4}))?$"#, text),
            let first = groups[1].flatMap({ Int($0) }), let separator = groups[2], let second = groups[3].flatMap({ Int($0) }) {
             let dayFirst = separator == "." ? true : self.dayFirst
-            let year = groups[4].flatMap { Int($0) }.map { $0 < 100 ? 2000 + $0 : $0 } ?? calendar.component(.year, from: now)
-            return valid(year: year, month: dayFirst ? second : first, day: dayFirst ? first : second)
+            let month = dayFirst ? second : first, day = dayFirst ? first : second
+            guard let year = groups[4].flatMap({ Int($0) }).map({ $0 < 100 ? 2000 + $0 : $0 }) else { return nearest(month: month, day: day) }
+            return valid(year: year, month: month, day: day)
         }
         if let groups = Self.match(#"^([a-z]{3,})\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?$"#, text),
            let name = groups[1], let month = monthNumber(name), let day = groups[2].flatMap({ Int($0) }) {
-            return valid(year: groups[3].flatMap { Int($0) } ?? calendar.component(.year, from: now), month: month, day: day)
+            guard let year = groups[3].flatMap({ Int($0) }) else { return nearest(month: month, day: day) }
+            return valid(year: year, month: month, day: day)
         }
         if let groups = Self.match(#"^(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([a-z]{3,})(?:\s+(\d{4}))?$"#, text),
            let day = groups[1].flatMap({ Int($0) }), let name = groups[2], let month = monthNumber(name) {
-            return valid(year: groups[3].flatMap { Int($0) } ?? calendar.component(.year, from: now), month: month, day: day)
+            guard let year = groups[3].flatMap({ Int($0) }) else { return nearest(month: month, day: day) }
+            return valid(year: year, month: month, day: day)
         }
         return nil
     }
@@ -1043,6 +1168,13 @@ struct NoteDateParser {
     private func monthNumber(_ name: String) -> Int? {
         guard name.count >= 3 else { return nil }
         return Self.months.firstIndex { $0.hasPrefix(name) }.map { $0 + 1 }
+    }
+
+    private func nearest(month: Int, day: Int) -> Date? {
+        let today = calendar.startOfDay(for: now)
+        let year = calendar.component(.year, from: now)
+        let candidates = [year, year + 1, year - 1].compactMap { valid(year: $0, month: month, day: day) }
+        return candidates.min { abs($0.timeIntervalSince(today)) < abs($1.timeIntervalSince(today)) }
     }
 
     private func valid(year: Int, month: Int, day: Int) -> Date? {
@@ -1074,6 +1206,19 @@ struct NoteDateParser {
 enum NoteDateFormatting {
     static func label(_ mention: NoteDateMention, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent,
                       locale: Locale = .autoupdatingCurrent) -> String {
+        var start = mention
+        start.end = nil
+        let first = dayLabel(start, now: now, calendar: calendar, locale: locale)
+        guard let end = mention.end else { return first }
+        let finish = NoteDateMention(year: end.year, month: end.month, day: end.day, hour: end.hour, minute: end.minute)
+        if end.year == mention.year, end.month == mention.month, end.day == mention.day, mention.includesTime, end.hour != nil,
+           let date = calendar.date(from: finish.components) {
+            return first + NoteDateText.arrow + format(date, template: "jmm", calendar: calendar, locale: locale)
+        }
+        return first + NoteDateText.arrow + dayLabel(finish, now: now, calendar: calendar, locale: locale)
+    }
+
+    private static func dayLabel(_ mention: NoteDateMention, now: Date, calendar: Calendar, locale: Locale) -> String {
         guard let date = calendar.date(from: DateComponents(year: mention.year, month: mention.month, day: mention.day,
                                                             hour: mention.hour ?? 12, minute: mention.minute ?? 0)) else {
             return NoteAtom.date(mention).fallbackText
@@ -1094,12 +1239,19 @@ enum NoteDateFormatting {
     }
 
     static func longLabel(_ mention: NoteDateMention, calendar: Calendar = .autoupdatingCurrent, locale: Locale = .autoupdatingCurrent) -> String {
-        guard let date = calendar.date(from: DateComponents(year: mention.year, month: mention.month, day: mention.day,
-                                                            hour: mention.hour ?? 12, minute: mention.minute ?? 0)) else {
-            return NoteAtom.date(mention).fallbackText
+        var text = longDay(mention.components, calendar: calendar, locale: locale) ?? NoteAtom.date(mention).fallbackText
+        if let end = mention.end, let finish = longDay(end.components, calendar: calendar, locale: locale) {
+            text += " to " + finish
         }
+        if let zone = NoteDateText.zoneName(mention, calendar: calendar, locale: locale) { text += " " + zone }
+        return text
+    }
+
+    private static func longDay(_ parts: DateComponents, calendar: Calendar, locale: Locale) -> String? {
+        guard let date = calendar.date(from: DateComponents(year: parts.year, month: parts.month, day: parts.day,
+                                                            hour: parts.hour ?? 12, minute: parts.minute ?? 0)) else { return nil }
         var text = format(date, template: "EEEEMMMMdy", calendar: calendar, locale: locale)
-        if mention.includesTime { text += " " + format(date, template: "jmm", calendar: calendar, locale: locale) }
+        if parts.hour != nil { text += " " + format(date, template: "jmm", calendar: calendar, locale: locale) }
         return text
     }
 
@@ -1131,8 +1283,10 @@ struct NoteReminderPlan: Hashable {
                 for run in text.runs() {
                     guard case .date(let mention)? = run.marks.atom, mention.remind,
                           let fire = parser.fireDate(for: mention), fire > parser.now else { continue }
-                    let key = String(format: "%04d-%02d-%02dT%02d:%02d", mention.year, mention.month, mention.day,
+                    var key = String(format: "%04d-%02d-%02dT%02d:%02d", mention.year, mention.month, mention.day,
                                      mention.hour ?? 9, mention.hour == nil ? 0 : (mention.minute ?? 0))
+                    if mention.reminderLead > 0 { key += "-" + NoteReminderLead.token(mention.reminderLead) }
+                    if mention.includesTime, let zone = mention.timeZone { key += "@" + zone }
                     guard seen.insert(key).inserted else { continue }
                     result.append(NoteReminderPlan(key: key, mention: mention, fireDate: fire, body: summary(of: text, parser: parser)))
                 }

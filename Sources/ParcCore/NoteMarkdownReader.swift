@@ -866,30 +866,11 @@ struct NoteMDReader {
             if tag.attributes.count == 2, tag.attribute("data-mention") != nil { return .mention(href) }
             return tag.attributes.count == 1 ? .link(href) : .none
         case "time":
-            guard case .some(.some(let value)) = tag.attribute("datetime"), let date = Self.date(value) else { return .none }
-            var mention = date
-            if tag.attributes.count == 2, tag.attribute("data-remind") != nil { mention.remind = true } else if tag.attributes.count != 1 { return .none }
+            guard let mention = NoteDateMarkup.mention(from: tag.attributes) else { return .none }
             return .date(mention)
         default:
             return .none
         }
-    }
-
-    static func date(_ value: String) -> NoteDateMention? {
-        let bytes = Array(value.utf8)
-        func number(_ range: Range<Int>) -> Int? {
-            guard range.upperBound <= bytes.count, bytes[range].allSatisfy(NoteMDByte.isDigit) else { return nil }
-            return Int(NoteMDByte.string(bytes[range]))
-        }
-        guard bytes.count == 10 || bytes.count == 16, let year = number(0..<4), bytes[4] == 45, let month = number(5..<7),
-              bytes[7] == 45, let day = number(8..<10), (1...12).contains(month), (1...31).contains(day) else { return nil }
-        var mention = NoteDateMention(year: year, month: month, day: day)
-        if bytes.count == 16 {
-            guard bytes[10] == 84, let hour = number(11..<13), bytes[13] == 58, let minute = number(14..<16), hour < 24, minute < 60 else { return nil }
-            mention.hour = hour
-            mention.minute = minute
-        }
-        return mention
     }
 
     private func build(_ events: [Event]) -> NoteText {

@@ -771,10 +771,13 @@ struct NotePageHTMLWriter {
                 + Self.attribute(link(target)) + "\">" + Self.escape(title.isEmpty ? "Untitled" : title) + "</a>"
         }
         if case .date(let date) = atom {
-            var stamp = String(format: "%04d-%02d-%02d", date.year, date.month, date.day)
-            if let hour = date.hour { stamp += String(format: "T%02d:%02d", hour, date.minute ?? 0) }
-            return "<time class=\"date-mention\" data-mention=\"date\" datetime=\"" + stamp + "\"" + (date.remind ? " data-remind=\"true\"" : "")
-                + ">@" + Self.escape(Self.formatted(date)) + "</time>"
+            var tag = "<time class=\"date-mention\" data-mention=\"date\" datetime=\"" + NoteDateMarkup.start(date) + "\""
+            if let end = date.end { tag += " data-end=\"" + NoteDateMarkup.end(end) + "\"" }
+            if let zone = date.timeZone { tag += " data-timezone=\"" + Self.attribute(zone) + "\"" }
+            if date.remind { tag += " data-remind=\"" + (date.reminderLead > 0 ? NoteReminderLead.token(date.reminderLead) : "true") + "\"" }
+            if let format = date.format { tag += " data-format=\"" + format.rawValue + "\"" }
+            if let timeFormat = date.timeFormat { tag += " data-clock=\"" + timeFormat.rawValue + "\"" }
+            return tag + ">@" + Self.escape(NoteDateText.label(date, now: nil)) + "</time>"
         }
         if case .link(let url, let title) = atom {
             return "<a class=\"link-mention\" data-mention=\"link\" href=\"" + Self.attribute(url) + "\">"
@@ -786,15 +789,5 @@ struct NotePageHTMLWriter {
                 + Self.attribute(atom.fallbackText) + "\" src=\"" + Self.attribute(custom) + "\">"
         }
         return Self.escape(atom.fallbackText)
-    }
-
-    private static func formatted(_ date: NoteDateMention) -> String {
-        let calendar = Calendar(identifier: .gregorian)
-        guard let value = calendar.date(from: date.components) else { return NoteAtom.date(date).fallbackText }
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.dateStyle = .long
-        formatter.timeStyle = date.includesTime ? .short : .none
-        return formatter.string(from: value)
     }
 }

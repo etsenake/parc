@@ -481,9 +481,7 @@ struct NoteMDInlineWriter {
             if title == target { return "[[" + target + "]]" }
             return "[[" + target + "|" + title + "]]"
         case .date(let date):
-            var value = String(format: "%04d-%02d-%02d", date.year, date.month, date.day)
-            if let hour = date.hour { value += String(format: "T%02d:%02d", hour, date.minute ?? 0) }
-            return "<time datetime=\"\(value)\"\(date.remind ? " data-remind" : "")>\(atom.fallbackText)</time>"
+            return NoteDateMarkup.markdownTag(date, escape: NoteMDText.escapeAttribute)
         case .link(let url, let title):
             return "<a href=\"\(NoteMDText.escapeAttribute(url))\" data-mention>\(Self.escapeLight(title))</a>"
         case .customEmoji(let name):

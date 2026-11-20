@@ -31,11 +31,41 @@ struct NoteDateMention: Hashable, Codable {
     var hour: Int?
     var minute: Int?
     var remind = false
+    var end: NoteDateEnd?
+    var remindBefore: Int?
+    var timeZone: String?
+    var format: NoteDateFormat?
+    var timeFormat: NoteTimeFormat?
 
     var components: DateComponents {
         DateComponents(year: year, month: month, day: day, hour: hour, minute: minute)
     }
     var includesTime: Bool { hour != nil }
+    var reminderLead: Int { remind ? max(0, remindBefore ?? 0) : 0 }
+}
+
+struct NoteDateEnd: Hashable, Codable {
+    var year: Int
+    var month: Int
+    var day: Int
+    var hour: Int?
+    var minute: Int?
+
+    var components: DateComponents {
+        DateComponents(year: year, month: month, day: day, hour: hour, minute: minute)
+    }
+}
+
+enum NoteDateFormat: String, CaseIterable, Codable, Hashable {
+    case full, short
+    case monthDayYear = "mdy"
+    case dayMonthYear = "dmy"
+    case yearMonthDay = "ymd"
+}
+
+enum NoteTimeFormat: String, CaseIterable, Codable, Hashable {
+    case twelveHour = "12h"
+    case twentyFourHour = "24h"
 }
 
 enum NoteAtom: Hashable, Codable {
@@ -58,6 +88,9 @@ enum NoteAtom: Hashable, Codable {
         case .date(let date):
             var value = String(format: "%04d-%02d-%02d", date.year, date.month, date.day)
             if let hour = date.hour { value += String(format: " %02d:%02d", hour, date.minute ?? 0) }
+            guard let end = date.end else { return value }
+            value += String(format: " \u{2192} %04d-%02d-%02d", end.year, end.month, end.day)
+            if let hour = end.hour { value += String(format: " %02d:%02d", hour, end.minute ?? 0) }
             return value
         }
     }

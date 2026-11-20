@@ -1044,12 +1044,12 @@ final class NoteHTMLConversion {
             switch mention {
             case "page": return .page(target: node["data-target"] ?? node["href"] ?? "", title: title)
             case "link": return .link(url: node["href"] ?? "", title: title)
-            case "date": return Self.date(node["datetime"] ?? "", remind: node["data-remind"] == "true")
+            case "date": return Self.date(node)
             default: break
             }
         }
         if node.name == "time", node.textContent.trimmingCharacters(in: .whitespaces).hasPrefix("@"),
-           let date = Self.date(node["datetime"] ?? "", remind: false) {
+           let date = Self.date(node, remind: false) {
             return date
         }
         guard isInlineMath(node) else { return nil }
@@ -1057,18 +1057,33 @@ final class NoteHTMLConversion {
         return source.isEmpty ? nil : .equation(source)
     }
 
-    private static func date(_ value: String, remind: Bool) -> NoteAtom? {
-        let parts = value.split(separator: "T", maxSplits: 1)
-        guard let day = parts.first?.split(separator: "-").compactMap({ Int($0) }), day.count == 3 else { return nil }
-        var mention = NoteDateMention(year: day[0], month: day[1], day: day[2], remind: remind)
+    private static func date(_ node: NoteHTMLNode, remind allowsRemind: Bool = true) -> NoteAtom? {
+        guard let start = stamp(node["datetime"] ?? "") else { return nil }
+        var mention = NoteDateMention(year: start.year, month: start.month, day: start.day, hour: start.hour, minute: start.minute)
+        mention.end = node["data-end"].flatMap(stamp)
+        if allowsRemind, let remind = node["data-remind"]?.trimmingCharacters(in: .whitespaces).lowercased(), remind != "false" {
+            mention.remind = true
+            if let lead = NoteReminderLead.lead(fromToken: remind), lead > 0 { mention.remindBefore = lead }
+        }
+        if let zone = node["data-timezone"]?.trimmingCharacters(in: .whitespaces), !zone.isEmpty { mention.timeZone = zone }
+        mention.format = node["data-format"].flatMap(NoteDateFormat.init(rawValue:))
+        mention.timeFormat = node["data-clock"].flatMap(NoteTimeFormat.init(rawValue:))
+        return .date(mention)
+    }
+
+    private static func stamp(_ value: String) -> NoteDateEnd? {
+        let parts = value.trimmingCharacters(in: .whitespaces).split(separator: "T", maxSplits: 1)
+        guard let day = parts.first?.split(separator: "-").compactMap({ Int($0) }), day.count == 3,
+              (1...12).contains(day[1]), (1...31).contains(day[2]) else { return nil }
+        var result = NoteDateEnd(year: day[0], month: day[1], day: day[2])
         if parts.count == 2 {
             let time = parts[1].prefix(5).split(separator: ":").compactMap { Int($0) }
-            if time.count == 2 {
-                mention.hour = time[0]
-                mention.minute = time[1]
+            if time.count == 2, (0...23).contains(time[0]), (0...59).contains(time[1]) {
+                result.hour = time[0]
+                result.minute = time[1]
             }
         }
-        return .date(mention)
+        return result
     }
 
     private func resolveLink(_ href: String) -> String? {

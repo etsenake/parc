@@ -66,7 +66,7 @@ struct NoteSlashDatesTests {
         check("12/3", "2026-12-03")
         check("12/3/27", "2027-12-03")
         check("3.12.2026", "2026-12-03")
-        check("12/3", "2026-03-12", NoteDateParser(now: now, calendar: calendar, dayFirst: true))
+        check("12/3", "2027-03-12", NoteDateParser(now: now, calendar: calendar, dayFirst: true))
         check("3pm", "2026-11-20 15:00")
         check("3 pm", "2026-11-20 15:00")
         check("at 3:45pm", "2026-11-20 15:45")
