@@ -207,6 +207,12 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         }
     }
 
+    @discardableResult
+    func reveal(anchor: String) -> Bool {
+        guard isViewLoaded, !isTornDown else { return false }
+        return editor.reveal(anchor: anchor)
+    }
+
     func canPerform(_ action: BrowserFindAction) -> Bool {
         guard isViewLoaded, !isTornDown, !editor.hasMarkedText else { return false }
         if let command = Self.findCommand(for: action) { return editor.validate(command) }

@@ -223,6 +223,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         didSet { NotePaneRetention.reconcile(old: oldValue, new: noteEditors) }
     }
     var noteFailures: [UUID: (destination: String, message: String)] = [:]
+    var pendingNoteAnchors: [UUID: String] = [:]
     var onOpenNoteInRegularWindow: ((URL) -> Void)?
     var easelEditors: [UUID: EaselPane] = [:]
     var easelFailures: [UUID: (destination: String, message: String)] = [:]

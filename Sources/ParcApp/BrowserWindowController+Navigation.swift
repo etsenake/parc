@@ -155,7 +155,7 @@ extension BrowserWindowController {
         if activeSpaceID != spaceID { selectSpace(spaceID) }
         else { cancelSpaceCreation(restoreFocus: false); sidebarPreviews?.dismiss() }
         guard activeSpaceID == spaceID, canAcceptExternalLink else { return false }
-        if let file = InternalPage.noteFile(url) { return openNote(url: file) }
+        if InternalPage.noteFile(url) != nil { return openNote(url: url) }
         let creation = creationProvenance(activeTabID: currentTabID)
         performWindowCommand {
             let id = store.openResolvedURL(url, creation: creation)

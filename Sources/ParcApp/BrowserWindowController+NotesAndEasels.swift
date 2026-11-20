@@ -9,16 +9,27 @@ extension BrowserWindowController {
             return true
         }
         guard let file = InternalPage.noteFile(value) else { return false }
+        let target = URL(string: value).flatMap { InternalPage.noteFile($0) == nil ? nil : $0 } ?? file
         if isPrivateBrowsing || isPopupWindow {
-            onOpenNoteInRegularWindow?(file)
+            onOpenNoteInRegularWindow?(target)
         } else {
-            openNote(url: file)
+            openNote(url: target)
         }
         return true
     }
     @discardableResult
     func openNote(url: URL, inSplit: Bool = false) -> Bool {
-        presentNote(url: url, inSplit: inSplit).handled
+        let result = presentNote(url: url, inSplit: inSplit)
+        if let id = result.tabID, let anchor = url.fragment, !anchor.isEmpty { revealNoteAnchor(anchor, inTab: id) }
+        return result.handled
+    }
+    func revealNoteAnchor(_ anchor: String, inTab id: UUID) {
+        if let note = noteEditors[id], note.editor.isViewLoaded {
+            pendingNoteAnchors.removeValue(forKey: id)
+            note.editor.reveal(anchor: anchor)
+        } else {
+            pendingNoteAnchors[id] = anchor
+        }
     }
     private func presentNote(url: URL, inSplit: Bool = false) -> (handled: Bool, tabID: UUID?) {
         guard let file = InternalPage.noteFile(url) else { showNoteError(NoteFileError.notANote); return (true, nil) }
@@ -92,6 +103,7 @@ extension BrowserWindowController {
         return accepted
     }
     func retireNoteEditor(_ id: UUID) {
+        pendingNoteAnchors.removeValue(forKey: id)
         guard let note = noteEditors.removeValue(forKey: id) else { return }
         if note.editor.isViewLoaded { note.editor.view.removeFromSuperview() }
     }
@@ -106,10 +118,15 @@ extension BrowserWindowController {
         guard !isPrivateBrowsing, !store.isProfileRemovalPending(tab.profileID) else { pane.showError("Notes are unavailable in this Space."); return }
         if let cached = noteEditors[tab.id], cached.profileID == tab.profileID,
            InternalPage.note(url) == .note(cached.url) || InternalPage.note(url) == InternalPage(urlString: cached.originalTab.url) {
-            pane.showNote(cached.editor); return
+            pane.showNote(cached.editor)
+            if let anchor = pendingNoteAnchors.removeValue(forKey: tab.id) { cached.editor.reveal(anchor: anchor) }
+            return
         }
         let destination = tab.profileID.uuidString + ":" + InternalPage.note(url).urlString
-        if let failure = noteFailures[tab.id], failure.destination == destination { pane.showError(failure.message); return }
+        if let failure = noteFailures[tab.id], failure.destination == destination {
+            pendingNoteAnchors.removeValue(forKey: tab.id)
+            pane.showError(failure.message); return
+        }
         do {
             let editor = NotePageViewController(file: try NoteFileSession.open(url))
             retireNoteEditor(tab.id)
@@ -117,6 +134,7 @@ extension BrowserWindowController {
             noteFailures.removeValue(forKey: tab.id)
             configureNoteOwner(tab, editor: editor)
             pane.showNote(editor)
+            if let anchor = pendingNoteAnchors.removeValue(forKey: tab.id) { editor.reveal(anchor: anchor) }
             if tab.title != editor.file.title || InternalPage.note(editor.file.url) != .note(url) {
                 DispatchQueue.main.async { [weak self, weak editor] in
                     guard let self, let editor, self.noteEditors[tab.id]?.editor === editor else { return }
@@ -124,6 +142,7 @@ extension BrowserWindowController {
                 }
             }
         } catch {
+            pendingNoteAnchors.removeValue(forKey: tab.id)
             noteFailures[tab.id] = (destination, error.localizedDescription)
             pane.showError(error.localizedDescription)
         }
