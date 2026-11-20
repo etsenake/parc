@@ -512,6 +512,7 @@ struct NoteBlockProps: Hashable, Codable {
     var source: String?
     var alt: String?
     var width: Double?
+    var height: Double?
     var alignment: NoteAlignment = .center
     var caption = NoteText()
     var bookmark: NoteBookmark?

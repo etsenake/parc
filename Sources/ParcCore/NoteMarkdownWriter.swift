@@ -481,6 +481,7 @@ struct NoteMDWriter {
             items.append((NoteMDAttributes.kindNames.first(where: { $0.value == block.kind })?.key ?? "image", nil))
         }
         if let width = block.props.width { items.append(("width", Self.number(width))) }
+        if let height = block.props.height { items.append(("height", Self.number(height))) }
         if block.props.alignment != .center { items.append(("align", block.props.alignment.rawValue)) }
         items += blockAttributes(block)
         return line + suffix(items)
