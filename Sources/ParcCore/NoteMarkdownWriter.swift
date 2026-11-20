@@ -38,7 +38,10 @@ struct NoteMDWriter {
 
     func write(_ page: NotePage) -> String {
         let front = NoteMDFrontMatter.write(page.settings)
-        let body = sequence(page.blocks, frame: front == nil ? .document : .documentAfterFrontMatter)
+        var body = sequence(page.blocks, frame: front == nil ? .document : .documentAfterFrontMatter)
+        if front == nil, let first = body.first, NoteMDFrontMatter.split(Array((body.joined(separator: "\n") + "\n").utf8)) != nil {
+            body[0] = " " + first
+        }
         var output = front ?? ""
         if !body.isEmpty { output += body.joined(separator: "\n") + "\n" }
         return output
@@ -48,7 +51,7 @@ struct NoteMDWriter {
         case document, documentAfterFrontMatter, container(leading: Int, trailing: Int), listItem(leading: Int)
     }
 
-    private static func isBareEmptyParagraph(_ block: NoteBlock) -> Bool {
+    static func isBareEmptyParagraph(_ block: NoteBlock) -> Bool {
         block.kind == .paragraph && block.text.isEmpty && block.color == nil && block.children.isEmpty && block.props.anchor == nil
     }
 
@@ -197,7 +200,7 @@ struct NoteMDWriter {
     }
 
     private func textLines(_ text: NoteText, style: NoteMDInlineStyle, attributes items: [(String, String?)],
-                           marked: Bool = false, carrying carried: [(String, String?)] = []) -> [String] {
+                           marked: Bool = false, carrying carried: [(String, String?)] = [], standalone: Bool = true) -> [String] {
         var commented = style
         commented.trailingComment = marked || !items.isEmpty
         var lines = inline.write(text, style: commented).components(separatedBy: "\n")
@@ -206,17 +209,24 @@ struct NoteMDWriter {
             lines = inline.write(text, style: commented).components(separatedBy: "\n")
         }
         if commented.trailingComment { lines[lines.count - 1] += " " + comment(carried + items) }
-        return lines
+        return standalone ? Self.leadingParagraph(lines) : lines
+    }
+
+    static let paragraphLeadIn = "<b></b>"
+
+    static func needsLeadIn(_ line: String) -> Bool {
+        guard let byte = line.utf8.first, NoteMDBlockParser.mayOpenBlock(byte) else { return false }
+        return !startsParagraph(line)
+    }
+
+    private static func leadingParagraph(_ lines: [String]) -> [String] {
+        guard let first = lines.first, needsLeadIn(first) else { return lines }
+        return [paragraphLeadIn + first] + lines.dropFirst()
     }
 
     static func startsHTMLBlock(_ line: String) -> Bool {
         let bytes = Array(line.utf8)
         return NoteMDHTML.blockStart(bytes, from: 0, upTo: bytes.count, interruptsParagraph: false) != nil
-    }
-
-    static func interruptsWithHTML(_ line: String) -> Bool {
-        let bytes = Array(line.utf8)
-        return NoteMDHTML.blockStart(bytes, from: 0, upTo: bytes.count, interruptsParagraph: true) != nil
     }
 
     static func writesAsParagraph(_ block: NoteBlock?) -> Bool {
@@ -279,7 +289,7 @@ struct NoteMDWriter {
         }
         var lines = markdown.components(separatedBy: "\n")
         if !items.isEmpty { lines[lines.count - 1] += suffix(items) }
-        return lines
+        return Self.leadingParagraph(lines)
     }
 
     private func standaloneHazard(_ markdown: String) -> Bool {
@@ -321,7 +331,7 @@ struct NoteMDWriter {
             textLines = !items.isEmpty || firstChildIsParagraph ? [comment(items)] : []
         } else {
             let style = NoteMDInlineStyle(shape: .paragraph, taskSensitive: block.kind != .todo)
-            textLines = self.textLines(block.text, style: style, attributes: items)
+            textLines = self.textLines(block.text, style: style, attributes: items, standalone: block.kind != .todo)
         }
         var lines: [String] = []
         if let first = textLines.first {
@@ -338,7 +348,14 @@ struct NoteMDWriter {
                 let interrupts = firstLineHasContent && (Self.orderedDelimiter(first) == nil || (first.props.listStart ?? 1) == 1)
                 leading = interrupts ? 0 : 1
             }
-            for line in sequence(block.children, frame: .listItem(leading: leading)) {
+            var childLines = sequence(block.children, frame: .listItem(leading: leading))
+            if leading == 0, hasFirstLine, let firstChildLine = childLines.first {
+                let task = block.kind == .todo ? String(marker.suffix(3)) : ""
+                let paragraphLine = textLines.count > 1 ? textLines[textLines.count - 1] : [task, textLines.first ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
+                let junction = NoteMDBlockParser.parse(Array((paragraphLine + "\n" + firstChildLine).utf8)).root.children.map(\.kind)
+                if junction != [.paragraph, .list] { childLines = sequence(block.children, frame: .listItem(leading: 1)) }
+            }
+            for line in childLines {
                 lines.append(line.isEmpty ? "" : indent + line)
             }
         }
@@ -361,8 +378,8 @@ struct NoteMDWriter {
             if NoteMDReader.calloutUsesBody(block.props.alert) {
                 inner.append(marker)
                 let lines = block.text.isEmpty ? [] : textLines(block.text, style: .paragraph, attributes: items, marked: marked,
-                                                                carrying: carried)
-                if let first = lines.first, Self.interruptsWithHTML(first) {
+                                                                carrying: carried, standalone: false)
+                if let first = lines.first, Self.needsLeadIn(first) {
                     let commented = marked || !items.isEmpty
                     let title = inline.write(block.text, style: NoteMDInlineStyle(shape: .line, trailingComment: commented))
                     inner[inner.count - 1] = marker + " " + title + (commented ? " " + comment(carried + items) : "")
@@ -394,6 +411,10 @@ struct NoteMDWriter {
         return inner.map { $0.isEmpty ? ">" : "> " + $0 }
     }
 
+    static func startsParagraph(_ line: String) -> Bool {
+        NoteMDBlockParser.startsParagraph(Array(line.utf8)[...])
+    }
+
     private func toggle(_ block: NoteBlock) -> [String] {
         let content = inline.write(block.text, style: NoteMDInlineStyle(shape: .line, htmlSafe: true, trailingComment: !blockAttributes(block).isEmpty)) + suffix(blockAttributes(block))
         let summary: String
@@ -415,15 +436,21 @@ struct NoteMDWriter {
         if !block.props.caption.isEmpty { items.append(("caption", inline.write(block.props.caption, style: .verbatim))) }
         if block.props.wrap { items.append(("wrap", nil)) }
         items += blockAttributes(block)
-        if block.props.fence == "    ", block.props.language.isEmpty, block.props.info == nil, items.isEmpty, !afterList,
-           let first = lines.first, !first.trimmingCharacters(in: .whitespaces).isEmpty,
-           let last = lines.last, !last.trimmingCharacters(in: .whitespaces).isEmpty {
+        if Self.writesIndentedCode(block, afterList: afterList) {
             return lines.map { $0.isEmpty ? "" : "    " + $0 }
         }
         let info = block.props.language + (block.props.info.map { " " + $0 } ?? "")
         let fence = Self.fence(for: text, preferred: block.props.fence, info: info)
         let separator = info.first == fence.first ? " " : ""
         return [fence + separator + Self.escapeInfo(info)] + (text.isEmpty ? [] : lines) + [fence] + trailingAttributes(items)
+    }
+
+    static func writesIndentedCode(_ block: NoteBlock, afterList: Bool) -> Bool {
+        guard block.kind == .code, block.props.fence == "    ", !afterList, block.props.language.isEmpty, block.props.info == nil,
+              block.props.caption.isEmpty, !block.props.wrap, block.color == nil, !(block.props.anchor.map(NoteAnchor.isValid) ?? false) else { return false }
+        let lines = block.text.string.components(separatedBy: "\n")
+        func hasContent(_ line: String?) -> Bool { line?.unicodeScalars.contains { $0 != " " && $0 != "\t" } ?? false }
+        return hasContent(lines.first) && hasContent(lines.last)
     }
 
     private static func escapeInfo(_ info: String) -> String {

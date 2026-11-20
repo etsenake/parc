@@ -228,9 +228,10 @@ struct MarkdownPageGenerator {
         if !trailingEmpty {
             while let last = result.last, last.kind == .paragraph, last.text.isEmpty, last.color == nil { result.removeLast() }
         }
-        for index in result.indices.dropFirst() where result[index].kind == .code && result[index].props.fence == "    "
-            && (result[index - 1].kind.isListItem || result[index - 1].kind == .raw) {
-            result[index].props.fence = nil
+        for index in result.indices where result[index].kind == .code && result[index].props.fence == "    " {
+            if let previous = result[..<index].last(where: { !NoteMDWriter.isBareEmptyParagraph($0) }), previous.kind.isListItem || previous.kind == .raw {
+                result[index].props.fence = nil
+            }
         }
         var lastNumber: Int?
         for index in result.indices {

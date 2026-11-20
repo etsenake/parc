@@ -222,8 +222,7 @@ struct NoteMDReader {
                 if !node.ordered { lastNumber = nil }
             default:
                 var converted = block(node)
-                if converted.kind == .code, converted.props.fence == "    ", let previous = result.last,
-                   previous.kind.isListItem || (previous.kind == .raw && previous.text.string.hasPrefix("[^")) {
+                if converted.kind == .code, converted.props.fence == "    ", !NoteMDWriter.writesIndentedCode(converted, afterList: Self.followsList(result)) {
                     converted.props.fence = nil
                 }
                 result.append(converted)
@@ -233,6 +232,11 @@ struct NoteMDReader {
         }
         appendEmpties(documentEdges ? trailingBlank : max(0, trailingBlank - 1))
         return result
+    }
+
+    private static func followsList(_ blocks: [NoteBlock]) -> Bool {
+        guard let previous = blocks.last(where: { !NoteMDWriter.isBareEmptyParagraph($0) }) else { return false }
+        return previous.kind.isListItem || (previous.kind == .raw && previous.text.string.hasPrefix("[^"))
     }
 
     private func block(_ node: NoteMDBlock) -> NoteBlock {
@@ -636,6 +640,7 @@ struct NoteMDReader {
             }
             block.props.table = table
         }
+        if block.kind == .code, block.props.fence == "    ", !NoteMDWriter.writesIndentedCode(block, afterList: false) { block.props.fence = nil }
     }
 
     func inline(_ content: [UInt8]) -> (NoteText, NoteMDAttributes?) {

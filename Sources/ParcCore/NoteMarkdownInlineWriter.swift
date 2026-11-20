@@ -78,7 +78,12 @@ struct NoteMDInlineWriter {
             guard cells.count == 1 else { return false }
             source = cells[0]
         case .line, .verbatim:
-            break
+            if style.insideLink {
+                let tree = NoteMDInlineParser.parse(Array("[".utf8) + source + Array("](<>)".utf8), references: reader.references, footnotes: reader.footnotes)
+                let children = tree.children(of: 0)
+                guard children.count == 1, tree.nodes[children[0]].kind == .link else { return false }
+                return reader.text(tree, children: tree.children(of: children[0])) == text
+            }
         }
         let tree = style.shape == .verbatim
             ? NoteMDInlineParser.parseVerbatim(source, references: reader.references, footnotes: reader.footnotes)
@@ -247,7 +252,9 @@ struct NoteMDInlineWriter {
                     pieces.append(Rendered(prefix: hard ? "<br>" : "&#x2028;"))
                 }
             case .atom(let atom):
-                pieces.append(Rendered(prefix: atomString(atom, safe: safe, next: nextCharacter(items, after: index))))
+                var markup = atomString(atom, safe: safe, next: nextCharacter(items, after: index))
+                if style.multiline, case .raw = atom, markup.contains("\n") { markup = Self.continuationSafe(markup) }
+                pieces.append(Rendered(prefix: markup))
             }
             index += 1
         }
@@ -467,6 +474,15 @@ struct NoteMDInlineWriter {
         case .link(let url, let title):
             return "<a href=\"\(NoteMDText.escapeAttribute(url))\" data-mention>\(Self.escapeLight(title))</a>"
         }
+    }
+
+    private static func continuationSafe(_ markup: String) -> String {
+        let lines = markup.components(separatedBy: "\n")
+        let indented = lines.dropFirst().map { line -> String in
+            guard let first = line.utf8.first, NoteMDBlockParser.mayOpenBlock(first) else { return line }
+            return "    " + line
+        }
+        return ([lines[0]] + indented).joined(separator: "\n")
     }
 
     static func escapeLight(_ text: String) -> String {
@@ -716,7 +732,7 @@ struct NoteMDInlineWriter {
             if hazards.lastLinkBracket > index { return true }
             if hasReferences, hazards.lastCloseBracket > index { return true }
             if style.taskSensitive, index == 0, index + 2 < all.count, all[index + 1] == " " || all[index + 1] == "x" || all[index + 1] == "X",
-               all[index + 2] == "]", index + 3 >= all.count || all[index + 3] == " " || all[index + 3] == "\t" { return true }
+               all[index + 2] == "]", index + 3 >= all.count || all[index + 3].isASCII && NoteMDByte.isWhitespace(UInt8(all[index + 3].value)) { return true }
             return false
         case "]":
             return piece.insideLink || style.insideLink

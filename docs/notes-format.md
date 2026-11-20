@@ -269,6 +269,16 @@ These normalizations are deliberate:
 - Only characters that would change the meaning are escaped. `snake_case`,
   `2 * 3` and `$5` stay as they are.
 - A trailing empty paragraph inside a list item is dropped.
+- A note that opens with a divider gets one space before that `---` when a
+  later `---` or `...` line would otherwise turn the top into front matter.
+- Indented code that carries a colour, caption or other setting is saved as a
+  fenced block, and so is indented code right after a list.
+- Reference definitions followed by an indented line that can't start a
+  paragraph on its own, such as `<details>`, stay together as one raw block,
+  because Markdown has no way to write that paragraph by itself.
+- Any other text that would open such a block when it starts a line (for
+  example `<div>` left behind by an empty tag) gets an empty `<b></b>` in
+  front, so it stays text.
 
 Everything else, including HTML and constructs Parc doesn't model, comes back
 the way it was read.

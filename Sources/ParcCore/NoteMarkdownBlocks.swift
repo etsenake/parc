@@ -234,7 +234,7 @@ final class NoteMDBlockParser {
         var matchedLeaf = container.kind != .paragraph && container.kind != .table && container.acceptsLines
         starts: while !matchedLeaf {
             findNextNonspace()
-            if !indented, !maybeSpecial(peek(nextNonspace)) {
+            if !indented, !Self.mayOpenBlock(peek(nextNonspace)) {
                 advanceNextNonspace()
                 break starts
             }
@@ -287,7 +287,7 @@ final class NoteMDBlockParser {
         }
     }
 
-    private func maybeSpecial(_ byte: UInt8) -> Bool {
+    static func mayOpenBlock(_ byte: UInt8) -> Bool {
         switch byte {
         case 35, 96, 126, 42, 43, 45, 95, 61, 60, 62, 124, 58, 36, 91: return true
         default: return NoteMDByte.isDigit(byte)
@@ -511,6 +511,15 @@ final class NoteMDBlockParser {
         let paragraph = container
         let consumed = extractReferences(from: paragraph)
         guard consumed < paragraph.content.count else { return nil }
+        if consumed > 0, !Self.startsParagraph(paragraph.content[consumed...]), let parent = paragraph.parent,
+           let position = parent.children.firstIndex(where: { $0 === paragraph }) {
+            let underline = Array(NoteMDText.trimmed(bytes[nextNonspace..<lineEnd]))
+            parent.children[position] = definitionsBlock(paragraph, length: consumed, continuation: paragraph.content[consumed...], closing: underline)
+            tip = parent
+            offset = lineEnd
+            lineConsumed = true
+            return .leaf
+        }
         let heading = NoteMDBlock(.heading)
         heading.level = underline == 61 ? 1 : 2
         heading.setext = underline
@@ -718,15 +727,30 @@ final class NoteMDBlockParser {
         return position
     }
 
-    private func definitionsBlock(_ paragraph: NoteMDBlock, length: Int) -> NoteMDBlock {
+    private func definitionsBlock(_ paragraph: NoteMDBlock, length: Int, continuation: ArraySlice<UInt8> = [], closing: [UInt8] = []) -> NoteMDBlock {
         let block = NoteMDBlock(.definitions)
         block.parent = paragraph.parent
         block.isOpen = false
         block.blankBefore = paragraph.blankBefore
         var text = Array(paragraph.content[0..<length])
         while let last = text.last, NoteMDByte.isWhitespace(last) { text.removeLast() }
+        for line in continuation.split(separator: NoteMDByte.newline) {
+            text.append(NoteMDByte.newline)
+            text.append(contentsOf: repeatElement(NoteMDByte.space, count: 4))
+            text.append(contentsOf: line)
+        }
+        if !closing.isEmpty {
+            text.append(NoteMDByte.newline)
+            text.append(contentsOf: closing)
+        }
         block.content = text
         return block
+    }
+
+    static func startsParagraph(_ content: ArraySlice<UInt8>) -> Bool {
+        let firstLine = content.prefix { $0 != NoteMDByte.newline }
+        let document = NoteMDBlockParser.parse(Array(firstLine))
+        return document.root.children.count == 1 && document.root.children[0].kind == .paragraph
     }
 
     private func finalize(_ block: NoteMDBlock) {
@@ -740,10 +764,12 @@ final class NoteMDBlockParser {
         case .paragraph:
             let consumed = extractReferences(from: block)
             if consumed > 0, let parent, let position = parent.children.firstIndex(where: { $0 === block }) {
-                let definitions = definitionsBlock(block, length: consumed)
                 if consumed >= block.content.count || NoteMDText.trimmed(block.content[consumed...]).isEmpty {
-                    parent.children[position] = definitions
+                    parent.children[position] = definitionsBlock(block, length: consumed)
+                } else if !Self.startsParagraph(block.content[consumed...]) {
+                    parent.children[position] = definitionsBlock(block, length: consumed, continuation: block.content[consumed...])
                 } else {
+                    let definitions = definitionsBlock(block, length: consumed)
                     block.content = Array(block.content[consumed...])
                     block.blankBefore = 0
                     parent.children.insert(definitions, at: position)
@@ -763,8 +789,7 @@ final class NoteMDBlockParser {
         case .html, .math:
             if block.content.last == NoteMDByte.newline { block.content.removeLast() }
             if block.kind == .html {
-                var leading = 0
-                while leading < min(3, block.content.count), block.content[leading] == NoteMDByte.space { leading += 1 }
+                let leading = block.content.prefix(while: NoteMDByte.isSpaceOrTab).count
                 block.content.removeFirst(leading)
             }
         case .item:

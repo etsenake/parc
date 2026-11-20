@@ -20,7 +20,80 @@ struct MarkdownCodecTests {
         escaping()
         plainText()
         anchors()
+        fuzzRegressions()
         MarkdownCheck.finish("MarkdownCodecTests")
+    }
+
+    static func fuzzRegressions() {
+        var paintedRule = NoteBlock(.divider)
+        paintedRule.color = .background(.orange)
+        for (label, model) in [("divider pair", [NoteBlock(.divider), .paragraph("between"), NoteBlock(.divider)]),
+                               ("divider before dots", [NoteBlock(.divider), .paragraph("...")]),
+                               ("painted divider pair", [paintedRule, NoteBlock(.divider)])] {
+            let page = NotePage(blocks: model)
+            expect(NoteMarkdown.serialize(page).hasPrefix(" ---\n"), "\(label): a leading divider that could open front matter is indented")
+            MarkdownCheck.checkModelRoundTrip(page, label)
+        }
+
+        for (label, text) in [("ticked", "[x]\u{2028}after"), ("open", "[ ]\u{2028}after"), ("vertical tab", "[x]\u{0B}after")] {
+            let numbered = NoteBlock(.numberedItem, text: NoteText(text))
+            let bulleted = NoteBlock(.bulletedItem, text: NoteText(text))
+            MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [numbered, .paragraph("gap"), bulleted]), "task-like text before a break, \(label)")
+        }
+
+        MarkdownCheck.checkStable("-\n\n\n    code\n", "indented code after a list and a blank paragraph")
+        expect(blocks("-\n\n\n    code\n").last?.props.fence == nil, "code the writer must fence after a list loads without the indented style")
+        MarkdownCheck.checkStable("    code\n<!-- parc color=\"red\" -->\n", "indented code with a Parc comment")
+        expect(blocks("    code\n<!-- parc color=\"red\" -->\n").first?.props.fence == nil, "indented code with settings loads as fenced")
+        var unicodeBlank = NoteBlock(.code, text: NoteText("\u{00A0}"))
+        unicodeBlank.props.fence = "    "
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [unicodeBlank]), "indented code whose only line is a no-break space")
+
+        MarkdownCheck.checkExact("[r]: /url\n    <details>x\n", "definition continued by a block HTML line")
+        expect(blocks("[r]: /url\n     <details>x\n").map(\.kind) == [.raw], "definitions with an HTML-block continuation stay one raw block")
+        MarkdownCheck.checkExact("[r]: /url\n    <div>\n===\n", "definition continued by a setext heading that opens with HTML")
+        MarkdownCheck.checkStable("[r]: /url\n$$x$$ y\n", "definition continued by inline display math")
+        MarkdownCheck.checkStable("> - [r]: /url\n>       <!-- c --> tail\n", "nested definition continued by a comment")
+        MarkdownCheck.checkStable("[r]: /url\ntext\n", "definition followed by an ordinary line")
+        expect(blocks("[r]: /url\ntext\n").map(\.kind) == [.raw, .paragraph], "an ordinary continuation still becomes a paragraph")
+
+        MarkdownCheck.checkStable("> [!tip]- T\n>     <summary>S</summary> x\n", "titled callout continued by block HTML")
+        MarkdownCheck.checkStable("> [!TIP] T\n>     <div>x\n", "GitHub alert title continued by block HTML")
+        MarkdownCheck.checkStable("> [!TIP] <!-- parc -->\n>     <div>x\n", "empty GitHub alert title continued by block HTML")
+        MarkdownCheck.checkStable("> [!NOTE] Hi <!-- parc alert -->\n>     <pre>x\n", "kept GitHub note continued by a pre tag")
+        var tipped = NoteBlock(.callout, text: "Title", children: [.paragraph(.atom(.raw("<div>")) + NoteText(" body"))])
+        tipped.props.alert = "TIP"
+        var plain = NoteBlock(.callout, children: [.paragraph(.atom(.raw("<details>")) + NoteText(" body"))])
+        plain.props.icon = "💡"
+        var titled = NoteBlock(.callout, text: "Why", children: [.paragraph(.atom(.raw("<summary>")) + NoteText(" body"))])
+        titled.props.alert = "faq"
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [tipped, plain, titled]), "callouts whose first child opens with block HTML")
+
+        var paintedTask = NoteBlock(.todo, children: [NoteBlock(.bulletedItem, text: "|")])
+        paintedTask.color = .text(.red)
+        let piped = NoteBlock(.bulletedItem, text: "a | b", children: [NoteBlock(.bulletedItem, text: "|")])
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [paintedTask, .paragraph("gap"), piped]), "nested item that would read as a table delimiter row")
+
+        var italic = NoteMarks()
+        italic.italic = true
+        var leaning = NoteBlock(.pageLink, text: NoteText("_ @ #", marks: italic) + NoteText("*   "))
+        leaning.props.target = "Other.md"
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [leaning]), "page link label opening with italics")
+
+        MarkdownCheck.checkStable("a $$ b\n    + c $$ d\n", "inline display math whose second line looks like a list item")
+        MarkdownCheck.checkStable("x <!-- a\n    # b --> y\n", "inline comment whose second line looks like a heading")
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [.paragraph(NoteText("a ") + .atom(.raw("$$ b\n> c $$")) + NoteText(" d"))]),
+                                          "multi-line raw atom with a quote-like line")
+
+        MarkdownCheck.checkStable("<span data-color=\"red\"></span><div> after\n", "empty span in front of block HTML")
+        MarkdownCheck.checkStable("<b></b>$$x$$ after\n", "empty bold in front of display math")
+        MarkdownCheck.checkStable("> <i></i><details> quoted\n\n- <u></u><pre> item\n", "empty wrappers opening a quote and an item")
+        MarkdownCheck.checkStable("<b></b><div>\n===\n", "empty bold opening a setext heading")
+        let exposed = [NoteBlock.paragraph(.atom(.raw("<div>")) + NoteText(" x")), NoteBlock(.bulletedItem, text: .atom(.raw("<details>")) + NoteText(" y")),
+                       NoteBlock(.quote, text: .atom(.raw("<pre>")) + NoteText(" z"))]
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: exposed), "text that opens with block HTML in a paragraph, an item and a quote")
+
+        MarkdownCheck.checkStable("1.  > \t <details>\n", "tab before block HTML inside a quote inside a list")
     }
 
     static func exactFixtures() {
