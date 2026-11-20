@@ -135,6 +135,10 @@ enum NotePageHTMLStyle {
     figure.image img{max-width:100%;height:auto;border-radius:8px}
     figure.image[style*=width] img{width:100%}
     figure.image[style*=width]{margin-left:auto;margin-right:auto}
+    figure.pdf[style*=width]{margin-left:auto;margin-right:auto}figure.pdf.align-left{margin-left:0}\
+    figure.pdf.align-right{margin-right:0}
+    .pdf-frame{display:block;width:100%;aspect-ratio:17/22;max-height:88vh;border:1px solid var(--line);border-radius:8px;\
+    background:var(--fill)}
     video,audio{display:block;max-width:100%;border-radius:8px}
     audio{width:100%}
     figcaption{margin-top:.45em;color:var(--muted);font-size:.86em;text-align:left}

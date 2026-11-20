@@ -12,7 +12,7 @@ enum NoteBlockViewFactory {
         case .tableOfContents: return NoteTOCBlockView(block: block, editor: editor)
         case .html, .raw: return NoteRawBlockView(block: block, editor: editor)
         case .table: return NoteTableBlockView(block: block, editor: editor)
-        case .image, .video, .audio, .file: return NoteMediaBlockView(block: block, editor: editor)
+        case .image, .video, .audio, .file, .pdf: return NoteMediaBlockView(block: block, editor: editor)
         case .bookmark: return NoteBookmarkBlockView(block: block, editor: editor)
         case .embed: return NoteEmbedBlockView(block: block, editor: editor)
         case .pageLink: return NotePageLinkBlockView(block: block, editor: editor)

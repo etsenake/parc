@@ -8,7 +8,7 @@ struct NoteMDAttributes: Equatable {
 
     static let kindNames: [String: NoteBlockKind] = [
         "paragraph": .paragraph, "image": .image, "video": .video, "audio": .audio, "file": .file,
-        "embed": .embed, "bookmark": .bookmark,
+        "embed": .embed, "bookmark": .bookmark, "pdf": .pdf,
     ]
 
     var kind: NoteBlockKind? {
@@ -330,6 +330,15 @@ struct NoteMDReader {
             let node = tree.nodes[children[0]]
             if node.kind == .image, kindHint == nil || (kindHint != .paragraph && kindHint != .bookmark) {
                 var block = NoteBlock(kindHint ?? NoteMDMedia.inferredKind(node.destination))
+                block.props.source = node.destination
+                let alt = tree.plainText(of: children[0])
+                block.props.alt = alt.isEmpty ? nil : alt
+                if let title = node.title { block.props.caption = caption(title) }
+                if let attributes { apply(attributes, to: &block) }
+                return block
+            }
+            if node.kind == .link, kindHint == .pdf {
+                var block = NoteBlock(.pdf)
                 block.props.source = node.destination
                 let alt = tree.plainText(of: children[0])
                 block.props.alt = alt.isEmpty ? nil : alt

@@ -915,6 +915,11 @@ final class NoteHTMLConversion {
     private func embed(_ node: NoteHTMLNode) -> [NoteBlock] {
         guard let source = node["src"] ?? node["data"] else { return [] }
         let resolved = resolve(source)
+        if node["type"]?.lowercased() == "application/pdf" || NoteMDMedia.pathExtension(resolved) == "pdf" {
+            var block = NoteBlock(.pdf)
+            block.props.source = resolved
+            return [block]
+        }
         guard let host = URL(string: resolved)?.host?.lowercased(), resolved.lowercased().hasPrefix("http"),
               Self.embedHosts.contains(where: { host == $0 || host.hasSuffix("." + $0) }) else { return [] }
         var block = NoteBlock(.embed)
@@ -957,7 +962,7 @@ final class NoteHTMLConversion {
             return flow(node.children, inner)
         case "tableOfContents":
             return [NoteBlock(.tableOfContents, color: blockColor(node))]
-        case "bookmark", "embed", "file", "pageLink":
+        case "bookmark", "embed", "file", "pdf", "pageLink":
             let link = node.name == "a" ? node : node.first { $0.name == "a" }
             let source = node["data-source"] ?? node["data-target"] ?? link?["href"] ?? ""
             guard !source.isEmpty else { return [] }
@@ -975,6 +980,10 @@ final class NoteHTMLConversion {
             default:
                 block.props.source = source
                 block.props.alt = node["data-name"]
+                if block.kind == .pdf {
+                    block.props.width = node["data-width"].flatMap(Double.init)
+                    if let align = node["data-align"].flatMap({ NoteAlignment(rawValue: $0.lowercased()) }) { block.props.alignment = align }
+                }
             }
             return captioned(block)
         case "html", "raw":

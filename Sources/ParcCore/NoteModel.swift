@@ -312,7 +312,7 @@ struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
 
 enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
     case paragraph, heading, bulletedItem, numberedItem, todo, toggle, quote, callout, divider
-    case code, equation, image, video, audio, file, bookmark, embed, table, tableOfContents
+    case code, equation, image, video, audio, file, pdf, bookmark, embed, table, tableOfContents
     case columns, column, pageLink, html, raw
 
     var hasRichText: Bool {
@@ -330,7 +330,7 @@ enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
     var hasText: Bool { hasRichText || hasPlainText }
     var isMedia: Bool {
         switch self {
-        case .image, .video, .audio, .file: return true
+        case .image, .video, .audio, .file, .pdf: return true
         default: return false
         }
     }
@@ -339,7 +339,7 @@ enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
     var acceptsChildren: Bool { hasRichText || isColumnStructure }
     var hasCaption: Bool {
         switch self {
-        case .image, .video, .audio, .file, .bookmark, .embed, .code: return true
+        case .image, .video, .audio, .file, .pdf, .bookmark, .embed, .code: return true
         default: return false
         }
     }

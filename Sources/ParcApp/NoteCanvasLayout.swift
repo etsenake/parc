@@ -64,7 +64,7 @@ struct NoteCanvasMetrics: Equatable {
             case 3: value = (6, 2)
             default: value = (4, 2)
             }
-        case .callout, .code, .table, .image, .video, .audio, .file, .embed, .bookmark, .equation: value = (6, 6)
+        case .callout, .code, .table, .image, .video, .audio, .file, .pdf, .embed, .bookmark, .equation: value = (6, 6)
         case .columns: value = (4, 4)
         case .column: value = (0, 0)
         }
@@ -804,6 +804,10 @@ enum NoteCanvasEstimate {
             return min(used * 0.5625, 480) + caption
         case .audio: return 54 * scale + caption
         case .file: return 40 * scale + caption
+        case .pdf:
+            guard block.props.source?.isEmpty == false else { return 64 + caption }
+            return NotePDFLayout.viewerHeight(width: NotePDFLayout.displayWidth(fraction: block.props.width, columnWidth: width), aspect: nil)
+                + 12 + caption
         case .bookmark: return 104 * scale + caption
         case .pageLink: return metrics.bodyLineHeight + 4 * scale
         case .tableOfContents: return 3 * metrics.bodyLineHeight

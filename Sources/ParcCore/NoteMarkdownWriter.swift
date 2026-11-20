@@ -232,7 +232,7 @@ struct NoteMDWriter {
     static func writesAsParagraph(_ block: NoteBlock?) -> Bool {
         guard let block else { return false }
         switch block.kind {
-        case .paragraph, .pageLink, .image, .video, .audio, .file, .embed, .bookmark: return true
+        case .paragraph, .pageLink, .image, .video, .audio, .file, .pdf, .embed, .bookmark: return true
         default: return false
         }
     }
@@ -249,7 +249,7 @@ struct NoteMDWriter {
             return [fence] + trailingAttributes(blockAttributes(block))
         case .code: return code(block, afterList: afterList)
         case .equation: return equation(block)
-        case .image, .video, .audio, .file, .embed: return [media(block)]
+        case .image, .video, .audio, .file, .pdf, .embed: return [media(block)]
         case .bookmark: return [bookmark(block)]
         case .pageLink:
             var label = block.text

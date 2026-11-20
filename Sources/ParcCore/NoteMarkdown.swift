@@ -31,6 +31,12 @@ enum NotePlainText {
     }
 
     static func serialize(_ page: NotePage) -> String {
-        page.allBlocks().map { $0.text.plainText }.joined(separator: "\n")
+        page.allBlocks().map(line).joined(separator: "\n")
+    }
+
+    static func line(_ block: NoteBlock) -> String {
+        guard block.kind.isMedia || block.kind == .bookmark || block.kind == .embed, block.text.isEmpty,
+              let source = block.props.source, !source.isEmpty else { return block.text.plainText }
+        return source
     }
 }

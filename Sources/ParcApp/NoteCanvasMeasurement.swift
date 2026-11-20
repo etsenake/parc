@@ -150,7 +150,7 @@ final class NoteCanvasMeasurer {
 
     static func measuresOffscreen(_ kind: NoteBlockKind) -> Bool {
         switch kind {
-        case .image, .video, .audio, .file, .bookmark, .embed, .columns, .column: return false
+        case .image, .video, .audio, .file, .pdf, .bookmark, .embed, .columns, .column: return false
         default: return true
         }
     }

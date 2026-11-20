@@ -320,6 +320,8 @@ struct NotePageHTMLWriter {
             let anchor = "<a class=\"file-link\" href=\"" + Self.attribute(link(source)) + "\"><span class=\"file-icon\">\u{1F4CE}</span> "
                 + Self.escape(name.isEmpty ? "File" : name) + "</a>"
             figure("file", block, attributes: " data-source=\"" + Self.attribute(source) + "\"" + named, content: anchor)
+        case .pdf:
+            pdf(block)
         case .bookmark:
             bookmark(block)
         case .embed:
@@ -490,6 +492,52 @@ struct NotePageHTMLWriter {
         }
         figureCaption(block)
         output += "</figure>"
+    }
+
+    private mutating func pdf(_ block: NoteBlock) {
+        let raw = block.props.source ?? ""
+        let fallback = raw.removingPercentEncoding.map { ($0 as NSString).lastPathComponent } ?? raw
+        let name = block.props.alt.flatMap { $0.isEmpty ? nil : $0 } ?? (fallback.isEmpty ? "PDF" : fallback)
+        var attributes = " data-source=\"" + Self.attribute(raw) + "\""
+        if let alt = block.props.alt { attributes += " data-name=\"" + Self.attribute(alt) + "\"" }
+        if let width = block.props.width, width > 0 { attributes += " data-width=\"" + NoteMDWriter.number(width) + "\"" }
+        if block.props.alignment != .center { attributes += " data-align=\"" + block.props.alignment.rawValue + "\"" }
+        var classes = ["pdf"]
+        var style = ""
+        switch mode {
+        case .document:
+            if block.props.alignment != .center { classes.append("align-" + block.props.alignment.rawValue) }
+            if let width = block.props.width, width > 0 {
+                style = width <= 1 ? "width:" + String(Int((width * 100).rounded())) + "%" : "width:" + String(Int(width.rounded())) + "px"
+            }
+        case .fragment:
+            style = "margin:1em 0"
+        }
+        let anchor = "<a class=\"file-link\" href=\"" + Self.attribute(link(raw)) + "\"><span class=\"file-icon\">\u{1F4C4}</span> "
+            + Self.escape(name) + "</a>"
+        output += "<figure data-block=\"pdf\"" + attributes + colorClass(block.color, adding: classes)
+            + (style.isEmpty ? "" : " style=\"" + style + "\"") + ">"
+        if mode == .document, !raw.isEmpty {
+            output += "<object class=\"pdf-frame\" data=\"" + Self.attribute(pdfSource(raw)) + "\" type=\"application/pdf\" aria-label=\""
+                + Self.attribute(name) + "\">" + anchor + "</object>"
+        } else {
+            output += anchor
+        }
+        if !block.props.caption.isEmpty { output += "<figcaption>" + inline(block.props.caption) + "</figcaption>" }
+        output += "</figure>"
+    }
+
+    static let embeddedPDFLimit = 25_000_000
+
+    func pdfSource(_ value: String) -> String {
+        let url = assets(value) ?? URL(string: value).flatMap { $0.scheme != nil ? $0 : nil }
+        guard let url else { return value }
+        if embedImages, url.isFileURL,
+           let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size <= Self.embeddedPDFLimit,
+           let data = try? Data(contentsOf: url) {
+            return "data:application/pdf;base64," + data.base64EncodedString()
+        }
+        return url.absoluteString
     }
 
     private mutating func bookmark(_ block: NoteBlock) {
