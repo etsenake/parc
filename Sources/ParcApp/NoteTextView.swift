@@ -401,7 +401,13 @@ class NoteTextView: NSTextView {
             switch atom {
             case .equation:
                 if editEquation(at: index) { return }
-            case .date, .page, .link, .raw:
+            case .date:
+                if let editor, let host {
+                    selectedOffsets = index..<(index + 1)
+                    editor.slashMenu.openDatePicker(at: NotePosition(host.blockID, index, field: host.field))
+                    return
+                }
+            case .page, .link, .raw:
                 break
             }
         }
