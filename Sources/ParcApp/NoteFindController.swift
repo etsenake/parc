@@ -486,17 +486,10 @@ final class NoteFindBar: NSView {
     }
 
     private func rotateDisclosure(animated: Bool) {
-        guard let layer = disclosure.layer else { return }
-        let size = disclosure.bounds.size
-        var transform = CATransform3DMakeTranslation(size.width / 2, size.height / 2, 0)
-        transform = CATransform3DRotate(transform, isReplacing ? (disclosure.isFlipped ? .pi / 2 : -.pi / 2) : 0, 0, 0, 1)
-        transform = CATransform3DTranslate(transform, -size.width / 2, -size.height / 2, 0)
-        if animated && !NoteAnimation.reduceMotion {
-            NoteAnimation.animate(layer, "transform", to: NSValue(caTransform3D: transform), spring: .toggle,
-                                  key: NoteAnimation.keyPrefix + "find.disclosure")
-        } else {
-            NoteAnimation.withoutAnimation { layer.transform = transform }
-        }
+        let symbol = isReplacing ? "chevron.down" : "chevron.right"
+        guard disclosure.content != .icon(.symbol(symbol)) else { return }
+        disclosure.content = .icon(.symbol(symbol))
+        if animated { NoteAnimation.pop(disclosure, from: 0.8, spring: .toggle) }
     }
 
     func refresh() {
@@ -525,7 +518,6 @@ final class NoteFindBar: NSView {
         let button = NoteTheme.toolbarButtonSize
         let buttonY = pad + (row - button.height) / 2
         disclosure.frame = NSRect(x: pad, y: buttonY, width: button.width, height: button.height)
-        rotateDisclosure(animated: false)
         let x = disclosure.frame.maxX + 4
         var trailing = bounds.width - pad
         for view in [close, next, previous] {

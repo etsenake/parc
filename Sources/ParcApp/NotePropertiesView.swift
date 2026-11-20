@@ -249,7 +249,7 @@ final class NotePropertyRowView: NSView, NSTextFieldDelegate {
     private let handle = NotePropertyHandle()
     private let valueField = NSTextField()
     private let checkButton = NoteToolbarButton(icon: .symbol("circle"), label: "Checkbox")
-    private let dateButton = NoteToolbarButton(.text("Empty"), label: "Date")
+    private let dateButton = NotePropertyValueButton(label: "Date")
     private let tags = NotePropertyTagsView()
     private(set) var property = NotePageProperty(key: "", value: .text(""))
     private(set) var index = 0
@@ -331,8 +331,7 @@ final class NotePropertyRowView: NSView, NSTextFieldDelegate {
             checkButton.isChecked = false
             checkButtonState = value
         case .date:
-            dateButton.content = .text(next.value.isEmpty ? "Empty" : next.value.displayText)
-            dateButton.iconTint = nil
+            dateButton.value = next.value.isEmpty ? nil : next.value.displayText
         case .list(let items):
             tags.items = items
         }
@@ -662,7 +661,7 @@ final class NotePropertyTagChip: NSView {
 
     override var isFlipped: Bool { true }
 
-    private var font: NSFont { NoteTheme.nunitoBold(12.5) }
+    private var chipFont: NSFont { NoteTheme.nunitoBold(12.5) }
 
     func configure(_ value: String, removable: Bool) {
         label = value
@@ -674,13 +673,13 @@ final class NotePropertyTagChip: NSView {
     }
 
     override var intrinsicContentSize: NSSize {
-        let width = ceil((label as NSString).size(withAttributes: [.font: font]).width)
-        return NSSize(width: width + 16 + (removable ? 16 : 0), height: 24)
+        let width = ceil((label as NSString).size(withAttributes: [.font: chipFont]).width)
+        return NSSize(width: width + 16, height: 24)
     }
 
     override func layout() {
         super.layout()
-        remove.frame = NSRect(x: bounds.width - 21, y: (bounds.height - 18) / 2, width: 18, height: 18)
+        remove.frame = NSRect(x: bounds.width - 20, y: (bounds.height - 18) / 2, width: 18, height: 18)
     }
 
     override func updateTrackingAreas() {
@@ -691,19 +690,57 @@ final class NotePropertyTagChip: NSView {
         hoverArea = area
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true; remove.isHidden = !removable }
-    override func mouseExited(with event: NSEvent) { isHovered = false; remove.isHidden = true }
+    override func mouseEntered(with event: NSEvent) { isHovered = true; remove.isHidden = !removable; needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { isHovered = false; remove.isHidden = true; needsDisplay = true }
 
     override func draw(_ dirtyRect: NSRect) {
         let color = NotePropertiesView.tagColor(label)
         let pill = NSBezierPath(roundedRect: bounds.insetBy(dx: 0, dy: 2), xRadius: 6, yRadius: 6)
         NoteTheme.color(.background(color)).setFill()
         pill.fill()
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NoteTheme.color(.text(color))]
+        let attributes: [NSAttributedString.Key: Any] = [.font: chipFont, .foregroundColor: NoteTheme.color(.text(color))]
         let size = (label as NSString).size(withAttributes: attributes)
-        let available = bounds.width - 16 - (removable ? 16 : 0)
-        (label as NSString).draw(with: NSRect(x: 8, y: (bounds.height - size.height) / 2, width: available, height: size.height),
+        (label as NSString).draw(with: NSRect(x: 8, y: (bounds.height - size.height) / 2, width: bounds.width - 16, height: size.height),
                                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes)
+        guard isHovered, removable else { return }
+        NoteTheme.color(.background(color)).setFill()
+        NSBezierPath(roundedRect: NSRect(x: bounds.width - 22, y: 2, width: 22, height: bounds.height - 4), xRadius: 6, yRadius: 6).fill()
+    }
+}
+
+@MainActor
+final class NotePropertyValueButton: NoteControlButton {
+    var value: String? { didSet { if value != oldValue { invalidateIntrinsicContentSize(); needsDisplay = true; refreshAccessibility() } } }
+    private let label: String
+
+    init(label: String) {
+        self.label = label
+        super.init(frame: NSRect(x: 0, y: 0, width: 80, height: NoteTheme.toolbarButtonSize.height))
+        pressedScale = NoteAnimation.rowPressedScale
+        refreshAccessibility()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private var valueFont: NSFont { NoteTheme.nunitoRegular(14.5) }
+
+    private var shown: String { value ?? "Empty" }
+
+    private func refreshAccessibility() {
+        setAccessibilityLabel(label)
+        setAccessibilityValue(value ?? "Empty")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: ceil((shown as NSString).size(withAttributes: [.font: valueFont]).width) + 16, height: NoteTheme.toolbarButtonSize.height)
+    }
+
+    override func drawContent(in bounds: NSRect, ink: NSColor) {
+        let color = value == nil ? NoteTheme.tertiaryInk : NoteTheme.ink
+        let attributes: [NSAttributedString.Key: Any] = [.font: valueFont, .foregroundColor: color]
+        let size = (shown as NSString).size(withAttributes: attributes)
+        (shown as NSString).draw(with: NSRect(x: 8, y: (bounds.height - size.height) / 2, width: bounds.width - 16, height: size.height),
+                                 options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes)
     }
 }
 
