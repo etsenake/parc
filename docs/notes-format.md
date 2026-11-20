@@ -119,10 +119,29 @@ after it:
 The comment always starts with `parc`, followed by words and `name="value"`
 pairs. Parc writes `color`, `icon`, `width`, `height` (an embed's page height),
 `align`, `crop` and `mask` (an image's framing), `caption`, `wrap` (code that wraps), `view` (`code` or `split` for a Mermaid block; Preview writes nothing), the table flags `no-header-row`, `header-column` and
-`widths="120,,80"`, the bookmark fields, and a block kind (`paragraph`,
+`widths="120,,80"`, the table's `merge` and `colors` (see below), the bookmark fields, and a block kind (`paragraph`,
 `image`, `video`, `audio`, `file`, `pdf`, `embed` or `bookmark`) when the file
 wouldn't otherwise make the kind clear. An empty paragraph that has a colour is
 written as `<!-- parc paragraph color="…" -->` on its own line.
+
+### Merged cells and cell colours
+
+A pipe table can't merge cells, so Parc keeps the table readable and lists the
+merges in its comment with spreadsheet references. A merged-away cell is
+written empty, and the merged cell's text sits in its top-left cell:
+
+```markdown
+| Name | Q1  |     |
+| ---- | --- | --- |
+| Ada  | 3   | 4   |
+<!-- parc merge="B1:C1" colors="A:A=gray_background,B2:C2=red" -->
+```
+
+`colors` gives each cell's colour, using the same names as `color`: `A:B` is
+whole columns, `2:3` whole rows and `B2:C2` a block of cells. If text turns up
+in a merged-away cell (say, typed in another editor), the merge is dropped so
+nothing is hidden. Exports write merges as `colspan` and `rowspan`, and HTML
+tables pasted from elsewhere bring theirs along.
 
 ### Block links
 

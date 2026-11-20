@@ -116,6 +116,16 @@ exports show both. Alt text is what VoiceOver reads for the image and lives in
 the Markdown `![alt](…)`; when an image has some, an ALT badge in its corner
 shows it on hover.
 
+Tables work like Notion's simple tables. Hover for `+` bars that add a row or a
+column, or drag the bottom-right corner to add several at once or take away empty
+ones. Drag a column's edge to resize it, and use a row's or column's grip to
+move, insert, duplicate, colour, clear or delete it. Drag across cells or
+Shift-arrow to select a block of them, then use the `•••` button on the
+selection to colour it, clear it, or merge it into one cell (the top-left text
+stays) and unmerge it again. ⌘D fills down and ⌘R fills right. Tab and Shift-Tab
+step through cells, Tab in the last cell adds a row, and Escape selects the cell,
+then the whole table.
+
 Any text block can hold nested blocks, as in Notion: paragraphs, headings, list
 items, to-dos, toggles, quotes and callouts, plus columns. Tab on a line after a
 paragraph nests it there, Shift-Tab takes the lines after it along as its
