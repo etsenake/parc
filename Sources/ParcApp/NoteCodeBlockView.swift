@@ -267,6 +267,10 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     private var pageSettings: NotePageSettings { editor?.session.page.settings ?? NotePageSettings() }
     private var codeStyle: NoteTextStyle { NoteTheme.textStyle(.code, small: pageSettings.smallText) }
     private var captionStyle: NoteTextStyle { NoteTheme.textStyle(.caption, font: pageSettings.font, small: pageSettings.smallText) }
+    private var codePresentation: NoteTextPresentation { NoteTextPresentation(role: .code, small: pageSettings.smallText) }
+    private var captionPresentation: NoteTextPresentation {
+        NoteTextPresentation(role: .caption, pageFont: pageSettings.font, small: pageSettings.smallText)
+    }
     private var padding: NSEdgeInsets {
         var insets = NoteTheme.codePadding
         insets.top = max(insets.top, NoteTheme.chipHeight + Self.barInset * 2)
@@ -309,6 +313,9 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         codeView.smartInsertDeleteEnabled = false
         codeView.usesFindBar = false
         codeView.layoutManager?.allowsNonContiguousLayout = false
+        codeView.inputRulesEnabled = false
+        codeView.presentation = codePresentation
+        codeView.placeholder = NoteTheme.placeholder(for: .code)
         codeView.setAccessibilityLabel("Code")
         codeView.indentation = { [weak self] in
             guard let self else { return .spaces(2) }
@@ -322,13 +329,14 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     private func configureCaption() {
         captionView.host = captionHost
         captionView.editor = editor
-        captionView.isRichText = true
-        captionView.drawsBackground = false
+        captionView.presentation = captionPresentation
         captionView.placeholder = NoteTheme.captionPlaceholder
+        captionView.placeholderShowsWhenUnfocused = true
+        captionView.onFocusChange = { [weak self] focused in
+            if !focused { self?.captionDidEndEditing() }
+        }
         captionView.setAccessibilityLabel("Caption")
         addSubview(captionView)
-        NotificationCenter.default.addObserver(self, selector: #selector(captionDidEndEditing),
-                                               name: NSText.didEndEditingNotification, object: captionView)
     }
 
     private func configureBar() {
@@ -359,6 +367,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         let restyle = force || key != appliedStyle
         if restyle {
             codeView.codeAttributes = codeAttributes(style)
+            if codeView.presentation != codePresentation { codeView.presentation = codePresentation }
             appliedStyle = key
         }
         let attributes = codeView.codeAttributes
@@ -374,18 +383,9 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
             storage.setAttributes(attributes, range: NSRange(location: 0, length: storage.length))
             measuredWidth = -1
         }
-        if force || captionView.noteText != block.props.caption {
-            if !(captionView.hasMarkedText() && captionView.noteText.string == block.props.caption.string) {
-                captionView.apply(block.props.caption, selection: nil)
-            }
-        }
-        let captionStyle = self.captionStyle
-        captionView.font = captionStyle.font
-        captionView.textColor = captionStyle.ink
-        captionView.typingAttributes = captionStyle.attributes
-        if let storage = captionView.textStorage, storage.length > 0 {
-            storage.addAttributes([.font: captionStyle.font, .paragraphStyle: captionStyle.paragraphStyle(),
-                                   .baselineOffset: captionStyle.baselineOffset], range: NSRange(location: 0, length: storage.length))
+        if captionView.presentation != captionPresentation { captionView.presentation = captionPresentation }
+        if force || (captionView.noteText != block.props.caption && !captionView.hasMarkedText()) {
+            captionView.apply(block.props.caption, selection: nil)
         }
         languageButton.content = .text(languageName)
         languageButton.setAccessibilityLabel("Language: \(languageName)")
@@ -684,7 +684,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         if newWindow == nil { closeLanguagePicker() }
     }
 
-    @objc private func captionDidEndEditing() {
+    private func captionDidEndEditing() {
         guard wantsCaption, block.props.caption.isEmpty, captionView.string.isEmpty else { return }
         wantsCaption = false
         invalidateHeight()

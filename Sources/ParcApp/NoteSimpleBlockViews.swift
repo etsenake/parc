@@ -396,6 +396,8 @@ final class NoteRawBlockView: NoteBlockView, NoteTextHost {
         rawView.isContinuousSpellCheckingEnabled = false
         rawView.isGrammarCheckingEnabled = false
         rawView.smartInsertDeleteEnabled = false
+        rawView.inputRulesEnabled = false
+        rawView.presentation = NoteTextPresentation(role: .code)
         rawView.textContainer?.widthTracksTextView = true
         rawView.languageID = { [weak self] in self?.block.kind == .html ? "html" : "markdown" }
         rawView.indentation = { [weak self] in
