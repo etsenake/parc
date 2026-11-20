@@ -47,7 +47,10 @@ enum NoteMediaImport {
 
     static func replace(_ id: NoteBlockID, with url: URL, name: String, in session: NotePageSession, environment: NoteEnvironment) throws {
         let source = try source(importing: url, environment: environment, scoped: true)
-        session.updateBlock(id, name: name) { $0.props.source = source }
+        session.updateBlock(id, name: name) { block in
+            block.props.source = source
+            block.props.credit = nil
+        }
     }
 
     static func resume(_ source: String?, environment: NoteEnvironment) {

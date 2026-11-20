@@ -341,6 +341,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
                 settings.cover?.position = position
             }
         }
+        coverView.onOpen = { [weak self] url in self?.editor.open(url) }
         properties.onHeightChange = { [weak self] in self?.relayoutIfHeightChanged() }
     }
 
@@ -363,6 +364,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         } else if let cover = next.cover, previous?.cover?.position != cover.position {
             coverView.setPosition(cover.position)
         }
+        coverView.credit = next.cover?.credit
         if previous?.icon != next.icon {
             iconView.icon = isPlainText ? nil : next.icon
             if animated, next.icon != nil { NoteAnimation.pop(iconView, from: NoteAnimation.checkPopScale, spring: .pop) }
@@ -564,10 +566,11 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         let picker = NoteCoverPicker(environment: editor.environment, hasCover: settings.cover != nil)
         let popover = NotePagePopover(content: picker)
         popover.exempt(anchorView)
-        picker.onChoose = { [weak self, weak popover] source in
-            self?.editor.session.updateSettings(name: "Change Cover") { $0.cover = NoteCover(source: source, position: 0.5) }
+        picker.onChoose = { [weak self, weak popover] cover in
+            self?.editor.session.updateSettings(name: "Change Cover") { $0.cover = cover }
             popover?.close()
         }
+        picker.onOpen = { [weak self] url in self?.editor.open(url) }
         picker.onRemove = { [weak self, weak popover] in
             self?.editor.session.updateSettings(name: "Remove Cover") { $0.cover = nil }
             popover?.close()
@@ -982,6 +985,7 @@ final class NotePageCoverView: NSView {
     var onChange: (() -> Void)?
     var onRemove: (() -> Void)?
     var onSavePosition: ((Double) -> Void)?
+    var onOpen: ((URL) -> Void)?
     var isEditable = true { didSet { refreshControls(animated: false) } }
     var controlsInset: CGFloat = 16 { didSet { needsLayout = true } }
     var controlsPinned = false { didSet { refreshControls(animated: true) } }
@@ -989,6 +993,17 @@ final class NotePageCoverView: NSView {
         didSet {
             controls.isHidden = isPrinting
             hint.isHidden = isPrinting || !isRepositioning
+            refreshControls(animated: false)
+        }
+    }
+    var credit: NoteMediaCredit? {
+        didSet {
+            guard credit != oldValue else { return }
+            creditLabel.parts = credit?.parts ?? []
+            creditGroup.isHidden = credit == nil
+            setAccessibilityLabel(credit.map { "Note cover. " + $0.sentence } ?? "Note cover")
+            needsLayout = true
+            refreshControls(animated: false)
         }
     }
     let changeChip = NoteChip("Change cover", style: .ghost)
@@ -997,6 +1012,8 @@ final class NotePageCoverView: NSView {
     let saveChip = NoteChip("Save position", style: .ghost)
     let cancelChip = NoteChip("Cancel", style: .ghost)
     private let controls = NotePageChromeGroup()
+    private let creditGroup = NotePageChromeGroup()
+    private let creditLabel = NoteCreditLabel()
     private let hint = NotePageChromeGroup()
     private let hintLabel = NSTextField(labelWithString: "Drag image to reposition")
     private let failureLabel = NSTextField(labelWithString: "Can’t load this cover")
@@ -1030,10 +1047,19 @@ final class NotePageCoverView: NSView {
         failureLabel.textColor = NoteTheme.tertiaryInk
         failureLabel.isHidden = true
         addSubview(failureLabel)
+        addSubview(creditGroup)
         addSubview(controls)
         addSubview(hint)
         controls.wantsLayer = true
         controls.layer?.opacity = 0
+        creditLabel.font = NoteTheme.nunitoRegular(12)
+        creditLabel.linkFont = NoteTheme.nunitoBold(12)
+        creditLabel.ink = NoteTheme.menuSecondaryInk
+        creditLabel.linkInk = NoteTheme.menuInk
+        creditLabel.onOpen = { [weak self] url in self?.onOpen?(url) }
+        creditGroup.addSubview(creditLabel)
+        creditGroup.isHidden = true
+        creditGroup.layer?.opacity = 0
         changeChip.onPress = { [weak self] in self?.onChange?() }
         repositionChip.onPress = { [weak self] in self?.beginRepositioning() }
         removeChip.onPress = { [weak self] in self?.onRemove?() }
@@ -1124,6 +1150,12 @@ final class NotePageCoverView: NSView {
         let editing = isRepositioning
         controls.arrange(editing ? [saveChip, cancelChip] : [changeChip, repositionChip, removeChip])
         controls.setFrameOrigin(NSPoint(x: bounds.width - controlsInset - controls.frame.width, y: bounds.height - controls.frame.height - 12))
+        let creditHeight = controls.frame.height
+        let creditRoom = max(0, controls.frame.minX - controlsInset - 8)
+        let creditWidth = min(ceil(creditLabel.intrinsicContentSize.width) + 20, creditRoom)
+        creditGroup.frame = NSRect(x: controlsInset, y: bounds.height - creditHeight - 12, width: creditWidth, height: creditHeight)
+        let labelHeight = creditLabel.intrinsicContentSize.height
+        creditLabel.frame = NSRect(x: 10, y: (creditHeight - labelHeight) / 2, width: max(0, creditWidth - 20), height: labelHeight)
         let hintSize = hintLabel.intrinsicContentSize
         hint.frame = NSRect(x: (bounds.width - hintSize.width - 24) / 2, y: (bounds.height - 30) / 2, width: hintSize.width + 24, height: 30)
         hintLabel.frame = NSRect(x: 12, y: (30 - hintSize.height) / 2, width: hintSize.width, height: hintSize.height)
@@ -1143,6 +1175,11 @@ final class NotePageCoverView: NSView {
     private func refreshControls(animated: Bool) {
         let visible = isEditable && (isHovered || isRepositioning || controlsPinned)
         repositionChip.isEnabled = image != nil && overflow > 1
+        let showsCredit = credit != nil && !isRepositioning && (isHovered || controlsPinned || isPrinting)
+        if let creditLayer = creditGroup.layer {
+            if animated { NoteAnimation.fade(creditLayer, to: showsCredit ? 1 : 0, duration: NoteAnimation.hoverDuration) }
+            else { NoteAnimation.withoutAnimation { creditLayer.opacity = showsCredit ? 1 : 0 } }
+        }
         guard let layer = controls.layer else { return }
         if animated { NoteAnimation.fade(layer, to: visible ? 1 : 0, duration: NoteAnimation.hoverDuration) }
         else { NoteAnimation.withoutAnimation { layer.opacity = visible ? 1 : 0 } }
@@ -1170,6 +1207,7 @@ final class NotePageCoverView: NSView {
         guard let hit = super.hitTest(point) else { return nil }
         if hit.isDescendant(of: hint) { return self }
         if hit.isDescendant(of: controls), (controls.layer?.opacity ?? 0) < 0.01 { return self }
+        if hit.isDescendant(of: creditGroup), (creditGroup.layer?.opacity ?? 0) < 0.01 || isRepositioning { return self }
         return hit
     }
 

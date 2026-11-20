@@ -20,9 +20,21 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     private var failure: (source: String, problem: NoteMediaProblem)?
     private var importWatch: AnyCancellable?
     private(set) var isHovering = false
+    private let creditLine = NoteCreditLabel()
+    private var unsplashPopover: NotePagePopover?
+    private var replacePopover: NotePagePopover?
+    private var unsplashImport: Task<Void, Never>?
+    private static let creditGap: CGFloat = 3
 
     override init(block: NoteBlock, editor: NotePageEditor?) {
         super.init(block: block, editor: editor)
+        creditLine.font = NoteMediaStyle.smallFont
+        creditLine.linkFont = NoteMediaStyle.nunito(12, weight: .bold)
+        creditLine.ink = NoteTheme.tertiaryInk
+        creditLine.linkInk = NoteTheme.secondaryInk
+        creditLine.onOpen = { [weak self] url in self?.open(url) }
+        creditLine.isHidden = true
+        addSubview(creditLine)
         setAccessibilityElement(true)
         if editor != nil {
             importWatch = NoteAttachmentImports.shared.changes.sink { [weak self] source in
@@ -37,6 +49,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
 
     deinit {
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        unsplashImport?.cancel()
     }
 
     var source: NoteMediaSource {
@@ -129,6 +142,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         }
         content?.update(block: block, source: source)
         refreshCaption()
+        refreshCredit()
         refreshAccessibility()
         if notify { invalidateMeasuredHeight() } else { needsLayout = true }
     }
@@ -138,8 +152,25 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     override func measureHeight(width: CGFloat) -> CGFloat {
         let inset = NoteMediaStyle.verticalInset
         let span = content?.captionSpan(width: width) ?? (x: 0, width: width)
-        let height = inset + (content?.measureHeight(width: width) ?? 44) + inset + captionHeight(width: span.width)
+        let height = inset + (content?.measureHeight(width: width) ?? 44) + inset + captionHeight(width: span.width) + creditHeight
         return ceil(height)
+    }
+
+    private var showsCredit: Bool {
+        guard block.props.credit != nil else { return false }
+        switch mode {
+        case .image, .video, .audio, .file: return true
+        default: return false
+        }
+    }
+
+    private var creditHeight: CGFloat {
+        showsCredit ? Self.creditGap + creditLine.intrinsicContentSize.height : 0
+    }
+
+    private func refreshCredit() {
+        creditLine.parts = block.props.credit?.parts ?? []
+        creditLine.isHidden = !showsCredit
     }
 
     override var handleAnchorY: CGFloat { NoteMediaStyle.verticalInset + (content?.handleAnchorY ?? 14) }
@@ -153,6 +184,11 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         content.frame = NSRect(x: 0, y: inset, width: width, height: height)
         let span = content.captionSpan(width: width)
         layoutCaption(top: content.frame.maxY, x: span.x, width: span.width)
+        if showsCredit {
+            let top = (captionVisible ? caption.frame.maxY : content.frame.maxY) + Self.creditGap
+            let size = creditLine.intrinsicContentSize
+            creditLine.frame = NSRect(x: span.x, y: top, width: min(size.width, span.width), height: size.height)
+        }
     }
 
     override func setBlockSelected(_ selected: Bool, animated: Bool) {
@@ -294,6 +330,89 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         failure = nil
         editor?.session.updateBlock(blockID, name: name) { block in
             block.props.source = value
+            block.props.credit = nil
+        }
+    }
+
+    var offersUnsplash: Bool { kind == .image && canEdit && NoteUnsplash.isAvailable }
+
+    func presentReplaceMenu(from anchor: NSView) {
+        guard canEdit else { return }
+        guard offersUnsplash, let editor else { replace(); return }
+        replacePopover?.close(animated: false)
+        let list = NoteMenuList(items: [
+            NoteMenuList.Item(id: "upload", title: "Upload…", icon: .symbol("square.and.arrow.up")),
+            NoteMenuList.Item(id: "unsplash", title: "Unsplash…", icon: .symbol("photo.on.rectangle.angled")),
+        ])
+        list.minimumWidth = 180
+        let popover = NotePagePopover(content: list)
+        popover.exempt(anchor)
+        list.onActivate = { [weak self, weak popover, weak anchor] item in
+            popover?.close(animated: false)
+            guard let self else { return }
+            if item.id == "unsplash" { self.presentUnsplash(from: anchor ?? self) } else { self.replace() }
+        }
+        list.onCancel = { [weak popover] in popover?.close() }
+        popover.onKeyDown = { [weak list] event in list?.handleKeyDown(event) ?? false }
+        popover.onClose = { [weak self] in self?.replacePopover = nil }
+        replacePopover = popover
+        let overlay = editor.canvas.overlayView
+        popover.present(in: overlay, anchor: overlay.convert(anchor.bounds, from: anchor), edge: .below, alignment: .trailing)
+    }
+
+    func presentUnsplash(from anchor: NSView) {
+        guard offersUnsplash, let editor else { return }
+        unsplashPopover?.close(animated: false)
+        let browser = NoteUnsplashBrowser(orientation: nil)
+        let popover = NotePagePopover(content: browser)
+        popover.exempt(anchor)
+        browser.onOpen = { [weak self] url in self?.open(url) }
+        browser.onPick = { [weak self, weak browser, weak popover] photo in
+            guard let self, let browser else { return }
+            self.importUnsplash(photo, browser: browser, popover: popover)
+        }
+        popover.onClose = { [weak self] in
+            guard let self else { return }
+            self.unsplashPopover = nil
+            self.unsplashImport?.cancel()
+            self.unsplashImport = nil
+        }
+        unsplashPopover = popover
+        let overlay = editor.canvas.overlayView
+        let alignment: NoteFloatingPanel.Alignment = anchor === self || anchor is NoteMediaEmptyCard ? .leading : .trailing
+        popover.present(in: overlay, anchor: overlay.convert(anchor.bounds, from: anchor), edge: .below, alignment: alignment)
+        browser.focus()
+    }
+
+    private func importUnsplash(_ photo: NoteUnsplashPhoto, browser: NoteUnsplashBrowser, popover: NotePagePopover?) {
+        guard unsplashImport == nil, canEdit, let environment = editor?.environment else { return }
+        browser.busyPhotoID = photo.id
+        unsplashImport = Task { [weak self, weak browser, weak popover] in
+            do {
+                let imported = try await NoteUnsplashImport.importPhoto(photo, width: NoteUnsplash.imageWidth, environment: environment)
+                guard let self, !Task.isCancelled else { return }
+                self.unsplashImport = nil
+                browser?.busyPhotoID = nil
+                self.applyUnsplash(imported)
+                popover?.close()
+            } catch {
+                guard let self else { return }
+                self.unsplashImport = nil
+                browser?.busyPhotoID = nil
+                if !(error is CancellationError) { self.reportMediaError(error) }
+            }
+        }
+    }
+
+    private func applyUnsplash(_ imported: NoteUnsplashImport.Imported) {
+        guard canEdit else { return }
+        failure = nil
+        let name = (block.props.source == nil ? "Add " : "Replace ") + NoteMediaCopy.title(for: kind)
+        editor?.session.updateBlock(blockID, name: name) { block in
+            let replacesOwnAlt = block.props.credit != nil || (block.props.alt ?? "").isEmpty
+            block.props.source = imported.source
+            block.props.credit = imported.credit
+            if replacesOwnAlt { block.props.alt = imported.alt }
         }
     }
 
@@ -529,6 +648,7 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
     private let field = NSTextField()
     private let embedChip: NoteChip
     private let fieldUploadChip: NoteChip
+    private let unsplashChip = NoteChip("Unsplash", icon: .symbol("photo.on.rectangle.angled"))
     private let hint: NSTextField
     private var enteringLink = false
     private static let height: CGFloat = 52
@@ -561,7 +681,12 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
         linkChip.onPress = { [weak self] in self?.setEnteringLink(true) }
         embedChip.onPress = { [weak self] in self?.submitLink() }
         fieldUploadChip.onPress = { [weak self] in self?.host?.replace() }
-        for view in [icon, title, uploadChip, linkChip, field, embedChip, fieldUploadChip, hint] as [NSView] { addSubview(view) }
+        unsplashChip.setToolTip("Find a free photo on Unsplash")
+        unsplashChip.onPress = { [weak self] in
+            guard let self else { return }
+            self.host?.presentUnsplash(from: self)
+        }
+        for view in [icon, title, uploadChip, linkChip, unsplashChip, field, embedChip, fieldUploadChip, hint] as [NSView] { addSubview(view) }
         registerForDraggedTypes([.fileURL, .png, .tiff])
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
@@ -585,6 +710,7 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
         title.isHidden = linking
         uploadChip.isHidden = linking || !editable
         linkChip.isHidden = linking || !editable
+        unsplashChip.isHidden = linking || host?.offersUnsplash != true
         field.isHidden = !linking
         embedChip.isHidden = !linking
         fieldUploadChip.isHidden = !linking
@@ -599,7 +725,7 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
         enteringLink = entering
         applyMode()
         layoutSubtreeIfNeeded()
-        for view in entering ? [field, embedChip, fieldUploadChip] as [NSView] : [title, uploadChip, linkChip] {
+        for view in entering ? [field, embedChip, fieldUploadChip] as [NSView] : [title, uploadChip, linkChip, unsplashChip] {
             guard let layer = view.layer ?? { view.wantsLayer = true; return view.layer }() else { continue }
             MainActor.assumeIsolated { NoteMediaMotion.fadeIn(layer, duration: 0.15) }
         }
@@ -670,13 +796,20 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
             field.frame = NSRect(x: 44, y: (height - fieldHeight) / 2, width: max(40, trailing - 44 - (hintWidth > 0 ? hintWidth + 8 : 0)), height: fieldHeight)
             hint.frame = NSRect(x: field.frame.maxX + 8, y: (height - 16) / 2, width: hintWidth, height: 16)
         } else {
-            let linkWidth = linkChip.intrinsicContentSize.width, uploadWidth = uploadChip.intrinsicContentSize.width
-            let showsChips = editable && bounds.width > 300
-            linkChip.isHidden = !showsChips
-            uploadChip.isHidden = !showsChips
-            linkChip.frame = NSRect(x: trailing - linkWidth, y: (height - NoteTheme.chipHeight) / 2, width: linkWidth, height: NoteTheme.chipHeight)
-            uploadChip.frame = NSRect(x: linkChip.frame.minX - 4 - uploadWidth, y: linkChip.frame.minY, width: uploadWidth, height: NoteTheme.chipHeight)
-            trailing = showsChips ? uploadChip.frame.minX - 8 : bounds.width - 12
+            let chips = [uploadChip, linkChip] + (host?.offersUnsplash == true ? [unsplashChip] : [])
+            let chipsWidth = chips.reduce(CGFloat(0)) { $0 + $1.intrinsicContentSize.width } + CGFloat(chips.count - 1) * 4
+            let showsChips = editable && bounds.width - 12 - 44 >= chipsWidth
+            let showsTitle = !showsChips || bounds.width - 12 - 44 - chipsWidth - 8 >= 96
+            for chip in [uploadChip, linkChip, unsplashChip] { chip.isHidden = !showsChips || !chips.contains(chip) }
+            if showsChips {
+                for chip in chips.reversed() {
+                    let width = chip.intrinsicContentSize.width
+                    chip.frame = NSRect(x: trailing - width, y: (height - NoteTheme.chipHeight) / 2, width: width, height: NoteTheme.chipHeight)
+                    trailing = chip.frame.minX - 4
+                }
+                trailing -= 4
+            }
+            title.isHidden = !showsTitle
             title.frame = NSRect(x: 44, y: (height - 20) / 2, width: max(0, trailing - 44), height: 20)
         }
     }

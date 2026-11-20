@@ -50,7 +50,10 @@ final class NoteImageContentView: NoteMediaContentView {
         }
         alignChip.onPress = { [weak self] in self?.toggleAlignmentMenu() }
         captionChip.onPress = { [weak self] in self?.host?.revealCaption() }
-        replaceChip.onPress = { [weak self] in self?.host?.replace() }
+        replaceChip.onPress = { [weak self] in
+            guard let self else { return }
+            self.host?.presentReplaceMenu(from: self.replaceChip)
+        }
         downloadChip.onPress = { [weak self] in self?.host?.download() }
         openChip.onPress = { [weak self] in
             guard let self else { return }

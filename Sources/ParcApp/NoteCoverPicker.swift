@@ -4,24 +4,29 @@ import UniformTypeIdentifiers
 @MainActor
 final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
     enum Tab: Int, CaseIterable {
-        case gallery, upload, link
+        case gallery, upload, link, unsplash
 
         var title: String {
             switch self {
             case .gallery: return "Gallery"
             case .upload: return "Upload"
             case .link: return "Link"
+            case .unsplash: return "Unsplash"
             }
         }
+
+        static var available: [Tab] { allCases.filter { $0 != .unsplash || NoteUnsplash.isAvailable } }
     }
 
     static let size = NSSize(width: 452, height: 332)
+    static let unsplashSize = NSSize(width: 452, height: 448)
     static let columns = 3
     private static var thumbnails: [String: NSImage] = [:]
 
     let environment: NoteEnvironment
     let hasCover: Bool
-    var onChoose: ((String) -> Void)?
+    let tabs = Tab.available
+    var onChoose: ((NoteCover) -> Void)?
     var onRemove: (() -> Void)?
     var onError: ((Error) -> Void)?
     var preferredSizeDidChange: (() -> Void)?
@@ -36,6 +41,9 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
     private let linkButton = NoteChip("Use Link", style: .filled)
     private let linkHint = NSTextField(wrappingLabelWithString: "Works with any image on the web.")
     private var busyStyle: String?
+    private var unsplash: NoteUnsplashBrowser?
+    private var unsplashImport: Task<Void, Never>?
+    var onOpen: ((URL) -> Void)?
 
     init(environment: NoteEnvironment, hasCover: Bool) {
         self.environment = environment
@@ -45,7 +53,7 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Cover Picker")
-        for item in Tab.allCases {
+        for item in tabs {
             let button = NoteToolbarButton(.text(item.title), label: item.title)
             button.onPress = { [weak self] in self?.select(item) }
             tabButtons[item] = button
@@ -79,15 +87,36 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
         addSubview(linkField)
         addSubview(linkButton)
         addSubview(linkHint)
+        if tabs.contains(.unsplash) {
+            let browser = NoteUnsplashBrowser(orientation: .landscape)
+            browser.onPick = { [weak self] photo in self?.pickUnsplash(photo) }
+            browser.onOpen = { [weak self] url in self?.onOpen?(url) }
+            browser.isHidden = true
+            addSubview(browser)
+            unsplash = browser
+        }
         select(.gallery)
         refreshAppearance()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    deinit {
+        unsplashImport?.cancel()
+    }
+
     override var isFlipped: Bool { true }
-    override var intrinsicContentSize: NSSize { Self.size }
-    override var fittingSize: NSSize { Self.size }
+    var currentSize: NSSize { tab == .unsplash ? Self.unsplashSize : Self.size }
+    override var intrinsicContentSize: NSSize { currentSize }
+    override var fittingSize: NSSize { currentSize }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window == nil else { return }
+        unsplashImport?.cancel()
+        unsplashImport = nil
+        unsplash?.busyPhotoID = nil
+    }
 
     static func thumbnail(for style: NoteCoverStyle) -> NSImage? {
         if let cached = thumbnails[style.id] { return cached }
@@ -120,16 +149,24 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
     }
 
     func select(_ next: Tab) {
+        guard tabs.contains(next) else { return }
+        let previousSize = currentSize
         tab = next
         for (item, button) in tabButtons { button.isChecked = item == next }
-        let gallery = next == .gallery, upload = next == .upload, link = next == .link
+        let gallery = next == .gallery, upload = next == .upload, link = next == .link, photos = next == .unsplash
         galleryHeader.isHidden = !gallery
         for tile in tiles { tile.isHidden = !gallery }
         dropZone.isHidden = !upload
         linkField.isHidden = !link
         linkButton.isHidden = !link
         linkHint.isHidden = !link
+        unsplash?.isHidden = !photos
         if link { linkField.focus() }
+        if photos { unsplash?.focus() }
+        if currentSize != previousSize {
+            setFrameSize(currentSize)
+            preferredSizeDidChange?()
+        }
         needsLayout = true
     }
 
@@ -137,7 +174,7 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
         super.layout()
         var x: CGFloat = 8
         let tabHeight = NoteTheme.toolbarButtonSize.height
-        for item in Tab.allCases {
+        for item in tabs {
             guard let button = tabButtons[item] else { continue }
             let width = button.intrinsicContentSize.width
             button.frame = NSRect(x: x, y: 8, width: width, height: tabHeight)
@@ -166,6 +203,7 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
                                   width: buttonWidth, height: NoteTheme.chipHeight)
         let hintHeight = ceil(linkHint.sizeThatFits(NSSize(width: bounds.width - inset * 2 - 4, height: 200)).height)
         linkHint.frame = NSRect(x: inset + 2, y: linkField.frame.maxY + 10, width: bounds.width - inset * 2 - 4, height: hintHeight)
+        unsplash?.frame = NSRect(x: 0, y: top - 2, width: bounds.width, height: max(0, bounds.height - top + 2))
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -187,15 +225,35 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
             self.busyStyle = nil
             for tile in self.tiles { tile.isBusy = false }
             switch result {
-            case .success(let source): self.onChoose?(source)
+            case .success(let source): self.onChoose?(NoteCover(source: source))
             case .failure(let error): self.onError?(error)
+            }
+        }
+    }
+
+    private func pickUnsplash(_ photo: NoteUnsplashPhoto) {
+        guard unsplashImport == nil, let unsplash else { return }
+        unsplash.busyPhotoID = photo.id
+        let environment = self.environment
+        unsplashImport = Task { [weak self] in
+            do {
+                let imported = try await NoteUnsplashImport.importPhoto(photo, width: NoteUnsplash.coverWidth, environment: environment)
+                guard let self, !Task.isCancelled else { return }
+                self.unsplashImport = nil
+                self.unsplash?.busyPhotoID = nil
+                self.onChoose?(NoteCover(source: imported.source, credit: imported.credit))
+            } catch {
+                guard let self else { return }
+                self.unsplashImport = nil
+                self.unsplash?.busyPhotoID = nil
+                if !(error is CancellationError) { self.onError?(error) }
             }
         }
     }
 
     private func importFile(_ url: URL) {
         do {
-            onChoose?(try NoteMediaImport.source(importing: url, environment: environment, scoped: true))
+            onChoose?(NoteCover(source: try NoteMediaImport.source(importing: url, environment: environment, scoped: true)))
         } catch {
             onError?(error)
         }
@@ -209,7 +267,7 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
             needsLayout = true
             return
         }
-        onChoose?(url.absoluteString)
+        onChoose?(NoteCover(source: url.absoluteString))
     }
 
     private func resetLinkHint() {
