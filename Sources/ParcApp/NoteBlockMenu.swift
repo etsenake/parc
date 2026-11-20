@@ -556,6 +556,16 @@ final class NoteBlockMenuController: NSObject {
                 editor.open(url)
                 return
             }
+        case .cropImage:
+            dismiss(animated: true, restore: false)
+            (editor.canvas.blockView(for: live[0]) as? NoteMediaBlockView)?.beginCrop()
+            return
+        case .altText:
+            dismiss(animated: true, restore: false)
+            (editor.canvas.blockView(for: live[0]) as? NoteMediaBlockView)?.editAltText()
+            return
+        case .mask(let mask):
+            (editor.canvas.blockView(for: live[0]) as? NoteMediaBlockView)?.applyMask(mask)
         case .copyOriginalLink:
             if let source = page.block(live[0])?.props.source {
                 let pasteboard = NSPasteboard.general

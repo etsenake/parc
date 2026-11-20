@@ -4,6 +4,10 @@ import AppKit
 final class NoteMediaZoomOverlay: NSView {
     private let backdrop = CALayer()
     private let picture = CALayer()
+    private let content = CALayer()
+    private let shape = CAShapeLayer()
+    private var crop = NoteImageCrop.full
+    private var mask: NoteImageMask?
     private var image: NoteMediaImage
     private let source: URL?
     private var originRect: NSRect
@@ -21,7 +25,12 @@ final class NoteMediaZoomOverlay: NSView {
         wantsLayer = true
         layer?.masksToBounds = true
         backdrop.opacity = 0
-        picture.contentsGravity = .resizeAspect
+        content.contentsGravity = .resize
+        content.anchorPoint = .zero
+        content.minificationFilter = .trilinear
+        shape.anchorPoint = .zero
+        shape.fillColor = NSColor.black.cgColor
+        picture.addSublayer(content)
         picture.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         picture.cornerCurve = .continuous
         picture.cornerRadius = NoteMediaStyle.imageRadius
@@ -43,7 +52,8 @@ final class NoteMediaZoomOverlay: NSView {
 
     @discardableResult
     static func present(image: NoteMediaImage, source: URL?, from rect: NSRect, of view: NSView,
-                        in canvas: NotePageCanvasView, onClose: (() -> Void)? = nil) -> NoteMediaZoomOverlay {
+                        in canvas: NotePageCanvasView, onClose: (() -> Void)? = nil,
+                        crop: NoteImageCrop? = nil, mask: NoteImageMask? = nil) -> NoteMediaZoomOverlay {
         let host = canvas.overlayView
         let visible = canvas.visibleRect.isEmpty ? canvas.bounds : canvas.visibleRect
         let frame = host.convert(visible, from: canvas)
@@ -51,6 +61,12 @@ final class NoteMediaZoomOverlay: NSView {
         overlay.frame = frame
         overlay.originRect = overlay.convert(rect, from: view)
         overlay.onClose = onClose
+        overlay.crop = crop ?? .full
+        overlay.mask = mask
+        if mask != nil {
+            overlay.picture.cornerRadius = 0
+            overlay.picture.mask = overlay.shape
+        }
         host.addSubview(overlay)
         overlay.open()
         return overlay
@@ -63,10 +79,11 @@ final class NoteMediaZoomOverlay: NSView {
         let scale = window?.backingScaleFactor ?? 2
         NoteMediaMotion.instant {
             backdrop.frame = bounds
-            picture.contents = image.first
-            picture.contentsScale = scale
+            content.contents = image.first
+            content.contentsScale = scale
             picture.bounds = CGRect(origin: .zero, size: originRect.size)
             picture.position = CGPoint(x: originRect.midX, y: originRect.midY)
+            placeInner(for: originRect.size)
         }
         startAnimating()
         let target = fittedRect()
@@ -79,7 +96,8 @@ final class NoteMediaZoomOverlay: NSView {
     private func fittedRect() -> NSRect {
         let area = bounds.insetBy(dx: Self.margin, dy: Self.margin)
         guard area.width > 0, area.height > 0 else { return bounds }
-        let natural = image.pointSize.width > 0 ? image.pointSize : CGSize(width: image.first.width, height: image.first.height)
+        let whole = image.pointSize.width > 0 ? image.pointSize : CGSize(width: image.first.width, height: image.first.height)
+        let natural = crop.croppedSize(of: whole)
         let fit = min(area.width / natural.width, area.height / natural.height)
         let current = originRect.width / max(1, natural.width)
         let ratio = max(min(fit, 2), min(current, fit))
@@ -93,9 +111,13 @@ final class NoteMediaZoomOverlay: NSView {
         let fromPosition = picture.presentation()?.position ?? picture.position
         let toBounds = CGRect(origin: .zero, size: rect.size)
         let toPosition = CGPoint(x: rect.midX, y: rect.midY)
+        let fromContentBounds = content.presentation()?.bounds ?? content.bounds
+        let fromContentPosition = content.presentation()?.position ?? content.position
+        let fromPath = shape.presentation()?.path ?? shape.path
         NoteMediaMotion.instant {
             picture.bounds = toBounds
             picture.position = toPosition
+            placeInner(for: rect.size)
         }
         guard !NoteAnimation.reduceMotion else {
             picture.removeAnimation(forKey: "zoom.bounds")
@@ -117,6 +139,12 @@ final class NoteMediaZoomOverlay: NSView {
         CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion?() } }
         picture.add(bounds, forKey: "zoom.bounds")
         picture.add(position, forKey: "zoom.position")
+        content.add(NoteAnimation.spring("bounds", spring, from: NSValue(rect: fromContentBounds), to: NSValue(rect: content.bounds)), forKey: "zoom.content.bounds")
+        content.add(NoteAnimation.spring("position", spring, from: NSValue(point: fromContentPosition), to: NSValue(point: content.position)),
+                    forKey: "zoom.content.position")
+        if mask != nil, let fromPath, let toPath = shape.path {
+            shape.add(NoteAnimation.spring("path", spring, from: fromPath, to: toPath), forKey: "zoom.shape.path")
+        }
         CATransaction.commit()
     }
 
@@ -139,15 +167,15 @@ final class NoteMediaZoomOverlay: NSView {
         NoteMediaImageLoader.shared.load(source, pixels: pixels) { [weak self] result in
             guard let self, !self.closing, case .success(let sharper) = result else { return }
             self.image = sharper
-            NoteMediaMotion.instant { self.picture.contents = sharper.first }
+            NoteMediaMotion.instant { self.content.contents = sharper.first }
             self.startAnimating()
         }
     }
 
     private func startAnimating() {
-        picture.removeAnimation(forKey: "zoom.frames")
+        content.removeAnimation(forKey: "zoom.frames")
         guard image.isAnimated, !NoteAnimation.reduceMotion else { return }
-        picture.add(NoteImageFrames.animation(for: image), forKey: "zoom.frames")
+        content.add(NoteImageFrames.animation(for: image), forKey: "zoom.frames")
     }
 
     func close() {
@@ -170,7 +198,17 @@ final class NoteMediaZoomOverlay: NSView {
         NoteMediaMotion.instant {
             picture.bounds = CGRect(origin: .zero, size: target.size)
             picture.position = CGPoint(x: target.midX, y: target.midY)
+            placeInner(for: target.size)
         }
+    }
+
+    private func placeInner(for size: CGSize) {
+        let local = CGRect(origin: .zero, size: size)
+        let full = crop.fullRect(forFrame: local)
+        content.bounds = CGRect(origin: .zero, size: full.size)
+        content.position = full.origin
+        shape.frame = local
+        shape.path = mask?.path(in: local)
     }
 
     override func viewDidChangeEffectiveAppearance() {

@@ -9,18 +9,21 @@ protocol NoteMediaResizing: AnyObject {
 
 @MainActor
 final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
+    private let frameLayer = CALayer()
     private let picture = CALayer()
-    private let ring = CALayer()
+    private let maskLayer = CAShapeLayer()
+    private let ring = CAShapeLayer()
     private let shimmer = NoteMediaShimmer()
     private let leadingHandle = NoteMediaResizeHandle(edge: .leading)
     private let trailingHandle = NoteMediaResizeHandle(edge: .trailing)
     private let toolbar = NoteMediaToolbar()
+    private let altBadge = NoteMediaAltBadge()
     private let alignChip = NoteToolbarButton(icon: .symbol("text.aligncenter"), label: "Alignment")
     private let captionChip = NoteToolbarButton(icon: .symbol("text.below.photo"), label: "Caption")
     private let replaceChip = NoteToolbarButton(icon: .symbol("arrow.triangle.2.circlepath"), label: "Replace")
     private let downloadChip = NoteToolbarButton(icon: .symbol("arrow.down.to.line"), label: "Download")
     private let openChip = NoteToolbarButton(icon: .symbol("eye"), label: "Open in Quick Look")
-    private let deleteChip = NoteToolbarButton(icon: .symbol("trash"), label: "Delete")
+    private let moreChip = NoteToolbarButton(icon: .symbol("ellipsis"), label: "More")
     private var source: NoteMediaSource = .empty
     private var props = NoteBlockProps()
     private var natural: CGSize?
@@ -33,20 +36,30 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
     private var alignmentMenu: NoteFloatingPanel?
     private var menuMonitor: Any?
     private var observer: NSObjectProtocol?
+    private var morePopover: NotePagePopover?
+    private var framingPopover: NotePagePopover?
+    private(set) var cropEditor: NoteImageCropEditor?
+    private var animatesNextLayout = false
+    private var clickAwayMonitor: Any?
+    private weak var responderBeforeCrop: NSResponder?
+    static let cropMaximumHeight: CGFloat = 560
 
     override init(host: NoteMediaBlockView) {
         super.init(host: host)
+        frameLayer.masksToBounds = true
+        frameLayer.cornerRadius = NoteMediaStyle.imageRadius
+        frameLayer.cornerCurve = .continuous
         picture.contentsGravity = .resizeAspectFill
-        picture.masksToBounds = true
-        picture.cornerRadius = NoteMediaStyle.imageRadius
-        picture.cornerCurve = .continuous
+        picture.anchorPoint = .zero
         picture.minificationFilter = .trilinear
         picture.opacity = 0
-        ring.cornerRadius = NoteMediaStyle.imageRadius + 2
-        ring.cornerCurve = .continuous
-        ring.borderWidth = 2
+        maskLayer.fillColor = NSColor.black.cgColor
+        maskLayer.anchorPoint = .zero
+        ring.fillColor = nil
+        ring.lineWidth = 2
         ring.isHidden = true
-        layer?.addSublayer(picture)
+        frameLayer.addSublayer(picture)
+        layer?.addSublayer(frameLayer)
         layer?.addSublayer(ring)
         addSubview(shimmer)
         for handle in [leadingHandle, trailingHandle] {
@@ -66,8 +79,10 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
             guard let self else { return }
             self.host?.quickLook(from: self.imageRect, in: self)
         }
-        deleteChip.onPress = { [weak self] in self?.host?.deleteBlock() }
+        moreChip.onPress = { [weak self] in self?.toggleMoreMenu() }
+        altBadge.onPress = { [weak self] in self?.editAltText() }
         addSubview(toolbar)
+        addSubview(altBadge)
         observer = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -81,13 +96,16 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
     deinit {
         if let observer { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
         if let menuMonitor { NSEvent.removeMonitor(menuMonitor) }
+        if let clickAwayMonitor { NSEvent.removeMonitor(clickAwayMonitor) }
     }
 
     override func update(block: NoteBlock, source: NoteMediaSource) {
         let changed = source != self.source
+        let framingChanged = block.props.crop != props.crop || block.props.mask != props.mask
         self.source = source
         props = block.props
         if changed {
+            if cropEditor != nil { finishCrop(save: false) }
             image = nil
             requestedPixels = 0
             NoteMediaMotion.instant { picture.contents = nil; picture.opacity = 0 }
@@ -97,8 +115,11 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
                 natural = cached.pointSize
                 show(cached, animated: false)
             }
+        } else if framingChanged, window != nil, image != nil {
+            animatesNextLayout = true
         }
         configureToolbar()
+        refreshBadge()
         needsLayout = true
     }
 
@@ -109,21 +130,49 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
 
     private var editable: Bool { host?.canEdit == true }
 
+    private var altText: String { props.alt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
+
+    private var shownCrop: NoteImageCrop { cropEditor == nil ? (props.crop ?? .full) : .full }
+
+    private var framedNatural: CGSize? { natural.map { (props.crop ?? .full).croppedSize(of: $0) } }
+
     private func displayWidth(for column: CGFloat) -> CGFloat {
         if let liveWidth { return liveWidth }
-        return NoteMediaLayout.displayWidth(fraction: props.width, natural: natural, columnWidth: column)
+        return NoteMediaLayout.displayWidth(fraction: props.width, natural: framedNatural, columnWidth: column)
     }
 
-    private func rect(for column: CGFloat) -> NSRect {
+    private func frameRect(for column: CGFloat) -> NSRect {
         let width = displayWidth(for: column)
+        let natural = framedNatural ?? props.crop.map { crop in
+            CGSize(width: CGFloat(crop.width), height: CGFloat(crop.height) * NoteMediaLayout.fallbackAspect)
+        }
         let height = NoteMediaLayout.displayHeight(width: width, natural: natural)
         let x = NoteMediaLayout.originX(width: width, alignment: props.alignment, columnWidth: column)
         return NSRect(x: x, y: 0, width: width, height: max(1, height))
     }
 
+    private func cropRect(for column: CGFloat) -> NSRect {
+        let frame = frameRect(for: column)
+        let crop = props.crop ?? .full
+        let aspect = NoteMediaLayout.aspect(of: natural)
+        var width = min(column, max(frame.width, frame.width / CGFloat(crop.width)))
+        if width * aspect > Self.cropMaximumHeight { width = max(min(column, NoteMediaLayout.minimumWidth), Self.cropMaximumHeight / aspect) }
+        width = width.rounded()
+        let x = NoteMediaLayout.originX(width: width, alignment: props.alignment, columnWidth: column)
+        return NSRect(x: x, y: 0, width: width, height: max(1, (width * aspect).rounded()))
+    }
+
+    private func rect(for column: CGFloat) -> NSRect {
+        cropEditor == nil ? frameRect(for: column) : cropRect(for: column)
+    }
+
     var imageRect: NSRect { rect(for: bounds.width) }
 
-    override func measureHeight(width: CGFloat) -> CGFloat { rect(for: width).height }
+    override func measureHeight(width: CGFloat) -> CGFloat {
+        let height = rect(for: width).height
+        return cropEditor == nil ? height : height + NoteImageCropEditor.barGap + NoteImageCropEditor.barHeight
+    }
+
     override var handleAnchorY: CGFloat { 14 }
 
     override func captionSpan(width: CGFloat) -> (x: CGFloat, width: CGFloat) {
@@ -137,13 +186,16 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
         super.layout()
         let frame = imageRect
         let anchorX: CGFloat = props.alignment == .left ? 0 : props.alignment == .right ? 1 : 0.5
+        let local = CGRect(origin: .zero, size: frame.size)
+        let pictureRect = shownCrop.fullRect(forFrame: local)
+        let mask = cropEditor == nil ? props.mask : nil
+        let animated = animatesNextLayout && window != nil && !NoteAnimation.reduceMotion
+        animatesNextLayout = false
+        applyGeometry(frame: frame, anchorX: anchorX, picture: pictureRect, maskPath: mask?.path(in: local), animated: animated)
         NoteMediaMotion.instant {
-            picture.anchorPoint = CGPoint(x: anchorX, y: 0)
-            picture.bounds = CGRect(origin: .zero, size: frame.size)
-            picture.position = CGPoint(x: frame.minX + anchorX * frame.width, y: frame.minY)
             picture.contentsScale = window?.backingScaleFactor ?? 2
-            ring.frame = frame.insetBy(dx: -3, dy: -3)
-            ring.borderColor = NoteMediaStyle.cg(NoteTheme.accent, in: self)
+            ring.path = Self.ringPath(frame: frame, mask: mask)
+            ring.strokeColor = NoteMediaStyle.cg(NoteTheme.accent, in: self)
         }
         shimmer.frame = frame
         shimmer.isHidden = image != nil
@@ -153,6 +205,14 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
         let toolbarWidth = toolbar.fittingWidth
         let toolbarX = min(max(0, frame.maxX - 8 - toolbarWidth), max(0, bounds.width - toolbarWidth))
         toolbar.frame = NSRect(x: toolbarX, y: frame.minY + 8, width: toolbarWidth, height: NoteMediaToolbar.height)
+        let badgeSize = altBadge.intrinsicContentSize
+        let badgeInset: CGFloat = mask == nil ? 8 : max(8, min(frame.width, frame.height) * 0.16)
+        altBadge.frame = NSRect(x: frame.minX + badgeInset, y: frame.maxY - badgeInset - badgeSize.height,
+                                width: badgeSize.width, height: badgeSize.height)
+        if let cropEditor {
+            cropEditor.frame = bounds
+            cropEditor.imageRect = frame
+        }
         if let settleScale {
             self.settleScale = nil
             settle(from: settleScale)
@@ -160,11 +220,56 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
         requestIfNeeded()
     }
 
+    private static func ringPath(frame: NSRect, mask: NoteImageMask?) -> CGPath {
+        let outset = frame.insetBy(dx: -3, dy: -3)
+        if let mask { return mask.path(in: outset) }
+        let radius = NoteMediaStyle.imageRadius + 2
+        return CGPath(roundedRect: outset, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
+    private func applyGeometry(frame: NSRect, anchorX: CGFloat, picture pictureRect: CGRect, maskPath: CGPath?, animated: Bool) {
+        let fromBounds = frameLayer.presentation()?.bounds ?? frameLayer.bounds
+        let fromPosition = frameLayer.presentation()?.position ?? frameLayer.position
+        let fromPictureBounds = picture.presentation()?.bounds ?? picture.bounds
+        let fromPicturePosition = picture.presentation()?.position ?? picture.position
+        let fromPath = frameLayer.mask === maskLayer ? (maskLayer.presentation()?.path ?? maskLayer.path) : nil
+        let toBounds = CGRect(origin: .zero, size: frame.size)
+        let toPosition = CGPoint(x: frame.minX + anchorX * frame.width, y: frame.minY)
+        let toPictureBounds = CGRect(origin: .zero, size: pictureRect.size)
+        NoteMediaMotion.instant {
+            frameLayer.anchorPoint = CGPoint(x: anchorX, y: 0)
+            frameLayer.bounds = toBounds
+            frameLayer.position = toPosition
+            picture.bounds = toPictureBounds
+            picture.position = pictureRect.origin
+            if let maskPath {
+                maskLayer.frame = toBounds
+                maskLayer.path = maskPath
+                frameLayer.mask = maskLayer
+                frameLayer.cornerRadius = 0
+            } else {
+                frameLayer.mask = nil
+                frameLayer.cornerRadius = NoteMediaStyle.imageRadius
+            }
+        }
+        guard animated else { return }
+        func spring(_ layer: CALayer, _ keyPath: String, _ from: Any, _ to: Any) {
+            layer.add(NoteAnimation.spring(keyPath, .settle, from: from, to: to), forKey: "media.frame." + keyPath)
+        }
+        if fromBounds != toBounds { spring(frameLayer, "bounds", NSValue(rect: fromBounds), NSValue(rect: toBounds)) }
+        if fromPosition != toPosition { spring(frameLayer, "position", NSValue(point: fromPosition), NSValue(point: toPosition)) }
+        if fromPictureBounds != toPictureBounds { spring(picture, "bounds", NSValue(rect: fromPictureBounds), NSValue(rect: toPictureBounds)) }
+        if fromPicturePosition != pictureRect.origin {
+            spring(picture, "position", NSValue(point: fromPicturePosition), NSValue(point: pictureRect.origin))
+        }
+        if let fromPath, let maskPath { spring(maskLayer, "path", fromPath, maskPath) }
+    }
+
     private func requestIfNeeded() {
         guard let url = source.url, bounds.width > 0 else { return }
-        let frame = imageRect
+        let full = shownCrop.fullRect(forFrame: imageRect)
         let scale = window?.backingScaleFactor ?? 2
-        let pixels = NoteMediaImageLoader.pixels(for: frame.size, scale: scale)
+        let pixels = NoteMediaImageLoader.pixels(for: full.size, scale: scale)
         let bucket = NoteMediaImageLoader.bucket(for: pixels)
         if let image, image.decodedPixels >= min(bucket, maxNaturalPixels) { return }
         guard bucket > requestedPixels else { return }
@@ -202,6 +307,7 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
             NoteMediaMotion.instant { picture.opacity = 1 }
         }
         refreshAnimation()
+        cropEditor?.imageDidLoad()
     }
 
     private func refreshAnimation() {
@@ -222,9 +328,8 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
 
     private func reduceMotionChanged() {
         if NoteAnimation.reduceMotion {
-            picture.removeAnimation(forKey: "media.settle")
-            picture.removeAnimation(forKey: "media.fadeIn")
-            NoteMediaMotion.instant { picture.transform = CATransform3DIdentity }
+            for layer in [frameLayer, picture, maskLayer] as [CALayer] { layer.removeAllAnimations() }
+            NoteMediaMotion.instant { frameLayer.transform = CATransform3DIdentity; picture.opacity = image == nil ? 0 : 1 }
             toolbar.layer?.removeAllAnimations()
         }
         refreshAnimation()
@@ -232,7 +337,12 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil { dismissMenu() }
+        if window == nil {
+            dismissMenu()
+            morePopover?.close(animated: false)
+            framingPopover?.close(animated: false)
+            if cropEditor != nil { finishCrop(save: false) }
+        }
         refreshAnimation()
     }
 
@@ -247,11 +357,14 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
     }
 
     override func setSelected(_ selected: Bool) {
-        NoteMediaMotion.instant { ring.isHidden = !selected }
+        NoteMediaMotion.instant { ring.isHidden = !selected || cropEditor != nil }
     }
 
     override func readOnlyDidChange() {
+        if !editable, cropEditor != nil { finishCrop(save: false) }
+        if !editable { framingPopover?.close(animated: false) }
         configureToolbar()
+        refreshBadge()
         setHovered(hovered)
     }
 
@@ -267,9 +380,15 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
         }
         chips.append(downloadChip)
         chips.append(openChip)
-        if editable { chips.append(deleteChip) }
+        chips.append(moreChip)
         toolbar.setButtons(chips)
         needsLayout = true
+    }
+
+    private func refreshBadge() {
+        altBadge.text = altText
+        altBadge.isEditable = editable
+        setHovered(hovered)
     }
 
     static func alignmentSymbol(_ alignment: NoteAlignment) -> String {
@@ -280,9 +399,13 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
         }
     }
 
+    private var menusOpen: Bool {
+        alignmentMenu != nil || morePopover?.isOpen == true || framingPopover?.isOpen == true
+    }
+
     override func setHovered(_ hovered: Bool) {
         self.hovered = hovered
-        let visible = (hovered || resizeStart != nil || alignmentMenu != nil) && image != nil
+        let visible = (hovered || resizeStart != nil || menusOpen) && image != nil && cropEditor == nil
         if visible {
             configureToolbar()
             layoutSubtreeIfNeeded()
@@ -292,13 +415,15 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
         }
         let showsHandles = visible && editable && imageRect.height >= 36
         for handle in [leadingHandle, trailingHandle] { handle.setRevealed(showsHandles) }
+        let fitsBadge = imageRect.width >= 64 && imageRect.height >= 40
+        altBadge.setRevealed(visible && !altText.isEmpty && fitsBadge)
     }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        guard imageRect.contains(point) else { super.mouseDown(with: event); return }
-        if event.clickCount >= 2, let image {
-            host?.zoom(image: image, from: imageRect, in: self)
+        guard cropEditor == nil, imageRect.contains(point) else { super.mouseDown(with: event); return }
+        if event.clickCount >= 2, image != nil {
+            _ = presentZoom()
             return
         }
         if host?.selectBlock(with: event) == true { return }
@@ -306,17 +431,17 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
     }
 
     override func resetCursorRects() {
-        if image != nil { addCursorRect(imageRect, cursor: .pointingHand) }
+        if image != nil, cropEditor == nil { addCursorRect(imageRect, cursor: .pointingHand) }
     }
 
     func presentZoom() -> Bool {
-        guard let image, let host else { return false }
-        host.zoom(image: image, from: imageRect, in: self)
+        guard let image, let host, cropEditor == nil else { return false }
+        host.zoom(image: image, from: imageRect, in: self, crop: props.crop, mask: props.mask)
         return true
     }
 
     func beginResize() {
-        guard editable else { return }
+        guard editable, cropEditor == nil else { return }
         resizeStart = (imageRect.width, bounds.width)
         dismissMenu()
     }
@@ -334,7 +459,7 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
         resizeStart = nil
         let live = liveWidth ?? start.width
         let fraction = NoteMediaLayout.storedFraction(width: live, columnWidth: start.column)
-        let settled = NoteMediaLayout.displayWidth(fraction: fraction, natural: natural, columnWidth: start.column)
+        let settled = NoteMediaLayout.displayWidth(fraction: fraction, natural: framedNatural, columnWidth: start.column)
         liveWidth = nil
         if settled > 0, abs(live - settled) > 0.5 { settleScale = live / settled }
         if props.width != fraction { host?.commitWidth(fraction) }
@@ -346,9 +471,206 @@ final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
     private func settle(from scale: CGFloat) {
         guard !NoteAnimation.reduceMotion else { return }
         let from = CATransform3DMakeScale(scale, scale, 1)
-        NoteMediaMotion.instant { picture.transform = CATransform3DIdentity }
-        picture.add(NoteAnimation.spring("transform", .settle, from: NSValue(caTransform3D: from), to: NSValue(caTransform3D: CATransform3DIdentity)),
-                    forKey: "media.settle")
+        NoteMediaMotion.instant { frameLayer.transform = CATransform3DIdentity }
+        frameLayer.add(NoteAnimation.spring("transform", .settle, from: NSValue(caTransform3D: from), to: NSValue(caTransform3D: CATransform3DIdentity)),
+                       forKey: "media.settle")
+    }
+
+    private var overlay: NSView? { host?.editor?.canvas.overlayView }
+
+    private func toggleMoreMenu() {
+        if morePopover?.isOpen == true { morePopover?.close(); return }
+        guard let overlay else { return }
+        dismissMenu()
+        framingPopover?.close(animated: false)
+        let editable = self.editable
+        var items: [NoteMenuList.Item] = []
+        if editable {
+            items.append(NoteMenuList.Item(id: "crop", title: "Crop Image", icon: .symbol("crop"), isEnabled: image != nil && natural != nil))
+            items.append(NoteMenuList.Item(id: "mask", title: "Mask", subtitle: props.mask?.title ?? NoteImageMask.noneTitle,
+                                           icon: .symbol("square.on.circle"), hasSubmenu: true))
+            items.append(NoteMenuList.Item(id: "alt", title: "Alt Text", subtitle: altText.isEmpty ? nil : altText, icon: .symbol("text.bubble")))
+        }
+        items.append(NoteMenuList.Item(id: "fullScreen", title: "Full Screen", icon: .symbol("arrow.up.left.and.arrow.down.right"),
+                                       shortcut: "⌘↩", isEnabled: image != nil, separatorBefore: editable))
+        if source.url != nil {
+            items.append(NoteMenuList.Item(id: "original", title: "View Original", icon: .symbol("arrow.up.forward.square")))
+        }
+        if editable {
+            items.append(NoteMenuList.Item(id: "delete", title: "Delete", icon: .symbol("trash"), isDestructive: true, separatorBefore: true))
+        }
+        let list = NoteMenuList(items: items)
+        list.minimumWidth = 200
+        let popover = NotePagePopover(content: list)
+        popover.exempt(moreChip)
+        list.onActivate = { [weak self, weak popover, weak list] item in
+            guard let self else { return }
+            if item.id == "mask" {
+                guard let popover, let list, let row = list.rowFrame(forItemID: "mask") else { return }
+                self.presentMaskPicker(anchor: overlay.convert(row, from: list), edge: .trailing, parent: popover,
+                                       current: self.props.mask) { [weak self] mask in self?.applyMask(mask) }
+                return
+            }
+            popover?.close(animated: false)
+            self.performMoreItem(item.id)
+        }
+        list.onCancel = { [weak popover] in popover?.close() }
+        popover.onKeyDown = { [weak list] event in list?.handleKeyDown(event) ?? false }
+        popover.onClose = { [weak self, weak popover] in
+            guard let self, self.morePopover === popover else { return }
+            self.morePopover = nil
+            self.setHovered(self.hovered)
+        }
+        morePopover = popover
+        popover.present(in: overlay, anchor: overlay.convert(moreChip.bounds, from: moreChip), edge: .below, alignment: .trailing)
+        if NSApp.currentEvent?.type == .keyDown { list.prepare(origin: .keyboard); _ = list.moveHighlight(by: 1) }
+    }
+
+    private func performMoreItem(_ id: String) {
+        switch id {
+        case "crop": beginCrop()
+        case "alt": editAltText()
+        case "fullScreen": _ = presentZoom()
+        case "original": if let url = source.url { host?.open(url) }
+        case "delete": host?.deleteBlock()
+        default: break
+        }
+    }
+
+    func applyMask(_ mask: NoteImageMask?) {
+        guard editable, let host else { return }
+        let next = NoteImageFraming.applying(mask, to: props, natural: natural)
+        host.commitFraming(crop: next.crop, mask: next.mask, name: mask == nil ? "Remove Mask" : "Mask Image")
+    }
+
+    @discardableResult
+    func presentMaskPicker(anchor: NSRect, edge: NoteFloatingPanel.Edge, parent: NotePagePopover?, current: NoteImageMask?,
+                           onPick: @escaping (NoteImageMask?) -> Void) -> NotePagePopover? {
+        guard let overlay else { return nil }
+        let thumbnailCrop = cropEditor?.draftCrop ?? props.crop ?? .full
+        let picker = NoteImageMaskPicker(image: image?.first, crop: thumbnailCrop, current: current)
+        let popover = NotePagePopover(content: picker, parent: parent)
+        picker.onPick = { [weak popover] mask in
+            popover?.close()
+            parent?.close()
+            onPick(mask)
+        }
+        popover.onKeyDown = { [weak picker] event in picker?.handleKeyDown(event) ?? false }
+        popover.onClose = { [weak self, weak popover] in
+            guard let self, self.framingPopover === popover else { return }
+            self.framingPopover = nil
+            self.setHovered(self.hovered)
+        }
+        framingPopover = popover
+        popover.present(in: overlay, anchor: anchor, edge: edge, alignment: .leading)
+        return popover
+    }
+
+    func showMaskPicker() {
+        guard editable, overlay != nil else { return }
+        layoutSubtreeIfNeeded()
+        let anchor = overlayRect(of: NSRect(x: imageRect.minX, y: imageRect.minY + 8, width: imageRect.width, height: NoteMediaToolbar.height))
+        presentMaskPicker(anchor: anchor, edge: .below, parent: nil, current: props.mask) { [weak self] mask in self?.applyMask(mask) }
+    }
+
+    private func overlayRect(of rect: NSRect) -> NSRect {
+        guard let overlay else { return rect }
+        return overlay.convert(rect, from: self)
+    }
+
+    func editAltText() {
+        guard editable, let overlay else { return }
+        morePopover?.close(animated: false)
+        framingPopover?.close(animated: false)
+        layoutSubtreeIfNeeded()
+        let editor = NoteMediaAltTextEditor(text: props.alt ?? "")
+        let popover = NotePagePopover(content: editor)
+        editor.onCommit = { [weak self, weak popover] text in
+            popover?.close()
+            self?.host?.setAltText(text)
+        }
+        popover.onKeyDown = { [weak editor, weak popover] event in
+            guard event.keyCode == 53 else { return false }
+            editor?.cancel()
+            popover?.close()
+            return true
+        }
+        popover.onClose = { [weak self, weak popover, weak editor] in
+            editor?.commitIfPending()
+            guard let self, self.framingPopover === popover else { return }
+            self.framingPopover = nil
+            self.setHovered(self.hovered)
+        }
+        framingPopover = popover
+        let anchorRect = toolbar.isShown ? toolbar.frame : NSRect(x: imageRect.maxX - 1, y: imageRect.minY + 8, width: 1, height: NoteMediaToolbar.height)
+        popover.present(in: overlay, anchor: overlayRect(of: anchorRect), edge: .below, alignment: .trailing)
+        editor.focus()
+    }
+
+    func beginCrop() {
+        guard editable, cropEditor == nil, image != nil, let natural, let host else { return }
+        dismissMenu()
+        morePopover?.close(animated: false)
+        framingPopover?.close(animated: false)
+        toolbar.hideImmediately()
+        for handle in [leadingHandle, trailingHandle] { handle.setRevealed(false) }
+        altBadge.setRevealed(false)
+        let editor = NoteImageCropEditor(owner: self, crop: props.crop ?? .full, mask: props.mask, natural: natural)
+        responderBeforeCrop = window?.firstResponder
+        cropEditor = editor
+        addSubview(editor, positioned: .above, relativeTo: shimmer)
+        NoteMediaMotion.instant { ring.isHidden = true }
+        animatesNextLayout = window != nil
+        host.invalidateMeasuredHeight()
+        needsLayout = true
+        host.editor?.canvas.layoutSubtreeIfNeeded()
+        layoutSubtreeIfNeeded()
+        editor.appear()
+        window?.makeFirstResponder(editor)
+        window?.invalidateCursorRects(for: self)
+        installClickAwayMonitor()
+    }
+
+    func finishCrop(save: Bool) {
+        guard let editor = cropEditor else { return }
+        let result = editor.result
+        removeClickAwayMonitor()
+        let ownedFocus = window?.firstResponder === editor
+        cropEditor = nil
+        animatesNextLayout = window != nil
+        editor.disappear()
+        if save { host?.commitFraming(crop: result.crop, mask: result.mask, name: "Crop Image") }
+        host?.invalidateMeasuredHeight()
+        needsLayout = true
+        if ownedFocus, let window {
+            if let responder = responderBeforeCrop, (responder as? NSView)?.window === window { window.makeFirstResponder(responder) }
+            else if let host { window.makeFirstResponder(host) }
+        }
+        responderBeforeCrop = nil
+        window?.invalidateCursorRects(for: self)
+        setSelected(host?.isBlockSelected == true)
+        setHovered(hovered)
+    }
+
+    private func installClickAwayMonitor() {
+        removeClickAwayMonitor()
+        clickAwayMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            let location = event.locationInWindow, windowNumber = event.windowNumber
+            MainActor.assumeIsolated { self?.clickAway(at: location, windowNumber: windowNumber) }
+            return event
+        }
+    }
+
+    private func removeClickAwayMonitor() {
+        if let clickAwayMonitor { NSEvent.removeMonitor(clickAwayMonitor) }
+        clickAwayMonitor = nil
+    }
+
+    private func clickAway(at location: NSPoint, windowNumber: Int) {
+        guard cropEditor != nil, let window, windowNumber == window.windowNumber else { return }
+        if bounds.contains(convert(location, from: nil)) { return }
+        if let topmost = NotePagePopover.topmost, topmost.contains(windowPoint: location, in: window) { return }
+        finishCrop(save: true)
     }
 
     private func toggleAlignmentMenu() {

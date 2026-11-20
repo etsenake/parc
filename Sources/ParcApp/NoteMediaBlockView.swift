@@ -267,6 +267,8 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         case .image:
             setAccessibilityRole(.image)
             setAccessibilityLabel(name.isEmpty ? "Image" : name)
+            let framing = [block.props.crop == nil ? nil : "cropped", block.props.mask.map { $0.title.lowercased() + " shape" }].compactMap { $0 }
+            setAccessibilityValue(framing.isEmpty ? nil : framing.joined(separator: ", "))
         default:
             setAccessibilityRole(.group)
             setAccessibilityLabel(name.isEmpty ? NoteMediaCopy.title(for: kind) : name)
@@ -333,6 +335,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         editor?.session.updateBlock(blockID, name: name) { block in
             block.props.source = value
             block.props.credit = nil
+            block.props.crop = nil
         }
     }
 
@@ -414,6 +417,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
             let replacesOwnAlt = block.props.credit != nil || (block.props.alt ?? "").isEmpty
             block.props.source = imported.source
             block.props.credit = imported.credit
+            block.props.crop = nil
             if replacesOwnAlt { block.props.alt = imported.alt }
         }
     }
@@ -488,9 +492,40 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         }
     }
 
-    func zoom(image: NoteMediaImage, from rect: NSRect, in view: NSView) {
+    func zoom(image: NoteMediaImage, from rect: NSRect, in view: NSView, crop: NoteImageCrop? = nil, mask: NoteImageMask? = nil) {
         guard let canvas = editor?.canvas else { return }
-        NoteMediaZoomOverlay.present(image: image, source: source.url, from: rect, of: view, in: canvas)
+        NoteMediaZoomOverlay.present(image: image, source: source.url, from: rect, of: view, in: canvas, crop: crop, mask: mask)
+    }
+
+    var imageContent: NoteImageContentView? { content as? NoteImageContentView }
+
+    func commitFraming(crop: NoteImageCrop?, mask: NoteImageMask?, name: String) {
+        guard canEdit else { return }
+        let crop = crop.flatMap { $0.isFull ? nil : $0.normalized }
+        guard crop != block.props.crop || mask != block.props.mask else { return }
+        editor?.session.updateBlock(blockID, name: name) { block in
+            block.props.crop = crop
+            block.props.mask = mask
+        }
+    }
+
+    func setAltText(_ text: String) {
+        guard canEdit else { return }
+        let cleaned = text.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        let value: String? = cleaned.isEmpty ? nil : cleaned
+        guard value != block.props.alt else { return }
+        editor?.session.updateBlock(blockID, name: "Alt Text") { $0.props.alt = value }
+    }
+
+    func beginCrop() { imageContent?.beginCrop() }
+    func editAltText() { imageContent?.editAltText() }
+    func showMaskPicker() { imageContent?.showMaskPicker() }
+
+    func applyMask(_ mask: NoteImageMask?) {
+        if let imageContent { imageContent.applyMask(mask); return }
+        let natural = source.url.flatMap { NoteMediaImageLoader.shared.naturalSize(of: $0) }
+        let next = NoteImageFraming.applying(mask, to: block.props, natural: natural)
+        commitFraming(crop: next.crop, mask: next.mask, name: mask == nil ? "Remove Mask" : "Mask Image")
     }
 }
 

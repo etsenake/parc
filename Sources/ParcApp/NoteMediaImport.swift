@@ -50,6 +50,7 @@ enum NoteMediaImport {
         session.updateBlock(id, name: name) { block in
             block.props.source = source
             block.props.credit = nil
+            block.props.crop = nil
         }
     }
 

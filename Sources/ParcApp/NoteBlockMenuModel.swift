@@ -48,6 +48,9 @@ enum NoteBlockAction: Hashable {
     case viewOriginal
     case fullScreen
     case copyOriginalLink
+    case cropImage
+    case mask(NoteImageMask?)
+    case altText
     case tableItem(String)
 }
 
@@ -255,6 +258,16 @@ enum NoteBlockMenuModel {
         }
     }
 
+    static let maskTitle = "Mask"
+
+    static func maskEntries(current: NoteImageMask?) -> [NoteBlockMenuEntry] {
+        let options: [NoteImageMask?] = [nil] + NoteImageMask.allCases.map { Optional($0) }
+        return options.map { mask in
+            NoteBlockMenuEntry(id: "mask." + (mask?.rawValue ?? "none"), title: mask?.title ?? NoteImageMask.noneTitle,
+                               keywords: ["shape"], section: maskTitle, isChecked: current == mask, action: .mask(mask))
+        }
+    }
+
     static func alignmentEntries(current: NoteAlignment?) -> [NoteBlockMenuEntry] {
         let options: [(NoteAlignment, String, String)] = [(.left, "Left", "text.alignleft"), (.center, "Center", "text.aligncenter"),
                                                          (.right, "Right", "text.alignright")]
@@ -290,6 +303,17 @@ enum NoteBlockMenuModel {
                 result.append(NoteBlockMenuEntry(id: "align", title: alignmentTitle, icon: .symbol("text.aligncenter"),
                                                  keywords: ["left", "right", "center", "centre"], group: 1,
                                                  children: alignmentEntries(current: alignments.count == 1 ? alignments.first : nil)))
+            }
+            if editable && kind == .image && single && block.props.source?.isEmpty == false {
+                result.append(NoteBlockMenuEntry(id: "crop", title: "Crop Image", icon: .symbol("crop"), keywords: ["trim", "cut", "frame"],
+                                                 group: 1, action: .cropImage))
+                result.append(NoteBlockMenuEntry(id: "mask", title: maskTitle, icon: .symbol("square.on.circle"),
+                                                 subtitle: block.props.mask?.title ?? NoteImageMask.noneTitle,
+                                                 keywords: ["shape", "circle", "rounded", "star", "heart"], group: 1,
+                                                 children: maskEntries(current: block.props.mask)))
+                result.append(NoteBlockMenuEntry(id: "alt", title: "Alt Text", icon: .symbol("text.bubble"),
+                                                 subtitle: block.props.alt.flatMap { $0.isEmpty ? nil : $0 },
+                                                 keywords: ["accessibility", "description", "screen reader"], group: 1, action: .altText))
             }
             if single && block.props.source?.isEmpty == false {
                 result.append(NoteBlockMenuEntry(id: "download", title: "Download", icon: .symbol("arrow.down.circle"),

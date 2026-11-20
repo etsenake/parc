@@ -347,10 +347,39 @@ final class NotePageMenu {
         let environment = editor.environment
         return NotePageHTML.document(editor.session.page, title: title, assets: { environment.resolve($0) }, embedImages: true,
                                      equationArt: { tex, display, numbering in NotePageEquationArtwork.art(tex, display: display, numbering: numbering) },
-                                     diagramArt: diagrams)
+                                     diagramArt: diagrams,
+                                     imageSize: { source in environment.resolve(source).flatMap { NoteMediaImageLoader.shared.naturalSize(of: $0) } })
+    }
+
+    private func loadFramedImageSizes(then completion: @escaping () -> Void) {
+        let environment = editor.environment
+        let urls = editor.session.page.allBlocks().compactMap { block -> URL? in
+            guard block.kind == .image, block.props.crop != nil || block.props.mask != nil, let source = block.props.source,
+                  let url = environment.resolve(source), !url.isFileURL, NoteMediaImageLoader.shared.naturalSize(of: url) == nil else { return nil }
+            return url
+        }
+        var pending = urls.count
+        var finished = false
+        func finish() {
+            guard !finished else { return }
+            finished = true
+            completion()
+        }
+        guard pending > 0 else { finish(); return }
+        for url in urls {
+            NoteMediaImageLoader.shared.load(url, pixels: 128) { _ in
+                pending -= 1
+                if pending <= 0 { finish() }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + NotePagePrintView.imageWait) { finish() }
     }
 
     private func writeHTML(to destination: URL) {
+        loadFramedImageSizes { [weak self] in self?.writeHTMLDocument(to: destination) }
+    }
+
+    private func writeHTMLDocument(to destination: URL) {
         let page = editor.session.page
         let light = NotePagePrintView.diagramRequests(in: page, dark: false)
         let dark = NotePagePrintView.diagramRequests(in: page, dark: true)
@@ -666,6 +695,12 @@ final class NotePagePrintView: NSView {
             context.translateBy(x: -anchor.x, y: -anchor.y)
         }
         let rect = CGRect(origin: .zero, size: frame.size)
+        if let mask = layer.mask as? CAShapeLayer, let path = mask.path {
+            context.translateBy(x: mask.frame.minX, y: mask.frame.minY)
+            context.addPath(path)
+            context.clip()
+            context.translateBy(x: -mask.frame.minX, y: -mask.frame.minY)
+        }
         let alpha = CGFloat(layer.opacity)
         if alpha < 0.99 { context.setAlpha(alpha); context.beginTransparencyLayer(auxiliaryInfo: nil) }
         drawLayerBody(layer, rect: rect, yDown: yDown, includeContents: true, in: context)

@@ -100,6 +100,18 @@ scroll sideways when wider than the page. The file keeps a plain
 ```` ```mermaid ```` fence, so GitHub still draws it; HTML exports embed the SVG
 for light and dark, and PDF exports print the drawing as vectors.
 
+Hovering an image shows alignment, caption, replace, download, Quick Look and a
+`•••` menu with Crop Image, Mask, Alt Text, Full Screen, View Original and Delete;
+the block menu offers the first three too. Cropping shows the whole picture
+behind a frame with corner and edge handles, thirds guides and aspect presets
+(Shift keeps the ratio); Save or Return keeps it, as does clicking elsewhere,
+and Escape cancels. Masks clip the picture to a rounded rectangle, circle,
+squircle, arch, diamond, hexagon, star or heart, and the square shapes keep the
+crop square. Neither touches the file itself, and full screen, HTML and PDF
+exports show both. Alt text is what VoiceOver reads for the image and lives in
+the Markdown `![alt](…)`; when an image has some, an ALT badge in its corner
+shows it on hover.
+
 Any text block can hold nested blocks, as in Notion: paragraphs, headings, list
 items, to-dos, toggles, quotes and callouts, plus columns. Tab on a line after a
 paragraph nests it there, Shift-Tab takes the lines after it along as its
