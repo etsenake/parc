@@ -114,10 +114,28 @@ extension BrowserWindowController {
         guard kind != .reload else { return nil }
         let action: PCNativeNavigationAction = kind == .back ? .back : .forward
         guard let id = noteVisitTarget(action) else { return nil }
-        return NavigationControlInteraction(activate: { [weak self] _ in
+        return NavigationControlInteraction(activate: { [weak self] alternate in
             guard let self, self.noteVisitTarget(action) == id else { return }
+            if alternate, action == .forward { self.openNoteAheadInBackground(id); return }
             self.stepNoteVisit(id, forward: action == .forward)
         })
+    }
+
+    @discardableResult
+    func openNoteAheadInBackground(_ id: UUID) -> Bool {
+        guard canCreateNote, let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
+              let visit = tab.noteVisit, !visit.showsNote, let file = visit.noteFile,
+              NoteFilePaths.isOpenableFile(file) else { return false }
+        navigationHistory?.dismiss()
+        let creation = TabCreationProvenance(referrerID: id, activeTabID: currentTabID,
+                                             profileID: activeProfileID, state: store.state)
+        var opened: UUID?
+        performWindowCommand(selectNativePage: false) {
+            let existing = Set(store.state.tabs.map(\.id))
+            opened = store.openNote(url: file, title: visit.note.title, inBackground: true, creation: creation)
+            if let created = opened, !existing.contains(created) { presentation.recordCreation(created, state: store.state) }
+        }
+        return opened != nil
     }
 
     func openNoteOverPage(_ file: URL, url: URL, sourceID: UUID, page: PCNativePage) -> Bool {
