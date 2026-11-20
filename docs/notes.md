@@ -128,10 +128,19 @@ embed, and pasted or dropped images and files are copied into an `Attachments`
 folder beside the note in the background, linking to the original until the copy
 lands so a note never saves a broken reference.
 
+Empty image blocks and the cover picker have an Unsplash tab: search, scroll the
+grid and click a photo. Parc tells Unsplash about the download, copies the photo
+into `Attachments` and credits the photographer with links to them and to
+Unsplash, under the image (beside its caption) or on the cover when you hover it,
+and in HTML and PDF exports. An image's Replace button offers Upload or Unsplash.
+The tab appears only when Parc has an Unsplash access key: the
+`NoteUnsplash.builtInAccessKey` constant, or the `NoteUnsplashAccessKey` user
+default.
+
 ## The page
 
-A note can have a cover (twelve built-in covers, an upload or a link, with
-reposition), an emoji or image icon, front-matter properties (text, number,
+A note can have a cover (twelve built-in covers, an upload, a link or an
+Unsplash photo, with reposition), an emoji or image icon, front-matter properties (text, number,
 checkbox, date and tags), and one of four fonts: Nunito, EB Garamond, Space Mono
 or ParcWide. The menu at the top right of a note offers Small Text, Full Width,
 Lock Note, Copy as Markdown, Copy Link, export (Markdown, HTML and PDF), Show in

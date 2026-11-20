@@ -62,6 +62,7 @@ status: draft
 | `icon` | An emoji, or a path or URL to an image |
 | `cover` | Cover image path or URL |
 | `cover-position` | Vertical focus of the cover, from 0 (top) to 1 (bottom); 0.5 is left out |
+| `cover-credit`, `cover-credit-url` | Who took the cover photo and a link to them |
 | `font` | `serif`, `mono` or `wide`; leave it out for the default |
 | `small-text`, `full-width`, `locked` | `true` to turn on; Parc leaves them out when off |
 
