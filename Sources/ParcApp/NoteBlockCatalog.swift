@@ -176,6 +176,8 @@ enum NoteBlockCatalog {
         return rank(base, normalized, keepEmpty: false)
     }
 
+    static let strongMatchScore = 600
+
     static func score(_ item: NoteCatalogItem, query: String) -> Int? {
         let query = normalize(query)
         guard !query.isEmpty else { return 0 }
@@ -257,7 +259,9 @@ enum NoteBlockCatalog {
 
     private static func rank(_ candidates: [NoteCatalogItem], _ query: String, keepEmpty: Bool) -> [NoteCatalogItem] {
         guard !query.isEmpty else { return keepEmpty ? candidates : [] }
-        return candidates.compactMap { item in score(item, query: query).map { (item, $0) } }
+        let scored = candidates.compactMap { item in score(item, query: query).map { (item, $0) } }
+        let strong = scored.filter { $0.1 >= strongMatchScore }
+        return (strong.isEmpty ? scored : strong)
             .sorted { lhs, rhs in lhs.1 != rhs.1 ? lhs.1 > rhs.1 : (order[lhs.0.id] ?? 0) < (order[rhs.0.id] ?? 0) }
             .map(\.0)
     }
