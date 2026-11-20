@@ -121,6 +121,7 @@ final class NotePageEditor {
     }
 
     func open(_ url: URL) {
+        guard NoteLinkPolicy.allowsOpening(url) else { return }
         if url.isFileURL, NoteFileKind(url: url) != nil { onOpenNote?(url) } else { onOpenURL?(url) }
     }
 
@@ -1039,13 +1040,17 @@ final class NotePageEditor {
             pasteBlocks([.paragraph(NoteText(title.flatMap { $0.isEmpty ? nil : $0 } ?? link, marks: marks))], inline: false)
             return
         }
-        guard let caret = session.deleteSelection(), let text = session.page.text(of: caret) else { return }
-        var marks = text.typingMarks(at: caret.offset)
-        marks.link = link
-        let label = NoteText(link, marks: marks)
-        session.replaceText(at: caret, length: 0, with: label)
-        guard caret.field == .body, session.page.block(caret.block)?.kind.hasRichText == true else { return }
-        showPasteMenu(NotePastedLink(position: caret, length: label.length, url: url, title: title))
+        var pasted: (caret: NotePosition, length: Int)?
+        session.group("Paste") {
+            guard let caret = session.deleteSelection(), let text = session.page.text(of: caret) else { return }
+            var marks = text.typingMarks(at: caret.offset)
+            marks.link = link
+            let label = NoteText(link, marks: marks)
+            session.replaceText(at: caret, length: 0, with: label)
+            pasted = (caret, label.length)
+        }
+        guard let pasted, pasted.caret.field == .body, session.page.block(pasted.caret.block)?.kind.hasRichText == true else { return }
+        showPasteMenu(NotePastedLink(position: pasted.caret, length: pasted.length, url: url, title: title))
     }
 
     private func showPasteMenu(_ link: NotePastedLink) {
@@ -1174,8 +1179,10 @@ final class NotePageEditor {
         case .move(let insertion)?:
             session.insertBlocks(blocks, insertion, select: landing)
         case .placeBeside(let anchor, let side)?:
-            session.insertBlocks(blocks, .after(anchor), select: landing)
-            session.placeBeside(blocks.map(\.id), target: anchor, side: side)
+            session.group("Drop") {
+                session.insertBlocks(blocks, .after(anchor), select: landing)
+                session.placeBeside(blocks.map(\.id), target: anchor, side: side)
+            }
         case nil:
             session.insertBlocks(blocks, .top(session.page.blocks.count), select: landing)
         }

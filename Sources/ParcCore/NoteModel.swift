@@ -1228,3 +1228,19 @@ extension NotePage {
         return candidate
     }
 }
+
+enum NoteLinkPolicy {
+    static let blockedSchemes: Set<String> = ["javascript", "vbscript", "data"]
+
+    static func allowsOpening(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return true }
+        return !blockedSchemes.contains(scheme)
+    }
+
+    static func allowsOpening(_ link: String) -> Bool {
+        let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines.union(.controlCharacters))
+        guard let colon = trimmed.firstIndex(of: ":") else { return true }
+        let scheme = trimmed[..<colon].filter { !$0.isWhitespace && !$0.unicodeScalars.allSatisfy(CharacterSet.controlCharacters.contains) }
+        return !blockedSchemes.contains(scheme.lowercased())
+    }
+}

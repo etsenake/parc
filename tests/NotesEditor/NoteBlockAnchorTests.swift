@@ -33,6 +33,7 @@ struct NoteBlockAnchorTests {
         undoEffectsRunWithHistory()
         createdFileGoesToTrashAndBack()
         editedFileStaysPut()
+        linkSafety()
         print("NoteBlockAnchorTests passed")
     }
 
@@ -229,5 +230,15 @@ struct NoteBlockAnchorTests {
         let failing = NoteCreatedFile(url: url, contents: Data("Draft, now longer\n".utf8), trash: { _ in throw CocoaError(.fileWriteNoPermission) })
         failing.withdraw()
         expect(!failing.isWithdrawn && FileManager.default.fileExists(atPath: url.path), "a Trash that says no leaves the file where it was")
+    }
+
+    static func linkSafety() {
+        for bad in ["javascript:alert(1)", "JavaScript:alert(1)", "vbscript:msgbox", "data:text/html,<script>x</script>"] {
+            expect(!NoteLinkPolicy.allowsOpening(URL(string: bad)!), "\(bad) never opens")
+        }
+        expect(!NoteLinkPolicy.allowsOpening(" java\tscript:alert(1)"), "whitespace inside the scheme doesn't sneak past")
+        for good in ["https://parc.example", "mailto:ada@example.com", "file:///Users/ada/Notes/Plan.md#k3x9qa", "Other.md#intro"] {
+            expect(NoteLinkPolicy.allowsOpening(URL(string: good)!) && NoteLinkPolicy.allowsOpening(good), "\(good) still opens")
+        }
     }
 }
