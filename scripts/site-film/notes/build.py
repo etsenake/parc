@@ -32,7 +32,8 @@ sources += [root / "tests/KeyboardNavigation/NativeShortcutStub.swift", root / "
             root / "tests/Support/TestFailure.swift"]
 skipped = {"NoteLocationPicker.swift", "NoteEmbedBlockView.swift", "NoteEmbedPages.swift", "NoteEmbedSurface.swift"}
 notes = sorted(path for path in app.glob("Note*.swift") if path.name not in skipped)
-extras = [app / name for name in ["ParcToast.swift", "TextFormatMenu.swift", "BrowserFindCommand.swift", "SidebarNotePlacement.swift"] if name not in names]
+extras = [app / name for name in ["ParcToast.swift", "TextFormatMenu.swift", "BrowserFindCommand.swift", "SidebarNotePlacement.swift",
+                                  "SidebarAddressText.swift"] if name not in names and (app / name).exists()]
 sources += notes + extras
 sources += sorted(here.glob("Harness/*.swift"))
 command = ["xcrun", "swiftc", "-parse-as-library", "-Onone",
