@@ -22,7 +22,7 @@ enum CommandBarCommandPresentation {
         "newTab": "add-tab", "focusAddress": "magnifyingglass", "newWindow": "plus.rectangle",
         "newIncognitoWindow": "macwindow.on.rectangle", "newBlankWindow": "macwindow.on.rectangle",
         "createSpace": "plus.rectangle.portrait", "createNote": "note.text",
-        "createNoteInSplit": "note.text", "createEasel": "scribble.variable", "exportNotes": "arrow.down.doc",
+        "createNoteInSplit": "note.text", "createEasel": "scribble.variable", "showNotesFolder": "folder",
         "closeWindow": "xmark.circle", "closeTab": "archivebox", "restoreTab": "arrow.uturn.backward",
         "sharePage": "square.and.arrow.up", "capturePage": "camera", "captureVisiblePage": "camera",
         "captureFullPage": "newspaper", "savePage": "square.and.arrow.down", "printPage": "printer",

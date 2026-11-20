@@ -56,22 +56,21 @@ extension BrowserWindowController {
     }
     private func commandBarDocuments(profileID: UUID) -> [CommandBarDocument] {
         guard !isPopupWindow, !isPrivateBrowsing, !store.isProfileRemovalPending(profileID),
-              let notes = try? NoteStore.sharedStore(directory: store.notesDirectory(for: profileID)),
               let easels = try? EaselEditorViewController.sharedStore(directory: store.easelsDirectory(for: profileID)) else { return [] }
-        let stamp = [store.notesDirectory(for: profileID), easels.documentsDirectory].map {
+        let stamp = [easels.documentsDirectory].map {
             (try? FileManager.default.attributesOfItem(atPath: $0.path)[.modificationDate] as? Date) ?? .distantPast
         }
         let all: [CommandBarDocument]
         if let cache = commandBarDocumentCache, cache.profileID == profileID, cache.stamp == stamp {
             all = cache.documents
         } else {
-            let noteList = try? notes.list(), easelList = try? easels.list()
-            all = (noteList ?? []).map { CommandBarDocument(kind: .note, id: $0.id, title: $0.title) }
-                + (easelList ?? []).map { CommandBarDocument(kind: .easel, id: $0.id, title: $0.title) }
-            commandBarDocumentCache = noteList != nil && easelList != nil ? (profileID, stamp, all) : nil
+            let easelList = try? easels.list()
+            all = (easelList ?? []).map { CommandBarDocument(kind: .easel, id: $0.id, title: $0.title) }
+            commandBarDocumentCache = easelList != nil ? (profileID, stamp, all) : nil
         }
         let open = store.state.openTabs(where: { $0.profileID == profileID }).compactMap { InternalPage(urlString: $0.url) }
-        return all.filter { !open.contains($0.kind == .note ? .note($0.id) : .easel($0.id)) }
+        return CommandBarNotes.documents(profileID: profileID, openTabURLs: Set(open.compactMap(\.noteURL)))
+            + all.filter { !open.contains(.easel($0.id)) }
     }
     func deliverCommandBarTopDomains(to panel: CommandBar, profileID: UUID) {
         if let cache = commandBarTopDomainCache, cache.profileID == profileID, cache.revision == store.historyRevision {
@@ -687,12 +686,11 @@ extension BrowserWindowController {
             classifyBackground(original.url, typed, stillOriginal, complete)
         }
         panel.onManagePasswords = { [weak self] in if isOriginal() { self?.showPasswordManager() } }
+        panel.noteLibrary = isPrivateBrowsing || isPopupWindow ? nil : NoteFolderPreferences.library(for: commandProfile)
         panel.onOpenDocument = { [weak self] document in
             guard isOriginal(), let self else { return }
-            switch document.kind {
-            case .note: self.openNote(id: document.id, title: document.title)
-            case .easel: self.openEasel(id: document.id, title: document.title)
-            }
+            if let url = document.url { self.openNote(url: url) }
+            else if document.kind == .easel { self.openEasel(id: document.id, title: document.title) }
         }
         panel.removedHistoryURLs = { [weak self] revision in
             self?.store.removedHistoryURLs(profileID: commandProfile, after: revision)

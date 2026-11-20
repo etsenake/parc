@@ -155,6 +155,7 @@ extension BrowserWindowController {
         if activeSpaceID != spaceID { selectSpace(spaceID) }
         else { cancelSpaceCreation(restoreFocus: false); sidebarPreviews?.dismiss() }
         guard activeSpaceID == spaceID, canAcceptExternalLink else { return false }
+        if let file = InternalPage.noteFile(url) { return openNote(url: file) }
         let creation = creationProvenance(activeTabID: currentTabID)
         performWindowCommand {
             let id = store.openResolvedURL(url, creation: creation)
@@ -208,33 +209,34 @@ extension BrowserWindowController {
         view.onCreateNote = { [weak self] in self?.createNote() }
         view.onOpenDocument = { [weak self] page, title in
             guard let self, self.activeProfileID == profileID else { return }
-            switch page { case .note(let id): self.openNote(id: id, title: title)
+            switch page { case .note(let url): self.openNote(url: url)
             case .easel(let id): self.closeLibrary(restoreFocus: false); self.openEasel(id: id, title: title) }
         }
         view.onRenameDocument = { [weak self] page, title in
             guard let self else { return }
-            switch page { case .note(let id): self.store.updateNoteTitle(id: id, profileID: profileID, title: title)
+            switch page { case .note(let url): self.store.updateNoteFile(from: url, to: url, title: title)
             case .easel(let id): self.store.updateEaselTitle(id: id, profileID: profileID, title: title) }
         }
         view.onDeleteDocument = { [weak self, weak view] page, done in
             guard let self, let view, self.libraryView === view, self.activeProfileID == profileID else { done(CocoaError(.userCancelled)); return }
-            do {
-                let note = try page.noteID.map { try NoteStore.sharedStore(directory: self.store.notesDirectory(for: profileID)).load($0) }
-                let revision = note?.document.revision
-                let easel = try page.easelID.map { try EaselEditorViewController.sharedStore(directory: self.store.easelsDirectory(for: profileID)).load($0) }
-                let easelSnapshot = easel?.document
-                self.store.deleteLocalDocument(page, profileID: profileID, ownerValid: { [weak self, weak view] in
-                    guard let self, let view else { return false }
-                    return self.libraryView === view && self.activeProfileID == profileID && !self.isClosing
-                        && note?.document.revision == revision && easel?.document == easelSnapshot
-                }, deleteDocument: {
-                    if let id = page.noteID, let revision {
-                        try NoteStore.sharedStore(directory: self.store.notesDirectory(for: profileID)).delete(id, expectedRevision: revision)
-                    } else if let id = page.easelID {
+            let ownerValid: () -> Bool = { [weak self, weak view] in
+                guard let self, let view else { return false }
+                return self.libraryView === view && self.activeProfileID == profileID && !self.isClosing
+            }
+            switch page {
+            case .note:
+                self.store.deleteLocalDocument(page, profileID: profileID, ownerValid: ownerValid, completion: done)
+            case .easel(let id):
+                do {
+                    let easel = try EaselEditorViewController.sharedStore(directory: self.store.easelsDirectory(for: profileID)).load(id)
+                    let easelSnapshot = easel.document
+                    self.store.deleteLocalDocument(page, profileID: profileID, ownerValid: {
+                        ownerValid() && easel.document == easelSnapshot
+                    }, deleteDocument: {
                         try EaselEditorViewController.sharedStore(directory: self.store.easelsDirectory(for: profileID)).delete(id)
-                    }
-                }, completion: done)
-            } catch { done(error) }
+                    }, completion: done)
+                } catch { done(error) }
+            }
         }
         view.palette = rootView.palette
         view.onClose = { [weak self] in self?.closeLibrary() }

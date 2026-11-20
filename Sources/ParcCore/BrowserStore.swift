@@ -2351,23 +2351,41 @@ enum BrowserInternalURL {
 }
 
 enum InternalPage: Equatable {
-    case easel(UUID), note(UUID)
+    case easel(UUID), note(URL)
     init?(urlString: String) {
+        if let file = Self.noteFile(urlString) { self = .note(file); return }
         guard let value = URLComponents(string: urlString), value.scheme?.lowercased() == "parc",
-              ["easel", "note"].contains(value.host?.lowercased() ?? ""), value.user == nil, value.password == nil,
+              value.host?.lowercased() == "easel", value.user == nil, value.password == nil,
               value.port == nil, value.query == nil, value.fragment == nil,
               value.path.hasPrefix("/"), let id = UUID(uuidString: String(value.path.dropFirst())) else { return nil }
-        self = value.host?.lowercased() == "note" ? .note(id) : .easel(id)
+        self = .easel(id)
+    }
+    static func noteFile(_ input: String) -> URL? {
+        URL(string: input).flatMap(noteFile)
+    }
+    static func noteFile(_ url: URL) -> URL? {
+        guard url.isFileURL, NoteFileKind(url: url) != nil, url.user == nil, url.port == nil,
+              [nil, "", "localhost"].contains(url.host?.lowercased()) else { return nil }
+        let path = url.standardizedFileURL.path
+        guard path.hasPrefix("/"), path.count > 1 else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: false)
+    }
+    static func == (lhs: InternalPage, rhs: InternalPage) -> Bool {
+        switch (lhs, rhs) {
+        case let (.easel(left), .easel(right)): return left == right
+        case let (.note(left), .note(right)): return (noteFile(left) ?? left).path == (noteFile(right) ?? right).path
+        default: return false
+        }
     }
     var urlString: String {
         switch self {
         case .easel(let id): return "parc://easel/" + id.uuidString.lowercased()
-        case .note(let id): return "parc://note/" + id.uuidString.lowercased()
+        case .note(let url): return (Self.noteFile(url) ?? url).absoluteString
         }
     }
     var easelID: UUID? { if case let .easel(id) = self { return id }; return nil }
-    var noteID: UUID? { if case let .note(id) = self { return id }; return nil }
-    var untitledTitle: String { noteID != nil ? "Untitled Note" : "Untitled Easel" }
+    var noteURL: URL? { if case let .note(url) = self { return Self.noteFile(url) ?? url }; return nil }
+    var untitledTitle: String { noteURL != nil ? "Untitled" : "Untitled Easel" }
     var sidebarFallbackSymbol: String {
         switch self {
         case .note: return "note.text"
@@ -2378,8 +2396,19 @@ enum InternalPage: Equatable {
         InternalPage(urlString: urlString)?.sidebarFallbackSymbol ?? "globe"
     }
     static func isInternal(_ input: String) -> Bool {
+        if noteFile(input) != nil { return true }
         guard let value = URLComponents(string: input) else { return false }
         return value.scheme?.lowercased() == "parc" && ["easel", "note"].contains(value.host?.lowercased() ?? "")
+    }
+    static func isRetiredNoteAddress(_ input: String) -> Bool {
+        guard let value = URLComponents(string: input.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
+        return value.scheme?.lowercased() == "parc" && value.host?.lowercased() == "note"
+    }
+    static func noteTitle(_ title: String, file: URL) -> String {
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { return name }
+        let stem = file.deletingPathExtension().lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        return stem.isEmpty ? "Untitled" : stem
     }
 }
 
@@ -2813,18 +2842,12 @@ final class BrowserStore: ObservableObject {
             .appendingPathComponent("Captures", isDirectory: true)
     }
 
-    func notesDirectory(for profileID: UUID) -> URL {
-        directory.appendingPathComponent("Profiles", isDirectory: true)
-            .appendingPathComponent(profileID.uuidString, isDirectory: true)
-            .appendingPathComponent("Notes", isDirectory: true)
-    }
-
     @discardableResult
-    func openNote(id documentID: UUID, title: String, inSplit: Bool = false) -> UUID? {
-        guard !isEphemeral, !isProfileRemovalPending(activeSpace.profileID),
+    func openNote(url: URL, title: String, inSplit: Bool = false) -> UUID? {
+        guard !isEphemeral, let file = InternalPage.noteFile(url), !isProfileRemovalPending(activeSpace.profileID),
               !inSplit || (!state.selectedTabIDs.isEmpty && state.selectedTabIDs.count < 4) else { return nil }
-        let original = state.selectedTabIDs, page = InternalPage.note(documentID)
-        let name = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Note" : title
+        let original = state.selectedTabIDs, page = InternalPage.note(file)
+        let name = InternalPage.noteTitle(title, file: file)
         if let index = localDocumentTabIndex(page, profileID: activeSpace.profileID) {
             let existing = state.tabs[index]
             guard !inSplit || existing.spaceID == activeSpaceID else { return nil }
@@ -2849,36 +2872,53 @@ final class BrowserStore: ObservableObject {
         }
         return id
     }
-    func updateNoteTitle(id documentID: UUID, profileID: UUID, title: String) {
-        let name = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Note" : title
+    func updateNoteFile(from old: URL, to new: URL, title: String) {
+        guard let source = InternalPage.noteFile(old), let destination = InternalPage.noteFile(new) else { return }
+        let from = InternalPage.note(source), to = InternalPage.note(destination)
+        let name = InternalPage.noteTitle(title, file: destination)
         var next = state, didChange = false
-        for index in next.tabs.indices where next.tabs[index].profileID == profileID {
-            if InternalPage(urlString: next.tabs[index].url)?.noteID == documentID && next.tabs[index].title != name {
-                next.tabs[index].title = name; didChange = true
+        for index in next.tabs.indices {
+            if InternalPage(urlString: next.tabs[index].url) == from {
+                if next.tabs[index].url != to.urlString { next.tabs[index].url = to.urlString; didChange = true }
+                if next.tabs[index].title != name { next.tabs[index].title = name; didChange = true }
             }
-            if InternalPage(urlString: next.tabs[index].savedURL)?.noteID == documentID && next.tabs[index].savedTitle != name {
-                next.tabs[index].savedTitle = name; didChange = true
+            if InternalPage(urlString: next.tabs[index].savedURL) == from {
+                if next.tabs[index].savedURL != to.urlString { next.tabs[index].savedURL = to.urlString; didChange = true }
+                if next.tabs[index].savedTitle != name { next.tabs[index].savedTitle = name; didChange = true }
             }
         }
         if didChange { state = next; changed() }
     }
     func deleteLocalDocument(_ page: InternalPage, profileID: UUID,
                              ownerValid: @escaping () -> Bool,
-                             deleteDocument: @escaping () throws -> Void,
+                             deleteDocument: (() throws -> Void)? = nil,
                              completion: @escaping (Error?) -> Void) {
+        let file = page.noteURL
+        func references(_ tab: BrowserTab) -> Bool {
+            (file != nil || tab.profileID == profileID)
+                && (InternalPage(urlString: tab.url) == page || InternalPage(urlString: tab.savedURL) == page)
+        }
+        func owners(_ state: BrowserState) -> [UUID] {
+            file == nil ? [profileID] : state.profiles.map(\.id).filter { owner in state.tabs.contains { $0.profileID == owner && references($0) } }
+        }
+        let profiles = owners(state)
         guard !isEphemeral, state.profiles.contains(where: { $0.id == profileID }),
-              !isProfileRemovalPending(profileID) else { completion(CocoaError(.userCancelled)); return }
-        let originals = state.tabs.filter { $0.profileID == profileID && ($0.url == page.urlString || $0.savedURL == page.urlString) }
+              !isProfileRemovalPending(profileID), !profiles.contains(where: isProfileRemovalPending) else {
+            completion(CocoaError(.userCancelled)); return
+        }
+        let originals = state.tabs.filter(references)
         let ids = Set(originals.map(\.id))
-        let archiveGroups = archivedItems(profileID: profileID).filter { !ids.isDisjoint(with: Set($0.tabs.map(\.id))) }.map(\.tabs)
+        let archiveGroups = profiles.flatMap { archivedItems(profileID: $0) }.filter { !ids.isDisjoint(with: Set($0.tabs.map(\.id))) }.map(\.tabs)
         let retiring = ids.union(archiveGroups.flatMap { $0.map(\.id) })
         guard retiring.isDisjoint(with: retiringTabIDs) else { completion(CocoaError(.userCancelled)); return }
+        let removeDocument = deleteDocument ?? { if let file { try NoteLibrary.trash(file) } }
         func current() -> Bool {
             ownerValid() && !self.isProfileRemovalPending(profileID)
                 && self.state.profiles.contains(where: { $0.id == profileID })
-                && self.state.tabs.filter { $0.profileID == profileID && ($0.url == page.urlString || $0.savedURL == page.urlString) }
+                && owners(self.state) == profiles && !profiles.contains(where: self.isProfileRemovalPending)
+                && self.state.tabs.filter(references)
                     .map(\.archivedWithoutFolderPlacement) == originals.map(\.archivedWithoutFolderPlacement)
-                && archiveGroups.allSatisfy { group in self.archivedItems(profileID: profileID).contains {
+                && archiveGroups.allSatisfy { group in profiles.flatMap { self.archivedItems(profileID: $0) }.contains {
                     $0.tabs.map(\.withoutFolderPlacement) == group.map(\.withoutFolderPlacement)
                 } }
         }
@@ -2899,7 +2939,7 @@ final class BrowserStore: ObservableObject {
                     return layout
                 }
                 try self.commitProfileSettings(next)
-                try deleteDocument(); completion(nil)
+                try removeDocument(); completion(nil)
             } catch { completion(error) }
         }
     }
@@ -4612,7 +4652,7 @@ final class BrowserStore: ObservableObject {
               let destinationProfile = state.spaces.first(where: { $0.id == destination.spaceID })?.profileID,
               destination.profileID == nil || destination.profileID == destinationProfile else { return nil }
         guard destinationProfile == source.profileID
-                || (copy.wholeSplits && copy.tabs.allSatisfy({ InternalPage(urlString: $0.savedURL) == nil })) else { return nil }
+                || (copy.wholeSplits && copy.tabs.allSatisfy({ InternalPage(urlString: $0.savedURL)?.easelID == nil })) else { return nil }
         guard let copied = adjacentCopies(roots: copy.roots, folderIDs: copy.folderIDs, tabs: copy.tabs, groups: copy.groups,
                   spaceID: source.spaceID, profileID: source.profileID, destinations: destinations,
                   creation: creation, opensEverySplit: false),

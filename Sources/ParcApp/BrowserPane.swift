@@ -40,6 +40,11 @@ final class BrowserPane: NSView {
     private(set) var showsNoteCanvas = false
     private(set) var showsTopBar = false
     private var noteCanvasContentAppearance: NSAppearance?
+    private weak var noteController: NotePageViewController?
+    private var showsNoteController: Bool {
+        guard let noteController, noteController.isViewLoaded else { return false }
+        return nativeContent === noteController.view
+    }
     var onContentBackingChange: (() -> Void)?
     private var pageBacking: NSColor?
     var contentBacking: NSColor { showsNoteCanvas ? .clear : (surface == .page ? pageBacking : nil) ?? .white }
@@ -160,16 +165,20 @@ final class BrowserPane: NSView {
         view.frame = content.bounds; view.isHidden = false
         error.clear(); browser?.isHidden = true; showsBlank = false
         surface = .local
-        setNoteCanvasBacking(view is NoteCanvasView)
+        setNoteCanvasBacking(showsNoteController)
         applyNoteCanvasTheme()
+    }
+    func showNote(_ controller: NotePageViewController) {
+        noteController = controller
+        showNativeContent(controller.view)
     }
     func inheritNoteCanvasTheme(_ appearance: NSAppearance?) {
         noteCanvasContentAppearance = appearance
         applyNoteCanvasTheme()
     }
     private func applyNoteCanvasTheme() {
-        if let canvas = nativeContent as? NoteCanvasView {
-            canvas.inheritSpaceContentAppearance(noteCanvasContentAppearance)
+        if showsNoteController, let noteController {
+            noteController.inheritSpaceContentAppearance(noteCanvasContentAppearance)
         } else if let easel = nativeContent as? EaselDocumentView {
             easel.inheritSpaceContentAppearance(noteCanvasContentAppearance)
         }

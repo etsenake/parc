@@ -90,7 +90,7 @@ struct InterProfileDocumentBlock: Equatable {
         var blocked: [(tab: BrowserTab, page: InternalPage, blockers: [BrowserTab])] = []
         for tab in after.tabs where ids.contains(tab.id) {
             for value in [tab.url, tab.savedURL] {
-                guard let page = InternalPage(urlString: value), !checked.contains(page.urlString) else { continue }
+                guard let page = InternalPage(urlString: value), page.easelID != nil, !checked.contains(page.urlString) else { continue }
                 checked.append(page.urlString)
                 let blockers = after.tabs.filter { other in
                     (other.url == page.urlString || other.savedURL == page.urlString) && other.profileID != tab.profileID
@@ -108,15 +108,14 @@ struct InterProfileDocumentBlock: Equatable {
             guard let target = Self.spaceName(id, before, after) else { return nil }
             change = .share(target: target)
         }
-        let kind = first.page.noteID != nil ? "Note" : "Easel"
         let shown = InternalPage(urlString: first.tab.url) == first.page
         if sharing == nil && ids.count == 1 && shown {
-            subject = "This " + kind
+            subject = "This Easel"
         } else {
             let title = (shown ? [first.tab.customTitle, first.tab.title, first.tab.savedTitle] : [first.tab.customTitle, first.tab.savedTitle])
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .first { !$0.isEmpty && $0 != first.page.untitledTitle }
-            subject = title.map { "The " + kind + " “" + InterProfileMovePrompt.displayName($0) + "”" } ?? "An untitled " + kind
+            subject = title.map { "The Easel “" + InterProfileMovePrompt.displayName($0) + "”" } ?? "An untitled Easel"
         }
         var behind: [Place] = [], sidebar: [Place] = [], archived: [Place] = []
         for tab in first.blockers {
@@ -178,9 +177,7 @@ struct InterProfileDocumentBlock: Equatable {
         let scope = change != .move ? " on " + sourceSpace + "’s current data" : mixed ? "" : " in " + sourceSpace
         var text = subject + " is still used elsewhere" + scope + ": " + list + "."
         if !others.isEmpty {
-            let noun = others.allSatisfy({ $0.noteID != nil }) ? "Note"
-                : others.allSatisfy({ $0.easelID != nil }) ? "Easel" : "document"
-            text += others.count == 1 ? " 1 more \(noun) is too." : " \(others.count) more \(noun)s are too."
+            text += others.count == 1 ? " 1 more Easel is too." : " \(others.count) more Easels are too."
         }
         return text
     }
@@ -226,7 +223,8 @@ enum InterProfileMove {
         for id in ids.sorted(by: { $0.uuidString < $1.uuidString }) {
             guard let tab = state.tab(id) else { return nil }
             for value in [tab.url, tab.savedURL] {
-                guard InternalPage.isInternal(value) else { continue }
+                guard InternalPage.isInternal(value), InternalPage.noteFile(value) == nil,
+                      !InternalPage.isRetiredNoteAddress(value) else { continue }
                 guard let page = InternalPage(urlString: value) else { return nil }
                 if !pages.contains(page) { pages.append(page) }
             }

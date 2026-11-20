@@ -629,47 +629,6 @@ extension BrowserWindowController {
             && transferringTabIDs.isEmpty && resolvingTransfers.isEmpty && activePeek == nil
     }
     var canCreateNoteInSplit: Bool { canCreateNote && !selectedTabIDs.isEmpty && selectedTabIDs.count < 4 }
-    var isExportingNotes: Bool { noteExport != nil }
-    var canExportNotes: Bool { canCreateNote && noteExport == nil }
-    func prepareNotesForExport(profileID: UUID) -> Bool {
-        var ready = true
-        for note in noteEditors.values where note.profileID == profileID {
-            if !note.editor.prepareToClose() { ready = false }
-        }
-        guard ready else { return false }
-        do {
-            try NoteStore.sharedStore(directory: store.notesDirectory(for: profileID)).flushAllDelayedDiskSaves()
-            return true
-        } catch { return false }
-    }
-    func exportNotes() {
-        guard canExportNotes, let originalWindow = window else { return }
-        let profile = activeProfileID
-        do {
-            let notes = try NoteStore.sharedStore(directory: store.notesDirectory(for: profile))
-            try notes.flushAllDelayedDiskSaves()
-            let documents = try notes.list()
-            guard !documents.isEmpty else { throw NoteExportError.empty }
-            let owner = NoteExportController(window: originalWindow, isValid: { [weak self, weak originalWindow] in
-                guard let self, let originalWindow else { return false }
-                return self.window === originalWindow && self.presentation.isReady
-                    && !self.isClosing && !self.wholeWindowClose && !self.windowClosePending
-                    && !self.isPrivateBrowsing && self.activeProfileID == profile
-                    && !self.store.isProfileRemovalPending(profile)
-            }, onFinish: { [weak self] in self?.noteExport = nil },
-               onError: { [weak self] in self?.showNoteError($0) })
-            noteExport = owner; owner.begin(documents)
-        } catch { showNoteError(error) }
-    }
-
-    func createNote(inSplit: Bool = false) {
-        guard inSplit ? canCreateNoteInSplit : canCreateNote else { return }
-        do {
-            let notes = try NoteStore.sharedStore(directory: store.notesDirectory(for: activeProfileID))
-            let session = try notes.create()
-            openNote(id: session.document.id, title: session.displayTitle, inSplit: inSplit)
-        } catch { showNoteError(error) }
-    }
 }
 
 extension PCNativePage {

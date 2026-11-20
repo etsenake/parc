@@ -258,7 +258,7 @@ final class CommandBarTitleIndex: Sendable {
 
     static func tabKey(url: String, title: String, id: UUID) -> String {
         InternalPage(urlString: url).map {
-            $0.noteID.map { "document:" + $0.uuidString.lowercased() } ?? "easel:" + ($0.easelID?.uuidString.lowercased() ?? "")
+            $0.noteURL.map(CommandBarDocument.noteKey) ?? "easel:" + ($0.easelID?.uuidString.lowercased() ?? "")
         } ?? URL(string: url).map { CommandBarRanking.pageKey($0, title: title) } ?? "tab:" + id.uuidString
     }
 

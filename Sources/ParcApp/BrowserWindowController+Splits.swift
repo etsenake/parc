@@ -9,15 +9,14 @@ extension BrowserWindowController {
                 return self.browsers[id] === browser && browser.nativePage === page && !page.isClosed
             })
         }
-        if let note = noteEditors[id], note.editor.isViewLoaded, note.editor.canAcceptExternalSplitDrop {
-            let editor = note.editor, documentID = note.documentID, profileID = note.profileID
+        if let note = noteEditors[id], note.editor.isViewLoaded, note.editor.canAcceptExternalDrop {
+            let editor = note.editor, profileID = note.profileID
             return (editor.view, true, { [weak self, weak editor] in
                 guard let self, let editor, self.noteEditors[id]?.editor === editor,
-                      self.noteEditors[id]?.documentID == documentID,
                       self.noteEditors[id]?.profileID == profileID,
                       let tab = self.store.state.tab(id),
-                      tab.profileID == profileID, InternalPage(urlString: tab.url)?.noteID == documentID else { return false }
-                return editor.canAcceptExternalSplitDrop
+                      tab.profileID == profileID, InternalPage(urlString: tab.url) == .note(editor.file.url) else { return false }
+                return editor.canAcceptExternalDrop
             })
         }
         if let easel = easelEditors[id], easel.editor.isViewLoaded, easel.editor.canAcceptExternalSplitDrop {
@@ -472,7 +471,7 @@ extension BrowserWindowController {
               easelEditorsForRelocation(in: ids).values.allSatisfy({ $0.canPrepareForProfileRelocation }),
               easelEditorsForRelocation(in: ids).values.allSatisfy({ $0.prepareForProfileRelocation() }) else { return false }
         for id in ids {
-            if let note = noteEditors.removeValue(forKey: id) { note.editor.view.removeFromSuperview() }
+            retireNoteEditor(id)
             if let easel = easelEditors.removeValue(forKey: id) {
                 easel.editor.retirePageOwner(); panes[id]?.clearNativeContent(); easelFailures.removeValue(forKey: id)
             }
@@ -727,9 +726,8 @@ extension BrowserWindowController {
             switch command.id {
             case "createNote:", "createNoteInSplit:":
                 self.fillSplitInsertionWithNewDocument(session, create: {
-                    let notes = try NoteStore.sharedStore(directory: self.store.notesDirectory(for: self.activeProfileID))
-                    let created = try notes.create()
-                    return (.note(created.document.id), created.displayTitle)
+                    let created = try NoteFolderPreferences.library(for: self.activeProfileID).createNote()
+                    return (.note(created), InternalPage.noteTitle("", file: created))
                 }, reportError: { self.showNoteError($0) })
             case "createEasel:":
                 self.fillSplitInsertionWithNewDocument(session, create: {

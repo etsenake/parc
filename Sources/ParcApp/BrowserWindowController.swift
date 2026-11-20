@@ -214,13 +214,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let originalTab: BrowserTab
     }
     struct NotePane {
-        let documentID: UUID
         let profileID: UUID
-        let editor: NoteEditorViewController
+        let editor: NotePageViewController
         let originalTab: BrowserTab
+        @MainActor var url: URL { editor.file.url }
     }
-    var noteEditors: [UUID: NotePane] = [:]
-    var noteExport: NoteExportController?
+    var noteEditors: [UUID: NotePane] = [:] {
+        didSet { NotePaneRetention.reconcile(old: oldValue, new: noteEditors) }
+    }
+    var noteFailures: [UUID: (destination: String, message: String)] = [:]
+    var onOpenNoteInRegularWindow: ((URL) -> Void)?
     var easelEditors: [UUID: EaselPane] = [:]
     var easelFailures: [UUID: (destination: String, message: String)] = [:]
     var panes: [UUID: BrowserPane] = [:]
@@ -371,7 +374,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     var windowCloseApproved = false
     var onboardingCloseRequested = false
-    var onboardingCloseNotes: [(editor: NoteEditorViewController, bodyEditable: Bool, titleEditable: Bool)]?
+    var onboardingCloseNotes: [(file: NoteFileSession, wasReadOnly: Bool)]?
     var wholeWindowClose = false {
         didSet {
             if !wholeWindowClose, oldValue { onReturnUnblocked?() }
@@ -1800,12 +1803,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         destination.attachedPageIDs.insert(page.identifier)
                     }
                     if let note = notes[id] {
-                        destination.noteEditors[id] = NotePane(documentID: note.documentID, profileID: note.profileID,
-                            editor: note.editor, originalTab: tab)
-                        destination.configureNoteOwner(tab, id: note.documentID, editor: note.editor)
+                        destination.noteEditors[id] = NotePane(profileID: note.profileID, editor: note.editor, originalTab: tab)
+                        destination.configureNoteOwner(tab, editor: note.editor)
                         let pane = destination.panes[id] ?? destination.makePane(tab); destination.panes[id] = pane
                         if pane.superview == nil { destination.parkedPages.addSubview(pane) }
-                        pane.showNativeContent(note.editor.view)
+                        pane.showNote(note.editor)
                     }
                     if let easel = easels[id] {
                         destination.easelEditors[id] = EaselPane(documentID: easel.documentID, profileID: easel.profileID,

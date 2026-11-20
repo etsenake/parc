@@ -557,7 +557,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let closesOriginal = original.map { $0.store === store && !$0.isPopupWindow } ?? false
         if closesOriginal, let original {
             guard original.prepareNotesToClose() else { throw CocoaError(.userCancelled) }
-            try NoteStore.flushAllSharedDelayedDiskSaves()
+            try NoteFileSession.flushAll()
         }
         recordWindowSessions()
         persistTabHistory()
@@ -781,7 +781,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                    completion: @escaping (Bool) -> Void) {
         guard !terminationInProgress,
               !windows.contains(where: { $0.hasPendingNativePage(in: ids) }) else { completion(false); return }
-        func noteOwners(_ windows: [BrowserWindowController]) -> [ObjectIdentifier: [UUID: NoteEditorViewController]] {
+        func noteOwners(_ windows: [BrowserWindowController]) -> [ObjectIdentifier: [UUID: NotePageViewController]] {
             Dictionary(uniqueKeysWithValues: windows.compactMap { owner in
                 let editors = owner.noteEditorsForRetirement(in: ids)
                 return editors.isEmpty ? nil : (ObjectIdentifier(owner), editors)
@@ -883,21 +883,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             }
         }
         guard owners.allSatisfy({ $0.closeLocalDocumentEditors(ids) }) else {
-            restoreEditors(); throw NoteError.changed
+            restoreEditors(); throw NoteTabError.changed
         }
         let rollback = LocalDocumentRelocationRollback()
         do {
             for page in pages {
                 switch page {
-                case .note(let id):
-                    let source = try NoteStore.sharedStore(directory: store.notesDirectory(for: from))
-                    let destination = try NoteStore.sharedStore(directory: store.notesDirectory(for: to))
-                    try source.retireSessionForRelocation(id)
-                    try source.relocate(id, to: destination)
-                    rollback.append(reverse: {
-                        do { try destination.relocate(id, to: source); return true }
-                        catch { return false }
-                    })
+                case .note: continue
                 case .easel(let id):
                     let source = try EaselEditorViewController.sharedStore(directory: store.easelsDirectory(for: from))
                     let destination = try EaselEditorViewController.sharedStore(directory: store.easelsDirectory(for: to))
@@ -1215,7 +1207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             resumeOnboardingAfterCancelledTermination()
             return
         }
-        do { try NoteStore.flushAllSharedDelayedDiskSaves() }
+        do { try NoteFileSession.flushAll() }
         catch {
             abandonApplicationTermination("Quit cancelled. A note could not be saved on this Mac.")
             resumeOnboardingAfterCancelledTermination()
@@ -1518,6 +1510,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             spaceRefreshDeferredForCommandBar = false
             self?.refreshSpaceCommands()
         }
+        controller.onOpenNoteInRegularWindow = { [weak self] url in
+            guard let self, !self.terminationInProgress else { return }
+            self.application(NSApp, open: [url])
+        }
         controller.onRequestBrowserTab = { [weak self, weak controller] input in
             guard let self, let controller, !self.terminationInProgress else { return }
             let profileID = controller.activeProfileID, privateParentID = controller.store.privateParentProfileID
@@ -1543,10 +1539,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                     do {
                         let reference: SidebarDocumentReference
                         switch page {
-                        case .note(let id):
-                            let notes = try NoteStore.sharedStore(directory: self.store.notesDirectory(for: original.profileID))
-                            try notes.validateReference(id)
-                            reference = SidebarDocumentReference(page: page, profileID: original.profileID) { try notes.validateReference(id) }
+                        case .note(let url):
+                            let validate: @MainActor () throws -> Void = {
+                                guard FileManager.default.fileExists(atPath: url.path) else { throw NoteFileError.missing }
+                            }
+                            try validate()
+                            reference = SidebarDocumentReference(page: page, profileID: original.profileID, validate: validate)
                         case .easel(let id):
                             let easels = try EaselEditorViewController.sharedStore(directory: self.store.easelsDirectory(for: original.profileID))
                             try easels.validateReference(id)
@@ -1904,10 +1902,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                   owner.activeProfileID == selection.profileID else { return false }
             return owner.canCreateNote
         }
-        if item.action == #selector(exportNotes) {
-            item.title = libraryCommandWindow?.isExportingNotes == true ? "Exporting Notes…" : "Export Notes…"
-            return libraryCommandWindow?.canExportNotes ?? false
-        }
+        if item.action == #selector(showNotesFolder) { return libraryCommandWindow?.canShowNotesFolder ?? false }
         if item.action == #selector(showDocuments) { return libraryCommandWindow?.canCreateNote ?? false }
         if item.action == #selector(newIncognitoWindow) { return scriptingReady }
         if front?.isPrivateBrowsing == true,
@@ -2585,16 +2580,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         } else { performLibraryMenuCommand { $0.createNote() } }
     }
     @objc private func createNoteInSplit(_ sender: Any?) { performLibraryMenuCommand { $0.createNote(inSplit: true) } }
-    @objc private func exportNotes(_ sender: Any?) {
-        performLibraryMenuCommand { owner in
-            guard owner.canExportNotes else { return }
-            let profile = owner.activeProfileID
-            guard windows.allSatisfy({ $0.prepareNotesForExport(profileID: profile) }),
-                  owner.activeProfileID == profile, libraryCommandWindow === owner,
-                  owner.canExportNotes else { return }
-            owner.exportNotes()
-        }
-    }
+    @objc private func showNotesFolder(_ sender: Any?) { performLibraryMenuCommand { $0.showNotesFolder() } }
     @objc private func showDocuments(_ sender: Any?) { performLibraryMenuCommand { $0.showLibrary(.documents) } }
     @objc private func openInCurrentSpace(_ sender: NSMenuItem) {
         _ = (sender.representedObject as? PeekOpenCommand)?.perform()
@@ -2879,7 +2865,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         item("New Note in Split View", #selector(createNoteInSplit), in: file)
         hideKeepingShortcut(file)
         item("New Easel", #selector(createEasel), in: file)
-        item("Export Notes…", #selector(exportNotes), in: file)
+        item("Show Notes Folder", #selector(showNotesFolder), in: file)
         file.addItem(.separator())
         item("Close Window", #selector(closeWindow), "w", in: file, modifiers: [.command, .shift])
         item("Archive Tab", #selector(closeTab), "w", in: file)

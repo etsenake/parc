@@ -4,23 +4,47 @@ import Combine
 extension BrowserWindowController {
     func openLocalNoteAddress(_ input: String) -> Bool {
         let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let parts = URLComponents(string: value), parts.scheme?.lowercased() == "parc",
-              parts.host?.lowercased() == "note" else { return false }
-        guard canCreateNote else { return true }
-        do {
-            guard let id = InternalPage(urlString: value)?.noteID else { throw NoteError.invalid }
-            let note = try NoteStore.sharedStore(directory: store.notesDirectory(for: activeProfileID)).load(id)
-            openNote(id: id, title: note.displayTitle)
-        } catch { showNoteError(error) }
+        if InternalPage.isRetiredNoteAddress(value) {
+            showNoteError(NoteTabError.retiredAddress)
+            return true
+        }
+        guard let file = InternalPage.noteFile(value) else { return false }
+        if isPrivateBrowsing || isPopupWindow {
+            onOpenNoteInRegularWindow?(file)
+        } else {
+            openNote(url: file)
+        }
         return true
     }
-    func openNote(id: UUID, title: String, inSplit: Bool = false) {
-        guard inSplit ? canCreateNoteInSplit : canCreateNote else { return }
+    @discardableResult
+    func openNote(url: URL, inSplit: Bool = false) -> Bool {
+        guard let file = InternalPage.noteFile(url) else { showNoteError(NoteFileError.notANote); return true }
+        guard inSplit ? canCreateNoteInSplit : canCreateNote else { return false }
+        guard FileManager.default.fileExists(atPath: file.path) else { showNoteError(NoteFileError.missing); return true }
         closeLibrary(restoreFocus: false)
-        performWindowCommand { _ = store.openNote(id: id, title: title, inSplit: inSplit) }
+        let title = NoteFileSession.session(for: file)?.title ?? file.deletingPathExtension().lastPathComponent
+        var opened: UUID?
+        performWindowCommand { opened = store.openNote(url: file, title: title, inSplit: inSplit) }
         focusSelectedLocalContent()
+        return opened != nil
     }
-    func noteEditorsForRetirement(in ids: Set<UUID>) -> [UUID: NoteEditorViewController] {
+    func createNote(inSplit: Bool = false) {
+        guard inSplit ? canCreateNoteInSplit : canCreateNote else { return }
+        do {
+            let file = try NoteFolderPreferences.library(for: activeProfileID).createNote()
+            openNote(url: file, inSplit: inSplit)
+        } catch { showNoteError(error) }
+    }
+    var canShowNotesFolder: Bool { canCreateNote }
+    func showNotesFolder() {
+        guard canShowNotesFolder else { return }
+        let folder = NoteFolderPreferences.folder(for: activeProfileID)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            NSWorkspace.shared.activateFileViewerSelecting([folder])
+        } catch { showNoteError(error) }
+    }
+    func noteEditorsForRetirement(in ids: Set<UUID>) -> [UUID: NotePageViewController] {
         Dictionary(uniqueKeysWithValues: noteEditors.filter { ids.contains($0.key) }.map {
             ($0.key, $0.value.editor)
         })
@@ -32,6 +56,10 @@ extension BrowserWindowController {
         }
         return accepted
     }
+    func retireNoteEditor(_ id: UUID) {
+        guard let note = noteEditors.removeValue(forKey: id) else { return }
+        if note.editor.isViewLoaded { note.editor.view.removeFromSuperview() }
+    }
     func showError(_ error: Error) {
         if window != nil { ParcDialog.present(error) }
     }
@@ -39,26 +67,56 @@ extension BrowserWindowController {
         guard let window, window.attachedSheet == nil else { return }
         ParcDialog.inform(in: window, .init(error: error), queued: true)
     }
-    func showNote(_ tab: BrowserTab, id: UUID, in pane: BrowserPane) {
+    func showNote(_ tab: BrowserTab, url: URL, in pane: BrowserPane) {
         guard !isPrivateBrowsing, !store.isProfileRemovalPending(tab.profileID) else { pane.showError("Notes are unavailable in this Space."); return }
-        if let cached = noteEditors[tab.id], cached.documentID == id, cached.profileID == tab.profileID {
-            pane.showNativeContent(cached.editor.view); return
+        if let cached = noteEditors[tab.id], cached.profileID == tab.profileID,
+           InternalPage.note(url) == .note(cached.url) || InternalPage.note(url) == InternalPage(urlString: cached.originalTab.url) {
+            pane.showNote(cached.editor); return
         }
+        let destination = tab.profileID.uuidString + ":" + InternalPage.note(url).urlString
+        if let failure = noteFailures[tab.id], failure.destination == destination { pane.showError(failure.message); return }
         do {
-            let editor = try NoteEditorViewController(directory: store.notesDirectory(for: tab.profileID), documentID: id)
-            configureNoteOwner(tab, id: id, editor: editor)
-            noteEditors[tab.id] = NotePane(documentID: id, profileID: tab.profileID, editor: editor, originalTab: tab)
-            pane.showNativeContent(editor.view)
-        } catch { pane.showNativeContent(NoteLoadErrorView(error: error)) }
+            let editor = NotePageViewController(file: try NoteFileSession.open(url))
+            retireNoteEditor(tab.id)
+            noteEditors[tab.id] = NotePane(profileID: tab.profileID, editor: editor, originalTab: tab)
+            noteFailures.removeValue(forKey: tab.id)
+            configureNoteOwner(tab, editor: editor)
+            pane.showNote(editor)
+            if tab.title != editor.file.title || InternalPage.note(editor.file.url) != .note(url) {
+                DispatchQueue.main.async { [weak self, weak editor] in
+                    guard let self, let editor, self.noteEditors[tab.id]?.editor === editor else { return }
+                    self.store.updateNoteFile(from: url, to: editor.file.url, title: editor.file.title)
+                }
+            }
+        } catch {
+            noteFailures[tab.id] = (destination, error.localizedDescription)
+            pane.showError(error.localizedDescription)
+        }
     }
 
-    func configureNoteOwner(_ tab: BrowserTab, id: UUID, editor: NoteEditorViewController) {
-            editor.onTitleChange = { [weak self] title in self?.store.updateNoteTitle(id: id, profileID: tab.profileID, title: title) }
-            editor.onOpenURL = { [weak self, weak editor] url in
-                guard let self, let editor, self.noteEditors[tab.id]?.editor === editor,
-                      self.currentTabID == tab.id, self.activeProfileID == tab.profileID, !self.isClosing else { return }
-                self.openInput(url.absoluteString)
-            }
+    func configureNoteOwner(_ tab: BrowserTab, editor: NotePageViewController) {
+        let tabID = tab.id, profileID = tab.profileID
+        var current = editor.file.url
+        editor.onTitleChange = { [weak self, weak editor] title in
+            guard let self, let editor, self.noteEditors[tabID]?.editor === editor else { return }
+            self.store.updateNoteFile(from: editor.file.url, to: editor.file.url, title: title)
+        }
+        editor.onURLChange = { [weak self, weak editor] url in
+            guard let self, let editor, self.noteEditors[tabID]?.editor === editor else { return }
+            let previous = current
+            current = url
+            self.store.updateNoteFile(from: previous, to: url, title: editor.file.title)
+        }
+        editor.onOpenURL = { [weak self, weak editor] url in
+            guard let self, let editor, self.noteEditors[tabID]?.editor === editor,
+                  self.currentTabID == tabID, self.activeProfileID == profileID, !self.isClosing else { return }
+            self.openInput(url.absoluteString)
+        }
+        editor.onOpenNote = { [weak self, weak editor] url in
+            guard let self, let editor, self.noteEditors[tabID]?.editor === editor,
+                  self.currentTabID == tabID, self.activeProfileID == profileID, !self.isClosing else { return }
+            self.openNote(url: url)
+        }
     }
 
     func createEasel(inSplit: Bool = false) {
@@ -111,6 +169,41 @@ extension BrowserWindowController {
             } catch {
                 FileHandle.standardError.write(Data(("Parc rendering metrics failed: " + error.localizedDescription + "\n").utf8))
             }
+        }
+    }
+}
+
+enum NoteTabError: LocalizedError {
+    case retiredAddress, changed
+    var errorDescription: String? {
+        switch self {
+        case .retiredAddress: return "This old note can’t open anymore. Notes live in files in your Notes folder now."
+        case .changed: return "This changed in another window. Give it another try."
+        }
+    }
+}
+
+@MainActor
+enum NotePaneRetention {
+    private static var holders: [ObjectIdentifier: Int] = [:]
+    static func reconcile(old: [UUID: BrowserWindowController.NotePane], new: [UUID: BrowserWindowController.NotePane]) {
+        let before = Set(old.values.map { ObjectIdentifier($0.editor) })
+        let after = Set(new.values.map { ObjectIdentifier($0.editor) })
+        guard before != after else { return }
+        var seen = Set<ObjectIdentifier>()
+        for pane in new.values {
+            let key = ObjectIdentifier(pane.editor)
+            guard !before.contains(key), seen.insert(key).inserted else { continue }
+            holders[key, default: 0] += 1
+            if holders[key] == 1 { pane.editor.file.retain() }
+        }
+        seen = []
+        for pane in old.values {
+            let key = ObjectIdentifier(pane.editor)
+            guard !after.contains(key), seen.insert(key).inserted, let count = holders[key] else { continue }
+            if count > 1 { holders[key] = count - 1; continue }
+            holders.removeValue(forKey: key)
+            pane.editor.file.release()
         }
     }
 }

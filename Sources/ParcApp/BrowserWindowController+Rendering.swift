@@ -30,17 +30,19 @@ extension BrowserWindowController {
         for id in Array(noteEditors.keys) {
             guard let cached = noteEditors[id] else { continue }
             let tab = state.tab(id, where: { $0.archivedAt == nil })
-            if tab?.profileID != cached.profileID || tab.flatMap({ InternalPage(urlString: $0.url)?.noteID }) != cached.documentID {
+            let page = tab.flatMap { InternalPage(urlString: $0.url) }
+            let sameNote = page == .note(cached.url) || (page?.noteURL != nil && page == InternalPage(urlString: cached.originalTab.url))
+            if tab?.profileID != cached.profileID || !sameNote {
                 guard cached.editor.prepareToClose() else {
                     _ = store.restoreLiveTab(cached.originalTab, replacing: store.state.tab(id))
                     continue
                 }
-                cached.editor.view.removeFromSuperview(); noteEditors.removeValue(forKey: id)
+                retireNoteEditor(id)
             } else if let tab {
-                noteEditors[id] = NotePane(documentID: cached.documentID, profileID: cached.profileID,
-                    editor: cached.editor, originalTab: tab)
+                noteEditors[id] = NotePane(profileID: cached.profileID, editor: cached.editor, originalTab: tab)
             }
         }
+        noteFailures = noteFailures.filter { presentation.displayedTabIDs.contains($0.key) }
         for id in Array(easelEditors.keys) {
             guard let cached = easelEditors[id] else { continue }
             let tab = state.tab(id, where: { $0.archivedAt == nil })
@@ -321,10 +323,11 @@ extension BrowserWindowController {
 
     private func showInternalPage(_ tab: BrowserTab, in pane: BrowserPane) {
         guard let page = InternalPage(urlString: tab.url) else {
-            pane.showError("This internal address is not supported.")
+            pane.showError(InternalPage.isRetiredNoteAddress(tab.url)
+                ? NoteTabError.retiredAddress.localizedDescription : "This internal address is not supported.")
             return
         }
-        if case let .note(id) = page { showNote(tab, id: id, in: pane); return }
+        if case let .note(url) = page { showNote(tab, url: url, in: pane); return }
         guard let documentID = page.easelID else { return }
         if let cached = easelEditors[tab.id], cached.documentID == documentID, cached.profileID == tab.profileID {
             pane.showNativeContent(cached.editor.view)
@@ -543,7 +546,7 @@ extension BrowserWindowController {
         if window?.isKeyWindow == true { refreshSidebarPointer() }
     }
     func reloadTab(_ id: UUID) {
-        failures.removeValue(forKey: id); easelFailures.removeValue(forKey: id)
+        failures.removeValue(forKey: id); easelFailures.removeValue(forKey: id); noteFailures.removeValue(forKey: id)
         if let tab = store.state.tab(id), InternalPage.isInternal(tab.url) {
             if let cached = easelEditors[id] {
                 cached.editor.refreshPageVisibility(); render(store.state); return

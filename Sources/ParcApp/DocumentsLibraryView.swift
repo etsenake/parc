@@ -39,7 +39,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private let empty = NSTextField(wrappingLabelWithString: "")
     private var rows: [Row] = []
     private var subscription: AnyCancellable?
-    private var observedNotes: [NoteDocument] = []
+    private var observedNotes: [NoteReference] = []
     private var observedEasels: [EaselSummary] = []
     private var observedProfileRemovalPending = false
     var ownerValid: (() -> Bool)?
@@ -87,8 +87,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         empty.textColor = .secondaryLabelColor
         empty.alignment = .center
         for view in [searchBackdrop, createButton, scroll, empty] { addSubview(view) }
-        do { subscription = try NoteStore.sharedStore(directory: store.notesDirectory(for: profileID)).changes.sink { [weak self] in self?.reload() } }
-        catch { empty.stringValue = error.localizedDescription }
+        subscription = NoteFolderPreferences.library(for: profileID).changes.sink { [weak self] in self?.reload() }
         reload(force: true)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -99,13 +98,13 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     func reload(force: Bool = false) {
         let selected = selectedPage
         do {
-            let notes = try NoteStore.sharedStore(directory: store.notesDirectory(for: profileID)).list()
+            let notes = try NoteFolderPreferences.library(for: profileID).notes()
             let easels = try EaselEditorViewController.sharedStore(directory: store.easelsDirectory(for: profileID)).list()
             let pending = store.isProfileRemovalPending(profileID)
             if !force && shouldSkipCatalogReload(notes: notes, easels: easels, pending: pending) { return }
             rememberAppliedCatalog(notes: notes, easels: easels, pending: pending)
-            let all = notes.map { Row(page: .note($0.id), title: $0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Note" : $0.title,
-                                      searchableText: $0.body.text.replacingOccurrences(of: "\n", with: " "), modified: $0.modifiedAt) }
+            let all = notes.map { Row(page: .note($0.url), title: InternalPage.noteTitle($0.title, file: $0.url),
+                                      searchableText: $0.url.lastPathComponent, modified: $0.modifiedAt) }
                 + easels.map { Row(page: .easel($0.id), title: $0.title, searchableText: "Easel · \($0.itemCount) objects", modified: $0.modifiedAt) }
             let next = all.filter { search.stringValue.isEmpty || $0.title.localizedCaseInsensitiveContains(search.stringValue)
                     || $0.searchableText.localizedCaseInsensitiveContains(search.stringValue) }
@@ -125,13 +124,13 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         }
     }
 
-    private func shouldSkipCatalogReload(notes: [NoteDocument], easels: [EaselSummary], pending: Bool) -> Bool {
+    private func shouldSkipCatalogReload(notes: [NoteReference], easels: [EaselSummary], pending: Bool) -> Bool {
         notes == observedNotes
             && easels == observedEasels
             && pending == observedProfileRemovalPending
     }
 
-    private func rememberAppliedCatalog(notes: [NoteDocument], easels: [EaselSummary], pending: Bool) {
+    private func rememberAppliedCatalog(notes: [NoteReference], easels: [EaselSummary], pending: Bool) {
         observedNotes = notes
         observedEasels = easels
         observedProfileRemovalPending = pending
@@ -154,7 +153,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         let dark = chromeDark
         for index in (row * 2)..<min(rows.count, row * 2 + 2) {
             let item = rows[index]
-            let card = DocumentCard(title: item.title, isNote: item.page.noteID != nil, dark: dark)
+            let card = DocumentCard(title: item.title, isNote: item.page.noteURL != nil, dark: dark)
             card.identifier = NSUserInterfaceItemIdentifier("document-\(index)")
             card.isSelected = item.page == selectedPage
             card.select = { [weak self] in self?.selectedPage = item.page; self?.updateSelection() }
@@ -222,30 +221,32 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private func open(_ row: Row) { guard valid else { return }; onOpen?(row.page, row.title) }
     private func rename(_ row: Row) {
         guard valid, let window, window.attachedSheet == nil else { return }
-        let dialog = ParcDialog(.init(title: [(row.page.noteID == nil ? "Rename Easel" : "Rename Note", false)],
+        let dialog = ParcDialog(.init(title: [(row.page.noteURL == nil ? "Rename Easel" : "Rename Note", false)],
             confirm: "Rename", cancel: "Cancel", field: .init(value: row.title, placeholder: "", required: false)))
         guard let field = dialog.textField else { return }
         _ = dialog.begin(for: window) { [weak self] result in
             guard let self, result == .confirm, self.valid else { return }
             do {
-                if let id = row.page.noteID {
-                    let session = try NoteStore.sharedStore(directory: self.store.notesDirectory(for: self.profileID)).load(id)
-                    guard session.displayTitle == row.title else { throw NoteError.changed }
-                    try session.updateTitle(field.stringValue, replacing: session.document.title)
+                if let url = row.page.noteURL {
+                    let session = try NoteFileSession.open(url)
+                    let renamed = try session.rename(to: field.stringValue)
+                    self.store.updateNoteFile(from: url, to: renamed, title: session.title)
+                    self.onRename?(.note(renamed), session.title)
                 } else if let id = row.page.easelID {
                     let session = try EaselEditorViewController.sharedStore(directory: self.store.easelsDirectory(for: self.profileID)).load(id)
-                    guard session.document.title == row.title else { throw NoteError.changed }
+                    guard session.document.title == row.title else { throw NoteTabError.changed }
                     try session.perform("Rename Easel") { $0.title = field.stringValue.isEmpty ? "Untitled Easel" : field.stringValue }
+                    self.onRename?(row.page, field.stringValue)
                 }
-                self.onRename?(row.page, field.stringValue); self.reload()
+                self.reload()
             } catch { self.empty.stringValue = error.localizedDescription; self.empty.isHidden = self.rows.isEmpty == false }
         }
     }
     private func delete(_ row: Row) {
         guard valid, let window, window.attachedSheet == nil else { return }
-        let note = row.page.noteID != nil
+        let note = row.page.noteURL != nil
         ParcDialog.confirm(in: window, title: note ? "Are you sure you want to delete this note?" : "Are you sure you want to delete this Easel?",
-                          message: note ? "Doing so will delete the note permanently." : "Doing so will delete the Easel permanently.",
+                          message: note ? "Doing so will move the note’s file to the Trash." : "Doing so will delete the Easel permanently.",
                           confirm: "Delete", destructive: true) { [weak self] approved in
             guard let self, approved, self.valid else { return }
             self.onDelete?(row.page) { [weak self] error in

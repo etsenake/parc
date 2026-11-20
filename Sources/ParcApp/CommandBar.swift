@@ -70,6 +70,7 @@ import SwiftUI
     private var submissionDepth = 0
     var onManagePasswords: (() -> Void)?
     var onOpenDocument: ((CommandBarDocument) -> Void)?
+    var noteLibrary: NoteLibrary?
     var onRestoreArchived: ((UUID) -> Bool)?
     var onMuteAllTabs: ((Bool) -> Bool)?
     var onManageSiteSearch: (() -> Void)?
@@ -1155,7 +1156,7 @@ import SwiftUI
         for tab in tabs where tab.archivedAt == nil && (!addressOnly || Self.isAddressSuggestion(tab.url)) {
             let url = URL(string: tab.url)
             let key = InternalPage(urlString: tab.url).map {
-                $0.noteID.map { "document:" + $0.uuidString.lowercased() } ?? "easel:" + ($0.easelID?.uuidString.lowercased() ?? "")
+                $0.noteURL.map(CommandBarDocument.noteKey) ?? "easel:" + ($0.easelID?.uuidString.lowercased() ?? "")
             } ?? url.map { CommandBarRanking.pageKey($0, title: tab.title) } ?? "tab:" + tab.id.uuidString
             let row = tabResult(tab)
             if let titleQuery, let score = CommandBarTitleMatch.score(titleQuery, titleTokens(for: tab, title: row.title), kind: .tab,
@@ -1181,9 +1182,9 @@ import SwiftUI
             candidates[entry.index].titleScore = score
         }
         for document in (addressOnly ? [] : documents) {
-            add(Result(id: document.key, title: document.title.isEmpty ? (document.kind == .note ? "Untitled Note" : "Untitled Easel") : document.title,
+            add(Result(id: document.key, title: document.title.isEmpty ? (document.kind == .note ? "Untitled" : "Untitled Easel") : document.title,
                        detail: document.kind == .note ? "Note" : "Easel",
-                       symbol: (document.kind == .note ? InternalPage.note(document.id) : .easel(document.id)).sidebarFallbackSymbol,
+                       symbol: document.kind == .note ? "note.text" : InternalPage.easel(document.id).sidebarFallbackSymbol,
                        document: document),
                 .init(archetype: .document, key: document.key, texts: [document.title]))
         }
