@@ -141,7 +141,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     lazy var windowKeyViews = WindowKeyViewLoop(
         root: rootView, sidebar: sidebar,
         excluded: { [sidebarContainer, parkedPages, pageHost, peekLayer, weak self] in
-            EaselBrowserObjects.excludesFromKeyboardNavigation($0) ||
+            EmbeddedPagePool.excludesFromKeyboardNavigation($0) ||
             WindowKeyViewLoop.windowExcludes($0, sidebarContainer: sidebarContainer, parkedPages: parkedPages,
                                              pageHost: pageHost, peekLayer: peekLayer, activePeek: { self?.activePeek?.view })
         },

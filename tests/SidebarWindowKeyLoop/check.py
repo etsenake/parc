@@ -10,7 +10,7 @@ root = Path(__file__).resolve().parents[2]
 controller = browser_window_controller_source(root / "Sources/ParcApp")
 for use, count in (("lazy var windowKeyViews = WindowKeyViewLoop(", 1),
                    ("excluded: { [sidebarContainer, parkedPages, pageHost, peekLayer, weak self] in\n"
-                    "            EaselBrowserObjects.excludesFromKeyboardNavigation($0) ||\n"
+                    "            EmbeddedPagePool.excludesFromKeyboardNavigation($0) ||\n"
                     "            WindowKeyViewLoop.windowExcludes($0, sidebarContainer: sidebarContainer, parkedPages: parkedPages,\n"
                     "                                             pageHost: pageHost, peekLayer: peekLayer, activePeek: { self?.activePeek?.view })", 1),
                    ("isPage: { [extensionSidePanel] in $0 is PCBrowserView || $0 === extensionSidePanel.content },", 1),

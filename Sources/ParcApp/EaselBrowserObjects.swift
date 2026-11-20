@@ -2,70 +2,25 @@ import AppKit
 import Combine
 
 @MainActor
-final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserViewDelegate {
-    private static var owners: [UUID: EaselBrowserObjects] = [:]
-    private let token = UUID()
+final class EaselBrowserObjects: EmbeddedPagePool, EaselBrowserObjectHosting {
     private let session: EaselSession
-    private weak var canvas: EaselCanvasView?
-    private weak var binding: PCNativeBrowserWindow?
-    private let profilePath: String
-    private var validOwner: () -> Bool
-    private var activeOwner: () -> Bool
-    private var selectionChanged: () -> Void
-    private var metadataChanged: () -> Void
-    private var metadataRefreshPending = false
+    private var canvas: EaselCanvasView? { hostView as? EaselCanvasView }
     private var replacementObserver: UUID?
     private var documentObserver: AnyCancellable?
-    private var entries: [UUID: Entry] = [:]
-    private var selectedID: UUID?
-    private var interacting = false
-    private var retirementPending = false
-    private var windowTransferGeneration: UInt64 = 0
-    private var windowTransfer: WindowTransfer?
-    private var disposed = false
-    var onError: ((Error) -> Void)?
-    var onContextImage: ((PCBrowserView, PCNativeContextImage) -> Void)?
-
-    @MainActor private final class Entry {
-        let identity = UUID()
-        var originalURL: String
-        let view: EaselBrowserSurface
-        let captureLayout: EaselCaptureLayout?
-        func matches(_ item: EaselItem) -> Bool {
-            item.ownsEmbeddedPage && item.url == originalURL && item.captureLayout == captureLayout
-        }
-        var request: PCNativeEmbeddedPageRequest?
-        var started = false
-        var wasLoading = true
-        var crash: PCNativeRendererCrash?
-        var retainedPage: PCNativePage?
-        var page: PCNativePage? { view.browser.nativePage ?? retainedPage }
-        var attempt = UUID()
-        func cancelRequest() {
-            request?.cancel()
-            guard request?.isPending != true else { return }
-            attempt = UUID(); request = nil
-        }
-        init(url: String, profilePath: String, captureLayout: EaselCaptureLayout?) {
-            self.captureLayout = captureLayout
-            originalURL = url; view = EaselBrowserSurface(profilePath: profilePath, captureLayout: captureLayout)
-        }
-    }
 
     init(session: EaselSession, canvas: EaselCanvasView, binding: PCNativeBrowserWindow,
          profilePath: String, validOwner: @escaping () -> Bool,
          activeOwner: @escaping () -> Bool, selectionChanged: @escaping () -> Void,
          metadataChanged: @escaping () -> Void) {
-        self.session = session; self.canvas = canvas; self.binding = binding; self.profilePath = profilePath
-        self.validOwner = validOwner; self.activeOwner = activeOwner; self.selectionChanged = selectionChanged
-        self.metadataChanged = metadataChanged
-        super.init()
+        self.session = session
+        super.init(owner: session, hostView: canvas, binding: binding, profilePath: profilePath, validOwner: validOwner,
+                   activeOwner: activeOwner, selectionChanged: selectionChanged, metadataChanged: metadataChanged)
         replacementObserver = session.observeReplacement { [weak self] next in
             guard let self else { return true }
             return self.entries.allSatisfy { id, entry in
                 guard entry.page?.isClosed == false || entry.request?.isPending == true else { return true }
                 return next?.items.contains { item in
-                    guard item.id == id, item.ownsEmbeddedPage, item.captureLayout == entry.captureLayout, let url = item.url else { return false }
+                    guard item.id == id, item.ownsEmbeddedPage, Self.variant(item) == entry.variant, let url = item.url else { return false }
                     return url == entry.originalURL || (entry.page?.isClosed == false && entry.request == nil
                         && self.session.isRecordingBrowserNavigation(id, from: entry.originalURL, to: url))
                 } == true
@@ -80,126 +35,27 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
                 }
             }
             for (id, entry) in Array(self.entries) where
-                !next.items.contains(where: { $0.id == id && entry.matches($0) })
+                !next.items.contains(where: { $0.id == id && Self.matches($0, entry) })
                 && entry.page?.isClosed != false {
                 entry.cancelRequest()
-                if entry.request == nil { entry.view.removeFromSuperview(); self.entries.removeValue(forKey: id) }
+                if entry.request == nil { entry.surface.removeFromSuperview(); self.entries.removeValue(forKey: id) }
             }
             self.releaseIfIdle()
         }
         canvas.pageObjects = self
     }
 
-    final class WindowTransfer {
-        fileprivate let generation: UInt64
-        fileprivate let owner: UUID
-        fileprivate let entryIDs: [UUID: UUID]
-        fileprivate let objects: [UUID: EaselItem]
-        let views: [UUID: PCBrowserView]
-        let pages: [UUID: PCNativePage]
-        fileprivate init(owner: UUID, generation: UInt64, entryIDs: [UUID: UUID], objects: [UUID: EaselItem],
-                         views: [UUID: PCBrowserView], pages: [UUID: PCNativePage]) {
-            self.owner = owner; self.generation = generation; self.entryIDs = entryIDs; self.objects = objects
-            self.views = views; self.pages = pages
-        }
-    }
-    func snapshotForWindowTransfer() -> WindowTransfer? {
-        guard !disposed, windowTransfer == nil, !retirementPending, !hasPendingCreation,
-              validOwner(), let window = binding?.window, canvas?.window === window else { return nil }
-        let views = ownedViews
-        let pages = views.compactMapValues(\.nativePage)
-        guard views.count == pages.count, pages.values.allSatisfy({
-            !$0.isClosed && $0.isEmbedded && $0.embeddedOwnerValid
-                && PCNativeBrowserApplication.owner(of: $0) === binding
-        }), views.values.allSatisfy({ $0.window === window }) else { return nil }
-        return WindowTransfer(owner: token, generation: windowTransferGeneration, entryIDs: entries.mapValues(\.identity),
-            objects: Dictionary(uniqueKeysWithValues: session.document.items.filter { entries[$0.id] != nil }.map { ($0.id, $0) }),
-            views: views, pages: pages)
-    }
-    func isCurrent(_ transfer: WindowTransfer, checkingDocument: Bool = true) -> Bool {
-        guard !disposed, transfer.owner == token, transfer.generation == windowTransferGeneration,
-              !retirementPending, !hasPendingCreation,
-              windowTransfer == nil || windowTransfer === transfer else { return false }
-        if checkingDocument {
-            guard entries.mapValues(\.identity) == transfer.entryIDs,
-                  Dictionary(uniqueKeysWithValues: session.document.items.filter { transfer.entryIDs[$0.id] != nil }.map { ($0.id, $0) }) == transfer.objects else { return false }
-        }
-        return transfer.pages.allSatisfy { id, page in
-            page.isClosed || (transfer.views[id]?.nativePage === page
-                && entries.values.contains { $0.identity == id && $0.view.browser === transfer.views[id] && $0.page === page })
-        } && pages.allSatisfy { page in transfer.pages.values.contains { $0 === page } }
-    }
-    func beginWindowTransfer(_ transfer: WindowTransfer) -> Bool {
-        guard windowTransfer == nil, isCurrent(transfer) else { return false }
-        windowTransfer = transfer
-        refreshVisibility()
-        return true
-    }
-    func rebindWindowTransfer(_ transfer: WindowTransfer, binding: PCNativeBrowserWindow,
-                             profilePath: String, validOwner: @escaping () -> Bool,
-                             activeOwner: @escaping () -> Bool, selectionChanged: @escaping () -> Void,
-                             metadataChanged: @escaping () -> Void) -> Bool {
-        guard windowTransfer === transfer, self.profilePath == profilePath,
-              isCurrent(transfer, checkingDocument: false), let window = binding.window,
-              canvas?.window === window, transfer.pages.allSatisfy({ id, page in
-                  page.isClosed || (page.embeddedOwnerValid && PCNativeBrowserApplication.owner(of: page) === binding
-                      && transfer.views[id]?.window === window)
-              }) else { return false }
-        self.binding = binding; self.validOwner = validOwner; self.activeOwner = activeOwner
-        self.selectionChanged = selectionChanged; self.metadataChanged = metadataChanged
-        return true
-    }
-    func canFinishWindowTransfer(_ transfer: WindowTransfer) -> Bool {
-        guard windowTransfer === transfer, isCurrent(transfer, checkingDocument: false),
-              let binding, canvas?.window === binding.window else { return false }
-        return transfer.pages.values.allSatisfy {
-            $0.isClosed || ($0.embeddedOwnerValid && PCNativeBrowserApplication.owner(of: $0) === binding)
-        }
-    }
-    func finishWindowTransfer(_ transfer: WindowTransfer) -> Bool {
-        guard canFinishWindowTransfer(transfer) else { return false }
-        windowTransfer = nil
-        windowTransferGeneration &+= 1
-        return true
+    fileprivate static func variant(_ item: EaselItem) -> EmbeddedPageFingerprint? { item.captureLayout.map(EmbeddedPageFingerprint.init) }
+    fileprivate static func matches(_ item: EaselItem, _ entry: EmbeddedPageEntry) -> Bool {
+        item.ownsEmbeddedPage && item.url == entry.originalURL && variant(item) == entry.variant
     }
 
-    var ownedViews: [UUID: PCBrowserView] {
-        Dictionary(uniqueKeysWithValues: entries.values.filter { $0.page?.isClosed == false }.map { ($0.identity, $0.view.browser) })
-    }
-    func reveal(_ page: PCNativePage) {
-        guard let id = entries.first(where: { $0.value.page === page })?.key, validOwner() else { return }
-        canvas?.selectBrowserObject(id)
-        selectionChanged()
-        if selectedPage === page { canvas?.window?.makeFirstResponder(page.nativeView) }
-    }
-    func focusPage(for id: UUID) -> Bool {
-        guard let surface = accessibilitySurface(for: id) as? EaselBrowserSurface,
-              let window = surface.window, window.attachedSheet == nil else { return false }
-        if let page = entries[id]?.page, !page.isClosed {
-            guard selectedPage === page, page.nativeView.window === window,
-                  page.nativeView.isDescendant(of: surface) else { return false }
-            if surface.showsRecovery { return surface.focusRecovery() }
-            return window.makeFirstResponder(page.nativeView)
-        }
-        return surface.focusRecovery()
-    }
-    func accessibilitySurface(for id: UUID) -> NSView? {
-        guard !disposed, !session.isClosed, !session.isDeleted, windowTransfer == nil, !retirementPending, validOwner(), activeOwner(),
-              interacting, selectedID == id, let entry = entries[id], entry.view.interactive,
-              entry.view.window === binding?.window, !entry.view.isHiddenOrHasHiddenAncestor,
-              session.document.items.contains(where: { $0.id == id && entry.matches($0) }) else { return nil }
-        if let page = entry.page, !page.isClosed,
-           !page.embeddedOwnerValid || PCNativeBrowserApplication.owner(of: page) !== binding { return nil }
-        return entry.view
-    }
-    static func excludesFromKeyboardNavigation(_ view: NSView) -> Bool {
-        (view as? EaselBrowserSurface).map { !$0.inputAvailable } ?? false
-    }
-    var pages: [PCNativePage] { entries.values.compactMap { $0.page }.filter { !$0.isClosed } }
+    override func revealEntry(_ id: UUID) { canvas?.selectBrowserObject(id) }
+
     func exportSnapshots(within deadline: TimeInterval, _ completion: @escaping ([UUID: EaselPageSnapshot]) -> Void) {
         let collection = SnapshotCollection(completion)
-        for (id, entry) in entries where !disposed && session.document.items.contains(where: { $0.id == id && entry.matches($0) }) {
-            let area = entry.view.pageArea
+        for (id, entry) in entries where !disposed && session.document.items.contains(where: { $0.id == id && Self.matches($0, entry) }) {
+            let area = entry.surface.pageArea
             guard let page = entry.page, !page.isClosed, page.embeddedOwnerValid, !area.page.isEmpty, !area.visible.isEmpty,
                   page.responds(to: #selector(PCNativePage.snapshotEmbeddedPage(completion:))) else { continue }
             collection.request()
@@ -231,243 +87,66 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
             delivered = true; completion(snapshots)
         }
     }
-    var hasPendingCreation: Bool { entries.values.contains { $0.request != nil } }
-    var selectedPage: PCNativePage? {
-        guard !disposed, windowTransfer == nil, validOwner(), activeOwner(), interacting, let id = selectedID,
-              let entry = entries[id], entry.view.window === binding?.window,
-              !entry.view.isHiddenOrHasHiddenAncestor, let page = entry.page, !page.isClosed, page.embeddedOwnerValid else { return nil }
-        return page
-    }
-    var visiblePages: [PCNativePage] {
-        guard !disposed, windowTransfer == nil, validOwner() else { return [] }
-        return entries.values.compactMap { entry in
-            guard entry.view.window === binding?.window, !entry.view.isHiddenOrHasHiddenAncestor,
-                  !entry.view.visibleRect.isEmpty, let page = entry.page, !page.isClosed, page.embeddedOwnerValid else { return nil }
-            return page
-        }
-    }
-    func contains(_ page: PCNativePage) -> Bool { entries.values.contains { $0.page === page } }
-    func container(for page: PCNativePage) -> NSView? { entries.values.first { $0.page === page }?.view.browser }
 
     func surface(for item: EaselItem) -> NSView? {
-        guard item.ownsEmbeddedPage, let url = item.url, !disposed else { return nil }
-        if let existing = entries[item.id] { return existing.view }
-        let entry = Entry(url: url, profilePath: profilePath, captureLayout: item.captureLayout)
-        entry.view.browser.delegate = self
-        entry.view.setStatus("Loading webpage…")
-        entry.view.onLayout = { [weak self, weak entry] in
-            guard let self, let entry else { return }; self.start(item.id, entry: entry)
-        }
-        entry.view.onRetry = { [weak self, weak entry] in
-            guard let self, let entry, self.entries[item.id] === entry else { return }
-            if let page = entry.page, !page.isClosed {
-                if let crash = page.rendererCrash { _ = page.performRendererCrashAction(crash) }
-                else { _ = page.performNavigation(.reload, inNewTab: false) }
-            }
-            else { entry.started = false; self.start(item.id, entry: entry) }
-        }
-        entry.view.onNavigate = { [weak self, weak entry] url in
+        guard item.ownsEmbeddedPage, let url = item.url else { return nil }
+        let profilePath = self.profilePath, layout = item.captureLayout
+        guard let entry = surface(id: item.id, url: url, variant: Self.variant(item), make: {
+            EaselBrowserSurface(profilePath: profilePath, captureLayout: layout)
+        }) else { return nil }
+        guard entry.surface.onDone == nil, let view = entry.surface as? EaselBrowserSurface else { return entry.surface }
+        view.onDone = { [weak self, weak entry] in
             guard let self, let entry, self.entries[item.id] === entry,
-                  self.selectedPage === entry.page, !self.retirementPending,
-                  entry.view.window?.attachedSheet == nil, let page = entry.page,
-                  page.embeddedOwnerValid, page.canPerformNavigation(.reload) else { return false }
-            entry.view.browser.loadURL(url)
-            return true
-        }
-        entry.view.onDone = { [weak self, weak entry] in
-            guard let self, let entry, self.entries[item.id] === entry,
-                  self.accessibilitySurface(for: item.id) === entry.view, let canvas = self.canvas,
+                  self.accessibilitySurface(for: item.id) === entry.surface, let canvas = self.canvas,
                   let window = canvas.window, window.attachedSheet == nil else { return }
             canvas.cancelOperation(nil); window.makeFirstResponder(canvas)
             canvas.layoutSubtreeIfNeeded()
         }
-        entry.view.onSnapshot = { [weak self] in self?.canvas?.setLiveCapture(item.id, enabled: false) }
-        entries[item.id] = entry
-        return entry.view
-    }
-
-    private func start(_ id: UUID, entry: Entry) {
-        guard !entry.started, !disposed, windowTransfer == nil, !retirementPending, validOwner(),
-              entries[id] === entry, let canvas, let binding,
-              canvas.window === binding.window, !canvas.isHiddenOrHasHiddenAncestor,
-              entry.view.window === binding.window, !entry.view.visibleRect.isEmpty,
-              session.document.items.contains(where: { $0.id == id && entry.matches($0) }),
-              let url = URL(string: entry.originalURL) else { return }
-        entry.started = true
-        entry.attempt = UUID(); let attempt = entry.attempt
-        entry.view.setStatus("Loading webpage…")
-        Self.owners[token] = self
-        let validate = { [weak self, weak entry, weak binding] in
-            guard let self, let entry, let binding else { return false }
-            return !self.disposed && self.windowTransfer == nil && !self.retirementPending && self.validOwner()
-                && self.entries[id] === entry && self.canvas?.window === binding.window
-                && entry.view.window === binding.window && !entry.view.isHiddenOrHasHiddenAncestor
-                && self.session.document.items.contains { $0.id == id && entry.matches($0) }
-        }
-        entry.request = entry.view.browser.beginEmbeddedNavigation(url, validateOwner: validate) { [weak self, weak entry] page, error in
-            MainActor.assumeIsolated {
-                guard let self, let entry else { return }
-                guard entry.attempt == attempt, self.entries[id] === entry else { return }
-                entry.request = nil
-                if let page {
-                    entry.retainedPage = page
-                    entry.view.setStatus(nil); entry.view.refresh()
-                    self.recordURL(entry.view.browser)
-                    self.selectionChanged()
-                    if page.isClosed { self.didClose(page) }
-                } else {
-                    entry.view.setStatus(error?.localizedDescription ?? "The webpage could not open.", retry: true)
-                    self.releaseIfIdle()
-                }
-            }
-        }
-        if entry.request == nil { entry.view.setStatus("This webpage owner is unavailable.", retry: true); releaseIfIdle() }
+        view.onSnapshot = { [weak self] in self?.canvas?.setLiveCapture(item.id, enabled: false) }
+        return view
     }
 
     func synchronize(items: [EaselItem], selection: Set<UUID>, interacting: Bool) {
-        let before = selectedPage
-        self.interacting = interacting && !retirementPending
-        selectedID = selection.count == 1 ? selection.first : nil
         let current = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
-        for (id, entry) in Array(entries) {
-            if current[id].map(entry.matches) != true {
-                entry.cancelRequest()
-                if entry.page?.isClosed != false && entry.request == nil { entry.view.removeFromSuperview(); entries.removeValue(forKey: id) }
-            }
-            entry.view.validateInput()
-            entry.view.positioningAllowed = !disposed && validOwner() && windowTransfer == nil && !retirementPending
-            entry.view.interactive = self.interacting && selectedID == id && activeOwner() && validOwner() && windowTransfer == nil
-            entry.view.refresh()
-        }
-        if before !== selectedPage { selectionChanged() }
-        releaseIfIdle()
-    }
-    func refreshVisibility() {
-        let before = selectedPage
-        for (id, entry) in entries {
-            entry.view.validateInput()
-            entry.view.positioningAllowed = !disposed && validOwner() && windowTransfer == nil && !retirementPending
-            entry.view.interactive = interacting && selectedID == id && activeOwner() && validOwner() && windowTransfer == nil && !retirementPending
-            entry.view.refresh()
-        }
-        if before !== selectedPage { selectionChanged() }
+        synchronize(wanted: { id, entry in current[id].map { Self.matches($0, entry) } == true },
+                    selection: selection.count == 1 ? selection.first : nil, interacting: interacting)
     }
 
     func prepareReplacement(_ next: EaselDocument, valid: @escaping () -> Bool, completion: @escaping (Bool) -> Void) {
         let original = session.document
-        guard valid(), windowTransfer == nil, !retirementPending else { completion(false); return }
-        let owners = Self.owners.values.filter { $0.session === session }
-        let targets = owners.flatMap { owner in owner.entries.compactMap { id, entry -> (EaselBrowserObjects, Entry)? in
-            next.items.contains { $0.id == id && entry.matches($0) } ? nil : (owner, entry)
+        guard valid(), !gate.isTransferring, !gate.isRetiring else { completion(false); return }
+        let owners = Self.liveOwners.compactMap { $0 as? EaselBrowserObjects }.filter { $0.session === session }
+        let targets = owners.flatMap { owner in owner.entries.compactMap { id, entry -> (EmbeddedPagePool, EmbeddedPageEntry)? in
+            next.items.contains { $0.id == id && Self.matches($0, entry) } ? nil : (owner, entry)
         } }
-        for (_, entry) in targets { entry.cancelRequest() }
-        let pages = targets.compactMap { $0.1.page }.filter { !$0.isClosed }
-        guard !pages.isEmpty else { completion(valid() && session.document == original); return }
-        guard owners.allSatisfy({ !$0.retirementPending && $0.windowTransfer == nil }) else { completion(false); return }
-        owners.forEach { $0.retirementPending = true; $0.refreshVisibility() }
-        PCNativeBrowserApplication.requestClosePages(pages, shouldCommit: { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self else { return false }
-                return valid() && self.session.document == original && targets.allSatisfy { owner, entry in
-                    owner.validOwner() && owner.entries.values.contains { $0 === entry }
-                }
-            }
-        }, completion: { [weak self] allowed in
-            MainActor.assumeIsolated {
-                owners.forEach { $0.retirementPending = false; $0.refreshVisibility() }
-                guard let self else { completion(false); return }
-                completion(allowed && valid() && self.session.document == original)
-            }
-        })
+        EmbeddedPagePool.requestRetirement(of: targets, owners: owners, valid: { [weak self] in
+            guard let self else { return false }
+            return valid() && self.session.document == original
+        }, completion: completion)
     }
 
-    func didClose(_ page: PCNativePage) {
-        guard let entry = entries.values.first(where: { $0.page === page }) else { return }
-        entry.view.cancelPositioning()
-        entry.view.setStatus("Webpage closed", retry: true); entry.view.refresh()
-        selectionChanged(); releaseIfIdle()
-    }
-    func disposeAfterClosure() {
-        disposed = true
-        entries.values.forEach { $0.view.positioningAllowed = false; $0.cancelRequest() }
-        guard pages.isEmpty && !hasPendingCreation else { return }
-        entries.values.forEach { $0.view.cancelPositioning(); $0.view.browser.delegate = nil; $0.view.removeFromSuperview() }; entries.removeAll()
+    override func didDispose() {
         if let replacementObserver { session.removeReplacementObserver(replacementObserver); self.replacementObserver = nil }
         documentObserver = nil
-        Self.owners.removeValue(forKey: token)
     }
-    private func releaseIfIdle() {
-        if pages.isEmpty && !hasPendingCreation {
-            Self.owners.removeValue(forKey: token)
-            if disposed { disposeAfterClosure() }
-        }
+}
+
+extension EaselSession: EmbeddedPageOwner {
+    var embeddedPagesOpen: Bool { !isClosed && !isDeleted }
+    func embeddedPage(_ id: UUID, wants url: String, variant: EmbeddedPageFingerprint?) -> Bool {
+        document.items.contains { $0.id == id && $0.ownsEmbeddedPage && $0.url == url && $0.captureLayout.map(EmbeddedPageFingerprint.init) == variant }
     }
-    func browserView(_ view: PCBrowserView, addContextImageToEasel image: PCNativeContextImage) {
-        guard selectedPage === view.nativePage, image.isValid, validOwner() else { return }
-        onContextImage?(view, image)
+    func embeddedPageFingerprint(for ids: Set<UUID>) -> EmbeddedPageFingerprint {
+        EmbeddedPageFingerprint(Dictionary(uniqueKeysWithValues: document.items.filter { ids.contains($0.id) }.map { ($0.id, $0) }))
     }
-    func browserView(_ view: PCBrowserView, didChangeRendererCrash crash: PCNativeRendererCrash?) {
-        guard let entry = entries.values.first(where: { $0.view.browser === view }) else { return }
-        let previous = entry.crash; entry.crash = crash
-        if let crash {
-            entry.view.setStatus(SadTabContent.plainMessage, retry: true)
-            entry.view.setRetryTitle(crash.actionTitle)
-            if selectedPage === entry.page { _ = entry.page?.rendererCrashDidPresent(crash) }
-        } else if previous != nil { entry.view.setStatus(nil); entry.view.setRetryTitle("Retry") }
-    }
-    func browserView(_ view: PCBrowserView, requestFocusForRendererCrash crash: PCNativeRendererCrash) {
-        guard let entry = entries.values.first(where: { $0.view.browser === view }),
-              entry.page?.rendererCrash === crash, selectedPage === entry.page else { return }
-        entry.view.focusRetry()
-    }
-    func browserView(_ view: PCBrowserView, didChangeCaptureState state: PCNativeCaptureState?) { scheduleMetadataRefresh() }
-    func browserView(_ view: PCBrowserView, didChangeTitle title: String) { refresh(view) }
-    func browserView(_ view: PCBrowserView, didChangeURL url: URL) { recordURL(view); refresh(view) }
-    private func recordURL(_ view: PCBrowserView) {
-        guard !disposed, !retirementPending, validOwner(), let page = view.nativePage, !page.isClosed,
-              page.embeddedOwnerValid, selectedPage === page, let url = page.url,
-              let (id, entry) = entries.first(where: { $0.value.view.browser === view && $0.value.page === page }),
-              entry.request == nil, entry.captureLayout == nil else { return }
-        do { _ = try session.recordBrowserNavigation(url, itemID: id, expectedURL: entry.originalURL) }
+    func recordEmbeddedPageNavigation(_ url: URL, for id: UUID, expectedURL: String) throws {
+        do { _ = try recordBrowserNavigation(url, itemID: id, expectedURL: expectedURL) }
         catch EaselStoreError.browserInUse { }
-        catch { onError?(error) }
-    }
-    func browserView(_ view: PCBrowserView, didChangeLoading loading: Bool, canGoBack back: Bool, canGoForward forward: Bool) {
-        if let entry = entries.values.first(where: { $0.view.browser === view }) {
-            if loading != entry.wasLoading {
-                if loading { entry.view.cancelPositioning() }
-                else { entry.view.positionCapture(force: true) }
-            }
-            entry.wasLoading = loading
-        }
-        if !loading { recordURL(view) }
-        refresh(view)
-    }
-    func browserView(_ view: PCBrowserView, didLearnSafariIdentityForSite site: String,
-                     profilePath: String, offTheRecord: Bool) {
-        FairPlayIdentityController.shared.didLearn(site, profilePath: profilePath, offTheRecord: offTheRecord)
-    }
-    func browserView(_ view: PCBrowserView, didFailWithError error: Error) {
-        entries.values.first { $0.view.browser === view }?.view.setStatus(error.localizedDescription, retry: true)
-    }
-    func browserViewDidRequestClose(_ view: PCBrowserView) { if let page = entries.values.first(where: { $0.view.browser === view })?.page { didClose(page) } }
-    private func refresh(_ view: PCBrowserView) {
-        entries.values.first { $0.view.browser === view }?.view.refresh()
-        scheduleMetadataRefresh()
-    }
-    private func scheduleMetadataRefresh() {
-        guard !disposed, !metadataRefreshPending else { return }
-        metadataRefreshPending = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.metadataRefreshPending = false
-            if !self.disposed { self.metadataChanged() }
-        }
     }
 }
 
 @MainActor
-private final class EaselBrowserSurface: NSView {
+private final class EaselBrowserSurface: NSView, EmbeddedPageSurface {
     let browser: PCBrowserView
     private let captureLayout: EaselCaptureLayout?
     private let clip = EaselLiveCaptureClip()
