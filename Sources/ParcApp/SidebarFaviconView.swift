@@ -31,6 +31,14 @@ final class SidebarFaviconView: NSImageView {
         }
     }
 
+    func showLocal(_ image: NSImage?, fallback symbol: NSImage?) {
+        generation &+= 1
+        fallback = symbol
+        hasFavicon = image != nil
+        self.image = image ?? symbol
+        contentTintColor = image == nil ? fallbackTintColor : nil
+    }
+
     func adoptSettled(_ image: NSImage) {
         generation &+= 1
         if fallback == nil { fallback = self.image }

@@ -969,18 +969,25 @@ import SwiftUI
             clearCompletion(); updateSelectionAppearance()
         }
         for result in results where result.navigation?.search != true {
-            guard let url = result.url, ["https", "http"].contains(url.scheme?.lowercased() ?? ""), requestedIcons.insert(url).inserted else { continue }
+            guard let url = result.url else { continue }
+            if result.tabID != nil || result.archivedTabID != nil, let note = InternalPage.noteFile(url) {
+                guard requestedIcons.insert(url).inserted else { continue }
+                NoteTabIconArt.shared.requestImage(forNote: note) { [weak self] image in self?.adoptIcon(image, for: url) }
+                continue
+            }
+            guard ["https", "http"].contains(url.scheme?.lowercased() ?? ""), requestedIcons.insert(url).inserted else { continue }
             PCNativeBrowserApplication.favicon(for: url, profilePath: profilePath) { [weak self] image in
-                MainActor.assumeIsolated {
-                    guard let self, !self.dismissed, self.isOwnerValid?() != false, let image else { return }
-                    self.icons[url] = image
-                    for row in self.results.indices where self.results[row].url == url {
-                        (self.table.view(atColumn: 0, row: row, makeIfNecessary: false) as? CommandResultCell)?.setIcon(image)
-                    }
-                    self.updateInputIcon()
-                }
+                MainActor.assumeIsolated { self?.adoptIcon(image, for: url) }
             }
         }
+    }
+    private func adoptIcon(_ image: NSImage?, for url: URL) {
+        guard !dismissed, isOwnerValid?() != false, let image else { return }
+        icons[url] = image
+        for row in results.indices where results[row].url == url {
+            (table.view(atColumn: 0, row: row, makeIfNecessary: false) as? CommandResultCell)?.setIcon(image)
+        }
+        updateInputIcon()
     }
     private func restResidentResults() {
         guard !CommandBarOpenResultsSkip.shouldSkip(previous: lastOpenResultsFingerprint,
@@ -1549,7 +1556,11 @@ import SwiftUI
             return
         }
         let result = results[table.selectedRow]
-        inputIcon.image = result.extensionLaunch?.icon ?? result.url.flatMap { icons[$0] } ?? Self.iconImage(result.symbol)
+        inputIcon.image = icon(for: result)
+    }
+    private func icon(for result: Result) -> NSImage? {
+        result.extensionLaunch?.icon ?? result.url.flatMap { icons[$0] }
+            ?? result.document?.icon.flatMap(NoteTabIconArt.shared.image(emoji:)) ?? Self.iconImage(result.symbol)
     }
     func numberOfRows(in tableView: NSTableView) -> Int { results.count }
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
@@ -1564,7 +1575,7 @@ import SwiftUI
         let result = results[row]
         let cell = CommandResultCell(title: result.title, subtitle: result.subtitle, detail: result.detail, accessory: accessoryText(result),
                                      isTab: result.tabID != nil || result.archivedTabID != nil,
-                                     icon: result.extensionLaunch?.icon ?? result.url.flatMap { icons[$0] } ?? Self.iconImage(result.symbol),
+                                     icon: icon(for: result),
                                      spokenAccessory: result.caption?.spoken, spokenSubtitle: CommandBarResultText.spokenSubtitle(result.subtitle),
                                      enabled: enabled(result), spaceAction: result.spaceAction, folderAction: result.folderAction ?? result.folderMove?.folder,
                                      isAction: result.command != nil || result.spaceAction != nil || result.folderAction != nil

@@ -330,7 +330,11 @@ extension BrowserWindowController {
                 ? NoteTabError.retiredAddress.localizedDescription : "This internal address is not supported.")
             return
         }
-        if case let .note(url) = page { showNote(tab, url: url, in: pane); return }
+        if case let .note(url) = page {
+            showNote(tab, url: url, in: pane)
+            if let file = noteEditors[tab.id]?.editor.file { NoteTabIcons.shared.follow(file) }
+            return
+        }
         guard let documentID = page.easelID else { return }
         if let cached = easelEditors[tab.id], cached.documentID == documentID, cached.profileID == tab.profileID {
             pane.showNativeContent(cached.editor.view)

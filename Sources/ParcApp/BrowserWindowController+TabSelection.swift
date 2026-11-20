@@ -472,10 +472,18 @@ extension BrowserWindowController {
                 case .easel?: component.template = RecentSwitcherArtwork.easel.map { .init(image: $0, title: title) }
                 case nil: if privateWindow { component.template = RecentSwitcherArtwork.incognito.map { .init(image: $0, title: nil) } }
                 }
-                if InternalPage(urlString: tab.url) != nil {
-                    component.favicon = NSImage(
-                        systemSymbolName: InternalPage.sidebarFallbackSymbol(urlString: tab.url),
-                        accessibilityDescription: nil)
+                if let page = InternalPage(urlString: tab.url) {
+                    component.favicon = NSImage(systemSymbolName: page.sidebarFallbackSymbol, accessibilityDescription: nil)
+                    if let note = page.noteURL {
+                        switch NoteTabIconArt.shared.art(forNote: note) {
+                        case .image(let image): component.favicon = image
+                        case .pending:
+                            component.faviconRequest = { completion in
+                                NoteTabIconArt.shared.requestImage(forNote: note, completion: completion)
+                            }
+                        case .symbol: break
+                        }
+                    }
                 } else if let page = browsers[id]?.nativePage, !page.isClosed, let icon = page.favicon {
                     component.favicon = icon
                 } else if !privateWindow, mayReadCachedFavicons, let url = URL(string: tab.url) {

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 struct SidebarTabAudio {
     let lease: NSObject
@@ -393,6 +394,8 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
     private var editingTitle: Bool { titleFieldStore?.editingTitle == true }
     private let background = SidebarRowBackgroundView()
     private let icon = SidebarFaviconView()
+    private var noteIconFile: URL?
+    private var noteIconWatch: AnyCancellable?
     private let closeButton = SidebarRowActionButton("Close Tab")
     private var shareButtonStore: SidebarRowActionButton?
     private var shareButton: SidebarRowActionButton {
@@ -607,6 +610,25 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
         if InternalPage(urlString: tab.url) == nil { setAccessibilityRoleDescription("Tab") }
         setAccessibilityHelp(tab.url)
         closeButton.makeMenu = { [weak self] in self?.context?() }
+        bindNoteIcon(tab)
+    }
+    private func bindNoteIcon(_ tab: BrowserTab) {
+        let file = InternalPage(urlString: tab.url)?.noteURL
+        guard file != noteIconFile else { return }
+        noteIconFile = file
+        guard let file else { noteIconWatch = nil; return }
+        noteIconWatch = NoteTabIconArt.shared.changes
+            .filter { NoteTabIcons.touches($0, note: file) }
+            .sink { [weak self] _ in self?.showNoteIcon() }
+        showNoteIcon()
+    }
+    private func showNoteIcon() {
+        guard let file = noteIconFile else { return }
+        switch NoteTabIconArt.shared.art(forNote: file) {
+        case .pending: return
+        case .image(let image): icon.showLocal(image, fallback: Self.fallbackSymbol(tooltipTab))
+        case .symbol: icon.showLocal(nil, fallback: Self.fallbackSymbol(tooltipTab))
+        }
     }
     private static var fallbackSymbols: [String: NSImage] = [:]
     private static func fallbackSymbol(_ tab: BrowserTab) -> NSImage? {
@@ -664,8 +686,9 @@ final class SidebarTabRow: NSView, NSDraggingSource, SidebarItemDragSource, Side
             let allows = InternalPage(urlString: tab.url) == nil
             if allows != allowsFavicon {
                 allowsFavicon = allows
-                icon.image = Self.fallbackSymbol(tab)
+                icon.showLocal(nil, fallback: Self.fallbackSymbol(tab))
             }
+            bindNoteIcon(tab)
         }
         let reset = tab.resetDestination != nil
         if reset != hasReset {
@@ -1799,6 +1822,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private var favoriteItems: [SidebarItemReference] = []
     private var favoriteTiles: [UUID: FavoriteTile] = [:]
     private var favoriteFaviconArms: [UUID: FavoriteFaviconIdentity] = [:]
+    private var noteIconWatch: AnyCancellable?
     private var tabFaviconArms: [UUID: TabRowFaviconIdentity] = [:]
     private var spaceButtons: [ActionButton] = []
     private var spaceButtonsByID: [UUID: ActionButton] = [:]
@@ -1867,6 +1891,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+        noteIconWatch = NoteTabIconArt.shared.changes.sink { [weak self] change in self?.noteIconsChanged(change) }
         registerForDraggedTypes([SidebarMoveSession.pasteboardType, .fileURL])
         addSubview(spaceCreationFeedback)
         addSubview(contentSurface)
@@ -2650,7 +2675,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                     favoriteFaviconArms[id] = arm
                     for (index, page) in pages.enumerated() {
                         button.loadFavicon(page: index) { [weak self, weak button] completion in
-                            self?.requestTabFavicon?(page) { [weak self, weak button] image in
+                            self?.requestPageIcon(page) { [weak self, weak button] image in
                                 guard let self, let button, self.favoriteTiles[id] === button else { return }
                                 completion(image)
                             }
@@ -2895,7 +2920,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                     favoriteFaviconArms[tab.id] = arm
                     for (index, page) in pages.enumerated() {
                         button.loadFavicon(page: index) { [weak self, weak button] completion in
-                            self?.requestTabFavicon?(page) { [weak self, weak button] image in
+                            self?.requestPageIcon(page) { [weak self, weak button] image in
                                 guard let self, let button, self.favoriteTiles[tab.id] === button else { return }
                                 completion(image)
                             }
@@ -3525,7 +3550,40 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         return header
     }
 
+    private func requestPageIcon(_ tab: BrowserTab, completion: @escaping (NSImage?) -> Void) {
+        if let note = InternalPage(urlString: tab.url)?.noteURL {
+            NoteTabIconArt.shared.requestImage(forNote: note, completion: completion)
+        } else {
+            requestTabFavicon?(tab, completion)
+        }
+    }
+
+    private func noteIconsChanged(_ change: Set<String>?) {
+        for (id, button) in favoriteTiles {
+            for (index, address) in (favoriteFaviconArms[id]?.pageURLs ?? []).enumerated() {
+                guard let note = InternalPage(urlString: address)?.noteURL, NoteTabIcons.touches(change, note: note) else { continue }
+                button.loadFavicon(page: index) { completion in
+                    NoteTabIconArt.shared.requestImage(forNote: note, completion: completion)
+                }
+            }
+        }
+        guard let state = hierarchyState else { return }
+        var seen = Set<ObjectIdentifier>()
+        for page in [shownPage] + Array(pages.values) where seen.insert(ObjectIdentifier(page)).inserted {
+            guard let header = page.pinnedHeader, header.content.showsIcons else { continue }
+            for id in header.content.icons {
+                guard let tab = state.tab(id), let note = InternalPage(urlString: tab.url)?.noteURL,
+                      NoteTabIcons.touches(change, note: note) else { continue }
+                header.setFavicon(NoteTabIconArt.shared.image(forNote: note), for: id, url: tab.url)
+            }
+        }
+    }
+
     private func requestPinnedFavicon(_ tab: BrowserTab, header: SidebarPinnedHeaderView) {
+        if let note = InternalPage(urlString: tab.url)?.noteURL {
+            header.setFavicon(NoteTabIconArt.shared.image(forNote: note), for: tab.id, url: tab.url)
+            return
+        }
         guard InternalPage(urlString: tab.url) == nil else { header.setFavicon(nil, for: tab.id, url: tab.url); return }
         guard header.needsFavicon(for: tab.id, url: tab.url) else { return }
         let url = tab.url
