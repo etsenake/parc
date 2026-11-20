@@ -23,9 +23,16 @@ final class NoteSyncedController {
     private var subscriptions = Set<AnyCancellable>()
     private var panel: NoteFloatingPanel?
 
+    private var librarySubscription: AnyCancellable?
+
     init(editor: NotePageEditor) {
         self.editor = editor
         engine.changes.sink { [weak self] in self?.engineDidChange() }.store(in: &subscriptions)
+    }
+
+    private func watchLibrary() {
+        guard librarySubscription == nil, let url = editor?.environment.documentURL else { return }
+        librarySubscription = engine.libraryChanges(url)?.sink { [weak self] in self?.engineDidChange() }
     }
 
     var session: NotePageSession? { editor?.session }
@@ -92,6 +99,7 @@ final class NoteSyncedController {
 
     func info(for id: NoteBlockID) -> NoteSyncedInfo? {
         if let cached = infos[id] { return cached }
+        watchLibrary()
         guard let session, let value = engine.info(for: id, in: session) else { return nil }
         infos[id] = value
         return value

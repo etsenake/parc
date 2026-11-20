@@ -21,6 +21,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
     private var pageMenu: NotePageMenu?
     private var pageMenuButton: NotePageMenuButton?
     private var lease: NoteFileLease?
+    private var syncedHold: NoteSyncedHold?
     private var isTornDown = false
     private var isPreparingPrint = false
     private static var openEditors: [ObjectIdentifier: Int] = [:]
@@ -102,6 +103,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         editor.canvas.spaceFocus = spaceFocus
         Self.openEditors[ObjectIdentifier(file), default: 0] += 1
         lease = NoteFileLease(file)
+        syncedHold = NoteSyncedBlocks.shared.hold(file.page)
         reportedTitle = file.title
         file.$state
             .sink { [weak self] state in self?.saveStateDidChange(state) }
@@ -190,6 +192,8 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
             try? file.flush()
             NotePageHistory.fileWillClose(file)
         }
+        syncedHold?.end()
+        syncedHold = nil
         lease?.end()
         lease = nil
     }
