@@ -203,6 +203,7 @@ final class NoteEmbedBlockView: NoteCaptionedBlockView {
         }
         pages.activate(blockID)
         window?.invalidateCursorRects(for: self)
+        if surface.interactive { window?.postEvent(event, atStart: true) }
     }
 
     override func updateTrackingAreas() {
