@@ -214,7 +214,7 @@ enum NotePagePreviewRenderer {
             for block in blocks {
                 if block.kind != .numberedItem { numbers[depth] = nil }
                 append(block, depth: depth, numbers: &numbers)
-                if block.kind == .columns || block.kind == .column {
+                if block.kind == .columns || block.kind == .column || block.kind == .synced {
                     walk(block.children, depth: depth)
                 } else {
                     walk(block.children, depth: depth + 1)
@@ -288,7 +288,7 @@ enum NotePagePreviewRenderer {
                 base[.foregroundColor] = NoteTheme.tertiaryInk
                 result.append(NSAttributedString(string: "Table of contents\n", attributes: base))
                 return
-            case .columns, .column:
+            case .columns, .column, .synced:
                 return
             case .paragraph:
                 break

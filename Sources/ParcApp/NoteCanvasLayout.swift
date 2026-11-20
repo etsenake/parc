@@ -37,6 +37,8 @@ struct NoteCanvasMetrics: Equatable {
     var quoteBarWidth: CGFloat = 3
     var quoteBarInset: CGFloat = 1
     var toggleHintHeight: CGFloat = 28
+    var syncedHeaderHeight: CGFloat = 8
+    var syncedFooterHeight: CGFloat = 8
     var washOutsetX: CGFloat = 4
     var washOutsetY: CGFloat = 1
     var scale: CGFloat = 1
@@ -66,6 +68,7 @@ struct NoteCanvasMetrics: Equatable {
             }
         case .callout, .code, .table, .image, .video, .audio, .file, .pdf, .embed, .bookmark, .equation: value = (6, 6)
         case .columns: value = (4, 4)
+        case .synced: value = (4, 4)
         case .column: value = (0, 0)
         }
         return NoteCanvasSpacing(before: max(blockSpacing, (value.before * scale).rounded()),
@@ -76,6 +79,7 @@ struct NoteCanvasMetrics: Equatable {
         switch block.kind {
         case .callout: return block.calloutDisplayIcon == nil ? calloutInsets.left : calloutChildIndent
         case .quote: return quoteChildIndent
+        case .synced: return 0
         default: return indentWidth
         }
     }
@@ -670,6 +674,14 @@ struct NoteCanvasLayout {
         case .columns:
             let bottom = layoutColumns(block, index: index, x: x, width: width, y: y, depth: depth, context: context)
             return (index, bottom, spacing.after)
+        case .synced:
+            let row = CGRect(x: x, y: y, width: width, height: max(0, context.measure.height(block, width)).rounded(.up))
+            entries[index].frame = row
+            let inner = layoutChildren(block, index: index, row: row, rowAfter: 0, trailing: 0, depth: depth, flow: flow, context: context)
+            let bottom = (inner.bottom + metrics.syncedFooterHeight * metrics.scale).rounded()
+            entries[index].outerFrame = CGRect(x: x, y: y, width: width, height: bottom - y)
+            entries[index].subtreeEnd = entries.count
+            return (index, bottom, spacing.after)
         case .callout:
             let row = CGRect(x: x, y: y, width: width, height: max(0, context.measure.height(block, width)).rounded(.up))
             entries[index].frame = row
@@ -815,6 +827,7 @@ enum NoteCanvasEstimate {
             let rows = CGFloat(max(1, block.props.table?.rowCount ?? 3))
             return rows * (metrics.bodyLineHeight + 10 * scale) + 2
         case .columns, .column: return 0
+        case .synced: return metrics.syncedHeaderHeight * scale
         }
     }
 

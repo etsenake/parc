@@ -262,7 +262,17 @@ struct NoteMDWriter {
         case .columns: return columns(block)
         case .column: return columns(NoteBlock(.columns, children: [block]))
         case .html, .raw: return block.text.string.components(separatedBy: "\n")
+        case .synced: return synced(block)
         }
+    }
+
+    private func synced(_ block: NoteBlock) -> [String] {
+        var items: [(String, String?)] = [(NoteMDSynced.flag, nil)]
+        if let source = block.props.target, !source.isEmpty { items.append((NoteMDSynced.sourceKey, source)) }
+        if let anchor = block.props.anchor, NoteAnchor.isValid(anchor) { items.append(("id", anchor)) }
+        let opener = attributes(items)
+        if block.children.isEmpty { return [opener, NoteMDSynced.closer] }
+        return [opener] + sequence(block.children, frame: .container(leading: 1, trailing: 1)) + [NoteMDSynced.closer]
     }
 
     private func indented(_ lines: [String], children: [NoteBlock]) -> [String] {

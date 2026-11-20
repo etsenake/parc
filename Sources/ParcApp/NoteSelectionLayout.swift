@@ -31,7 +31,7 @@ final class NoteSelectionCanvasLayout: NoteSelectionLayout {
 
     static func role(for block: NoteBlock, view: NoteBlockView?) -> NoteSelectionRole {
         switch block.kind {
-        case .columns: return .layout
+        case .columns, .synced: return .layout
         case .column: return .column
         case .divider, .tableOfContents: return .decoration
         default:

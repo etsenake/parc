@@ -52,6 +52,40 @@ struct NoteMDAttributes: Equatable {
     }
 }
 
+enum NoteMDSynced {
+    static let flag = "synced"
+    static let sourceKey = "from"
+    static let closer = "<!-- parc /synced -->"
+
+    static func isCloser(_ node: NoteMDBlock) -> Bool {
+        guard node.kind == .html else { return false }
+        let inner = NoteMDByte.string(NoteMDText.trimmed(node.content[...]))
+        guard inner.hasPrefix("<!--"), inner.hasSuffix("-->") else { return false }
+        let words = inner.dropFirst(4).dropLast(3).split(whereSeparator: \.isWhitespace)
+        return words.count == 2 && words[0].lowercased() == "parc" && words[1].lowercased() == "/" + flag
+    }
+
+    static func isOpener(_ node: NoteMDBlock) -> Bool {
+        node.kind == .html && NoteMDAttributes.parse(NoteMDByte.string(node.content))?.flags.contains(flag) == true
+    }
+
+    static func matchingClose(_ nodes: ArraySlice<NoteMDBlock>, after index: Int) -> Int? {
+        var depth = 0
+        var probe = index + 1
+        while probe < nodes.endIndex {
+            let node = nodes[probe]
+            if isCloser(node) {
+                if depth == 0 { return probe }
+                depth -= 1
+            } else if isOpener(node) {
+                depth += 1
+            }
+            probe += 1
+        }
+        return nil
+    }
+}
+
 enum NoteMDColor {
     static func style(_ value: String) -> NoteColorStyle? {
         let lowered = value.lowercased()
@@ -166,6 +200,18 @@ struct NoteMDReader {
             let node = nodes[index]
             let isFirst = index == nodes.startIndex
             if node.kind == .html, let attributes = NoteMDAttributes.parse(NoteMDByte.string(node.content)) {
+                if attributes.flags.contains(NoteMDSynced.flag) {
+                    appendEmpties(isFirst && documentEdges ? node.blankBefore : max(0, node.blankBefore - 1))
+                    lastNumber = nil
+                    guard let close = NoteMDSynced.matchingClose(nodes, after: index) else {
+                        result.append(NoteBlock(.html, text: NoteText(NoteMDByte.string(node.content))))
+                        index += 1
+                        continue
+                    }
+                    result.append(synced(attributes, children: nodes[(index + 1)..<close], trailing: max(0, nodes[close].blankBefore - 1)))
+                    index = close + 1
+                    continue
+                }
                 if attributes.kind == .paragraph {
                     appendEmpties(isFirst && documentEdges ? node.blankBefore : max(0, node.blankBefore - 1))
                     var block = NoteBlock.paragraph()
@@ -588,6 +634,18 @@ struct NoteMDReader {
             block.children = sequence(children, documentEdges: false, trailingBlank: trailing + 1)
         }
         if let attributes { apply(attributes, to: &block) }
+        return block
+    }
+
+    private func synced(_ attributes: NoteMDAttributes, children: ArraySlice<NoteMDBlock>, trailing: Int) -> NoteBlock {
+        var block = NoteBlock(.synced)
+        if let anchor = attributes.values["id"], NoteAnchor.isValid(anchor) { block.props.anchor = anchor }
+        if let source = attributes.values[NoteMDSynced.sourceKey], !source.isEmpty { block.props.target = source }
+        if children.isEmpty {
+            block.children = Array(repeating: NoteBlock.paragraph(), count: trailing)
+        } else {
+            block.children = sequence(children, documentEdges: false, trailingBlank: trailing + 1)
+        }
         return block
     }
 

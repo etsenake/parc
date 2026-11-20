@@ -16,7 +16,7 @@ enum NoteOutline {
                 case .heading where levels.contains(block.props.level):
                     let title = Self.title(of: block.text)
                     if !title.isEmpty { found.append((block.id, block.props.level, title)) }
-                case .columns, .column:
+                case .columns, .column, .synced:
                     walk(block.children)
                 default:
                     break

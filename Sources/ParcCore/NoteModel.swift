@@ -315,7 +315,7 @@ struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
 enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
     case paragraph, heading, bulletedItem, numberedItem, todo, toggle, quote, callout, divider
     case code, equation, image, video, audio, file, pdf, bookmark, embed, table, tableOfContents
-    case columns, column, pageLink, html, raw
+    case columns, column, pageLink, html, raw, synced
 
     var hasRichText: Bool {
         switch self {
@@ -338,7 +338,7 @@ enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
     }
     var isListItem: Bool { self == .bulletedItem || self == .numberedItem || self == .todo }
     var isColumnStructure: Bool { self == .columns || self == .column }
-    var acceptsChildren: Bool { hasRichText || isColumnStructure }
+    var acceptsChildren: Bool { hasRichText || isColumnStructure || self == .synced }
     var hasCaption: Bool {
         switch self {
         case .image, .video, .audio, .file, .pdf, .bookmark, .embed, .code: return true
@@ -612,6 +612,8 @@ struct NoteBlock: Hashable, Identifiable, Codable {
     }
 
     var isToggle: Bool { kind == .toggle || (kind == .heading && props.toggleable) }
+    var isSyncedOriginal: Bool { kind == .synced && props.target == nil }
+    var isSyncedCopy: Bool { kind == .synced && props.target != nil }
     var acceptsChildren: Bool { kind.acceptsChildren }
     var showsChildren: Bool { !isToggle || props.expanded }
     var isCollapsed: Bool { isToggle && !props.expanded }

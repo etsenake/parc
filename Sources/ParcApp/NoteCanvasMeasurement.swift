@@ -29,6 +29,8 @@ extension NoteCanvasMetrics {
         metrics.codeLineHeight = NoteTheme.textStyle(.code, font: settings.font, small: settings.smallText).lineHeight
         metrics.averageCharacterWidth = NoteTheme.bodyFont(settings.font, small: settings.smallText).pointSize * 0.5
         metrics.dragLeadOffset = NoteHandleGeometry.contentGap + NoteHandleGeometry.buttonSize.width / 2
+        metrics.syncedHeaderHeight = NoteTheme.syncedPadding
+        metrics.syncedFooterHeight = NoteTheme.syncedPadding
         return metrics
     }
 }
@@ -143,6 +145,8 @@ final class NoteCanvasMeasurer {
         case .callout, .quote:
             let inset = live?.contentLeadingInset ?? 0
             return inset > 0 ? inset : metrics.childIndent(of: block)
+        case .synced:
+            return metrics.childIndent(of: block)
         default:
             return metrics.indentWidth
         }
@@ -150,7 +154,7 @@ final class NoteCanvasMeasurer {
 
     static func measuresOffscreen(_ kind: NoteBlockKind) -> Bool {
         switch kind {
-        case .image, .video, .audio, .file, .pdf, .bookmark, .embed, .columns, .column: return false
+        case .image, .video, .audio, .file, .pdf, .bookmark, .embed, .columns, .column, .synced: return false
         default: return true
         }
     }

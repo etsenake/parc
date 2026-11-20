@@ -367,6 +367,10 @@ struct NotePageHTMLWriter {
         case .raw:
             let source = block.text.string
             output += "<pre data-block=\"raw\" data-source=\"" + Self.attribute(source) + "\">" + Self.escape(source) + "</pre>"
+        case .synced:
+            output += "<div data-block=\"synced\" class=\"synced\">"
+            write(block.children)
+            output += "</div>"
         }
     }
 
