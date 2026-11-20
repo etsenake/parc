@@ -16,6 +16,8 @@ struct NoteFormatBarModelTests {
         links()
         chords()
         focus()
+        linkSpans()
+        equations()
         print("NoteFormatBarModelTests passed")
     }
 
@@ -177,7 +179,8 @@ struct NoteFormatBarModelTests {
         let deep = NoteBlock.heading(5, "Small")
         expect(NoteTurnIntoOption(block: deep) == nil && NoteTurnIntoOption.label(for: deep) == "Heading 5",
                "deeper headings still get a name")
-        expect(NoteTurnIntoOption.allCases.first == .text && NoteTurnIntoOption.allCases.count == 15, "the list starts at Text")
+        expect(NoteTurnIntoOption.allCases.first == .text && NoteTurnIntoOption.allCases.count == 16, "the list starts at Text")
+        expect(NoteTurnIntoOption(block: NoteBlock.heading(4, "Four")) == .heading4, "Heading 4 sits in the list like Notion's")
         expect(NoteTurnIntoOption.heading1.chord?.display == "⌥⌘1", "turn-into shortcuts read in Parc's modifier order")
     }
 
@@ -283,6 +286,37 @@ struct NoteFormatBarModelTests {
         expect(NoteFormatItem.shortcutItem(for: ("e", .command)) == .code, "⌘E is inline code")
         expect(NoteFormatItem.shortcutItem(for: ("k", .command)) == .link, "⌘K is the link editor")
         expect(NoteFormatItem.shortcutItem(for: ("x", .command)) == nil, "other chords pass through")
+    }
+
+    static func linkSpans() {
+        var red = NoteMarks.plain
+        red.link = "https://parc.example"
+        var redBold = red
+        redBold.bold = true
+        var other = NoteMarks.plain
+        other.link = "Other.md"
+        let text = NoteText(pieces: [("See ", .plain), ("the ", red), ("bold", redBold), (" docs", red), (" and ", .plain), ("this", other)])
+        let span = NoteLinkSpan.at(9, in: text)
+        expect(span?.range == 4..<17 && span?.link == "https://parc.example", "a link spans every run that shares it")
+        expect(NoteLinkSpan.at(2, in: text) == nil, "plain text has no link span")
+        expect(NoteLinkSpan.at(22, in: text)?.range == 22..<26 && NoteLinkSpan.at(22, in: text)?.link == "Other.md",
+               "neighbouring links stay separate")
+        expect(NoteLinkSpan.at(26, in: text) == nil, "past the end there is no link")
+    }
+
+    static func equations() {
+        var bold = NoteMarks.plain
+        bold.bold = true
+        let text = NoteText(pieces: [("Energy ", .plain), (" E=mc^2 ", bold), ("rocks", .plain)])
+        let wrapped = NoteInlineEquation.wrap(text, range: 7..<15)
+        expect(wrapped?.text.string == "Energy  " + NoteAtom.character + " rocks", "spaces stay outside the equation")
+        expect(wrapped?.atom == 8..<9, "the new equation is reported for selecting")
+        let atomMarks = wrapped.map { $0.text.marks(at: $0.atom.lowerBound) }
+        expect(atomMarks?.atom == .equation("E=mc^2") && atomMarks?.bold == true, "the source becomes an equation that keeps its marks")
+        expect(NoteInlineEquation.wrap(text, range: 6..<7) == nil, "wrapping only spaces does nothing")
+        let unwrapped = NoteInlineEquation.unwrap(wrapped!.text, range: wrapped!.atom)
+        expect(unwrapped.text.string == "Energy  E=mc^2 rocks" && unwrapped.range == 8..<14, "unwrapping restores the source")
+        expect(unwrapped.text.marks(at: 9).bold && unwrapped.text.marks(at: 9).atom == nil, "unwrapped source keeps its marks")
     }
 
     static func focus() {

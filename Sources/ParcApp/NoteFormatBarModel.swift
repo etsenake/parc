@@ -121,7 +121,7 @@ enum NoteFormatItem: String, CaseIterable, Hashable {
 }
 
 enum NoteTurnIntoOption: String, CaseIterable, Hashable {
-    case text, heading1, heading2, heading3, bulletedList, numberedList, todoList, toggleList
+    case text, heading1, heading2, heading3, heading4, bulletedList, numberedList, todoList, toggleList
     case code, quote, callout, blockEquation, toggleHeading1, toggleHeading2, toggleHeading3
 
     var title: String {
@@ -130,6 +130,7 @@ enum NoteTurnIntoOption: String, CaseIterable, Hashable {
         case .heading1: return "Heading 1"
         case .heading2: return "Heading 2"
         case .heading3: return "Heading 3"
+        case .heading4: return "Heading 4"
         case .bulletedList: return "Bulleted List"
         case .numberedList: return "Numbered List"
         case .todoList: return "To-do List"
@@ -147,7 +148,7 @@ enum NoteTurnIntoOption: String, CaseIterable, Hashable {
     var kind: NoteBlockKind {
         switch self {
         case .text: return .paragraph
-        case .heading1, .heading2, .heading3, .toggleHeading1, .toggleHeading2, .toggleHeading3: return .heading
+        case .heading1, .heading2, .heading3, .heading4, .toggleHeading1, .toggleHeading2, .toggleHeading3: return .heading
         case .bulletedList: return .bulletedItem
         case .numberedList: return .numberedItem
         case .todoList: return .todo
@@ -164,6 +165,7 @@ enum NoteTurnIntoOption: String, CaseIterable, Hashable {
         case .heading1, .toggleHeading1: return 1
         case .heading2, .toggleHeading2: return 2
         case .heading3, .toggleHeading3: return 3
+        case .heading4: return 4
         default: return nil
         }
     }
@@ -193,6 +195,7 @@ enum NoteTurnIntoOption: String, CaseIterable, Hashable {
             case (1, false): self = .heading1
             case (2, false): self = .heading2
             case (3, false): self = .heading3
+            case (4, false): self = .heading4
             case (1, true): self = .toggleHeading1
             case (2, true): self = .toggleHeading2
             case (3, true): self = .toggleHeading3
@@ -687,5 +690,62 @@ enum NoteFormatBarFocus {
             return delta < 0 ? candidates.last : candidates.first
         }
         return candidates[(position + delta % candidates.count + candidates.count) % candidates.count]
+    }
+}
+
+enum NoteLinkSpan {
+    static func at(_ offset: Int, in text: NoteText) -> (range: Range<Int>, link: String)? {
+        guard offset >= 0, offset < text.length, let link = text.marks(at: offset).link else { return nil }
+        let runs = text.runs()
+        guard let index = runs.firstIndex(where: { $0.range.contains(offset) }) else { return nil }
+        var lower = runs[index].range.lowerBound, upper = runs[index].range.upperBound
+        var before = index - 1
+        while before >= 0, runs[before].marks.link == link, runs[before].range.upperBound == lower {
+            lower = runs[before].range.lowerBound
+            before -= 1
+        }
+        var after = index + 1
+        while after < runs.count, runs[after].marks.link == link, runs[after].range.lowerBound == upper {
+            upper = runs[after].range.upperBound
+            after += 1
+        }
+        return (lower..<upper, link)
+    }
+}
+
+enum NoteInlineEquation {
+    static func wrap(_ text: NoteText, range: Range<Int>) -> (text: NoteText, atom: Range<Int>)? {
+        let lower = min(max(0, range.lowerBound), text.length), upper = min(max(lower, range.upperBound), text.length)
+        let characters = text.string as NSString
+        var start = lower, end = upper
+        while start < end, isSpace(characters.character(at: start)) { start += 1 }
+        while end > start, isSpace(characters.character(at: end - 1)) { end -= 1 }
+        guard start < end else { return nil }
+        let source = text.slice(start..<end).plainText
+        var marks = text.marks(at: start).withoutAtom
+        marks.code = false
+        marks.link = nil
+        var result = text
+        result.replace(start..<end, with: .atom(.equation(source), marks: marks))
+        return (result, start..<(start + 1))
+    }
+
+    static func unwrap(_ text: NoteText, range: Range<Int>) -> (text: NoteText, range: Range<Int>) {
+        var replacement = NoteText()
+        for run in text.runs(in: range) {
+            if case .equation(let source) = run.marks.atom {
+                replacement.append(NoteText(source, marks: run.marks.withoutAtom))
+            } else {
+                replacement.append(text.slice(run.range))
+            }
+        }
+        var result = text
+        let lower = min(max(0, range.lowerBound), text.length)
+        result.replace(range, with: replacement)
+        return (result, lower..<(lower + replacement.length))
+    }
+
+    private static func isSpace(_ character: unichar) -> Bool {
+        character == 32 || character == 9 || character == 0xA0
     }
 }
