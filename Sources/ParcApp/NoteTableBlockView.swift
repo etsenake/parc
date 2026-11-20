@@ -837,8 +837,10 @@ final class NoteTableBlockView: NoteBlockView {
         }
         resizingColumn = nil
         liveWidths = nil
-        if widths != base {
-            commit("Resize Column") { NoteTableTransforms.setWidths(widths.map { Optional($0) }, in: &$0) }
+        if widths != base, let editor, !isReadOnly {
+            var resized = table
+            NoteTableTransforms.setWidths(widths.map { Optional($0) }, in: &resized)
+            editor.session.setTableColumnWidths(blockID, resized.columnWidths, name: "Resize Column")
         } else {
             reloadContent()
         }
@@ -1013,10 +1015,12 @@ final class NoteTableBlockView: NoteBlockView {
         let slot = finished.axis == .row ? displayGeometry.rowRect(finished.target) : displayGeometry.columnRect(finished.target)
         settlingDrag = (finished.axis, finished.target)
         drag = nil
-        if finished.target != finished.source {
-            let change: NoteTableChange = finished.axis == .row ? .moveRow(from: finished.source, to: finished.target)
-                : .moveColumn(from: finished.source, to: finished.target)
-            commit(finished.axis == .row ? "Move Row" : "Move Column", selection: remappedSelection(change)) { NoteTableTransforms.apply(change, to: &$0) }
+        if finished.target != finished.source, let session = editor?.session, !isReadOnly {
+            if finished.axis == .row {
+                session.moveTableRow(blockID, from: finished.source, to: finished.target, kind: .text)
+            } else {
+                session.moveTableColumn(blockID, from: finished.source, to: finished.target, kind: .text)
+            }
         } else {
             reloadContent()
         }
@@ -1038,29 +1042,6 @@ final class NoteTableBlockView: NoteBlockView {
             ghost.lift(false)
         }
         CATransaction.commit()
-    }
-
-    private func remappedSelection(_ change: NoteTableChange) -> NotePageSelection? {
-        guard let editor else { return nil }
-        switch editor.session.selection {
-        case .text(let anchor, let head):
-            guard head.block == blockID, case .cell(let row, let column) = head.field else { return nil }
-            let current = table
-            var cell = change.newCell(for: NoteTableCell(row: row, column: column))
-            if cell == nil {
-                let fallbackRow = change.newRow(for: row) ?? min(row, current.rowCount - 2)
-                let fallbackColumn = change.newColumn(for: column) ?? min(column, current.columnCount - 2)
-                cell = NoteTableCell(row: max(0, fallbackRow), column: max(0, fallbackColumn))
-                return .caret(NotePosition(blockID, 0, field: .cell(row: cell!.row, column: cell!.column)))
-            }
-            let field = NoteTextField.cell(row: cell!.row, column: cell!.column)
-            return .text(anchor: NotePosition(blockID, anchor.offset, field: field), head: NotePosition(blockID, head.offset, field: field))
-        case .cells(let id, let anchor, let head) where id == blockID:
-            guard let newAnchor = change.newCell(for: anchor), let newHead = change.newCell(for: head) else { return NotePageSelection.none }
-            return .cells(table: blockID, anchor: newAnchor, head: newHead)
-        default:
-            return nil
-        }
     }
 
     private func commit(_ name: String, change: NoteTableChange? = nil, selection: NotePageSelection? = nil,
@@ -1146,41 +1127,42 @@ final class NoteTableBlockView: NoteBlockView {
         NoteTableMotion.settle(self)
     }
 
-    private func revealInserted(_ change: NoteTableChange, name: String, focus: NoteTableCell? = nil,
-                                _ transform: @escaping (inout NoteTable) -> Void) {
-        var selection = remappedSelection(change)
-        if let focus { selection = .caret(NotePosition(blockID, 0, field: .cell(row: focus.row, column: focus.column))) }
-        commit(name, change: change, selection: selection, transform)
+    private func run(_ change: NoteTableChange?, focus: NoteTableCell? = nil,
+                     _ operation: (NotePageSession, NoteBlockID, NotePageSelection?) -> Bool) {
+        guard let editor, !isReadOnly else { return }
+        if let change { prepareMotion(change) }
+        let select = focus.map { NotePageSelection.caret(NotePosition(blockID, 0, field: .cell(row: $0.row, column: $0.column))) }
+        _ = operation(editor.session, blockID, select)
+        pendingChange = nil
+        motionGeometry = nil
+        motionSnapshot = nil
         if let focus { focusCell(focus, placement: .start) }
     }
 
     func appendRow(focusColumn: Int? = nil) {
-        let current = table
-        let change = NoteTableChange.insertRows(at: current.rowCount, count: 1)
-        revealInserted(change, name: "Add Row", focus: focusColumn.map { NoteTableCell(row: current.rowCount, column: $0) }) {
-            NoteTableTransforms.apply(change, to: &$0)
+        let index = table.rowCount
+        run(.insertRows(at: index, count: 1), focus: focusColumn.map { NoteTableCell(row: index, column: $0) }) { session, id, select in
+            session.insertTableRow(id, at: index, name: "Add Row", select: select)
         }
     }
 
     func appendColumn() {
-        let change = NoteTableChange.insertColumns(at: table.columnCount, count: 1)
-        revealInserted(change, name: "Add Column") { NoteTableTransforms.apply(change, to: &$0) }
+        let index = table.columnCount
+        run(.insertColumns(at: index, count: 1)) { session, id, _ in session.insertTableColumn(id, at: index, name: "Add Column") }
     }
 
     func insertRow(at index: Int) {
-        let change = NoteTableChange.insertRows(at: index, count: 1)
-        revealInserted(change, name: "Insert Row") { NoteTableTransforms.apply(change, to: &$0) }
+        run(.insertRows(at: index, count: 1)) { session, id, _ in session.insertTableRow(id, at: index) }
     }
 
     func insertColumn(at index: Int) {
-        let change = NoteTableChange.insertColumns(at: index, count: 1)
-        revealInserted(change, name: "Insert Column") { NoteTableTransforms.apply(change, to: &$0) }
+        run(.insertColumns(at: index, count: 1)) { session, id, _ in session.insertTableColumn(id, at: index) }
     }
 
     func duplicate(_ axis: Axis, at index: Int) {
         let change: NoteTableChange = axis == .row ? .insertRows(at: index + 1, count: 1) : .insertColumns(at: index + 1, count: 1)
-        revealInserted(change, name: axis == .row ? "Duplicate Row" : "Duplicate Column") { table in
-            if axis == .row { NoteTableTransforms.duplicateRow(index, in: &table) } else { NoteTableTransforms.duplicateColumn(index, in: &table) }
+        run(change) { session, id, _ in
+            axis == .row ? session.duplicateTableRow(id, at: index) : session.duplicateTableColumn(id, at: index)
         }
     }
 
@@ -1188,8 +1170,8 @@ final class NoteTableBlockView: NoteBlockView {
         let current = table
         guard (axis == .row ? current.rowCount : current.columnCount) > 1 else { return }
         let change: NoteTableChange = axis == .row ? .deleteRows(at: index, count: 1) : .deleteColumns(at: index, count: 1)
-        commit(axis == .row ? "Delete Row" : "Delete Column", change: change, selection: remappedSelection(change)) {
-            NoteTableTransforms.apply(change, to: &$0)
+        run(change) { session, id, _ in
+            axis == .row ? session.deleteTableRow(id, at: index) : session.deleteTableColumn(id, at: index)
         }
     }
 
@@ -1198,8 +1180,8 @@ final class NoteTableBlockView: NoteBlockView {
         let count = axis == .row ? current.rowCount : current.columnCount
         guard index != target, (0..<count).contains(index), (0..<count).contains(target) else { return }
         let change: NoteTableChange = axis == .row ? .moveRow(from: index, to: target) : .moveColumn(from: index, to: target)
-        commit(axis == .row ? "Move Row" : "Move Column", change: change, selection: remappedSelection(change)) {
-            NoteTableTransforms.apply(change, to: &$0)
+        run(change) { session, id, _ in
+            axis == .row ? session.moveTableRow(id, from: index, to: target) : session.moveTableColumn(id, from: index, to: target)
         }
     }
 
@@ -1221,6 +1203,7 @@ final class NoteTableBlockView: NoteBlockView {
     func write(_ rect: NoteTableRect, to pasteboard: NSPasteboard) {
         let current = table
         let rows = NoteTableTransforms.slice(rect, of: current)
+        let sliced = NoteTableClipboard.slice(rect, of: current)
         let headerRow = current.headerRow && rect.rows.lowerBound == 0
         let headerColumn = current.headerColumn && rect.columns.lowerBound == 0
         let alignments = rect.columns.map { current.alignments[$0] }
@@ -1231,8 +1214,7 @@ final class NoteTableBlockView: NoteBlockView {
         pasteboard.setString(tsv, forType: .string)
         pasteboard.setString(tsv, forType: .tabularText)
         pasteboard.setString(NoteTableClipboard.html(rows, headerRow: headerRow, headerColumn: headerColumn, alignments: alignments), forType: .html)
-        pasteboard.setString(NoteTableClipboard.markdown(rows, headerRow: headerRow, headerColumn: headerColumn, alignments: alignments),
-                             forType: Self.markdownPasteboardType)
+        pasteboard.setString(NoteTableClipboard.markdown(sliced), forType: Self.markdownPasteboardType)
     }
 
     static func grid(from pasteboard: NSPasteboard) -> [[NoteText]]? {
@@ -1278,13 +1260,13 @@ final class NoteTableBlockView: NoteBlockView {
     }
 
     private func setHeader(_ axis: Axis, _ enabled: Bool) {
-        commit(axis == .row ? "Header Row" : "Header Column") { table in
-            if axis == .row { table.headerRow = enabled } else { table.headerColumn = enabled }
+        run(nil) { session, id, _ in
+            axis == .row ? session.setTableHeaderRow(id, enabled) : session.setTableHeaderColumn(id, enabled)
         }
     }
 
     private func setAlignment(_ alignment: NoteAlignment, column: Int) {
-        commit("Align Column") { NoteTableTransforms.setAlignment(alignment, column: column, in: &$0) }
+        run(nil) { session, id, _ in session.setTableColumnAlignment(id, column: column, alignment == .left ? nil : alignment) }
     }
 
     private func menuItems(axis: Axis, index: Int) -> [NoteMenuList.Item] {
@@ -1435,24 +1417,13 @@ final class NoteTableBlockView: NoteBlockView {
 
     @discardableResult
     static func performTableMenuItem(_ id: String, on blockID: NoteBlockID, session: NotePageSession) -> Bool {
-        let transform: (inout NoteTable) -> Void
-        let name: String
+        guard let table = session.page.block(blockID)?.props.table else { return false }
         switch id {
-        case "table.headerRow": (name, transform) = ("Header Row", { $0.headerRow.toggle() })
-        case "table.headerColumn": (name, transform) = ("Header Column", { $0.headerColumn.toggle() })
-        case "table.fitWidth": (name, transform) = ("Fit to Width", { NoteTableTransforms.setWidths([], in: &$0) })
+        case "table.headerRow": return session.setTableHeaderRow(blockID, !table.headerRow)
+        case "table.headerColumn": return session.setTableHeaderColumn(blockID, !table.headerColumn)
+        case "table.fitWidth": return session.setTableColumnWidths(blockID, [], name: "Fit to Width")
         default: return false
         }
-        guard session.page.block(blockID)?.props.table != nil else { return false }
-        session.edit(name, kind: .text, affected: [blockID]) { page in
-            page.update(blockID) { block in
-                guard var table = block.props.table else { return }
-                transform(&table)
-                table.normalize()
-                block.props.table = table
-            }
-        }
-        return true
     }
 }
 

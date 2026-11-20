@@ -93,31 +93,23 @@ enum NoteTableClipboard {
         return result + "</table>"
     }
 
-    static func markdown(_ rows: [[NoteText]], headerRow: Bool, headerColumn: Bool, alignments: [NoteAlignment?]) -> String {
-        var table = NoteTable(rows: rows, headerRow: headerRow, headerColumn: headerColumn)
-        for index in table.alignments.indices where index < alignments.count { table.alignments[index] = alignments[index] }
-        var props = NoteBlockProps()
-        props.table = table
-        let serialized = NoteMarkdown.serialize(NotePage(blocks: [NoteBlock(.table, props: props)]))
-        let trimmed = serialized.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.contains("|") ? trimmed : fallbackMarkdown(rows, alignments: alignments)
+    static func slice(_ rect: NoteTableRect, of table: NoteTable) -> NoteTable {
+        let columns = rect.columns.filter { $0 < table.columnCount }
+        var sliced = NoteTable(rows: NoteTableTransforms.slice(rect, of: table),
+                               headerRow: table.headerRow && rect.rows.lowerBound == 0,
+                               headerColumn: table.headerColumn && rect.columns.lowerBound == 0)
+        sliced.normalize()
+        for (offset, column) in columns.enumerated() where offset < sliced.columnCount {
+            sliced.alignments[offset] = table.alignments.indices.contains(column) ? table.alignments[column] : nil
+            sliced.columnWidths[offset] = table.columnWidths.indices.contains(column) ? table.columnWidths[column] : nil
+        }
+        return sliced
     }
 
-    static func fallbackMarkdown(_ rows: [[NoteText]], alignments: [NoteAlignment?]) -> String {
-        guard let first = rows.first else { return "" }
-        func line(_ cells: [String]) -> String { "| " + cells.joined(separator: " | ") + " |" }
-        func escaped(_ text: NoteText) -> String {
-            text.plainText.replacingOccurrences(of: "|", with: "\\|").replacingOccurrences(of: "\n", with: "<br>")
-        }
-        let rule = first.indices.map { index -> String in
-            switch index < alignments.count ? alignments[index] : nil {
-            case .left: return ":---"
-            case .center: return ":---:"
-            case .right: return "---:"
-            case nil: return "---"
-            }
-        }
-        return ([line(first.map(escaped)), line(rule)] + rows.dropFirst().map { line($0.map(escaped)) }).joined(separator: "\n")
+    static func markdown(_ table: NoteTable) -> String {
+        var props = NoteBlockProps()
+        props.table = table
+        return NoteMarkdown.serialize(NotePage(blocks: [NoteBlock(.table, props: props)])).trimmingCharacters(in: .newlines)
     }
 
     static func inlineHTML(_ text: NoteText) -> String {

@@ -52,10 +52,20 @@ struct NoteTableClipboardTests {
         expect(html.hasSuffix("</tr></tbody></table>"), "html closes the body")
         let headerColumn = NoteTableClipboard.html([["x", "y"]], headerRow: false, headerColumn: true, alignments: [])
         expect(headerColumn == "<table><tbody><tr><th>x</th><td>y</td></tr></tbody></table>", "html header column")
-        let markdown = NoteTableClipboard.markdown(rows, headerRow: true, headerColumn: false, alignments: [nil, .center])
-        expect(markdown.contains("|") && markdown.contains("Name") && markdown.contains("Notes"), "markdown is a pipe table")
-        let fallback = NoteTableClipboard.fallbackMarkdown([["a|b", "c"], ["d", "e\nf"]], alignments: [.right, nil])
-        expect(fallback == "| a\\|b | c |\n| ---: | --- |\n| d | e<br>f |", "fallback markdown escapes pipes and breaks")
+        var source = NoteTable(rows: [["a|b", "c", "z"], ["d", "e\nf", "y"]], headerRow: true, headerColumn: true)
+        source.normalize()
+        source.alignments = [.right, nil, .center]
+        source.columnWidths = [nil, 210, 90]
+        let whole = NoteTableClipboard.slice(NoteTableRect(cell(0, 0), cell(1, 2)), of: source)
+        expect(NoteTableClipboard.markdown(whole) == NoteMarkdown.serialize(NotePage(blocks: [NoteBlock(.table, props: { var props = NoteBlockProps(); props.table = source; return props }())])).trimmingCharacters(in: .newlines),
+               "copied Markdown is exactly what the note file would say")
+        let part = NoteTableClipboard.markdown(NoteTableClipboard.slice(NoteTableRect(cell(1, 1), cell(1, 2)), of: source))
+        expect(part == "| e<br>f | y   |\n| ------ | :-: |\n<!-- parc no-header-row widths=\"210,90\" -->", "a slice keeps breaks, alignment and widths: \(part)")
+        let back = NoteMarkdown.parse(part).blocks.first?.props.table
+        expect(back?.rows.first?.map(\.string) == ["e\nf", "y"] && back?.columnWidths == [210, 90] && back?.headerRow == false,
+               "and reads straight back into a table")
+        let corner = NoteTableClipboard.slice(NoteTableRect(cell(0, 0), cell(0, 0)), of: source)
+        expect(corner.headerRow && corner.headerColumn && corner.alignments == [.right], "a top-left slice keeps the headers")
     }
 
     static func pasting() {

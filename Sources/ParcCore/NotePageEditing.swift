@@ -1641,8 +1641,9 @@ extension NotePageSession {
     }
 
     @discardableResult
-    func moveTableRow(_ id: NoteBlockID, from source: Int, to destination: Int, name: String = "Move Row") -> Bool {
-        editTable(id, name: name, { $0.moveRow(from: source, to: destination) }) { cell in
+    func moveTableRow(_ id: NoteBlockID, from source: Int, to destination: Int, name: String = "Move Row",
+                      kind: NotePageChange.Kind = .structure) -> Bool {
+        editTable(id, name: name, kind: kind, { $0.moveRow(from: source, to: destination) }) { cell in
             NoteTableCell(row: NoteTable.movedIndex(cell.row, from: source, to: destination), column: cell.column)
         }
     }
@@ -1670,8 +1671,9 @@ extension NotePageSession {
     }
 
     @discardableResult
-    func moveTableColumn(_ id: NoteBlockID, from source: Int, to destination: Int, name: String = "Move Column") -> Bool {
-        editTable(id, name: name, { $0.moveColumn(from: source, to: destination) }) { cell in
+    func moveTableColumn(_ id: NoteBlockID, from source: Int, to destination: Int, name: String = "Move Column",
+                         kind: NotePageChange.Kind = .structure) -> Bool {
+        editTable(id, name: name, kind: kind, { $0.moveColumn(from: source, to: destination) }) { cell in
             NoteTableCell(row: cell.row, column: NoteTable.movedIndex(cell.column, from: source, to: destination))
         }
     }

@@ -208,29 +208,10 @@ enum NoteTableTransforms {
         table.normalize()
     }
 
-    static func duplicateRow(_ index: Int, in table: inout NoteTable) {
-        guard table.rows.indices.contains(index) else { return }
-        table.rows.insert(table.rows[index], at: index + 1)
-    }
-
-    static func duplicateColumn(_ index: Int, in table: inout NoteTable) {
-        table.normalize()
-        guard (0..<table.columnCount).contains(index) else { return }
-        for row in table.rows.indices { table.rows[row].insert(table.rows[row][index], at: index + 1) }
-        table.alignments.insert(table.alignments[index], at: index + 1)
-        table.columnWidths.insert(table.columnWidths[index], at: index + 1)
-    }
-
     static func clear(_ rect: NoteTableRect, in table: inout NoteTable) {
         for row in rect.rows where table.rows.indices.contains(row) {
             for column in rect.columns where table.rows[row].indices.contains(column) { table.rows[row][column] = NoteText() }
         }
-    }
-
-    static func setAlignment(_ alignment: NoteAlignment?, column: Int, in table: inout NoteTable) {
-        table.normalize()
-        guard table.alignments.indices.contains(column) else { return }
-        table.alignments[column] = alignment == .left ? nil : alignment
     }
 
     static func setWidths(_ widths: [Double?], in table: inout NoteTable) {
