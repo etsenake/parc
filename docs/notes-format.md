@@ -263,7 +263,9 @@ nothing ([embedded pages](embedded-pages.md#live-embeds-in-notes)).
 
 The text in brackets is the alt text, which screen readers announce and the
 exports use, and the quoted title is the caption. Pasted and dropped files live
-in an `Attachments` folder beside the note.
+in an `Attachments` folder beside the note. A photo credit, such as one from
+Unsplash, goes in the comment as
+`credit="Jane Doe" credit-url="https://unsplash.com/@jane"`.
 
 Cropping and shapes never touch the picture itself. They're saved in the
 comment, so other apps simply show the whole image:
