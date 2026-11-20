@@ -40,7 +40,8 @@ between windows and ask before leaving, like an Easel's pages ([embedded pages](
 The body uses AppKit attributed text, native selection/caret, composition,
 Undo/Redo, range formatting, paragraph/list commands, supported Markdown
 transforms, links, rich clipboard and local image carriers. Cmd-F targets the
-original Note text view, never Chromium's page finder. Title and body have
+note's own find bar; only a focused [live embed](embedded-pages.md#live-embeds-in-notes)
+hands Find to its page. Title and body have
 separate native Undo managers and retain IME drafts until composition commits.
 
 Each field update checks its prior value, preventing a stale window from

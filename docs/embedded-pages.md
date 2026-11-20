@@ -67,7 +67,8 @@ ring appears, the page takes clicks, keys and scrolling, and becomes the
 window's selected page. Before that, scrolling moves the note. A click anywhere
 else or the header's check mark ends it; switching tabs or moving the note to
 another window pauses it until the note is back. Note shortcuts stay out of a
-focused page.
+focused page: Find, Find Next, Find Previous and Use Selection for Find search
+the page with its own find bar, as in an Easel, and Find and Replace is off.
 
 Navigation inside a note embed doesn't rewrite the file. Deleting the block
 closes its page with the page's usual leave-page check; if someone chooses to

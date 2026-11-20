@@ -463,6 +463,16 @@ extension BrowserWindowController {
             _ = editor.perform(action)
         })
     }
+    private func focusedNoteEmbedPage(in window: NSWindow) -> PCNativePage? {
+        guard activePeek == nil, libraryView == nil, let id = currentTabID, renderedPaneIDs.contains(id),
+              let note = noteEditors[id], note.profileID == activeProfileID,
+              let page = NoteEmbeddedPages.pool(for: note.editor)?.selectedPage, selectedNativePage() === page,
+              let responder = window.firstResponder as? NSView else { return nil }
+        if responder === page.nativeView || responder.isDescendant(of: page.nativeView) { return page }
+        guard let state = visibleFind, state.owner === page, isCurrentFind(state), !findHost.isHidden,
+              responder.isDescendant(of: findHost) else { return nil }
+        return page
+    }
     func prepareFindMenuItem(_ item: NSMenuItem, action: BrowserFindAction, preservingTarget: Bool = false) -> Bool {
         if preservingTarget, let command = item.representedObject as? BrowserFindCommand {
             return command.action == action && command.isAvailable
@@ -471,7 +481,8 @@ extension BrowserWindowController {
         guard canOwnFind, let window else { return false }
         let prepare: () -> Void = { [weak self] in self?.commandBar?.dismiss() }
         let command: BrowserFindCommand
-        if let responder = window.firstResponder as? NSView, activePeek == nil,
+        let noteEmbedHasFocus = focusedNoteEmbedPage(in: window) != nil
+        if !noteEmbedHasFocus, let responder = window.firstResponder as? NSView, activePeek == nil,
            let entry = noteEditors.first(where: { $0.value.editor.isViewLoaded
                && responder.isDescendant(of: $0.value.editor.view) }),
            renderedPaneIDs.contains(entry.key), entry.value.profileID == activeProfileID {
@@ -482,7 +493,7 @@ extension BrowserWindowController {
             }, prepare: prepare, execute: { [weak self, weak libraryView] in
                 self?.dismissFind(restoreFocus: false); libraryView?.focusSearch()
             })
-        } else if activePeek == nil, libraryView == nil, let id = currentTabID, renderedPaneIDs.contains(id),
+        } else if !noteEmbedHasFocus, activePeek == nil, libraryView == nil, let id = currentTabID, renderedPaneIDs.contains(id),
                   let note = noteEditors[id], note.profileID == activeProfileID, note.editor.isViewLoaded {
             command = noteFindCommand(action, id: id, editor: note.editor, window: window, prepare: prepare)
         } else if action.isNativeTextOnly {
