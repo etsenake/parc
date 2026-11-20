@@ -357,8 +357,8 @@ enum NoteDragGhostRenderer {
               let bitmap = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
         rep.size = rect.size
         let context = bitmap.cgContext
-        context.translateBy(x: 0, y: rect.height)
-        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: CGFloat(rep.pixelsHigh))
+        context.scaleBy(x: CGFloat(rep.pixelsWide) / rect.width, y: -CGFloat(rep.pixelsHigh) / rect.height)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
         container.effectiveAppearance.performAsCurrentDrawingAppearance {
