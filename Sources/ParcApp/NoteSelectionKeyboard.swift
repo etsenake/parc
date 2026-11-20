@@ -130,6 +130,7 @@ extension NoteSelectionController {
                 select(.caret(forward ? end : start))
                 return true
             }
+            if name == "moveRight:" || name == "moveForward:", openEquation(at: head) { return true }
             guard let landing = nav.horizontalLanding(from: head, forward: forward, unit: unit, layout: layout) else { return !fromTextView }
             if fromTextView, case .caret(let position) = landing, position.block == head.block, position.field == head.field { return false }
             goal.reset()
@@ -175,6 +176,16 @@ extension NoteSelectionController {
             guard !fromTextView else { return false }
             return runResponderText(name, anchor: anchor, head: head, forward: forward, nav: nav)
         }
+    }
+
+    private func openEquation(at position: NotePosition) -> Bool {
+        guard !editor.isReadOnly, let text = session.page.text(of: position), position.offset >= 0, position.offset < text.length,
+              case .equation = text.marks(at: position.offset).atom, let host = canvas.textHost(for: position) else { return false }
+        let view = host.textView
+        guard view.isEditable, !view.isEditingEquation else { return false }
+        if view.window?.firstResponder !== view { editor.focus(position) }
+        goal.reset()
+        return view.editEquation(at: position.offset)
     }
 
     private func paragraphEdge(of position: NotePosition, forward: Bool) -> Int {

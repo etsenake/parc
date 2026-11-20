@@ -3,23 +3,16 @@ import Combine
 
 @MainActor
 final class NotePageHeaderView: NSView, NoteCanvasHeader {
-    private struct Arrangement {
-        var cover: NSRect?
-        var icon: NSRect?
-        var affordances: NSRect?
-        var title: NSRect
-        var properties: NSRect?
-        var height: CGFloat
-    }
-
-    static let iconSide: CGFloat = 80
+    static let iconSide: CGFloat = NotePageHeaderGeometry.iconSide
     static let affordanceHeight: CGFloat = NoteTheme.chipHeight
+    static let errorLingerDelay: TimeInterval = 4
 
     unowned let editor: NotePageEditor
     let file: NoteFileSession?
     var onTitleChange: ((String) -> Void)?
     var onTitleCommit: ((String) -> Void)?
     let titleView = NotePageTitleView()
+    let errorView = NotePageTitleErrorView()
     let coverView: NotePageCoverView
     let iconView: NotePageIconView
     let properties: NotePropertiesView
@@ -27,6 +20,8 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
     let addCover = NoteChip("Add cover", icon: .featherImage, style: .ghost)
     let addProperties = NoteChip("Add properties", icon: .symbol("list.bullet.rectangle"), style: .ghost)
     let lockChip = NoteChip("Locked", icon: .symbol("lock.fill"), style: .filled)
+    var isPrinting = false { didSet { if isPrinting != oldValue { printingDidChange() } } }
+    private(set) var titleError: String?
     private let affordances = NSView()
     private var applied: NotePageSettings?
     private var subscriptions: Set<AnyCancellable> = []
@@ -35,6 +30,8 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
     private var lastHeight: CGFloat = 0
     private var committedTitle: String
     private var commitTimer: Timer?
+    private var errorTimer: Timer?
+    private var reservesErrorSpace = false
     private var iconPopover: NotePagePopover?
     private var coverPopover: NotePagePopover?
 
@@ -53,10 +50,12 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         affordances.wantsLayer = true
         for chip in [addIcon, addCover, addProperties] { affordances.addSubview(chip) }
         affordances.layer?.opacity = 0
+        errorView.isHidden = true
         addSubview(coverView)
         addSubview(affordances)
         addSubview(lockChip)
         addSubview(titleView)
+        addSubview(errorView)
         addSubview(properties)
         addSubview(iconView)
         configureTitle()
@@ -80,7 +79,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
 
     var isPlainText: Bool { editor.environment.isPlainText }
 
-    var isEditable: Bool { !editor.isReadOnly }
+    var isEditable: Bool { !editor.isReadOnly && !isPrinting }
 
     var title: String {
         get { titleView.string }
@@ -99,14 +98,22 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         if selectAll { titleView.selectAll(nil) } else { titleView.setSelectedRange(NSRange(location: (titleView.string as NSString).length, length: 0)) }
     }
 
+    func focusTitle(selecting range: Range<Int>) {
+        guard let window else { return }
+        window.makeFirstResponder(titleView)
+        let length = (titleView.string as NSString).length
+        let lower = min(max(0, range.lowerBound), length), upper = min(max(lower, range.upperBound), length)
+        titleView.setSelectedRange(NSRange(location: lower, length: upper - lower))
+    }
+
     func canvasHeaderHeight(width: CGFloat, column: NSRect) -> CGFloat {
-        arrangement(width: width, column: column).height
+        geometry(width: width, column: column).layout().height
     }
 
     override var fittingSize: NSSize {
         let column = editor.canvas.contentRect
         let width = bounds.width > 0 ? bounds.width : editor.canvas.bounds.width
-        return NSSize(width: width, height: arrangement(width: width, column: column).height)
+        return NSSize(width: width, height: geometry(width: width, column: column).layout().height)
     }
 
     private var viewportHeight: CGFloat {
@@ -118,51 +125,32 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
 
     private var hasCover: Bool { !isPlainText && settings.cover != nil }
     private var hasIcon: Bool { !isPlainText && !(settings.icon ?? "").isEmpty }
-    private var showsProperties: Bool { !isPlainText && (!settings.properties.isEmpty || properties.isRevealed) }
+    private var showsProperties: Bool { !isPlainText && (!settings.properties.isEmpty || (properties.isRevealed && !isPrinting)) }
 
     func coverHeight() -> CGFloat {
         min(max((viewportHeight * 0.3).rounded(), 150), 300)
     }
 
-    private func arrangement(width: CGFloat, column rawColumn: NSRect) -> Arrangement {
+    func geometry(width: CGFloat, column rawColumn: NSRect) -> NotePageHeaderGeometry {
         let column = rawColumn.width > 0 ? rawColumn : NSRect(x: 0, y: 0, width: width, height: 0)
-        var result = Arrangement(title: .zero, height: 0)
-        var y: CGFloat = 0
-        if hasCover {
-            let height = coverHeight()
-            result.cover = NSRect(x: 0, y: 0, width: width, height: height)
-            y = height
-        }
-        if isPlainText {
-            y += 56
-        } else if hasIcon {
-            let top = hasCover ? y - Self.iconSide * 0.55 : 52
-            result.icon = NSRect(x: column.minX - 6, y: top, width: Self.iconSide, height: Self.iconSide)
-            y = top + Self.iconSide + 4
-        } else {
-            y += hasCover ? 14 : 44
-        }
-        if !isPlainText {
-            result.affordances = NSRect(x: column.minX, y: y, width: column.width, height: Self.affordanceHeight)
-            y += Self.affordanceHeight + 6
-        }
-        let titleHeight = titleView.height(forWidth: column.width)
-        result.title = NSRect(x: column.minX, y: y, width: column.width, height: titleHeight)
-        y += titleHeight
-        if showsProperties {
-            y += 8
-            let height = properties.preferredHeight(width: column.width + NotePropertiesView.gutter)
-            result.properties = NSRect(x: column.minX - NotePropertiesView.gutter, y: y, width: column.width + NotePropertiesView.gutter, height: height)
-            y += height
-        }
-        result.height = ceil(y + 14)
-        return result
+        let font = titleView.font ?? NoteTheme.titleFont(.standard)
+        var geometry = NotePageHeaderGeometry(width: width, column: column, titleHeight: titleView.height(forWidth: column.width))
+        geometry.coverHeight = hasCover ? coverHeight() : nil
+        geometry.hasIcon = hasIcon
+        geometry.isPlainText = isPlainText
+        geometry.iconInkInset = settings.icon.map(NotePageImageLoader.isImageSource) == true ? 8 : 11
+        geometry.titleCapInset = max(0, font.ascender - font.capHeight)
+        geometry.affordanceHeight = Self.affordanceHeight
+        geometry.errorHeight = reservesErrorSpace && !isPrinting ? NotePageTitleErrorView.height : nil
+        geometry.propertiesHeight = showsProperties ? properties.preferredHeight(width: column.width + NotePropertiesView.gutter) : nil
+        geometry.propertiesGutter = NotePropertiesView.gutter
+        return geometry
     }
 
     override func layout() {
         super.layout()
         let column = convert(editor.canvas.contentRect, from: editor.canvas)
-        let layout = arrangement(width: bounds.width, column: column)
+        let layout = geometry(width: bounds.width, column: column).layout()
         NoteAnimation.withoutAnimation {
             coverView.isHidden = layout.cover == nil
             if let cover = layout.cover {
@@ -171,27 +159,27 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             }
             iconView.isHidden = layout.icon == nil
             if let icon = layout.icon { iconView.frame = icon }
-            affordances.isHidden = layout.affordances == nil
-            if let row = layout.affordances {
-                affordances.frame = row
-                var x: CGFloat = -8
-                let editable = isEditable
-                for chip in [addIcon, addCover, addProperties] {
-                    let visible = editable && chipVisible(chip)
-                    chip.isHidden = !visible
-                    guard visible else { continue }
-                    let size = chip.intrinsicContentSize
-                    chip.frame = NSRect(x: x, y: 0, width: size.width, height: size.height)
-                    x += size.width + 2
-                }
-                let lockSize = lockChip.intrinsicContentSize
-                lockChip.isHidden = !settings.locked
-                lockChip.frame = NSRect(x: settings.locked ? row.minX : row.maxX - lockSize.width, y: row.minY,
-                                        width: lockSize.width, height: lockSize.height)
-            } else {
-                lockChip.isHidden = true
+            let showsAffordances = !isPlainText && !isPrinting
+            affordances.isHidden = !showsAffordances
+            affordances.frame = layout.affordances
+            var x: CGFloat = -8
+            let editable = isEditable
+            for chip in [addIcon, addCover, addProperties] {
+                let visible = editable && chipVisible(chip)
+                chip.isHidden = !visible
+                guard visible else { continue }
+                let size = chip.intrinsicContentSize
+                chip.frame = NSRect(x: x, y: 0, width: size.width, height: size.height)
+                x += size.width + 2
             }
+            let row = layout.affordances
+            let lockSize = lockChip.intrinsicContentSize
+            lockChip.isHidden = !showsAffordances || !settings.locked
+            lockChip.frame = NSRect(x: row.minX, y: row.minY, width: lockSize.width, height: lockSize.height)
             titleView.frame = layout.title
+            if let frame = layout.error {
+                errorView.frame = frame
+            }
             properties.isHidden = layout.properties == nil
             if let frame = layout.properties { properties.frame = frame }
         }
@@ -240,12 +228,78 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         NoteAnimation.fade(layer, to: visible ? 1 : 0, duration: NoteAnimation.hoverDuration)
     }
 
+    private func printingDidChange() {
+        coverView.isPrinting = isPrinting
+        if isPrinting {
+            commitTimer?.invalidate()
+            errorTimer?.invalidate()
+            titleError = nil
+            reservesErrorSpace = false
+            errorView.isHidden = true
+            titleView.findHighlights = []
+        }
+        apply(settings, animated: false)
+        needsLayout = true
+    }
+
+    func showTitleError(_ message: String?) {
+        errorTimer?.invalidate()
+        errorTimer = nil
+        let next = message?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let next, !next.isEmpty, !isPrinting else {
+            hideTitleError()
+            return
+        }
+        let wasShowing = titleError != nil
+        titleError = next
+        errorView.message = next
+        guard !wasShowing || errorView.isHidden else {
+            NoteAnimation.pop(errorView, from: 0.97, spring: .pill)
+            announce(next)
+            return
+        }
+        reservesErrorSpace = true
+        errorView.isHidden = false
+        relayoutIfHeightChanged()
+        layoutSubtreeIfNeeded()
+        NoteAnimation.presentHUD(errorView, about: NSPoint(x: 0, y: 0))
+        announce(next)
+    }
+
+    private func hideTitleError() {
+        guard titleError != nil else { return }
+        titleError = nil
+        NoteAnimation.dismissHUD(errorView, about: NSPoint(x: 0, y: 0)) { [weak self] in
+            guard let self, self.titleError == nil else { return }
+            self.errorView.isHidden = true
+            self.reservesErrorSpace = false
+            self.relayoutIfHeightChanged()
+        }
+    }
+
+    private func announce(_ message: String) {
+        NSAccessibility.post(element: titleView, notification: .announcementRequested,
+                             userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    }
+
+    private func lingerTitleError() {
+        errorTimer?.invalidate()
+        errorTimer = Timer.scheduledTimer(withTimeInterval: Self.errorLingerDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.window?.firstResponder !== self.titleView else { return }
+                self.showTitleError(nil)
+            }
+        }
+    }
+
     private func configureTitle() {
         titleView.string = committedTitle
         titleView.onEdit = { [weak self] text in
             guard let self else { return }
+            if self.titleError != nil { self.showTitleError(nil) }
             self.relayoutIfHeightChanged()
             self.onTitleChange?(text)
+            self.editor.find.titleDidChange()
             self.scheduleCommit()
         }
         titleView.onEndEditing = { [weak self] in self?.commitTitle(ending: true) }
@@ -288,9 +342,9 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             titleView.font = font
             titleView.typingAttributes[.font] = font
         }
-        let editable = !editor.isReadOnly
+        let editable = isEditable
         titleView.isEditable = editable
-        titleView.isSelectable = true
+        titleView.isSelectable = !isPrinting
         coverView.isEditable = editable
         iconView.isEditable = editable
         if previous?.cover?.source != next.cover?.source || previous == nil {
@@ -318,6 +372,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         guard window?.firstResponder !== titleView, titleView.string != name else { return }
         titleView.string = name
         relayoutIfHeightChanged()
+        editor.find.titleDidChange()
     }
 
     private func scheduleCommit() {
@@ -334,28 +389,44 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
     private func commitTitle(ending: Bool) {
         commitTimer?.invalidate()
         commitTimer = nil
-        guard !titleView.hasMarkedText() else { return }
+        guard !titleView.hasMarkedText(), !isPrinting else { return }
         let value = titleView.string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else {
             if ending { showCommittedTitle() }
             return
         }
-        if value != committedTitle {
-            let previous = committedTitle
-            committedTitle = value
-            if let onTitleCommit {
-                onTitleCommit(value)
-            } else if let file {
-                do {
-                    _ = try file.rename(to: value)
-                } catch {
-                    committedTitle = previous
-                    editor.onError?(error)
-                }
-            }
-            if let file { committedTitle = file.title }
+        guard value != committedTitle else {
+            showTitleError(nil)
+            if ending { showCommittedTitle() }
+            return
         }
+        if let url = file?.url, let problem = NotePageTitleCheck.problem(renaming: url, to: value) {
+            rejectTitle(problem, ending: ending)
+            return
+        }
+        let previous = committedTitle
+        committedTitle = value
+        if let onTitleCommit {
+            onTitleCommit(value)
+        } else if let file {
+            do {
+                _ = try file.rename(to: value)
+            } catch {
+                committedTitle = previous
+                rejectTitle(error, ending: ending)
+                return
+            }
+        }
+        if let file { committedTitle = file.title }
+        showTitleError(nil)
         if ending { showCommittedTitle() }
+    }
+
+    private func rejectTitle(_ error: Error, ending: Bool) {
+        showTitleError(error.localizedDescription)
+        guard ending else { return }
+        showCommittedTitle()
+        lingerTitleError()
     }
 
     private func showCommittedTitle() {
@@ -363,6 +434,21 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         titleView.string = committedTitle
         titleView.needsDisplay = true
         relayoutIfHeightChanged()
+        editor.find.titleDidChange()
+    }
+
+    @discardableResult
+    func replaceTitleText(_ matches: [NoteFindMatch], with replacement: String) -> Bool {
+        guard isEditable, !titleView.hasMarkedText() else { return false }
+        let current = titleView.string
+        let next = NotePageExport.flattenedTitle(NotePageFinder.replacingTitle(current, matches: matches, with: replacement))
+        guard next != current else { return false }
+        let whole = NSRange(location: 0, length: (current as NSString).length)
+        guard titleView.shouldChangeText(in: whole, replacementString: next) else { return false }
+        titleView.textStorage?.replaceCharacters(in: whole, with: next)
+        titleView.didChangeText()
+        commitTitle(ending: window?.firstResponder !== titleView)
+        return true
     }
 
     private func splitIntoBody() {
@@ -488,16 +574,78 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
 }
 
 @MainActor
-final class NotePageTitleView: NSTextView {
+final class NotePageTitleErrorView: NSView {
+    static let height: CGFloat = 20
+    static let iconSide: CGFloat = 14
+
+    var message = "" {
+        didSet {
+            guard message != oldValue else { return }
+            label.stringValue = message
+            setAccessibilityLabel(message)
+            needsLayout = true
+        }
+    }
+    private let label = NSTextField(labelWithString: "")
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        label.font = NoteTheme.nunitoBold(12.5)
+        label.textColor = NoteTheme.destructiveInk
+        label.lineBreakMode = .byTruncatingTail
+        label.maximumNumberOfLines = 1
+        label.setAccessibilityElement(false)
+        addSubview(label)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        let size = label.intrinsicContentSize
+        let x = Self.iconSide + 6
+        label.frame = NSRect(x: x, y: ((bounds.height - size.height) / 2).rounded(), width: max(0, bounds.width - x), height: size.height)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let symbol = NoteIconRenderer.symbol("exclamationmark.circle.fill", pointSize: 12, weight: .semibold) else { return }
+        let box = NSRect(x: 0, y: ((bounds.height - Self.iconSide) / 2).rounded(), width: Self.iconSide, height: Self.iconSide)
+        NoteIconRenderer.drawTemplate(symbol, centeredIn: box, tint: NoteTheme.destructiveInk)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
+@MainActor
+final class NotePageTitleView: NSTextView, NoteFindPaintable {
     var onEdit: ((String) -> Void)?
     var onEndEditing: (() -> Void)?
     var onReturn: (() -> Void)?
     var onMoveDown: (() -> Void)?
     var placeholder = "Untitled" { didSet { needsDisplay = true } }
+    var findHighlights: [NoteFindHighlight] = [] {
+        didSet {
+            guard oldValue != findHighlights else { return }
+            noteLayoutManager?.findHighlights = findHighlights
+            needsDisplay = true
+        }
+    }
     private let titleUndo = UndoManager()
+    private var keyObservers: [NSObjectProtocol] = []
 
     convenience init() {
         self.init(usingTextLayoutManager: false)
+        textContainer?.replaceLayoutManager(NoteLayoutManager())
         isRichText = false
         importsGraphics = false
         allowsUndo = true
@@ -516,10 +664,15 @@ final class NotePageTitleView: NSTextView {
         textColor = NoteTheme.titleInk
         insertionPointColor = NoteTheme.caret
         selectedTextAttributes = [.backgroundColor: NoteTheme.selection]
+        noteLayoutManager?.inactiveSelectionColor = NoteTheme.inactiveSelection
+        noteLayoutManager?.findColor = NoteTheme.findMatch
+        noteLayoutManager?.findCurrentColor = NoteTheme.findCurrentMatch
         typingAttributes = [.font: NoteTheme.titleFont(.standard), .foregroundColor: NoteTheme.titleInk]
         setAccessibilityLabel("Title")
         setAccessibilityPlaceholderValue(placeholder)
     }
+
+    var noteLayoutManager: NoteLayoutManager? { layoutManager as? NoteLayoutManager }
 
     override var undoManager: UndoManager? { titleUndo }
 
@@ -537,6 +690,21 @@ final class NotePageTitleView: NSTextView {
         guard !string.isEmpty else { return max(line, ceil(layoutManager.defaultLineHeight(for: font))) }
         layoutManager.ensureLayout(for: textContainer)
         return max(line, ceil(layoutManager.usedRect(for: textContainer).height))
+    }
+
+    func rects(for range: Range<Int>) -> [NSRect] {
+        guard let layoutManager, let textContainer, !range.isEmpty else { return [] }
+        let length = (string as NSString).length
+        let lower = min(max(0, range.lowerBound), length), upper = min(max(lower, range.upperBound), length)
+        guard lower < upper else { return [] }
+        layoutManager.ensureLayout(for: textContainer)
+        let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: lower, length: upper - lower), actualCharacterRange: nil)
+        var rects: [NSRect] = []
+        layoutManager.enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                                              in: textContainer) { rect, _ in
+            rects.append(rect.offsetBy(dx: self.textContainerOrigin.x, dy: self.textContainerOrigin.y))
+        }
+        return rects
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
@@ -599,6 +767,7 @@ final class NotePageTitleView: NSTextView {
         super.didChangeText()
         needsDisplay = true
         guard !hasMarkedText() else { return }
+        if !findHighlights.isEmpty { findHighlights = [] }
         onEdit?(string)
     }
 
@@ -606,6 +775,21 @@ final class NotePageTitleView: NSTextView {
         let resigned = super.resignFirstResponder()
         if resigned { onEndEditing?() }
         return resigned
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        for observer in keyObservers { NotificationCenter.default.removeObserver(observer) }
+        keyObservers = []
+        guard let window else { return }
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            keyObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.selectedRange().length > 0 else { return }
+                    self.needsDisplay = true
+                }
+            })
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -784,6 +968,12 @@ final class NotePageCoverView: NSView {
     var isEditable = true { didSet { refreshControls(animated: false) } }
     var controlsInset: CGFloat = 16 { didSet { needsLayout = true } }
     var controlsPinned = false { didSet { refreshControls(animated: true) } }
+    var isPrinting = false {
+        didSet {
+            controls.isHidden = isPrinting
+            hint.isHidden = isPrinting || !isRepositioning
+        }
+    }
     let changeChip = NoteChip("Change cover", style: .ghost)
     let repositionChip = NoteChip("Reposition", style: .ghost)
     let removeChip = NoteChip("Remove", style: .ghost)

@@ -2,7 +2,18 @@ import AppKit
 import Combine
 
 @MainActor
+protocol NoteFindPaintable: AnyObject {
+    var findHighlights: [NoteFindHighlight] { get set }
+}
+
+extension NoteTextView: NoteFindPaintable {}
+
+@MainActor
 final class NoteFindController {
+    private struct Painted {
+        weak var view: (any NoteFindPaintable)?
+    }
+
     unowned let editor: NotePageEditor
     private(set) var query = ""
     private(set) var options = NoteFindOptions()
@@ -12,16 +23,16 @@ final class NoteFindController {
     var topInset: CGFloat = 4
     private var bar: NoteFindBar?
     private var panel: NoteFloatingPanel?
-    private let highlights = NoteFindHighlightView()
+    private var painted: [ObjectIdentifier: Painted] = [:]
     private var origin: NotePosition?
-    private var subscription: AnyCancellable?
+    private var subscriptions: Set<AnyCancellable> = []
     private var observers: [NSObjectProtocol] = []
     private weak var returnResponder: NSResponder?
     private var refreshScheduled = false
+    private var paintScheduled = false
 
     init(editor: NotePageEditor) {
         self.editor = editor
-        highlights.controller = self
     }
 
     var isVisible: Bool { panel?.isPresented == true }
@@ -38,6 +49,8 @@ final class NoteFindController {
     }
 
     var canReplace: Bool { !editor.isReadOnly }
+
+    private var header: NotePageHeaderView? { editor.canvas.headerView as? NotePageHeaderView }
 
     func show(replacing: Bool = false) {
         let canvas = editor.canvas!
@@ -60,7 +73,6 @@ final class NoteFindController {
         bar.refresh()
         let panel = self.panel ?? makePanel(bar)
         if !isVisible {
-            attachHighlights()
             observe()
             panel.present(in: canvas.overlayView, anchor: anchorRect(for: panel), edge: .below, animated: true)
             recompute(keepingPosition: origin, reveal: true)
@@ -80,15 +92,17 @@ final class NoteFindController {
     func hide(restoringFocus: Bool) {
         guard let panel, panel.isPresented else { return }
         let match = currentMatch
-        subscription = nil
+        subscriptions.removeAll()
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers.removeAll()
         panel.dismiss(animated: true)
-        highlights.removeFromSuperview()
         matches = []
         currentIndex = nil
+        paint()
         guard restoringFocus else { return }
-        if let match, editor.canvas.textHost(for: match.position) != nil {
+        if let match, match.isTitle, let header {
+            header.focusTitle(selecting: match.range)
+        } else if let match, editor.canvas.textHost(for: match.position) != nil {
             editor.focus(match.position)
             if let host = editor.canvas.textHost(for: match.position) {
                 host.textView.selectedOffsets = match.range
@@ -149,6 +163,11 @@ final class NoteFindController {
         recompute(keepingPosition: currentMatch?.position ?? origin, reveal: true)
     }
 
+    func titleDidChange() {
+        guard isVisible else { return }
+        scheduleRefresh()
+    }
+
     func toggleReplacing() {
         guard canReplace || isReplacing else { return }
         isReplacing.toggle()
@@ -162,8 +181,12 @@ final class NoteFindController {
         guard canReplace, let match = currentMatch else { NSSound.beep(); return }
         let replacement = bar?.replaceField.text ?? ""
         let after = NotePageFinder.positionAfterReplacing(match, with: replacement)
-        editor.session.edit("Replace", kind: .text, affected: [match.block]) { page in
-            NotePageFinder.replace([match], with: replacement, in: &page)
+        if match.isTitle {
+            guard let header, header.replaceTitleText([match], with: replacement) else { NSSound.beep(); return }
+        } else {
+            editor.session.edit("Replace", kind: .text, affected: [match.block]) { page in
+                NotePageFinder.replace([match], with: replacement, in: &page)
+            }
         }
         origin = after
         recompute(keepingPosition: after, reveal: true)
@@ -173,12 +196,18 @@ final class NoteFindController {
         guard canReplace, !matches.isEmpty else { NSSound.beep(); return }
         let replacement = bar?.replaceField.text ?? ""
         let targets = matches
-        let blocks = Set(targets.map(\.block))
-        editor.session.edit("Replace All", kind: .text, affected: blocks) { page in
-            NotePageFinder.replace(targets, with: replacement, in: &page)
+        let titleTargets = targets.filter(\.isTitle)
+        let bodyTargets = targets.filter { !$0.isTitle }
+        var count = 0
+        if !titleTargets.isEmpty, let header, header.replaceTitleText(titleTargets, with: replacement) { count += titleTargets.count }
+        if !bodyTargets.isEmpty {
+            let blocks = Set(bodyTargets.map(\.block))
+            editor.session.edit("Replace All", kind: .text, affected: blocks) { page in
+                NotePageFinder.replace(bodyTargets, with: replacement, in: &page)
+            }
+            count += bodyTargets.count
         }
         recompute(keepingPosition: origin, reveal: false)
-        let count = targets.count
         bar?.flash(count == 1 ? "Replaced 1" : "Replaced \(count)")
     }
 
@@ -197,7 +226,7 @@ final class NoteFindController {
 
     private func recompute(keepingPosition position: NotePosition?, reveal shouldReveal: Bool) {
         let page = editor.session.page
-        matches = NotePageFinder.matches(of: query, in: page, options: options)
+        matches = NotePageFinder.matches(of: query, in: page, title: header?.title, options: options)
         currentIndex = NotePageFinder.firstIndex(atOrAfter: position, in: matches, page: page)
         if shouldReveal, let match = currentMatch { reveal(match) }
         refreshViews()
@@ -205,7 +234,7 @@ final class NoteFindController {
 
     private func refreshViews() {
         bar?.refresh()
-        highlights.refresh()
+        paint()
         if let bar {
             NSAccessibility.post(element: bar, notification: .announcementRequested,
                                  userInfo: [.announcement: countLabel, .priority: NSAccessibilityPriorityLevel.low.rawValue])
@@ -213,14 +242,21 @@ final class NoteFindController {
     }
 
     private func reveal(_ match: NoteFindMatch) {
-        expandAncestors(of: match.block)
         let canvas = editor.canvas!
-        canvas.scrollBlockToVisible(match.block)
-        canvas.layoutSubtreeIfNeeded()
-        guard let host = canvas.textHost(for: match.position) else { return }
-        let rects = host.textView.selectionRects(for: clamped(match.range, in: host.textView))
-        guard let first = rects.first else { return }
-        let rect = rects.dropFirst().reduce(canvas.convert(first, from: host.textView)) { $0.union(canvas.convert($1, from: host.textView)) }
+        let target: (view: NSView, rects: [NSRect])
+        if match.isTitle {
+            guard let header else { return }
+            canvas.layoutSubtreeIfNeeded()
+            target = (header.titleView, header.titleView.rects(for: match.range))
+        } else {
+            expandAncestors(of: match.block)
+            canvas.scrollBlockToVisible(match.block)
+            canvas.layoutSubtreeIfNeeded()
+            guard let host = canvas.textHost(for: match.position) else { return }
+            target = (host.textView, host.textView.selectionRects(for: clamped(match.range, in: host.textView)))
+        }
+        guard let first = target.rects.first else { return }
+        let rect = target.rects.dropFirst().reduce(canvas.convert(first, from: target.view)) { $0.union(canvas.convert($1, from: target.view)) }
         let clipped = canvas.visibleRect.intersection(canvas.bounds)
         let visible = clipped.isEmpty ? canvas.bounds : clipped
         let barHeight = (panel?.frame.height ?? 0) + 24
@@ -251,24 +287,46 @@ final class NoteFindController {
         return lower..<min(max(lower, range.upperBound), length)
     }
 
-    func highlightRects(in view: NSView) -> [(rect: NSRect, current: Bool)] {
-        guard isVisible, !matches.isEmpty, let canvas = editor.canvas else { return [] }
-        let clipped = canvas.visibleRect.intersection(canvas.bounds)
-        let visible = (clipped.isEmpty ? canvas.bounds : clipped).insetBy(dx: 0, dy: -240)
-        var result: [(NSRect, Bool)] = []
-        for (index, match) in matches.enumerated() {
-            if let frame = canvas.frame(of: match.block), !frame.intersects(visible) { continue }
-            guard let host = canvas.textHost(for: match.position) else { continue }
-            let textView = host.textView
-            guard textView.window === canvas.window, !textView.isHiddenOrHasHiddenAncestor else { continue }
-            let range = clamped(match.range, in: textView)
-            guard !range.isEmpty else { continue }
-            for rect in textView.selectionRects(for: range) {
-                let converted = view.convert(rect, from: textView)
-                if converted.intersects(visible) { result.append((converted, index == currentIndex)) }
+    private func paint() {
+        var next: [ObjectIdentifier: (view: any NoteFindPaintable, highlights: [NoteFindHighlight])] = [:]
+        if isVisible, !matches.isEmpty, let canvas = editor.canvas {
+            let clipped = canvas.visibleRect.intersection(canvas.bounds)
+            let visible = (clipped.isEmpty ? canvas.bounds : clipped).insetBy(dx: 0, dy: -600)
+            for (index, match) in matches.enumerated() {
+                let current = index == currentIndex
+                guard let view = paintable(for: match, within: visible, current: current) else { continue }
+                let key = ObjectIdentifier(view)
+                var entry = next[key] ?? (view, [])
+                entry.highlights.append(NoteFindHighlight(range: match.range, isCurrent: current))
+                next[key] = entry
             }
         }
-        return result
+        for (key, item) in painted where next[key] == nil { item.view?.findHighlights = [] }
+        var stored: [ObjectIdentifier: Painted] = [:]
+        for (key, entry) in next {
+            entry.view.findHighlights = entry.highlights
+            stored[key] = Painted(view: entry.view)
+        }
+        painted = stored
+    }
+
+    private func paintable(for match: NoteFindMatch, within visible: NSRect, current: Bool) -> (any NoteFindPaintable)? {
+        if match.isTitle { return header?.titleView }
+        let canvas = editor.canvas!
+        if let frame = canvas.frame(of: match.block), !frame.intersects(visible) { return nil }
+        guard let view = canvas.existingBlockView(for: match.block) else { return nil }
+        if let host = view.textHosts.first(where: { $0.field == match.field }) { return host.textView }
+        return current ? view.textHost(for: match.field)?.textView : nil
+    }
+
+    private func schedulePaint() {
+        guard !paintScheduled else { return }
+        paintScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.paintScheduled = false
+            self.paint()
+        }
     }
 
     private func makeBar() -> NoteFindBar {
@@ -292,21 +350,14 @@ final class NoteFindController {
         return NSRect(x: max(visible.minX + 12, visible.maxX - width - 16), y: visible.minY + topInset, width: width, height: 0)
     }
 
-    private func attachHighlights() {
-        let canvas = editor.canvas!
-        if highlights.superview !== canvas {
-            highlights.removeFromSuperview()
-            canvas.addSubview(highlights, positioned: .below, relativeTo: canvas.subviews.first)
-        }
-        highlights.frame = canvas.bounds
-    }
-
     private func observe() {
-        subscription = editor.session.changes.sink { [weak self] change in
+        subscriptions.removeAll()
+        editor.session.changes.sink { [weak self] change in
             guard let self, change.kind != .selection else { return }
             self.scheduleRefresh()
-        }
+        }.store(in: &subscriptions)
         let canvas = editor.canvas!
+        canvas.blockViewDidMaterialize.sink { [weak self] _ in self?.schedulePaint() }.store(in: &subscriptions)
         let center = NotificationCenter.default
         if let clip = canvas.enclosingScrollView?.contentView {
             clip.postsBoundsChangedNotifications = true
@@ -322,9 +373,8 @@ final class NoteFindController {
 
     private func viewportDidChange() {
         guard isVisible, let panel else { return }
-        attachHighlights()
         panel.reposition(anchor: anchorRect(for: panel), edge: .below, animated: false)
-        highlights.refresh()
+        paint()
     }
 
     private func scheduleRefresh() {
@@ -340,6 +390,11 @@ final class NoteFindController {
     }
 
     private func selectedSingleLineText() -> String? {
+        if let header, let window = editor.canvas.window, window.firstResponder === header.titleView {
+            let range = header.titleView.selectedRange()
+            guard range.length > 0, range.length <= 200 else { return nil }
+            return (header.titleView.string as NSString).substring(with: range)
+        }
         guard case .text(let anchor, let head) = editor.session.selection, anchor != head,
               anchor.block == head.block, anchor.field == head.field,
               let text = editor.session.page.text(of: anchor) else { return nil }
@@ -356,40 +411,6 @@ final class NoteFindController {
         case .blocks(let ids): return ids.first.map { NotePosition($0, 0) }
         case .cells(let table, let anchor, _): return NotePosition(table, 0, field: .cell(row: anchor.row, column: anchor.column))
         case .none: return nil
-        }
-    }
-}
-
-@MainActor
-final class NoteFindHighlightView: NSView {
-    weak var controller: NoteFindController?
-    private var drawn: [(rect: NSRect, current: Bool)] = []
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        setAccessibilityElement(false)
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    override var isFlipped: Bool { true }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    func refresh() {
-        guard let superview else { return }
-        if frame != superview.bounds { frame = superview.bounds }
-        let next = controller?.highlightRects(in: self) ?? []
-        for item in drawn { setNeedsDisplay(item.rect.insetBy(dx: -3, dy: -3)) }
-        for item in next { setNeedsDisplay(item.rect.insetBy(dx: -3, dy: -3)) }
-        drawn = next
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        for item in drawn where item.rect.insetBy(dx: -3, dy: -3).intersects(dirtyRect) {
-            (item.current ? NoteTheme.findCurrentMatch : NoteTheme.findMatch).setFill()
-            NSBezierPath(roundedRect: item.rect.insetBy(dx: -1.5, dy: 0), xRadius: 3, yRadius: 3).fill()
         }
     }
 }
