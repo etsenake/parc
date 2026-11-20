@@ -404,8 +404,10 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
 
     private func performStatusAction(_ action: NotePageStatus.Action) {
         switch action {
-        case .retry, .restore:
+        case .retry:
             do { try file.flush() } catch { showTransientError(error) }
+        case .restore:
+            do { try file.restore() } catch { showTransientError(error) }
         case .keepMine:
             file.resolveConflict(keepMine: true)
         case .useFile:
