@@ -35,6 +35,36 @@ struct NoteTextRenderingTests {
         expectEqual(NoteTextRendering.noteText(from: attributed), text, message + " survives the round trip")
     }
 
+    static func atomRunsKeepTheirNeighbours() {
+        let equation = marks { $0.atom = .equation("x") }
+        let tagged = NSAttributedString(string: "😀\u{FFFC}é👩🏽‍💻", attributes: [.noteMarks: NoteMarksValue(equation)])
+        let text = NoteTextRendering.noteText(from: tagged)
+        expectEqual(text, NoteText("😀") + NoteText.atom(.equation("x")) + NoteText("é👩🏽‍💻"),
+                    "emoji typed beside an atom stay emoji instead of turning into replacement characters")
+        expect(!text.string.contains("\u{FFFD}"), "no replacement characters appear")
+        let rendered = NoteTextRendering.attributedString(NoteText("🎉") + NoteText.atom(.equation("y")) + NoteText("🎈"), NoteTextPresentation())
+        expectEqual(rendered.string, "🎉\u{FFFC}🎈", "rendering keeps emoji beside atoms whole")
+    }
+
+    static func compositionMerges() {
+        let base: NoteText = "Hello world"
+        let committed: NoteText = "Hello 世界 world"
+        let untouched = NoteTextRendering.mergeComposition(committed: committed, base: base, external: base)
+        expectEqual(untouched.text, committed, "a composition over unchanged text commits as typed")
+        let appended = NoteTextRendering.mergeComposition(committed: committed, base: base, external: "Hello world, friends", caret: 8)
+        expectEqual(appended.text.string, "Hello 世界 world, friends", "an outside edit after the caret survives the commit")
+        expectEqual(appended.caret, 8, "the caret lands after the committed text")
+        let prepended = NoteTextRendering.mergeComposition(committed: committed, base: base, external: "Oh, Hello world", caret: 8)
+        expectEqual(prepended.text.string, "Oh, Hello 世界 world", "an outside edit before the caret survives the commit")
+        expectEqual(prepended.caret, 12, "the caret follows the shifted composition")
+        let emoji = NoteTextRendering.mergeComposition(committed: "😀😁", base: "😀", external: "😀!", caret: 4)
+        let split = NoteTextRendering.mergeComposition(committed: "😁", base: "😀", external: "😀?", caret: 2)
+        expectEqual(split.text.string, "😁?", "a replaced emoji swaps whole instead of by halves")
+        expectEqual(emoji.text.string, "😀😁!", "merging never splits a surrogate pair")
+        let replaced = NoteTextRendering.mergeComposition(committed: "abc", base: "xyz", external: "totally different")
+        expectEqual(replaced.text.string, "totally different", "an outside rewrite wins when the composition can't be placed")
+    }
+
     static func roundTrips() {
         roundTrip(NoteText(), "empty text")
         roundTrip("Plain words", "plain text")
@@ -55,6 +85,8 @@ struct NoteTextRenderingTests {
             + NoteText.atom(.equation("y"), marks: boldMarks)
         roundTrip(atoms, "every atom, including identical neighbours")
         roundTrip(NoteText("Stray \u{FFFC} object"), "a raw object character without an atom")
+        atomRunsKeepTheirNeighbours()
+        compositionMerges()
         roundTrip(NoteText(pieces: [("linked ", link), ("bold link", marks { $0.link = "https://parc.app"; $0.bold = true })]),
                   "a link across marks")
         let checked = NoteTextPresentation(completed: true)

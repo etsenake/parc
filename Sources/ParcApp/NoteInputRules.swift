@@ -164,7 +164,7 @@ enum NoteInputRules {
                 if content.contains(10) || content.contains(13) { break }
                 guard !isSpace(content.first!), !isSpace(content.last!) else { continue }
                 if content.first == tokenUnit || content.last == tokenUnit { continue }
-                if delimiter.boundary, open > 0, isWordUnit(units[open - 1]) { continue }
+                if delimiter.boundary, isWordCharacter(endingAt: open, in: units) { continue }
                 let contentRange = contentStart..<closeStart
                 let segment = text.slice(contentRange)
                 if segment.spans.contains(where: { $0.marks.code }) && !delimiter.isEquation { continue }
@@ -226,9 +226,20 @@ enum NoteInputRules {
         unit == 32 || unit == 9 || unit == 10 || unit == 13 || unit == 0xA0 || unit == 0x2028 || unit == 0x3000
     }
 
-    private static func isWordUnit(_ unit: UInt16) -> Bool {
-        guard let scalar = Unicode.Scalar(unit) else { return true }
-        return scalar.properties.isAlphabetic || (unit >= 48 && unit <= 57)
+    static func isWordCharacter(endingAt end: Int, in units: [UInt16]) -> Bool {
+        guard end > 0, end <= units.count else { return false }
+        let last = units[end - 1]
+        let value: UInt32
+        if UTF16.isTrailSurrogate(last) {
+            guard end > 1, UTF16.isLeadSurrogate(units[end - 2]) else { return false }
+            value = 0x10000 + ((UInt32(units[end - 2]) - 0xD800) << 10) + (UInt32(last) - 0xDC00)
+        } else if UTF16.isLeadSurrogate(last) {
+            return false
+        } else {
+            value = UInt32(last)
+        }
+        guard let scalar = Unicode.Scalar(value) else { return false }
+        return scalar.properties.isAlphabetic || scalar.properties.generalCategory == .decimalNumber
     }
 }
 
