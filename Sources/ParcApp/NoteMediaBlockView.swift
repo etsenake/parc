@@ -315,6 +315,20 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) { NoteMediaQuickLook.shared.attach(panel) }
     override func endPreviewPanelControl(_ panel: QLPreviewPanel!) { NoteMediaQuickLook.shared.detach(panel) }
 
+    @discardableResult
+    func presentPreview() -> Bool {
+        guard let content else { return false }
+        if let image = content as? NoteImageContentView, image.presentZoom() { return true }
+        switch mode {
+        case .image, .video, .audio, .file:
+            guard source.url != nil else { return false }
+            quickLook(from: content.bounds, in: content)
+            return true
+        default:
+            return false
+        }
+    }
+
     func zoom(image: NoteMediaImage, from rect: NSRect, in view: NSView) {
         guard let canvas = editor?.canvas else { return }
         NoteMediaZoomOverlay.present(image: image, source: source.url, from: rect, of: view, in: canvas)

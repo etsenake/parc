@@ -294,6 +294,12 @@ final class NoteImageContentView: NoteMediaContentView {
         if image != nil { addCursorRect(imageRect, cursor: .pointingHand) }
     }
 
+    func presentZoom() -> Bool {
+        guard let image, let host else { return false }
+        host.zoom(image: image, from: imageRect, in: self)
+        return true
+    }
+
     func beginResize() {
         guard editable else { return }
         resizeStart = (imageRect.width, bounds.width)
