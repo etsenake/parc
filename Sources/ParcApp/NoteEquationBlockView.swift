@@ -195,12 +195,14 @@ final class NoteEquationEditorView: NSView, NoteFloatingPanelContent, NSTextView
             let whole = NSRange(location: 0, length: (textView.string as NSString).length)
             layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: whole)
             layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: whole)
+            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: whole)
             if text != nil, let range, whole.length > 0 {
                 let clamped = NSIntersectionRange(range.length == 0 ? NSRange(location: max(0, min(range.location, whole.length - 1)), length: 1) : range, whole)
                 if clamped.length > 0 {
                     layoutManager.addTemporaryAttributes([
-                        .underlineStyle: NSUnderlineStyle.thick.rawValue | NSUnderlineStyle.patternDot.rawValue,
+                        .underlineStyle: NSUnderlineStyle.single.rawValue,
                         .underlineColor: NoteTheme.destructiveInk,
+                        .backgroundColor: NoteTheme.destructiveHighlight,
                     ], forCharacterRange: clamped)
                 }
             }

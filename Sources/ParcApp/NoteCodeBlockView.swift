@@ -29,15 +29,31 @@ final class NoteCodeTextView: NoteTextView {
     var languageID: () -> String = { "" }
     var onExit: ((_ trimsBlankLine: Bool) -> Void)?
     var onEdit: (() -> Void)?
-    var codeAttributes: [NSAttributedString.Key: Any] = [:]
+    var codeAttributes: [NSAttributedString.Key: Any] = [:] {
+        didSet { if !codeAttributes.isEmpty { super.typingAttributes = codeAttributes } }
+    }
+
+    override var typingAttributes: [NSAttributedString.Key: Any] {
+        get { codeAttributes.isEmpty ? super.typingAttributes : codeAttributes }
+        set { super.typingAttributes = codeAttributes.isEmpty ? newValue : codeAttributes }
+    }
+
+    private func exitsOnCommandReturn(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard event.type == .keyDown, event.keyCode == 36 || event.keyCode == 76, modifiers == .command,
+              !hasMarkedText(), isEditable, let onExit else { return false }
+        onExit(false)
+        return true
+    }
 
     override func keyDown(with event: NSEvent) {
-        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if (event.keyCode == 36 || event.keyCode == 76), modifiers == .command, !hasMarkedText(), isEditable {
-            onExit?(false)
-            return
-        }
+        if exitsOnCommandReturn(event) { return }
         super.keyDown(with: event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if window?.firstResponder === self, exitsOnCommandReturn(event) { return true }
+        return super.performKeyEquivalent(with: event)
     }
 
     override func doCommand(by selector: Selector) {
@@ -86,15 +102,6 @@ final class NoteCodeTextView: NoteTextView {
         setSelectedRange(NSRange(location: edit.selection.lowerBound, length: edit.selection.count))
         didChangeText()
         scrollRangeToVisible(selectedRange())
-    }
-
-    override func selectAll(_ sender: Any?) {
-        let length = (string as NSString).length
-        if selectedOffsets == 0..<length, length > 0, let editor {
-            editor.selection.selectAll()
-            return
-        }
-        super.selectAll(sender)
     }
 }
 
