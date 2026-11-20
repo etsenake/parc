@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src file: 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; font-src file:; img-src data:">
+<style>
+@font-face{font-family:"Nunito";src:url("../NoteFonts/Nunito-Regular.ttf") format("truetype");font-weight:400;font-style:normal}
+@font-face{font-family:"Nunito";src:url("../NoteFonts/Nunito-Bold.ttf") format("truetype");font-weight:700;font-style:normal}
+@font-face{font-family:"Nunito";src:url("../NoteFonts/Nunito-Italic.ttf") format("truetype");font-weight:400;font-style:italic}
+@font-face{font-family:"Nunito";src:url("../NoteFonts/Nunito-BoldItalic.ttf") format("truetype");font-weight:700;font-style:italic}
+@font-face{font-family:"EB Garamond";src:url("../EaselFonts/EBGaramond-VariableFont_wght.ttf") format("truetype");font-weight:400 800;font-style:normal}
+@font-face{font-family:"Space Mono";src:url("../EaselFonts/SpaceMono-Regular.ttf") format("truetype");font-weight:400;font-style:normal}
+@font-face{font-family:"Space Mono";src:url("../EaselFonts/SpaceMono-Bold.ttf") format("truetype");font-weight:700;font-style:normal}
+@font-face{font-family:"ParcWide";src:url("../EaselFonts/ParcWide-Regular.ttf") format("truetype");font-weight:400;font-style:normal}
+@font-face{font-family:"ParcWide";src:url("../EaselFonts/ParcWide-SemiBold.ttf") format("truetype");font-weight:500 700;font-style:normal}
+html,body{margin:0;padding:0;background:transparent}
+#stage{position:absolute;left:0;top:0}
+#stage svg{display:block}
+</style>
+<script src="mermaid.min.js"></script>
+<script>
+"use strict";
+(() => {
+  const stage = () => document.getElementById("stage");
+  const sweep = (id) => {
+    for (const prefix of ["d", "i"]) document.getElementById(prefix + id)?.remove();
+    stage().replaceChildren();
+  };
+  const loadFonts = async (faces) => {
+    try { await Promise.all(faces.map((face) => document.fonts.load(face))); } catch (error) {}
+  };
+  const naturalSize = (svg) => {
+    const box = svg.viewBox && svg.viewBox.baseVal;
+    if (box && box.width > 0 && box.height > 0) return { width: box.width, height: box.height };
+    const bounds = svg.getBBox();
+    return { width: bounds.x + bounds.width, height: bounds.y + bounds.height };
+  };
+  const describe = (error) => {
+    if (!error) return "";
+    if (typeof error === "string") return error;
+    return String(error.message || error.str || error);
+  };
+  window.parcMermaid = {
+    ready: () => typeof mermaid === "object" && typeof mermaid.render === "function",
+    async render(id, source, config, faces) {
+      if (!window.parcMermaid.ready()) return { ok: false, message: "Mermaid didn't load." };
+      await loadFonts(JSON.parse(faces));
+      mermaid.initialize(JSON.parse(config));
+      sweep(id);
+      try {
+        const result = await mermaid.render(id, source);
+        const host = stage();
+        host.innerHTML = result.svg;
+        const svg = host.querySelector("svg");
+        if (!svg) return { ok: false, message: "Mermaid drew nothing." };
+        const size = naturalSize(svg);
+        const width = Math.max(1, Math.ceil(size.width)), height = Math.max(1, Math.ceil(size.height));
+        svg.setAttribute("width", String(width));
+        svg.setAttribute("height", String(height));
+        svg.style.removeProperty("max-width");
+        if (!svg.getAttribute("style")) svg.removeAttribute("style");
+        const rect = svg.getBoundingClientRect();
+        return { ok: true, svg: svg.outerHTML, x: rect.left + window.scrollX, y: rect.top + window.scrollY,
+                 width: rect.width, height: rect.height };
+      } catch (error) {
+        sweep(id);
+        return { ok: false, message: describe(error) };
+      }
+    }
+  };
+})();
+</script>
+</head>
+<body><div id="stage"></div></body>
+</html>
