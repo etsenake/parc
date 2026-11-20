@@ -40,167 +40,137 @@ height people drag to taste. Click a page to use it; until then the note keeps
 scrolling past it. The pages nap after four hours out of sight, follow the tab
 between windows and ask before leaving, like an Easel's pages ([embedded pages](embedded-pages.md#live-embeds-in-notes)).
 
-## Editing and lifetime
+## How the editor is built
 
-The body uses AppKit attributed text, native selection/caret, composition,
-Undo/Redo, range formatting, paragraph/list commands, supported Markdown
-transforms, links, rich clipboard and local image carriers. Cmd-F targets the
-note's own find bar; only a focused [live embed](embedded-pages.md#live-embeds-in-notes)
-hands Find to its page. Title and body have
-separate native Undo managers and retain IME drafts until composition commits.
+Notes are a native block editor in the spirit of Notion, drawn entirely in AppKit.
+Every block is its own view, so blocks can be selected, dragged, coloured and
+animated one at a time:
 
-Each field update checks its prior value, preventing a stale window from
-replacing a newer edit. Independent title changes preserve body Undo; external
-body replacements invalidate stale local body history. Formatting targets retain
-body identity, document revision, complete attributed content and UTF-16 range.
-Changed text/attributes, selection, geometry, ownership, composition, tombstone
-or cross-window publication revoke them. Only that editor's successful save of
-the exact pending content may advance a retained target's durability revision.
+- `NotePageSession` (ParcCore) holds the page as a tree of `NoteBlock`s with
+  inline `NoteText`, the selection and the undo history. Editing operations live
+  in `NotePageEditing.swift`; every user action is one undo step that restores
+  the selection, and typing coalesces per block.
+- `NoteMarkdown` reads and writes the file; [the Notes file format](notes-format.md)
+  describes the Markdown on disk. `NotePlainText` handles `.txt`.
+- `NoteFileSession` owns one file for every editor showing it, in every window.
+- `NotePageViewController` hosts `NotePageEditor`, which routes keys, the
+  clipboard, drops and focus. Its canvas (`NotePageCanvasView`) lays blocks out,
+  creates views only near the visible area, draws callout and colour boxes and
+  animates structural changes.
+- Overlays (the format bar, slash menu, block menu, pickers, find bar and link
+  cards) are views inside the page, never separate windows, so the text keeps
+  focus and input methods keep working.
 
-Save/validation failures preserve the draft with Retry and Discard Draft and
-block closure. Tab/window/Profile retirement flushes the real editor before
-consent completes. A failed unrelated model mutation cannot dispose of its draft.
-UUID paths, regular-file/symlink checks, range validation and byte limits protect
-the local format.
+## Blocks
 
-## Body publication and local save barriers
+Text, headings 1–6 (the menus offer 1–4), bulleted, numbered and to-do lists,
+toggles and toggle headings, quotes, callouts with an emoji icon, dividers, code
+with syntax highlighting for 39 languages, equations typeset natively from TeX
+(including chemistry with `\ce`), simple tables, images, video, audio, files,
+bookmarks with a cached preview card, embeds, links to other notes, columns (two
+to five) and a table of contents. Inline text can be bold, italic, underlined,
+struck, code, a link, coloured or highlighted in Notion's nine colours, and can
+hold note mentions, dates and reminders, link mentions and inline equations.
 
-Body changes use a 0.5-second main-queue Combine throttle with `latest=true`;
-continuous typing still publishes rather than postponing forever. Title changes
-publish immediately. In-memory publication does not combine native Undo steps.
-Disk persistence follows a three-second delay that later edits replace.
-Create and tombstone writes are immediate. Close, export, Retry and termination
-flush all pending store writes, including documents without a live editor.
+Blocks can nest under list items, to-dos, toggles, toggle headings, quotes,
+callouts and columns. Plain paragraphs and headings can't hold children: Markdown
+can only express that as a code block, so Tab on a paragraph after another
+paragraph does nothing, and Shift-Tab won't strand following siblings under text.
+This is the one deliberate difference from Notion's editing.
 
-JSON encoding, the 8 MiB cap, exclusive temporary-file write, `fsync` and atomic
-rename run at persistence, not on every keystroke. Library listing prefers the
-live or pending document. A delayed write failure preserves that authoritative
-memory state and reports its actual error; closure waits for a successful Retry.
-Title/deletion notifications publish immediately, while body-only memory changes
-do not publish the Library store-change stream.
+## Writing
 
-Deletion captures the exact Profile/document and all saved-tab references,
-including tabs currently navigated away. It uses genuine whole-set retirement,
-persists tab-reference removal first, then deletes the document. A failed session
-write preserves everything; a later document-delete failure leaves its real
-Library row available for retry. A small identity tombstone prevents stale
-sessions from recreating deleted content. Surviving split geometry remains intact.
+Notion's Markdown shortcuts work as you type: `# ` through `###### `, `- `, `* `,
+`1. `, `[] `, `> ` (toggle), `" ` (quote), ```` ``` ```` plus a language,
+`---` (divider), `$$` (equation), and inline `**bold**`, `*italic*`,
+`` `code` ``, `~strike~` or `~~strike~~`, `==highlight==` and `$math$`. One
+⌘Z undoes a shortcut back to the characters you typed. `/` opens the block menu,
+`@` or `[[` mentions a note or a date, and `:` plus two letters suggests emoji. Date reminders are local notifications that
+follow the note through renames and moves and disappear when it's trashed.
 
-## Paragraph gutter and formatting ownership
+Return, Backspace, Delete and Tab follow Notion's rules: lists continue, an empty
+item outdents and then becomes text, Backspace at the start of a block turns it
+into text, then outdents, then merges. Notion's keyboard shortcuts apply inside a
+note, including ⌥⌘0–9 to turn blocks into other types, ⌘D to duplicate, ⇧⌘↑/↓
+to move, ⌘↩ to tick a to-do or open a toggle, ⌥⌘T for all toggles, ⇧⌘H to repeat
+the last colour and ⌘/ for the block menu. While a note is focused, the Format
+menu routes to the note and its shortcuts follow the note's keys.
 
-The paragraph menu offers Heading 1–3, Text, Bulleted List, Numbered List, Bold,
-Italic, Underline, Strikethrough, Insert Image and Link. These use the shared
-attributed-text operations. List nesting is actual `NSTextList` structure with
-native Tab/Backtab and Undo, not a separate document tree.
+## Selecting and formatting
 
-The 42×30 gutter sits five points from the actual first-character rectangle.
-It uses Nunito glyphs and a six-point disclosure triangle; an empty-line plus
-omits that triangle. Idle opacity is 0.33 and hover/selected opacity is 1. Press
-uses hover feedback, with selected state taking precedence. Paragraph tracking
-retains its original line metadata while a menu is open; scrolling recomputes
-that anchor without inventing pointer input. The extra empty line targets the
-real end-of-body range.
+Selecting text, with the pointer or the keyboard, floats a format bar above it:
+Turn into, Link, bold, italic, underline, strikethrough, code, equation, colour
+and mention. ⌘K opens the link editor, which also finds notes to link, and
+hovering a link shows a card to open, copy, edit or remove it.
 
-Gutter icon classification is display-only: valid list markers take precedence,
-then the first font run's 32/26/22-point size selects H1/H2/H3; ordinary text is Aa.
-Empty means newline-only, not whitespace-trimmed. A collapsed caret at that
-range may supply its typing font; otherwise an empty line uses Plus. No display
-classification rewrites authored fonts or semantic paragraph attributes.
+Selections cross blocks like one page. Dragging from the margin, or pressing
+Escape, selects whole blocks, which can then be moved, coloured, duplicated,
+deleted or copied together. Hovering a block reveals `+` (add below, ⌥ for
+above) and a grip; clicking the grip opens a searchable action menu (Delete,
+Duplicate, Turn into, Colour, Copy link to block, Move to another note, and kind
+specific items), and dragging it moves blocks anywhere, including beside a block
+to make columns, while the page scrolls along.
 
-### Image picker and local image ownership
+Copying writes the note's own block format, Markdown, HTML and plain text, so a
+paste keeps its structure in Parc, Mail, Pages or Google Docs. Pasting HTML from
+web pages and documents makes real blocks, a lone URL offers mention, bookmark or
+embed, and pasted or dropped images and files are copied into an `Attachments`
+folder beside the note in the background, linking to the original until the copy
+lands so a note never saves a broken reference.
 
-Insert Image opens a single-file sheet for JPEG, PNG, PDF, BMP or TIFF, bound to
-the original Note window/body/range. Cancellation, stale contents, composition,
-read-only/deleted state or retirement inserts nothing. Files are bounded regular
-local files. JPEG/PNG/TIFF retain validated bytes; BMP becomes PNG; PDF uses its
-first-page raster at one pixel per point. No private filesystem reference or
-upload becomes part of the document. Native insertion owns selection and Undo.
+## The page
 
-## Native selection formatting
+A note can have a cover (twelve built-in covers, an upload or a link, with
+reposition), an emoji or image icon, front-matter properties (text, number,
+checkbox, date and tags), and one of four fonts: Nunito, EB Garamond, Space Mono
+or ParcWide. The menu at the top right of a note offers Small Text, Full Width,
+Lock Note, Copy as Markdown, Copy Link, export (Markdown, HTML and PDF), Show in
+Finder, Note History and Move to Trash, with a word count and reading time.
+Note History keeps versions through macOS file versions and restores one as a
+single undo step, and File › Print prints the real page.
 
-The compact horizontal selection bar shares the paragraph menu's controls and
-light/dark palette. Checked formatting takes precedence over hover and keyboard
-highlight. Link's checked state follows the first character of the primary
-selected substring; its actual edit still binds the complete selection range.
-The paragraph submenu remains a native menu with Plain Text, Heading 1–3 and the
-two lists. Retired controls are disabled and disconnected before removal.
+⌘F finds and replaces across the whole note, including its title, captions and
+table cells; inside a focused live embed it searches that page instead. `.txt`
+notes show only the title and plain text, and Save a Markdown Copy writes a `.md`
+twin beside them.
 
-## Title and body keyboard ownership
+## Files and saving
 
-The title is plain text. Paste takes the first plain-string item and replaces
-newlines with spaces. Initial forwarded focus chooses an empty title, otherwise
-the body, while an already active original responder retains focus.
+Edits save automatically 0.6 seconds after you stop typing, and at least every
+five seconds while you keep going, with an atomic, coordinated write off the main
+thread that keeps the file's encoding, byte-order mark, line endings and final
+newline (a character the old encoding can't hold switches the file to UTF-8). A
+file you only read is never rewritten, and an edit you undo writes nothing, so
+opening a README leaves it byte for byte the same. Binary files and files over
+20 MB don't open as notes. Changing the title renames the file,
+and a name that's taken shows an error without losing what you typed.
 
-- Title Tab/Down and Right at its end focus the body's start. Return and alternate
-  Return move the title suffix beginning at selection start to the body, adding
-  a newline before existing content. Literal Tab is consumed without insertion.
-- Body Up on its first visual line and Left at a collapsed start focus the title's
-  end. Backspace at the body start joins its first plain line to the title only
-  with default typing attributes. An image-bearing line refuses with an error;
-  styled/list/heading text retains native behavior.
-- Escape dismisses an owned formatting menu first, otherwise collapses the active
-  selection at its start. Body Return while a format menu exists is consumed,
-  even when no keyboard item is selected; otherwise it stays native. Body
-  Down/Right dismiss the menu and continue native movement.
-- The three beginning-of-line/paragraph selectors use the shared scalar-safe
-  prefix policy. CRLF is one boundary. Ordinary field behavior remains native
-  outside these explicitly handled cases.
+The file is watched for changes from other apps. Without local edits the note
+reloads in place and the caret stays put; with them, autosave pauses and the page
+offers Keep mine or Use the file's version, and taking the file's version can be
+undone.
+A deleted file keeps its text in memory until you close it or it saves again. A
+failed save shows Retry and blocks closing, and quitting flushes every note.
 
-Composition, another responder, non-key windows, sheets and deletion block these
-boundary commands. Transfers validate both previous field values and stable body
-ID as one document update; failures preserve both drafts. Field-local Undo stays
-separate and cannot impersonate a whole-document transaction.
+## Look and motion
 
-## Native document presentation
+Notes sit on the Notes paper over the Space theme and take light or dark from the
+Space. Ink is Parc's indigo, and selection, block washes and drop lines can take
+the Space's colour. Menus are Parc's opaque cards with continuous corners; every
+clickable control shows the pointing hand.
 
-A centered column prefers 900-point width and 100-point side margins, with 20-point
-minimum sides and a 250-point field-width preference that can yield in narrow
-panes. Top/bottom spacing is 64 and title/body spacing 16. Native measurement keeps
-both original text views through reflow, including their selection and IME state.
-
-New title/body defaults are Nunito ExtraBold 34 and Regular 18, line-height 1.25,
-spacing 4 before / 8 after. Explicit saved formatting remains unchanged. Bundled
-fonts retain their license and attribution in `Resources/NoteFonts`. The title's
-empty placeholder is Title; the body has no invented placeholder.
-
-NotesBackground is white at 85% in light appearance and black at 50% in dark.
-Only a displayed Note clears the pane backing so this surface composites over
-the existing Space theme. Other page types restore their backing. Named ink,
-selection, cursor and links follow the Space's content appearance; appearance
-changes never rewrite text, selection, Undo or saved files.
-
-Default body ink uses optional `semanticInk=noteBody` in the rich carrier with
-a black light/export fallback. Explicit authored colors and legacy untagged
-runs remain fixed. Private rich clipboard and formatting preserve that tag;
-HTML export resolves only semantic default ink to its fixed light fallback.
-
-A real load failure displays Can't load this note and its local error instead
-of a fake editor. Save failures stay in the editor with their original draft.
-There is no artificial local-loading spinner.
-
-## Format-menu motion
-
-Selected-index movement and in-place item opacity use a spring with response
-0.15, damping 0.825 and blend 0. Gutter hover and menu presentation/dismissal are
-immediate. Reduce Motion settles existing animation and prevents new springs.
-Notes does not emit haptic feedback.
-
-## Keyboard, accessibility and viewport focus
-
-Pointer/automatic menus keep the body first responder with no initial keyboard
-selection. Explicit footer or accessibility Format Paragraph/Selection focuses
-the menu; arrows select an enabled control and Return/Enter/Space activates it.
-Escape returns to the original body without stealing another live control.
-
-The gutter is an accessible press target, not a key-loop stop. Title/body remain
-native text areas; footer Retry/Discard/Format buttons follow the body when
-visible. The final control leaves traversal to the containing window. Explicit
-format entry scrolls its target into view; pointer presentation does not.
-Image and link-sheet completion return focus only to the original eligible body.
+Menus and toolbars pop open (scale 0.95 to 1 with a short fade) and close
+quickly, highlights glide on a short spring, blocks fade and rise when inserted,
+slide when moved and settle when dropped, toggle triangles rotate, to-dos pop
+when ticked, and the drag ghost lifts. Typing, caret movement and scrolling never
+animate. Reduce Motion turns slides and scales into short fades. Notes make no
+sounds and no haptics.
 
 ## Checks
 
-`scripts/test-notes.sh` runs the windowless note tab checks (file addresses,
-opening, renames, archive and restore, splits and deletion consent across Profiles)
-and then `scripts/test-notes-editor.sh`, which covers the editor model and file
-layer with temporary fixtures.
+`scripts/test-notes.sh` runs the note tab tests and `scripts/test-notes-editor.sh`,
+which builds every windowless suite in `tests/NotesEditor/`: the model and
+editing rules, the Markdown codec (including generated round-trip pages), files
+and folders, HTML, syntax, math, emoji, the canvas layout, selection, menus and
+clipboard. Pass a suite name to run one. Views are checked by compiling and by
+offscreen renders, never in a window.
