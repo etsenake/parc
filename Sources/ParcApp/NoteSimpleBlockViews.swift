@@ -33,18 +33,20 @@ enum NoteBlockWash {
 }
 
 @MainActor
-private func selectWholeBlock(_ view: NoteBlockView, with event: NSEvent) {
-    guard let editor = view.editor else { return }
-    if editor.selection.canvasMouseDown(event) { return }
-    let id = view.blockID
-    var ids = [id]
-    if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.shift),
-       case .blocks(let current) = editor.session.selection {
-        ids = current.contains(id) && event.modifierFlags.contains(.command) ? current.filter { $0 != id } : current + [id]
-        ids = editor.session.page.ordered(ids)
+enum NoteBlockPointer {
+    static func selectBlock(_ view: NoteBlockView, with event: NSEvent) {
+        guard let editor = view.editor else { return }
+        if editor.selection.canvasMouseDown(event) { return }
+        let id = view.blockID
+        var ids = [id]
+        if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.shift),
+           case .blocks(let current) = editor.session.selection {
+            ids = current.contains(id) && event.modifierFlags.contains(.command) ? current.filter { $0 != id } : current + [id]
+            ids = editor.session.page.ordered(ids)
+        }
+        view.window?.makeFirstResponder(editor.canvas)
+        editor.session.setSelection(ids.isEmpty ? .none : .blocks(ids))
     }
-    view.window?.makeFirstResponder(editor.canvas)
-    editor.session.setSelection(ids.isEmpty ? .none : .blocks(ids))
 }
 
 @MainActor
@@ -84,7 +86,7 @@ final class NoteDividerBlockView: NoteBlockView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        selectWholeBlock(self, with: event)
+        NoteBlockPointer.selectBlock(self, with: event)
     }
 }
 
@@ -223,7 +225,7 @@ final class NoteTOCBlockView: NoteBlockView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        selectWholeBlock(self, with: event)
+        NoteBlockPointer.selectBlock(self, with: event)
     }
 
     func jump(to id: NoteBlockID) {
@@ -355,4 +357,181 @@ final class NoteTOCRowView: NSView {
 }
 
 @MainActor
-final class NoteRawBlockView: NoteBlockView {}
+final class NoteRawBlockView: NoteBlockView, NoteTextHost {
+    static let padding = NSEdgeInsets(top: 28, left: 14, bottom: 12, right: 14)
+    static let cornerRadius: CGFloat = 8
+    static let lineHeight: CGFloat = 20
+
+    let field: NoteTextField = .body
+    var textView: NoteTextView { rawView }
+    let rawView = NoteCodeTextView()
+    private let card = NoteCodeCard()
+    private let label = NSTextField(labelWithString: "")
+    private let icon = NoteIconView(icon: .symbol("chevron.left.forwardslash.chevron.right"), pointSize: 10)
+    private var measured: (width: CGFloat, text: String, height: CGFloat)?
+
+    override init(block: NoteBlock, editor: NotePageEditor?) {
+        super.init(block: block, editor: editor)
+        card.wantsLayer = true
+        card.layer?.cornerRadius = Self.cornerRadius
+        card.layer?.cornerCurve = .continuous
+        addSubview(card)
+        label.font = NoteTheme.menuHeaderFont()
+        label.textColor = NoteTheme.tertiaryInk
+        label.setAccessibilityElement(false)
+        card.addSubview(label)
+        icon.tint = NoteTheme.tertiaryInk
+        icon.setAccessibilityElement(false)
+        card.addSubview(icon)
+        rawView.host = self
+        rawView.editor = editor
+        rawView.isRichText = false
+        rawView.importsGraphics = false
+        rawView.isAutomaticQuoteSubstitutionEnabled = false
+        rawView.isAutomaticDashSubstitutionEnabled = false
+        rawView.isAutomaticTextReplacementEnabled = false
+        rawView.isAutomaticSpellingCorrectionEnabled = false
+        rawView.isAutomaticLinkDetectionEnabled = false
+        rawView.isAutomaticDataDetectionEnabled = false
+        rawView.isContinuousSpellCheckingEnabled = false
+        rawView.isGrammarCheckingEnabled = false
+        rawView.smartInsertDeleteEnabled = false
+        rawView.textContainer?.widthTracksTextView = true
+        rawView.languageID = { [weak self] in self?.block.kind == .html ? "html" : "markdown" }
+        rawView.indentation = { [weak self] in
+            NoteCodeEditing.indent(forLanguage: self?.block.kind == .html ? "html" : "markdown", text: self?.rawView.string ?? "")
+        }
+        rawView.onExit = { [weak self] trims in self?.exitBelow(trimmingBlankLine: trims) }
+        rawView.onEdit = { [weak self] in self?.rawDidChange() }
+        card.addSubview(rawView)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        apply(block, force: true)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var textHosts: [NoteTextHost] { [self] }
+
+    var kindLabel: String { block.kind == .html ? "HTML" : "Markdown" }
+
+    private var attributes: [NSAttributedString.Key: Any] {
+        let font = NoteCodeFont.code(size: 13)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = Self.lineHeight
+        paragraph.maximumLineHeight = Self.lineHeight
+        paragraph.lineBreakMode = .byCharWrapping
+        let space = NSAttributedString(string: " ", attributes: [.font: font]).size().width
+        paragraph.tabStops = []
+        paragraph.defaultTabInterval = space * 4
+        return [.font: font, .foregroundColor: NoteTheme.secondaryInk, .paragraphStyle: paragraph, .ligature: 0,
+                .baselineOffset: max(0, (Self.lineHeight - (font.ascender - font.descender + font.leading)) / 2)]
+    }
+
+    override func update(_ block: NoteBlock) {
+        super.update(block)
+        apply(block, force: false)
+    }
+
+    private func apply(_ block: NoteBlock, force: Bool) {
+        let attributes = self.attributes
+        rawView.codeAttributes = attributes
+        rawView.typingAttributes = attributes
+        rawView.insertionPointColor = NoteTheme.caret
+        rawView.selectedTextAttributes = [.backgroundColor: NoteTheme.selection]
+        rawView.isEditable = !isReadOnly
+        if force || (rawView.string != block.text.string && !rawView.hasMarkedText()) {
+            let selection = rawView.selectedOffsets
+            rawView.apply(NoteText(block.text.string), selection: nil)
+            rawView.selectedOffsets = selection
+            measured = nil
+        }
+        if let storage = rawView.textStorage, storage.length > 0 {
+            storage.setAttributes(attributes, range: NSRange(location: 0, length: storage.length))
+        }
+        label.stringValue = kindLabel
+        setAccessibilityLabel("\(kindLabel) kept as written")
+        rawView.setAccessibilityLabel("\(kindLabel) source")
+        refreshCard()
+        needsLayout = true
+    }
+
+    override func readOnlyDidChange() {
+        rawView.isEditable = !isReadOnly
+    }
+
+    override func themeDidChange() {
+        super.themeDidChange()
+        apply(block, force: false)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshCard()
+    }
+
+    private func refreshCard() {
+        NoteAnimation.withoutAnimation { card.layer?.backgroundColor = NoteTheme.resolved(NoteTheme.codeBackground, in: self) }
+    }
+
+    private func textHeight(width: CGFloat) -> CGFloat {
+        let available = max(40, width - Self.padding.left - Self.padding.right)
+        let text = rawView.string
+        if let measured, measured.width == available, measured.text == text { return measured.height }
+        guard let layoutManager = rawView.layoutManager, let container = rawView.textContainer else { return Self.lineHeight }
+        container.size = NSSize(width: available, height: .greatestFiniteMagnitude)
+        layoutManager.ensureLayout(for: container)
+        let height = text.isEmpty ? Self.lineHeight : max(Self.lineHeight, ceil(layoutManager.usedRect(for: container).height))
+        measured = (available, text, height)
+        return height
+    }
+
+    override func measureHeight(width: CGFloat) -> CGFloat {
+        Self.padding.top + textHeight(width: width) + Self.padding.bottom
+    }
+
+    override var handleAnchorY: CGFloat { Self.padding.top + Self.lineHeight / 2 }
+
+    override func layout() {
+        super.layout()
+        NoteAnimation.withoutAnimation {
+            card.frame = bounds
+            let labelSize = label.intrinsicContentSize
+            let labelWidth = ceil(label.attributedStringValue.size().width) + 6
+            icon.frame = NSRect(x: Self.padding.left, y: 9, width: 12, height: 12)
+            label.frame = NSRect(x: icon.frame.maxX + 5, y: (15 - labelSize.height / 2).rounded(), width: max(labelSize.width, labelWidth),
+                                 height: labelSize.height)
+            let available = max(40, bounds.width - Self.padding.left - Self.padding.right)
+            rawView.frame = NSRect(x: Self.padding.left, y: Self.padding.top, width: available, height: textHeight(width: bounds.width))
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let local = rawView.convert(event.locationInWindow, from: nil)
+        let clamped = NSPoint(x: max(0, local.x), y: min(max(0, local.y), max(0, rawView.bounds.height - 1)))
+        window?.makeFirstResponder(rawView)
+        let offset = rawView.offset(at: clamped)
+        rawView.selectedOffsets = offset..<offset
+    }
+
+    private func rawDidChange() {
+        measured = nil
+        needsLayout = true
+        superview?.needsLayout = true
+        editor?.canvas.needsLayout = true
+    }
+
+    private func exitBelow(trimmingBlankLine: Bool) {
+        guard let editor else { return }
+        let current = rawView.string
+        let trimmed = trimmingBlankLine ? NoteCodeEditing.trimmedForExit(current) : current
+        let fresh = NoteBlock.paragraph()
+        let id = blockID
+        editor.session.edit("New Block", selection: .caret(NotePosition(fresh.id, 0))) { page in
+            if trimmed != current { page.update(id) { $0.text = NoteText(trimmed) } }
+            page.insert([fresh], .after(id))
+        }
+        editor.canvas.layoutSubtreeIfNeeded()
+        editor.focus(NotePosition(fresh.id, 0))
+    }
+}

@@ -1,4 +1,767 @@
 import AppKit
+import Combine
+import CoreText
 
 @MainActor
-final class NoteCodeBlockView: NoteBlockView {}
+enum NoteCodeFont {
+    private static var cache: [String: NSFont] = [:]
+
+    static func literal(_ font: NSFont) -> NSFont {
+        let key = "\(font.fontName)@\(font.pointSize)"
+        if let cached = cache[key] { return cached }
+        let settings: [[NSFontDescriptor.FeatureKey: Int]] = [
+            [.typeIdentifier: kLigaturesType, .selectorIdentifier: kCommonLigaturesOffSelector],
+            [.typeIdentifier: kLigaturesType, .selectorIdentifier: kRareLigaturesOffSelector],
+            [.typeIdentifier: kContextualAlternatesType, .selectorIdentifier: kContextualAlternatesOffSelector],
+        ]
+        let descriptor = font.fontDescriptor.addingAttributes([.featureSettings: settings])
+        let literal = NSFont(descriptor: descriptor, size: font.pointSize) ?? font
+        cache[key] = literal
+        return literal
+    }
+
+    static func code(size: CGFloat) -> NSFont { literal(NoteTheme.codeFont(size: size)) }
+}
+
+@MainActor
+final class NoteCodeTextView: NoteTextView {
+    var indentation: () -> NoteCodeIndent = { .spaces(2) }
+    var languageID: () -> String = { "" }
+    var onExit: ((_ trimsBlankLine: Bool) -> Void)?
+    var onEdit: (() -> Void)?
+    var codeAttributes: [NSAttributedString.Key: Any] = [:]
+
+    override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        if (event.keyCode == 36 || event.keyCode == 76), modifiers == .command, !hasMarkedText(), isEditable {
+            onExit?(false)
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    override func doCommand(by selector: Selector) {
+        guard isEditable, !hasMarkedText() else { super.doCommand(by: selector); return }
+        let text = string, range = selectedOffsets
+        switch selector {
+        case #selector(insertNewline(_:)), #selector(insertLineBreak(_:)), #selector(insertNewlineIgnoringFieldEditor(_:)):
+            if NoteCodeEditing.exitsOnReturn(text, selection: range), let onExit {
+                onExit(true)
+                return
+            }
+            perform(NoteCodeEditing.newline(in: text, selection: range, indent: indentation(), language: languageID()))
+        case #selector(insertTab(_:)), #selector(insertTabIgnoringFieldEditor(_:)):
+            perform(NoteCodeEditing.tab(in: text, selection: range, indent: indentation()))
+        case #selector(insertBacktab(_:)):
+            if let edit = NoteCodeEditing.dedentLines(in: text, selection: range, indent: indentation()) { perform(edit) }
+        case #selector(deleteBackward(_:)):
+            if let edit = NoteCodeEditing.deleteBackward(in: text, selection: range, indent: indentation()) {
+                perform(edit)
+            } else {
+                super.doCommand(by: selector)
+            }
+        default:
+            super.doCommand(by: selector)
+        }
+    }
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        if isEditable, !hasMarkedText(), replacementRange.location == NSNotFound, let typed = string as? String,
+           let edit = NoteCodeEditing.closingBracket(typed, in: self.string, selection: selectedOffsets, indent: indentation()) {
+            perform(edit)
+            return
+        }
+        super.insertText(string, replacementRange: replacementRange)
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        onEdit?()
+    }
+
+    func perform(_ edit: NoteCodeEdit) {
+        let range = NSRange(location: edit.range.lowerBound, length: edit.range.count)
+        guard let storage = textStorage, shouldChangeText(in: range, replacementString: edit.replacement) else { return }
+        storage.replaceCharacters(in: range, with: NSAttributedString(string: edit.replacement, attributes: codeAttributes))
+        setSelectedRange(NSRange(location: edit.selection.lowerBound, length: edit.selection.count))
+        didChangeText()
+        scrollRangeToVisible(selectedRange())
+    }
+
+    override func selectAll(_ sender: Any?) {
+        let length = (string as NSString).length
+        if selectedOffsets == 0..<length, length > 0, let editor {
+            editor.selection.selectAll()
+            return
+        }
+        super.selectAll(sender)
+    }
+}
+
+@MainActor
+final class NoteCodeScrollView: NSScrollView {
+    private var routesVertically: Bool?
+
+    override func scrollWheel(with event: NSEvent) {
+        if event.phase == .began || (event.phase == [] && event.momentumPhase == []) {
+            routesVertically = abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX)
+        }
+        let vertical = routesVertically ?? (abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX))
+        if event.phase == .ended || event.phase == .cancelled || event.momentumPhase == .ended { routesVertically = nil }
+        if vertical || !hasHorizontalScroller { nextResponder?.scrollWheel(with: event) } else { super.scrollWheel(with: event) }
+    }
+}
+
+@MainActor
+final class NoteCodeLanguagePicker: NSView, NoteFloatingPanelContent {
+    let search = NoteSearchField(placeholder: "Search languages")
+    let list = NoteMenuList()
+    var preferredSizeDidChange: (() -> Void)?
+    var onChoose: ((NoteCodeLanguage) -> Void)?
+    var onCancel: (() -> Void)?
+
+    static let width: CGFloat = 240
+    static let inset: CGFloat = NoteTheme.menuInset
+
+    init(current: String) {
+        super.init(frame: .zero)
+        let selected = NoteCodeLanguage.named(current)?.id ?? NoteCodeLanguage.plainText.id
+        list.fixedWidth = Self.width
+        list.maximumHeight = 300
+        list.noResultsTitle = "No language by that name"
+        list.items = NoteCodeLanguage.all.map {
+            NoteMenuList.Item(id: $0.id, title: $0.name, isChecked: $0.id == selected, keywords: $0.aliases)
+        }
+        list.prepare(origin: .keyboard)
+        list.highlight(id: selected, animated: false)
+        list.onActivate = { [weak self] item in
+            guard let language = NoteCodeLanguage.all.first(where: { $0.id == item.id }) else { return }
+            self?.onChoose?(language)
+        }
+        list.onCancel = { [weak self] in self?.onCancel?() }
+        list.preferredSizeDidChange = { [weak self] in
+            self?.needsLayout = true
+            self?.preferredSizeDidChange?()
+        }
+        search.bind(to: list)
+        addSubview(search)
+        addSubview(list)
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+
+    override var fittingSize: NSSize {
+        NSSize(width: Self.width, height: Self.inset + NoteTheme.fieldHeight + Self.inset / 2 + list.intrinsicContentSize.height)
+    }
+
+    override var intrinsicContentSize: NSSize { fittingSize }
+
+    override func layout() {
+        super.layout()
+        search.frame = NSRect(x: Self.inset, y: Self.inset, width: bounds.width - Self.inset * 2, height: NoteTheme.fieldHeight)
+        let top = Self.inset + NoteTheme.fieldHeight + Self.inset / 2
+        list.frame = NSRect(x: 0, y: top, width: bounds.width, height: max(0, bounds.height - top))
+    }
+}
+
+@MainActor
+final class NoteCodeCard: NSView {
+    override var isFlipped: Bool { true }
+}
+
+@MainActor
+final class NoteCodeCaptionHost: NoteTextHost {
+    let blockID: NoteBlockID
+    let field: NoteTextField = .caption
+    let textView: NoteTextView
+
+    init(blockID: NoteBlockID, textView: NoteTextView) {
+        self.blockID = blockID
+        self.textView = textView
+    }
+}
+
+@MainActor
+final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
+    static let cornerRadius: CGFloat = 8
+    static let barInset: CGFloat = 4
+    static let barSpacing: CGFloat = 2
+    static let captionGap: CGFloat = 6
+    static let copiedDuration: TimeInterval = 1.5
+    static let synchronousHighlightLimit = 6_000
+
+    let field: NoteTextField = .body
+    var textView: NoteTextView { codeView }
+    let codeView = NoteCodeTextView()
+    let captionView = NoteTextView()
+    private lazy var captionHost = NoteCodeCaptionHost(blockID: blockID, textView: captionView)
+    private let card = NoteCodeCard()
+    private let scrollView = NoteCodeScrollView()
+    private let bar = NSView()
+    private let languageButton = NoteToolbarButton(.text(NoteCodeLanguage.plainText.name), label: "Change language")
+    private let captionButton = NoteChip("Caption", icon: .symbol("captions.bubble"))
+    private let wrapButton = NoteChip("Wrap", icon: .symbol("arrow.turn.down.left"))
+    private let copyButton = NoteChip("Copy", icon: .symbol("doc.on.doc"))
+    private var tracking: NSTrackingArea?
+    private var isHovering = false
+    private var barVisible = false
+    private var picker: NoteFloatingPanel?
+    private var pickerMonitor: Any?
+    private var copiedWork: DispatchWorkItem?
+    private var highlightGeneration = 0
+    private var paintedCode: String?
+    private var paintedLanguage: String?
+    private var wantsCaption = false
+    private var measuredWidth: CGFloat = -1
+    private var measuredText = ""
+    private var measuredWrap = false
+    private var measuredTextHeight: CGFloat = 0
+
+    override init(block: NoteBlock, editor: NotePageEditor?) {
+        super.init(block: block, editor: editor)
+        card.wantsLayer = true
+        card.layer?.cornerRadius = Self.cornerRadius
+        card.layer?.cornerCurve = .continuous
+        card.layer?.masksToBounds = true
+        addSubview(card)
+        configureScrollView()
+        configureCodeView()
+        configureCaption()
+        configureBar()
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        applyBlock(block, force: true)
+        NoteAnimation.observeReduceMotion(self) { [weak self] in
+            guard let self else { return }
+            NoteAnimation.settle(self.bar)
+            NoteAnimation.settle(self.copyButton)
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    var language: NoteCodeLanguage? { NoteCodeLanguage.named(block.props.language) }
+    var languageName: String {
+        language?.name ?? (block.props.language.isEmpty ? NoteCodeLanguage.plainText.name : block.props.language)
+    }
+    var languageID: String { language?.id ?? NoteCodeEditing.normalizedLanguage(block.props.language) }
+
+    private var pageSettings: NotePageSettings { editor?.session.page.settings ?? NotePageSettings() }
+    private var codeStyle: NoteTextStyle { NoteTheme.textStyle(.code, small: pageSettings.smallText) }
+    private var captionStyle: NoteTextStyle { NoteTheme.textStyle(.caption, font: pageSettings.font, small: pageSettings.smallText) }
+    private var padding: NSEdgeInsets {
+        var insets = NoteTheme.codePadding
+        insets.top = max(insets.top, NoteTheme.chipHeight + Self.barInset * 2)
+        return insets
+    }
+
+    override var textHosts: [NoteTextHost] { showsCaption ? [self, captionHost] : [self] }
+
+    private var showsCaption: Bool { !block.props.caption.isEmpty || wantsCaption }
+
+    private func configureScrollView() {
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.verticalScrollElasticity = .none
+        scrollView.horizontalScrollElasticity = .automatic
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentView.drawsBackground = false
+        scrollView.documentView = codeView
+        card.addSubview(scrollView)
+    }
+
+    private func configureCodeView() {
+        codeView.host = self
+        codeView.editor = editor
+        codeView.isRichText = false
+        codeView.importsGraphics = false
+        codeView.allowsImageEditing = false
+        codeView.isAutomaticQuoteSubstitutionEnabled = false
+        codeView.isAutomaticDashSubstitutionEnabled = false
+        codeView.isAutomaticTextReplacementEnabled = false
+        codeView.isAutomaticSpellingCorrectionEnabled = false
+        codeView.isAutomaticTextCompletionEnabled = false
+        codeView.isAutomaticLinkDetectionEnabled = false
+        codeView.isAutomaticDataDetectionEnabled = false
+        codeView.isContinuousSpellCheckingEnabled = false
+        codeView.isGrammarCheckingEnabled = false
+        codeView.smartInsertDeleteEnabled = false
+        codeView.usesFindBar = false
+        codeView.layoutManager?.allowsNonContiguousLayout = false
+        codeView.setAccessibilityLabel("Code")
+        codeView.indentation = { [weak self] in
+            guard let self else { return .spaces(2) }
+            return NoteCodeEditing.indent(forLanguage: self.languageID, text: self.codeView.string)
+        }
+        codeView.languageID = { [weak self] in self?.languageID ?? "" }
+        codeView.onExit = { [weak self] trims in self?.exitBelow(trimmingBlankLine: trims) }
+        codeView.onEdit = { [weak self] in self?.codeDidChange() }
+    }
+
+    private func configureCaption() {
+        captionView.host = captionHost
+        captionView.editor = editor
+        captionView.isRichText = true
+        captionView.drawsBackground = false
+        captionView.placeholder = NoteTheme.captionPlaceholder
+        captionView.setAccessibilityLabel("Caption")
+        addSubview(captionView)
+        NotificationCenter.default.addObserver(self, selector: #selector(captionDidEndEditing),
+                                               name: NSText.didEndEditingNotification, object: captionView)
+    }
+
+    private func configureBar() {
+        bar.wantsLayer = true
+        bar.alphaValue = 0
+        bar.layer?.opacity = 0
+        card.addSubview(bar)
+        languageButton.showsDisclosure = true
+        languageButton.onPress = { [weak self] in self?.toggleLanguagePicker() }
+        captionButton.onPress = { [weak self] in self?.addCaption() }
+        wrapButton.onPress = { [weak self] in self?.toggleWrap() }
+        copyButton.onPress = { [weak self] in self?.copyCode() }
+        for button in [languageButton, captionButton, wrapButton, copyButton] { bar.addSubview(button) }
+        captionButton.setAccessibilityHelp("Adds a caption under the code")
+        wrapButton.setAccessibilityHelp("Wraps long lines instead of scrolling sideways")
+        copyButton.setAccessibilityLabel("Copy code")
+    }
+
+    override func update(_ block: NoteBlock) {
+        super.update(block)
+        applyBlock(block, force: false)
+    }
+
+    private func applyBlock(_ block: NoteBlock, force: Bool) {
+        let style = codeStyle
+        let attributes = codeAttributes(style)
+        codeView.codeAttributes = attributes
+        codeView.typingAttributes = attributes
+        codeView.insertionPointColor = NoteTheme.caret
+        codeView.selectedTextAttributes = [.backgroundColor: NoteTheme.selection]
+        if force || (codeView.string != block.text.string && !codeView.hasMarkedText()) {
+            let selection = codeView.selectedOffsets
+            codeView.apply(NoteText(block.text.string), selection: nil)
+            codeView.textStorage?.setAttributes(attributes, range: NSRange(location: 0, length: (codeView.string as NSString).length))
+            codeView.selectedOffsets = selection
+            measuredWidth = -1
+        } else if let storage = codeView.textStorage, storage.length > 0 {
+            storage.setAttributes(attributes, range: NSRange(location: 0, length: storage.length))
+        }
+        if force || captionView.noteText != block.props.caption {
+            if !(captionView.hasMarkedText() && captionView.noteText.string == block.props.caption.string) {
+                captionView.apply(block.props.caption, selection: nil)
+            }
+        }
+        let captionStyle = self.captionStyle
+        captionView.font = captionStyle.font
+        captionView.textColor = captionStyle.ink
+        captionView.typingAttributes = captionStyle.attributes
+        if let storage = captionView.textStorage, storage.length > 0 {
+            storage.addAttributes([.font: captionStyle.font, .paragraphStyle: captionStyle.paragraphStyle(),
+                                   .baselineOffset: captionStyle.baselineOffset], range: NSRange(location: 0, length: storage.length))
+        }
+        languageButton.content = .text(languageName)
+        languageButton.setAccessibilityLabel("Language: \(languageName)")
+        wrapButton.isChecked = block.props.wrap
+        refreshEditable()
+        configureWrapping()
+        rehighlight(force: force)
+        refreshCard()
+        setAccessibilityLabel("Code block, \(languageName)")
+        needsLayout = true
+    }
+
+    private func codeAttributes(_ style: NoteTextStyle) -> [NSAttributedString.Key: Any] {
+        let paragraph = style.paragraphStyle()
+        paragraph.lineBreakMode = block.props.wrap ? .byWordWrapping : .byClipping
+        let space = NSAttributedString(string: " ", attributes: [.font: style.font]).size().width
+        paragraph.tabStops = []
+        paragraph.defaultTabInterval = space * CGFloat(NoteCodeEditing.indent(forLanguage: languageID).width)
+        return [.font: NoteCodeFont.literal(style.font), .foregroundColor: style.ink, .paragraphStyle: paragraph,
+                .baselineOffset: style.baselineOffset, .ligature: 0]
+    }
+
+    private func refreshEditable() {
+        let editable = !isReadOnly
+        codeView.isEditable = editable
+        captionView.isEditable = editable
+        languageButton.isEnabled = editable
+        wrapButton.isEnabled = editable
+        captionButton.isHidden = !editable || showsCaption
+        layoutBar()
+    }
+
+    override func readOnlyDidChange() {
+        refreshEditable()
+        if isReadOnly { closeLanguagePicker() }
+    }
+
+    override func themeDidChange() {
+        super.themeDidChange()
+        measuredWidth = -1
+        applyBlock(block, force: false)
+        rehighlight(force: true)
+    }
+
+    private func configureWrapping() {
+        guard let container = codeView.textContainer else { return }
+        let wrap = block.props.wrap
+        scrollView.hasHorizontalScroller = !wrap
+        codeView.isHorizontallyResizable = !wrap
+        codeView.isVerticallyResizable = false
+        container.widthTracksTextView = wrap
+        container.heightTracksTextView = false
+        codeView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        if !wrap {
+            container.size = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        }
+    }
+
+    private func textWidth(for width: CGFloat) -> CGFloat {
+        max(40, width - padding.left - padding.right)
+    }
+
+    private func codeHeight(width: CGFloat) -> CGFloat {
+        let available = textWidth(for: width)
+        let text = codeView.string
+        if measuredWidth == available, measuredText == text, measuredWrap == block.props.wrap { return measuredTextHeight }
+        guard let layoutManager = codeView.layoutManager, let container = codeView.textContainer else { return codeStyle.lineHeight }
+        if block.props.wrap {
+            container.size = NSSize(width: available, height: CGFloat.greatestFiniteMagnitude)
+        }
+        layoutManager.ensureLayout(for: container)
+        var used = layoutManager.usedRect(for: container).height
+        let lineHeight = codeStyle.lineHeight
+        if (text as NSString).length == 0 { used = lineHeight }
+        let height = max(lineHeight, ceil(used))
+        measuredWidth = available
+        measuredText = text
+        measuredWrap = block.props.wrap
+        measuredTextHeight = height
+        return height
+    }
+
+    private func captionHeight(width: CGFloat) -> CGFloat {
+        guard showsCaption, let layoutManager = captionView.layoutManager, let container = captionView.textContainer else { return 0 }
+        container.size = NSSize(width: max(1, width), height: CGFloat.greatestFiniteMagnitude)
+        layoutManager.ensureLayout(for: container)
+        let line = captionStyle.lineHeight
+        let used = captionView.string.isEmpty ? line : ceil(layoutManager.usedRect(for: container).height)
+        return max(line, used)
+    }
+
+    private func cardHeight(width: CGFloat) -> CGFloat {
+        padding.top + codeHeight(width: width) + padding.bottom
+    }
+
+    override func measureHeight(width: CGFloat) -> CGFloat {
+        let caption = captionHeight(width: width)
+        return cardHeight(width: width) + (caption > 0 ? Self.captionGap + caption : 0)
+    }
+
+    override var handleAnchorY: CGFloat { padding.top + codeStyle.lineHeight / 2 }
+
+    override func layout() {
+        super.layout()
+        NoteAnimation.withoutAnimation {
+            let width = bounds.width
+            let cardHeight = self.cardHeight(width: width)
+            card.frame = NSRect(x: 0, y: 0, width: width, height: cardHeight)
+            let textHeight = codeHeight(width: width)
+            let available = textWidth(for: width)
+            scrollView.frame = NSRect(x: padding.left, y: padding.top, width: available, height: textHeight)
+            if block.props.wrap {
+                codeView.frame = NSRect(x: 0, y: 0, width: available, height: textHeight)
+            } else {
+                let used = codeView.layoutManager.flatMap { manager in codeView.textContainer.map { manager.usedRect(for: $0).width } } ?? 0
+                codeView.frame = NSRect(x: 0, y: 0, width: max(available, ceil(used) + 2), height: textHeight)
+            }
+            layoutBar()
+            let caption = captionHeight(width: width)
+            captionView.isHidden = caption == 0
+            captionView.frame = NSRect(x: 0, y: cardHeight + Self.captionGap, width: width, height: caption)
+        }
+    }
+
+    private func layoutBar() {
+        let width = card.bounds.width
+        bar.frame = NSRect(x: 0, y: 0, width: width, height: padding.top)
+        let y = Self.barInset
+        let height = NoteTheme.chipHeight
+        let languageWidth = languageButton.intrinsicContentSize.width
+        languageButton.frame = NSRect(x: padding.left - 8, y: y, width: languageWidth, height: height)
+        var x = width - Self.barInset - 2
+        for button in [copyButton, wrapButton, captionButton] where !button.isHidden {
+            let buttonWidth = button.intrinsicContentSize.width
+            x -= buttonWidth
+            button.frame = NSRect(x: x, y: y, width: buttonWidth, height: height)
+            x -= Self.barSpacing
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshCard()
+    }
+
+    private func refreshCard() {
+        let fill: NSColor
+        if let color = block.color, color.isBackground { fill = NoteTheme.color(color) } else { fill = NoteTheme.codeBackground }
+        NoteAnimation.withoutAnimation { card.layer?.backgroundColor = NoteTheme.resolved(fill, in: self) }
+    }
+
+    private func codeDidChange() {
+        measuredWidth = -1
+        rehighlight()
+        needsLayout = true
+        superview?.needsLayout = true
+        editor?.canvas.needsLayout = true
+    }
+
+    func rehighlight(force: Bool = false) {
+        let code = codeView.string
+        let language = languageID
+        guard force || code != paintedCode || language != paintedLanguage else { return }
+        paintedCode = code
+        paintedLanguage = language
+        highlightGeneration &+= 1
+        let generation = highlightGeneration
+        guard let layoutManager = codeView.layoutManager else { return }
+        guard NoteCodeLanguage.named(language) != nil, language != NoteCodeLanguage.plainText.id else {
+            layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: NSRange(location: 0, length: (code as NSString).length))
+            layoutManager.removeTemporaryAttribute(.font, forCharacterRange: NSRange(location: 0, length: (code as NSString).length))
+            return
+        }
+        if (code as NSString).length <= Self.synchronousHighlightLimit {
+            paint(NoteSyntaxHighlighter.tokens(in: code, language: language), for: code)
+            return
+        }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let tokens = NoteSyntaxHighlighter.tokens(in: code, language: language)
+            await MainActor.run { [weak self] in
+                guard let self, self.highlightGeneration == generation, self.codeView.string == code else { return }
+                self.paint(tokens, for: code)
+            }
+        }
+    }
+
+    private func paint(_ tokens: [NoteSyntaxToken], for code: String) {
+        guard let layoutManager = codeView.layoutManager else { return }
+        let length = (code as NSString).length
+        let whole = NSRange(location: 0, length: length)
+        layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: whole)
+        layoutManager.removeTemporaryAttribute(.font, forCharacterRange: whole)
+        let style = codeStyle
+        let bold = NoteCodeFont.literal(NoteTheme.boldCodeFont(size: style.font.pointSize))
+        let italic = NoteCodeFont.literal(NSFontManager.shared.convert(style.font, toHaveTrait: .italicFontMask))
+        for token in tokens where token.range.lowerBound < length {
+            let range = NSRange(location: token.range.lowerBound, length: min(token.range.upperBound, length) - token.range.lowerBound)
+            guard range.length > 0 else { continue }
+            let name = token.kind.rawValue
+            var attributes: [NSAttributedString.Key: Any] = [.foregroundColor: NoteTheme.syntaxColor(name)]
+            if NoteTheme.syntaxIsBold(name) || token.kind == .strong { attributes[.font] = bold }
+            if NoteTheme.syntaxIsItalic(name) || token.kind == .emphasis { attributes[.font] = italic }
+            layoutManager.addTemporaryAttributes(attributes, forCharacterRange: range)
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovering = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        refreshBar()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let allowed = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        if allowed != isHovering {
+            isHovering = allowed
+            refreshBar()
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovering = false
+        refreshBar()
+    }
+
+    private func refreshBar() {
+        let visible = isHovering || picker != nil || copiedWork != nil
+        guard visible != barVisible else { return }
+        barVisible = visible
+        NoteAnimation.fade(bar, visible: visible, duration: NoteAnimation.hoverDuration)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if card.frame.contains(point) {
+            let local = codeView.convert(event.locationInWindow, from: nil)
+            let clamped = NSPoint(x: max(0, local.x), y: min(max(0, local.y), codeView.bounds.height - 1))
+            window?.makeFirstResponder(codeView)
+            let offset = codeView.offset(at: clamped)
+            codeView.selectedOffsets = offset..<offset
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func focus(at offset: Int?, field: NoteTextField = .body) -> Bool {
+        if field == .caption, !showsCaption {
+            wantsCaption = true
+            invalidateHeight()
+        }
+        return super.focus(at: offset, field: field)
+    }
+
+    private func invalidateHeight() {
+        refreshEditable()
+        needsLayout = true
+        superview?.needsLayout = true
+        editor?.canvas.needsLayout = true
+    }
+
+    private func exitBelow(trimmingBlankLine: Bool) {
+        guard let editor else { return }
+        let current = codeView.string
+        let trimmed = trimmingBlankLine ? NoteCodeEditing.trimmedForExit(current) : current
+        let fresh = NoteBlock.paragraph()
+        editor.session.edit("New Block", selection: .caret(NotePosition(fresh.id, 0))) { page in
+            if trimmed != current { page.update(blockID) { $0.text = NoteText(trimmed) } }
+            page.insert([fresh], .after(blockID))
+        }
+        editor.canvas.layoutSubtreeIfNeeded()
+        editor.focus(NotePosition(fresh.id, 0))
+    }
+
+    private func addCaption() {
+        guard !isReadOnly else { return }
+        wantsCaption = true
+        invalidateHeight()
+        layoutSubtreeIfNeeded()
+        window?.makeFirstResponder(captionView)
+        captionView.selectedOffsets = captionView.noteText.length..<captionView.noteText.length
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil { closeLanguagePicker() }
+    }
+
+    @objc private func captionDidEndEditing() {
+        guard wantsCaption, block.props.caption.isEmpty, captionView.string.isEmpty else { return }
+        wantsCaption = false
+        invalidateHeight()
+    }
+
+    private func toggleWrap() {
+        guard let editor, !isReadOnly else { return }
+        let wrap = !block.props.wrap
+        editor.session.updateBlock(blockID, name: wrap ? "Wrap Code" : "Unwrap Code") { $0.props.wrap = wrap }
+    }
+
+    private func copyCode() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(codeView.string, forType: .string)
+        copiedWork?.cancel()
+        copyButton.flash("Copied!", icon: .symbol("checkmark"), duration: Self.copiedDuration)
+        glideBar()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.copiedWork = nil
+                self.glideBar()
+                self.refreshBar()
+            }
+        }
+        copiedWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.copiedDuration + 0.02, execute: work)
+    }
+
+    private func glideBar() {
+        let buttons = [copyButton, wrapButton, captionButton].filter { !$0.isHidden }
+        let before = buttons.map(\.frame)
+        layoutBar()
+        guard window != nil else { return }
+        for (button, previous) in zip(buttons, before) where previous != button.frame && !previous.isEmpty {
+            let goal = button.frame
+            NoteAnimation.withoutAnimation { button.frame = previous }
+            _ = NoteAnimation.slide(button, to: goal, spring: .highlight)
+        }
+    }
+
+    private func toggleLanguagePicker() {
+        if picker != nil { closeLanguagePicker(); return }
+        guard let editor, !isReadOnly else { return }
+        let content = NoteCodeLanguagePicker(current: block.props.language)
+        content.frame.size = content.fittingSize
+        let panel = NoteFloatingPanel(content: content)
+        content.onChoose = { [weak self] language in self?.choose(language) }
+        content.onCancel = { [weak self] in
+            self?.closeLanguagePicker()
+            self?.restoreCodeFocus()
+        }
+        panel.onDismiss = { [weak self, weak panel] in
+            guard let self, self.picker === panel else { return }
+            self.picker = nil
+            self.removePickerMonitor()
+            self.refreshBar()
+        }
+        let overlay = editor.canvas.overlayView
+        let anchor = overlay.convert(languageButton.bounds, from: languageButton)
+        picker = panel
+        panel.present(in: overlay, anchor: anchor, edge: .below)
+        content.search.focus()
+        refreshBar()
+        pickerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, let panel = self.picker, event.window === panel.window else { return }
+                let inPanel = panel.bounds.contains(panel.convert(event.locationInWindow, from: nil))
+                let onButton = self.languageButton.bounds.contains(self.languageButton.convert(event.locationInWindow, from: nil))
+                if !inPanel && !onButton { self.closeLanguagePicker() }
+            }
+            return event
+        }
+    }
+
+    private func removePickerMonitor() {
+        if let pickerMonitor { NSEvent.removeMonitor(pickerMonitor) }
+        pickerMonitor = nil
+    }
+
+    private func closeLanguagePicker() {
+        guard let panel = picker else { return }
+        picker = nil
+        removePickerMonitor()
+        panel.dismiss(animated: true)
+        refreshBar()
+    }
+
+    private func choose(_ language: NoteCodeLanguage) {
+        closeLanguagePicker()
+        guard let editor else { return }
+        let value = language.id == NoteCodeLanguage.plainText.id ? "" : language.id
+        if NoteCodeLanguage.named(block.props.language)?.id != NoteCodeLanguage.named(value)?.id || block.props.language != value {
+            editor.session.updateBlock(blockID, name: "Code Language") { $0.props.language = value }
+        }
+        restoreCodeFocus()
+    }
+
+    private func restoreCodeFocus() {
+        let selection = codeView.selectedOffsets
+        window?.makeFirstResponder(codeView)
+        codeView.selectedOffsets = selection
+    }
+}
