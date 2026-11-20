@@ -297,7 +297,7 @@ final class NotePageMenu {
     func htmlDocument() -> String {
         let environment = editor.environment
         return NotePageHTML.document(editor.session.page, title: title, assets: { environment.resolve($0) }, embedImages: true,
-                                     equationImage: { tex, display in NotePageEquationArtwork.url(tex, display: display) })
+                                     equationArt: { tex, display, numbering in NotePageEquationArtwork.art(tex, display: display, numbering: numbering) })
     }
 
     private func copyAssets(to folder: URL) throws {

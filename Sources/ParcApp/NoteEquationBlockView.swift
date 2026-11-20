@@ -572,29 +572,30 @@ final class NoteEquationBlockView: NoteBlockView {
         draft = text
         rerender()
         invalidateHeight()
+        editor?.math.draftDidChange(text, for: blockID)
     }
 
     func closeEditor(commit: Bool, reselect: Bool) {
         guard let floating = panel else { return }
-        let final = draft
+        if commit, let final = draft, final != block.text.string {
+            editor?.session.updateBlock(blockID, name: "Edit Equation") { $0.text = NoteText(final) }
+        }
         finishEditing()
         floating.dismiss(animated: true)
         guard let editor else { return }
-        if commit, let final, final != block.text.string {
-            editor.session.updateBlock(blockID, name: "Edit Equation") { $0.text = NoteText(final) }
-        }
         if reselect {
             window?.makeFirstResponder(editor.canvas)
             editor.session.setSelection(.blocks([blockID]))
         }
     }
 
-    private func finishEditing() {
+    private func finishEditing(endingDraft: Bool = true) {
         if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }
         outsideMonitor = nil
         panel = nil
         editorView = nil
         draft = nil
+        if endingDraft { editor?.math.endDraft(for: blockID) }
         rerender()
         invalidateHeight()
     }
@@ -604,12 +605,15 @@ final class NoteEquationBlockView: NoteBlockView {
         guard newWindow == nil, let floating = panel else { return }
         let final = draft
         let id = blockID
-        finishEditing()
+        finishEditing(endingDraft: false)
         floating.dismiss(animated: false)
-        guard let final, let editor else { return }
+        guard let editor else { return }
         DispatchQueue.main.async { [weak editor] in
-            guard let editor, let current = editor.session.page.block(id), current.text.string != final else { return }
-            editor.session.updateBlock(id, name: "Edit Equation") { $0.text = NoteText(final) }
+            guard let editor else { return }
+            if let final, let current = editor.session.page.block(id), current.text.string != final {
+                editor.session.updateBlock(id, name: "Edit Equation") { $0.text = NoteText(final) }
+            }
+            editor.math.endDraft(for: id)
         }
     }
 }

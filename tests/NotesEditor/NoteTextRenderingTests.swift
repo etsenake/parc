@@ -237,14 +237,29 @@ struct NoteTextRenderingTests {
         expect(NotePageEquationArtwork.fontSize(display: true) > fontSize, "display maths uses the larger size")
         expect(NotePageEquationArtwork.svg("   ", display: false) == nil, "blank equations fall back to their source")
         expect(NotePageEquationArtwork.svg("\\frac{", display: false) == nil, "broken equations fall back to their source")
-        guard let url = NotePageEquationArtwork.url("e^{i\\pi} + 1 = 0", display: true) else { failTest("artwork becomes a data URL") }
+        guard let url = NotePageEquationArtwork.art("e^{i\\pi} + 1 = 0", display: true)?.url else { failTest("artwork becomes a data URL") }
         expect(url.absoluteString.hasPrefix("data:image/svg+xml;charset=utf-8,%3Csvg"), "the data URL is a percent-encoded SVG")
         expect(url.absoluteString.removingPercentEncoding?.contains("width=") == true, "the SVG keeps its intrinsic size")
         let html = NotePageHTML.document(NotePage(blocks: [NoteBlock(.equation, text: "a^2"),
                                                            .paragraph(NoteText("Area ") + NoteText.atom(.equation("\\pi r^2")))]),
                                          title: "Maths", assets: { _ in nil }, embedImages: true,
-                                         equationImage: { tex, display in NotePageEquationArtwork.url(tex, display: display) })
+                                         equationArt: { tex, display, numbering in NotePageEquationArtwork.art(tex, display: display, numbering: numbering) })
         expect(html.components(separatedBy: "data:image/svg+xml").count == 3, "exported HTML typesets block and inline equations")
+        let labelled = NoteBlock(.equation, text: "\\begin{equation} E = mc^2 \\label{energy} \\end{equation}")
+        let numbered = NotePage(blocks: [NoteBlock(.equation, text: "\\begin{equation} a \\end{equation}"), labelled,
+                                         .paragraph(NoteText("See ") + NoteText.atom(.equation("\\eqref{energy}")))])
+        let numbering = NotePageMathNumberer().numbering(for: numbered)
+        guard let reference = NotePageEquationArtwork.art("\\eqref{energy}", display: false, numbering: numbering.inlineContext),
+              let link = reference.links.first else { failTest("a resolved reference carries a link rectangle") }
+        expect(link.key == "energy" && link.rect.width > 0 && link.rect.height > 0, "the link covers the drawn reference")
+        expect(NotePageEquationArtwork.art("\\eqref{nowhere}", display: false)?.links.isEmpty == true, "dangling references stay unlinked")
+        let unnumbered = NotePageEquationArtwork.art(labelled.text.string, display: true)?.url
+        let renumbered = NotePageEquationArtwork.art(labelled.text.string, display: true, numbering: numbering.context(for: labelled.id))?.url
+        expect(unnumbered != nil && renumbered != nil && unnumbered != renumbered, "artwork draws the note-wide number, not (1)")
+        let exported = NotePageHTML.document(numbered, title: "Numbers", assets: { _ in nil }, embedImages: true,
+                                             equationArt: { tex, display, context in NotePageEquationArtwork.art(tex, display: display, numbering: context) })
+        expect(exported.contains("id=\"eq-energy\"") && exported.contains("href=\"#eq-energy\"") && exported.contains("usemap=\"#equation-links-"),
+               "exported references link to their equation")
         expect(!html.contains("<span class=\"tex\">"), "no raw TeX is left behind when artwork renders")
         expect(html.contains("img.equation{vertical-align:middle;max-width:100%}"), "inline artwork keeps its own size in the stylesheet")
     }

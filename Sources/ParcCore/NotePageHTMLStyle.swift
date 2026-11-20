@@ -155,6 +155,8 @@ enum NotePageHTMLStyle {
     div.equation .tex{display:inline-block;padding:.5em 1em;font-size:1.1em}
     img.equation{vertical-align:middle;max-width:100%}
     div.equation img{max-width:100%}
+    div.equation img[usemap],img.equation[usemap]{max-width:none}
+    div.equation:target{border-radius:8px;background:var(--code-fill)}
     table{border-collapse:collapse;margin:.8em 0;font-size:.95em;display:block;overflow-x:auto;max-width:100%}
     th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;vertical-align:top;min-width:4em}
     thead th,tbody th{background:var(--fill);font-weight:700}

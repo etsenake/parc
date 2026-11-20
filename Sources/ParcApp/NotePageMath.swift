@@ -3,9 +3,14 @@ import Combine
 
 @MainActor
 final class NotePageMath {
+    static let draftDelay: TimeInterval = 0.25
+
     private weak var editor: NotePageEditor?
     private let numberer = NotePageMathNumberer()
-    private var computed: (revision: UInt64, numbering: NotePageMathNumbering)?
+    private var computed: (revision: UInt64, drafts: Int, numbering: NotePageMathNumbering)?
+    private var drafts: [NoteBlockID: String] = [:]
+    private var draftGeneration = 0
+    private var draftToken = 0
     private var pendingBroadcast = false
     private var subscription: AnyCancellable?
 
@@ -19,14 +24,35 @@ final class NotePageMath {
 
     var numbering: NotePageMathNumbering {
         guard let editor else { return NotePageMathNumbering() }
-        if let computed, computed.revision == editor.session.revision { return computed.numbering }
-        let next = numberer.numbering(for: editor.session.page)
+        if let computed, computed.revision == editor.session.revision, computed.drafts == draftGeneration { return computed.numbering }
+        let next = numberer.numbering(for: editor.session.page, drafts: drafts)
         if let previous = computed?.numbering, previous != next {
             pendingBroadcast = true
             DispatchQueue.main.async { [weak self] in self?.flush() }
         }
-        computed = (editor.session.revision, next)
+        computed = (editor.session.revision, draftGeneration, next)
         return next
+    }
+
+    func draftDidChange(_ source: String, for id: NoteBlockID) {
+        draftToken &+= 1
+        let token = draftToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.draftDelay) { [weak self] in
+            guard let self, self.draftToken == token else { return }
+            self.setDraft(source, for: id)
+        }
+    }
+
+    func endDraft(for id: NoteBlockID) {
+        draftToken &+= 1
+        setDraft(nil, for: id)
+    }
+
+    private func setDraft(_ source: String?, for id: NoteBlockID) {
+        guard drafts[id] != source else { return }
+        drafts[id] = source
+        draftGeneration &+= 1
+        refresh()
     }
 
     func context(for id: NoteBlockID) -> NoteMathNumberingContext { numbering.context(for: id) }

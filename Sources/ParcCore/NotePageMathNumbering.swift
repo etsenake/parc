@@ -4,6 +4,7 @@ struct NotePageMathNumbering: Equatable {
     struct Entry: Equatable {
         var firstNumber = 0
         var numbers = 0
+        var labels: [String] = []
         var duplicateLabels: Set<String> = []
     }
 
@@ -32,17 +33,18 @@ final class NotePageMathNumberer {
 
     private var scans: [String: Scan?] = [:]
 
-    func numbering(for page: NotePage) -> NotePageMathNumbering {
+    func numbering(for page: NotePage, drafts: [NoteBlockID: String] = [:]) -> NotePageMathNumbering {
         var result = NotePageMathNumbering()
         var used: Set<String> = []
         var count = 0
         for block in page.allBlocks() where block.kind == .equation {
-            let source = block.text.string
+            let source = drafts[block.id] ?? block.text.string
             var entry = NotePageMathNumbering.Entry(firstNumber: count)
             if let scan = scan(source) {
                 let duplicates = Set(scan.labels.map(\.key)).intersection(result.targets.keys)
                 if duplicates.isEmpty {
                     entry.numbers = scan.numbers
+                    entry.labels = scan.labels.map(\.key)
                     for label in scan.labels {
                         result.targets[label.key] = block.id
                         switch label.target {

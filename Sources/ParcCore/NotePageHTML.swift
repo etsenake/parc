@@ -1,18 +1,28 @@
 import Foundation
 
+struct NoteEquationArt {
+    struct Link: Equatable {
+        var key: String
+        var rect: CGRect
+    }
+
+    var url: URL
+    var links: [Link] = []
+}
+
 enum NotePageHTML {
     static func fragment(_ blocks: [NoteBlock], assets: ((String) -> URL?)? = nil) -> String {
         var writer = NotePageHTMLWriter(mode: .fragment, assets: assets ?? { _ in nil }, embedImages: false,
-                                        equationImage: nil, blocks: blocks)
+                                        equationArt: nil, blocks: blocks)
         writer.write(blocks)
         return writer.output
     }
 
     static func document(_ page: NotePage, title: String, assets: (String) -> URL?, embedImages: Bool,
-                         equationImage: ((String, Bool) -> URL?)? = nil) -> String {
+                         equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)? = nil) -> String {
         withoutActuallyEscaping(assets) { assets in
             var writer = NotePageHTMLWriter(mode: .document, assets: assets, embedImages: embedImages,
-                                            equationImage: equationImage, blocks: page.blocks)
+                                            equationArt: equationArt, blocks: page.blocks)
             writer.write(page.blocks)
             let settings = page.settings
             let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -54,20 +64,23 @@ struct NotePageHTMLWriter {
     let mode: Mode
     let assets: (String) -> URL?
     let embedImages: Bool
-    let equationImage: ((String, Bool) -> URL?)?
+    let equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)?
     private(set) var output = ""
     private var anchors: [NoteBlockID: String] = [:]
+    private var mathNumbering = NotePageMathNumbering()
+    private var equationAnchors: [String: String] = [:]
     private var outline: [(level: Int, anchor: String, title: String)] = []
 
-    init(mode: Mode, assets: @escaping (String) -> URL?, embedImages: Bool, equationImage: ((String, Bool) -> URL?)?,
-         blocks: [NoteBlock]) {
+    init(mode: Mode, assets: @escaping (String) -> URL?, embedImages: Bool,
+         equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)?, blocks: [NoteBlock]) {
         self.mode = mode
         self.assets = assets
         self.embedImages = embedImages
-        self.equationImage = equationImage
+        self.equationArt = equationArt
         var all: [NoteBlock] = []
         func walk(_ list: [NoteBlock]) { for block in list { all.append(block); walk(block.children) } }
         walk(blocks)
+        if mode == .document { mathNumbering = NotePageMathNumberer().numbering(for: NotePage(blocks: blocks)) }
         guard mode == .document || all.contains(where: { $0.kind == .tableOfContents }) else { return }
         var used: Set<String> = []
         for block in all where block.kind == .heading {
@@ -82,6 +95,19 @@ struct NotePageHTMLWriter {
             used.insert(anchor)
             anchors[block.id] = anchor
             outline.append((block.props.level, anchor, title))
+        }
+        for block in all where block.kind == .equation {
+            for key in mathNumbering.entries[block.id]?.labels ?? [] {
+                let base = "eq-" + Self.slug(key.replacingOccurrences(of: ":", with: "-"))
+                var anchor = base
+                var suffix = 2
+                while used.contains(anchor) {
+                    anchor = base + "-" + String(suffix)
+                    suffix += 1
+                }
+                used.insert(anchor)
+                equationAnchors[key] = anchor
+            }
         }
     }
 
@@ -387,9 +413,12 @@ struct NotePageHTMLWriter {
 
     private mutating func equation(_ block: NoteBlock) {
         let tex = block.text.string
-        var html = "<div data-block=\"equation\" data-tex=\"" + Self.attribute(tex) + "\"" + colorClass(block.color, adding: ["equation"]) + ">"
-        if let image = equationImage?(tex, true) {
-            html += "<img alt=\"" + Self.attribute(tex) + "\" src=\"" + Self.attribute(source(image.absoluteString)) + "\">"
+        let labelAnchors = (mathNumbering.entries[block.id]?.labels ?? []).compactMap { equationAnchors[$0] }
+        let id = labelAnchors.first.map { " id=\"" + Self.attribute($0) + "\"" } ?? ""
+        var html = "<div data-block=\"equation\"" + id + " data-tex=\"" + Self.attribute(tex) + "\"" + colorClass(block.color, adding: ["equation"]) + ">"
+        html += labelAnchors.dropFirst().map { "<span id=\"" + Self.attribute($0) + "\"></span>" }.joined()
+        if let art = equationArt?(tex, true, mathNumbering.context(for: block.id)) {
+            html += equationImage(art, tex: tex, attributes: "")
         } else if mode == .document {
             html += "<span class=\"tex\">" + Self.escape(tex) + "</span>"
         } else {
@@ -548,11 +577,42 @@ struct NotePageHTMLWriter {
         return String(decoding: units, as: UTF16.self)
     }
 
+    private func equationImage(_ art: NoteEquationArt, tex: String, attributes: String) -> String {
+        let image = "<img" + attributes + " alt=\"" + Self.attribute(tex) + "\" src=\"" + Self.attribute(source(art.url.absoluteString)) + "\""
+        let areas = art.links.compactMap { link -> String? in
+            guard let anchor = equationAnchors[link.key] else { return nil }
+            let corners = [link.rect.minX.rounded(.down), link.rect.minY.rounded(.down), link.rect.maxX.rounded(.up), link.rect.maxY.rounded(.up)]
+            return "<area shape=\"rect\" coords=\"" + corners.map { String(Int($0)) }.joined(separator: ",") + "\" href=\"#"
+                + Self.attribute(anchor) + "\" alt=\"" + Self.attribute(referenceDescription(link.key)) + "\">"
+        }
+        guard !areas.isEmpty else { return image + ">" }
+        let map = areas.joined()
+        let name = "equation-links-" + Self.fingerprint(map)
+        return image + " usemap=\"#" + name + "\"><map name=\"" + name + "\">" + map + "</map>"
+    }
+
+    private func referenceDescription(_ key: String) -> String {
+        let number = (mathNumbering.references[key] ?? []).compactMap { node -> String? in
+            if case .text(let value, _) = node { return value }
+            return nil
+        }.joined()
+        return "Equation " + (number.isEmpty ? key : number)
+    }
+
+    private static func fingerprint(_ value: String) -> String {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0000_0100_0000_01b3
+        }
+        return String(hash, radix: 36)
+    }
+
     private func atom(_ atom: NoteAtom) -> String {
         if case .equation(let tex) = atom {
             let data = " data-tex=\"" + Self.attribute(tex) + "\""
-            if let image = equationImage?(tex, false) {
-                return "<img class=\"equation\"" + data + " alt=\"" + Self.attribute(tex) + "\" src=\"" + Self.attribute(source(image.absoluteString)) + "\">"
+            if let art = equationArt?(tex, false, mathNumbering.inlineContext) {
+                return equationImage(art, tex: tex, attributes: " class=\"equation\"" + data)
             }
             if mode == .document { return "<span class=\"equation\"" + data + "><span class=\"tex\">" + Self.escape(tex) + "</span></span>" }
             return "<span class=\"equation\"" + data + ">$" + Self.escape(tex) + "$</span>"

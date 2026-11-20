@@ -276,12 +276,13 @@ enum NotePageEquationArtwork {
         return (size * 4).rounded() / 4
     }
 
-    static func svg(_ tex: String, display: Bool) -> (markup: String, size: CGSize)? {
+    static func svg(_ tex: String, display: Bool, numbering: NoteMathNumberingContext = NoteMathNumberingContext())
+        -> (markup: String, size: CGSize, links: [NoteEquationArt.Link])? {
         guard !tex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         let fontSize = fontSize(display: display)
-        let light = NoteMathRenderer.render(tex, fontSize: fontSize, color: lightInk, display: display)
+        let light = NoteMathRenderer.render(tex, fontSize: fontSize, color: lightInk, display: display, numbering: numbering)
         guard !light.isEmpty, light.error == nil, light.size.width > 0, light.size.height > 0 else { return nil }
-        let dark = NoteMathRenderer.render(tex, fontSize: fontSize, color: darkInk, display: display)
+        let dark = NoteMathRenderer.render(tex, fontSize: fontSize, color: darkInk, display: display, numbering: numbering)
         let aqua = NSAppearance(named: .aqua)
         guard let lightPNG = png(light.cgImage(scale: scale, appearance: aqua)),
               let darkPNG = png(dark.cgImage(scale: scale, appearance: NSAppearance(named: .darkAqua))) else { return nil }
@@ -303,15 +304,19 @@ enum NotePageEquationArtwork {
             + "<image class=\"l\" x=\"0\" y=\"" + y + "\" width=\"" + imageWidth + "\" height=\"" + imageHeight + "\" xlink:href=\"data:image/png;base64,"
             + lightPNG + "\"/><image class=\"d\" x=\"0\" y=\"" + y + "\" width=\"" + imageWidth + "\" height=\"" + imageHeight
             + "\" xlink:href=\"data:image/png;base64," + darkPNG + "\"/></svg>"
-        return (markup, CGSize(width: width, height: height))
+        let links = light.links(width: light.size.width).filter(\.resolved).map {
+            NoteEquationArt.Link(key: $0.key, rect: $0.rect.offsetBy(dx: 0, dy: top))
+        }
+        return (markup, CGSize(width: width, height: height), links)
     }
 
-    static func url(_ tex: String, display: Bool) -> URL? {
-        guard let svg = svg(tex, display: display) else { return nil }
+    static func art(_ tex: String, display: Bool, numbering: NoteMathNumberingContext = NoteMathNumberingContext()) -> NoteEquationArt? {
+        guard let svg = svg(tex, display: display, numbering: numbering) else { return nil }
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~!$'()*+,;=:@/")
-        guard let encoded = svg.markup.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
-        return URL(string: "data:image/svg+xml;charset=utf-8," + encoded)
+        guard let encoded = svg.markup.addingPercentEncoding(withAllowedCharacters: allowed),
+              let url = URL(string: "data:image/svg+xml;charset=utf-8," + encoded) else { return nil }
+        return NoteEquationArt(url: url, links: svg.links)
     }
 
     private static func png(_ image: CGImage?) -> String? {
