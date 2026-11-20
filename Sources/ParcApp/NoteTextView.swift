@@ -18,6 +18,13 @@ class NoteTextView: NSTextView {
             needsDisplay = true
         }
     }
+    var findHighlights: [NoteFindHighlight] = [] {
+        didSet {
+            guard oldValue != findHighlights else { return }
+            noteLayoutManager?.findHighlights = findHighlights
+            needsDisplay = true
+        }
+    }
     var presentation = NoteTextPresentation() { didSet { if oldValue != presentation { refreshRendering() } } }
     var inputRulesEnabled = true
     var onContentHeightChange: (() -> Void)?
@@ -34,6 +41,7 @@ class NoteTextView: NSTextView {
     private var equationPanel: NoteFloatingPanel?
     private var equationEdit: (offset: Int, original: NoteText)?
     private var equationMonitor: Any?
+    private var keyObservers: [NSObjectProtocol] = []
 
     convenience init() {
         self.init(usingTextLayoutManager: false)
@@ -70,6 +78,9 @@ class NoteTextView: NSTextView {
         insertionPointColor = NoteTheme.caret
         selectedTextAttributes = [.backgroundColor: NoteTheme.selection]
         noteLayoutManager?.crossBlockColor = NoteTheme.selection
+        noteLayoutManager?.inactiveSelectionColor = NoteTheme.inactiveSelection
+        noteLayoutManager?.findColor = NoteTheme.findMatch
+        noteLayoutManager?.findCurrentColor = NoteTheme.findCurrentMatch
         noteLayoutManager?.inlineCodeFill = NoteTheme.inlineCodeBackground
         unregisterDraggedTypes()
         setAccessibilityRole(.textArea)
@@ -94,6 +105,7 @@ class NoteTextView: NSTextView {
             unmarkText()
         }
         let previous = selectedOffsets
+        if !findHighlights.isEmpty, text.string != noteText.string { findHighlights = [] }
         isApplying = true
         noteText = text
         textRevision &+= 1
@@ -262,6 +274,23 @@ class NoteTextView: NSTextView {
         super.viewDidMoveToWindow()
         if window == nil { finishEquationEditorAfterRemoval() }
         if window?.firstResponder !== self { setFocused(false) }
+        observeKeyState()
+    }
+
+    private func observeKeyState() {
+        for observer in keyObservers { NotificationCenter.default.removeObserver(observer) }
+        keyObservers = []
+        guard let window else { return }
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            keyObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.keyStateDidChange() }
+            })
+        }
+    }
+
+    private func keyStateDidChange() {
+        guard crossBlockHighlight != nil || !selectedOffsets.isEmpty else { return }
+        needsDisplay = true
     }
 
     private func setFocused(_ focused: Bool) {

@@ -22,14 +22,16 @@ struct NoteTextPresentation: Hashable {
     var small = false
     var color: NoteColorStyle?
     var completed = false
+    var alignment: NSTextAlignment = .natural
 
     init(role: NoteTextRole = .body, pageFont: NotePageFont = .standard, small: Bool = false,
-         color: NoteColorStyle? = nil, completed: Bool = false) {
+         color: NoteColorStyle? = nil, completed: Bool = false, alignment: NSTextAlignment = .natural) {
         self.role = role
         self.pageFont = pageFont
         self.small = small
         self.color = color
         self.completed = completed
+        self.alignment = alignment
     }
 
     init(block: NoteBlock, settings: NotePageSettings) {
@@ -45,6 +47,11 @@ struct NoteTextPresentation: Hashable {
         default: return .body
         }
     }
+}
+
+struct NoteFindHighlight: Hashable {
+    var range: Range<Int>
+    var isCurrent: Bool
 }
 
 struct NoteTextMetrics {
@@ -69,6 +76,7 @@ enum NoteTextRendering {
     private struct StyleKey: Hashable {
         var lineHeight: CGFloat
         var flexible: Bool
+        var alignment: NSTextAlignment
     }
 
     private static var metricsCache: [NoteTextPresentation: NoteTextMetrics] = [:]
@@ -76,6 +84,8 @@ enum NoteTextRendering {
     private static var paragraphCache: [StyleKey: NSParagraphStyle] = [:]
 
     static func metrics(_ presentation: NoteTextPresentation) -> NoteTextMetrics {
+        var presentation = presentation
+        presentation.alignment = .natural
         if let cached = metricsCache[presentation] { return cached }
         let style = NoteTheme.textStyle(presentation.role, font: presentation.pageFont, small: presentation.small)
         let natural = ceil(style.font.ascender - style.font.descender + style.font.leading)
@@ -91,12 +101,13 @@ enum NoteTextRendering {
 
     static func lineHeight(_ presentation: NoteTextPresentation) -> CGFloat { metrics(presentation).lineHeight }
 
-    static func paragraphStyle(lineHeight: CGFloat, flexible: Bool) -> NSParagraphStyle {
-        let key = StyleKey(lineHeight: lineHeight, flexible: flexible)
+    static func paragraphStyle(lineHeight: CGFloat, flexible: Bool, alignment: NSTextAlignment = .natural) -> NSParagraphStyle {
+        let key = StyleKey(lineHeight: lineHeight, flexible: flexible, alignment: alignment)
         if let cached = paragraphCache[key] { return cached }
         let style = NSMutableParagraphStyle()
         style.minimumLineHeight = lineHeight
         style.maximumLineHeight = flexible ? 0 : lineHeight
+        style.alignment = alignment
         style.lineBreakMode = .byWordWrapping
         style.lineSpacing = 0
         style.paragraphSpacing = 0
@@ -172,7 +183,7 @@ enum NoteTextRendering {
         var attributes: [NSAttributedString.Key: Any] = [
             .font: font(for: marks, presentation),
             .foregroundColor: ink,
-            .paragraphStyle: paragraphStyle(lineHeight: metrics.lineHeight, flexible: flexible),
+            .paragraphStyle: paragraphStyle(lineHeight: metrics.lineHeight, flexible: flexible, alignment: presentation.alignment),
             .baselineOffset: metrics.baselineOffset,
             .noteMarks: NoteMarksValue(marks),
         ]
@@ -255,7 +266,7 @@ enum NoteTextRendering {
         var attributes: [NSAttributedString.Key: Any] = [
             .font: metrics.font,
             .foregroundColor: NoteTheme.placeholderInk,
-            .paragraphStyle: paragraphStyle(lineHeight: metrics.lineHeight, flexible: false),
+            .paragraphStyle: paragraphStyle(lineHeight: metrics.lineHeight, flexible: false, alignment: presentation.alignment),
             .baselineOffset: metrics.baselineOffset,
         ]
         if metrics.kern != 0 { attributes[.kern] = metrics.kern }
@@ -301,7 +312,16 @@ final class NoteTextMeasurer {
 final class NoteLayoutManager: NSLayoutManager {
     var crossBlockHighlight: Range<Int>?
     var crossBlockColor: NSColor = .selectedTextBackgroundColor
+    var inactiveSelectionColor: NSColor?
     var inlineCodeFill: NSColor = .quaternaryLabelColor
+    var findHighlights: [NoteFindHighlight] = []
+    var findColor: NSColor = .findHighlightColor
+    var findCurrentColor: NSColor = .findHighlightColor
+
+    var isSelectionActive: Bool {
+        guard let view = firstTextView, let window = view.window else { return false }
+        return window.isKeyWindow && window.firstResponder === view
+    }
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         if let storage = textStorage, let container = textContainers.first, storage.length > 0 {
@@ -316,9 +336,39 @@ final class NoteLayoutManager: NSLayoutManager {
                 fillRuns(range, storage: storage, container: container, origin: origin, color: inlineCodeFill,
                          horizontal: 3, vertical: 1.5, radius: 4)
             }
+            drawFindHighlights(in: characters, storage: storage, container: container, origin: origin)
         }
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         drawCrossBlockHighlight(at: origin)
+    }
+
+    override func fillBackgroundRectArray(_ rectArray: UnsafePointer<NSRect>, count rectCount: Int, forCharacterRange charRange: NSRange,
+                                          color: NSColor) {
+        guard let inactive = inactiveSelectionColor, let view = firstTextView, !isSelectionActive,
+              view.selectedRanges.contains(where: { NSIntersectionRange($0.rangeValue, charRange).length > 0 }) else {
+            super.fillBackgroundRectArray(rectArray, count: rectCount, forCharacterRange: charRange, color: color)
+            return
+        }
+        inactive.setFill()
+        super.fillBackgroundRectArray(rectArray, count: rectCount, forCharacterRange: charRange, color: inactive)
+    }
+
+    private func drawFindHighlights(in characters: NSRange, storage: NSTextStorage, container: NSTextContainer, origin: NSPoint) {
+        guard !findHighlights.isEmpty else { return }
+        let length = storage.length
+        for highlight in findHighlights.sorted(by: { !$0.isCurrent && $1.isCurrent }) {
+            let lower = min(max(0, highlight.range.lowerBound), length)
+            let upper = min(max(lower, highlight.range.upperBound), length)
+            let range = NSRange(location: lower, length: upper - lower)
+            guard range.length > 0, NSIntersectionRange(range, characters).length > 0 else { continue }
+            (highlight.isCurrent ? findCurrentColor : findColor).setFill()
+            let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                                    in: container) { rect, _ in
+                let pill = rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -1.5, dy: 0)
+                NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
+            }
+        }
     }
 
     override func drawUnderline(forGlyphRange glyphRange: NSRange, underlineType: NSUnderlineStyle, baselineOffset: CGFloat,
@@ -376,7 +426,9 @@ final class NoteLayoutManager: NSLayoutManager {
 
     private func drawCrossBlockHighlight(at origin: NSPoint) {
         guard let range = crossBlockHighlight, let storage = textStorage, let container = textContainers.first else { return }
-        crossBlockColor.setFill()
+        let window = firstTextView?.window
+        let dimmed = window.map { !$0.isKeyWindow } ?? false
+        (dimmed ? inactiveSelectionColor ?? crossBlockColor : crossBlockColor).setFill()
         let length = storage.length
         let lower = min(max(0, range.lowerBound), length), upper = min(max(lower, range.upperBound), length)
         if lower < upper {

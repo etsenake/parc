@@ -9,6 +9,7 @@ struct NoteTextRenderingTests {
             typing()
             measurement()
             presentation()
+            alignment()
             numbering()
             dates()
             print("NoteTextRenderingTests passed")
@@ -146,6 +147,46 @@ struct NoteTextRenderingTests {
         expectEqual(boldFont.pointSize, regularFont.pointSize, "bold keeps the body size")
         let codeFont = NoteTextRendering.font(for: marks { $0.code = true }, NoteTextPresentation())
         expect(codeFont.pointSize < regularFont.pointSize, "inline code is a touch smaller")
+    }
+
+    static func alignment() {
+        let natural = NoteTextPresentation()
+        expectEqual(natural.alignment, .natural, "text starts naturally aligned")
+        let centered = NoteTextPresentation(role: .tableCell, alignment: .center)
+        let right = NoteTextPresentation(role: .tableHeader, small: true, alignment: .right)
+        let equation = NoteText("Total ") + NoteText.atom(.equation("x^2")) + NoteText(" done", marks: boldMarks)
+        for (presentation, name) in [(centered, "centred"), (right, "right-aligned")] {
+            roundTrip("Two\nlines", name + " text", in: presentation)
+            roundTrip(equation, name + " text with an equation", in: presentation)
+            let attributed = NoteTextRendering.attributedString(equation, presentation)
+            var alignments = Set<Int>()
+            attributed.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: attributed.length)) { value, _, _ in
+                alignments.insert((value as? NSParagraphStyle)?.alignment.rawValue ?? -1)
+            }
+            expectEqual(alignments, [presentation.alignment.rawValue], name + " runs all share the alignment")
+            let typing = NoteTextRendering.typingAttributes(boldMarks, presentation)
+            expectEqual((typing[.paragraphStyle] as? NSParagraphStyle)?.alignment, presentation.alignment, name + " typing keeps the alignment")
+            let placeholder = NoteTextRendering.placeholder("Type here", presentation)
+            expectEqual((placeholder.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?.alignment,
+                        presentation.alignment, name + " placeholders line up with the text")
+        }
+        var plain = centered
+        plain.alignment = .natural
+        expectEqual(NoteTextRendering.lineHeight(centered), NoteTextRendering.lineHeight(plain), "alignment never changes the line height")
+        expectEqual(NoteTextRendering.font(for: .plain, centered), NoteTextRendering.font(for: .plain, plain), "alignment never changes the font")
+        expect(centered != plain, "alignment is part of the presentation, so views refresh when it changes")
+        let attributed = NoteTextRendering.attributedString("Middle", centered)
+        let width: CGFloat = 300
+        let storage = NSTextStorage(attributedString: attributed)
+        let manager = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: width, height: 1000))
+        container.lineFragmentPadding = 0
+        manager.addTextContainer(container)
+        storage.addLayoutManager(manager)
+        manager.ensureLayout(for: container)
+        let used = manager.usedRect(for: container)
+        let glyphs = manager.boundingRect(forGlyphRange: manager.glyphRange(for: container), in: container)
+        expect(abs(glyphs.midX - width / 2) < 2, "centred text lays out in the middle (centre \(glyphs.midX), used \(used))")
     }
 
     static func numbering() {
