@@ -403,6 +403,8 @@ struct NoteClipboardTests {
                "and the picture lives in the new folder's Attachments")
         let resolved = landed.flatMap { file.environment.resolve($0) }
         expect(resolved.map { FileManager.default.fileExists(atPath: $0.path) } ?? false, "so the link resolves")
+        expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("Old/Attachments/Sunset.png").path),
+               "and the first copy doesn't linger in the old folder")
 
         let stranded = root.appendingPathComponent("Old/Attachments/Kept.png")
         try? FileManager.default.createDirectory(at: stranded.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -411,8 +413,15 @@ struct NoteClipboardTests {
         try? FileManager.default.createDirectory(at: readOnly.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: readOnly.deletingLastPathComponent().path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: readOnly.deletingLastPathComponent().path) }
-        expect((try? NoteAttachmentImports.rebase(stranded, into: readOnly)) == "../Old/Attachments/Kept.png",
+        let fallback = try? NoteAttachmentImports.rebase(stranded, created: true, into: readOnly, discardingOriginal: true)
+        expect(fallback == NoteAttachments.Placement(path: "../Old/Attachments/Kept.png", created: true),
                "when the copy can't be made, the link points back to where the picture landed")
+        expect(FileManager.default.fileExists(atPath: stranded.path), "and that picture stays put")
+        let shared = root.appendingPathComponent("Old/Attachments/Shared.png")
+        try? bytes.write(to: shared)
+        let kept = try? NoteAttachmentImports.rebase(shared, created: false, into: destination, discardingOriginal: false)
+        expect(kept == NoteAttachments.Placement(path: "Attachments/Shared.png", created: true) && FileManager.default.fileExists(atPath: shared.path),
+               "a picture this import didn't make is copied, never taken away")
     }
 
     static func stagedResume() {

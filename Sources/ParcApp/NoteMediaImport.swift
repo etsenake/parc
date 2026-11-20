@@ -70,14 +70,14 @@ enum NoteMediaImport {
         return source
     }
 
-    nonisolated static func copy(_ file: URL, into note: URL, date: Date) throws -> String {
+    nonisolated static func copy(_ file: URL, into note: URL, date: Date) throws -> NoteAttachments.Placement {
         let pathExtension = file.pathExtension.lowercased()
         guard NoteAttachments.isStaged(file), pathExtension == "tiff" || pathExtension == "tif" else {
-            return try NoteAttachments.importFile(file, into: note)
+            return try NoteAttachments.placeFile(file, into: note)
         }
         let normalized = normalizedImage(try Data(contentsOf: file), fileExtension: "tiff")
-        return try NoteAttachments.importData(normalized.data, fileExtension: normalized.fileExtension,
-                                              suggestedName: file.deletingPathExtension().lastPathComponent, into: note, date: date)
+        return try NoteAttachments.placeData(normalized.data, fileExtension: normalized.fileExtension,
+                                             suggestedName: file.deletingPathExtension().lastPathComponent, into: note, date: date)
     }
 
     nonisolated static func normalizedImage(_ data: Data, fileExtension: String) -> (data: Data, fileExtension: String) {

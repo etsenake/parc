@@ -2,6 +2,11 @@ import Combine
 import Foundation
 
 enum NoteAttachments {
+    struct Placement: Equatable, Sendable {
+        var path: String
+        var created: Bool
+    }
+
     static let folderName = "Attachments"
     static let stagingFolder = FileManager.default.temporaryDirectory.appendingPathComponent("Parc Note Imports", isDirectory: true)
 
@@ -17,9 +22,13 @@ enum NoteAttachments {
     }
 
     static func importFile(_ source: URL, into note: URL) throws -> String {
+        try placeFile(source, into: note).path
+    }
+
+    static func placeFile(_ source: URL, into note: URL) throws -> Placement {
         let original = NoteFilePaths.canonical(source)
         guard NoteFilePaths.itemExists(original) else { throw NoteFileError.missing }
-        if let relative = existingSource(for: original, in: note) { return relative }
+        if let relative = existingSource(for: original, in: note) { return Placement(path: relative, created: false) }
         let destinationFolder = folder(for: note)
         try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
         let pathExtension = original.pathExtension
@@ -30,13 +39,13 @@ enum NoteAttachments {
             if NoteFilePaths.itemExists(candidate) {
                 if !directory, fileSize(candidate) == fileSize(original),
                    FileManager.default.contentsEqual(atPath: candidate.path, andPath: original.path) {
-                    return relativeLink(to: candidate)
+                    return Placement(path: relativeLink(to: candidate), created: false)
                 }
                 continue
             }
             do {
                 try coordinatedCopy(original, to: candidate)
-                return relativeLink(to: candidate)
+                return Placement(path: relativeLink(to: candidate), created: true)
             } catch CocoaError.fileWriteFileExists {
                 continue
             }
@@ -45,6 +54,10 @@ enum NoteAttachments {
     }
 
     static func importData(_ data: Data, fileExtension: String, suggestedName: String?, into note: URL, date: Date) throws -> String {
+        try placeData(data, fileExtension: fileExtension, suggestedName: suggestedName, into: note, date: date).path
+    }
+
+    static func placeData(_ data: Data, fileExtension: String, suggestedName: String?, into note: URL, date: Date) throws -> Placement {
         let pathExtension = NoteFileNaming.sanitizedExtension(fileExtension)
         var base = ""
         if let suggestedName {
@@ -59,13 +72,13 @@ enum NoteAttachments {
         for candidate in NoteFileNaming.candidates(in: destinationFolder, base: base, pathExtension: pathExtension).prefix(10_000) {
             if NoteFilePaths.itemExists(candidate) {
                 if fileSize(candidate) == data.count, let existing = try? Data(contentsOf: candidate), existing == data {
-                    return relativeLink(to: candidate)
+                    return Placement(path: relativeLink(to: candidate), created: false)
                 }
                 continue
             }
             do {
                 try data.write(to: candidate, options: .withoutOverwriting)
-                return relativeLink(to: candidate)
+                return Placement(path: relativeLink(to: candidate), created: true)
             } catch CocoaError.fileWriteFileExists {
                 continue
             }
@@ -163,7 +176,8 @@ final class NoteAttachmentImports {
         return originals.contains(NoteFilePaths.canonical(file).path) || NoteAttachments.isStaged(file)
     }
 
-    func begin(_ source: String, from original: URL, in session: NotePageSession, note: URL, _ work: @escaping () throws -> String) {
+    func begin(_ source: String, from original: URL, in session: NotePageSession, note: URL,
+               _ work: @escaping () throws -> NoteAttachments.Placement) {
         let ledger = ledger(for: session)
         ledger.pending[source, default: 0] += 1
         ledger.tried.insert(source)
@@ -174,17 +188,17 @@ final class NoteAttachmentImports {
         }
     }
 
-    private func finish(_ source: String, _ result: Result<String, Error>, from origin: NotePageSession?, note: URL) {
+    private func finish(_ source: String, _ result: Result<NoteAttachments.Placement, Error>, from origin: NotePageSession?, note: URL) {
         ledgers = ledgers.filter { $0.value.session != nil }
-        if case .success(let path) = result, let target = Self.liveSession(origin, note: note),
+        if case .success(let placement) = result, let target = Self.liveSession(origin, note: note),
            let moved = Self.movedNote(of: target, from: note) {
-            follow(source, path: path, from: note, to: moved, origin: origin)
+            follow(source, placement, from: note, to: moved, origin: origin)
             return
         }
         if let origin, let ledger = existingLedger(for: origin), let count = ledger.pending[source] {
             ledger.pending[source] = count > 1 ? count - 1 : nil
         }
-        switch result {
+        switch result.map(\.path) {
         case .success(let path):
             if let target = Self.liveSession(origin, note: note) {
                 land([source: path], in: target)
@@ -197,20 +211,46 @@ final class NoteAttachmentImports {
         changes.send(source)
     }
 
-    private func follow(_ source: String, path: String, from note: URL, to moved: URL, origin: NotePageSession?) {
-        let landed = note.deletingLastPathComponent().appendingPathComponent(path.removingPercentEncoding ?? path)
-        worker.perform({ Result { try Self.rebase(landed, into: moved) } }) { [weak self, weak origin] result in
+    private func follow(_ source: String, _ placement: NoteAttachments.Placement, from note: URL, to moved: URL, origin: NotePageSession?) {
+        let folder = note.deletingLastPathComponent()
+        let landed = folder.appendingPathComponent(placement.path.removingPercentEncoding ?? placement.path)
+        let discarding = placement.created && !isClaimed(landed, besides: origin, in: folder)
+        worker.perform({ Result { try Self.rebase(landed, created: placement.created, into: moved, discardingOriginal: discarding) } }) {
+            [weak self, weak origin] result in
             self?.finish(source, result, from: origin, note: moved)
         }
     }
 
-    nonisolated static func rebase(_ landed: URL, into note: URL) throws -> String {
+    private func isClaimed(_ file: URL, besides origin: NotePageSession?, in folder: URL) -> Bool {
+        let fileKey = NoteFilePaths.key(for: file), folderKey = NoteFilePaths.key(for: folder)
+        for ledger in ledgers.values {
+            guard let session = ledger.session,
+                  let note = NoteFileSession.openSessions.first(where: { $0.page === session })?.url else { continue }
+            let noteFolder = note.deletingLastPathComponent()
+            if session !== origin, !ledger.pending.isEmpty, NoteFilePaths.key(for: noteFolder) == folderKey { return true }
+            if ledger.landed.values.contains(where: { NoteFilePaths.key(for: noteFolder.appendingPathComponent($0.removingPercentEncoding ?? $0)) == fileKey }) {
+                return true
+            }
+        }
+        return orphans.contains { noteKey, found in
+            let orphanFolder = (noteKey as NSString).deletingLastPathComponent
+            return found.values.contains { path in
+                NoteFilePaths.identityKey(ofCanonicalPath: (orphanFolder as NSString).appendingPathComponent(path.removingPercentEncoding ?? path)) == fileKey
+            }
+        }
+    }
+
+    nonisolated static func rebase(_ landed: URL, created: Bool, into note: URL, discardingOriginal: Bool) throws -> NoteAttachments.Placement {
+        let folder = note.deletingLastPathComponent()
         do {
-            return try NoteAttachments.importFile(landed, into: note)
+            let placed = try NoteAttachments.placeFile(landed, into: note)
+            let target = folder.appendingPathComponent(placed.path.removingPercentEncoding ?? placed.path)
+            if NoteFilePaths.key(for: target) == NoteFilePaths.key(for: landed) { return NoteAttachments.Placement(path: placed.path, created: created) }
+            if discardingOriginal { try? FileManager.default.removeItem(at: landed) }
+            return placed
         } catch {
-            guard NoteFilePaths.itemExists(landed),
-                  let relative = NoteFilePaths.relativePath(from: note.deletingLastPathComponent(), to: landed) else { throw error }
-            return relative
+            guard NoteFilePaths.itemExists(landed), let relative = NoteFilePaths.relativePath(from: folder, to: landed) else { throw error }
+            return NoteAttachments.Placement(path: relative, created: created)
         }
     }
 
