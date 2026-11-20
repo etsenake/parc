@@ -15,7 +15,7 @@ for use, count in (("let request = ContentFocusRequest(window: window, content: 
                    ("            requestNativeSelection()\n            focusSelectedContent()\n        case .move", 1),
                    ("        guard restoreFocus else { return }\n        requestNativeSelection()\n", 1),
                    ("if let editor = findField.currentEditor(), window?.firstResponder === editor { return }\n            if window?.makeFirstResponder(findField) == true { return }\n        }\n        focusSelectedContent()\n", 1),
-                   ("reclaimFocusAfterSplitPresentation()", 4),
+                   ("reclaimFocusAfterSplitPresentation()", 5),
                    ("guard let window, ContentFocusRequest.lostByPresentation(window.firstResponder, window: window) else { return }\n        focusSelectedContent()", 1),
                    ("self.window?.makeFirstResponder(self.findField) == true { return }", 1)):
     assert controller.count(use) == count, f"content focus wiring changed: {use}"
