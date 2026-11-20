@@ -279,6 +279,10 @@ final class NotePageMenu {
             writePDF(to: destination)
             return
         }
+        if format == .html {
+            writeHTML(to: destination)
+            return
+        }
         do {
             switch format {
             case .markdown:
@@ -294,10 +298,30 @@ final class NotePageMenu {
         }
     }
 
-    func htmlDocument() -> String {
+    func htmlDocument(diagrams: ((NoteBlock) -> NoteDiagramArt?)? = nil) -> String {
         let environment = editor.environment
         return NotePageHTML.document(editor.session.page, title: title, assets: { environment.resolve($0) }, embedImages: true,
-                                     equationArt: { tex, display, numbering in NotePageEquationArtwork.art(tex, display: display, numbering: numbering) })
+                                     equationArt: { tex, display, numbering in NotePageEquationArtwork.art(tex, display: display, numbering: numbering) },
+                                     diagramArt: diagrams)
+    }
+
+    private func writeHTML(to destination: URL) {
+        let page = editor.session.page
+        let light = NotePagePrintView.diagramRequests(in: page, dark: false)
+        let dark = NotePagePrintView.diagramRequests(in: page, dark: true)
+        NoteMermaidRenderer.shared.renderAll(Array(light.values) + Array(dark.values)) { [weak self] results in
+            guard let self else { return }
+            let art: (NoteBlock) -> NoteDiagramArt? = { block in
+                guard let key = light[block.id]?.key, let drawing = results[key]?.art?.drawing else { return nil }
+                return NoteDiagramArt(light: drawing.svg, dark: dark[block.id].flatMap { results[$0.key]?.art?.drawing.svg })
+            }
+            do {
+                try Data(self.htmlDocument(diagrams: art).utf8).write(to: destination, options: .atomic)
+                self.showToast(.standard("Exported \(destination.lastPathComponent)"))
+            } catch {
+                self.editor.onError?(error)
+            }
+        }
     }
 
     private func copyAssets(to folder: URL) throws {
@@ -431,11 +455,23 @@ final class NotePagePrintView: NSView {
                 if let icon = bookmark.iconURL.flatMap(URL.init(string:)) { mediaImages.append((icon, 64)) }
             }
         }
-        pending = chromeImages.count + mediaImages.count
+        let diagrams = Array(diagramRequests(in: page, dark: false).values)
+        pending = chromeImages.count + mediaImages.count + (diagrams.isEmpty ? 0 : 1)
         guard pending > 0 else { finish(); return }
+        if !diagrams.isEmpty { NoteMermaidRenderer.shared.renderAll(diagrams) { _ in arrived() } }
         for url in chromeImages { NotePageImageLoader.shared.load(url) { _ in arrived() } }
         for (url, pixels) in mediaImages { NoteMediaImageLoader.shared.load(url, pixels: pixels) { _ in arrived() } }
         DispatchQueue.main.asyncAfter(deadline: .now() + imageWait) { finish() }
+    }
+
+    static func diagramRequests(in page: NotePage, dark: Bool) -> [NoteBlockID: NoteMermaidRequest] {
+        let theme = NoteMermaidTheme.note(dark: dark, font: page.settings.font, small: page.settings.smallText)
+        var requests: [NoteBlockID: NoteMermaidRequest] = [:]
+        for block in page.allBlocks() where NoteMermaid.isDiagram(block) && NoteMermaid.storedMode(of: block).showsDiagram
+            && NoteMermaid.hasContent(block.text.string) {
+            requests[block.id] = NoteMermaidRequest(source: block.text.string, theme: theme)
+        }
+        return requests
     }
 
     func settle() {
