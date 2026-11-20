@@ -92,6 +92,10 @@ struct NoteSlashCatalogTests {
         expect(menu.contains { $0.id == "into.toggleHeading4" }, "Turn into offers Toggle heading 4")
         expect(menu.allSatisfy { if case .turnInto = $0.effect { return true } else { return false } }, "Turn into rows only convert")
         expect(NoteBlockCatalog.results(for: "quo", in: .turnInto).first?.id == "into.quote", "Turn into filters too")
+        expect(menu.contains { $0.id == "into.button" }, "Turn into offers Button")
+        let button = NoteCatalogBlock.button.makeBlock()
+        expect(button.kind == .button && button.buttonValue == NoteButton.starter && !button.props.expanded,
+               "/button makes a closed starter button with one empty insert")
 
         expect(NoteBlockCatalog.turnIntoMenuItems(columnLimit: 1).map(\.id) == NoteBlockCatalog.turnIntoMenuItems.map(\.id),
                "a single block gets no column choices")
