@@ -22,6 +22,7 @@ struct NoteFileLibraryTests {
             try containment()
             try renaming()
             try watching()
+            try refreshingOffTheMainThread()
             print("NoteFileLibraryTests passed")
         }
     }
@@ -205,6 +206,57 @@ struct NoteFileLibraryTests {
             return planFolder() == nil
         }
         expect(trashed, "and so is trashing it")
+        watch.cancel()
+    }
+
+    static func refreshingOffTheMainThread() throws {
+        let root = folder.appendingPathComponent("Busy", isDirectory: true)
+        NoteFileTestSupport.write("first body\n", to: root.appendingPathComponent("First.md"))
+        NoteFileTestSupport.write("tucked away\n", to: root.appendingPathComponent("Drawer/Nested.md"))
+        let worker = NoteFileWorker(label: "org.parc.tests.library")
+        NoteLibrary.worker = worker
+        defer { NoteLibrary.worker = .inline }
+        let gate = DispatchSemaphore(value: 0)
+        worker.perform({ () -> Bool in
+            gate.wait()
+            return true
+        }) { _ in }
+        let library = NoteLibrary.shared(folder: root)
+        let started = Date()
+        let first = try library.notes()
+        expectEqual(first.map(\.title), ["First"], "a never-listed folder names its top-level notes straight away")
+        expectEqual(first.first?.snippet, "", "while summaries wait for the worker")
+        NoteFileTestSupport.write("second body\n", to: root.appendingPathComponent("Second.md"))
+        library.refresh()
+        clock.advance(1)
+        expectEqual(try library.notes().map(\.title), ["First"], "a refresh in flight leaves the last listing in place")
+        expectEqual(library.search("second", limit: 5), [], "and search answers from it too")
+        expect(Date().timeIntervalSince(started) < 0.5, "without waiting on the disk")
+        let made = try library.createNote(title: "Made meanwhile")
+        expectEqual(try library.notes().map(\.title).sorted(), ["First", "Made meanwhile"], "a note Parc makes shows up at once")
+        var heard = 0
+        let watch = library.changes.sink { heard += 1 }
+        gate.signal()
+        let refreshed = NoteFileTestSupport.spin(timeout: 10) {
+            let notes = (try? library.notes()) ?? []
+            return notes.map(\.title).sorted() == ["First", "Made meanwhile", "Nested", "Second"]
+                && notes.first { $0.title == "First" }?.snippet == "first body"
+        }
+        expect(refreshed && heard > 0, "the full listing and summaries arrive from the worker and announce themselves")
+        let found = NoteFileTestSupport.spin(timeout: 10) { library.search("second body", limit: 5).map(\.title) == ["Second"] }
+        expect(found, "and search catches up once the worker has read the new note")
+        let bin = folder.appendingPathComponent("Bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let previousMover = NoteFileIO.trashMover
+        NoteFileIO.trashMover = { url in
+            let target = bin.appendingPathComponent(url.lastPathComponent)
+            try FileManager.default.moveItem(at: url, to: target)
+            return target
+        }
+        defer { NoteFileIO.trashMover = previousMover }
+        try NoteLibrary.trash(made)
+        let remaining = try library.notes()
+        expect(remaining.allSatisfy { $0.title != "Made meanwhile" }, "a note Parc trashes leaves at once")
         watch.cancel()
     }
 }

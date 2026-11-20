@@ -20,11 +20,17 @@ struct DocumentsLibraryCatalogTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let filler = String(repeating: "Socks, chargers and a spare umbrella for the drizzle. ", count: 40)
         try? Data("\(filler)\n\nDon't forget the sardine tin opener.\n".utf8).write(to: folder.appendingPathComponent("Packing.md"))
+        NoteLibrary.worker = NoteFileWorker(label: "org.parc.tests.library-catalog")
         let library = NoteLibrary.shared(folder: folder)
+        let listed = Date().addingTimeInterval(10)
+        while ((try? library.notes()) ?? []).first?.snippet?.isEmpty != false && Date() < listed {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
         func inputs() -> DocumentsLibraryInputs? {
             try? DocumentsLibraryCatalog.inputs(library: library, easels: { [] }, pending: false, query: "  sardine ", searchLimit: 100)
         }
         guard let before = inputs() else { failTest("a readable folder gives catalog inputs") }
+        expect(before.notes.first?.snippet?.hasPrefix("Socks, chargers") == true, "the first listing snapshot is in, summaries and all")
         expect(before.query == "sardine" && before.noteMatches.isEmpty, "a cold index has no body matches yet")
         expect(DocumentsLibraryCatalog.visible(before).isEmpty, "so the body word finds nothing at first")
         var changed = false

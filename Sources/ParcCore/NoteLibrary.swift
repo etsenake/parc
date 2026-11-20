@@ -11,6 +11,7 @@ final class NoteLibrary {
         var modifiedAt: Date
         var size: Int
         var foldedTitle: String
+        var summarized = true
 
         var reference: NoteReference {
             NoteReference(url: url, title: title, icon: icon, modifiedAt: modifiedAt, snippet: snippet)
@@ -30,6 +31,7 @@ final class NoteLibrary {
     static var refreshDelay: TimeInterval = 0.2
     nonisolated static let maximumDepth = 12
     nonisolated static let maximumNotes = 20_000
+    nonisolated static let quickListBudget = 1_000
     nonisolated static let indexedBytes = 2 * 1024 * 1024
     nonisolated private static let skippedFolders: Set<String> = ["attachments", "node_modules"]
     nonisolated private static let bundleExtensions: Set<String> = [
@@ -63,15 +65,17 @@ final class NoteLibrary {
     static func trash(_ url: URL) throws {
         let session = NoteFileSession.session(for: url)
         try? session?.flush()
-        try NoteFileIO.trash(NoteFilePaths.canonical(url), presenter: session?.presenter)
+        let file = NoteFilePaths.canonical(url)
+        try NoteFileIO.trash(file, presenter: session?.presenter)
         session?.noteWasTrashed()
-        invalidateLibraries(containing: url)
+        invalidateLibraries(containing: [file])
     }
 
     static func rename(_ url: URL, to title: String) throws -> URL {
         if let session = NoteFileSession.session(for: url) {
+            let original = session.url
             let renamed = try session.rename(to: title)
-            invalidateLibraries(containing: renamed)
+            invalidateLibraries(containing: [original, renamed])
             return renamed
         }
         let source = NoteFilePaths.canonical(url)
@@ -79,13 +83,14 @@ final class NoteLibrary {
         guard let target = try NoteFileNaming.renameTarget(for: source, to: title) else { return source }
         try NoteFileIO.move(source, to: target, presenter: nil)
         let renamed = NoteFilePaths.canonical(target.deletingLastPathComponent()).appendingPathComponent(target.lastPathComponent)
-        invalidateLibraries(containing: renamed)
+        invalidateLibraries(containing: [source, renamed])
         return renamed
     }
 
-    private static func invalidateLibraries(containing url: URL) {
-        for library in Array(libraries.values) + Array(shallowLibraries.values) where library.contains(url) {
-            library.folderChanged(events: [NoteFolderEvent(path: url.path)], broad: false)
+    private static func invalidateLibraries(containing urls: [URL]) {
+        for library in Array(libraries.values) + Array(shallowLibraries.values) {
+            let inside = urls.filter(library.contains)
+            if !inside.isEmpty { library.filesChanged(inside) }
         }
     }
 
@@ -94,9 +99,15 @@ final class NoteLibrary {
     let changes = PassthroughSubject<Void, Never>()
 
     private var entries: [String: Entry] = [:]
+    private var hasListing = false
     private var listingIsCurrent = false
+    private var listingGeneration = 0
+    private var isScanning = false
+    private var scanAgain = false
+    private var touchedWhileScanning: Set<String> = []
     private var contents: [String: IndexedContent] = [:]
     private var contentIsCurrent = false
+    private var wantsContents = false
     private var isIndexing = false
     private var indexAgain = false
     private var watcher: NoteFileFolderWatcher?
@@ -106,6 +117,7 @@ final class NoteLibrary {
         self.folder = folder
         isRecursive = recursive
         startWatchingIfNeeded()
+        if watcher != nil, FileManager.default.isReadableFile(atPath: folder.path) { scan() }
     }
 
     func contains(_ url: URL) -> Bool {
@@ -131,27 +143,28 @@ final class NoteLibrary {
             } catch CocoaError.fileWriteFileExists {
                 continue
             }
-            invalidateLibraries(containing: candidate)
+            invalidateLibraries(containing: [candidate])
             return candidate
         }
         throw NoteFileError.nameTaken(base)
     }
 
     func notes() throws -> [NoteReference] {
-        try ensureListing()
+        try refreshListing()
         return Self.newestFirst(Array(entries.values)).map(\.reference)
     }
 
     func search(_ query: String, limit: Int) -> [NoteReference] {
         guard limit > 0 else { return [] }
-        do { try ensureListing() } catch { return [] }
+        do { try refreshListing() } catch { return [] }
+        wantsContents = true
         if !contentIsCurrent { indexContents() }
         return Self.rank(query, entries: Array(entries.values), contents: contents, limit: limit).map(\.reference)
     }
 
     func snippet(for url: URL) -> String? {
         let file = NoteFilePaths.canonical(url)
-        if let entry = entries[file.path] { return entry.snippet }
+        if let entry = entries[file.path], entry.summarized { return entry.snippet }
         guard let kind = NoteFileKind(url: file), NoteFilePaths.isOpenableFile(file) else { return nil }
         return NoteFileSummary.read(file, kind: kind).snippet
     }
@@ -160,20 +173,87 @@ final class NoteLibrary {
         folderChanged(events: [], broad: true)
     }
 
-    private func ensureListing() throws {
+    private func refreshListing() throws {
         if listingIsCurrent && watcher != nil { return }
         guard NoteFilePaths.isDirectory(folder) else {
-            watcher = nil
-            entries = [:]
-            listingIsCurrent = false
+            forgetListing()
             return
         }
         guard FileManager.default.isReadableFile(atPath: folder.path) else {
             throw NoteFileError.unreadable("Parc doesn’t have permission to look inside “\(folder.lastPathComponent)”.")
         }
-        entries = Self.scan(folder: folder, recursive: isRecursive, previous: entries)
         startWatchingIfNeeded()
-        listingIsCurrent = watcher != nil
+        if !hasListing {
+            entries = Self.list(folder: folder, recursive: false, previous: entries, budget: Self.quickListBudget)
+            hasListing = true
+        }
+        if !isScanning { scan() }
+    }
+
+    private func forgetListing() {
+        watcher = nil
+        listingGeneration += 1
+        entries = [:]
+        hasListing = false
+        listingIsCurrent = false
+        contentIsCurrent = false
+    }
+
+    private func scan() {
+        isScanning = true
+        scanAgain = false
+        touchedWhileScanning = []
+        let folder = folder, recursive = isRecursive, previous = entries, generation = listingGeneration
+        Self.worker.perform({ Self.scan(folder: folder, recursive: recursive, previous: previous) }) { [weak self] scanned in
+            self?.finishScan(scanned, generation: generation)
+        }
+    }
+
+    private func finishScan(_ scanned: [String: Entry], generation: Int) {
+        isScanning = false
+        guard generation == listingGeneration else { return }
+        var next = scanned
+        for path in touchedWhileScanning {
+            if let current = entries[path], let fresh = scanned[path], fresh.modifiedAt == current.modifiedAt, fresh.size == current.size {
+                continue
+            }
+            next[path] = entries[path]
+        }
+        touchedWhileScanning = []
+        let changed = next != entries, wasListed = hasListing
+        entries = next
+        hasListing = true
+        if changed { contentIsCurrent = false }
+        if scanAgain { scan() } else { listingIsCurrent = watcher != nil }
+        if wantsContents && !contentIsCurrent { indexContents() }
+        if changed && wasListed { changes.send() }
+    }
+
+    private func filesChanged(_ urls: [URL]) {
+        let files = urls.map(NoteFilePaths.canonical).filter { isRelevant(NoteFolderEvent(path: $0.path)) }
+        var announce = !hasListing
+        if hasListing {
+            var next = entries
+            var departed: [Entry] = []
+            var arrived: [Entry] = []
+            for file in files {
+                if isScanning { touchedWhileScanning.insert(file.path) }
+                if let entry = Self.entry(at: file, previous: entries[file.path]) {
+                    arrived.append(entry)
+                } else if let gone = next.removeValue(forKey: file.path) {
+                    departed.append(gone)
+                }
+            }
+            for entry in arrived {
+                next[entry.url.path] = Self.carryingSummary(into: entry, from: departed)
+            }
+            if next != entries {
+                entries = next
+                announce = true
+            }
+        }
+        folderChanged(events: files.map { NoteFolderEvent(path: $0.path) }, broad: false)
+        if announce { changes.send() }
     }
 
     private func indexContents() {
@@ -194,11 +274,9 @@ final class NoteLibrary {
         contents = indexed
         if indexAgain {
             indexAgain = false
-            contentIsCurrent = false
-            try? ensureListing()
             indexContents()
         } else {
-            contentIsCurrent = listingIsCurrent
+            contentIsCurrent = listingIsCurrent && !isScanning
         }
         if changed { changes.send() }
     }
@@ -207,15 +285,16 @@ final class NoteLibrary {
         guard broad || events.contains(where: isRelevant) else { return }
         listingIsCurrent = false
         contentIsCurrent = false
+        if isScanning { scanAgain = true }
         if isIndexing { indexAgain = true }
         startWatchingIfNeeded()
-        changes.send()
         refreshTimer?.cancel()
         refreshTimer = Self.clock.schedule(after: Self.refreshDelay) { [weak self] in
             guard let self else { return }
             self.refreshTimer = nil
-            try? self.ensureListing()
-            self.indexContents()
+            let hadEntries = !self.entries.isEmpty
+            try? self.refreshListing()
+            if hadEntries && !self.hasListing { self.changes.send() }
         }
     }
 
@@ -242,13 +321,56 @@ final class NoteLibrary {
     }
 
     nonisolated static func scan(folder: URL, recursive: Bool, previous: [String: Entry]) -> [String: Entry] {
+        summarize(list(folder: folder, recursive: recursive, previous: previous))
+    }
+
+    nonisolated static func summarize(_ entries: [String: Entry]) -> [String: Entry] {
+        var result = entries
+        for (key, entry) in entries where !entry.summarized {
+            guard let kind = NoteFileKind(url: entry.url) else { continue }
+            let summary = NoteFileSummary.read(entry.url, kind: kind)
+            result[key]?.icon = summary.icon
+            result[key]?.snippet = summary.snippet
+            result[key]?.summarized = true
+        }
+        return result
+    }
+
+    nonisolated static func entry(at url: URL, previous: Entry?) -> Entry? {
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
+        guard NoteFileKind(url: url) != nil, let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true else { return nil }
+        let modifiedAt = values.contentModificationDate ?? .distantPast
+        let size = values.fileSize ?? 0
+        if let previous, previous.modifiedAt == modifiedAt, previous.size == size { return previous }
+        return unsummarized(url, modifiedAt: modifiedAt, size: size, previous: previous)
+    }
+
+    nonisolated static func carryingSummary(into entry: Entry, from departed: [Entry]) -> Entry {
+        guard !entry.summarized, entry.snippet.isEmpty, entry.icon == nil,
+              let twin = departed.first(where: { $0.modifiedAt == entry.modifiedAt && $0.size == entry.size }) else { return entry }
+        var carried = entry
+        carried.icon = twin.icon
+        carried.snippet = twin.snippet
+        carried.summarized = twin.summarized
+        return carried
+    }
+
+    nonisolated private static func unsummarized(_ url: URL, modifiedAt: Date, size: Int, previous: Entry?) -> Entry {
+        let title = url.deletingPathExtension().lastPathComponent
+        return Entry(url: url, title: title, icon: previous?.icon, snippet: previous?.snippet ?? "", modifiedAt: modifiedAt, size: size,
+                     foldedTitle: fold(title), summarized: false)
+    }
+
+    nonisolated static func list(folder: URL, recursive: Bool, previous: [String: Entry], budget: Int = .max) -> [String: Entry] {
         let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey, .isPackageKey, .contentModificationDateKey, .fileSizeKey]
         var options: FileManager.DirectoryEnumerationOptions = [.skipsHiddenFiles, .skipsPackageDescendants]
         if !recursive { options.insert(.skipsSubdirectoryDescendants) }
         guard let enumerator = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys, options: options,
                                                               errorHandler: { _, _ in true }) else { return [:] }
         var result: [String: Entry] = [:]
-        while let next = enumerator.nextObject() as? URL {
+        var visited = 0
+        while visited < budget, let next = enumerator.nextObject() as? URL {
+            visited += 1
             guard let values = try? next.resourceValues(forKeys: Set(keys)) else { continue }
             if values.isDirectory == true {
                 if values.isPackage == true || bundleExtensions.contains(next.pathExtension.lowercased())
@@ -257,17 +379,14 @@ final class NoteLibrary {
                 }
                 continue
             }
-            guard values.isRegularFile == true, let kind = NoteFileKind(pathExtension: next.pathExtension) else { continue }
+            guard values.isRegularFile == true, NoteFileKind(pathExtension: next.pathExtension) != nil else { continue }
             let url = URL(fileURLWithPath: next.path)
             let modifiedAt = values.contentModificationDate ?? .distantPast
             let size = values.fileSize ?? 0
             if let known = previous[url.path], known.modifiedAt == modifiedAt, known.size == size {
                 result[url.path] = known
             } else {
-                let title = url.deletingPathExtension().lastPathComponent
-                let summary = NoteFileSummary.read(url, kind: kind)
-                result[url.path] = Entry(url: url, title: title, icon: summary.icon, snippet: summary.snippet,
-                                         modifiedAt: modifiedAt, size: size, foldedTitle: fold(title))
+                result[url.path] = unsummarized(url, modifiedAt: modifiedAt, size: size, previous: previous[url.path])
             }
             if result.count >= maximumNotes { break }
         }
