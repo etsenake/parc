@@ -22,6 +22,8 @@ final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
     private var isPresenting = false
     private var source: DispatchSourceFileSystemObject?
     private var watchedIdentity: WatchedIdentity?
+    private var watchedFile: Int32?
+    private var relocatedPath: String?
     private let sourceQueue = DispatchQueue(label: "org.parc.notes.file-watch")
     private let events: @Sendable (NoteFileWatchEvent) -> Void
     private let saveRequest: SaveRequest
@@ -38,13 +40,13 @@ final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
 
     var presentedItemURL: URL? { lock.withLock { url } }
 
-    func start() {
+    func start(seen: NoteFileSighting? = nil) {
         let shouldPresent = lock.withLock { () -> Bool in
             defer { isPresenting = true }
             return !isPresenting
         }
         if shouldPresent { NSFileCoordinator.addFilePresenter(self) }
-        rearm()
+        sourceQueue.sync { arm(seen: seen) }
     }
 
     func stop() {
@@ -53,10 +55,7 @@ final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
             return isPresenting
         }
         if wasPresenting { NSFileCoordinator.removeFilePresenter(self) }
-        sourceQueue.async { [self] in
-            source?.cancel()
-            source = nil
-        }
+        sourceQueue.async { [self] in disarm() }
     }
 
     func update(url next: URL) {
@@ -64,38 +63,59 @@ final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
         rearm()
     }
 
-    func rearm() {
-        sourceQueue.async { [self] in
-            source?.cancel()
-            source = nil
-            let (path, active) = lock.withLock { (url.path, isPresenting) }
-            guard active else { return }
-            var descriptor = open(path, O_EVTONLY)
-            let watchingFolder = descriptor < 0
-            if watchingFolder { descriptor = open((path as NSString).deletingLastPathComponent, O_EVTONLY) }
-            guard descriptor >= 0 else { return }
-            var info = stat()
-            let identity = fstat(descriptor, &info) == 0
-                ? WatchedIdentity(device: UInt64(info.st_dev), inode: UInt64(info.st_ino), isFolder: watchingFolder) : nil
-            if let previous = watchedIdentity, previous != identity { events(.changed) }
-            watchedIdentity = identity
-            let watched = DispatchSource.makeFileSystemObjectSource(
-                fileDescriptor: descriptor, eventMask: [.write, .extend, .attrib, .delete, .rename, .revoke, .link],
-                queue: sourceQueue)
-            watched.setEventHandler { [weak self, weak watched] in
-                guard let self, let watched else { return }
-                if watchingFolder { self.receivedInFolder(watched.data, from: watched) } else {
-                    self.received(watched.data, descriptor: descriptor, from: watched)
-                }
+    func rearm(seen: NoteFileSighting? = nil) {
+        sourceQueue.async { [self] in arm(seen: seen) }
+    }
+
+    func movedPath() -> String? {
+        sourceQueue.sync { relocatedPath ?? watchedFile.flatMap(Self.currentPath(of:)) }
+    }
+
+    private func disarm() {
+        source?.cancel()
+        source = nil
+        watchedFile = nil
+    }
+
+    private func arm(seen: NoteFileSighting?) {
+        disarm()
+        relocatedPath = nil
+        let (path, active) = lock.withLock { (url.path, isPresenting) }
+        guard active else { return }
+        var descriptor = open(path, O_EVTONLY | O_CLOEXEC)
+        let watchingFolder = descriptor < 0
+        if watchingFolder { descriptor = open((path as NSString).deletingLastPathComponent, O_EVTONLY | O_CLOEXEC) }
+        guard descriptor >= 0 else {
+            if let seen, seen != .absent { events(.changed) }
+            return
+        }
+        var info = stat()
+        let described = fstat(descriptor, &info) == 0
+        let identity = described ? WatchedIdentity(device: UInt64(info.st_dev), inode: UInt64(info.st_ino), isFolder: watchingFolder) : nil
+        let sighting: NoteFileSighting? = watchingFolder ? .absent : (described ? .file(NoteFileStamp(info)) : nil)
+        if let seen {
+            if sighting != seen { events(.changed) }
+        } else if let previous = watchedIdentity, previous != identity {
+            events(.changed)
+        }
+        watchedIdentity = identity
+        let watched = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor, eventMask: [.write, .extend, .attrib, .delete, .rename, .revoke, .link],
+            queue: sourceQueue)
+        watched.setEventHandler { [weak self, weak watched] in
+            guard let self, let watched else { return }
+            if watchingFolder { self.receivedInFolder(watched.data, from: watched) } else {
+                self.received(watched.data, descriptor: descriptor, from: watched)
             }
-            watched.setCancelHandler { close(descriptor) }
-            source = watched
-            watched.resume()
-            let opened = info
-            sourceQueue.asyncAfter(deadline: .now() + Self.registrationGrace) { [weak self, weak watched] in
-                guard let self, let watched, watched === self.source else { return }
-                if Self.differs(path: path, from: opened, watchingFolder: watchingFolder) { self.events(.changed) }
-            }
+        }
+        watched.setCancelHandler { close(descriptor) }
+        source = watched
+        if !watchingFolder { watchedFile = descriptor }
+        watched.resume()
+        let opened = info
+        sourceQueue.asyncAfter(deadline: .now() + Self.registrationGrace) { [weak self, weak watched] in
+            guard let self, let watched, watched === self.source else { return }
+            if Self.differs(path: path, from: opened, watchingFolder: watchingFolder) { self.events(.changed) }
         }
     }
 
@@ -114,8 +134,8 @@ final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
         guard watched === source else { return }
         if mask.contains(.rename) || mask.contains(.delete) || mask.contains(.revoke) {
             let current = mask.contains(.rename) ? Self.currentPath(of: descriptor) : nil
-            watched.cancel()
-            source = nil
+            disarm()
+            relocatedPath = current
             events(.relocated(current))
         } else {
             events(.changed)
@@ -124,10 +144,7 @@ final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
 
     private func receivedInFolder(_ mask: DispatchSource.FileSystemEvent, from watched: DispatchSourceFileSystemObject) {
         guard watched === source else { return }
-        if mask.contains(.delete) || mask.contains(.rename) || mask.contains(.revoke) {
-            watched.cancel()
-            source = nil
-        }
+        if mask.contains(.delete) || mask.contains(.rename) || mask.contains(.revoke) { disarm() }
         events(.changed)
     }
 
@@ -154,15 +171,33 @@ final class NoteFileWatcher: NSObject, NSFilePresenter, @unchecked Sendable {
     }
 }
 
+struct NoteFolderEvent: Hashable, Sendable {
+    var path: String
+    var isFile: Bool
+
+    init(path: String, isFile: Bool = true) {
+        self.path = path
+        self.isFile = isFile
+    }
+
+    init(path: String, flags: FSEventStreamEventFlags) {
+        self.path = path
+        let file = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile | kFSEventStreamEventFlagItemIsSymlink
+            | kFSEventStreamEventFlagItemIsHardlink | kFSEventStreamEventFlagItemIsLastHardlink)
+        let folder = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir)
+        isFile = flags & file != 0 && flags & folder == 0
+    }
+}
+
 final class NoteFileFolderWatcher {
     private final class Sink: @unchecked Sendable {
-        let handler: @Sendable (Set<String>, Bool) -> Void
-        init(handler: @escaping @Sendable (Set<String>, Bool) -> Void) { self.handler = handler }
+        let handler: @Sendable ([NoteFolderEvent], Bool) -> Void
+        init(handler: @escaping @Sendable ([NoteFolderEvent], Bool) -> Void) { self.handler = handler }
     }
 
     private let stream: FSEventStreamRef
 
-    init?(folder: URL, latency: TimeInterval = 0.25, handler: @escaping @Sendable (Set<String>, Bool) -> Void) {
+    init?(folder: URL, latency: TimeInterval = 0.25, handler: @escaping @Sendable ([NoteFolderEvent], Bool) -> Void) {
         let sink = Sink(handler: handler)
         var context = FSEventStreamContext(
             version: 0, info: Unmanaged.passUnretained(sink).toOpaque(),
@@ -179,8 +214,12 @@ final class NoteFileFolderWatcher {
             let rescan = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagUserDropped
                 | kFSEventStreamEventFlagKernelDropped | kFSEventStreamEventFlagRootChanged | kFSEventStreamEventFlagEventIdsWrapped)
             var broad = false
-            for index in 0..<count where flags[index] & rescan != 0 { broad = true }
-            Unmanaged<Sink>.fromOpaque(info).takeUnretainedValue().handler(Set(names), broad)
+            var events: [NoteFolderEvent] = []
+            for index in 0..<min(count, names.count) {
+                if flags[index] & rescan != 0 { broad = true }
+                events.append(NoteFolderEvent(path: names[index], flags: flags[index]))
+            }
+            Unmanaged<Sink>.fromOpaque(info).takeUnretainedValue().handler(events, broad)
         }
         let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWatchRoot
             | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)

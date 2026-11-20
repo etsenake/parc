@@ -19,6 +19,7 @@ enum NoteFileError: Error, LocalizedError, Equatable {
     case notANote
     case unwritable(String)
     case conflict
+    case unsaved([String])
 
     var errorDescription: String? {
         switch self {
@@ -30,6 +31,10 @@ enum NoteFileError: Error, LocalizedError, Equatable {
         case .notANote: return "Parc can only open Markdown and text files as notes."
         case .unwritable(let detail): return "Parc couldn’t save this note. \(detail)"
         case .conflict: return "This note changed somewhere else too. Pick the version to keep first."
+        case .unsaved(let titles):
+            let names = ListFormatter.localizedString(byJoining: titles.map { "“\($0)”" })
+            return titles.count == 1 ? "Parc couldn’t save \(names) yet. Open it to sort things out."
+                : "Parc couldn’t save \(names) yet. Open them to sort things out."
         }
     }
 }
@@ -42,7 +47,6 @@ final class NoteFileSession {
         var data: Data
         var format: NoteFileFormat
         var url: URL
-        var expected: String?
         var force: Bool
     }
 
@@ -56,13 +60,19 @@ final class NoteFileSession {
         }
     }
 
+    private final class StagedDelivery: @unchecked Sendable {
+        let write: NoteFileDisk.StagedWrite
+        init(_ write: NoteFileDisk.StagedWrite) { self.write = write }
+    }
+
     private static var sessions: [String: NoteFileSession] = [:]
+    private static var live: [ObjectIdentifier: NoteFileSession] = [:]
     static var clock: NoteFileClock = NoteFileSystemClock.shared
     static var worker: NoteFileWorker = .files
     static var autosaveDelay: TimeInterval = 0.6
     static var longestAutosaveWait: TimeInterval = 5
     static var diskCheckDelay: TimeInterval = 0.12
-    nonisolated static let coordinatedSaveWait: TimeInterval = 1
+    static var retryDelays: [TimeInterval] = [1, 2, 4, 8, 15, 30, 60]
 
     static func open(_ url: URL) throws -> NoteFileSession {
         guard url.isFileURL else { throw NoteFileError.notANote }
@@ -73,24 +83,33 @@ final class NoteFileSession {
         guard NoteFilePaths.isOpenableFile(canonical) else {
             throw NoteFilePaths.itemExists(canonical) ? NoteFileError.notANote : NoteFileError.missing
         }
-        let contents = try NoteFileIO.read(canonical, kind: kind)
-        let session = NoteFileSession(url: canonical, kind: kind, contents: contents)
+        let read = try NoteFileIO.readStamped(canonical, kind: kind)
+        let session = NoteFileSession(url: canonical, kind: kind, contents: read.contents)
         session.registryKey = key
         sessions[key] = session
-        session.startWatching()
+        live[ObjectIdentifier(session)] = session
+        session.startWatching(seen: read.stamp.map(NoteFileSighting.file))
         return session
     }
 
     static func session(for url: URL) -> NoteFileSession? { sessions[NoteFilePaths.key(for: url)] }
 
-    static var openSessions: [NoteFileSession] { Array(sessions.values) }
+    static var openSessions: [NoteFileSession] { Array(live.values) }
 
     static func flushAll() throws {
-        var firstError: Error?
-        for session in sessions.values {
-            do { try session.flush() } catch { if firstError == nil { firstError = error } }
+        var unsaved: [String] = []
+        for session in live.values.sorted(by: { $0.url.path < $1.url.path }) {
+            do { try session.flush() } catch {
+                if session.preserveUnattendedConflict() { continue }
+                unsaved.append(session.title)
+            }
         }
-        if let firstError { throw firstError }
+        if !unsaved.isEmpty { throw NoteFileError.unsaved(unsaved) }
+    }
+
+    nonisolated static func render(_ value: NotePage, kind: NoteFileKind, format: NoteFileFormat) -> String {
+        let body = kind == .markdown ? NoteMarkdown.serialize(value) : NotePlainText.serialize(value)
+        return NoteFileText.fileText(body, format: format, kind: kind)
     }
 
     private(set) var url: URL
@@ -106,26 +125,31 @@ final class NoteFileSession {
     private(set) var readProblem: String?
 
     private let fileEnvironment: NoteFileEnvironment
-    private var diskText: String?
+    private let disk: NoteFileDisk
     private var baseline: NotePage
     private var conflict: NoteFileContents?
+    private var vanishedText: String?
+    private var waitsForMissingFile = false
     private var forceNextSave = false
     private var firstUnsavedEdit: Date?
     private var autosaveTimer: NoteFileTimer?
     private var diskCheckTimer: NoteFileTimer?
+    private var retryTimer: NoteFileTimer?
+    private var retryAttempt = 0
     private var pendingMovePath: String?
     private var applyingDisk = false
     private var tickets: [(WriteTicket, SaveRequest)] = []
     private var watcher: NoteFileWatcher?
     private var changeSubscription: AnyCancellable?
     private var isClosed = false
+    private var wasAttended = false
     private var registryKey = ""
 
     private init(url: URL, kind: NoteFileKind, contents: NoteFileContents) {
         self.url = url
         self.kind = kind
         format = contents.format
-        diskText = contents.text
+        disk = NoteFileDisk(text: contents.text)
         let parsed = Self.parse(contents, kind: kind)
         page = NotePageSession(page: parsed)
         baseline = page.page
@@ -142,14 +166,20 @@ final class NoteFileSession {
 
     var presenter: NSFilePresenter? { watcher }
 
-    func retain() { editorCount += 1 }
+    private var diskText: String? { disk.text }
+
+    func retain() {
+        if isClosed { reopen() }
+        editorCount += 1
+        wasAttended = true
+    }
 
     func release() {
         guard editorCount > 0 else { return }
         editorCount -= 1
         guard editorCount == 0 else { return }
-        do { try flush() } catch { return }
-        close()
+        do { try flush() } catch { scheduleRetry() }
+        closeIfIdle()
     }
 
     func flush() throws {
@@ -157,29 +187,22 @@ final class NoteFileSession {
         autosaveTimer = nil
         drainWrites()
         if conflict != nil { throw NoteFileError.conflict }
-        guard hasUnsavedChanges || forceNextSave, let request = makeSaveRequest() else { return }
-        let ticket = WriteTicket()
-        tickets.append((ticket, request))
-        refreshState()
-        let presenter = watcher
-        let outcome = Self.worker.sync {
-            NoteFileIO.write(request.data, text: request.text, to: request.url, kind: kind, expecting: request.expected,
-                             force: request.force, presenter: presenter)
+        guard hasUnsavedChanges || forceNextSave else { return }
+        var outcome = writeSynchronously()
+        if case .missing? = outcome {
+            locateSynchronously()
+            if conflict != nil { throw NoteFileError.conflict }
+            guard hasUnsavedChanges || forceNextSave else { return }
+            outcome = writeSynchronously()
         }
-        ticket.outcome = outcome
-        complete(ticket)
-        switch outcome {
-        case .written, .unchanged: return
-        case .conflict: throw NoteFileError.conflict
-        case .failed(let message): throw NoteFileError.unwritable(message)
-        }
+        if let error = outcome?.error { throw error }
     }
 
     func resolveConflict(keepMine: Bool) {
         guard let theirs = conflict else { return }
         conflict = nil
         if keepMine {
-            diskText = theirs.text
+            disk.adopt(theirs.text)
             forceNextSave = true
             hasUnsavedChanges = true
             if firstUnsavedEdit == nil { firstUnsavedEdit = Self.clock.now }
@@ -188,6 +211,7 @@ final class NoteFileSession {
         } else {
             adopt(theirs, undoable: true)
         }
+        closeIfIdle()
     }
 
     func rename(to proposed: String) throws -> URL {
@@ -214,40 +238,17 @@ final class NoteFileSession {
         diskCheckTimer?.cancel()
         diskCheckTimer = nil
         guard !isClosed else { return }
-        let target = url, kind = kind, moved = pendingMovePath, presenter = watcher
+        let target = url, kind = kind, presenter = watcher, generation = disk.generation
+        let moved = pendingMovePath ?? watcher?.movedPath()
         pendingMovePath = nil
         Self.worker.perform({ NoteFileIO.probe(target, kind: kind, movedPath: moved, presenter: presenter) }) { [weak self] probe in
-            self?.apply(probe, checked: target)
+            self?.apply(probe, checked: target, generation: generation)
         }
     }
 
-    private static func parse(_ contents: NoteFileContents, kind: NoteFileKind) -> NotePage {
-        let text = NoteFileText.editableText(contents, kind: kind)
-        return kind == .markdown ? NoteMarkdown.parse(text) : NotePlainText.parse(text)
-    }
-
-    private func render(_ value: NotePage) -> String {
-        let body = kind == .markdown ? NoteMarkdown.serialize(value) : NotePlainText.serialize(value)
-        return NoteFileText.fileText(body, format: format, kind: kind)
-    }
-
-    private func startWatching() {
-        let events: @Sendable (NoteFileWatchEvent) -> Void = { [weak self] event in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.handle(event) } }
-        }
-        let saveRequest: NoteFileWatcher.SaveRequest = { [weak self] completion in
-            let outcome = NoteFileCoordinatedSave()
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    do { try self?.flush() } catch { outcome.error = error }
-                    outcome.finished.signal()
-                }
-            }
-            completion(outcome.finished.wait(timeout: .now() + Self.coordinatedSaveWait) == .success ? outcome.error : nil)
-        }
-        let watcher = NoteFileWatcher(url: url, events: events, saveRequest: saveRequest)
-        self.watcher = watcher
-        watcher.start()
+    func noteWasTrashed() {
+        handleDeletion()
+        refreshState()
     }
 
     func handle(_ event: NoteFileWatchEvent) {
@@ -263,47 +264,106 @@ final class NoteFileSession {
         }
     }
 
+    private static func parse(_ contents: NoteFileContents, kind: NoteFileKind) -> NotePage {
+        let text = NoteFileText.editableText(contents, kind: kind)
+        return kind == .markdown ? NoteMarkdown.parse(text) : NotePlainText.parse(text)
+    }
+
+    private func render(_ value: NotePage) -> String { Self.render(value, kind: kind, format: format) }
+
+    private func startWatching(seen: NoteFileSighting?) {
+        let events: @Sendable (NoteFileWatchEvent) -> Void = { [weak self] event in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.handle(event) } }
+        }
+        let disk = disk
+        let saveRequest: NoteFileWatcher.SaveRequest = { [weak self] completion in
+            guard let written = disk.writeStaged() else {
+                completion(nil)
+                return
+            }
+            let delivery = StagedDelivery(written)
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.finishStagedWrite(delivery.write) } }
+            completion(written.outcome.error)
+        }
+        let watcher = NoteFileWatcher(url: url, events: events, saveRequest: saveRequest)
+        self.watcher = watcher
+        watcher.start(seen: seen)
+    }
+
     private func scheduleDiskCheck() {
         diskCheckTimer?.cancel()
         diskCheckTimer = Self.clock.schedule(after: Self.diskCheckDelay) { [weak self] in self?.checkDisk() }
     }
 
-    private func apply(_ probe: NoteFileProbe, checked target: URL) {
+    private func locateSynchronously() {
+        let target = url, kind = kind, presenter = watcher, generation = disk.generation
+        let moved = pendingMovePath ?? watcher?.movedPath()
+        pendingMovePath = nil
+        let probe = Self.worker.sync { NoteFileIO.probe(target, kind: kind, movedPath: moved, presenter: presenter) }
+        apply(probe, checked: target, generation: generation)
+    }
+
+    private func apply(_ probe: NoteFileProbe, checked target: URL, generation: Int) {
         guard !isClosed, target == url else { return }
+        guard disk.generation == generation else {
+            scheduleDiskCheck()
+            return
+        }
         if case .unreadable = probe {} else { readProblem = nil }
         switch probe {
-        case .contents(let contents):
+        case .contents(let contents, let stamp):
             guard tickets.isEmpty else {
                 scheduleDiskCheck()
                 return
             }
-            watcher?.rearm()
-            if conflict != nil {
-                if contents.text == render(page.page) { settleConflict(on: contents) } else { conflict = contents }
-            } else if contents.text != diskText {
-                if hasUnsavedChanges && page.page != baseline {
-                    if contents.text == render(page.page) { settle(on: contents) } else { conflict = contents }
-                } else {
-                    adopt(contents, undoable: false)
-                }
-            }
+            watcher?.rearm(seen: stamp.map(NoteFileSighting.file))
+            absorb(contents)
         case .moved(let destination):
             handleMove(to: destination)
         case .missing:
-            watcher?.rearm()
+            watcher?.rearm(seen: .absent)
             handleDeletion()
         case .unreadable(let error):
             watcher?.rearm()
             readProblem = error.localizedDescription
         }
         refreshState()
+        resumeAutosaveIfNeeded()
+        closeIfIdle()
+    }
+
+    private func absorb(_ contents: NoteFileContents) {
+        let returning = vanishedText
+        vanishedText = nil
+        waitsForMissingFile = false
+        if conflict != nil {
+            if contents.text == render(page.page) { settleConflict(on: contents) } else { conflict = contents }
+            return
+        }
+        guard contents.text != diskText else { return }
+        guard hasUnsavedChanges && page.page != baseline else {
+            adopt(contents, undoable: false)
+            return
+        }
+        if contents.text == render(page.page) {
+            settle(on: contents)
+        } else if diskText == nil, contents.text == returning {
+            resume(on: contents)
+        } else {
+            conflict = contents
+            autosaveTimer?.cancel()
+            autosaveTimer = nil
+        }
     }
 
     private func settle(on contents: NoteFileContents) {
-        diskText = contents.text
+        disk.adopt(contents.text)
         format = contents.format
         baseline = page.page
         hasUnsavedChanges = false
+        forceNextSave = false
+        waitsForMissingFile = false
+        vanishedText = nil
         firstUnsavedEdit = nil
         autosaveTimer?.cancel()
         autosaveTimer = nil
@@ -312,6 +372,13 @@ final class NoteFileSession {
     private func settleConflict(on contents: NoteFileContents) {
         conflict = nil
         settle(on: contents)
+    }
+
+    private func resume(on contents: NoteFileContents) {
+        disk.adopt(contents.text)
+        format = contents.format
+        vanishedText = nil
+        waitsForMissingFile = false
     }
 
     private func adopt(_ contents: NoteFileContents, undoable: Bool) {
@@ -324,7 +391,6 @@ final class NoteFileSession {
             page.replacePage(parsed, selection: selection, keepHistory: false)
         }
         applyingDisk = false
-        forceNextSave = false
         lastSaveError = nil
         settle(on: contents)
         refreshState()
@@ -340,23 +406,17 @@ final class NoteFileSession {
         }
         guard canonical.path != url.path else { return }
         relocate(to: canonical)
+        resumeAutosaveIfNeeded()
     }
 
     private func handleDeletion() {
         guard diskText != nil else { return }
-        diskText = nil
+        vanishedText = diskText
+        disk.adopt(nil)
         conflict = nil
-        baseline = page.page
-        hasUnsavedChanges = false
-        forceNextSave = false
-        firstUnsavedEdit = nil
         autosaveTimer?.cancel()
         autosaveTimer = nil
-    }
-
-    func noteWasTrashed() {
-        handleDeletion()
-        refreshState()
+        if hasUnsavedChanges || forceNextSave { waitsForMissingFile = true }
     }
 
     private func relocate(to destination: URL) {
@@ -372,6 +432,7 @@ final class NoteFileSession {
     private func pageChanged(_ change: NotePageChange) {
         guard change.kind != .selection, !applyingDisk else { return }
         if isClosed { reopen() }
+        waitsForMissingFile = false
         hasUnsavedChanges = true
         if firstUnsavedEdit == nil { firstUnsavedEdit = Self.clock.now }
         refreshState()
@@ -379,31 +440,51 @@ final class NoteFileSession {
     }
 
     private func scheduleAutosave() {
-        guard conflict == nil, !isClosed else { return }
+        guard conflict == nil, !waitsForMissingFile, !isClosed else { return }
         autosaveTimer?.cancel()
         let waited = Self.clock.now.timeIntervalSince(firstUnsavedEdit ?? Self.clock.now)
         let delay = max(0, min(Self.autosaveDelay, Self.longestAutosaveWait - waited))
         autosaveTimer = Self.clock.schedule(after: delay) { [weak self] in self?.save() }
     }
 
+    private func resumeAutosaveIfNeeded() {
+        guard hasUnsavedChanges || forceNextSave, conflict == nil, !waitsForMissingFile, lastSaveError == nil,
+              autosaveTimer == nil, tickets.isEmpty, !isClosed else { return }
+        scheduleAutosave()
+    }
+
     private func save() {
         autosaveTimer?.cancel()
         autosaveTimer = nil
-        guard conflict == nil, hasUnsavedChanges || forceNextSave else { return }
-        guard tickets.isEmpty else { return }
+        guard conflict == nil, !waitsForMissingFile, hasUnsavedChanges || forceNextSave, tickets.isEmpty else { return }
         guard let request = makeSaveRequest() else { return }
         let ticket = WriteTicket()
         tickets.append((ticket, request))
         refreshState()
-        let presenter = watcher, kind = kind
+        let presenter = watcher, kind = kind, disk = disk
         Self.worker.perform({ () -> NoteFileWriteOutcome in
-            let outcome = NoteFileIO.write(request.data, text: request.text, to: request.url, kind: kind,
-                                           expecting: request.expected, force: request.force, presenter: presenter)
+            let outcome = NoteFileIO.write(request.data, text: request.text, to: request.url, kind: kind, disk: disk,
+                                           force: request.force, presenter: presenter)
             ticket.outcome = outcome
             return outcome
         }) { [weak self] _ in
             self?.complete(ticket)
         }
+    }
+
+    private func writeSynchronously() -> NoteFileWriteOutcome? {
+        guard let request = makeSaveRequest() else { return nil }
+        let ticket = WriteTicket()
+        tickets.append((ticket, request))
+        refreshState()
+        let presenter = watcher, kind = kind, disk = disk
+        let outcome = Self.worker.sync {
+            NoteFileIO.write(request.data, text: request.text, to: request.url, kind: kind, disk: disk,
+                             force: request.force, presenter: presenter)
+        }
+        ticket.outcome = outcome
+        complete(ticket)
+        return outcome
     }
 
     private func makeSaveRequest() -> SaveRequest? {
@@ -419,13 +500,13 @@ final class NoteFileSession {
             return nil
         }
         let encoded = NoteFileText.encode(text, format: format)
-        return SaveRequest(page: current, text: text, data: encoded.data, format: encoded.format, url: url,
-                           expected: diskText, force: force)
+        return SaveRequest(page: current, text: text, data: encoded.data, format: encoded.format, url: url, force: force)
     }
 
     private func markClean(at current: NotePage) {
         baseline = current
         hasUnsavedChanges = false
+        waitsForMissingFile = false
         firstUnsavedEdit = nil
         refreshState()
     }
@@ -441,18 +522,33 @@ final class NoteFileSession {
               let index = tickets.firstIndex(where: { $0.0 === ticket }) else { return }
         ticket.handled = true
         let request = tickets.remove(at: index).1
+        record(outcome, page: request.page, text: request.text, format: request.format, force: request.force)
+    }
+
+    private func finishStagedWrite(_ write: NoteFileDisk.StagedWrite) {
+        record(write.outcome, page: write.staged.page, text: write.text, format: write.format, force: write.staged.force)
+    }
+
+    private func record(_ outcome: NoteFileWriteOutcome, page written: NotePage, text: String, format writtenFormat: NoteFileFormat,
+                        force: Bool) {
         switch outcome {
         case .written, .unchanged:
-            diskText = request.text
-            format = request.format
-            baseline = request.page
-            forceNextSave = false
-            lastSaveError = nil
-            if page.page == request.page {
-                hasUnsavedChanges = false
-                firstUnsavedEdit = nil
+            if diskText == text {
+                format = writtenFormat
+                baseline = written
+                if page.page == written {
+                    hasUnsavedChanges = false
+                    waitsForMissingFile = false
+                    firstUnsavedEdit = nil
+                }
             }
-            if case .written = outcome { watcher?.rearm() }
+            if force { forceNextSave = false }
+            lastSaveError = nil
+            vanishedText = nil
+            retryAttempt = 0
+            retryTimer?.cancel()
+            retryTimer = nil
+            if case .written(let stamp) = outcome { watcher?.rearm(seen: stamp.map(NoteFileSighting.file)) }
         case .conflict(let theirs):
             if theirs.text == render(page.page) {
                 settle(on: theirs)
@@ -461,11 +557,47 @@ final class NoteFileSession {
                 autosaveTimer?.cancel()
                 autosaveTimer = nil
             }
+        case .missing:
+            scheduleDiskCheck()
+            refreshState()
+            return
         case .failed(let message):
             lastSaveError = message
+            scheduleRetry()
         }
         refreshState()
-        if hasUnsavedChanges, conflict == nil, lastSaveError == nil, autosaveTimer == nil, tickets.isEmpty { scheduleAutosave() }
+        resumeAutosaveIfNeeded()
+        closeIfIdle()
+    }
+
+    private func scheduleRetry() {
+        guard editorCount == 0, !isClosed, lastSaveError != nil, conflict == nil, retryTimer == nil else { return }
+        let delays = Self.retryDelays.isEmpty ? [60] : Self.retryDelays
+        let delay = delays[min(retryAttempt, delays.count - 1)]
+        retryAttempt += 1
+        retryTimer = Self.clock.schedule(after: delay) { [weak self] in
+            guard let self else { return }
+            self.retryTimer = nil
+            guard self.editorCount == 0, !self.isClosed else { return }
+            do { try self.flush() } catch { self.scheduleRetry() }
+            self.closeIfIdle()
+        }
+    }
+
+    private func preserveUnattendedConflict() -> Bool {
+        guard editorCount == 0, conflict != nil else { return false }
+        let folder = url.deletingLastPathComponent()
+        let base = NoteFileNaming.sanitizedTitle(title + " (your version)")
+        let target = NoteFileNaming.uniqueURL(in: folder, base: base.isEmpty ? NoteFileNaming.untitled : base,
+                                              pathExtension: url.pathExtension)
+        let data = NoteFileText.encode(render(page.page), format: format).data
+        do { try Self.worker.sync { try data.write(to: target, options: .withoutOverwriting) } } catch { return false }
+        conflict = nil
+        hasUnsavedChanges = false
+        forceNextSave = false
+        refreshState()
+        close()
+        return true
     }
 
     private func refreshState() {
@@ -473,10 +605,23 @@ final class NoteFileSession {
         if conflict != nil { next = .conflict }
         else if let problem = lastSaveError ?? readProblem { next = .failed(problem) }
         else if !tickets.isEmpty { next = .saving }
+        else if waitsForMissingFile { next = .missing }
         else if hasUnsavedChanges { next = .unsaved }
         else if diskText == nil { next = .missing }
         else { next = .saved }
         if state != next { state = next }
+        stageForPresenter()
+    }
+
+    private func stageForPresenter() {
+        let ready = (hasUnsavedChanges || forceNextSave) && conflict == nil && !waitsForMissingFile && !isClosed
+        disk.stage(ready ? NoteFileDisk.Staged(page: page.page, kind: kind, format: format, url: url, force: forceNextSave) : nil)
+    }
+
+    private func closeIfIdle() {
+        guard !isClosed, editorCount == 0, wasAttended, !hasUnsavedChanges, !forceNextSave, conflict == nil, tickets.isEmpty
+        else { return }
+        close()
     }
 
     private func close() {
@@ -485,19 +630,20 @@ final class NoteFileSession {
         autosaveTimer = nil
         diskCheckTimer?.cancel()
         diskCheckTimer = nil
+        retryTimer?.cancel()
+        retryTimer = nil
+        disk.stage(nil)
         watcher?.stop()
         watcher = nil
         if Self.sessions[registryKey] === self { Self.sessions[registryKey] = nil }
+        Self.live[ObjectIdentifier(self)] = nil
     }
 
     private func reopen() {
         isClosed = false
+        wasAttended = true
+        Self.live[ObjectIdentifier(self)] = self
         if Self.sessions[registryKey] == nil { Self.sessions[registryKey] = self }
-        startWatching()
+        startWatching(seen: nil)
     }
-}
-
-private final class NoteFileCoordinatedSave: @unchecked Sendable {
-    let finished = DispatchSemaphore(value: 0)
-    var error: Error?
 }

@@ -53,7 +53,22 @@ func expectThrows<Failure: Error & Equatable>(_ expected: Failure, _ message: St
     }
 }
 
+final class LockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value?
+
+    var value: Value? { lock.withLock { stored } }
+
+    func set(_ value: Value?) { lock.withLock { stored = value } }
+}
+
 enum NoteFileTestSupport {
+    static func isPresented(_ url: URL) -> Bool {
+        NSFileCoordinator.filePresenters.contains { presenter in
+            presenter.presentedItemURL.map { NoteFilePaths.sameItem($0, url) } ?? false
+        }
+    }
+
     static func makeFolder(_ label: String) -> URL {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("parc-\(label)-\(UUID().uuidString)", isDirectory: true)

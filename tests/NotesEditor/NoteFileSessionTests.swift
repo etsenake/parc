@@ -29,6 +29,14 @@ struct NoteFileSessionTests {
             try retainAndRelease()
             try markdownCopy()
             try liveWatcher()
+            try deletionKeepsUnsavedEdits()
+            try savesFollowMoves()
+            try coordinatedSavesNeverWaitOnTheMainThread()
+            try presentersComeAndGo()
+            try unattendedSessionsRecover()
+            try quitKeepsUnattendedConflicts()
+            try watcherGapIsCovered()
+            try watcherComparesWhatWasRead()
             print("NoteFileSessionTests passed")
         }
     }
@@ -484,5 +492,237 @@ struct NoteFileSessionTests {
         }
         expect(returned, "a file recreated by someone else is picked up")
         session.release()
+    }
+
+    static func deletionKeepsUnsavedEdits() throws {
+        let url = file("evicted.txt", "base\n")
+        let session = try NoteFileSession.open(url)
+        setText(session, "mine")
+        try FileManager.default.removeItem(at: url)
+        session.checkDisk()
+        expectEqual(session.state, .missing, "a file that vanishes under unsaved edits shows as missing")
+        expectEqual(texts(session), ["mine"], "the unsaved edits stay")
+        clock.advance(5)
+        expect(!NoteFilePaths.itemExists(url), "autosave doesn't bring back a file that vanished under unsaved edits")
+        NoteFileTestSupport.write("base\n", to: url)
+        session.checkDisk()
+        expectEqual(texts(session), ["mine"], "a file that comes back as it was keeps the unsaved edits")
+        clock.advance(1)
+        expectEqual(NoteFileTestSupport.read(url), "mine\n", "and saves them on top")
+        expectEqual(session.state, .saved, "then it's saved")
+
+        setText(session, "mine again")
+        try FileManager.default.removeItem(at: url)
+        session.checkDisk()
+        NoteFileTestSupport.write("someone else's\n", to: url)
+        session.checkDisk()
+        expectEqual(session.state, .conflict, "a file that comes back different while edits are unsaved is a conflict")
+        expectEqual(texts(session), ["mine again"], "the edits survive it")
+        expectEqual(session.conflictingText, "someone else's", "and the returning text is on offer")
+        clock.advance(5)
+        expectEqual(NoteFileTestSupport.read(url), "someone else's\n", "nothing gets overwritten")
+        session.resolveConflict(keepMine: true)
+        expectEqual(NoteFileTestSupport.read(url), "mine again\n", "keeping mine writes it")
+
+        setText(session, "typed after")
+        try FileManager.default.removeItem(at: url)
+        session.checkDisk()
+        try session.flush()
+        expectEqual(NoteFileTestSupport.read(url), "typed after\n", "an explicit flush puts unsaved edits back rather than lose them")
+    }
+
+    static func savesFollowMoves() throws {
+        let url = file("Racer.md", "Original\n")
+        let session = try NoteFileSession.open(url)
+        setText(session, "Edited on the way")
+        let destination = folder.appendingPathComponent("Racer moved.md")
+        try FileManager.default.moveItem(at: url, to: destination)
+        clock.advance(1)
+        expect(!NoteFilePaths.itemExists(url), "an autosave racing a move doesn't recreate the old name")
+        expectEqual(session.url, destination, "the session follows the file instead")
+        clock.advance(1)
+        expect(NoteFileTestSupport.read(destination).contains("Edited on the way"), "and saves there")
+        expectEqual(session.state, .saved, "saved in its new home")
+
+        setText(session, "Last words before the Trash")
+        let trash = folder.appendingPathComponent(".Trash", isDirectory: true)
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: destination, to: trash.appendingPathComponent("Racer moved.md"))
+        clock.advance(5)
+        expect(!NoteFilePaths.itemExists(destination), "an autosave racing a move to the Trash doesn't recreate the file")
+        expectEqual(session.state, .missing, "the note knows it's gone")
+        expectEqual(texts(session), ["Last words before the Trash"], "and keeps the words")
+
+        let flushed = file("Flushed.md", "Before\n")
+        let other = try NoteFileSession.open(flushed)
+        setText(other, "After")
+        let elsewhere = folder.appendingPathComponent("Flushed elsewhere.md")
+        try FileManager.default.moveItem(at: flushed, to: elsewhere)
+        try other.flush()
+        expect(!NoteFilePaths.itemExists(flushed), "a flush racing a move doesn't recreate the old name either")
+        expect(NoteFileTestSupport.read(elsewhere).contains("After"), "it writes where the file went")
+        expectEqual(other.url, elsewhere, "and follows it")
+    }
+
+    static func coordinatedSavesNeverWaitOnTheMainThread() throws {
+        let url = file("Shared draft.md", "Old words\n")
+        let session = try NoteFileSession.open(url)
+        session.retain()
+        setText(session, "Fresh words")
+        let seen = LockedBox<String>()
+        let started = Date()
+        DispatchQueue.global().async {
+            var error: NSError?
+            NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: url, options: [], error: &error) { actual in
+                seen.set(NoteFileTestSupport.read(actual))
+            }
+            if let error { seen.set("error: \(error.localizedDescription)") }
+        }
+        expect(NoteFileTestSupport.spin(timeout: 10) { seen.value != nil }, "a coordinated reader finishes")
+        expectEqual(seen.value, "Fresh words\n", "a coordinated reader gets the unsaved words, saved for it")
+        expect(Date().timeIntervalSince(started) < 0.9, "without waiting out a timeout")
+        expect(NoteFileTestSupport.spin(timeout: 5) { session.state == .saved }, "and the note knows it's saved")
+        clock.advance(1)
+        expectEqual(NoteFileTestSupport.read(url), "Fresh words\n", "leaving the autosave nothing to do")
+
+        guard let presenter = session.presenter else { failTest("an open note has a presenter") }
+        let held = LockedBox<NSFilePresenter>()
+        held.set(presenter)
+        func askToSave() -> (answered: Bool, error: Error?) {
+            let reply = LockedBox<Error?>(), answered = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                held.value?.savePresentedItemChanges? { error in
+                    reply.set(.some(error))
+                    answered.signal()
+                }
+            }
+            let done = answered.wait(timeout: .now() + 3) == .success
+            return (done, reply.value ?? nil)
+        }
+        setText(session, "Saved while busy")
+        let busy = askToSave()
+        expect(busy.answered && busy.error == nil, "a save request is answered while the main thread is busy")
+        expectEqual(NoteFileTestSupport.read(url), "Saved while busy\n", "and really saves")
+
+        setText(session, "Mine")
+        NoteFileTestSupport.write("Theirs\n", to: url)
+        let refused = askToSave()
+        expect(refused.answered, "a save that can't happen is still answered")
+        expectEqual(refused.error as? NoteFileError, .conflict, "with the reason instead of a fake success")
+        expectEqual(NoteFileTestSupport.read(url), "Theirs\n", "and their words stay put")
+        expect(NoteFileTestSupport.spin(timeout: 5) { session.state == .conflict }, "the note shows the conflict")
+        session.resolveConflict(keepMine: false)
+        session.release()
+    }
+
+    static func presentersComeAndGo() throws {
+        let url = file("Visitor.txt", "hi\n")
+        let session = try NoteFileSession.open(url)
+        session.retain()
+        expect(NoteFileTestSupport.isPresented(url), "an open note presents its file")
+        session.release()
+        expect(!NoteFileTestSupport.isPresented(url), "the last release stops presenting it")
+        setText(session, "back for more")
+        expect(NoteFileTestSupport.isPresented(url), "a late edit presents it again while it saves")
+        clock.advance(1)
+        expectEqual(NoteFileTestSupport.read(url), "back for more\n", "the late edit saves")
+        expect(!NoteFileTestSupport.isPresented(url), "and the revived session lets go once it's saved")
+    }
+
+    static func unattendedSessionsRecover() throws {
+        let locked = folder.appendingPathComponent("Locked", isDirectory: true)
+        let url = file("Locked/Stubborn.txt", "start\n")
+        let session = try NoteFileSession.open(url)
+        session.retain()
+        setText(session, "kept safe")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path) }
+        expectThrows(NoteFileError.unsaved(["Stubborn"]), "quitting names the note that can't be saved") { try NoteFileSession.flushAll() }
+        expectEqual(NoteFileError.unsaved(["Stubborn"]).localizedDescription,
+                    "Parc couldn’t save “Stubborn” yet. Open it to sort things out.", "in words people can act on")
+        session.release()
+        expect(NoteFileSession.session(for: url) === session, "a session that can't save yet stays alive")
+        if case .failed = session.state {} else { failTest("it says the save failed, not \(session.state)") }
+        clock.advance(1.5)
+        expectEqual(NoteFileTestSupport.read(url), "start\n", "the folder is still locked")
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+        clock.advance(5)
+        expectEqual(NoteFileTestSupport.read(url), "kept safe\n", "it keeps retrying on its own and saves once it can")
+        expect(NoteFileSession.session(for: url) == nil, "then it lets go")
+        expect(!NoteFileTestSupport.isPresented(url), "and stops presenting the file")
+    }
+
+    static func quitKeepsUnattendedConflicts() throws {
+        let url = file("Contested.md", "Base\n")
+        let session = try NoteFileSession.open(url)
+        session.retain()
+        setText(session, "My take")
+        NoteFileTestSupport.write("Their take\n", to: url)
+        session.checkDisk()
+        session.release()
+        expect(NoteFileSession.session(for: url) === session, "an unresolved conflict waits for the next editor")
+        let again = try NoteFileSession.open(url)
+        expect(again === session && again.state == .conflict, "which sees the conflict")
+        try NoteFileSession.flushAll()
+        let copy = folder.appendingPathComponent("Contested (your version).md")
+        expect(NoteFileTestSupport.read(copy).contains("My take"), "at quit, an unattended conflict keeps my words in a copy")
+        expectEqual(NoteFileTestSupport.read(url), "Their take\n", "and leaves theirs alone")
+        expect(NoteFileSession.session(for: url) == nil, "so quitting isn't blocked forever")
+        expect(!NoteFileTestSupport.isPresented(url), "and the session is fully closed")
+    }
+
+    static func watcherGapIsCovered() throws {
+        NoteFileSession.worker = NoteFileWorker(label: "org.parc.tests.note-files")
+        defer { NoteFileSession.worker = .inline }
+        let url = file("gap.txt", "one\n")
+        let session = try NoteFileSession.open(url)
+        session.retain()
+        defer { session.release() }
+        _ = NoteFileTestSupport.spin(timeout: 0.2) { false }
+        let parked = folder.appendingPathComponent("gap parked.txt")
+        expect(rename(url.path, parked.path) == 0 && rename(parked.path, url.path) == 0, "the file steps out and back in")
+        _ = NoteFileTestSupport.spin(timeout: 0.3) { false }
+        session.checkDisk()
+        NoteFileSession.worker.sync {}
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: 0)
+        try handle.write(contentsOf: Data("two, written in place\n".utf8))
+        try handle.close()
+        let noticed = NoteFileTestSupport.spin(timeout: 5) {
+            clock.advance(1)
+            return texts(session) == ["two, written in place"]
+        }
+        expect(noticed, "an in-place write landing while the watcher re-arms is still noticed")
+    }
+
+    static func watcherComparesWhatWasRead() throws {
+        let url = file("stamped.txt", "first version\n")
+        guard let read = NoteFileStamp(path: url.path) else { failTest("the file has a stamp") }
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: 0)
+        try handle.write(contentsOf: Data("second, longer version\n".utf8))
+        try handle.close()
+        let heard = LockedBox<[NoteFileWatchEvent]>()
+        func watcher() -> NoteFileWatcher {
+            heard.set([])
+            return NoteFileWatcher(url: url, events: { event in heard.set((heard.value ?? []) + [event]) }, saveRequest: { $0(nil) })
+        }
+        let stale = watcher()
+        stale.start(seen: .file(read))
+        _ = NoteFileTestSupport.spin(timeout: 0.3) { false }
+        stale.stop()
+        expect(heard.value?.contains(.changed) == true, "a watcher armed after a read notices the file moved on since that read")
+        guard let current = NoteFileStamp(path: url.path) else { failTest("the file still has a stamp") }
+        let fresh = watcher()
+        fresh.start(seen: .file(current))
+        _ = NoteFileTestSupport.spin(timeout: 0.3) { false }
+        fresh.stop()
+        expectEqual(heard.value ?? [], [], "and stays quiet when nothing moved on")
+        try FileManager.default.removeItem(at: url)
+        let gone = watcher()
+        gone.start(seen: .file(current))
+        _ = NoteFileTestSupport.spin(timeout: 0.3) { false }
+        gone.stop()
+        expect(heard.value?.contains(.changed) == true, "a file that vanished since the read is noticed too")
     }
 }

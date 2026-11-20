@@ -179,6 +179,32 @@ struct NoteFileLibraryTests {
             return library.search("pineapples", limit: 5).map(\.title) == ["Existing"]
         }
         expect(indexed, "outside edits are re-indexed for search")
+
+        let quarter = root.appendingPathComponent("Q3.2026", isDirectory: true)
+        NoteFileTestSupport.write("quarterly plans\n", to: quarter.appendingPathComponent("Plan.md"))
+        func planFolder() -> String? {
+            (try? library.notes())?.first { $0.title == "Plan" }?.url.deletingLastPathComponent().lastPathComponent
+        }
+        let listed = NoteFileTestSupport.spin(timeout: 10) {
+            clock.advance(0.5)
+            return planFolder() == "Q3.2026"
+        }
+        expect(listed, "notes in a folder with a dot in its name are listed")
+        try FileManager.default.moveItem(at: quarter, to: root.appendingPathComponent("Q4.2026", isDirectory: true))
+        let renamed = NoteFileTestSupport.spin(timeout: 10) {
+            clock.advance(0.5)
+            return planFolder() == "Q4.2026"
+        }
+        expect(renamed, "renaming that folder is noticed, dot and all")
+        let trash = folder.appendingPathComponent(".Trash", isDirectory: true)
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: root.appendingPathComponent("Q4.2026", isDirectory: true),
+                                         to: trash.appendingPathComponent("Q4.2026", isDirectory: true))
+        let trashed = NoteFileTestSupport.spin(timeout: 10) {
+            clock.advance(0.5)
+            return planFolder() == nil
+        }
+        expect(trashed, "and so is trashing it")
         watch.cancel()
     }
 }

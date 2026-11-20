@@ -85,7 +85,7 @@ final class NoteLibrary {
 
     private static func invalidateLibraries(containing url: URL) {
         for library in Array(libraries.values) + Array(shallowLibraries.values) where library.contains(url) {
-            library.folderChanged(paths: [url.path], broad: false)
+            library.folderChanged(events: [NoteFolderEvent(path: url.path)], broad: false)
         }
     }
 
@@ -157,7 +157,7 @@ final class NoteLibrary {
     }
 
     func refresh() {
-        folderChanged(paths: [], broad: true)
+        folderChanged(events: [], broad: true)
     }
 
     private func ensureListing() throws {
@@ -203,8 +203,8 @@ final class NoteLibrary {
         if changed { changes.send() }
     }
 
-    private func folderChanged(paths: Set<String>, broad: Bool) {
-        guard broad || paths.contains(where: isRelevant) else { return }
+    private func folderChanged(events: [NoteFolderEvent], broad: Bool) {
+        guard broad || events.contains(where: isRelevant) else { return }
         listingIsCurrent = false
         contentIsCurrent = false
         if isIndexing { indexAgain = true }
@@ -219,8 +219,8 @@ final class NoteLibrary {
         }
     }
 
-    private func isRelevant(_ path: String) -> Bool {
-        let folderPath = folder.path
+    private func isRelevant(_ event: NoteFolderEvent) -> Bool {
+        let path = event.path, folderPath = folder.path
         if path == folderPath || path == folderPath + "/" { return true }
         guard path.hasPrefix(folderPath + "/") else { return false }
         let relative = path.dropFirst(folderPath.count + 1).split(separator: "/").map(String.init)
@@ -228,15 +228,15 @@ final class NoteLibrary {
         if !isRecursive && relative.count > 1 { return false }
         if relative.dropLast().contains(where: { $0.hasPrefix(".") || Self.skippedFolders.contains($0.lowercased()) }) { return false }
         if name.hasPrefix(".") { return false }
-        let pathExtension = (name as NSString).pathExtension
-        return pathExtension.isEmpty || NoteFileKind(pathExtension: pathExtension) != nil
+        guard event.isFile else { return true }
+        return NoteFileKind(pathExtension: (name as NSString).pathExtension) != nil
     }
 
     private func startWatchingIfNeeded() {
         guard watcher == nil, NoteFilePaths.isDirectory(folder) else { return }
-        watcher = NoteFileFolderWatcher(folder: folder) { [weak self] paths, broad in
+        watcher = NoteFileFolderWatcher(folder: folder) { [weak self] events, broad in
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { self?.folderChanged(paths: paths, broad: broad) }
+                MainActor.assumeIsolated { self?.folderChanged(events: events, broad: broad) }
             }
         }
     }
