@@ -50,6 +50,10 @@ enum NoteMathDecoration: Equatable, Sendable {
     case strike
 }
 
+enum NoteMathLap: Equatable, Sendable {
+    case left, right, center
+}
+
 enum NoteMathColumnAlignment: Equatable, Sendable {
     case left, center, right
 }
@@ -93,6 +97,7 @@ indirect enum NoteMathNode: Equatable {
     case lines([[NoteMathNode]])
     case phantom([NoteMathNode], keepsWidth: Bool, keepsHeight: Bool)
     case boxed([NoteMathNode])
+    case lap(NoteMathLap, [NoteMathNode])
 }
 
 struct NoteMathParseError: Error, Equatable, CustomStringConvertible {
@@ -127,27 +132,39 @@ struct NoteMathParser {
     private static let maximumDepth = 120
 
     private let characters: [Character]
-    private let utf16Offsets: [Int]
+    private let origins: [Range<Int>]
+    private let sourceLength: Int
     private var index = 0
     private var depth = 0
 
-    private init(_ source: String) {
-        characters = Array(source)
-        var offsets: [Int] = []
-        offsets.reserveCapacity(characters.count + 1)
-        var running = 0
-        for character in characters {
-            offsets.append(running)
-            running += character.utf16.count
-        }
-        offsets.append(running)
-        utf16Offsets = offsets
+    private init(_ source: NoteMathSource) {
+        characters = source.characters
+        origins = source.origins
+        sourceLength = source.length
     }
 
     static func parse(_ source: String) throws(NoteMathParseError) -> [NoteMathNode] {
-        var parser = NoteMathParser(source)
+        var parser = NoteMathParser(try NoteMathExpander.expand(source))
         return try parser.parseFormula()
     }
+
+    static func isBuiltIn(_ name: String) -> Bool {
+        NoteMathSymbols.symbols[name] != nil || NoteMathSymbols.italicCapitals[name] != nil
+            || NoteMathSymbols.largeOperators[name] != nil || NoteMathSymbols.functions[name] != nil
+            || NoteMathSymbols.spaces[name] != nil || fontCommands[name] != nil || textCommands[name] != nil
+            || decorations[name] != nil || sizedDelimiters[name] != nil || classCommands[name] != nil
+            || styleSwitches[name] != nil || fontSwitches[name] != nil || extensibleArrows[name] != nil
+            || structuralCommands.contains(name)
+    }
+
+    private static let structuralCommands: Set<String> = [
+        "frac", "dfrac", "tfrac", "cfrac", "binom", "dbinom", "tbinom", "sqrt", "left", "right", "middle", "begin", "end",
+        "operatorname", "overset", "underset", "stackrel", "textcolor", "color", "not", "colon", "bmod", "pmod", "mod",
+        "phantom", "hphantom", "vphantom", "boxed", "fbox", "llap", "mathllap", "rlap", "mathrlap", "clap", "mathclap", "hspace", "hskip", "kern", "mkern", "mskip", "limits",
+        "nolimits", "displaylimits", "over", "choose", "atop", "brack", "brace", "tag", "notag", "nonumber", "hline",
+        "hdashline", "\\", "cr", "newline", "newcommand", "renewcommand", "providecommand", "def", "gdef", "edef",
+        "xdef", "let", "global", "ce", "pu",
+    ]
 
     private mutating func parseFormula() throws(NoteMathParseError) -> [NoteMathNode] {
         var lines: [[NoteMathNode]] = []
@@ -164,8 +181,10 @@ struct NoteMathParser {
     }
 
     private func failure(_ message: String, from start: Int, to end: Int) -> NoteMathParseError {
-        let lower = utf16Offsets[min(max(start, 0), characters.count)]
-        let upper = utf16Offsets[min(max(end, start), characters.count)]
+        let lowerIndex = min(max(start, 0), characters.count)
+        let upperIndex = min(max(end, lowerIndex), characters.count)
+        let lower = lowerIndex < characters.count ? origins[lowerIndex].lowerBound : sourceLength
+        let upper = upperIndex > lowerIndex ? origins[upperIndex - 1].upperBound : lower
         return NoteMathParseError(message: message, offset: lower, length: max(upper - lower, 0))
     }
 
@@ -562,6 +581,9 @@ struct NoteMathParser {
         case "phantom", "hphantom", "vphantom":
             return .phantom(try parseArgument(for: name, count: 1), keepsWidth: name != "vphantom",
                             keepsHeight: name != "hphantom")
+        case "llap", "mathllap", "rlap", "mathrlap", "clap", "mathclap":
+            let side: NoteMathLap = name.hasSuffix("llap") ? .left : name.hasSuffix("rlap") ? .right : .center
+            return .lap(side, try parseArgument(for: name, count: 1))
         case "boxed", "fbox":
             return .boxed(try parseArgument(for: name, count: 1))
         case "hspace", "hskip", "kern", "mkern", "mskip":
@@ -885,6 +907,9 @@ struct NoteMathParser {
     private static let extensibleArrows: [String: String] = [
         "xrightarrow": "→", "xleftarrow": "←", "xleftrightarrow": "↔", "xRightarrow": "⇒", "xLeftarrow": "⇐",
         "xLeftrightarrow": "⇔", "xmapsto": "↦", "xhookrightarrow": "↪", "xhookleftarrow": "↩",
+        "xrightharpoonup": "⇀", "xrightharpoondown": "⇁", "xleftharpoonup": "↼", "xleftharpoondown": "↽",
+        "xrightleftharpoons": "⇌", "xleftrightharpoons": "⇋", "xrightleftarrows": "⇄", "xtofrom": "⇄",
+        "xrightequilibrium": "⥂", "xleftequilibrium": "⥄",
     ]
 
     private static let sizedDelimiters: [String: (Int, NoteMathAtomKind)] = [

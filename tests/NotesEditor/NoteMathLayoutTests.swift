@@ -61,6 +61,7 @@ struct NoteMathLayoutTests {
         accents()
         environments()
         scriptSizes()
+        macrosAndChemistry()
         renderer()
         bitmaps()
         samples()
@@ -337,6 +338,59 @@ struct NoteMathLayoutTests {
         expect(power.ink(x: 0.62...1, y: 0...0.45) > 30, "the ssty superscript draws")
     }
 
+    static func macrosAndChemistry() {
+        expect(abs(box("\\newcommand{\\sq}[1]{#1^2}\\sq{x}").width - box("x^2").width) < 0.001, "macros lay out like their expansion")
+        let water = box("\\ce{H2O}")
+        let two = inks(water, glyph: scriptGlyph("2", 1))
+        expect(two.count == 1 && two[0].origin.y < 0, "formula numbers are subscripts")
+        expect(inks(water, glyph: glyph("H")).count == 1 && inks(water, glyph: glyph("𝐻")).isEmpty, "elements are upright")
+        let sulfate = box("\\ce{SO4^2-}")
+        let four = inks(sulfate, glyph: scriptGlyph("4", 1)), charge = inks(sulfate, glyph: scriptGlyph("2", 1))
+        expect(four.count == 1 && charge.count == 1 && four[0].origin.y < 0 && charge[0].origin.y > 0, "charge above, count below")
+        expect(abs(four[0].origin.x - charge[0].origin.x) < 0.5, "charge and count share a column")
+        let isotope = box("\\ce{^{227}_{90}Th}")
+        let seven = inks(isotope, glyph: scriptGlyph("7", 1)), zero = inks(isotope, glyph: scriptGlyph("0", 1))
+        let scriptScale = size * 0.7 / 1000
+        let sevenRight = (seven.first?.origin.x ?? 0) + font.metrics(scriptGlyph("7", 1)).advance * scriptScale
+        let zeroRight = (zero.first?.origin.x ?? 0) + font.metrics(scriptGlyph("0", 1)).advance * scriptScale
+        expect(seven.count == 1 && zero.count == 1 && abs(sevenRight - zeroRight) < 0.01
+               && extent(seven).minY > extent(zero).maxY, "isotope numbers right-align on the left")
+        let lapped = box("x\\llap{y}")
+        expect(abs(lapped.width - box("x").width) < 0.01, "llap takes no width")
+        let lapY = inks(lapped, glyph: glyph("𝑦"))
+        expect(lapY.count == 1 && lapY[0].origin.x < box("x").width - 1, "llap overlaps leftwards")
+        let axis = font.constants[.axisHeight] * size / 1000
+        func halves(_ latex: String) -> (CGRect, CGRect) {
+            let marks = box(latex).inks.filter { ink in
+                if case .glyph(let value, _) = ink.content { return value != glyph("A") && value != glyph("B") }
+                return false
+            }
+            return (extent(marks.filter { extent([$0]).midY > axis }), extent(marks.filter { extent([$0]).midY < axis }))
+        }
+        let balanced = halves("\\ce{A <=> B}")
+        expect(!balanced.0.isNull && !balanced.1.isNull, "equilibrium harpoons stack around the axis")
+        expect(abs(balanced.0.width - balanced.1.width) < 0.6 && balanced.0.minY > balanced.1.maxY - 0.01, "balanced harpoons match")
+        expect(balanced.0.width >= size * 1.3, "the equilibrium arrow is long")
+        let right = halves("\\ce{A <=>> B}"), left = halves("\\ce{A <<=> B}")
+        expect(right.0.width > right.1.width * 1.3, "<=>> leans right with a long top harpoon")
+        expect(left.1.width > left.0.width * 1.3, "<<=> leans left with a long bottom harpoon")
+        let label = box("\\ce{A ->[heat][cat] B}")
+        expect(label.ascent > size * 0.7 && label.descent > size * 0.3, "arrow labels sit above and below")
+        expect(box("\\ce{A ->[very long label] B}").width > box("\\ce{A -> B}").width + size, "arrows stretch for labels")
+        expect(inks(box("\\ce{BaSO4 v}"), glyph: glyph("↓")).count == 1, "precipitate arrow")
+        expect(box("\\pu{9.81 m/s^2}").width > box("9.81").width + size, "units follow their number")
+        let reaction = bitmap(NoteMathRenderer.render("\\ce{N2 + 3H2 <=> 2NH3}", fontSize: 40, color: .black, display: true))
+        expect(reaction.ink(x: 0...1, y: 0...1) > 400, "a reaction renders")
+        let arrowBand = bitmap(NoteMathRenderer.render("\\ce{<=>}", fontSize: 40, color: .black, display: true))
+        expect(arrowBand.ink(x: 0.1...0.9, y: 0...0.48) > 20 && arrowBand.ink(x: 0.1...0.9, y: 0.52...1) > 20,
+               "the equilibrium arrow draws two strokes")
+        let macroBitmap = bitmap(NoteMathRenderer.render("\\def\\half#1{\\frac{#1}{2}}\\half{x}", fontSize: 40, color: .black, display: true))
+        expect(!macroBitmap.fullRows().isEmpty && macroBitmap.ink(x: 0...1, y: 0...0.4) > 30, "macro fractions draw their rule and numerator")
+        let error = NoteMathRenderer.render("\\def\\a{\\a}\\a", fontSize: 20, color: .black, display: true)
+        expect(error.error?.hasPrefix("\\a keeps expanding") == true && error.errorRange == NSRange(location: 10, length: 2),
+               "runaway macros render as a clear error")
+    }
+
     static func renderer() {
         let black = NSColor.black
         let rendering = NoteMathRenderer.render("x^2 + y^2 = z^2", fontSize: size, color: black, display: true)
@@ -461,6 +515,14 @@ struct NoteMathLayoutTests {
             "x \\in \\{1, 2, 3\\} \\setminus \\emptyset",
             "A \\xrightarrow[\\text{under}]{f \\circ g} B \\xLeftrightarrow{} C \\xmapsto{n} D \\xhookrightarrow{i} E",
             "\\cancel{a} \\bcancel{b} \\xcancel{c} \\sout{d} \\in \\R \\setminus \\Q",
+            "\\newcommand{\\norm}[1]{\\left\\lVert #1 \\right\\rVert} \\norm{\\vec{v}} \\le \\norm{u}",
+            "\\ce{2H2 + O2 -> 2H2O}",
+            "\\ce{Fe2(SO4)3 + 3Ba^2+ -> 3BaSO4 v + 2Fe^3+}",
+            "\\ce{CaCO3(s) ->[\\Delta] CaO(s) + CO2(g) ^}",
+            "\\ce{CH3COOH <=> CH3COO- + H+} \\quad \\ce{A <=>> B} \\quad \\ce{C <<=> D} \\quad \\ce{E <--> F}",
+            "\\ce{^{235}_{92}U + ^{1}_{0}n -> ^{141}_{56}Ba + ^{92}_{36}Kr + 3^{1}_{0}n}",
+            "\\ce{CuSO4*5H2O} \\quad \\ce{H-C#C-H} \\quad \\ce{[Cu(NH3)4]^2+}",
+            "\\Delta H = \\pu{-285.8 kJ/mol} \\quad \\pu{6.022e23 mol-1} \\quad \\pu{25 °C}",
         ]
         for formula in formulas {
             for display in [true, false] {

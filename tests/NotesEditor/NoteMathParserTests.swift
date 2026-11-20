@@ -33,6 +33,10 @@ struct NoteMathParserTests {
         fontsTextAndColour()
         accentsSpacingAndMisc()
         errors()
+        macros()
+        macroErrors()
+        chemistry()
+        units()
         print("NoteMathParserTests passed")
     }
 
@@ -242,7 +246,149 @@ struct NoteMathParserTests {
         expect(parse("f\\colon A \\ltimes B") == [.char("f", .ord), .group([.space(2.0 / 18), .char(":", .punct), .space(6.0 / 18)]),
                                                 .char("A", .ord), .char("⋉", .bin), .char("B", .ord)],
                "colon spaces like amsmath and ltimes is binary")
+        expect(parse("\\llap{a}\\mathrlap{b}\\clap{c}") == [.lap(.left, [.char("a", .ord)]), .lap(.right, [.char("b", .ord)]),
+                                                               .lap(.center, [.char("c", .ord)])], "laps")
         expect(parse("\\mathrel{x}\\mathbin{y}") == [.classed(.rel, [.char("x", .ord)]), .classed(.bin, [.char("y", .ord)])], "math classes")
+    }
+
+    static func contains(_ nodes: [NoteMathNode], _ predicate: (NoteMathNode) -> Bool) -> Bool {
+        nodes.contains { node in
+            if predicate(node) { return true }
+            switch node {
+            case .group(let content), .styled(_, let content), .classed(_, let content), .colored(_, let content),
+                 .mathStyle(_, let content), .decorated(_, let content):
+                return contains(content, predicate)
+            case .scripts(let base, let upper, let lower):
+                return contains(base.map { [$0] } ?? [], predicate) || contains(upper ?? [], predicate) || contains(lower ?? [], predicate)
+            case .extensibleArrow(_, let over, let under):
+                return contains(over, predicate) || contains(under ?? [], predicate)
+            default:
+                return false
+            }
+        }
+    }
+
+    static func arrow(_ nodes: [NoteMathNode]) -> (String, [NoteMathNode], [NoteMathNode]?)? {
+        for node in nodes {
+            if case .extensibleArrow(let symbol, let over, let under) = node { return (symbol, over, under) }
+            if case .group(let content) = node, let found = arrow(content) { return found }
+        }
+        return nil
+    }
+
+    static func macros() {
+        expect(parse("\\newcommand{\\RR}{\\mathbb{R}} \\RR^n") == parse("\\mathbb{R}^n"), "newcommand without arguments")
+        expect(parse("\\newcommand\\sq[1]{#1^2} \\sq{a}+\\sq b") == parse("a^2+b^2"), "argument count with braced and bare arguments")
+        expect(parse("\\newcommand{\\pair}[2][0]{(#1,#2)} \\pair{x} \\pair[1]{y}") == parse("(0,x) (1,y)"), "optional argument with a default")
+        expect(parse("\\newcommand*{\\one}{1}\\one") == parse("1"), "starred newcommand")
+        expect(parse("\\newcommand{\\e}{e}\\renewcommand{\\e}{f}\\e") == parse("f"), "renewcommand replaces a macro")
+        expect(parse("\\renewcommand{\\alpha}{a}\\alpha") == parse("a"), "renewcommand can redefine a built-in")
+        expect(parse("\\providecommand{\\pi}{p}\\providecommand{\\q}{q}\\pi\\q") == parse("\\pi q"), "providecommand only fills gaps")
+        expect(parse("\\def\\f#1#2{#1+#2}\\f ab") == parse("a+b"), "def with parameter text")
+        expect(parse("\\def\\g{x}\\g\\g") == parse("xx"), "def without parameters")
+        expect(parse("\\def\\g{\\alpha}\\g x") == parse("\\alpha x"), "expansions keep control words apart from letters")
+        expect(parse("\\let\\a\\alpha \\a") == parse("\\alpha"), "let copies a built-in")
+        expect(parse("\\let\\a=\\beta\\a") == parse("\\beta"), "let with an equals sign")
+        expect(parse("\\def\\b{y}\\let\\c=\\b \\def\\b{z}\\c\\b") == parse("yz"), "let snapshots a macro's meaning")
+        expect(parse("\\renewcommand{\\beta}{b}\\let\\c\\alpha\\renewcommand{\\alpha}{a}\\c") == parse("\\alpha"), "let snapshots a built-in")
+        expect(parse("{\\def\\h{1}\\h}") == parse("{1}"), "definitions work inside their group")
+        expect(failure("{\\def\\h{1}}\\h").message == "Unknown command \\h", "definitions end with their group")
+        expect(parse("{\\gdef\\k{w}}\\k") == parse("{}w"), "gdef escapes its group")
+        expect(parse("{\\global\\def\\m{v}}\\m") == parse("{}v"), "global prefix")
+        expect(parse("\\def\\n{a}\\edef\\o{\\n}\\def\\n{b}\\o") == parse("a"), "edef expands when defined")
+        expect(parse("\\def\\outer{\\def\\inner##1{##1!}}\\outer\\inner x") == parse("x!"), "## builds nested parameters")
+        expect(parse("\\newcommand{\\abs}[1]{\\left|#1\\right|}\\abs{\\abs{x}}") == parse("\\left|\\left|x\\right|\\right|"), "macros nest")
+        expect(parse("\\newcommand{\\ip}[2]{\\langle #1, #2 \\rangle}\\ip{\\frac12}{y}") == parse("\\langle \\frac12, y \\rangle"),
+               "arguments carry structure")
+        let many = "\\def\\a{x}" + String(repeating: "\\a", count: 900)
+        expect(parse(many).count == 900, "hundreds of expansions are fine")
+        expect(parse("% \\def\\a{b}\n a") == parse("a"), "definitions in comments are ignored")
+    }
+
+    static func macroErrors() {
+        let loop = failure("\\def\\a{\\a}\\a")
+        expect(loop.message == "\\a keeps expanding (over 1,000 times). Is it calling itself?" && loop.offset == 10 && loop.length == 2,
+               "runaway recursion is caught at the call: \(loop.message) \(loop.offset) \(loop.length)")
+        expect(failure("\\def\\a{\\a\\a}\\a").message.hasPrefix("\\a keeps expanding"), "exponential recursion is caught")
+        expect(failure("\\newcommand{\\b}{\\c}\\newcommand{\\c}{\\b}\\b").message.hasPrefix("\\b keeps expanding"), "mutual recursion is caught")
+        let taken = failure("\\newcommand{\\alpha}{x}")
+        expect(taken.message == "\\alpha already means something; use \\renewcommand to change it" && taken.offset == 12 && taken.length == 6,
+               "newcommand refuses to clobber")
+        expect(failure("\\newcommand{\\f}{x}\\newcommand{\\f}{y}").message.hasPrefix("\\f already means something"), "newcommand twice")
+        expect(failure("\\renewcommand{\\nope}{x}").message == "\\nope isn't defined yet, so use \\newcommand", "renewcommand needs a definition")
+        expect(failure("\\newcommand{\\f}[1]{#2}").message == "\\f only takes 1 argument, so there's no #2", "parameter out of range")
+        expect(failure("\\newcommand{\\f}[10]{x}").message == "The number of arguments has to be 0 to 9", "argument count range")
+        expect(failure("\\def\\f#2{x}").message.hasPrefix("\\def parameters have to be #1, #2"), "def parameters in order")
+        let short = failure("\\newcommand{\\x}[3]{#1#2#3}\\x ab")
+        expect(short.message == "\\x needs 3 arguments" && short.offset == 26 && short.length == 2, "missing macro argument")
+        let inner = failure("\\newcommand{\\y}{\\frac{a}}\\y")
+        expect(inner.message == "\\frac needs 2 arguments" && inner.offset == 25 && inner.length == 2, "errors inside a macro point at its use")
+        expect(failure("\\newcommand").message.hasPrefix("\\newcommand needs a command name"), "newcommand needs a name")
+        expect(failure("\\newcommand{\\z}").message == "\\newcommand{\\z} needs a definition in braces", "newcommand needs a body")
+        expect(failure("\\def\\z").message.hasPrefix("\\def\\z needs a definition"), "def needs a body")
+        expect(failure("\\newcommand{\\z}{x").message == "Missing } to close this {", "unclosed definition")
+    }
+
+    static func chemistry() {
+        expect(parse("\\ce{H2O}") == parse("{\\mathrm{H}_{2}\\mathrm{O}}"), "subscripted formula")
+        expect(parse("\\ce{Fe2(SO4)3}") == parse("{\\mathrm{Fe}_{2}(\\mathrm{S}\\mathrm{O}_{4})_{3}}"), "parentheses take subscripts")
+        expect(parse("\\ce{SO4^2-}") == parse("{\\mathrm{S}\\mathrm{O}_{4}^{2-}}"), "charge over a subscript")
+        expect(parse("\\ce{Na+}") == parse("{\\mathrm{Na}^{+}}") && parse("\\ce{NO3-}") == parse("{\\mathrm{N}\\mathrm{O}_{3}^{-}}"),
+               "trailing charges")
+        expect(parse("\\ce{Fe^{3+}}") == parse("\\ce{Fe^3+}"), "braced and bare charges")
+        expect(parse("\\ce{^{14}_{6}C}") == parse("{{}^{\\hphantom{14}}_{\\hphantom{6}}{}^{\\mathllap{14}}_{\\mathllap{6}}\\mathrm{C}}"),
+               "isotope prescripts line up on the right")
+        expect(parse("\\ce{{}^{14}_{6}C}") == parse("\\ce{^{14}_{6}C}"), "braced isotope form")
+        expect(parse("\\ce{2H2O}") == parse("{2\\mathrm{H}_{2}\\mathrm{O}}"), "stoichiometric number")
+        expect(parse("\\ce{1/2O2}") == parse("{\\tfrac{1}{2}\\mathrm{O}_{2}}"), "fractional stoichiometric number")
+        expect(parse("\\ce{NaCl(aq)}") == parse("{\\mathrm{Na}\\mathrm{Cl}\\mathrm{(aq)}}"), "aqueous state")
+        expect(parse("\\ce{H2O(l)}") == parse("{\\mathrm{H}_{2}\\mathrm{O}\\mathrm{(l)}}") && parse("\\ce{Fe(s)}") == parse("{\\mathrm{Fe}\\mathrm{(s)}}"),
+               "liquid and solid states")
+        expect(parse("\\ce{Fe(CN)6^3-}") == parse("{\\mathrm{Fe}(\\mathrm{C}\\mathrm{N})_{6}^{3-}}"), "capital parentheses are groups, not states")
+        expect(parse("\\ce{C6H5-CHO}") == parse("{\\mathrm{C}_{6}\\mathrm{H}_{5}{-}\\mathrm{C}\\mathrm{H}\\mathrm{O}}"), "single bond")
+        expect(parse("\\ce{X=Y#Z}") == parse("{\\mathrm{X}{=}\\mathrm{Y}{\\equiv}\\mathrm{Z}}"), "double and triple bonds")
+        expect(parse("\\ce{CuSO4*5H2O}") == parse("\\ce{CuSO4.5H2O}"), "star and dot both make addition compounds")
+        expect(contains(parse("\\ce{CuSO4*5H2O}")) { $0 == .char("⋅", .bin) }, "addition dot")
+        expect(parse("\\ce{[AgCl2]-}") == parse("{\\lbrack\\mathrm{Ag}\\mathrm{Cl}_{2}\\rbrack^{-}}"), "bracketed complex ion")
+        expect(parse("\\ce{e-}") == parse("{\\mathrm{e}^{-}}"), "electron")
+        expect(parse("\\ce{Fe^{II}}") == parse("{\\mathrm{Fe}^{\\mathrm{II}}}"), "oxidation state")
+        expect(parse("\\ce{$x$ H2O}") == parse("{{x} \\mathrm{H}_{2}\\mathrm{O}}"), "math escapes")
+        expect(parse("\\ce{n H2O}") == parse("{n\\, \\mathrm{H}_{2}\\mathrm{O}}"), "variable stoichiometry stays italic")
+        let reaction = parse("\\ce{2H2 + O2 -> 2H2O}")
+        expect(contains(reaction) { $0 == .char("+", .bin) }, "plus between species")
+        let checks: [(String, String)] = [("->", "→"), ("<-", "←"), ("<->", "↔"), ("<-->", "⇄"), ("<=>", "⇌"), ("<=>>", "⥂"), ("<<=>", "⥄")]
+        for (text, symbol) in checks {
+            expect(arrow(parse("\\ce{A \(text) B}"))?.0 == symbol, "\(text) becomes \(symbol)")
+        }
+        expect(arrow(parse("\\ce{A->B}"))?.0 == "→", "arrows need no spaces")
+        guard let labelled = arrow(parse("\\ce{A ->[H2O][\\Delta] B}")) else { failTest("labelled arrow parses") }
+        expect(labelled.1 == parse("\\mathrm{H}_{2}\\mathrm{O}") && labelled.2 == [.group([.char("Δ", .ord)])],
+               "arrow labels above and below, with chemistry in the label")
+        expect(arrow(parse("\\ce{A ->[heat] B}"))?.2 == nil, "a single label goes above")
+        expect(contains(parse("\\ce{BaSO4 v}")) { $0 == .classed(.rel, [.char("↓", .rel)]) }, "precipitate")
+        expect(contains(parse("\\ce{H2 ^}")) { $0 == .classed(.rel, [.char("↑", .rel)]) }, "gas")
+        expect(!contains(parse("\\ce{V2O5}")) { $0 == .char("↓", .rel) }, "a capital V is vanadium")
+        let nested = parse("\\newcommand{\\water}{\\ce{H2O}}\\water")
+        expect(nested == parse("\\ce{H2O}"), "chemistry inside a macro")
+        let unclosed = failure("x + \\ce{A ->[heat B}")
+        expect(unclosed.message == "Missing ] in this formula" && unclosed.offset == 4, "chemistry errors point at \\ce")
+        expect(failure("\\ce").message == "\\ce needs {…} after it", "ce needs an argument")
+    }
+
+    static func units() {
+        expect(parse("\\pu{123 kJ/mol}") == parse("{123~\\mathrm{kJ}/\\mathrm{mol}}"), "number and unit")
+        expect(parse("\\pu{1.2e3 kJ}") == parse("{1.2\\cdot 10^{3}~\\mathrm{kJ}}"), "lowercase e uses a dot")
+        expect(parse("\\pu{1.2E-3 kJ}") == parse("{1.2\\times 10^{-3}~\\mathrm{kJ}}"), "capital E uses a cross")
+        expect(parse("\\pu{kJ mol-1}") == parse("{\\mathrm{kJ}\\,\\mathrm{mol}^{-1}}"), "exponents without a caret")
+        expect(parse("\\pu{m/s^2}") == parse("{\\mathrm{m}/\\mathrm{s}^{2}}"), "exponents with a caret")
+        expect(parse("\\pu{kg*m2}") == parse("{\\mathrm{kg}\\cdot \\mathrm{m}^{2}}"), "multiplied units")
+        expect(parse("\\pu{12345.67891 m}") == parse("{12\\,345.678\\,91~\\mathrm{m}}"), "digit groups")
+        expect(parse("\\pu{1234 m}") == parse("{1234~\\mathrm{m}}"), "four digits stay together")
+        expect(parse("\\pu{J//mol}") == parse("{\\frac{\\mathrm{J}}{\\mathrm{mol}}}"), "double slash makes a fraction")
+        expect(parse("\\pu{25 °C}") == parse("{25~{}^{\\circ}\\mathrm{C}}"), "degrees Celsius")
+        expect(parse("\\pu{1.2+-0.1 mm}") == parse("{1.2\\pm 0.1~\\mathrm{mm}}"), "uncertainty")
+        expect(parse("\\pu{-40 K}") == parse("{-40~\\mathrm{K}}"), "negative numbers")
+        expect(parse("\\pu{5 µm}") == parse("{5~\\mu \\mathrm{m}}"), "micro sign")
     }
 
     static func errors() {

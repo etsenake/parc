@@ -321,6 +321,12 @@ struct NoteMathTypesetter {
             return (box, .ord)
         case .boxed(let content):
             return (boxed(content, context), .ord)
+        case .lap(let side, let content):
+            let inner = layoutList(content, context).withoutGlyphIdentity()
+            let shift: CGFloat = side == .left ? -inner.width : side == .center ? -inner.width / 2 : 0
+            var box = NoteMathBox(width: 0, ascent: inner.ascent, descent: inner.descent)
+            box.draw(inner, at: CGPoint(x: shift, y: 0))
+            return (box, .ord)
         case .space(let amount):
             return (NoteMathBox(width: CGFloat(amount) * em(context)), .ord)
         case .styled(let variant, let content):
@@ -813,7 +819,8 @@ struct NoteMathTypesetter {
         let underBox = under.map { layoutList($0, context.with(style: context.style.subscriptStyle)) }
         let em = self.em(context)
         let target = max(max(overBox.width, underBox?.width ?? 0) + 0.6 * em, 1.4 * em)
-        guard let stretched = horizontalStretch(arrow, target: target, context) else { return overBox }
+        let paired = Self.pairedArrows[arrow].flatMap { pairedArrow($0, target: target, context) }
+        guard let stretched = paired ?? horizontalStretch(arrow, target: target, context) else { return overBox }
         let ink = inkExtent(stretched)
         let width = max(stretched.width, overBox.width, underBox?.width ?? 0)
         var box = NoteMathBox(width: width, ascent: max(stretched.ascent, 0), descent: max(stretched.descent, 0))
@@ -829,6 +836,28 @@ struct NoteMathTypesetter {
             box.draw(underBox, at: CGPoint(x: (width - underBox.width) / 2, y: y))
             box.descent = max(box.descent, underBox.descent - y)
         }
+        return box
+    }
+
+    private static let pairedArrows: [String: (top: String, bottom: String, shortTop: Bool, shortBottom: Bool)] = [
+        "⇌": ("⇀", "↽", false, false), "⇋": ("↼", "⇁", false, false), "⇄": ("→", "←", false, false),
+        "⥂": ("⇀", "↽", false, true), "⥄": ("⇀", "↽", true, false),
+    ]
+
+    private func pairedArrow(_ pair: (top: String, bottom: String, shortTop: Bool, shortBottom: Bool), target: CGFloat,
+                             _ context: NoteMathContext) -> NoteMathBox? {
+        let short = max(target * 0.6, 0.8 * em(context))
+        guard let top = horizontalStretch(pair.top, target: pair.shortTop ? short : target, context),
+              let bottom = horizontalStretch(pair.bottom, target: pair.shortBottom ? short : target, context) else { return nil }
+        let topInk = inkExtent(top), bottomInk = inkExtent(bottom)
+        let axis = constant(.axisHeight, context)
+        let gap = 0.09 * em(context)
+        let width = max(top.width, bottom.width)
+        let topY = axis + gap - topInk.minY
+        let bottomY = axis - gap - bottomInk.maxY
+        var box = NoteMathBox(width: width, ascent: max(0, topY + topInk.maxY), descent: max(0, -(bottomY + bottomInk.minY)))
+        box.draw(top, at: CGPoint(x: (width - top.width) / 2, y: topY))
+        box.draw(bottom, at: CGPoint(x: (width - bottom.width) / 2, y: bottomY))
         return box
     }
 
