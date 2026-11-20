@@ -68,7 +68,9 @@ animated one at a time:
 Text, headings 1–6 (the menus offer 1–4), bulleted, numbered and to-do lists,
 toggles and toggle headings, quotes, callouts with an emoji icon, dividers, code
 with syntax highlighting for 39 languages, equations typeset natively from TeX
-(including chemistry with `\ce`), simple tables, images, video, audio, files,
+(including chemistry with `\ce`, numbering that runs through the whole note,
+and `\label` with `\eqref` or `\ref` that link up in the editor and in HTML and
+PDF exports), simple tables, images, video, audio, files,
 bookmarks with a cached preview card, embeds, links to other notes, columns (two
 to five) and a table of contents. Inline text can be bold, italic, underlined,
 struck, code, a link, coloured or highlighted in Notion's nine colours, and can
