@@ -85,6 +85,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         let pageMenuButton = pageMenu.makeButton()
         root.addSubview(pageMenuButton)
         self.pageMenuButton = pageMenuButton
+        editor.find.topInset = Self.pageMenuInset.y + NotePageMenuButton.size.height + 6
 
         status.onAction = { [weak self] action in self?.performStatusAction(action) }
         root.addSubview(status)

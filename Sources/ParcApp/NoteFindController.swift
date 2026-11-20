@@ -9,6 +9,7 @@ final class NoteFindController {
     private(set) var matches: [NoteFindMatch] = []
     private(set) var currentIndex: Int?
     private(set) var isReplacing = false
+    var topInset: CGFloat = 4
     private var bar: NoteFindBar?
     private var panel: NoteFloatingPanel?
     private let highlights = NoteFindHighlightView()
@@ -288,7 +289,7 @@ final class NoteFindController {
         let clipped = overlay.visibleRect.intersection(overlay.bounds)
         let visible = clipped.isEmpty ? overlay.bounds : clipped
         let width = panel.preferredSize.width
-        return NSRect(x: max(visible.minX + 12, visible.maxX - width - 16), y: visible.minY + 4, width: width, height: 0)
+        return NSRect(x: max(visible.minX + 12, visible.maxX - width - 16), y: visible.minY + topInset, width: width, height: 0)
     }
 
     private func attachHighlights() {
