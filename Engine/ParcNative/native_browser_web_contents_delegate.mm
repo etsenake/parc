@@ -1,5 +1,3 @@
-// Copyright 2026 Parc contributors.
-
 // Copyright 2026 The Chromium Embedded Framework Authors. All rights reserved.
 #include "native_browser_web_contents_delegate.h"
 
@@ -17,6 +15,7 @@
 #include "javascript_dialog_manager.h"
 #include "native_browser.h"
 #include "native_link_routing.h"
+#include "native_note_links.h"
 #include "native_page_binding.h"
 #include "native_page_observers.h"
 #include "native_popup_blocking.h"
@@ -114,6 +113,10 @@ content::WebContents* NativeBrowserWebContentsDelegate::OpenURLFromTab(
   const auto early_browser_weak = browser_->GetWeakPtr();
   const auto early_source_weak =
       source ? source->GetWeakPtr() : base::WeakPtr<content::WebContents>();
+  if (source && (OpenNativeNoteLink(browser_.get(), *source, params) ||
+                 !early_browser_weak || !early_source_weak)) {
+    return nullptr;
+  }
   if (params.disposition == WindowOpenDisposition::SAVE_TO_DISK &&
       params.native_route_token) {
     auto split = TakeNativeOptionLink(source, params);

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 788,
+  "version": 789,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -339,7 +339,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "parc/native/native_appkit_bridge.h",
-      "sha256": "59d79298e424838c4e9d11fdba23809eff109e0b701797b4def2ad31febb0efb"
+      "sha256": "fc8671d1a9ff6319afc04d2b6da774254f0db578eb6a028d439d4f7aac9be565"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -1155,6 +1155,16 @@
       "source": "Engine/ParcNative/native_link_routing.mm",
       "target": "parc/native/native_link_routing.mm",
       "sha256": "9cceead8e6be33192532a7aeaa1c21c1c6d2153b1d2b84c28bec0f20bf918614"
+    },
+    {
+      "source": "Engine/ParcNative/native_note_links.h",
+      "target": "parc/native/native_note_links.h",
+      "sha256": "7febace0ed6a530fc661dffcced14e4834ff9dcef8ebc3eaf4a40655c5fe1fde"
+    },
+    {
+      "source": "Engine/ParcNative/native_note_links.mm",
+      "target": "parc/native/native_note_links.mm",
+      "sha256": "1a366e190be0c5475df04b18a1967a8ccb98af343babc54af33aba479b9a647c"
     },
     {
       "source": "Engine/ParcNative/native_shift_link.h",
@@ -2089,7 +2099,7 @@
     {
       "source": "Engine/ParcNative/native_browser_web_contents_delegate.mm",
       "target": "parc/native/native_browser_web_contents_delegate.mm",
-      "sha256": "0335f4a43f5e3ed4bf47b84f7ced6870ecf59665d879bbc597ed5a3b4da6dc37"
+      "sha256": "be36df7fb116780c2df389b974542345a84e93223e74ed02dffc747eb5bd127d"
     },
     {
       "source": "Engine/ParcNative/native_web_contents_view_delegate.h",
@@ -2114,7 +2124,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "485ddea81e3f870a59415db0aed49c9580dc166843b7e743edecdc52966371fd"
+      "sha256": "d159232934093637476788e8c75a9682baec07d6c79ea59c3c589496dbe5d6fb"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
@@ -2304,7 +2314,7 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.mm",
       "target": "parc/parc_content_clients.mm",
-      "sha256": "0ec7e930889ebc678b98ffd23f9ee23aa9aad6549410e29cae894a74add28e8c"
+      "sha256": "c96c2716e0f37f05fab794e2d405e747fd45c222a44357c6e28846f8e35676a0"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",

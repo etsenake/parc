@@ -49,6 +49,7 @@
 #include "parc/native/native_device_delegates.h"
 #include "parc/native/native_internal_urls.h"
 #include "parc/native/native_link_routing.h"
+#include "parc/native/native_note_links.h"
 #include "parc/native/native_page_context_menu.h"
 #include "parc/native/native_tab_sharing.h"
 #include "parc/native/native_web_contents_view_delegate.h"
@@ -196,6 +197,7 @@ void ParcContentBrowserClient::CreateThrottlesForNavigation(
     content::NavigationThrottleRegistry& registry) {
   AddNativeShiftOpeningThrottle(registry);
   ChromeContentBrowserClient::CreateThrottlesForNavigation(registry);
+  AddNativeNoteLinkThrottle(registry);
 }
 
 ParcContentBrowserClient::~ParcContentBrowserClient() {

@@ -57,8 +57,10 @@ With CEF gone, Parc owns Chromium's embedder classes and uses them before anythi
 - `ParcContentBrowserClient` overrides the public browser-client methods it needs: HTTP authentication
   through an owned coordinator, helper paths for the CDM and Alerts helpers, per-frame interface
   binders, WebPreferences recomputation, the WebAuthn request delegate, the video picture-in-picture
-  window, the web-contents view delegate, internal URLs and the navigation throttle that hands a
-  page held for a [Peek](peek.md#links-inside-a-peek) its first request.
+  window, the web-contents view delegate, internal URLs and two navigation throttles: one hands a
+  page held for a [Peek](peek.md#links-inside-a-peek) its first request, and the other offers the app
+  a clicked link to a Markdown or text file before Chromium loads it
+  ([note links](navigation.md#links-to-markdown-and-text-files)).
 - `ParcContentGpuClient` exposes the FairPlay media service. `ParcContentRendererClient` adds the
   FairPlay key systems, the ALAC answer and Parc's renderer observers, and at document end tells a
   network error page whether there is history to go back to. `ParcContentClient` adds the
@@ -76,7 +78,9 @@ With CEF gone, Parc owns Chromium's embedder classes and uses them before anythi
   also put Parc's mark on Chromium's pages from one owned rule table; see
   [Parc's mark on Chromium's pages](app-icon-marks.md#parcs-mark-on-chromiums-pages).
 - Parc's BrowserWindow, Browser record and WebContentsDelegate serve each native window, so
-  JavaScript dialogs and new pages reach Parc through Chromium's own interfaces.
+  JavaScript dialogs and new pages reach Parc through Chromium's own interfaces. The delegate's
+  `OpenURLFromTab` also offers a Command-clicked link to a note file to the app before Chromium
+  makes a tab for it.
 - Blocked pop-ups keep Chromium's own blocker. The browser client swaps the blocker's pop-up delegate
   factory through Chrome's public static accessor (named for tests, but the only seam), and Parc's
   WebContentsDelegate records renderer-link pop-ups with the same blocker before its own routing. A

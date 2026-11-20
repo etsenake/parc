@@ -679,6 +679,9 @@ NS_SWIFT_UI_ACTOR
 - (BOOL)nativeBrowser:(PCNativeBrowserWindow*)browser
   allowsPeekWithShift:(BOOL)shift
     NS_SWIFT_NAME(nativeBrowser(_:allowsPeekWithShift:));
+- (BOOL)nativeBrowser:(PCNativeBrowserWindow*)browser
+    openNoteFileURL:(NSURL*)url fromPage:(PCNativePage*)page inBackground:(BOOL)background
+    NS_SWIFT_NAME(nativeBrowser(_:openNoteFile:from:inBackground:));
 - (void)nativeBrowser:(PCNativeBrowserWindow*)browser
     downloadDidBegin:(PCNativeDownloadArrival*)arrival
     NS_SWIFT_NAME(nativeBrowser(_:downloadDidBegin:));

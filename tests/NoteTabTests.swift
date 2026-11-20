@@ -16,6 +16,7 @@ struct NoteTabTests {
         try Data("# Plans\n".utf8).write(to: project)
         try addresses(project)
         try tabs(directory, project: project)
+        try pageLinks(directory, project: project)
         try deletion(directory, notes: notes)
         print("NoteTabs: \(assertions) assertions passed")
     }
@@ -88,6 +89,28 @@ struct NoteTabTests {
         let privateStore = BrowserStore(privateParentProfileID: store.activeSpace.profileID, engineProfilePath: "/tmp/parc-private-notes",
                                         directory: directory.appendingPathComponent("private"), settings: store.state.settings)
         try expect(privateStore.openNote(url: renamed, title: "Renamed") == nil, "Private windows never open notes")
+    }
+
+    static func pageLinks(_ directory: URL, project: URL) throws {
+        let store = try BrowserStore(directory: directory.appendingPathComponent("links"))
+        let page = store.open("https://example.test/page")
+        _ = store.open("https://example.test/other")
+        store.selectTab(page)
+        let creation = TabCreationProvenance(referrerID: page, activeTabID: page, profileID: store.activeSpace.profileID, state: store.state)
+        let note = try unwrap(store.openNote(url: project, title: "Project", inBackground: true, creation: creation), "background note")
+        let tab = try unwrap(store.state.tabs.first { $0.id == note }, "note tab")
+        try expect(store.state.selectedTabIDs == [page], "A Command-clicked note leaves the page selected")
+        try expect(tab.referrerID == page && tab.activeTabBeforeCreationID == page, "The note remembers the page that linked it")
+        let order = SidebarHierarchy.children(in: SidebarContainerLocation(spaceID: store.activeSpaceID, folderID: nil, section: .today),
+                                              state: store.state)
+        try expect(order.firstIndex(of: .tab(note)) == order.firstIndex(of: .tab(page)).map { $0 + 1 }, "The note lands right after its page")
+        try expect(store.openNote(url: project, title: "Project", inBackground: true, creation: creation) == note
+                   && store.state.selectedTabIDs == [page], "A note that already has a tab stays in the background")
+        try expect(store.openNote(url: project, title: "Project", inSplit: true, inBackground: true) == nil, "A background note never joins a split")
+        let front = directory.appendingPathComponent("Front.md")
+        let shown = try unwrap(store.openNote(url: front, title: "", creation: creation), "clicked note")
+        try expect(store.state.selectedTabIDs == [shown] && store.state.tabs.first { $0.id == shown }?.referrerID == page,
+                   "A plain click opens the note in front, still tied to its page")
     }
 
     static func deletion(_ directory: URL, notes: URL) throws {

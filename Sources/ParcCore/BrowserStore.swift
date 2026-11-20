@@ -2843,26 +2843,33 @@ final class BrowserStore: ObservableObject {
     }
 
     @discardableResult
-    func openNote(url: URL, title: String, inSplit: Bool = false) -> UUID? {
+    func openNote(url: URL, title: String, inSplit: Bool = false, inBackground: Bool = false,
+                  creation: TabCreationProvenance? = nil) -> UUID? {
         guard !isEphemeral, let file = InternalPage.noteFile(url), !isProfileRemovalPending(activeSpace.profileID),
-              !inSplit || (!state.selectedTabIDs.isEmpty && state.selectedTabIDs.count < 4) else { return nil }
+              !inSplit || (!inBackground && !state.selectedTabIDs.isEmpty && state.selectedTabIDs.count < 4) else { return nil }
         let original = state.selectedTabIDs, page = InternalPage.note(file)
         let name = InternalPage.noteTitle(title, file: file)
         if let index = localDocumentTabIndex(page, profileID: activeSpace.profileID) {
             let existing = state.tabs[index]
             guard !inSplit || existing.spaceID == activeSpaceID else { return nil }
             let id = presentLocalDocument(at: index, page: page, title: name)
-            if inSplit { setSplit(original + [id]) } else { selectTab(id) }
+            if inSplit { setSplit(original + [id]) } else if inBackground { changed() } else { selectTab(id) }
             return id
         }
         let id = UUID()
+        let creation = creation?.validated(profileID: activeSpace.profileID, state: state)
         var next = state
         next.tabs.append(BrowserTab(id: id, spaceID: activeSpaceID, profileID: activeSpace.profileID,
             url: page.urlString, title: name, kind: .today, createdAt: clock(), lastAccessed: clock(),
-            savedURL: page.urlString, savedTitle: name))
+            savedURL: page.urlString, savedTitle: name, referrerID: creation?.referrerID,
+            activeTabBeforeCreationID: creation?.activeTabBeforeCreationID))
         if inSplit {
             state = next
             setSplit(original + [id], adding: id)
+        } else if inBackground {
+            SidebarHierarchy.placingCreatedTab(id, insertion: .automatic, in: &next)
+            state = next
+            changed()
         } else {
             SidebarHierarchy.placingCreatedTab(id, insertion: .automatic, in: &next)
             next.selectedTabIDs = [id]

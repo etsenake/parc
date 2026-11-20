@@ -77,6 +77,22 @@ page was inserted. `alternateNavigationSourcePage` and
 adoption; Chromium's disposition determines selection. Peek arrow navigation
 has no sidebar referrer, while Peek Reload/history use the parent item.
 
+## Links to Markdown and text files
+
+Clicking a page's link to a local Markdown or text file opens it as a [note](notes.md) without
+the page going anywhere: it keeps its place and its Back and Forward history, and the note opens
+in its own tab right after it, or comes forward if it already has one. Closing a new note tab
+returns to the page, as closing any tab a link opened does. A Command-click or middle-click opens
+the note tab the way it opens any link, in the background unless Shift is held. A private window
+hands the note to a regular window.
+
+The file types match the note editor's. For a same-tab click, Parc's navigation throttle holds the
+navigation for one task and asks the window through `openNoteFile`; for a new-tab click, Parc's
+web-contents delegate asks before Chromium creates the tab. Only user-initiated link navigations
+from a page that has already loaded are offered, never history moves, reloads or form posts. A
+link that opens a new window, such as `target="_blank"`, still opens a tab that turns into the
+note, and so does any click while the window can't take a note, such as with a Peek or sheet open.
+
 ## Sidebar controls and URL pill
 
 Navigation glyphs are 16 points in 32-point controls, reduced to 14 in 28-point

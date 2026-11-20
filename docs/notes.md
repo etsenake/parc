@@ -15,7 +15,9 @@ note file, so moving a tab to another Profile leaves the file where it is.
 Parc appears in Finder's Open With list as an editor for Markdown and plain text.
 Opening one from Finder or the Dock icon, dropping it on the sidebar, typing its
 `file://` address, or following a link to one from a note or a page opens a note
-tab instead of Chromium's file view; other file types still open in Chromium.
+tab instead of Chromium's file view; other file types still open in Chromium. A
+page's link leaves the page and its history where they are and opens the note in
+its own tab ([note links](navigation.md#links-to-markdown-and-text-files)).
 Dropping notes on the sidebar shows the insertion line and opens their new tabs
 right there; a note that already has a tab just comes forward. A `#heading` or
 block anchor in the address scrolls to that spot, and clicking a note reminder

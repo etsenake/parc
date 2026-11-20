@@ -164,6 +164,38 @@ extension BrowserWindowController {
         return true
     }
 
+    func nativeBrowser(_ browser: PCNativeBrowserWindow, openNoteFile url: URL, from page: PCNativePage,
+                       inBackground background: Bool) -> Bool {
+        guard browser === nativeBinding, !isClosing, !wholeWindowClose, !page.isClosed,
+              PCNativeBrowserApplication.owner(of: page) === browser, let file = InternalPage.noteFile(url),
+              let sourceID = browsers.first(where: { $0.value.nativePage === page })?.key,
+              let source = store.state.tab(sourceID, where: { $0.archivedAt == nil }) else { return false }
+        if isPrivateBrowsing || isPopupWindow {
+            guard let handoff = onOpenNoteInRegularWindow else { return false }
+            handoff(url)
+            return true
+        }
+        guard canCreateNote, source.profileID == activeProfileID else { return false }
+        guard FileManager.default.fileExists(atPath: file.path) else {
+            showNoteError(NoteFileError.missing)
+            return true
+        }
+        if !background { closeLibrary(restoreFocus: false) }
+        let title = NoteFileSession.session(for: file)?.title ?? file.deletingPathExtension().lastPathComponent
+        let creation = TabCreationProvenance(referrerID: sourceID, activeTabID: currentTabID,
+                                             profileID: activeProfileID, state: store.state)
+        var opened: UUID?
+        performWindowCommand(selectNativePage: !background) {
+            let existing = Set(store.state.tabs.map(\.id))
+            opened = store.openNote(url: file, title: title, inBackground: background, creation: creation)
+            if let id = opened, !existing.contains(id) { presentation.recordCreation(id, state: store.state) }
+        }
+        guard let opened else { return false }
+        if !background { focusSelectedLocalContent() }
+        if let anchor = url.fragment, !anchor.isEmpty { revealNoteAnchor(anchor, inTab: opened) }
+        return true
+    }
+
     var canShowLibrary: Bool {
         if isPrivateBrowsing { return false }
         return !isPopupWindow && presentation.isReady && !isClosing && !wholeWindowClose && nativeFullscreenTabID == nil
