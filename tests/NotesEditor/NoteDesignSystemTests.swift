@@ -178,6 +178,22 @@ struct NoteDesignSystemTests {
                "unflipped hosts place below in their own coordinates")
         panel.dismiss(animated: false)
         expect(panel.superview == nil && !panel.isPresented && dismissed == 1, "dismiss removes the panel once")
+        let hud = NoteFloatingPanel(content: NoteMenuList(items: sampleItems()))
+        hud.alignment = .center
+        hud.present(in: host, anchor: NSRect(x: 300, y: 40, width: 20, height: 20), edge: .below, animated: true)
+        expect(hud.scaleOrigin.y == 0 && hud.scaleOrigin.x == 310 - hud.frame.minX, "the card grows out of the edge nearest its anchor")
+        expect(hud.frame.midX == 310, "centred cards sit under the middle of their anchor")
+        if !NoteAnimation.reduceMotion {
+            let grow = hud.layer?.animation(forKey: NoteAnimation.hudTransformKey) as? CABasicAnimation
+            let start = (grow?.fromValue as? NSValue)?.caTransform3DValue
+            expect(grow?.duration == NoteAnimation.hudOpenDuration && start?.m11 == NoteAnimation.hudHiddenScale, "opening scales up from 0.95")
+            expect(hud.layer?.animation(forKey: NoteAnimation.hudOpacityKey)?.duration == NoteAnimation.hudFadeDuration, "opening fades in fast")
+        }
+        hud.reposition(anchor: NSRect(x: 300, y: 420, width: 20, height: 20), animated: false)
+        expect(hud.resolvedEdge == .above && hud.scaleOrigin.y == hud.frame.height, "above, the card grows from its bottom edge")
+        var finished = false
+        hud.dismiss(animated: false) { finished = true }
+        expect(finished && hud.superview == nil, "an unanimated dismiss finishes at once")
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 120, height: 36))
         let bar = NoteFloatingPanel(content: content)
         expect(bar.preferredSize == NSSize(width: 120, height: 36), "constraint-free content keeps its frame size")
@@ -189,12 +205,25 @@ struct NoteDesignSystemTests {
         expect(NoteTheme.syntaxFamily("stringLiteral") == "string", "camel-case kinds still map")
         expect(NoteTheme.syntaxFamily("comment") == "comment" && NoteTheme.syntaxIsItalic("comment"), "comments are italic")
         expect(NoteTheme.syntaxFamily("whatever") == "plain", "unknown kinds fall back to plain ink")
+        let expected: [NoteSyntaxKind: String] = [
+            .keyword: "keyword", .type: "type", .string: "string", .number: "number", .comment: "comment", .function: "function",
+            .property: "attribute", .operatorSymbol: "operator", .punctuation: "operator", .tag: "tag", .attribute: "attribute",
+            .variable: "variable", .constant: "number", .regex: "escape", .builtin: "type", .inserted: "string", .deleted: "tag",
+            .heading: "heading", .emphasis: "emphasis", .strong: "strong", .link: "link", .meta: "meta", .escape: "escape",
+        ]
+        for kind in NoteSyntaxKind.allCases {
+            expect(NoteTheme.syntaxFamily(kind.rawValue) == expected[kind], "\(kind) has its own syntax family")
+        }
+        expect(NoteTheme.syntaxIsItalic(.emphasis) && NoteTheme.syntaxIsBold(.strong) && NoteTheme.syntaxIsUnderlined(.link),
+               "Markdown emphasis keeps its shape in code")
         expect(NoteTheme.placeholder(for: .heading, level: 2) == "Heading 2", "heading placeholders name their level")
         expect(NoteTheme.contentWidth(forViewport: 1200) == NoteTheme.pageColumnWidth, "wide windows keep the column")
         expect(NoteTheme.contentWidth(forViewport: 500) == 500 - NoteTheme.minimumSideMargin * 2, "narrow windows keep the margins")
         let style = NoteTheme.textStyle(.body)
         expect(style.lineHeight == (NoteTheme.bodySize * NoteTheme.lineHeightRatio).rounded(), "body line height comes from the ratio")
         expect(NoteTheme.textStyle(.heading(1)).font.pointSize > NoteTheme.textStyle(.heading(3)).font.pointSize, "headings step down")
+        expect(NoteTheme.textStyle(.inlineCode).baselineOffset == style.baselineOffset, "inline code sits on the body baseline")
+        expect(NoteTheme.textStyle(.inlineCode).runAttributes[.paragraphStyle] == nil, "run attributes leave the paragraph alone")
         for font in NotePageFont.allCases {
             expect(NoteTheme.titleFont(font, small: false).pointSize > NoteTheme.bodyFont(font).pointSize, "titles beat body text in \(font)")
         }

@@ -22,10 +22,18 @@ struct NoteTextStyle {
     var lineHeight: CGFloat
     var ink: NSColor
     var kern: CGFloat = 0
+    var baselineShift: CGFloat?
 
     var baselineOffset: CGFloat {
+        if let baselineShift { return baselineShift }
         let natural = font.ascender - font.descender + font.leading
         return max(0, (lineHeight - natural) / 2)
+    }
+
+    var runAttributes: [NSAttributedString.Key: Any] {
+        var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: ink, .baselineOffset: baselineOffset]
+        if kern != 0 { attributes[.kern] = kern }
+        return attributes
     }
 
     func paragraphStyle(spacingBefore: CGFloat = 0, spacingAfter: CGFloat = 0,
@@ -162,9 +170,9 @@ enum NoteTheme {
     static let findMatch = adaptive("FindMatch", light: rgb(0xFFD84D, 0.45), dark: rgb(0xFFD84D, 0.3))
     static let findCurrentMatch = adaptive("FindCurrent", light: rgb(0xFFB020, 0.75), dark: rgb(0xFFB020, 0.6))
 
-    static let disabledOpacity: CGFloat = 0.25
-    static let disabledRowOpacity: CGFloat = 0.38
-    static let idleHandleOpacity: CGFloat = 0.33
+    nonisolated static let disabledOpacity: CGFloat = 0.25
+    nonisolated static let disabledRowOpacity: CGFloat = 0.38
+    nonisolated static let idleHandleOpacity: CGFloat = 0.33
 
     static func dropIndicator(spaceFocus: NSColor?) -> NSColor {
         guard let spaceFocus else { return dropIndicatorFallback }
@@ -218,11 +226,27 @@ enum NoteTheme {
 
     static func displayName(_ color: NoteColor) -> String { color.rawValue.capitalized }
 
+    static func syntaxColor(_ kind: NoteSyntaxKind) -> NSColor { syntaxColor(kind.rawValue) }
+    static func syntaxIsItalic(_ kind: NoteSyntaxKind) -> Bool { syntaxIsItalic(kind.rawValue) }
+    static func syntaxIsBold(_ kind: NoteSyntaxKind) -> Bool { syntaxIsBold(kind.rawValue) }
+    static func syntaxIsUnderlined(_ kind: NoteSyntaxKind) -> Bool { syntaxFamily(kind.rawValue) == "link" }
+
+    static func syntaxAttributes(_ kind: NoteSyntaxKind, size: CGFloat = codeSize) -> [NSAttributedString.Key: Any] {
+        var attributes: [NSAttributedString.Key: Any] = [.foregroundColor: syntaxColor(kind)]
+        if syntaxIsBold(kind) { attributes[.font] = boldCodeFont(size: size) }
+        if syntaxIsItalic(kind) { attributes[.obliqueness] = 0.12 }
+        if syntaxIsUnderlined(kind) { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+        return attributes
+    }
+
     static func syntaxColor(_ rawValue: String) -> NSColor {
         syntaxPalette[syntaxFamily(rawValue)] ?? codeInk
     }
 
-    static func syntaxIsItalic(_ rawValue: String) -> Bool { syntaxFamily(rawValue) == "comment" }
+    static func syntaxIsItalic(_ rawValue: String) -> Bool {
+        let family = syntaxFamily(rawValue)
+        return family == "comment" || family == "emphasis"
+    }
 
     static func syntaxIsBold(_ rawValue: String) -> Bool {
         let family = syntaxFamily(rawValue)
@@ -233,9 +257,9 @@ enum NoteTheme {
         let name = rawValue.lowercased()
         let families: [(String, [String])] = [
             ("comment", ["comment", "doc", "prolog", "cdata"]),
-            ("keyword", ["keyword", "control", "storage", "modifier", "directive", "preprocessor", "important", "atrule"]),
-            ("string", ["string", "char", "template", "inserted", "url"]),
-            ("number", ["number", "constant", "boolean", "null", "nil", "symbol", "unit", "literal"]),
+            ("keyword", ["keyword", "control", "storage", "modifier", "directive", "important", "atrule"]),
+            ("string", ["string", "char", "template", "inserted"]),
+            ("number", ["number", "constant", "boolean", "null", "nil", "unit", "literal"]),
             ("type", ["type", "class", "interface", "struct", "enum", "namespace", "module", "builtin"]),
             ("function", ["function", "method", "macro", "call", "selector"]),
             ("tag", ["tag", "deleted", "invalid", "error"]),
@@ -244,6 +268,9 @@ enum NoteTheme {
             ("operator", ["operator", "punctuation", "delimiter", "bracket"]),
             ("heading", ["heading", "title", "section"]),
             ("strong", ["strong", "bold"]),
+            ("emphasis", ["emphasis", "italic"]),
+            ("link", ["link", "href"]),
+            ("meta", ["meta", "shebang", "pragma", "preprocessor"]),
             ("variable", ["variable", "parameter", "identifier", "plain", "text"]),
         ]
         for (family, names) in families where names.contains(where: { name.hasPrefix($0) || name.hasSuffix($0) }) {
@@ -265,22 +292,25 @@ enum NoteTheme {
         "operator": adaptive("Syntax.Operator", light: rgb(0x29243D, 0.68), dark: rgb(0xE4E1F5, 0.7)),
         "heading": adaptive("Syntax.Heading", light: rgb(0x220C7F), dark: rgb(0xC9C4FF)),
         "strong": adaptive("Syntax.Strong", light: rgb(0x29243D), dark: rgb(0xE4E1F5)),
+        "emphasis": adaptive("Syntax.Emphasis", light: rgb(0x29243D), dark: rgb(0xE4E1F5)),
+        "link": adaptive("Syntax.Link", light: rgb(0x2350C2), dark: rgb(0x93B6FF)),
+        "meta": adaptive("Syntax.Meta", light: rgb(0x7A5C9E), dark: rgb(0xB9A5D6)),
         "variable": adaptive("Syntax.Variable", light: rgb(0x29243D), dark: rgb(0xE4E1F5)),
     ]
 
-    static let bodySize: CGFloat = 17
-    static let smallBodySize: CGFloat = 15
-    static let headingSizes: [CGFloat] = [30, 24, 20, 18, 17, 16]
-    static let titleSize: CGFloat = 40
-    static let smallTitleSize: CGFloat = 34
-    static let codeSize: CGFloat = 14
-    static let captionSize: CGFloat = 13.5
-    static let menuTitleSize: CGFloat = 13.5
-    static let menuSubtitleSize: CGFloat = 12
-    static let menuHeaderSize: CGFloat = 11.5
-    static let lineHeightRatio: CGFloat = 1.52
-    static let headingLineHeightRatio: CGFloat = 1.28
-    static let titleLineHeightRatio: CGFloat = 1.2
+    nonisolated static let bodySize: CGFloat = 17
+    nonisolated static let smallBodySize: CGFloat = 15
+    nonisolated static let headingSizes: [CGFloat] = [30, 24, 20, 18, 17, 16]
+    nonisolated static let titleSize: CGFloat = 40
+    nonisolated static let smallTitleSize: CGFloat = 34
+    nonisolated static let codeSize: CGFloat = 14
+    nonisolated static let captionSize: CGFloat = 13.5
+    nonisolated static let menuTitleSize: CGFloat = 13.5
+    nonisolated static let menuSubtitleSize: CGFloat = 12
+    nonisolated static let menuHeaderSize: CGFloat = 11.5
+    nonisolated static let lineHeightRatio: CGFloat = 1.52
+    nonisolated static let headingLineHeightRatio: CGFloat = 1.3
+    nonisolated static let titleLineHeightRatio: CGFloat = 1.25
 
     private static func nunito(_ name: String, _ size: CGFloat, fallback: NSFont.Weight) -> NSFont {
         _ = registerFonts
@@ -405,8 +435,9 @@ enum NoteTheme {
             let size = small ? codeSize - 1.5 : codeSize
             return NoteTextStyle(font: codeFont(size: size), lineHeight: (size * 1.6).rounded(), ink: codeInk)
         case .inlineCode:
-            let face = inlineCodeFont(relativeTo: bodyFont(font, small: small))
-            return NoteTextStyle(font: face, lineHeight: bodyLine, ink: inlineCodeInk)
+            let host = textStyle(.body, font: font, small: small)
+            return NoteTextStyle(font: inlineCodeFont(relativeTo: host.font), lineHeight: bodyLine, ink: inlineCodeInk,
+                                 baselineShift: host.baselineOffset)
         case .caption:
             let face = captionFont(font)
             return NoteTextStyle(font: face, lineHeight: (face.pointSize * 1.45).rounded(), ink: secondaryInk)
@@ -431,52 +462,52 @@ enum NoteTheme {
         }
     }
 
-    static let titlePlaceholder = "Untitled"
-    static let captionPlaceholder = "Add a caption"
+    nonisolated static let titlePlaceholder = "Untitled"
+    nonisolated static let captionPlaceholder = "Add a caption"
 
-    static let pageColumnWidth: CGFloat = 720
-    static let fullWidthMaximum: CGFloat = 1600
-    static let pageSideMargin: CGFloat = 96
-    static let minimumSideMargin: CGFloat = 28
-    static let pageTopMargin: CGFloat = 64
-    static let pageBottomMargin: CGFloat = 160
-    static let titleSpacingAfter: CGFloat = 12
-    static let indentWidth: CGFloat = 26
-    static let blockSpacing: CGFloat = 2
-    static let blockVerticalPadding: CGFloat = 3
-    static let gutterWidth: CGFloat = 46
+    nonisolated static let pageColumnWidth: CGFloat = 720
+    nonisolated static let fullWidthMaximum: CGFloat = 1600
+    nonisolated static let pageSideMargin: CGFloat = 96
+    nonisolated static let minimumSideMargin: CGFloat = 28
+    nonisolated static let pageTopMargin: CGFloat = 64
+    nonisolated static let pageBottomMargin: CGFloat = 160
+    nonisolated static let titleSpacingAfter: CGFloat = 12
+    nonisolated static let indentWidth: CGFloat = 26
+    nonisolated static let blockSpacing: CGFloat = 2
+    nonisolated static let blockVerticalPadding: CGFloat = 3
+    nonisolated static let gutterWidth: CGFloat = 46
     static let handleSize = NSSize(width: 18, height: 24)
-    static let handleGap: CGFloat = 4
-    static let columnGap: CGFloat = 46
-    static let columnMinimumWidth: CGFloat = 120
-    static let listMarkerWidth: CGFloat = 26
-    static let todoBoxSize: CGFloat = 16
-    static let toggleTriangleSize: CGFloat = 22
-    static let quoteBarWidth: CGFloat = 3
-    static let quoteInset: CGFloat = 14
+    nonisolated static let handleGap: CGFloat = 4
+    nonisolated static let columnGap: CGFloat = 46
+    nonisolated static let columnMinimumWidth: CGFloat = 120
+    nonisolated static let listMarkerWidth: CGFloat = 26
+    nonisolated static let todoBoxSize: CGFloat = 16
+    nonisolated static let toggleTriangleSize: CGFloat = 22
+    nonisolated static let quoteBarWidth: CGFloat = 3
+    nonisolated static let quoteInset: CGFloat = 14
     static let calloutPadding = NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 18)
-    static let calloutIconSize: CGFloat = 22
+    nonisolated static let calloutIconSize: CGFloat = 22
     static let codePadding = NSEdgeInsets(top: 30, left: 18, bottom: 18, right: 18)
-    static let dividerHeight: CGFloat = 13
-    static let dropIndicatorThickness: CGFloat = 3
-    static let mediaRadius: CGFloat = 6
-    static let inlineCodeRadius: CGFloat = 4
-    static let menuRadius: CGFloat = 12
+    nonisolated static let dividerHeight: CGFloat = 13
+    nonisolated static let dropIndicatorThickness: CGFloat = 3
+    nonisolated static let mediaRadius: CGFloat = 6
+    nonisolated static let inlineCodeRadius: CGFloat = 4
+    nonisolated static let menuRadius: CGFloat = 12
     nonisolated static let menuInset: CGFloat = 6
-    static let menuRowHeight: CGFloat = 34
-    static let menuDetailedRowHeight: CGFloat = 46
-    static let menuHeaderHeight: CGFloat = 28
-    static let menuSeparatorSlot: CGFloat = 9
-    static let menuHighlightRadius: CGFloat = 6
+    nonisolated static let menuRowHeight: CGFloat = 34
+    nonisolated static let menuDetailedRowHeight: CGFloat = 46
+    nonisolated static let menuHeaderHeight: CGFloat = 28
+    nonisolated static let menuSeparatorSlot: CGFloat = 9
+    nonisolated static let menuHighlightRadius: CGFloat = 6
     nonisolated static let menuGap: CGFloat = 6
     nonisolated static let menuScreenMargin: CGFloat = 8
-    static let controlRadius: CGFloat = 6
-    static let blockRadius: CGFloat = 6
-    static let toolbarHeight: CGFloat = 36
+    nonisolated static let controlRadius: CGFloat = 6
+    nonisolated static let blockRadius: CGFloat = 6
+    nonisolated static let toolbarHeight: CGFloat = 36
     static let toolbarButtonSize = NSSize(width: 28, height: 28)
-    static let keycapSide: CGFloat = 19
-    static let chipHeight: CGFloat = 26
-    static let fieldHeight: CGFloat = 32
+    nonisolated static let keycapSide: CGFloat = 19
+    nonisolated static let chipHeight: CGFloat = 26
+    nonisolated static let fieldHeight: CGFloat = 32
 
     static func spacingBefore(_ kind: NoteBlockKind, level: Int = 1, isFirst: Bool = false) -> CGFloat {
         guard !isFirst else { return 0 }

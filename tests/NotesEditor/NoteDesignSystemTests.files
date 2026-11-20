@@ -6,3 +6,4 @@ Sources/ParcApp/NoteControls.swift
 Sources/ParcApp/PointerCover.swift
 Sources/ParcApp/PointingHand.swift
 tests/NotesEditor/NoteDesignSystemStubs.swift
+Sources/ParcCore/NoteSyntax*.swift
