@@ -42,6 +42,7 @@ struct NoteClipboardTests {
         plainLines()
         files()
         rebasing()
+        inlineMedia()
         print("NoteClipboardTests passed")
     }
 
@@ -167,6 +168,26 @@ struct NoteClipboardTests {
         expect(environment.imported.count == 4, "only attachments are copied")
         let png = try? NoteClipboard.imageBlock(data: Data([0x89]), fileExtension: "png", environment: environment)
         expect(png?.kind == .image && png?.props.source == "Attachments/pasted.png", "pasted images become image blocks")
+    }
+
+    static func inlineMedia() {
+        let png = Data([0x89, 0x50, 0x4E, 0x47])
+        let decoded = NoteClipboard.decodeDataURL("data:image/png;base64," + png.base64EncodedString())
+        expect(decoded?.data == png && decoded?.fileExtension == "png", "base64 data URLs decode")
+        expect(NoteClipboard.decodeDataURL("data:image/jpeg;base64,/9j/")?.fileExtension == "jpg", "JPEG data gets a jpg extension")
+        expect(NoteClipboard.decodeDataURL("data:text/html,<b>x</b>") == nil, "only media data URLs import")
+        expect(NoteClipboard.decodeDataURL("https://example.com/a.png") == nil, "web sources stay put")
+        let environment = RecordingEnvironment(documentURL: URL(fileURLWithPath: "/tmp/notes/Page.md"))
+        var image = NoteBlock(.image)
+        image.props.source = "data:image/png;base64," + png.base64EncodedString()
+        var web = NoteBlock(.image)
+        web.props.source = "https://example.com/dog.png"
+        let toggle = NoteBlock(.toggle, text: "Pics", children: [image, web])
+        let result = NoteClipboard.importInlineMedia([toggle], environment: environment)
+        expect(result.failures.isEmpty, "imports succeed")
+        expect(result.blocks[0].children[0].props.source == "Attachments/pasted.png", "inline images land in Attachments")
+        expect(result.blocks[0].children[1].props.source == "https://example.com/dog.png", "remote images keep their URL")
+        expect(environment.importedData.count == 1 && environment.importedData[0].0 == png, "the decoded bytes are what's imported")
     }
 
     static func rebasing() {

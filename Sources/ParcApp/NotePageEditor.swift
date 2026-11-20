@@ -799,9 +799,11 @@ final class NotePageEditor {
         guard !fragment.isEmpty else { return false }
         var inline = false
         if case .text = target { inline = true }
+        let environment = environment
+        let html = isPlainText ? nil : NotePageHTML.fragment(fragment, assets: { environment.resolve($0) })
         let payload = NoteClipboard.payload(for: fragment, inline: inline,
                                             base: environment.documentURL?.deletingLastPathComponent(),
-                                            plainTextFile: isPlainText)
+                                            plainTextFile: isPlainText, html: html)
         return NoteClipboard.write(payload, to: pasteboard)
     }
 
@@ -830,7 +832,7 @@ final class NotePageEditor {
         if !plainText, let focused = focusedCell, focused.table.pasteIntoCell(focused.cell) { return true }
         let reading = NoteClipboard.read(pasteboard)
         let plainOnly = plainText || isPlainText || caretIsInPlainField
-        switch NoteClipboard.choose(reading, plainOnly: plainOnly, canReadHTML: false) {
+        switch NoteClipboard.choose(reading, plainOnly: plainOnly, canReadHTML: true) {
         case .nothing:
             return false
         case .plainText:
@@ -852,8 +854,15 @@ final class NotePageEditor {
                 onError?(error)
             }
         case .html:
-            guard let string = reading.string else { return false }
-            insertPlain(string)
+            let parsed = reading.html.map { NoteHTMLReader.blocks(from: $0, baseURL: nil) } ?? []
+            if parsed.isEmpty {
+                guard let string = NoteClipboard.plainString(reading) else { return false }
+                insertPlain(string)
+            } else {
+                let imported = NoteClipboard.importInlineMedia(parsed, environment: environment)
+                pasteBlocks(imported.blocks, inline: true)
+                if let failure = imported.failures.first { onError?(failure) }
+            }
         case .url:
             let text = reading.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard let url = NoteClipboard.webURL(in: text) ?? reading.url else { return false }
@@ -1031,7 +1040,7 @@ final class NotePageEditor {
         let target = canvas.dropTarget(at: point, dragging: [])
         let reading = NoteClipboard.read(info.draggingPasteboard)
         var blocks: [NoteBlock] = []
-        switch NoteClipboard.choose(reading, plainOnly: isPlainText, canReadHTML: false) {
+        switch NoteClipboard.choose(reading, plainOnly: isPlainText, canReadHTML: true) {
         case .nothing:
             return false
         case .blocks:
@@ -1054,7 +1063,13 @@ final class NotePageEditor {
             blocks = [.paragraph(NoteText(label, marks: marks))]
         case .markdown:
             blocks = NoteClipboard.markdownBlocks(reading.string ?? "")
-        case .plainText, .html:
+        case .html:
+            let parsed = reading.html.map { NoteHTMLReader.blocks(from: $0, baseURL: nil) } ?? []
+            let imported = NoteClipboard.importInlineMedia(parsed, environment: environment)
+            blocks = imported.blocks
+            if let failure = imported.failures.first { onError?(failure) }
+            if blocks.isEmpty, let string = NoteClipboard.plainString(reading) { blocks = NoteClipboard.plainBlocks(string) }
+        case .plainText:
             guard let string = NoteClipboard.plainString(reading) else { return false }
             blocks = isPlainText ? NotePlainText.parse(string).blocks : NoteClipboard.plainBlocks(string)
         }

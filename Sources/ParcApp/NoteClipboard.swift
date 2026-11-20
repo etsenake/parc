@@ -304,6 +304,43 @@ enum NoteClipboard {
         return NoteBlock(.image, props: props)
     }
 
+    static func decodeDataURL(_ source: String) -> (data: Data, fileExtension: String)? {
+        guard source.lowercased().hasPrefix("data:"), let comma = source.firstIndex(of: ",") else { return nil }
+        let header = source[source.index(source.startIndex, offsetBy: 5)..<comma].lowercased()
+        let parts = header.split(separator: ";").map(String.init)
+        guard let mime = parts.first, mime.hasPrefix("image/") || mime.hasPrefix("video/") || mime.hasPrefix("audio/") else { return nil }
+        let payload = String(source[source.index(after: comma)...])
+        let data: Data?
+        if parts.contains("base64") {
+            data = Data(base64Encoded: payload.filter { !$0.isWhitespace }, options: .ignoreUnknownCharacters)
+        } else {
+            data = payload.removingPercentEncoding.map { Data($0.utf8) }
+        }
+        guard let data, !data.isEmpty else { return nil }
+        let subtype = String(mime.split(separator: "/").last ?? "png")
+        let known: [String: String] = ["jpeg": "jpg", "svg+xml": "svg", "x-icon": "ico", "vnd.microsoft.icon": "ico", "quicktime": "mov", "mpeg": "mp3"]
+        return (data, known[subtype] ?? subtype)
+    }
+
+    @MainActor
+    static func importInlineMedia(_ blocks: [NoteBlock], environment: NoteEnvironment) -> (blocks: [NoteBlock], failures: [Error]) {
+        var failures: [Error] = []
+        func walk(_ block: NoteBlock) -> NoteBlock {
+            var copy = block
+            if block.kind.isMedia, let source = block.props.source, let decoded = decodeDataURL(source) {
+                do {
+                    copy.props.source = try environment.importAsset(data: decoded.data, fileExtension: decoded.fileExtension,
+                                                                    suggestedName: "Pasted " + (block.kind == .image ? "Image" : "File"))
+                } catch {
+                    failures.append(error)
+                }
+            }
+            copy.children = block.children.map(walk)
+            return copy
+        }
+        return (blocks.map(walk), failures)
+    }
+
     @MainActor
     static func rebase(_ archive: Archive, into environment: NoteEnvironment) -> [NoteBlock] {
         let destination = environment.documentURL?.deletingLastPathComponent().standardizedFileURL
