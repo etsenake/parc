@@ -95,7 +95,8 @@ extension BrowserWindowController {
               !original.windowClosePending, !original.windowCloseApproved,
               let window = original.window, page.nativeView.window === window,
               let id = original.browsers.first(where: { $0.value.nativePage === page })?.key
-                  ?? original.peekSource(of: page),
+                  ?? original.peekSource(of: page)
+                  ?? original.coveredPages.first(where: { $0.value.browser.nativePage === page })?.key,
               original.ownership.canUse(id, owner: original.presentationID),
               !original.closingTabIDs.contains(id), !original.modelRetirementIDs.contains(id),
               !original.transferringTabIDs.contains(id), !store.retiringTabIDs.contains(id) else { return nil }

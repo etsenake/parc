@@ -162,6 +162,11 @@ extension BrowserWindowController {
                 return alternate || self.stepNoteVisit(id, forward: false)
             }
         }
+        history.onNavigate = { [weak self] in
+            guard let self, self.currentTabID == id else { return }
+            self.failures.removeValue(forKey: id)
+            self.refreshPagePresentation(id)
+        }
         history.onClose = { [weak self, weak history] in
             guard let self, self.navigationHistory === history else { return }
             self.navigationHistory = nil; self.refreshSidebarPointer()
