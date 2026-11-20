@@ -301,12 +301,11 @@ enum NoteBlockMenuModel {
     }
 
     static func footer(for blocks: [NoteBlock]) -> String? {
-        let text = NotePage(blocks: blocks).plainText
-        let words = NotePage(blocks: blocks).wordCount
-        guard words > 0 else { return nil }
-        let characters = text.filter { !$0.isNewline }.count
-        let wordLabel = words == 1 ? "1 word" : "\(words) words"
-        let characterLabel = characters == 1 ? "1 character" : "\(characters) characters"
-        return wordLabel + " · " + characterLabel
+        let stats = NotePageStats(page: NotePage(blocks: blocks))
+        guard stats.words > 0 else { return nil }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        let count = formatter.string(from: NSNumber(value: stats.characters)) ?? String(stats.characters)
+        return stats.wordLabel + " · " + (stats.characters == 1 ? "1 character" : count + " characters")
     }
 }
