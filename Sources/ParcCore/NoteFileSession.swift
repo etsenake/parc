@@ -91,6 +91,7 @@ final class NoteFileSession {
         sessions[key] = session
         live[ObjectIdentifier(session)] = session
         session.startWatching(seen: read.stamp.map(NoteFileSighting.file))
+        session.joinSyncedBlocks()
         return session
     }
 
@@ -149,6 +150,7 @@ final class NoteFileSession {
     private var isClosed = false
     private var wasAttended = false
     private var registryKey = ""
+    private var reportedMissing = false
 
     private init(url: URL, kind: NoteFileKind, contents: NoteFileContents) {
         self.url = url
@@ -664,7 +666,20 @@ final class NoteFileSession {
         return true
     }
 
+    private func joinSyncedBlocks() {
+        reportedMissing = isMissing
+        NoteSyncedBlocks.shared.useNoteFiles()
+        NoteSyncedBlocks.shared.attach(page, location: { [weak self] in self?.url }, isAvailable: { [weak self] in
+            guard let self else { return false }
+            return !self.isClosed && !self.isMissing
+        })
+    }
+
     private func refreshState() {
+        if isMissing != reportedMissing {
+            reportedMissing = isMissing
+            NoteSyncedBlocks.shared.availabilityChanged(page)
+        }
         let next: NoteFileSaveState
         if conflict != nil { next = .conflict }
         else if let problem = lastSaveError ?? readProblem { next = .failed(problem) }
@@ -702,6 +717,7 @@ final class NoteFileSession {
         watcher = nil
         if Self.sessions[registryKey] === self { Self.sessions[registryKey] = nil }
         Self.live[ObjectIdentifier(self)] = nil
+        NoteSyncedBlocks.shared.detach(page)
     }
 
     private func reopen() {
@@ -710,5 +726,6 @@ final class NoteFileSession {
         Self.live[ObjectIdentifier(self)] = self
         if Self.sessions[registryKey] == nil { Self.sessions[registryKey] = self }
         startWatching(seen: nil)
+        joinSyncedBlocks()
     }
 }

@@ -178,6 +178,27 @@ final class NoteLibrary {
         return Self.rank(query, entries: Array(entries.values), contents: contents, limit: limit).map(\.reference)
     }
 
+    func notes(withSyncedOriginal anchor: String) -> [URL] {
+        syncedNotes(matching: ["synced id=\"" + anchor + "\""])
+    }
+
+    func notes(mentioningSynced anchor: String) -> [URL] {
+        syncedNotes(matching: ["synced id=\"" + anchor + "\"", "#" + anchor + "\""])
+    }
+
+    private func syncedNotes(matching needles: [String]) -> [URL] {
+        guard !needles.isEmpty else { return [] }
+        do { try refreshListing() } catch { return [] }
+        wantsContents = true
+        if !contentIsCurrent { indexContents() }
+        let folded = needles.map(Self.fold)
+        let marker = Self.fold("parc synced")
+        return entries.values.compactMap { entry -> URL? in
+            guard let body = contents[entry.url.path]?.folded, body.contains(marker), folded.contains { body.contains($0) } else { return nil }
+            return entry.url
+        }.sorted { $0.path < $1.path }
+    }
+
     func snippet(for url: URL) -> String? {
         let file = NoteFilePaths.canonical(url)
         if let entry = entries[file.path], entry.summarized { return entry.snippet }

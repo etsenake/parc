@@ -854,7 +854,8 @@ extension NotePageSession {
     func duplicateBlocks(_ ids: [NoteBlockID]) -> [NoteBlockID] {
         let targets = page.topLevelSelection(ids)
         guard let last = targets.last else { return [] }
-        let copies = targets.compactMap { page.block($0)?.withFreshIDs() }
+        ensureSyncedAnchors(within: targets)
+        let copies = targets.compactMap { page.block($0)?.referencingSyncedOriginals { "#" + $0 }.withFreshIDs() }
         edit("Duplicate", selection: .blocks(copies.map(\.id))) { page in page.insert(copies, .after(last)) }
         return copies.map(\.id)
     }

@@ -31,6 +31,7 @@ final class NotePageSession {
         var selectionAfter: NotePageSelection
         var name: String
         var effects: [NoteUndoEffect] = []
+        var serial = 0
     }
 
     private struct OpenGroup {
@@ -40,12 +41,14 @@ final class NotePageSession {
         var changed = false
         var continuing: NoteEditCoalescing = .none
         var effects: [NoteUndoEffect] = []
+        var serial = 0
     }
 
     private(set) var page: NotePage
     private(set) var selection: NotePageSelection = .none
     private(set) var revision: UInt64 = 0
     let changes = PassthroughSubject<NotePageChange, Never>()
+    let settled = PassthroughSubject<NotePageChange, Never>()
     var isReadOnly = false
     var isFlat = false
     var now: () -> Date = Date.init
@@ -56,6 +59,7 @@ final class NotePageSession {
     private var lastCoalescing: NoteEditCoalescing = .none
     private var lastEditTime = Date.distantPast
     private var openGroup: OpenGroup?
+    private var lastSerial = 0
 
     init(page: NotePage) {
         self.page = page.blocks.isEmpty ? NotePage(settings: page.settings, blocks: [.paragraph()]) : page
@@ -68,6 +72,7 @@ final class NotePageSession {
     var undoDepth: Int { undoStack.count }
     var redoDepth: Int { redoStack.count }
     var isGrouping: Bool { openGroup != nil }
+    var historyToken: Int? { openGroup?.serial ?? undoStack.last?.serial }
 
     func replacePage(_ value: NotePage, selection next: NotePageSelection = .none, keepHistory: Bool = false) {
         page = value.blocks.isEmpty ? NotePage(settings: value.settings, blocks: [.paragraph()]) : value
@@ -79,14 +84,14 @@ final class NotePageSession {
         }
         breakCoalescing()
         revision &+= 1
-        changes.send(NotePageChange(kind: .replaced, blocks: Set(page.documentOrder()), origin: nil, revision: revision))
+        publish(NotePageChange(kind: .replaced, blocks: Set(page.documentOrder()), origin: nil, revision: revision))
     }
 
     func setSelection(_ value: NotePageSelection, origin: AnyObject? = nil) {
         guard value != selection else { return }
         if Self.coalescingTarget(lastCoalescing) != Self.typingTarget(of: value) { breakCoalescing() }
         selection = value
-        changes.send(NotePageChange(kind: .selection, blocks: [], origin: origin.map(ObjectIdentifier.init), revision: revision))
+        publish(NotePageChange(kind: .selection, blocks: [], origin: origin.map(ObjectIdentifier.init), revision: revision))
     }
 
     func breakCoalescing() { lastCoalescing = .none }
@@ -121,8 +126,8 @@ final class NotePageSession {
         if let after { selection = after }
         if changed, openGroup == nil, !undoStack.isEmpty { undoStack[undoStack.count - 1].selectionAfter = selection }
         revision &+= 1
-        changes.send(NotePageChange(kind: changed ? kind : .selection, blocks: changedBlocks,
-                                    origin: origin.map(ObjectIdentifier.init), revision: revision))
+        publish(NotePageChange(kind: changed ? kind : .selection, blocks: changedBlocks,
+                               origin: origin.map(ObjectIdentifier.init), revision: revision))
     }
 
     @discardableResult
@@ -134,7 +139,7 @@ final class NotePageSession {
     func group<Result>(_ name: String, continuing: NoteEditCoalescing, _ body: () throws -> Result) rethrows -> Result {
         if openGroup != nil { return try body() }
         breakCoalescing()
-        openGroup = OpenGroup(name: name, page: page, selection: selection, continuing: continuing)
+        openGroup = OpenGroup(name: name, page: page, selection: selection, continuing: continuing, serial: nextSerial())
         defer { closeGroup() }
         return try body()
     }
@@ -144,7 +149,7 @@ final class NotePageSession {
         openGroup = nil
         if group.changed {
             pushUndo(HistoryStep(page: group.page.withoutIndex, selectionBefore: group.selection, selectionAfter: selection,
-                                 name: group.name, effects: group.effects))
+                                 name: group.name, effects: group.effects, serial: group.serial))
             redoStack.removeAll()
         }
         if group.changed && group.continuing != .none {
@@ -158,17 +163,82 @@ final class NotePageSession {
     func undo() {
         guard openGroup == nil, !isReadOnly, let step = undoStack.popLast() else { return }
         redoStack.append(HistoryStep(page: page.withoutIndex, selectionBefore: step.selectionBefore,
-                                     selectionAfter: step.selectionAfter, name: step.name, effects: step.effects))
-        restore(step.page, selection: step.selectionBefore)
+                                     selectionAfter: step.selectionAfter, name: step.name, effects: step.effects, serial: step.serial))
+        let change = restore(step.page, selection: step.selectionBefore)
         for effect in step.effects.reversed() { effect.undo() }
+        settled.send(change)
     }
 
     func redo() {
         guard openGroup == nil, !isReadOnly, let step = redoStack.popLast() else { return }
         for effect in step.effects { effect.redo() }
         pushUndo(HistoryStep(page: page.withoutIndex, selectionBefore: step.selectionBefore,
-                             selectionAfter: step.selectionAfter, name: step.name, effects: step.effects))
-        restore(step.page, selection: step.selectionAfter)
+                             selectionAfter: step.selectionAfter, name: step.name, effects: step.effects, serial: step.serial))
+        let change = restore(step.page, selection: step.selectionAfter)
+        settled.send(change)
+    }
+
+    @discardableResult
+    func attachToLastStep(_ effect: NoteUndoEffect) -> Bool {
+        if openGroup != nil {
+            guard openGroup?.effects.contains(where: { $0.owner != nil && $0.owner == effect.owner }) != true else { return false }
+            openGroup?.effects.append(effect)
+            return true
+        }
+        guard !undoStack.isEmpty, !undoStack[undoStack.count - 1].effects.contains(where: { $0.owner != nil && $0.owner == effect.owner })
+        else { return false }
+        undoStack[undoStack.count - 1].effects.append(effect)
+        return true
+    }
+
+    @discardableResult
+    func applyLinked(_ name: String, owner: ObjectIdentifier, effect: () -> NoteUndoEffect, origin: AnyObject? = nil,
+                     _ body: (inout NotePage) -> Void) -> Bool {
+        guard !isReadOnly else { return false }
+        var next = page
+        body(&next)
+        if next.blocks.isEmpty { next.blocks = [.paragraph()] }
+        guard next != page else { return true }
+        if openGroup != nil {
+            openGroup?.changed = true
+            if openGroup?.effects.contains(where: { $0.owner == owner }) != true { openGroup?.effects.append(effect()) }
+        } else if undoStack.last?.effects.contains(where: { $0.owner == owner }) == true {
+            redoStack.removeAll()
+        } else {
+            pushUndo(HistoryStep(page: page.withoutIndex, selectionBefore: selection, selectionAfter: selection, name: name,
+                                 effects: [effect()], serial: nextSerial()))
+            redoStack.removeAll()
+            breakCoalescing()
+        }
+        commit(next, origin: origin)
+        return true
+    }
+
+    func applyUntracked(origin: AnyObject? = nil, _ body: (inout NotePage) -> Void) {
+        guard !isReadOnly else { return }
+        var next = page
+        body(&next)
+        if next.blocks.isEmpty { next.blocks = [.paragraph()] }
+        guard next != page else { return }
+        commit(next, origin: origin)
+    }
+
+    private func commit(_ next: NotePage, origin: AnyObject?) {
+        let changed = Self.changedBlocks(from: page, to: next)
+        page = next
+        selection = next.clamped(selection)
+        revision &+= 1
+        publish(NotePageChange(kind: .structure, blocks: changed, origin: origin.map(ObjectIdentifier.init), revision: revision))
+    }
+
+    private func publish(_ change: NotePageChange) {
+        changes.send(change)
+        settled.send(change)
+    }
+
+    private func nextSerial() -> Int {
+        lastSerial += 1
+        return lastSerial
     }
 
     @discardableResult
@@ -204,7 +274,7 @@ final class NotePageSession {
             openGroup = group
         }
         revision &+= 1
-        changes.send(NotePageChange(kind: kind, blocks: [id], origin: nil, revision: revision))
+        publish(NotePageChange(kind: kind, blocks: [id], origin: nil, revision: revision))
     }
 
     func updateAllPagesMetadata(_ transform: (NotePage) -> NotePage) {
@@ -235,7 +305,11 @@ final class NotePageSession {
         guard settings != page.settings else { return }
         page.settings = settings
         revision &+= 1
-        changes.send(NotePageChange(kind: .settings, blocks: [], origin: nil, revision: revision))
+        publish(NotePageChange(kind: .settings, blocks: [], origin: nil, revision: revision))
+    }
+
+    func ensureSyncedAnchors(within ids: some Sequence<NoteBlockID>) {
+        for id in page.syncedOriginals(within: ids) where page.block(id)?.props.anchor == nil { ensureAnchor(for: id) }
     }
 
     @discardableResult
@@ -271,7 +345,9 @@ final class NotePageSession {
         }
         let coalesce = coalescing != .none && coalescing == lastCoalescing && !undoStack.isEmpty
             && time.timeIntervalSince(lastEditTime) < typingCoalesceInterval
-        if !coalesce { pushUndo(HistoryStep(page: page.withoutIndex, selectionBefore: selection, selectionAfter: selection, name: name)) }
+        if !coalesce {
+            pushUndo(HistoryStep(page: page.withoutIndex, selectionBefore: selection, selectionAfter: selection, name: name, serial: nextSerial()))
+        }
         redoStack.removeAll()
     }
 
@@ -288,13 +364,15 @@ final class NotePageSession {
         if undoStack.count > undoLimit { undoStack.removeFirst(undoStack.count - undoLimit) }
     }
 
-    private func restore(_ target: NotePage, selection next: NotePageSelection) {
+    private func restore(_ target: NotePage, selection next: NotePageSelection) -> NotePageChange {
         let changed = Self.changedBlocks(from: page, to: target)
         page = target
         selection = next
         breakCoalescing()
         revision &+= 1
-        changes.send(NotePageChange(kind: .structure, blocks: changed, origin: nil, isUndoRedo: true, revision: revision))
+        let change = NotePageChange(kind: .structure, blocks: changed, origin: nil, isUndoRedo: true, revision: revision)
+        changes.send(change)
+        return change
     }
 
     private static func coalescingTarget(_ value: NoteEditCoalescing) -> NotePosition? {

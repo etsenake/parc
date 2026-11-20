@@ -648,6 +648,19 @@ struct NoteBlock: Hashable, Identifiable, Codable {
     var isToggle: Bool { kind == .toggle || (kind == .heading && props.toggleable) }
     var isSyncedOriginal: Bool { kind == .synced && props.target == nil }
     var isSyncedCopy: Bool { kind == .synced && props.target != nil }
+    var containsSynced: Bool { kind == .synced || children.contains { $0.containsSynced } }
+
+    func referencingSyncedOriginals(_ target: (String) -> String) -> NoteBlock {
+        var copy = self
+        if isSyncedOriginal, let anchor = props.anchor, NoteAnchor.isValid(anchor) {
+            copy.props.target = target(anchor)
+            copy.props.anchor = nil
+            return copy
+        }
+        guard !children.isEmpty else { return copy }
+        copy.children = children.map { $0.referencingSyncedOriginals(target) }
+        return copy
+    }
     var acceptsChildren: Bool { kind.acceptsChildren }
     var showsChildren: Bool { !isToggle || props.expanded }
     var isCollapsed: Bool { isToggle && !props.expanded }
@@ -666,7 +679,7 @@ struct NoteBlock: Hashable, Identifiable, Codable {
     func withFreshIDs() -> NoteBlock {
         var copy = self
         copy.id = NoteBlockID()
-        if copy.props.anchor != nil { copy.props.anchor = nil }
+        if copy.props.anchor != nil && !isSyncedOriginal { copy.props.anchor = nil }
         copy.children = children.map { $0.withFreshIDs() }
         return copy
     }
@@ -1253,6 +1266,24 @@ extension NotePage {
             counts[base] = count
             used.insert(slug)
             result.append((block.id, slug))
+        }
+        return result
+    }
+
+    func syncedSite(containing id: NoteBlockID) -> NoteBlockID? {
+        guard contains(id) else { return nil }
+        return ([id] + ancestors(of: id)).last { block($0)?.kind == .synced }
+    }
+
+    func syncedOriginals(within ids: some Sequence<NoteBlockID>) -> [NoteBlockID] {
+        var result: [NoteBlockID] = []
+        func walk(_ block: NoteBlock) {
+            if block.isSyncedOriginal { result.append(block.id); return }
+            block.children.forEach(walk)
+        }
+        let wanted = Set(ids)
+        for id in wanted where !ancestors(of: id).contains(where: wanted.contains) {
+            if let block = block(id) { walk(block) }
         }
         return result
     }
