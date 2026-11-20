@@ -49,6 +49,7 @@ final class NoteMermaidRenderer: NSObject, WKNavigationDelegate {
     typealias Completion = (NoteMermaidResult) -> Void
 
     private var cache = NoteMermaidCache<NoteMermaidResult>(capacity: 96, costLimit: 24 << 20)
+    private var layouts = NoteMermaidCache<NoteMermaidResult>(capacity: 192, costLimit: 24 << 20)
     private var queue = NoteMermaidQueue()
     private var completions: [Int: Completion] = [:]
     private var lastClient = 0
@@ -67,6 +68,10 @@ final class NoteMermaidRenderer: NSObject, WKNavigationDelegate {
 
     func cached(_ request: NoteMermaidRequest) -> NoteMermaidResult? {
         cache.value(for: request.key)
+    }
+
+    func lastKnown(_ request: NoteMermaidRequest) -> NoteMermaidResult? {
+        cache.peek(request.key) ?? layouts.peek(request.layoutKey)
     }
 
     func render(_ request: NoteMermaidRequest, client: Int, completion: @escaping Completion) {
@@ -181,7 +186,10 @@ final class NoteMermaidRenderer: NSObject, WKNavigationDelegate {
         timeout = nil
         let result = Self.result(for: outcome)
         if case .art = result { retriedKey = nil }
-        if outcome.isCacheable, result.art != nil || outcome.drawing == nil { cache.insert(result, for: request.key, cost: outcome.cost) }
+        if outcome.isCacheable, result.art != nil || outcome.drawing == nil {
+            cache.insert(result, for: request.key, cost: outcome.cost)
+            layouts.insert(result, for: request.layoutKey, cost: outcome.cost)
+        }
         for client in queue.finish(request.key) {
             completions.removeValue(forKey: client)?(result)
         }

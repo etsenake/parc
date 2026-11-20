@@ -1,5 +1,20 @@
 import Foundation
 
+enum NoteDiagramMode: String, Codable, CaseIterable, Hashable, Sendable {
+    case code, preview, split
+
+    var title: String {
+        switch self {
+        case .code: return "Code"
+        case .preview: return "Preview"
+        case .split: return "Split"
+        }
+    }
+
+    var showsCode: Bool { self != .preview }
+    var showsDiagram: Bool { self != .code }
+}
+
 enum NoteMermaid {
     static let languageID = "mermaid"
     static let typingDelay: TimeInterval = 0.3
@@ -233,12 +248,14 @@ struct NoteMermaidRequest: Hashable, Sendable {
     let source: String
     let theme: NoteMermaidTheme
     let key: String
+    let layoutKey: String
 
     init(source: String, theme: NoteMermaidTheme) {
         let normalized = NoteMermaid.normalizedSource(source)
         self.source = normalized
         self.theme = theme
         key = NoteMermaid.fingerprint(theme.signature + "\u{0}" + normalized)
+        layoutKey = NoteMermaid.fingerprint(theme.fontFamily + "\u{0}" + String(theme.fontSize) + "\u{0}" + normalized)
     }
 
     var elementID: String { "parc-mermaid-" + key }

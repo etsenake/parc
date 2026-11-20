@@ -153,6 +153,11 @@ struct NoteMermaidTests {
         expect(NoteMermaidRequest(source: "graph TD\nA-->B", theme: dark).key != a.key, "appearance is part of the key")
         expect(NoteMermaidRequest(source: "graph TD\nA-->B", theme: .note(dark: false, font: .serif)).key != a.key, "page fonts are part of the key")
         expect(a.elementID == "parc-mermaid-" + a.key, "each drawing gets its own element id")
+        expect(NoteMermaidRequest(source: "graph TD\nA-->B", theme: dark).layoutKey == a.layoutKey,
+               "light and dark share a layout, so heights hold steady across appearances")
+        expect(NoteMermaidRequest(source: "graph TD\nA-->B", theme: .note(dark: false, small: true)).layoutKey != a.layoutKey,
+               "text size changes the layout")
+        expect(NoteMermaidRequest(source: "graph TD\nA-->C", theme: light).layoutKey != a.layoutKey, "sources change the layout")
         expect(a.elementID.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }, "element ids are CSS-safe")
         expect(Set([a, b]).count == 1, "equal requests hash together")
         expect(NoteMermaid.hasContent(" \n graph") && !NoteMermaid.hasContent(" \n\t "), "blank sources don't draw")
