@@ -278,6 +278,22 @@ struct NoteCanvasLayoutTests {
         expect(all.contains { $0.style == .background(.yellow) }, "background colours get a fill")
         expect(all.last?.key.slot == 1, "bars draw above fills")
         expect(result.decorations(in: CGRect(x: 0, y: 1500, width: 10, height: 10)).isEmpty, "regions filter decorations")
+        expect(result.decorations(of: [callout.id]).map(\.style) == [.callout(.background(.blue))], "one block's decorations on request")
+        expect(result.decorations(of: [inside.id]).isEmpty, "plain blocks have none")
+
+        var tip = NoteBlock(.callout, text: "tip")
+        tip.props.alert = "TIP"
+        var warning = NoteBlock(.callout, text: "careful", color: .background(.pink))
+        warning.props.alert = "WARNING"
+        var plain = NoteBlock(.callout, text: "plain")
+        plain.props.alert = nil
+        let alerts = layout([tip, warning, plain])
+        expect(alerts.decorations(of: [tip.id]).first?.style == .callout(.background(.green)), "a TIP callout is green by default")
+        expect(alerts.decorations(of: [warning.id]).first?.style == .callout(.background(.pink)), "a chosen colour beats the alert default")
+        expect(alerts.decorations(of: [plain.id]).first?.style == .callout(nil), "a plain callout keeps the house fill")
+        var caution = NoteBlock(.callout, text: "stop")
+        caution.props.alert = "caution"
+        expect(layout([caution]).decorations(of: [caution.id]).first?.style == .callout(.background(.red)), "alert names match in any case")
     }
 
     static func transitions() {

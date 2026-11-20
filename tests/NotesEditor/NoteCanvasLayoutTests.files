@@ -1,4 +1,2 @@
-Sources/ParcCore/NoteModel.swift
-Sources/ParcCore/NotePageSession.swift
-Sources/ParcCore/NotePageEditing.swift
+Sources/ParcCore/*.swift
 Sources/ParcApp/NoteCanvasLayout.swift

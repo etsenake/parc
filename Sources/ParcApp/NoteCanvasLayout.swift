@@ -401,7 +401,7 @@ struct NoteCanvasLayout {
         var result: [NoteCanvasDecoration] = []
         let outset = metrics.washOutsetY * metrics.scale
         if entry.kind == .callout {
-            result.append(NoteCanvasDecoration(key: .init(owner: entry.id, slot: 0), style: .callout(block.color),
+            result.append(NoteCanvasDecoration(key: .init(owner: entry.id, slot: 0), style: .callout(block.calloutDisplayColor),
                                                rect: entry.outerFrame, depth: entry.depth))
         } else if case .background(let color) = block.color, entry.kind != .columns {
             result.append(NoteCanvasDecoration(key: .init(owner: entry.id, slot: 0), style: .background(color),
