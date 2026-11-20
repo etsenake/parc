@@ -5,6 +5,7 @@ struct NoteTableCellStyle: Hashable {
     var small = false
     var header = false
     var alignment: NoteAlignment?
+    var color: NoteColorStyle?
 }
 
 @MainActor
@@ -38,10 +39,14 @@ enum NoteTableStyle {
     static let fadeWidth: CGFloat = 28
     static let virtualizationThreshold = 150
     static let gripTooltip = "Drag to move, click for options"
+    static let cellMenuButtonSize = NSSize(width: 20, height: 18)
+    static let cellMenuTooltip = "Cell options"
+    static let cornerTooltip = "Drag to add or remove rows and columns"
+    static let cornerColumnStep: CGFloat = 96
 
     static func presentation(_ style: NoteTableCellStyle) -> NoteTextPresentation {
         NoteTextPresentation(role: style.header ? .tableHeader : .tableCell, pageFont: style.font, small: style.small,
-                             alignment: textAlignment(style.alignment))
+                             color: style.color?.isBackground == false ? style.color : nil, alignment: textAlignment(style.alignment))
     }
 
     static func textAlignment(_ alignment: NoteAlignment?) -> NSTextAlignment {
@@ -56,6 +61,7 @@ enum NoteTableStyle {
 @MainActor
 final class NoteTableCellTextView: NoteTextView {
     weak var table: NoteTableBlockView?
+    let backdrop = NoteTableBackdropView(frame: .zero)
     var cell = NoteTableCell(row: 0, column: 0)
     private(set) var cellStyle = NoteTableCellStyle()
     private(set) var isTrackingPointer = false
@@ -239,6 +245,13 @@ final class NoteTableSurfaceView: NSView, NSMenuItemValidation {
         if table?.handleRangeKey(event) != true { super.keyDown(with: event) }
     }
 
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.firstResponder === self, event.type == .keyDown, let table, table.handleRangeKeyEquivalent(event) else {
+            return super.performKeyEquivalent(with: event)
+        }
+        return true
+    }
+
     @objc func copy(_ sender: Any?) { table?.copyRange(cut: false) }
     @objc func cut(_ sender: Any?) { table?.copyRange(cut: true) }
     @objc func paste(_ sender: Any?) { table?.pasteIntoRange() }
@@ -258,6 +271,7 @@ final class NoteTableSurfaceView: NSView, NSMenuItemValidation {
 @MainActor
 final class NoteTableRuleView: NSView {
     var color: NSColor = NoteTableStyle.border { didSet { needsDisplay = true } }
+    var gaps: [ClosedRange<CGFloat>] = [] { didSet { if oldValue != gaps { needsDisplay = true } } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -272,7 +286,183 @@ final class NoteTableRuleView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         color.setFill()
+        guard !gaps.isEmpty else { bounds.fill(); return }
+        let horizontal = bounds.width >= bounds.height
+        let length = horizontal ? bounds.width : bounds.height
+        var start: CGFloat = 0
+        for gap in gaps.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            if gap.lowerBound > start {
+                (horizontal ? NSRect(x: start, y: 0, width: gap.lowerBound - start, height: bounds.height)
+                    : NSRect(x: 0, y: start, width: bounds.width, height: gap.lowerBound - start)).fill()
+            }
+            start = max(start, gap.upperBound)
+        }
+        if start < length {
+            (horizontal ? NSRect(x: start, y: 0, width: length - start, height: bounds.height)
+                : NSRect(x: 0, y: start, width: bounds.width, height: length - start)).fill()
+        }
+    }
+}
+
+@MainActor
+final class NoteTableBackdropView: NSView {
+    var fill: NSColor? { didSet { if oldValue != fill { needsDisplay = true } } }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let fill else { return }
+        fill.setFill()
         bounds.fill()
+    }
+}
+
+@MainActor
+final class NoteTableCellMenuButton: NSView {
+    var onPress: (() -> Void)?
+    var isActive = false { didSet { if oldValue != isActive { needsDisplay = true } } }
+    private var isHovered = false { didSet { if oldValue != isHovered { needsDisplay = true } } }
+    private var hoverArea: NSTrackingArea?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        parcTooltip = TooltipConfiguration(NoteTableStyle.cellMenuTooltip)
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = 0.08
+        layer?.shadowRadius = 2
+        layer?.shadowOffset = CGSize(width: 0, height: -1)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+
+    override func updateTrackingAreas() {
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverArea = area
+        super.updateTrackingAreas()
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseExited(with event: NSEvent) { isHovered = false }
+    override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        NoteTableMotion.press(self, pressed: true)
+        var inside = true
+        window?.trackEvents(matching: [.leftMouseDragged, .leftMouseUp], timeout: .infinity, mode: .eventTracking) { next, stop in
+            guard let next else { stop.pointee = true; return }
+            inside = bounds.contains(convert(next.locationInWindow, from: nil))
+            if next.type == .leftMouseUp { stop.pointee = true }
+        }
+        NoteTableMotion.press(self, pressed: false)
+        if inside { onPress?() }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let plate = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let path = NSBezierPath(roundedRect: plate, xRadius: 5, yRadius: 5)
+        NoteTableStyle.gripFill.setFill()
+        path.fill()
+        if isHovered || isActive {
+            NoteTheme.hoverFill.setFill()
+            path.fill()
+        }
+        path.lineWidth = 1 / (window?.backingScaleFactor ?? 2)
+        NoteTableStyle.gripStroke.setStroke()
+        path.stroke()
+        (isHovered || isActive ? NoteTableStyle.gripActiveInk : NoteTableStyle.gripInk).setFill()
+        let dot: CGFloat = 2.5, gap: CGFloat = 2
+        let width = dot * 3 + gap * 2
+        for index in 0..<3 {
+            let rect = NSRect(x: bounds.midX - width / 2 + CGFloat(index) * (dot + gap), y: bounds.midY - dot / 2, width: dot, height: dot)
+            NSBezierPath(ovalIn: rect).fill()
+        }
+    }
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { NoteTableStyle.cellMenuTooltip }
+    override func accessibilityPerformPress() -> Bool {
+        onPress?()
+        return true
+    }
+}
+
+@MainActor
+final class NoteTableCornerHandle: NSView {
+    var onPress: ((NSEvent) -> Void)?
+    var onAccessibilityPress: (() -> Void)?
+    var isActive = false { didSet { if oldValue != isActive { needsDisplay = true } } }
+    private var isHovered = false { didSet { if oldValue != isHovered { needsDisplay = true } } }
+    private var hoverArea: NSTrackingArea?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        parcTooltip = TooltipConfiguration(NoteTableStyle.cornerTooltip)
+        setAccessibilityHelp(NoteTableStyle.cornerTooltip)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+
+    override func updateTrackingAreas() {
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverArea = area
+        super.updateTrackingAreas()
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseExited(with event: NSEvent) { isHovered = false }
+    override func cursorUpdate(with event: NSEvent) {
+        if alphaValue > 0.01 { NSCursor.pointingHand.set() } else { super.cursorUpdate(with: event) }
+    }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        isActive = true
+        NoteTableMotion.press(self, pressed: true)
+        onPress?(event)
+        NoteTableMotion.press(self, pressed: false)
+        isActive = false
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4)
+        if isActive { NoteTableStyle.barPressedFill.setFill(); path.fill() } else if isHovered { NoteTableStyle.barFill.setFill(); path.fill() }
+        (isHovered || isActive ? NoteTheme.secondaryInk : NoteTableStyle.barInk).setFill()
+        let dot: CGFloat = 2, gap: CGFloat = 2
+        let corner = NSPoint(x: bounds.midX + dot + gap / 2, y: bounds.midY + dot + gap / 2)
+        for (column, row) in [(0, 0), (1, 0), (0, 1), (2, 0), (1, 1), (0, 2)] {
+            let rect = NSRect(x: corner.x - CGFloat(column) * (dot + gap) - dot, y: corner.y - CGFloat(row) * (dot + gap) - dot, width: dot, height: dot)
+            NSBezierPath(ovalIn: rect).fill()
+        }
+    }
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { "Add a row and a column" }
+    override func accessibilityPerformPress() -> Bool {
+        onAccessibilityPress?()
+        return true
     }
 }
 

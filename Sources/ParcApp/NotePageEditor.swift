@@ -671,6 +671,10 @@ final class NotePageEditor {
         case .turnInto(let target):
             return turnInto(target)
         case .duplicate:
+            if let table = selectedTableView {
+                table.fillRange(.down)
+                return true
+            }
             let ids = targetBlocks
             guard !ids.isEmpty else { return false }
             let previous = session.selection

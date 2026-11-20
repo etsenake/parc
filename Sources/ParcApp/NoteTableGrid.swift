@@ -79,6 +79,52 @@ enum NoteTableNavigation {
         cell.row + 1 < rows ? .cell(NoteTableCell(row: cell.row + 1, column: cell.column)) : .exitAfter
     }
 
+    static func tab(from cell: NoteTableCell, in table: NoteTable, backward: Bool) -> NoteTableDestination {
+        let order = table.visibleCells
+        guard let index = order.firstIndex(of: table.anchor(of: cell)) else { return .stay }
+        if backward { return index > 0 ? .cell(order[index - 1]) : .stay }
+        return index + 1 < order.count ? .cell(order[index + 1]) : .appendRow
+    }
+
+    static func step(from cell: NoteTableCell, _ direction: NoteTableDirection, in table: NoteTable, lane: Int? = nil) -> NoteTableDestination {
+        guard table.rowCount > 0, table.columnCount > 0 else { return .stay }
+        let span = table.span(of: table.anchor(of: cell))
+        let column = min(max(lane ?? span.column, span.column), span.lastColumn)
+        let row = min(max(lane ?? span.row, span.row), span.lastRow)
+        switch direction {
+        case .up:
+            guard span.row > 0 else { return .exitBefore }
+            return .cell(table.anchor(of: NoteTableCell(row: span.row - 1, column: column)))
+        case .down:
+            guard span.lastRow + 1 < table.rowCount else { return .exitAfter }
+            return .cell(table.anchor(of: NoteTableCell(row: span.lastRow + 1, column: column)))
+        case .left:
+            if span.column > 0 { return .cell(table.anchor(of: NoteTableCell(row: row, column: span.column - 1))) }
+            if case .cell(let previous) = tab(from: span.anchor, in: table, backward: true) { return .cell(previous) }
+            return .exitBefore
+        case .right:
+            if span.lastColumn + 1 < table.columnCount { return .cell(table.anchor(of: NoteTableCell(row: row, column: span.lastColumn + 1))) }
+            if case .cell(let next) = tab(from: span.anchor, in: table, backward: false) { return .cell(next) }
+            return .exitAfter
+        }
+    }
+
+    static func extended(_ head: NoteTableCell, anchor: NoteTableCell, _ direction: NoteTableDirection, in table: NoteTable) -> NoteTableCell {
+        func area(_ value: NoteTableCell) -> (rows: ClosedRange<Int>, columns: ClosedRange<Int>) {
+            table.expanded(rows: min(anchor.row, value.row)...max(anchor.row, value.row),
+                           columns: min(anchor.column, value.column)...max(anchor.column, value.column))
+        }
+        let start = area(head)
+        var next = head
+        while true {
+            let stepped = Self.moved(next, direction, rows: table.rowCount, columns: table.columnCount)
+            if stepped == next { return next }
+            next = stepped
+            let grown = area(next)
+            if grown.rows != start.rows || grown.columns != start.columns { return next }
+        }
+    }
+
     static func moved(_ cell: NoteTableCell, _ direction: NoteTableDirection, rows: Int, columns: Int) -> NoteTableCell {
         var next = cell
         switch direction {

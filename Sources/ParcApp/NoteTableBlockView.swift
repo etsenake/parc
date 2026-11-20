@@ -94,8 +94,6 @@ final class NoteTableBlockView: NoteBlockView {
     private let scrollView = NoteTableScrollView(frame: .zero)
     private let documentView = NoteTableDocumentView()
     private let surface = NoteTableSurfaceView(frame: .zero)
-    private let headerRowFill = NoteTableFillView(frame: .zero)
-    private let headerColumnFill = NoteTableFillView(frame: .zero)
     private let frameView = NoteTableFrameView()
     private let selectionView = NoteTableSelectionView()
     private let resizeIndicator = NoteTableRuleView(frame: .zero)
@@ -103,6 +101,8 @@ final class NoteTableBlockView: NoteBlockView {
     private let addColumnBar = NoteTableAddBar(axis: .column)
     private let rowGrip = NoteTableGripView(axis: .row)
     private let columnGrip = NoteTableGripView(axis: .column)
+    private let cellMenuButton = NoteTableCellMenuButton(frame: .zero)
+    private let cornerHandle = NoteTableCornerHandle(frame: .zero)
     private var rowRules: [NoteTableRuleView] = []
     private var columnRules: [NoteTableRuleView] = []
     private var hosts: [NoteTableCell: NoteTableCellHost] = [:]
@@ -133,6 +133,11 @@ final class NoteTableBlockView: NoteBlockView {
     private var menuPanel: NoteFloatingPanel?
     private var menuList: NoteMenuList?
     private var menuTarget: (axis: Axis, index: Int)?
+    private var cellMenuTarget: NoteTableRect?
+    private var previewTable: NoteTable?
+    private var isCornerDragging = false
+    private var pendingSpanFrames: [NoteTableCell: NSRect]?
+    private var pendingSpanGhost: (image: NSImage, rect: NSRect)?
     private var subscription: AnyCancellable?
     private var trackingArea: NSTrackingArea?
     private var pageScrollObserver: NSObjectProtocol?
@@ -147,7 +152,7 @@ final class NoteTableBlockView: NoteBlockView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     var table: NoteTable {
-        var value = block.props.table ?? NoteTable.empty()
+        var value = previewTable ?? block.props.table ?? NoteTable.empty()
         value.normalize()
         return value
     }
@@ -161,17 +166,23 @@ final class NoteTableBlockView: NoteBlockView {
         addSubview(scrollView)
         documentView.addSubview(surface)
         surface.table = self
-        for view in [headerRowFill, headerColumnFill] { surface.addSubview(view) }
         surface.addSubview(frameView)
         surface.addSubview(selectionView)
         resizeIndicator.color = NoteTableStyle.resizeLine
         resizeIndicator.isHidden = true
         surface.addSubview(resizeIndicator)
         documentView.addSubview(columnGrip)
+        documentView.addSubview(cellMenuButton)
         addSubview(addRowBar)
         addSubview(addColumnBar)
+        addSubview(cornerHandle)
         addSubview(rowGrip)
-        for bar in [addRowBar, addColumnBar] { bar.alphaValue = 0 }
+        for bar in [addRowBar, addColumnBar, cornerHandle] as [NSView] { bar.alphaValue = 0 }
+        cellMenuButton.alphaValue = 0
+        cellMenuButton.isHidden = true
+        cellMenuButton.onPress = { [weak self] in self?.openCellMenu() }
+        cornerHandle.onPress = { [weak self] event in self?.cornerPressed(event) }
+        cornerHandle.onAccessibilityPress = { [weak self] in self?.growByOne() }
         for grip in [rowGrip, columnGrip] {
             grip.alphaValue = 0
             grip.isHidden = true
@@ -224,12 +235,14 @@ final class NoteTableBlockView: NoteBlockView {
     override func readOnlyDidChange() {
         for host in hosts.values { host.cellView.isEditable = !isReadOnly }
         if isReadOnly { hideHoverChrome(animated: false) }
+        layoutCellMenuButton()
     }
 
     override func themeDidChange() {
         super.themeDidChange()
         for view in surface.subviews { view.needsDisplay = true }
-        for view in [rowGrip, columnGrip, addRowBar, addColumnBar] as [NSView] { view.needsDisplay = true }
+        for view in [rowGrip, columnGrip, addRowBar, addColumnBar, cellMenuButton, cornerHandle] as [NSView] { view.needsDisplay = true }
+        for host in hosts.values { host.cellView.backdrop.needsDisplay = true }
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -264,6 +277,7 @@ final class NoteTableBlockView: NoteBlockView {
             if grip.convert(grip.bounds, to: self).contains(local) { return grip }
         }
         if addColumnBar.alphaValue > 0.01, !addColumnBar.isHidden, addColumnBar.frame.contains(local) { return addColumnBar }
+        if cornerHandle.alphaValue > 0.01, !cornerHandle.isHidden, cornerHandle.frame.contains(local) { return cornerHandle }
         return super.hitTest(point)
     }
 
@@ -277,7 +291,8 @@ final class NoteTableBlockView: NoteBlockView {
     private func cellStyle(_ cell: NoteTableCell, in table: NoteTable) -> NoteTableCellStyle {
         let settings = pageSettings
         return NoteTableCellStyle(font: settings.font, small: settings.smallText, header: isHeader(cell, in: table),
-                                  alignment: table.alignments.indices.contains(cell.column) ? table.alignments[cell.column] : nil)
+                                  alignment: table.alignments.indices.contains(cell.column) ? table.alignments[cell.column] : nil,
+                                  color: table.color(at: cell))
     }
 
     private func isHeader(_ cell: NoteTableCell, in table: NoteTable) -> Bool {
@@ -295,6 +310,7 @@ final class NoteTableBlockView: NoteBlockView {
     private func cellHeight(_ text: NoteText, columnWidth: CGFloat, style: NoteTableCellStyle) -> CGFloat {
         var measured = style
         measured.alignment = nil
+        measured.color = nil
         let textWidth = max(8, columnWidth - NoteTableStyle.horizontalPadding * 2)
         let key = MeasureKey(text: text, width: Int(textWidth.rounded()), style: measured)
         if let cached = heightCache[key] { return cached }
@@ -308,12 +324,29 @@ final class NoteTableBlockView: NoteBlockView {
         let current = table
         let available = max(0, width)
         let widths = liveWidths ?? NoteTableMetrics.resolvedWidths(current.columnWidths, available: Double(available)).map { CGFloat($0) }
-        let heights = current.rows.enumerated().map { rowIndex, row in
-            row.enumerated().reduce(CGFloat(0)) { tallest, entry in
-                guard entry.offset < widths.count else { return tallest }
-                let cell = NoteTableCell(row: rowIndex, column: entry.offset)
-                return max(tallest, cellHeight(entry.element, columnWidth: widths[entry.offset], style: cellStyle(cell, in: current)))
+        let edges = NoteTableMetrics.edges(widths.map(Double.init)).map { CGFloat($0) }
+        let covered = current.coveredCells
+        var heights = Array(repeating: CGFloat(0), count: current.rowCount)
+        var tall: [(span: NoteTableMerge, height: CGFloat)] = []
+        for (rowIndex, row) in current.rows.enumerated() {
+            for (column, text) in row.enumerated() where column < widths.count {
+                let cell = NoteTableCell(row: rowIndex, column: column)
+                guard !covered.contains(cell) else { continue }
+                let span = current.merges.isEmpty ? NoteTableMerge(row: rowIndex, column: column, rowSpan: 1, columnSpan: 1) : current.span(of: cell)
+                let last = min(span.lastColumn, widths.count - 1)
+                let height = cellHeight(text, columnWidth: edges[last + 1] - edges[column], style: cellStyle(cell, in: current))
+                if span.rowSpan > 1 { tall.append((span, height)) } else { heights[rowIndex] = max(heights[rowIndex], height) }
             }
+        }
+        if heights.contains(0) {
+            let settings = pageSettings
+            let empty = cellHeight(NoteText(), columnWidth: widths.first ?? 100, style: NoteTableCellStyle(font: settings.font, small: settings.smallText))
+            for index in heights.indices where heights[index] == 0 { heights[index] = empty }
+        }
+        for entry in tall {
+            let rows = entry.span.row...min(entry.span.lastRow, heights.count - 1)
+            let total = rows.reduce(CGFloat(0)) { $0 + heights[$1] }
+            if total < entry.height { heights[rows.upperBound] += entry.height - total }
         }
         return NoteTableGeometry(columnWidths: widths, rowHeights: heights)
     }
@@ -331,7 +364,20 @@ final class NoteTableBlockView: NoteBlockView {
         return order
     }
 
-    private func displayRect(_ cell: NoteTableCell) -> NSRect {
+    private func displayRect(_ cell: NoteTableCell, in current: NoteTable) -> NSRect {
+        guard !current.merges.isEmpty else { return displayCellRect(cell) }
+        let span = current.span(of: cell)
+        let first = displayCellRect(span.anchor)
+        guard span.cellCount > 1 else { return first }
+        return first.union(displayCellRect(NoteTableCell(row: span.lastRow, column: span.lastColumn)))
+    }
+
+    private func spanRect(_ cell: NoteTableCell, in current: NoteTable) -> NSRect {
+        let span = current.span(of: current.anchor(of: cell))
+        return geometry.rect(NoteTableRect(rows: span.rows, columns: span.columns))
+    }
+
+    private func displayCellRect(_ cell: NoteTableCell) -> NSRect {
         guard let drag else { return geometry.cellRect(cell) }
         let order = visualOrder(drag)
         let shown = displayGeometry
@@ -366,6 +412,11 @@ final class NoteTableBlockView: NoteBlockView {
             motionGeometry = nil
             motionSnapshot = nil
         }
+        if let frames = pendingSpanFrames {
+            runSpanMotion(frames, ghost: pendingSpanGhost)
+            pendingSpanFrames = nil
+            pendingSpanGhost = nil
+        }
     }
 
     private func layoutChrome() {
@@ -385,15 +436,9 @@ final class NoteTableBlockView: NoteBlockView {
         let visibleTable = max(0, min(tableWidth - scrollView.horizontalOffset, bounds.width))
         addRowBar.frame = NSRect(x: 0, y: NoteTableStyle.topInset + tableHeight + NoteTableStyle.barGap,
                                  width: visibleTable, height: NoteTableStyle.barThickness)
-        let current = table
-        headerRowFill.isHidden = !current.headerRow || shown.rowCount == 0
-        headerColumnFill.isHidden = !current.headerColumn || shown.columnCount == 0
-        let headerTop = current.headerRow ? (shown.rowHeights.first ?? 0) : 0
-        headerRowFill.frame = NSRect(x: 0, y: 0, width: tableWidth, height: shown.rowHeights.first ?? 0)
-        headerColumnFill.frame = NSRect(x: 0, y: headerTop, width: shown.columnWidths.first ?? 0, height: max(0, tableHeight - headerTop))
-        headerRowFill.tableBounds = surface.bounds
-        headerColumnFill.tableBounds = surface.bounds
-        layoutRules(shown)
+        cornerHandle.frame = NSRect(x: columnBarX(tableWidth: tableWidth), y: addRowBar.frame.minY,
+                                    width: NoteTableStyle.barThickness, height: NoteTableStyle.barThickness)
+        layoutRules(shown, merges: table.merges)
         surface.resizeBoundaries = isReadOnly ? [] : shown.columnEdges.dropFirst().map {
             NSRect(x: $0 - NoteTableStyle.resizeTolerance, y: 0, width: NoteTableStyle.resizeTolerance * 2, height: tableHeight)
         }
@@ -413,7 +458,7 @@ final class NoteTableBlockView: NoteBlockView {
         max(0, min(tableWidth - scrollView.horizontalOffset, bounds.width)) + NoteTableStyle.barGap
     }
 
-    private func layoutRules(_ shown: NoteTableGeometry) {
+    private func layoutRules(_ shown: NoteTableGeometry, merges: [NoteTableMerge]) {
         let line = hairline
         func sync(_ rules: inout [NoteTableRuleView], count: Int) {
             while rules.count > count { rules.removeLast().removeFromSuperview() }
@@ -428,10 +473,18 @@ final class NoteTableBlockView: NoteBlockView {
         for (index, rule) in rowRules.enumerated() {
             rule.frame = surface.backingAlignedRect(NSRect(x: 0, y: shown.rowEdges[index + 1] - line / 2, width: shown.width, height: line),
                                                     options: .alignAllEdgesNearest)
+            rule.gaps = merges.compactMap { merge in
+                guard merge.row <= index, merge.lastRow >= index + 1, merge.lastColumn + 1 < shown.columnEdges.count else { return nil }
+                return shown.columnEdges[merge.column]...shown.columnEdges[merge.lastColumn + 1]
+            }
         }
         for (index, rule) in columnRules.enumerated() {
             rule.frame = surface.backingAlignedRect(NSRect(x: shown.columnEdges[index + 1] - line / 2, y: 0, width: line, height: shown.height),
                                                     options: .alignAllEdgesNearest)
+            rule.gaps = merges.compactMap { merge in
+                guard merge.column <= index, merge.lastColumn >= index + 1, merge.lastRow + 1 < shown.rowEdges.count else { return nil }
+                return shown.rowEdges[merge.row]...shown.rowEdges[merge.lastRow + 1]
+            }
         }
     }
 
@@ -476,18 +529,15 @@ final class NoteTableBlockView: NoteBlockView {
 
     private func wantedCells() -> Set<NoteTableCell> {
         let current = table
-        var wanted = Set<NoteTableCell>()
-        if !isVirtualizing {
-            for row in 0..<current.rowCount { for column in 0..<current.columnCount { wanted.insert(NoteTableCell(row: row, column: column)) } }
-            return wanted
-        }
+        if !isVirtualizing { return Set(current.visibleCells) }
         let visible = convert(visibleRect, to: surface)
         let clip = documentView.convert(scrollView.contentView.bounds, to: surface)
         let shown = displayGeometry
         let rows = NoteTableMetrics.visibleRange(from: Double(visible.minY), to: Double(visible.maxY), sizes: shown.rowHeights.map(Double.init))
         let columns = NoteTableMetrics.visibleRange(from: Double(clip.minX), to: Double(clip.maxX), sizes: shown.columnWidths.map(Double.init))
         let extra = Array(pinnedCells) + (focusedHost().map { [$0.cell] } ?? [])
-        return NoteTableMetrics.keptCells(rows: rows, columns: columns, also: extra, rowCount: current.rowCount, columnCount: current.columnCount)
+        let kept = NoteTableMetrics.keptCells(rows: rows, columns: columns, also: extra, rowCount: current.rowCount, columnCount: current.columnCount)
+        return current.merges.isEmpty ? kept : Set(kept.map { current.anchor(of: $0) })
     }
 
     private func layoutCells() {
@@ -495,7 +545,7 @@ final class NoteTableBlockView: NoteBlockView {
         let wanted = wantedCells()
         let focused = focusedHost()
         for (cell, host) in hosts where !wanted.contains(cell)
-            && (host !== focused || cell.row >= current.rowCount || cell.column >= current.columnCount) {
+            && (host !== focused || cell.row >= current.rowCount || cell.column >= current.columnCount || current.isCovered(cell)) {
             recycle(host)
             hosts[cell] = nil
         }
@@ -520,6 +570,8 @@ final class NoteTableBlockView: NoteBlockView {
         view.textContainer?.containerSize = NSSize(width: 100, height: CGFloat.greatestFiniteMagnitude)
         let host = NoteTableCellHost(blockID: blockID, cell: cell, view: view)
         view.host = host
+        view.backdrop.alphaValue = 1
+        surface.addSubview(view.backdrop, positioned: .below, relativeTo: nil)
         surface.addSubview(view, positioned: .below, relativeTo: frameView)
         hosts[cell] = host
         return host
@@ -528,6 +580,8 @@ final class NoteTableBlockView: NoteBlockView {
     private func recycle(_ host: NoteTableCellHost) {
         let view = host.cellView
         NoteTableMotion.settle(view)
+        NoteTableMotion.settle(view.backdrop)
+        view.backdrop.removeFromSuperview()
         view.removeFromSuperview()
         view.host = nil
         if pool.count < 24 { pool.append(view) }
@@ -540,16 +594,26 @@ final class NoteTableBlockView: NoteBlockView {
         view.configure(cellStyle(cell, in: current))
         let text = current.rows[cell.row][cell.column]
         if view.noteText != text, !view.hasMarkedText() { view.apply(text, selection: nil) }
-        let frame = editorFrame(displayRect(cell))
+        let full = displayRect(cell, in: current)
+        let frame = editorFrame(full)
         if view.frame != frame { view.frame = frame }
+        if view.backdrop.frame != full { view.backdrop.frame = full }
+        view.backdrop.fill = backdropFill(cell, in: current)
         let hidden = (drag.map { $0.axis == .row ? $0.source == cell.row : $0.source == cell.column } ?? false)
             || (settlingDrag.map { $0.axis == .row ? $0.index == cell.row : $0.index == cell.column } ?? false)
         view.alphaValue = hidden ? 0 : 1
+        view.backdrop.alphaValue = hidden ? 0 : 1
+    }
+
+    private func backdropFill(_ cell: NoteTableCell, in current: NoteTable) -> NSColor? {
+        if let color = current.color(at: cell), color.isBackground { return NoteTheme.color(color) }
+        return isHeader(cell, in: current) ? NoteTableStyle.headerFill : nil
     }
 
     @discardableResult
-    private func materialize(_ cell: NoteTableCell) -> NoteTableCellHost? {
+    private func materialize(_ requested: NoteTableCell) -> NoteTableCellHost? {
         let current = table
+        let cell = current.anchor(of: requested)
         guard cell.row >= 0, cell.column >= 0, cell.row < current.rowCount, cell.column < current.columnCount else { return nil }
         if let host = hosts[cell] { return host }
         if pinnedCells.count > 32 { pinnedCells.removeAll() }
@@ -598,7 +662,7 @@ final class NoteTableBlockView: NoteBlockView {
     }
 
     private func revealCell(_ cell: NoteTableCell) {
-        let rect = geometry.cellRect(cell)
+        let rect = spanRect(cell, in: table)
         scrollView.scrollHorizontally(toReveal: surface.convert(rect, to: documentView))
         scrollToVisible(convert(rect, from: surface).insetBy(dx: 0, dy: -12))
     }
@@ -611,13 +675,21 @@ final class NoteTableBlockView: NoteBlockView {
     }
 
     private var cellRange: NoteTableRect? {
-        cellRangeEnds.map { NoteTableRect($0.anchor, $0.head) }
+        cellRangeEnds.flatMap { expandedRect($0.anchor, $0.head) }
+    }
+
+    private func expandedRect(_ anchor: NoteTableCell, _ head: NoteTableCell) -> NoteTableRect? {
+        let current = table
+        guard let clamped = NoteTableRect(anchor, head).clamped(rows: current.rowCount, columns: current.columnCount) else { return nil }
+        let area = current.expanded(rows: clamped.rows, columns: clamped.columns)
+        return NoteTableRect(rows: area.rows, columns: area.columns)
     }
 
     private func syncSelection() {
-        if let pointerRange {
+        defer { layoutCellMenuButton() }
+        if let pointerRange, let rect = expandedRect(pointerRange.anchor, pointerRange.head) {
             selectionView.style = .selection
-            selectionView.highlight = displayGeometry.rect(NoteTableRect(pointerRange.anchor, pointerRange.head))
+            selectionView.highlight = displayGeometry.rect(rect)
         } else if let range = cellRange {
             selectionView.style = .selection
             selectionView.highlight = displayGeometry.rect(range)
@@ -698,8 +770,7 @@ final class NoteTableBlockView: NoteBlockView {
         switch event.keyCode {
         case 48:
             guard flags.isSubset(of: [.shift]) else { return false }
-            move(from: host, to: NoteTableNavigation.tab(from: cell, rows: current.rowCount, columns: current.columnCount,
-                                                         backward: flags.contains(.shift)), placement: .end)
+            move(from: host, to: NoteTableNavigation.tab(from: cell, in: current, backward: flags.contains(.shift)), placement: .end)
             return true
         case 36, 76:
             if flags == [.shift] {
@@ -707,11 +778,12 @@ final class NoteTableBlockView: NoteBlockView {
                 return true
             }
             guard flags.isEmpty else { return false }
-            move(from: host, to: NoteTableNavigation.returnKey(from: cell, rows: current.rowCount), placement: .end)
+            move(from: host, to: NoteTableNavigation.step(from: cell, .down, in: current), placement: .end)
             return true
         case 53:
             guard flags.isEmpty else { return false }
-            selectTableBlock()
+            commitComposition()
+            setRange(anchor: cell, head: cell)
             return true
         case 51:
             return flags.isSubset(of: [.option, .command]) && selection == 0..<0
@@ -726,7 +798,7 @@ final class NoteTableBlockView: NoteBlockView {
                 case .down, .right: exhausted = selection.upperBound == length
                 }
                 guard exhausted else { return false }
-                setRange(anchor: cell, head: NoteTableNavigation.moved(cell, direction, rows: current.rowCount, columns: current.columnCount))
+                setRange(anchor: cell, head: NoteTableNavigation.extended(cell, anchor: cell, direction, in: current))
                 return true
             }
             guard flags.isEmpty else { return false }
@@ -738,7 +810,13 @@ final class NoteTableBlockView: NoteBlockView {
             case .right: atEdge = selection.isEmpty && selection.upperBound == length
             }
             guard atEdge else { return false }
-            let x = surface.convert(view.caretRect(at: direction == .down ? selection.upperBound : selection.lowerBound), from: view).midX
+            let caret = surface.convert(view.caretRect(at: direction == .down ? selection.upperBound : selection.lowerBound), from: view)
+            let x = caret.midX
+            let lane: Int?
+            switch direction {
+            case .up, .down: lane = geometry.cell(at: NSPoint(x: x, y: 0), clamped: true)?.column
+            case .left, .right: lane = geometry.cell(at: NSPoint(x: 0, y: caret.midY), clamped: true)?.row
+            }
             let placement: Placement
             switch direction {
             case .up: placement = .x(x, firstLine: false)
@@ -746,8 +824,7 @@ final class NoteTableBlockView: NoteBlockView {
             case .left: placement = .end
             case .right: placement = .start
             }
-            move(from: host, to: NoteTableNavigation.step(from: cell, direction, rows: current.rowCount, columns: current.columnCount),
-                 placement: placement)
+            move(from: host, to: NoteTableNavigation.step(from: cell, direction, in: current, lane: lane), placement: placement)
             return true
         default:
             return false
@@ -763,12 +840,15 @@ final class NoteTableBlockView: NoteBlockView {
         case 123, 124, 125, 126:
             guard flags.isSubset(of: [.shift]) else { return false }
             let direction: NoteTableDirection = [123: .left, 124: .right, 125: .down, 126: .up][event.keyCode]!
-            let head = NoteTableNavigation.moved(ends.head, direction, rows: current.rowCount, columns: current.columnCount)
-            setRange(anchor: flags.contains(.shift) ? ends.anchor : head, head: head)
+            if flags.contains(.shift) {
+                setRange(anchor: ends.anchor, head: NoteTableNavigation.extended(ends.head, anchor: ends.anchor, direction, in: current))
+            } else if case .cell(let next) = NoteTableNavigation.step(from: ends.head, direction, in: current) {
+                setRange(anchor: next, head: next)
+            }
             return true
         case 48:
             guard flags.isSubset(of: [.shift]) else { return false }
-            switch NoteTableNavigation.tab(from: ends.head, rows: current.rowCount, columns: current.columnCount, backward: flags.contains(.shift)) {
+            switch NoteTableNavigation.tab(from: ends.head, in: current, backward: flags.contains(.shift)) {
             case .cell(let cell): focusCell(cell, placement: .end)
             case .appendRow: appendRow(focusColumn: 0)
             default: focusCell(ends.head, placement: .end)
@@ -787,7 +867,7 @@ final class NoteTableBlockView: NoteBlockView {
         default:
             guard !isReadOnly, flags.isSubset(of: [.shift]), let characters = event.characters, !characters.isEmpty,
                   characters.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) && $0.value < 0xF700 }),
-                  focusCell(ends.head, placement: .end), let host = hosts[ends.head] else { return false }
+                  focusCell(ends.head, placement: .end), let host = materialize(ends.head) else { return false }
             host.cellView.selectedOffsets = 0..<host.cellView.noteText.length
             host.cellView.keyDown(with: event)
             return true
@@ -807,7 +887,7 @@ final class NoteTableBlockView: NoteBlockView {
     func pointerSelectionMoved(in view: NoteTableCellTextView, to windowPoint: NSPoint, finished: Bool) -> Bool {
         let point = surface.convert(windowPoint, from: nil)
         guard let target = geometry.cell(at: point, clamped: true) else { return pointerRange != nil }
-        if target == view.cell {
+        if table.anchor(of: target) == view.cell {
             if pointerRange != nil { pointerRange = nil; syncSelection() }
             return false
         }
@@ -843,6 +923,7 @@ final class NoteTableBlockView: NoteBlockView {
         let base = geometry.columnWidths.map(Double.init)
         resizingColumn = column
         hideHoverChrome(animated: true)
+        layoutCellMenuButton()
         var widths = base
         window.trackEvents(matching: [.leftMouseDragged, .leftMouseUp], timeout: .infinity, mode: .eventTracking) { next, stop in
             guard let next else { stop.pointee = true; return }
@@ -856,6 +937,7 @@ final class NoteTableBlockView: NoteBlockView {
         }
         resizingColumn = nil
         liveWidths = nil
+        defer { layoutCellMenuButton() }
         if widths != base, let editor, !isReadOnly {
             var resized = table
             NoteTableTransforms.setWidths(widths.map { Optional($0) }, in: &resized)
@@ -885,7 +967,7 @@ final class NoteTableBlockView: NoteBlockView {
     override func mouseExited(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if [rowGrip, columnGrip].contains(where: { !$0.isHidden && $0.frame(in: self).insetBy(dx: -4, dy: -4).contains(point) }) { return }
-        if isHovering, addColumnBar.frame.insetBy(dx: -NoteTableStyle.barGap - 2, dy: -4).contains(point) { return }
+        if isHovering, addColumnBar.frame.union(cornerHandle.frame).insetBy(dx: -NoteTableStyle.barGap - 2, dy: -4).contains(point) { return }
         hideHoverChrome(animated: true)
     }
 
@@ -896,10 +978,10 @@ final class NoteTableBlockView: NoteBlockView {
     }
 
     private func pointerMoved(_ event: NSEvent) {
-        guard !isReadOnly, drag == nil, resizingColumn == nil else { return }
+        guard !isReadOnly, drag == nil, resizingColumn == nil, !isCornerDragging else { return }
         if !isHovering {
             isHovering = true
-            for bar in [addRowBar, addColumnBar] { NoteAnimation.fade(bar, visible: true, duration: 0.12) }
+            for bar in [addRowBar, addColumnBar, cornerHandle] as [NSView] { NoteAnimation.fade(bar, visible: true, duration: 0.12) }
         }
         let point = surface.convert(event.locationInWindow, from: nil)
         let shown = geometry
@@ -943,7 +1025,7 @@ final class NoteTableBlockView: NoteBlockView {
         hoveredBoundary = nil
         if menuTarget == nil { hoverCell = nil }
         setGripsVisible(false)
-        for bar in [addRowBar, addColumnBar] {
+        for bar in [addRowBar, addColumnBar, cornerHandle] as [NSView] where !(bar === cornerHandle && isCornerDragging) {
             if animated { NoteAnimation.fade(bar, visible: false, duration: 0.12) } else { bar.alphaValue = 0 }
         }
         resizeIndicator.isHidden = resizingColumn == nil
@@ -955,6 +1037,7 @@ final class NoteTableBlockView: NoteBlockView {
         CATransaction.setDisableActions(true)
         addRowBar.frame.size.width = max(0, min(shown.width - scrollView.horizontalOffset, bounds.width))
         addColumnBar.frame.origin.x = columnBarX(tableWidth: shown.width)
+        cornerHandle.frame.origin.x = columnBarX(tableWidth: shown.width)
         CATransaction.commit()
         if isVirtualizing { layoutCells() }
     }
@@ -995,6 +1078,7 @@ final class NoteTableBlockView: NoteBlockView {
                     ghostOrigin: frame.origin, ghost: ghost)
         hideHoverChrome(animated: true)
         layoutCells()
+        layoutCellMenuButton()
         return true
     }
 
@@ -1022,7 +1106,10 @@ final class NoteTableBlockView: NoteBlockView {
         let sizes = (current.axis == .row ? geometry.rowHeights : geometry.columnWidths).map(Double.init)
         let target = NoteTableMetrics.dropIndex(for: Double(center), sizes: sizes, moving: current.source)
         guard target != current.target else { return }
-        let before = Dictionary(uniqueKeysWithValues: hosts.map { ($0.key, ($0.value.cellView.frame, NoteTableMotion.presentedOffset($0.value.cellView))) })
+        let before = Dictionary(uniqueKeysWithValues: hosts.map { entry in
+            (entry.key, (entry.value.cellView.frame, NoteTableMotion.presentedOffset(entry.value.cellView),
+                         entry.value.cellView.backdrop.frame, NoteTableMotion.presentedOffset(entry.value.cellView.backdrop)))
+        })
         let rulesBefore = (rowRules + columnRules).map { ($0, $0.frame, NoteTableMotion.presentedOffset($0)) }
         current.target = target
         drag = current
@@ -1031,13 +1118,17 @@ final class NoteTableBlockView: NoteBlockView {
         for (cell, host) in hosts {
             guard let old = before[cell] else { continue }
             NoteTableMotion.slide(host.cellView, from: old.0, offset: old.1)
+            NoteTableMotion.slide(host.cellView.backdrop, from: old.2, offset: old.3)
         }
         for (rule, frame, offset) in rulesBefore where rule.superview != nil { NoteTableMotion.slide(rule, from: frame, offset: offset) }
     }
 
     private func endDrag() {
         guard let finished = drag else { return }
-        for host in hosts.values { NoteTableMotion.settle(host.cellView) }
+        for host in hosts.values {
+            NoteTableMotion.settle(host.cellView)
+            NoteTableMotion.settle(host.cellView.backdrop)
+        }
         for rule in rowRules + columnRules { NoteTableMotion.settle(rule) }
         let ghost = finished.ghost
         let slot = finished.axis == .row ? displayGeometry.rowRect(finished.target) : displayGeometry.columnRect(finished.target)
@@ -1060,6 +1151,7 @@ final class NoteTableBlockView: NoteBlockView {
                 ghost?.removeFromSuperview()
                 self?.settlingDrag = nil
                 self?.layoutCells()
+                self?.layoutCellMenuButton()
             }
         }
         ghost.frame = destination
@@ -1108,13 +1200,19 @@ final class NoteTableBlockView: NoteBlockView {
 
     private func runMotion(_ change: NoteTableChange, from old: NoteTableGeometry) {
         guard window != nil else { return }
+        let current = table
         for (cell, host) in hosts {
             let view = host.cellView
+            let span = current.span(of: cell)
             if let row = change.oldRow(for: cell.row), let column = change.oldColumn(for: cell.column),
                old.contains(NoteTableCell(row: row, column: column)) {
-                NoteTableMotion.slide(view, from: editorFrame(old.cellRect(NoteTableCell(row: row, column: column))))
+                let previous = old.rect(NoteTableRect(rows: row...(row + span.rowSpan - 1), columns: column...(column + span.columnSpan - 1)))
+                NoteTableMotion.slide(view, from: editorFrame(previous))
+                NoteTableMotion.slide(view.backdrop, from: previous)
+                NoteTableMotion.resize(view.backdrop, from: previous.size)
             } else {
                 NoteTableMotion.fadeIn(view, delay: 0.04)
+                NoteTableMotion.fadeIn(view.backdrop)
             }
         }
         for (index, rule) in rowRules.enumerated() {
@@ -1136,8 +1234,8 @@ final class NoteTableBlockView: NoteBlockView {
         for view in [surface, frameView, selectionView] as [NSView] {
             NoteTableMotion.resize(view, from: NSSize(width: old.width, height: old.height))
         }
-        NoteTableMotion.resize(headerRowFill, from: NSSize(width: old.width, height: old.rowHeights.first ?? 0))
-        NoteTableMotion.resize(headerColumnFill, from: NSSize(width: old.columnWidths.first ?? 0, height: headerColumnFill.frame.height + old.height - geometry.height))
+        NoteTableMotion.slide(cornerHandle, from: NSRect(x: columnBarX(tableWidth: old.width), y: NoteTableStyle.topInset + old.height + NoteTableStyle.barGap,
+                                                         width: cornerHandle.frame.width, height: cornerHandle.frame.height))
         let barShift = NSRect(x: addRowBar.frame.minX, y: NoteTableStyle.topInset + old.height + NoteTableStyle.barGap,
                               width: addRowBar.frame.width, height: addRowBar.frame.height)
         NoteTableMotion.slide(addRowBar, from: barShift)
@@ -1177,6 +1275,72 @@ final class NoteTableBlockView: NoteBlockView {
     func appendColumn() {
         let index = table.columnCount
         run(.insertColumns(at: index, count: 1)) { session, id, _ in session.insertTableColumn(id, at: index, name: "Add Column") }
+    }
+
+    private func growByOne() {
+        guard let editor, !isReadOnly else { return }
+        let current = table
+        prepareMotion(.insertRows(at: current.rowCount, count: 1))
+        editor.session.resizeTable(blockID, rows: current.rowCount + 1, columns: current.columnCount + 1)
+        pendingChange = nil
+        motionGeometry = nil
+        motionSnapshot = nil
+    }
+
+    private func cornerPressed(_ event: NSEvent) {
+        guard let window, let editor, !isReadOnly else { return }
+        commitComposition()
+        dismissMenu()
+        let base = table
+        let start = event.locationInWindow
+        let settings = pageSettings
+        let rowStep = max(20, cellHeight(NoteText(), columnWidth: geometry.columnWidths.last ?? 100,
+                                         style: NoteTableCellStyle(font: settings.font, small: settings.smallText)))
+        let columnStep = NoteTableStyle.cornerColumnStep
+        let fewestRows = base.rowCount - base.trailingEmptyRows, fewestColumns = base.columnCount - base.trailingEmptyColumns
+        var shown = (rows: base.rowCount, columns: base.columnCount)
+        isCornerDragging = true
+        cornerHandle.isActive = true
+        hideHoverChrome(animated: true)
+        layoutCellMenuButton()
+        window.trackEvents(matching: [.leftMouseDragged, .leftMouseUp], timeout: .infinity, mode: .eventTracking) { next, stop in
+            guard let next else { stop.pointee = true; return }
+            let across = next.locationInWindow.x - start.x, down = start.y - next.locationInWindow.y
+            let rows = min(base.rowCount + 200, max(fewestRows, base.rowCount + Int((down / rowStep).rounded())))
+            let columns = min(base.columnCount + 50, max(fewestColumns, base.columnCount + Int((across / columnStep).rounded())))
+            if rows != shown.rows || columns != shown.columns {
+                previewResize(base, from: shown, to: (rows, columns))
+                shown = (rows, columns)
+            }
+            if next.type == .leftMouseUp { stop.pointee = true }
+        }
+        isCornerDragging = false
+        cornerHandle.isActive = false
+        previewTable = nil
+        if shown.rows != base.rowCount || shown.columns != base.columnCount {
+            editor.session.resizeTable(blockID, rows: shown.rows, columns: shown.columns)
+        } else {
+            reloadContent()
+        }
+        invalidateCanvasLayout()
+        layoutCellMenuButton()
+    }
+
+    private func previewResize(_ base: NoteTable, from old: (rows: Int, columns: Int), to new: (rows: Int, columns: Int)) {
+        var next = base
+        next.resize(rows: new.rows, columns: new.columns)
+        if new.rows != old.rows {
+            prepareMotion(new.rows > old.rows ? .insertRows(at: old.rows, count: new.rows - old.rows) : .deleteRows(at: new.rows, count: old.rows - new.rows))
+        } else if new.columns != old.columns {
+            prepareMotion(new.columns > old.columns ? .insertColumns(at: old.columns, count: new.columns - old.columns)
+                          : .deleteColumns(at: new.columns, count: old.columns - new.columns))
+        }
+        previewTable = next
+        reloadContent()
+        pendingChange = nil
+        motionGeometry = nil
+        motionSnapshot = nil
+        invalidateCanvasLayout()
     }
 
     func insertRow(at index: Int) {
@@ -1232,20 +1396,24 @@ final class NoteTableBlockView: NoteBlockView {
         let current = table
         let rows = NoteTableTransforms.slice(rect, of: current)
         let sliced = NoteTableClipboard.slice(rect, of: current)
-        let headerRow = current.headerRow && rect.rows.lowerBound == 0
-        let headerColumn = current.headerColumn && rect.columns.lowerBound == 0
-        let alignments = rect.columns.map { current.alignments[$0] }
         let tsv = NoteTableClipboard.tsv(rows)
         pasteboard.clearContents()
         pasteboard.declareTypes([Self.cellsPasteboardType, .string, .tabularText, .html, Self.markdownPasteboardType], owner: nil)
-        if let data = try? JSONEncoder().encode(rows) { pasteboard.setData(data, forType: Self.cellsPasteboardType) }
+        if let data = try? JSONEncoder().encode(sliced) { pasteboard.setData(data, forType: Self.cellsPasteboardType) }
         pasteboard.setString(tsv, forType: .string)
         pasteboard.setString(tsv, forType: .tabularText)
-        pasteboard.setString(NoteTableClipboard.html(rows, headerRow: headerRow, headerColumn: headerColumn, alignments: alignments), forType: .html)
+        pasteboard.setString(NoteTableClipboard.html(sliced), forType: .html)
         pasteboard.setString(NoteTableClipboard.markdown(sliced), forType: Self.markdownPasteboardType)
     }
 
+    static func tableSlice(from pasteboard: NSPasteboard) -> NoteTable? {
+        guard let data = pasteboard.data(forType: cellsPasteboardType), var slice = try? JSONDecoder().decode(NoteTable.self, from: data) else { return nil }
+        slice.normalize()
+        return slice
+    }
+
     static func grid(from pasteboard: NSPasteboard) -> [[NoteText]]? {
+        if let slice = tableSlice(from: pasteboard) { return slice.rows }
         if let data = pasteboard.data(forType: cellsPasteboardType), let rows = try? JSONDecoder().decode([[NoteText]].self, from: data), !rows.isEmpty {
             return rows
         }
@@ -1260,7 +1428,12 @@ final class NoteTableBlockView: NoteBlockView {
     }
 
     func pasteIntoCell(_ view: NoteTableCellTextView) -> Bool {
-        guard !isReadOnly, let grid = Self.grid(from: .general), grid.count * (grid.map(\.count).max() ?? 0) > 1 else { return false }
+        guard !isReadOnly else { return false }
+        if let slice = Self.tableSlice(from: .general), slice.rowCount * slice.columnCount > 1 {
+            paste(slice, at: view.cell)
+            return true
+        }
+        guard let grid = Self.grid(from: .general), grid.count * (grid.map(\.count).max() ?? 0) > 1 else { return false }
         paste(grid, at: view.cell, filling: nil)
         return true
     }
@@ -1268,6 +1441,10 @@ final class NoteTableBlockView: NoteBlockView {
     func pasteIntoRange() {
         guard !isReadOnly, let rect = cellRange else { return }
         let pasteboard = NSPasteboard.general
+        if let slice = Self.tableSlice(from: pasteboard), slice.rowCount * slice.columnCount > 1 {
+            paste(slice, at: rect.topLeft)
+            return
+        }
         guard let grid = Self.grid(from: pasteboard) ?? pasteboard.string(forType: .string).map({ [[NoteText($0.trimmingCharacters(in: .newlines))]] }) else { return }
         paste(grid, at: rect.topLeft, filling: rect)
     }
@@ -1287,6 +1464,97 @@ final class NoteTableBlockView: NoteBlockView {
         }
         if let window, window.firstResponder !== surface { _ = window.makeFirstResponder(surface) }
         syncSelection()
+    }
+
+    private func paste(_ slice: NoteTable, at origin: NoteTableCell) {
+        let current = table
+        var next = current
+        let area = next.paste(slice, at: origin)
+        var change: NoteTableChange?
+        if next.rowCount > current.rowCount, next.columnCount == current.columnCount {
+            change = .insertRows(at: current.rowCount, count: next.rowCount - current.rowCount)
+        } else if next.columnCount > current.columnCount, next.rowCount == current.rowCount {
+            change = .insertColumns(at: current.columnCount, count: next.columnCount - current.columnCount)
+        }
+        let selection = NotePageSelection.cells(table: blockID, anchor: NoteTableCell(row: area.rows.lowerBound, column: area.columns.lowerBound),
+                                                head: NoteTableCell(row: area.rows.upperBound, column: area.columns.upperBound))
+        commit("Paste Cells", change: change, selection: selection) { table in table.paste(slice, at: origin) }
+        if let window, window.firstResponder !== surface { _ = window.makeFirstResponder(surface) }
+        syncSelection()
+    }
+
+    func handleRangeKeyEquivalent(_ event: NSEvent) -> Bool {
+        guard cellRange != nil, event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command,
+              let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
+        switch key {
+        case "d": fillRange(.down)
+        case "r": fillRange(.right)
+        default: return false
+        }
+        return true
+    }
+
+    func fillRange(_ direction: NoteTableFill) {
+        guard let rect = cellRange, let editor else { return }
+        guard !isReadOnly, editor.session.fillTableCells(blockID, direction, rows: rect.rows, columns: rect.columns) else {
+            NSSound.beep()
+            return
+        }
+        flash(rect)
+    }
+
+    private func flash(_ rect: NoteTableRect) {
+        guard window != nil else { return }
+        for (cell, host) in hosts where rect.contains(cell) { NoteTableMotion.fadeIn(host.cellView) }
+    }
+
+    private func spanEdit(_ rect: NoteTableRect, _ operation: () -> Void) {
+        pendingSpanFrames = Dictionary(uniqueKeysWithValues: hosts.map { ($0.key, $0.value.cellView.backdrop.frame) })
+        let area = geometry.rect(rect)
+        pendingSpanGhost = NoteTableMotion.snapshot(of: surface, rect: area).map { (image: $0, rect: area) }
+        operation()
+        pendingSpanFrames = nil
+        pendingSpanGhost = nil
+    }
+
+    private func runSpanMotion(_ frames: [NoteTableCell: NSRect], ghost: (image: NSImage, rect: NSRect)?) {
+        guard window != nil else { return }
+        for (cell, host) in hosts {
+            let view = host.cellView
+            guard let old = frames[cell] else {
+                NoteTableMotion.fadeIn(view, delay: 0.04)
+                NoteTableMotion.fadeIn(view.backdrop)
+                continue
+            }
+            guard old != view.backdrop.frame else { continue }
+            NoteTableMotion.slide(view.backdrop, from: old, spring: .settle)
+            NoteTableMotion.resize(view.backdrop, from: old.size, spring: .settle)
+            NoteTableMotion.slide(view, from: editorFrame(old), spring: .settle)
+        }
+        if let ghost {
+            let snapshot = NoteTableSnapshotView(image: ghost.image, frame: ghost.rect)
+            surface.addSubview(snapshot, positioned: .below, relativeTo: frameView)
+            NoteTableMotion.fadeOutAndRemove(snapshot)
+        }
+    }
+
+    func mergeCells(_ rect: NoteTableRect) {
+        guard let editor, !isReadOnly else { return }
+        spanEdit(rect) { _ = editor.session.mergeTableCells(blockID, rows: rect.rows, columns: rect.columns) }
+        if let window, window.firstResponder !== surface { _ = window.makeFirstResponder(surface) }
+        syncSelection()
+    }
+
+    func unmergeCells(_ rect: NoteTableRect) {
+        guard let editor, !isReadOnly else { return }
+        spanEdit(rect) { _ = editor.session.unmergeTableCells(blockID, rows: rect.rows, columns: rect.columns) }
+        if let window, window.firstResponder !== surface { _ = window.makeFirstResponder(surface) }
+        syncSelection()
+    }
+
+    func setColor(_ style: NoteColorStyle?, in rect: NoteTableRect) {
+        guard let editor, !isReadOnly else { return }
+        if editor.session.setTableCellColor(blockID, style, rows: rect.rows, columns: rect.columns), let style { NoteColorRecents.record(style) }
     }
 
     private func setHeader(_ axis: Axis, _ enabled: Bool) {
@@ -1323,7 +1591,8 @@ final class NoteTableBlockView: NoteBlockView {
                                                separatorBefore: value == .left))
             }
         }
-        items.append(NoteMenuList.Item(id: "duplicate", title: "Duplicate", icon: .symbol("plus.square.on.square"), separatorBefore: true))
+        items.append(NoteMenuList.Item(id: "color", title: "Color", icon: .symbol("paintpalette"), hasSubmenu: true, separatorBefore: true))
+        items.append(NoteMenuList.Item(id: "duplicate", title: "Duplicate", icon: .symbol("plus.square.on.square")))
         items.append(NoteMenuList.Item(id: "moveBefore", title: axis == .row ? "Move Up" : "Move Left",
                                        icon: .symbol(axis == .row ? "arrow.up" : "arrow.left"), isEnabled: index > 0))
         items.append(NoteMenuList.Item(id: "moveAfter", title: axis == .row ? "Move Down" : "Move Right",
@@ -1349,13 +1618,18 @@ final class NoteTableBlockView: NoteBlockView {
             clear(axis == .row ? NoteTableRect(rows: index...index, columns: 0...(current.columnCount - 1))
                 : NoteTableRect(rows: 0...(current.rowCount - 1), columns: index...index), name: "Clear Contents")
         case "delete": delete(axis, at: index)
+        case "color":
+            let rect = axis == .row ? NoteTableRect(rows: index...index, columns: 0...(current.columnCount - 1))
+                : NoteTableRect(rows: 0...(current.rowCount - 1), columns: index...index)
+            let grip = axis == .row ? rowGrip : columnGrip
+            openColorMenu(for: rect, anchor: grip, highlight: (axis: axis, index: index))
         default:
             if id.hasPrefix("align."), let alignment = NoteAlignment(rawValue: String(id.dropFirst(6))) { setAlignment(alignment, column: index) }
         }
     }
 
     private func openMenu(for grip: NoteTableGripView) {
-        guard let editor, !isReadOnly else { return }
+        guard editor != nil, !isReadOnly else { return }
         commitComposition()
         dismissMenu()
         let axis: Axis = grip.axis == .row ? .row : .column
@@ -1371,6 +1645,14 @@ final class NoteTableBlockView: NoteBlockView {
             self?.performMenuItem(item.id, axis: axis, index: index)
         }
         list.onCancel = { [weak self] in self?.dismissMenu() }
+        menuTarget = (axis, index)
+        grip.isActive = true
+        setGripsVisible(true)
+        presentMenu(list, from: grip)
+    }
+
+    private func presentMenu(_ list: NoteMenuList, from control: NSView) {
+        guard let editor else { return }
         let panel = NoteFloatingPanel(content: list)
         panel.onDismiss = { [weak self, weak panel] in
             guard let self, let panel, self.menuPanel === panel else { return }
@@ -1378,11 +1660,8 @@ final class NoteTableBlockView: NoteBlockView {
         }
         menuPanel = panel
         menuList = list
-        menuTarget = (axis, index)
-        grip.isActive = true
-        setGripsVisible(true)
         let host = editor.canvas.overlayView
-        let anchor = grip.convert(grip.bounds, to: host)
+        let anchor = control.convert(control.bounds, to: host)
         if focusedHost() == nil, let window, window.firstResponder !== surface, cellRange == nil {
             _ = window.makeFirstResponder(self)
         }
@@ -1392,6 +1671,104 @@ final class NoteTableBlockView: NoteBlockView {
             return event
         }
         syncSelection()
+    }
+
+    private var focusedCellRect: NoteTableRect? {
+        guard let editor, case .text(let anchor, let head) = editor.session.selection, head.block == blockID, anchor.block == blockID,
+              anchor.field == head.field, case .cell(let row, let column) = head.field else { return nil }
+        let current = table
+        guard row >= 0, column >= 0, row < current.rowCount, column < current.columnCount else { return nil }
+        let span = current.span(of: current.anchor(of: NoteTableCell(row: row, column: column)))
+        return NoteTableRect(rows: span.rows, columns: span.columns)
+    }
+
+    private func layoutCellMenuButton() {
+        let busy = isReadOnly || drag != nil || resizingColumn != nil || pointerRange != nil || isCornerDragging || menuTarget != nil
+        let target = cellMenuTarget ?? (busy ? nil : (cellRange ?? (focusedHost() != nil ? focusedCellRect : nil)))
+        guard let target else {
+            if !cellMenuButton.isHidden, cellMenuButton.alphaValue > 0 {
+                NoteAnimation.fade(cellMenuButton, visible: false, duration: 0.1) { [weak self] in
+                    guard let self, self.cellMenuButton.alphaValue == 0 else { return }
+                    self.cellMenuButton.isHidden = true
+                }
+            }
+            return
+        }
+        let rect = displayGeometry.rect(target)
+        let size = NoteTableStyle.cellMenuButtonSize
+        let lane = min(rect.height, 34)
+        let frame = NSRect(x: max(rect.minX + 2, rect.maxX - size.width - 5), y: NoteTableStyle.topInset + rect.minY + (lane - size.height) / 2,
+                           width: size.width, height: size.height)
+        let wasHidden = cellMenuButton.isHidden || cellMenuButton.alphaValue < 0.01
+        if cellMenuButton.frame != frame {
+            let previous = cellMenuButton.frame
+            NoteAnimation.withoutAnimation { cellMenuButton.frame = frame }
+            if !wasHidden { NoteTableMotion.slide(cellMenuButton, from: previous, spring: .settle) }
+        }
+        if wasHidden {
+            cellMenuButton.isHidden = false
+            NoteAnimation.fade(cellMenuButton, visible: true, duration: 0.12)
+        }
+    }
+
+    private func openCellMenu() {
+        guard editor != nil, !isReadOnly, let target = cellMenuTarget ?? cellRange ?? focusedCellRect else { return }
+        commitComposition()
+        dismissMenu()
+        let current = table
+        let list = NoteMenuList()
+        list.minimumWidth = 200
+        list.items = [
+            NoteMenuList.Item(id: "cell.color", title: "Color", icon: .symbol("paintpalette"), hasSubmenu: true),
+            NoteMenuList.Item(id: "cell.merge", title: "Merge Cells", icon: .symbol("arrow.right.and.line.vertical.and.arrow.left"),
+                              isEnabled: current.canMerge(rows: target.rows, columns: target.columns), separatorBefore: true),
+            NoteMenuList.Item(id: "cell.unmerge", title: "Unmerge Cells", icon: .symbol("arrow.left.and.line.vertical.and.arrow.right"),
+                              isEnabled: current.hasMerges(intersecting: target.rows, columns: target.columns)),
+            NoteMenuList.Item(id: "cell.clear", title: "Clear Contents", icon: .symbol("eraser"),
+                              isEnabled: !NoteTableTransforms.isEmpty(target, of: current), separatorBefore: true),
+        ]
+        list.onActivate = { [weak self] item in
+            guard let self else { return }
+            self.dismissMenu()
+            switch item.id {
+            case "cell.color": self.openColorMenu(for: target, anchor: self.cellMenuButton, highlight: nil)
+            case "cell.merge": self.mergeCells(target)
+            case "cell.unmerge": self.unmergeCells(target)
+            case "cell.clear": self.clear(target, name: "Clear Contents")
+            default: break
+            }
+        }
+        list.onCancel = { [weak self] in self?.dismissMenu() }
+        cellMenuTarget = target
+        cellMenuButton.isActive = true
+        presentMenu(list, from: cellMenuButton)
+    }
+
+    private func openColorMenu(for target: NoteTableRect, anchor control: NSView, highlight: (axis: Axis, index: Int)?) {
+        guard editor != nil, !isReadOnly else { return }
+        dismissMenu()
+        let entries = NoteBlockMenuModel.colorEntries(current: table.commonColor(rows: target.rows, columns: target.columns))
+        let list = NoteMenuList()
+        list.minimumWidth = 200
+        list.maximumHeight = 360
+        list.items = entries.map { NoteMenuList.Item($0) }
+        list.onActivate = { [weak self] item in
+            guard let self else { return }
+            self.dismissMenu()
+            guard case .color(let style)? = entries.first(where: { $0.id == item.id })?.action else { return }
+            self.setColor(style, in: target)
+        }
+        list.onCancel = { [weak self] in self?.dismissMenu() }
+        if let highlight {
+            menuTarget = highlight
+            (highlight.axis == .row ? rowGrip : columnGrip).isActive = true
+            setGripsVisible(true)
+        } else {
+            cellMenuTarget = target
+            cellMenuButton.isActive = true
+        }
+        presentMenu(list, from: control)
+        if let checked = list.items.first(where: \.isChecked) { list.highlight(id: checked.id, animated: false) }
     }
 
     private func menuSawClick(_ event: NSEvent) {
@@ -1426,6 +1803,8 @@ final class NoteTableBlockView: NoteBlockView {
         menuPanel = nil
         menuList = nil
         menuTarget = nil
+        cellMenuTarget = nil
+        cellMenuButton.isActive = false
         rowGrip.isActive = false
         columnGrip.isActive = false
         syncSelection()

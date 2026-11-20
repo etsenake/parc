@@ -92,22 +92,45 @@ enum NoteTableClipboard {
     }
 
     static func html(_ rows: [[NoteText]], headerRow: Bool, headerColumn: Bool, alignments: [NoteAlignment?]) -> String {
-        func line(_ row: [NoteText], header: Bool) -> String {
-            var result = "<tr>"
-            for (column, cell) in row.enumerated() {
-                let tag = header || (column == 0 && headerColumn) ? "th" : "td"
-                let style = column < alignments.count ? alignments[column].map { " style=\"text-align: \($0.rawValue)\"" } ?? "" : ""
-                result += "<\(tag)\(style)>\(inlineHTML(cell))</\(tag)>"
+        var table = NoteTable(rows: rows.isEmpty ? [[NoteText()]] : rows, headerRow: headerRow, headerColumn: headerColumn)
+        for (index, alignment) in alignments.enumerated() where table.alignments.indices.contains(index) { table.alignments[index] = alignment }
+        return html(table)
+    }
+
+    static func html(_ source: NoteTable) -> String {
+        var table = source
+        table.normalize()
+        let covered = table.coveredCells
+        func cell(_ position: NoteTableCell) -> String {
+            let header = (table.headerRow && position.row == 0) || (table.headerColumn && position.column == 0)
+            let tag = header ? "th" : "td"
+            var attributes = ""
+            let span = table.span(of: position)
+            if span.columnSpan > 1 { attributes += " colspan=\"\(span.columnSpan)\"" }
+            if span.rowSpan > 1 { attributes += " rowspan=\"\(span.rowSpan)\"" }
+            var styles: [String] = []
+            if let alignment = table.alignments[position.column] { styles.append("text-align: \(alignment.rawValue)") }
+            if let color = table.cellColors[position] {
+                let palette = NotePageHTMLStyle.palette[color.color] ?? NotePageHTMLStyle.palette[.gray]!
+                attributes += " data-color=\"\(NoteMDColor.name(color))\""
+                styles.append(color.isBackground ? "background-color: #\(palette.background)" : "color: #\(palette.text)")
             }
-            return result + "</tr>"
+            if !styles.isEmpty { attributes += " style=\"" + styles.joined(separator: "; ") + "\"" }
+            return "<\(tag)\(attributes)>\(inlineHTML(table.rows[position.row][position.column]))</\(tag)>"
+        }
+        func line(_ row: Int) -> String {
+            "<tr>" + (0..<table.columnCount).compactMap { column -> String? in
+                let position = NoteTableCell(row: row, column: column)
+                return covered.contains(position) ? nil : cell(position)
+            }.joined() + "</tr>"
         }
         var result = "<table>"
-        var body = rows[...]
-        if headerRow, let first = rows.first {
-            result += "<thead>" + line(first, header: true) + "</thead>"
-            body = rows.dropFirst()
+        var first = 0
+        if table.headerRow, !table.merges.contains(where: { $0.row == 0 && $0.rowSpan > 1 }) {
+            result += "<thead>" + line(0) + "</thead>"
+            first = 1
         }
-        if !body.isEmpty { result += "<tbody>" + body.map { line($0, header: false) }.joined() + "</tbody>" }
+        if first < table.rowCount { result += "<tbody>" + (first..<table.rowCount).map(line).joined() + "</tbody>" }
         return result + "</table>"
     }
 
