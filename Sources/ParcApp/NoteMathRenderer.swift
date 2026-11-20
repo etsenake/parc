@@ -27,6 +27,8 @@ final class NoteMathLayoutEntry {
                 bounds = CGRect(origin: .zero, size: size)
             case .line(let line):
                 bounds = CTLineGetImageBounds(line, nil)
+            case .segment(let vector, let width):
+                bounds = NoteMathInk.segmentBounds(vector, width: width)
             }
             guard !bounds.isNull, !bounds.isEmpty else { continue }
             frame = frame.union(bounds.offsetBy(dx: ink.origin.x, dy: ink.origin.y))
@@ -103,6 +105,13 @@ final class NoteMathRendering {
                 context.textMatrix = .identity
                 context.textPosition = point
                 CTLineDraw(line, context)
+            case .segment(let vector, let width):
+                context.setStrokeColor(fill)
+                context.setLineWidth(width)
+                context.setLineCap(.round)
+                context.move(to: point)
+                context.addLine(to: CGPoint(x: point.x + vector.dx, y: point.y + vector.dy))
+                context.strokePath()
             }
         }
         context.restoreGState()

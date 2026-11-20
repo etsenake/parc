@@ -44,6 +44,10 @@ enum NoteMathDecoration: Equatable, Sendable {
     case underline
     case overbrace
     case underbrace
+    case cancel
+    case backCancel
+    case crossCancel
+    case strike
 }
 
 enum NoteMathColumnAlignment: Equatable, Sendable {
@@ -79,6 +83,7 @@ indirect enum NoteMathNode: Equatable {
     case sizedDelimiter(String?, size: Int, kind: NoteMathAtomKind)
     case decorated(NoteMathDecoration, [NoteMathNode])
     case stacked(base: [NoteMathNode], over: [NoteMathNode]?, under: [NoteMathNode]?)
+    case extensibleArrow(String, over: [NoteMathNode], under: [NoteMathNode]?)
     case space(Double)
     case styled(NoteMathVariant, [NoteMathNode])
     case colored(NoteMathColor, [NoteMathNode])
@@ -512,6 +517,18 @@ struct NoteMathParser {
         case "operatorname":
             let limits: NoteMathLimits = consumeStar() ? .auto : .beside
             return .operatorName(try parseArgument(for: name, count: 1), limits)
+        case _ where Self.extensibleArrows[name] != nil:
+            var under: [NoteMathNode]?
+            let next = skipIndex(from: index)
+            if next < characters.count, characters[next] == "[" {
+                index = next + 1
+                try enter(lexeme)
+                under = try parseList(.bracket(next))
+                depth -= 1
+                advance(past: peek())
+            }
+            let over = try parseArgument(for: name, count: 1)
+            return .extensibleArrow(Self.extensibleArrows[name]!, over: over, under: under)
         case "overset", "underset", "stackrel":
             let annotation = try parseArgument(for: name, count: 2)
             let base = try parseArgument(for: name, count: 2)
@@ -531,6 +548,8 @@ struct NoteMathParser {
                 return .char(NoteMathSymbols.negations[symbol] ?? symbol + "\u{0338}", kind)
             }
             throw failure("\\not needs a symbol after it, like \\not=", lexeme)
+        case "colon":
+            return .group([.space(2.0 / 18), .char(":", .punct), .space(6.0 / 18)])
         case "bmod":
             return .classed(.bin, [.function("mod", .beside)])
         case "pmod":
@@ -860,6 +879,12 @@ struct NoteMathParser {
         "overrightarrow": .overArrow("\u{2192}"), "overleftarrow": .overArrow("\u{2190}"),
         "overleftrightarrow": .overArrow("\u{2194}"), "underrightarrow": .underArrow("\u{2192}"),
         "underleftarrow": .underArrow("\u{2190}"), "underleftrightarrow": .underArrow("\u{2194}"),
+        "cancel": .cancel, "bcancel": .backCancel, "xcancel": .crossCancel, "sout": .strike,
+    ]
+
+    private static let extensibleArrows: [String: String] = [
+        "xrightarrow": "→", "xleftarrow": "←", "xleftrightarrow": "↔", "xRightarrow": "⇒", "xLeftarrow": "⇐",
+        "xLeftrightarrow": "⇔", "xmapsto": "↦", "xhookrightarrow": "↪", "xhookleftarrow": "↩",
     ]
 
     private static let sizedDelimiters: [String: (Int, NoteMathAtomKind)] = [
@@ -939,6 +964,8 @@ enum NoteMathSymbols {
         ("vert", "|"), ("Vert", "‖"), ("|", "‖"), ("#", "#"), ("%", "%"), ("&", "&"), ("_", "_"), ("$", "$"),
         ("vdots", "⋮"), ("bigstar", "★"), ("diagup", "╱"), ("diagdown", "╲"), ("blacktriangle", "▲"),
         ("triangledown", "▽"), ("blacktriangledown", "▼"), ("varkappa", "ϰ"), ("infin", "∞"), ("Bbbk", "𝕜"),
+        ("R", "ℝ"), ("Reals", "ℝ"), ("reals", "ℝ"), ("N", "ℕ"), ("natnums", "ℕ"), ("Z", "ℤ"), ("Q", "ℚ"),
+        ("C", "ℂ"), ("Complex", "ℂ"),
     ]
 
     static let binary: [(String, String)] = [
@@ -968,11 +995,11 @@ enum NoteMathSymbols {
         ("eqqcolon", "≕"), ("triangleq", "≜"), ("leqslant", "⩽"), ("geqslant", "⩾"), ("lesssim", "≲"),
         ("gtrsim", "≳"), ("approxeq", "≊"), ("nless", "≮"), ("ngtr", "≯"), ("nleq", "≰"), ("ngeq", "≱"),
         ("nsim", "≁"), ("ncong", "≇"), ("therefore", "∴"), ("because", "∵"), ("leqq", "≦"), ("geqq", "≧"),
-        ("lneq", "⪇"), ("gneq", "⪈"), ("ltimes", "⋉"), ("sqsubsetneq", "⊏"), ("risingdotseq", "≓"),
+        ("lneq", "⪇"), ("gneq", "⪈"), ("risingdotseq", "≓"),
         ("fallingdotseq", "≒"), ("backsim", "∽"), ("eqsim", "≂"), ("thicksim", "∼"), ("thickapprox", "≈"),
-        ("propto", "∝"), ("varpropto", "∝"), ("between", "≬"), ("pitchfork", "⋔"), ("Subset", "⋐"),
+        ("varpropto", "∝"), ("between", "≬"), ("pitchfork", "⋔"), ("Subset", "⋐"),
         ("Supset", "⋑"), ("vartriangleleft", "⊲"), ("vartriangleright", "⊳"), ("trianglelefteq", "⊴"),
-        ("trianglerighteq", "⊵"), ("colon", "∶"), ("coloneq", "≔"), ("dashleftarrow", "⇠"),
+        ("trianglerighteq", "⊵"), ("coloneq", "≔"), ("dashleftarrow", "⇠"),
     ]
 
     static let arrows: [(String, String)] = [

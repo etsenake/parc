@@ -12,11 +12,17 @@ struct NoteMathInk {
         case glyph(CGGlyph, CTFont)
         case rule(CGSize)
         case line(CTLine)
+        case segment(CGVector, CGFloat)
     }
 
     var content: Content
     var origin: CGPoint
     var color: NoteMathInkColor
+
+    static func segmentBounds(_ vector: CGVector, width: CGFloat) -> CGRect {
+        CGRect(x: min(0, vector.dx), y: min(0, vector.dy), width: abs(vector.dx), height: abs(vector.dy))
+            .insetBy(dx: -width / 2, dy: -width / 2)
+    }
 }
 
 struct NoteMathBox {
@@ -247,6 +253,7 @@ struct NoteMathTypesetter {
             return content.count == 1 ? atomKind(content[0]) : .ord
         case .stacked(let base, _, _): return base.count == 1 ? atomKind(base[0]) : .ord
         case .scripts(let base, _, _): return atomKind(base)
+        case .extensibleArrow: return .rel
         default: return .ord
         }
     }
@@ -285,6 +292,8 @@ struct NoteMathTypesetter {
             return (stacked(base: base, over: over, under: under, context), atomKind(node))
         case .environment(let environment):
             return (self.environment(environment, context), atomKind(node))
+        case .extensibleArrow(let arrow, let over, let under):
+            return (extensibleArrow(arrow, over: over, under: under, context), .rel)
         case .classed(let kind, let content):
             return (layoutList(content, context), kind)
         case .lines(let lines):
@@ -744,7 +753,56 @@ struct NoteMathTypesetter {
         case .underArrow(let arrow):
             if let mark = Self.underArrowMarks[arrow] { return stretchyMark(mark, above: false, content, context) }
             return stretchedStack(arrow, over: false, content, context)
+        case .cancel, .backCancel, .crossCancel, .strike:
+            return cancelled(decoration, content, context)
         }
+    }
+
+    private func cancelled(_ decoration: NoteMathDecoration, _ content: [NoteMathNode], _ context: NoteMathContext) -> NoteMathBox {
+        var box = layoutList(content, context).withoutGlyphIdentity()
+        let em = self.em(context)
+        let thickness = 0.05 * em
+        let area = CGRect(x: 0, y: -box.descent, width: box.width, height: box.height).insetBy(dx: -0.04 * em, dy: -0.08 * em)
+        var segments: [(CGPoint, CGVector)] = []
+        switch decoration {
+        case .cancel:
+            segments = [(CGPoint(x: area.minX, y: area.minY), CGVector(dx: area.width, dy: area.height))]
+        case .backCancel:
+            segments = [(CGPoint(x: area.minX, y: area.maxY), CGVector(dx: area.width, dy: -area.height))]
+        case .crossCancel:
+            segments = [(CGPoint(x: area.minX, y: area.minY), CGVector(dx: area.width, dy: area.height)),
+                        (CGPoint(x: area.minX, y: area.maxY), CGVector(dx: area.width, dy: -area.height))]
+        default:
+            segments = [(CGPoint(x: 0, y: constant(.axisHeight, context)), CGVector(dx: box.width, dy: 0))]
+        }
+        for (origin, vector) in segments {
+            box.inks.append(NoteMathInk(content: .segment(vector, thickness), origin: origin, color: context.color))
+        }
+        return box
+    }
+
+    private func extensibleArrow(_ arrow: String, over: [NoteMathNode], under: [NoteMathNode]?, _ context: NoteMathContext) -> NoteMathBox {
+        let overBox = layoutList(over, context.with(style: context.style.superscriptStyle))
+        let underBox = under.map { layoutList($0, context.with(style: context.style.subscriptStyle)) }
+        let em = self.em(context)
+        let target = max(max(overBox.width, underBox?.width ?? 0) + 0.6 * em, 1.4 * em)
+        guard let stretched = horizontalStretch(arrow, target: target, context) else { return overBox }
+        let ink = inkExtent(stretched)
+        let width = max(stretched.width, overBox.width, underBox?.width ?? 0)
+        var box = NoteMathBox(width: width, ascent: max(stretched.ascent, 0), descent: max(stretched.descent, 0))
+        box.draw(stretched, at: CGPoint(x: (width - stretched.width) / 2, y: 0))
+        let gap = max(constant(.stretchStackGapAboveMin, context), 0.1 * em)
+        if !over.isEmpty {
+            let y = ink.maxY + gap + overBox.descent
+            box.draw(overBox, at: CGPoint(x: (width - overBox.width) / 2, y: y))
+            box.ascent = max(box.ascent, y + overBox.ascent)
+        }
+        if let underBox {
+            let y = ink.minY - gap - underBox.ascent
+            box.draw(underBox, at: CGPoint(x: (width - underBox.width) / 2, y: y))
+            box.descent = max(box.descent, underBox.descent - y)
+        }
+        return box
     }
 
     private static let overArrowMarks: [String: String] = ["→": "\u{20D7}", "←": "\u{20D6}", "↔": "\u{20E1}"]
@@ -763,6 +821,8 @@ struct NoteMathTypesetter {
                 bounds = CGRect(origin: .zero, size: size)
             case .line(let line):
                 bounds = CTLineGetImageBounds(line, nil)
+            case .segment(let vector, let width):
+                bounds = NoteMathInk.segmentBounds(vector, width: width)
             }
             guard !bounds.isNull, !bounds.isEmpty else { continue }
             extent = extent.union(bounds.offsetBy(dx: ink.origin.x, dy: ink.origin.y))

@@ -251,6 +251,18 @@ struct NoteMathLayoutTests {
         expect(brace.ascent > box("a+b+c").ascent + size * 0.4, "overbrace and its label stack up")
         let under = box("\\underbrace{a+b+c}_{n}")
         expect(under.descent > box("a+b+c").descent + size * 0.4, "underbrace and its label hang down")
+        let label = box("\\xrightarrow{\\text{long label}}")
+        let labelWidth = box("\\scriptstyle\\text{long label}").width
+        let labelArrow = extent(label.inks.filter { if case .glyph = $0.content { return true }; return false })
+        expect(labelArrow.width > labelWidth && label.width > labelWidth, "labelled arrows stretch past their label")
+        expect(label.ascent > size * 0.6, "the label sits above the arrow")
+        let both = box("\\xleftarrow[below]{above}")
+        expect(both.descent > size * 0.3 && both.ascent > size * 0.6, "labels above and below")
+        expect(box("\\xLeftrightarrow{}").width >= size * 1.4 - 0.01, "empty labelled arrows still read as long arrows")
+        let cancel = box("\\cancel{x+y}")
+        let segments = cancel.inks.filter { if case .segment = $0.content { return true }; return false }
+        expect(segments.count == 1 && abs(cancel.width - box("x+y").width) < 0.01, "cancel strikes without changing width")
+        expect(box("\\xcancel{x}").inks.filter { if case .segment = $0.content { return true }; return false }.count == 2, "xcancel crosses")
         let overline = box("\\overline{xy}")
         expect(overline.ascent > box("xy").ascent && overline.inks.contains { if case .rule = $0.content { return true }; return false }, "overline")
         let underline = box("\\underline{xy}")
@@ -361,6 +373,8 @@ struct NoteMathLayoutTests {
         let afterFunction = bitmap(NoteMathRenderer.render("\\sin\\frac{x}{y}", fontSize: 40, color: .black, display: true))
         expect(afterFunction.ink(x: 0.6...1, y: 0...0.4) > 20 && afterFunction.ink(x: 0.6...1, y: 0.6...1) > 20,
                "a fraction after a function name stays in place")
+        let struck = bitmap(NoteMathRenderer.render("\\cancel{\\phantom{x}}", fontSize: 40, color: .black, display: true))
+        expect(struck.ink(x: 0...0.4, y: 0.6...1) > 5 && struck.ink(x: 0.6...1, y: 0...0.4) > 5, "cancel draws a rising stroke")
         let red = bitmap(NoteMathRenderer.render("\\color{red}{x}", fontSize: 40, color: .black, display: true))
         expect(red.ink(x: 0...1, y: 0...1) > 50, "coloured ink draws")
         let error = bitmap(NoteMathRenderer.render("\\frac{a}", fontSize: 40, color: .black, display: true))
@@ -404,6 +418,8 @@ struct NoteMathLayoutTests {
             "\\begin{smallmatrix} a & b \\\\ c & d \\end{smallmatrix}",
             "\\stackrel{\\text{def}}{=} \\overset{?}{=} \\underset{n}{\\max}",
             "x \\in \\{1, 2, 3\\} \\setminus \\emptyset",
+            "A \\xrightarrow[\\text{under}]{f \\circ g} B \\xLeftrightarrow{} C \\xmapsto{n} D \\xhookrightarrow{i} E",
+            "\\cancel{a} \\bcancel{b} \\xcancel{c} \\sout{d} \\in \\R \\setminus \\Q",
         ]
         for formula in formulas {
             for display in [true, false] {

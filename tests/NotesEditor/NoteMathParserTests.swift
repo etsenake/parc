@@ -231,6 +231,17 @@ struct NoteMathParserTests {
         expect(parse("a \\\\ b") == [.lines([[.char("a", .ord)], [.char("b", .ord)]])], "top-level line breaks")
         expect(parse("\\boxed{x}\\phantom{y}") == [.boxed([.char("x", .ord)]), .phantom([.char("y", .ord)], keepsWidth: true, keepsHeight: true)],
                "boxed and phantom")
+        expect(parse("\\xrightarrow[a]{b}") == [.extensibleArrow("→", over: [.char("b", .ord)], under: [.char("a", .ord)])],
+               "labelled arrow with both labels")
+        expect(parse("\\xLeftarrow{}") == [.extensibleArrow("⇐", over: [], under: nil)], "empty labelled arrow")
+        expect(parse("\\cancel{x}\\bcancel{y}\\xcancel{z}\\sout{w}") == [
+            .decorated(.cancel, [.char("x", .ord)]), .decorated(.backCancel, [.char("y", .ord)]),
+            .decorated(.crossCancel, [.char("z", .ord)]), .decorated(.strike, [.char("w", .ord)]),
+        ], "cancel family")
+        expect(parse("\\R\\N\\Z\\Q\\C") == ["ℝ", "ℕ", "ℤ", "ℚ", "ℂ"].map { .char($0, .ord) }, "number set shorthands")
+        expect(parse("f\\colon A \\ltimes B") == [.char("f", .ord), .group([.space(2.0 / 18), .char(":", .punct), .space(6.0 / 18)]),
+                                                .char("A", .ord), .char("⋉", .bin), .char("B", .ord)],
+               "colon spaces like amsmath and ltimes is binary")
         expect(parse("\\mathrel{x}\\mathbin{y}") == [.classed(.rel, [.char("x", .ord)]), .classed(.bin, [.char("y", .ord)])], "math classes")
     }
 
