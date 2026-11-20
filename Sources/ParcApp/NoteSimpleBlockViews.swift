@@ -165,8 +165,8 @@ final class NoteTOCBlockView: NoteBlockView {
     }
 
     private func invalidateCanvasLayout() {
-        superview?.needsLayout = true
-        editor?.canvas.needsLayout = true
+        guard window != nil else { return }
+        editor?.canvas.blockHeightDidChange(blockID)
     }
 
     func rowHeights(width: CGFloat) -> [CGFloat] {
@@ -443,11 +443,11 @@ final class NoteRawBlockView: NoteBlockView, NoteTextHost {
         if force || (rawView.string != block.text.string && !rawView.hasMarkedText()) {
             let selection = rawView.selectedOffsets
             rawView.apply(NoteText(block.text.string), selection: nil)
+            if let storage = rawView.textStorage, storage.length > 0 {
+                storage.setAttributes(attributes, range: NSRange(location: 0, length: storage.length))
+            }
             rawView.selectedOffsets = selection
             measured = nil
-        }
-        if let storage = rawView.textStorage, storage.length > 0 {
-            storage.setAttributes(attributes, range: NSRange(location: 0, length: storage.length))
         }
         label.stringValue = kindLabel
         setAccessibilityLabel("\(kindLabel) kept as written")
@@ -517,8 +517,8 @@ final class NoteRawBlockView: NoteBlockView, NoteTextHost {
     private func rawDidChange() {
         measured = nil
         needsLayout = true
-        superview?.needsLayout = true
-        editor?.canvas.needsLayout = true
+        guard window != nil else { return }
+        editor?.canvas.blockHeightDidChange(blockID)
     }
 
     private func exitBelow(trimmingBlankLine: Bool) {

@@ -226,6 +226,14 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     private var measuredText = ""
     private var measuredWrap = false
     private var measuredTextHeight: CGFloat = 0
+    private var appliedStyle: StyleKey?
+
+    private struct StyleKey: Equatable {
+        var size: CGFloat
+        var lineHeight: CGFloat
+        var wrap: Bool
+        var tabWidth: Int
+    }
 
     override init(block: NoteBlock, editor: NotePageEditor?) {
         super.init(block: block, editor: editor)
@@ -346,9 +354,14 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
 
     private func applyBlock(_ block: NoteBlock, force: Bool) {
         let style = codeStyle
-        let attributes = codeAttributes(style)
-        codeView.codeAttributes = attributes
-        codeView.typingAttributes = attributes
+        let key = StyleKey(size: style.font.pointSize, lineHeight: style.lineHeight, wrap: block.props.wrap,
+                           tabWidth: NoteCodeEditing.indent(forLanguage: languageID).width)
+        let restyle = force || key != appliedStyle
+        if restyle {
+            codeView.codeAttributes = codeAttributes(style)
+            appliedStyle = key
+        }
+        let attributes = codeView.codeAttributes
         codeView.insertionPointColor = NoteTheme.caret
         codeView.selectedTextAttributes = [.backgroundColor: NoteTheme.selection]
         if force || (codeView.string != block.text.string && !codeView.hasMarkedText()) {
@@ -357,8 +370,9 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
             codeView.textStorage?.setAttributes(attributes, range: NSRange(location: 0, length: (codeView.string as NSString).length))
             codeView.selectedOffsets = selection
             measuredWidth = -1
-        } else if let storage = codeView.textStorage, storage.length > 0 {
+        } else if restyle, let storage = codeView.textStorage, storage.length > 0 {
             storage.setAttributes(attributes, range: NSRange(location: 0, length: storage.length))
+            measuredWidth = -1
         }
         if force || captionView.noteText != block.props.caption {
             if !(captionView.hasMarkedText() && captionView.noteText.string == block.props.caption.string) {
@@ -412,6 +426,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     override func themeDidChange() {
         super.themeDidChange()
         measuredWidth = -1
+        appliedStyle = nil
         applyBlock(block, force: false)
         rehighlight(force: true)
     }
@@ -527,8 +542,12 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         measuredWidth = -1
         rehighlight()
         needsLayout = true
-        superview?.needsLayout = true
-        editor?.canvas.needsLayout = true
+        reportHeightChange()
+    }
+
+    private func reportHeightChange() {
+        guard window != nil else { return }
+        editor?.canvas.blockHeightDidChange(blockID)
     }
 
     func rehighlight(force: Bool = false) {
@@ -635,8 +654,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     private func invalidateHeight() {
         refreshEditable()
         needsLayout = true
-        superview?.needsLayout = true
-        editor?.canvas.needsLayout = true
+        reportHeightChange()
     }
 
     private func exitBelow(trimmingBlankLine: Bool) {

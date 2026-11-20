@@ -295,13 +295,11 @@ final class NoteEquationBlockView: NoteBlockView {
     override func update(_ block: NoteBlock) {
         super.update(block)
         rerender()
-        invalidateHeight()
     }
 
     override func themeDidChange() {
         super.themeDidChange()
         rerender()
-        invalidateHeight()
     }
 
     override func readOnlyDidChange() {
@@ -324,8 +322,8 @@ final class NoteEquationBlockView: NoteBlockView {
     private func invalidateHeight() {
         needsLayout = true
         needsDisplay = true
-        superview?.needsLayout = true
-        editor?.canvas.needsLayout = true
+        guard window != nil else { return }
+        editor?.canvas.blockHeightDidChange(blockID)
     }
 
     override func layout() {
