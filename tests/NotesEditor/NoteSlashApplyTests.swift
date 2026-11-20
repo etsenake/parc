@@ -33,8 +33,8 @@ struct NoteSlashApplyTests {
         expect(outcome.page.blocks.count == 1 && outcome.page.blocks[0].kind == .todo && outcome.page.blocks[0].children.map(\.id) == [child.id],
                "converting a list item into a to-do keeps its children")
         outcome = apply(.block(.heading(1)), NotePage(blocks: [parent]), parent.id, 0..<5)
-        expect(outcome.page.blocks.map(\.id) == [parent.id, child.id] && outcome.page.blocks[0].children.isEmpty,
-               "headings can't hold children, so they step out after it")
+        expect(outcome.page.blocks.map(\.id) == [parent.id] && outcome.page.blocks[0].children.map(\.id) == [child.id],
+               "headings keep their children nested under them")
         outcome = apply(.block(.toggleHeading(1)), NotePage(blocks: [parent]), parent.id, 0..<5)
         expect(outcome.page.blocks[0].children.map(\.id) == [child.id] && outcome.page.blocks[0].props.toggleable,
                "toggle headings keep the children folded inside")
