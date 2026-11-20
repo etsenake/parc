@@ -116,9 +116,81 @@ extension BrowserWindowController {
         guard let id = noteVisitTarget(action) else { return nil }
         return NavigationControlInteraction(activate: { [weak self] alternate in
             guard let self, self.noteVisitTarget(action) == id else { return }
-            if alternate, action == .forward { self.openNoteAheadInBackground(id); return }
-            self.stepNoteVisit(id, forward: action == .forward)
+            self.chooseNoteVisitStep(id, forward: action == .forward, alternate: alternate)
+        }, showHistory: { [weak self] anchor in
+            self?.showNoteVisitHistory(id, forward: action == .forward, from: anchor)
         })
+    }
+
+    private func chooseNoteVisitStep(_ id: UUID, forward: Bool, alternate: Bool) {
+        guard noteVisitTarget(forward ? .forward : .back) == id else { return }
+        if alternate {
+            _ = forward ? openNoteAheadInBackground(id) : openPageUnderNoteInBackground(id)
+        } else {
+            stepNoteVisit(id, forward: forward)
+        }
+    }
+
+    private func showNoteVisitHistory(_ id: UUID, forward: Bool, from anchor: NSView) {
+        let action: PCNativeNavigationAction = forward ? .forward : .back
+        guard let window, noteVisitTarget(action) == id,
+              let visit = store.state.tab(id, where: { $0.archivedAt == nil })?.noteVisit else { return }
+        let page = forward ? navigationPage : coveredPages[id]?.browser.nativePage
+        let snapshot = page?.navigationHistory(back: !forward)
+        let leading: NavigationHistoryStepRow
+        if forward {
+            leading = NavigationHistoryStepRow(
+                title: visit.note.title, icon: visit.noteFile.flatMap { NoteTabIconArt.shared.image(forNote: $0) },
+                url: visit.noteFile) { [weak self] alternate in self?.chooseNoteVisitStep(id, forward: true, alternate: alternate) }
+        } else {
+            leading = NavigationHistoryStepRow(
+                title: visit.page.title, icon: page?.favicon, url: URL(string: visit.page.url)) { [weak self] alternate in
+                self?.chooseNoteVisitStep(id, forward: false, alternate: alternate)
+            }
+        }
+        navigationHistory?.dismiss()
+        sidebarPreviews?.dismiss(); tabSwitcher?.cancel()
+        let history = NavigationHistoryController(page: page, snapshot: snapshot?.isValid == true ? snapshot : nil,
+                                                  leading: leading, window: window, theme: windowPaletteTheme)
+        history.stillSelected = { [weak self, weak page] in
+            guard let self, self.noteVisitTarget(action) == id else { return false }
+            return !forward || (page != nil && self.navigationPage === page)
+        }
+        if !forward {
+            history.beforeEntry = { [weak self] alternate in
+                guard let self else { return false }
+                return alternate || self.stepNoteVisit(id, forward: false)
+            }
+        }
+        history.onClose = { [weak self, weak history] in
+            guard let self, self.navigationHistory === history else { return }
+            self.navigationHistory = nil; self.refreshSidebarPointer()
+        }
+        navigationHistory = history
+        history.show(from: anchor)
+    }
+
+    @discardableResult
+    func openPageUnderNoteInBackground(_ id: UUID) -> Bool {
+        guard let tab = store.state.tab(id, where: { $0.archivedAt == nil }), let visit = tab.noteVisit,
+              visit.showsNote, let page = coveredPages[id]?.browser.nativePage, !page.isClosed else { return false }
+        navigationHistory?.dismiss()
+        let history = page.responds(to: #selector(PCNativePage.captureNavigationState)) ? page.captureNavigationState() : nil
+        let creation = TabCreationProvenance(referrerID: id, activeTabID: currentTabID,
+                                             profileID: tab.profileID, state: store.state)
+        var opened: UUID?
+        performWindowCommand(selectNativePage: false) {
+            opened = store.adoptNativePage(url: URL(string: visit.page.url), title: visit.page.title,
+                                           profilePath: page.profilePath, preferredSpaceID: tab.spaceID,
+                                           select: false, creation: creation)
+            guard let created = opened else { return }
+            if let history {
+                store.closedPageHistory.closed(created, state: history)
+                store.closedPageHistory.restore([created])
+            }
+            presentation.recordCreation(created, state: store.state)
+        }
+        return opened != nil
     }
 
     @discardableResult

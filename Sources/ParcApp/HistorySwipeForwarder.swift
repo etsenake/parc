@@ -6,6 +6,7 @@ final class HistorySwipeForwarding: NSObject, PCNativeHistorySwipeClient {
 
     static func install() {
         if PCNativeHistorySwipeSource.client == nil { PCNativeHistorySwipeSource.client = shared }
+        HistorySwipeNoteSource.shared.install()
     }
 
     func historySwipeHandler(for source: PCNativeHistorySwipeSource) -> any PCNativeHistorySwipeHandler {
@@ -13,7 +14,7 @@ final class HistorySwipeForwarding: NSObject, PCNativeHistorySwipeClient {
     }
 }
 
-private final class HistorySwipeSystemClock: HistorySwipeClock {
+final class HistorySwipeSystemClock: HistorySwipeClock {
     var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
     func schedule(at deadline: TimeInterval, _ tick: @escaping () -> Void) {

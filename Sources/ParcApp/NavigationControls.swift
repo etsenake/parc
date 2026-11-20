@@ -336,9 +336,20 @@ private final class NavigationHistoryCardView: NSView {
     }
 }
 
+struct NavigationHistoryStepRow {
+    var title: String
+    var icon: NSImage?
+    var url: URL?
+    var choose: (Bool) -> Void
+}
+
 final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTableViewDelegate {
-    let page: PCNativePage
-    private let snapshot: PCNativeNavigationHistory
+    let page: PCNativePage?
+    private let snapshot: PCNativeNavigationHistory?
+    private let leading: NavigationHistoryStepRow?
+    private var rowCount: Int { (leading == nil ? 0 : 1) + (snapshot?.entries.count ?? 0) }
+    private var isValid: Bool { snapshot?.isValid ?? true }
+    var beforeEntry: ((Bool) -> Bool)?
     private let colors: ParcMenuColors
     private weak var parent: NSWindow?
     private weak var oldResponder: NSResponder?
@@ -355,12 +366,14 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
     var onNavigate: (() -> Void)?
     var address: (URL) -> String? = { $0.absoluteString }
 
-    init(page: PCNativePage, snapshot: PCNativeNavigationHistory, window: NSWindow, theme: SpaceTheme) {
-        self.page = page; self.snapshot = snapshot; colors = ParcMenuColors(theme: theme)
+    init(page: PCNativePage?, snapshot: PCNativeNavigationHistory?, leading: NavigationHistoryStepRow? = nil,
+         window: NSWindow, theme: SpaceTheme) {
+        self.page = page; self.snapshot = snapshot; self.leading = leading; colors = ParcMenuColors(theme: theme)
+        let rowCount = (leading == nil ? 0 : 1) + (snapshot?.entries.count ?? 0)
         parent = window; oldResponder = window.firstResponder
         let m = NavigationHistoryMenuMetrics.self
         let size = NSSize(width: m.width + 2 * m.shadowMargin,
-                          height: m.cardHeight(rows: snapshot.entries.count) + 2 * m.shadowMargin)
+                          height: m.cardHeight(rows: rowCount) + 2 * m.shadowMargin)
         menuWindow = NavigationHistoryMenuWindow(contentRect: NSRect(origin: .zero, size: size),
                                                  styleMask: .borderless, backing: .buffered, defer: true)
         card = NavigationHistoryCardView(frame: NSRect(origin: .zero, size: size), colors: colors)
@@ -382,7 +395,7 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         table.focus = { [weak self] row in self?.setFocus(row) }
         table.move = { [weak self] delta in self?.moveFocus(delta) }
         table.focusedRow = { [weak self] in self?.focused }
-        let rows = CGFloat(snapshot.entries.count) * m.rowHeight
+        let rows = CGFloat(rowCount) * m.rowHeight
         let scroll = NSScrollView(frame: card.clip.bounds.insetBy(dx: m.edgeInset, dy: m.edgeInset))
         scroll.drawsBackground = false; scroll.hasVerticalScroller = true
         scroll.scrollerStyle = .overlay; scroll.autohidesScrollers = true
@@ -398,13 +411,13 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         }
     }
     func show(from view: NSView) {
-        guard snapshot.isValid, stillSelected?() == true, let parent,
-              view.window === parent, !snapshot.entries.isEmpty else { dismiss(); return }
+        guard isValid, stillSelected?() == true, let parent,
+              view.window === parent, rowCount > 0 else { dismiss(); return }
         anchor = view as? NavigationControlButton; anchor?.showingHistory = true
         let m = NavigationHistoryMenuMetrics.self
         let anchorRect = parent.convertToScreen(view.convert(view.bounds, to: nil))
         let frame = m.cardFrame(anchor: anchorRect, parent: parent.frame,
-                                screen: (parent.screen ?? NSScreen.main)?.visibleFrame, rows: snapshot.entries.count)
+                                screen: (parent.screen ?? NSScreen.main)?.visibleFrame, rows: rowCount)
         anchorOffset = min(max(anchorRect.midX - frame.minX, 0), m.width)
         menuWindow.setFrame(frame.insetBy(dx: -m.shadowMargin, dy: -m.shadowMargin), display: false)
         card.layoutSubtreeIfNeeded()
@@ -462,46 +475,56 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         }
     }
     func ownsKeyWindow(in window: NSWindow) -> Bool {
-        !finished && parent === window && menuWindow.isKeyWindow && snapshot.isValid && stillSelected?() == true
+        !finished && parent === window && menuWindow.isKeyWindow && isValid && stillSelected?() == true
     }
 
     func validate() {
-        if !snapshot.isValid || stillSelected?() != true { dismiss() }
+        if !isValid || stillSelected?() != true { dismiss() }
     }
     func dismiss(restoreFocus: Bool = false) {
         finish(selection: nil, restoreFocus: restoreFocus)
     }
-    func numberOfRows(in tableView: NSTableView) -> Int { snapshot.entries.count }
+    func numberOfRows(in tableView: NSTableView) -> Int { rowCount }
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         let view = NavigationHistoryRowView()
         view.hoverColor = colors.hover; view.focused = row == focused
         return view
     }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard snapshot.entries.indices.contains(row) else { return nil }
+        guard (0..<rowCount).contains(row) else { return nil }
         let m = NavigationHistoryMenuMetrics.self
-        let entry = snapshot.entries[row]
+        let shown = shownRow(row)
         let width = m.width - 2 * m.edgeInset
         let cell = NavigationHistoryCellView(frame: NSRect(x: 0, y: 0, width: width, height: m.rowHeight))
         cell.onPress = { [weak self] in self?.choose(row, alternate: false) }
         let primary = colors.title
         let side = m.imageDimension
         let icon = NSImageView(frame: NSRect(x: m.rowHorizontalInset, y: (m.rowHeight - side) / 2, width: side, height: side))
-        icon.image = entry.favicon ?? NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+        icon.image = shown.icon ?? NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
         icon.imageScaling = .scaleProportionallyUpOrDown; icon.contentTintColor = primary
         cell.addSubview(icon); cell.imageView = icon
-        let label = NSTextField(labelWithString: entry.title.isEmpty ? entry.url.flatMap(address) ?? "Untitled" : entry.title)
+        let label = NSTextField(labelWithString: shown.title.isEmpty ? shown.url.flatMap(address) ?? "Untitled" : shown.title)
         label.font = m.font; label.textColor = primary
         label.lineBreakMode = .byTruncatingTail; label.maximumNumberOfLines = 1
         let x = m.rowHorizontalInset + side + m.imageSpacing
         let height = ceil(label.intrinsicContentSize.height)
         label.frame = NSRect(x: x, y: (m.rowHeight - height) / 2, width: width - x - m.rowHorizontalInset, height: height)
-        cell.addSubview(label); cell.textField = label; cell.toolTip = entry.url.flatMap(address)
+        cell.addSubview(label); cell.textField = label; cell.toolTip = shown.url.flatMap(address)
         cell.setAccessibilityLabel(label.stringValue)
         return cell
     }
+    private func shownRow(_ row: Int) -> (title: String, icon: NSImage?, url: URL?) {
+        if let leading, row == 0 { return (leading.title, leading.icon, leading.url) }
+        guard let entry = entry(at: row) else { return ("", nil, nil) }
+        return (entry.title, entry.favicon, entry.url)
+    }
+    private func entry(at row: Int) -> PCNativeNavigationEntry? {
+        let index = row - (leading == nil ? 0 : 1)
+        guard let snapshot, snapshot.entries.indices.contains(index) else { return nil }
+        return snapshot.entries[index]
+    }
     private func setFocus(_ row: Int?) {
-        let row = row.flatMap { snapshot.entries.indices.contains($0) ? $0 : nil }
+        let row = row.flatMap { (0..<rowCount).contains($0) ? $0 : nil }
         guard row != focused else { return }
         let old = focused; focused = row
         for index in [old, row].compactMap({ $0 }) {
@@ -519,15 +542,21 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         if row >= 0 { choose(row, alternate: false) }
     }
     private func moveFocus(_ delta: Int) {
-        let count = snapshot.entries.count
+        let count = rowCount
         guard count > 0 else { return }
         guard let focused else { setFocus(delta > 0 ? 0 : count - 1); return }
         setFocus(((focused + delta) % count + count) % count)
     }
     private func choose(_ row: Int, alternate: Bool) {
-        guard !finished, snapshot.entries.indices.contains(row), snapshot.isValid,
+        guard !finished, (0..<rowCount).contains(row), isValid,
               stillSelected?() == true else { dismiss(); return }
-        finish(selection: (snapshot.entries[row], alternate), restoreFocus: false)
+        if let leading, row == 0 {
+            finish(selection: nil, restoreFocus: false)
+            DispatchQueue.main.async { leading.choose(alternate) }
+            return
+        }
+        guard let entry = entry(at: row) else { dismiss(); return }
+        finish(selection: (entry, alternate), restoreFocus: false)
     }
     private func finish(selection: (PCNativeNavigationEntry, Bool)?, restoreFocus: Bool, animated: Bool = true) {
         guard !finished else { return }; finished = true
@@ -536,14 +565,15 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         let validOwner = stillSelected?() == true
         if let parent, menuWindow.isKeyWindow, parent.isVisible, NSApp.isActive { parent.makeKey() }
         animateOut(animated: animated)
-        if let selection, validOwner {
-            let snapshot = snapshot, stillSelected = stillSelected, onNavigate = onNavigate
+        if let selection, validOwner, let snapshot {
+            let stillSelected = stillSelected, onNavigate = onNavigate, beforeEntry = beforeEntry
             DispatchQueue.main.async {
-                if stillSelected?() == true, snapshot.navigate(to: selection.0, inNewTab: selection.1), !selection.1 { onNavigate?() }
+                if stillSelected?() == true, beforeEntry?(selection.1) ?? true,
+                   snapshot.navigate(to: selection.0, inNewTab: selection.1), !selection.1 { onNavigate?() }
                 snapshot.invalidate()
             }
         } else {
-            snapshot.invalidate()
+            snapshot?.invalidate()
             if restoreFocus, validOwner {
                 let stillSelected = stillSelected
                 DispatchQueue.main.async { [weak parent, weak oldResponder] in

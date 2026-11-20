@@ -1,0 +1,153 @@
+import AppKit
+
+@MainActor
+final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget, @preconcurrency HistorySwipePresenter {
+    static let shared = HistorySwipeNoteSource()
+
+    private let clock = HistorySwipeSystemClock()
+    private lazy var driver = HistorySwipeDriver(target: self, presenter: self, clock: clock)
+    private var monitor: Any?
+    private weak var controller: BrowserWindowController?
+    private var tabID: UUID?
+    private var overlay: HistorySwipeOverlayView?
+    private var reducesMotion = false
+
+    func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            MainActor.assumeIsolated { HistorySwipeNoteSource.shared.receive(event) } ? nil : event
+        }
+    }
+
+    private func receive(_ event: NSEvent) -> Bool {
+        if event.phase == .began {
+            if driver.isActive { driver.cancel() }
+            resolveTarget(event)
+            guard tabID != nil else { return false }
+            driver.receive(.pageScroll(.began(synthetic: false, momentum: false)))
+            driver.receive(.pageScroll(.updated(consumed: Self.scrollsHorizontally(event))))
+            driver.receive(.overscroll(propagatesX: true))
+        }
+        guard tabID != nil else { return false }
+        let step = driver.receive(HistorySwipeEvents.scroll(
+            phase: event.phase, momentumPhase: event.momentumPhase, deltaX: Double(event.scrollingDeltaX),
+            deltaY: Double(event.scrollingDeltaY), directionInverted: event.isDirectionInvertedFromDevice))
+        if let request = step.startsTracking { track(event, request) }
+        if event.momentumPhase == .ended || event.momentumPhase == .cancelled, !driver.isActive {
+            tabID = nil
+        }
+        return step.consumesEvent
+    }
+
+    private func resolveTarget(_ event: NSEvent) {
+        controller = nil
+        tabID = nil
+        guard let window = event.window, let controller = window.windowController as? BrowserWindowController,
+              let id = controller.noteVisitTarget(.back), let view = noteView(controller, id),
+              let content = window.contentView,
+              let hit = content.hitTest(content.convert(event.locationInWindow, from: nil)),
+              hit === view || hit.isDescendant(of: view) else { return }
+        self.controller = controller
+        tabID = id
+    }
+
+    private func noteView(_ controller: BrowserWindowController, _ id: UUID) -> NSView? {
+        guard let note = controller.noteEditors[id], note.editor.isViewLoaded else { return nil }
+        let view = note.editor.view
+        return view.window == nil || view.isHiddenOrHasHiddenAncestor ? nil : view
+    }
+
+    private static func scrollsHorizontally(_ event: NSEvent) -> Bool {
+        guard let content = event.window?.contentView,
+              var view = content.hitTest(content.convert(event.locationInWindow, from: nil)) else { return false }
+        while true {
+            if let scroll = view as? NSScrollView, let document = scroll.documentView,
+               document.frame.width > scroll.contentView.bounds.width + 0.5 { return true }
+            guard let parent = view.superview else { return false }
+            view = parent
+        }
+    }
+
+    private var visit: TabNoteVisit? {
+        guard let controller, let tabID, controller.noteVisitTarget(.back) == tabID else { return nil }
+        return controller.store.state.tab(tabID)?.noteVisit
+    }
+
+    var swipesBetweenPages: Bool { NSEvent.isSwipeTrackingFromScrollEventsEnabled }
+    var allowsHistorySwipe: Bool { visit?.showsNote == true && controller?.navigationHistory == nil }
+
+    func historyEntries(toward direction: HistorySwipeDirection) -> Int {
+        HistorySwipeNoteStep.entries(toward: direction, visit: visit, pageEntries: 0)
+    }
+
+    func dismisses(toward direction: HistorySwipeDirection) -> Bool { false }
+
+    func beginSwipe(_ direction: HistorySwipeDirection) -> Bool {
+        direction == .back && allowsHistorySwipe
+    }
+
+    func beginDismissal() -> Bool { false }
+
+    func navigate(_ commit: HistorySwipeCommit) -> Bool {
+        guard let controller, let tabID, let visit else { return false }
+        let distance: Int
+        switch commit {
+        case .adjacent(.back): distance = 1
+        case let .entry(.back, steps): distance = steps
+        default: return false
+        }
+        guard case .pageUnderNote? = HistorySwipeNoteStep.step(toward: .back, distance: distance, visit: visit,
+                                                              pageEntries: 0) else { return false }
+        return controller.stepNoteVisit(tabID, forward: false)
+    }
+
+    func endSwipe() {}
+
+    func preloadBack() {}
+
+    func present(_ output: HistorySwipeOutput) {
+        if case .begin = output { showOverlay() }
+        guard let overlay else { return }
+        overlay.handle(output)
+        switch output {
+        case .commit, .cancel:
+            self.overlay = nil
+            tabID = nil
+            let collapse = reducesMotion ? HistorySwipeOverlayTiming.reducedCollapse : HistorySwipeOverlayTiming.collapse
+            let timer = Timer(timeInterval: collapse, repeats: false) { [weak overlay] _ in
+                MainActor.assumeIsolated { overlay?.removeFromSuperview() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+        default:
+            break
+        }
+    }
+
+    private func showOverlay() {
+        overlay = nil
+        reducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        guard let controller, let tabID, let visit, let container = noteView(controller, tabID)?.superview else { return }
+        let frame = noteView(controller, tabID)?.frame ?? container.bounds
+        let view = HistorySwipeOverlayView(frame: frame)
+        view.autoresizingMask = [.width, .height]
+        view.palette = controller.historySwipePalette
+        let note = HistorySwipeOverlayRow(title: visit.note.title,
+                                          favicon: visit.noteFile.flatMap { NoteTabIconArt.shared.image(forNote: $0) })
+        let page = HistorySwipeOverlayRow(title: visit.page.title,
+                                          favicon: controller.coveredPages[tabID]?.browser.nativePage?.favicon)
+        view.setRows(current: note, back: [page], forward: [])
+        container.addSubview(view, positioned: .above, relativeTo: noteView(controller, tabID))
+        overlay = view
+    }
+
+    private func track(_ event: NSEvent, _ request: HistorySwipeTrackingRequest) {
+        event.trackSwipeEvent(options: .lockDirection, dampenAmountThresholdMin: -1, max: 1) {
+            [weak self] amount, phase, complete, stop in
+            MainActor.assumeIsolated {
+                let update = HistorySwipeTrackedUpdate(generation: request.generation, amount: Double(amount),
+                                                       phase: HistorySwipeEvents.phase(phase), isComplete: complete)
+                if self?.driver.tracked(update) != true { stop.pointee = true }
+            }
+        }
+    }
+}
