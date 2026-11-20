@@ -75,6 +75,29 @@ struct NoteFileSessionTests {
         expectEqual(first.state, .saved, "a fresh session is saved")
         expect(first.environment is NoteFileEnvironment, "the environment is a real file environment")
         expectEqual(first.environment.documentURL, url, "the environment knows the note")
+
+        let archive = folder.appendingPathComponent("Archive.md", isDirectory: true)
+        try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        expectThrows(NoteFileError.notANote, "a folder named like a note isn't opened as one") { _ = try NoteFileSession.open(archive) }
+
+        let shelf = folder.appendingPathComponent("Shelf", isDirectory: true)
+        let book = file("Shelf/Book.md", "Words\n")
+        let alias = folder.appendingPathComponent("Shelf Alias", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: shelf)
+        let original = try NoteFileSession.open(book)
+        let viaAlias = try NoteFileSession.open(alias.appendingPathComponent("Book.md"))
+        expect(viaAlias === original, "a symlinked folder shares the session")
+        let viaData = try NoteFileSession.open(URL(fileURLWithPath: "/System/Volumes/Data" + book.path))
+        expect(viaData === original, "so does the firmlinked Data volume path")
+        guard pathconf(folder.path, _PC_CASE_SENSITIVE) == 0 else { return }
+        let shouted = shelf.appendingPathComponent("BOOK.md")
+        let viaCase = try NoteFileSession.open(shouted)
+        expect(viaCase === original, "a different case shares the session")
+        try FileManager.default.removeItem(at: book)
+        original.checkDisk()
+        expect(NoteFileSession.session(for: shouted) === original, "a deleted note is still found by any spelling")
+        let reopened = try NoteFileSession.open(alias.appendingPathComponent("book.md"))
+        expect(reopened === original, "and reopening finds it instead of failing")
     }
 
     static func encodingsAndLineEndings() throws {

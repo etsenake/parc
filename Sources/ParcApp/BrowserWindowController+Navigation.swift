@@ -176,8 +176,8 @@ extension BrowserWindowController {
             return true
         }
         guard canCreateNote, source.profileID == activeProfileID else { return false }
-        guard FileManager.default.fileExists(atPath: file.path) else {
-            showNoteError(NoteFileError.missing)
+        guard NoteFilePaths.isOpenableFile(file) else {
+            showNoteError(NoteFilePaths.itemExists(file) ? NoteFileError.notANote : NoteFileError.missing)
             return true
         }
         if !background { closeLibrary(restoreFocus: false) }

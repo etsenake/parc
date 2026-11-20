@@ -11,7 +11,7 @@ enum NoteFilePaths {
         while !path.isEmpty {
             if let resolved = realpath(path, nil) {
                 defer { free(resolved) }
-                var result = String(cString: resolved)
+                var result = throughFirmlinks(String(cString: resolved))
                 for component in trailing.reversed() { result = (result as NSString).appendingPathComponent(component) }
                 return URL(fileURLWithPath: result, isDirectory: standardized.hasDirectoryPath)
             }
@@ -22,7 +22,44 @@ enum NoteFilePaths {
         return standardized
     }
 
-    static func key(for url: URL) -> String { canonical(url).path }
+    static func key(for url: URL) -> String { identityKey(ofCanonicalPath: canonical(url).path) }
+
+    static func identityKey(ofCanonicalPath path: String) -> String {
+        isCaseSensitive(atPath: path) ? path : path.precomposedStringWithCanonicalMapping.folding(options: [.caseInsensitive], locale: nil)
+    }
+
+    static func sameItem(_ first: URL, _ second: URL) -> Bool {
+        let left = first.standardizedFileURL.path, right = second.standardizedFileURL.path
+        if left == right { return true }
+        let leftNode = NoteFileNode(path: left), rightNode = NoteFileNode(path: right)
+        if (leftNode == nil) != (rightNode == nil) { return false }
+        if let leftNode, let rightNode, leftNode != rightNode { return false }
+        return key(for: first) == key(for: second)
+    }
+
+    static func isOpenableFile(_ url: URL) -> Bool {
+        var info = stat()
+        return stat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG
+    }
+
+    private static func throughFirmlinks(_ resolved: String) -> String {
+        var info = stat()
+        guard lstat(resolved, &info) == 0 else { return resolved }
+        let isFolder = (info.st_mode & S_IFMT) == S_IFDIR
+        let folder = isFolder ? resolved : (resolved as NSString).deletingLastPathComponent
+        guard let actual = descriptorPath(ofFolder: folder) else { return resolved }
+        return isFolder ? actual : (actual as NSString).appendingPathComponent((resolved as NSString).lastPathComponent)
+    }
+
+    private static func descriptorPath(ofFolder folder: String) -> String? {
+        let descriptor = open(folder, O_EVTONLY | O_NONBLOCK | O_CLOEXEC | O_DIRECTORY)
+        guard descriptor >= 0 else { return nil }
+        defer { close(descriptor) }
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard fcntl(descriptor, F_GETPATH, &buffer) != -1 else { return nil }
+        let path = buffer.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
+        return path.isEmpty ? nil : path
+    }
 
     static func itemExists(_ url: URL) -> Bool { itemExists(atPath: url.path) }
 
@@ -106,9 +143,44 @@ enum NoteFilePaths {
         return caseInsensitive ? a.caseInsensitiveCompare(b) == .orderedSame : a == b
     }
 
-    private static func isCaseSensitive(_ url: URL) -> Bool {
-        var probe = canonical(url)
-        while !itemExists(probe), probe.path != "/" { probe.deleteLastPathComponent() }
-        return (try? probe.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]))?.volumeSupportsCaseSensitiveNames ?? false
+    private static func isCaseSensitive(_ url: URL) -> Bool { isCaseSensitive(atPath: canonical(url).path) }
+
+    private static func isCaseSensitive(atPath path: String) -> Bool {
+        var probe = path
+        while !itemExists(atPath: probe), probe != "/", !probe.isEmpty { probe = (probe as NSString).deletingLastPathComponent }
+        return pathconf(probe.isEmpty ? "/" : probe, _PC_CASE_SENSITIVE) == 1
+    }
+}
+
+struct NoteFileNode: Hashable, Sendable {
+    var device: UInt64
+    var inode: UInt64
+
+    init?(path: String) {
+        var info = stat()
+        guard stat(path, &info) == 0 else { return nil }
+        device = UInt64(info.st_dev)
+        inode = UInt64(info.st_ino)
+    }
+}
+
+struct NoteFileIdentity {
+    let path: String
+    let key: String
+    let node: NoteFileNode?
+
+    init(_ url: URL) {
+        path = url.standardizedFileURL.path
+        node = NoteFileNode(path: path)
+        key = NoteFilePaths.key(for: url)
+    }
+
+    func matches(_ url: URL) -> Bool {
+        let other = url.standardizedFileURL.path
+        if other == path { return true }
+        let otherNode = NoteFileNode(path: other)
+        if (node == nil) != (otherNode == nil) { return false }
+        if let node, let otherNode, node != otherNode { return false }
+        return NoteFilePaths.key(for: url) == key
     }
 }

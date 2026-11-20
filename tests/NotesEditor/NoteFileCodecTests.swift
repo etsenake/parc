@@ -9,6 +9,7 @@ struct NoteFileCodecTests {
             trailingNewlines()
             naming()
             paths()
+            identities()
             summaries()
             reconciling()
             print("NoteFileCodecTests passed")
@@ -155,6 +156,44 @@ struct NoteFileCodecTests {
                "a shared prefix isn't containment")
         expect(NoteFilePaths.isInTrash(URL(fileURLWithPath: "/Users/me/.Trash/n.md")), "the Trash is spotted")
         expect(!NoteFilePaths.isInTrash(folder.appendingPathComponent("n.md")), "ordinary folders aren't the Trash")
+    }
+
+    static func identities() {
+        let folder = NoteFileTestSupport.makeFolder("identity")
+        defer { NoteFileTestSupport.remove(folder) }
+        let real = folder.appendingPathComponent("Real Folder", isDirectory: true)
+        let plan = NoteFileTestSupport.write("plan\n", to: real.appendingPathComponent("Plan.md"))
+        let link = folder.appendingPathComponent("Linked", isDirectory: true)
+        try! FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        let viaVar = URL(fileURLWithPath: plan.path.replacingOccurrences(of: "/private/var/", with: "/var/"))
+        let viaLink = link.appendingPathComponent("Plan.md")
+        let viaData = URL(fileURLWithPath: "/System/Volumes/Data" + plan.path)
+        expectEqual(NoteFilePaths.canonical(viaLink).path, plan.path, "a symlinked folder resolves to the real file")
+        expectEqual(NoteFilePaths.canonical(viaData).path, plan.path, "the firmlinked Data volume path is the same file")
+        expect(NoteFilePaths.sameItem(plan, viaVar) && NoteFilePaths.sameItem(plan, viaLink) && NoteFilePaths.sameItem(plan, viaData),
+               "every spelling of one file is one item")
+        expectEqual(Set([plan, viaVar, viaLink, viaData].map(NoteFilePaths.key(for:))).count, 1, "and has one identity key")
+        expect(!NoteFilePaths.sameItem(plan, real.appendingPathComponent("Other.md")), "different files stay different")
+
+        let caseInsensitive = pathconf(folder.path, _PC_CASE_SENSITIVE) == 0
+        if caseInsensitive {
+            let shouted = real.appendingPathComponent("PLAN.md")
+            expectEqual(NoteFilePaths.canonical(shouted).lastPathComponent, "Plan.md", "the canonical path takes the case on disk")
+            expect(NoteFilePaths.sameItem(plan, shouted), "a different case names the same file")
+            let ghost = real.appendingPathComponent("Ghost.md"), whisper = link.appendingPathComponent("ghost.MD")
+            expect(NoteFilePaths.sameItem(ghost, whisper), "files that don't exist yet still match across case and symlinks")
+            expectEqual(NoteFilePaths.key(for: ghost), NoteFilePaths.key(for: whisper), "with one key")
+            let before = NoteFilePaths.key(for: plan)
+            try! FileManager.default.removeItem(at: plan)
+            expectEqual(NoteFilePaths.key(for: shouted), before, "a deleted file keeps the key it had while it existed")
+            NoteFileTestSupport.write("plan\n", to: plan)
+        }
+
+        let archive = folder.appendingPathComponent("Archive.md", isDirectory: true)
+        try! FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        expect(!NoteFilePaths.isOpenableFile(archive), "a folder named like a note isn't a note")
+        expect(!NoteFilePaths.isOpenableFile(real.appendingPathComponent("Nope.md")), "a missing file isn't openable")
+        expect(NoteFilePaths.isOpenableFile(viaLink), "a real file through a symlink is")
     }
 
     static func summaries() {

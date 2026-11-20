@@ -18,6 +18,7 @@ struct NoteTabTests {
         try tabs(directory, project: project)
         try pageLinks(directory, project: project)
         try deletion(directory, notes: notes)
+        try spellings(directory, notes: notes)
         print("NoteTabs: \(assertions) assertions passed")
     }
 
@@ -65,7 +66,7 @@ struct NoteTabTests {
         let renamed = project.deletingLastPathComponent().appendingPathComponent("Renamed.md")
         store.updateNoteFile(from: project, to: renamed, title: "Renamed")
         let moved = try unwrap(store.state.tabs.first { $0.id == note }, "renamed tab")
-        try expect(moved.url == InternalPage.note(renamed).urlString && moved.savedURL == moved.url && moved.title == "Renamed",
+        try expect(moved.url == InternalPage.note(renamed).canonical.urlString && moved.savedURL == moved.url && moved.title == "Renamed",
                    "Renaming moves the tab's address and title")
         let stamp = store.stateRevision
         store.updateNoteFile(from: project, to: renamed, title: "Renamed")
@@ -169,6 +170,50 @@ struct NoteTabTests {
         try expect(failure != nil && removals == 1 && !store.state.tabs.contains { $0.id == tab }, "A file failure reports after the tabs retire")
         store.deleteLocalDocument(.note(trashable), profileID: profile, ownerValid: { true }, deleteDocument: { removals += 1 }) { failure = $0 }
         try expect(failure == nil && removals == 2, "Retrying with no tabs left finishes the deletion")
+    }
+
+    static func spellings(_ directory: URL, notes: URL) throws {
+        let store = try BrowserStore(directory: directory.appendingPathComponent("spellings"))
+        let profile = store.activeSpace.profileID
+        let real = notes.appendingPathComponent("Plans", isDirectory: true)
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        let plan = real.appendingPathComponent("Plan.md")
+        try Data("plan\n".utf8).write(to: plan)
+        let alias = notes.appendingPathComponent("Plans Alias", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: real)
+        let viaVar = URL(fileURLWithPath: plan.path.replacingOccurrences(of: "/private/var/", with: "/var/"))
+        let viaPrivate = URL(fileURLWithPath: "/private" + viaVar.path)
+        let viaAlias = alias.appendingPathComponent("Plan.md")
+        let tab = try unwrap(store.openNote(url: viaVar, title: "Plan"), "note via /var")
+        try expect(store.openNote(url: viaPrivate, title: "Plan") == tab && store.openNote(url: viaAlias, title: "Plan") == tab,
+                   "The /private spelling and a symlinked folder reuse the same tab")
+        try expect(InternalPage.note(viaVar) == .note(viaAlias) && InternalPage.note(viaAlias) == .note(viaPrivate),
+                   "Every spelling of one file is the same note")
+        let caseInsensitive = pathconf(real.path, _PC_CASE_SENSITIVE) == 0
+        if caseInsensitive {
+            try expect(store.openNote(url: real.appendingPathComponent("plan.md"), title: "plan") == tab, "Another case reuses the tab too")
+        }
+        store.updateTab(tab, url: viaAlias.absoluteString)
+        let moved = real.appendingPathComponent("Moved.md")
+        try FileManager.default.moveItem(at: plan, to: moved)
+        let renamedFrom = caseInsensitive ? URL(fileURLWithPath: plan.path.uppercased()) : plan
+        store.updateNoteFile(from: renamedFrom, to: moved, title: "Moved")
+        let after = try unwrap(store.state.tabs.first { $0.id == tab }, "moved tab")
+        try expect(after.url == InternalPage.note(moved).canonical.urlString && after.title == "Moved",
+                   "A rename still finds the tab after the old path is gone, whatever spelling either side used")
+        try expect(store.state.tabs.filter { InternalPage(urlString: $0.url) == .note(moved) }.count == 1, "No second tab appears")
+        let other = try unwrap(store.openNote(url: real.appendingPathComponent("Other.md"), title: "Other"), "a different note")
+        try expect(other != tab && InternalPage.note(moved) != .note(real.appendingPathComponent("Other.md")), "Different files stay different notes")
+        store.updateTab(tab, url: InternalPage.note(URL(fileURLWithPath: moved.path.replacingOccurrences(of: "/private/var/", with: "/var/"))).urlString)
+        var requested = Set<UUID>(), validate: (() -> Bool)?, finish: ((Bool) -> Void)?
+        store.requestPageRetirement = { ids, gate, done in requested = ids; validate = gate; finish = done }
+        var deleted = 0
+        store.deleteLocalDocument(.note(alias.appendingPathComponent("Moved.md")), profileID: profile, ownerValid: { true },
+                                  deleteDocument: { deleted += 1 }) { _ in }
+        try expect(requested == [tab] && validate?() == true, "Deleting through another spelling still retires the note's tab")
+        finish?(true)
+        try expect(deleted == 1 && !store.state.tabs.contains { $0.id == tab }, "and the tab goes away with the file")
+        store.requestPageRetirement = nil
     }
 
     static func unwrap<T>(_ value: T?, _ message: String) throws -> T {

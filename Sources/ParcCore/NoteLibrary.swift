@@ -42,9 +42,10 @@ final class NoteLibrary {
 
     static func shared(folder: URL) -> NoteLibrary {
         let canonical = NoteFilePaths.canonical(folder)
-        if let existing = libraries[canonical.path] { return existing }
+        let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
+        if let existing = libraries[key] { return existing }
         let library = NoteLibrary(folder: canonical, recursive: true)
-        libraries[canonical.path] = library
+        libraries[key] = library
         return library
     }
 
@@ -52,9 +53,10 @@ final class NoteLibrary {
         let containing = libraries.values.filter { $0.contains(note) }
         if let deepest = containing.max(by: { $0.folder.path.count < $1.folder.path.count }) { return deepest }
         let parent = NoteFilePaths.canonical(note.deletingLastPathComponent())
-        if let existing = libraries[parent.path] ?? shallowLibraries[parent.path] { return existing }
+        let key = NoteFilePaths.identityKey(ofCanonicalPath: parent.path)
+        if let existing = libraries[key] ?? shallowLibraries[key] { return existing }
         let library = NoteLibrary(folder: parent, recursive: false)
-        shallowLibraries[parent.path] = library
+        shallowLibraries[key] = library
         return library
     }
 
@@ -108,7 +110,9 @@ final class NoteLibrary {
 
     func contains(_ url: URL) -> Bool {
         guard url.isFileURL, NoteFilePaths.contains(folder: folder, item: url) else { return false }
-        return isRecursive || NoteFilePaths.canonical(url).deletingLastPathComponent().path == folder.path
+        guard !isRecursive else { return true }
+        let parent = NoteFilePaths.canonical(url).deletingLastPathComponent().path
+        return NoteFilePaths.identityKey(ofCanonicalPath: parent) == NoteFilePaths.identityKey(ofCanonicalPath: folder.path)
     }
 
     func createNote(title: String? = nil) throws -> URL {
@@ -146,10 +150,10 @@ final class NoteLibrary {
     }
 
     func snippet(for url: URL) -> String? {
-        let key = NoteFilePaths.key(for: url)
-        if let entry = entries[key] { return entry.snippet }
-        guard let kind = NoteFileKind(url: url), NoteFilePaths.itemExists(url) else { return nil }
-        return NoteFileSummary.read(URL(fileURLWithPath: key), kind: kind).snippet
+        let file = NoteFilePaths.canonical(url)
+        if let entry = entries[file.path] { return entry.snippet }
+        guard let kind = NoteFileKind(url: file), NoteFilePaths.isOpenableFile(file) else { return nil }
+        return NoteFileSummary.read(file, kind: kind).snippet
     }
 
     func refresh() {

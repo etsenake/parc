@@ -2373,7 +2373,7 @@ enum InternalPage: Equatable {
     static func == (lhs: InternalPage, rhs: InternalPage) -> Bool {
         switch (lhs, rhs) {
         case let (.easel(left), .easel(right)): return left == right
-        case let (.note(left), .note(right)): return (noteFile(left) ?? left).path == (noteFile(right) ?? right).path
+        case let (.note(left), .note(right)): return NoteFilePaths.sameItem(noteFile(left) ?? left, noteFile(right) ?? right)
         default: return false
         }
     }
@@ -2385,6 +2385,15 @@ enum InternalPage: Equatable {
     }
     var easelID: UUID? { if case let .easel(id) = self { return id }; return nil }
     var noteURL: URL? { if case let .note(url) = self { return Self.noteFile(url) ?? url }; return nil }
+    var canonical: InternalPage {
+        guard let url = noteURL else { return self }
+        return .note(NoteFilePaths.canonical(url))
+    }
+    func matcher() -> (String) -> Bool {
+        guard let url = noteURL else { return { InternalPage(urlString: $0) == self } }
+        let identity = NoteFileIdentity(url)
+        return { InternalPage(urlString: $0)?.noteURL.map(identity.matches) ?? false }
+    }
     var untitledTitle: String { noteURL != nil ? "Untitled" : "Untitled Easel" }
     var sidebarFallbackSymbol: String {
         switch self {
@@ -2881,15 +2890,15 @@ final class BrowserStore: ObservableObject {
     }
     func updateNoteFile(from old: URL, to new: URL, title: String) {
         guard let source = InternalPage.noteFile(old), let destination = InternalPage.noteFile(new) else { return }
-        let from = InternalPage.note(source), to = InternalPage.note(destination)
+        let from = InternalPage.note(source).matcher(), to = InternalPage.note(destination).canonical
         let name = InternalPage.noteTitle(title, file: destination)
         var next = state, didChange = false
         for index in next.tabs.indices {
-            if InternalPage(urlString: next.tabs[index].url) == from {
+            if from(next.tabs[index].url) {
                 if next.tabs[index].url != to.urlString { next.tabs[index].url = to.urlString; didChange = true }
                 if next.tabs[index].title != name { next.tabs[index].title = name; didChange = true }
             }
-            if InternalPage(urlString: next.tabs[index].savedURL) == from {
+            if from(next.tabs[index].savedURL) {
                 if next.tabs[index].savedURL != to.urlString { next.tabs[index].savedURL = to.urlString; didChange = true }
                 if next.tabs[index].savedTitle != name { next.tabs[index].savedTitle = name; didChange = true }
             }
@@ -2900,10 +2909,9 @@ final class BrowserStore: ObservableObject {
                              ownerValid: @escaping () -> Bool,
                              deleteDocument: (() throws -> Void)? = nil,
                              completion: @escaping (Error?) -> Void) {
-        let file = page.noteURL
+        let file = page.noteURL, names = page.matcher()
         func references(_ tab: BrowserTab) -> Bool {
-            (file != nil || tab.profileID == profileID)
-                && (InternalPage(urlString: tab.url) == page || InternalPage(urlString: tab.savedURL) == page)
+            (file != nil || tab.profileID == profileID) && (names(tab.url) || names(tab.savedURL))
         }
         func owners(_ state: BrowserState) -> [UUID] {
             file == nil ? [profileID] : state.profiles.map(\.id).filter { owner in state.tabs.contains { $0.profileID == owner && references($0) } }
@@ -2985,12 +2993,13 @@ final class BrowserStore: ObservableObject {
     }
 
     private func localDocumentTabIndex(_ page: InternalPage, profileID: UUID) -> Int? {
+        let names = page.matcher()
         let matches = state.tabs.indices.filter { index in
             let tab = state.tabs[index]
             return tab.profileID == profileID
                 && !retiringTabIDs.contains(tab.id)
                 && !archivePreviewOverlaps([tab.id])
-                && (InternalPage(urlString: tab.url) == page || InternalPage(urlString: tab.savedURL) == page)
+                && (names(tab.url) || names(tab.savedURL))
         }
         return matches.first { state.tabs[$0].archivedAt == nil } ?? matches.first
     }

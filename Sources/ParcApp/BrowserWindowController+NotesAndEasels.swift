@@ -34,7 +34,10 @@ extension BrowserWindowController {
     private func presentNote(url: URL, inSplit: Bool = false) -> (handled: Bool, tabID: UUID?) {
         guard let file = InternalPage.noteFile(url) else { showNoteError(NoteFileError.notANote); return (true, nil) }
         guard inSplit ? canCreateNoteInSplit : canCreateNote else { return (false, nil) }
-        guard FileManager.default.fileExists(atPath: file.path) else { showNoteError(NoteFileError.missing); return (true, nil) }
+        guard NoteFilePaths.isOpenableFile(file) else {
+            showNoteError(NoteFilePaths.itemExists(file) ? NoteFileError.notANote : NoteFileError.missing)
+            return (true, nil)
+        }
         closeLibrary(restoreFocus: false)
         let title = NoteFileSession.session(for: file)?.title ?? file.deletingPathExtension().lastPathComponent
         var opened: UUID?

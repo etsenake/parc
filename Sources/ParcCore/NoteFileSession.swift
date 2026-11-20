@@ -67,12 +67,16 @@ final class NoteFileSession {
     static func open(_ url: URL) throws -> NoteFileSession {
         guard url.isFileURL else { throw NoteFileError.notANote }
         let canonical = NoteFilePaths.canonical(url)
-        if let existing = sessions[canonical.path] { return existing }
+        let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
+        if let existing = sessions[key] { return existing }
         guard let kind = NoteFileKind(url: canonical) ?? NoteFileKind(url: url) else { throw NoteFileError.notANote }
-        guard NoteFilePaths.itemExists(canonical) else { throw NoteFileError.missing }
+        guard NoteFilePaths.isOpenableFile(canonical) else {
+            throw NoteFilePaths.itemExists(canonical) ? NoteFileError.notANote : NoteFileError.missing
+        }
         let contents = try NoteFileIO.read(canonical, kind: kind)
         let session = NoteFileSession(url: canonical, kind: kind, contents: contents)
-        sessions[canonical.path] = session
+        session.registryKey = key
+        sessions[key] = session
         session.startWatching()
         return session
     }
@@ -115,6 +119,7 @@ final class NoteFileSession {
     private var watcher: NoteFileWatcher?
     private var changeSubscription: AnyCancellable?
     private var isClosed = false
+    private var registryKey = ""
 
     private init(url: URL, kind: NoteFileKind, contents: NoteFileContents) {
         self.url = url
@@ -355,9 +360,10 @@ final class NoteFileSession {
     }
 
     private func relocate(to destination: URL) {
-        if Self.sessions[url.path] === self { Self.sessions[url.path] = nil }
+        if Self.sessions[registryKey] === self { Self.sessions[registryKey] = nil }
         url = destination
-        if !isClosed { Self.sessions[destination.path] = self }
+        registryKey = NoteFilePaths.identityKey(ofCanonicalPath: destination.path)
+        if !isClosed, Self.sessions[registryKey] == nil { Self.sessions[registryKey] = self }
         fileEnvironment.move(to: destination)
         watcher?.update(url: destination)
         urlChanges.send(destination)
@@ -481,12 +487,12 @@ final class NoteFileSession {
         diskCheckTimer = nil
         watcher?.stop()
         watcher = nil
-        if Self.sessions[url.path] === self { Self.sessions[url.path] = nil }
+        if Self.sessions[registryKey] === self { Self.sessions[registryKey] = nil }
     }
 
     private func reopen() {
         isClosed = false
-        if Self.sessions[url.path] == nil { Self.sessions[url.path] = self }
+        if Self.sessions[registryKey] == nil { Self.sessions[registryKey] = self }
         startWatching()
     }
 }
