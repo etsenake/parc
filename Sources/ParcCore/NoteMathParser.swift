@@ -535,11 +535,11 @@ struct NoteMathParser {
             return .classed(.bin, [.function("mod", .beside)])
         case "pmod":
             let argument = try parseArgument(for: name, count: 1)
-            return .group([.space(1), .char("(", .open), .function("mod", .beside), .space(1.0 / 3.0)]
+            return .group([.space(1), .char("(", .open), .text("mod", .roman), .space(1.0 / 3.0)]
                           + argument + [.char(")", .close)])
         case "mod":
             let argument = try parseArgument(for: name, count: 1)
-            return .group([.space(1), .function("mod", .beside), .space(1.0 / 3.0)] + argument)
+            return .group([.space(1), .text("mod", .roman), .space(1.0 / 3.0)] + argument)
         case "phantom", "hphantom", "vphantom":
             return .phantom(try parseArgument(for: name, count: 1), keepsWidth: name != "vphantom",
                             keepsHeight: name != "hphantom")
