@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Quartz
 import UniformTypeIdentifiers
 
@@ -9,7 +10,7 @@ enum NoteMediaProblem: Equatable {
 @MainActor
 final class NoteMediaBlockView: NoteCaptionedBlockView {
     private enum Mode: Equatable {
-        case empty, problem(NoteMediaProblem), image, video, audio, file
+        case empty, pending, problem(NoteMediaProblem), image, video, audio, file
     }
 
     private var mode: Mode?
@@ -17,6 +18,8 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     private var tracking: NSTrackingArea?
     private var observers: [NSObjectProtocol] = []
     private var failure: (source: String, problem: NoteMediaProblem)?
+    private var importWatch: AnyCancellable?
+    private var watchedImport: String?
     private(set) var isHovering = false
 
     override init(block: NoteBlock, editor: NotePageEditor?) {
@@ -33,7 +36,25 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
 
     var source: NoteMediaSource {
         let environment = editor?.environment
-        return NoteMediaSource(block.props.source) { environment?.resolve($0) ?? URL(string: $0) }
+        var written = block.props.source
+        switch NoteAttachmentImports.shared.state(of: written) {
+        case .imported(let path)?: written = path
+        case .pending?, .failed?: return .unresolved(written ?? "")
+        case nil: break
+        }
+        return NoteMediaSource(written) { environment?.resolve($0) ?? URL(string: $0) }
+    }
+
+    private func watchImport() {
+        let written = block.props.source
+        guard NoteAttachmentImports.isToken(written) else { importWatch = nil; watchedImport = nil; return }
+        guard written != watchedImport else { return }
+        watchedImport = written
+        importWatch = NoteAttachmentImports.shared.changes.filter { $0 == written }.sink { [weak self] _ in
+            guard let self else { return }
+            self.mode = nil
+            self.rebuild()
+        }
     }
 
     var kind: NoteBlockKind { block.kind }
@@ -49,6 +70,11 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     private func resolveMode() -> Mode {
         let source = self.source
         if let failure, failure.source == block.props.source { return .problem(failure.problem) }
+        switch NoteAttachmentImports.shared.state(of: block.props.source) {
+        case .pending?: return kind == .image ? .image : kind == .video ? .video : .pending
+        case .failed(let missing)?: return .problem(missing ? .missing : .unreadable)
+        case .imported?, nil: break
+        }
         switch source {
         case .empty: return .empty
         case .unresolved: return .problem(.missing)
@@ -74,6 +100,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     }
 
     private func rebuild(notify: Bool = true) {
+        watchImport()
         let next = resolveMode()
         if next != mode || content == nil {
             mode = next
@@ -81,6 +108,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
             let view: NoteMediaContentView
             switch next {
             case .empty: view = NoteMediaEmptyCard(host: self)
+            case .pending: view = NoteMediaPendingCard(host: self)
             case .problem(let problem): view = NoteMediaProblemCard(host: self, problem: problem)
             case .image: view = NoteImageContentView(host: self)
             case .video: view = NoteVideoContentView(host: self)
@@ -736,7 +764,8 @@ final class NoteMediaProblemCard: NoteMediaCardView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     static func writtenPath(_ written: String?, source: NoteMediaSource) -> String {
-        guard let written = written?.trimmingCharacters(in: .whitespacesAndNewlines), !written.isEmpty else { return "" }
+        guard let written = written?.trimmingCharacters(in: .whitespacesAndNewlines), !written.isEmpty,
+              !NoteAttachmentImports.isToken(written) else { return "" }
         if case .remote = source { return written }
         return written.removingPercentEncoding ?? written
     }
@@ -770,6 +799,36 @@ final class NoteMediaProblemCard: NoteMediaCardView {
         let textWidth = max(0, trailing - 8 - 46)
         title.frame = NSRect(x: 46, y: 13, width: textWidth, height: 20)
         detail.frame = NSRect(x: 46, y: 33, width: textWidth, height: 18)
+    }
+}
+
+@MainActor
+final class NoteMediaPendingCard: NoteMediaCardView {
+    private let shimmer = NoteMediaShimmer()
+    private let title: NSTextField
+    private static let height: CGFloat = 52
+
+    override init(host: NoteMediaBlockView) {
+        title = NoteMediaStyle.label("Bringing your \(host.nounPhrase) in…", font: NoteMediaStyle.titleFont, color: NoteTheme.secondaryInk)
+        super.init(host: host)
+        shimmer.cornerRadius = NoteMediaStyle.cardRadius
+        shimmer.setAccessibilityElement(false)
+        addSubview(shimmer)
+        addSubview(title)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.progressIndicator)
+        setAccessibilityLabel(title.stringValue)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func measureHeight(width: CGFloat) -> CGFloat { Self.height }
+    override var handleAnchorY: CGFloat { Self.height / 2 }
+
+    override func layout() {
+        super.layout()
+        shimmer.frame = bounds
+        title.frame = NSRect(x: 16, y: (bounds.height - 20) / 2, width: max(0, bounds.width - 32), height: 20)
     }
 }
 

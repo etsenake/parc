@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 enum NoteAttachments {
@@ -78,5 +79,69 @@ enum NoteAttachments {
             do { try FileManager.default.copyItem(at: from, to: to) } catch { copyError = error }
         }
         if let error = coordinationError ?? copyError { throw error }
+    }
+}
+
+enum NoteAttachmentImportState: Equatable {
+    case pending
+    case imported(String)
+    case failed(missing: Bool)
+}
+
+@MainActor
+final class NoteAttachmentImports {
+    static let shared = NoteAttachmentImports()
+    nonisolated static let scheme = "parc-attachment"
+
+    var worker = NoteFileWorker(label: "org.parc.notes.attachments")
+    let changes = PassthroughSubject<String, Never>()
+    private var states: [String: NoteAttachmentImportState] = [:]
+    private var healers: [String: AnyCancellable] = [:]
+
+    nonisolated static func isToken(_ source: String?) -> Bool {
+        source?.hasPrefix(scheme + ":") == true
+    }
+
+    func state(of source: String?) -> NoteAttachmentImportState? {
+        guard let source, Self.isToken(source) else { return nil }
+        return states[source] ?? .failed(missing: true)
+    }
+
+    func begin(in session: NotePageSession, _ work: @escaping () throws -> String) -> String {
+        let token = Self.scheme + ":" + UUID().uuidString
+        states[token] = .pending
+        worker.perform({ Result { try work() } }) { [weak self, weak session] result in
+            self?.finish(token, result, session: session)
+        }
+        return token
+    }
+
+    private func finish(_ token: String, _ result: Result<String, Error>, session: NotePageSession?) {
+        switch result {
+        case .success(let path):
+            states[token] = .imported(path)
+            if let session {
+                Self.settle(token, as: path, in: session)
+                healers[token] = session.changes.filter(\.isUndoRedo).sink { [weak session] _ in
+                    _ = NoteFileSystemClock.shared.schedule(after: 0) { [weak session] in
+                        guard let session else { return }
+                        Self.settle(token, as: path, in: session)
+                    }
+                }
+            }
+        case .failure(let error):
+            states[token] = .failed(missing: (error as? NoteFileError) == .missing)
+        }
+        changes.send(token)
+    }
+
+    static func settle(_ token: String, as path: String, in session: NotePageSession) {
+        let page = session.page
+        let waiting = page.documentOrder(includingCollapsed: true).filter { page.block($0)?.props.source == token }
+        for id in waiting {
+            session.updateBlockMetadata(id, kind: .structure) { block in
+                if block.props.source == token { block.props.source = path }
+            }
+        }
     }
 }

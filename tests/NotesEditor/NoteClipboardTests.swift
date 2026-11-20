@@ -43,7 +43,129 @@ struct NoteClipboardTests {
         files()
         rebasing()
         inlineMedia()
+        rebaseRefusals()
+        asyncImports()
         print("NoteClipboardTests passed")
+    }
+
+    static func wait(_ done: () -> Bool) {
+        let deadline = Date().addingTimeInterval(10)
+        while !done() && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+    }
+
+    static func rebaseRefusals() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-clipboard-rebase-" + UUID().uuidString, isDirectory: true)
+        let source = root.appendingPathComponent("Source", isDirectory: true)
+        let secrets = root.appendingPathComponent("Secrets", isDirectory: true)
+        try? FileManager.default.createDirectory(at: source.appendingPathComponent("Attachments"), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: source.appendingPathComponent(".ssh"), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: secrets, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try? Data([1]).write(to: source.appendingPathComponent("Attachments/cat.png"))
+        try? Data([2]).write(to: secrets.appendingPathComponent("id_rsa"))
+        try? Data([3]).write(to: source.appendingPathComponent(".ssh/id_rsa"))
+        try? FileManager.default.createSymbolicLink(at: source.appendingPathComponent("Attachments/sneaky.png"),
+                                                    withDestinationURL: secrets.appendingPathComponent("id_rsa"))
+        func media(_ path: String) -> NoteBlock {
+            var block = NoteBlock(.file)
+            block.props.source = path
+            return block
+        }
+        func imported(base: URL, _ paths: [String]) -> (blocks: [NoteBlock], copied: [String]) {
+            let environment = RecordingEnvironment(documentURL: root.appendingPathComponent("Elsewhere/Page.md"))
+            let archive = NoteClipboard.Archive(blocks: paths.map(media), base: base, inline: false)
+            let blocks = NoteClipboard.rebase(archive, into: environment)
+            return (blocks, environment.imported.map { $0.lastPathComponent })
+        }
+        let fine = imported(base: source, ["Attachments/cat.png"])
+        expect(fine.copied == ["cat.png"], "media inside the copied note's folder still comes along")
+        let escapes = imported(base: source, ["../Secrets/id_rsa", "Attachments/../../Secrets/id_rsa"])
+        expect(escapes.copied.isEmpty, "media climbing out of the source folder with .. stays behind")
+        expect(escapes.blocks.map(\.props.source) == ["../Secrets/id_rsa", "Attachments/../../Secrets/id_rsa"], "refused sources are left as written")
+        expect(imported(base: source, ["Attachments/sneaky.png"]).copied.isEmpty, "a symlink pointing out of the folder isn't followed")
+        expect(imported(base: source, [".ssh/id_rsa"]).copied.isEmpty, "hidden folders aren't raided")
+        expect(imported(base: source.appendingPathComponent(".ssh", isDirectory: true), ["id_rsa"]).copied.isEmpty,
+               "a hidden folder can't pose as a note folder")
+        expect(imported(base: URL(fileURLWithPath: "/", isDirectory: true), [String(secrets.path.dropFirst()) + "/id_rsa"]).copied.isEmpty,
+               "the disk root can't pose as a note folder")
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        expect(imported(base: home, [".ssh/id_rsa", "Documents/taxes.pdf"]).copied.isEmpty, "the home folder can't pose as a note folder")
+        expect(imported(base: home.deletingLastPathComponent(), [home.lastPathComponent + "/Documents/taxes.pdf"]).copied.isEmpty,
+               "nor can anything above it")
+        expect(NoteClipboard.trustedMediaFolder(URL(string: "https://example.com/notes/")!) == nil, "a web base is never a note folder")
+    }
+
+    static func asyncImports() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-clipboard-imports-" + UUID().uuidString, isDirectory: true)
+        let notes = root.appendingPathComponent("Notes", isDirectory: true)
+        let outside = root.appendingPathComponent("Outside", isDirectory: true)
+        let other = root.appendingPathComponent("Other", isDirectory: true)
+        for folder in [notes, outside, other.appendingPathComponent("Attachments")] {
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pagePath = notes.appendingPathComponent("Trip.md")
+        try? Data("Hello\n".utf8).write(to: pagePath)
+        let photo = outside.appendingPathComponent("Beach.png")
+        try? Data([0x89, 0x50, 0x4E, 0x47, 1, 2, 3]).write(to: photo)
+        try? Data([7, 7]).write(to: other.appendingPathComponent("Attachments/cat.png"))
+        guard let file = try? NoteFileSession.open(pagePath) else { failTest("the note opens") }
+        let session = file.page
+        let imports = NoteAttachmentImports.shared
+        func attachment(_ source: String?) -> Data? {
+            guard let source, let path = source.removingPercentEncoding else { return nil }
+            return try? Data(contentsOf: notes.appendingPathComponent(path))
+        }
+
+        let dropped = NoteClipboard.blocks(forFiles: [photo, outside.appendingPathComponent("Gone.mov")], environment: file.environment)
+        let tokens = dropped.blocks.compactMap(\.props.source)
+        expect(dropped.failures.isEmpty && tokens.count == 2, "dropped files become blocks right away")
+        expect(tokens.allSatisfy { NoteAttachmentImports.isToken($0) && imports.state(of: $0) == .pending },
+               "they start with a pending source while the copy runs in the background")
+        let ids = session.insertBlocks(dropped.blocks, .top(session.page.blocks.count))
+        wait { tokens.allSatisfy { imports.state(of: $0) != .pending } }
+        expect(session.page.block(ids[0])?.props.source == "Attachments/Beach.png", "the finished copy becomes the block's source")
+        expect(attachment("Attachments/Beach.png") == (try? Data(contentsOf: photo)), "and the copy is byte for byte")
+        expect(imports.state(of: tokens[1]) == .failed(missing: true) && session.page.block(ids[1])?.props.source == tokens[1],
+               "a file that vanished leaves a broken block behind")
+        session.undo()
+        expect(session.page.block(ids[0]) == nil, "undo takes the drop back")
+        session.redo()
+        expect(session.page.block(ids[0])?.props.source == "Attachments/Beach.png", "redo brings back the finished source")
+
+        let tiff = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 2, pixelsHigh: 2, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                    isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)?.tiffRepresentation ?? Data()
+        guard let pasted = try? NoteClipboard.imageBlock(data: tiff, fileExtension: "tiff", environment: file.environment),
+              let pastedToken = pasted.props.source else { failTest("a pasted picture becomes a block") }
+        expect(imports.state(of: pastedToken) == .pending, "a pasted picture is converted off the main thread")
+        session.insertBlocks([pasted], .top(session.page.blocks.count))
+        session.undo()
+        wait { imports.state(of: pastedToken) != .pending }
+        guard case .imported(let pastedPath)? = imports.state(of: pastedToken) else { failTest("the pasted picture is saved") }
+        expect(pastedPath.hasSuffix(".png") && attachment(pastedPath)?.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]), "TIFF lands as a PNG")
+        session.redo()
+        wait { session.page.block(pasted.id)?.props.source != pastedToken }
+        expect(session.page.block(pasted.id)?.props.source == pastedPath, "redoing a paste that finished while undone heals its source")
+
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47, 9, 9])
+        var inline = NoteBlock(.image)
+        inline.props.source = "data:image/png;base64," + bytes.base64EncodedString()
+        let decoded = NoteClipboard.importInlineMedia([inline], environment: file.environment)
+        let inlineToken = decoded.blocks[0].props.source
+        expect(decoded.failures.isEmpty && NoteAttachmentImports.isToken(inlineToken), "data URLs decode in the background")
+        session.insertBlocks(decoded.blocks, .top(session.page.blocks.count))
+        wait { imports.state(of: inlineToken) != .pending }
+        expect(attachment(session.page.block(decoded.blocks[0].id)?.props.source) == bytes, "and land in Attachments")
+
+        var cat = NoteBlock(.image)
+        cat.props.source = "Attachments/cat.png"
+        let rebased = NoteClipboard.rebase(NoteClipboard.Archive(blocks: [cat], base: other, inline: false), into: file.environment)
+        expect(NoteAttachmentImports.isToken(rebased[0].props.source), "media from another note's folder copies in the background too")
+        session.insertBlocks(rebased, .top(session.page.blocks.count))
+        wait { imports.state(of: rebased[0].props.source) != .pending }
+        expect(attachment(session.page.block(rebased[0].id)?.props.source) == Data([7, 7]), "and arrives intact")
+        expect(imports.state(of: "Attachments/cat.png") == nil, "ordinary sources aren't imports")
+        expect(imports.state(of: NoteAttachmentImports.scheme + ":forgotten") == .failed(missing: true), "a token from an earlier run reads as broken")
     }
 
     static func sniffing() {
