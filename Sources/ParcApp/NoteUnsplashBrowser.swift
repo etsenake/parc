@@ -422,8 +422,11 @@ final class NoteUnsplashTile: NSView {
         name.font = NoteTheme.nunitoRegular(11.5)
         name.ink = NoteTheme.menuTertiaryInk
         name.linkInk = NoteTheme.menuTertiaryInk
-        let credit = NoteUnsplash.credit(for: photo)
-        name.parts = [credit.profileURL.map { .link(photo.photographer, $0) } ?? .text(photo.photographer)]
+        if let profile = NoteUnsplash.credit(for: photo).profileURL {
+            name.parts = [NoteMediaCredit.Part.link(photo.photographer, profile)]
+        } else {
+            name.parts = [NoteMediaCredit.Part.text(photo.photographer)]
+        }
         name.onOpen = { [weak self] url in self?.onOpen?(url) }
         name.setAccessibilityLabel("Photographer: " + photo.photographer)
         shimmer.cornerRadius = Self.radius
