@@ -91,6 +91,7 @@ struct NoteSyncedBlockTests {
         syncedBlocksNeverNest()
         backspaceStaysInside()
         closedCopiesCatchUp()
+        emptiedBlocksKeepALine()
         print("NoteSyncedBlockTests passed")
     }
 
@@ -486,5 +487,16 @@ struct NoteSyncedBlockTests {
         expectEqual(opened, 1, "a closed note with a copy opens in the background")
         expectEqual(texts(closed), ["Two"], "its snapshot catches up")
         expectEqual(ended, 1, "and it's let go again to save and close")
+    }
+
+    static func emptiedBlocksKeepALine() {
+        let (_, a, b) = pair()
+        let id = site(b).id
+        b.edit("Delete") { page in page.update(id) { $0.children = [] } }
+        expectEqual(texts(b), [""], "a synced block always keeps a line to type in")
+        expectEqual(texts(a), [""], "and the original matches")
+        expectEqual(b.undoDepth, 1, "in the same undo step")
+        b.undo()
+        expectEqual(texts(a), ["One"], "undo brings the content back everywhere")
     }
 }

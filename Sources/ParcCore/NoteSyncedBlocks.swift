@@ -453,6 +453,15 @@ final class NoteSyncedBlocks {
 
     private func propagate(_ change: NotePageChange, from document: Document) {
         guard let session = document.session, !(document.seen.isEmpty && document.currentSites().isEmpty) else { return }
+        let before = document.seen
+        let emptied = affectedSites(change, in: document).filter { session.page.block($0)?.children.isEmpty == true }
+        if !emptied.isEmpty {
+            let edit = currentEdit(for: document, session: session)
+            session.applyLinked(Self.stepName, owner: edit.owner, effect: { edit.effect(for: session) }, origin: self) { page in
+                for id in emptied { page.update(id) { $0.children = [.paragraph()] } }
+            }
+            document.seen = before
+        }
         let page = session.page
         let current = Set(document.currentSites())
         if document.seen.keys.contains(where: { !current.contains($0) }) { announce = true }
