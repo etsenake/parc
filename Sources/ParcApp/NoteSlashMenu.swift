@@ -22,10 +22,8 @@ final class NoteSlashMenuController {
     private struct Anchor: Equatable {
         var block: NoteBlockID
         var field: NoteTextField
-        var start: Int
-        var trigger: String
-        var length: Int { (trigger as NSString).length }
-        var queryStart: Int { start + length }
+        var token: NoteQueryToken
+        var start: Int { token.start }
         var key: TextKey { TextKey(block: block, field: field) }
         var position: NotePosition { NotePosition(block, start, field: field) }
     }
@@ -34,7 +32,9 @@ final class NoteSlashMenuController {
     static let mentionMenuWidth: CGFloat = 300
     static let turnIntoMenuWidth: CGFloat = 248
 
-    private var mode: Mode?
+    private var mode: Mode? {
+        didSet { if mode == nil { stopWatchingPointer() } else { watchPointer() } }
+    }
     private var anchor: Anchor?
     private var tracker = NoteQueryTracker.slash
     private var currentQuery: String?
@@ -53,8 +53,12 @@ final class NoteSlashMenuController {
     private var previousText: (key: TextKey, text: String)?
     private var latestText: (key: TextKey, text: String)?
     private var subscription: AnyCancellable?
+    private var fileSubscription: AnyCancellable?
+    private var pointerMonitor: Any?
     private var reminderTask: Task<Void, Never>?
     private var reminderDocument: URL?
+    private let openedAt = Date()
+    private var isTornDown = false
 
     init(editor: NotePageEditor) {
         self.editor = editor
@@ -63,6 +67,9 @@ final class NoteSlashMenuController {
         list.onCancel = { [weak self] in self?.dismiss() }
         list.onHighlight = { [weak self] item in self?.highlightDidChange(item) }
         subscription = editor.session.changes.sink { [weak self] change in self?.sessionDidChange(change) }
+        reminderDocument = editor.environment.documentURL
+        fileSubscription = NoteFileSession.openSessions.first { $0.page === editor.session }?.urlChanges
+            .sink { [weak self] url in self?.documentDidMove(to: url) }
         scheduleReminderSync(after: 1)
     }
 
@@ -78,8 +85,7 @@ final class NoteSlashMenuController {
         case .slash(let position):
             let key = TextKey(block: position.block, field: position.field)
             guard allowsBlocks(key) else { return }
-            openBlocks(Anchor(block: position.block, field: position.field, start: position.offset, trigger: "/"),
-                       context: context(for: position.block, plus: false), origin: .keyboard)
+            openBlocks(makeAnchor(key, start: position.offset, trigger: "/"), context: context(for: position.block, plus: false), origin: .keyboard)
         case .plus(let id):
             openPlus(id)
         case .turnInto(let ids):
@@ -131,17 +137,16 @@ final class NoteSlashMenuController {
             switch found.trigger {
             case .slash:
                 guard allowsBlocks(key) else { return }
-                openBlocks(Anchor(block: key.block, field: key.field, start: found.start, trigger: "/"),
-                           context: context(for: key.block, plus: false), origin: .keyboard)
+                openBlocks(makeAnchor(key, start: found.start, trigger: "/"), context: context(for: key.block, plus: false), origin: .keyboard)
             case .mention:
-                openMention(Anchor(block: key.block, field: key.field, start: found.start, trigger: "@"), scope: .everything)
+                openMention(makeAnchor(key, start: found.start, trigger: "@"), scope: .everything)
             case .noteLink:
-                openMention(Anchor(block: key.block, field: key.field, start: found.start, trigger: "[["), scope: .notes)
+                openMention(makeAnchor(key, start: found.start, trigger: "[["), scope: .notes)
             }
             return
         }
         if typed.text.count == 1, let emoji = NoteTriggerRule.emojiQuery(in: new, caret: caret), !text.marks(at: emoji.start).code {
-            openEmoji(Anchor(block: key.block, field: key.field, start: emoji.start, trigger: ":"), query: emoji.query)
+            openEmoji(makeAnchor(key, start: emoji.start, trigger: ":"), query: emoji.query)
         }
     }
 
@@ -249,7 +254,7 @@ final class NoteSlashMenuController {
             editor.canvas.layoutSubtreeIfNeeded()
             editor.focus(NotePosition(target, 0))
         }
-        openBlocks(Anchor(block: target, field: .body, start: 0, trigger: ""), context: context(for: target, plus: true), origin: .pointer)
+        openBlocks(makeAnchor(TextKey(block: target, field: .body), start: 0, trigger: ""), context: context(for: target, plus: true), origin: .pointer)
     }
 
     private func openTurnInto(_ ids: [NoteBlockID]) {
@@ -318,7 +323,7 @@ final class NoteSlashMenuController {
         picker.onCancel = { [weak self] in self?.closeEmojiPicker() }
         let panel = makePanel(picker)
         pickerPanel = panel
-        anchor = Anchor(block: position.block, field: position.field, start: position.offset, trigger: "")
+        anchor = makeAnchor(key, start: position.offset, trigger: "")
         mode = .emojiPicker
         panel.present(in: editor.canvas.overlayView, anchor: rect, edge: .below, animated: true)
         picker.focusSearch()
@@ -327,7 +332,7 @@ final class NoteSlashMenuController {
     @discardableResult
     private func refresh() -> Bool {
         guard let mode else { return false }
-        guard let query = liveQuery() else { dismiss(); return false }
+        guard let query = liveMatch()?.query else { dismiss(); return false }
         switch mode {
         case .blocks(let context):
             let match = context.mode == .plus && query.hasPrefix("/") ? String(query.dropFirst()) : query
@@ -397,20 +402,23 @@ final class NoteSlashMenuController {
             _ = completeShortcode(done, in: anchor.key)
             return
         }
-        guard let found = NoteTriggerRule.emojiQuery(in: text.string, caret: caret), found.start == anchor.start else { dismiss(); return }
-        currentQuery = found.query
-        emojiList?.query = found.query
+        guard let match = liveMatch(), NoteTriggerRule.isEmojiQuery(match.query) else { dismiss(); return }
+        currentQuery = match.query
+        emojiList?.query = match.query
         if emojiList?.hasResults != true { dismiss() }
     }
 
-    private func liveQuery() -> String? {
-        guard let anchor, let text = page.block(anchor.block)?.text(in: anchor.field), let caret = caret(in: anchor.key),
-              caret >= anchor.queryStart, caret <= text.length else { return nil }
-        let string = text.string as NSString
-        if anchor.length > 0, string.substring(with: NSRange(location: anchor.start, length: anchor.length)) != anchor.trigger { return nil }
-        let query = string.substring(with: NSRange(location: anchor.queryStart, length: caret - anchor.queryStart))
-        if query.contains(where: \.isNewline) || query.contains(NoteAtom.character) { return nil }
-        return query
+    private func liveMatch() -> NoteQueryMatch? {
+        guard var anchor, let text = page.block(anchor.block)?.text(in: anchor.field), let caret = caret(in: anchor.key) else { return nil }
+        let match = anchor.token.resolve(in: text.string, caret: caret)
+        self.anchor = anchor
+        return match
+    }
+
+    private func makeAnchor(_ key: TextKey, start: Int, trigger: String) -> Anchor {
+        let text = page.block(key.block)?.text(in: key.field)?.string ?? ""
+        let caret = caret(in: key) ?? start + (trigger as NSString).length
+        return Anchor(block: key.block, field: key.field, token: NoteQueryToken(start: start, trigger: trigger, text: text, caret: caret))
     }
 
     private func activate(_ item: NoteMenuList.Item) {
@@ -431,9 +439,8 @@ final class NoteSlashMenuController {
     }
 
     private func choose(_ item: NoteCatalogItem) {
-        guard let anchor, let caret = caret(in: anchor.key) else { dismiss(); return }
-        let range = anchor.start..<caret
-        let position = NotePosition(anchor.block, caret, field: anchor.field)
+        guard let anchor, let range = liveMatch()?.range else { dismiss(); return }
+        let position = NotePosition(anchor.block, range.lowerBound, field: anchor.field)
         dismiss()
         if item.effect == .block(.newNote) {
             createNoteBlock(at: position, removing: range)
@@ -464,12 +471,12 @@ final class NoteSlashMenuController {
         guard isEnabled else { return }
         switch followUp {
         case .mention(let position, let datesOnly):
-            openMention(Anchor(block: position.block, field: position.field, start: position.offset, trigger: "@"),
+            openMention(makeAnchor(TextKey(block: position.block, field: position.field), start: position.offset, trigger: "@"),
                         scope: datesOnly ? .dates : .everything)
         case .emoji(let position):
             openEmojiPicker(at: position)
         case .pickNote(let position):
-            openMention(Anchor(block: position.block, field: position.field, start: position.offset, trigger: ""), scope: .noteBlock)
+            openMention(makeAnchor(TextKey(block: position.block, field: position.field), start: position.offset, trigger: ""), scope: .noteBlock)
         case .editEquation(let position):
             editor.canvas.layoutSubtreeIfNeeded()
             if editor.canvas.textHost(for: position)?.textView.editEquation(at: position.offset) == true { return }
@@ -481,7 +488,7 @@ final class NoteSlashMenuController {
 
     private func createNoteBlock(at position: NotePosition, removing range: Range<Int>) {
         do {
-            let url = try editor.environment.createSiblingNote(titled: "Untitled")
+            let url = try editor.environment.createNote(titled: "Untitled")
             guard let outcome = NoteCatalogApplier.place(pageLink(to: url), template: nil, into: page, at: position, removing: range, name: "New Note") else { return }
             commit(outcome)
             editor.open(url)
@@ -497,8 +504,7 @@ final class NoteSlashMenuController {
     }
 
     private func chooseMention(_ choice: NoteMentionMenu.Choice, scope: NoteMentionMenu.Scope) {
-        guard let anchor, let caret = caret(in: anchor.key) else { dismiss(); return }
-        let range = anchor.start..<caret
+        guard let anchor, let range = liveMatch()?.range else { dismiss(); return }
         dismiss()
         let note: URL
         let title: String
@@ -514,13 +520,13 @@ final class NoteSlashMenuController {
             note = reference.url
             title = reference.title
         case .createNote(let name):
-            do { note = try editor.environment.createSiblingNote(titled: name) } catch { editor.onError?(error); return }
+            do { note = try editor.environment.createNote(titled: name) } catch { editor.onError?(error); return }
             title = note.deletingPathExtension().lastPathComponent
         }
         if scope == .noteBlock {
             var link = pageLink(to: note)
             link.text = NoteText(title)
-            let position = NotePosition(anchor.block, caret, field: anchor.field)
+            let position = NotePosition(anchor.block, range.lowerBound, field: anchor.field)
             guard let outcome = NoteCatalogApplier.place(link, template: nil, into: page, at: position, removing: range, name: "Link to Note") else { return }
             commit(outcome)
             return
@@ -560,8 +566,7 @@ final class NoteSlashMenuController {
     }
 
     private func insertEmoji(_ character: String) {
-        guard let anchor, let caret = caret(in: anchor.key) else { dismiss(); return }
-        let range = anchor.start..<caret
+        guard let anchor, let range = liveMatch()?.range else { dismiss(); return }
         dismiss()
         replace(range, in: anchor.key, with: NoteText(character), name: "Emoji")
     }
@@ -763,7 +768,7 @@ final class NoteSlashMenuController {
             if let anchor, page.block(anchor.block) == nil { dismiss(animated: false) }
             else if change.kind == .selection { dismiss() }
         case .blocks, .mention, .emoji:
-            guard let query = liveQuery() else {
+            guard let query = liveMatch()?.query else {
                 dismiss(animated: change.kind == .selection)
                 return
             }
@@ -785,21 +790,74 @@ final class NoteSlashMenuController {
         latestText = (key, text.string)
     }
 
+    func tearDown() {
+        guard !isTornDown else { return }
+        dismiss(animated: false)
+        isTornDown = true
+        subscription = nil
+        fileSubscription = nil
+        guard reminderTask != nil else { return }
+        reminderTask?.cancel()
+        reminderTask = nil
+        syncReminders()
+    }
+
     private func scheduleReminderSync(after delay: TimeInterval) {
-        guard !editor.environment.isPlainText else { return }
+        guard !isTornDown, !editor.environment.isPlainText else { return }
         reminderTask?.cancel()
         reminderTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            self?.syncReminders()
+            guard !Task.isCancelled, let self, !self.isTornDown else { return }
+            self.reminderTask = nil
+            self.syncReminders()
         }
     }
 
+    private func documentDidMove(to url: URL) {
+        if let previous = reminderDocument, previous != url { NoteReminderCenter.shared.noteMoved(from: previous, to: url) }
+        reminderDocument = url
+        scheduleReminderSync(after: 0)
+    }
+
     private func syncReminders() {
+        guard !editor.environment.isPlainText else { return }
         let document = editor.environment.documentURL
-        if let previous = reminderDocument, previous != document { NoteReminderCenter.shared.forget(document: previous) }
-        reminderDocument = document
-        NoteReminderCenter.shared.reconcile(page: page, document: document, title: document?.deletingPathExtension().lastPathComponent ?? "")
+        if let previous = reminderDocument, let document, previous != document { NoteReminderCenter.shared.noteMoved(from: previous, to: document) }
+        reminderDocument = document ?? reminderDocument
+        NoteReminderCenter.shared.reconcile(page: page, document: document, title: document?.deletingPathExtension().lastPathComponent ?? "",
+                                            openedAt: openedAt)
+    }
+
+    private func watchPointer() {
+        guard pointerMonitor == nil else { return }
+        pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated { self?.pointerWentDown(event) }
+            return event
+        }
+    }
+
+    private func stopWatchingPointer() {
+        if let pointerMonitor { NSEvent.removeMonitor(pointerMonitor) }
+        pointerMonitor = nil
+    }
+
+    private func pointerWentDown(_ event: NSEvent) {
+        guard let mode else { return }
+        let panels = [listPanel, emojiPanel, pickerPanel, datePanel].compactMap { $0 }.filter(\.isPresented)
+        if panels.contains(where: { $0.window === event.window && $0.bounds.contains($0.convert(event.locationInWindow, from: nil)) }) { return }
+        switch mode {
+        case .blocks, .mention, .emoji:
+            if let anchor, let view = editor.canvas.blockView(for: anchor.block)?.textHost(for: anchor.field)?.textView,
+               view.window === event.window, let hit = hitView(for: event), hit === view || hit.isDescendant(of: view) { return }
+        case .turnInto, .emojiPicker, .date:
+            break
+        }
+        dismiss()
+    }
+
+    private func hitView(for event: NSEvent) -> NSView? {
+        guard let content = event.window?.contentView else { return nil }
+        return content.hitTest(content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow)
     }
 
     private func caret(in key: TextKey) -> Int? {
@@ -820,7 +878,7 @@ final class NoteSlashMenuController {
     private func context(for block: NoteBlockID, plus: Bool) -> NoteCatalogContext {
         var context = plus ? NoteCatalogContext.plus : .slash
         context.allowsColumns = page.parent(of: block) == nil
-        context.allowsNewNote = editor.environment.noteFolder != nil
+        context.allowsNewNote = editor.environment.documentURL != nil
         return context
     }
 

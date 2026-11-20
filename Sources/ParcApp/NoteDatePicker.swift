@@ -602,12 +602,56 @@ final class NoteToggleSwitch: NoteControlButton {
 }
 
 @MainActor
-final class NoteReminderCenter: NSObject, UNUserNotificationCenterDelegate {
-    static let shared = NoteReminderCenter()
-    nonisolated static let identifierPrefix = "parc.notes.reminder|"
+final class NoteReminderNotifications: NoteReminderScheduling {
+    nonisolated static let noteIDKey = "parc.notes.reminder.note"
+    nonisolated static let bookmarkKey = "parc.notes.reminder.bookmark"
     nonisolated static let pathKey = "parc.notes.reminder.path"
-    static let documentsKey = "parc.notes.reminderDocuments"
-    nonisolated static let fallbackBody = "Here's the nudge you asked for."
+
+    private let center: UNUserNotificationCenter
+
+    init(center: UNUserNotificationCenter) {
+        self.center = center
+    }
+
+    func pendingRequests() async -> [NoteReminderRequest] {
+        await center.pendingNotificationRequests().compactMap { request in
+            guard let noteID = request.content.userInfo[Self.noteIDKey] as? String
+                    ?? NoteReminderBook.noteID(fromIdentifier: request.identifier) else { return nil }
+            let trigger = request.trigger as? UNCalendarNotificationTrigger
+            return NoteReminderRequest(identifier: request.identifier, noteID: noteID, title: request.content.title,
+                                       body: request.content.body,
+                                       fireDate: trigger.flatMap { Calendar.current.date(from: $0.dateComponents) } ?? .distantPast,
+                                       bookmark: request.content.userInfo[Self.bookmarkKey] as? Data,
+                                       path: request.content.userInfo[Self.pathKey] as? String)
+        }
+    }
+
+    func removeRequests(_ identifiers: [String]) {
+        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+    }
+
+    func add(_ request: NoteReminderRequest) async {
+        let content = UNMutableNotificationContent()
+        content.title = request.title
+        content.body = request.body
+        var info: [String: Any] = [Self.noteIDKey: request.noteID]
+        if let bookmark = request.bookmark { info[Self.bookmarkKey] = bookmark }
+        if let path = request.path { info[Self.pathKey] = path }
+        content.userInfo = info
+        content.threadIdentifier = request.noteID
+        let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: request.fireDate)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
+        try? await center.add(UNNotificationRequest(identifier: request.identifier, content: content, trigger: trigger))
+    }
+}
+
+@MainActor
+final class NoteReminderCenter: NSObject, UNUserNotificationCenterDelegate {
+    static let shared: NoteReminderCenter = {
+        let center = NoteReminderCenter()
+        Task { @MainActor in center.book.prune() }
+        return center
+    }()
 
     var onOpenNote: ((URL) -> Void)? {
         didSet {
@@ -616,67 +660,39 @@ final class NoteReminderCenter: NSObject, UNUserNotificationCenterDelegate {
             onOpenNote(pendingOpen)
         }
     }
-    var defaults = UserDefaults.standard
+    let book: NoteReminderBook
     private var pendingOpen: URL?
     private var requestedAuthorization = false
-    private var lastPlans: [String: [NoteReminderPlan]] = [:]
 
-    private var center: UNUserNotificationCenter? {
-        Bundle.main.bundleIdentifier == nil ? nil : UNUserNotificationCenter.current()
+    private override init() {
+        let center = Bundle.main.bundleIdentifier == nil ? nil : UNUserNotificationCenter.current()
+        book = NoteReminderBook(scheduler: center.map(NoteReminderNotifications.init(center:)), defaults: .standard)
+        super.init()
     }
 
-    func reconcile(page: NotePage, document: URL?, title: String, parser: NoteDateParser = NoteDateParser()) {
-        guard let document else { return }
-        let path = document.standardizedFileURL.path
-        let plans = NoteReminderPlan.reminders(in: page, parser: parser)
-        var tracked = Set(defaults.stringArray(forKey: Self.documentsKey) ?? [])
-        guard !plans.isEmpty || tracked.contains(path) else { return }
-        guard lastPlans[path] != plans, center != nil else { return }
-        lastPlans[path] = plans
-        if plans.isEmpty { tracked.remove(path) } else { tracked.insert(path) }
-        defaults.set(tracked.sorted(), forKey: Self.documentsKey)
-        if !plans.isEmpty { requestAuthorizationIfNeeded() }
-        Self.schedule(plans, path: path, title: title)
+    func reconcile(page: NotePage, document: URL?, title: String, openedAt: Date) {
+        if book.reconcile(page: page, document: document, title: title, openedAt: openedAt) { requestAuthorizationIfNeeded() }
     }
 
     func forget(document: URL) {
-        let path = document.standardizedFileURL.path
-        lastPlans[path] = nil
-        var tracked = Set(defaults.stringArray(forKey: Self.documentsKey) ?? [])
-        guard tracked.remove(path) != nil, center != nil else { return }
-        defaults.set(tracked.sorted(), forKey: Self.documentsKey)
-        Self.schedule([], path: path, title: "")
+        book.forget(document: document)
+    }
+
+    func noteMoved(from old: URL, to new: URL) {
+        book.noteMoved(from: old, to: new)
     }
 
     func requestAuthorizationIfNeeded() {
-        guard !requestedAuthorization, let center else { return }
+        guard !requestedAuthorization, book.scheduler != nil else { return }
         requestedAuthorization = true
-        center.requestAuthorization(options: [.alert]) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
     }
 
-    private nonisolated static func schedule(_ plans: [NoteReminderPlan], path: String, title: String) {
-        let prefix = identifierPrefix + path + "|"
-        let wanted = plans.map { (identifier: prefix + $0.key, plan: $0) }
-        UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
-            let center = UNUserNotificationCenter.current()
-            let keep = Set(wanted.map(\.identifier))
-            let stale = requests.map(\.identifier).filter { $0.hasPrefix(prefix) && !keep.contains($0) }
-            if !stale.isEmpty { center.removePendingNotificationRequests(withIdentifiers: stale) }
-            for entry in wanted {
-                let content = UNMutableNotificationContent()
-                content.title = title.isEmpty ? "Parc Notes" : title
-                content.body = entry.plan.body.isEmpty ? fallbackBody : entry.plan.body
-                content.userInfo = [pathKey: path]
-                content.threadIdentifier = path
-                let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: entry.plan.fireDate)
-                let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
-                center.add(UNNotificationRequest(identifier: entry.identifier, content: content, trigger: trigger), withCompletionHandler: nil)
-            }
-        }
-    }
-
-    private func open(_ url: URL) {
-        if let onOpenNote { onOpenNote(url) } else { pendingOpen = url }
+    private func open(noteID: String?, bookmark: Data?, path: String?) {
+        let location = book.location(noteID: noteID, bookmark: bookmark, path: path)
+        book.prune()
+        guard let location else { return }
+        if let onOpenNote { onOpenNote(location) } else { pendingOpen = location }
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
@@ -686,9 +702,13 @@ final class NoteReminderCenter: NSObject, UNUserNotificationCenterDelegate {
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
-        let path = response.notification.request.content.userInfo[Self.pathKey] as? String
+        let request = response.notification.request
+        let info = request.content.userInfo
+        let noteID = info[NoteReminderNotifications.noteIDKey] as? String ?? NoteReminderBook.noteID(fromIdentifier: request.identifier)
+        let bookmark = info[NoteReminderNotifications.bookmarkKey] as? Data
+        let path = info[NoteReminderNotifications.pathKey] as? String
         completionHandler()
-        guard let path else { return }
-        Task { @MainActor in NoteReminderCenter.shared.open(URL(fileURLWithPath: path)) }
+        guard noteID != nil || bookmark != nil || path != nil else { return }
+        Task { @MainActor in NoteReminderCenter.shared.open(noteID: noteID, bookmark: bookmark, path: path) }
     }
 }

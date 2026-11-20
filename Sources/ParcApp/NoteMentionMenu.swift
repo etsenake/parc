@@ -32,20 +32,21 @@ enum NoteMentionMenu {
         var creating: NoteMenuList.Item?
         let query = rawQuery.trimmingCharacters(in: .whitespaces)
         let reminder = NoteDateParser.reminderQuery(query)
+        let folder = environment.documentURL?.deletingLastPathComponent()
         if scope.showsNotes && !reminder.remind {
             let current = environment.documentURL?.standardizedFileURL
             let notes = environment.searchNotes(query, limit: noteLimit + 1).filter { $0.url.standardizedFileURL != current }.prefix(noteLimit)
             for (index, note) in notes.enumerated() {
                 let id = "note.\(index)"
                 var item = NoteMenuList.Item(id: id, title: note.title.isEmpty ? "Untitled" : note.title,
-                                             subtitle: folderName(of: note.url, relativeTo: environment.noteFolder),
+                                             subtitle: folderName(of: note.url, relativeTo: folder),
                                              icon: note.icon.map { NoteIcon.emoji($0) } ?? .symbol("doc.text"), section: notesSection)
                 item.accessibilityLabel = "Note, " + item.title
                 result.items.append(item)
                 result.choices[id] = .note(note)
                 notesFound = true
             }
-            if !query.isEmpty, environment.noteFolder != nil,
+            if !query.isEmpty, folder != nil,
                !notes.contains(where: { $0.title.compare(query, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }) {
                 var item = NoteMenuList.Item(id: "note.create", title: "New note “\(query)”", subtitle: scope == .noteBlock ? nil : "in this folder",
                                              icon: .symbol("plus"), section: notesSection)

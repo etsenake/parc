@@ -71,6 +71,46 @@ struct NoteSlashTriggerTests {
         expect(mention.update(query: "dec 3 zzzz", hasResults: false) == .close, "but give up after a few misses")
         var newline = NoteQueryTracker.mention
         expect(newline.update(query: "a\n", hasResults: false) == .close, "a line break always closes")
+
+        var at = NoteQueryToken(start: 0, trigger: "@", text: "@", caret: 1)
+        let whole = NoteQueryMatch(query: "tomorrow", range: 0..<9)
+        expect(at.resolve(in: "@tomorrow", caret: 9) == whole, "the token is everything typed after the trigger")
+        expect(at.resolve(in: "@tomorrow", caret: 4) == whole, "walking the caret left still covers the whole token")
+        expect(at.resolve(in: "@tomorrow", caret: 1) == whole, "the caret can sit right after the trigger")
+        expect(at.resolve(in: "@tomorrow", caret: 0) == nil, "slipping left of the trigger closes the menu")
+        var dated = NoteText("@tomorrow")
+        if let range = at.resolve(in: dated.string, caret: 4)?.range {
+            dated.replace(range, with: .atom(.date(NoteDateMention(year: 2026, month: 11, day: 21))))
+        }
+        expect(dated.string == NoteAtom.character, "choosing replaces the whole query, so nothing like [Tomorrow]orrow is left behind")
+
+        var slashed = NoteQueryToken(start: 6, trigger: "/", text: "Hello / world", caret: 7)
+        expect(slashed.resolve(in: "Hello /hea world", caret: 10) == NoteQueryMatch(query: "hea", range: 6..<10), "words after the token aren't part of it")
+        expect(slashed.resolve(in: "Hello /hea world", caret: 8)?.query == "hea", "the query is the whole token wherever the caret is")
+        expect(slashed.resolve(in: "Hello /hea world", caret: 11) == nil, "moving past the token's end closes the menu")
+        expect(slashed.resolve(in: "Hello /head world", caret: 9)?.query == "head", "typing in the middle grows the token")
+        expect(slashed.resolve(in: "Hello /headworld", caret: 11)?.query == "head", "forward-deleting into the next word keeps the token")
+        expect(slashed.resolve(in: "Hello /headworld", caret: 11)?.range == 6..<11, "and the token stops at the caret")
+        expect(slashed.resolve(in: "Hello head world", caret: 10) == nil, "deleting the trigger closes the menu")
+        var broken = NoteQueryToken(start: 0, trigger: "/", text: "/", caret: 1)
+        expect(broken.resolve(in: "/he\nad", caret: 3) == nil, "a line break inside the token closes the menu")
+        var plus = NoteQueryToken(start: 0, trigger: "", text: "", caret: 0)
+        expect(plus.resolve(in: "quo", caret: 1)?.query == "quo", "menus without a trigger track their token too")
+
+        let typed = NoteBlock.paragraph(NoteText("/heading"))
+        var heading = NoteQueryToken(start: 0, trigger: "/", text: "/", caret: 1)
+        let headingRange = heading.resolve(in: "/heading", caret: 3)?.range ?? 0..<3
+        let applied = NoteCatalogApplier.apply(.block(.heading(1)), to: NotePage(blocks: [typed]), at: NotePosition(typed.id, 0),
+                                               removing: headingRange)
+        let result = applied?.page.blocks.first
+        expect(result?.kind == .heading && result?.text.isEmpty == true, "picking a block with the caret mid-query leaves no stray letters")
+
+        var shortcode = NoteQueryToken(start: 3, trigger: ":", text: "hi :sm", caret: 6)
+        let smile = shortcode.resolve(in: "hi :smile", caret: 6)
+        expect(smile == NoteQueryMatch(query: "smile", range: 3..<9), "emoji tokens cover the whole shortcode")
+        expect(NoteTriggerRule.isEmojiQuery("smile") && NoteTriggerRule.isEmojiQuery("thumbs_up"), "shortcodes are emoji queries")
+        expect(!NoteTriggerRule.isEmojiQuery("s") && !NoteTriggerRule.isEmojiQuery("+1") && !NoteTriggerRule.isEmojiQuery("sm ile"),
+               "short, symbol-led or spaced queries aren't")
         print("NoteSlashTriggerTests passed")
     }
 }

@@ -178,6 +178,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         isTornDown = true
         pageMenu?.close(animated: false)
         editor?.dismissOverlays()
+        editor?.slashMenu.tearDown()
         if isViewLoaded, Self.closeEditor(of: file) {
             try? file.flush()
             NotePageHistory.fileWillClose(file)

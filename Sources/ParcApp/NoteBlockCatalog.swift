@@ -504,7 +504,50 @@ enum NoteTriggerRule {
         guard let open = emojiQuery(in: text.substring(to: caret - 1), caret: caret - 1) else { return nil }
         return (open.start..<caret, open.query.lowercased())
     }
+
+    static func isEmojiQuery(_ query: String) -> Bool {
+        guard query.count >= 2, let first = query.unicodeScalars.first, CharacterSet.letters.contains(first) else { return false }
+        return query.unicodeScalars.allSatisfy { shortcodeCharacters.contains($0) }
+    }
 }
+
+struct NoteQueryMatch: Hashable {
+    var query: String
+    var range: Range<Int>
+}
+
+struct NoteQueryToken: Hashable {
+    var start: Int
+    var trigger: String
+    private(set) var suffix: String
+
+    init(start: Int, trigger: String, text: String, caret: Int) {
+        let string = text as NSString
+        self.start = start
+        self.trigger = trigger
+        let queryStart = start + (trigger as NSString).length
+        suffix = string.substring(from: Swift.min(Swift.max(caret, queryStart, 0), string.length))
+    }
+
+    var queryStart: Int { start + (trigger as NSString).length }
+
+    mutating func resolve(in text: String, caret: Int) -> NoteQueryMatch? {
+        let string = text as NSString
+        let queryStart = self.queryStart
+        guard start >= 0, queryStart <= string.length, caret >= queryStart, caret <= string.length else { return nil }
+        if !trigger.isEmpty, string.substring(with: NSRange(location: start, length: queryStart - start)) != trigger { return nil }
+        var end = string.length - (suffix as NSString).length
+        if end < queryStart || string.substring(from: end) != suffix {
+            end = caret
+            suffix = string.substring(from: end)
+        }
+        guard caret <= end else { return nil }
+        let query = string.substring(with: NSRange(location: queryStart, length: end - queryStart))
+        guard !query.contains(where: \.isNewline), !query.contains(NoteAtom.character) else { return nil }
+        return NoteQueryMatch(query: query, range: start..<end)
+    }
+}
+
 
 struct NoteCatalogOutcome {
     enum FollowUp: Hashable {
@@ -1094,25 +1137,306 @@ struct NoteReminderPlan: Hashable {
     }
 }
 
-extension NoteEnvironment {
-    var noteFolder: URL? { documentURL?.deletingLastPathComponent() }
+struct NoteReminderRequest: Hashable {
+    var identifier: String
+    var noteID: String
+    var title: String
+    var body: String
+    var fireDate: Date
+    var bookmark: Data?
+    var path: String?
+}
 
-    func createSiblingNote(titled title: String) throws -> URL {
-        guard let folder = noteFolder else { throw CocoaError(.fileNoSuchFile) }
-        let cleaned = title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = cleaned.isEmpty || cleaned.hasPrefix(".") ? "Untitled" : String(cleaned.prefix(120))
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        for attempt in 1...500 {
-            let url = folder.appendingPathComponent(attempt == 1 ? base : "\(base) \(attempt)").appendingPathExtension("md")
-            guard !FileManager.default.fileExists(atPath: url.path) else { continue }
-            do {
-                try Data().write(to: url, options: .withoutOverwriting)
-                return url
-            } catch CocoaError.fileWriteFileExists {
+@MainActor
+protocol NoteReminderScheduling: AnyObject {
+    func pendingRequests() async -> [NoteReminderRequest]
+    func removeRequests(_ identifiers: [String])
+    func add(_ request: NoteReminderRequest) async
+}
+
+struct NoteReminderRecord: Codable, Hashable {
+    var id: String
+    var bookmark: Data?
+    var path: String
+    var title: String
+    var lastFire: Date
+}
+
+enum NoteReminderFiles {
+    static func documentID(of url: URL, tracking: Bool) -> String? {
+        let file = URL(fileURLWithPath: url.path)
+        if let id = readDocumentID(file) { return id }
+        guard tracking else { return nil }
+        var info = stat()
+        guard stat(file.path, &info) == 0, info.st_flags & UInt32(UF_TRACKED) == 0,
+              chflags(file.path, info.st_flags | UInt32(UF_TRACKED)) == 0 else { return nil }
+        return readDocumentID(file)
+    }
+
+    private static func readDocumentID(_ file: URL) -> String? {
+        var probe = file
+        probe.removeAllCachedResourceValues()
+        guard let values = try? probe.resourceValues(forKeys: [.documentIdentifierKey, .volumeUUIDStringKey]),
+              let document = values.documentIdentifier else { return nil }
+        return "doc:\(values.volumeUUIDString ?? "local"):\(document)"
+    }
+
+    static func bookmark(for url: URL) -> Data? {
+        try? URL(fileURLWithPath: url.path).bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+    }
+
+    static func resolve(_ bookmark: Data) -> (url: URL, stale: Bool)? {
+        var stale = false
+        guard let url = try? URL(resolvingBookmarkData: bookmark, options: [.withoutUI, .withoutMounting], relativeTo: nil,
+                                 bookmarkDataIsStale: &stale) else { return nil }
+        return (NoteFilePaths.canonical(url), stale)
+    }
+
+    static func isGone(_ url: URL) -> Bool {
+        url.pathComponents.contains { $0 == ".Trash" || $0 == ".Trashes" } || !NoteFilePaths.itemExists(url)
+    }
+
+    static func isUnmounted(_ path: String) -> Bool {
+        let parts = URL(fileURLWithPath: path).pathComponents
+        guard parts.count > 2, parts[1] == "Volumes" else { return false }
+        return !FileManager.default.fileExists(atPath: "/Volumes/" + parts[2])
+    }
+}
+
+@MainActor
+final class NoteReminderQueue {
+    private var tail: Task<Void, Never>?
+
+    func run(_ job: @escaping @MainActor () async -> Void) {
+        let previous = tail
+        tail = Task { @MainActor in
+            await previous?.value
+            await job()
+        }
+    }
+
+    func drain() async {
+        while let current = tail {
+            await current.value
+            if tail == current { return }
+        }
+    }
+}
+
+@MainActor
+final class NoteReminderBook {
+    nonisolated static let identifierPrefix = "parc.notes.reminder|"
+    static let recordsKey = "parc.notes.reminderNotes"
+    static let legacyKey = "parc.notes.reminderDocuments"
+    nonisolated static let fallbackTitle = "Parc Notes"
+    nonisolated static let fallbackBody = "Here's the nudge you asked for."
+
+    private struct Signature: Equatable {
+        var plans: [NoteReminderPlan]
+        var title: String
+        var path: String
+    }
+
+    let scheduler: NoteReminderScheduling?
+    let defaults: UserDefaults
+    var now: () -> Date = Date.init
+    private(set) var records: [String: NoteReminderRecord] = [:]
+    private var tombstones: [String: Date] = [:]
+    private var signatures: [String: Signature] = [:]
+    private let queue = NoteReminderQueue()
+
+    init(scheduler: NoteReminderScheduling?, defaults: UserDefaults) {
+        self.scheduler = scheduler
+        self.defaults = defaults
+        if let data = defaults.data(forKey: Self.recordsKey),
+           let stored = try? PropertyListDecoder().decode([NoteReminderRecord].self, from: data) {
+            records = Dictionary(stored.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        }
+        defaults.removeObject(forKey: Self.legacyKey)
+    }
+
+    nonisolated static func identifierPrefix(for noteID: String) -> String { identifierPrefix + noteID + "|" }
+
+    nonisolated static func noteID(fromIdentifier identifier: String) -> String? {
+        guard identifier.hasPrefix(identifierPrefix) else { return nil }
+        let rest = identifier.dropFirst(identifierPrefix.count)
+        guard let bar = rest.lastIndex(of: "|") else { return nil }
+        return String(rest[..<bar])
+    }
+
+    @discardableResult
+    func reconcile(page: NotePage, document: URL?, title: String, openedAt: Date, parser: NoteDateParser = NoteDateParser()) -> Bool {
+        guard scheduler != nil, let document, document.isFileURL else { return false }
+        let file = NoteFilePaths.canonical(document)
+        guard !isBuried(file.path, openedAt: openedAt) else { return false }
+        let plans = NoteReminderPlan.reminders(in: page, parser: parser)
+        guard !plans.isEmpty || !records.isEmpty else { return false }
+        let known = record(at: file)
+        guard !plans.isEmpty || known != nil, !NoteReminderFiles.isGone(file) else { return false }
+        let id: String
+        if let known {
+            id = known.id
+        } else {
+            id = NoteReminderFiles.documentID(of: file, tracking: true) ?? "note:" + UUID().uuidString
+        }
+        guard !isBuried(id, openedAt: openedAt) else { return false }
+        let signature = Signature(plans: plans, title: title, path: file.path)
+        guard signatures[id] != signature else { return false }
+        guard let last = plans.last else {
+            signatures[id] = signature
+            records[id] = nil
+            save()
+            unschedule([id])
+            prune()
+            return false
+        }
+        let bookmark = NoteReminderFiles.bookmark(for: file) ?? known?.bookmark
+        signatures[id] = signature
+        records[id] = NoteReminderRecord(id: id, bookmark: bookmark, path: file.path, title: title, lastFire: last.fireDate)
+        save()
+        let requests = plans.map { plan in
+            NoteReminderRequest(identifier: Self.identifierPrefix(for: id) + plan.key, noteID: id,
+                                title: title.isEmpty ? Self.fallbackTitle : title,
+                                body: plan.body.isEmpty ? Self.fallbackBody : plan.body,
+                                fireDate: plan.fireDate, bookmark: bookmark, path: file.path)
+        }
+        queue.run { [weak self] in await self?.replace(id, with: requests) }
+        prune()
+        return true
+    }
+
+    func forget(document: URL) {
+        let file = NoteFilePaths.canonical(document)
+        let moment = now()
+        tombstones[file.path] = moment
+        var ids = Set(records.values.filter { $0.path == file.path }.map(\.id))
+        if let id = NoteReminderFiles.documentID(of: file, tracking: false) { ids.insert(id) }
+        for id in ids {
+            tombstones[id] = moment
+            records[id] = nil
+            signatures[id] = nil
+        }
+        save()
+        unschedule(ids.sorted())
+        prune()
+    }
+
+    func noteMoved(from old: URL, to new: URL) {
+        let oldPath = NoteFilePaths.canonical(old).path
+        let file = NoteFilePaths.canonical(new)
+        guard oldPath != file.path else { return }
+        let movedID = NoteReminderFiles.documentID(of: file, tracking: false)
+        for var record in records.values where record.path == oldPath || record.id == movedID {
+            record.path = file.path
+            record.title = file.deletingPathExtension().lastPathComponent
+            record.bookmark = NoteReminderFiles.bookmark(for: file) ?? record.bookmark
+            records[record.id] = record
+            signatures[record.id] = nil
+        }
+        save()
+    }
+
+    func prune() {
+        guard let scheduler else { return }
+        let moment = now()
+        var renamed: [String: NoteReminderRecord] = [:]
+        for record in records.values {
+            if record.lastFire <= moment {
+                records[record.id] = nil
+                signatures[record.id] = nil
                 continue
             }
+            guard let resolved = Self.current(record), !NoteReminderFiles.isGone(resolved.url) else {
+                if NoteReminderFiles.isUnmounted(record.path) { continue }
+                records[record.id] = nil
+                signatures[record.id] = nil
+                continue
+            }
+            guard resolved.url.path != record.path || resolved.stale else { continue }
+            var moved = record
+            moved.path = resolved.url.path
+            moved.title = resolved.url.deletingPathExtension().lastPathComponent
+            moved.bookmark = NoteReminderFiles.bookmark(for: resolved.url) ?? record.bookmark
+            records[record.id] = moved
+            guard moved.path != record.path else { continue }
+            signatures[record.id] = nil
+            renamed[record.id] = moved
         }
-        throw CocoaError(.fileWriteFileExists)
+        save()
+        let live = Set(records.keys)
+        queue.run {
+            let pending = await scheduler.pendingRequests().filter { $0.identifier.hasPrefix(Self.identifierPrefix) }
+            let orphans = pending.filter { !live.contains($0.noteID) }.map(\.identifier)
+            if !orphans.isEmpty { scheduler.removeRequests(orphans) }
+            for request in pending {
+                guard let record = renamed[request.noteID] else { continue }
+                var updated = request
+                updated.title = record.title.isEmpty ? Self.fallbackTitle : record.title
+                updated.bookmark = record.bookmark
+                updated.path = record.path
+                if updated != request { await scheduler.add(updated) }
+            }
+        }
+    }
+
+    func location(noteID: String?, bookmark: Data?, path: String?) -> URL? {
+        for data in [bookmark, noteID.flatMap { records[$0]?.bookmark }].compactMap({ $0 }) {
+            if let resolved = NoteReminderFiles.resolve(data), !NoteReminderFiles.isGone(resolved.url) { return resolved.url }
+        }
+        guard let path else { return nil }
+        let file = NoteFilePaths.canonical(URL(fileURLWithPath: path))
+        return NoteReminderFiles.isGone(file) ? nil : file
+    }
+
+    func drain() async { await queue.drain() }
+
+    private static func current(_ record: NoteReminderRecord) -> (url: URL, stale: Bool)? {
+        if let bookmark = record.bookmark { return NoteReminderFiles.resolve(bookmark) }
+        return (NoteFilePaths.canonical(URL(fileURLWithPath: record.path)), false)
+    }
+
+    private func record(at file: URL) -> NoteReminderRecord? {
+        let document = NoteReminderFiles.documentID(of: file, tracking: false)
+        if let document, let record = records[document] { return record }
+        return records.values.first { record in
+            guard record.path == file.path else { return false }
+            return !record.id.hasPrefix("doc:") || document == nil || document == record.id
+        }
+    }
+
+    private func isBuried(_ key: String, openedAt: Date) -> Bool {
+        guard let buried = tombstones[key] else { return false }
+        if buried >= openedAt { return true }
+        tombstones[key] = nil
+        return false
+    }
+
+    private func unschedule(_ ids: [String]) {
+        guard let scheduler, !ids.isEmpty else { return }
+        let prefixes = ids.map(Self.identifierPrefix(for:))
+        queue.run {
+            let stale = await scheduler.pendingRequests().map(\.identifier).filter { identifier in
+                prefixes.contains { identifier.hasPrefix($0) }
+            }
+            if !stale.isEmpty { scheduler.removeRequests(stale) }
+        }
+    }
+
+    private func replace(_ id: String, with requests: [NoteReminderRequest]) async {
+        guard let scheduler else { return }
+        let prefix = Self.identifierPrefix(for: id)
+        let keep = Set(requests.map(\.identifier))
+        let stale = await scheduler.pendingRequests().map(\.identifier).filter { $0.hasPrefix(prefix) && !keep.contains($0) }
+        if !stale.isEmpty { scheduler.removeRequests(stale) }
+        for request in requests { await scheduler.add(request) }
+    }
+
+    private func save() {
+        let sorted = records.values.sorted { $0.id < $1.id }
+        if sorted.isEmpty {
+            defaults.removeObject(forKey: Self.recordsKey)
+        } else if let data = try? PropertyListEncoder().encode(sorted) {
+            defaults.set(data, forKey: Self.recordsKey)
+        }
     }
 }
