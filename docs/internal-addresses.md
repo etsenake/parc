@@ -15,10 +15,12 @@ the debug commands, under `parc://` names. It keeps the internal debugging pages
 which sets the same local-state preference through a page message, and links only pages
 the Profile can open.
 
-`parc://easel/<UUID>` and `parc://note/<UUID>` remain app-owned document addresses.
-Malformed document addresses stay in those typed app routes; they cannot acquire WebUI
-bindings. Conversely, unsupported `chrome://easel` and `chrome://note` addresses are not
-projected into existing documents.
+`parc://easel/<UUID>` remains the app-owned Easel address. A note tab's address is its
+Markdown or text file's `file://` URL, which opens in the native note editor rather
+than Chromium. The retired `parc://note/<UUID>` form stays reserved so old tabs show a
+short error instead of reaching Chromium. Malformed document addresses stay in those
+typed app routes; they cannot acquire WebUI bindings. Conversely, unsupported
+`chrome://easel` and `chrome://note` addresses are not projected into existing documents.
 
 ## Request and security ownership
 

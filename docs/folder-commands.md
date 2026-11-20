@@ -81,13 +81,14 @@ ID returned or the parent folder is gone.
 
 ## Typed Note and Easel reference copies
 
-Copies create new sidebar aliases to the same original-Profile document ID,
+Copies create new sidebar aliases to the same note file or original-Profile Easel,
 never duplicate document contents or image assets. Open aliases share the actual
-`NoteSession`/`EaselSession`. Copying neither flushes composition nor replaces
-embedded pages. The original document store, file, tombstone/session and assets
+note file session or `EaselSession`. Copying neither flushes composition nor
+replaces embedded pages. The note file, or the Easel's store, session and assets,
 must validate both before and immediately before publication. Bare internal URLs,
-wrong Profiles, corrupt/missing files or changed capabilities refuse the whole
-copy. Document stores remain read-only during sidebar persistence.
+wrong Profiles, missing files or changed capabilities refuse the whole copy. A note
+file belongs to no Profile, so its aliases may also be copied into another
+Profile's Space. Document stores remain read-only during sidebar persistence.
 
 Document deletion is separate: it gathers every same-Profile alias and native
 owner, retires them with consent, removes aliases, then deletes the document.

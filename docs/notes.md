@@ -1,19 +1,28 @@
 # Local Notes
 
-Notes are local native documents with a separate title and rich body. New Note,
-New Note in Split View and the split insertion bar create distinct Note owners.
-Library → Easels & Notes searches the real stores and opens, renames or deletes
-the selected document. New Notes are Today tabs: close archives the tab while
-keeping its document. Pinned Notes and Favorites unload in place; a pinned tab
-that navigated away unloads back to its saved document.
+Notes are Markdown files on disk, opened in a native editor. Each Space's Profile
+has a Notes folder, chosen in Settings like the Downloads location and
+`~/Documents/Parc Notes` by default. New Note, New Note in Split View and the split
+insertion bar create an `Untitled.md` file there and open it as a Today tab;
+closing the tab archives it and keeps the file. File → Show Notes Folder reveals the
+current Space's folder in Finder. Library → Easels & Notes lists that folder and
+opens, renames or moves notes to the Trash; deleting a note first retires every
+tab showing that file, in every Profile.
 
-Each normal Profile stores `Profiles/<profile UUID>/Notes/<document UUID>.json`.
-A shared `NoteSession` owns each document. `parc://note/<UUID>` resolves only in
-the current Profile; malformed addresses retain the reserved internal host.
+A note tab's address is its file's `file://` URL, and its title is the file name;
+renaming a note moves every tab that shows it. Any regular Profile can open any
+note file, so moving a tab to another Profile leaves the file where it is.
+Parc appears in Finder's Open With list as an editor for Markdown and plain text.
+Opening one from Finder or the Dock icon, dropping it on the sidebar, typing its
+`file://` address, or following a link to one from a note or a page opens a note
+tab instead of Chromium's file view; other file types still open in Chromium.
+Old `parc://note/<UUID>` tabs from the previous format show a short error, and the
+old `Profiles/<id>/Notes/*.json` documents are not read or migrated.
+
 Private windows deliberately offer no Notes, as explained in
-[capture Library](capture-library.md#private-media-ownership). Cloud sharing,
-collaboration and vendor services are excluded. There is no Notes ZIP/HTML
-import command.
+[capture Library](capture-library.md#private-media-ownership): a Markdown file
+opened while a private window is in front opens in a regular window. Cloud
+sharing, collaboration and vendor services are excluded.
 
 ## Editing and lifetime
 
@@ -172,21 +181,9 @@ visible. The final control leaves traversal to the containing window. Explicit
 format entry scrolls its target into view; pointer presentation does not.
 Image and link-sheet completion return focus only to the original eligible body.
 
-## Local HTML archive export
-
-Export Notes snapshots the initiating regular Profile after every editor flushes;
-composition or a failed draft refuses export. Each record contains ID, title,
-HTML and modification date. Native attributed-text HTML includes inline image
-bytes; no exported image depends on a private path. Unicode-safe filenames are
-bounded and collisions use document UUIDs.
-
-The original window/Profile owns preparation and save consent. Conversion yields
-between documents; ZIP preparation/copy run off the UI thread. Destination
-replacement is staged and atomic, preserving an existing file on failure.
-Temporary content is removed with its owner. Empty Profiles report no Notes.
-
 ## Checks
 
-`scripts/test-notes.sh`, `scripts/test-note-export.sh` and shared
-`scripts/test-easels.sh` checks cover stores, actual native editors, formatting,
-retirement, HTML/ZIP output and failure paths with temporary fixtures.
+`scripts/test-notes.sh` runs the windowless note tab checks (file addresses,
+opening, renames, archive and restore, splits and deletion consent across Profiles)
+and then `scripts/test-notes-editor.sh`, which covers the editor model and file
+layer with temporary fixtures.
