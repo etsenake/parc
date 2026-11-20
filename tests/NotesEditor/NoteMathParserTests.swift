@@ -35,6 +35,9 @@ struct NoteMathParserTests {
         errors()
         macros()
         macroErrors()
+        delimitedParameters()
+        expansionPrimitives()
+        cellScopes()
         chemistry()
         units()
         tags()
@@ -328,6 +331,73 @@ struct NoteMathParserTests {
         expect(failure("\\newcommand{\\z}").message == "\\newcommand{\\z} needs a definition in braces", "newcommand needs a body")
         expect(failure("\\def\\z").message.hasPrefix("\\def\\z needs a definition"), "def needs a body")
         expect(failure("\\newcommand{\\z}{x").message == "Missing } to close this {", "unclosed definition")
+    }
+
+    static func delimitedParameters() {
+        expect(parse("\\def\\pt(#1,#2){#1+#2}\\pt(a,b)") == parse("a+b"), "delimiters around and between parameters")
+        expect(parse("\\def\\foo#1.{[#1]}\\foo abc.d") == parse("[abc]d"), "an argument runs to its delimiter")
+        expect(parse("\\def\\foo#1.{[#1]}\\foo {a.b}.") == parse("[a.b]"), "braces hide the delimiter and come off")
+        expect(parse("\\def\\foo#1.{[#1]}\\foo {a}{b}.") == parse("[{a}{b}]"), "braces stay when they don't wrap the whole argument")
+        expect(parse("\\def\\foo#1.{[#1]}\\foo .") == parse("[]"), "an empty delimited argument")
+        expect(parse("\\def\\foo#1\\stop{(#1)}\\foo xy\\stop") == parse("(xy)"), "a command works as a delimiter")
+        expect(parse("\\def\\foo#1#2;{#2#1}\\foo ab c;") == parse("bca"), "undelimited then delimited")
+        expect(parse("\\def\\foo#1 #2.{#2#1}\\foo x y.") == parse("yx"), "a space is a delimiter too")
+        expect(parse("\\def\\foo.#1{#1!}\\foo.x") == parse("x!"), "text before the first parameter has to match")
+        expect(parse("\\def\\foo#1#{#1\\boxed}\\foo ab{c}") == parse("ab\\boxed{c}"), "#{ stops at a brace and leaves it")
+        expect(parse("\\def\\foo#1.{#1}\\def\\bar{\\foo x.}\\bar") == parse("x"), "delimited macros inside macros")
+        expect(parse("\\def\\cs#1.#2.{#2#1}\\cs a.b.") == parse("ba"), "two delimited parameters")
+        expect(parse("\\def\\ab#1ab{[#1]}\\ab aab") == parse("[a]"), "the shortest argument that the delimiter follows")
+        let mismatch = failure("\\def\\foo.#1{#1}\\foo x")
+        expect(mismatch.message == "\\foo has to be followed by \u{201C}.\u{201D}, the way it was defined" && mismatch.offset == 15,
+               "a prefix that doesn't match: \(mismatch.message)")
+        let runaway = failure("\\def\\foo#1.{#1}\\foo abc")
+        expect(runaway.message == "\\foo never finds the \u{201C}.\u{201D} that ends its argument" && runaway.offset == 15,
+               "a missing delimiter: \(runaway.message)")
+        expect(failure("{\\def\\foo#1.{#1}\\foo a}.").message == "\\foo's argument has an extra }", "a brace can't close mid-argument")
+        expect(failure("\\def\\foo#1}{x}").message == "\\def\\foo has a } before its definition starts", "stray brace in parameter text")
+    }
+
+    static func expansionPrimitives() {
+        expect(parse("\\def\\a{x.y}\\def\\b#1.{[#1]}\\expandafter\\b\\a") == parse("[x]y"), "expandafter expands the second token first")
+        expect(failure("\\def\\a{x.y}\\def\\b#1.{[#1]}\\b\\a").message.hasPrefix("\\b never finds"), "without expandafter the macro sees \\a")
+        expect(parse("\\def\\a{1}\\def\\b{\\a}\\def\\c#1.{[#1]}\\expandafter\\expandafter\\expandafter\\c\\b.") == parse("[1]"),
+               "expandafter chains expand twice")
+        expect(parse("\\def\\a{1}\\edef\\b{\\noexpand\\a\\a}\\def\\a{2}\\b") == parse("21"), "noexpand keeps a command for later in edef")
+        expect(parse("\\noexpand\\alpha") == parse("\\alpha"), "noexpand on a built-in")
+        expect(parse("x\\def\\q{1}\\noexpand\\q y") == parse("xy"), "noexpand on a macro acts like relax")
+        expect(parse("\\csname alpha\\endcsname") == parse("\\alpha"), "csname builds a command")
+        expect(parse("\\expandafter\\def\\csname my thing\\endcsname{z}\\csname my thing\\endcsname") == parse("z"),
+               "csname defines and uses a macro, spaces and all")
+        expect(parse("\\def\\n{al}\\csname\\n pha\\endcsname") == parse("\\alpha"), "macros expand inside csname")
+        expect(parse("x\\csname nothinghere\\endcsname y") == parse("xy"), "an undefined csname is a no-op")
+        expect(parse("\\expandafter\\let\\csname b\\endcsname\\beta \\b") == parse("\\beta"), "csname with let")
+        expect(parse("\\expandafter\\newcommand\\csname sq\\endcsname[1]{#1^2}\\sq{y}") == parse("y^2"), "csname with newcommand")
+        expect(parse("\\csname alpha\\endcsname b") == parse("\\alpha b"), "a built name stays apart from the next letter")
+        let open = failure("x \\csname alpha")
+        expect(open.message == "\\csname needs an \\endcsname to finish the name" && open.offset == 2, "csname needs its end")
+        expect(failure("\\csname \\alpha\\endcsname").message == "\\csname builds names from letters and symbols, so \\alpha can't go inside",
+               "csname refuses commands that don't expand")
+        expect(failure("\\expandafter").message == "\\expandafter needs two things after it", "expandafter needs tokens")
+        expect(failure("\\def\\a{\\expandafter\\a\\a}\\a").message.contains("keeps expanding"), "expandafter loops hit the limit")
+        expect(failure("\\def\\a{\\csname a\\endcsname}\\a").message.contains("keeps expanding"), "csname loops hit the limit")
+        expect(parse("% \\csname alpha\\endcsname\n a") == parse("a"), "primitives in comments are ignored")
+    }
+
+    static func cellScopes() {
+        expect(parse("\\begin{matrix}\\def\\x{1}\\x & 2\\end{matrix}") == parse("\\begin{matrix}1 & 2\\end{matrix}"),
+               "a definition works in its own cell")
+        expect(failure("\\begin{matrix}\\def\\x{1}\\x & \\x\\end{matrix}").message == "Unknown command \\x", "a definition ends with its cell")
+        expect(failure("\\begin{aligned} \\def\\y{a} \\y \\\\ \\y \\end{aligned}").message == "Unknown command \\y", "a new row starts fresh")
+        expect(failure("\\begin{matrix}\\def\\z{1}\\end{matrix}\\z").message == "Unknown command \\z", "nothing leaks out of an environment")
+        expect(parse("\\begin{matrix}\\gdef\\w{1}\\end{matrix}\\w") == parse("\\begin{matrix}\\end{matrix}1"), "gdef still escapes a cell")
+        expect(parse("\\def\\v{3}\\begin{matrix}\\v & \\v\\end{matrix}") == parse("\\begin{matrix}3 & 3\\end{matrix}"),
+               "outer macros reach every cell")
+        expect(parse("\\begin{array}{cc}\\def\\u{4}\\u & 5\\end{array}") == parse("\\begin{array}{cc}4 & 5\\end{array}"),
+               "array column specs don't confuse scopes")
+        expect(failure("\\begin{matrix}\\begin{matrix}\\def\\t{1}\\t\\end{matrix} & \\t\\end{matrix}").message == "Unknown command \\t",
+               "nested environments scope their own cells")
+        expect(parse("\\begin{matrix}{\\def\\s{1}\\s} & 2\\end{matrix}") == parse("\\begin{matrix}{1} & 2\\end{matrix}"),
+               "groups still work inside cells")
     }
 
     static func chemistry() {

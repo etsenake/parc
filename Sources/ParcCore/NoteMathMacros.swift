@@ -40,6 +40,7 @@ struct NoteMathExpander {
         var start: Int
         var invocation: Range<Int>?
         var noexpand = false
+        var fromCsname = false
 
         var origin: Range<Int> {
             if let invocation { return invocation }
@@ -53,19 +54,32 @@ struct NoteMathExpander {
         var defaultArgument: [Token]?
         var body: [Token] = []
         var alias: Token?
+        var prefix: [Token] = []
+        var delimiters: [[Token]] = []
+        var braceDelimited = false
+    }
+
+    private struct Frame {
+        enum Kind { case root, brace, cell }
+        var kind: Kind
+        var macros: [String: Macro] = [:]
     }
 
     static let maximumExpansions = 1000
     static let maximumLength = 100_000
     private static let triggers: Set<String> = [
         "newcommand", "renewcommand", "providecommand", "def", "gdef", "edef", "xdef", "let", "global", "ce", "pu",
+        "expandafter", "noexpand", "csname",
     ]
+    private static let expansionPrimitives: Set<String> = ["expandafter", "noexpand", "csname"]
 
     private let tokens: [Token]
     private let sourceLength: Int
     private var position = 0
     private var pending: [Token] = []
-    private var frames: [[String: Macro]] = [[:]]
+    private var frames: [Frame] = [Frame(kind: .root)]
+    private var awaitsEnvironmentName = false
+    private var environmentNameDepth: Int?
     private var expansions = 0
     private var characters: [Character] = []
     private var origins: [Range<Int>] = []
@@ -115,7 +129,8 @@ struct NoteMathExpander {
             } else if character == "%" {
                 while index < characters.count, !characters[index].isNewline { index += 1 }
                 if index < characters.count { index += 1 }
-                kind = .space
+                offset += String(characters[first..<index]).utf16.count
+                continue
             } else if character.isWhitespace {
                 while index < characters.count, characters[index].isWhitespace { index += 1 }
                 kind = .space
@@ -167,18 +182,22 @@ struct NoteMathExpander {
 
     private func lookup(_ name: String) -> Macro? {
         for frame in frames.reversed() {
-            if let macro = frame[name] { return macro }
+            if let macro = frame.macros[name] { return macro }
         }
         return nil
     }
 
     private mutating func define(_ name: String, _ macro: Macro, global: Bool) {
         if global {
-            for index in frames.indices { frames[index][name] = nil }
-            frames[0][name] = macro
+            for index in frames.indices { frames[index].macros[name] = nil }
+            frames[0].macros[name] = macro
         } else {
-            frames[frames.count - 1][name] = macro
+            frames[frames.count - 1].macros[name] = macro
         }
+    }
+
+    private func isExpandable(_ name: String) -> Bool {
+        Self.expansionPrimitives.contains(name) || lookup(name) != nil
     }
 
     private mutating func run() throws(NoteMathParseError) {
@@ -205,11 +224,95 @@ struct NoteMathExpander {
             try defineLet(token, global: global)
         case "ce", "pu":
             try expandChemistry(name, token)
+        case "expandafter":
+            try expandAfter(token)
+        case "noexpand":
+            guard var target = next(), target.kind != .marker else { throw failure("\\noexpand needs something after it", token.origin) }
+            if capture != nil {
+                target.noexpand = false
+                emit(target)
+            } else if case .control(let inner) = target.kind, lookup(inner) != nil || !NoteMathParser.isBuiltIn(inner) {
+                return
+            } else {
+                emit(target)
+            }
+        case "csname":
+            try expandCsname(token)
+        default:
+            if let macro = lookup(name) {
+                try expand(macro, name: name, token)
+            } else if token.fromCsname, !NoteMathParser.isBuiltIn(name) {
+                return
+            } else {
+                emit(token)
+            }
+        }
+    }
+
+    private mutating func expandOnce(_ token: Token) throws(NoteMathParseError) {
+        guard !token.noexpand, case .control(let name) = token.kind else {
+            push([token])
+            return
+        }
+        switch name {
+        case "expandafter":
+            try expandAfter(token)
+        case "noexpand":
+            guard var target = next(), target.kind != .marker else { throw failure("\\noexpand needs something after it", token.origin) }
+            target.noexpand = true
+            push([target])
+        case "csname":
+            try expandCsname(token)
+        case "ce", "pu":
+            try expandChemistry(name, token)
         default:
             if let macro = lookup(name) {
                 try expand(macro, name: name, token)
             } else {
-                emit(token)
+                push([token])
+            }
+        }
+    }
+
+    private mutating func expandAfter(_ call: Token) throws(NoteMathParseError) {
+        try countExpansion("expandafter", call)
+        guard let first = next(), first.kind != .marker, let second = next(), second.kind != .marker else {
+            throw failure("\\expandafter needs two things after it", call.origin)
+        }
+        try expandOnce(second)
+        push([first])
+    }
+
+    private mutating func expandCsname(_ call: Token) throws(NoteMathParseError) {
+        try countExpansion("csname", call)
+        var name = ""
+        var end = call.origin.upperBound
+        while true {
+            guard let token = next(), token.kind != .marker else {
+                throw failure("\\csname needs an \\endcsname to finish the name", call.origin)
+            }
+            end = max(end, token.origin.upperBound)
+            switch token.kind {
+            case .control("endcsname"):
+                let invocation = call.invocation ?? call.origin.lowerBound..<end
+                var result = Token(kind: .control(name), raw: "\\" + name, start: invocation.lowerBound, invocation: invocation)
+                result.fromCsname = true
+                push([result])
+                return
+            case .character(let character):
+                name.append(character)
+            case .space:
+                name.append(" ")
+            case .hash:
+                name.append("#")
+            case .control(let inner):
+                if !token.noexpand, isExpandable(inner) {
+                    try expandOnce(token)
+                    continue
+                }
+                throw failure("\\csname builds names from letters and symbols, so \\\(inner) can't go inside", token.origin)
+            case .marker:
+                break
             }
         }
     }
@@ -219,11 +322,7 @@ struct NoteMathExpander {
             capture?.append(token)
             return
         }
-        switch token.kind {
-        case .character("{"): frames.append([:])
-        case .character("}"): if frames.count > 1 { frames.removeLast() }
-        default: break
-        }
+        trackScope(token)
         var offset = token.start
         for (index, character) in token.raw.enumerated() {
             let width = character.utf16.count
@@ -240,6 +339,32 @@ struct NoteMathExpander {
             afterControlWord = token.raw.last.map { !$0.isWhitespace } ?? false
         } else if !token.raw.isEmpty {
             afterControlWord = false
+        }
+    }
+
+    private mutating func trackScope(_ token: Token) {
+        if token.kind == .space { return }
+        let opensName = awaitsEnvironmentName && token.kind == .character("{")
+        awaitsEnvironmentName = false
+        switch token.kind {
+        case .character("{"):
+            if opensName { environmentNameDepth = frames.count }
+            frames.append(Frame(kind: .brace))
+        case .character("}"):
+            guard let brace = frames.lastIndex(where: { $0.kind == .brace }) else { return }
+            frames.removeSubrange(brace...)
+            if environmentNameDepth == frames.count {
+                environmentNameDepth = nil
+                frames.append(Frame(kind: .cell))
+            }
+        case .character("&"), .control("\\"), .control("cr"), .control("newline"):
+            if frames.last?.kind == .cell { frames[frames.count - 1] = Frame(kind: .cell) }
+        case .control("begin"):
+            awaitsEnvironmentName = true
+        case .control("end"):
+            if frames.last?.kind == .cell { frames.removeLast() }
+        default:
+            break
         }
     }
 
@@ -355,19 +480,38 @@ struct NoteMathExpander {
         let (name, nameToken) = try readName(for: command, at: call)
         var macro = Macro()
         while true {
-            guard let token = nextSignificant() else {
+            guard let token = next() else {
                 throw failure("\\\(command)\\\(name) needs a definition in braces", nameToken.origin)
             }
             if token.kind == .character("{") {
                 macro.body = try readGroup(after: token).tokens
                 break
             }
-            guard token.kind == .hash, let digit = next(), case .character(let character) = digit.kind,
-                  character.wholeNumberValue == macro.arity + 1 else {
+            if token.kind == .character("}") {
+                throw failure("\\\(command)\\\(name) has a } before its definition starts", token.origin)
+            }
+            guard token.kind == .hash else {
+                if macro.arity == 0 {
+                    macro.prefix.append(token)
+                } else {
+                    macro.delimiters[macro.arity - 1].append(token)
+                }
+                continue
+            }
+            guard let digit = next() else {
+                throw failure("\\\(command)\\\(name) needs a definition in braces", nameToken.origin)
+            }
+            if digit.kind == .character("{") {
+                macro.braceDelimited = true
+                macro.body = try readGroup(after: digit).tokens
+                break
+            }
+            guard case .character(let character) = digit.kind, character.wholeNumberValue == macro.arity + 1 else {
                 throw failure("\\\(command) parameters have to be #1, #2, … in order, then the definition in braces",
                               token.origin)
             }
             macro.arity += 1
+            macro.delimiters.append([])
             if macro.arity > 9 { throw failure("A macro takes at most 9 arguments", token.origin) }
         }
         for (value, token) in referencedParameters(macro.body) where value > macro.arity {
@@ -426,6 +570,13 @@ struct NoteMathExpander {
         var arguments: [[Token]] = []
         var end = call.origin.upperBound
         let message = macro.arity == 1 ? "\\\(name) needs something after it" : "\\\(name) needs \(macro.arity) arguments"
+        for expected in macro.prefix {
+            guard let token = next(), token.kind == expected.kind else {
+                throw failure("\\\(name) has to be followed by \u{201C}\(Self.spelled(macro.prefix))\u{201D}, the way it was defined",
+                              call.origin)
+            }
+            end = max(end, token.origin.upperBound)
+        }
         for index in 0..<macro.arity {
             if index == 0, let fallback = macro.defaultArgument {
                 if let optional = try readOptional() {
@@ -436,9 +587,22 @@ struct NoteMathExpander {
                 }
                 continue
             }
-            let argument = try readArgument(message, at: call)
-            arguments.append(argument.tokens)
-            end = max(end, argument.end)
+            let delimiter = index < macro.delimiters.count ? macro.delimiters[index] : []
+            let stopsAtBrace = macro.braceDelimited && index == macro.arity - 1
+            if delimiter.isEmpty && !stopsAtBrace {
+                let argument = try readArgument(message, at: call)
+                arguments.append(argument.tokens)
+                end = max(end, argument.end)
+            } else {
+                let argument = try readDelimited(delimiter, stopsAtBrace: stopsAtBrace, name: name, at: call)
+                arguments.append(argument.tokens)
+                end = max(end, argument.end)
+            }
+        }
+        if macro.braceDelimited, macro.arity == 0 {
+            guard let brace = peekSignificant(), brace.kind == .character("{") else {
+                throw failure("\\\(name) has to be followed by {", call.origin)
+            }
         }
         let invocation = call.invocation ?? call.origin.lowerBound..<max(end, call.origin.upperBound)
         var result: [Token] = []
@@ -469,6 +633,67 @@ struct NoteMathExpander {
             index += 1
         }
         push(result)
+    }
+
+    private static func spelled(_ tokens: [Token]) -> String {
+        tokens.map { token in
+            switch token.kind {
+            case .control(let name): return "\\" + name + (name.last?.isLetter == true ? " " : "")
+            case .space: return " "
+            default: return token.raw
+            }
+        }.joined().trimmingCharacters(in: .whitespaces)
+    }
+
+    private mutating func readDelimited(_ delimiter: [Token], stopsAtBrace: Bool, name: String,
+                                        at call: Token) throws(NoteMathParseError) -> (tokens: [Token], end: Int) {
+        var collected: [Token] = []
+        var depth = 0
+        var end = call.origin.upperBound
+        let wanted = delimiter.map(\.kind)
+        while true {
+            guard let token = next(), token.kind != .marker else {
+                let ending = stopsAtBrace ? "{" : Self.spelled(delimiter)
+                throw failure("\\\(name) never finds the \u{201C}\(ending)\u{201D} that ends its argument", call.origin)
+            }
+            if stopsAtBrace, depth == 0, token.kind == .character("{") {
+                push([token])
+                break
+            }
+            switch token.kind {
+            case .character("{"):
+                depth += 1
+            case .character("}"):
+                if depth == 0 {
+                    push([token])
+                    throw failure("\\\(name)'s argument has an extra }", token.origin)
+                }
+                depth -= 1
+            default:
+                break
+            }
+            collected.append(token)
+            end = max(end, token.origin.upperBound)
+            if depth == 0, !wanted.isEmpty, collected.count >= wanted.count,
+               zip(collected.suffix(wanted.count), wanted).allSatisfy({ $0.kind == $1 }) {
+                collected.removeLast(wanted.count)
+                break
+            }
+        }
+        return (Self.strippingOuterBraces(collected), end)
+    }
+
+    private static func strippingOuterBraces(_ tokens: [Token]) -> [Token] {
+        guard tokens.count >= 2, tokens.first?.kind == .character("{"), tokens.last?.kind == .character("}") else { return tokens }
+        var depth = 0
+        for (index, token) in tokens.enumerated() {
+            if token.kind == .character("{") { depth += 1 }
+            if token.kind == .character("}") {
+                depth -= 1
+                if depth == 0, index < tokens.count - 1 { return tokens }
+            }
+        }
+        return Array(tokens.dropFirst().dropLast())
     }
 
     private mutating func expandChemistry(_ name: String, _ call: Token) throws(NoteMathParseError) {
