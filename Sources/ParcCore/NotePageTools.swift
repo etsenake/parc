@@ -693,3 +693,24 @@ extension NoteBlock {
         calloutAlert == nil ? nil : ""
     }
 }
+
+struct NotePagePrintSpan: Hashable {
+    var minY: CGFloat
+    var maxY: CGFloat
+    var keepsTogether: Bool
+}
+
+enum NotePagePagination {
+    static func pageBreak(proposed: CGFloat, limit: CGFloat, spans: [NotePagePrintSpan]) -> CGFloat {
+        var bottom = proposed
+        var moved = true
+        while moved {
+            moved = false
+            for span in spans where span.keepsTogether && span.minY < bottom - 0.5 && span.maxY > bottom + 0.5 && span.minY >= limit {
+                bottom = span.minY
+                moved = true
+            }
+        }
+        return bottom
+    }
+}

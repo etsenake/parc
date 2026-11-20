@@ -10,6 +10,7 @@ struct NoteTextRenderingTests {
             measurement()
             presentation()
             alignment()
+            equationArtwork()
             numbering()
             dates()
             print("NoteTextRenderingTests passed")
@@ -187,6 +188,33 @@ struct NoteTextRenderingTests {
         let used = manager.usedRect(for: container)
         let glyphs = manager.boundingRect(forGlyphRange: manager.glyphRange(for: container), in: container)
         expect(abs(glyphs.midX - width / 2) < 2, "centred text lays out in the middle (centre \(glyphs.midX), used \(used))")
+    }
+
+    static func equationArtwork() {
+        guard let inline = NotePageEquationArtwork.svg("x^2 + y^2 = z^2", display: false),
+              let display = NotePageEquationArtwork.svg("\\frac{a}{b} = c", display: true) else {
+            failTest("equations render to SVG artwork")
+        }
+        expect(inline.markup.hasPrefix("<svg ") && inline.markup.contains("prefers-color-scheme:dark"), "artwork carries light and dark ink")
+        expect(inline.markup.components(separatedBy: "data:image/png;base64,").count == 3, "artwork embeds a light and a dark rendering")
+        expect(inline.size.width > 20 && inline.size.height > 10, "inline artwork has a real size (\(inline.size))")
+        let fontSize = NotePageEquationArtwork.fontSize(display: false)
+        let rendering = NoteMathRenderer.render("x^2 + y^2 = z^2", fontSize: fontSize, color: .black, display: false)
+        expect(inline.size.height >= ceil(rendering.size.height), "inline artwork pads around the maths, never crops it")
+        expect(display.size.height > inline.size.height, "display maths is bigger than inline maths")
+        expect(NotePageEquationArtwork.fontSize(display: true) > fontSize, "display maths uses the larger size")
+        expect(NotePageEquationArtwork.svg("   ", display: false) == nil, "blank equations fall back to their source")
+        expect(NotePageEquationArtwork.svg("\\frac{", display: false) == nil, "broken equations fall back to their source")
+        guard let url = NotePageEquationArtwork.url("e^{i\\pi} + 1 = 0", display: true) else { failTest("artwork becomes a data URL") }
+        expect(url.absoluteString.hasPrefix("data:image/svg+xml;charset=utf-8,%3Csvg"), "the data URL is a percent-encoded SVG")
+        expect(url.absoluteString.removingPercentEncoding?.contains("width=") == true, "the SVG keeps its intrinsic size")
+        let html = NotePageHTML.document(NotePage(blocks: [NoteBlock(.equation, text: "a^2"),
+                                                           .paragraph(NoteText("Area ") + NoteText.atom(.equation("\\pi r^2")))]),
+                                         title: "Maths", assets: { _ in nil }, embedImages: true,
+                                         equationImage: { tex, display in NotePageEquationArtwork.url(tex, display: display) })
+        expect(html.components(separatedBy: "data:image/svg+xml").count == 3, "exported HTML typesets block and inline equations")
+        expect(!html.contains("<span class=\"tex\">"), "no raw TeX is left behind when artwork renders")
+        expect(html.contains("img.equation{vertical-align:middle;max-width:100%}"), "inline artwork keeps its own size in the stylesheet")
     }
 
     static func numbering() {

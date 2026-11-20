@@ -275,16 +275,18 @@ final class NotePageMenu {
     }
 
     func write(_ format: ExportFormat, to destination: URL) {
+        if format == .pdf {
+            writePDF(to: destination)
+            return
+        }
         do {
             switch format {
             case .markdown:
                 let text = isPlainText ? NotePlainText.serialize(editor.session.page) : NoteMarkdown.serialize(editor.session.page)
                 try Data(text.utf8).write(to: destination, options: .atomic)
                 try copyAssets(to: destination.deletingLastPathComponent())
-            case .html:
+            case .html, .pdf:
                 try Data(htmlDocument().utf8).write(to: destination, options: .atomic)
-            case .pdf:
-                try writePDF(to: destination)
             }
             showToast(.standard("Exported \(destination.lastPathComponent)"))
         } catch {
@@ -294,7 +296,8 @@ final class NotePageMenu {
 
     func htmlDocument() -> String {
         let environment = editor.environment
-        return NotePageHTML.document(editor.session.page, title: title, assets: { environment.resolve($0) }, embedImages: true)
+        return NotePageHTML.document(editor.session.page, title: title, assets: { environment.resolve($0) }, embedImages: true,
+                                     equationImage: { tex, display in NotePageEquationArtwork.url(tex, display: display) })
     }
 
     private func copyAssets(to folder: URL) throws {
@@ -311,35 +314,17 @@ final class NotePageMenu {
         }
     }
 
-    private func writePDF(to destination: URL) throws {
-        let html = htmlDocument()
-        guard let data = html.data(using: .utf8),
-              let text = NSAttributedString(html: data, baseURL: url?.deletingLastPathComponent() ?? FileManager.default.temporaryDirectory,
-                                            documentAttributes: nil) else {
-            throw CocoaError(.fileWriteUnknown)
+    private func writePDF(to destination: URL) {
+        let name = title
+        NotePagePrintView.prepare(page: editor.session.page, title: name, environment: editor.environment) { [weak self] view in
+            guard let self else { return }
+            do {
+                try view.writePDF(to: destination)
+                self.showToast(.standard("Exported \(destination.lastPathComponent)"))
+            } catch {
+                self.editor.onError?(error)
+            }
         }
-        let info = NSPrintInfo.shared.copy() as? NSPrintInfo ?? NSPrintInfo()
-        info.jobDisposition = .save
-        info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = destination
-        info.horizontalPagination = .fit
-        info.verticalPagination = .automatic
-        info.topMargin = 54
-        info.bottomMargin = 54
-        info.leftMargin = 54
-        info.rightMargin = 54
-        let width = info.paperSize.width - info.leftMargin - info.rightMargin
-        let view = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 100))
-        view.appearance = NSAppearance(named: .aqua)
-        view.drawsBackground = false
-        view.textContainerInset = .zero
-        view.textStorage?.setAttributedString(text)
-        view.isVerticallyResizable = true
-        view.sizeToFit()
-        let operation = NSPrintOperation(view: view, printInfo: info)
-        operation.showsPrintPanel = false
-        operation.showsProgressPanel = false
-        operation.jobTitle = title
-        guard operation.run() else { throw CocoaError(.fileWriteUnknown) }
     }
 
     func turnIntoMarkdown() {
@@ -384,6 +369,318 @@ final class NotePageMenu {
             edited = NoteRelativeTime.edited(date)
         }
         return (stats.summary, edited)
+    }
+}
+
+@MainActor
+final class NotePagePrintView: NSView {
+    static let canvasWidth: CGFloat = 776
+    static let horizontalMargin: CGFloat = 36
+    static let verticalMargin: CGFloat = 40
+    static let imageWait: TimeInterval = 6
+
+    let editor: NotePageEditor
+    let header: NotePageHeaderView
+    let title: String
+
+    init(page: NotePage, title: String, environment: NoteEnvironment) {
+        var copy = page
+        copy.settings.fullWidth = false
+        let session = NotePageSession(page: copy)
+        session.isReadOnly = true
+        editor = NotePageEditor(session: session, environment: environment)
+        header = NotePageHeaderView(editor: editor, file: nil, title: title)
+        self.title = title
+        super.init(frame: NSRect(x: 0, y: 0, width: Self.canvasWidth, height: 1200))
+        appearance = NSAppearance(named: .aqua)
+        setAccessibilityElement(false)
+        let canvas = editor.canvas!
+        canvas.frame = bounds
+        addSubview(canvas)
+        header.isPrinting = true
+        canvas.headerView = header
+        settle()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+
+    static func prepare(page: NotePage, title: String, environment: NoteEnvironment, completion: @escaping (NotePagePrintView) -> Void) {
+        var pending = 0
+        var finished = false
+        func finish() {
+            guard !finished else { return }
+            finished = true
+            NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
+                completion(NotePagePrintView(page: page, title: title, environment: environment))
+            }
+        }
+        func arrived() {
+            pending -= 1
+            if pending <= 0 { finish() }
+        }
+        var chromeImages: [URL] = []
+        if let cover = page.settings.cover, let url = environment.resolve(cover.source) { chromeImages.append(url) }
+        if let icon = page.settings.icon, NotePageImageLoader.isImageSource(icon), let url = environment.resolve(icon) { chromeImages.append(url) }
+        var mediaImages: [(URL, Int)] = []
+        for block in page.allBlocks() {
+            if block.kind == .image, let source = block.props.source, let url = environment.resolve(source) { mediaImages.append((url, 1600)) }
+            if block.kind == .bookmark, let bookmark = block.props.bookmark {
+                if let image = bookmark.imageURL.flatMap(URL.init(string:)) { mediaImages.append((image, 1024)) }
+                if let icon = bookmark.iconURL.flatMap(URL.init(string:)) { mediaImages.append((icon, 64)) }
+            }
+        }
+        pending = chromeImages.count + mediaImages.count
+        guard pending > 0 else { finish(); return }
+        for url in chromeImages { NotePageImageLoader.shared.load(url) { _ in arrived() } }
+        for (url, pixels) in mediaImages { NoteMediaImageLoader.shared.load(url, pixels: pixels) { _ in arrived() } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + imageWait) { finish() }
+    }
+
+    func settle() {
+        let canvas = editor.canvas!
+        for _ in 0..<3 {
+            canvas.layoutSubtreeIfNeeded()
+            for entry in canvas.canvasLayout.entries { _ = canvas.blockView(for: entry.id) }
+            canvas.layoutSubtreeIfNeeded()
+            let height = ceil(canvas.canvasLayout.contentBottom + 24)
+            guard abs(frame.height - height) > 0.5 else { break }
+            setFrameSize(NSSize(width: Self.canvasWidth, height: height))
+            canvas.setFrameSize(NSSize(width: Self.canvasWidth, height: height))
+        }
+        canvas.overlayView.isHidden = true
+        hideInvisibleChrome(in: canvas)
+    }
+
+    private func hideInvisibleChrome(in view: NSView) {
+        for child in view.subviews {
+            if child is NSScroller || child.alphaValue < 0.01 || (child.layer.map { $0.opacity < 0.01 } ?? false) {
+                child.isHidden = true
+                continue
+            }
+            hideInvisibleChrome(in: child)
+        }
+    }
+
+    func printInfo(saving destination: URL? = nil) -> NSPrintInfo {
+        let info = NSPrintInfo.shared.copy() as? NSPrintInfo ?? NSPrintInfo()
+        if let destination {
+            info.jobDisposition = .save
+            info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = destination
+        }
+        info.horizontalPagination = .fit
+        info.verticalPagination = .automatic
+        info.isHorizontallyCentered = true
+        info.isVerticallyCentered = false
+        info.leftMargin = Self.horizontalMargin
+        info.rightMargin = Self.horizontalMargin
+        info.topMargin = Self.verticalMargin
+        info.bottomMargin = Self.verticalMargin
+        return info
+    }
+
+    func printOperation(info: NSPrintInfo) -> NSPrintOperation {
+        let operation = NSPrintOperation(view: self, printInfo: info)
+        operation.jobTitle = title.isEmpty ? "Untitled" : title
+        return operation
+    }
+
+    func writePDF(to destination: URL) throws {
+        let operation = printOperation(info: printInfo(saving: destination))
+        operation.showsPrintPanel = false
+        operation.showsProgressPanel = false
+        guard operation.run() else { throw CocoaError(.fileWriteUnknown) }
+    }
+
+    var printSpans: [NotePagePrintSpan] {
+        let canvas = editor.canvas!
+        var spans = [NotePagePrintSpan(minY: header.frame.minY, maxY: header.frame.maxY, keepsTogether: true)]
+        for entry in canvas.canvasLayout.entries {
+            let frame = convert(entry.outerFrame.isEmpty ? entry.frame : entry.outerFrame, from: canvas)
+            let container = entry.hasVisibleChildren || entry.kind == .columns || entry.kind == .column
+            spans.append(NotePagePrintSpan(minY: frame.minY, maxY: frame.maxY, keepsTogether: !container))
+        }
+        return spans
+    }
+
+    override func adjustPageHeightNew(_ newBottom: UnsafeMutablePointer<CGFloat>, top oldTop: CGFloat, bottom oldBottom: CGFloat,
+                                      limit bottomLimit: CGFloat) {
+        let preferred = NotePagePagination.pageBreak(proposed: oldBottom, limit: bottomLimit, spans: printSpans)
+        newBottom.pointee = preferred
+        super.adjustPageHeightNew(newBottom, top: oldTop, bottom: preferred, limit: bottomLimit)
+        newBottom.pointee = max(bottomLimit, min(newBottom.pointee, preferred))
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        drawInOwnAppearance {
+            NSColor.white.setFill()
+            dirtyRect.fill()
+            context.saveGState()
+            context.clip(to: dirtyRect)
+            renderLayers(of: editor.canvas, in: context, clip: dirtyRect.intersection(bounds))
+            context.restoreGState()
+        }
+    }
+
+    private static let drawSelector = #selector(NSView.draw(_:))
+    private static let baseDraw = class_getMethodImplementation(NSView.self, drawSelector)
+
+    private func drawsItself(_ view: NSView) -> Bool {
+        guard let type = object_getClass(view) else { return false }
+        return class_getMethodImplementation(type, Self.drawSelector) != Self.baseDraw
+    }
+
+    private func transform(from view: NSView) -> CGAffineTransform {
+        let origin = convert(NSPoint.zero, from: view)
+        let x = convert(NSPoint(x: 1, y: 0), from: view)
+        let y = convert(NSPoint(x: 0, y: 1), from: view)
+        return CGAffineTransform(a: x.x - origin.x, b: x.y - origin.y, c: y.x - origin.x, d: y.y - origin.y, tx: origin.x, ty: origin.y)
+    }
+
+    private func renderLayers(of view: NSView, in context: CGContext, clip: NSRect) {
+        guard !view.isHidden, view.alphaValue > 0.01 else { return }
+        let frame = convert(view.bounds, from: view)
+        guard frame.intersects(clip) || frame.isEmpty else { return }
+        if let layer = view.layer, layer.opacity > 0.01 {
+            if view.wantsUpdateLayer { view.updateLayer() }
+            let alpha = CGFloat(layer.opacity) * view.alphaValue
+            context.saveGState()
+            context.clip(to: clip)
+            context.concatenate(transform(from: view))
+            if alpha < 0.99 { context.setAlpha(alpha); context.beginTransparencyLayer(auxiliaryInfo: nil) }
+            let owned = Set(view.subviews.compactMap { $0.layer.map(ObjectIdentifier.init) })
+            drawLayerBody(layer, rect: view.bounds, yDown: view.isFlipped, includeContents: !drawsItself(view), in: context)
+            if layer.masksToBounds { context.addPath(shape(for: layer, in: view.bounds)); context.clip() }
+            let sublayers = (layer.sublayers ?? []).filter { !owned.contains(ObjectIdentifier($0)) }
+            if !sublayers.isEmpty {
+                context.saveGState()
+                let flips = layer.isGeometryFlipped != view.isFlipped
+                if flips { context.translateBy(x: 0, y: view.bounds.minY + view.bounds.maxY); context.scaleBy(x: 1, y: -1) }
+                for sublayer in sublayers { render(sublayer, yDown: layer.isGeometryFlipped, in: context) }
+                context.restoreGState()
+            }
+            if alpha < 0.99 { context.endTransparencyLayer() }
+            context.restoreGState()
+        }
+        var childClip = clip
+        if view is NSClipView || view.layer?.masksToBounds == true { childClip = clip.intersection(frame) }
+        guard !childClip.isEmpty else { return }
+        for child in view.subviews { renderLayers(of: child, in: context, clip: childClip) }
+    }
+
+    private func render(_ layer: CALayer, yDown: Bool, in context: CGContext) {
+        guard !layer.isHidden, layer.opacity > 0.01 else { return }
+        context.saveGState()
+        let frame = layer.frame
+        context.translateBy(x: frame.minX, y: frame.minY)
+        if !CATransform3DIsIdentity(layer.transform), CATransform3DIsAffine(layer.transform) {
+            let anchor = CGPoint(x: frame.width * layer.anchorPoint.x, y: frame.height * layer.anchorPoint.y)
+            context.translateBy(x: anchor.x, y: anchor.y)
+            context.concatenate(CATransform3DGetAffineTransform(layer.transform))
+            context.translateBy(x: -anchor.x, y: -anchor.y)
+        }
+        let rect = CGRect(origin: .zero, size: frame.size)
+        let alpha = CGFloat(layer.opacity)
+        if alpha < 0.99 { context.setAlpha(alpha); context.beginTransparencyLayer(auxiliaryInfo: nil) }
+        drawLayerBody(layer, rect: rect, yDown: yDown, includeContents: true, in: context)
+        if let sublayers = layer.sublayers, !sublayers.isEmpty {
+            if layer.masksToBounds { context.addPath(shape(for: layer, in: rect)); context.clip() }
+            if layer.isGeometryFlipped { context.translateBy(x: 0, y: rect.height); context.scaleBy(x: 1, y: -1) }
+            for sublayer in sublayers { render(sublayer, yDown: yDown != layer.isGeometryFlipped, in: context) }
+        }
+        if alpha < 0.99 { context.endTransparencyLayer() }
+        context.restoreGState()
+    }
+
+    private func shape(for layer: CALayer, in rect: CGRect) -> CGPath {
+        let radius = min(layer.cornerRadius, min(rect.width, rect.height) / 2)
+        guard radius > 0 else { return CGPath(rect: rect, transform: nil) }
+        return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
+    private func drawLayerBody(_ layer: CALayer, rect: CGRect, yDown: Bool, includeContents: Bool, in context: CGContext) {
+        if let fill = layer.backgroundColor, fill.alpha > 0.001 {
+            context.saveGState()
+            context.addPath(shape(for: layer, in: rect))
+            context.setFillColor(fill)
+            context.fillPath()
+            context.restoreGState()
+        }
+        if let gradient = layer as? CAGradientLayer { drawGradient(gradient, rect: rect, in: context) }
+        if let shapeLayer = layer as? CAShapeLayer, let path = shapeLayer.path {
+            context.saveGState()
+            context.addPath(path)
+            if let fill = shapeLayer.fillColor { context.setFillColor(fill); context.fillPath() }
+            if let stroke = shapeLayer.strokeColor, shapeLayer.lineWidth > 0 {
+                context.addPath(path)
+                context.setStrokeColor(stroke)
+                context.setLineWidth(shapeLayer.lineWidth)
+                context.setLineCap(shapeLayer.lineCap == .round ? .round : shapeLayer.lineCap == .square ? .square : .butt)
+                context.setLineJoin(shapeLayer.lineJoin == .round ? .round : shapeLayer.lineJoin == .bevel ? .bevel : .miter)
+                context.strokePath()
+            }
+            context.restoreGState()
+        }
+        if includeContents, let contents = layer.contents {
+            let image: CGImage?
+            if CFGetTypeID(contents as CFTypeRef) == CGImage.typeID {
+                image = (contents as! CGImage)
+            } else {
+                image = (contents as? NSImage)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            }
+            if let image { drawContents(image, of: layer, rect: rect, yDown: yDown, in: context) }
+        }
+        if layer.borderWidth > 0, let border = layer.borderColor, border.alpha > 0.001 {
+            context.saveGState()
+            let inset = layer.borderWidth / 2
+            context.addPath(shape(for: layer, in: rect.insetBy(dx: inset, dy: inset)))
+            context.setStrokeColor(border)
+            context.setLineWidth(layer.borderWidth)
+            context.strokePath()
+            context.restoreGState()
+        }
+    }
+
+    private func drawContents(_ image: CGImage, of layer: CALayer, rect: CGRect, yDown: Bool, in context: CGContext) {
+        let source = CGSize(width: CGFloat(image.width) / max(layer.contentsScale, 1), height: CGFloat(image.height) / max(layer.contentsScale, 1))
+        var target = rect
+        switch layer.contentsGravity {
+        case .resizeAspect, .resizeAspectFill:
+            guard source.width > 0, source.height > 0 else { return }
+            let fit = layer.contentsGravity == .resizeAspect
+            let scale = fit ? min(rect.width / source.width, rect.height / source.height) : max(rect.width / source.width, rect.height / source.height)
+            let size = CGSize(width: source.width * scale, height: source.height * scale)
+            target = CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height)
+        case .center:
+            target = CGRect(x: rect.midX - source.width / 2, y: rect.midY - source.height / 2, width: source.width, height: source.height)
+        default:
+            break
+        }
+        context.saveGState()
+        context.addPath(shape(for: layer, in: rect))
+        context.clip()
+        if yDown {
+            context.translateBy(x: 0, y: target.minY + target.maxY)
+            context.scaleBy(x: 1, y: -1)
+        }
+        context.interpolationQuality = .high
+        context.draw(image, in: target)
+        context.restoreGState()
+    }
+
+    private func drawGradient(_ layer: CAGradientLayer, rect: CGRect, in context: CGContext) {
+        guard let colors = layer.colors as? [CGColor], colors.count > 1,
+              let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors as CFArray,
+                                        locations: layer.locations?.map { CGFloat($0.doubleValue) }) else { return }
+        let start = CGPoint(x: rect.minX + rect.width * layer.startPoint.x, y: rect.minY + rect.height * layer.startPoint.y)
+        let end = CGPoint(x: rect.minX + rect.width * layer.endPoint.x, y: rect.minY + rect.height * layer.endPoint.y)
+        context.saveGState()
+        context.addPath(shape(for: layer, in: rect))
+        context.clip()
+        context.drawLinearGradient(gradient, start: start, end: end, options: [])
+        context.restoreGState()
     }
 }
 

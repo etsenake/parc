@@ -115,13 +115,32 @@ final class NoteAtomCell: NSTextAttachmentCell {
     }
 
     private func drawIcon(_ icon: NSImage, in rect: NSRect, tint: NSColor) {
-        let tinted = NSImage(size: rect.size, flipped: false) { bounds in
+        let tinted = Self.tinted(icon, size: rect.size, tint: tint)
+        tinted.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+    }
+
+    static func tinted(_ icon: NSImage, size: NSSize, tint: NSColor) -> NSImage {
+        let drawing: (NSRect) -> Bool = { bounds in
             icon.draw(in: bounds)
             tint.set()
             bounds.fill(using: .sourceAtop)
             return true
         }
-        tinted.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        guard NSGraphicsContext.current?.isDrawingToScreen == false, size.width > 0, size.height > 0,
+              let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int((size.width * 3).rounded(.up)),
+                                         pixelsHigh: Int((size.height * 3).rounded(.up)), bitsPerSample: 8, samplesPerPixel: 4,
+                                         hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else {
+            return NSImage(size: size, flipped: false, drawingHandler: drawing)
+        }
+        rep.size = size
+        guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return NSImage(size: size, flipped: false, drawingHandler: drawing) }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        _ = drawing(NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: size)
+        image.addRepresentation(rep)
+        return image
     }
 }
 
@@ -229,5 +248,62 @@ enum NoteAtomRendering {
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
         symbols[name] = image
         return image
+    }
+}
+
+@MainActor
+enum NotePageEquationArtwork {
+    static let lightInk = NSColor(srgbRed: 0x1F / 255, green: 0x1B / 255, blue: 0x2E / 255, alpha: 1)
+    static let darkInk = NSColor(srgbRed: 0xED / 255, green: 0xEB / 255, blue: 0xFA / 255, alpha: 1)
+    static let scale: CGFloat = 3
+    static let displayScale: CGFloat = 1.2
+
+    static func fontSize(display: Bool) -> CGFloat {
+        let body = NoteTheme.bodyFont(.standard)
+        let size = NoteMathRenderer.fontSize(matching: body) * (display ? displayScale : 1)
+        return (size * 4).rounded() / 4
+    }
+
+    static func svg(_ tex: String, display: Bool) -> (markup: String, size: CGSize)? {
+        guard !tex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let fontSize = fontSize(display: display)
+        let light = NoteMathRenderer.render(tex, fontSize: fontSize, color: lightInk, display: display)
+        guard !light.isEmpty, light.error == nil, light.size.width > 0, light.size.height > 0 else { return nil }
+        let dark = NoteMathRenderer.render(tex, fontSize: fontSize, color: darkInk, display: display)
+        let aqua = NSAppearance(named: .aqua)
+        guard let lightPNG = png(light.cgImage(scale: scale, appearance: aqua)),
+              let darkPNG = png(dark.cgImage(scale: scale, appearance: NSAppearance(named: .darkAqua))) else { return nil }
+        let width = ceil(light.size.width)
+        let ascent = light.baseline, descent = light.descent
+        var height = ceil(light.size.height)
+        var top: CGFloat = 0
+        if !display {
+            let axis = fontSize * 0.25
+            let half = max(ascent - axis, descent + axis)
+            height = ceil(half * 2)
+            top = (half - (ascent - axis)).rounded(.down)
+        }
+        func number(_ value: CGFloat) -> String { String(format: "%.2f", Double(value)) }
+        let w = number(width), h = number(height)
+        let imageHeight = number(light.size.height), imageWidth = number(light.size.width), y = number(top)
+        let markup = "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"" + w + "\" height=\"" + h
+            + "\" viewBox=\"0 0 " + w + " " + h + "\"><style>.d{display:none}@media screen and (prefers-color-scheme:dark){.l{display:none}.d{display:inline}}</style>"
+            + "<image class=\"l\" x=\"0\" y=\"" + y + "\" width=\"" + imageWidth + "\" height=\"" + imageHeight + "\" xlink:href=\"data:image/png;base64,"
+            + lightPNG + "\"/><image class=\"d\" x=\"0\" y=\"" + y + "\" width=\"" + imageWidth + "\" height=\"" + imageHeight
+            + "\" xlink:href=\"data:image/png;base64," + darkPNG + "\"/></svg>"
+        return (markup, CGSize(width: width, height: height))
+    }
+
+    static func url(_ tex: String, display: Bool) -> URL? {
+        guard let svg = svg(tex, display: display) else { return nil }
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~!$'()*+,;=:@/")
+        guard let encoded = svg.markup.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
+        return URL(string: "data:image/svg+xml;charset=utf-8," + encoded)
+    }
+
+    private static func png(_ image: CGImage?) -> String? {
+        guard let image else { return nil }
+        return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.base64EncodedString()
     }
 }

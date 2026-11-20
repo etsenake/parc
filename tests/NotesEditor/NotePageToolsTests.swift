@@ -13,6 +13,7 @@ struct NotePageToolsTests {
         titleChecks()
         headerGeometry()
         calloutAlerts()
+        pagination()
         stats()
         properties()
         history()
@@ -243,6 +244,25 @@ struct NotePageToolsTests {
         let fragment = NotePageHTML.fragment([callout(alert: "WARNING")])
         expect(fragment.contains("data-default-icon") && !fragment.contains("data-color") && !fragment.contains("data-icon="),
                "copied callouts mark alert defaults so pasting doesn't adopt them")
+    }
+
+    static func pagination() {
+        let spans = [
+            NotePagePrintSpan(minY: 0, maxY: 300, keepsTogether: true),
+            NotePagePrintSpan(minY: 304, maxY: 700, keepsTogether: false),
+            NotePagePrintSpan(minY: 310, maxY: 360, keepsTogether: true),
+            NotePagePrintSpan(minY: 364, maxY: 980, keepsTogether: true),
+            NotePagePrintSpan(minY: 984, maxY: 1100, keepsTogether: true),
+        ]
+        expect(NotePagePagination.pageBreak(proposed: 1000, limit: 800, spans: spans) == 984, "a block straddling the break moves to the next page")
+        expect(NotePagePagination.pageBreak(proposed: 984, limit: 800, spans: spans) == 984, "a break between blocks stays put")
+        expect(NotePagePagination.pageBreak(proposed: 600, limit: 480, spans: spans) == 600,
+               "a block taller than the slack splits instead of leaving a near-empty page")
+        expect(NotePagePagination.pageBreak(proposed: 340, limit: 200, spans: spans) == 310,
+               "containers may split between their children, but children stay whole")
+        let chained = [NotePagePrintSpan(minY: 900, maxY: 1010, keepsTogether: true), NotePagePrintSpan(minY: 850, maxY: 960, keepsTogether: true)]
+        expect(NotePagePagination.pageBreak(proposed: 1000, limit: 800, spans: chained) == 850, "overlapping blocks keep moving the break up")
+        expect(NotePagePagination.pageBreak(proposed: 1000, limit: 800, spans: []) == 1000, "an empty page breaks where AppKit asked")
     }
 
     static func replacing() {

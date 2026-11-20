@@ -81,14 +81,38 @@ enum NoteIconRenderer {
         let size = image.size
         let target = NSRect(x: (rect.midX - size.width / 2).rounded(), y: (rect.midY - size.height / 2).rounded(),
                             width: size.width, height: size.height)
-        let tinted = NSImage(size: size, flipped: false) { bounds in
-            image.draw(in: bounds)
-            tint.withAlphaComponent(1).set()
-            bounds.fill(using: .sourceIn)
-            return true
-        }
+        let tinted = tintedTemplate(image, size: size, tint: tint.withAlphaComponent(1))
         tinted.draw(in: target, from: .zero, operation: .sourceOver, fraction: tint.alphaComponent,
                     respectFlipped: true, hints: nil)
+    }
+
+    static func tintedTemplate(_ image: NSImage, size: NSSize, tint: NSColor) -> NSImage {
+        guard NSGraphicsContext.current?.isDrawingToScreen == false else {
+            return NSImage(size: size, flipped: false) { bounds in
+                image.draw(in: bounds)
+                tint.set()
+                bounds.fill(using: .sourceIn)
+                return true
+            }
+        }
+        let scale: CGFloat = 3
+        guard size.width > 0, size.height > 0,
+              let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int((size.width * scale).rounded(.up)),
+                                         pixelsHigh: Int((size.height * scale).rounded(.up)), bitsPerSample: 8, samplesPerPixel: 4,
+                                         hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return image }
+        rep.size = size
+        guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return image }
+        let resolved = tint.usingColorSpace(.sRGB) ?? tint
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        let bounds = NSRect(origin: .zero, size: size)
+        image.draw(in: bounds)
+        resolved.set()
+        bounds.fill(using: .sourceIn)
+        NSGraphicsContext.restoreGraphicsState()
+        let result = NSImage(size: size)
+        result.addRepresentation(rep)
+        return result
     }
 
     static func drawText(_ text: String, font: NSFont, in rect: NSRect, color: NSColor?, decoration: NoteIconDecoration) {

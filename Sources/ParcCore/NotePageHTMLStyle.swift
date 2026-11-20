@@ -152,7 +152,7 @@ enum NotePageHTMLStyle {
     border-radius:5px;padding:.05em .35em}
     div.equation{margin:.8em 0;text-align:center;overflow-x:auto}
     div.equation .tex{display:inline-block;padding:.5em 1em;font-size:1.1em}
-    img.equation{height:1.2em;vertical-align:middle}
+    img.equation{vertical-align:middle;max-width:100%}
     div.equation img{max-width:100%}
     table{border-collapse:collapse;margin:.8em 0;font-size:.95em;display:block;overflow-x:auto;max-width:100%}
     th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;vertical-align:top;min-width:4em}

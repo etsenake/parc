@@ -361,13 +361,8 @@ final class NoteLayoutManager: NSLayoutManager {
             let upper = min(max(lower, highlight.range.upperBound), length)
             let range = NSRange(location: lower, length: upper - lower)
             guard range.length > 0, NSIntersectionRange(range, characters).length > 0 else { continue }
-            (highlight.isCurrent ? findCurrentColor : findColor).setFill()
-            let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
-                                    in: container) { rect, _ in
-                let pill = rect.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -1.5, dy: 0)
-                NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
-            }
+            fillRuns(range, storage: storage, container: container, origin: origin,
+                     color: highlight.isCurrent ? findCurrentColor : findColor, horizontal: 1.5, vertical: 1.5, radius: 3)
         }
     }
 
