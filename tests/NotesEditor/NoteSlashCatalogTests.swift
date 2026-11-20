@@ -32,7 +32,7 @@ struct NoteSlashCatalogTests {
                          "linkToNote", "table"],
                "basic blocks follow Notion's order: \(basic)")
         expect(unfiltered.filter { $0.section == .media }.map(\.id) == ["image", "video", "audio", "file", "pdf", "bookmark", "embed"], "media order")
-        expect(unfiltered.filter { $0.section == .advanced }.map(\.id) == ["tableOfContents", "equation", "button", "code", "breadcrumb", "columns2", "columns3", "columns4", "columns5"],
+        expect(unfiltered.filter { $0.section == .advanced }.map(\.id) == ["tableOfContents", "equation", "button", "code", "breadcrumb", "synced", "columns2", "columns3", "columns4", "columns5"],
                "advanced order")
         expect(unfiltered.filter { $0.section == .inline }.map(\.id) == ["mention", "date", "emoji", "inlineEquation"], "inline order")
 

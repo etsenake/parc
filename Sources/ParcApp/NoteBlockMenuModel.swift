@@ -54,6 +54,11 @@ enum NoteBlockAction: Hashable {
     case tableItem(String)
     case editButton
     case unwrapButton
+    case turnIntoSynced
+    case copySynced
+    case goToOriginal
+    case unsync
+    case unsyncAll
 }
 
 struct NoteBlockMenuEntry: Hashable {
@@ -81,6 +86,8 @@ struct NoteBlockMenuContext {
     var supportsBlockLinks = false
     var tableEntries: [NoteBlockMenuEntry] = []
     var columnLimit = 0
+    var canTurnIntoSynced = false
+    var syncedOriginalFound = false
 }
 
 enum NoteBlockMenuModel {
@@ -173,13 +180,15 @@ enum NoteBlockMenuModel {
                                              keywords: ["copy", "clone"], group: 0, action: .duplicate))
             let restyles = blocks.allSatisfy(turnable)
             let media = !restyles && blocks.allSatisfy(showsPDF) ? pdfTurnIntoEntries(for: blocks) : []
-            if restyles || !media.isEmpty || context.columnLimit >= 2 {
+            if restyles || !media.isEmpty || context.columnLimit >= 2 || context.canTurnIntoSynced {
                 result.append(NoteBlockMenuEntry(id: "turn", title: turnIntoTitle, icon: .symbol("arrow.triangle.2.circlepath"),
                                                  keywords: ["convert", "change", "type"] + (media.isEmpty ? [] : ["pdf", "file"]), group: 0,
-                                                 children: media + turnIntoEntries(for: blocks, columns: context.columnLimit, restyles: restyles)))
+                                                 children: media + turnIntoEntries(for: blocks, columns: context.columnLimit, restyles: restyles)
+                                                    + (context.canTurnIntoSynced ? [syncedTurnIntoEntry] : [])))
             }
         }
         if sameKind { result += kindEntries(for: blocks, kind: first.kind, editable: editable, single: single) }
+        if single, first.kind == .synced { result += syncedEntries(for: first, editable: editable, originalFound: context.syncedOriginalFound) }
         if sameKind, first.kind == .table, editable { result += context.tableEntries.map { entry in var copy = entry; copy.group = 1; return copy } }
         if single && context.supportsBlockLinks && linkable(first) {
             result.append(NoteBlockMenuEntry(id: "link", title: "Copy Link to Block", icon: .symbol("link"), shortcut: "⌃⌘L",
@@ -205,6 +214,27 @@ enum NoteBlockMenuModel {
                                isChecked: current.count == 1 && current.contains(option.style), action: .turnInto(option.style))
         } : []
         return styles + columnEntries(limit: columns)
+    }
+
+    static let syncedTurnIntoEntry = NoteBlockMenuEntry(id: "turn.synced", title: "Synced Block", icon: .symbol("arrow.triangle.2.circlepath"),
+                                                        keywords: ["sync", "mirror", "reuse", "shared", "everywhere"], section: turnIntoTitle,
+                                                        action: .turnIntoSynced)
+
+    static func syncedEntries(for block: NoteBlock, editable: Bool, originalFound: Bool) -> [NoteBlockMenuEntry] {
+        var result = [NoteBlockMenuEntry(id: "copySynced", title: "Copy and Sync", icon: .symbol("doc.on.doc"),
+                                         keywords: ["copy", "paste", "reference", "share", "sync"], group: 1, action: .copySynced)]
+        if block.isSyncedCopy {
+            result.append(NoteBlockMenuEntry(id: "goToOriginal", title: "Go to Original", icon: .symbol("arrow.up.forward.square"),
+                                             keywords: ["open", "source", "original"], group: 1, isEnabled: originalFound, action: .goToOriginal))
+            if editable {
+                result.append(NoteBlockMenuEntry(id: "unsync", title: "Unsync", icon: .symbol("scissors"),
+                                                 keywords: ["detach", "stop syncing", "independent", "break"], group: 1, action: .unsync))
+            }
+        } else if editable {
+            result.append(NoteBlockMenuEntry(id: "unsyncAll", title: "Unsync All", icon: .symbol("scissors"),
+                                             keywords: ["detach", "stop syncing", "every copy", "break"], group: 1, action: .unsyncAll))
+        }
+        return result
     }
 
     static func columnEntries(limit: Int) -> [NoteBlockMenuEntry] {

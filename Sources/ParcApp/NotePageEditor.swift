@@ -19,6 +19,7 @@ final class NotePageEditor {
     private(set) var slashMenu: NoteSlashMenuController!
     private(set) var handles: NoteBlockHandleController!
     private(set) var find: NoteFindController!
+    private(set) var synced: NoteSyncedController!
     private(set) lazy var math = NotePageMath(editor: self)
     var onOpenURL: ((URL) -> Void)?
     var onOpenNote: ((URL) -> Void)?
@@ -49,6 +50,7 @@ final class NotePageEditor {
         slashMenu = NoteSlashMenuController(editor: self)
         handles = NoteBlockHandleController(editor: self)
         find = NoteFindController(editor: self)
+        synced = NoteSyncedController(editor: self)
         subscription = session.changes.sink { [weak self] change in self?.sessionDidChange(change) }
         layoutSubscription = canvas.layoutDidChange.sink { [weak self] in self?.canvasDidLayout() }
         emojiSubscription = NoteEmojiLibrary.anyChange.sink { [weak self] library in
@@ -170,6 +172,7 @@ final class NotePageEditor {
     }
 
     func dismissOverlays() {
+        synced.dismiss()
         dismissPasteMenu()
         slashMenu.dismiss(animated: false)
         formatBar.dismiss(animated: false)
@@ -193,10 +196,12 @@ final class NotePageEditor {
         }
         formatBar.selectionDidChange()
         handles.layoutDidChange()
+        synced.sessionDidChange(change)
         onChange?(change)
     }
 
     private func canvasDidLayout() {
+        synced.layoutDidChange()
         formatBar.layoutDidChange()
         handles.layoutDidChange()
         onCanvasLayout?()
@@ -519,6 +524,13 @@ final class NotePageEditor {
 
     @discardableResult
     func copyLink(toBlock id: NoteBlockID) -> Bool {
+        if let url = synced.linkToOriginalBlock(id) {
+            pasteboard.declareTypes([.URL, .string], owner: nil)
+            pasteboard.setString(url.absoluteString, forType: .URL)
+            pasteboard.setString(url.absoluteString, forType: .string)
+            handles.presentToast?(.standard("Copied Link to Block", icon: "link", subLabel: "It points at the original."))
+            return true
+        }
         guard canLinkBlocks, let block = session.page.block(id), NoteBlockMenuModel.linkable(block) else { return false }
         guard let anchor = session.ensureAnchor(for: id) ?? headingSlug(for: id), let url = link(toAnchor: anchor) else {
             handles.presentToast?(.standard("This note is read-only, so its blocks can’t get links."))
@@ -936,14 +948,15 @@ final class NotePageEditor {
     }
 
     @discardableResult
-    func copySelection() -> Bool {
+    func copySelection(keepingSyncedOriginals: Bool = false) -> Bool {
         if let table = selectedTableView {
             table.copyRange(cut: false)
             return true
         }
         let target = session.selection
         guard hasCopyableSelection else { return false }
-        let fragment = session.fragment(of: target)
+        if !keepingSyncedOriginals, !isReadOnly { session.ensureSyncedAnchors(within: targetBlocks) }
+        let fragment = synced.clipboardBlocks(session.fragment(of: target), keepingOriginals: keepingSyncedOriginals)
         guard !fragment.isEmpty else { return false }
         var inline = false
         if case .text = target { inline = true }
@@ -962,7 +975,7 @@ final class NotePageEditor {
             table.copyRange(cut: true)
             return true
         }
-        guard copySelection() else { return false }
+        guard copySelection(keepingSyncedOriginals: true) else { return false }
         dismissOverlaysForStructure()
         session.deleteSelection()
         return true
@@ -988,7 +1001,8 @@ final class NotePageEditor {
             insertPlain(string)
         case .blocks:
             guard let archive = reading.archive else { return false }
-            pasteBlocks(NoteClipboard.rebase(archive, into: environment), inline: archive.inline)
+            pasteBlocks(synced.pastedBlocks(NoteClipboard.rebase(archive, into: environment), into: session.selection),
+                        inline: archive.inline)
         case .files:
             let result = NoteClipboard.blocks(forFiles: reading.files, environment: environment)
             pasteBlocks(result.blocks, inline: false)

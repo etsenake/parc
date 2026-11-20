@@ -232,15 +232,20 @@ final class NotePageCanvasView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        editor?.handles.pointerMoved(to: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        editor?.handles.pointerMoved(to: point)
+        editor?.synced.pointerMoved(to: point)
     }
 
     override func mouseEntered(with event: NSEvent) {
-        editor?.handles.pointerMoved(to: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        editor?.handles.pointerMoved(to: point)
+        editor?.synced.pointerMoved(to: point)
     }
 
     override func mouseExited(with event: NSEvent) {
         editor?.handles.pointerExited()
+        editor?.synced.pointerExited()
     }
 
     override func mouseDown(with event: NSEvent) {

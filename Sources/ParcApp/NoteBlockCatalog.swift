@@ -21,7 +21,7 @@ enum NoteCatalogBlock: Hashable {
     case text, heading(Int), toggleHeading(Int), bulleted, numbered, todo, toggle, quote, callout, divider
     case newNote, linkToNote, table
     case image, video, audio, file, pdf, bookmark, embed
-    case tableOfContents, breadcrumb, equation, button, code, columns(Int)
+    case tableOfContents, breadcrumb, equation, button, code, columns(Int), synced
 
     static let turnIntoTargets: [NoteCatalogBlock] = [
         .text, .heading(1), .heading(2), .heading(3), .heading(4), .bulleted, .numbered, .todo, .toggle,
@@ -54,6 +54,7 @@ enum NoteCatalogBlock: Hashable {
         case .button: return .button
         case .code: return .code
         case .columns: return .columns
+        case .synced: return .synced
         }
     }
 
@@ -79,6 +80,7 @@ enum NoteCatalogBlock: Hashable {
         if case .columns(let count) = self {
             return NoteBlock(.columns, children: (0..<min(max(count, 2), 5)).map { _ in NoteBlock(.column, children: [.paragraph()]) })
         }
+        if self == .synced { return NoteBlock(.synced, children: [.paragraph()]) }
         return NoteBlock.paragraph().converted(to: kind, configure: configure)
     }
 
@@ -134,6 +136,7 @@ struct NoteCatalogContext: Hashable {
     enum Mode: Hashable { case slash, plus, turnInto }
     var mode: Mode
     var allowsColumns = true
+    var allowsSynced = true
     var allowsNewNote = true
     var allowsActions = true
 
@@ -177,6 +180,7 @@ enum NoteBlockCatalog {
         let base = items.filter { item in
             switch item.effect {
             case .block(.columns): return context.allowsColumns
+            case .block(.synced): return context.allowsSynced
             case .block(.newNote): return context.allowsNewNote
             case .action: return context.allowsActions
             default: return true
@@ -368,6 +372,9 @@ enum NoteBlockCatalog {
                   aliases: ["```", "snippet", "pre"], keywords: ["program", "syntax", "script", "monospace"], .code),
             block("breadcrumb", "Breadcrumb", "Where this note lives, folder by folder.", .advanced, .symbol("signpost.right"),
                   aliases: ["bread", "crumbs", "path", "location"], keywords: ["folder", "where", "navigation", "trail"], .breadcrumb),
+            block("synced", "Synced block", "Paste it anywhere, edit it everywhere.", .advanced, .symbol("arrow.triangle.2.circlepath"),
+                  aliases: ["sync", "synced", "synced block", "mirror"], keywords: ["transclusion", "reuse", "shared", "copy", "everywhere"],
+                  .synced),
         ]
         let counts = ["two", "three", "four", "five"]
         let blurbs = ["Put blocks side by side.", "Three blocks, shoulder to shoulder.", "Four columns, getting cosy.", "Five columns. Bold move."]
@@ -746,6 +753,8 @@ private extension NoteCatalogOutcome {
             result.selection = .caret(NotePosition(id, 0, field: .cell(row: 0, column: 0)))
         case .columns:
             if let first = block.children.first?.children.first { result.selection = .caret(NotePosition(first.id, 0)) }
+        case .synced:
+            if let first = block.children.first { result.selection = .caret(NotePosition(first.id, 0)) }
         case .equation:
             result.selection = .blocks([id])
             result.activate = id

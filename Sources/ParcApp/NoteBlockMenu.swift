@@ -132,9 +132,13 @@ final class NoteBlockMenuController: NSObject {
         let page = editor.session.page
         let top = page.topLevelSelection(ids)
         let blocks = top.compactMap { page.block($0) }
-        let context = NoteBlockMenuContext(blocks: blocks, isReadOnly: editor.isReadOnly, canMoveToNotes: canMoveToNotes,
+        var context = NoteBlockMenuContext(blocks: blocks, isReadOnly: editor.isReadOnly, canMoveToNotes: canMoveToNotes,
                                            supportsBlockLinks: editor.canLinkBlocks, tableEntries: Self.tableEntries(for: blocks),
                                            columnLimit: editor.session.columnSplitLimit(top))
+        context.canTurnIntoSynced = !editor.isPlainText && page.canTurnIntoSynced(top)
+        if blocks.count == 1, blocks[0].kind == .synced {
+            context.syncedOriginalFound = editor.synced.info(for: blocks[0].id).map { !$0.isMissing } ?? false
+        }
         let available = NoteBlockMenuModel.entries(for: context)
         guard !blocks.isEmpty, !available.isEmpty else { return }
         targets = top
@@ -593,6 +597,26 @@ final class NoteBlockMenuController: NSObject {
             dismiss(animated: true, restore: false)
             session.unwrapButton(live[0])
             if let caret = session.selection.caret { editor.focus(caret) } else { editor.restoreFocus() }
+            return
+        case .turnIntoSynced:
+            dismiss(animated: true, restore: false)
+            editor.synced.turnIntoSynced(live)
+            return
+        case .copySynced:
+            dismiss(animated: true, restore: true)
+            editor.synced.copyAndSync(live[0])
+            return
+        case .goToOriginal:
+            dismiss(animated: true, restore: true)
+            editor.synced.goToOriginal(live[0])
+            return
+        case .unsync:
+            dismiss(animated: true, restore: false)
+            editor.synced.unsync(live[0])
+            return
+        case .unsyncAll:
+            dismiss(animated: true, restore: false)
+            editor.synced.unsyncAll(live[0])
             return
         }
         dismiss(animated: true, restore: true)

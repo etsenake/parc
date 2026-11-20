@@ -909,6 +909,7 @@ final class NoteSlashMenuController {
         var context = plus ? NoteCatalogContext.plus : .slash
         context.allowsColumns = page.parent(of: block) == nil
         context.allowsNewNote = editor.environment.documentURL != nil && !editor.isTemplateEditor
+        context.allowsSynced = !editor.isPlainText && !editor.isTemplateEditor && page.syncedSite(containing: block) == nil
         return context
     }
 
@@ -1214,6 +1215,19 @@ final class NoteBlockPreviewCard: NSView {
                 string.draw(at: NSPoint(x: box.minX + 10, y: lineY))
                 lineY += 19
             }
+        case .synced:
+            let frame = NSRect(x: x - 6, y: y + 4, width: width + 12, height: rect.height - 8)
+            NoteTheme.syncedAccent.setStroke()
+            let border = NSBezierPath(roundedRect: frame, xRadius: 6, yRadius: 6)
+            border.lineWidth = 1.5
+            border.stroke()
+            let label = NSAttributedString(string: "↙ 2 other notes", attributes: [.font: NoteTheme.nunitoBold(10.5),
+                                                                                   .foregroundColor: NoteTheme.syncedAccent])
+            let size = label.size()
+            NoteTheme.menuFill.setFill()
+            NSBezierPath(rect: NSRect(x: frame.minX + 8, y: frame.minY - size.height / 2, width: size.width + 8, height: size.height)).fill()
+            label.draw(at: NSPoint(x: frame.minX + 12, y: frame.minY - size.height / 2))
+            for (row, fraction) in ([0.82, 0.64, 0.74] as [CGFloat]).enumerated() { bar(x + 4, frame.minY + 16 + CGFloat(row) * 17, (width - 8) * fraction) }
         case .columns(let count):
             let gap: CGFloat = 8
             let column = (width - gap * CGFloat(count - 1)) / CGFloat(count)
