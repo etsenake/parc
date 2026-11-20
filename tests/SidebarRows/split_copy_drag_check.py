@@ -149,8 +149,10 @@ expect(update.count("return operation") == 2 and "return .move" not in update
        "the drop reports copy, so AppKit shows the green-plus copy pointer, or move")
 expect("override func wantsPeriodicDraggingUpdates() -> Bool { true }" in sidebar,
        "periodic drag updates re-read Option, so the copy pointer follows Option pressed or released mid-drag")
-expect("let children = SidebarHierarchy.children(in: folder, state: state)" in update
-       and "before = copying ? children.first : children.first { !session.items.contains($0) }" in update,
+outline = body(sidebar, "private func outlineDrop(")
+expect("outlineDrop(at: point, state: state, spaceID: spaceID, moving: copying ? [] : session.items)" in update
+       and "let children = SidebarHierarchy.children(in: folder, state: state)" in outline
+       and "before = children.first { !moving.contains($0) }" in outline,
        "a folder-middle copy lands at the very top of the folder")
 pinned_header = body(sidebar, "private func pinnedHeaderDrop(")
 expect("moving: copying ? [] : session.items" in pinned_header
@@ -170,8 +172,8 @@ expect("adjacentCopies(" in duplicate and "opensEverySplit: true" in duplicate, 
 reload = body(store, "func copySidebarSplitsReloadingOriginals(")
 expect(reload.index("withRetiredPages(originals") < reload.index("self.commitProfileSettings(value.state)"),
        "the originals' pages are retired with consent before the copy is saved")
-expect("|| (copy.wholeSplits && copy.tabs.allSatisfy({ InternalPage(urlString: $0.savedURL) == nil }))" in place,
-       "only whole web splits copy into a Space that keeps separate data; a Note or Easel alias never does")
+expect("|| (copy.wholeSplits && copy.tabs.allSatisfy({ InternalPage(urlString: $0.savedURL)?.easelID == nil }))" in place,
+       "only whole web or note splits copy into a Space that keeps separate data; an Easel alias never does")
 expect("guard copy.wholeSplits, placed(holding: false) != nil" in reload, "the separate-data reload path is for whole splits only")
 expect("now.matchesPlacement(of: copy)" in copy and "self.resolveSidebarCopyDestinations?(now.tabs)" in copy,
        "after the sheet the copy is rebuilt by placement and its current sources resolved")

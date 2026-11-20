@@ -1164,7 +1164,8 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     var onNewFolder: (() -> Void)?
     var onNewEasel: (() -> Void)?
     var onNewNote: (() -> Void)?
-    var onOpenNoteFiles: (([URL]) -> Bool)?
+    var onOpenNoteFiles: (([URL], SidebarNotePlacement?) -> Bool)?
+    private var noteDropPlacement: SidebarNotePlacement?
     var onNewSplit: (() -> Void)?
     var plusMenuCanCreateEasel: () -> Bool = { false }
     var plusMenuCanCreateNote: () -> Bool = { false }
@@ -4703,6 +4704,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
     private func clearDrop() {
         dropProposal = nil; windowDropAction = nil; copyDropAction = nil; dockDropAction = nil; dropFeedback.targetRect = nil
+        noteDropPlacement = nil
         favoritesEmptyState.showsDrop(false)
     }
     private func admitDrop(_ session: SidebarMoveSession, to destination: SidebarContainerLocation,
@@ -4780,14 +4782,29 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
     private func updateDrop(_ sender: NSDraggingInfo) -> NSDragOperation {
         springCandidate = nil; springPinnedCandidate = nil
-        if noteFiles(sender) != nil {
-            clearDrop(); updateSpringLoading(nil); updatePinnedSpringLoading(nil)
-            return .copy
+        if let files = noteFiles(sender) {
+            updatePinnedSpringLoading(nil)
+            let operation = proposeNoteDrop(sender, files: files)
+            updateSpringLoading(springCandidate)
+            return operation
         }
         let operation = proposeDrop(sender)
         updateSpringLoading(operation.isEmpty ? nil : springCandidate)
         updatePinnedSpringLoading(operation.isEmpty ? nil : springPinnedCandidate)
         return operation
+    }
+    private func proposeNoteDrop(_ sender: NSDraggingInfo, files: [URL]) -> NSDragOperation {
+        clearDrop()
+        let point = convert(sender.draggingLocation, from: nil)
+        guard !isPrivateBrowsing, !isSpaceManagement, scroll.frame.contains(point),
+              let state = hierarchyState, let spaceID = activeSpaceID,
+              let profileID = state.spaces.first(where: { $0.id == spaceID })?.profileID,
+              SidebarNotePlacement.opensNewTab(files, state: state, profileID: profileID) else { return .copy }
+        autoscrollDrop(at: point)
+        guard let outline = outlineDrop(at: point, state: state, spaceID: spaceID, moving: []) else { return .copy }
+        noteDropPlacement = SidebarNotePlacement(destination: outline.destination, before: outline.before)
+        presentOutlineDrop(outline, state: state)
+        return .copy
     }
     private var springPinnedCandidate: UUID?
     private func updatePinnedSpringLoading(_ spaceID: UUID?) {
@@ -4883,20 +4900,39 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             return target
         }
         guard scroll.frame.contains(point) else { return [] }
+        autoscrollDrop(at: point)
+        if let admitted = pinnedHeaderDrop(session, at: point, copying: copying, state: state, spaceID: spaceID) {
+            return admitted ? operation : []
+        }
+        guard let outline = outlineDrop(at: point, state: state, spaceID: spaceID, moving: copying ? [] : session.items) else { return [] }
+        let destination = outline.destination, before = outline.before
+        guard admitDrop(session, to: destination, before: before, copying: copying) else { return [] }
+        dropProposal = (session, destination, before)
+        presentOutlineDrop(outline, state: state)
+        return operation
+    }
+    private struct SidebarOutlineDrop {
+        let destination: SidebarContainerLocation
+        let before: SidebarItemReference?
+        let feedback: NSRect
+        let insertion: Bool
+        let collapsedFolder: UUID?
+    }
+    private func autoscrollDrop(at point: NSPoint) {
         let clip = scroll.contentView
         let offset: CGFloat = point.y < scroll.frame.minY + 20 ? -8 : (point.y > scroll.frame.maxY - 20 ? 8 : 0)
         if offset != 0 {
             let y = min(max(0, clip.bounds.origin.y + offset), max(0, list.bounds.height - clip.bounds.height))
             clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: y)); scroll.reflectScrolledClipView(clip)
         }
+    }
+    private func outlineDrop(at point: NSPoint, state: BrowserState, spaceID: UUID,
+                             moving: [SidebarItemReference]) -> SidebarOutlineDrop? {
         var destination: SidebarContainerLocation?
         var before: SidebarItemReference?
         var feedback: NSRect?
         var insertion = true
         var onCollapsedFolder: UUID?
-        if let admitted = pinnedHeaderDrop(session, at: point, copying: copying, state: state, spaceID: spaceID) {
-            return admitted ? operation : []
-        }
         let listEnd = isSpaceManagement && pinnedEnd == nil
             ? list.rows.last.map { convert($0.frame, from: list).maxY - SidebarChromeLayout.tablistIntercellSpacing / 2 } : nil
         let pinnedBottom = pinnedEnd.map { convert($0.bounds, from: $0).midY } ?? listEnd ?? scroll.frame.minY
@@ -4921,7 +4957,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 let folder = SidebarContainerLocation(spaceID: spaceID, folderID: id, section: .pinned)
                 destination = folder
                 let children = SidebarHierarchy.children(in: folder, state: state)
-                before = copying ? children.first : children.first { !session.items.contains($0) }
+                before = children.first { !moving.contains($0) }
                 feedback = rect; insertion = false
                 if state.folders.first(where: { $0.id == id })?.isExpanded == false { onCollapsedFolder = id }
             } else {
@@ -4959,16 +4995,18 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                 feedback = NSRect(x: scroll.frame.minX + 5, y: point.y, width: scroll.frame.width - 10, height: 2)
             }
         }
-        guard let destination, let feedback else { return [] }
-        guard admitDrop(session, to: destination, before: before, copying: copying) else { return [] }
-        dropProposal = (session, destination, before)
-        let siblings = SidebarHierarchy.children(in: destination, state: state)
-        let index = insertion ? before.flatMap { siblings.firstIndex(of: $0) } ?? siblings.count : -1
+        guard let destination, let feedback else { return nil }
+        return SidebarOutlineDrop(destination: destination, before: before, feedback: feedback, insertion: insertion,
+                                  collapsedFolder: onCollapsedFolder)
+    }
+    private func presentOutlineDrop(_ outline: SidebarOutlineDrop, state: BrowserState) {
+        let insertion = outline.insertion
+        let siblings = SidebarHierarchy.children(in: outline.destination, state: state)
+        let index = insertion ? outline.before.flatMap { siblings.firstIndex(of: $0) } ?? siblings.count : -1
         reorderFeedback.propose(index: index)
-        dropFeedback.isInsertion = insertion; dropFeedback.targetRect = feedback.intersection(scroll.frame)
+        dropFeedback.isInsertion = insertion; dropFeedback.targetRect = outline.feedback.intersection(scroll.frame)
         if !insertion { dropFeedback.targetCornerRadius = SidebarRowAppearance.cornerRadius }
-        springCandidate = onCollapsedFolder
-        return operation
+        springCandidate = outline.collapsedFolder
     }
     override func wantsPeriodicDraggingUpdates() -> Bool { true }
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { updateDrop(sender) }
@@ -4988,8 +5026,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { !updateDrop(sender).isEmpty }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         if let files = noteFiles(sender) {
+            let placement = noteDropPlacement
             clearDrop(); updateSpringLoading(nil); updatePinnedSpringLoading(nil)
-            return onOpenNoteFiles?(files) ?? false
+            if placement != nil { sprungFolders = []; sprungPinned = nil }
+            return onOpenNoteFiles?(files, placement) ?? false
         }
         guard !updateDrop(sender).isEmpty, let (session, destination, before) = dropProposal else { return false }
         let external = windowDropAction, copy = copyDropAction, dock = dockDropAction

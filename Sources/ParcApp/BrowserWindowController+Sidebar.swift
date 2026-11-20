@@ -259,7 +259,7 @@ extension BrowserWindowController {
         sidebar.onNewFolder = { [weak self] in self?.createFolder() }
         sidebar.onNewEasel = { [weak self] in self?.createEaselFromPlusMenu() }
         sidebar.onNewNote = { [weak self] in self?.createNote() }
-        sidebar.onOpenNoteFiles = { [weak self] files in self?.openDroppedNoteFiles(files) ?? false }
+        sidebar.onOpenNoteFiles = { [weak self] files, placement in self?.openDroppedNoteFiles(files, placement: placement) ?? false }
         sidebar.onNewSplit = { [weak self] in self?.toggleSplit() }
         sidebar.plusMenuCanCreateEasel = { [weak self] in self?.canCreateNote ?? false }
         sidebar.plusMenuCanCreateNote = { [weak self] in self?.canCreateNote ?? false }

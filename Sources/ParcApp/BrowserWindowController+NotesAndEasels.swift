@@ -18,17 +18,20 @@ extension BrowserWindowController {
     }
     @discardableResult
     func openNote(url: URL, inSplit: Bool = false) -> Bool {
-        guard let file = InternalPage.noteFile(url) else { showNoteError(NoteFileError.notANote); return true }
-        guard inSplit ? canCreateNoteInSplit : canCreateNote else { return false }
-        guard FileManager.default.fileExists(atPath: file.path) else { showNoteError(NoteFileError.missing); return true }
+        presentNote(url: url, inSplit: inSplit).handled
+    }
+    private func presentNote(url: URL, inSplit: Bool = false) -> (handled: Bool, tabID: UUID?) {
+        guard let file = InternalPage.noteFile(url) else { showNoteError(NoteFileError.notANote); return (true, nil) }
+        guard inSplit ? canCreateNoteInSplit : canCreateNote else { return (false, nil) }
+        guard FileManager.default.fileExists(atPath: file.path) else { showNoteError(NoteFileError.missing); return (true, nil) }
         closeLibrary(restoreFocus: false)
         let title = NoteFileSession.session(for: file)?.title ?? file.deletingPathExtension().lastPathComponent
         var opened: UUID?
         performWindowCommand { opened = store.openNote(url: file, title: title, inSplit: inSplit) }
         focusSelectedLocalContent()
-        return opened != nil
+        return (opened != nil, opened)
     }
-    func openDroppedNoteFiles(_ files: [URL]) -> Bool {
+    func openDroppedNoteFiles(_ files: [URL], placement: SidebarNotePlacement? = nil) -> Bool {
         guard !files.isEmpty else { return false }
         if isPrivateBrowsing || isPopupWindow {
             guard let handoff = onOpenNoteInRegularWindow else { return false }
@@ -36,7 +39,29 @@ extension BrowserWindowController {
             return true
         }
         guard canCreateNote else { return false }
-        return files.reduce(false) { opened, file in openNote(url: file) || opened }
+        let profileID = activeProfileID
+        let open = Set(store.state.tabs.lazy.filter { $0.archivedAt == nil && $0.profileID == profileID }.map(\.id))
+        var handled = false
+        var arrivals: [UUID] = []
+        for file in files {
+            let result = presentNote(url: file)
+            handled = result.handled || handled
+            if let id = result.tabID, !open.contains(id), !arrivals.contains(id) { arrivals.append(id) }
+        }
+        if let placement, !arrivals.isEmpty { placeDroppedNotes(arrivals, at: placement) }
+        return handled
+    }
+    private func placeDroppedNotes(_ ids: [UUID], at placement: SidebarNotePlacement) {
+        let items = ids.map(SidebarItemReference.tab)
+        guard placement.destination.spaceID == activeSpaceID, !isClosing,
+              placement.before.map({ !items.contains($0) }) ?? true,
+              let expected = SidebarHierarchySnapshot(state: store.state, spaceID: activeSpaceID, profileID: activeProfileID,
+                                                      includesFavorites: true) else { return }
+        do {
+            try store.moveSidebarItems(items, to: placement.destination, before: placement.before, expected: expected)
+        } catch {
+            showError(error)
+        }
     }
     func createNote(inSplit: Bool = false) {
         guard inSplit ? canCreateNoteInSplit : canCreateNote else { return }
