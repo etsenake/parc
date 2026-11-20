@@ -57,10 +57,12 @@ final class HistorySwipeForwarder: NSObject, PCNativeHistorySwipeHandler,
     func historySwipeSource(_ source: PCNativeHistorySwipeSource, pageScrollBeganSynthetic synthetic: Bool,
                             momentum: Bool) {
         driver.receive(.pageScroll(.began(synthetic: synthetic, momentum: momentum)))
+        EmbeddedPagePool.pageScrollBegan(momentum: momentum, from: source)
     }
 
     func historySwipeSource(_ source: PCNativeHistorySwipeSource, pageScrollUpdatedConsumed consumed: Bool) {
         driver.receive(.pageScroll(.updated(consumed: consumed)))
+        EmbeddedPagePool.pageScrollUpdated(consumed: consumed, from: source)
     }
 
     func historySwipeSource(_ source: PCNativeHistorySwipeSource, overscrollPropagatesX propagates: Bool) {

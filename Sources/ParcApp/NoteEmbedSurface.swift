@@ -28,6 +28,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         }
     }
     var selected = false { didSet { if selected != oldValue { refreshRing(animated: true) } } }
+    var scrollLatched = false
     private let content = NoteEmbedPageClip()
     private let ring = CALayer()
     private let headerRule = CALayer()
@@ -242,8 +243,17 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
-        if !interactive, status == nil, pageRect.contains(local) { return nil }
+        if status == nil, pageRect.contains(local) {
+            let admits = NSApp.currentEvent?.type == .scrollWheel ? scrollLatched : interactive
+            if !admits { return nil }
+        }
         return super.hitTest(point)
+    }
+
+    func takesPageInput(at windowPoint: NSPoint) -> Bool {
+        guard !showsRecovery, !isHiddenOrHasHiddenAncestor, let page = browser.nativePage,
+              !page.isClosed, page.embeddedOwnerValid else { return false }
+        return pageRect.contains(convert(windowPoint, from: nil))
     }
 
     private func navigate(_ action: PCNativeNavigationAction) {

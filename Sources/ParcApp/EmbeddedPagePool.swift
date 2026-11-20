@@ -354,6 +354,14 @@ class EmbeddedPagePool: NSObject, PCBrowserViewDelegate {
             if gate.isDisposed { disposeAfterClosure() }
         }
     }
+    static func pageScrollBegan(momentum: Bool, from source: PCNativeHistorySwipeSource) {
+        for pool in liveOwners { pool.pageScrollBegan(momentum: momentum, from: source) }
+    }
+    static func pageScrollUpdated(consumed: Bool, from source: PCNativeHistorySwipeSource) {
+        for pool in liveOwners { pool.pageScrollUpdated(consumed: consumed, from: source) }
+    }
+    func pageScrollBegan(momentum: Bool, from source: PCNativeHistorySwipeSource) {}
+    func pageScrollUpdated(consumed: Bool, from source: PCNativeHistorySwipeSource) {}
     func browserView(_ view: PCBrowserView, addContextImageToEasel image: PCNativeContextImage) {
         guard selectedPage === view.nativePage, image.isValid, validOwner() else { return }
         onContextImage?(view, image)
