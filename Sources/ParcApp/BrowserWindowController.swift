@@ -1259,6 +1259,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, canHandlePeekEscapeFrom page: PCNativePage) -> Bool {
+        if browser === nativeBinding, activePeek == nil, selectedNativePage() === page,
+           let pool = NoteEmbeddedPages.escapeOwner(for: page) { return pool.canLeave(from: page) }
         guard browser === nativeBinding, let peek = activePeek,
               peek.page === page, presentedPeek(for: page) === peek,
               selectedNativePage() === page, PCNativeBrowserApplication.owner(of: page) === browser,
@@ -1272,6 +1274,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, handlePeekEscapeFrom page: PCNativePage,
                        prefersConfirmation: Bool) {
+        if browser === nativeBinding, activePeek == nil, selectedNativePage() === page,
+           let pool = NoteEmbeddedPages.escapeOwner(for: page) {
+            pool.pageEscape(page, prefersConfirmation: prefersConfirmation)
+            return
+        }
         guard nativeBrowser(browser, canHandlePeekEscapeFrom: page),
               let peek = activePeek, peek.page === page else { return }
         peek.rendererEscape(prefersConfirmation: prefersConfirmation)

@@ -36,8 +36,10 @@ opened while a private window is in front opens in a regular window. Cloud
 sharing, collaboration and vendor services are excluded.
 
 Embed blocks hold a live web page in the note's Profile, with its sign-ins, at a
-height people drag to taste. Click a page to use it; until then the note keeps
-scrolling past it. The pages nap after four hours out of sight, follow the tab
+height people drag to taste. The first click on a page already reaches it and
+moves the keyboard into it; Escape or the check mark returns to the note.
+Scrolling that starts over a page scrolls the page and carries on into the note
+once the page hits its edge. The pages nap after four hours out of sight, follow the tab
 between windows and ask before leaving, like an Easel's pages ([embedded pages](embedded-pages.md#live-embeds-in-notes)).
 
 ## How the editor is built
@@ -72,11 +74,14 @@ to five) and a table of contents. Inline text can be bold, italic, underlined,
 struck, code, a link, coloured or highlighted in Notion's nine colours, and can
 hold note mentions, dates and reminders, link mentions and inline equations.
 
-Blocks can nest under list items, to-dos, toggles, toggle headings, quotes,
-callouts and columns. Plain paragraphs and headings can't hold children: Markdown
-can only express that as a code block, so Tab on a paragraph after another
-paragraph does nothing, and Shift-Tab won't strand following siblings under text.
-This is the one deliberate difference from Notion's editing.
+Any text block can hold nested blocks, as in Notion: paragraphs, headings, list
+items, to-dos, toggles, quotes and callouts, plus columns. Tab on a line after a
+paragraph nests it there, Shift-Tab takes the lines after it along as its
+children, and dragging a block right of a paragraph or heading drops it inside.
+Plain headings always show their children; only toggles fold. Lists, quotes,
+callouts and toggles save their nesting the usual Markdown way, and text blocks
+save theirs in an [indent fence](notes-format.md#nested-blocks-under-text).
+Plain-text notes stay flat, since a `.txt` file can't keep levels.
 
 ## Writing
 

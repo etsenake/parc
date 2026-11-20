@@ -62,13 +62,27 @@ edge. The height is stored as `height` in the block's
 [parc comment](notes-format.md#block-colours-and-other-block-settings); the default
 height writes nothing. Locked notes keep their pages but hide the handle.
 
-Clicking a page activates it, as selecting a browser object does in an Easel: a
-ring appears, the page takes clicks, keys and scrolling, and becomes the
-window's selected page. Before that, scrolling moves the note. A click anywhere
-else or the header's check mark ends it; switching tabs or moving the note to
-another window pauses it until the note is back. Note shortcuts stay out of a
-focused page: Find, Find Next, Find Previous and Use Selection for Find search
-the page with its own find bar, as in an Easel, and Find and Replace is off.
+Unlike an Easel, where the first click only selects a browser object so it can
+be moved, a note page takes its first click. The note pool's mouse-down monitor
+activates the page under the pointer before the window delivers the click, so a
+ring appears, keyboard focus moves into the page, it becomes the window's
+selected page and the same click reaches the link, button or player. Easels
+keep their select-first rule. A click anywhere else, the header's check mark or
+Escape ends it; switching tabs or moving the note to another window pauses it
+until the note is back. Escape comes from the engine's unhandled-Escape route:
+an Escape the page doesn't use goes back to the note, while one the page uses
+or one typed in a page field needs a second press within a second.
+
+Scrolling follows the browser's chaining rule. A gesture that starts over the
+note scrolls the note, even when a page slides under the pointer. A gesture or
+wheel run that starts over a page, active or not, scrolls that page. When the
+page reports a vertical scroll step it couldn't use (it hit its edge or can't
+scroll), the rest of the gesture, momentum included, scrolls the note; a page
+that handles the wheel itself, like a map, keeps it. The decision is
+`NoteEmbedScrollLatch`, fed by the page's scroll acknowledgements through the
+history-swipe handler. Note shortcuts stay out of a focused page: Find, Find
+Next, Find Previous and Use Selection for Find search the page with its own find
+bar, as in an Easel, and Find and Replace is off.
 
 Navigation inside a note embed doesn't rewrite the file. Deleting the block
 closes its page with the page's usual leave-page check; if someone chooses to
@@ -126,5 +140,6 @@ The Easel pool component exercises injected engines and disposable document
 stores, including cancellation, ownership rejection, rollback and retirement;
 it opens windows, so it runs only where that is allowed.
 `bash scripts/test-notes-editor.sh EmbeddedPageLifecycle` covers the owner
-gate and the sleep rule, and `NoteEmbedModel` covers height clamping, the embed
-players and the `height` round trip.
+gate and the sleep rule, `NoteEmbedModel` covers height clamping, the embed
+players and the `height` round trip, and `NoteEmbedInput` covers first-click
+activation, scroll latching and chaining, and the Escape confirmation.

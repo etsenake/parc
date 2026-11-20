@@ -86,6 +86,15 @@ final class NoteEmbeddedPages: EmbeddedPagePool {
         pool.removeMonitors()
         pool.disposeAfterClosure()
         notifyBlocks(of: editor)
+        pool.closeRemainingPages()
+    }
+
+    private func closeRemainingPages() {
+        let open = pages
+        guard !open.isEmpty else { return }
+        PCNativeBrowserApplication.requestClosePages(open, shouldCommit: { true }, completion: { _ in
+            MainActor.assumeIsolated { self.releaseIfIdle() }
+        })
     }
 
     static func escapeOwner(for page: PCNativePage) -> NoteEmbeddedPages? {
