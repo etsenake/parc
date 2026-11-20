@@ -83,7 +83,7 @@ final class NoteLibrary {
 
     private static func invalidateLibraries(containing url: URL) {
         for library in Array(libraries.values) + Array(shallowLibraries.values) where library.contains(url) {
-            library.folderChanged(paths: [], broad: true)
+            library.folderChanged(paths: [url.path], broad: false)
         }
     }
 
@@ -112,17 +112,22 @@ final class NoteLibrary {
     }
 
     func createNote(title: String? = nil) throws -> URL {
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Self.createNote(in: folder, title: title)
+    }
+
+    static func createNote(in folder: URL, title: String?) throws -> URL {
+        let directory = NoteFilePaths.canonical(folder)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var base = NoteFileNaming.sanitizedTitle(title ?? "")
         if base.isEmpty { base = NoteFileNaming.untitled }
-        for candidate in NoteFileNaming.candidates(in: folder, base: base, pathExtension: "md").prefix(10_000) {
+        for candidate in NoteFileNaming.candidates(in: directory, base: base, pathExtension: "md").prefix(10_000) {
             if NoteFilePaths.itemExists(candidate) { continue }
             do {
                 try Data().write(to: candidate, options: .withoutOverwriting)
             } catch CocoaError.fileWriteFileExists {
                 continue
             }
-            folderChanged(paths: [candidate.path], broad: false)
+            invalidateLibraries(containing: candidate)
             return candidate
         }
         throw NoteFileError.nameTaken(base)

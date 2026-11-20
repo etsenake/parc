@@ -17,6 +17,7 @@ struct NoteFileEnvironmentTests {
             try importingData()
             linking()
             try searching()
+            try creating()
             print("NoteFileEnvironmentTests passed")
         }
     }
@@ -140,5 +141,28 @@ struct NoteFileEnvironmentTests {
         NoteFileTestSupport.write("", to: folder.appendingPathComponent("Loose/Nested/Three.md"))
         let looseEnv = NoteFileEnvironment(documentURL: loose, isPlainText: false)
         expectEqual(looseEnv.searchNotes("", limit: 10).map(\.title), ["Two"], "notes outside a library search their own folder only")
+    }
+
+    static func creating() throws {
+        let root = folder.appendingPathComponent("Created", isDirectory: true)
+        let library = NoteLibrary.shared(folder: root)
+        let page = try library.createNote(title: "Page")
+        _ = try library.notes()
+        var heard = 0
+        let watch = library.changes.sink { heard += 1 }
+        let env: NoteEnvironment = NoteFileEnvironment(documentURL: page, isPlainText: false)
+        let made = try env.createNote(titled: "Ideas: next/steps")
+        expectEqual(made, root.appendingPathComponent("Ideas- next-steps.md"), "new notes land beside the page with tidy names")
+        expectEqual(NoteFileTestSupport.bytes(made), [], "and start empty")
+        expectEqual(try env.createNote(titled: "Ideas: next/steps").lastPathComponent, "Ideas- next-steps 2.md", "taken names count up")
+        expectEqual(try env.createNote(titled: "  ").lastPathComponent, "Untitled.md", "blank titles are untitled")
+        expect(heard >= 3, "the library hears about each new note")
+        let titles = try library.notes().map(\.title)
+        expect(titles.contains("Ideas- next-steps 2"), "and lists it right away")
+        expectEqual(env.linkTarget(for: made), "Ideas-%20next-steps.md", "new notes link relatively")
+        let detached: NoteEnvironment = NoteDetachedEnvironment(documentURL: page)
+        expectEqual(try detached.createNote(titled: "Detached").lastPathComponent, "Detached.md", "the default works for any environment")
+        expectThrows(NoteFileError.missing, "no document, no folder") { _ = try NoteDetachedEnvironment().createNote(titled: "x") }
+        watch.cancel()
     }
 }
