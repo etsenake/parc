@@ -305,7 +305,7 @@ struct NoteTextRenderingTests {
         expectEqual(label(NoteDateMention(year: 2026, month: 11, day: 20)), "Today", "today reads as Today")
         expectEqual(label(NoteDateMention(year: 2026, month: 11, day: 21)), "Tomorrow", "tomorrow reads as Tomorrow")
         expectEqual(label(NoteDateMention(year: 2026, month: 11, day: 19)), "Yesterday", "yesterday reads as Yesterday")
-        expectEqual(label(NoteDateMention(year: 2026, month: 12, day: 25)), "December 25", "this year drops the year")
+        expectEqual(label(NoteDateMention(year: 2026, month: 12, day: 25)), "December 25, 2026", "dates spell out the year")
         expectEqual(label(NoteDateMention(year: 2027, month: 1, day: 12)), "January 12, 2027", "other years keep it")
         expectEqual(label(NoteDateMention(year: 2026, month: 11, day: 21, hour: 15, minute: 5)), "Tomorrow 3:05 PM", "times show")
         expect(NoteAtomRendering.isOverdue(NoteDateMention(year: 2026, month: 11, day: 20, hour: 9, minute: 0), now: now, calendar: calendar),

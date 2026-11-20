@@ -217,42 +217,15 @@ enum NoteAtomRendering {
     }
 
     static func date(of mention: NoteDateMention, calendar: Calendar = .current) -> Date? {
-        calendar.date(from: DateComponents(year: mention.year, month: mention.month, day: mention.day,
-                                           hour: mention.hour ?? 0, minute: mention.hour == nil ? 0 : (mention.minute ?? 0)))
+        mention.startDate(in: calendar)
     }
 
     static func isOverdue(_ mention: NoteDateMention, now: Date, calendar: Calendar = .current) -> Bool {
-        guard let start = date(of: mention, calendar: calendar) else { return false }
-        if mention.includesTime { return start <= now }
-        return calendar.startOfDay(for: now) >= start
+        mention.isDue(now: now, calendar: calendar)
     }
 
     static func dateLabel(_ mention: NoteDateMention, now: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
-        guard let value = date(of: mention, calendar: calendar) else { return NoteAtom.date(mention).fallbackText }
-        let today = calendar.startOfDay(for: now)
-        let day = calendar.startOfDay(for: value)
-        let distance = calendar.dateComponents([.day], from: today, to: day).day ?? 0
-        let dayText: String
-        switch distance {
-        case 0: dayText = "Today"
-        case 1: dayText = "Tomorrow"
-        case -1: dayText = "Yesterday"
-        default:
-            let formatter = DateFormatter()
-            formatter.calendar = calendar
-            formatter.locale = locale
-            formatter.timeZone = calendar.timeZone
-            formatter.setLocalizedDateFormatFromTemplate(calendar.component(.year, from: value) == calendar.component(.year, from: now)
-                                                         ? "MMMMd" : "yMMMMd")
-            dayText = formatter.string(from: value)
-        }
-        guard mention.includesTime else { return dayText }
-        let time = DateFormatter()
-        time.calendar = calendar
-        time.locale = locale
-        time.timeZone = calendar.timeZone
-        time.setLocalizedDateFormatFromTemplate("jmm")
-        return dayText + " " + time.string(from: value)
+        NoteDateText.label(mention, now: now, calendar: calendar, locale: locale)
     }
 
     private static var symbols: [String: NSImage] = [:]

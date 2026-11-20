@@ -57,6 +57,7 @@ final class NoteSlashMenuController {
     private var pointerMonitor: Any?
     private var reminderTask: Task<Void, Never>?
     private var reminderDocument: URL?
+    private var dateRefresher: NoteDateRefresher?
     private let openedAt = Date()
     private var isTornDown = false
 
@@ -71,6 +72,7 @@ final class NoteSlashMenuController {
         fileSubscription = NoteFileSession.openSessions.first { $0.page === editor.session }?.urlChanges
             .sink { [weak self] url in self?.documentDidMove(to: url) }
         scheduleReminderSync(after: 1)
+        dateRefresher = NoteDateRefresher(editor: editor)
     }
 
     var isOpen: Bool { mode != nil }
@@ -99,7 +101,9 @@ final class NoteSlashMenuController {
         let picker = NoteDatePickerView(mention: mention)
         picker.onChange = { [weak self] value in self?.updateDate(value) }
         picker.onRemove = { [weak self] in self?.removeDate() }
+        picker.onNeedsTextFocus = { [weak self] in self?.refocusDate() }
         let panel = makePanel(picker)
+        panel.maximumHeight = nil
         datePicker = picker
         datePanel = panel
         datePosition = position
@@ -175,6 +179,7 @@ final class NoteSlashMenuController {
             if selector == #selector(NSResponder.cancelOperation(_:)) { dismiss(); return true }
             return emojiList?.handle(selector) ?? false
         case .date:
+            if datePicker?.handleCommand(selector) == true { return true }
             switch selector {
             case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.insertNewline(_:)): dismiss(); return true
             case #selector(NSResponder.moveLeft(_:)): return datePicker?.move(byDays: -1) ?? false
@@ -683,6 +688,7 @@ final class NoteSlashMenuController {
     }
 
     private func handleDateKey(_ event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
+        if datePicker?.handleKeyDown(event) == true { return true }
         switch event.keyCode {
         case 53, 36, 76:
             let position = datePosition
@@ -690,8 +696,13 @@ final class NoteSlashMenuController {
             if let position { editor.focus(NotePosition(position.block, position.offset + 1, field: position.field)) }
             return true
         default:
-            return datePicker?.handleKeyDown(event) ?? false
+            return false
         }
+    }
+
+    private func refocusDate() {
+        guard let position = datePosition else { return }
+        editor.focus(NotePosition(position.block, position.offset + 1, field: position.field))
     }
 
     private func highlightDidChange(_ item: NoteMenuList.Item?) {
@@ -799,6 +810,8 @@ final class NoteSlashMenuController {
         guard !isTornDown else { return }
         dismiss(animated: false)
         isTornDown = true
+        dateRefresher?.stop()
+        dateRefresher = nil
         subscription = nil
         fileSubscription = nil
         guard reminderTask != nil else { return }
@@ -831,6 +844,7 @@ final class NoteSlashMenuController {
         reminderDocument = document ?? reminderDocument
         NoteReminderCenter.shared.reconcile(page: page, document: document, title: document?.deletingPathExtension().lastPathComponent ?? "",
                                             openedAt: openedAt)
+        dateRefresher?.reschedule()
     }
 
     private func watchPointer() {
