@@ -120,7 +120,7 @@ The comment always starts with `parc`, followed by words and `name="value"`
 pairs. Parc writes `color`, `icon`, `width`, `height` (an embed's page height),
 `align`, `crop` and `mask` (an image's framing), `caption`, `wrap` (code that wraps), `view` (`code` or `split` for a Mermaid block; Preview writes nothing), the table flags `no-header-row`, `header-column` and
 `widths="120,,80"`, the bookmark fields, and a block kind (`paragraph`,
-`image`, `video`, `audio`, `file`, `embed` or `bookmark`) when the file
+`image`, `video`, `audio`, `file`, `pdf`, `embed` or `bookmark`) when the file
 wouldn't otherwise make the kind clear. An empty paragraph that has a colour is
 written as `<!-- parc paragraph color="…" -->` on its own line.
 
@@ -280,6 +280,19 @@ fractions of the whole picture with up to four decimals; a crop that spills over
 the edge is pulled back inside. `mask` is `rounded`, `circle`, `squircle`,
 `arch`, `diamond`, `hexagon`, `star` or `heart`. HTML exports draw both with CSS,
 and PDF exports match the editor.
+
+An **inline PDF** is the same image-style line with a `pdf` flag. Without the
+flag a PDF stays a file row, so older notes keep their look:
+
+```markdown
+![report.pdf](Attachments/report.pdf "Q3 numbers") <!-- parc pdf width="0.6" align="left" -->
+```
+
+`width` is a fraction of the column (or points, when above 1) and is left out
+at full width. A hand-written link, `[Report](report.pdf) <!-- parc pdf -->`,
+reads as a PDF too and is saved in the image form. Plain-text notes keep only
+the file's path on its own line. HTML export shows the PDF in an `<object>`
+(embedded in the file when it's under 25 MB) with a link to the original.
 
 A **bookmark** is a link on its own line plus its cached preview:
 

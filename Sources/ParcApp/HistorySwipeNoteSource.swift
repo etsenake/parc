@@ -1,6 +1,11 @@
 import AppKit
 
 @MainActor
+protocol HistorySwipeScrollRoomProvider: AnyObject {
+    var historySwipeScrollRoom: HistorySwipeTargets.ScrollRoom? { get }
+}
+
+@MainActor
 final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget, @preconcurrency HistorySwipePresenter {
     static let shared = HistorySwipeNoteSource()
 
@@ -61,6 +66,7 @@ final class HistorySwipeNoteSource: NSObject, @preconcurrency HistorySwipeTarget
         guard let content = event.window?.contentView,
               let hit = content.hitTest(content.convert(event.locationInWindow, from: nil)) else { return false }
         let rooms = sequence(first: hit, next: \.superview).compactMap { view -> HistorySwipeTargets.ScrollRoom? in
+            if let provider = view as? HistorySwipeScrollRoomProvider { return provider.historySwipeScrollRoom }
             guard let scroll = view as? NSScrollView, let document = scroll.documentView else { return nil }
             return HistorySwipeTargets.ScrollRoom(content: Double(document.frame.width),
                                                   visible: Double(scroll.contentView.bounds.width))

@@ -1129,7 +1129,7 @@ final class NoteBlockPreviewCard: NSView {
             }
             path.lineWidth = 1
             path.stroke()
-        case .image, .video, .audio, .file, .embed, .bookmark:
+        case .image, .video, .audio, .file, .pdf, .embed, .bookmark:
             mediaSample(in: NSRect(x: x, y: y, width: width, height: rect.height))
         case .tableOfContents:
             for (index, indent) in ([0, 14, 14, 0, 14] as [CGFloat]).enumerated() {
@@ -1208,6 +1208,26 @@ final class NoteBlockPreviewCard: NSView {
             icon("paperclip", in: NSRect(x: row.minX, y: row.minY, width: 22, height: row.height), size: 15)
             text("Itinerary.pdf", NoteTheme.nunitoBold(14), at: NSPoint(x: row.minX + 28, y: row.minY + 3))
             text("1.2 MB", NoteTheme.nunitoRegular(11.5), at: NSPoint(x: row.minX + 28, y: row.minY + 21), color: NoteTheme.tertiaryInk)
+        case .pdf:
+            let well = NSRect(x: rect.minX - 4, y: rect.minY, width: rect.width + 8, height: rect.height)
+            NoteTheme.mediaPlaceholderFill.setFill()
+            NSBezierPath(roundedRect: well, xRadius: 6, yRadius: 6).fill()
+            let sheet = NSRect(x: well.midX - 30, y: well.minY + 8, width: 60, height: well.height - 8)
+            NSColor.white.setFill()
+            NSBezierPath(rect: sheet).fill()
+            NoteTheme.separator.setStroke()
+            NSBezierPath(rect: sheet.insetBy(dx: 0.5, dy: 0.5)).stroke()
+            NoteTheme.tertiaryInk.withAlphaComponent(0.8).setFill()
+            NSRect(x: sheet.minX + 8, y: sheet.minY + 9, width: 30, height: 4).fill()
+            for (index, fraction) in ([0.85, 0.7, 0.8, 0.55, 0.75] as [CGFloat]).enumerated() {
+                NoteTheme.tertiaryInk.withAlphaComponent(0.35).setFill()
+                NSRect(x: sheet.minX + 8, y: sheet.minY + 20 + CGFloat(index) * 8, width: (sheet.width - 16) * fraction, height: 3).fill()
+            }
+            let pill = NSRect(x: well.midX - 22, y: well.maxY - 18, width: 44, height: 13)
+            NoteTheme.menuFill.setFill()
+            NSBezierPath(roundedRect: pill, xRadius: 6.5, yRadius: 6.5).fill()
+            text("1 / 3", NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .semibold), at: NSPoint(x: pill.minX + 11, y: pill.minY + 1),
+                 color: NoteTheme.tertiaryInk)
         case .bookmark:
             let card = NSRect(x: rect.minX - 4, y: rect.minY + 8, width: rect.width + 8, height: rect.height - 16)
             NoteTheme.menuHairline.setStroke()

@@ -1,7 +1,14 @@
 import AppKit
 
 @MainActor
-final class NoteImageContentView: NoteMediaContentView {
+protocol NoteMediaResizing: AnyObject {
+    func beginResize()
+    func updateResize(edge: NoteMediaEdge, delta: CGFloat)
+    func endResize()
+}
+
+@MainActor
+final class NoteImageContentView: NoteMediaContentView, NoteMediaResizing {
     private let picture = CALayer()
     private let ring = CALayer()
     private let shimmer = NoteMediaShimmer()
@@ -418,7 +425,7 @@ final class NoteImageContentView: NoteMediaContentView {
 @MainActor
 final class NoteMediaResizeHandle: NSView, ResizeHandleView {
     let edge: NoteMediaEdge
-    weak var owner: NoteImageContentView?
+    weak var owner: NoteMediaResizing?
     private let pill = CALayer()
     private var startX: CGFloat = 0
     private var dragging = false

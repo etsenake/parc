@@ -42,6 +42,16 @@ Scrolling that starts over a page scrolls the page and carries on into the note
 once the page hits its edge. The pages nap after four hours out of sight, follow the tab
 between windows and ask before leaving, like an Easel's pages ([embedded pages](embedded-pages.md#live-embeds-in-notes)).
 
+PDF blocks (`/pdf`, a dropped or pasted PDF file, a pasted `.pdf` link, or Turn
+Into on a file row) read the PDF right in the note with PDFKit: pages scroll
+inside the viewer at fit width, and scrolling hands over to the note at the first
+or last page. On hover a page indicator with previous and next, zoom out, fit
+width and zoom in floats at the bottom, and the corner toolbar offers alignment,
+caption, Full Screen (also Space or ⌘↩ on the selected block), Download, View
+Original (a Parc tab), Replace and Delete. The side bars resize it like an image,
+the height follows the first page, links inside open in Parc, a password-locked
+PDF asks for its password in place, and plain-text notes show it as a file row.
+
 ## How the editor is built
 
 Notes are a native block editor in the spirit of Notion, drawn entirely in AppKit.
@@ -70,7 +80,7 @@ toggles and toggle headings, quotes, callouts with an emoji icon, dividers, code
 with syntax highlighting for 39 languages, equations typeset natively from TeX
 (including chemistry with `\ce`, numbering that runs through the whole note,
 and `\label` with `\eqref` or `\ref` that link up in the editor and in HTML and
-PDF exports), simple tables, images, video, audio, files,
+PDF exports), simple tables, images, video, audio, files, inline PDFs,
 bookmarks with a cached preview card, embeds, links to other notes, columns (two
 to five) and a table of contents. Inline text can be bold, italic, underlined,
 struck, code, a link, coloured or highlighted in Notion's nine colours, and can

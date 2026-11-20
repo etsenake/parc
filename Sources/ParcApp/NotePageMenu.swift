@@ -492,19 +492,22 @@ final class NotePagePrintView: NSView {
         if let cover = page.settings.cover, let url = environment.resolve(cover.source) { chromeImages.append(url) }
         if let icon = page.settings.icon, NotePageImageLoader.isImageSource(icon), let url = environment.resolve(icon) { chromeImages.append(url) }
         var mediaImages: [(URL, Int)] = []
+        var pdfs: [URL] = []
         for block in page.allBlocks() {
             if block.kind == .image, let source = block.props.source, let url = environment.resolve(source) { mediaImages.append((url, 1600)) }
+            if block.kind == .pdf, let source = block.props.source, let url = environment.resolve(source) { pdfs.append(url) }
             if block.kind == .bookmark, let bookmark = block.props.bookmark {
                 if let image = bookmark.imageURL.flatMap(URL.init(string:)) { mediaImages.append((image, 1024)) }
                 if let icon = bookmark.iconURL.flatMap(URL.init(string:)) { mediaImages.append((icon, 64)) }
             }
         }
         let diagrams = Array(diagramRequests(in: page, dark: false).values)
-        pending = chromeImages.count + mediaImages.count + (diagrams.isEmpty ? 0 : 1)
+        pending = chromeImages.count + mediaImages.count + pdfs.count + (diagrams.isEmpty ? 0 : 1)
         guard pending > 0 else { finish(); return }
         if !diagrams.isEmpty { NoteMermaidRenderer.shared.renderAll(diagrams) { _ in arrived() } }
         for url in chromeImages { NotePageImageLoader.shared.load(url) { _ in arrived() } }
         for (url, pixels) in mediaImages { NoteMediaImageLoader.shared.load(url, pixels: pixels) { _ in arrived() } }
+        for url in pdfs { NotePDFDocuments.shared.load(url) { _ in arrived() } }
         DispatchQueue.main.asyncAfter(deadline: .now() + imageWait) { finish() }
     }
 

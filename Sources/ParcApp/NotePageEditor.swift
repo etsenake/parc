@@ -469,7 +469,7 @@ final class NotePageEditor {
         return view.presentPreview()
     }
 
-    static let previewableKinds: Set<NoteBlockKind> = [.image, .video, .audio, .file]
+    static let previewableKinds: Set<NoteBlockKind> = [.image, .video, .audio, .file, .pdf]
 
     var canLinkBlocks: Bool {
         guard let url = environment.documentURL, url.isFileURL, NoteFileKind(url: url) == .markdown else { return false }
@@ -1076,7 +1076,7 @@ final class NotePageEditor {
         let start = host.textView.caretRect(at: link.position.offset)
         let anchor = canvas.overlayView.convert(NSRect(x: start.minX, y: caret.minY, width: max(1, caret.maxX - start.minX), height: caret.height),
                                                 from: host.textView)
-        let menu = NotePasteLinkMenu(link: link, embeddable: NoteClipboard.isEmbeddable(link.url)) { [weak self] choice in
+        let menu = NotePasteLinkMenu(link: link, embeddable: NoteClipboard.isEmbeddable(link.url), pdf: NoteClipboard.isPDFLink(link.url)) { [weak self] choice in
             self?.choosePasteOption(choice)
         }
         pasteMenu = menu
@@ -1107,15 +1107,16 @@ final class NotePageEditor {
         case .mention:
             let atom = NoteText.atom(.link(url: link.url.absoluteString, title: link.title ?? ""), marks: text.marks(at: range.lowerBound).withoutAtom.unlinked)
             session.replaceText(at: link.position, length: link.length, with: atom)
-        case .bookmark, .embed:
+        case .bookmark, .embed, .pdf:
             var props = NoteBlockProps()
             props.source = link.url.absoluteString
-            let fresh = NoteBlock(choice == .bookmark ? .bookmark : .embed, props: props)
+            let kind: NoteBlockKind = choice == .bookmark ? .bookmark : choice == .pdf ? .pdf : .embed
+            let fresh = NoteBlock(kind, props: props)
             var remaining = text
             remaining.delete(range)
             let replacesBlock = remaining.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 && block.kind == .paragraph && block.children.isEmpty
-            session.edit(choice == .bookmark ? "Bookmark" : "Embed", selection: .blocks([fresh.id])) { page in
+            session.edit(choice == .bookmark ? "Bookmark" : choice == .pdf ? "PDF" : "Embed", selection: .blocks([fresh.id])) { page in
                 if replacesBlock {
                     page.insert([fresh], .after(block.id))
                     page.remove(block.id)
@@ -1244,14 +1245,14 @@ struct NotePastedLink: Hashable {
 
 @MainActor
 final class NotePasteLinkMenu {
-    enum Choice: String { case dismiss, mention, bookmark, embed }
+    enum Choice: String { case dismiss, mention, bookmark, embed, pdf }
 
     let link: NotePastedLink
     let list: NoteMenuList
     private let panel: NoteFloatingPanel
     private let onChoose: (Choice) -> Void
 
-    init(link: NotePastedLink, embeddable: Bool, onChoose: @escaping (Choice) -> Void) {
+    init(link: NotePastedLink, embeddable: Bool, pdf: Bool = false, onChoose: @escaping (Choice) -> Void) {
         self.link = link
         self.onChoose = onChoose
         let list = NoteMenuList()
@@ -1261,6 +1262,10 @@ final class NotePasteLinkMenu {
             .init(id: Choice.mention.rawValue, title: "Mention", subtitle: "A tidy inline chip", icon: .symbol("at"), section: "Paste as"),
             .init(id: Choice.bookmark.rawValue, title: "Bookmark", subtitle: "A card with a preview", icon: .symbol("bookmark"), section: "Paste as"),
         ]
+        if pdf {
+            items.append(.init(id: Choice.pdf.rawValue, title: "PDF", subtitle: "Read it right in the note",
+                               icon: .symbol("doc.richtext"), section: "Paste as"))
+        }
         if embeddable {
             items.append(.init(id: Choice.embed.rawValue, title: "Embed", subtitle: "Show it right in the note",
                                icon: .symbol("play.rectangle"), section: "Paste as"))

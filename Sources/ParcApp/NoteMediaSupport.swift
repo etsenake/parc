@@ -141,7 +141,7 @@ enum NoteMediaSource: Equatable {
         case .unresolved: return .missing
         case .local(let url):
             guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
-            return importing && kind != .image && kind != .video ? .importing : .ready
+            return importing && kind != .image && kind != .video && kind != .pdf ? .importing : .ready
         case .remote: return .ready
         }
     }
@@ -186,6 +186,7 @@ enum NoteMediaFileType {
 
     static func blockKind(forExtension ext: String) -> NoteBlockKind {
         guard !ext.isEmpty, let type = UTType(filenameExtension: ext.lowercased()) else { return .file }
+        if type.conforms(to: .pdf) { return .pdf }
         if type.conforms(to: .image) { return .image }
         if type.conforms(to: .movie) || type.conforms(to: .video) { return .video }
         if type.conforms(to: .audio) { return .audio }
@@ -201,6 +202,7 @@ enum NoteMediaFileType {
         case .image: return [.image]
         case .video: return [.movie, .video]
         case .audio: return [.audio]
+        case .pdf: return [.pdf]
         default: return [.item]
         }
     }

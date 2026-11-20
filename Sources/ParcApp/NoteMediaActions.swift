@@ -35,6 +35,7 @@ enum NoteMediaActions {
         case .image: return "Pick an image for your note."
         case .video: return "Pick a video for your note."
         case .audio: return "Pick a sound for your note."
+        case .pdf: return "Pick a PDF to read right in your note."
         default: return "Pick a file to tuck into your note."
         }
     }

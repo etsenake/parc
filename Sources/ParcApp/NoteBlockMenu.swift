@@ -546,6 +546,10 @@ final class NoteBlockMenuController: NSObject {
             }
         case .download:
             if let source = page.block(live[0])?.props.source { editor.handles.download(source) }
+        case .fullScreen:
+            dismiss(animated: true, restore: false)
+            (editor.canvas.blockView(for: live[0]) as? NoteMediaBlockView)?.presentPreview()
+            return
         case .viewOriginal:
             if let source = page.block(live[0])?.props.source, let url = editor.environment.resolve(source) {
                 dismiss(animated: true, restore: true)

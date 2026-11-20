@@ -69,6 +69,19 @@ struct NoteHandlesModelTests {
         let imageEntries = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [image], canMoveToNotes: true))
         expect(ids(imageEntries) == ["delete", "duplicate", "align", "download", "original", "move"], "images get alignment, download and the original")
         expect(imageEntries[2].children.filter(\.isChecked).map(\.title) == ["Left"], "the image's alignment is checked")
+        var pdf = NoteBlock(.pdf)
+        pdf.props.source = "Attachments/report.pdf"
+        let pdfEntries = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [pdf], canMoveToNotes: true))
+        expect(ids(pdfEntries) == ["delete", "duplicate", "turn", "align", "download", "original", "fullScreen", "move"],
+               "PDFs get Turn Into, alignment, download, the original and full screen: \(ids(pdfEntries))")
+        expect(pdfEntries.first { $0.id == "turn" }?.children.map(\.id) == ["turn.pdf", "turn.file"], "PDFs turn into file rows and back")
+        var pdfFile = NoteBlock(.file)
+        pdfFile.props.source = "Attachments/report.pdf"
+        let fileEntries = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [pdfFile]))
+        expect(fileEntries.first { $0.id == "turn" }?.children.first { $0.isChecked }?.id == "turn.file", "a PDF file row can turn into a PDF")
+        var zip = NoteBlock(.file)
+        zip.props.source = "Attachments/a.zip"
+        expect(!ids(NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [zip]))).contains("turn"), "other files can't become PDFs")
         let emptyImage = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [NoteBlock(.image)]))
         expect(ids(emptyImage) == ["delete", "duplicate", "align"], "an empty image has nothing to download")
 

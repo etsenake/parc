@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import UniformTypeIdentifiers
 
 @main @MainActor
 struct NoteMediaLayoutTests {
@@ -129,7 +130,11 @@ struct NoteMediaLayoutTests {
         expect(NoteMediaFileType.blockKind(forExtension: "mp4") == .video, "mp4 is a video")
         expect(NoteMediaFileType.blockKind(forExtension: "m4a") == .audio, "m4a is audio")
         expect(NoteMediaFileType.blockKind(forExtension: "mp3") == .audio, "mp3 is audio")
-        expect(NoteMediaFileType.blockKind(forExtension: "pdf") == .file, "pdf is a file")
+        expect(NoteMediaFileType.blockKind(forExtension: "pdf") == .pdf, "dropped PDFs read inline")
+        expect(NoteMediaFileType.accepts(URL(fileURLWithPath: "/a.pdf"), for: .pdf), "PDF blocks take PDFs")
+        expect(!NoteMediaFileType.accepts(URL(fileURLWithPath: "/a.png"), for: .pdf), "PDF blocks turn away pictures")
+        expect(NoteMediaFileType.accepts(URL(fileURLWithPath: "/a.pdf"), for: .file), "file blocks still take PDFs")
+        expect(NoteMediaFileType.contentTypes(for: .pdf) == [.pdf], "the picker shows only PDFs")
         expect(NoteMediaFileType.blockKind(forExtension: "") == .file, "no extension is a file")
         expect(NoteMediaFileType.accepts(URL(fileURLWithPath: "/a.zip"), for: .file), "file blocks take anything")
         expect(!NoteMediaFileType.accepts(URL(fileURLWithPath: "/a.zip"), for: .image), "image blocks refuse zips")

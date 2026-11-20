@@ -20,7 +20,7 @@ enum NoteCatalogSection: String, CaseIterable, Hashable {
 enum NoteCatalogBlock: Hashable {
     case text, heading(Int), toggleHeading(Int), bulleted, numbered, todo, toggle, quote, callout, divider
     case newNote, linkToNote, table
-    case image, video, audio, file, bookmark, embed
+    case image, video, audio, file, pdf, bookmark, embed
     case tableOfContents, equation, code, columns(Int)
 
     static let turnIntoTargets: [NoteCatalogBlock] = [
@@ -45,6 +45,7 @@ enum NoteCatalogBlock: Hashable {
         case .video: return .video
         case .audio: return .audio
         case .file: return .file
+        case .pdf: return .pdf
         case .bookmark: return .bookmark
         case .embed: return .embed
         case .tableOfContents: return .tableOfContents
@@ -348,7 +349,9 @@ enum NoteBlockCatalog {
             block("audio", "Audio", "Add a recording or a song.", .media, .symbol("waveform"),
                   aliases: ["sound", "music", "mp3"], keywords: ["podcast", "song", "recording", "voice memo"], .audio),
             block("file", "File", "Attach any file to this note.", .media, .symbol("paperclip"),
-                  aliases: ["attachment", "attach", "upload"], keywords: ["pdf", "document", "doc", "zip"], .file),
+                  aliases: ["attachment", "attach", "upload"], keywords: ["document", "doc", "zip"], .file),
+            block("pdf", "PDF", "Read a PDF right in the note.", .media, .symbol("doc.richtext"),
+                  aliases: ["pdf", "document", "paper"], keywords: ["upload", "embed", "slides", "report", "read"], .pdf),
             block("bookmark", "Bookmark", "Save a link as a tidy card.", .media, .symbol("bookmark"),
                   aliases: ["book", "web", "web bookmark", "url"], keywords: ["link", "preview", "website"], .bookmark),
             block("embed", "Embed", "Bring a live page into the note.", .media, .symbol("chevron.left.forwardslash.chevron.right"),

@@ -252,8 +252,14 @@ enum NoteClipboard {
         return type.conforms(to: .image)
     }
 
+    static func isPDFLink(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return false }
+        return url.pathExtension.lowercased() == "pdf"
+    }
+
     static func mediaKind(for url: URL) -> NoteBlockKind {
         guard let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return .file }
+        if type.conforms(to: .pdf) { return .pdf }
         if type.conforms(to: .image) { return .image }
         if type.conforms(to: .movie) || type.conforms(to: .video) { return .video }
         if type.conforms(to: .audio) { return .audio }
@@ -275,6 +281,7 @@ enum NoteClipboard {
                 let kind = mediaKind(for: url)
                 if kind == .image { props.alt = url.deletingPathExtension().lastPathComponent }
                 if kind == .file { props.caption = NoteText(url.lastPathComponent) }
+                if kind == .pdf { props.alt = url.lastPathComponent }
                 blocks.append(NoteBlock(kind, props: props))
             } catch {
                 failures.append(error)

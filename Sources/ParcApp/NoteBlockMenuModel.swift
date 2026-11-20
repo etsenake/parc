@@ -46,6 +46,7 @@ enum NoteBlockAction: Hashable {
     case align(NoteAlignment)
     case download
     case viewOriginal
+    case fullScreen
     case copyOriginalLink
     case tableItem(String)
 }
@@ -120,6 +121,22 @@ enum NoteBlockMenuModel {
         block.kind.hasRichText || block.kind == .code || block.kind == .equation
     }
 
+    static func showsPDF(_ block: NoteBlock) -> Bool {
+        guard block.kind == .pdf || block.kind == .file else { return false }
+        guard let source = block.props.source, !source.isEmpty else { return block.kind == .pdf }
+        return NoteMDMedia.pathExtension(source) == "pdf" || block.kind == .pdf
+    }
+
+    static func pdfTurnIntoEntries(for blocks: [NoteBlock]) -> [NoteBlockMenuEntry] {
+        let kinds = Set(blocks.map(\.kind))
+        return [
+            NoteBlockMenuEntry(id: "turn.pdf", title: "PDF", icon: .symbol("doc.richtext"), keywords: ["inline", "viewer", "read"],
+                               section: turnIntoTitle, isChecked: kinds == [.pdf], action: .turnInto(NoteBlockStyle(.pdf))),
+            NoteBlockMenuEntry(id: "turn.file", title: "File", icon: .symbol("paperclip"), keywords: ["attachment", "row"],
+                               section: turnIntoTitle, isChecked: kinds == [.file], action: .turnInto(NoteBlockStyle(.file))),
+        ]
+    }
+
     static func linkable(_ block: NoteBlock) -> Bool {
         switch block.kind {
         case .html, .raw, .column, .columns: return false
@@ -149,10 +166,11 @@ enum NoteBlockMenuModel {
             result.append(NoteBlockMenuEntry(id: "duplicate", title: "Duplicate", icon: .symbol("plus.square.on.square"), shortcut: "⌘D",
                                              keywords: ["copy", "clone"], group: 0, action: .duplicate))
             let restyles = blocks.allSatisfy(turnable)
-            if restyles || context.columnLimit >= 2 {
+            let media = !restyles && blocks.allSatisfy(showsPDF) ? pdfTurnIntoEntries(for: blocks) : []
+            if restyles || !media.isEmpty || context.columnLimit >= 2 {
                 result.append(NoteBlockMenuEntry(id: "turn", title: turnIntoTitle, icon: .symbol("arrow.triangle.2.circlepath"),
-                                                 keywords: ["convert", "change", "type"], group: 0,
-                                                 children: turnIntoEntries(for: blocks, columns: context.columnLimit, restyles: restyles)))
+                                                 keywords: ["convert", "change", "type"] + (media.isEmpty ? [] : ["pdf", "file"]), group: 0,
+                                                 children: media + turnIntoEntries(for: blocks, columns: context.columnLimit, restyles: restyles)))
             }
         }
         if sameKind { result += kindEntries(for: blocks, kind: first.kind, editable: editable, single: single) }
@@ -266,8 +284,8 @@ enum NoteBlockMenuModel {
                                                  subtitle: current?.title, keywords: ["mermaid", "diagram", "preview", "split", "code"],
                                                  group: 1, children: diagramModeEntries(current: current)))
             }
-        case .image, .video, .audio, .file:
-            if editable && kind == .image {
+        case .image, .video, .audio, .file, .pdf:
+            if editable && (kind == .image || kind == .pdf) {
                 let alignments = Set(blocks.map(\.props.alignment))
                 result.append(NoteBlockMenuEntry(id: "align", title: alignmentTitle, icon: .symbol("text.aligncenter"),
                                                  keywords: ["left", "right", "center", "centre"], group: 1,
@@ -278,6 +296,10 @@ enum NoteBlockMenuModel {
                                                  keywords: ["save", "export"], group: 1, action: .download))
                 result.append(NoteBlockMenuEntry(id: "original", title: "View Original", icon: .symbol("arrow.up.forward.square"),
                                                  keywords: ["open", "source", "full size"], group: 1, action: .viewOriginal))
+                if kind == .pdf {
+                    result.append(NoteBlockMenuEntry(id: "fullScreen", title: "Full Screen", icon: .symbol("arrow.up.left.and.arrow.down.right"),
+                                                     shortcut: "⎵", keywords: ["expand", "present", "read", "big"], group: 1, action: .fullScreen))
+                }
             }
         case .bookmark, .embed:
             if single && block.props.source?.isEmpty == false {

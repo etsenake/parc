@@ -10,7 +10,7 @@ enum NoteMediaProblem: Equatable {
 @MainActor
 final class NoteMediaBlockView: NoteCaptionedBlockView {
     private enum Mode: Equatable {
-        case empty, pending, problem(NoteMediaProblem), image, video, audio, file
+        case empty, pending, problem(NoteMediaProblem), image, video, audio, file, pdf
     }
 
     private var mode: Mode?
@@ -99,6 +99,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         case .image: return .image
         case .video: return .video
         case .audio: return .audio
+        case .pdf: return editor?.isPlainText == true ? .file : .pdf
         default: return .file
         }
     }
@@ -134,6 +135,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
             case .video: view = NoteVideoContentView(host: self)
             case .audio: view = NoteAudioContentView(host: self)
             case .file: view = NoteFileContentView(host: self)
+            case .pdf: view = NotePDFContentView(host: self)
             }
             addSubview(view, positioned: .below, relativeTo: caption)
             content = view
@@ -267,7 +269,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
             setAccessibilityLabel(name.isEmpty ? "Image" : name)
         default:
             setAccessibilityRole(.group)
-            setAccessibilityLabel(name.isEmpty ? NoteMediaCopy.noun(for: kind).capitalized : name)
+            setAccessibilityLabel(name.isEmpty ? NoteMediaCopy.title(for: kind) : name)
         }
         setAccessibilityRoleDescription(NoteMediaCopy.roleDescription(for: kind))
     }
@@ -421,7 +423,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         editor?.session.updateBlock(blockID, name: "Align " + NoteMediaCopy.title(for: kind)) { $0.props.alignment = alignment }
     }
 
-    func commitWidth(_ fraction: Double) {
+    func commitWidth(_ fraction: Double?) {
         guard canEdit else { return }
         editor?.session.updateBlock(blockID, name: "Resize " + NoteMediaCopy.title(for: kind)) { $0.props.width = fraction }
     }
@@ -475,6 +477,7 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     func presentPreview() -> Bool {
         guard let content else { return false }
         if let image = content as? NoteImageContentView, image.presentZoom() { return true }
+        if let pdf = content as? NotePDFContentView { return pdf.presentFullScreen() }
         switch mode {
         case .image, .video, .audio, .file:
             guard source.url != nil else { return false }
@@ -498,6 +501,7 @@ enum NoteMediaCopy {
         case .image: return "image"
         case .video: return "video"
         case .audio: return "audio"
+        case .pdf: return "PDF"
         default: return "file"
         }
     }
@@ -507,6 +511,7 @@ enum NoteMediaCopy {
         case .image: return "Image"
         case .video: return "Video"
         case .audio: return "Audio"
+        case .pdf: return "PDF"
         default: return "File"
         }
     }
@@ -516,6 +521,7 @@ enum NoteMediaCopy {
         case .image: return "image block"
         case .video: return "video block"
         case .audio: return "audio block"
+        case .pdf: return "PDF block"
         default: return "file block"
         }
     }
@@ -525,6 +531,7 @@ enum NoteMediaCopy {
         case .image: return "Add an image"
         case .video: return "Add a video"
         case .audio: return "Add audio"
+        case .pdf: return "Add a PDF"
         default: return "Add a file"
         }
     }
@@ -534,6 +541,7 @@ enum NoteMediaCopy {
         case .image: return "No image here yet"
         case .video: return "No video here yet"
         case .audio: return "No audio here yet"
+        case .pdf: return "No PDF here yet"
         default: return "No file here yet"
         }
     }
@@ -543,6 +551,7 @@ enum NoteMediaCopy {
         case .image: return "photo"
         case .video: return "film"
         case .audio: return "waveform"
+        case .pdf: return "doc.richtext"
         default: return "paperclip"
         }
     }
@@ -553,6 +562,7 @@ enum NoteMediaCopy {
         case .image: thing = "image"
         case .video: thing = "video"
         case .audio: thing = "sound"
+        case .pdf: thing = "PDF"
         default: thing = "file"
         }
         switch problem {
@@ -656,10 +666,10 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
     override init(host: NoteMediaBlockView) {
         let kind = host.kind
         title = NoteMediaStyle.label(NoteMediaCopy.addPrompt(for: kind), font: NoteMediaStyle.titleFont, color: NoteTheme.secondaryInk)
-        uploadChip = NoteChip("Upload", icon: .symbol(kind == .file ? "arrow.up.doc" : "square.and.arrow.up"))
+        uploadChip = NoteChip("Upload", icon: .symbol(kind == .file || kind == .pdf ? "arrow.up.doc" : "square.and.arrow.up"))
         linkChip = NoteChip("Embed link", icon: .symbol("link"))
         embedChip = NoteChip("Embed", icon: .symbol("return"))
-        fieldUploadChip = NoteChip("Upload", icon: .symbol(kind == .file ? "arrow.up.doc" : "square.and.arrow.up"))
+        fieldUploadChip = NoteChip("Upload", icon: .symbol(kind == .file || kind == .pdf ? "arrow.up.doc" : "square.and.arrow.up"))
         hint = NoteMediaStyle.label("That doesn’t look like a link.", font: NoteMediaStyle.smallFont, color: NoteMediaStyle.warningInk)
         super.init(host: host)
         icon.imageScaling = .scaleProportionallyUpOrDown
@@ -931,7 +941,8 @@ final class NoteMediaProblemCard: NoteMediaCardView {
         replaceChip.isHidden = !editable
         deleteChip.isHidden = !editable
         retryChip.isHidden = !(remote && (problem == .unreachable || problem == .unreadable))
-        openChip.isHidden = !(remote && (problem == .unsupported || problem == .unreadable))
+        let opensElsewhere = remote || (host?.kind == .pdf && host?.source.url != nil)
+        openChip.isHidden = !(opensElsewhere && (problem == .unsupported || problem == .unreadable))
         var trailing = bounds.width - 12
         for chip in [deleteChip, replaceChip, retryChip, openChip] where !chip.isHidden {
             let width = chip.intrinsicContentSize.width
