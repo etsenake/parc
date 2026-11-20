@@ -1,4 +1,5 @@
 Sources/ParcCore/NoteModel.swift
+Sources/ParcCore/NoteCustomEmojiName.swift
 Sources/ParcCore/NoteImageFraming.swift
 Sources/ParcApp/NoteTheme.swift
 Sources/ParcApp/NoteAnimation.swift

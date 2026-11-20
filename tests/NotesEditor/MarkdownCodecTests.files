@@ -1,6 +1,9 @@
 Sources/ParcCore/NoteModel.swift
+Sources/ParcCore/NoteCustomEmojiName.swift
 Sources/ParcCore/NoteImageFraming.swift
 Sources/ParcCore/NoteDateMentionText.swift
 Sources/ParcCore/NoteFileKind.swift
 Sources/ParcCore/NoteMarkdown*.swift
 tests/NotesEditor/MarkdownTestSupport.swift
+Sources/ParcCore/NoteMermaid.swift
+Sources/ParcCore/NoteSyntaxLanguages.swift
