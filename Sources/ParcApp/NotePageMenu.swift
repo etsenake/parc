@@ -101,19 +101,34 @@ final class NotePageMenu {
         popover?.close(animated: animated)
     }
 
+    static let toggleIDs: Set<String> = ["small-text", "full-width", "lock"]
+
+    func isOn(_ id: String) -> Bool? {
+        let settings = editor.session.page.settings
+        switch id {
+        case "small-text": return settings.smallText
+        case "full-width": return settings.fullWidth
+        case "lock": return settings.locked
+        default: return nil
+        }
+    }
+
+    private func toggleItem(_ id: String, _ title: String, symbol: String) -> NoteMenuList.Item {
+        let on = isOn(id) ?? false
+        var item = NoteMenuList.Item(id: id, title: title, icon: .symbol(symbol), isEnabled: !editor.session.isReadOnly)
+        item.accessibilityLabel = title + (on ? ", on" : ", off")
+        return item
+    }
+
     func items() -> [NoteMenuList.Item] {
         let settings = editor.session.page.settings
         let hasFile = url != nil
         var result: [NoteMenuList.Item] = []
         if !isPlainText {
-            result.append(.init(id: "small-text", title: "Small Text", icon: .symbol("textformat.size.smaller"), isChecked: settings.smallText,
-                                isEnabled: !editor.session.isReadOnly))
-            result.append(.init(id: "full-width", title: "Full Width", icon: .symbol("arrow.left.and.right"), isChecked: settings.fullWidth,
-                                isEnabled: !editor.session.isReadOnly))
+            result.append(toggleItem("small-text", "Small Text", symbol: "textformat.size.smaller"))
+            result.append(toggleItem("full-width", "Full Width", symbol: "arrow.left.and.right"))
         }
-        result.append(.init(id: "lock", title: settings.locked ? "Unlock Page" : "Lock Page",
-                            icon: .symbol(settings.locked ? "lock.open" : "lock"), isChecked: settings.locked,
-                            isEnabled: !editor.session.isReadOnly))
+        result.append(toggleItem("lock", "Lock Page", symbol: settings.locked ? "lock.fill" : "lock"))
         var copy = NoteMenuList.Item(id: "copy-markdown", title: isPlainText ? "Copy Text" : "Copy as Markdown", icon: .symbol("doc.on.doc"))
         copy.separatorBefore = true
         result.append(copy)
@@ -384,6 +399,7 @@ final class NotePageMenuView: NSView, NoteFloatingPanelContent {
     let list: NoteMenuList
     var preferredSizeDidChange: (() -> Void)?
     private var cards: [NotePageFontCard] = []
+    private var switches: [String: NotePageMenuSwitch] = [:]
     private let topSeparator = NSView()
     private let bottomSeparator = NSView()
     private let statsLabel = NSTextField(labelWithString: "")
@@ -449,7 +465,9 @@ final class NotePageMenuView: NSView, NoteFloatingPanelContent {
             card.isCurrent = card.pageFont == current
             card.isEnabled = !pageMenu.editor.session.isReadOnly
         }
-        list.setItems(pageMenu.items(), keepingHighlight: true)
+        let items = pageMenu.items()
+        list.setItems(items, keepingHighlight: true)
+        refreshSwitches(items)
         let lines = pageMenu.footerLines()
         statsLabel.stringValue = lines.stats
         editedLabel.stringValue = lines.edited
@@ -457,12 +475,33 @@ final class NotePageMenuView: NSView, NoteFloatingPanelContent {
         preferredSizeDidChange?()
     }
 
+    private func refreshSwitches(_ items: [NoteMenuList.Item]) {
+        let wanted = items.filter { NotePageMenu.toggleIDs.contains($0.id) }
+        for (id, view) in switches where !wanted.contains(where: { $0.id == id }) {
+            view.removeFromSuperview()
+            switches[id] = nil
+        }
+        for item in wanted {
+            let on = pageMenu.isOn(item.id) ?? false
+            let view = switches[item.id] ?? {
+                let created = NotePageMenuSwitch(isOn: on)
+                addSubview(created, positioned: .above, relativeTo: list)
+                switches[item.id] = created
+                return created
+            }()
+            view.isOn = on
+            view.isEnabled = item.isEnabled
+        }
+    }
+
+    func switchView(for id: String) -> NotePageMenuSwitch? { switches[id] }
+
     func rowRect(for id: String) -> NSRect? {
-        guard let index = list.visibleItems.firstIndex(where: { $0.id == id }) else { return nil }
-        let separators = list.visibleItems.prefix(index + 1).filter(\.separatorBefore).count
-        let headerOffset: CGFloat = 4
-        let y = headerOffset + CGFloat(index) * list.rowHeight + CGFloat(separators) * 9
-        return convert(NSRect(x: 0, y: y, width: list.frame.width, height: list.rowHeight), from: list)
+        let visible = list.visibleItems
+        guard let index = visible.firstIndex(where: { $0.id == id }) else { return nil }
+        let separators = visible.prefix(index + 1).enumerated().filter { $0.offset > 0 && $0.element.separatorBefore }.count
+        let y = NoteTheme.menuInset + CGFloat(index) * list.rowHeight + CGFloat(separators) * NoteTheme.menuSeparatorSlot
+        return convert(NSRect(x: NoteTheme.menuInset, y: y, width: list.frame.width - NoteTheme.menuInset * 2, height: list.rowHeight), from: list)
     }
 
     override func layout() {
@@ -480,6 +519,12 @@ final class NotePageMenuView: NSView, NoteFloatingPanelContent {
         let listHeight = list.fittingSize.height
         list.frame = NSRect(x: 0, y: y, width: bounds.width, height: listHeight)
         y += listHeight
+        let size = NotePageMenuSwitch.size
+        for (id, view) in switches {
+            guard let row = rowRect(for: id) else { view.isHidden = true; continue }
+            view.isHidden = false
+            view.frame = NSRect(x: row.maxX - 10 - size.width, y: (row.midY - size.height / 2).rounded(), width: size.width, height: size.height)
+        }
         bottomSeparator.frame = NSRect(x: 0, y: y, width: bounds.width, height: 1)
         y += 9
         let statsHeight = ceil(statsLabel.intrinsicContentSize.height)
@@ -498,6 +543,56 @@ final class NotePageMenuView: NSView, NoteFloatingPanelContent {
                 separator.layer?.backgroundColor = NoteTheme.resolved(NoteTheme.menuSeparator, in: self)
             }
         }
+    }
+}
+
+@MainActor
+final class NotePageMenuSwitch: NSView {
+    static let size = NoteToggleSwitch.size
+    let toggle = NoteToggleSwitch(label: "")
+
+    var isOn: Bool {
+        get { toggle.isOn }
+        set { toggle.isOn = newValue }
+    }
+
+    var isEnabled: Bool {
+        get { toggle.isEnabled }
+        set {
+            toggle.isEnabled = newValue
+            alphaValue = newValue ? 1 : NoteTheme.disabledOpacity
+            toggle.alphaValue = 1
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let radius = bounds.height / 2
+        NoteTheme.hoverFill.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    init(isOn: Bool) {
+        super.init(frame: NSRect(origin: .zero, size: Self.size))
+        toggle.isOn = isOn
+        toggle.setAccessibilityElement(false)
+        addSubview(toggle)
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        toggle.frame = bounds
     }
 }
 
