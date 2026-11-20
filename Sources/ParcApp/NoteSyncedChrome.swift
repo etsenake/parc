@@ -22,6 +22,7 @@ final class NoteSyncedController {
     private var pinned: NoteBlockID?
     private var subscriptions = Set<AnyCancellable>()
     private var panel: NoteFloatingPanel?
+    private var cachedSites: [NoteBlockID]?
 
     private var librarySubscription: AnyCancellable?
 
@@ -38,8 +39,18 @@ final class NoteSyncedController {
     var session: NotePageSession? { editor?.session }
 
     func sessionDidChange(_ change: NotePageChange) {
-        if change.kind != .selection && change.kind != .text { infos.removeAll() }
+        if change.kind != .selection && change.kind != .text {
+            infos.removeAll()
+            cachedSites = nil
+        }
         refresh()
+    }
+
+    private var sites: [NoteBlockID] {
+        if let cachedSites { return cachedSites }
+        let found = editor?.session.page.syncedSites().map(\.id) ?? []
+        cachedSites = found
+        return found
     }
 
     func layoutDidChange() { refresh() }
@@ -69,6 +80,7 @@ final class NoteSyncedController {
 
     private func engineDidChange() {
         infos.removeAll()
+        cachedSites = nil
         refresh()
     }
 
@@ -76,10 +88,10 @@ final class NoteSyncedController {
         guard let editor else { return nil }
         let layout = editor.canvas.canvasLayout
         let outset = NoteTheme.syncedBorderOutset
-        for site in editor.session.page.syncedSites() {
-            guard let frame = layout.outerFrame(of: site.id) else { continue }
+        for site in sites {
+            guard let frame = layout.outerFrame(of: site) else { continue }
             let box = frame.insetBy(dx: -outset - 4, dy: -NoteTheme.syncedHeaderHeight / 2)
-            if box.contains(point) { return site.id }
+            if box.contains(point) { return site }
         }
         return nil
     }
@@ -107,16 +119,17 @@ final class NoteSyncedController {
 
     private func refresh() {
         guard let editor else { return }
-        let page = editor.session.page
+        let current = sites
+        guard !current.isEmpty || !chromes.isEmpty else { return }
         let layout = editor.canvas.canvasLayout
         let editing = editingSite
         var wanted: [NoteBlockID: Phase] = [:]
-        for site in page.syncedSites() {
-            guard layout.outerFrame(of: site.id) != nil else { continue }
-            let missing = info(for: site.id)?.isMissing == true
-            if site.id == editing || site.id == pinned { wanted[site.id] = .editing }
-            else if site.id == hovered { wanted[site.id] = missing ? .missing : .hover }
-            else if missing { wanted[site.id] = .missing }
+        for site in current {
+            guard layout.outerFrame(of: site) != nil else { continue }
+            let missing = info(for: site)?.isMissing == true
+            if site == editing || site == pinned { wanted[site] = .editing }
+            else if site == hovered { wanted[site] = missing ? .missing : .hover }
+            else if missing { wanted[site] = .missing }
         }
         for (id, chrome) in chromes where wanted[id] == nil {
             chromes[id] = nil

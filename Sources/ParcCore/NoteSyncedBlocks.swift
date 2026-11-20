@@ -437,7 +437,7 @@ final class NoteSyncedBlocks {
     private func affectedSites(_ change: NotePageChange, in document: Document) -> [NoteBlockID] {
         guard let page = document.session?.page else { return [] }
         let all = document.currentSites()
-        guard change.kind == .text, !change.blocks.isEmpty else { return all }
+        guard !all.isEmpty, change.kind == .text, !change.blocks.isEmpty else { return all }
         let known = Set(all)
         var found = Set<NoteBlockID>()
         for id in change.blocks {
@@ -448,7 +448,7 @@ final class NoteSyncedBlocks {
     }
 
     private func propagate(_ change: NotePageChange, from document: Document) {
-        guard let session = document.session else { return }
+        guard let session = document.session, !(document.seen.isEmpty && document.currentSites().isEmpty) else { return }
         let page = session.page
         let current = Set(document.currentSites())
         if document.seen.keys.contains(where: { !current.contains($0) }) { announce = true }
