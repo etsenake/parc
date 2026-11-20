@@ -20,6 +20,7 @@ enum NoteFileError: Error, LocalizedError, Equatable {
     case unwritable(String)
     case conflict
     case unsaved([String])
+    case occupied(String)
 
     var errorDescription: String? {
         switch self {
@@ -35,6 +36,7 @@ enum NoteFileError: Error, LocalizedError, Equatable {
             let names = ListFormatter.localizedString(byJoining: titles.map { "“\($0)”" })
             return titles.count == 1 ? "Parc couldn’t save \(names) yet. Open it to sort things out."
                 : "Parc couldn’t save \(names) yet. Open them to sort things out."
+        case .occupied(let name): return "Something else is already called “\(name)” there. Move or rename it, then try again."
         }
     }
 }
@@ -196,6 +198,34 @@ final class NoteFileSession {
             outcome = writeSynchronously()
         }
         if let error = outcome?.error { throw error }
+    }
+
+    func restore() throws {
+        autosaveTimer?.cancel()
+        autosaveTimer = nil
+        drainWrites()
+        if conflict != nil { throw NoteFileError.conflict }
+        guard diskText == nil else { return try flush() }
+        let current = page.page
+        let text = current == baseline ? vanishedText ?? render(current) : render(current)
+        let encoded = NoteFileText.encode(text, format: format)
+        let target = url, kind = kind, presenter = watcher, disk = disk
+        let outcome = Self.worker.sync {
+            NoteFileIO.write(encoded.data, text: text, to: target, kind: kind, disk: disk, force: false, presenter: presenter)
+        }
+        switch outcome {
+        case .written, .unchanged:
+            forceNextSave = false
+            record(outcome, page: current, text: text, format: encoded.format, force: false)
+            if case .unchanged = outcome { watcher?.rearm(seen: NoteFileStamp(path: target.path).map(NoteFileSighting.file)) }
+        case .conflict:
+            throw NoteFileError.occupied(target.lastPathComponent)
+        case .missing:
+            throw NoteFileError.missing
+        case .failed(let message):
+            if NoteFilePaths.itemExists(target) { throw NoteFileError.occupied(target.lastPathComponent) }
+            throw NoteFileError.unwritable(message)
+        }
     }
 
     func resolveConflict(keepMine: Bool) {

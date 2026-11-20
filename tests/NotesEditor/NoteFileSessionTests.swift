@@ -25,6 +25,7 @@ struct NoteFileSessionTests {
             try outsideEditWithLocalChanges()
             try saveNoticesUnseenOutsideEdits()
             try deletionAndRecreation()
+            try puttingItBack()
             try movesAndTrash()
             try retainAndRelease()
             try markdownCopy()
@@ -352,6 +353,69 @@ struct NoteFileSessionTests {
         session.checkDisk()
         expectEqual(texts(session), ["reborn elsewhere"], "a file that reappears is picked up")
         expectEqual(session.state, .saved, "and is saved")
+    }
+
+    static func puttingItBack() throws {
+        let untouched = file("Boomerang.md", "# Still here\nkeep me\n")
+        let session = try NoteFileSession.open(untouched)
+        session.retain()
+        try FileManager.default.removeItem(at: untouched)
+        session.checkDisk()
+        expectEqual(session.state, .missing, "a deleted note with nothing unsaved shows as missing")
+        try session.restore()
+        expectEqual(NoteFileTestSupport.read(untouched), "# Still here\nkeep me\n", "putting it back rewrites the file just as it was")
+        expectEqual(session.state, .saved, "and it's saved")
+        expect(!session.isMissing, "and no longer missing")
+        NoteFileTestSupport.write("# Still here\nedited in another app\n", to: untouched)
+        let watched = NoteFileTestSupport.spin(timeout: 10) {
+            clock.advance(1)
+            return texts(session) == ["Still here", "edited in another app"]
+        }
+        expect(watched, "and the file is watched again")
+        session.release()
+
+        let edited = file("Edited.txt", "base\n")
+        let editing = try NoteFileSession.open(edited)
+        setText(editing, "unsaved words")
+        try FileManager.default.removeItem(at: edited)
+        editing.checkDisk()
+        clock.advance(5)
+        expectEqual(editing.state, .missing, "a note deleted under unsaved edits shows as missing")
+        try editing.restore()
+        expectEqual(NoteFileTestSupport.read(edited), "unsaved words\n", "putting it back keeps the unsaved edits")
+        expectEqual(editing.state, .saved, "and saves them")
+        expect(!editing.hasUnsavedChanges, "leaving nothing unsaved")
+
+        let shelf = folder.appendingPathComponent("Shelf", isDirectory: true)
+        let nested = NoteFileTestSupport.write("On the shelf\n", to: shelf.appendingPathComponent("Deep/Book.md"))
+        let orphan = try NoteFileSession.open(nested)
+        try FileManager.default.removeItem(at: shelf)
+        orphan.checkDisk()
+        expectEqual(orphan.state, .missing, "a note whose folder vanished shows as missing")
+        try orphan.restore()
+        expectEqual(NoteFileTestSupport.read(nested), "On the shelf\n", "putting it back rebuilds the missing folders too")
+        expectEqual(orphan.state, .saved, "and it's saved")
+
+        let taken = file("Taken.md", "mine\n")
+        let squatted = try NoteFileSession.open(taken)
+        try FileManager.default.removeItem(at: taken)
+        squatted.checkDisk()
+        NoteFileTestSupport.write("someone else's\n", to: taken)
+        expectThrows(NoteFileError.occupied("Taken.md"), "a different file in the old spot stops it") { try squatted.restore() }
+        expectEqual(NoteFileTestSupport.read(taken), "someone else's\n", "and stays untouched")
+        expectEqual(texts(squatted), ["mine"], "while the page keeps its words")
+        expectEqual(squatted.state, .missing, "and still offers to put it back")
+        expectEqual(NoteFileError.occupied("Taken.md").localizedDescription,
+                    "Something else is already called “Taken.md” there. Move or rename it, then try again.", "the error says what's wrong")
+        try FileManager.default.removeItem(at: taken)
+        try FileManager.default.createDirectory(at: taken, withIntermediateDirectories: false)
+        expectThrows(NoteFileError.occupied("Taken.md"), "so does a folder in its place") { try squatted.restore() }
+        try FileManager.default.removeItem(at: taken)
+        NoteFileTestSupport.write("mine\n", to: taken)
+        let twin = NoteFileStamp(path: taken.path)
+        try squatted.restore()
+        expectEqual(squatted.state, .saved, "an identical file in the old spot is simply picked back up")
+        expectEqual(NoteFileStamp(path: taken.path), twin, "without rewriting it")
     }
 
     static func movesAndTrash() throws {
