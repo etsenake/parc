@@ -274,6 +274,19 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     private var measuredWrap = false
     private var measuredTextHeight: CGFloat = 0
     private var appliedStyle: StyleKey?
+    private let modeControl = NoteDiagramModeControl()
+    private let previewDivider = NSView()
+    private var preview: NoteMermaidPreviewView?
+    private var shownMode: NoteDiagramMode = .code
+    private var isEditingCode = false
+    private var slidesCardOnce = false
+    private lazy var diagramClient = NoteMermaidRenderer.shared.makeClient()
+    private var diagramRequest: NoteMermaidRequest?
+    private var diagramWork: DispatchWorkItem?
+    private var diagramProblemRange: Range<Int>?
+
+    static let modeFadeIn: CFTimeInterval = 0.18
+    static let modeFadeOut: CFTimeInterval = 0.12
 
     private struct StyleKey: Equatable {
         var size: CGFloat
@@ -293,6 +306,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         configureCodeView()
         configureCaption()
         configureBar()
+        configureDiagram()
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         applyBlock(block, force: true)
@@ -300,6 +314,8 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
             guard let self else { return }
             NoteAnimation.settle(self.bar)
             NoteAnimation.settle(self.copyButton)
+            NoteAnimation.settle(self.card)
+            self.settleDiagramViews()
         }
     }
 
@@ -310,6 +326,11 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         language?.name ?? (block.props.language.isEmpty ? NoteCodeLanguage.plainText.name : block.props.language)
     }
     var languageID: String { language?.id ?? NoteCodeEditing.normalizedLanguage(block.props.language) }
+    var isDiagram: Bool { NoteMermaid.isDiagram(block) }
+
+    private var presentedMode: NoteDiagramMode {
+        isDiagram ? NoteMermaid.presentedMode(stored: NoteMermaid.storedMode(of: block), editing: isEditingCode) : .code
+    }
 
     private var pageSettings: NotePageSettings { editor?.session.page.settings ?? NotePageSettings() }
     private var codeStyle: NoteTextStyle { NoteTheme.textStyle(.code, small: pageSettings.smallText) }
@@ -416,6 +437,14 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
             if !showsCaption {
                 actions.append(NSAccessibilityCustomAction(name: "Add caption") { [weak self] in self?.addCaption(); return true })
             }
+            if isDiagram {
+                for mode in NoteDiagramMode.allCases where mode != NoteMermaid.storedMode(of: block) {
+                    actions.append(NSAccessibilityCustomAction(name: "Show " + mode.title.lowercased()) { [weak self] in
+                        self?.chooseDiagramMode(mode)
+                        return true
+                    })
+                }
+            }
         }
         setAccessibilityCustomActions(actions)
     }
@@ -455,11 +484,14 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         languageButton.content = .text(languageName)
         languageButton.setAccessibilityLabel("Language: \(languageName)")
         wrapButton.isChecked = block.props.wrap
+        modeControl.select(NoteMermaid.storedMode(of: block), animated: !force && window != nil)
+        refreshDiagramMode(animated: !force)
         refreshEditable()
         configureWrapping()
         rehighlight(force: force)
         refreshCard()
-        setAccessibilityLabel("Code block, \(languageName)")
+        refreshDiagram(immediately: force || !isEditingCode)
+        setAccessibilityLabel(isDiagram ? "Mermaid diagram" : "Code block, \(languageName)")
         needsLayout = true
     }
 
@@ -479,6 +511,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         captionView.isEditable = editable
         languageButton.isEnabled = editable
         wrapButton.isEnabled = editable
+        modeControl.isEnabled = editable
         captionButton.isHidden = !editable || showsCaption
         layoutBar()
         refreshAccessibilityActions()
@@ -544,8 +577,19 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         return max(line, used)
     }
 
+    private var dividerHeight: CGFloat { shownMode == .split ? 1 : 0 }
+
+    private func codeSectionHeight(width: CGFloat) -> CGFloat {
+        shownMode.showsCode ? padding.top + codeHeight(width: width) + padding.bottom : 0
+    }
+
+    private func previewHeight(width: CGFloat) -> CGFloat {
+        guard shownMode.showsDiagram, let preview else { return 0 }
+        return preview.height(for: width)
+    }
+
     private func cardHeight(width: CGFloat) -> CGFloat {
-        padding.top + codeHeight(width: width) + padding.bottom
+        codeSectionHeight(width: width) + dividerHeight + previewHeight(width: width)
     }
 
     override func measureHeight(width: CGFloat) -> CGFloat {
@@ -560,7 +604,13 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         NoteAnimation.withoutAnimation {
             let width = bounds.width
             let cardHeight = self.cardHeight(width: width)
-            card.frame = NSRect(x: 0, y: 0, width: width, height: cardHeight)
+            let cardFrame = NSRect(x: 0, y: 0, width: width, height: cardHeight)
+            if slidesCardOnce, abs(card.frame.width - width) < 0.5, card.frame != cardFrame {
+                NoteAnimation.slide(card, to: cardFrame, spring: .reorder)
+            } else {
+                card.frame = cardFrame
+            }
+            slidesCardOnce = false
             let textHeight = codeHeight(width: width)
             let available = textWidth(for: width)
             scrollView.frame = NSRect(x: padding.left, y: padding.top, width: available, height: textHeight)
@@ -570,6 +620,11 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
                 let used = codeView.layoutManager.flatMap { manager in codeView.textContainer.map { manager.usedRect(for: $0).width } } ?? 0
                 codeView.frame = NSRect(x: 0, y: 0, width: max(available, ceil(used) + 2), height: textHeight)
             }
+            let codeSection = codeSectionHeight(width: width)
+            previewDivider.frame = NSRect(x: 0, y: codeSection, width: width, height: 1)
+            if let preview {
+                preview.frame = NSRect(x: 0, y: codeSection + dividerHeight, width: width, height: preview.height(for: width))
+            }
             layoutBar()
             let caption = captionHeight(width: width)
             captionView.isHidden = caption == 0
@@ -577,7 +632,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         }
     }
 
-    private var barButtons: [NSView] { [copyButton, wrapButton, captionButton, languageButton].filter { !$0.isHidden } }
+    private var barButtons: [NSView] { [copyButton, wrapButton, captionButton, languageButton, modeControl].filter { !$0.isHidden } }
 
     private func layoutBar() {
         let width = card.bounds.width
@@ -599,16 +654,32 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         refreshCard()
+        refreshDiagram(immediately: true)
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        if superview != nil { refreshDiagram(immediately: true) } else { cancelDiagram() }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { refreshDiagram(immediately: true) }
     }
 
     private func refreshCard() {
         let fill: NSColor
         if let color = block.color, color.isBackground { fill = NoteTheme.color(color) } else { fill = NoteTheme.codeBackground }
-        NoteAnimation.withoutAnimation { card.layer?.backgroundColor = NoteTheme.resolved(fill, in: self) }
+        NoteAnimation.withoutAnimation {
+            card.layer?.backgroundColor = NoteTheme.resolved(fill, in: self)
+            previewDivider.layer?.backgroundColor = NoteTheme.resolved(NoteTheme.separator, in: self)
+        }
     }
 
     private func codeDidChange() {
         measuredWidth = -1
+        clearProblemMarks()
+        refreshDiagram(immediately: false)
         rehighlight()
         needsLayout = true
         reportHeightChange()
@@ -707,6 +778,12 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if card.frame.contains(point) {
+            if let preview, !preview.isHidden, shownMode.showsDiagram,
+               preview.frame.contains(card.convert(event.locationInWindow, from: nil)) {
+                if isReadOnly { super.mouseDown(with: event) } else { beginEditing(at: (codeView.string as NSString).length) }
+                return
+            }
+            guard shownMode.showsCode else { super.mouseDown(with: event); return }
             let local = codeView.convert(event.locationInWindow, from: nil)
             let clamped = NSPoint(x: max(0, local.x), y: min(max(0, local.y), codeView.bounds.height - 1))
             window?.makeFirstResponder(codeView)
@@ -722,7 +799,18 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
             wantsCaption = true
             invalidateHeight()
         }
-        return super.focus(at: offset, field: field)
+        let revealsCode = field == .body && isDiagram && !shownMode.showsCode
+        if revealsCode {
+            isEditingCode = true
+            refreshDiagramMode(animated: true)
+            layoutSubtreeIfNeeded()
+        }
+        let focused = super.focus(at: offset, field: field)
+        if revealsCode, !focused {
+            isEditingCode = false
+            refreshDiagramMode(animated: false)
+        }
+        return focused
     }
 
     private func invalidateHeight() {
@@ -755,7 +843,10 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
-        if newWindow == nil { closeLanguagePicker() }
+        if newWindow == nil {
+            closeLanguagePicker()
+            cancelDiagram()
+        }
     }
 
     private func captionDidEndEditing() {
@@ -817,6 +908,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
             self.picker = nil
             self.removePickerMonitor()
             self.refreshBar()
+            self.syncEditingSoon()
         }
         let overlay = editor.canvas.overlayView
         let anchor = overlay.convert(languageButton.bounds, from: languageButton)
@@ -846,6 +938,7 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         removePickerMonitor()
         panel.dismiss(animated: true)
         refreshBar()
+        syncEditingSoon()
     }
 
     private func choose(_ language: NoteCodeLanguage) {
@@ -862,5 +955,215 @@ final class NoteCodeBlockView: NoteBlockView, NoteTextHost {
         let selection = codeView.selectedOffsets
         window?.makeFirstResponder(codeView)
         codeView.selectedOffsets = selection
+    }
+
+    private func configureDiagram() {
+        previewDivider.wantsLayer = true
+        previewDivider.isHidden = true
+        previewDivider.setAccessibilityElement(false)
+        card.addSubview(previewDivider, positioned: .below, relativeTo: bar)
+        modeControl.isHidden = true
+        modeControl.onChoose = { [weak self] mode in self?.chooseDiagramMode(mode) }
+        bar.addSubview(modeControl)
+        codeView.onFocusChange = { [weak self] focused in self?.codeFocusDidChange(focused) }
+    }
+
+    private func ensurePreview() {
+        guard preview == nil else { return }
+        let view = NoteMermaidPreviewView()
+        view.isHidden = true
+        card.addSubview(view, positioned: .below, relativeTo: bar)
+        preview = view
+    }
+
+    private func refreshDiagramMode(animated: Bool) {
+        let mode = presentedMode
+        modeControl.isHidden = !isDiagram
+        wrapButton.isHidden = !mode.showsCode
+        defer { layoutBar() }
+        guard mode != shownMode else { return }
+        let animate = animated && window != nil && !NoteAnimation.reduceMotion
+        shownMode = mode
+        if mode.showsDiagram { ensurePreview() }
+        setShown(scrollView, mode.showsCode, animate: animate)
+        setShown(previewDivider, mode == .split, animate: animate)
+        if let preview { setShown(preview, mode.showsDiagram, animate: animate) }
+        if mode.showsDiagram { refreshDiagram(immediately: true) } else { cancelDiagram() }
+        slidesCardOnce = animate
+        needsLayout = true
+        reportHeightChange()
+    }
+
+    private func isShownInCurrentMode(_ view: NSView) -> Bool {
+        if view === scrollView { return shownMode.showsCode }
+        if view === previewDivider { return shownMode == .split }
+        return shownMode.showsDiagram
+    }
+
+    private func setShown(_ view: NSView, _ shown: Bool, animate: Bool) {
+        if shown {
+            let wasHidden = view.isHidden
+            view.isHidden = false
+            if animate, wasHidden {
+                NoteAnimation.withoutAnimation { view.alphaValue = 0; view.layer?.opacity = 0 }
+                NoteAnimation.fade(view, visible: true, duration: Self.modeFadeIn)
+            } else if !animate {
+                if let layer = view.layer { NoteAnimation.settle(layer) }
+                NoteAnimation.withoutAnimation { view.alphaValue = 1; view.layer?.opacity = 1 }
+            }
+        } else if !view.isHidden {
+            guard animate else {
+                view.isHidden = true
+                NoteAnimation.withoutAnimation { view.alphaValue = 1; view.layer?.opacity = 1 }
+                return
+            }
+            NoteAnimation.fade(view, visible: false, duration: Self.modeFadeOut) { [weak self, weak view] in
+                guard let self, let view, !self.isShownInCurrentMode(view) else { return }
+                view.isHidden = true
+            }
+        }
+    }
+
+    private func settleDiagramViews() {
+        var views: [(NSView, Bool)] = [(scrollView, shownMode.showsCode), (previewDivider, shownMode == .split)]
+        if let preview { views.append((preview, shownMode.showsDiagram)) }
+        for (view, shown) in views {
+            view.isHidden = !shown
+            NoteAnimation.withoutAnimation { view.alphaValue = 1; view.layer?.opacity = 1 }
+        }
+        needsLayout = true
+    }
+
+    private func codeFocusDidChange(_ focused: Bool) {
+        if !focused, picker != nil { return }
+        guard focused != isEditingCode else { return }
+        isEditingCode = focused
+        refreshDiagramMode(animated: true)
+    }
+
+    private func syncEditingSoon() {
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.codeFocusDidChange(self.window?.firstResponder === self.codeView)
+            }
+        }
+    }
+
+    private func beginEditing(at offset: Int) {
+        guard !isReadOnly else { return }
+        isEditingCode = true
+        refreshDiagramMode(animated: true)
+        layoutSubtreeIfNeeded()
+        window?.makeFirstResponder(codeView)
+        codeView.selectedOffsets = offset..<offset
+    }
+
+    private func chooseDiagramMode(_ mode: NoteDiagramMode) {
+        guard let editor, !isReadOnly, isDiagram else { return }
+        let stored: NoteDiagramMode? = mode == .preview ? nil : mode
+        modeControl.select(mode, animated: true)
+        if block.props.diagramMode != stored {
+            editor.session.updateBlock(blockID, name: "Diagram View") { $0.props.diagramMode = stored }
+        }
+        guard mode == .preview, window?.firstResponder === codeView else { return }
+        editor.selection.select(.blocks([blockID]))
+        isEditingCode = window?.firstResponder === codeView
+        refreshDiagramMode(animated: true)
+    }
+
+    private func refreshDiagram(immediately: Bool) {
+        guard isDiagram, shownMode.showsDiagram, let preview else { cancelDiagram(); return }
+        let renderer = NoteMermaidRenderer.shared
+        let request = NoteMermaidRequest(source: codeView.string, theme: .note(appearance: effectiveAppearance, settings: pageSettings))
+        guard request != diagramRequest else { return }
+        guard NoteMermaid.hasContent(request.source) else {
+            cancelDiagram()
+            diagramRequest = request
+            markProblem(nil, source: request.source)
+            present(art: nil, problem: nil, message: NoteMermaidPreviewView.emptyTitle, animated: false)
+            return
+        }
+        diagramRequest = request
+        diagramWork?.cancel()
+        diagramWork = nil
+        if let hit = renderer.cached(request) {
+            renderer.cancel(diagramClient)
+            show(hit, for: request, animated: preview.hasDrawing)
+            return
+        }
+        if !preview.hasDrawing, preview.problem == nil {
+            if let known = renderer.lastKnown(request) {
+                show(known, for: request, animated: false)
+            } else {
+                present(art: nil, problem: nil, message: NoteMermaidPreviewView.drawingTitle, animated: false)
+            }
+        }
+        guard superview != nil else { return }
+        if immediately || !preview.hasDrawing {
+            startDiagram(request)
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.startDiagram(request) }
+        }
+        diagramWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + NoteMermaid.typingDelay, execute: work)
+    }
+
+    private func startDiagram(_ request: NoteMermaidRequest) {
+        diagramWork = nil
+        guard request == diagramRequest else { return }
+        NoteMermaidRenderer.shared.render(request, client: diagramClient) { [weak self] result in
+            guard let self, request == self.diagramRequest else { return }
+            self.show(result, for: request, animated: true)
+        }
+    }
+
+    private func cancelDiagram() {
+        diagramWork?.cancel()
+        diagramWork = nil
+        guard diagramRequest != nil else { return }
+        diagramRequest = nil
+        NoteMermaidRenderer.shared.cancel(diagramClient)
+    }
+
+    private func show(_ result: NoteMermaidResult, for request: NoteMermaidRequest, animated: Bool) {
+        switch result {
+        case .art(let art):
+            markProblem(nil, source: request.source)
+            present(art: art, problem: nil, message: nil, animated: animated)
+        case .failure(let message), .unavailable(let message):
+            let problem = NoteMermaidProblem(message: message)
+            markProblem(problem, source: request.source)
+            present(art: preview?.art, problem: problem, message: nil, animated: animated)
+        }
+    }
+
+    private func present(art: NoteMermaidArt?, problem: NoteMermaidProblem?, message: String?, animated: Bool) {
+        guard let preview else { return }
+        let width = bounds.width
+        let before = preview.height(for: width)
+        preview.show(art: art, problem: problem, message: message, animated: animated)
+        needsLayout = true
+        if preview.height(for: width) != before { reportHeightChange() }
+    }
+
+    private func markProblem(_ problem: NoteMermaidProblem?, source: String) {
+        clearProblemMarks()
+        guard let problem, let range = problem.range(in: source), NoteMermaid.normalizedSource(codeView.string) == source,
+              let layoutManager = codeView.layoutManager, range.upperBound <= (codeView.string as NSString).length else { return }
+        layoutManager.addTemporaryAttributes([.underlineStyle: NSUnderlineStyle([.single, .patternDot]).rawValue,
+                                              .underlineColor: NoteTheme.destructiveInk],
+                                             forCharacterRange: NSRange(location: range.lowerBound, length: range.count))
+        diagramProblemRange = range
+    }
+
+    private func clearProblemMarks() {
+        guard diagramProblemRange != nil, let layoutManager = codeView.layoutManager else { return }
+        diagramProblemRange = nil
+        let whole = NSRange(location: 0, length: (codeView.string as NSString).length)
+        layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: whole)
+        layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: whole)
     }
 }
