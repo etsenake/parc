@@ -1,0 +1,3 @@
+Sources/ParcCore/*.swift
+Sources/ParcApp/NoteMediaSupport.swift
+Sources/ParcApp/NoteMediaImageLoader.swift

@@ -194,3 +194,52 @@ enum NoteMediaFileType {
         ["gif", "png", "apng", "webp", "heics"].contains(url.pathExtension.lowercased())
     }
 }
+
+enum NoteLinkedNote {
+    private struct Entry {
+        var modified: Date?
+        var icon: String?
+    }
+
+    @MainActor private static var cache: [URL: Entry] = [:]
+
+    @MainActor
+    static func icon(for url: URL) -> String? {
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        if let hit = cache[url], hit.modified == modified { return hit.icon }
+        let icon = read(url)
+        cache[url] = Entry(modified: modified, icon: icon)
+        return icon
+    }
+
+    static func read(_ url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 4096) else { return nil }
+        return frontMatterIcon(in: String(decoding: data, as: UTF8.self))
+    }
+
+    static func frontMatterIcon(in text: String) -> String? {
+        var lines = text.components(separatedBy: .newlines)
+        if lines.first?.hasPrefix("\u{FEFF}") == true { lines[0].removeFirst() }
+        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else { return nil }
+        for line in lines.dropFirst() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "---" || trimmed == "..." { return nil }
+            guard trimmed.lowercased().hasPrefix("icon:") else { continue }
+            var value = trimmed.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            if let hash = value.range(of: " #") { value = String(value[..<hash.lowerBound]).trimmingCharacters(in: .whitespaces) }
+            if value.count >= 2, let first = value.first, let last = value.last, (first == "\"" && last == "\"") || (first == "'" && last == "'") {
+                value = String(value.dropFirst().dropLast())
+            }
+            return value.isEmpty ? nil : value
+        }
+        return nil
+    }
+
+    static func title(fromTarget target: String) -> String {
+        let decoded = target.removingPercentEncoding ?? target
+        let last = (decoded as NSString).lastPathComponent
+        return (last as NSString).deletingPathExtension
+    }
+}

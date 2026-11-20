@@ -1,4 +1,6 @@
 import AppKit
 
 @MainActor
-final class NoteEmbedBlockView: NoteBlockView {}
+final class NoteEmbedBlockView: NoteLinkBlockView {
+    override var style: Style { .embed }
+}
