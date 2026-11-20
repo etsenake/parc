@@ -849,7 +849,7 @@ final class NoteSlashMenuController {
     }
 
     private func syncReminders() {
-        guard !editor.environment.isPlainText else { return }
+        guard !editor.environment.isPlainText, !editor.isTemplateEditor else { return }
         let document = editor.environment.documentURL
         if let previous = reminderDocument, let document, previous != document { NoteReminderCenter.shared.noteMoved(from: previous, to: document) }
         reminderDocument = document ?? reminderDocument

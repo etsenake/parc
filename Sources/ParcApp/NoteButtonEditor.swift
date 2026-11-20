@@ -87,6 +87,7 @@ final class NoteButtonTemplateView: NSView, NSMenuItemValidation {
 
     func detach() {
         templateEditor.dismissOverlays()
+        templateEditor.slashMenu.tearDown()
         canvas.overlayHost = nil
     }
 
