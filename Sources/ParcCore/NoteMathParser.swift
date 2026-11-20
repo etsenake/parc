@@ -60,7 +60,7 @@ enum NoteMathColumnAlignment: Equatable, Sendable {
 }
 
 enum NoteMathEnvironmentKind: Equatable, Sendable {
-    case matrix, smallMatrix, cases, aligned, gathered, array
+    case matrix, smallMatrix, cases, aligned, alignedAt, gathered, multline, array, subarray
 }
 
 struct NoteMathEnvironment: Equatable {
@@ -73,6 +73,9 @@ struct NoteMathEnvironment: Equatable {
     var rowSpacing: [Int: Double] = [:]
     var left: String?
     var right: String?
+    var displayCells = false
+    var columnRuleDashes: [Bool] = []
+    var rowRuleDashes: [Bool] = []
 }
 
 indirect enum NoteMathNode: Equatable {
@@ -1107,7 +1110,9 @@ struct NoteMathParser {
             throw failure("Unknown environment \u{201C}\(name.text)\u{201D}", from: name.start, to: name.end)
         }
         var environment = NoteMathEnvironment(kind: shape.kind, rows: [], columns: [], left: shape.left, right: shape.right)
+        environment.displayCells = Self.displayEnvironments.contains(name.text)
         let tagsRows = display && depth == 1 && Self.numberedEnvironments[name.text] != nil
+        let rowsTagged = tagsRows && shape.kind != .multline
         let numbered = tagsRows && Self.numberedEnvironments[name.text] == true
         let outerTag = pendingTag
         let outerLabel = pendingLabel
@@ -1118,23 +1123,45 @@ struct NoteMathParser {
             suppressesNumber = false
         }
         var specified: [NoteMathColumnAlignment]?
-        if shape.kind == .array {
-            let spec = try parseRawGroup(for: "begin{array}", what: "columns like lcr")
+        var uniformAlignment: NoteMathColumnAlignment?
+        switch shape.kind {
+        case .array:
+            let spec = try parseRawGroup(for: "begin{\(name.text)}", what: "columns like lcr")
             var columns: [NoteMathColumnAlignment] = []
             for character in spec.text where !character.isWhitespace {
                 switch character {
                 case "l": columns.append(.left)
                 case "c": columns.append(.center)
                 case "r": columns.append(.right)
-                case "|": environment.columnRules.append(columns.count)
+                case "|", ":":
+                    environment.columnRules.append(columns.count)
+                    environment.columnRuleDashes.append(character == ":")
                 default:
-                    throw failure("Array columns only take l, c, r and |", from: spec.start, to: spec.end)
+                    throw failure("Array columns only take l, c, r, | and :", from: spec.start, to: spec.end)
                 }
             }
             if columns.isEmpty { throw failure("Array needs at least one column, like {cc}", from: spec.start, to: spec.end) }
             specified = columns
+        case .subarray:
+            let spec = try parseRawGroup(for: "begin{subarray}", what: "one column, c or l")
+            switch spec.text.filter({ !$0.isWhitespace }) {
+            case "c": specified = [.center]
+            case "l": specified = [.left]
+            default: throw failure("Subarray takes a single column, {c} or {l}", from: spec.start, to: spec.end)
+            }
+        case .alignedAt:
+            let spec = try parseRawGroup(for: "begin{\(name.text)}", what: "how many column pairs, like {2}")
+            guard let pairs = Int(spec.text.filter { !$0.isWhitespace }), pairs > 0 else {
+                throw failure("\(name.text) needs how many column pairs it has, like {2}", from: spec.start, to: spec.end)
+            }
+            specified = (0..<(pairs * 2)).map { $0.isMultiple(of: 2) ? .right : .left }
+        case .matrix where name.text.hasSuffix("*"):
+            uniformAlignment = try parseMatrixAlignment(for: name.text)
+        default:
+            break
         }
-        let maximumColumns = specified?.count ?? (shape.kind == .gathered ? 1 : shape.kind == .cases ? 2 : Int.max)
+        let singleColumn = shape.kind == .gathered || shape.kind == .multline
+        let maximumColumns = specified?.count ?? (singleColumn ? 1 : shape.kind == .cases ? 2 : Int.max)
         var row: [[NoteMathNode]] = []
         consumeRowRules(into: &environment, row: 0)
         while true {
@@ -1144,30 +1171,38 @@ struct NoteMathParser {
             switch next.token {
             case .character("&"):
                 if row.count >= maximumColumns {
-                    throw failure(shape.kind == .gathered ? "\(name.text) doesn't use &" : "This row has more columns than \(name.text) allows", next)
+                    throw failure(singleColumn ? "\(name.text) doesn't use &" : "This row has more columns than \(name.text) allows", next)
                 }
             case .command("end"):
                 let closing = try parseRawGroup(for: "end", what: "an environment name")
                 guard closing.text == name.text else {
                     throw failure("\\begin{\(name.text)} ends with \\end{\(closing.text)}", from: closing.start, to: closing.end)
                 }
-                let trailingEmpty = row.count == 1 && row[0].isEmpty && pendingTag == nil && pendingLabel == nil
+                let trailingEmpty = row.count == 1 && row[0].isEmpty && (!rowsTagged || (pendingTag == nil && pendingLabel == nil))
                 if !trailingEmpty || environment.rows.isEmpty {
                     environment.rows.append(row)
-                    if tagsRows { environment.tags.append(try rowTag(numbered: numbered)) }
+                    if rowsTagged { environment.tags.append(try rowTag(numbered: numbered)) }
                 }
                 if tagsRows {
+                    if !rowsTagged {
+                        let tag = try rowTag(numbered: numbered)
+                        environment.tags = Array(repeating: nil, count: max(environment.rows.count - 1, 0)) + [tag]
+                    }
                     if environment.tags.allSatisfy({ $0 == nil }) { environment.tags = [] }
                     pendingTag = outerTag
                     pendingLabel = outerLabel
                     suppressesNumber = outerSuppression
                 }
                 let columnCount = environment.rows.map(\.count).max() ?? 1
-                environment.columns = specified ?? Self.defaultColumns(for: shape.kind, count: columnCount)
+                if let uniformAlignment {
+                    environment.columns = Array(repeating: uniformAlignment, count: max(columnCount, 1))
+                } else {
+                    environment.columns = specified ?? Self.defaultColumns(for: shape.kind, count: columnCount)
+                }
                 return .environment(environment)
             default:
                 environment.rows.append(row)
-                if tagsRows { environment.tags.append(try rowTag(numbered: numbered)) }
+                if rowsTagged { environment.tags.append(try rowTag(numbered: numbered)) }
                 row = []
                 if let spacing = try parseOptionalRowSpacing() { environment.rowSpacing[environment.rows.count - 1] = spacing }
                 consumeRowRules(into: &environment, row: environment.rows.count)
@@ -1181,13 +1216,33 @@ struct NoteMathParser {
             guard next.token == .command("hline") || next.token == .command("hdashline") else { return }
             advance(past: next)
             environment.rowRules.append(row)
+            environment.rowRuleDashes.append(next.token == .command("hdashline"))
         }
+    }
+
+    private mutating func parseMatrixAlignment(for name: String) throws(NoteMathParseError) -> NoteMathColumnAlignment {
+        let open = peek()
+        guard open.token == .character("[") else { return .center }
+        advance(past: open)
+        let letter = peek()
+        advance(past: letter)
+        let close = peek()
+        let alignment: NoteMathColumnAlignment
+        switch letter.token {
+        case .character("l"): alignment = .left
+        case .character("c"): alignment = .center
+        case .character("r"): alignment = .right
+        default: throw failure("\(name) lines its columns up with [l], [c] or [r]", letter)
+        }
+        guard close.token == .character("]") else { throw failure("\(name) lines its columns up with [l], [c] or [r]", close) }
+        advance(past: close)
+        return alignment
     }
 
     private static func defaultColumns(for kind: NoteMathEnvironmentKind, count: Int) -> [NoteMathColumnAlignment] {
         switch kind {
         case .cases: return Array(repeating: .left, count: max(count, 1))
-        case .aligned: return (0..<max(count, 1)).map { $0.isMultiple(of: 2) ? .right : .left }
+        case .aligned, .alignedAt: return (0..<max(count, 1)).map { $0.isMultiple(of: 2) ? .right : .left }
         default: return Array(repeating: .center, count: max(count, 1))
         }
     }
@@ -1199,11 +1254,19 @@ struct NoteMathParser {
         "aligned": (.aligned, nil, nil), "align": (.aligned, nil, nil), "align*": (.aligned, nil, nil),
         "split": (.aligned, nil, nil), "gathered": (.gathered, nil, nil), "gather": (.gathered, nil, nil),
         "gather*": (.gathered, nil, nil), "array": (.array, nil, nil), "equation": (.gathered, nil, nil),
-        "equation*": (.gathered, nil, nil),
+        "equation*": (.gathered, nil, nil), "matrix*": (.matrix, nil, nil), "pmatrix*": (.matrix, "(", ")"),
+        "bmatrix*": (.matrix, "[", "]"), "Bmatrix*": (.matrix, "{", "}"), "vmatrix*": (.matrix, "|", "|"),
+        "Vmatrix*": (.matrix, "\u{2016}", "\u{2016}"), "dcases": (.cases, "{", nil), "drcases": (.cases, nil, "}"),
+        "darray": (.array, nil, nil), "alignat": (.alignedAt, nil, nil), "alignat*": (.alignedAt, nil, nil),
+        "alignedat": (.alignedAt, nil, nil), "multline": (.multline, nil, nil), "multline*": (.multline, nil, nil),
+        "subarray": (.subarray, nil, nil),
     ]
+
+    private static let displayEnvironments: Set<String> = ["dcases", "drcases", "darray"]
 
     private static let numberedEnvironments: [String: Bool] = [
         "align": true, "gather": true, "equation": true, "align*": false, "gather*": false, "equation*": false,
+        "alignat": true, "alignat*": false, "multline": true, "multline*": false,
     ]
 
     private static let styleSwitches: [String: NoteMathStyleLevel] = [

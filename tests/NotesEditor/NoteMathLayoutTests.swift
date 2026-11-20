@@ -43,6 +43,42 @@ struct NoteMathLayoutTests {
         }
     }
 
+    static func ruleCount(_ box: NoteMathBox) -> Int {
+        box.inks.filter { ink in
+            if case .rule = ink.content { return true }
+            return false
+        }.count
+    }
+
+    static func katexEnvironments() {
+        let alignat = box("\\begin{alignat*}{2} a &= b & c &= d \\end{alignat*}")
+        let aligned = box("\\begin{aligned} a &= b & c &= d \\end{aligned}")
+        expect(abs(aligned.width - alignat.width - size) < 0.5, "alignat drops aligned's quad between pairs")
+        let multline = box("\\begin{multline*} a+b+c+d+e \\\\ x \\\\ y \\end{multline*}")
+        let rows = multline.inks.sorted { $0.origin.y > $1.origin.y }
+        guard let first = rows.first, let last = rows.last else { failTest("multline draws") }
+        expect(first.origin.x < 0.2 * size, "multline's first line hugs the left")
+        expect(last.origin.x > multline.width - size, "multline's last line hugs the right")
+        let middle = rows.filter { abs($0.origin.y - (first.origin.y + last.origin.y) / 2) < 0.3 * size }
+        expect(middle.count == 1 && abs(middle[0].origin.x - multline.width / 2) < 0.6 * size, "multline centres the middle line")
+        let subarray = box("\\begin{subarray}{c} a \\\\ b \\end{subarray}")
+        let matrix = box("\\begin{matrix} a \\\\ b \\end{matrix}")
+        expect(subarray.height < matrix.height * 0.75 && subarray.width < matrix.width, "subarray is script-sized and tight")
+        let leftSubarray = box("\\begin{subarray}{l} abc \\\\ d \\end{subarray}")
+        let leftRows = leftSubarray.inks.sorted { $0.origin.y > $1.origin.y }
+        expect(abs((leftRows.first?.origin.x ?? 1) - (leftRows.last?.origin.x ?? 0)) < 0.1 * size, "subarray {l} aligns left")
+        expect(box("\\begin{dcases} \\frac{1}{2} & x \\end{dcases}").height > box("\\begin{cases} \\frac{1}{2} & x \\end{cases}").height,
+               "dcases sets its cells in display style")
+        expect(box("\\begin{darray}{c} \\sum_{i=1}^n i \\end{darray}").height > box("\\begin{array}{c} \\sum_{i=1}^n i \\end{array}").height,
+               "darray sets its cells in display style")
+        let right = box("\\begin{matrix*}[r] 1 \\\\ -10 \\end{matrix*}").inks.max { $0.origin.y < $1.origin.y }
+        let left = box("\\begin{matrix*}[l] 1 \\\\ -10 \\end{matrix*}").inks.max { $0.origin.y < $1.origin.y }
+        expect((right?.origin.x ?? 0) > (left?.origin.x ?? 0) + 0.5 * size, "matrix*[r] pushes short entries right")
+        expect(ruleCount(box("\\begin{array}{c:c} a & b \\\\ c & d \\end{array}")) > 2, "a dashed column draws as dashes")
+        expect(ruleCount(box("\\begin{array}{c|c} a & b \\\\ c & d \\end{array}")) == 1, "a solid column is one rule")
+        expect(ruleCount(box("\\begin{array}{cc} a & b \\\\ \\hdashline c & d \\end{array}")) > 2, "hdashline draws as dashes")
+    }
+
     static func main() {
         let repository = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : FileManager.default.currentDirectoryPath)
         let url = repository.appendingPathComponent("Resources/NoteFonts/STIXTwoMath-Regular.otf")
@@ -60,6 +96,7 @@ struct NoteMathLayoutTests {
         delimiters()
         accents()
         environments()
+        katexEnvironments()
         scriptSizes()
         macrosAndChemistry()
         tags()

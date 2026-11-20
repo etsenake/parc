@@ -79,12 +79,74 @@ struct NoteMathParserTests {
         expansionPrimitives()
         cellScopes()
         katexBoxesSizesAndLinks()
+        katexEnvironments()
         chemistry()
         units()
         mhchemManual()
         tags()
         labels()
         print("NoteMathParserTests passed")
+    }
+
+    static func katexEnvironments() {
+        guard case .environment(let alignat)? = parse("\\begin{alignat}{2} a &= b & c &= d \\\\ e &= f \\end{alignat}").first else {
+            failTest("alignat parses")
+        }
+        expect(alignat.kind == .alignedAt && alignat.columns == [.right, .left, .right, .left], "alignat takes its column pairs")
+        expect(alignat.tags == [[.text("(1)", .roman)], [.text("(2)", .roman)]], "alignat numbers every row: \(alignat.tags)")
+        guard case .environment(let alignedat)? = parse("\\begin{alignedat}{1} a &= b \\end{alignedat}").first else {
+            failTest("alignedat parses")
+        }
+        expect(alignedat.kind == .alignedAt && alignedat.tags.isEmpty, "alignedat never numbers")
+        expect(parse("\\begin{alignat*}{1} a &= b \\\\ c &= d \\end{alignat*}").first.map { node in
+            if case .environment(let environment) = node { return environment.tags.isEmpty }
+            return false
+        } == true, "alignat* stays unnumbered")
+        expect(failure("\\begin{alignat}{1} a &= b & c \\end{alignat}").message.contains("more columns"), "alignat caps the pairs")
+        expect(failure("\\begin{alignat}{x} a \\end{alignat}").message.contains("column pairs"), "alignat needs a count")
+        guard case .environment(let multline)? = parse("\\begin{multline} a + b \\\\ c \\label{long} \\\\ d \\end{multline}").first else {
+            failTest("multline parses")
+        }
+        expect(multline.kind == .multline && multline.rows.count == 3, "multline keeps its lines")
+        expect(multline.tags == [nil, nil, [.text("(1)", .roman)]], "multline takes one number on its last line: \(multline.tags)")
+        guard case .environment(let quiet)? = parse("\\begin{multline*} a \\\\ b \\\\ \\end{multline*}").first else {
+            failTest("multline* parses")
+        }
+        expect(quiet.tags.isEmpty && quiet.rows.count == 2, "multline* stays unnumbered and drops a trailing break")
+        guard case .environment(let tagged)? = parse("\\begin{multline} a \\tag{M} \\\\ b \\end{multline}").first else {
+            failTest("tagged multline parses")
+        }
+        expect(tagged.tags.count == 2 && tagged.tags[0] == nil && tagged.tags[1] != nil, "a multline tag lands on the last line")
+        expect(failure("\\begin{multline} a & b \\end{multline}").message.contains("doesn't use &"), "multline has one column")
+        guard case .environment(let subarray)? = parse("\\begin{subarray}{l} i < n \\\\ j < m \\end{subarray}").first else {
+            failTest("subarray parses")
+        }
+        expect(subarray.kind == .subarray && subarray.columns == [.left] && subarray.rows.count == 2, "subarray is one left column")
+        expect(failure("\\begin{subarray}{cc} a \\end{subarray}").message.contains("single column"), "subarray takes one column")
+        expect(failure("\\begin{subarray}{r} a \\end{subarray}").message.contains("single column"), "subarray takes only c or l")
+        expect(failure("\\begin{subarray}{c} a & b \\end{subarray}").message.contains("more columns"), "subarray rejects &")
+        guard case .environment(let dcases)? = parse("\\begin{dcases} \\frac12 & x > 0 \\end{dcases}").first,
+              case .environment(let drcases)? = parse("\\begin{drcases} a & b \\end{drcases}").first,
+              case .environment(let darray)? = parse("\\begin{darray}{rl} a & b \\end{darray}").first,
+              case .environment(let plainCases)? = parse("\\begin{cases} a & b \\end{cases}").first else {
+            failTest("display-style environments parse")
+        }
+        expect(dcases.kind == .cases && dcases.displayCells && dcases.left == "{" && dcases.columns == [.left, .left], "dcases")
+        expect(drcases.kind == .cases && drcases.displayCells && drcases.right == "}" && drcases.left == nil, "drcases")
+        expect(darray.kind == .array && darray.displayCells && darray.columns == [.right, .left], "darray")
+        expect(!plainCases.displayCells, "cases stays text style")
+        guard case .environment(let starred)? = parse("\\begin{pmatrix*}[r] 1 & -1 \\\\ -10 & 2 \\end{pmatrix*}").first,
+              case .environment(let centred)? = parse("\\begin{bmatrix*} 1 & 2 \\end{bmatrix*}").first else {
+            failTest("starred matrices parse")
+        }
+        expect(starred.kind == .matrix && starred.left == "(" && starred.columns == [.right, .right], "pmatrix* lines columns up")
+        expect(centred.left == "[" && centred.columns == [.center, .center], "matrix* defaults to centred")
+        expect(failure("\\begin{Vmatrix*}[x] 1 \\end{Vmatrix*}").message.contains("[l], [c] or [r]"), "matrix* checks its alignment")
+        guard case .environment(let dashed)? = parse("\\begin{array}{c:c|c} a & b & c \\\\ \\hdashline d & e & f \\\\ \\hline \\end{array}").first else {
+            failTest("dashed array parses")
+        }
+        expect(dashed.columnRules == [1, 2] && dashed.columnRuleDashes == [true, false], "colons draw dashed columns")
+        expect(dashed.rowRules == [1, 2] && dashed.rowRuleDashes == [true, false], "hdashline draws a dashed row rule")
     }
 
     static func atomsAndClasses() {
@@ -678,7 +740,7 @@ struct NoteMathParserTests {
         expect(mismatch.message == "\\begin{matrix} ends with \\end{pmatrix}", "mismatched environment")
         expect(failure("\\begin{matrix} a").message == "Missing \\end{matrix}", "unclosed environment")
         expect(failure("\\begin{foo} a \\end{foo}").message == "Unknown environment \u{201C}foo\u{201D}", "unknown environment")
-        expect(failure("\\begin{array}{cx} a \\end{array}").message == "Array columns only take l, c, r and |", "bad array spec")
+        expect(failure("\\begin{array}{cx} a \\end{array}").message == "Array columns only take l, c, r, | and :", "bad array spec")
         expect(failure("\\begin{array}{c} a & b \\end{array}").message.hasPrefix("This row has more columns"), "too many cells")
         expect(failure("\\begin{gathered} a & b \\end{gathered}").message == "gathered doesn't use &", "gathered has one column")
         expect(failure("a & b").message.hasPrefix("& only works"), "stray ampersand")

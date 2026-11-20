@@ -1161,6 +1161,7 @@ struct NoteMathTypesetter {
         var strutDescent: CGFloat
         var rowGap: CGFloat
         var padsRelations: Bool
+        var rowAlignments: [Int: NoteMathColumnAlignment] = [:]
     }
 
     private func environment(_ environment: NoteMathEnvironment, _ context: NoteMathContext) -> NoteMathBox {
@@ -1175,9 +1176,14 @@ struct NoteMathTypesetter {
             break
         case .smallMatrix:
             shape.cellStyle = .script
-            shape.gaps = { _ in em * 0.3 }
-            shape.strutAscent = 0.7 * baselineSkip * 0.6
-            shape.strutDescent = 0.3 * baselineSkip * 0.6
+            shape.gaps = { _ in em * 2 * 0.2778 * 0.7 }
+            shape.strutAscent = 0.7 * baselineSkip * 0.5
+            shape.strutDescent = 0.3 * baselineSkip * 0.5
+        case .subarray:
+            shape.cellStyle = .script
+            shape.gaps = { _ in 0 }
+            shape.strutAscent = 0.7 * baselineSkip * 0.5
+            shape.strutDescent = 0.3 * baselineSkip * 0.5
         case .cases:
             shape.strutAscent *= 1.2
             shape.strutDescent *= 1.2
@@ -1186,12 +1192,24 @@ struct NoteMathTypesetter {
             shape.gaps = { $0.isMultiple(of: 2) ? 0 : em }
             shape.rowGap = 0.3 * em
             shape.padsRelations = true
+        case .alignedAt:
+            shape.cellStyle = script ? context.style.level : .display
+            shape.gaps = { _ in 0 }
+            shape.rowGap = 0.3 * em
+            shape.padsRelations = true
         case .gathered:
             shape.cellStyle = script ? context.style.level : .display
             shape.rowGap = 0.3 * em
+        case .multline:
+            shape.cellStyle = script ? context.style.level : .display
+            shape.rowGap = 0.3 * em
+            if environment.rows.count > 1 {
+                shape.rowAlignments = [0: .left, environment.rows.count - 1: .right]
+            }
         case .array:
             shape.outerPadding = 0.5 * em
         }
+        if environment.displayCells { shape.cellStyle = .display }
         let grid = self.grid(environment, shape: shape, context)
         guard environment.left != nil || environment.right != nil else { return grid }
         let target = delimiterTarget(ascent: grid.ascent, descent: grid.descent, context)
@@ -1254,7 +1272,7 @@ struct NoteMathTypesetter {
         var box = NoteMathBox(width: totalWidth)
         for (rowIndex, row) in cells.enumerated() {
             for (column, cell) in row.enumerated() {
-                let alignment = column < shape.columns.count ? shape.columns[column] : .center
+                let alignment = shape.rowAlignments[rowIndex] ?? (column < shape.columns.count ? shape.columns[column] : .center)
                 let offset: CGFloat
                 switch alignment {
                 case .left: offset = 0
@@ -1265,19 +1283,28 @@ struct NoteMathTypesetter {
             }
         }
         var rules: [CGRect] = []
-        for rule in environment.rowRules.sorted() {
+        var dashedRules: [(frame: CGRect, vertical: Bool)] = []
+        let rowRuleOrder = environment.rowRules.indices.sorted { environment.rowRules[$0] < environment.rowRules[$1] }
+        for ruleIndex in rowRuleOrder {
+            let rule = environment.rowRules[ruleIndex]
+            let frame: CGRect
             if rule == 0 {
-                rules.append(CGRect(x: 0, y: top, width: totalWidth, height: ruleThickness))
+                frame = CGRect(x: 0, y: top, width: totalWidth, height: ruleThickness)
                 top += ruleThickness
             } else if rule >= cells.count {
                 bottom -= ruleThickness
-                rules.append(CGRect(x: 0, y: bottom, width: totalWidth, height: ruleThickness))
+                frame = CGRect(x: 0, y: bottom, width: totalWidth, height: ruleThickness)
             } else {
                 let edge = baselines[rule - 1] - descents[rule - 1]
-                rules.append(CGRect(x: 0, y: edge - ruleThickness, width: totalWidth, height: ruleThickness))
+                frame = CGRect(x: 0, y: edge - ruleThickness, width: totalWidth, height: ruleThickness)
+            }
+            if ruleIndex < environment.rowRuleDashes.count, environment.rowRuleDashes[ruleIndex] {
+                dashedRules.append((frame, false))
+            } else {
+                rules.append(frame)
             }
         }
-        for boundary in environment.columnRules {
+        for (ruleIndex, boundary) in environment.columnRules.enumerated() {
             let ruleX: CGFloat
             if boundary <= 0 {
                 ruleX = 0
@@ -1286,7 +1313,24 @@ struct NoteMathTypesetter {
             } else {
                 ruleX = columnX[boundary] - shape.gaps(boundary - 1) / 2 - ruleThickness / 2
             }
-            rules.append(CGRect(x: ruleX, y: bottom, width: ruleThickness, height: top - bottom))
+            let frame = CGRect(x: ruleX, y: bottom, width: ruleThickness, height: top - bottom)
+            if ruleIndex < environment.columnRuleDashes.count, environment.columnRuleDashes[ruleIndex] {
+                dashedRules.append((frame, true))
+            } else {
+                rules.append(frame)
+            }
+        }
+        let dash = 0.2 * em
+        for dashed in dashedRules {
+            let length = dashed.vertical ? dashed.frame.height : dashed.frame.width
+            var offset: CGFloat = 0
+            while offset < length {
+                let piece = min(dash, length - offset)
+                rules.append(dashed.vertical
+                    ? CGRect(x: dashed.frame.minX, y: dashed.frame.maxY - offset - piece, width: dashed.frame.width, height: piece)
+                    : CGRect(x: dashed.frame.minX + offset, y: dashed.frame.minY, width: piece, height: dashed.frame.height))
+                offset += dash * 2
+            }
         }
         for rule in rules {
             box.inks.append(NoteMathInk(content: .rule(rule.size), origin: rule.origin, color: context.color))
