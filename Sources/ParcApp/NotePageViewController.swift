@@ -10,11 +10,17 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
     var onOpenURL: ((URL) -> Void)?
     var onOpenNote: ((URL) -> Void)?
     var onToast: ((ParcToastContent) -> Void)?
+    var onTrashed: ((URL) -> Void)?
     private let root = NotePageRootView()
     private let scroll = NSScrollView()
     private let status = NotePageStatusView()
     private var header: NotePageHeaderView?
+    private var pageMenu: NotePageMenu?
+    private var pageMenuButton: NotePageMenuButton?
     private var lease: NoteFileLease?
+    private var isTornDown = false
+    private static var openEditors: [ObjectIdentifier: Int] = [:]
+    static let pageMenuInset = NSPoint(x: 14, y: 12)
     private var subscriptions = Set<AnyCancellable>()
     private var unsavedSince: Date?
     private var slowSaveToken = 0
@@ -72,12 +78,21 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         self.header = header
         editor.canvas.headerView = header
 
+        let pageMenu = NotePageMenu(editor: editor, file: file)
+        pageMenu.onToast = { [weak self] content in self?.onToast?(content) }
+        pageMenu.onTrashed = { [weak self] url in self?.onTrashed?(url) }
+        self.pageMenu = pageMenu
+        let pageMenuButton = pageMenu.makeButton()
+        root.addSubview(pageMenuButton)
+        self.pageMenuButton = pageMenuButton
+
         status.onAction = { [weak self] action in self?.performStatusAction(action) }
         root.addSubview(status)
         root.onLayout = { [weak self] in self?.layoutRoot() }
         view = root
 
         editor.canvas.spaceFocus = spaceFocus
+        Self.openEditors[ObjectIdentifier(file), default: 0] += 1
         lease = NoteFileLease(file)
         reportedTitle = file.title
         file.$state
@@ -91,6 +106,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
 
     override func viewWillDisappear() {
         super.viewWillDisappear()
+        pageMenu?.close(animated: false)
         editor?.dismissOverlays()
         header?.commitTitle()
     }
@@ -111,7 +127,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
 
     var spaceFocus: NSColor? {
         didSet {
-            guard isViewLoaded else { return }
+            guard isViewLoaded, spaceFocus != oldValue else { return }
             editor.canvas.spaceFocus = spaceFocus
         }
     }
@@ -144,6 +160,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         guard isViewLoaded else {
             do { try file.flush(); return true } catch { return false }
         }
+        pageMenu?.close(animated: false)
         editor.dismissOverlays()
         header?.commitTitle()
         do {
@@ -156,29 +173,64 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
     }
 
     func teardown() {
+        guard !isTornDown else { return }
+        isTornDown = true
+        pageMenu?.close(animated: false)
         editor?.dismissOverlays()
+        if isViewLoaded, Self.closeEditor(of: file) {
+            try? file.flush()
+            NotePageHistory.fileWillClose(file)
+        }
         lease?.end()
         lease = nil
     }
 
-    func perform(_ action: BrowserFindAction) -> Bool {
-        guard isViewLoaded else { return false }
-        switch action {
-        case .show: return editor.perform(.find)
-        case .replace: return editor.perform(.findAndReplace)
-        case .next: return editor.perform(.findNext)
-        case .previous: return editor.perform(.findPrevious)
-        case .useSelection: return editor.perform(.useSelectionForFind)
-        case .jumpToSelection:
-            editor.restoreFocus()
-            return true
+    private static func closeEditor(of file: NoteFileSession) -> Bool {
+        let key = ObjectIdentifier(file)
+        guard let count = openEditors[key] else { return false }
+        if count > 1 {
+            openEditors[key] = count - 1
+            return false
         }
+        openEditors.removeValue(forKey: key)
+        return true
+    }
+
+    static func findCommand(for action: BrowserFindAction) -> NoteKeyCommand? {
+        switch action {
+        case .show: return .find
+        case .replace: return .findAndReplace
+        case .next: return .findNext
+        case .previous: return .findPrevious
+        case .useSelection: return .useSelectionForFind
+        case .jumpToSelection: return nil
+        }
+    }
+
+    func canPerform(_ action: BrowserFindAction) -> Bool {
+        guard isViewLoaded, !isTornDown, !editor.hasMarkedText else { return false }
+        if let command = Self.findCommand(for: action) { return editor.validate(command) }
+        if case .none = editor.session.selection { return false }
+        return true
+    }
+
+    func perform(_ action: BrowserFindAction) -> Bool {
+        guard canPerform(action) else { return false }
+        if let command = Self.findCommand(for: action) { return editor.perform(command) }
+        editor.restoreFocus()
+        return true
     }
 
     fileprivate func routeKeyEquivalent(_ event: NSEvent) -> Bool {
         guard let window = view.window, window.isKeyWindow, let responder = window.firstResponder as? NSView,
               responder === view || responder.isDescendant(of: view) else { return false }
-        if editor.ownsFocus { return editor.performKeyEquivalent(event) }
+        if editor.ownsFocus {
+            if editor.performKeyEquivalent(event) { return true }
+            guard !editor.hasMarkedText, let chord = NoteKeyChord(event: event) else { return false }
+            return NoteFormatShortcuts.displacedFormat(for: chord) { format in
+                KeyboardShortcuts.shared.activeShortcut(for: format.bindingID).map { TextFormatKeyEquivalent(key: $0.key, modifiers: $0.flags) }
+            } != nil
+        }
         guard let command = NoteKeyCommands.command(for: event) else { return false }
         switch command {
         case .find, .findAndReplace, .findNext, .findPrevious, .print:
@@ -225,6 +277,11 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
 
     private func layoutRoot() {
         scroll.frame = root.bounds
+        if let pageMenuButton {
+            let size = NotePageMenuButton.size
+            pageMenuButton.frame = NSRect(x: max(0, root.bounds.width - size.width - Self.pageMenuInset.x), y: Self.pageMenuInset.y,
+                                          width: size.width, height: size.height)
+        }
         let size = status.fittingSize
         let width = min(size.width, max(0, root.bounds.width - 32))
         status.frame = NSRect(x: (root.bounds.width - width) / 2, y: root.bounds.height - size.height - 14, width: width, height: size.height)
@@ -380,6 +437,12 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         operation.showsPrintPanel = true
         operation.showsProgressPanel = true
         operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+}
+
+extension NotePageViewController: TextFormatShortcutOwner {
+    func formatKeyEquivalent(for command: TextFormatCommand) -> TextFormatKeyEquivalent? {
+        NoteFormatShortcuts.keyEquivalent(for: command)
     }
 }
 

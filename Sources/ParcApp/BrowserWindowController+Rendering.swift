@@ -634,7 +634,7 @@ extension BrowserWindowController {
     }
 
     func refreshNoteCanvasTheme(_ palette: ThemeChromePalette) {
-        for pane in panes.values { pane.inheritNoteCanvasTheme(palette.contentAppearance) }
+        for pane in panes.values { pane.inheritNoteCanvasTheme(palette.contentAppearance, focus: palette.focus) }
     }
 
     func refreshSplitPaneHighlights() {
@@ -721,7 +721,7 @@ extension BrowserWindowController {
     }
     func makePane(_ tab: BrowserTab) -> BrowserPane {
         let pane = BrowserPane()
-        pane.inheritNoteCanvasTheme(rootView.palette.contentAppearance)
+        pane.inheritNoteCanvasTheme(rootView.palette.contentAppearance, focus: rootView.palette.focus)
         pane.onContentBackingChange = { [weak self] in self?.refreshPageHostBacking() }
         pane.onReload = { [weak self] in self?.reloadTab(tab.id) }
         pane.onRendererPresented = { [weak self] expected in

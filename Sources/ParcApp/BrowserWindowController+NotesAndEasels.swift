@@ -127,6 +127,46 @@ extension BrowserWindowController {
                   self.currentTabID == tabID, self.activeProfileID == profileID, !self.isClosing else { return }
             self.openNote(url: url)
         }
+        editor.onToast = { [weak self, weak editor] content in
+            guard let self, let editor, self.noteEditors[tabID]?.editor === editor, !self.isClosing else { return }
+            self.showToast(content, at: .window)
+        }
+        editor.onTrashed = { [weak self, weak editor] url in
+            guard let self, let editor, self.noteEditors[tabID]?.editor === editor else { return }
+            self.retireTrashedNote(url, profileID: profileID)
+        }
+    }
+
+    func retireTrashedNote(_ url: URL, profileID: UUID) {
+        guard let file = InternalPage.noteFile(url) else { return }
+        store.deleteLocalDocument(.note(file), profileID: profileID, ownerValid: { [weak self] in
+            guard let self else { return false }
+            return !self.isClosing && !self.wholeWindowClose
+        }, deleteDocument: {}, completion: { [weak self] error in
+            guard let self, let error, (error as? CocoaError)?.code != .userCancelled else { return }
+            self.showNoteError(error)
+        })
+    }
+
+    var currentNoteEditor: NotePageViewController? {
+        guard presentation.isReady, !isClosing, !wholeWindowClose, activePeek == nil, libraryView == nil,
+              let id = currentTabID, !transferringTabIDs.contains(id), renderedPaneIDs.contains(id),
+              let note = noteEditors[id], note.profileID == activeProfileID, note.editor.isViewLoaded else { return nil }
+        return note.editor
+    }
+
+    var canPrintCurrentPage: Bool {
+        if currentNoteEditor != nil { return window?.attachedSheet == nil }
+        return canPerformPageTool(.print)
+    }
+
+    func printCurrentPage() {
+        if let note = currentNoteEditor {
+            guard window?.attachedSheet == nil else { return }
+            note.printPage()
+        } else {
+            performPageTool(.print)
+        }
     }
 
     func createEasel(inSplit: Bool = false) {
@@ -213,6 +253,7 @@ enum NotePaneRetention {
             guard !after.contains(key), seen.insert(key).inserted, let count = holders[key] else { continue }
             if count > 1 { holders[key] = count - 1; continue }
             holders.removeValue(forKey: key)
+            pane.editor.teardown()
             pane.editor.file.release()
         }
     }

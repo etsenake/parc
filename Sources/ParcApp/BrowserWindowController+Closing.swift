@@ -125,9 +125,7 @@ extension BrowserWindowController {
                 if applied { self.focusedTabID = nextSelection.focusedTabID }
                 for id in ids where !self.selectedTabIDs.contains(id)
                     && self.store.state.containsTab(id, where: { $0.archivedAt == nil }) {
-                    if let note = self.noteEditors[id], note.editor.prepareToClose() {
-                        note.editor.view.removeFromSuperview(); self.noteEditors.removeValue(forKey: id)
-                    }
+                    if let note = self.noteEditors[id], note.editor.prepareToClose() { self.retireNoteEditor(id) }
                     if let easel = self.easelEditors[id], self.embeddedEaselPages(forTabID: id).isEmpty {
                         easel.editor.retirePageOwner(); self.panes[id]?.clearNativeContent()
                         self.easelEditors.removeValue(forKey: id); self.easelFailures.removeValue(forKey: id)

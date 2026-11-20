@@ -1,0 +1,4 @@
+Sources/ParcCore/*.swift
+Sources/ParcApp/NoteKeyCommands.swift
+Sources/ParcApp/TextFormatMenu.swift
+Sources/ParcApp/NoteMenuShortcuts.swift

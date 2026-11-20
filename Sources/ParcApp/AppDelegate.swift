@@ -2050,7 +2050,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if item.action == #selector(captureVisiblePage) { return front?.preparePageCaptureMenuItem(item, mode: .viewport) ?? false }
         if item.action == #selector(captureFullPage) { return front?.preparePageCaptureMenuItem(item, mode: .fullPage) ?? false }
         if item.action == #selector(sharePage) { return browserInputCommandWindow?.canSharePage ?? false }
-        if item.action == #selector(printPage) { return front?.canPerformPageTool(.print) ?? false }
+        if item.action == #selector(printPage) { return front?.canPrintCurrentPage ?? false }
         if item.action == #selector(savePage) {
             if let editor = NSApp.keyWindow as? EaselImageExporting { return editor.canExportEaselImage }
             return front?.canExportEaselImage == true || front?.canPerformPageTool(.save) == true
@@ -2488,7 +2488,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         guard AppAppearance.apply(value) else { return }
         spaceCommandWindow?.registerAppearanceUndo(from: previous, to: value)
     }
-    @objc private func printPage(_ sender: Any?) { front?.performPageTool(.print) }
+    @objc private func printPage(_ sender: Any?) { front?.printCurrentPage() }
     @objc private func savePage(_ sender: Any?) {
         if let editor = NSApp.keyWindow as? EaselImageExporting { return editor.exportEaselImage() }
         if front?.canExportEaselImage == true { front?.exportEaselImage() } else { front?.performPageTool(.save) }

@@ -445,8 +445,7 @@ extension BrowserWindowController {
         layoutFindBar()
     }
     private func noteFindCommand(_ action: BrowserFindAction, id: UUID, editor: NotePageViewController, window: NSWindow,
-                                 prepare: @escaping () -> Void) -> BrowserFindCommand? {
-        guard action == .show || action == .replace else { return nil }
+                                 prepare: @escaping () -> Void) -> BrowserFindCommand {
         let profileID = activeProfileID
         return BrowserFindCommand(action: action, window: window, available: { [weak self, weak editor] in
             guard let self, let editor, editor.isViewLoaded, self.canOwnFind, self.activePeek == nil,
@@ -454,13 +453,14 @@ extension BrowserWindowController {
                   self.renderedPaneIDs.contains(id), note.profileID == profileID, self.activeProfileID == profileID,
                   self.switcherCanUse(id),
                   let tab = self.store.state.tab(id, where: { $0.profileID == profileID }),
-                  InternalPage(urlString: tab.url) == .note(editor.file.url) else { return false }
+                  InternalPage(urlString: tab.url) == .note(editor.file.url),
+                  editor.canPerform(action) else { return false }
             if let current = window.firstResponder as? NSView, current.isDescendant(of: editor.view) { return true }
             return self.currentTabID == id
         }, prepare: prepare, execute: { [weak self, weak editor] in
             guard let editor, editor.isViewLoaded else { return }
-            self?.dismissFind(restoreFocus: false)
-            editor.editor.find.show(replacing: action == .replace)
+            if action == .show || action == .replace { self?.dismissFind(restoreFocus: false) }
+            _ = editor.perform(action)
         })
     }
     func prepareFindMenuItem(_ item: NSMenuItem, action: BrowserFindAction, preservingTarget: Bool = false) -> Bool {
@@ -475,22 +475,18 @@ extension BrowserWindowController {
            let entry = noteEditors.first(where: { $0.value.editor.isViewLoaded
                && responder.isDescendant(of: $0.value.editor.view) }),
            renderedPaneIDs.contains(entry.key), entry.value.profileID == activeProfileID {
-            guard let command = noteFindCommand(action, id: entry.key, editor: entry.value.editor, window: window, prepare: prepare) else { return false }
-            item.representedObject = command
-            return command.isAvailable
-        } else if action.isNativeTextOnly {
-            return false
+            command = noteFindCommand(action, id: entry.key, editor: entry.value.editor, window: window, prepare: prepare)
         } else if action == .show, let libraryView {
             command = BrowserFindCommand(action: action, window: window, available: { [weak self, weak libraryView] in
                 self?.canOwnFind == true && libraryView != nil && self?.libraryView === libraryView
             }, prepare: prepare, execute: { [weak self, weak libraryView] in
                 self?.dismissFind(restoreFocus: false); libraryView?.focusSearch()
             })
-        } else if activePeek == nil, let id = currentTabID, renderedPaneIDs.contains(id),
+        } else if activePeek == nil, libraryView == nil, let id = currentTabID, renderedPaneIDs.contains(id),
                   let note = noteEditors[id], note.profileID == activeProfileID, note.editor.isViewLoaded {
-            guard let command = noteFindCommand(action, id: id, editor: note.editor, window: window, prepare: prepare) else { return false }
-            item.representedObject = command
-            return command.isAvailable
+            command = noteFindCommand(action, id: id, editor: note.editor, window: window, prepare: prepare)
+        } else if action.isNativeTextOnly {
+            return false
         } else {
             guard libraryView == nil, let page = selectedNativePage(), page.canFindInPage else { return false }
             let state = findState(for: page)

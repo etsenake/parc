@@ -64,15 +64,45 @@ enum TextFormatCommand: Int, CaseIterable {
     }
 }
 
+struct TextFormatKeyEquivalent: Equatable {
+    static let modifierMask: NSEvent.ModifierFlags = [.control, .option, .shift, .command]
+    let key: String
+    let modifiers: NSEvent.ModifierFlags
+
+    init(key: String, modifiers: NSEvent.ModifierFlags) {
+        var flags = modifiers.intersection(Self.modifierMask)
+        if key.count == 1, let letter = key.first, letter.isLetter, letter.isUppercase { flags.insert(.shift) }
+        self.key = key.lowercased()
+        self.modifiers = flags
+    }
+
+    @MainActor
+    init?(of item: NSMenuItem) {
+        guard !item.keyEquivalent.isEmpty else { return nil }
+        self.init(key: item.keyEquivalent, modifiers: item.keyEquivalentModifierMask)
+    }
+}
+
+@MainActor
+protocol TextFormatShortcutOwner: AnyObject {
+    func formatKeyEquivalent(for command: TextFormatCommand) -> TextFormatKeyEquivalent?
+}
+
 @MainActor
 enum TextFormatMenu {
-    private final class StateReset: NSObject, NSMenuDelegate {
+    @MainActor private final class StateReset: NSObject, NSMenuDelegate {
+        private var shown = TextFormatShortcutSwap()
         func menuNeedsUpdate(_ menu: NSMenu) {
             for item in menu.items where item.action == TextFormatCommand.action {
                 item.state = .off
                 if TextFormatCommand(item) == .link { item.title = TextFormatCommand.addLinkTitle }
             }
         }
+        func menuWillOpen(_ menu: NSMenu) {
+            let owner = NSApp.target(forAction: TextFormatCommand.action, to: nil, from: nil) as? TextFormatShortcutOwner
+            shown.show(owner, in: menu)
+        }
+        func menuDidClose(_ menu: NSMenu) { shown.restore(in: menu) }
     }
     private enum Section {
         case submenu(String, [[TextFormatCommand]])
@@ -117,5 +147,41 @@ enum TextFormatMenu {
             }
         }
         return root
+    }
+}
+
+@MainActor
+struct TextFormatShortcutSwap {
+    private struct Entry {
+        let item: NSMenuItem
+        let original: TextFormatKeyEquivalent?
+        let shown: TextFormatKeyEquivalent?
+    }
+    private var entries: [ObjectIdentifier: Entry] = [:]
+
+    private static func apply(_ equivalent: TextFormatKeyEquivalent?, to item: NSMenuItem) {
+        item.keyEquivalent = equivalent?.key ?? ""
+        item.keyEquivalentModifierMask = equivalent?.modifiers ?? []
+    }
+
+    mutating func show(_ owner: TextFormatShortcutOwner?, in menu: NSMenu) {
+        guard let owner else { return }
+        for item in menu.items {
+            guard let command = TextFormatCommand(item) else { continue }
+            let key = ObjectIdentifier(item)
+            let current = TextFormatKeyEquivalent(of: item)
+            var original = current
+            if let previous = entries[key], previous.shown == current { original = previous.original }
+            let next = owner.formatKeyEquivalent(for: command)
+            entries[key] = Entry(item: item, original: original, shown: next)
+            Self.apply(next, to: item)
+        }
+    }
+
+    mutating func restore(in menu: NSMenu) {
+        for item in menu.items {
+            guard let entry = entries.removeValue(forKey: ObjectIdentifier(item)) else { continue }
+            if TextFormatKeyEquivalent(of: item) == entry.shown { Self.apply(entry.original, to: item) }
+        }
     }
 }
