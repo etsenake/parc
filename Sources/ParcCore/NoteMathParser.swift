@@ -30,6 +30,7 @@ struct NoteMathFraction: Equatable {
     var numerator: [NoteMathNode]
     var denominator: [NoteMathNode]
     var hasRule = true
+    var thickness: Double?
     var level: NoteMathStyleLevel?
     var left: String?
     var right: String?
@@ -100,6 +101,13 @@ indirect enum NoteMathNode: Equatable {
     case boxed([NoteMathNode])
     case lap(NoteMathLap, [NoteMathNode])
     case reference(String, parenthesized: Bool, label: [NoteMathNode]?)
+    case sized(Double, [NoteMathNode])
+    case raised(Double, [NoteMathNode])
+    case smashed([NoteMathNode], top: Bool, bottom: Bool)
+    case substack([[NoteMathNode]])
+    case colorBox(NoteMathColor, frame: NoteMathColor?, [NoteMathNode])
+    case link(String, [NoteMathNode])
+    case rule(width: Double, height: Double, raise: Double)
 }
 
 enum NoteMathLabelTarget: Equatable {
@@ -165,6 +173,7 @@ struct NoteMathParser {
         case fence(Int)
         case bracket(Int)
         case inlineMath(Int)
+        case stack(Int)
     }
 
     private static let maximumDepth = 120
@@ -243,6 +252,7 @@ struct NoteMathParser {
             || NoteMathSymbols.spaces[name] != nil || fontCommands[name] != nil || textCommands[name] != nil
             || decorations[name] != nil || sizedDelimiters[name] != nil || classCommands[name] != nil
             || styleSwitches[name] != nil || fontSwitches[name] != nil || extensibleArrows[name] != nil
+            || sizeSwitches[name] != nil
             || structuralCommands.contains(name)
     }
 
@@ -252,7 +262,8 @@ struct NoteMathParser {
         "phantom", "hphantom", "vphantom", "boxed", "fbox", "llap", "mathllap", "rlap", "mathrlap", "clap", "mathclap", "hspace", "hskip", "kern", "mkern", "mskip", "limits",
         "nolimits", "displaylimits", "over", "choose", "atop", "brack", "brace", "tag", "notag", "nonumber", "hline",
         "hdashline", "\\", "cr", "newline", "newcommand", "renewcommand", "providecommand", "def", "gdef", "edef",
-        "xdef", "let", "global", "ce", "pu", "label", "eqref", "ref",
+        "xdef", "let", "global", "ce", "pu", "label", "eqref", "ref", "raisebox", "smash", "substack", "genfrac",
+        "colorbox", "fcolorbox", "href", "url", "rule", "tripledash",
     ]
 
     private mutating func parseFormula() throws(NoteMathParseError) -> [NoteMathNode] {
@@ -355,7 +366,7 @@ struct NoteMathParser {
             case .end:
                 switch scope {
                 case .top: return finish(nodes)
-                case .group(let open): throw failure("Missing } to close this {", from: open, to: open + 1)
+                case .group(let open), .stack(let open): throw failure("Missing } to close this {", from: open, to: open + 1)
                 case .cell(let name, let open): throw failure("Missing \\end{\(name)}", from: open, to: open + 1)
                 case .fence(let open): throw failure("Missing \\right to close this \\left", from: open, to: open + 5)
                 case .bracket(let open): throw failure("Missing ] to close this [", from: open, to: open + 1)
@@ -363,6 +374,7 @@ struct NoteMathParser {
                 }
             case .character("}"):
                 if case .group = scope { return finish(nodes) }
+                if case .stack = scope { return finish(nodes) }
                 throw failure("There's a } without a matching {", lexeme)
             case .character("]"):
                 if case .bracket = scope { return finish(nodes) }
@@ -376,7 +388,7 @@ struct NoteMathParser {
                 throw failure("& only works inside an environment like aligned or matrix", lexeme)
             case .command("\\"), .command("cr"), .command("newline"):
                 switch scope {
-                case .cell, .top: return finish(nodes)
+                case .cell, .top, .stack: return finish(nodes)
                 default: throw failure("A line break can't go here", lexeme)
                 }
             case .command("end"):
@@ -430,6 +442,11 @@ struct NoteMathParser {
                 advance(past: lexeme)
                 let rest = try parseList(scope)
                 nodes.append(.styled(Self.fontSwitches[name]!, rest))
+                return finish(nodes)
+            case .command(let name) where Self.sizeSwitches[name] != nil:
+                advance(past: lexeme)
+                let rest = try parseList(scope)
+                nodes.append(.sized(Self.sizeSwitches[name]!, rest))
                 return finish(nodes)
             default:
                 advance(past: lexeme)
@@ -603,6 +620,7 @@ struct NoteMathParser {
         }
         if let kind = Self.classCommands[name] { return .classed(kind, try parseArgument(for: name, count: 1)) }
         if let level = Self.styleSwitches[name] { return .mathStyle(level, []) }
+        if let factor = Self.sizeSwitches[name] { return .sized(factor, []) }
         switch name {
         case "frac", "dfrac", "tfrac", "cfrac", "binom", "dbinom", "tbinom":
             let numerator = try parseArgument(for: name, count: 2)
@@ -693,11 +711,162 @@ struct NoteMathParser {
             throw failure("A lone \\ needs a command name after it", lexeme)
         case "eqref", "ref":
             return try parseReference(name, lexeme)
+        case "raisebox":
+            let amount = try parseDimensionArgument(for: name, at: lexeme)
+            return .raised(amount, Self.contents(try parseText(.roman, command: lexeme, name: name)))
+        case "smash":
+            var top = true, bottom = true
+            if let option = try parseOptionalWord(for: name) {
+                switch option {
+                case "t": bottom = false
+                case "b": top = false
+                case "tb", "bt", "": break
+                default: throw failure("\\smash takes [t] or [b], not [\(option)]", lexeme)
+                }
+            }
+            return .smashed(try parseArgument(for: name, count: 1), top: top, bottom: bottom)
+        case "substack":
+            return try parseSubstack(lexeme)
+        case "tripledash":
+            let dash = NoteMathNode.text("-", .roman)
+            let dashes = NoteMathNode.sized(0.5, [dash, .space(1.0 / 18), dash, .space(1.0 / 18), dash, .space(2.0 / 18)])
+            return .group([.phantom([.char("\u{2212}", .bin)], keepsWidth: false, keepsHeight: true),
+                           .raised(2.56 / 18, [.mathStyle(.text, [.space(2.0 / 18), dashes])])])
+        case "genfrac":
+            return try parseGeneralizedFraction(lexeme)
+        case "colorbox":
+            let background = try parseColor(after: name)
+            return .colorBox(background, frame: nil, Self.contents(try parseText(.roman, command: lexeme, name: name)))
+        case "fcolorbox":
+            let frame = try parseColor(after: name)
+            let background = try parseColor(after: name)
+            return .colorBox(background, frame: frame, Self.contents(try parseText(.roman, command: lexeme, name: name)))
+        case "href":
+            let target = try parseURL(for: name)
+            return .link(target, try parseArgument(for: name, count: 2))
+        case "url":
+            let target = try parseURL(for: name)
+            return .link(target, [.text(target, .monospace)])
+        case "rule":
+            var raise = 0.0
+            if let option = try parseOptionalWord(for: name) {
+                guard let value = Self.dimension(option) else {
+                    throw failure("\u{201C}\(option)\u{201D} isn't a size I understand, like 0.2em", lexeme)
+                }
+                raise = value
+            }
+            let width = try parseDimensionArgument(for: name, at: lexeme)
+            let height = try parseDimensionArgument(for: name, at: lexeme)
+            return .rule(width: width, height: height, raise: raise)
         case "tag", "notag", "nonumber", "label":
             throw failure("\\\(name) has to stand on its own, not inside a script or argument", lexeme)
         default:
             throw failure("Unknown command \\\(name)", lexeme)
         }
+    }
+
+    private static func contents(_ node: NoteMathNode) -> [NoteMathNode] {
+        if case .group(let parts) = node { return parts }
+        return [node]
+    }
+
+    private mutating func parseOptionalWord(for command: String) throws(NoteMathParseError) -> String? {
+        let start = skipIndex(from: index)
+        guard start < characters.count, characters[start] == "[" else { return nil }
+        var end = start + 1
+        while end < characters.count, characters[end] != "]" { end += 1 }
+        guard end < characters.count else { throw failure("Missing ] to close this [", from: start, to: start + 1) }
+        index = end + 1
+        return String(characters[(start + 1)..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private mutating func parseURL(for command: String) throws(NoteMathParseError) -> String {
+        let start = skipIndex(from: index)
+        guard start < characters.count, characters[start] == "{" else {
+            throw failure("\\\(command) needs {a link} after it, like \\\(command){https://parc.is}", from: max(start - 1, 0), to: start)
+        }
+        var end = start + 1
+        var nesting = 0
+        var text = ""
+        while end < characters.count {
+            let character = characters[end]
+            if character == "\\", end + 1 < characters.count, "#$%&~_^{}\\".contains(characters[end + 1]) {
+                text.append(characters[end + 1])
+                end += 2
+                continue
+            }
+            if character == "{" { nesting += 1 }
+            if character == "}" {
+                if nesting == 0 { break }
+                nesting -= 1
+            }
+            text.append(character)
+            end += 1
+        }
+        guard end < characters.count else { throw failure("Missing } to close this {", from: start, to: start + 1) }
+        index = end + 1
+        let target = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if target.isEmpty { throw failure("\\\(command) needs a link, like \\\(command){https://parc.is}", from: start, to: end + 1) }
+        return target
+    }
+
+    private mutating func parseSubstack(_ lexeme: Lexeme) throws(NoteMathParseError) -> NoteMathNode {
+        let open = peek()
+        guard open.token == .character("{") else { throw failure("\\substack needs {rows} after it, like \\substack{i<n\\\\j<m}", lexeme) }
+        advance(past: open)
+        try enter(open)
+        defer { depth -= 1 }
+        var rows: [[NoteMathNode]] = []
+        while true {
+            rows.append(try parseList(.stack(open.start)))
+            let next = peek()
+            advance(past: next)
+            if next.token == .character("}") { break }
+        }
+        if rows.count > 1, rows.last?.isEmpty == true { rows.removeLast() }
+        return .substack(rows)
+    }
+
+    private mutating func parseGeneralizedFraction(_ lexeme: Lexeme) throws(NoteMathParseError) -> NoteMathNode {
+        let left = try parseBracedDelimiter(at: lexeme)
+        let right = try parseBracedDelimiter(at: lexeme)
+        let rule = try parseRawGroup(for: "genfrac", what: "a rule thickness")
+        let style = try parseRawGroup(for: "genfrac", what: "a style")
+        var fraction = NoteMathFraction(numerator: try parseArgument(for: "genfrac", count: 6),
+                                        denominator: try parseArgument(for: "genfrac", count: 6))
+        fraction.left = left
+        fraction.right = right
+        if !rule.text.isEmpty {
+            guard let thickness = Self.dimension(rule.text) else {
+                throw failure("\u{201C}\(rule.text)\u{201D} isn't a size I understand, like 0.4pt", from: rule.start, to: rule.end)
+            }
+            fraction.thickness = thickness
+            fraction.hasRule = thickness > 0
+        }
+        switch style.text {
+        case "": break
+        case "0": fraction.level = .display
+        case "1": fraction.level = .text
+        case "2": fraction.level = .script
+        case "3": fraction.level = .scriptScript
+        default: throw failure("\\genfrac styles go from 0 (display) to 3 (tiny scripts)", from: style.start, to: style.end)
+        }
+        return .fraction(fraction)
+    }
+
+    private mutating func parseBracedDelimiter(at lexeme: Lexeme) throws(NoteMathParseError) -> String? {
+        let open = peek()
+        guard open.token == .character("{") else { return try parseDelimiter(after: "genfrac", at: lexeme) }
+        advance(past: open)
+        if peek().token == .character("}") {
+            advance(past: peek())
+            return nil
+        }
+        let delimiter = try parseDelimiter(after: "genfrac", at: lexeme)
+        let close = peek()
+        guard close.token == .character("}") else { throw failure("\\genfrac takes one delimiter per side, like {(}", close) }
+        advance(past: close)
+        return delimiter
     }
 
     private mutating func parseTag(_ lexeme: Lexeme) throws(NoteMathParseError) {
@@ -1041,6 +1210,11 @@ struct NoteMathParser {
         "displaystyle": .display, "textstyle": .text, "scriptstyle": .script, "scriptscriptstyle": .scriptScript,
     ]
 
+    private static let sizeSwitches: [String: Double] = [
+        "tiny": 0.5, "sixptsize": 0.6, "scriptsize": 0.7, "footnotesize": 0.8, "small": 0.9, "normalsize": 1,
+        "large": 1.2, "Large": 1.44, "LARGE": 1.728, "huge": 2.074, "Huge": 2.488,
+    ]
+
     private static let fontSwitches: [String: NoteMathVariant] = [
         "rm": .roman, "bf": .bold, "it": .italic, "sf": .sansSerif, "tt": .monospace, "cal": .script,
     ]
@@ -1071,7 +1245,7 @@ struct NoteMathParser {
         "widehat": .wideAccent("\u{0302}"), "widetilde": .wideAccent("\u{0303}"), "widecheck": .wideAccent("\u{030C}"),
         "overline": .overline, "underline": .underline, "overbrace": .overbrace, "underbrace": .underbrace,
         "overrightarrow": .overArrow("\u{2192}"), "overleftarrow": .overArrow("\u{2190}"),
-        "overleftrightarrow": .overArrow("\u{2194}"), "underrightarrow": .underArrow("\u{2192}"),
+        "overleftrightarrow": .overArrow("\u{2194}"), "overgroup": .overArrow("\u{23E0}"), "undergroup": .underArrow("\u{23E1}"), "underrightarrow": .underArrow("\u{2192}"),
         "underleftarrow": .underArrow("\u{2190}"), "underleftrightarrow": .underArrow("\u{2194}"),
         "cancel": .cancel, "bcancel": .backCancel, "xcancel": .crossCancel, "sout": .strike,
     ]

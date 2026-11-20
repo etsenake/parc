@@ -101,15 +101,17 @@ final class NoteMathRendering {
         for (mark, frame) in zip(entry.box.tags, entry.tagFrames) {
             let x = (available - frame.maxX).rounded()
             for link in mark.box.links {
-                result.append(NoteMathLinkMark(key: link.key, rect: CGRect(x: x + link.rect.minX, y: size.height - (baselineY + mark.baseline + link.rect.maxY),
-                                                                         width: link.rect.width, height: link.rect.height), resolved: link.resolved))
+                var placed = link
+                placed.rect = CGRect(x: x + link.rect.minX, y: size.height - (baselineY + mark.baseline + link.rect.maxY),
+                                     width: link.rect.width, height: link.rect.height)
+                result.append(placed)
             }
         }
         return result
     }
 
     func draw(in context: CGContext, at origin: CGPoint, width: CGFloat) {
-        draw(in: context, at: origin, width: width, ink: color.cgColor, muted: Self.mutedInk(for: color))
+        draw(in: context, at: origin, width: width, ink: color.cgColor, muted: Self.mutedInk(for: color), link: Self.linkInk(for: color))
     }
 
     func drawFlipped(in context: CGContext, at topLeft: CGPoint) {
@@ -134,18 +136,18 @@ final class NoteMathRendering {
         return max(0, offset).rounded()
     }
 
-    private func draw(in context: CGContext, at origin: CGPoint, width: CGFloat, ink: CGColor, muted: CGColor) {
+    private func draw(in context: CGContext, at origin: CGPoint, width: CGFloat, ink: CGColor, muted: CGColor, link: CGColor) {
         let available = max(width, size.width)
         let baselineY = origin.y - entry.frame.minY
         draw(entry.box.inks, in: context, at: CGPoint(x: origin.x + equationOffset(width: width) - entry.equationFrame.minX, y: baselineY),
-             ink: ink, muted: muted)
+             ink: ink, muted: muted, link: link)
         for (mark, frame) in zip(entry.box.tags, entry.tagFrames) {
             draw(mark.box.inks, in: context, at: CGPoint(x: (origin.x + available - frame.maxX).rounded(), y: baselineY + mark.baseline),
-                 ink: ink, muted: muted)
+                 ink: ink, muted: muted, link: link)
         }
     }
 
-    private func draw(_ inks: [NoteMathInk], in context: CGContext, at base: CGPoint, ink: CGColor, muted: CGColor) {
+    private func draw(_ inks: [NoteMathInk], in context: CGContext, at base: CGPoint, ink: CGColor, muted: CGColor, link: CGColor) {
         context.saveGState()
         context.textMatrix = .identity
         for item in inks {
@@ -154,6 +156,7 @@ final class NoteMathRendering {
             case .inherited: fill = ink
             case .custom(let custom): fill = custom
             case .muted: fill = muted
+            case .link: fill = link
             }
             context.setFillColor(fill)
             let point = CGPoint(x: base.x + item.origin.x, y: base.y + item.origin.y)
@@ -181,6 +184,10 @@ final class NoteMathRendering {
         context.restoreGState()
     }
 
+    static func linkInk(for color: NSColor) -> CGColor {
+        color.withAlphaComponent(color.alphaComponent * 0.42).cgColor
+    }
+
     static func mutedInk(for color: NSColor) -> CGColor {
         let base = color.usingColorSpace(.sRGB) ?? .black
         let red = NSColor.systemRed.usingColorSpace(.sRGB) ?? .red
@@ -188,16 +195,16 @@ final class NoteMathRendering {
     }
 
     func image(appearance: NSAppearance? = nil) -> NSImage {
-        var fixed: (ink: CGColor, muted: CGColor)?
+        var fixed: (ink: CGColor, muted: CGColor, link: CGColor)?
         if let appearance {
             appearance.performAsCurrentDrawingAppearance {
-                fixed = (self.color.cgColor, Self.mutedInk(for: self.color))
+                fixed = (self.color.cgColor, Self.mutedInk(for: self.color), Self.linkInk(for: self.color))
             }
         }
         let image = NSImage(size: size, flipped: false) { [self] _ in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             if let fixed {
-                draw(in: context, at: .zero, width: size.width, ink: fixed.ink, muted: fixed.muted)
+                draw(in: context, at: .zero, width: size.width, ink: fixed.ink, muted: fixed.muted, link: fixed.link)
             } else {
                 draw(in: context, at: .zero)
             }

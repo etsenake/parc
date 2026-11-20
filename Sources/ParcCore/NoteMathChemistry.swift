@@ -81,16 +81,15 @@ enum NoteMathChemistry {
             return "{" + String(characters[start..<(index - 1)]) + "}"
         }
 
-        static let bonds: [String: String] = {
-            let dash = "{-}\\mkern-3mu{-}\\mkern-3mu{-}"
-            return [
-                "-": "{-}", "1": "{-}", "=": "{=}", "2": "{=}", "#": "{\\equiv}", "3": "{\\equiv}",
-                "~": "{\\scriptstyle " + dash + "}", "~-": "{\\overset{" + dash + "}{-}}", "~=": "{\\overset{" + dash + "}{=}}",
-                "~--": "{\\overset{" + dash + "}{=}}", "-~-": "{\\overset{-}{\\underset{-}{" + dash + "}}}",
-                "...": "{{\\cdot}{\\cdot}{\\cdot}}", "....": "{{\\cdot}{\\cdot}{\\cdot}{\\cdot}}",
-                "->": "{\\rightarrow}", "<-": "{\\leftarrow}", "<": "{<}", ">": "{>}",
-            ]
-        }()
+        static let bonds: [String: String] = [
+            "-": "{-}", "1": "{-}", "=": "{=}", "2": "{=}", "#": "{\\equiv}", "3": "{\\equiv}", "~": "{\\tripledash}",
+            "~-": "{\\mathrlap{\\raisebox{-.1em}{$-$}}\\raisebox{.1em}{$\\tripledash$}}",
+            "~=": "{\\mathrlap{\\raisebox{-.2em}{$-$}}\\mathrlap{\\raisebox{.2em}{$\\tripledash$}}-}",
+            "~--": "{\\mathrlap{\\raisebox{-.2em}{$-$}}\\mathrlap{\\raisebox{.2em}{$\\tripledash$}}-}",
+            "-~-": "{\\mathrlap{\\raisebox{-.2em}{$-$}}\\mathrlap{\\raisebox{.2em}{$-$}}\\tripledash}",
+            "...": "{{\\cdot}{\\cdot}{\\cdot}}", "....": "{{\\cdot}{\\cdot}{\\cdot}{\\cdot}}",
+            "->": "{\\rightarrow}", "<-": "{\\leftarrow}", "<": "{<}", ">": "{>}",
+        ]
 
         static let ceArguments: Set<String> = ["frac", "dfrac", "tfrac", "overset", "underset", "underbrace", "overbrace"]
 

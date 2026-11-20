@@ -23,6 +23,46 @@ struct NoteMathParserTests {
         }
     }
 
+    static func katexBoxesSizesAndLinks() {
+        expect(parse("a \\Huge b c") == [.char("a", .ord), .sized(2.488, [.char("b", .ord), .char("c", .ord)])], "size switches cover the rest")
+        expect(parse("{\\tiny x} y") == [.group([.sized(0.5, [.char("x", .ord)])]), .char("y", .ord)], "size switches stop at the brace")
+        let sizes = ["tiny": 0.5, "scriptsize": 0.7, "footnotesize": 0.8, "small": 0.9, "normalsize": 1.0, "large": 1.2,
+                     "Large": 1.44, "LARGE": 1.728, "huge": 2.074, "Huge": 2.488]
+        for (name, factor) in sizes { expect(parse("\\\(name) x") == [.sized(factor, [.char("x", .ord)])], "\\\(name) is \(factor)") }
+        expect(parse("\\raisebox{0.25em}{hi}") == [.raised(0.25, [.text("hi", .roman)])], "raisebox lifts text")
+        expect(parse("\\raisebox{-.1em}{$x$}") == [.raised(-0.1, [.mathStyle(.text, [.char("x", .ord)])])], "raisebox takes math in dollars")
+        expect(parse("\\smash{y}") == [.smashed([.char("y", .ord)], top: true, bottom: true)], "smash flattens both sides")
+        expect(parse("\\smash[t]{y}") == [.smashed([.char("y", .ord)], top: true, bottom: false)], "smash t keeps depth")
+        expect(parse("\\smash[b]{y}") == [.smashed([.char("y", .ord)], top: false, bottom: true)], "smash b keeps height")
+        expect(failure("\\smash[x]{y}").message == "\\smash takes [t] or [b], not [x]", "smash rejects other options")
+        expect(parse("\\sum_{\\substack{i<n\\\\j}}") == [.scripts(base: .largeOperator("\u{2211}", .auto), superscript: nil,
+               subscript: [.substack([[.char("i", .ord), .char("<", .rel), .char("n", .ord)], [.char("j", .ord)]])])], "substack splits rows")
+        expect(failure("\\substack{a").message == "Missing } to close this {", "unclosed substack")
+        guard case .fraction(let general) = parse("\\genfrac(]{0pt}{2}{a}{b}")[0] else { failTest("genfrac is a fraction") }
+        expect(general.left == "(" && general.right == "]" && !general.hasRule && general.level == .script, "genfrac reads delimiters, rule and style")
+        guard case .fraction(let thick) = parse("\\genfrac{}{}{2pt}{}{a}{b}")[0] else { failTest("genfrac thickness") }
+        expect(thick.hasRule && thick.thickness == 0.2 && thick.left == nil && thick.level == nil, "genfrac keeps a custom rule")
+        guard case .fraction(let curly) = parse("\\genfrac{\\{}{\\}}{}{0}{a}{b}")[0] else { failTest("genfrac curly") }
+        expect(curly.left == "{" && curly.right == "}" && curly.level == .display, "genfrac takes brace delimiters")
+        expect(failure("\\genfrac(){}{7}{a}{b}").message.hasPrefix("\\genfrac styles"), "bad genfrac style")
+        let red = NoteMathSymbols.color(named: "red")!, blue = NoteMathSymbols.color(named: "blue")!
+        expect(parse("\\colorbox{red}{hi}") == [.colorBox(red, frame: nil, [.text("hi", .roman)])], "colorbox")
+        expect(parse("\\fcolorbox{blue}{red}{a $x$}") == [.colorBox(red, frame: blue, [.text("a ", .roman), .mathStyle(.text, [.char("x", .ord)])])],
+               "fcolorbox takes frame then background")
+        expect(parse("\\href{https://katex.org/}{x}") == [.link("https://katex.org/", [.char("x", .ord)])], "href wraps math")
+        expect(parse("\\url{https://a.b/c\\#d\\_e}") == [.link("https://a.b/c#d_e", [.text("https://a.b/c#d_e", .monospace)])], "url unescapes")
+        expect(failure("\\url{}").message.hasPrefix("\\url needs a link"), "empty url")
+        expect(parse("\\rule[0.1em]{1em}{2pt}") == [.rule(width: 1, height: 0.2, raise: 0.1)], "rule with a lift")
+        expect(parse("\\overgroup{AB}") == [.decorated(.overArrow("\u{23E0}"), [.char("A", .ord), .char("B", .ord)])], "overgroup")
+        expect(parse("\\undergroup{AB}") == [.decorated(.underArrow("\u{23E1}"), [.char("A", .ord), .char("B", .ord)])], "undergroup")
+        for name in ["tiny", "Huge", "raisebox", "smash", "substack", "genfrac", "colorbox", "fcolorbox", "href", "url", "overgroup", "tripledash"] {
+            expect(NoteMathParser.isBuiltIn(name), "\\\(name) is built in")
+        }
+        let wavy = String(describing: parse("\\ce{A\\bond{~-}B}"))
+        expect(wavy.contains("raised(-0.1") && wavy.contains("sized(0.5"), "a dashed bond stacks a raised line over a tiny triple dash")
+        for bond in ["~", "~-", "~=", "~--", "-~-", "...", "...."] { _ = parse("\\ce{C\\bond{\(bond)}C}") }
+    }
+
     static func main() {
         atomsAndClasses()
         scriptsAndPrimes()
@@ -38,6 +78,7 @@ struct NoteMathParserTests {
         delimitedParameters()
         expansionPrimitives()
         cellScopes()
+        katexBoxesSizesAndLinks()
         chemistry()
         units()
         mhchemManual()

@@ -39,6 +39,7 @@ class NoteTextView: NSTextView {
     private var isInsertingText = false
     private var compositionBase: NoteText?
     private var deferredText: (text: NoteText, selection: Range<Int>?)?
+    private var renderingDeferred = false
     private var lastContentHeight: CGFloat = 0
     private var hoveredRange: NSRange?
     private var hoverArea: NSTrackingArea?
@@ -110,6 +111,7 @@ class NoteTextView: NSTextView {
             deferredText = text == noteText ? nil : (text, selection)
             return
         }
+        renderingDeferred = false
         let previous = selectedOffsets
         if !findHighlights.isEmpty, text.string != noteText.string { findHighlights = [] }
         isApplying = true
@@ -127,7 +129,10 @@ class NoteTextView: NSTextView {
     }
 
     func refreshRendering() {
-        guard !hasMarkedText() else { return }
+        guard !hasMarkedText() else {
+            renderingDeferred = true
+            return
+        }
         apply(noteText, selection: nil)
     }
 
@@ -316,16 +321,18 @@ class NoteTextView: NSTextView {
         let deferred = deferredText
         compositionBase = nil
         deferredText = nil
-        guard let deferred else { return false }
-        guard let base else {
-            apply(deferred.text, selection: deferred.selection)
+        if let deferred, deferred.text != base {
+            if let base {
+                let merged = NoteTextRendering.mergeComposition(committed: noteText, base: base, external: deferred.text,
+                                                                 caret: selectedRange().location)
+                apply(merged.text, selection: merged.caret..<merged.caret)
+            } else {
+                apply(deferred.text, selection: deferred.selection)
+            }
             return true
         }
-        guard deferred.text != base else { return false }
-        let merged = NoteTextRendering.mergeComposition(committed: noteText, base: base, external: deferred.text,
-                                                         caret: selectedRange().location)
-        apply(merged.text, selection: merged.caret..<merged.caret)
-        return true
+        if renderingDeferred { apply(noteText, selection: nil) }
+        return false
     }
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
@@ -505,7 +512,7 @@ class NoteTextView: NSTextView {
         if let editor, editor.selection.textViewMouseDown(self, with: event) { return }
         let point = convert(event.locationInWindow, from: nil)
         if event.clickCount == 1, event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
-           let link = equationLink(at: point), link.resolved, let editor, editor.math.reveal(label: link.key) {
+           let link = equationLink(at: point), link.resolved, let editor, editor.math.follow(link) {
             return
         }
         if event.clickCount == 1, isEditable, event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,

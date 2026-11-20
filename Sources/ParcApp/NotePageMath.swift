@@ -53,6 +53,16 @@ final class NotePageMath {
         return editor.reveal(block: id)
     }
 
+    @discardableResult
+    func follow(_ link: NoteMathLinkMark) -> Bool {
+        guard let target = link.url else { return reveal(label: link.key) }
+        guard let editor else { return false }
+        let url = target.contains("://") || target.hasPrefix("mailto:") ? URL(string: target) : editor.environment.resolveNoteLink(target)
+        guard let url else { return false }
+        editor.open(url)
+        return true
+    }
+
     static func missingReferenceTooltip(_ key: String) -> String {
         "No equation is labelled \u{201C}\(key)\u{201D} yet"
     }

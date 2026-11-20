@@ -500,7 +500,7 @@ final class NoteEquationBlockView: NoteBlockView {
 
     override func mouseDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.shift, .command])
-        if modifiers.isEmpty, !isEditing, let link = link(at: event), link.resolved, let editor, editor.math.reveal(label: link.key) {
+        if modifiers.isEmpty, !isEditing, let link = link(at: event), link.resolved, let editor, editor.math.follow(link) {
             return
         }
         if isReadOnly || !modifiers.isEmpty {

@@ -67,6 +67,7 @@ struct NoteMathLayoutTests {
         bitmaps()
         fallbackGlyphs()
         references()
+        katexBoxesSizesAndLinks()
         samples()
         print("NoteMathLayoutTests passed")
     }
@@ -595,6 +596,48 @@ struct NoteMathLayoutTests {
         expect(picture.ink(x: 0.55...1, y: 0...1) > 40, "the reference number draws")
         let pictureMissing = bitmap(missing)
         expect(pictureMissing.ink(x: 0.55...1, y: 0...1) > 40, "the missing marker draws")
+    }
+
+    static func katexBoxesSizesAndLinks() {
+        let normal = box("x", display: false), huge = box("\\Huge x", display: false), tiny = box("\\tiny x", display: false)
+        expect(abs(huge.width / normal.width - 2.488) < 0.02, "Huge is 2.488 times as wide")
+        expect(abs(tiny.width / normal.width - 0.5) < 0.02, "tiny is half as wide")
+        expect(abs(box("\\Huge{\\tiny x}", display: false).width - tiny.width) < 0.01, "sizes are absolute, not nested")
+        expect(abs(box("x^{\\normalsize y}", display: false).width - box("x^{y}", display: false).width) < 0.01, "normalsize in a script keeps the script")
+        let raised = box("\\raisebox{0.5em}{x}", display: false), flat = box("\\text{x}", display: false)
+        expect(abs(raised.ascent - flat.ascent - 0.5 * size) < 0.01, "raisebox lifts by its length")
+        let smashed = box("\\smash{\\frac{a}{b}}", display: false)
+        expect(smashed.ascent == 0 && smashed.descent == 0 && !smashed.inks.isEmpty, "smash keeps ink and drops height")
+        let bottomless = box("\\smash[b]{y}", display: false)
+        expect(bottomless.ascent > 0 && bottomless.descent == 0, "smash b keeps the height")
+        let stack = box("\\substack{a\\\\b\\\\c}", display: false), single = box("\\substack{a}", display: false)
+        expect(stack.height > single.height * 2, "substack stacks rows")
+        expect(abs(single.width - box("{\\scriptstyle a}", display: false).width) < 0.01, "substack cells use script size")
+        let thin = box("\\genfrac{}{}{0.1em}{}{a}{b}", display: false)
+        let rules = thin.inks.compactMap { ink -> CGSize? in if case .rule(let size) = ink.content { return size }; return nil }
+        expect(rules.count == 1 && abs(rules[0].height - 0.1 * size) < 0.01, "genfrac draws its own rule thickness")
+        let colorBox = box("\\colorbox{red}{hi}", display: false), text = box("\\text{hi}", display: false)
+        expect(abs(colorBox.width - text.width - 0.6 * size) < 0.01, "colorbox pads by fboxsep")
+        expect(colorBox.inks.first.map { if case .rule = $0.content, case .custom = $0.color { true } else { false } } == true, "background draws first")
+        let framed = box("\\fcolorbox{blue}{red}{hi}", display: false)
+        expect(abs(framed.width - text.width - 0.68 * size) < 0.01 && framed.inks.count == text.inks.count + 5, "fcolorbox adds a frame")
+        let link = NoteMathRenderer.render("a + \\href{https://katex.org}{b}", fontSize: 40, color: .black, display: false)
+        let marks = link.links(width: link.size.width)
+        expect(marks.count == 1 && marks[0].url == "https://katex.org" && marks[0].resolved, "href makes a clickable link")
+        expect(marks.first.map { $0.rect.minX > link.size.width * 0.5 } == true, "the link covers the linked part")
+        let url = box("\\url{https://parc.is}", display: false)
+        expect(url.links.first?.url == "https://parc.is" && url.inks.contains { if case .link = $0.color { true } else { false } }, "url underlines")
+        let group = box("\\overgroup{ABCD}", display: false), plain = box("ABCD", display: false)
+        expect(group.ascent > plain.ascent + 0.1 * size, "overgroup arcs over its base")
+        expect(box("\\undergroup{ABCD}", display: false).descent > plain.descent + 0.1 * size, "undergroup hangs below")
+        let dash = box("\\tripledash", display: false), minus = box("-", display: false)
+        expect(dash.ascent >= minus.ascent - 0.01, "tripledash keeps a minus strut")
+        let lines = box("\\ce{A\\bond{~-}B}", display: false), plainBond = box("\\ce{A\\bond{-}B}", display: false)
+        expect(lines.inks.count > plainBond.inks.count, "a dashed bond adds its dashes above the line")
+        for bond in ["~", "~-", "~=", "~--", "-~-", "...", "...."] {
+            let rendering = NoteMathRenderer.render("\\ce{C\\bond{\(bond)}C}", fontSize: 30, color: .black, display: false)
+            expect(rendering.error == nil && bitmap(rendering).ink(x: 0.35...0.65, y: 0...1) > 4, "bond \(bond) draws between the atoms")
+        }
     }
 
     static func samples() {

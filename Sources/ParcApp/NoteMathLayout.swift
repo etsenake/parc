@@ -5,6 +5,7 @@ enum NoteMathInkColor {
     case inherited
     case custom(CGColor)
     case muted
+    case link
 }
 
 struct NoteMathInk {
@@ -29,6 +30,7 @@ struct NoteMathLinkMark {
     var key: String
     var rect: CGRect
     var resolved: Bool
+    var url: String?
 }
 
 struct NoteMathTagMark {
@@ -144,11 +146,13 @@ struct NoteMathContext {
 struct NoteMathTypesetter {
     let font: NoteMathFont
     let baseSize: CGFloat
+    var sizeFactor: CGFloat = 1
 
     private struct Atom {
         var kind: NoteMathAtomKind?
         var box: NoteMathBox
         var style: NoteMathStyle
+        var scale: CGFloat = 1
     }
 
     private struct Nucleus {
@@ -245,7 +249,7 @@ struct NoteMathTypesetter {
                     let entry = Self.spacingTable[Self.index(lastKind)][Self.index(kind)]
                     if entry > 0 || (entry < 0 && !atom.style.isScript) {
                         let mu = [0, 3, 4, 5][abs(entry)]
-                        row.skip(CGFloat(mu) * size(atom.style) / 18)
+                        row.skip(CGFloat(mu) * size(atom.style) * atom.scale / 18)
                     }
                 }
                 lastKind = kind
@@ -279,6 +283,15 @@ struct NoteMathTypesetter {
                 collectAtoms(content, context.with(style: NoteMathStyle(level: level, cramped: context.style.cramped)), into: &atoms)
             case .space(let amount):
                 atoms.append(Atom(kind: nil, box: NoteMathBox(width: CGFloat(amount) * em(context)), style: context.style))
+            case .sized(let factor, let content):
+                let sized = resized(CGFloat(factor), context)
+                var inner: [Atom] = []
+                sized.typesetter.collectAtoms(content, sized.context, into: &inner)
+                let ratio = sized.typesetter.baseSize / baseSize
+                for var atom in inner {
+                    atom.scale *= ratio
+                    atoms.append(atom)
+                }
             default:
                 let laidOut = layoutAtom(node, context)
                 atoms.append(Atom(kind: laidOut.kind, box: laidOut.box, style: context.style))
@@ -379,7 +392,88 @@ struct NoteMathTypesetter {
             box.links.append(NoteMathLinkMark(key: key, rect: CGRect(x: 0, y: -box.descent, width: box.width, height: box.height),
                                               resolved: label != nil))
             return (box, .ord)
+        case .sized(let factor, let content):
+            let sized = resized(CGFloat(factor), context)
+            return (sized.typesetter.layoutList(content, sized.context).withoutGlyphIdentity(), .ord)
+        case .raised(let amount, let content):
+            return (layoutList(content, context).withoutGlyphIdentity().raised(by: CGFloat(amount) * em(context)), .ord)
+        case .smashed(let content, let top, let bottom):
+            var box = layoutList(content, context).withoutGlyphIdentity()
+            if top { box.ascent = 0 }
+            if bottom { box.descent = 0 }
+            return (box, .ord)
+        case .substack(let rows):
+            return (substack(rows, context), .ord)
+        case .colorBox(let background, let frame, let content):
+            return (colorBox(background: background, frame: frame, content, context), .ord)
+        case .link(let target, let content):
+            let inner = layoutList(content, context).withoutGlyphIdentity()
+            let thickness = constant(.underbarRuleThickness, context)
+            let underline = max(inner.descent, 0.1 * em(context)) + thickness
+            var box = NoteMathBox(width: inner.width, ascent: inner.ascent, descent: max(inner.descent, underline))
+            box.draw(inner, at: .zero)
+            box.inks.append(NoteMathInk(content: .rule(CGSize(width: inner.width, height: thickness)), origin: CGPoint(x: 0, y: -underline), color: .link))
+            box.links.append(NoteMathLinkMark(key: target, rect: CGRect(x: 0, y: -box.descent, width: box.width, height: box.height),
+                                              resolved: true, url: target))
+            return (box, atomKind(content.count == 1 ? content[0] : nil))
+        case .rule(let width, let height, let raise):
+            let em = em(context)
+            let size = CGSize(width: max(0, CGFloat(width) * em), height: max(0, CGFloat(height) * em))
+            var box = NoteMathBox(width: size.width, ascent: max(0, CGFloat(raise + height) * em), descent: max(0, -CGFloat(raise) * em))
+            if size.width > 0, size.height > 0 {
+                box.inks.append(NoteMathInk(content: .rule(size), origin: CGPoint(x: 0, y: CGFloat(raise) * em), color: context.color))
+            }
+            return (box, .ord)
         }
+    }
+
+    private func resized(_ factor: CGFloat, _ context: NoteMathContext) -> (typesetter: NoteMathTypesetter, context: NoteMathContext) {
+        guard factor != sizeFactor else { return (self, context) }
+        let typesetter = NoteMathTypesetter(font: font, baseSize: baseSize / sizeFactor * factor, sizeFactor: factor)
+        return (typesetter, context.with(style: NoteMathStyle(level: .text, cramped: context.style.cramped)))
+    }
+
+    private func substack(_ rows: [[NoteMathNode]], _ context: NoteMathContext) -> NoteMathBox {
+        let em = em(context)
+        let cellContext = context.with(style: NoteMathStyle(level: .script, cramped: false))
+        let boxes = rows.map { layoutList($0, cellContext) }
+        let arraySkip = 0.5 * 1.2 * em
+        var positions: [CGFloat] = []
+        var total: CGFloat = 0
+        for box in boxes {
+            total += max(box.ascent, 0.7 * arraySkip)
+            positions.append(total)
+            total += max(box.descent, 0.3 * arraySkip)
+        }
+        let offset = total / 2 + constant(.axisHeight, context)
+        let width = boxes.map(\.width).max() ?? 0
+        var result = NoteMathBox(width: width, ascent: offset, descent: total - offset)
+        for (box, position) in zip(boxes, positions) {
+            result.draw(box, at: CGPoint(x: (width - box.width) / 2, y: offset - position))
+        }
+        return result
+    }
+
+    private func colorBox(background: NoteMathColor, frame: NoteMathColor?, _ content: [NoteMathNode], _ context: NoteMathContext) -> NoteMathBox {
+        let inner = layoutList(content, context)
+        let em = em(context)
+        let thickness = frame == nil ? 0 : 0.04 * em
+        let inset = 0.3 * em + thickness
+        var box = NoteMathBox(width: inner.width + inset * 2, ascent: inner.ascent + inset, descent: inner.descent + inset)
+        box.inks.append(NoteMathInk(content: .rule(CGSize(width: box.width, height: box.height)), origin: CGPoint(x: 0, y: -box.descent),
+                                    color: .custom(color(background))))
+        box.draw(inner, at: CGPoint(x: inset, y: 0))
+        guard let frame else { return box }
+        let frames = [
+            CGRect(x: 0, y: -box.descent, width: box.width, height: thickness),
+            CGRect(x: 0, y: box.ascent - thickness, width: box.width, height: thickness),
+            CGRect(x: 0, y: -box.descent, width: thickness, height: box.height),
+            CGRect(x: box.width - thickness, y: -box.descent, width: thickness, height: box.height),
+        ]
+        for rect in frames {
+            box.inks.append(NoteMathInk(content: .rule(rect.size), origin: rect.origin, color: .custom(color(frame))))
+        }
+        return box
     }
 
     func glyphBox(_ glyph: CGGlyph, size: CGFloat, color: NoteMathInkColor) -> NoteMathBox {
@@ -651,7 +745,7 @@ struct NoteMathTypesetter {
         let axis = value(.axisHeight)
         var up: CGFloat
         var down: CGFloat
-        let thickness = fraction.hasRule ? value(.fractionRuleThickness) : 0
+        let thickness = fraction.hasRule ? fraction.thickness.map { CGFloat($0) * em(context) } ?? value(.fractionRuleThickness) : 0
         if fraction.hasRule {
             up = max(value(display ? .fractionNumeratorDisplayStyleShiftUp : .fractionNumeratorShiftUp),
                      axis + thickness / 2 + value(display ? .fractionNumDisplayStyleGapMin : .fractionNumeratorGapMin) + numerator.descent)
