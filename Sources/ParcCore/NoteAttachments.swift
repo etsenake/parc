@@ -90,13 +90,18 @@ enum NoteAttachmentImportState: Equatable {
 
 @MainActor
 final class NoteAttachmentImports {
+    private struct Healer {
+        weak var session: NotePageSession?
+        var subscription: AnyCancellable
+    }
+
     static let shared = NoteAttachmentImports()
     nonisolated static let scheme = "parc-attachment"
 
     var worker = NoteFileWorker(label: "org.parc.notes.attachments")
     let changes = PassthroughSubject<String, Never>()
     private var states: [String: NoteAttachmentImportState] = [:]
-    private var healers: [String: AnyCancellable] = [:]
+    private var healers: [String: Healer] = [:]
 
     nonisolated static func isToken(_ source: String?) -> Bool {
         source?.hasPrefix(scheme + ":") == true
@@ -120,14 +125,16 @@ final class NoteAttachmentImports {
         switch result {
         case .success(let path):
             states[token] = .imported(path)
+            healers = healers.filter { $0.value.session != nil }
             if let session {
                 Self.settle(token, as: path, in: session)
-                healers[token] = session.changes.filter(\.isUndoRedo).sink { [weak session] _ in
+                let subscription = session.changes.filter(\.isUndoRedo).sink { [weak session] _ in
                     _ = NoteFileSystemClock.shared.schedule(after: 0) { [weak session] in
                         guard let session else { return }
                         Self.settle(token, as: path, in: session)
                     }
                 }
+                healers[token] = Healer(session: session, subscription: subscription)
             }
         case .failure(let error):
             states[token] = .failed(missing: (error as? NoteFileError) == .missing)
