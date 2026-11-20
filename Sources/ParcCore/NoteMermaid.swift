@@ -1,20 +1,5 @@
 import Foundation
 
-enum NoteDiagramMode: String, Codable, CaseIterable, Hashable, Sendable {
-    case code, preview, split
-
-    var title: String {
-        switch self {
-        case .code: return "Code"
-        case .preview: return "Preview"
-        case .split: return "Split"
-        }
-    }
-
-    var showsCode: Bool { self != .preview }
-    var showsDiagram: Bool { self != .code }
-}
-
 enum NoteMermaid {
     static let languageID = "mermaid"
     static let typingDelay: TimeInterval = 0.3
