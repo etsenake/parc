@@ -1,0 +1,3 @@
+Sources/ParcCore/*.swift
+Sources/ParcApp/NoteHandleGeometry.swift
+Sources/ParcApp/NoteBlockMenuModel.swift
