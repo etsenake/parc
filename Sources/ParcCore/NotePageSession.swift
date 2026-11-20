@@ -13,16 +13,25 @@ struct NotePageChange {
 enum NoteEditCoalescing: Hashable {
     case none
     case typing(NoteBlockID, NoteTextField)
+    case deleting(NoteBlockID, NoteTextField)
+    case adjusting(NoteBlockID)
 }
 
 @MainActor
 final class NotePageSession {
-    private struct Snapshot {
+    private struct HistoryStep {
+        var page: NotePage
+        var selectionBefore: NotePageSelection
+        var selectionAfter: NotePageSelection
+        var name: String
+    }
+
+    private struct OpenGroup {
+        var name: String
         var page: NotePage
         var selection: NotePageSelection
-        var name: String
-        var coalescing: NoteEditCoalescing
-        var time: Date
+        var changed = false
+        var continuing: NoteEditCoalescing = .none
     }
 
     private(set) var page: NotePage
@@ -33,10 +42,11 @@ final class NotePageSession {
     var now: () -> Date = Date.init
     var undoLimit = 300
     var typingCoalesceInterval: TimeInterval = 1.5
-    private var undoStack: [Snapshot] = []
-    private var redoStack: [Snapshot] = []
+    private var undoStack: [HistoryStep] = []
+    private var redoStack: [HistoryStep] = []
     private var lastCoalescing: NoteEditCoalescing = .none
     private var lastEditTime = Date.distantPast
+    private var openGroup: OpenGroup?
 
     init(page: NotePage) {
         self.page = page.blocks.isEmpty ? NotePage(settings: page.settings, blocks: [.paragraph()]) : page
@@ -46,11 +56,18 @@ final class NotePageSession {
     var canRedo: Bool { !redoStack.isEmpty }
     var undoActionName: String? { undoStack.last?.name }
     var redoActionName: String? { redoStack.last?.name }
+    var undoDepth: Int { undoStack.count }
+    var redoDepth: Int { redoStack.count }
+    var isGrouping: Bool { openGroup != nil }
 
     func replacePage(_ value: NotePage, selection next: NotePageSelection = .none, keepHistory: Bool = false) {
         page = value.blocks.isEmpty ? NotePage(settings: value.settings, blocks: [.paragraph()]) : value
         selection = next
-        if !keepHistory { undoStack.removeAll(); redoStack.removeAll() }
+        if !keepHistory {
+            undoStack.removeAll()
+            redoStack.removeAll()
+            if openGroup != nil { openGroup?.page = page; openGroup?.selection = next; openGroup?.changed = false }
+        }
         breakCoalescing()
         revision &+= 1
         changes.send(NotePageChange(kind: .replaced, blocks: Set(page.documentOrder()), origin: nil, revision: revision))
@@ -58,8 +75,7 @@ final class NotePageSession {
 
     func setSelection(_ value: NotePageSelection, origin: AnyObject? = nil) {
         guard value != selection else { return }
-        if case .text(_, let head) = value, case .typing(let block, let field) = lastCoalescing,
-           head.block != block || head.field != field { breakCoalescing() }
+        if Self.coalescingTarget(lastCoalescing) != Self.typingTarget(of: value) { breakCoalescing() }
         selection = value
         changes.send(NotePageChange(kind: .selection, blocks: [], origin: origin.map(ObjectIdentifier.init), revision: revision))
     }
@@ -69,61 +85,149 @@ final class NotePageSession {
     func edit(_ name: String, kind: NotePageChange.Kind = .structure, coalescing: NoteEditCoalescing = .none,
               affected: Set<NoteBlockID>? = nil, origin: AnyObject? = nil, selection after: NotePageSelection? = nil,
               _ body: (inout NotePage) throws -> Void) rethrows {
+        try edit(name, kind: kind, coalescing: coalescing, affected: affected, origin: origin, selecting: { _ in after }, body)
+    }
+
+    func edit(_ name: String, kind: NotePageChange.Kind = .structure, coalescing: NoteEditCoalescing = .none,
+              affected: Set<NoteBlockID>? = nil, origin: AnyObject? = nil,
+              selecting: (NotePage) -> NotePageSelection?, _ body: (inout NotePage) throws -> Void) rethrows {
         guard !isReadOnly else { return }
         var next = page
         try body(&next)
         if next.blocks.isEmpty { next.blocks = [.paragraph()] }
-        guard next != page || (after != nil && after != selection) else { return }
+        let after = selecting(next)
+        let changed = next != page
+        guard changed || (after != nil && after != selection) else { return }
         let time = now()
-        let coalesce = coalescing != .none && coalescing == lastCoalescing
-            && time.timeIntervalSince(lastEditTime) < typingCoalesceInterval && !undoStack.isEmpty
-        if next != page && !coalesce {
-            undoStack.append(Snapshot(page: page, selection: selection, name: name, coalescing: coalescing, time: time))
-            if undoStack.count > undoLimit { undoStack.removeFirst(undoStack.count - undoLimit) }
-        }
-        if next != page { redoStack.removeAll() }
+        if changed { record(name, coalescing: coalescing, time: time) }
         lastCoalescing = coalescing
         lastEditTime = time
-        let changed = affected ?? Self.changedBlocks(from: page, to: next)
+        let changedBlocks = changed ? (affected ?? Self.changedBlocks(from: page, to: next)) : []
         page = next
         if let after { selection = after }
+        if changed, openGroup == nil, !undoStack.isEmpty { undoStack[undoStack.count - 1].selectionAfter = selection }
         revision &+= 1
-        changes.send(NotePageChange(kind: kind, blocks: changed, origin: origin.map(ObjectIdentifier.init), revision: revision))
+        changes.send(NotePageChange(kind: changed ? kind : .selection, blocks: changedBlocks,
+                                    origin: origin.map(ObjectIdentifier.init), revision: revision))
+    }
+
+    @discardableResult
+    func group<Result>(_ name: String, _ body: () throws -> Result) rethrows -> Result {
+        try group(name, continuing: .none, body)
+    }
+
+    @discardableResult
+    func group<Result>(_ name: String, continuing: NoteEditCoalescing, _ body: () throws -> Result) rethrows -> Result {
+        if openGroup != nil { return try body() }
+        breakCoalescing()
+        openGroup = OpenGroup(name: name, page: page, selection: selection, continuing: continuing)
+        defer { closeGroup() }
+        return try body()
+    }
+
+    private func closeGroup() {
+        guard let group = openGroup else { return }
+        openGroup = nil
+        if group.changed {
+            pushUndo(HistoryStep(page: group.page.withoutIndex, selectionBefore: group.selection, selectionAfter: selection, name: group.name))
+            redoStack.removeAll()
+        }
+        if group.changed && group.continuing != .none {
+            lastCoalescing = group.continuing
+            lastEditTime = now()
+        } else {
+            breakCoalescing()
+        }
     }
 
     func undo() {
-        guard let snapshot = undoStack.popLast() else { return }
-        redoStack.append(Snapshot(page: page, selection: selection, name: snapshot.name, coalescing: .none, time: now()))
-        restore(snapshot)
+        guard openGroup == nil, !isReadOnly, let step = undoStack.popLast() else { return }
+        redoStack.append(HistoryStep(page: page.withoutIndex, selectionBefore: step.selectionBefore,
+                                     selectionAfter: step.selectionAfter, name: step.name))
+        restore(step.page, selection: step.selectionBefore)
     }
 
     func redo() {
-        guard let snapshot = redoStack.popLast() else { return }
-        undoStack.append(Snapshot(page: page, selection: selection, name: snapshot.name, coalescing: .none, time: now()))
-        restore(snapshot)
+        guard openGroup == nil, !isReadOnly, let step = redoStack.popLast() else { return }
+        pushUndo(HistoryStep(page: page.withoutIndex, selectionBefore: step.selectionBefore,
+                             selectionAfter: step.selectionAfter, name: step.name))
+        restore(step.page, selection: step.selectionAfter)
     }
 
-    private func restore(_ snapshot: Snapshot) {
-        let changed = Self.changedBlocks(from: page, to: snapshot.page)
-        page = snapshot.page
-        selection = snapshot.selection
+    func clearHistory() {
+        undoStack.removeAll()
+        redoStack.removeAll()
+        breakCoalescing()
+    }
+
+    private func record(_ name: String, coalescing: NoteEditCoalescing, time: Date) {
+        if openGroup != nil {
+            openGroup?.changed = true
+            return
+        }
+        let coalesce = coalescing != .none && coalescing == lastCoalescing && !undoStack.isEmpty
+            && time.timeIntervalSince(lastEditTime) < typingCoalesceInterval
+        if !coalesce { pushUndo(HistoryStep(page: page.withoutIndex, selectionBefore: selection, selectionAfter: selection, name: name)) }
+        redoStack.removeAll()
+    }
+
+    private func pushUndo(_ step: HistoryStep) {
+        undoStack.append(step)
+        if undoStack.count > undoLimit { undoStack.removeFirst(undoStack.count - undoLimit) }
+    }
+
+    private func restore(_ target: NotePage, selection next: NotePageSelection) {
+        let changed = Self.changedBlocks(from: page, to: target)
+        page = target
+        selection = next
         breakCoalescing()
         revision &+= 1
         changes.send(NotePageChange(kind: .structure, blocks: changed, origin: nil, isUndoRedo: true, revision: revision))
     }
 
+    private static func coalescingTarget(_ value: NoteEditCoalescing) -> NotePosition? {
+        switch value {
+        case .typing(let block, let field), .deleting(let block, let field): return NotePosition(block, 0, field: field)
+        case .none, .adjusting: return nil
+        }
+    }
+
+    private static func typingTarget(of selection: NotePageSelection) -> NotePosition? {
+        guard let caret = selection.caret else { return nil }
+        return NotePosition(caret.block, 0, field: caret.field)
+    }
+
     static func changedBlocks(from old: NotePage, to new: NotePage) -> Set<NoteBlockID> {
-        var before: [NoteBlockID: NoteBlock] = [:]
-        for block in old.allBlocks() { before[block.id] = block }
         var result = Set<NoteBlockID>()
-        for block in new.allBlocks() {
-            guard let previous = before.removeValue(forKey: block.id) else { result.insert(block.id); continue }
-            if previous.kind != block.kind || previous.text != block.text || previous.props != block.props
-                || previous.color != block.color || previous.children.map(\.id) != block.children.map(\.id) {
+        func insertSubtree(_ list: [NoteBlock]) {
+            for block in list {
                 result.insert(block.id)
+                insertSubtree(block.children)
             }
         }
-        result.formUnion(before.keys)
+        func previousSibling(of id: NoteBlockID, in page: NotePage) -> NoteBlockID? {
+            guard let index = page.path(of: id)?.last, index > 0 else { return nil }
+            let siblings = page.siblings(of: id)
+            return siblings.indices.contains(index - 1) ? siblings[index - 1].id : nil
+        }
+        func scan(_ list: [NoteBlock], parent: NoteBlockID?, against other: NotePage, reportsContent: Bool) {
+            for (index, block) in list.enumerated() {
+                guard let counterpart = other.block(block.id) else {
+                    result.insert(block.id)
+                    insertSubtree(block.children)
+                    continue
+                }
+                if reportsContent && (other.parent(of: block.id) != parent
+                    || previousSibling(of: block.id, in: other) != (index > 0 ? list[index - 1].id : nil)) {
+                    result.insert(block.id)
+                }
+                if counterpart == block { continue }
+                if reportsContent && !block.sameContent(as: counterpart) { result.insert(block.id) }
+                scan(block.children, parent: block.id, against: other, reportsContent: reportsContent)
+            }
+        }
+        scan(new.blocks, parent: nil, against: old, reportsContent: true)
+        scan(old.blocks, parent: nil, against: new, reportsContent: false)
         return result
     }
 }

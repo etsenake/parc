@@ -43,6 +43,7 @@ enum NoteAtom: Hashable, Codable {
     case page(target: String, title: String)
     case date(NoteDateMention)
     case link(url: String, title: String)
+    case raw(String)
 
     static let character = "\u{FFFC}"
 
@@ -51,6 +52,7 @@ enum NoteAtom: Hashable, Codable {
         case .equation(let source): return source
         case .page(_, let title): return title
         case .link(let url, let title): return title.isEmpty ? url : title
+        case .raw(let source): return source
         case .date(let date):
             var value = String(format: "%04d-%02d-%02d", date.year, date.month, date.day)
             if let hour = date.hour { value += String(format: " %02d:%02d", hour, date.minute ?? 0) }
@@ -109,6 +111,7 @@ struct NoteSpan: Hashable, Codable {
     var marks: NoteMarks
 }
 
+
 struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
     private(set) var string: String
     private(set) var spans: [NoteSpan]
@@ -135,6 +138,7 @@ struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
 
     var length: Int { (string as NSString).length }
     var isEmpty: Bool { string.isEmpty }
+    var isPlain: Bool { spans.allSatisfy { $0.marks.isPlain } }
 
     var plainText: String {
         var result = ""
@@ -171,14 +175,43 @@ struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
     }
 
     func typingMarks(at offset: Int) -> NoteMarks {
-        guard offset > 0, !spans.isEmpty else {
-            var first = spans.first?.marks.withoutAtom ?? .plain
-            first.link = nil
-            return offset == 0 ? first : .plain
+        guard !spans.isEmpty else { return .plain }
+        let caret = min(max(0, offset), length)
+        if caret == 0 {
+            var leading = marks(at: 0).withoutAtom
+            leading.link = nil
+            return leading
         }
-        var marks = self.marks(at: offset - 1).withoutAtom
-        if offset >= length || self.marks(at: offset).link != marks.link { marks.link = nil }
+        var marks = self.marks(at: caret - 1).withoutAtom
+        if self.marks(at: caret - 1).atom != nil { marks.link = nil }
+        if caret >= length || self.marks(at: caret).link != marks.link { marks.link = nil }
         return marks
+    }
+
+    func linkRange(at offset: Int) -> Range<Int>? {
+        let caret = min(max(0, offset), length)
+        let probe = caret < length && marks(at: caret).link != nil ? caret : caret - 1
+        guard probe >= 0, probe < length, let link = marks(at: probe).link else { return nil }
+        let all = runs()
+        guard let hit = all.firstIndex(where: { $0.range.contains(probe) }) else { return nil }
+        var lower = hit, upper = hit
+        while lower > 0, all[lower - 1].marks.link == link { lower -= 1 }
+        while upper + 1 < all.count, all[upper + 1].marks.link == link { upper += 1 }
+        return all[lower].range.lowerBound..<all[upper].range.upperBound
+    }
+
+    func composedRange(before offset: Int) -> Range<Int>? {
+        let caret = min(max(0, offset), length)
+        guard caret > 0 else { return nil }
+        let range = (string as NSString).rangeOfComposedCharacterSequence(at: caret - 1)
+        return range.location..<caret
+    }
+
+    func composedRange(after offset: Int) -> Range<Int>? {
+        let caret = min(max(0, offset), length)
+        guard caret < length else { return nil }
+        let range = (string as NSString).rangeOfComposedCharacterSequence(at: caret)
+        return caret..<(range.location + range.length)
     }
 
     func slice(_ range: Range<Int>) -> NoteText {
@@ -294,6 +327,7 @@ enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
         default: return false
         }
     }
+    var hasText: Bool { hasRichText || hasPlainText }
     var isMedia: Bool {
         switch self {
         case .image, .video, .audio, .file: return true
@@ -301,6 +335,7 @@ enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
         }
     }
     var isListItem: Bool { self == .bulletedItem || self == .numberedItem || self == .todo }
+    var isColumnStructure: Bool { self == .columns || self == .column }
     var acceptsChildren: Bool {
         switch self {
         case .bulletedItem, .numberedItem, .todo, .toggle, .quote, .callout, .columns, .column: return true
@@ -313,6 +348,7 @@ enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
         default: return false
         }
     }
+    var supportsColor: Bool { hasRichText || self == .tableOfContents || self == .table }
 }
 
 enum NoteAlignment: String, Hashable, Codable, CaseIterable {
@@ -359,6 +395,103 @@ struct NoteTable: Hashable, Codable {
         if columnWidths.count < columns { columnWidths += Array(repeating: nil, count: columns - columnWidths.count) }
         if columnWidths.count > columns { columnWidths.removeLast(columnWidths.count - columns) }
     }
+
+    func cell(_ row: Int, _ column: Int) -> NoteText? {
+        guard rows.indices.contains(row), rows[row].indices.contains(column) else { return nil }
+        return rows[row][column]
+    }
+
+    mutating func insertRow(at index: Int) {
+        normalize()
+        rows.insert(Array(repeating: NoteText(), count: max(1, columnCount)), at: min(max(0, index), rows.count))
+    }
+
+    @discardableResult
+    mutating func deleteRow(at index: Int) -> Bool {
+        guard rows.count > 1, rows.indices.contains(index) else { return false }
+        rows.remove(at: index)
+        return true
+    }
+
+    @discardableResult
+    mutating func duplicateRow(at index: Int) -> Bool {
+        guard rows.indices.contains(index) else { return false }
+        rows.insert(rows[index], at: index + 1)
+        return true
+    }
+
+    @discardableResult
+    mutating func moveRow(from source: Int, to destination: Int) -> Bool {
+        guard rows.indices.contains(source), rows.indices.contains(destination), source != destination else { return false }
+        let row = rows.remove(at: source)
+        rows.insert(row, at: destination)
+        return true
+    }
+
+    mutating func insertColumn(at index: Int) {
+        normalize()
+        let position = min(max(0, index), columnCount)
+        for row in rows.indices { rows[row].insert(NoteText(), at: position) }
+        alignments.insert(nil, at: position)
+        columnWidths.insert(nil, at: position)
+    }
+
+    @discardableResult
+    mutating func deleteColumn(at index: Int) -> Bool {
+        normalize()
+        guard columnCount > 1, index >= 0, index < columnCount else { return false }
+        for row in rows.indices { rows[row].remove(at: index) }
+        alignments.remove(at: index)
+        columnWidths.remove(at: index)
+        return true
+    }
+
+    @discardableResult
+    mutating func duplicateColumn(at index: Int) -> Bool {
+        normalize()
+        guard index >= 0, index < columnCount else { return false }
+        for row in rows.indices { rows[row].insert(rows[row][index], at: index + 1) }
+        alignments.insert(alignments[index], at: index + 1)
+        columnWidths.insert(columnWidths[index], at: index + 1)
+        return true
+    }
+
+    @discardableResult
+    mutating func moveColumn(from source: Int, to destination: Int) -> Bool {
+        normalize()
+        let count = columnCount
+        guard source >= 0, source < count, destination >= 0, destination < count, source != destination else { return false }
+        for row in rows.indices {
+            let cell = rows[row].remove(at: source)
+            rows[row].insert(cell, at: destination)
+        }
+        let alignment = alignments.remove(at: source)
+        alignments.insert(alignment, at: destination)
+        let width = columnWidths.remove(at: source)
+        columnWidths.insert(width, at: destination)
+        return true
+    }
+
+    mutating func setColumnWidth(_ width: Double?, at index: Int) {
+        normalize()
+        guard columnWidths.indices.contains(index) else { return }
+        columnWidths[index] = width.map { max(NoteTable.minimumColumnWidth, $0) }
+    }
+
+    mutating func setAlignment(_ alignment: NoteAlignment?, at index: Int) {
+        normalize()
+        guard alignments.indices.contains(index) else { return }
+        alignments[index] = alignment
+    }
+
+    static let minimumColumnWidth = 32.0
+
+    static func movedIndex(_ index: Int, from source: Int, to destination: Int) -> Int {
+        if index == source { return destination }
+        if source < destination, index > source, index <= destination { return index - 1 }
+        if destination < source, index >= destination, index < source { return index + 1 }
+        return index
+    }
 }
 
 struct NoteBlockProps: Hashable, Codable {
@@ -369,11 +502,13 @@ struct NoteBlockProps: Hashable, Codable {
     var listStart: Int?
     var bulletMarker: String?
     var orderedDelimiter: String?
+    var looseList = false
     var icon: String?
     var alert: String?
     var language = ""
     var wrap = false
     var fence: String?
+    var info: String?
     var source: String?
     var alt: String?
     var width: Double?
@@ -384,22 +519,72 @@ struct NoteBlockProps: Hashable, Codable {
     var target: String?
 }
 
+private final class NoteBlockPropsStorage {
+    var value: NoteBlockProps
+    init(_ value: NoteBlockProps) { self.value = value }
+}
+
 struct NoteBlock: Hashable, Identifiable, Codable {
     var id = NoteBlockID()
     var kind: NoteBlockKind
     var text = NoteText()
-    var props = NoteBlockProps()
     var color: NoteColorStyle?
     var children: [NoteBlock] = []
+    private var propsStorage: NoteBlockPropsStorage
+
+    var props: NoteBlockProps {
+        get { propsStorage.value }
+        set {
+            if isKnownUniquelyReferenced(&propsStorage) { propsStorage.value = newValue }
+            else { propsStorage = NoteBlockPropsStorage(newValue) }
+        }
+    }
 
     init(_ kind: NoteBlockKind, text: NoteText = NoteText(), props: NoteBlockProps = NoteBlockProps(),
          color: NoteColorStyle? = nil, children: [NoteBlock] = [], id: NoteBlockID = NoteBlockID()) {
         self.id = id
         self.kind = kind
         self.text = text
-        self.props = props
+        self.propsStorage = NoteBlockPropsStorage(props)
         self.color = color
         self.children = children
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, kind, text, props, color, children }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(NoteBlockID.self, forKey: .id) ?? NoteBlockID()
+        kind = try container.decode(NoteBlockKind.self, forKey: .kind)
+        text = try container.decodeIfPresent(NoteText.self, forKey: .text) ?? NoteText()
+        propsStorage = NoteBlockPropsStorage(try container.decodeIfPresent(NoteBlockProps.self, forKey: .props) ?? NoteBlockProps())
+        color = try container.decodeIfPresent(NoteColorStyle.self, forKey: .color)
+        children = try container.decodeIfPresent([NoteBlock].self, forKey: .children) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(text, forKey: .text)
+        try container.encode(props, forKey: .props)
+        try container.encodeIfPresent(color, forKey: .color)
+        try container.encode(children, forKey: .children)
+    }
+
+    static func == (lhs: NoteBlock, rhs: NoteBlock) -> Bool {
+        lhs.id == rhs.id && lhs.kind == rhs.kind && lhs.color == rhs.color && lhs.text == rhs.text
+            && (lhs.propsStorage === rhs.propsStorage || lhs.propsStorage.value == rhs.propsStorage.value)
+            && lhs.children == rhs.children
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(kind)
+        hasher.combine(text)
+        hasher.combine(props)
+        hasher.combine(color)
+        hasher.combine(children)
     }
 
     static func paragraph(_ text: NoteText = NoteText()) -> NoteBlock { NoteBlock(.paragraph, text: text) }
@@ -413,6 +598,18 @@ struct NoteBlock: Hashable, Identifiable, Codable {
     var isToggle: Bool { kind == .toggle || (kind == .heading && props.toggleable) }
     var acceptsChildren: Bool { kind.acceptsChildren || (kind == .heading && props.toggleable) }
     var showsChildren: Bool { !isToggle || props.expanded }
+    var isCollapsed: Bool { isToggle && !props.expanded }
+
+    func sameContent(as other: NoteBlock) -> Bool {
+        kind == other.kind && text == other.text && color == other.color
+            && (propsStorage === other.propsStorage || props == other.props)
+            && children.count == other.children.count
+            && zip(children, other.children).allSatisfy { $0.id == $1.id }
+    }
+
+    fileprivate var indexSignature: NoteBlockIndexSignature {
+        NoteBlockIndexSignature(id: id, kind: kind, toggleable: props.toggleable, expanded: props.expanded, listStart: props.listStart)
+    }
 
     func withFreshIDs() -> NoteBlock {
         var copy = self
@@ -420,6 +617,26 @@ struct NoteBlock: Hashable, Identifiable, Codable {
         copy.children = children.map { $0.withFreshIDs() }
         return copy
     }
+
+    func lastDescendant() -> NoteBlock {
+        var current = self
+        while let last = current.children.last { current = last }
+        return current
+    }
+
+    func lastVisibleDescendant() -> NoteBlock {
+        var current = self
+        while current.showsChildren, let last = current.children.last { current = last }
+        return current
+    }
+}
+
+private struct NoteBlockIndexSignature: Equatable {
+    var id: NoteBlockID
+    var kind: NoteBlockKind
+    var toggleable: Bool
+    var expanded: Bool
+    var listStart: Int?
 }
 
 enum NotePageFont: String, Hashable, Codable, CaseIterable {
@@ -457,13 +674,151 @@ struct NotePageSettings: Hashable, Codable {
     var isDefault: Bool { self == NotePageSettings() }
 }
 
+struct NoteListNumber: Hashable {
+    var value: Int
+    var level: Int
+
+    var label: String {
+        switch level % 3 {
+        case 1: return (NoteListNumber.letters(value) ?? String(value)) + "."
+        case 2: return (NoteListNumber.roman(value) ?? String(value)) + "."
+        default: return String(value) + "."
+        }
+    }
+
+    static func letters(_ value: Int) -> String? {
+        guard value > 0 else { return nil }
+        var remaining = value
+        var result = ""
+        while remaining > 0 {
+            remaining -= 1
+            result = String(Character(UnicodeScalar(UInt8(97 + remaining % 26)))) + result
+            remaining /= 26
+        }
+        return result
+    }
+
+    static func roman(_ value: Int) -> String? {
+        guard value > 0, value < 4000 else { return nil }
+        let table: [(Int, String)] = [(1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"),
+                                      (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")]
+        var remaining = value
+        var result = ""
+        for (amount, symbol) in table {
+            while remaining >= amount { result += symbol; remaining -= amount }
+        }
+        return result
+    }
+}
+
+struct NotePageIndex {
+    struct Entry {
+        var path: [Int]
+        var parent: NoteBlockID?
+        var depth: Int
+        var order: Int
+        var visibleOrder: Int?
+    }
+
+    private(set) var entries: [NoteBlockID: Entry] = [:]
+    private(set) var all: [NoteFlatBlock] = []
+    private(set) var visible: [NoteFlatBlock] = []
+    private(set) var allIDs: [NoteBlockID] = []
+    private(set) var visibleIDs: [NoteBlockID] = []
+    private(set) var numbers: [NoteBlockID: NoteListNumber] = [:]
+
+    init(_ blocks: [NoteBlock]) {
+        var path: [Int] = []
+        func walk(_ list: [NoteBlock], parent: NoteBlockID?, depth: Int, isVisible: Bool, numberedLevel: Int) {
+            var previous: Int?
+            for (index, block) in list.enumerated() {
+                path.append(index)
+                let flat = NoteFlatBlock(id: block.id, parent: parent, depth: depth, indexInParent: index)
+                var visibleOrder: Int?
+                if isVisible {
+                    visibleOrder = visible.count
+                    visible.append(flat)
+                    visibleIDs.append(block.id)
+                }
+                entries[block.id] = Entry(path: path, parent: parent, depth: depth, order: all.count, visibleOrder: visibleOrder)
+                all.append(flat)
+                allIDs.append(block.id)
+                if block.kind == .numberedItem {
+                    let value = previous.map { $0 + 1 } ?? (block.props.listStart ?? 1)
+                    numbers[block.id] = NoteListNumber(value: value, level: numberedLevel)
+                    previous = value
+                } else {
+                    previous = nil
+                }
+                if !block.children.isEmpty {
+                    walk(block.children, parent: block.id, depth: depth + 1, isVisible: isVisible && block.showsChildren,
+                         numberedLevel: numberedLevel + (block.kind == .numberedItem ? 1 : 0))
+                }
+                path.removeLast()
+            }
+        }
+        walk(blocks, parent: nil, depth: 0, isVisible: true, numberedLevel: 0)
+    }
+}
+
+private final class NotePageIndexStorage: @unchecked Sendable {
+    private let lock = NSLock()
+    private var built: NotePageIndex?
+
+    func index(for blocks: [NoteBlock]) -> NotePageIndex {
+        lock.lock()
+        defer { lock.unlock() }
+        if let built { return built }
+        let value = NotePageIndex(blocks)
+        built = value
+        return value
+    }
+}
+
 struct NotePage: Hashable, Codable {
     var settings = NotePageSettings()
-    var blocks: [NoteBlock] = []
+    var blocks: [NoteBlock] = [] { didSet { indexStorage = NotePageIndexStorage() } }
+    private var indexStorage = NotePageIndexStorage()
 
     init(settings: NotePageSettings = NotePageSettings(), blocks: [NoteBlock] = []) {
         self.settings = settings
         self.blocks = blocks
+    }
+
+    private enum CodingKeys: String, CodingKey { case settings, blocks }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        settings = try container.decodeIfPresent(NotePageSettings.self, forKey: .settings) ?? NotePageSettings()
+        blocks = try container.decodeIfPresent([NoteBlock].self, forKey: .blocks) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(settings, forKey: .settings)
+        try container.encode(blocks, forKey: .blocks)
+    }
+
+    static func == (lhs: NotePage, rhs: NotePage) -> Bool {
+        lhs.settings == rhs.settings && lhs.blocks == rhs.blocks
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(settings)
+        hasher.combine(blocks)
+    }
+
+    var index: NotePageIndex { indexStorage.index(for: blocks) }
+
+    var withoutIndex: NotePage {
+        var copy = self
+        copy.indexStorage = NotePageIndexStorage()
+        return copy
+    }
+
+    fileprivate mutating func keepingIndex(_ body: (inout [NoteBlock]) -> Bool) {
+        let storage = indexStorage
+        if body(&blocks) { indexStorage = storage }
     }
 }
 
@@ -489,12 +844,29 @@ extension NotePage {
     }
 
     func path(of id: NoteBlockID) -> [Int]? {
-        Self.path(of: id, in: blocks)
+        index.entries[id]?.path
+    }
+
+    func contains(_ id: NoteBlockID) -> Bool {
+        index.entries[id] != nil
     }
 
     func parent(of id: NoteBlockID) -> NoteBlockID? {
-        guard let path = path(of: id), path.count > 1 else { return nil }
-        return Self.block(at: Array(path.dropLast()), in: blocks)?.id
+        index.entries[id]?.parent
+    }
+
+    func depth(of id: NoteBlockID) -> Int? {
+        index.entries[id]?.depth
+    }
+
+    func ancestors(of id: NoteBlockID) -> [NoteBlockID] {
+        var result: [NoteBlockID] = []
+        var current = parent(of: id)
+        while let value = current {
+            result.append(value)
+            current = parent(of: value)
+        }
+        return result
     }
 
     func siblings(of id: NoteBlockID) -> [NoteBlock] {
@@ -502,32 +874,117 @@ extension NotePage {
         return blocks
     }
 
+    func documentPosition(of id: NoteBlockID) -> Int? {
+        index.entries[id]?.order
+    }
+
+    func visiblePosition(of id: NoteBlockID) -> Int? {
+        index.entries[id]?.visibleOrder
+    }
+
+    func isVisible(_ id: NoteBlockID) -> Bool {
+        visiblePosition(of: id) != nil
+    }
+
     func flattened(includingCollapsed: Bool = false) -> [NoteFlatBlock] {
-        var result: [NoteFlatBlock] = []
-        func walk(_ list: [NoteBlock], parent: NoteBlockID?, depth: Int) {
-            for (index, block) in list.enumerated() {
-                result.append(NoteFlatBlock(id: block.id, parent: parent, depth: depth, indexInParent: index))
-                if includingCollapsed || block.showsChildren { walk(block.children, parent: block.id, depth: depth + 1) }
-            }
-        }
-        walk(blocks, parent: nil, depth: 0)
-        return result
+        includingCollapsed ? index.all : index.visible
     }
 
     func documentOrder(includingCollapsed: Bool = true) -> [NoteBlockID] {
-        flattened(includingCollapsed: includingCollapsed).map(\.id)
+        includingCollapsed ? index.allIDs : index.visibleIDs
     }
 
     func isAncestor(_ ancestor: NoteBlockID, of id: NoteBlockID) -> Bool {
-        guard let outer = path(of: ancestor), let inner = path(of: id), inner.count > outer.count else { return false }
-        return Array(inner.prefix(outer.count)) == outer
+        guard ancestor != id, contains(ancestor) else { return false }
+        var current = parent(of: id)
+        while let value = current {
+            if value == ancestor { return true }
+            current = parent(of: value)
+        }
+        return false
+    }
+
+    func containingColumn(of id: NoteBlockID) -> NoteBlockID? {
+        var current = parent(of: id)
+        while let value = current {
+            if block(value)?.kind == .column { return value }
+            current = parent(of: value)
+        }
+        return nil
+    }
+
+    func numberLabel(for id: NoteBlockID) -> String? {
+        index.numbers[id]?.label
+    }
+
+    func listNumber(for id: NoteBlockID) -> NoteListNumber? {
+        index.numbers[id]
+    }
+
+    func columnFractions(of id: NoteBlockID) -> [Double] {
+        guard let columns = block(id), columns.kind == .columns, !columns.children.isEmpty else { return [] }
+        let widths = columns.children.map { $0.props.width.map { max(0, $0) } }
+        let known = widths.compactMap { $0 }.reduce(0, +)
+        let unknown = widths.filter { $0 == nil }.count
+        let share = unknown == 0 ? 0 : (known < 1 ? (1 - known) / Double(unknown) : 1 / Double(columns.children.count))
+        let raw = widths.map { $0 ?? share }
+        let total = raw.reduce(0, +)
+        guard total > 0 else { return Array(repeating: 1 / Double(raw.count), count: raw.count) }
+        return raw.map { $0 / total }
     }
 
     @discardableResult
     mutating func update(_ id: NoteBlockID, _ transform: (inout NoteBlock) -> Void) -> Bool {
         guard let path = path(of: id) else { return false }
-        Self.update(at: path, in: &blocks, transform)
+        keepingIndex { list in
+            var neutral = true
+            Self.update(at: path, in: &list) { block in
+                let signature = block.indexSignature
+                let children = block.children
+                transform(&block)
+                neutral = block.indexSignature == signature && block.children == children
+            }
+            return neutral
+        }
         return true
+    }
+
+    mutating func updateBlocks(_ ids: some Sequence<NoteBlockID>, _ transform: (inout NoteBlock) -> Void) {
+        let paths = Set(ids).compactMap { path(of: $0) }.sorted { $0.lexicographicallyPrecedes($1) }
+        guard !paths.isEmpty else { return }
+        keepingIndex { list in
+            var neutral = true
+            for path in paths {
+                Self.update(at: path, in: &list) { block in
+                    let signature = block.indexSignature
+                    let children = block.children
+                    transform(&block)
+                    if block.indexSignature != signature || block.children != children { neutral = false }
+                }
+            }
+            return neutral
+        }
+    }
+
+    mutating func convertBlocks(_ ids: some Sequence<NoteBlockID>, _ convert: (NoteBlock) -> NoteBlock?) {
+        let paths = Set(ids).compactMap { path(of: $0) }.sorted { $0.lexicographicallyPrecedes($1) }
+        for location in paths.reversed() {
+            guard let current = Self.block(at: location, in: blocks), let converted = convert(current) else { continue }
+            var replacement = converted
+            let lifted = replacement.acceptsChildren ? [] : replacement.children
+            if !lifted.isEmpty { replacement.children = [] }
+            let parentPath = Array(location.dropLast())
+            let index = location.last!
+            if parentPath.isEmpty {
+                blocks[index] = replacement
+                blocks.insert(contentsOf: lifted, at: index + 1)
+            } else {
+                Self.update(at: parentPath, in: &blocks) { parent in
+                    parent.children[index] = replacement
+                    parent.children.insert(contentsOf: lifted, at: index + 1)
+                }
+            }
+        }
     }
 
     @discardableResult
@@ -537,7 +994,35 @@ extension NotePage {
     }
 
     @discardableResult
+    mutating func removeBlocks(_ ids: some Sequence<NoteBlockID>) -> [NoteBlock] {
+        let wanted = Set(ids).filter { contains($0) }
+        guard !wanted.isEmpty else { return [] }
+        let roots = wanted.filter { id in !ancestors(of: id).contains(where: wanted.contains) }
+        var byParent: [[Int]: [Int]] = [:]
+        var removedByPath: [[Int]: NoteBlock] = [:]
+        for id in roots {
+            guard let path = path(of: id) else { continue }
+            byParent[Array(path.dropLast()), default: []].append(path.last!)
+        }
+        for parentPath in byParent.keys.sorted(by: { $0.lexicographicallyPrecedes($1) }).reversed() {
+            let indices = Set(byParent[parentPath]!)
+            func strip(_ list: inout [NoteBlock]) {
+                var kept: [NoteBlock] = []
+                kept.reserveCapacity(list.count - indices.count)
+                for (index, block) in list.enumerated() {
+                    if indices.contains(index) { removedByPath[parentPath + [index]] = block } else { kept.append(block) }
+                }
+                list = kept
+            }
+            if parentPath.isEmpty { strip(&blocks) }
+            else { Self.update(at: parentPath, in: &blocks) { strip(&$0.children) } }
+        }
+        return removedByPath.keys.sorted(by: { $0.lexicographicallyPrecedes($1) }).compactMap { removedByPath[$0] }
+    }
+
+    @discardableResult
     mutating func insert(_ inserted: [NoteBlock], _ position: NoteInsertion) -> Bool {
+        guard !inserted.isEmpty else { return true }
         switch position {
         case .top(let index):
             blocks.insert(contentsOf: inserted, at: min(max(0, index), blocks.count))
@@ -551,9 +1036,13 @@ extension NotePage {
             Self.update(at: parentPath, in: &blocks) { $0.children.insert(contentsOf: inserted, at: index) }
             return true
         case .firstChild(let id):
-            return update(id) { $0.children.insert(contentsOf: inserted, at: 0) }
+            guard let path = path(of: id) else { return false }
+            Self.update(at: path, in: &blocks) { $0.children.insert(contentsOf: inserted, at: 0) }
+            return true
         case .lastChild(let id):
-            return update(id) { $0.children.append(contentsOf: inserted) }
+            guard let path = path(of: id) else { return false }
+            Self.update(at: path, in: &blocks) { $0.children.append(contentsOf: inserted) }
+            return true
         }
     }
 
@@ -578,17 +1067,15 @@ extension NotePage {
         return count
     }
 
-    private static func path(of id: NoteBlockID, in list: [NoteBlock]) -> [Int]? {
-        for (index, block) in list.enumerated() {
-            if block.id == id { return [index] }
-            if let inner = path(of: id, in: block.children) { return [index] + inner }
-        }
-        return nil
-    }
-
     private static func block(at path: [Int], in list: [NoteBlock]) -> NoteBlock? {
-        guard let first = path.first, list.indices.contains(first) else { return nil }
-        return path.count == 1 ? list[first] : block(at: Array(path.dropFirst()), in: list[first].children)
+        var current = list
+        var found: NoteBlock?
+        for index in path {
+            guard current.indices.contains(index) else { return nil }
+            found = current[index]
+            current = current[index].children
+        }
+        return found
     }
 
     private static func update(at path: [Int], in list: inout [NoteBlock], _ transform: (inout NoteBlock) -> Void) {
