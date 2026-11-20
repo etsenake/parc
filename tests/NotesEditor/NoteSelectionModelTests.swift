@@ -153,6 +153,11 @@ struct NoteSelectionModelTests {
         expect(nav.precedes(NotePosition(a.id, 1), NotePosition(a.id, 2)), "same block compares offsets")
         let ends = nav.ordered(NotePosition(b.id, 2), NotePosition(a.id, 3))
         expect(ends.start == NotePosition(a.id, 3) && ends.end == NotePosition(b.id, 2), "ordered swaps backward ends")
+        let caption = NotePosition(a.id, 0, field: .caption), body = NotePosition(a.id, 4)
+        expect(nav.precedes(body, caption) && !nav.precedes(caption, body), "body comes before the caption whatever the offsets")
+        let cell = NotePosition(a.id, 9, field: .cell(row: 0, column: 1)), later = NotePosition(a.id, 0, field: .cell(row: 1, column: 0))
+        expect(nav.precedes(cell, later) && nav.precedes(later, caption), "cells run row by row and sit before the caption")
+        expect(nav.ordered(caption, body).start == body, "ordering a same-block span looks at the field first")
     }
 
     static func marks() {
@@ -171,6 +176,13 @@ struct NoteSelectionModelTests {
         let touching = nav.marks(from: NotePosition(a.id, 11), to: NotePosition(c.id, 0)) { layout.length(of: NotePosition($0, 0)) }
         expect(touching[a.id] == .text(11..<11) && touching[c.id] == nil, "the start keeps its line end and a touched end block draws nothing")
         expect(nav.covered(from: NotePosition(a.id, 2), to: NotePosition(b.id, 1)) == [a.id, image.id, b.id], "covered blocks")
+        let crossField = nav.marks(from: NotePosition(b.id, 4, field: .caption), to: NotePosition(b.id, 1)) { _ in 6 }
+        expect(crossField == [b.id: .wash], "a span across two fields of one block washes it instead of painting the body")
+        let captionOnly = nav.marks(from: NotePosition(b.id, 5, field: .caption), to: NotePosition(b.id, 2, field: .caption)) { _ in 6 }
+        expect(captionOnly == [b.id: .field(.caption, 2..<5)], "a caption span paints the caption")
+        expect(captionOnly[b.id]?.highlight?.field == .caption && marks[a.id]?.highlight?.field == .body, "highlights name their field")
+        let fromCaption = nav.marks(from: NotePosition(a.id, 3, field: .caption), to: NotePosition(b.id, 2)) { layout.length(of: NotePosition($0, 0)) }
+        expect(fromCaption[a.id] == .wash && fromCaption[b.id] == .text(0..<2), "a caption start never paints its offsets onto the body")
     }
 
     static func granularity() {

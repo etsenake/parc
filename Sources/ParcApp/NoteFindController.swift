@@ -199,13 +199,21 @@ final class NoteFindController {
         let titleTargets = targets.filter(\.isTitle)
         let bodyTargets = targets.filter { !$0.isTitle }
         var count = 0
-        if !titleTargets.isEmpty, let header, header.replaceTitleText(titleTargets, with: replacement) { count += titleTargets.count }
-        if !bodyTargets.isEmpty {
-            let blocks = Set(bodyTargets.map(\.block))
-            editor.session.edit("Replace All", kind: .text, affected: blocks) { page in
-                NotePageFinder.replace(bodyTargets, with: replacement, in: &page)
+        if !titleTargets.isEmpty, let header {
+            let before = header.title
+            if header.replaceTitleText(titleTargets, with: replacement) {
+                count += NotePageFinder.titleReplacementCount(before, matches: titleTargets)
             }
-            count += bodyTargets.count
+        }
+        if !bodyTargets.isEmpty {
+            var preview = editor.session.page
+            let outcome = NotePageFinder.replaceCounting(bodyTargets, with: replacement, in: &preview)
+            if outcome.count > 0 {
+                editor.session.edit("Replace All", kind: .text, affected: outcome.touched) { page in
+                    NotePageFinder.replace(bodyTargets, with: replacement, in: &page)
+                }
+                count += outcome.count
+            }
         }
         recompute(keepingPosition: origin, reveal: false)
         bar?.flash(count == 1 ? "Replaced 1" : "Replaced \(count)")

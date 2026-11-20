@@ -184,7 +184,10 @@ final class NotePageHistory {
     static func restore(_ version: NotePageVersion, editor: NotePageEditor, file: NoteFileSession?) throws {
         guard !editor.isReadOnly else { return }
         guard let text = readText(version.url)?.text else { throw CocoaError(.fileReadUnknown) }
-        if let file { recorder(for: file)?.recordNow() }
+        if let file {
+            try file.flush()
+            track(file).recordNow()
+        }
         let restored = editor.environment.isPlainText ? NotePlainText.parse(text) : NoteMarkdown.parse(text)
         let page = restored.blocks.isEmpty ? NotePage(settings: restored.settings, blocks: [.paragraph()]) : restored
         editor.session.edit("Restore Version", affected: Set(editor.session.page.documentOrder()).union(page.documentOrder()), selection: NotePageSelection.none) {

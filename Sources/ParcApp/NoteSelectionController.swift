@@ -14,7 +14,7 @@ final class NoteSelectionController {
     var trackingEvent: NSEvent?
     var trackingUpdate: ((NSPoint) -> Void)?
     var trackingNavigator: NoteSelectionNavigator?
-    private var highlighted: [NoteBlockID: Range<Int>] = [:]
+    private var highlighted: [NoteBlockID: (field: NoteTextField, range: Range<Int>)] = [:]
     private var looks: Set<NoteBlockID> = []
     private var transientWash: Set<NoteBlockID> = []
     private var displayed: NotePageSelection = .none
@@ -57,9 +57,9 @@ final class NoteSelectionController {
     }
 
     func blockViewDidAppear(_ view: NoteBlockView) {
-        if let range = highlighted[view.blockID], let text = view.textHost(for: .body)?.textView {
+        if let entry = highlighted[view.blockID], let text = view.textHost(for: entry.field)?.textView {
             collapseNativeSelection(text)
-            text.crossBlockHighlight = range
+            text.crossBlockHighlight = entry.range
         }
         if looks.contains(view.blockID), !view.isBlockSelected { view.setBlockSelected(true, animated: false) }
     }
@@ -93,9 +93,10 @@ final class NoteSelectionController {
             let marks = navigator().marks(from: anchor, to: head) { [layout] in layout.length(of: NotePosition($0, 0)) }
             var rects: [NSRect] = []
             for (id, mark) in marks {
-                switch mark {
-                case .text(let range): rects += layout.selectionRects(for: NotePosition(id, 0), range: range)
-                case .wash: if let frame = canvas.frame(of: id) { rects.append(frame) }
+                if let entry = mark.highlight {
+                    rects += layout.selectionRects(for: NotePosition(id, 0, field: entry.field), range: entry.range)
+                } else if let frame = canvas.frame(of: id) {
+                    rects.append(frame)
                 }
             }
             return union(rects)
@@ -205,26 +206,23 @@ final class NoteSelectionController {
     }
 
     private func decorate(_ marks: [NoteBlockID: NoteSelectionMark], selected: Set<NoteBlockID>) {
-        var ranges: [NoteBlockID: Range<Int>] = [:]
+        var ranges: [NoteBlockID: (field: NoteTextField, range: Range<Int>)] = [:]
         var wash = selected
         for (id, mark) in marks {
-            switch mark {
-            case .text(let range): ranges[id] = range
-            case .wash: wash.insert(id)
-            }
+            if let entry = mark.highlight { ranges[id] = entry } else { wash.insert(id) }
         }
         setHighlights(ranges)
         setLooks(wash, wash: wash)
     }
 
-    private func setHighlights(_ next: [NoteBlockID: Range<Int>]) {
-        for id in highlighted.keys where next[id] == nil {
-            layout.textView(for: NotePosition(id, 0))?.crossBlockHighlight = nil
+    private func setHighlights(_ next: [NoteBlockID: (field: NoteTextField, range: Range<Int>)]) {
+        for (id, entry) in highlighted where next[id]?.field != entry.field {
+            layout.textView(for: NotePosition(id, 0, field: entry.field))?.crossBlockHighlight = nil
         }
-        for (id, range) in next {
-            guard let view = layout.textView(for: NotePosition(id, 0)) else { continue }
+        for (id, entry) in next {
+            guard let view = layout.textView(for: NotePosition(id, 0, field: entry.field)) else { continue }
             collapseNativeSelection(view)
-            view.crossBlockHighlight = range
+            view.crossBlockHighlight = entry.range
         }
         highlighted = next
     }

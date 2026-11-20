@@ -107,6 +107,12 @@ enum NotePageFinder {
 
     @discardableResult
     static func replace(_ targets: [NoteFindMatch], with replacement: String, in page: inout NotePage) -> Set<NoteBlockID> {
+        replaceCounting(targets, with: replacement, in: &page).touched
+    }
+
+    static func replaceCounting(_ targets: [NoteFindMatch], with replacement: String,
+                                in page: inout NotePage) -> (touched: Set<NoteBlockID>, count: Int) {
+        var count = 0
         var grouped: [NotePosition: [NoteFindMatch]] = [:]
         for match in targets where !match.isTitle {
             grouped[NotePosition(match.block, 0, field: match.field), default: []].append(match)
@@ -125,15 +131,29 @@ enum NotePageFinder {
                     text.replace(range, with: NoteText(replacement, marks: marks))
                     last = range.lowerBound
                     touched.insert(key.block)
+                    count += 1
                 }
                 block.setText(text, in: key.field)
             }
         }
-        return touched
+        return (touched, count)
     }
 
     static func positionAfterReplacing(_ match: NoteFindMatch, with replacement: String) -> NotePosition {
         NotePosition(match.block, match.position.offset + (replacement as NSString).length, field: match.field)
+    }
+
+    static func titleReplacementCount(_ title: String, matches targets: [NoteFindMatch]) -> Int {
+        let length = (title as NSString).length
+        var last = Int.max
+        var count = 0
+        for match in targets.filter(\.isTitle).sorted(by: { $0.position.offset > $1.position.offset }) {
+            let range = match.range
+            guard range.lowerBound >= 0, range.upperBound <= length, range.upperBound <= last else { continue }
+            last = range.lowerBound
+            count += 1
+        }
+        return count
     }
 
     static func replacingTitle(_ title: String, matches targets: [NoteFindMatch], with replacement: String) -> String {

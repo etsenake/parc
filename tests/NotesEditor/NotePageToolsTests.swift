@@ -309,6 +309,21 @@ struct NotePageToolsTests {
         let bogus = NoteFindMatch(stale.blocks[0].id, offset: 2, length: 10)
         expect(NotePageFinder.replace([bogus], with: "x", in: &stale).isEmpty && stale.blocks[0].text.string == "tiny",
                "a stale match past the end is ignored")
+
+        var atomMarks = NoteMarks.plain
+        atomMarks.atom = .equation("x")
+        var mixed = NotePage(blocks: [.paragraph(NoteText(pieces: [("ab", .plain), ("\u{FFFC}", atomMarks), ("cd ab", .plain)]))])
+        let mixedID = mixed.blocks[0].id
+        let spanning = NoteFindMatch(mixedID, offset: 1, length: 3), plain = NoteFindMatch(mixedID, offset: 6, length: 2)
+        let outcome = NotePageFinder.replaceCounting([spanning, plain], with: "zz", in: &mixed)
+        expect(outcome.count == 1 && outcome.touched == [mixedID], "a match swallowing an inline object is skipped and not counted")
+        expect(mixed.blocks[0].text.string == "ab\u{FFFC}cd zz", "only the plain match is replaced")
+        var untouched = NotePage(blocks: [.paragraph("tiny")])
+        expect(NotePageFinder.replaceCounting([bogus], with: "x", in: &untouched).count == 0, "stale matches count as zero")
+        let titleMatches = [NoteFindMatch(NoteFindMatch.titleBlock, offset: 0, length: 2), NoteFindMatch(NoteFindMatch.titleBlock, offset: 1, length: 2),
+                            NoteFindMatch(NoteFindMatch.titleBlock, offset: 8, length: 4)]
+        expect(NotePageFinder.titleReplacementCount("parkpark", matches: titleMatches) == 1,
+               "title counting skips overlapping and out-of-range matches")
     }
 
     static func stats() {

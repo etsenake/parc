@@ -48,7 +48,7 @@ final class NoteSelectionResponder: NSView, @preconcurrency NSTextInputClient, N
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         let event = pendingEvent ?? NSApp.currentEvent
         inputContext?.discardMarkedText()
-        controller.beginComposition(with: event)
+        controller.beginComposition(with: event, marked: string, selectedRange: selectedRange)
     }
 
     func unmarkText() {}

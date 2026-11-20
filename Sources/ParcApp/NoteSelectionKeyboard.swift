@@ -13,23 +13,6 @@ extension NoteSelectionController {
         return run(NSStringFromSelector(selector), on: session.selection, fromTextView: false)
     }
 
-    func moveCaret(from position: NotePosition, direction: NoteCaretDirection, extend: Bool, x: CGFloat?) -> Bool {
-        var anchor = position
-        if extend, case .text(let current, _) = session.selection { anchor = current }
-        if let x {
-            goal.reset()
-            _ = goal.value(for: position) { x }
-        }
-        let name: String
-        switch direction {
-        case .up: name = extend ? "moveUpAndModifySelection:" : "moveUp:"
-        case .down: name = extend ? "moveDownAndModifySelection:" : "moveDown:"
-        case .left: name = extend ? "moveLeftAndModifySelection:" : "moveLeft:"
-        case .right: name = extend ? "moveRightAndModifySelection:" : "moveRight:"
-        }
-        return run(name, on: .text(anchor: anchor, head: position), fromTextView: false)
-    }
-
     func selectAll() {
         if let view = canvas.window?.firstResponder as? NoteTextView, view.hasMarkedText() { return }
         selectAll(from: currentSelection())
@@ -320,7 +303,11 @@ extension NoteSelectionController {
         case .text:
             session.insertText(NoteText(string))
         case .none, .cells:
-            break
+            guard let target = compositionTarget(), let window = canvas.window else { return }
+            goal.reset()
+            editor.focus(target)
+            guard let client = window.firstResponder as? NoteTextView, client !== responder else { return }
+            client.insertText(string, replacementRange: NSRange(location: NSNotFound, length: 0))
         }
     }
 
@@ -338,7 +325,7 @@ extension NoteSelectionController {
         return paragraph.id
     }
 
-    func beginComposition(with event: NSEvent?) {
+    func beginComposition(with event: NSEvent?, marked: Any, selectedRange: NSRange) {
         guard !editor.isReadOnly else { return }
         switch session.selection {
         case .blocks(let ids):
@@ -346,9 +333,52 @@ extension NoteSelectionController {
         case .text(let anchor, let head) where anchor != head:
             session.deleteSelection()
         default:
-            return
+            break
         }
-        guard let event, event.type == .keyDown, let window = canvas.window, window.firstResponder !== responder else { return }
-        window.postEvent(event, atStart: true)
+        guard let window = canvas.window else { return }
+        if window.firstResponder === responder, let target = compositionTarget() {
+            goal.reset()
+            editor.focus(target)
+            if window.firstResponder === responder { focusSelection() }
+        }
+        guard window.firstResponder !== responder else { return }
+        if let event, event.type == .keyDown {
+            window.postEvent(event, atStart: true)
+        } else if let client = window.firstResponder as? NSTextInputClient {
+            client.setMarkedText(marked, selectedRange: selectedRange, replacementRange: NSRange(location: NSNotFound, length: 0))
+        }
+    }
+
+    private func compositionTarget() -> NotePosition? {
+        let nav = navigator()
+        switch session.selection {
+        case .text(_, let head):
+            if nav.role(of: head.block) == .text || head.field != .body { return head }
+            return nearestText(to: head.block, nav: nav)
+        case .blocks(let ids):
+            guard let id = blockRange?.head ?? ids.last else { return documentFallback(nav) }
+            return nearestText(to: id, nav: nav)
+        case .cells(let table, _, let head):
+            return NotePosition(table, 0, field: .cell(row: head.row, column: head.column))
+        case .none:
+            return documentFallback(nav)
+        }
+    }
+
+    private func nearestText(to id: NoteBlockID, nav: NoteSelectionNavigator) -> NotePosition? {
+        if nav.role(of: id) == .text { return NotePosition(id, layout.length(of: NotePosition(id, 0))) }
+        if let previous = nav.textNeighbour(of: id, forward: false) {
+            return NotePosition(previous.id, layout.length(of: NotePosition(previous.id, 0)))
+        }
+        if let next = nav.textNeighbour(of: id, forward: true) { return NotePosition(next.id, 0) }
+        return documentFallback(nav)
+    }
+
+    private func documentFallback(_ nav: NoteSelectionNavigator) -> NotePosition? {
+        if let end = nav.documentEnd(layout) { return end }
+        let paragraph = NoteBlock.paragraph()
+        let caret = NotePosition(paragraph.id, 0)
+        session.insertBlocks([paragraph], .top(session.page.blocks.count), select: .caret(caret))
+        return caret
     }
 }

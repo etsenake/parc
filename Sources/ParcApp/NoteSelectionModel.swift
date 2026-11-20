@@ -26,7 +26,16 @@ struct NoteSelectionItem: Hashable {
 
 enum NoteSelectionMark: Hashable {
     case text(Range<Int>)
+    case field(NoteTextField, Range<Int>)
     case wash
+
+    var highlight: (field: NoteTextField, range: Range<Int>)? {
+        switch self {
+        case .text(let range): return (.body, range)
+        case .field(let field, let range): return (field, range)
+        case .wash: return nil
+        }
+    }
 }
 
 enum NoteSelectionLanding: Hashable {
@@ -119,8 +128,19 @@ struct NoteSelectionNavigator {
 
     var topLevel: [NoteBlockID] { items.filter { $0.parent == nil }.map(\.id) }
 
+    static func fieldRank(_ field: NoteTextField) -> (Int, Int, Int) {
+        switch field {
+        case .body: return (0, 0, 0)
+        case .cell(let row, let column): return (1, row, column)
+        case .caption: return (2, 0, 0)
+        }
+    }
+
     func precedes(_ a: NotePosition, _ b: NotePosition) -> Bool {
-        if a.block == b.block { return a.offset < b.offset }
+        if a.block == b.block {
+            if a.field == b.field { return a.offset < b.offset }
+            return Self.fieldRank(a.field) < Self.fieldRank(b.field)
+        }
         return (index(of: a.block) ?? 0) < (index(of: b.block) ?? 0)
     }
 
@@ -192,7 +212,10 @@ struct NoteSelectionNavigator {
     func marks(from anchor: NotePosition, to head: NotePosition, length: (NoteBlockID) -> Int) -> [NoteBlockID: NoteSelectionMark] {
         let (start, end) = ordered(anchor, head)
         if start.block == end.block {
-            return start.offset == end.offset ? [:] : [start.block: .text(start.offset..<end.offset)]
+            guard start.field == end.field else { return [start.block: .wash] }
+            guard start.offset != end.offset else { return [:] }
+            let range = start.offset..<end.offset
+            return [start.block: start.field == .body ? .text(range) : .field(start.field, range)]
         }
         guard let s = index(of: start.block), let e = index(of: end.block) else { return [:] }
         var result: [NoteBlockID: NoteSelectionMark] = [:]
@@ -200,6 +223,10 @@ struct NoteSelectionNavigator {
             let item = items[index]
             switch item.role {
             case .text:
+                if (index == s && start.field != .body) || (index == e && end.field != .body) {
+                    result[item.id] = .wash
+                    continue
+                }
                 if index == e && end.offset == 0 { continue }
                 let lower = index == s ? start.offset : 0
                 let upper = index == e ? end.offset : length(item.id)

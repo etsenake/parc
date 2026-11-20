@@ -396,23 +396,24 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         commitTitle(ending: window?.firstResponder !== titleView)
     }
 
-    private func commitTitle(ending: Bool) {
+    @discardableResult
+    private func commitTitle(ending: Bool) -> Bool {
         commitTimer?.invalidate()
         commitTimer = nil
-        guard !titleView.hasMarkedText(), !isPrinting else { return }
+        guard !titleView.hasMarkedText(), !isPrinting else { return false }
         let value = titleView.string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else {
             if ending { showCommittedTitle() }
-            return
+            return false
         }
         guard value != committedTitle else {
             showTitleError(nil)
             if ending { showCommittedTitle() }
-            return
+            return true
         }
         if let url = file?.url, let problem = NotePageTitleCheck.problem(renaming: url, to: value) {
             rejectTitle(problem, ending: ending)
-            return
+            return false
         }
         let previous = committedTitle
         committedTitle = value
@@ -425,11 +426,12 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         } catch {
             committedTitle = previous
             rejectTitle(error, ending: ending)
-            return
+            return false
         }
         if let file { committedTitle = file.title }
         showTitleError(nil)
         if ending { showCommittedTitle() }
+        return true
     }
 
     private func rejectTitle(_ error: Error, ending: Bool) {
@@ -457,8 +459,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         guard titleView.shouldChangeText(in: whole, replacementString: next) else { return false }
         titleView.textStorage?.replaceCharacters(in: whole, with: next)
         titleView.didChangeText()
-        commitTitle(ending: window?.firstResponder !== titleView)
-        return true
+        return commitTitle(ending: window?.firstResponder !== titleView)
     }
 
     private func splitIntoBody() {
