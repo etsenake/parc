@@ -11,10 +11,20 @@ for test in "$repo_root"/tests/NotesEditor/*Tests.swift; do
   sidecar="${test%.swift}.files"
   sources=()
   if [ -f "$sidecar" ]; then
+    lines=()
     while IFS= read -r line; do
       [ -z "$line" ] && continue
-      for path in "$repo_root"/$line; do sources+=("$path"); done
+      lines+=("$line")
+      if [ "$line" = "Sources/ParcCore/NoteModel.swift" ] && [ -f "$repo_root/tests/NotesEditor/NoteModel.deps" ]; then
+        while IFS= read -r dep; do [ -n "$dep" ] && lines+=("$dep"); done < "$repo_root/tests/NotesEditor/NoteModel.deps"
+      fi
     done < "$sidecar"
+    seen=" "
+    for line in "${lines[@]}"; do
+      for path in "$repo_root"/$line; do
+        case "$seen" in *" $path "*) ;; *) sources+=("$path"); seen="$seen$path ";; esac
+      done
+    done
   else
     sources=("$repo_root"/Sources/ParcCore/*.swift)
   fi
