@@ -19,6 +19,7 @@ final class NotePageEditor {
     private(set) var slashMenu: NoteSlashMenuController!
     private(set) var handles: NoteBlockHandleController!
     private(set) var find: NoteFindController!
+    private(set) lazy var math = NotePageMath(editor: self)
     var onOpenURL: ((URL) -> Void)?
     var onOpenNote: ((URL) -> Void)?
     var onError: ((Error) -> Void)?
@@ -513,11 +514,23 @@ final class NotePageEditor {
             return true
         }
         pendingReveal = nil
+        revealNow(id)
+        return true
+    }
+
+    @discardableResult
+    func reveal(block id: NoteBlockID) -> Bool {
+        guard canRevealNow, session.page.contains(id) else { return false }
+        revealNow(id)
+        return true
+    }
+
+    private func revealNow(_ id: NoteBlockID) {
         dismissOverlays()
         revealHiddenAncestors(of: id)
         canvas.revealBlock(id)
         canvas.layoutSubtreeIfNeeded()
-        guard let block = session.page.block(id) else { return true }
+        guard let block = session.page.block(id) else { return }
         if block.kind.hasRichText || block.kind.hasPlainText {
             let caret = NotePosition(id, 0)
             session.setSelection(.caret(caret))
@@ -527,7 +540,6 @@ final class NotePageEditor {
             restoreFocus()
         }
         if let view = canvas.blockView(for: id) { NoteBlockWash.flash(view) }
-        return true
     }
 
     private func revealHiddenAncestors(of id: NoteBlockID) {

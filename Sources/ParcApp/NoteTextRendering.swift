@@ -212,7 +212,7 @@ enum NoteTextRendering {
     }
 
     static func attributedString(_ text: NoteText, _ presentation: NoteTextPresentation,
-                                 now: Date = Date()) -> NSAttributedString {
+                                 now: Date = Date(), numbering: NoteMathNumberingContext = NoteMathNumberingContext()) -> NSAttributedString {
         let result = NSMutableAttributedString()
         let flexible = needsFlexibleLines(text)
         let characters = text.string as NSString
@@ -220,13 +220,15 @@ enum NoteTextRendering {
             var attributes = self.attributes(for: run.marks, presentation, flexible: flexible)
             let segment = characters.substring(with: NSRange(location: run.range.lowerBound, length: run.range.count))
             if run.marks.atom != nil || segment.utf16.contains(0xFFFC) {
-                for unit in segment.utf16 {
+                let segmentString = segment as NSString
+                for piece in placeholderPieces(of: segmentString) {
                     var local = attributes
-                    if unit == 0xFFFC {
+                    if piece.isPlaceholder {
                         local[.attachment] = NoteAtomRendering.attachment(for: run.marks.atom, font: font(for: run.marks, presentation),
-                                                                          ink: ink(for: run.marks, presentation), now: now)
+                                                                          ink: ink(for: run.marks, presentation), now: now,
+                                                                          numbering: numbering)
                     }
-                    result.append(NSAttributedString(string: String(utf16CodeUnits: [unit], count: 1), attributes: local))
+                    result.append(NSAttributedString(string: segmentString.substring(with: piece.range), attributes: local))
                 }
                 attributes.removeValue(forKey: .attachment)
             } else {
@@ -247,18 +249,64 @@ enum NoteTextRendering {
                 return
             }
             let plain = marks.withoutAtom
-            var pending = ""
-            for unit in segment.utf16 {
-                if unit == 0xFFFC {
-                    if !pending.isEmpty { result.append(NoteText(pending, marks: plain)); pending = "" }
+            let segmentString = segment as NSString
+            for piece in placeholderPieces(of: segmentString) {
+                if piece.isPlaceholder {
                     result.append(NoteText.atom(atom, marks: plain))
                 } else {
-                    pending += String(utf16CodeUnits: [unit], count: 1)
+                    result.append(NoteText(segmentString.substring(with: piece.range), marks: plain))
                 }
             }
-            if !pending.isEmpty { result.append(NoteText(pending, marks: plain)) }
         }
         return result
+    }
+
+    static func mergeComposition(committed: NoteText, base: NoteText, external: NoteText,
+                                 caret: Int? = nil) -> (text: NoteText, caret: Int) {
+        let baseUnits = Array(base.string.utf16)
+        let committedUnits = Array(committed.string.utf16)
+        let externalUnits = Array(external.string.utf16)
+        let end = min(max(caret ?? committedUnits.count, 0), committedUnits.count)
+        var suffix = 0
+        let suffixLimit = min(baseUnits.count, committedUnits.count - end)
+        while suffix < suffixLimit, baseUnits[baseUnits.count - 1 - suffix] == committedUnits[committedUnits.count - 1 - suffix] { suffix += 1 }
+        if suffix > 0, suffix < baseUnits.count, UTF16.isTrailSurrogate(baseUnits[baseUnits.count - suffix]) { suffix -= 1 }
+        var prefix = 0
+        let prefixLimit = min(baseUnits.count - suffix, committedUnits.count - suffix)
+        while prefix < prefixLimit, baseUnits[prefix] == committedUnits[prefix] { prefix += 1 }
+        if prefix > 0, prefix < baseUnits.count - suffix || prefix < committedUnits.count - suffix,
+           UTF16.isLeadSurrogate(baseUnits[prefix - 1]) { prefix -= 1 }
+        let replaced = Array(baseUnits[prefix..<(baseUnits.count - suffix)])
+        let inserted = committed.slice(prefix..<(committedUnits.count - suffix))
+        func matches(_ position: Int) -> Bool {
+            position >= 0 && position + replaced.count <= externalUnits.count
+                && Array(externalUnits[position..<(position + replaced.count)]) == replaced
+        }
+        let position: Int
+        if externalUnits.count >= prefix, Array(externalUnits[0..<prefix]) == Array(baseUnits[0..<prefix]), matches(prefix) {
+            position = prefix
+        } else if externalUnits.count >= suffix + replaced.count,
+                  Array(externalUnits[(externalUnits.count - suffix)...]) == Array(baseUnits[(baseUnits.count - suffix)...]),
+                  matches(externalUnits.count - suffix - replaced.count) {
+            position = externalUnits.count - suffix - replaced.count
+        } else {
+            return (external, min(external.length, prefix))
+        }
+        var result = external
+        result.replace(position..<(position + replaced.count), with: inserted)
+        return (result, position + inserted.length)
+    }
+
+    static func placeholderPieces(of string: NSString) -> [(range: NSRange, isPlaceholder: Bool)] {
+        var pieces: [(range: NSRange, isPlaceholder: Bool)] = []
+        var start = 0
+        for index in 0..<string.length where string.character(at: index) == 0xFFFC {
+            if index > start { pieces.append((NSRange(location: start, length: index - start), false)) }
+            pieces.append((NSRange(location: index, length: 1), true))
+            start = index + 1
+        }
+        if string.length > start { pieces.append((NSRange(location: start, length: string.length - start), false)) }
+        return pieces
     }
 
     static func placeholder(_ text: String, _ presentation: NoteTextPresentation) -> NSAttributedString {

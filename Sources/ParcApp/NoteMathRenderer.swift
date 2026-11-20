@@ -88,6 +88,26 @@ final class NoteMathRendering {
         draw(in: context, at: origin, width: size.width)
     }
 
+    func links(width: CGFloat) -> [NoteMathLinkMark] {
+        let available = max(width, size.width)
+        let baselineY = -entry.frame.minY
+        let equationX = equationOffset(width: width) - entry.equationFrame.minX
+        var result: [NoteMathLinkMark] = entry.box.links.map { link in
+            var flipped = link
+            flipped.rect = CGRect(x: equationX + link.rect.minX, y: size.height - (baselineY + link.rect.maxY),
+                                  width: link.rect.width, height: link.rect.height)
+            return flipped
+        }
+        for (mark, frame) in zip(entry.box.tags, entry.tagFrames) {
+            let x = (available - frame.maxX).rounded()
+            for link in mark.box.links {
+                result.append(NoteMathLinkMark(key: link.key, rect: CGRect(x: x + link.rect.minX, y: size.height - (baselineY + mark.baseline + link.rect.maxY),
+                                                                         width: link.rect.width, height: link.rect.height), resolved: link.resolved))
+            }
+        }
+        return result
+    }
+
     func draw(in context: CGContext, at origin: CGPoint, width: CGFloat) {
         draw(in: context, at: origin, width: width, ink: color.cgColor, muted: Self.mutedInk(for: color))
     }
@@ -237,20 +257,22 @@ enum NoteMathRenderer {
         cache.removeAllObjects()
     }
 
-    static func render(_ latex: String, fontSize: CGFloat, color: NSColor, display: Bool) -> NoteMathRendering {
+    static func render(_ latex: String, fontSize: CGFloat, color: NSColor, display: Bool,
+                       numbering: NoteMathNumberingContext = NoteMathNumberingContext()) -> NoteMathRendering {
         NoteMathRendering(source: latex, fontSize: fontSize, color: color, display: display,
-                          entry: layout(latex, fontSize: fontSize, display: display))
+                          entry: layout(latex, fontSize: fontSize, display: display, numbering: numbering))
     }
 
-    static func layout(_ latex: String, fontSize: CGFloat, display: Bool) -> NoteMathLayoutEntry {
-        let key = "\(display ? "D" : "T")\(fontSize)|\(latex)" as NSString
+    static func layout(_ latex: String, fontSize: CGFloat, display: Bool,
+                       numbering: NoteMathNumberingContext = NoteMathNumberingContext()) -> NoteMathLayoutEntry {
+        let key = "\(display ? "D" : "T")\(fontSize)|\(numbering.fingerprint(for: latex, display: display))|\(latex)" as NSString
         if let cached = cache.object(forKey: key) { return cached }
-        let entry = makeEntry(latex, fontSize: fontSize, display: display)
+        let entry = makeEntry(latex, fontSize: fontSize, display: display, numbering: numbering)
         cache.setObject(entry, forKey: key)
         return entry
     }
 
-    private static func makeEntry(_ latex: String, fontSize: CGFloat, display: Bool) -> NoteMathLayoutEntry {
+    private static func makeEntry(_ latex: String, fontSize: CGFloat, display: Bool, numbering: NoteMathNumberingContext) -> NoteMathLayoutEntry {
         if latex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return NoteMathLayoutEntry(box: NoteMathBox(), error: nil, isEmpty: true)
         }
@@ -259,7 +281,7 @@ enum NoteMathRenderer {
             return NoteMathLayoutEntry(box: errorBox(latex, fontSize: fontSize), error: failure, isEmpty: false)
         }
         do {
-            let equation = try NoteMathParser.parseEquation(latex, display: display)
+            let equation = try NoteMathParser.parseEquation(latex, display: display, numbering: numbering)
             let box = NoteMathTypesetter(font: font, baseSize: fontSize).typeset(equation, display: display)
             return NoteMathLayoutEntry(box: box, error: nil, isEmpty: false, tagGap: fontSize)
         } catch {

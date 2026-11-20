@@ -66,6 +66,7 @@ struct NoteMathLayoutTests {
         renderer()
         bitmaps()
         fallbackGlyphs()
+        references()
         samples()
         print("NoteMathLayoutTests passed")
     }
@@ -572,6 +573,28 @@ struct NoteMathLayoutTests {
         let picture = bitmap(NoteMathRenderer.render("x_{\\text{日本}}", fontSize: 40, color: .black, display: true))
         expect(picture.ink(x: 0.4...1, y: 0.35...1) > 30, "fallback subscript ink at the bottom right")
         expect(picture.ink(x: 0.45...1, y: 0...0.2) == 0, "nothing floats above the fallback subscript")
+    }
+
+    static func references() {
+        let context = NoteMathNumberingContext(references: ["e": [.text("12", .roman)]], referenceDigest: "e=12")
+        let resolved = NoteMathRenderer.render("x = \\eqref{e}", fontSize: 40, color: .black, display: false, numbering: context)
+        let missing = NoteMathRenderer.render("x = \\eqref{gone}", fontSize: 40, color: .black, display: false, numbering: context)
+        let found = resolved.links(width: resolved.size.width)
+        expect(found.count == 1 && found[0].key == "e" && found[0].resolved, "a resolved reference is a link")
+        expect(found[0].rect.maxX <= resolved.size.width + 0.5 && found[0].rect.minX > resolved.size.width * 0.3, "the link sits on the reference")
+        let lost = missing.links(width: missing.size.width)
+        expect(lost.count == 1 && !lost[0].resolved, "a missing reference is marked")
+        let missingBox = NoteMathTypesetter(font: font, baseSize: size).typeset([.reference("gone", parenthesized: true, label: nil)], display: false)
+        expect(missingBox.inks.allSatisfy { if case .muted = $0.color { return true } else { return false } }, "missing references use muted ink")
+        let plain = NoteMathRenderer.render("x = \\eqref{e}", fontSize: 40, color: .black, display: false)
+        expect(plain.size.width != resolved.size.width, "the cache keeps numbered and unnumbered renders apart")
+        let display = NoteMathRenderer.render("\\begin{equation} a \\end{equation}", fontSize: 40, color: .black, display: true,
+                                             numbering: NoteMathNumberingContext(firstNumber: 6))
+        expect(display.hasTags, "page numbering keeps the tag")
+        let picture = bitmap(resolved)
+        expect(picture.ink(x: 0.55...1, y: 0...1) > 40, "the reference number draws")
+        let pictureMissing = bitmap(missing)
+        expect(pictureMissing.ink(x: 0.55...1, y: 0...1) > 40, "the missing marker draws")
     }
 
     static func samples() {

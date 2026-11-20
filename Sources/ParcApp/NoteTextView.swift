@@ -35,6 +35,10 @@ class NoteTextView: NSTextView {
     private var isApplying = false
     private var isEditingText = false
     private var pendingInsertion: String?
+    private var codeTypingCaret: Int?
+    private var isInsertingText = false
+    private var compositionBase: NoteText?
+    private var deferredText: (text: NoteText, selection: Range<Int>?)?
     private var lastContentHeight: CGFloat = 0
     private var hoveredRange: NSRange?
     private var hoverArea: NSTrackingArea?
@@ -95,21 +99,25 @@ class NoteTextView: NSTextView {
 
     var typingMarks: NoteMarks {
         get { (typingAttributes[.noteMarks] as? NoteMarksValue)?.marks ?? .plain }
-        set { typingAttributes = NoteTextRendering.typingAttributes(newValue, presentation, flexible: NoteTextRendering.needsFlexibleLines(noteText)) }
+        set {
+            if !newValue.code { codeTypingCaret = nil }
+            typingAttributes = NoteTextRendering.typingAttributes(newValue, presentation, flexible: NoteTextRendering.needsFlexibleLines(noteText))
+        }
     }
 
     func apply(_ text: NoteText, selection: Range<Int>?) {
         if hasMarkedText() {
-            guard text != noteText else { return }
-            inputContext?.discardMarkedText()
-            unmarkText()
+            deferredText = text == noteText ? nil : (text, selection)
+            return
         }
         let previous = selectedOffsets
         if !findHighlights.isEmpty, text.string != noteText.string { findHighlights = [] }
         isApplying = true
         noteText = text
         textRevision &+= 1
-        textStorage?.setAttributedString(NoteTextRendering.attributedString(text, presentation))
+        let numbering = NoteTextRendering.needsFlexibleLines(text) ? editor?.math.inlineContext : nil
+        textStorage?.setAttributedString(NoteTextRendering.attributedString(text, presentation,
+                                                                            numbering: numbering ?? NoteMathNumberingContext()))
         selectedOffsets = selection ?? previous
         isApplying = false
         refreshTypingAttributes()
@@ -121,6 +129,31 @@ class NoteTextView: NSTextView {
     func refreshRendering() {
         guard !hasMarkedText() else { return }
         apply(noteText, selection: nil)
+    }
+
+    func mathNumberingDidChange() {
+        let references = noteText.spans.contains { span in
+            if case .equation(let source) = span.marks.atom { return source.contains("ref") }
+            return false
+        }
+        if references { refreshRendering() }
+    }
+
+    private func equationLink(at point: NSPoint) -> NoteMathLinkMark? {
+        guard let layoutManager, let textContainer, let index = characterIndex(at: point),
+              case .equation = noteText.marks(at: index).atom,
+              let attachment = textStorage?.attribute(.attachment, at: index, effectiveRange: nil) as? NoteAtomAttachment,
+              let cell = attachment.atomCell else { return nil }
+        let glyph = layoutManager.glyphIndexForCharacter(at: index)
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let location = layoutManager.location(forGlyphAt: glyph)
+        let size = layoutManager.attachmentSize(forGlyphAt: glyph)
+        let baseline = line.minY + location.y
+        let bottom = baseline - cell.cellBaselineOffset().y
+        let frame = NSRect(x: line.minX + location.x + textContainerOrigin.x, y: bottom - size.height + textContainerOrigin.y,
+                           width: size.width, height: size.height)
+        _ = textContainer
+        return cell.mathLink(at: point, cellFrame: frame)
     }
 
     var selectedOffsets: Range<Int> {
@@ -210,7 +243,12 @@ class NoteTextView: NSTextView {
     private func currentTypingMarks() -> NoteMarks {
         let caret = selectedRange().location
         var marks = noteText.typingMarks(at: caret)
-        if marks.code, caret >= noteText.length || !noteText.marks(at: caret).code { marks.code = false }
+        if let codeCaret = codeTypingCaret, codeCaret != caret || selectedRange().length > 0 { codeTypingCaret = nil }
+        if codeTypingCaret != nil {
+            marks.code = true
+        } else if marks.code, caret >= noteText.length || !noteText.marks(at: caret).code {
+            marks.code = false
+        }
         return marks
     }
 
@@ -229,7 +267,9 @@ class NoteTextView: NSTextView {
         let wasComposing = hasMarkedText()
         pendingInsertion = (string as? NSAttributedString)?.string ?? (string as? String)
         if wasComposing { pendingInsertion = nil }
+        isInsertingText = true
         super.insertText(string, replacementRange: replacementRange)
+        isInsertingText = false
         pendingInsertion = nil
     }
 
@@ -244,10 +284,48 @@ class NoteTextView: NSTextView {
         reportContentHeight()
         needsDisplay = true
         guard !hasMarkedText() else { return }
+        let reconciled = reconcileComposition()
+        if codeTypingCaret != nil { codeTypingCaret = selectedRange().location }
         refreshTypingAttributes()
         guard let host, let editor else { return }
         editor.textDidChange(in: host)
-        if let inserted, inputRulesActive { runInputRules(after: inserted) }
+        if let inserted, inputRulesActive, !reconciled { runInputRules(after: inserted) }
+    }
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        if !hasMarkedText() {
+            compositionBase = noteText
+            deferredText = nil
+        }
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+    }
+
+    override func unmarkText() {
+        let wasComposing = hasMarkedText()
+        let revision = textRevision
+        super.unmarkText()
+        guard wasComposing, revision == textRevision, !isApplying, !isEditingText, !isInsertingText, let host, let editor else { return }
+        reconcileComposition()
+        refreshTypingAttributes()
+        editor.textDidChange(in: host)
+    }
+
+    @discardableResult
+    private func reconcileComposition() -> Bool {
+        let base = compositionBase
+        let deferred = deferredText
+        compositionBase = nil
+        deferredText = nil
+        guard let deferred else { return false }
+        guard let base else {
+            apply(deferred.text, selection: deferred.selection)
+            return true
+        }
+        guard deferred.text != base else { return false }
+        let merged = NoteTextRendering.mergeComposition(committed: noteText, base: base, external: deferred.text,
+                                                         caret: selectedRange().location)
+        apply(merged.text, selection: merged.caret..<merged.caret)
+        return true
     }
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
@@ -357,6 +435,7 @@ class NoteTextView: NSTextView {
         var marks = typingMarks
         marks[key].toggle()
         typingMarks = marks
+        if key == .code { codeTypingCaret = marks.code ? selectedRange().location : nil }
     }
 
     override func doCommand(by selector: Selector) {
@@ -425,6 +504,10 @@ class NoteTextView: NSTextView {
     override func mouseDown(with event: NSEvent) {
         if let editor, editor.selection.textViewMouseDown(self, with: event) { return }
         let point = convert(event.locationInWindow, from: nil)
+        if event.clickCount == 1, event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+           let link = equationLink(at: point), link.resolved, let editor, editor.math.reveal(label: link.key) {
+            return
+        }
         if event.clickCount == 1, isEditable, event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
            let index = characterIndex(at: point), let atom = noteText.marks(at: index).atom {
             switch atom {
@@ -531,7 +614,18 @@ class NoteTextView: NSTextView {
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
-        updateHover(at: convert(event.locationInWindow, from: nil), modifiers: event.modifierFlags)
+        let point = convert(event.locationInWindow, from: nil)
+        updateHover(at: point, modifiers: event.modifierFlags)
+        if let link = equationLink(at: point) {
+            if link.resolved {
+                NSCursor.pointingHand.set()
+                if parcTooltip != nil { parcTooltip = nil }
+            } else {
+                parcTooltip = TooltipConfiguration(NotePageMath.missingReferenceTooltip(link.key), anchor: .bottom, anchorRect: link.rect)
+            }
+        } else if parcTooltip != nil {
+            parcTooltip = nil
+        }
     }
 
     override func mouseExited(with event: NSEvent) {

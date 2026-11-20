@@ -99,11 +99,43 @@ indirect enum NoteMathNode: Equatable {
     case phantom([NoteMathNode], keepsWidth: Bool, keepsHeight: Bool)
     case boxed([NoteMathNode])
     case lap(NoteMathLap, [NoteMathNode])
+    case reference(String, parenthesized: Bool, label: [NoteMathNode]?)
+}
+
+enum NoteMathLabelTarget: Equatable {
+    case automatic(Int)
+    case tag([NoteMathNode])
+}
+
+struct NoteMathLabel: Equatable {
+    var key: String
+    var target: NoteMathLabelTarget
+}
+
+struct NoteMathNumberingContext: Equatable {
+    var firstNumber = 0
+    var references: [String: [NoteMathNode]] = [:]
+    var takenLabels: Set<String> = []
+    var referenceDigest = ""
+
+    func fingerprint(for source: String, display: Bool) -> String {
+        var parts: [String] = []
+        if display, source.contains("begin") { parts.append("n\(firstNumber)") }
+        if display, source.contains("label"), !takenLabels.isEmpty { parts.append("t" + takenLabels.sorted().joined(separator: ",")) }
+        if source.contains("ref") { parts.append("r" + referenceDigest) }
+        return parts.joined(separator: ";")
+    }
+
+    static func digest(_ references: [String: [NoteMathNode]]) -> String {
+        references.keys.sorted().map { "\($0)=\(String(describing: references[$0]!))" }.joined(separator: "|")
+    }
 }
 
 struct NoteMathEquation: Equatable {
     var nodes: [NoteMathNode]
     var tag: [NoteMathNode]?
+    var labels: [NoteMathLabel] = []
+    var automaticNumbers = 0
 }
 
 struct NoteMathParseError: Error, Equatable, CustomStringConvertible {
@@ -143,27 +175,66 @@ struct NoteMathParser {
     private let display: Bool
     private var index = 0
     private var depth = 0
-    private var pendingTag: (nodes: [NoteMathNode], lexeme: Lexeme)?
+    private var pendingTag: (nodes: [NoteMathNode], label: [NoteMathNode], lexeme: Lexeme)?
+    private var pendingLabel: (key: String, lexeme: Lexeme)?
     private var suppressesNumber = false
     private var equationNumber = 0
+    private var labels: [NoteMathLabel] = []
+    private let numbering: NoteMathNumberingContext
 
-    private init(_ source: NoteMathSource, display: Bool) {
+    private init(_ source: NoteMathSource, display: Bool, numbering: NoteMathNumberingContext) {
         characters = source.characters
         origins = source.origins
         sourceLength = source.length
         self.display = display
+        self.numbering = numbering
     }
 
     static func parse(_ source: String) throws(NoteMathParseError) -> [NoteMathNode] {
         try parseEquation(source, display: true).nodes
     }
 
-    static func parseEquation(_ source: String, display: Bool) throws(NoteMathParseError) -> NoteMathEquation {
-        var parser = NoteMathParser(try NoteMathExpander.expand(source), display: display)
+    static func parseEquation(_ source: String, display: Bool,
+                              numbering: NoteMathNumberingContext = NoteMathNumberingContext()) throws(NoteMathParseError) -> NoteMathEquation {
+        var parser = NoteMathParser(try NoteMathExpander.expand(source), display: display, numbering: numbering)
         let nodes = try parser.parseFormula()
-        guard let tag = parser.pendingTag else { return NoteMathEquation(nodes: nodes) }
-        if !display { throw parser.failure("\\tag only works in display equations", tag.lexeme) }
-        return NoteMathEquation(nodes: nodes, tag: tag.nodes)
+        let tag = parser.pendingTag
+        if let tag, !display { throw parser.failure("\\tag only works in display equations", tag.lexeme) }
+        if let label = parser.pendingLabel {
+            guard let tag else {
+                throw parser.failure("\\label needs a numbered equation: wrap it in \\begin{equation}…\\end{equation} or add a \\tag",
+                                     label.lexeme)
+            }
+            try parser.record(label, target: .tag(tag.label))
+        }
+        return NoteMathEquation(nodes: nodes, tag: tag?.nodes, labels: parser.labels, automaticNumbers: parser.equationNumber)
+    }
+
+    private mutating func record(_ label: (key: String, lexeme: Lexeme), target: NoteMathLabelTarget) throws(NoteMathParseError) {
+        if labels.contains(where: { $0.key == label.key }) {
+            throw failure("\u{201C}\(label.key)\u{201D} already labels another line here", label.lexeme)
+        }
+        if numbering.takenLabels.contains(label.key) {
+            throw failure("\u{201C}\(label.key)\u{201D} already labels an earlier equation", label.lexeme)
+        }
+        labels.append(NoteMathLabel(key: label.key, target: target))
+    }
+
+    private mutating func parseLabel(_ lexeme: Lexeme) throws(NoteMathParseError) {
+        let raw = try parseRawGroup(for: "label", what: "a name")
+        let whole = Lexeme(token: lexeme.token, start: lexeme.start, end: raw.end)
+        if !display { throw failure("\\label only works in display equations", whole) }
+        if raw.text.isEmpty { throw failure("\\label needs a name, like \\label{eq:energy}", whole) }
+        if pendingLabel != nil { throw failure("Only one \\label per line", whole) }
+        pendingLabel = (raw.text, whole)
+    }
+
+    private mutating func parseReference(_ name: String, _ lexeme: Lexeme) throws(NoteMathParseError) -> NoteMathNode {
+        let raw = try parseRawGroup(for: name, what: "a label")
+        if raw.text.isEmpty {
+            throw failure("\\\(name) needs a label, like \\\(name){eq:energy}", Lexeme(token: lexeme.token, start: lexeme.start, end: raw.end))
+        }
+        return .reference(raw.text, parenthesized: name == "eqref", label: numbering.references[raw.text])
     }
 
     static func isBuiltIn(_ name: String) -> Bool {
@@ -181,7 +252,7 @@ struct NoteMathParser {
         "phantom", "hphantom", "vphantom", "boxed", "fbox", "llap", "mathllap", "rlap", "mathrlap", "clap", "mathclap", "hspace", "hskip", "kern", "mkern", "mskip", "limits",
         "nolimits", "displaylimits", "over", "choose", "atop", "brack", "brace", "tag", "notag", "nonumber", "hline",
         "hdashline", "\\", "cr", "newline", "newcommand", "renewcommand", "providecommand", "def", "gdef", "edef",
-        "xdef", "let", "global", "ce", "pu",
+        "xdef", "let", "global", "ce", "pu", "label", "eqref", "ref",
     ]
 
     private mutating func parseFormula() throws(NoteMathParseError) -> [NoteMathNode] {
@@ -330,6 +401,9 @@ struct NoteMathParser {
             case .command("tag"):
                 advance(past: lexeme)
                 try parseTag(lexeme)
+            case .command("label"):
+                advance(past: lexeme)
+                try parseLabel(lexeme)
             case .command("notag"), .command("nonumber"):
                 advance(past: lexeme)
                 suppressesNumber = true
@@ -617,7 +691,9 @@ struct NoteMathParser {
             throw failure("\\\(name) has to come right after an operator like \\sum", lexeme)
         case "":
             throw failure("A lone \\ needs a command name after it", lexeme)
-        case "tag", "notag", "nonumber":
+        case "eqref", "ref":
+            return try parseReference(name, lexeme)
+        case "tag", "notag", "nonumber", "label":
             throw failure("\\\(name) has to stand on its own, not inside a script or argument", lexeme)
         default:
             throw failure("Unknown command \\\(name)", lexeme)
@@ -628,6 +704,11 @@ struct NoteMathParser {
         let literal = consumeStar()
         if pendingTag != nil { throw failure("Only one \\tag per line", lexeme) }
         let label = try parseText(.roman, command: lexeme, name: "tag")
+        let inner: [NoteMathNode]
+        switch label {
+        case .group(let parts): inner = parts
+        default: inner = [label]
+        }
         var nodes: [NoteMathNode]
         switch label {
         case .text(let text, let style) where !literal:
@@ -639,18 +720,28 @@ struct NoteMathParser {
         default:
             nodes = literal ? [label] : [.text("(", .roman), label, .text(")", .roman)]
         }
-        pendingTag = (nodes, lexeme)
+        pendingTag = (nodes, inner, lexeme)
     }
 
-    private mutating func rowTag(numbered: Bool) -> [NoteMathNode]? {
+    private mutating func rowTag(numbered: Bool) throws(NoteMathParseError) -> [NoteMathNode]? {
         defer {
             pendingTag = nil
+            pendingLabel = nil
             suppressesNumber = false
         }
-        if let tag = pendingTag { return tag.nodes }
-        guard numbered, !suppressesNumber else { return nil }
+        if let tag = pendingTag {
+            if let label = pendingLabel { try record(label, target: .tag(tag.label)) }
+            return tag.nodes
+        }
+        guard numbered, !suppressesNumber else {
+            if let label = pendingLabel {
+                throw failure("\\label needs a numbered line, and this one isn't numbered", label.lexeme)
+            }
+            return nil
+        }
         equationNumber += 1
-        return [.text("(\(equationNumber))", .roman)]
+        if let label = pendingLabel { try record(label, target: .automatic(equationNumber)) }
+        return [.text("(\(numbering.firstNumber + equationNumber))", .roman)]
     }
 
     private mutating func parseDelimiter(after command: String, at lexeme: Lexeme) throws(NoteMathParseError) -> String? {
@@ -822,6 +913,9 @@ struct NoteMathParser {
                 index = escape.end
                 if let replacement = Self.textEscapes[escaped] {
                     buffer += replacement
+                } else if escaped == "ref" || escaped == "eqref" {
+                    flush()
+                    segments.append(try parseReference(escaped, escape))
                 } else {
                     throw failure("\\\(escaped) doesn't work inside \\\(name)", escape)
                 }
@@ -847,9 +941,11 @@ struct NoteMathParser {
         let tagsRows = display && depth == 1 && Self.numberedEnvironments[name.text] != nil
         let numbered = tagsRows && Self.numberedEnvironments[name.text] == true
         let outerTag = pendingTag
+        let outerLabel = pendingLabel
         let outerSuppression = suppressesNumber
         if tagsRows {
             pendingTag = nil
+            pendingLabel = nil
             suppressesNumber = false
         }
         var specified: [NoteMathColumnAlignment]?
@@ -886,14 +982,15 @@ struct NoteMathParser {
                 guard closing.text == name.text else {
                     throw failure("\\begin{\(name.text)} ends with \\end{\(closing.text)}", from: closing.start, to: closing.end)
                 }
-                let trailingEmpty = row.count == 1 && row[0].isEmpty && pendingTag == nil
+                let trailingEmpty = row.count == 1 && row[0].isEmpty && pendingTag == nil && pendingLabel == nil
                 if !trailingEmpty || environment.rows.isEmpty {
                     environment.rows.append(row)
-                    if tagsRows { environment.tags.append(rowTag(numbered: numbered)) }
+                    if tagsRows { environment.tags.append(try rowTag(numbered: numbered)) }
                 }
                 if tagsRows {
                     if environment.tags.allSatisfy({ $0 == nil }) { environment.tags = [] }
                     pendingTag = outerTag
+                    pendingLabel = outerLabel
                     suppressesNumber = outerSuppression
                 }
                 let columnCount = environment.rows.map(\.count).max() ?? 1
@@ -901,7 +998,7 @@ struct NoteMathParser {
                 return .environment(environment)
             default:
                 environment.rows.append(row)
-                if tagsRows { environment.tags.append(rowTag(numbered: numbered)) }
+                if tagsRows { environment.tags.append(try rowTag(numbered: numbered)) }
                 row = []
                 if let spacing = try parseOptionalRowSpacing() { environment.rowSpacing[environment.rows.count - 1] = spacing }
                 consumeRowRules(into: &environment, row: environment.rows.count)

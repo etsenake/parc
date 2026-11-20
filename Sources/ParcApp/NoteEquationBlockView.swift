@@ -280,8 +280,46 @@ final class NoteEquationBlockView: NoteBlockView {
 
     private var errorFont: NSFont { NoteCodeFont.code(size: 13) }
 
+    private var numbering: NoteMathNumberingContext { editor?.math.context(for: blockID) ?? NoteMathNumberingContext() }
+    private var numberingFingerprint = ""
+
+    func mathNumberingDidChange() {
+        guard numbering.fingerprint(for: source, display: true) != numberingFingerprint else { return }
+        let height = measureHeight(width: bounds.width)
+        rerender()
+        if measureHeight(width: bounds.width) != height { invalidateHeight() }
+    }
+
+    private func linkFrames() -> [NoteMathLinkMark] {
+        guard let rendering, rendering.error == nil else { return [] }
+        let available = bounds.width - Self.horizontalInset * 2
+        let fits = rendering.size.width <= available
+        let x = fits ? Self.horizontalInset : Self.horizontalInset - scrollOffset
+        let y = ((bounds.height - rendering.size.height) / 2).rounded()
+        return rendering.links(width: fits ? available : rendering.size.width).map { link in
+            var placed = link
+            placed.rect = link.rect.offsetBy(dx: x, dy: y)
+            return placed
+        }
+    }
+
+    private func link(at event: NSEvent) -> NoteMathLinkMark? {
+        let point = convert(event.locationInWindow, from: nil)
+        return linkFrames().first { $0.rect.insetBy(dx: -2, dy: -2).contains(point) }
+    }
+
+    private func refreshLinkTooltip(_ event: NSEvent) {
+        if let link = link(at: event), !link.resolved {
+            parcTooltip = TooltipConfiguration(NotePageMath.missingReferenceTooltip(link.key), anchor: .bottom, anchorRect: link.rect)
+        } else if parcTooltip != nil {
+            parcTooltip = nil
+        }
+    }
+
     private func rerender() {
-        rendering = isBlank ? nil : NoteMathRenderer.render(source, fontSize: mathSize, color: ink, display: true)
+        let context = numbering
+        numberingFingerprint = context.fingerprint(for: source, display: true)
+        rendering = isBlank ? nil : NoteMathRenderer.render(source, fontSize: mathSize, color: ink, display: true, numbering: context)
         let label: String
         if isBlank { label = "Empty equation" } else if let error = rendering?.error { label = "Equation that won’t typeset: \(source). \(error)" }
         else { label = "Equation: \(source)" }
@@ -425,16 +463,22 @@ final class NoteEquationBlockView: NoteBlockView {
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        refreshLinkTooltip(event)
     }
 
     override func mouseMoved(with event: NSEvent) {
         isHovered = NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow)
+        refreshLinkTooltip(event)
     }
 
     override func mouseExited(with event: NSEvent) { isHovered = false }
 
     override func resetCursorRects() {
-        if !isReadOnly { addCursorRect(bounds, cursor: .pointingHand) }
+        if !isReadOnly {
+            addCursorRect(bounds, cursor: .pointingHand)
+        } else {
+            for link in linkFrames() where link.resolved { addCursorRect(link.rect, cursor: .pointingHand) }
+        }
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -456,6 +500,9 @@ final class NoteEquationBlockView: NoteBlockView {
 
     override func mouseDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.shift, .command])
+        if modifiers.isEmpty, !isEditing, let link = link(at: event), link.resolved, let editor, editor.math.reveal(label: link.key) {
+            return
+        }
         if isReadOnly || !modifiers.isEmpty {
             NoteBlockPointer.selectBlock(self, with: event)
             return

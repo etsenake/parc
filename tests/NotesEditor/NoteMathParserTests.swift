@@ -42,6 +42,7 @@ struct NoteMathParserTests {
         units()
         mhchemManual()
         tags()
+        labels()
         print("NoteMathParserTests passed")
     }
 
@@ -564,6 +565,43 @@ struct NoteMathParserTests {
         }
         expect(failure("\\begin{align} a \\tag{1} \\tag{2} \\end{align}").message == "Only one \\tag per line", "one tag per align row")
         expect(equation("\\newcommand{\\eq}[1]{\\tag{#1}} x \\eq{7}").tag == [.text("(7)", .roman)], "tags from macros")
+    }
+
+    static func labels() {
+        let numbered = equation("\\begin{align} a &= b \\label{first} \\\\ c &= d \\tag{x}\\label{second} \\\\ e \\label{third} \\end{align}")
+        expect(numbered.labels == [NoteMathLabel(key: "first", target: .automatic(1)), NoteMathLabel(key: "second", target: .tag([.text("x", .roman)])),
+                                   NoteMathLabel(key: "third", target: .automatic(2))] && numbered.automaticNumbers == 2,
+               "labels attach to row numbers and tags: \(numbered.labels)")
+        let later = NoteMathNumberingContext(firstNumber: 4)
+        let shifted = try? NoteMathParser.parseEquation("\\begin{gather} a \\\\ b \\end{gather}", display: true, numbering: later)
+        if case .environment(let environment)? = shifted?.nodes.first {
+            expect(environment.tags == [[.text("(5)", .roman)], [.text("(6)", .roman)]], "numbers continue from earlier equations")
+        } else {
+            failTest("numbered gather parses")
+        }
+        let context = NoteMathNumberingContext(references: ["e": [.text("3", .roman)]])
+        let refs = try? NoteMathParser.parseEquation("\\eqref{e} + \\ref{e} + \\eqref{nope}", display: false, numbering: context)
+        expect(refs?.nodes == [.reference("e", parenthesized: true, label: [.text("3", .roman)]), .char("+", .bin),
+                               .reference("e", parenthesized: false, label: [.text("3", .roman)]), .char("+", .bin),
+                               .reference("nope", parenthesized: true, label: nil)], "references resolve or stay missing")
+        expect(parse("\\text{see \\eqref{a}}") == [.group([.text("see ", .roman), .reference("a", parenthesized: true, label: nil)])],
+               "references work inside text")
+        expect(equation("x \\tag{A} \\label{k}").labels == [NoteMathLabel(key: "k", target: .tag([.text("A", .roman)]))], "a tagged display takes a label")
+        expect(failure("x \\label{k}").message.hasPrefix("\\label needs a numbered equation"), "an unnumbered display can't take a label")
+        expect(failure("x \\label{k}", display: false).message == "\\label only works in display equations", "inline labels explain themselves")
+        expect(failure("\\begin{align} a \\label{k} \\\\ b \\label{k} \\end{align}").message == "\u{201C}k\u{201D} already labels another line here",
+               "duplicate labels in one equation")
+        expect(failure("\\begin{align*} a \\label{k} \\end{align*}").message == "\\label needs a numbered line, and this one isn't numbered",
+               "labels need numbered rows")
+        let taken = NoteMathNumberingContext(takenLabels: ["k"])
+        do {
+            _ = try NoteMathParser.parseEquation("\\begin{equation} a \\label{k} \\end{equation}", display: true, numbering: taken)
+            failTest("a label taken by an earlier equation fails")
+        } catch {
+            expect(error.message == "\u{201C}k\u{201D} already labels an earlier equation", "labels are unique across the note")
+        }
+        expect(failure("\\begin{align} a \\label{x} \\label{y} \\end{align}").message == "Only one \\label per line", "one label per line")
+        expect(failure("\\eqref{}").message == "\\eqref needs a label, like \\eqref{eq:energy}", "references need a key")
     }
 
     static func failure(_ source: String, display: Bool, line: UInt = #line) -> NoteMathParseError {

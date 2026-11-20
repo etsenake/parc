@@ -65,6 +65,16 @@ final class NoteAtomCell: NSTextAttachmentCell {
 
     override func wantsToTrackMouse() -> Bool { false }
 
+    func mathLink(at point: NSPoint, cellFrame: NSRect) -> NoteMathLinkMark? {
+        guard let math = face.math else { return nil }
+        let origin = NSPoint(x: cellFrame.minX + Self.mathPadding, y: cellFrame.maxY - ceil(math.descent) - math.baseline)
+        return math.links(width: math.size.width).map { link in
+            var placed = link
+            placed.rect = link.rect.offsetBy(dx: origin.x, dy: origin.y)
+            return placed
+        }.first { $0.rect.insetBy(dx: -2, dy: -2).contains(point) }
+    }
+
     override func accessibilityLabel() -> String? { accessibilityText }
 
     override func highlight(_ flag: Bool, withFrame cellFrame: NSRect, in controlView: NSView?) {}
@@ -146,12 +156,14 @@ final class NoteAtomCell: NSTextAttachmentCell {
 
 @MainActor
 enum NoteAtomRendering {
-    static func attachment(for atom: NoteAtom?, font: NSFont, ink: NSColor, now: Date = Date()) -> NoteAtomAttachment {
-        let face = self.face(for: atom, font: font, ink: ink, now: now)
+    static func attachment(for atom: NoteAtom?, font: NSFont, ink: NSColor, now: Date = Date(),
+                           numbering: NoteMathNumberingContext = NoteMathNumberingContext()) -> NoteAtomAttachment {
+        let face = self.face(for: atom, font: font, ink: ink, now: now, numbering: numbering)
         return NoteAtomAttachment(atom: atom, cell: NoteAtomCell(face: face, font: font, accessibilityText: accessibilityText(for: atom)))
     }
 
-    static func face(for atom: NoteAtom?, font: NSFont, ink: NSColor, now: Date) -> NoteAtomFace {
+    static func face(for atom: NoteAtom?, font: NSFont, ink: NSColor, now: Date,
+                     numbering: NoteMathNumberingContext = NoteMathNumberingContext()) -> NoteAtomFace {
         let labelFont = NSFont(descriptor: font.fontDescriptor, size: font.pointSize * 0.94) ?? font
         func label(_ text: String, _ color: NSColor, _ face: NSFont = labelFont) -> NSAttributedString {
             NSAttributedString(string: text, attributes: [.font: face, .foregroundColor: color])
@@ -163,7 +175,7 @@ enum NoteAtomRendering {
         case .equation(let source):
             let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
-                let math = NoteMathRenderer.render(source, fontSize: font.pointSize, color: ink, display: false)
+                let math = NoteMathRenderer.render(source, fontSize: font.pointSize, color: ink, display: false, numbering: numbering)
                 if !math.isEmpty, math.size.width > 0 { return NoteAtomFace(label: NSAttributedString(), math: math) }
             }
             let mono = NoteTheme.codeFont(size: (font.pointSize * 0.82).rounded())

@@ -25,6 +25,12 @@ struct NoteMathInk {
     }
 }
 
+struct NoteMathLinkMark {
+    var key: String
+    var rect: CGRect
+    var resolved: Bool
+}
+
 struct NoteMathTagMark {
     var box: NoteMathBox
     var baseline: CGFloat
@@ -40,6 +46,7 @@ struct NoteMathBox {
     var glyphSize: CGFloat = 0
     var inks: [NoteMathInk] = []
     var tags: [NoteMathTagMark] = []
+    var links: [NoteMathLinkMark] = []
 
     var height: CGFloat { ascent + descent }
 
@@ -54,6 +61,10 @@ struct NoteMathBox {
             tag.baseline += point.y
             tags.append(tag)
         }
+        for var link in box.links {
+            link.rect = link.rect.offsetBy(dx: point.x, dy: point.y)
+            links.append(link)
+        }
     }
 
     func raised(by amount: CGFloat) -> NoteMathBox {
@@ -62,6 +73,7 @@ struct NoteMathBox {
         result.descent -= amount
         for index in result.inks.indices { result.inks[index].origin.y += amount }
         for index in result.tags.indices { result.tags[index].baseline += amount }
+        for index in result.links.indices { result.links[index].rect.origin.y += amount }
         return result
     }
 
@@ -337,6 +349,7 @@ struct NoteMathTypesetter {
             var box = layoutList(content, context).withoutGlyphIdentity()
             box.inks = []
             box.tags = []
+            box.links = []
             if !keepsWidth { box.width = 0 }
             if !keepsHeight {
                 box.ascent = 0
@@ -359,6 +372,13 @@ struct NoteMathTypesetter {
             return (layoutList(content, context.with(color: .custom(color(value)))), atomKind(node))
         case .mathStyle(let level, let content):
             return (layoutList(content, context.with(style: NoteMathStyle(level: level, cramped: context.style.cramped))), atomKind(node))
+        case .reference(let key, let parenthesized, let label):
+            var content = label ?? [.text("??", .roman)]
+            if parenthesized { content = [.text("(", .roman)] + content + [.text(")", .roman)] }
+            var box = layoutList(content, label == nil ? context.with(color: .muted) : context).withoutGlyphIdentity()
+            box.links.append(NoteMathLinkMark(key: key, rect: CGRect(x: 0, y: -box.descent, width: box.width, height: box.height),
+                                              resolved: label != nil))
+            return (box, .ord)
         }
     }
 
