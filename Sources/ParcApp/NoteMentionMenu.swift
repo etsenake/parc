@@ -40,7 +40,7 @@ enum NoteMentionMenu {
                 let id = "note.\(index)"
                 var item = NoteMenuList.Item(id: id, title: note.title.isEmpty ? "Untitled" : note.title,
                                              subtitle: folderName(of: note.url, relativeTo: folder),
-                                             icon: note.icon.map { NoteIcon.emoji($0) } ?? .symbol("doc.text"), section: notesSection)
+                                             icon: NoteIcon.note(note.icon, at: note.url), section: notesSection)
                 item.accessibilityLabel = "Note, " + item.title
                 result.items.append(item)
                 result.choices[id] = .note(note)

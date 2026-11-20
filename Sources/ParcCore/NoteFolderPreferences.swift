@@ -18,6 +18,15 @@ enum NoteFolderPreferences {
         return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
     }
 
+    static var allFolders: [URL] {
+        var folders = [NoteLibrary.defaultFolder.standardizedFileURL]
+        for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix(keyPrefix) {
+            guard let path = value as? String, path.hasPrefix("/") else { continue }
+            folders.append(URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL)
+        }
+        return folders
+    }
+
     static func library(for profileID: UUID) -> NoteLibrary {
         NoteLibrary.shared(folder: folder(for: profileID))
     }

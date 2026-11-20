@@ -207,6 +207,21 @@ final class NotePageSession {
         changes.send(NotePageChange(kind: kind, blocks: [id], origin: nil, revision: revision))
     }
 
+    func updateAllPagesMetadata(_ transform: (NotePage) -> NotePage) {
+        let next = transform(page)
+        for index in undoStack.indices { undoStack[index].page = transform(undoStack[index].page).withoutIndex }
+        for index in redoStack.indices { redoStack[index].page = transform(redoStack[index].page).withoutIndex }
+        if var group = openGroup {
+            group.page = transform(group.page)
+            openGroup = group
+        }
+        guard next != page else { return }
+        let changed = Self.changedBlocks(from: page, to: next)
+        page = next
+        revision &+= 1
+        changes.send(NotePageChange(kind: .text, blocks: changed, origin: nil, revision: revision))
+    }
+
     func updateSettingsMetadata(_ transform: (inout NotePageSettings) -> Void) {
         guard !isReadOnly else { return }
         for index in undoStack.indices { transform(&undoStack[index].page.settings) }

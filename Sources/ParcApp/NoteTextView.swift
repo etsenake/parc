@@ -119,7 +119,8 @@ class NoteTextView: NSTextView {
         textRevision &+= 1
         let numbering = NoteTextRendering.needsFlexibleLines(text) ? editor?.math.inlineContext : nil
         textStorage?.setAttributedString(NoteTextRendering.attributedString(text, presentation,
-                                                                            numbering: numbering ?? NoteMathNumberingContext()))
+                                                                            numbering: numbering ?? NoteMathNumberingContext(),
+                                                                            emoji: editor?.environment.emojiLibrary))
         selectedOffsets = selection ?? previous
         isApplying = false
         refreshTypingAttributes()
@@ -134,6 +135,14 @@ class NoteTextView: NSTextView {
             return
         }
         apply(noteText, selection: nil)
+    }
+
+    func customEmojiDidChange() {
+        let uses = noteText.spans.contains { span in
+            if case .customEmoji = span.marks.atom { return true }
+            return false
+        }
+        if uses { refreshRendering() }
     }
 
     func mathNumberingDidChange() {

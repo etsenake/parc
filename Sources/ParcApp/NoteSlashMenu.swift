@@ -308,6 +308,7 @@ final class NoteSlashMenuController {
 
     private func openEmoji(_ anchor: Anchor, query: String) {
         let suggestions = emojiList ?? makeEmojiList()
+        suggestions.library = editor.environment.emojiLibrary
         suggestions.query = query
         guard suggestions.hasResults else { return }
         closePanels(except: emojiPanel)
@@ -323,7 +324,7 @@ final class NoteSlashMenuController {
         let key = TextKey(block: position.block, field: position.field)
         guard let rect = overlayRect(key, from: position.offset) else { return }
         closePanels(except: nil)
-        let picker = NoteEmojiPicker(showsRandom: true)
+        let picker = NoteEmojiPicker(showsRandom: true, library: editor.environment.emojiLibrary)
         picker.onPick = { [weak self] character in self?.insertPickedEmoji(character) }
         picker.onCancel = { [weak self] in self?.closeEmojiPicker() }
         let panel = makePanel(picker)
@@ -568,6 +569,11 @@ final class NoteSlashMenuController {
     private func completeShortcode(_ done: (range: Range<Int>, shortcode: String), in key: TextKey) -> Bool {
         guard allowsInline(key) else { return false }
         let catalog = NoteEmojiCatalog.shared
+        if let custom = editor.environment.emojiLibrary?.emoji(named: done.shortcode) {
+            catalog.recordUse(custom.reference)
+            replace(done.range, in: key, with: .atom(.customEmoji(custom.name)), name: "Emoji")
+            return true
+        }
         guard let emoji = catalog.emoji(forShortcode: done.shortcode) else { return false }
         let character = catalog.character(for: emoji)
         catalog.recordUse(character)
@@ -578,7 +584,12 @@ final class NoteSlashMenuController {
     private func insertEmoji(_ character: String) {
         guard let anchor, let range = liveMatch()?.range else { dismiss(); return }
         dismiss()
-        replace(range, in: anchor.key, with: NoteText(character), name: "Emoji")
+        replace(range, in: anchor.key, with: Self.emojiText(character), name: "Emoji")
+    }
+
+    static func emojiText(_ character: String) -> NoteText {
+        if let name = NoteCustomEmojiName.name(inReference: character) { return .atom(.customEmoji(name)) }
+        return NoteText(character)
     }
 
     private func insertPickedEmoji(_ character: String) {
@@ -586,7 +597,7 @@ final class NoteSlashMenuController {
         let key = anchor.key
         let offset = min(anchor.start, page.block(key.block)?.text(in: key.field)?.length ?? 0)
         dismiss()
-        replace(offset..<offset, in: key, with: NoteText(character), name: "Emoji")
+        replace(offset..<offset, in: key, with: Self.emojiText(character), name: "Emoji")
     }
 
     private func closeEmojiPicker() {

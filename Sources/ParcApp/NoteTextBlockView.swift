@@ -319,7 +319,10 @@ final class NoteTextBlockView: NoteBlockView, NoteTextHost {
             }
             calloutIcon?.icon = icon
             calloutIcon?.resolveImage = { [weak editor] source in
-                editor?.environment.resolve(source).flatMap { NSImage(contentsOf: $0) }
+                if NoteCustomEmojiName.isReference(source) {
+                    return NoteCustomEmojiImages.image(forReference: source, in: editor?.environment.emojiLibrary)
+                }
+                return editor?.environment.resolve(source).flatMap { NSImage(contentsOf: $0) }
             }
             calloutIcon?.isEnabled = !isReadOnly
         } else if let button = calloutIcon {
@@ -405,10 +408,16 @@ final class NoteTextBlockView: NoteBlockView, NoteTextHost {
         editor.focus(NotePosition(child.id, 0))
     }
 
+    func calloutIconDidChange() {
+        calloutIcon?.needsDisplay = true
+        calloutIcon?.refreshAccessibility()
+    }
+
     @objc private func calloutIconPressed() {
         guard !isReadOnly, let editor, let calloutIcon else { return }
         if let panel = iconPanel, panel.isPresented { panel.dismiss(animated: true); return }
-        let picker = NoteEmojiPicker(showsRemove: true, showsRandom: true)
+        let picker = NoteEmojiPicker(showsRemove: true, showsRandom: true, library: editor.environment.emojiLibrary)
+        picker.currentEmoji = block.props.icon
         let panel = NoteFloatingPanel(content: picker)
         let id = block.id
         picker.onPick = { [weak editor, weak panel] emoji in
@@ -648,7 +657,7 @@ final class NoteToggleDisclosure: NSView {
 
 @MainActor
 final class NoteCalloutIconButton: PointingHandButton {
-    var icon = "" { didSet { if oldValue != icon { needsDisplay = true; setAccessibilityLabel("Callout icon " + icon) } } }
+    var icon = "" { didSet { if oldValue != icon { needsDisplay = true; refreshAccessibility() } } }
     var resolveImage: ((String) -> NSImage?)?
     private var isHovered = false
     private var area: NSTrackingArea?
@@ -667,7 +676,16 @@ final class NoteCalloutIconButton: PointingHandButton {
 
     override var isFlipped: Bool { true }
 
-    private var isImageSource: Bool { icon.contains("/") || icon.lowercased().hasSuffix(".png") || icon.lowercased().hasSuffix(".svg") }
+    private var isCustomEmoji: Bool { NoteCustomEmojiName.isReference(icon) }
+
+    private var isImageSource: Bool {
+        isCustomEmoji || icon.contains("/") || icon.lowercased().hasSuffix(".png") || icon.lowercased().hasSuffix(".svg")
+    }
+
+    func refreshAccessibility() {
+        let name = NoteCustomEmojiName.name(inReference: icon) ?? NoteEmojiCatalog.shared.entry(for: icon)?.displayName ?? icon
+        setAccessibilityLabel("Callout icon, " + name)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         drawInOwnAppearance {
@@ -675,10 +693,19 @@ final class NoteCalloutIconButton: PointingHandButton {
                 NoteTheme.hoverFill.setFill()
                 NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
             }
+            let side = NoteTheme.calloutIconSize - 2
+            let box = NSRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
             if isImageSource, let image = resolveImage?(icon) {
-                let side = NoteTheme.calloutIconSize - 2
-                image.draw(in: NSRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side),
-                           from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                if isCustomEmoji {
+                    NoteCustomEmojiImages.draw(image, fittingIn: box)
+                } else {
+                    image.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                }
+                return
+            }
+            if isCustomEmoji {
+                NoteTheme.mediaPlaceholderFill.setFill()
+                NSBezierPath(roundedRect: box.insetBy(dx: 2, dy: 2), xRadius: 5, yRadius: 5).fill()
                 return
             }
             let font = NSFont(name: "Apple Color Emoji", size: NoteTheme.calloutIconSize - 4) ?? .systemFont(ofSize: NoteTheme.calloutIconSize - 4)

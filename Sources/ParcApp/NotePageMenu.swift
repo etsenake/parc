@@ -330,7 +330,8 @@ final class NotePageMenu {
         do {
             switch format {
             case .markdown:
-                let text = isPlainText ? NotePlainText.serialize(editor.session.page) : NoteMarkdown.serialize(editor.session.page)
+                let text = isPlainText ? NotePlainText.serialize(editor.session.page)
+                    : NoteMarkdown.serialize(editor.session.page, customEmoji: editor.environment.customEmojiNames)
                 try Data(text.utf8).write(to: destination, options: .atomic)
                 try copyAssets(to: destination.deletingLastPathComponent())
             case .html, .pdf:

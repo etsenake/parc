@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 @MainActor
 enum NoteEmojiDrawing {
@@ -70,7 +71,7 @@ enum NoteEmojiDrawing {
     }
 
     static func categoryGlyph(_ category: NoteEmojiCategory) -> NSImage {
-        let codes: [NoteEmojiCategory: UInt32] = [.people: 0xE9DE, .nature: 0xE9E3, .food: 0xE943, .activities: 0xE919,
+        let codes: [NoteEmojiCategory: UInt32] = [.custom: 0xE981, .people: 0xE9DE, .nature: 0xE9E3, .food: 0xE943, .activities: 0xE919,
                                                   .travel: 0xE9F6, .objects: 0xE971, .symbols: 0xE97D, .flags: 0xE96B]
         if let code = codes[category] { return SidebarIconCatalog.featherImage(code, size: 16) }
         let image = NSImage(size: NSSize(width: 16, height: 16), flipped: true) { rect in
@@ -439,14 +440,33 @@ final class NoteEmojiAccessibilityElement: NSAccessibilityElement {
 @MainActor
 final class NoteEmojiGridView: NSView {
     struct Item: Equatable {
-        let emoji: NoteEmoji
+        let emoji: NoteEmoji?
+        let custom: NoteCustomEmoji?
         let character: String
+        let image: NSImage?
+
+        init(emoji: NoteEmoji, character: String) {
+            self.emoji = emoji
+            custom = nil
+            self.character = character
+            image = nil
+        }
+
+        init(custom: NoteCustomEmoji, image: NSImage?) {
+            emoji = nil
+            self.custom = custom
+            character = custom.reference
+            self.image = image
+        }
+
+        var label: String { custom.map { "Custom emoji, " + $0.name } ?? emoji?.displayName ?? character }
     }
 
     struct Section {
         let category: NoteEmojiCategory?
         let title: String?
         let items: [Item]
+        var action: String? = nil
     }
 
     enum Move { case left, right, up, down, pageUp, pageDown, first, last }
@@ -467,7 +487,10 @@ final class NoteEmojiGridView: NSView {
 
     var onPick: ((Item) -> Void)?
     var onHighlight: ((Item?) -> Void)?
+    var onEditCustom: ((NoteCustomEmoji) -> Void)?
+    var onHeaderAction: ((NoteEmojiCategory?) -> Void)?
     var currentCharacter: String? { didSet { resolveCurrent(); needsDisplay = true } }
+    var isEditingCustom = false { didSet { if isEditingCustom != oldValue { needsDisplay = true } } }
 
     private(set) var items: [Item] = []
     private(set) var highlighted: Int?
@@ -477,7 +500,7 @@ final class NoteEmojiGridView: NSView {
     private var current: Int?
     private var rows: [Row] = []
     private var rowOfItem: [Int] = []
-    private var headers: [(title: String, y: CGFloat)] = []
+    private var headers: [(title: String, y: CGFloat, action: String?, category: NoteEmojiCategory?)] = []
     private var sectionStarts: [(category: NoteEmojiCategory?, y: CGFloat)] = []
     private var columns = 1
     private var originX: CGFloat = 0
@@ -544,7 +567,7 @@ final class NoteEmojiGridView: NSView {
         for section in sections where !section.items.isEmpty {
             sectionStarts.append((section.category, y))
             if let title = section.title {
-                headers.append((title, y))
+                headers.append((title, y, section.action, section.category))
                 y += Self.headerHeight
             }
             let first = items.count
@@ -605,15 +628,37 @@ final class NoteEmojiGridView: NSView {
         guard let currentCharacter else { current = nil; return }
         let bare = NoteEmojiCatalog.unqualified(currentCharacter)
         current = items.firstIndex { $0.character == currentCharacter }
-            ?? items.firstIndex { $0.emoji.tone(of: currentCharacter) != nil || NoteEmojiCatalog.unqualified($0.emoji.character) == bare }
+            ?? items.firstIndex { item in
+                guard let emoji = item.emoji else { return false }
+                return emoji.tone(of: currentCharacter) != nil || NoteEmojiCatalog.unqualified(emoji.character) == bare
+            }
+    }
+
+    static let actionFont = NSFont.systemFont(ofSize: 12, weight: .medium)
+
+    func actionFrame(ofHeaderAt index: Int) -> NSRect? {
+        guard headers.indices.contains(index), let action = headers[index].action else { return nil }
+        let width = ceil((action as NSString).size(withAttributes: [.font: Self.actionFont]).width) + 12
+        let right = originX + CGFloat(columns) * Self.cell
+        return NSRect(x: right - width, y: headers[index].y + 4, width: width, height: Self.headerHeight - 4)
+    }
+
+    private func headerAction(at point: NSPoint) -> Int? {
+        headers.indices.first { actionFrame(ofHeaderAt: $0)?.contains(point) == true }
     }
 
     override func draw(_ dirtyRect: NSRect) {
         let headerAttributes: [NSAttributedString.Key: Any] = [.font: Self.headerFont, .foregroundColor: NoteTheme.secondaryInk]
-        for header in headers where header.y < dirtyRect.maxY && header.y + Self.headerHeight > dirtyRect.minY {
+        let actionAttributes: [NSAttributedString.Key: Any] = [.font: Self.actionFont, .foregroundColor: NoteTheme.accent]
+        for (index, header) in headers.enumerated() where header.y < dirtyRect.maxY && header.y + Self.headerHeight > dirtyRect.minY {
             let text = NSAttributedString(string: header.title, attributes: headerAttributes)
             let size = text.size()
             text.draw(at: NSPoint(x: originX + 6, y: header.y + (Self.headerHeight - size.height) / 2 + 3))
+            if let action = header.action, let frame = actionFrame(ofHeaderAt: index) {
+                let label = NSAttributedString(string: action, attributes: actionAttributes)
+                let measured = label.size()
+                label.draw(at: NSPoint(x: frame.maxX - 6 - measured.width, y: header.y + (Self.headerHeight - measured.height) / 2 + 3))
+            }
         }
         var rowIndex = firstRow(endingBelow: dirtyRect.minY)
         while rowIndex < rows.count, rows[rowIndex].y < dirtyRect.maxY {
@@ -624,11 +669,39 @@ final class NoteEmojiGridView: NSView {
                     NoteTheme.blockSelection.setFill()
                     NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: NoteTheme.controlRadius, yRadius: NoteTheme.controlRadius).fill()
                 }
-                if index == overlayIndex { continue }
-                NoteEmojiDrawing.draw(items[index].character, size: NoteEmojiDrawing.gridPointSize, centeredIn: rect)
+                if index == overlayIndex {
+                    drawEditBadge(for: index, in: rect)
+                    continue
+                }
+                drawItem(items[index], in: rect)
+                drawEditBadge(for: index, in: rect)
             }
             rowIndex += 1
         }
+    }
+
+    private func drawItem(_ item: Item, in rect: NSRect) {
+        guard item.custom != nil else {
+            NoteEmojiDrawing.draw(item.character, size: NoteEmojiDrawing.gridPointSize, centeredIn: rect)
+            return
+        }
+        let box = rect.insetBy(dx: 5, dy: 5)
+        if let image = item.image {
+            NoteCustomEmojiImages.draw(image, fittingIn: box)
+        } else {
+            NoteTheme.mediaPlaceholderFill.setFill()
+            NSBezierPath(roundedRect: box, xRadius: 5, yRadius: 5).fill()
+        }
+    }
+
+    private func drawEditBadge(for index: Int, in rect: NSRect) {
+        guard isEditingCustom, items[index].custom != nil else { return }
+        let badge = NSRect(x: rect.maxX - 13, y: rect.minY + 1, width: 12, height: 12)
+        NoteTheme.accent.setFill()
+        NSBezierPath(ovalIn: badge).fill()
+        let pencil = NoteEmojiDrawing.symbol("pencil", pointSize: 7)
+        let tinted = NoteAtomCell.tinted(pencil, size: NSSize(width: 8, height: 8), tint: .white)
+        tinted.draw(in: badge.insetBy(dx: 2, dy: 2), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     }
 
     func setHighlight(_ index: Int?, fromKeyboard: Bool, animated: Bool = true) {
@@ -688,7 +761,18 @@ final class NoteEmojiGridView: NSView {
     @discardableResult
     func pick(at index: Int) -> Bool {
         guard items.indices.contains(index) else { return false }
+        if isEditingCustom, let custom = items[index].custom {
+            onEditCustom?(custom)
+            return true
+        }
         onPick?(items[index])
+        return true
+    }
+
+    @discardableResult
+    func editHighlighted() -> Bool {
+        guard let highlighted, let custom = items[highlighted].custom else { return false }
+        onEditCustom?(custom)
         return true
     }
 
@@ -718,8 +802,18 @@ final class NoteEmojiGridView: NSView {
         if changed {
             let scale = (window?.backingScaleFactor ?? 2) * Self.hoverScale
             glyph.contentsScale = scale
-            glyph.contents = NoteEmojiDrawing.image(items[target].character, size: NoteEmojiDrawing.gridPointSize, side: Self.cell)
-                .layerContents(forContentsScale: scale)
+            let item = items[target]
+            if item.custom != nil {
+                let picture = item.image
+                let image = NSImage(size: NSSize(width: Self.cell, height: Self.cell), flipped: true) { rect in
+                    if let picture { NoteCustomEmojiImages.draw(picture, fittingIn: rect.insetBy(dx: 5, dy: 5)) }
+                    return true
+                }
+                glyph.contents = image.layerContents(forContentsScale: scale)
+            } else {
+                glyph.contents = NoteEmojiDrawing.image(item.character, size: NoteEmojiDrawing.gridPointSize, side: Self.cell)
+                    .layerContents(forContentsScale: scale)
+            }
             glyph.removeAllAnimations()
             glyph.transform = CATransform3DIdentity
         }
@@ -788,7 +882,16 @@ final class NoteEmojiGridView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let index = index(at: convert(event.locationInWindow, from: nil)) else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        if let header = headerAction(at: point) {
+            onHeaderAction?(headers[header].category)
+            return
+        }
+        guard let index = index(at: point) else { return }
+        if event.modifierFlags.contains(.control), let custom = items[index].custom {
+            onEditCustom?(custom)
+            return
+        }
         pressed = index
         if highlighted == index && !highlightFromKeyboard {
             updateOverlay(animated: true)
@@ -813,8 +916,19 @@ final class NoteEmojiGridView: NSView {
         if over == target { pick(at: target) }
     }
 
+    override func rightMouseDown(with event: NSEvent) {
+        guard let index = index(at: convert(event.locationInWindow, from: nil)), let custom = items[index].custom else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        onEditCustom?(custom)
+    }
+
     override func resetCursorRects() {
         let visible = visibleRect
+        for index in headers.indices {
+            if let frame = actionFrame(ofHeaderAt: index)?.intersection(visible), !frame.isEmpty { addCursorRect(frame, cursor: .pointingHand) }
+        }
         var rowIndex = firstRow(endingBelow: visible.minY)
         while rowIndex < rows.count, rows[rowIndex].y < visible.maxY {
             let row = rows[rowIndex]
@@ -854,7 +968,13 @@ final class NoteEmojiGridView: NSView {
 
     private func element(for index: Int) -> NoteEmojiAccessibilityElement {
         if let cached = elements[index] { return cached }
-        let element = NoteEmojiAccessibilityElement(grid: self, index: index, label: items[index].emoji.displayName)
+        let element = NoteEmojiAccessibilityElement(grid: self, index: index, label: items[index].label)
+        if let custom = items[index].custom {
+            element.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Rename or delete") { [weak self] in
+                MainActor.assumeIsolated { self?.onEditCustom?(custom) }
+                return true
+            }])
+        }
         elements[index] = element
         return element
     }
@@ -875,7 +995,13 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
     let catalog: NoteEmojiCatalog
     let showsRemove: Bool
     let showsRandom: Bool
+    let library: NoteEmojiLibrary?
     private let searchBox = NoteEmojiSearchBox()
+    private let addButton = NoteEmojiButton(.glyph(NoteEmojiDrawing.symbol("plus", pointSize: 13)), label: "Add a custom emoji",
+                                            tooltip: "Add a custom emoji")
+    private var customEditor: NoteCustomEmojiEditor?
+    private var dimmedViews: [NSView] = []
+    private var librarySubscription: AnyCancellable?
     private let toneButton: NoteEmojiButton
     private let randomButton = NoteEmojiButton(.glyph(NoteEmojiDrawing.symbol("shuffle", pointSize: 12)), label: "Random", tooltip: "Random")
     private let removeButton = NoteEmojiButton(.title("Remove"), label: "Remove icon")
@@ -891,11 +1017,12 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
     private var observers: [NSObjectProtocol] = []
     private var motionObserver: NSObjectProtocol?
 
-    init(catalog: NoteEmojiCatalog? = nil, showsRemove: Bool = false, showsRandom: Bool = false) {
+    init(catalog: NoteEmojiCatalog? = nil, showsRemove: Bool = false, showsRandom: Bool = false, library: NoteEmojiLibrary? = nil) {
         let catalog = catalog ?? .shared
         self.catalog = catalog
         self.showsRemove = showsRemove
         self.showsRandom = showsRandom
+        self.library = library
         toneButton = NoteEmojiButton(.emoji(NoteEmojiDrawing.toneHand(catalog.skinTone)), label: "Skin tone", tooltip: "Skin tone")
         super.init(frame: NSRect(origin: .zero, size: Self.preferredSize))
         NoteEmojiDrawing.prepare(catalog)
@@ -909,6 +1036,10 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
         toneStrip.isHidden = true
         categoryBar.onSelect = { [weak self] category in self?.jump(to: category) }
         grid.onPick = { [weak self] item in self?.pick(item.character) }
+        grid.onEditCustom = { [weak self] entry in self?.openCustomEditor(.edit(entry)) }
+        grid.onHeaderAction = { [weak self] category in if category == .custom { self?.toggleCustomEditing() } }
+        addButton.onPress = { [weak self] in self?.openCustomEditor(.add) }
+        addButton.isHidden = library == nil
         scrollView.documentView = grid
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
@@ -924,7 +1055,7 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
         emptyLabel.isHidden = true
         randomButton.isHidden = !showsRandom
         removeButton.isHidden = !showsRemove
-        for view in [scrollView, emptyLabel, categoryBar, searchBox, toneButton, randomButton, removeButton, toneStrip] as [NSView] {
+        for view in [scrollView, emptyLabel, categoryBar, searchBox, addButton, toneButton, randomButton, removeButton, toneStrip] as [NSView] {
             addSubview(view)
         }
         setAccessibilityRole(.group)
@@ -945,6 +1076,7 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { if NoteAnimation.reduceMotion { self?.grid.settleMotion() } }
         }
+        librarySubscription = library?.changes.sink { [weak self] in self?.libraryChanged() }
         arrange()
         reload()
     }
@@ -968,15 +1100,33 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
         window?.makeFirstResponder(searchBox.field)
     }
 
+    private func customItem(_ entry: NoteCustomEmoji) -> NoteEmojiGridView.Item? {
+        guard let library else { return nil }
+        return NoteEmojiGridView.Item(custom: entry, image: NoteCustomEmojiImages.image(for: entry, in: library))
+    }
+
+    private func recentItem(_ character: String) -> NoteEmojiGridView.Item? {
+        if NoteCustomEmojiName.isReference(character) {
+            guard let entry = library?.emoji(forReference: character) else { return nil }
+            return customItem(entry)
+        }
+        return catalog.entry(for: character).map { NoteEmojiGridView.Item(emoji: $0, character: character) }
+    }
+
     func reload() {
         let tone = catalog.skinTone
         var sections: [NoteEmojiGridView.Section] = []
+        let custom = library?.emoji ?? []
+        if custom.isEmpty { grid.isEditingCustom = false }
         if query.isEmpty {
-            let recents = catalog.recents.compactMap { character in
-                catalog.entry(for: character).map { NoteEmojiGridView.Item(emoji: $0, character: character) }
-            }
+            let recents = catalog.recents.compactMap(recentItem)
             if !recents.isEmpty {
                 sections.append(NoteEmojiGridView.Section(category: .recents, title: NoteEmojiCategory.recents.displayName, items: recents))
+            }
+            if !custom.isEmpty {
+                sections.append(NoteEmojiGridView.Section(category: .custom, title: NoteEmojiCategory.custom.displayName,
+                                                          items: custom.compactMap(customItem),
+                                                          action: grid.isEditingCustom ? "Done" : "Edit"))
             }
             for section in catalog.sections() {
                 let items = section.emoji.map { NoteEmojiGridView.Item(emoji: $0, character: $0.character(with: tone)) }
@@ -984,10 +1134,12 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
             }
             categoryBar.setEnabled(!recents.isEmpty, for: .recents)
         } else {
+            let customResults = (library?.search(query) ?? []).compactMap(customItem)
             let results = catalog.search(query)
-            let items = results.map { NoteEmojiGridView.Item(emoji: $0, character: $0.character(with: tone)) }
+            let items = customResults + results.map { NoteEmojiGridView.Item(emoji: $0, character: $0.character(with: tone)) }
             sections.append(NoteEmojiGridView.Section(category: nil, title: nil, items: items))
         }
+        categoryBar.setEnabled(!custom.isEmpty, for: .custom)
         scrollView.tile()
         grid.setSections(sections, width: scrollView.contentView.frame.width, minimumHeight: scrollView.contentSize.height,
                          span: scrollView.frame.width, gutter: scrollerGutter)
@@ -1018,14 +1170,98 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
             trailing -= rowHeight + 4
         }
         toneButton.frame = NSRect(x: trailing - rowHeight, y: padding, width: rowHeight, height: rowHeight)
-        trailing -= rowHeight + 6
+        trailing -= rowHeight + 4
+        if library != nil {
+            addButton.frame = NSRect(x: trailing - rowHeight, y: padding, width: rowHeight, height: rowHeight)
+            trailing -= rowHeight + 4
+        }
+        trailing -= 2
         searchBox.frame = NSRect(x: padding, y: padding, width: max(0, trailing - padding), height: rowHeight)
         toneStrip.frame = NSRect(x: padding, y: padding, width: bounds.width - 2 * padding, height: rowHeight)
         let gridTop = padding + rowHeight + 6
         categoryBar.frame = NSRect(x: 0, y: bounds.height - Self.barHeight, width: bounds.width, height: Self.barHeight)
         scrollView.frame = NSRect(x: 0, y: gridTop, width: bounds.width, height: max(0, categoryBar.frame.minY - gridTop))
         emptyLabel.frame = NSRect(x: padding, y: scrollView.frame.minY + 40, width: bounds.width - 2 * padding, height: 20)
+        customEditor?.frame = NSRect(x: 0, y: gridTop - 6, width: bounds.width, height: bounds.height - gridTop + 6)
         fitGrid()
+    }
+
+    var isEditingCustomEmoji: Bool { customEditor != nil }
+
+    func openCustomEditor(_ mode: NoteCustomEmojiEditor.Mode) {
+        guard let library, customEditor == nil else { return }
+        setToneStripOpen(false)
+        library.refreshIfNeeded()
+        if case .edit(let entry) = mode, library.emoji(named: entry.name) == nil { reload(); return }
+        let editor = NoteCustomEmojiEditor(library: library, mode: mode)
+        editor.onSaved = { [weak self] entry in self?.customEditorSaved(entry, adding: mode == .add) }
+        editor.onDeleted = { [weak self] in self?.closeCustomEditor() }
+        editor.onCancel = { [weak self] in self?.closeCustomEditor() }
+        customEditor = editor
+        addSubview(editor)
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+        editor.wantsLayer = true
+        editor.layer?.opacity = 0
+        NoteAnimation.fade(editor, visible: true)
+        if !NoteAnimation.reduceMotion, let layer = editor.layer {
+            layer.add(NoteAnimation.spring("transform.translation.y", .highlight, from: 6, to: 0), forKey: NoteAnimation.keyPrefix + "emoji.editor")
+        }
+        dimmedViews = ([scrollView, categoryBar, emptyLabel, searchBox, addButton, toneButton, randomButton, removeButton] as [NSView])
+            .filter { !$0.isHidden }
+        for view in dimmedViews {
+            view.wantsLayer = true
+            NoteAnimation.fade(view, visible: false) { [weak self, weak view] in
+                MainActor.assumeIsolated {
+                    guard let self, let view, self.customEditor != nil, view.layer?.opacity == 0 else { return }
+                    view.isHidden = true
+                }
+            }
+        }
+        editor.focus()
+    }
+
+    func closeCustomEditor() {
+        guard let editor = customEditor else { return }
+        customEditor = nil
+        NoteAnimation.fade(editor, visible: false) { [weak editor] in
+            MainActor.assumeIsolated { editor?.removeFromSuperview() }
+        }
+        for view in dimmedViews {
+            view.isHidden = false
+            NoteAnimation.fade(view, visible: true)
+        }
+        dimmedViews = []
+        reload()
+        focusSearch()
+    }
+
+    private func customEditorSaved(_ entry: NoteCustomEmoji, adding: Bool) {
+        closeCustomEditor()
+        if adding {
+            pick(entry.reference)
+        } else if let y = grid.origin(of: .custom) {
+            scrollTo(y: y)
+            categoryBar.select(.custom, animated: true)
+        }
+    }
+
+    private func toggleCustomEditing() {
+        grid.isEditingCustom.toggle()
+        let anchor = scrollView.contentView.bounds.minY
+        let selected = categoryBar.selected
+        reload()
+        scrollTo(y: anchor)
+        categoryBar.select(query.isEmpty ? selected : nil, animated: false)
+    }
+
+    private func libraryChanged() {
+        guard customEditor == nil else { return }
+        let anchor = scrollView.contentView.bounds.minY
+        let selected = categoryBar.selected
+        reload()
+        scrollTo(y: anchor)
+        categoryBar.select(query.isEmpty ? selected : nil, animated: false)
     }
 
     private var scrollerGutter: CGFloat {
@@ -1053,6 +1289,7 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
+        library?.refreshIfNeeded()
         toneStrip.selected = catalog.skinTone
         toneButton.face = .emoji(NoteEmojiDrawing.toneHand(catalog.skinTone))
         reload()
@@ -1097,6 +1334,7 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
 
     private func pick(_ character: String) {
         catalog.recordUse(character)
+        grid.isEditingCustom = false
         onPick?(character)
     }
 
@@ -1213,8 +1451,12 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
         case #selector(pageUp(_:)), #selector(scrollPageUp(_:)): navigate(.pageUp)
         case #selector(insertNewline(_:)):
             if !grid.pickHighlighted() { NSSound.beep() }
+        case #selector(deleteBackward(_:)), #selector(deleteForward(_:)):
+            guard !fromSearch || query.isEmpty, grid.editHighlighted() else { return false }
         case #selector(cancelOperation(_:)):
-            if !query.isEmpty {
+            if grid.isEditingCustom {
+                toggleCustomEditing()
+            } else if !query.isEmpty {
                 searchBox.field.stringValue = ""
                 query = ""
                 keyboardNavigating = false
@@ -1239,6 +1481,7 @@ final class NoteEmojiSuggestionRow: NSView {
     let index: Int
     weak var list: NoteEmojiSuggestionList?
     private let glyph = NSTextField(labelWithString: "")
+    private let picture = NSImageView()
     private let name = NSTextField(labelWithString: "")
     private let code = NSTextField(labelWithString: "")
 
@@ -1255,7 +1498,9 @@ final class NoteEmojiSuggestionRow: NSView {
         code.textColor = NoteTheme.tertiaryInk
         code.alignment = .right
         code.lineBreakMode = .byTruncatingHead
-        for label in [glyph, name, code] {
+        picture.imageScaling = .scaleProportionallyUpOrDown
+        picture.isHidden = true
+        for label in [glyph, picture, name, code] as [NSView] {
             label.setAccessibilityElement(false)
             addSubview(label)
         }
@@ -1265,11 +1510,22 @@ final class NoteEmojiSuggestionRow: NSView {
 
     override var isFlipped: Bool { true }
 
-    func show(character: String, emoji: NoteEmoji) {
-        glyph.stringValue = character
-        name.stringValue = emoji.displayName
-        code.stringValue = ":" + emoji.shortcode + ":"
-        setAccessibilityLabel(emoji.displayName)
+    func show(_ suggestion: NoteEmojiSuggestionList.Suggestion) {
+        if let custom = suggestion.custom {
+            glyph.isHidden = true
+            picture.isHidden = false
+            picture.image = suggestion.image
+            name.stringValue = custom.name
+            code.stringValue = "Custom"
+            setAccessibilityLabel("Custom emoji, " + custom.name)
+        } else if let emoji = suggestion.emoji {
+            glyph.isHidden = false
+            picture.isHidden = true
+            glyph.stringValue = suggestion.character
+            name.stringValue = emoji.displayName
+            code.stringValue = ":" + emoji.shortcode + ":"
+            setAccessibilityLabel(emoji.displayName)
+        }
         needsLayout = true
     }
 
@@ -1277,6 +1533,7 @@ final class NoteEmojiSuggestionRow: NSView {
         super.layout()
         let height = bounds.height
         glyph.frame = NSRect(x: 8, y: (height - 24) / 2, width: 26, height: 24)
+        picture.frame = NSRect(x: 10, y: (height - 20) / 2, width: 22, height: 20)
         let codeWidth = min(ceil(code.intrinsicContentSize.width), bounds.width * 0.42)
         code.frame = NSRect(x: bounds.width - 10 - codeWidth, y: (height - 16) / 2, width: codeWidth, height: 16)
         name.frame = NSRect(x: 40, y: (height - 17) / 2, width: max(0, code.frame.minX - 48), height: 17)
@@ -1299,8 +1556,24 @@ final class NoteEmojiSuggestionRow: NSView {
 @MainActor
 final class NoteEmojiSuggestionList: NSView {
     struct Suggestion: Equatable {
-        let emoji: NoteEmoji
+        let emoji: NoteEmoji?
+        let custom: NoteCustomEmoji?
         let character: String
+        let image: NSImage?
+
+        init(emoji: NoteEmoji, character: String) {
+            self.emoji = emoji
+            custom = nil
+            self.character = character
+            image = nil
+        }
+
+        init(custom: NoteCustomEmoji, image: NSImage?) {
+            emoji = nil
+            self.custom = custom
+            character = custom.reference
+            self.image = image
+        }
     }
 
     static let rowHeight: CGFloat = 32
@@ -1308,6 +1581,7 @@ final class NoteEmojiSuggestionList: NSView {
     static let padding: CGFloat = 4
 
     let catalog: NoteEmojiCatalog
+    var library: NoteEmojiLibrary? { didSet { if library !== oldValue { reload() } } }
     var limit: Int { didSet { if limit != oldValue { reload() } } }
     var query = "" { didSet { if query != oldValue { reload() } } }
     var onPick: ((String) -> Void)?
@@ -1353,15 +1627,23 @@ final class NoteEmojiSuggestionList: NSView {
     override var intrinsicContentSize: NSSize { preferredSize }
     override var fittingSize: NSSize { preferredSize }
 
+    private func custom(_ entry: NoteCustomEmoji) -> Suggestion? {
+        guard let library else { return nil }
+        return Suggestion(custom: entry, image: NoteCustomEmojiImages.image(for: entry, in: library))
+    }
+
     func reload() {
-        let previous = selectedIndex.map { suggestions[$0].emoji }
+        let previous = selectedIndex.map { suggestions[$0].character }
         let tone = catalog.skinTone
         if query.trimmingCharacters(in: .whitespaces).isEmpty {
-            suggestions = catalog.recents.prefix(limit).compactMap { character in
-                catalog.entry(for: character).map { Suggestion(emoji: $0, character: character) }
-            }
+            suggestions = Array(catalog.recents.compactMap { character -> Suggestion? in
+                if NoteCustomEmojiName.isReference(character) { return library?.emoji(forReference: character).flatMap(custom) }
+                return catalog.entry(for: character).map { Suggestion(emoji: $0, character: character) }
+            }.prefix(limit))
         } else {
-            suggestions = catalog.search(query, limit: limit).map { Suggestion(emoji: $0, character: $0.character(with: tone)) }
+            let customs = (library?.search(query, limit: limit) ?? []).compactMap(custom)
+            let standard = catalog.search(query, limit: max(0, limit - customs.count)).map { Suggestion(emoji: $0, character: $0.character(with: tone)) }
+            suggestions = customs + standard
         }
         while rows.count < suggestions.count {
             let row = NoteEmojiSuggestionRow(index: rows.count, list: self)
@@ -1370,9 +1652,9 @@ final class NoteEmojiSuggestionList: NSView {
         }
         for (index, row) in rows.enumerated() {
             row.isHidden = index >= suggestions.count
-            if index < suggestions.count { row.show(character: suggestions[index].character, emoji: suggestions[index].emoji) }
+            if index < suggestions.count { row.show(suggestions[index]) }
         }
-        let kept = previous.flatMap { emoji in suggestions.firstIndex { $0.emoji == emoji } }
+        let kept = previous.flatMap { character in suggestions.firstIndex { $0.character == character } }
         selectedIndex = suggestions.isEmpty ? nil : (kept ?? 0)
         invalidateIntrinsicContentSize()
         setFrameSize(preferredSize)

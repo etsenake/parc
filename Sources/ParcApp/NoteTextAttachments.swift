@@ -19,6 +19,7 @@ struct NoteAtomFace {
     var icon: NSImage?
     var iconTint: NSColor?
     var math: NoteMathRendering?
+    var image: NSImage?
     var fill: NSColor?
     var stroke: NSColor?
     var horizontalPadding: CGFloat = 4
@@ -51,7 +52,10 @@ final class NoteAtomCell: NSTextAttachmentCell {
 
     private static let mathPadding: CGFloat = 2
 
+    private var imageSide: CGFloat { min((textFont.pointSize * 1.2).rounded(), pillHeight) }
+
     override func cellSize() -> NSSize {
+        if face.image != nil { return NSSize(width: imageSide + 2, height: pillHeight) }
         if let math = face.math {
             return NSSize(width: ceil(math.size.width) + Self.mathPadding * 2, height: ceil(math.baseline) + ceil(math.descent))
         }
@@ -92,6 +96,15 @@ final class NoteAtomCell: NSTextAttachmentCell {
                 path.lineWidth = 1
                 path.stroke()
             }
+        }
+        if let image = face.image {
+            let side = imageSide
+            let baseline = flipped ? cellFrame.maxY + cellBaselineOffset().y : cellFrame.minY - cellBaselineOffset().y
+            let middle = flipped ? baseline - textFont.capHeight / 2 : baseline + textFont.capHeight / 2
+            var box = NSRect(x: cellFrame.midX - side / 2, y: middle - side / 2, width: side, height: side)
+            box.origin.y = min(max(box.minY, cellFrame.minY), cellFrame.maxY - side)
+            NoteCustomEmojiImages.draw(image, fittingIn: box)
+            return
         }
         if let math = face.math, let context = NSGraphicsContext.current?.cgContext {
             let x = cellFrame.minX + Self.mathPadding
@@ -157,13 +170,15 @@ final class NoteAtomCell: NSTextAttachmentCell {
 @MainActor
 enum NoteAtomRendering {
     static func attachment(for atom: NoteAtom?, font: NSFont, ink: NSColor, now: Date = Date(),
-                           numbering: NoteMathNumberingContext = NoteMathNumberingContext()) -> NoteAtomAttachment {
-        let face = self.face(for: atom, font: font, ink: ink, now: now, numbering: numbering)
+                           numbering: NoteMathNumberingContext = NoteMathNumberingContext(),
+                           emoji: NoteEmojiLibrary? = nil) -> NoteAtomAttachment {
+        let face = self.face(for: atom, font: font, ink: ink, now: now, numbering: numbering, emoji: emoji)
         return NoteAtomAttachment(atom: atom, cell: NoteAtomCell(face: face, font: font, accessibilityText: accessibilityText(for: atom)))
     }
 
     static func face(for atom: NoteAtom?, font: NSFont, ink: NSColor, now: Date,
-                     numbering: NoteMathNumberingContext = NoteMathNumberingContext()) -> NoteAtomFace {
+                     numbering: NoteMathNumberingContext = NoteMathNumberingContext(),
+                     emoji: NoteEmojiLibrary? = nil) -> NoteAtomFace {
         let labelFont = NSFont(descriptor: font.fontDescriptor, size: font.pointSize * 0.94) ?? font
         func label(_ text: String, _ color: NSColor, _ face: NSFont = labelFont) -> NSAttributedString {
             NSAttributedString(string: text, attributes: [.font: face, .foregroundColor: color])
@@ -190,6 +205,7 @@ enum NoteAtomRendering {
             return NoteAtomFace(label: label(text, NoteTheme.mentionInk), icon: symbol("link"),
                                 iconTint: NoteTheme.secondaryInk, fill: NoteTheme.hoverFill)
         case .customEmoji(let name):
+            if let image = NoteCustomEmojiImages.image(name, in: emoji) { return NoteAtomFace(label: NSAttributedString(), image: image) }
             return NoteAtomFace(label: label(NoteCustomEmojiName.reference(name), ink, font), horizontalPadding: 0)
         case .raw(let source):
             return NoteAtomFace(label: label(source.isEmpty ? "◇" : source, NoteTheme.tertiaryInk,

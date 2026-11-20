@@ -65,6 +65,7 @@ final class NoteFileDisk: @unchecked Sendable {
         var format: NoteFileFormat
         var url: URL
         var force: Bool
+        var customEmoji: Set<String> = []
     }
 
     struct StagedWrite {
@@ -108,7 +109,7 @@ final class NoteFileDisk: @unchecked Sendable {
     func writeStaged() -> StagedWrite? {
         lock.withLock {
             guard let save = staged else { return nil }
-            let text = NoteFileSession.render(save.page, kind: save.kind, format: save.format)
+            let text = NoteFileSession.render(save.page, kind: save.kind, format: save.format, customEmoji: save.customEmoji)
             let encoded = NoteFileText.encode(text, format: save.format)
             let outcome = NoteFileIO.writeNow(encoded.data, text: text, to: save.url, kind: save.kind, expecting: known, force: save.force)
             if outcome.succeeded {

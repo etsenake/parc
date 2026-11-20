@@ -479,12 +479,14 @@ final class NotePageIconPicker: NSView, NoteFloatingPanelContent {
     private let picker: NoteEmojiPicker
     private let dropZone = NotePageImageDropZone(title: "Drop an image here", hint: "Square images around 280 px look sharpest.")
     private let linkField = NoteSearchField(placeholder: "Or paste an image link…")
+    private let librarySwitch = NoteToggleSwitch(label: "Add to this folder’s emoji")
+    private let libraryLabel = NSTextField(labelWithString: "Also add it to this folder’s emoji")
     private let hasIcon: Bool
 
     init(environment: NoteEnvironment, current: String?) {
         self.environment = environment
         hasIcon = !(current ?? "").isEmpty
-        picker = NoteEmojiPicker(showsRemove: false, showsRandom: true)
+        picker = NoteEmojiPicker(showsRemove: false, showsRandom: true, library: environment.emojiLibrary)
         super.init(frame: NSRect(x: 0, y: 0, width: NoteEmojiPicker.preferredSize.width,
                                  height: NoteEmojiPicker.preferredSize.height + Self.tabHeight))
         wantsLayer = true
@@ -504,7 +506,12 @@ final class NotePageIconPicker: NSView, NoteFloatingPanelContent {
         linkField.textField.setAccessibilityLabel("Image link")
         linkField.onSubmit = { [weak self] text in self?.useLink(text) }
         separator.wantsLayer = true
-        for view in [emojiTab, uploadTab, removeChip, separator, picker, dropZone, linkField] as [NSView] { addSubview(view) }
+        libraryLabel.font = NoteTheme.nunitoRegular(12.5)
+        libraryLabel.textColor = NoteTheme.menuInk
+        libraryLabel.setAccessibilityElement(false)
+        for view in [emojiTab, uploadTab, removeChip, separator, picker, dropZone, linkField, librarySwitch, libraryLabel] as [NSView] {
+            addSubview(view)
+        }
         select(.emoji)
         refreshAppearance()
     }
@@ -528,6 +535,8 @@ final class NotePageIconPicker: NSView, NoteFloatingPanelContent {
         picker.isHidden = next != .emoji
         dropZone.isHidden = next != .upload
         linkField.isHidden = next != .upload
+        librarySwitch.isHidden = next != .upload || environment.emojiLibrary == nil
+        libraryLabel.isHidden = librarySwitch.isHidden
         focus()
         needsLayout = true
     }
@@ -546,7 +555,11 @@ final class NotePageIconPicker: NSView, NoteFloatingPanelContent {
                                   width: removeWidth, height: NoteTheme.chipHeight)
         separator.frame = NSRect(x: 0, y: Self.tabHeight - 1, width: bounds.width, height: 1)
         picker.frame = NSRect(x: 0, y: Self.tabHeight, width: bounds.width, height: bounds.height - Self.tabHeight)
-        linkField.frame = NSRect(x: 12, y: bounds.height - 12 - NoteTheme.fieldHeight, width: bounds.width - 24, height: NoteTheme.fieldHeight)
+        let switchRow: CGFloat = environment.emojiLibrary == nil ? 0 : 30
+        librarySwitch.frame = NSRect(x: 14, y: bounds.height - 12 - NoteToggleSwitch.size.height - 2,
+                                     width: NoteToggleSwitch.size.width, height: NoteToggleSwitch.size.height)
+        libraryLabel.frame = NSRect(x: librarySwitch.frame.maxX + 8, y: librarySwitch.frame.midY - 9, width: bounds.width - librarySwitch.frame.maxX - 22, height: 18)
+        linkField.frame = NSRect(x: 12, y: bounds.height - 12 - switchRow - NoteTheme.fieldHeight, width: bounds.width - 24, height: NoteTheme.fieldHeight)
         dropZone.frame = NSRect(x: 12, y: Self.tabHeight + 12, width: bounds.width - 24, height: linkField.frame.minY - 12 - Self.tabHeight - 12)
     }
 
@@ -561,6 +574,10 @@ final class NotePageIconPicker: NSView, NoteFloatingPanelContent {
     }
 
     private func importFile(_ url: URL) {
+        if librarySwitch.isOn, environment.emojiLibrary != nil {
+            addToLibrary(NoteCustomEmojiImages.preparedPNG(contentsOf: url), name: NoteCustomEmojiImages.suggestedName(for: url))
+            return
+        }
         do {
             onImage?(try NoteMediaImport.source(importing: url, environment: environment, scoped: true))
         } catch {
@@ -574,6 +591,27 @@ final class NotePageIconPicker: NSView, NoteFloatingPanelContent {
             NSSound.beep()
             return
         }
-        onImage?(url.absoluteString)
+        guard librarySwitch.isOn, environment.emojiLibrary != nil else {
+            onImage?(url.absoluteString)
+            return
+        }
+        NotePageImageLoader.shared.load(url) { [weak self] image in
+            let data = image?.tiffRepresentation.flatMap(NoteCustomEmojiImages.preparedPNG(from:))
+            self?.addToLibrary(data, name: NoteCustomEmojiImages.suggestedName(for: url))
+        }
+    }
+
+    private func addToLibrary(_ png: Data?, name: String) {
+        guard let library = environment.emojiLibrary else { return }
+        guard let png else {
+            onError?(NoteEmojiLibraryError.unreadableImage)
+            return
+        }
+        do {
+            let entry = try library.add(png: png, name: library.uniqueName(for: name) ?? library.uniqueName(for: "emoji") ?? "emoji")
+            onPick?(entry.reference)
+        } catch {
+            onError?(error)
+        }
     }
 }

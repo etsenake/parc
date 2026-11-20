@@ -11,6 +11,11 @@ enum NoteTabIcon: Hashable, Sendable {
             self = .emoji(emoji)
             return
         }
+        if NoteCustomEmojiName.isReference(value) {
+            guard let resolved = resolve(value), resolved.isFileURL else { return nil }
+            self = .image(URL(fileURLWithPath: resolved.path, isDirectory: false))
+            return
+        }
         guard NotePageExport.isImageSource(value), let resolved = resolve(value), resolved.isFileURL else { return nil }
         self = .image(URL(fileURLWithPath: resolved.path, isDirectory: false))
     }
@@ -56,6 +61,22 @@ final class NoteTabIcons {
     private var folderSubscriptions: [AnyCancellable] = []
     private var unannounced: Set<String>? = []
     private var announcement: NoteFileTimer?
+    private var emojiSubscription: AnyCancellable?
+
+    init() {
+        emojiSubscription = NoteEmojiLibrary.anyChange.sink { [weak self] _ in self?.emojiLibraryChanged() }
+    }
+
+    private func emojiLibraryChanged() {
+        known.removeAll()
+        for id in Array(followed.keys) {
+            guard var entry = followed[id], let session = entry.session else { continue }
+            entry.icon = NoteTabIcon(entry.raw, resolve: session.environment.resolve)
+            followed[id] = entry
+            rememberLive(entry.icon, for: session.url)
+        }
+        announce(nil)
+    }
 
     nonisolated static func key(_ note: URL) -> String { note.standardizedFileURL.path }
 

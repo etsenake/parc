@@ -360,7 +360,7 @@ final class NoteBlockMenuController: NSObject {
         current.view.list.setItems(notes.map { note in
             var item = NoteMenuList.Item(id: note.url.absoluteString, title: note.title)
             item.subtitle = NoteRelativeTime.edited(note.modifiedAt)
-            item.icon = note.icon.map { .emoji($0) } ?? .symbol("doc.text")
+            item.icon = NoteIcon.note(note.icon, at: note.url)
             return item
         }, keepingHighlight: false)
         if !NoteBlockMenuModel.normalized(query).isEmpty { current.view.list.prepare(origin: .keyboard) }

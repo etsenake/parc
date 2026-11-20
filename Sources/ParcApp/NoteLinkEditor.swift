@@ -90,7 +90,7 @@ final class NoteLinkEditorView: NSView, NoteFloatingPanelContent {
         results = searchable && (normalized == nil || !query.contains("/")) ? Array(search(query).prefix(Self.resultLimit)) : []
         for (index, note) in results.enumerated() {
             var item = NoteMenuList.Item(id: "note." + String(index), title: note.title.isEmpty ? "Untitled" : note.title)
-            item.icon = note.icon.map { .emoji($0) } ?? .symbol("doc.text")
+            item.icon = NoteIcon.note(note.icon, at: note.url)
             item.section = "Link to Note"
             item.accessibilityLabel = "Link to note " + item.title
             items.append(item)

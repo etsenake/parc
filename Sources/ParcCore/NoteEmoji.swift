@@ -22,13 +22,14 @@ enum NoteEmojiSkinTone: Int, CaseIterable, Codable {
 }
 
 enum NoteEmojiCategory: String, CaseIterable {
-    case recents, people, nature, food, activities, travel, objects, symbols, flags
+    case recents, custom, people, nature, food, activities, travel, objects, symbols, flags
 
-    static let browsable: [NoteEmojiCategory] = allCases.filter { $0 != .recents }
+    static let browsable: [NoteEmojiCategory] = allCases.filter { $0 != .recents && $0 != .custom }
 
     var displayName: String {
         switch self {
         case .recents: return "Recents"
+        case .custom: return "Custom"
         case .people: return "Smileys & People"
         case .nature: return "Animals & Nature"
         case .food: return "Food & Drink"
@@ -205,7 +206,7 @@ final class NoteEmojiCatalog {
         let stored = defaults.stringArray(forKey: Self.recentsKey) ?? []
         var seen = Set<String>()
         let valid = stored.filter { item in
-            guard let base = entry(for: item)?.character else { return false }
+            guard let base = recentBase(item) else { return false }
             return seen.insert(base).inserted
         }
         let capped = Array(valid.prefix(Self.recentsLimit))
@@ -214,8 +215,8 @@ final class NoteEmojiCatalog {
     }
 
     func recordUse(_ character: String) {
-        guard let base = entry(for: character)?.character else { return }
-        var list = recents.filter { entry(for: $0)?.character != base }
+        guard let base = recentBase(character) else { return }
+        var list = recents.filter { recentBase($0) != base }
         list.insert(character, at: 0)
         list = Array(list.prefix(Self.recentsLimit))
         recentsCache = list
@@ -223,8 +224,8 @@ final class NoteEmojiCatalog {
     }
 
     func removeRecent(_ character: String) {
-        let base = entry(for: character)?.character ?? character
-        let list = recents.filter { (entry(for: $0)?.character ?? $0) != base }
+        let base = recentBase(character) ?? character
+        let list = recents.filter { (recentBase($0) ?? $0) != base }
         recentsCache = list
         defaults.set(list, forKey: Self.recentsKey)
     }
@@ -232,6 +233,11 @@ final class NoteEmojiCatalog {
     func clearRecents() {
         recentsCache = []
         defaults.removeObject(forKey: Self.recentsKey)
+    }
+
+    private func recentBase(_ item: String) -> String? {
+        if NoteCustomEmojiName.isReference(item) { return item }
+        return entry(for: item)?.character
     }
 
     private func isAvailable(_ emoji: NoteEmoji) -> Bool {

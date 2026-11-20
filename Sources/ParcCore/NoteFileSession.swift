@@ -109,8 +109,8 @@ final class NoteFileSession {
         if !unsaved.isEmpty { throw NoteFileError.unsaved(unsaved) }
     }
 
-    nonisolated static func render(_ value: NotePage, kind: NoteFileKind, format: NoteFileFormat) -> String {
-        let body = kind == .markdown ? NoteMarkdown.serialize(value) : NotePlainText.serialize(value)
+    nonisolated static func render(_ value: NotePage, kind: NoteFileKind, format: NoteFileFormat, customEmoji: Set<String> = []) -> String {
+        let body = kind == .markdown ? NoteMarkdown.serialize(value, customEmoji: customEmoji) : NotePlainText.serialize(value)
         return NoteFileText.fileText(body, format: format, kind: kind)
     }
 
@@ -125,6 +125,9 @@ final class NoteFileSession {
     private(set) var editorCount = 0
     private(set) var lastSaveError: String?
     private(set) var readProblem: String?
+    private(set) var customEmoji: Set<String> = []
+    private var emojiLibrary: NoteEmojiLibrary?
+    private var emojiSubscription: AnyCancellable?
 
     private let fileEnvironment: NoteFileEnvironment
     private let disk: NoteFileDisk
@@ -152,7 +155,9 @@ final class NoteFileSession {
         self.kind = kind
         format = contents.format
         disk = NoteFileDisk(text: contents.text)
-        let parsed = Self.parse(contents, kind: kind)
+        let library = kind == .markdown ? NoteEmojiLibrary.library(for: url) : nil
+        let names = library?.names ?? []
+        let parsed = Self.parse(contents, kind: kind, customEmoji: names)
         let session = NotePageSession(page: parsed)
         session.isFlat = kind == .plainText
         page = session
@@ -160,6 +165,27 @@ final class NoteFileSession {
         fileEnvironment = NoteFileEnvironment(documentURL: url, isPlainText: kind == .plainText)
         environment = fileEnvironment
         changeSubscription = page.changes.sink { [weak self] change in self?.pageChanged(change) }
+        customEmoji = names
+        follow(library)
+    }
+
+    private func follow(_ library: NoteEmojiLibrary?) {
+        emojiLibrary = library
+        emojiSubscription = library?.changes.sink { [weak self] in self?.emojiLibraryChanged() }
+        emojiLibraryChanged()
+    }
+
+    private func emojiLibraryChanged() {
+        let names = emojiLibrary?.names ?? []
+        let added = names.subtracting(customEmoji)
+        customEmoji = names
+        guard !added.isEmpty else { return }
+        let wasApplying = applyingDisk
+        applyingDisk = true
+        page.updateAllPagesMetadata { NoteCustomEmojiName.upgrading($0, names: added) }
+        applyingDisk = wasApplying
+        baseline = NoteCustomEmojiName.upgrading(baseline, names: added)
+        refreshState()
     }
 
     var title: String { url.deletingPathExtension().lastPathComponent }
@@ -296,12 +322,12 @@ final class NoteFileSession {
         }
     }
 
-    private static func parse(_ contents: NoteFileContents, kind: NoteFileKind) -> NotePage {
+    private static func parse(_ contents: NoteFileContents, kind: NoteFileKind, customEmoji: Set<String>) -> NotePage {
         let text = NoteFileText.editableText(contents, kind: kind)
-        return kind == .markdown ? NoteMarkdown.parse(text) : NotePlainText.parse(text)
+        return kind == .markdown ? NoteMarkdown.parse(text, customEmoji: customEmoji) : NotePlainText.parse(text)
     }
 
-    private func render(_ value: NotePage) -> String { Self.render(value, kind: kind, format: format) }
+    private func render(_ value: NotePage) -> String { Self.render(value, kind: kind, format: format, customEmoji: customEmoji) }
 
     private func startWatching(seen: NoteFileSighting?) {
         let events: @Sendable (NoteFileWatchEvent) -> Void = { [weak self] event in
@@ -414,7 +440,7 @@ final class NoteFileSession {
     }
 
     private func adopt(_ contents: NoteFileContents, undoable: Bool) {
-        let parsed = NoteFileReconciler.preservingIdentity(of: page.page, in: Self.parse(contents, kind: kind))
+        let parsed = NoteFileReconciler.preservingIdentity(of: page.page, in: Self.parse(contents, kind: kind, customEmoji: customEmoji))
         let selection = NoteFileReconciler.mapSelection(page.selection, from: page.page, to: parsed)
         applyingDisk = true
         if undoable && !page.isReadOnly {
@@ -459,6 +485,10 @@ final class NoteFileSession {
         if !isClosed, Self.sessions[registryKey] == nil { Self.sessions[registryKey] = self }
         fileEnvironment.move(to: destination)
         watcher?.update(url: destination)
+        if kind == .markdown {
+            let library = NoteEmojiLibrary.library(for: destination)
+            if library !== emojiLibrary { follow(library) }
+        }
         urlChanges.send(destination)
         NoteLibrary.noteDidMove(from: previous, to: destination)
     }
@@ -649,7 +679,8 @@ final class NoteFileSession {
 
     private func stageForPresenter() {
         let ready = (hasUnsavedChanges || forceNextSave) && conflict == nil && !waitsForMissingFile && !isClosed
-        disk.stage(ready ? NoteFileDisk.Staged(page: page.page, kind: kind, format: format, url: url, force: forceNextSave) : nil)
+        disk.stage(ready ? NoteFileDisk.Staged(page: page.page, kind: kind, format: format, url: url, force: forceNextSave,
+                                                    customEmoji: customEmoji) : nil)
     }
 
     private func closeIfIdle() {

@@ -20,9 +20,14 @@ protocol NoteEnvironment: AnyObject {
     func linkTarget(for note: URL) -> String
     func resolveNoteLink(_ target: String) -> URL?
     func createNote(titled title: String) throws -> URL
+    var emojiLibrary: NoteEmojiLibrary? { get }
 }
 
 extension NoteEnvironment {
+    var emojiLibrary: NoteEmojiLibrary? { nil }
+
+    var customEmojiNames: Set<String> { emojiLibrary?.names ?? [] }
+
     func createNote(titled title: String) throws -> URL {
         guard let folder = documentURL?.deletingLastPathComponent() else { throw NoteFileError.missing }
         return try NoteLibrary.createNote(in: folder, title: title)

@@ -74,6 +74,10 @@ enum NoteIconRenderer {
                      decoration: decoration)
         case .emoji(let text):
             drawText(text, font: NSFont.systemFont(ofSize: pointSize * 1.12), in: rect, color: nil, decoration: [])
+        case .image(let url):
+            guard let image = NoteCustomEmojiImages.image(at: url) else { return }
+            let side = min(rect.width, rect.height, (pointSize * 1.25).rounded())
+            NoteCustomEmojiImages.draw(image, fittingIn: NSRect(x: rect.midX - side / 2, y: rect.midY - side / 2, width: side, height: side))
         }
     }
 

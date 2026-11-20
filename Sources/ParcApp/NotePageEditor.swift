@@ -30,6 +30,7 @@ final class NotePageEditor {
     var pasteboard: NSPasteboard = .general
     private var subscription: AnyCancellable?
     private var layoutSubscription: AnyCancellable?
+    private var emojiSubscription: AnyCancellable?
     private var isApplying = false
     private var pasteMenu: NotePasteLinkMenu?
     private var lastReadOnly: Bool?
@@ -46,11 +47,23 @@ final class NotePageEditor {
         find = NoteFindController(editor: self)
         subscription = session.changes.sink { [weak self] change in self?.sessionDidChange(change) }
         layoutSubscription = canvas.layoutDidChange.sink { [weak self] in self?.canvasDidLayout() }
+        emojiSubscription = NoteEmojiLibrary.anyChange.sink { [weak self] library in
+            guard let self, library === self.environment.emojiLibrary else { return }
+            self.customEmojiDidChange()
+        }
         canvas.reload()
         lastReadOnly = isReadOnly
     }
 
     var isReadOnly: Bool { session.isReadOnly || session.page.settings.locked }
+
+    private func customEmojiDidChange() {
+        for view in canvas.materializedViews {
+            for host in view.textHosts { host.textView.customEmojiDidChange() }
+            (view as? NoteTextBlockView)?.calloutIconDidChange()
+        }
+        canvas.needsLayout = true
+    }
 
     var isPlainText: Bool { environment.isPlainText }
 

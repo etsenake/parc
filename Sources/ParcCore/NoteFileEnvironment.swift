@@ -8,6 +8,7 @@ final class NoteFileEnvironment: NoteEnvironment {
     private(set) var documentURL: URL?
     let isPlainText: Bool
     var now: () -> Date = Date.init
+    private var cachedLibrary: (path: String, library: NoteEmojiLibrary)?
 
     init(documentURL: URL, isPlainText: Bool) {
         self.documentURL = documentURL
@@ -16,12 +17,21 @@ final class NoteFileEnvironment: NoteEnvironment {
 
     func move(to url: URL) { documentURL = url }
 
+    var emojiLibrary: NoteEmojiLibrary? {
+        guard let documentURL, !isPlainText else { return nil }
+        if let cachedLibrary, cachedLibrary.path == documentURL.path { return cachedLibrary.library }
+        let library = NoteEmojiLibrary.library(for: documentURL)
+        cachedLibrary = (documentURL.path, library)
+        return library
+    }
+
     var folder: URL? { documentURL?.deletingLastPathComponent() }
 
     func resolve(_ source: String) -> URL? {
         var value = source.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.count >= 2, value.hasPrefix("<"), value.hasSuffix(">") { value = String(value.dropFirst().dropLast()) }
         guard !value.isEmpty else { return nil }
+        if let name = NoteCustomEmojiName.name(inReference: value) { return emojiLibrary?.imageURL(named: name) }
         if let scheme = Self.scheme(of: value) {
             let remainder = value.dropFirst(scheme.count + 1)
             if Self.webSchemes.contains(scheme) { return Self.webURL(value) }

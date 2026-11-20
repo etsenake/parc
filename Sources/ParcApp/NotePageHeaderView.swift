@@ -141,7 +141,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         geometry.coverHeight = hasCover ? coverHeight() : nil
         geometry.hasIcon = hasIcon
         geometry.isPlainText = isPlainText
-        geometry.iconInkInset = settings.icon.map(NotePageImageLoader.isImageSource) == true ? 8 : 11
+        geometry.iconInkInset = settings.icon.map { NotePageImageLoader.isImageSource($0) || NoteCustomEmojiName.isReference($0) } == true ? 8 : 11
         geometry.titleCapInset = max(0, font.ascender - font.capHeight)
         geometry.affordanceHeight = Self.affordanceHeight
         geometry.errorHeight = reservesErrorSpace && !isPrinting ? NotePageTitleErrorView.height : nil
@@ -894,6 +894,7 @@ final class NotePageIconView: NSView {
     private var isHovered = false
     private var isPressed = false
     private var hoverArea: NSTrackingArea?
+    private var emojiSubscription: AnyCancellable?
 
     init(environment: NoteEnvironment) {
         self.environment = environment
@@ -902,6 +903,12 @@ final class NotePageIconView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         updateAccessibility()
+        emojiSubscription = NoteEmojiLibrary.anyChange.sink { [weak self] library in
+            guard let self, library === self.environment.emojiLibrary, let icon = self.icon, NoteCustomEmojiName.isReference(icon) else { return }
+            self.reloadImage()
+            self.updateAccessibility()
+            self.needsDisplay = true
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -909,13 +916,17 @@ final class NotePageIconView: NSView {
     override var isFlipped: Bool { true }
 
     private func updateAccessibility() {
-        let name = icon.flatMap { NoteEmojiCatalog.shared.entry(for: $0)?.displayName }
+        let name = icon.flatMap { NoteCustomEmojiName.name(inReference: $0) ?? NoteEmojiCatalog.shared.entry(for: $0)?.displayName }
         setAccessibilityLabel(name.map { "Note icon, \($0)" } ?? (icon == nil ? "Note icon" : "Note icon, image"))
         setAccessibilityHelp("Change icon")
     }
 
     private func reloadImage() {
         image = nil
+        if let icon, NoteCustomEmojiName.isReference(icon) {
+            image = NoteCustomEmojiImages.image(forReference: icon, in: environment.emojiLibrary)
+            return
+        }
         guard let icon, NotePageImageLoader.isImageSource(icon), let url = environment.resolve(icon) else { return }
         if let cached = NotePageImageLoader.shared.cached(url) { image = cached; return }
         NotePageImageLoader.shared.load(url) { [weak self] loaded in
@@ -932,6 +943,16 @@ final class NotePageIconView: NSView {
                 NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
             }
             guard let icon else { return }
+            if NoteCustomEmojiName.isReference(icon) {
+                let box = bounds.insetBy(dx: 8, dy: 8)
+                if let image {
+                    NoteCustomEmojiImages.draw(image, fittingIn: box)
+                } else {
+                    NoteTheme.mediaPlaceholderFill.setFill()
+                    NSBezierPath(roundedRect: box, xRadius: 8, yRadius: 8).fill()
+                }
+                return
+            }
             if NotePageImageLoader.isImageSource(icon) {
                 let box = bounds.insetBy(dx: 8, dy: 8)
                 guard let image, image.size.width > 0, image.size.height > 0 else {

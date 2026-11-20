@@ -188,7 +188,7 @@ final class NotePageHistory {
             try file.flush()
             track(file).recordNow()
         }
-        let restored = editor.environment.isPlainText ? NotePlainText.parse(text) : NoteMarkdown.parse(text)
+        let restored = editor.environment.isPlainText ? NotePlainText.parse(text) : NoteMarkdown.parse(text, customEmoji: editor.environment.customEmojiNames)
         let page = restored.blocks.isEmpty ? NotePage(settings: restored.settings, blocks: [.paragraph()]) : restored
         editor.session.edit("Restore Version", affected: Set(editor.session.page.documentOrder()).union(page.documentOrder()), selection: NotePageSelection.none) {
             $0 = page
@@ -455,7 +455,7 @@ final class NotePageHistoryView: NSView, NoteFloatingPanelContent {
         }, keepingHighlight: true)
         let version = versions[index]
         let text = NotePageHistory.readText(version.url)?.text ?? ""
-        let page = editor.environment.isPlainText ? NotePlainText.parse(text) : NoteMarkdown.parse(text)
+        let page = editor.environment.isPlainText ? NotePlainText.parse(text) : NoteMarkdown.parse(text, customEmoji: editor.environment.customEmojiNames)
         let rendered = NotePagePreviewRenderer.attributed(page, title: file.title, width: Self.size.width - Self.listWidth)
         preview.textStorage?.setAttributedString(rendered)
         preview.scroll(.zero)

@@ -807,7 +807,7 @@ final class NoteLinkHoverController: NSResponder {
             let title = url.deletingPathExtension().lastPathComponent
             if NoteFileKind(url: url) != nil {
                 let match = controller.editor.environment.searchNotes(title, limit: 8).first { $0.url.standardizedFileURL == url.standardizedFileURL }
-                return (match?.title ?? title, match?.icon.map { .emoji($0) } ?? .symbol("doc.text"))
+                return (match?.title ?? title, NoteIcon.note(match?.icon, at: url))
             }
             return (url.lastPathComponent, .symbol("doc"))
         }

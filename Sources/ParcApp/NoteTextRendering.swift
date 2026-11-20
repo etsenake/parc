@@ -212,7 +212,8 @@ enum NoteTextRendering {
     }
 
     static func attributedString(_ text: NoteText, _ presentation: NoteTextPresentation,
-                                 now: Date = Date(), numbering: NoteMathNumberingContext = NoteMathNumberingContext()) -> NSAttributedString {
+                                 now: Date = Date(), numbering: NoteMathNumberingContext = NoteMathNumberingContext(),
+                                 emoji: NoteEmojiLibrary? = nil) -> NSAttributedString {
         let result = NSMutableAttributedString()
         let flexible = needsFlexibleLines(text)
         let characters = text.string as NSString
@@ -226,7 +227,7 @@ enum NoteTextRendering {
                     if piece.isPlaceholder {
                         local[.attachment] = NoteAtomRendering.attachment(for: run.marks.atom, font: font(for: run.marks, presentation),
                                                                           ink: ink(for: run.marks, presentation), now: now,
-                                                                          numbering: numbering)
+                                                                          numbering: numbering, emoji: emoji)
                     }
                     result.append(NSAttributedString(string: segmentString.substring(with: piece.range), attributes: local))
                 }
@@ -321,10 +322,10 @@ enum NoteTextRendering {
         return NSAttributedString(string: text, attributes: attributes)
     }
 
-    static func height(of text: NoteText, _ presentation: NoteTextPresentation, width: CGFloat) -> CGFloat {
+    static func height(of text: NoteText, _ presentation: NoteTextPresentation, width: CGFloat, emoji: NoteEmojiLibrary? = nil) -> CGFloat {
         let lineHeight = metrics(presentation).lineHeight
         guard !text.isEmpty else { return lineHeight }
-        return NoteTextMeasurer.shared.height(of: attributedString(text, presentation), width: width, emptyHeight: lineHeight)
+        return NoteTextMeasurer.shared.height(of: attributedString(text, presentation, emoji: emoji), width: width, emptyHeight: lineHeight)
     }
 
     static func height(of attributed: NSAttributedString, width: CGFloat, emptyHeight: CGFloat) -> CGFloat {
