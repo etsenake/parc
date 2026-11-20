@@ -10,7 +10,8 @@ enum NoteIcon: Hashable {
     }
 
     static let featherImage = feather(0xE981)
-    static let featherLink = feather(0xE998)
+    static let featherLink = feather(0xE98A)
+    static let featherSmile = feather(0xE9DE)
 }
 
 @MainActor
@@ -52,7 +53,7 @@ class NoteFloatingPanel: NSView {
 
     init(content: NSView) {
         contentView = content
-        let size = content.fittingSize
+        let size = Self.naturalSize(of: content)
         super.init(frame: NSRect(origin: .zero, size: size))
         wantsLayer = true
         layer?.masksToBounds = false
@@ -62,7 +63,7 @@ class NoteFloatingPanel: NSView {
         clip.frame = bounds
         addSubview(clip)
         clip.addSubview(content)
-        content.frame = clip.bounds
+        content.frame = NSRect(origin: .zero, size: size)
         setAccessibilityElement(false)
         refreshChrome()
         (content as? NoteFloatingPanelContent)?.preferredSizeDidChange = { [weak self] in
@@ -74,8 +75,13 @@ class NoteFloatingPanel: NSView {
 
     override var isFlipped: Bool { true }
 
+    static func naturalSize(of content: NSView) -> NSSize {
+        let fitting = content.fittingSize
+        return fitting.width > 0 && fitting.height > 0 ? fitting : content.frame.size
+    }
+
     var preferredSize: NSSize {
-        let size = contentView.fittingSize
+        let size = Self.naturalSize(of: contentView)
         return NSSize(width: ceil(size.width + contentInsets.left + contentInsets.right),
                       height: ceil(size.height + contentInsets.top + contentInsets.bottom))
     }
@@ -128,7 +134,7 @@ class NoteFloatingPanel: NSView {
             layoutChrome()
             return
         }
-        relayout(animated: animated)
+        relayout(animated: animated, keepingEdge: isPresented)
     }
 
     func dismiss(animated: Bool = true, completion: (() -> Void)? = nil) {
@@ -151,13 +157,15 @@ class NoteFloatingPanel: NSView {
         NoteAnimation.dismissHUD(self, about: scaleOrigin, completion: finish)
     }
 
-    private func relayout(animated: Bool) {
+    private func relayout(animated: Bool, keepingEdge: Bool = false) {
         guard let host = superview else { return }
         let size = preferredSize
-        let visible = Self.topDown(host.visibleRect, in: host)
+        let clipped = host.visibleRect.intersection(host.bounds)
+        let visible = Self.topDown(clipped.isEmpty ? host.bounds : clipped, in: host)
         let anchorTopDown = Self.topDown(anchor, in: host)
-        let placement = Self.placement(anchor: anchorTopDown, size: size, preferred: preferredEdge, alignment: alignment,
-                                       gap: gap, margin: margin, visible: visible.isEmpty ? Self.topDown(host.bounds, in: host) : visible,
+        let placement = Self.placement(anchor: anchorTopDown, size: size, preferred: keepingEdge ? resolvedEdge : preferredEdge,
+                                       alignment: alignment,
+                                       gap: gap, margin: margin, visible: visible,
                                        maximumHeight: maximumHeight, sideOffset: sideAlignmentOffset)
         resolvedEdge = placement.edge
         let target = Self.topDown(placement.frame, in: host).integral

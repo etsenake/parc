@@ -218,9 +218,13 @@ enum NoteKeycapRenderer {
         keys(in: shortcut).contains { $0.count == 1 && modifierOrder.contains($0.first!) }
     }
 
+    static func isNamedKey(_ shortcut: String) -> Bool {
+        named[shortcut.lowercased()] != nil
+    }
+
     static func resolvedStyle(_ style: Style, for shortcut: String) -> Style {
         guard style == .automatic else { return style }
-        return hasModifiers(shortcut) ? .caps : .text
+        return hasModifiers(shortcut) || isNamedKey(shortcut) ? .caps : .text
     }
 
     private static func glyph(_ text: String, color: NSColor) -> NSAttributedString {
@@ -330,5 +334,513 @@ final class NoteKeycapLabel: NSView {
                                        "←": "Left Arrow", "→": "Right Arrow", "TAB": "Tab", "ESC": "Escape"]
         guard NoteKeycapRenderer.hasModifiers(shortcut) else { return shortcut }
         return NoteKeycapRenderer.keys(in: shortcut).map { names[$0] ?? $0 }.joined(separator: "-")
+    }
+}
+
+@MainActor
+class NoteControlButton: PointingHandButton {
+    private(set) var isHovered = false
+    private(set) var isPressed = false
+    var isChecked = false { didSet { if isChecked != oldValue { refreshFace(animated: true); setAccessibilityValue(isChecked ? "on" : nil) } } }
+    var onPress: (() -> Void)?
+    var cornerRadius: CGFloat = NoteTheme.controlRadius { didSet { layer?.cornerRadius = cornerRadius } }
+    var pressedScale: CGFloat = NoteAnimation.pressedScale
+    private var hoverArea: NSTrackingArea?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        title = ""
+        image = nil
+        isBordered = false
+        bezelStyle = .regularSquare
+        setButtonType(.momentaryChange)
+        focusRingType = .none
+        refusesFirstResponder = true
+        wantsLayer = true
+        layer?.cornerRadius = cornerRadius
+        layer?.cornerCurve = .continuous
+        NoteAnimation.observeReduceMotion(self) { [weak self] in
+            guard let self, let layer = self.layer else { return }
+            NoteAnimation.settle(layer)
+        }
+        refreshFace(animated: false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { false }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        refreshFace(animated: false)
+    }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var isEnabled: Bool {
+        didSet {
+            guard isEnabled != oldValue else { return }
+            if !isEnabled { isHovered = false; isPressed = false }
+            alphaValue = isEnabled ? 1 : NoteTheme.disabledOpacity
+            refreshFace(animated: false)
+        }
+    }
+
+    func fill(hovered: Bool, pressed: Bool, checked: Bool) -> NSColor? {
+        if checked { return NoteTheme.checkedFill }
+        if pressed { return NoteTheme.pressedFill }
+        if hovered { return NoteTheme.hoverFill }
+        return nil
+    }
+
+    func ink(hovered: Bool, pressed: Bool, checked: Bool) -> NSColor {
+        if checked { return NoteTheme.checkedInk }
+        return hovered || pressed ? NoteTheme.menuInk : NoteTheme.menuSecondaryInk
+    }
+
+    var currentInk: NSColor { ink(hovered: isHovered, pressed: isPressed, checked: isChecked) }
+
+    func drawContent(in bounds: NSRect, ink: NSColor) {}
+
+    override func draw(_ dirtyRect: NSRect) {
+        drawContent(in: bounds, ink: currentInk)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshFace(animated: false)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        refreshFace(animated: false)
+    }
+
+    func refreshFace(animated: Bool) {
+        needsDisplay = true
+        guard let layer else { return }
+        let target = fill(hovered: isHovered, pressed: isPressed, checked: isChecked).map { NoteTheme.resolved($0, in: self) }
+            ?? NSColor.clear.cgColor
+        let from = layer.presentation()?.backgroundColor ?? layer.backgroundColor
+        NoteAnimation.withoutAnimation { layer.backgroundColor = target }
+        if animated, !NoteAnimation.reduceMotion, window != nil, let from {
+            let fade = NoteAnimation.basic("backgroundColor", from: from, to: target, duration: NoteAnimation.hoverDuration,
+                                           curve: NoteCurve.hover)
+            _ = NoteAnimation.run(fade, on: layer, key: NoteAnimation.keyPrefix + "hover")
+        } else {
+            NoteAnimation.settle(layer, keys: [NoteAnimation.keyPrefix + "hover"])
+        }
+    }
+
+    private func setPressed(_ pressed: Bool) {
+        guard pressed != isPressed else { return }
+        isPressed = pressed
+        refreshFace(animated: false)
+        guard let layer else { return }
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let target = pressed ? NoteAnimation.scaleTransform(pressedScale, about: center) : CATransform3DIdentity
+        NoteAnimation.spring(layer, "transform", to: NSValue(caTransform3D: target), spring: .press,
+                             key: NoteAnimation.keyPrefix + "press")
+    }
+
+    private func setHovered(_ hovered: Bool) {
+        guard hovered != isHovered else { return }
+        isHovered = hovered
+        refreshFace(animated: true)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard event.trackingArea === hoverArea else { super.mouseEntered(with: event); return }
+        setHovered(isEnabled && NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        setHovered(isEnabled && NoteFloatingPanel.allowsHover(for: self, at: event.locationInWindow))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard event.trackingArea === hoverArea else { super.mouseExited(with: event); return }
+        setHovered(false)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
+        setPressed(true)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isEnabled else { return }
+        setPressed(bounds.contains(convert(event.locationInWindow, from: nil)))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        let wasPressed = isPressed
+        setPressed(false)
+        if isEnabled && inside && wasPressed { activate() }
+    }
+
+    override func performClick(_ sender: Any?) {
+        guard isEnabled else { return }
+        activate()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled else { return false }
+        activate()
+        return true
+    }
+
+    func activate() {
+        onPress?()
+        if let action { sendAction(action, to: target) }
+    }
+
+    func setToolTip(_ title: String, shortcut: String? = nil, commandID: String? = nil,
+                    anchor: TooltipConfiguration.Anchor = .bottom) {
+        if let commandID {
+            LiveShortcutToolTip.set(self, title, commandID: commandID, anchor: anchor)
+            return
+        }
+        let fixed = shortcut.flatMap(Self.keyboardShortcut(from:))
+        parcTooltip = TooltipConfiguration(title, shortcut: fixed.map { .fixed($0) }, anchor: anchor)
+        setAccessibilityHelp(shortcut.map { "\(title), \(NoteKeycapLabel.spoken($0))" } ?? title)
+    }
+
+    static func keyboardShortcut(from text: String) -> KeyboardShortcut? {
+        let keys = NoteKeycapRenderer.keys(in: text)
+        var flags: NSEvent.ModifierFlags = []
+        var key: String?
+        for part in keys {
+            switch part {
+            case "⌃": flags.insert(.control)
+            case "⌥": flags.insert(.option)
+            case "⇧": flags.insert(.shift)
+            case "⌘": flags.insert(.command)
+            case "↩": key = "\r"
+            case "⎵": key = " "
+            case "⌫": key = "\u{8}"
+            case "TAB": key = "\t"
+            case "ESC": key = "\u{1b}"
+            default: key = part.lowercased()
+            }
+        }
+        guard let key else { return nil }
+        return KeyboardShortcut(key: key, flags: flags)
+    }
+}
+
+@MainActor
+final class NoteToolbarButton: NoteControlButton {
+    enum Content: Hashable {
+        case icon(NoteIcon)
+        case text(String)
+        case iconAndText(NoteIcon, String)
+    }
+
+    var content: Content { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
+    var showsDisclosure = false { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
+    var decoration: NoteIconDecoration = [] { didSet { needsDisplay = true } }
+    var iconTint: NSColor? { didSet { needsDisplay = true } }
+    var iconFill: NSColor? { didSet { needsDisplay = true } }
+    var iconPointSize: CGFloat = 14 { didSet { needsDisplay = true } }
+
+    init(_ content: Content, label: String, shortcut: String? = nil) {
+        self.content = content
+        super.init(frame: NSRect(origin: .zero, size: NoteTheme.toolbarButtonSize))
+        setAccessibilityLabel(label)
+        setToolTip(label, shortcut: shortcut)
+        setFrameSize(intrinsicContentSize)
+    }
+
+    convenience init(icon: NoteIcon, label: String, shortcut: String? = nil) {
+        self.init(.icon(icon), label: label, shortcut: shortcut)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private var textFont: NSFont { NoteTheme.chromeFont(13.5) }
+
+    override var intrinsicContentSize: NSSize {
+        let height = NoteTheme.toolbarButtonSize.height
+        let disclosure: CGFloat = showsDisclosure ? 12 : 0
+        switch content {
+        case .icon:
+            return NSSize(width: NoteTheme.toolbarButtonSize.width + disclosure, height: height)
+        case .text(let text):
+            return NSSize(width: ceil(textWidth(text)) + 16 + disclosure, height: height)
+        case .iconAndText(_, let text):
+            return NSSize(width: ceil(textWidth(text)) + 16 + 20 + disclosure, height: height)
+        }
+    }
+
+    private func textWidth(_ text: String) -> CGFloat {
+        NSAttributedString(string: text, attributes: [.font: textFont]).size().width
+    }
+
+    override func drawContent(in bounds: NSRect, ink: NSColor) {
+        var area = bounds
+        if showsDisclosure {
+            let chevronBox = NSRect(x: bounds.maxX - 16, y: bounds.minY, width: 10, height: bounds.height)
+            if let chevron = NoteIconRenderer.symbol("chevron.down", pointSize: 8, weight: .bold) {
+                NoteIconRenderer.drawTemplate(chevron, centeredIn: chevronBox, tint: NoteTheme.menuTertiaryInk)
+            }
+            area.size.width -= 12
+        }
+        let iconInk = isChecked ? ink : (iconTint ?? ink)
+        switch content {
+        case .icon(let icon):
+            let box = NSRect(x: area.midX - 10, y: area.midY - 10, width: 20, height: 20)
+            if let iconFill {
+                iconFill.setFill()
+                NSBezierPath(roundedRect: box.insetBy(dx: 1, dy: 1), xRadius: 4, yRadius: 4).fill()
+            }
+            NoteIconRenderer.draw(icon, in: box, tint: iconInk, pointSize: iconPointSize, weight: .semibold, decoration: decoration)
+        case .text(let text):
+            drawTitle(text, in: NSRect(x: area.minX + 8, y: area.minY, width: area.width - 16, height: area.height), ink: ink)
+        case .iconAndText(let icon, let text):
+            let box = NSRect(x: area.minX + 6, y: area.midY - 9, width: 18, height: 18)
+            NoteIconRenderer.draw(icon, in: box, tint: iconInk, pointSize: iconPointSize - 1, weight: .semibold, decoration: decoration)
+            drawTitle(text, in: NSRect(x: box.maxX + 4, y: area.minY, width: area.maxX - box.maxX - 12, height: area.height), ink: ink)
+        }
+    }
+
+    private func drawTitle(_ text: String, in rect: NSRect, ink: NSColor) {
+        let font = textFont
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let height = ceil(font.ascender - font.descender)
+        NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: ink, .paragraphStyle: paragraph])
+            .draw(with: NSRect(x: rect.minX, y: (rect.midY - height / 2).rounded(), width: rect.width, height: height),
+                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+    }
+}
+
+@MainActor
+final class NoteChip: NoteControlButton {
+    enum Style { case ghost, filled }
+
+    var chipTitle: String { didSet { if !isFlashing { shownTitle = chipTitle } } }
+    var icon: NoteIcon? { didSet { if !isFlashing { shownIcon = icon } } }
+    var style: Style { didSet { refreshFace(animated: false) } }
+    private var shownTitle: String { didSet { invalidateIntrinsicContentSize(); needsDisplay = true; setAccessibilityLabel(shownTitle) } }
+    private var shownIcon: NoteIcon? { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
+    private var isFlashing = false
+    private var flashGeneration = 0
+
+    init(_ title: String, icon: NoteIcon? = nil, style: Style = .ghost) {
+        chipTitle = title
+        self.icon = icon
+        self.style = style
+        shownTitle = title
+        shownIcon = icon
+        super.init(frame: NSRect(x: 0, y: 0, width: 80, height: NoteTheme.chipHeight))
+        setAccessibilityLabel(title)
+        setFrameSize(intrinsicContentSize)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private var chipFont: NSFont { NoteTheme.chromeFont(12.5) }
+
+    override var intrinsicContentSize: NSSize {
+        let text = ceil(NSAttributedString(string: shownTitle, attributes: [.font: chipFont]).size().width)
+        let iconWidth: CGFloat = shownIcon == nil ? 0 : 18
+        return NSSize(width: text + iconWidth + 20, height: NoteTheme.chipHeight)
+    }
+
+    override func fill(hovered: Bool, pressed: Bool, checked: Bool) -> NSColor? {
+        switch style {
+        case .ghost: return super.fill(hovered: hovered, pressed: pressed, checked: checked)
+        case .filled: return pressed ? NoteTheme.pressedFill : hovered ? NoteTheme.pressedFill : NoteTheme.chipFill
+        }
+    }
+
+    override func drawContent(in bounds: NSRect, ink: NSColor) {
+        var x = bounds.minX + 10
+        if let shownIcon {
+            NoteIconRenderer.draw(shownIcon, in: NSRect(x: x - 1, y: bounds.midY - 8, width: 16, height: 16), tint: ink,
+                                  pointSize: 12, weight: .semibold)
+            x += 18
+        }
+        let height = ceil(chipFont.ascender - chipFont.descender)
+        NSAttributedString(string: shownTitle, attributes: [.font: chipFont, .foregroundColor: ink])
+            .draw(with: NSRect(x: x, y: (bounds.midY - height / 2).rounded(), width: bounds.maxX - x - 8, height: height),
+                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+    }
+
+    func flash(_ title: String, icon: NoteIcon? = .symbol("checkmark"), duration: TimeInterval = 1.4) {
+        flashGeneration += 1
+        let generation = flashGeneration
+        isFlashing = true
+        crossfade { self.shownTitle = title; self.shownIcon = icon }
+        NSAccessibility.post(element: self, notification: .announcementRequested,
+                             userInfo: [.announcement: title, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+            guard let self, self.flashGeneration == generation else { return }
+            self.isFlashing = false
+            self.crossfade { self.shownTitle = self.chipTitle; self.shownIcon = self.icon }
+        }
+    }
+
+    private func crossfade(_ change: () -> Void) {
+        change()
+        guard let layer, !NoteAnimation.reduceMotion, window != nil else { return }
+        let transition = CATransition()
+        transition.type = .fade
+        transition.duration = 0.15
+        transition.timingFunction = NoteCurve.easeOut
+        layer.add(transition, forKey: NoteAnimation.keyPrefix + "flash")
+        NoteAnimation.pop(layer, from: 0.96, spring: .pill, about: CGPoint(x: bounds.midX, y: bounds.midY))
+    }
+}
+
+@MainActor
+final class NoteSearchField: NSView {
+    let textField = NSTextField()
+    var onChange: ((String) -> Void)?
+    var onCommand: ((Selector) -> Bool)?
+    var onSubmit: ((String) -> Void)?
+    var placeholder: String { didSet { refreshPlaceholder() } }
+    var text: String {
+        get { textField.stringValue }
+        set { textField.stringValue = newValue; refreshClear() }
+    }
+    var showsIcon = true { didSet { needsLayout = true; icon.isHidden = !showsIcon } }
+
+    private let icon = NoteIconView(icon: .symbol("magnifyingglass"), pointSize: 12)
+    private let clear = NoteToolbarButton(icon: .symbol("xmark.circle.fill"), label: "Clear")
+    private let relay = NoteSearchFieldRelay()
+
+    init(placeholder: String = "Search…") {
+        self.placeholder = placeholder
+        super.init(frame: NSRect(x: 0, y: 0, width: 240, height: NoteTheme.fieldHeight))
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.cornerCurve = .continuous
+        textField.isBordered = false
+        textField.isBezeled = false
+        textField.drawsBackground = false
+        textField.focusRingType = .none
+        textField.font = NoteTheme.nunitoRegular(13.5)
+        textField.textColor = NoteTheme.menuInk
+        textField.lineBreakMode = .byTruncatingTail
+        textField.usesSingleLineMode = true
+        textField.cell?.isScrollable = true
+        textField.cell?.wraps = false
+        relay.field = self
+        textField.delegate = relay
+        icon.tint = NoteTheme.menuTertiaryInk
+        clear.iconPointSize = 12
+        clear.isHidden = true
+        clear.onPress = { [weak self] in
+            guard let self else { return }
+            self.text = ""
+            self.onChange?("")
+            self.focus()
+        }
+        addSubview(icon)
+        addSubview(textField)
+        addSubview(clear)
+        setAccessibilityElement(false)
+        textField.setAccessibilityLabel(placeholder)
+        refreshPlaceholder()
+        refreshFill()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var isFlipped: Bool { true }
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NoteTheme.fieldHeight) }
+
+    func focus() {
+        window?.makeFirstResponder(textField)
+    }
+
+    func bind(to list: NoteMenuList) {
+        onChange = { [weak list] text in list?.filterText = text }
+        onCommand = { [weak list] selector in list?.handle(command: selector) ?? false }
+    }
+
+    override func layout() {
+        super.layout()
+        let left: CGFloat = showsIcon ? 30 : 10
+        icon.frame = NSRect(x: 8, y: (bounds.midY - 9).rounded(), width: 18, height: 18)
+        clear.frame = NSRect(x: bounds.maxX - 28, y: (bounds.midY - 12).rounded(), width: 24, height: 24)
+        let font = textField.font ?? NoteTheme.nunitoRegular(13.5)
+        let height = ceil(font.ascender - font.descender) + 2
+        textField.frame = NSRect(x: left, y: (bounds.midY - height / 2).rounded(), width: bounds.width - left - (clear.isHidden ? 10 : 30),
+                                 height: height)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshFill()
+    }
+
+    override func mouseDown(with event: NSEvent) { focus() }
+
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .iBeam) }
+
+    private func refreshFill() {
+        NoteAnimation.withoutAnimation { layer?.backgroundColor = NoteTheme.resolved(NoteTheme.fieldFill, in: self) }
+    }
+
+    private func refreshPlaceholder() {
+        textField.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
+            .font: textField.font ?? NoteTheme.nunitoRegular(13.5), .foregroundColor: NoteTheme.menuTertiaryInk,
+        ])
+        textField.setAccessibilityLabel(placeholder)
+    }
+
+    fileprivate func refreshClear() {
+        let hidden = text.isEmpty
+        guard clear.isHidden != hidden else { return }
+        clear.isHidden = hidden
+        needsLayout = true
+    }
+
+    fileprivate func editingBegan(_ editor: NSTextView?) {
+        editor?.insertionPointColor = NoteTheme.caret
+        editor?.selectedTextAttributes = [.backgroundColor: NoteTheme.selection]
+    }
+
+    fileprivate func textChanged() {
+        refreshClear()
+        onChange?(text)
+    }
+
+    fileprivate func command(_ selector: Selector) -> Bool {
+        if onCommand?(selector) == true { return true }
+        if selector == #selector(NSResponder.insertNewline(_:)), let onSubmit {
+            onSubmit(text)
+            return true
+        }
+        return false
+    }
+}
+
+@MainActor
+private final class NoteSearchFieldRelay: NSObject, NSTextFieldDelegate {
+    weak var field: NoteSearchField?
+
+    func controlTextDidBeginEditing(_ notification: Notification) {
+        field?.editingBegan(notification.userInfo?["NSFieldEditor"] as? NSTextView)
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+        field?.textChanged()
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        field?.command(commandSelector) ?? false
     }
 }
