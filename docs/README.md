@@ -53,7 +53,7 @@ Git and release notes retain history.
 - [Settings](settings.md), [settings presentation](settings-presentation.md),
   [motion](settings-motion.md), [old-data removal](settings-profile-removal.md),
   [membership card](settings-membership-card.md).
-- [Notes](notes.md), [the Notes file format](notes-format.md),
+- [Notes](notes.md), [the Notes file format](notes-format.md), [embedded pages](embedded-pages.md),
   [automation and scripting](scripting.md), [performance](performance-navigation.md).
 
 ## Capture, Library and Easels
@@ -64,7 +64,7 @@ Git and release notes retain history.
   [portrait framing](portrait-capture-fidelity.md), [Library](capture-library.md),
   [document grid](documents-library-grid.md).
 - [Easels](easels.md), [appearance](easel-appearance.md), [motion](easel-motion.md),
-  [live captures](easel-live-captures.md), [embedded pages](easel-embedded-pages.md).
+  [live captures](easel-live-captures.md), [embedded pages](embedded-pages.md).
 
 ## Extensions and developer tools
 

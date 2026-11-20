@@ -115,8 +115,8 @@ after it:
 ```
 
 The comment always starts with `parc`, followed by words and `name="value"`
-pairs. Parc writes `color`, `icon`, `width`, `align`, `caption`, `wrap` (code
-that wraps), the table flags `no-header-row`, `header-column` and
+pairs. Parc writes `color`, `icon`, `width`, `height` (an embed's page height),
+`align`, `caption`, `wrap` (code that wraps), the table flags `no-header-row`, `header-column` and
 `widths="120,,80"`, the bookmark fields, and a block kind (`paragraph`,
 `image`, `video`, `audio`, `file`, `embed` or `bookmark`) when the file
 wouldn't otherwise make the kind clear. An empty paragraph that has a colour is
@@ -206,7 +206,10 @@ stays text. Use `\$` for a literal dollar sign where it would be ambiguous.
 A paragraph that holds a single image becomes a media block. The file
 extension picks the kind: pictures are images; `mp4`, `mov` or `webm` are
 video; `mp3`, `m4a` or `wav` are audio; anything else is a file. Links to
-YouTube, Vimeo, Figma, Loom, Spotify and similar sites become embeds.
+YouTube, Vimeo, Figma, Loom, Spotify and similar sites become embeds, and
+`![](https://…) <!-- parc embed -->` makes any web address one. An embed shows the live page
+in the note, `height="640"` sets its height, and the default height writes
+nothing ([embedded pages](embedded-pages.md#live-embeds-in-notes)).
 
 ```markdown
 ![A sleepy cat](Attachments/cat.png "My *favourite* photo") <!-- parc width="320" align="left" -->

@@ -30,6 +30,11 @@ Private windows deliberately offer no Notes, as explained in
 opened while a private window is in front opens in a regular window. Cloud
 sharing, collaboration and vendor services are excluded.
 
+Embed blocks hold a live web page in the note's Profile, with its sign-ins, at a
+height people drag to taste. Click a page to use it; until then the note keeps
+scrolling past it. The pages nap after four hours out of sight, follow the tab
+between windows and ask before leaving, like an Easel's pages ([embedded pages](embedded-pages.md#live-embeds-in-notes)).
+
 ## Editing and lifetime
 
 The body uses AppKit attributed text, native selection/caret, composition,

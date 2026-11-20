@@ -13,7 +13,7 @@ live in `BrowserPane.swift`. Add new window code to the matching topic file.
 A background tab that has not been on screen for four hours sleeps through
 Chromium's in-place discard, which keeps its history and reloads it when shown;
 pages in use by the automatic-archive standard stay awake. Easel pages follow
-the same rule through [embedded page retirement](easel-embedded-pages.md#admission-and-lifetime).
+the same rule through [embedded page retirement](embedded-pages.md#admission-and-lifetime).
 
 ## Restoration and launch continuity
 

@@ -186,7 +186,7 @@ destination panes. Notes keep their original editor/session with composition and
 failed-save barriers. Easels keep their canvas, session, pool and child wrappers;
 only the admitted transfer may rebind their native lease. Creation and shared
 mutation remain gated until all claims settle. Rollback rebinds the originals.
-See [embedded pages](easel-embedded-pages.md#physical-window-collection-transfer).
+See [embedded pages](embedded-pages.md#physical-window-collection-transfer).
 
 A nonempty destination preserves its selected/focused page; an empty one may
 adopt the first original item through ordinary split selection. Empty native

@@ -137,7 +137,7 @@ Webpage objects own real auxiliary native pages, scoped to the editor's physical
 window and Profile. Captured cards retain immutable PNG data and provenance;
 their optional live page is a separate owner. Selection, cancellation,
 `beforeunload`, transfer and Profile relocation contracts are in
-[embedded webpages](easel-embedded-pages.md).
+[embedded pages](embedded-pages.md).
 
 ### Webpage address, search and durable navigation
 
