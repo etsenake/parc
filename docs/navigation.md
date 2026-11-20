@@ -101,7 +101,8 @@ loading state. Hover shows only while a control is really on top, so the URL
 pill, its buttons and the Space title row stay quiet under the compact editor
 and Control–Space search; see [in-window hosting](command-bar.md#in-window-hosting).
 The URL pill is 36 points high with 12-point corners and a
-13-point host label. An empty page shows Search or Enter URL. Share Quote occupies
+13-point host label. An empty page shows Search or Enter URL; a note or other
+local file shows its file name, and an Easel shows Easel. Share Quote occupies
 the full row with its own content; toolbar mode hides the sidebar URL row.
 Split views retain one URL row following the focused pane while each pane owns
 its navigation controls.

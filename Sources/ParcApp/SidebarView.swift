@@ -1561,12 +1561,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         shareQuote.contentTintColor = palette?.maxContrastColor ?? .labelColor
         copyQuote.contentTintColor = palette?.maxContrastColor ?? .labelColor
     }
-    private static func address(of tab: BrowserTab?) -> String {
-        guard let tab else { return SidebarAddressSearchIcon.placeholder }
-        if InternalPage(urlString: tab.url) != nil { return "Easel" }
-        guard let url = URL(string: tab.url) else { return SidebarAddressSearchIcon.placeholder }
-        return url.isFileURL ? url.lastPathComponent : SidebarAddressSearchIcon.host(of: url) ?? SidebarAddressSearchIcon.placeholder
-    }
+    private static func address(of tab: BrowserTab?) -> String { SidebarAddressText.label(forPage: tab?.url) }
     private func setAddressTitle(_ address: String) {
         addressText = address
         let empty = address == SidebarAddressSearchIcon.placeholder

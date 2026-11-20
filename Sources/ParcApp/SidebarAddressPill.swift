@@ -93,11 +93,8 @@ import QuartzCore
 }
 
 @MainActor final class SidebarAddressSearchIcon: NSImageView {
-    static let placeholder = "Search or Enter URL…"
-    static func host(of url: URL) -> String? {
-        guard let host = url.host else { return nil }
-        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-    }
+    static let placeholder = SidebarAddressText.placeholder
+    static func host(of url: URL) -> String? { SidebarAddressText.host(of: url) }
     static let centerX: CGFloat = 16
     static let textIndent: CGFloat = 32
     static let side: CGFloat = 14
