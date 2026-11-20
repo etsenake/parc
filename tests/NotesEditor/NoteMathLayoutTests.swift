@@ -419,7 +419,6 @@ struct NoteMathLayoutTests {
         let axis = font.constants[.axisHeight] * size / 1000
         expect(abs((matrix.ascent - matrix.descent) / 2 - axis) < 0.5 && abs(matrix.tags[0].baseline) < 0.001,
                "tags line up with the middle of tall formulas")
-        expect(box("\\phantom{x \\tag{1}}").tags.isEmpty || true, "phantoms carry no tags")
         let rendering = NoteMathRenderer.render("E = mc^2 \\tag{1}", fontSize: 40, color: .black, display: true)
         let plain = NoteMathRenderer.render("E = mc^2", fontSize: 40, color: .black, display: true)
         expect(rendering.error == nil && rendering.hasTags && !plain.hasTags, "renderings know about tags")
