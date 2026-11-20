@@ -89,6 +89,16 @@ enum MarkdownCheck {
         if let value = props.table { parts.append("table=\(value.rows.map { $0.map(\.string) }) align=\(value.alignments) header=\(value.headerRow)/\(value.headerColumn) widths=\(value.columnWidths)") }
         if let value = props.target { parts.append("target=\(value)") }
         if let value = props.anchor { parts.append("anchor=\(value)") }
+        if let value = props.button {
+            let actions = value.actions.map { action -> String in
+                switch action {
+                case .insert(let placement, let blocks): return "insert(\(placement))[\n\(describe(blocks, depth: 3))\n]"
+                case .confirm(let message): return "confirm(\(String(reflecting: message)))"
+                case .open(let target): return "open(\(target))"
+                }
+            }
+            parts.append("button=\(String(reflecting: value.name)) actions=\(actions.joined(separator: ","))")
+        }
         return parts.joined(separator: " ")
     }
 

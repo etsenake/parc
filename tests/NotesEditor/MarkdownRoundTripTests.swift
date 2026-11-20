@@ -168,8 +168,28 @@ struct MarkdownPageGenerator {
         return block
     }
 
+    mutating func button(depth: Int) -> NoteBlock {
+        var actions: [NoteButtonAction] = []
+        for _ in 0..<random.int(0...3) {
+            switch random.int(0...3) {
+            case 0, 1:
+                actions.append(.insert(placement: random.pick(NoteButtonPlacement.allCases),
+                                       blocks: blocks(depth: depth + 1, count: random.int(0...3), trailingEmpty: true)))
+            case 2:
+                actions.append(.confirm(message: random.chance(20) ? "" : plainString(maxWords: 4)))
+            default:
+                actions.append(.open(target: random.pick(["https://example.com/a?b=c&d", "Other%20Note.md", "../Up.md", ""])))
+            }
+        }
+        let icon: String? = random.chance(40) ? random.pick(["✅", "🚀", "📓"]) : nil
+        var block = NoteBlock.button(name: NoteButton.normalizedName(plainString(maxWords: 4)), icon: icon, actions: actions)
+        if random.chance(20) { block.props.expanded = true }
+        if random.chance(15) { block.color = random.chance(50) ? .text(.blue) : .background(.yellow) }
+        return block
+    }
+
     mutating func container(depth: Int) -> NoteBlock {
-        switch random.int(0...4) {
+        switch random.int(0...5) {
         case 0:
             var block = NoteBlock(.toggle, text: text(breaks: false), children: blocks(depth: depth + 1, count: random.int(0...3), trailingEmpty: true))
             block.props.expanded = random.chance(50)
@@ -196,6 +216,8 @@ struct MarkdownPageGenerator {
                 columns.children.append(column)
             }
             return columns
+        case 4:
+            return button(depth: depth)
         default:
             return leaf(depth: depth)
         }
@@ -332,7 +354,8 @@ struct MarkdownRoundTripTests {
                                ":::: columns", "::: column", ":::", "::: indent", ":::: indent", "$$", "$x$", "$5", "**", "*", "_", "__", "~~", "==", "`", "[", "]", "(", ")",
                                "[a](b)", "![i](p.png)", "[[W]]", "<u>", "</u>", "<span data-color=\"red\">", "</span>", "<b>", "&amp;", "&#32;",
                                "\\", "\\*", "text", "more words", "https://x.y/z", "www.a.bc", "m@x.io", "[^1]", "[^1]: note", "[r]: /url",
-                               "> [!NOTE]", "> [!tip]- T", "<!-- parc color=\"red\" -->", "<!-- toc -->", "<time datetime=\"2026-01-02\">d</time>"]
+                               "> [!NOTE]", "> [!tip]- T", "<!-- parc color=\"red\" -->", "<!-- toc -->", "<time datetime=\"2026-01-02\">d</time>",
+                               "<summary>B <!-- parc button --></summary>", "<!-- parc insert=\"top\" -->", "<!-- parc confirm=\"Sure?\" -->"]
 
     static func randomSources() {
         let iterations = Int(ProcessInfo.processInfo.environment["MARKDOWN_SOURCES"] ?? "") ?? 1500

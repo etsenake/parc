@@ -987,6 +987,8 @@ final class NoteHTMLConversion {
             return [NoteBlock(.tableOfContents, color: blockColor(node))]
         case "breadcrumb":
             return [NoteBlock(.breadcrumb, color: blockColor(node))]
+        case "button":
+            return [button(node, inner)]
         case "bookmark", "embed", "file", "pdf", "pageLink":
             let link = node.name == "a" ? node : node.first { $0.name == "a" }
             let source = node["data-source"] ?? node["data-target"] ?? link?["href"] ?? ""
@@ -1018,6 +1020,26 @@ final class NoteHTMLConversion {
         default:
             return flow(node.children, inner)
         }
+    }
+
+    private func button(_ node: NoteHTMLNode, _ style: NoteHTMLInline) -> NoteBlock {
+        let icon = node["data-icon"].flatMap { $0.isEmpty ? nil : $0 }
+        var block = NoteBlock.button(icon: icon)
+        block.color = blockColor(node)
+        if let payload = node["data-button"], let data = payload.data(using: .utf8),
+           let value = try? JSONDecoder().decode(NoteButton.self, from: data) {
+            block.props.button = NoteButton(name: value.name, actions: value.actions.map { action in
+                guard case .insert(let placement, let blocks) = action else { return action }
+                return .insert(placement: placement, blocks: blocks.map { $0.withFreshIDs() })
+            })
+            return block
+        }
+        let summary = node.children.first { $0.name == "summary" }
+        let label = summary?.textContent.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let template = flow(node.children.filter { $0.name != "summary" }, style)
+        block.props.button = NoteButton(name: NoteMDButtonFormat.name(fromLabel: label, icon: icon),
+                                        actions: template.isEmpty ? [] : [.insert(placement: .below, blocks: template)])
+        return block
     }
 
     private func equation(_ source: String, color: NoteColorStyle? = nil) -> [NoteBlock] {

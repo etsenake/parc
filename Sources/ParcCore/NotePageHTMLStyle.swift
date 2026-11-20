@@ -132,6 +132,11 @@ enum NotePageHTMLStyle {
     display:inline;margin:0}
     details>summary:has(h1,h2,h3,h4,h5,h6){margin:1.2em 0 .3em}
     .toggle-body{padding-left:1.5em}
+    details.note-button{margin:.35em 0}
+    details.note-button>summary{display:inline-flex;align-items:center;gap:.4em;padding:.2em .75em;border:1px solid var(--line);background:var(--fill);\
+    border-radius:8px;font-weight:600;font-size:.94em}
+    details.note-button>summary::before{content:none}
+    .button-template{margin-top:.4em;padding:.2em .9em;border-left:2px solid var(--line)}
     .indented{padding-left:1.5em}
     hr{border:0;border-top:1px solid var(--line);margin:1.4em 0}
     code{font-family:var(--mono);font-size:.84em;color:var(--code-ink);background:var(--code-fill);border-radius:5px;\

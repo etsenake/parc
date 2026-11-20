@@ -193,7 +193,7 @@ final class NoteBlockMenuController: NSObject {
     }
 
     private var canMoveToNotes: Bool {
-        guard let url = editor.environment.documentURL, NoteFileKind(url: url) == .markdown else { return false }
+        guard !editor.isTemplateEditor, let url = editor.environment.documentURL, NoteFileKind(url: url) == .markdown else { return false }
         return !editor.environment.isPlainText
     }
 
@@ -584,6 +584,15 @@ final class NoteBlockMenuController: NSObject {
         case .copyLink:
             dismiss(animated: true, restore: true)
             editor.copyLink(toBlock: live[0])
+            return
+        case .editButton:
+            dismiss(animated: true, restore: false)
+            (editor.materializedView(for: live[0]) as? NoteButtonBlockView)?.openEditor()
+            return
+        case .unwrapButton:
+            dismiss(animated: true, restore: false)
+            session.unwrapButton(live[0])
+            if let caret = session.selection.caret { editor.focus(caret) } else { editor.restoreFocus() }
             return
         }
         dismiss(animated: true, restore: true)

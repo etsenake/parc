@@ -420,6 +420,12 @@ extension NoteBlock {
     }
 
     func converted(to kind: NoteBlockKind, configure: (inout NoteBlockProps) -> Void = { _ in }) -> NoteBlock {
+        if kind == .button {
+            var button = convertedToButton()
+            configure(&button.props)
+            return button
+        }
+        if self.kind == .button { return convertedFromButton(to: kind).converted(to: kind, configure: configure) }
         var copy = self
         let wasToggle = isToggle
         if kind.hasPlainText && !self.kind.hasPlainText { copy.text = NoteText(text.plainText) }

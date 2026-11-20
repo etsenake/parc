@@ -21,11 +21,11 @@ enum NoteCatalogBlock: Hashable {
     case text, heading(Int), toggleHeading(Int), bulleted, numbered, todo, toggle, quote, callout, divider
     case newNote, linkToNote, table
     case image, video, audio, file, pdf, bookmark, embed
-    case tableOfContents, breadcrumb, equation, code, columns(Int)
+    case tableOfContents, breadcrumb, equation, button, code, columns(Int)
 
     static let turnIntoTargets: [NoteCatalogBlock] = [
         .text, .heading(1), .heading(2), .heading(3), .heading(4), .bulleted, .numbered, .todo, .toggle,
-        .toggleHeading(1), .toggleHeading(2), .toggleHeading(3), .toggleHeading(4), .quote, .callout, .code, .equation,
+        .toggleHeading(1), .toggleHeading(2), .toggleHeading(3), .toggleHeading(4), .quote, .callout, .code, .equation, .button,
     ]
 
     var kind: NoteBlockKind {
@@ -51,6 +51,7 @@ enum NoteCatalogBlock: Hashable {
         case .tableOfContents: return .tableOfContents
         case .breadcrumb: return .breadcrumb
         case .equation: return .equation
+        case .button: return .button
         case .code: return .code
         case .columns: return .columns
         }
@@ -361,6 +362,8 @@ enum NoteBlockCatalog {
                   aliases: ["toc", "contents", "outline"], keywords: ["index", "headings", "navigation"], .tableOfContents),
             block("equation", "Block equation", "Write TeX, get beautiful math.", .advanced, .symbol("function"), hint: "$$",
                   aliases: ["math", "tex", "latex", "equation", "$$"], keywords: ["katex", "formula", "maths"], .equation),
+            block("button", "Button", "One press adds blocks, asks first or opens a link.", .advanced, .symbol("cursorarrow.click.2"),
+                  aliases: ["button", "template", "template button", "btn"], keywords: ["action", "automation", "insert", "repeat", "press"], .button),
             block("code", "Code", "Code, with colors that make sense.", .advanced, .symbol("curlybraces"), hint: "```",
                   aliases: ["```", "snippet", "pre"], keywords: ["program", "syntax", "script", "monospace"], .code),
             block("breadcrumb", "Breadcrumb", "Where this note lives, folder by folder.", .advanced, .symbol("signpost.right"),

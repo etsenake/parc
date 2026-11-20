@@ -19,6 +19,7 @@ enum NoteBlockViewFactory {
         case .pageLink: return NotePageLinkBlockView(block: block, editor: editor)
         case .columns, .column: return NoteColumnsBlockView(block: block, editor: editor)
         case .synced: return NoteSyncedBlockView(block: block, editor: editor)
+        case .button: return NoteButtonBlockView(block: block, editor: editor)
         }
     }
 }

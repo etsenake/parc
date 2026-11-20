@@ -52,6 +52,8 @@ enum NoteBlockAction: Hashable {
     case mask(NoteImageMask?)
     case altText
     case tableItem(String)
+    case editButton
+    case unwrapButton
 }
 
 struct NoteBlockMenuEntry: Hashable {
@@ -109,6 +111,7 @@ enum NoteBlockMenuModel {
         (NoteBlockStyle(.heading, level: 2, toggleable: true), "Toggle Heading 2", .glyph("▸H2"), ["collapse", "h2"]),
         (NoteBlockStyle(.heading, level: 3, toggleable: true), "Toggle Heading 3", .glyph("▸H3"), ["collapse", "h3"]),
         (NoteBlockStyle(.heading, level: 4, toggleable: true), "Toggle Heading 4", .glyph("▸H4"), ["collapse", "h4"]),
+        (NoteBlockStyle(.button), "Button", .symbol("cursorarrow.click.2"), ["template", "action", "press"]),
     ]
 
     static let languages: [(id: String, title: String)] = [
@@ -121,7 +124,7 @@ enum NoteBlockMenuModel {
     ]
 
     static func turnable(_ block: NoteBlock) -> Bool {
-        block.kind.hasRichText || block.kind == .code || block.kind == .equation
+        block.kind.hasRichText || block.kind == .code || block.kind == .equation || block.kind == .button
     }
 
     static func showsPDF(_ block: NoteBlock) -> Bool {
@@ -148,7 +151,7 @@ enum NoteBlockMenuModel {
     }
 
     static func colorable(_ block: NoteBlock) -> Bool {
-        block.kind.hasRichText || block.kind == .tableOfContents || block.kind == .breadcrumb
+        block.kind.hasRichText || block.kind == .tableOfContents || block.kind == .breadcrumb || block.kind == .button
     }
 
     static func languageTitle(for id: String) -> String {
@@ -324,6 +327,13 @@ enum NoteBlockMenuModel {
                     result.append(NoteBlockMenuEntry(id: "fullScreen", title: "Full Screen", icon: .symbol("arrow.up.left.and.arrow.down.right"),
                                                      shortcut: "⎵", keywords: ["expand", "present", "read", "big"], group: 1, action: .fullScreen))
                 }
+            }
+        case .button where editable && single:
+            result.append(NoteBlockMenuEntry(id: "editButton", title: "Edit Button", icon: .symbol("gearshape"),
+                                             keywords: ["settings", "configure", "actions", "name"], group: 1, action: .editButton))
+            if !block.buttonValue.templateBlocks.isEmpty {
+                result.append(NoteBlockMenuEntry(id: "unwrapButton", title: "Turn into Blocks", icon: .symbol("square.stack.3d.up"),
+                                                 keywords: ["unwrap", "template", "spill", "contents"], group: 1, action: .unwrapButton))
             }
         case .bookmark, .embed:
             if single && block.props.source?.isEmpty == false {

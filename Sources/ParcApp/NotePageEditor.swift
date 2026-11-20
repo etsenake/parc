@@ -29,6 +29,8 @@ final class NotePageEditor {
     var onCanvasLayout: (() -> Void)?
     var onOpenFolder: ((URL) -> Void)?
     var notesFolder: (() -> URL?)?
+    var onUnhandledEscape: (() -> Bool)?
+    var isTemplateEditor = false
     var pasteboard: NSPasteboard = .general
     private var subscription: AnyCancellable?
     private var layoutSubscription: AnyCancellable?
@@ -482,7 +484,7 @@ final class NotePageEditor {
             return true
         case 53 where flags.isEmpty:
             if dismissTopOverlay() { return true }
-            guard blocks else { return false }
+            guard blocks else { return onUnhandledEscape?() ?? false }
             session.setSelection(.none)
             return true
         default:
@@ -503,7 +505,7 @@ final class NotePageEditor {
     static let previewableKinds: Set<NoteBlockKind> = [.image, .video, .audio, .file, .pdf]
 
     var canLinkBlocks: Bool {
-        guard let url = environment.documentURL, url.isFileURL, NoteFileKind(url: url) == .markdown else { return false }
+        guard !isTemplateEditor, let url = environment.documentURL, url.isFileURL, NoteFileKind(url: url) == .markdown else { return false }
         return !isPlainText
     }
 

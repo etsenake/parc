@@ -21,6 +21,12 @@ enum NoteEditCoalescing: Hashable {
     case typing(NoteBlockID, NoteTextField)
     case deleting(NoteBlockID, NoteTextField)
     case adjusting(NoteBlockID)
+    case lasting(NoteBlockID, UUID)
+
+    var outlivesPauses: Bool {
+        if case .lasting = self { return true }
+        return false
+    }
 }
 
 @MainActor
@@ -344,7 +350,7 @@ final class NotePageSession {
             return
         }
         let coalesce = coalescing != .none && coalescing == lastCoalescing && !undoStack.isEmpty
-            && time.timeIntervalSince(lastEditTime) < typingCoalesceInterval
+            && (coalescing.outlivesPauses || time.timeIntervalSince(lastEditTime) < typingCoalesceInterval)
         if !coalesce {
             pushUndo(HistoryStep(page: page.withoutIndex, selectionBefore: selection, selectionAfter: selection, name: name, serial: nextSerial()))
         }
@@ -378,7 +384,7 @@ final class NotePageSession {
     private static func coalescingTarget(_ value: NoteEditCoalescing) -> NotePosition? {
         switch value {
         case .typing(let block, let field), .deleting(let block, let field): return NotePosition(block, 0, field: field)
-        case .none, .adjusting: return nil
+        case .none, .adjusting, .lasting: return nil
         }
     }
 

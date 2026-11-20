@@ -8,7 +8,7 @@ struct NoteMDWriter {
         var references: [String: NoteMDLinkReference] = [:]
         var labels: [String: String] = [:]
         var footnotes: Set<String> = []
-        for block in page.allBlocks() where block.kind == .raw {
+        for block in page.allBlocksIncludingTemplates() where block.kind == .raw {
             let bytes = Array(block.text.string.utf8)
             var position = 0
             while position < bytes.count {
@@ -175,7 +175,7 @@ struct NoteMDWriter {
         return lines
     }
 
-    private func attributes(_ items: [(String, String?)]) -> String {
+    func attributes(_ items: [(String, String?)]) -> String {
         guard !items.isEmpty else { return "" }
         var result = "<!-- parc"
         for (name, value) in items {
@@ -185,14 +185,14 @@ struct NoteMDWriter {
         return result + " -->"
     }
 
-    private func blockAttributes(_ block: NoteBlock) -> [(String, String?)] {
+    func blockAttributes(_ block: NoteBlock) -> [(String, String?)] {
         var items: [(String, String?)] = []
         if let color = block.color { items.append(("color", NoteMDColor.name(color))) }
         if let anchor = block.props.anchor, NoteAnchor.isValid(anchor) { items.append(("id", anchor)) }
         return items
     }
 
-    private func suffix(_ items: [(String, String?)]) -> String {
+    func suffix(_ items: [(String, String?)]) -> String {
         items.isEmpty ? "" : " " + attributes(items)
     }
 
@@ -203,7 +203,7 @@ struct NoteMDWriter {
     private func textLines(_ text: NoteText, style: NoteMDInlineStyle, attributes items: [(String, String?)],
                            marked: Bool = false, carrying carried: [(String, String?)] = [], standalone: Bool = true) -> [String] {
         var commented = style
-        commented.trailingComment = marked || !items.isEmpty
+        commented.trailingComment = marked || !items.isEmpty || Self.endsWithAttributeComment(text)
         var lines = inline.write(text, style: commented).components(separatedBy: "\n")
         if !commented.trailingComment, Self.startsHTMLBlock(lines[0]) {
             commented.trailingComment = true
@@ -214,6 +214,16 @@ struct NoteMDWriter {
     }
 
     static let paragraphLeadIn = "<b></b>"
+
+    static func endsWithAttributeComment(_ text: NoteText) -> Bool {
+        guard text.length > 0, case .raw(let source)? = text.marks(at: text.length - 1).atom else { return false }
+        return NoteMDAttributes.parse(source) != nil
+    }
+
+    private func guardedSuffix(_ text: NoteText, _ items: [(String, String?)]) -> (commented: Bool, suffix: String) {
+        if !items.isEmpty { return (true, suffix(items)) }
+        return Self.endsWithAttributeComment(text) ? (true, " " + comment([])) : (false, "")
+    }
 
     static func needsLeadIn(_ line: String) -> Bool {
         guard let byte = line.utf8.first, NoteMDBlockParser.mayOpenBlock(byte) else { return false }
@@ -264,6 +274,7 @@ struct NoteMDWriter {
         case .column: return columns(NoteBlock(.columns, children: [block]))
         case .html, .raw: return block.text.string.components(separatedBy: "\n")
         case .synced: return synced(block)
+        case .button: return button(block)
         }
     }
 
@@ -292,6 +303,7 @@ struct NoteMDWriter {
             switch block.kind {
             case .columns: own = 2 + directiveDepth(block.children.flatMap { $0.kind == .column ? $0.children : [$0] })
             case .column: own = 2 + directiveDepth(block.children)
+            case .button: own = directiveDepth(block.buttonValue.templateBlocks)
             default: own = (writesIndent(block) ? 1 : 0) + directiveDepth(block.children)
             }
             return max(deepest, own)
@@ -344,8 +356,9 @@ struct NoteMDWriter {
             let width = max(3, lines.map(\.count).max() ?? 3)
             return lines + [String(repeating: level == 1 ? "=" : "-", count: width)]
         }
-        let content = [inline.write(block.text, style: NoteMDInlineStyle(shape: .heading, trailingComment: !items.isEmpty)), attributes(items)]
-            .filter { !$0.isEmpty }.joined(separator: " ")
+        let tail = guardedSuffix(block.text, items)
+        let content = (inline.write(block.text, style: NoteMDInlineStyle(shape: .heading, trailingComment: tail.commented)) + tail.suffix)
+            .trimmingCharacters(in: .whitespaces)
         let marker = String(repeating: "#", count: level)
         return [content.isEmpty ? marker : marker + " " + content]
     }
@@ -424,8 +437,9 @@ struct NoteMDWriter {
                     inner.append(comment(carried + items))
                 }
             } else {
-                let title = inline.write(block.text, style: NoteMDInlineStyle(shape: .line, trailingComment: !items.isEmpty))
-                inner.append(marker + (title.isEmpty ? "" : " " + title) + suffix(items))
+                let tail = guardedSuffix(block.text, items)
+                let title = inline.write(block.text, style: NoteMDInlineStyle(shape: .line, trailingComment: tail.commented))
+                inner.append(marker + (title.isEmpty ? "" : " " + title) + tail.suffix)
                 if let first = children.first, first.kind == .paragraph, !first.text.isEmpty, first.color == nil, first.props.anchor == nil,
                    first.children.isEmpty {
                     inner.append(contentsOf: paragraph(first))
@@ -451,7 +465,8 @@ struct NoteMDWriter {
     }
 
     private func toggle(_ block: NoteBlock) -> [String] {
-        let content = inline.write(block.text, style: NoteMDInlineStyle(shape: .line, htmlSafe: true, trailingComment: !blockAttributes(block).isEmpty)) + suffix(blockAttributes(block))
+        let tail = guardedSuffix(block.text, blockAttributes(block))
+        let content = inline.write(block.text, style: NoteMDInlineStyle(shape: .line, htmlSafe: true, trailingComment: tail.commented)) + tail.suffix
         let summary: String
         if block.kind == .heading {
             let level = min(max(block.props.level, 1), 6)

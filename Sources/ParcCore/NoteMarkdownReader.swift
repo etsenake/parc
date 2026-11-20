@@ -553,14 +553,14 @@ struct NoteMDReader {
         return CalloutMarker(type: type, fold: fold, title: title, rest: rest)
     }
 
-    private struct DetailsOpener {
+    struct DetailsOpener {
         var open: Bool
         var level: Int?
         var summary: [UInt8]
         var closed: Bool
     }
 
-    private static func details(_ content: [UInt8]) -> DetailsOpener? {
+    static func details(_ content: [UInt8]) -> DetailsOpener? {
         var index = 0
         let end = content.count
         func skip() { while index < end, NoteMDByte.isWhitespace(content[index]) { index += 1 } }
@@ -602,11 +602,11 @@ struct NoteMDReader {
         return index >= end ? opener : nil
     }
 
-    private static func isDetailsClose(_ node: NoteMDBlock) -> Bool {
+    static func isDetailsClose(_ node: NoteMDBlock) -> Bool {
         node.kind == .html && NoteMDByte.string(NoteMDText.trimmed(node.content[...])).lowercased() == "</details>"
     }
 
-    private func matchingDetailsClose(_ nodes: ArraySlice<NoteMDBlock>, after index: Int) -> Int? {
+    func matchingDetailsClose(_ nodes: ArraySlice<NoteMDBlock>, after index: Int) -> Int? {
         var depth = 0
         var probe = index + 1
         while probe < nodes.endIndex {
@@ -624,6 +624,9 @@ struct NoteMDReader {
 
     private func toggle(_ opener: DetailsOpener, children: ArraySlice<NoteMDBlock>, trailing: Int) -> NoteBlock {
         let (text, attributes) = inline(opener.summary)
+        if let attributes, opener.level == nil, attributes.flags.contains(NoteMDButtonFormat.flag) {
+            return button(opener, label: text, attributes: attributes, children: children, trailing: trailing)
+        }
         var block: NoteBlock
         if let level = opener.level {
             block = NoteBlock.heading(level, text)

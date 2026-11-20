@@ -380,6 +380,8 @@ struct NotePageHTMLWriter {
             output += "<div data-block=\"synced\" class=\"synced\">"
             write(block.children)
             output += "</div>"
+        case .button:
+            button(block)
         }
     }
 
@@ -396,6 +398,23 @@ struct NotePageHTMLWriter {
         if mode == .document { output += "<div class=\"toggle-body\">" }
         write(block.children)
         if mode == .document { output += "</div>" }
+        output += "</details>"
+    }
+
+    private mutating func button(_ block: NoteBlock) {
+        let value = block.buttonValue
+        let icon = block.props.icon.flatMap { $0.isEmpty ? nil : $0 }
+        let payload = (try? JSONEncoder().encode(value)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        var attributes = " data-block=\"button\" data-button=\"" + Self.attribute(payload) + "\""
+        if let icon { attributes += " data-icon=\"" + Self.attribute(icon) + "\"" }
+        output += "<details" + attributes + colorClass(block.color, adding: ["note-button"]) + "><summary>"
+            + Self.escape(NoteMDButtonFormat.label(name: value.displayName, icon: icon)) + "</summary>"
+        let template = value.templateBlocks
+        if !template.isEmpty {
+            output += mode == .document ? "<div class=\"button-template\">" : "<div>"
+            write(template)
+            output += "</div>"
+        }
         output += "</details>"
     }
 

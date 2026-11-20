@@ -348,7 +348,7 @@ struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
 enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
     case paragraph, heading, bulletedItem, numberedItem, todo, toggle, quote, callout, divider
     case code, equation, image, video, audio, file, pdf, bookmark, embed, table, tableOfContents, breadcrumb
-    case columns, column, pageLink, html, raw, synced
+    case columns, column, pageLink, html, raw, synced, button
 
     var hasRichText: Bool {
         switch self {
@@ -378,7 +378,7 @@ enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
         default: return false
         }
     }
-    var supportsColor: Bool { hasRichText || self == .tableOfContents || self == .breadcrumb || self == .table }
+    var supportsColor: Bool { hasRichText || self == .tableOfContents || self == .breadcrumb || self == .table || self == .button }
 }
 
 enum NoteDiagramMode: String, Codable, CaseIterable, Hashable, Sendable {
@@ -567,6 +567,7 @@ struct NoteBlockProps: Hashable, Codable {
     var anchor: String?
     var diagramMode: NoteDiagramMode?
     var credit: NoteMediaCredit?
+    var button: NoteButton?
 }
 
 private final class NoteBlockPropsStorage {
@@ -1130,9 +1131,23 @@ extension NotePage {
         return result
     }
 
+    func allBlocksIncludingTemplates() -> [NoteBlock] {
+        var result: [NoteBlock] = []
+        func walk(_ list: [NoteBlock]) {
+            for block in list {
+                result.append(block)
+                walk(block.children)
+                if let button = block.props.button { walk(button.templateBlocks) }
+            }
+        }
+        walk(blocks)
+        return result
+    }
+
     var plainText: String {
         allBlocks().compactMap { block -> String? in
             if block.kind.hasRichText || block.kind.hasPlainText { return block.text.plainText }
+            if block.kind == .button { return block.buttonValue.displayName }
             if let table = block.props.table { return table.rows.map { $0.map(\.plainText).joined(separator: "\t") }.joined(separator: "\n") }
             return nil
         }.joined(separator: "\n")
@@ -1406,5 +1421,163 @@ struct NoteMediaCredit: Hashable, Codable {
         if !items.contains(where: { $0.name == "utm_medium" }) { items.append(URLQueryItem(name: "utm_medium", value: "referral")) }
         components.queryItems = items
         return components.url ?? url
+    }
+}
+
+enum NoteButtonPlacement: String, Hashable, Codable, CaseIterable {
+    case below, above, top, bottom
+
+    var title: String {
+        switch self {
+        case .below: return "Below the button"
+        case .above: return "Above the button"
+        case .top: return "Top of the note"
+        case .bottom: return "Bottom of the note"
+        }
+    }
+}
+
+enum NoteButtonAction: Hashable, Codable {
+    enum Kind: String, Hashable, CaseIterable {
+        case insert, confirm, open
+    }
+
+    case insert(placement: NoteButtonPlacement, blocks: [NoteBlock])
+    case confirm(message: String)
+    case open(target: String)
+
+    var kind: Kind {
+        switch self {
+        case .insert: return .insert
+        case .confirm: return .confirm
+        case .open: return .open
+        }
+    }
+
+    var blocks: [NoteBlock] {
+        if case .insert(_, let blocks) = self { return blocks }
+        return []
+    }
+
+    static func blank(_ kind: Kind) -> NoteButtonAction {
+        switch kind {
+        case .insert: return .insert(placement: .below, blocks: [])
+        case .confirm: return .confirm(message: "")
+        case .open: return .open(target: "")
+        }
+    }
+
+    static func == (lhs: NoteButtonAction, rhs: NoteButtonAction) -> Bool {
+        switch (lhs, rhs) {
+        case (.insert(let leftPlacement, let leftBlocks), .insert(let rightPlacement, let rightBlocks)):
+            return leftPlacement == rightPlacement && NoteBlock.sameTrees(leftBlocks, rightBlocks)
+        case (.confirm(let left), .confirm(let right)):
+            return left == right
+        case (.open(let left), .open(let right)):
+            return left == right
+        default:
+            return false
+        }
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        switch self {
+        case .insert(let placement, let blocks):
+            hasher.combine(placement)
+            hasher.combine(blocks.count)
+            for block in blocks {
+                hasher.combine(block.kind)
+                hasher.combine(block.text)
+            }
+        case .confirm(let message):
+            hasher.combine(message)
+        case .open(let target):
+            hasher.combine(target)
+        }
+    }
+}
+
+struct NoteButton: Hashable, Codable {
+    static let placeholderName = "New button"
+    static let maximumSuggestedName = 80
+
+    var name = ""
+    var actions: [NoteButtonAction] = []
+
+    static let starter = NoteButton(name: "", actions: [.blank(.insert)])
+
+    var displayName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? Self.placeholderName : trimmed
+    }
+
+    var templateBlocks: [NoteBlock] { actions.flatMap(\.blocks) }
+
+    var insertsBlocks: Bool { actions.contains { !$0.blocks.isEmpty } }
+
+    static func suggestedName(from text: String) -> String {
+        let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count > maximumSuggestedName else { return trimmed }
+        return String(trimmed.prefix(maximumSuggestedName - 1)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    static func normalizedName(_ value: String) -> String {
+        value.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.joined(separator: " ")
+    }
+}
+
+extension NoteButtonPlacement {
+    var phrase: String {
+        switch self {
+        case .below: return "below"
+        case .above: return "above"
+        case .top: return "at the top"
+        case .bottom: return "at the bottom"
+        }
+    }
+}
+
+extension NoteBlock {
+    static func button(name: String = "", icon: String? = nil, actions: [NoteButtonAction] = NoteButton.starter.actions,
+                       id: NoteBlockID = NoteBlockID()) -> NoteBlock {
+        var props = NoteBlockProps()
+        props.icon = icon
+        props.expanded = false
+        props.button = NoteButton(name: name, actions: actions)
+        return NoteBlock(.button, props: props, id: id)
+    }
+
+    var buttonValue: NoteButton { props.button ?? NoteButton() }
+
+    func sameTree(as other: NoteBlock) -> Bool {
+        kind == other.kind && text == other.text && color == other.color && props == other.props
+            && NoteBlock.sameTrees(children, other.children)
+    }
+
+    static func sameTrees(_ lhs: [NoteBlock], _ rhs: [NoteBlock]) -> Bool {
+        lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { $0.sameTree(as: $1) }
+    }
+
+    func convertedToButton() -> NoteBlock {
+        guard kind != .button else { return self }
+        var props = NoteBlockProps()
+        props.icon = kind == .callout ? self.props.icon : nil
+        props.anchor = self.props.anchor
+        props.expanded = false
+        let name = NoteButton.suggestedName(from: kind.hasText ? text.plainText : "")
+        props.button = NoteButton(name: name, actions: [.insert(placement: .below, blocks: children.map { $0.withFreshIDs() })])
+        return NoteBlock(.button, props: props, color: color, id: id)
+    }
+
+    func convertedFromButton(to kind: NoteBlockKind) -> NoteBlock {
+        guard self.kind == .button else { return self }
+        let button = buttonValue
+        var source = NoteBlock(.paragraph, text: NoteText(button.name.trimmingCharacters(in: .whitespacesAndNewlines)), color: color,
+                               children: button.templateBlocks.map { $0.withFreshIDs() }, id: id)
+        source.props.anchor = props.anchor
+        if kind == .callout { source.props.icon = props.icon }
+        return source
     }
 }

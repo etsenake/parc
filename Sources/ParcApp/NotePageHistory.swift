@@ -292,6 +292,11 @@ enum NotePagePreviewRenderer {
                 base[.foregroundColor] = NoteTheme.tertiaryInk
                 result.append(NSAttributedString(string: "📁  Breadcrumb\n", attributes: base))
                 return
+            case .button:
+                let label = NoteMDButtonFormat.label(name: block.buttonValue.displayName, icon: block.props.icon)
+                base[.foregroundColor] = NoteTheme.secondaryInk
+                result.append(NSAttributedString(string: "▢  " + label + "\n", attributes: base))
+                return
             case .columns, .column, .synced:
                 return
             case .paragraph:

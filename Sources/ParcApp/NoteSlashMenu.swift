@@ -908,7 +908,7 @@ final class NoteSlashMenuController {
     private func context(for block: NoteBlockID, plus: Bool) -> NoteCatalogContext {
         var context = plus ? NoteCatalogContext.plus : .slash
         context.allowsColumns = page.parent(of: block) == nil
-        context.allowsNewNote = editor.environment.documentURL != nil
+        context.allowsNewNote = editor.environment.documentURL != nil && !editor.isTemplateEditor
         return context
     }
 
@@ -1177,6 +1177,17 @@ final class NoteBlockPreviewCard: NSView {
                 bar(x + indent, y + 4, (width - indent) * (index % 2 == 0 ? 0.55 : 0.45), alpha: 0.8)
                 y += 17
             }
+        case .button:
+            let pill = NSRect(x: x, y: y + 18, width: min(width, 156), height: 32)
+            NoteTheme.hoverFill.setFill()
+            NSBezierPath(roundedRect: pill, xRadius: 8, yRadius: 8).fill()
+            NoteTheme.separator.setStroke()
+            let outline = NSBezierPath(roundedRect: pill.insetBy(dx: 0.5, dy: 0.5), xRadius: 7.5, yRadius: 7.5)
+            outline.lineWidth = 1
+            outline.stroke()
+            NoteIconRenderer.draw(.emoji("✅"), in: NSRect(x: pill.minX + 9, y: pill.minY + 7, width: 18, height: 18), tint: NoteTheme.ink, pointSize: 13)
+            text("Add a task", NoteTheme.nunitoBold(14), at: NSPoint(x: pill.minX + 33, y: pill.minY + 6))
+            bar(x, y + 66, width * 0.7, alpha: 0.6)
         case .equation:
             let base = NoteTheme.nunitoItalic(26)
             let small = NoteTheme.nunitoItalic(15)

@@ -67,6 +67,7 @@ struct NoteCanvasMetrics: Equatable {
             default: value = (4, 2)
             }
         case .callout, .code, .table, .image, .video, .audio, .file, .pdf, .embed, .bookmark, .equation: value = (6, 6)
+        case .button: value = (4, 4)
         case .columns: value = (4, 4)
         case .synced: value = (4, 4)
         case .column: value = (0, 0)
@@ -822,6 +823,7 @@ enum NoteCanvasEstimate {
                 + 12 + caption
         case .bookmark: return 104 * scale + caption
         case .pageLink: return metrics.bodyLineHeight + 4 * scale
+        case .button: return NoteButtonBlockView.height(scale: scale)
         case .tableOfContents: return 3 * metrics.bodyLineHeight
         case .breadcrumb: return metrics.bodyLineHeight + 8 * scale
         case .table:

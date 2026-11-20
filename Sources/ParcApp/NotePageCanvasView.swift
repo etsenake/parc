@@ -26,6 +26,30 @@ final class NotePageCanvasView: NSView {
 
     weak var editor: NotePageEditor?
     let overlayView: NSView = NoteCanvasOverlayView()
+    private let overlaySlot = NoteCanvasPassiveView()
+    weak var overlayHost: NSView? {
+        didSet {
+            guard overlayHost !== oldValue else { return }
+            overlayView.removeFromSuperview()
+            if let overlayHost {
+                overlayHost.addSubview(overlayView)
+            } else {
+                addSubview(overlayView, positioned: .above, relativeTo: overlaySlot)
+                NoteAnimation.withoutAnimation {
+                    overlayView.setBoundsOrigin(.zero)
+                    overlayView.frame = bounds
+                }
+            }
+            syncOverlayPlacement()
+        }
+    }
+    var metricsAdjustment: ((inout NoteCanvasMetrics) -> Void)? {
+        didSet {
+            metricsCache = nil
+            measurer.reset()
+            invalidateCanvasLayout()
+        }
+    }
     var headerView: NSView? {
         didSet {
             guard headerView !== oldValue else { return }
@@ -78,6 +102,7 @@ final class NotePageCanvasView: NSView {
         addSubview(decorationView)
         addSubview(washView)
         addSubview(transientView)
+        addSubview(overlaySlot)
         addSubview(overlayView)
         overlayView.addSubview(dropIndicator)
         editor.session.changes
@@ -429,14 +454,35 @@ final class NotePageCanvasView: NSView {
            cached.settings.fullWidth == settings.fullWidth {
             return cached.metrics
         }
-        let metrics = NoteCanvasMetrics.make(for: settings)
+        var metrics = NoteCanvasMetrics.make(for: settings)
+        metricsAdjustment?(&metrics)
         metricsCache = (settings, metrics)
         return metrics
     }
 
+    var contentHeight: CGFloat {
+        updateLayoutIfNeeded()
+        return canvasLayout.contentBottom + canvasLayout.metrics.bottomInset
+    }
+
+    func syncOverlayPlacement() {
+        guard let host = overlayHost, overlayView.superview === host else { return }
+        let origin = host.convert(NSPoint.zero, from: self)
+        let shift = NSPoint(x: host.bounds.minX - origin.x, y: host.bounds.minY - origin.y)
+        NoteAnimation.withoutAnimation {
+            if overlayView.frame != host.bounds { overlayView.frame = host.bounds }
+            if overlayView.bounds.origin != shift { overlayView.setBoundsOrigin(shift) }
+        }
+    }
+
     private func pinUtilityViews() {
-        for view in [decorationView, washView, transientView, overlayView] where view.frame != bounds {
+        for view in [decorationView, washView, transientView] where view.frame != bounds {
             NoteAnimation.withoutAnimation { view.frame = bounds }
+        }
+        if overlayHost == nil {
+            if overlayView.frame != bounds { NoteAnimation.withoutAnimation { overlayView.frame = bounds } }
+        } else {
+            syncOverlayPlacement()
         }
     }
 
@@ -466,6 +512,7 @@ final class NotePageCanvasView: NSView {
     }
 
     private func clipDidScroll() {
+        syncOverlayPlacement()
         guard !isLayingOut else { return }
         materializeVisibleRegion()
     }
@@ -789,7 +836,7 @@ final class NotePageCanvasView: NSView {
         let view = editor.makeBlockView(for: block)
         views[entry.id] = view
         place(view, entry: entry, block: nil)
-        addSubview(view, positioned: .below, relativeTo: overlayView)
+        addSubview(view, positioned: .below, relativeTo: overlaySlot)
         if dimmedBlocks().contains(entry.id) { view.alphaValue = 0.4 }
         if case .blocks(let ids) = editor.session.selection, ids.contains(entry.id) { view.setBlockSelected(true, animated: false) }
         blockViewDidMaterialize.send(view)
