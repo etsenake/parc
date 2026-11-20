@@ -299,6 +299,11 @@ struct NoteCanvasLayout {
 
     func index(of id: NoteBlockID) -> Int? { indexByID[id] }
 
+    mutating func refresh(_ block: NoteBlock) {
+        guard indexByID[block.id] != nil else { return }
+        blocks[block.id] = block
+    }
+
     func entry(_ id: NoteBlockID) -> NoteCanvasEntry? { indexByID[id].map { entries[$0] } }
 
     func frame(of id: NoteBlockID) -> CGRect? { entry(id)?.frame }
