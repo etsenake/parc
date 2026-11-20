@@ -53,7 +53,7 @@ final class NoteFindController {
         if !canReplace { isReplacing = false }
         bar.setReplacing(isReplacing, animated: isVisible)
         if let seeded, !seeded.isEmpty, !isVisible || replacing {
-            bar.findField.field.stringValue = seeded
+            bar.findField.text = seeded
             query = seeded
         }
         bar.refresh()
@@ -67,9 +67,9 @@ final class NoteFindController {
             panel.contentSizeDidChange(animated: true)
             panel.reposition(anchor: anchorRect(for: panel), edge: .below, animated: false)
         }
-        let target = replacing && isReplacing && !query.isEmpty ? bar.replaceField.field : bar.findField.field
-        window?.makeFirstResponder(target)
-        target.currentEditor()?.selectAll(nil)
+        let target = replacing && isReplacing && !query.isEmpty ? bar.replaceField : bar.findField
+        target.focus()
+        target.textField.currentEditor()?.selectAll(nil)
     }
 
     func hide() {
@@ -105,11 +105,11 @@ final class NoteFindController {
     func useSelectionForFind() {
         guard let text = selectedSingleLineText(), !text.isEmpty else { NSSound.beep(); return }
         if isVisible {
-            bar?.findField.field.stringValue = text
+            bar?.findField.text = text
             setQuery(text)
         } else {
             show()
-            bar?.findField.field.stringValue = text
+            bar?.findField.text = text
             setQuery(text)
         }
     }
@@ -129,7 +129,7 @@ final class NoteFindController {
         case ("e", [.command]): useSelectionForFind(); return true
         default: break
         }
-        if isVisible, event.keyCode == 53, flags.isEmpty, event.window?.firstResponder === bar?.findField.field.currentEditor() {
+        if isVisible, event.keyCode == 53, flags.isEmpty, event.window?.firstResponder === bar?.findField.textField.currentEditor() {
             hide()
             return true
         }
@@ -154,12 +154,12 @@ final class NoteFindController {
         bar?.setReplacing(isReplacing, animated: true)
         panel?.contentSizeDidChange(animated: true)
         if let panel { panel.reposition(anchor: anchorRect(for: panel), edge: .below, animated: false) }
-        editor.canvas.window?.makeFirstResponder(isReplacing ? bar?.replaceField.field : bar?.findField.field)
+        (isReplacing ? bar?.replaceField : bar?.findField)?.focus()
     }
 
     func replaceCurrent() {
         guard canReplace, let match = currentMatch else { NSSound.beep(); return }
-        let replacement = bar?.replaceField.field.stringValue ?? ""
+        let replacement = bar?.replaceField.text ?? ""
         let after = NotePageFinder.positionAfterReplacing(match, with: replacement)
         editor.session.edit("Replace", kind: .text, affected: [match.block]) { page in
             NotePageFinder.replace([match], with: replacement, in: &page)
@@ -170,7 +170,7 @@ final class NoteFindController {
 
     func replaceAll() {
         guard canReplace, !matches.isEmpty else { NSSound.beep(); return }
-        let replacement = bar?.replaceField.field.stringValue ?? ""
+        let replacement = bar?.replaceField.text ?? ""
         let targets = matches
         let blocks = Set(targets.map(\.block))
         editor.session.edit("Replace All", kind: .text, affected: blocks) { page in
@@ -178,7 +178,7 @@ final class NoteFindController {
         }
         recompute(keepingPosition: origin, reveal: false)
         let count = targets.count
-        bar?.flash(count == 1 ? "Replaced 1 match" : "Replaced \(count) matches")
+        bar?.flash(count == 1 ? "Replaced 1" : "Replaced \(count)")
     }
 
     private func step(_ delta: Int) {
@@ -362,8 +362,6 @@ final class NoteFindController {
 @MainActor
 final class NoteFindHighlightView: NSView {
     weak var controller: NoteFindController?
-    static let soft = NoteTheme.adaptive("Find.Soft", light: NoteTheme.rgb(0xFFE16B, 0.5), dark: NoteTheme.rgb(0xE8C33A, 0.28))
-    static let strong = NoteTheme.adaptive("Find.Strong", light: NoteTheme.rgb(0xFFB020, 0.62), dark: NoteTheme.rgb(0xFFB020, 0.5))
     private var drawn: [(rect: NSRect, current: Bool)] = []
 
     override init(frame: NSRect) {
@@ -389,32 +387,30 @@ final class NoteFindHighlightView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         for item in drawn where item.rect.insetBy(dx: -3, dy: -3).intersects(dirtyRect) {
-            (item.current ? Self.strong : Self.soft).setFill()
+            (item.current ? NoteTheme.findCurrentMatch : NoteTheme.findMatch).setFill()
             NSBezierPath(roundedRect: item.rect.insetBy(dx: -1.5, dy: 0), xRadius: 3, yRadius: 3).fill()
         }
     }
 }
 
 @MainActor
-final class NoteFindBar: NSView, NSTextFieldDelegate {
-    static let width: CGFloat = 420
-    static let rowHeight: CGFloat = 32
+final class NoteFindBar: NSView {
+    static let width: CGFloat = 440
+    static let rowHeight: CGFloat = NoteTheme.fieldHeight
     static let padding: CGFloat = 6
 
     unowned let controller: NoteFindController
-    let findField = NotePageFieldBox(placeholder: "Find in note", symbol: "magnifyingglass")
-    let replaceField = NotePageFieldBox(placeholder: "Replace with")
+    let findField = NoteSearchField(placeholder: "Find in note")
+    let replaceField = NoteSearchField(placeholder: "Replace with")
     let countLabel = NSTextField(labelWithString: "")
-    let disclosure = NotePageChromeButton("Show Replace", symbol: "chevron.right", style: .icon)
-    let matchCase = NotePageChromeButton("Match Case", style: .chip)
-    let previous = NotePageChromeButton("Previous Match", symbol: "chevron.up", style: .icon)
-    let next = NotePageChromeButton("Next Match", symbol: "chevron.down", style: .icon)
-    let close = NotePageChromeButton("Close", symbol: "xmark", style: .icon)
-    let replaceOne = NotePageChromeButton("Replace", style: .chip)
-    let replaceEvery = NotePageChromeButton("Replace All", style: .chip)
+    let disclosure = NoteToolbarButton(icon: .symbol("chevron.right"), label: "Replace", shortcut: "⌥⌘F")
+    let matchCase = NoteToolbarButton(.text("Aa"), label: "Match Case")
+    let previous = NoteToolbarButton(icon: .symbol("chevron.up"), label: "Previous Match", shortcut: "⇧⌘G")
+    let next = NoteToolbarButton(icon: .symbol("chevron.down"), label: "Next Match", shortcut: "⌘G")
+    let close = NoteToolbarButton(icon: .symbol("xmark"), label: "Close", shortcut: "ESC")
+    let replaceOne = NoteChip("Replace", style: .filled)
+    let replaceEvery = NoteChip("Replace All", style: .filled)
     private(set) var isReplacing = false
-    private var flashing: String?
-    private var flashGeneration = 0
 
     init(controller: NoteFindController) {
         self.controller = controller
@@ -423,21 +419,21 @@ final class NoteFindBar: NSView, NSTextFieldDelegate {
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Find in Note")
-        countLabel.font = NotePageChrome.labelFont(11, weight: .medium)
-        countLabel.textColor = NoteTheme.tertiaryInk
+        countLabel.font = NoteTheme.chromeFont(12)
+        countLabel.textColor = NoteTheme.menuTertiaryInk
         countLabel.alignment = .right
+        countLabel.lineBreakMode = .byClipping
         countLabel.setAccessibilityElement(false)
-        findField.trailingAccessory = countLabel
-        findField.field.delegate = self
-        findField.field.setAccessibilityLabel("Find")
-        replaceField.field.delegate = self
-        replaceField.field.setAccessibilityLabel("Replace")
-        matchCase.label = "Aa"
-        matchCase.setAccessibilityLabel("Match Case")
-        disclosure.symbolSize = 10
-        previous.symbolSize = 11
-        next.symbolSize = 11
-        close.symbolSize = 10
+        findField.textField.setAccessibilityLabel("Find")
+        replaceField.textField.setAccessibilityLabel("Replace")
+        replaceField.showsIcon = false
+        findField.onChange = { [unowned controller] text in controller.setQuery(text) }
+        findField.onCommand = { [unowned self] selector in self.command(selector, in: self.findField) }
+        replaceField.onCommand = { [unowned self] selector in self.command(selector, in: self.replaceField) }
+        disclosure.iconPointSize = 11
+        previous.iconPointSize = 12
+        next.iconPointSize = 12
+        close.iconPointSize = 11
         disclosure.onPress = { [unowned controller] in controller.toggleReplacing() }
         matchCase.onPress = { [unowned self, unowned controller] in
             controller.setMatchCase(!controller.options.matchCase)
@@ -448,17 +444,12 @@ final class NoteFindBar: NSView, NSTextFieldDelegate {
         close.onPress = { [unowned controller] in controller.hide() }
         replaceOne.onPress = { [unowned controller] in controller.replaceCurrent() }
         replaceEvery.onPress = { [unowned controller] in controller.replaceAll() }
-        disclosure.parcTooltip = TooltipConfiguration("Replace", shortcut: .fixed(KeyboardShortcut(key: "f", flags: [.command, .option])))
-        matchCase.parcTooltip = TooltipConfiguration("Match Case")
-        previous.parcTooltip = TooltipConfiguration("Previous Match", shortcut: .fixed(KeyboardShortcut(key: "g", flags: [.command, .shift])))
-        next.parcTooltip = TooltipConfiguration("Next Match", shortcut: .fixed(KeyboardShortcut(key: "g", flags: [.command])))
-        close.parcTooltip = TooltipConfiguration("Close", shortcut: .fixed(KeyboardShortcut(key: "\u{1b}", flags: [])))
-        for view in [disclosure, findField, matchCase, previous, next, close, replaceField, replaceOne, replaceEvery] as [NSView] {
+        replaceOne.setToolTip("Replace", shortcut: "↩")
+        replaceEvery.setToolTip("Replace All", shortcut: "⌘↩")
+        for view in [disclosure, findField, countLabel, matchCase, previous, next, close, replaceField, replaceOne, replaceEvery] as [NSView] {
             addSubview(view)
         }
-        replaceField.isHidden = true
-        replaceOne.isHidden = true
-        replaceEvery.isHidden = true
+        for view in [replaceField, replaceOne, replaceEvery] as [NSView] { view.isHidden = true }
         setReplaceEnabled(controller.canReplace)
     }
 
@@ -475,11 +466,14 @@ final class NoteFindBar: NSView, NSTextFieldDelegate {
     func setReplacing(_ value: Bool, animated: Bool) {
         guard value != isReplacing else { return }
         isReplacing = value
-        disclosure.label = value ? "Hide Replace" : "Show Replace"
+        disclosure.setAccessibilityLabel(value ? "Hide Replace" : "Show Replace")
         rotateDisclosure(animated: animated)
         for view in [replaceField, replaceOne, replaceEvery] as [NSView] {
             view.isHidden = !value
-            if value && animated { NotePageChrome.fade(view, to: 1, duration: 0.12) } else { view.alphaValue = 1; view.layer?.opacity = 1 }
+            if value && animated, let layer = view.layer {
+                NoteAnimation.withoutAnimation { layer.opacity = 0 }
+                NoteAnimation.fade(layer, to: 1, duration: NoteAnimation.revealDuration)
+            }
         }
         invalidateIntrinsicContentSize()
         needsLayout = true
@@ -487,101 +481,96 @@ final class NoteFindBar: NSView, NSTextFieldDelegate {
 
     func setReplaceEnabled(_ enabled: Bool) {
         disclosure.isEnabled = enabled
-        replaceOne.isEnabled = enabled
-        replaceEvery.isEnabled = enabled
-        replaceField.field.isEditable = enabled
+        replaceField.textField.isEditable = enabled
+        refresh()
     }
 
     private func rotateDisclosure(animated: Bool) {
         guard let layer = disclosure.layer else { return }
         let size = disclosure.bounds.size
         var transform = CATransform3DMakeTranslation(size.width / 2, size.height / 2, 0)
-        transform = CATransform3DRotate(transform, isReplacing ? .pi / 2 : 0, 0, 0, 1)
+        transform = CATransform3DRotate(transform, isReplacing ? (disclosure.isFlipped ? .pi / 2 : -.pi / 2) : 0, 0, 0, 1)
         transform = CATransform3DTranslate(transform, -size.width / 2, -size.height / 2, 0)
-        if animated && !NoteTheme.reduceMotion {
-            NoteAnimation.animate(layer, "transform", to: NSValue(caTransform3D: transform), spring: .toggle, key: "note.find.disclosure")
+        if animated && !NoteAnimation.reduceMotion {
+            NoteAnimation.animate(layer, "transform", to: NSValue(caTransform3D: transform), spring: .toggle,
+                                  key: NoteAnimation.keyPrefix + "find.disclosure")
         } else {
-            NotePageChrome.withoutAnimation { layer.transform = transform }
+            NoteAnimation.withoutAnimation { layer.transform = transform }
         }
     }
 
     func refresh() {
-        countLabel.stringValue = flashing ?? controller.countLabel
-        countLabel.textColor = controller.matches.isEmpty && !controller.query.isEmpty && flashing == nil
-            ? NoteTheme.color(.text(.red)) : NoteTheme.tertiaryInk
+        countLabel.stringValue = controller.countLabel
+        countLabel.textColor = controller.matches.isEmpty && !controller.query.isEmpty
+            ? NoteTheme.destructiveInk : NoteTheme.menuTertiaryInk
         let hasMatches = !controller.matches.isEmpty
         previous.isEnabled = hasMatches
         next.isEnabled = hasMatches
         replaceOne.isEnabled = hasMatches && controller.canReplace
         replaceEvery.isEnabled = hasMatches && controller.canReplace
         matchCase.isChecked = controller.options.matchCase
-        if findField.field.stringValue != controller.query && findField.field.currentEditor() == nil {
-            findField.field.stringValue = controller.query
+        if findField.text != controller.query && findField.textField.currentEditor() == nil {
+            findField.text = controller.query
         }
-        findField.needsLayout = true
+        needsLayout = true
     }
 
     func flash(_ message: String) {
-        flashGeneration += 1
-        let generation = flashGeneration
-        flashing = message
-        refresh()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
-            guard let self, self.flashGeneration == generation else { return }
-            self.flashing = nil
-            self.refresh()
-        }
+        replaceEvery.flash(message)
     }
 
     override func layout() {
         super.layout()
         let pad = Self.padding, row = Self.rowHeight
-        var x = pad
-        disclosure.frame = NSRect(x: x, y: pad + 2, width: 24, height: row - 4)
+        let button = NoteTheme.toolbarButtonSize
+        let buttonY = pad + (row - button.height) / 2
+        disclosure.frame = NSRect(x: pad, y: buttonY, width: button.width, height: button.height)
         rotateDisclosure(animated: false)
-        x += 28
-        let trailingButtons: CGFloat = 32 + 28 * 3 + 6
-        findField.frame = NSRect(x: x, y: pad, width: bounds.width - x - pad - trailingButtons, height: row)
-        var trailing = findField.frame.maxX + 6
-        matchCase.frame = NSRect(x: trailing, y: pad + 2, width: 32, height: row - 4)
-        trailing += 32
-        previous.frame = NSRect(x: trailing, y: pad + 2, width: 28, height: row - 4)
-        trailing += 28
-        next.frame = NSRect(x: trailing, y: pad + 2, width: 28, height: row - 4)
-        trailing += 28
-        close.frame = NSRect(x: trailing, y: pad + 2, width: 28, height: row - 4)
+        let x = disclosure.frame.maxX + 4
+        var trailing = bounds.width - pad
+        for view in [close, next, previous] {
+            trailing -= button.width
+            view.frame = NSRect(x: trailing, y: buttonY, width: button.width, height: button.height)
+        }
+        let caseWidth = max(button.width, matchCase.intrinsicContentSize.width)
+        trailing -= caseWidth + 2
+        matchCase.frame = NSRect(x: trailing, y: buttonY, width: caseWidth, height: button.height)
+        let countWidth = max(56, ceil(countLabel.intrinsicContentSize.width))
+        trailing -= countWidth + 6
+        let labelHeight = ceil(countLabel.intrinsicContentSize.height)
+        countLabel.frame = NSRect(x: trailing, y: pad + (row - labelHeight) / 2, width: countWidth, height: labelHeight)
+        findField.frame = NSRect(x: x, y: pad, width: max(80, trailing - 6 - x), height: row)
         let second = pad * 2 + row
+        let chipY = second + (row - NoteTheme.chipHeight) / 2
         let allWidth = replaceEvery.intrinsicContentSize.width
         let oneWidth = replaceOne.intrinsicContentSize.width
-        replaceEvery.frame = NSRect(x: bounds.width - pad - allWidth, y: second + 2, width: allWidth, height: row - 4)
-        replaceOne.frame = NSRect(x: replaceEvery.frame.minX - 4 - oneWidth, y: second + 2, width: oneWidth, height: row - 4)
-        replaceField.frame = NSRect(x: x, y: second, width: replaceOne.frame.minX - 6 - x, height: row)
+        replaceEvery.frame = NSRect(x: bounds.width - pad - allWidth, y: chipY, width: allWidth, height: NoteTheme.chipHeight)
+        replaceOne.frame = NSRect(x: replaceEvery.frame.minX - 4 - oneWidth, y: chipY, width: oneWidth, height: NoteTheme.chipHeight)
+        replaceField.frame = NSRect(x: x, y: second, width: max(80, replaceOne.frame.minX - 6 - x), height: row)
     }
 
-    func controlTextDidChange(_ notification: Notification) {
-        guard (notification.object as? NSTextField) === findField.field else { return }
-        flashing = nil
-        controller.setQuery(findField.field.stringValue)
-    }
-
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        let shift = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
-        switch commandSelector {
+    private func command(_ selector: Selector, in field: NoteSearchField) -> Bool {
+        let flags = NSApp.currentEvent?.modifierFlags ?? []
+        switch selector {
         case #selector(NSResponder.cancelOperation(_:)):
             controller.hide()
             return true
         case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
-            if control === replaceField.field {
-                if NSApp.currentEvent?.modifierFlags.contains(.command) == true { controller.replaceAll() } else { controller.replaceCurrent() }
-            } else if shift { controller.findPrevious() } else { controller.findNext() }
+            if field === replaceField {
+                if flags.contains(.command) { controller.replaceAll() } else { controller.replaceCurrent() }
+            } else if flags.contains(.shift) {
+                controller.findPrevious()
+            } else {
+                controller.findNext()
+            }
             return true
         case #selector(NSResponder.insertTab(_:)):
-            guard control === findField.field, isReplacing else { return false }
-            window?.makeFirstResponder(replaceField.field)
+            guard field === findField, isReplacing else { return false }
+            replaceField.focus()
             return true
         case #selector(NSResponder.insertBacktab(_:)):
-            guard control === replaceField.field else { return false }
-            window?.makeFirstResponder(findField.field)
+            guard field === replaceField else { return false }
+            findField.focus()
             return true
         default:
             return false
@@ -597,6 +586,7 @@ final class NoteFindBar: NSView, NSTextFieldDelegate {
         case ("g", [.command, .shift]): controller.findPrevious(); return true
         case ("f", [.command]): controller.show(replacing: false); return true
         case ("f", [.command, .option]): controller.show(replacing: true); return true
+        case ("\r", [.command]) where replaceField.textField.currentEditor() != nil: controller.replaceAll(); return true
         default: return super.performKeyEquivalent(with: event)
         }
     }
