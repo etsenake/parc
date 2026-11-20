@@ -100,7 +100,7 @@ struct NoteMermaidTests {
         expect(!preview.contains("<pre>"), "Preview leaves the code out")
         let split = html(.split, art: art)
         expect(split.contains("class=\"diagram split\""), "Split marks the figure")
-        guard let code = split.range(of: "<pre><code class=\"language-mermaid\">"), let drawing = split.range(of: "diagram-light") else {
+        guard let code = split.range(of: "<pre><code class=\"language-mermaid\">"), let drawing = split.range(of: "<div class=\"diagram-art diagram-light\">") else {
             failTest("Split exports code and drawing: \(split)")
         }
         expect(code.lowerBound < drawing.lowerBound, "Split puts the code above the drawing")
