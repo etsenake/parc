@@ -28,7 +28,7 @@ final class NoteCustomEmojiWell: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        drawInOwnAppearance {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
             let frame = bounds.insetBy(dx: 1, dy: 1)
             let path = NSBezierPath(roundedRect: frame, xRadius: 14, yRadius: 14)
             if isTargeted || (isHovered && isChangeable) {
@@ -45,7 +45,7 @@ final class NoteCustomEmojiWell: NSView {
             path.stroke()
             guard image == nil else { return }
             let glyph = NoteEmojiDrawing.symbol("photo.badge.plus", pointSize: 22)
-            let tinted = NoteAtomCell.tinted(glyph, size: glyph.size, tint: NoteTheme.tertiaryInk)
+            let tinted = NoteIconRenderer.tintedTemplate(glyph, size: glyph.size, tint: NoteTheme.tertiaryInk)
             tinted.draw(in: NSRect(x: bounds.midX - glyph.size.width / 2, y: bounds.midY - glyph.size.height / 2 - 10,
                                    width: glyph.size.width, height: glyph.size.height),
                         from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)

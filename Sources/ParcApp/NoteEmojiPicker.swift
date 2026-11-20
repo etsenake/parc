@@ -700,7 +700,7 @@ final class NoteEmojiGridView: NSView {
         NoteTheme.accent.setFill()
         NSBezierPath(ovalIn: badge).fill()
         let pencil = NoteEmojiDrawing.symbol("pencil", pointSize: 7)
-        let tinted = NoteAtomCell.tinted(pencil, size: NSSize(width: 8, height: 8), tint: .white)
+        let tinted = NoteIconRenderer.tintedTemplate(pencil, size: NSSize(width: 8, height: 8), tint: .white)
         tinted.draw(in: badge.insetBy(dx: 2, dy: 2), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     }
 

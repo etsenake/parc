@@ -4,6 +4,8 @@ Sources/ParcApp/NoteAnimation.swift
 Sources/ParcApp/NoteFloatingPanel.swift
 Sources/ParcApp/NoteControls.swift
 Sources/ParcApp/NoteEmojiPicker.swift
+Sources/ParcApp/NoteCustomEmojiEditor.swift
+Sources/ParcApp/NoteCustomEmojiImages.swift
 Sources/ParcApp/PointerCover.swift
 Sources/ParcApp/PointingHand.swift
 Sources/ParcApp/TranslucentButtonFace.swift

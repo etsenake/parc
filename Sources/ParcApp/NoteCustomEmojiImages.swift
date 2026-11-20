@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 @MainActor
 enum NoteCustomEmojiImages {
     nonisolated static let maximumPixels = 280
+    nonisolated static let maximumBytes = 40 * 1024 * 1024
     private static let cache = NSCache<NSString, NSImage>()
 
     static func image(_ name: String, in library: NoteEmojiLibrary?) -> NSImage? {
@@ -57,7 +58,7 @@ enum NoteCustomEmojiImages {
     nonisolated static func preparedPNG(contentsOf url: URL) -> Data? {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= NotePageImageLoader.maximumBytes,
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= maximumBytes,
               let data = try? Data(contentsOf: url) else { return nil }
         return preparedPNG(from: data)
     }
@@ -95,7 +96,7 @@ extension NoteIcon {
     static func note(_ icon: String?, at note: URL?) -> NoteIcon {
         guard let icon, !icon.isEmpty else { return .symbol("doc.text") }
         if NoteTabIcon.emoji(icon) != nil { return .emoji(icon) }
-        guard let note, NoteCustomEmojiName.isReference(icon) || NotePageImageLoader.isImageSource(icon),
+        guard let note, NoteCustomEmojiName.isReference(icon) || NotePageExport.isImageSource(icon),
               let url = NoteFileEnvironment(documentURL: note, isPlainText: false).resolve(icon), url.isFileURL,
               NoteCustomEmojiImages.image(at: url) != nil else { return .symbol("doc.text") }
         return .image(url)
