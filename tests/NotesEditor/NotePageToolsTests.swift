@@ -238,6 +238,11 @@ struct NotePageToolsTests {
         let reread = NoteMarkdown.parse(NoteMarkdown.serialize(page))
         expect(reread.blocks[0].props.alert == "TIP" && reread.blocks[0].calloutDisplayIcon == nil,
                "a removed alert icon survives the file round trip without losing the alert")
+        let githubNote = NoteMarkdown.parse("> [!NOTE]\n> Heads up\n").blocks[0]
+        expect(githubNote.calloutDisplayIcon == "ℹ️" && githubNote.calloutDisplayColor == .background(.blue),
+               "a hand-written GitHub NOTE shows blue with an info icon")
+        let plainNote = NoteMarkdown.parse(NoteMarkdown.serialize(NotePage(blocks: [callout(alert: nil)]))).blocks[0]
+        expect(plainNote.calloutDisplayIcon == nil && plainNote.calloutDisplayColor == nil, "a saved plain callout reloads plain and grey")
         let html = NotePageHTML.document(NotePage(blocks: [callout(alert: "WARNING")]), title: "T", assets: { _ in nil }, embedImages: false)
         expect(html.contains("⚠️") && html.contains("var(--yellow-bg)") && html.contains("<aside class=\"callout\" data-block"),
                "HTML export shows the alert's look without claiming a picked colour")

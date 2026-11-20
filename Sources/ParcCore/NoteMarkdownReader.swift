@@ -391,9 +391,12 @@ struct NoteMDReader {
 
     private static let githubAlerts: Set<String> = ["TIP", "IMPORTANT", "WARNING", "CAUTION"]
 
+    static let noteAlert = "NOTE"
+    static let keepsAlertFlag = "alert"
+
     static func calloutUsesBody(_ alert: String?) -> Bool {
         guard let alert else { return true }
-        return githubAlerts.contains(alert) || alert == "NOTE"
+        return githubAlerts.contains(alert) || alert == noteAlert
     }
 
     private func quote(_ node: NoteMDBlock) -> NoteBlock {
@@ -404,7 +407,7 @@ struct NoteMDReader {
         var block = NoteBlock(.quote)
         if let first = children.first, first.kind == .paragraph, let marker = Self.calloutMarker(first.content) {
             block.kind = .callout
-            block.props.alert = marker.type == "NOTE" ? nil : marker.type
+            block.props.alert = marker.type
             if let fold = marker.fold {
                 block.props.toggleable = true
                 block.props.expanded = fold == "+"
@@ -437,6 +440,7 @@ struct NoteMDReader {
         }
         block.text = text
         block.children = extra + sequence(children, documentEdges: false, trailingBlank: node.trailingBlank)
+        if block.props.alert == Self.noteAlert, let attributes, !attributes.flags.contains(Self.keepsAlertFlag) { block.props.alert = nil }
         if let attributes { apply(attributes, to: &block) }
         return block
     }

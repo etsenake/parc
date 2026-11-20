@@ -152,9 +152,15 @@ The text after the marker is the callout's own text. Any further blocks are
 its children. `NOTE`, `TIP`, `IMPORTANT`, `WARNING` and `CAUTION` (in capitals)
 follow GitHub's layout. Any other type, such as Obsidian's `> [!faq]- Title`,
 keeps the text on the marker line as the title. A `+` or `-` after the marker
-makes the callout fold open or closed. A plain callout from Parc is saved as
-`[!NOTE]`. When the callout's text is empty but a paragraph follows, a bare
-`<!-- parc -->` line keeps the place of the missing text.
+makes the callout fold open or closed.
+
+A plain callout from Parc is saved as `[!NOTE]` and always carries a Parc
+comment, a bare `<!-- parc -->` when it has no icon or colour. A `[!NOTE]`
+without one is GitHub's note, shown blue with ℹ️. Give a GitHub note your own
+icon or colour and its comment gets an `alert` flag, as in
+`<!-- parc alert icon="🌳" -->`, so it stays a note. When the callout's text
+is empty but a paragraph follows, the comment goes on its own line to keep the
+place of the missing text.
 
 ## Toggles and toggle headings
 

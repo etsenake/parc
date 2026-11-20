@@ -60,7 +60,8 @@ struct MarkdownCodecTests {
             ("toc", "<!-- toc -->\n\n# Intro\n"),
             ("callout github", "> [!TIP]\n> Try the shortcut. <!-- parc icon=\"💡\" color=\"yellow_background\" -->\n"),
             ("callout obsidian", "> [!faq]- Why markdown?\n> Because files outlive apps.\n"),
-            ("callout note default", "> [!NOTE]\n> Plain note.\n>\n> - with a list\n"),
+            ("callout github note", "> [!NOTE]\n> Useful note.\n>\n> - with a list\n"),
+            ("callout plain", "> [!NOTE]\n> Plain callout. <!-- parc -->\n>\n> - with a list\n"),
             ("toggle", "<details open>\n<summary>Open toggle</summary>\n\nInside.\n\n</details>\n"),
             ("toggle closed empty", "<details>\n<summary>Nothing here</summary>\n</details>\n"),
             ("toggle heading", "<details>\n<summary><h2>Section</h2></summary>\n\n- child\n\n</details>\n"),
@@ -282,7 +283,13 @@ struct MarkdownCodecTests {
         let alert = blocks("> [!WARNING]\n> Watch out.\n>\n> Second.\n")[0]
         expect(alert.kind == .callout && alert.props.alert == "WARNING" && alert.text.string == "Watch out." && alert.children.count == 1, "GitHub alerts become callouts")
         let note = blocks("> [!NOTE]\n> Hi\n")[0]
-        expect(note.props.alert == nil, "NOTE is the default callout")
+        expect(note.props.alert == "NOTE" && note.props.icon == nil && note.color == nil, "a hand-written GitHub NOTE is a note alert")
+        let plain = blocks("> [!NOTE]\n> Hi <!-- parc -->\n")[0]
+        expect(plain.props.alert == nil && plain.text.string == "Hi" && plain.props.icon == nil, "Parc's comment marks a plain callout")
+        let iconic = blocks("> [!NOTE]\n> Hi <!-- parc icon=\"🔥\" -->\n")[0]
+        expect(iconic.props.alert == nil && iconic.props.icon == "🔥", "a plain callout's icon comment keeps it plain")
+        let kept = blocks("> [!NOTE]\n> Hi <!-- parc alert icon=\"🌳\" -->\n")[0]
+        expect(kept.props.alert == "NOTE" && kept.props.icon == "🌳", "the alert flag keeps a restyled GitHub NOTE a note")
         let obsidian = blocks("> [!tip]+ Title here\n> Body line\n")[0]
         expect(obsidian.props.alert == "tip" && obsidian.props.toggleable && obsidian.props.expanded && obsidian.text.string == "Title here"
                && obsidian.children.first?.text.string == "Body line", "Obsidian titles and folds load")
@@ -305,6 +312,47 @@ struct MarkdownCodecTests {
         MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [callout]), "empty alert text")
         let bare = NoteBlock(.quote, children: [.paragraph("first child")])
         MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [bare, NoteBlock(.quote), NoteBlock(.callout)]), "empty quotes")
+        noteCallouts()
+    }
+
+    static func noteCallouts() {
+        let plain = NoteBlock(.callout, text: "No icon, no colour")
+        let plainText = NoteMarkdown.serialize(NotePage(blocks: [plain]))
+        expect(plainText == "> [!NOTE]\n> No icon, no colour <!-- parc -->\n", "a bare plain callout still carries Parc's comment")
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [plain]), "plain callout without icon or colour")
+        var plainUnderlined = NoteBlock(.callout, text: NoteText("under", marks: NoteMarks(underline: true)) + NoteText(" lined"))
+        plainUnderlined.children = [NoteBlock(.bulletedItem, text: "item")]
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [plainUnderlined]), "plain callout opening with inline HTML")
+        let plainEmpty = NoteBlock(.callout, children: [NoteBlock(.bulletedItem, text: "item")])
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [plainEmpty]), "empty plain callout with a list")
+        var plainIcon = NoteBlock(.callout, text: "Lit")
+        plainIcon.props.icon = "🔥"
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [plainIcon]), "plain callout with an icon")
+        var plainFolded = NoteBlock(.callout, text: "Folded", children: [.paragraph("inside")])
+        plainFolded.props.toggleable = true
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [plainFolded]), "folding plain callout")
+
+        MarkdownCheck.checkExact("> [!NOTE]\n> Useful information.\n", "GitHub NOTE")
+        MarkdownCheck.checkExact("> [!NOTE]\n>\n> - only a list\n", "GitHub NOTE without text")
+        MarkdownCheck.checkExact("> [!NOTE]\n> Two\\\n> lines\n>\n> Second paragraph.\n", "GitHub NOTE with a body")
+        var note = NoteMarkdown.parse("> [!NOTE]\n> Useful information.\n")
+        expect(note.blocks[0].props.alert == "NOTE", "a GitHub NOTE loads as a note alert")
+        note.blocks[0].text = NoteText("Edited information.")
+        expect(NoteMarkdown.serialize(note) == "> [!NOTE]\n> Edited information.\n", "editing a GitHub NOTE's text adds no comment")
+        note.blocks[0].props.icon = "🌳"
+        let restyled = NoteMarkdown.serialize(note)
+        expect(restyled == "> [!NOTE]\n> Edited information. <!-- parc alert icon=\"🌳\" -->\n", "a picked icon is saved with the alert flag")
+        MarkdownCheck.checkModelRoundTrip(note, "GitHub NOTE with a picked icon")
+        note.blocks[0].props.icon = ""
+        note.blocks[0].color = .background(.pink)
+        MarkdownCheck.checkModelRoundTrip(note, "GitHub NOTE with its icon removed and a picked colour")
+        var anchored = NoteBlock(.callout, text: "Linked")
+        anchored.props.alert = "NOTE"
+        anchored.props.anchor = "n0te22"
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [anchored]), "GitHub NOTE with a block anchor")
+        var empty = NoteBlock(.callout)
+        empty.props.alert = "NOTE"
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [empty, NoteBlock(.callout)]), "empty GitHub NOTE beside an empty plain callout")
     }
 
     static func togglesAndColumns() {

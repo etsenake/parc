@@ -192,16 +192,20 @@ struct NoteMDWriter {
         items.isEmpty ? "" : " " + attributes(items)
     }
 
-    private func textLines(_ text: NoteText, style: NoteMDInlineStyle, attributes items: [(String, String?)]) -> [String] {
+    private func comment(_ items: [(String, String?)]) -> String {
+        items.isEmpty ? "<!-- parc -->" : attributes(items)
+    }
+
+    private func textLines(_ text: NoteText, style: NoteMDInlineStyle, attributes items: [(String, String?)],
+                           marked: Bool = false, carrying carried: [(String, String?)] = []) -> [String] {
         var commented = style
-        commented.trailingComment = !items.isEmpty
+        commented.trailingComment = marked || !items.isEmpty
         var lines = inline.write(text, style: commented).components(separatedBy: "\n")
-        if items.isEmpty, Self.startsHTMLBlock(lines[0]) {
+        if !commented.trailingComment, Self.startsHTMLBlock(lines[0]) {
             commented.trailingComment = true
             lines = inline.write(text, style: commented).components(separatedBy: "\n")
-            lines[lines.count - 1] += " <!-- parc -->"
         }
-        if !items.isEmpty { lines[lines.count - 1] += suffix(items) }
+        if commented.trailingComment { lines[lines.count - 1] += " " + comment(carried + items) }
         return lines
     }
 
@@ -314,7 +318,7 @@ struct NoteMDWriter {
         var textLines: [String]
         let firstChildIsParagraph = Self.writesAsParagraph(block.children.first)
         if block.text.isEmpty {
-            textLines = !items.isEmpty || firstChildIsParagraph ? [items.isEmpty ? "<!-- parc -->" : attributes(items)] : []
+            textLines = !items.isEmpty || firstChildIsParagraph ? [comment(items)] : []
         } else {
             let style = NoteMDInlineStyle(shape: .paragraph, taskSensitive: block.kind != .todo)
             textLines = self.textLines(block.text, style: style, attributes: items)
@@ -348,19 +352,24 @@ struct NoteMDWriter {
         var leading = 1
         var children = block.children
         if block.kind == .callout {
-            let alert = block.props.alert ?? "NOTE"
+            let noteAlert = NoteMDReader.noteAlert
+            let marked = block.props.alert == nil
+            let carried: [(String, String?)] = block.props.alert == noteAlert ? [(NoteMDReader.keepsAlertFlag, nil)] : []
+            let alert = block.props.alert ?? noteAlert
             let fold = block.props.toggleable ? (block.props.expanded ? "+" : "-") : ""
             let marker = "[!\(alert)]\(fold)"
             if NoteMDReader.calloutUsesBody(block.props.alert) {
                 inner.append(marker)
-                let lines = block.text.isEmpty ? [] : textLines(block.text, style: .paragraph, attributes: items)
+                let lines = block.text.isEmpty ? [] : textLines(block.text, style: .paragraph, attributes: items, marked: marked,
+                                                                carrying: carried)
                 if let first = lines.first, Self.interruptsWithHTML(first) {
-                    let title = inline.write(block.text, style: NoteMDInlineStyle(shape: .line, trailingComment: !items.isEmpty))
-                    inner[inner.count - 1] = marker + " " + title + suffix(items)
+                    let commented = marked || !items.isEmpty
+                    let title = inline.write(block.text, style: NoteMDInlineStyle(shape: .line, trailingComment: commented))
+                    inner[inner.count - 1] = marker + " " + title + (commented ? " " + comment(carried + items) : "")
                 } else if !block.text.isEmpty {
                     inner.append(contentsOf: lines)
-                } else if !items.isEmpty || firstChildIsParagraph {
-                    inner.append(items.isEmpty ? "<!-- parc -->" : attributes(items))
+                } else if !items.isEmpty || firstChildIsParagraph || marked {
+                    inner.append(comment(carried + items))
                 }
             } else {
                 let title = inline.write(block.text, style: NoteMDInlineStyle(shape: .line, trailingComment: !items.isEmpty))
@@ -375,7 +384,7 @@ struct NoteMDWriter {
             if !block.text.isEmpty {
                 inner.append(contentsOf: textLines(block.text, style: NoteMDInlineStyle(shape: .paragraph, calloutSensitive: true), attributes: items))
             } else if !items.isEmpty || firstChildIsParagraph {
-                inner.append(items.isEmpty ? "<!-- parc -->" : attributes(items))
+                inner.append(comment(items))
             } else {
                 leading = 0
             }
