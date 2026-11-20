@@ -3,10 +3,10 @@
 The tools that make the videos on [parcbrowser.com](https://parcbrowser.com):
 the silent film under the headline and the videos inside the field-guide
 cards. Every frame of Parc in them is drawn offscreen from Parc's own interface
-code: the real sidebar, themes, Peek, splits, command bar, Easel canvas, Mini
-Player, capture tools, Library and window crank. Nothing launches the app,
-opens a window or records the screen. The web pages inside the window are the
-demo pages in `pages/`, because Chromium can't run here.
+code: the real sidebar, themes, Peek, splits, command bar, Easel canvas, Notes
+editor, Mini Player, capture tools, Library and window crank. Nothing launches
+the app, opens a window or records the screen. The web pages inside the window
+are the demo pages in `pages/`, because Chromium can't run here.
 
 These tools never run as part of the checks. See the [website guide](../../docs/website.md)
 for how the videos sit on the site.
@@ -15,7 +15,7 @@ for how the videos sit on the site.
 
 - `base/`: the starting render harness that every scene folder copied.
 - One folder per scene: `spaces`, `collapse`, `crank`, `peek`, `preview`,
-  `split`, `commandbar-easel`, `capture-archive`, `mini-card`, `startpage`.
+  `split`, `commandbar-easel`, `notes`, `capture-archive`, `mini-card`, `startpage`.
   Each has a `build.py` that compiles Parc's sources plus its `Harness/` into a
   `render` binary, and generates patched copies of a few sources into `gen/`.
 - `canon/Model.swift`: the shared Spaces, tabs and themes every scene uses. Each
@@ -44,6 +44,7 @@ From the scene's folder, build once, then render:
 | `preview` | `./render out preview ../pages/png/article.png ../pages/png/kite.png` |
 | `split` | `./render out split` (the film) and `./render out stacks` (the card) |
 | `commandbar-easel` | `./render out commandbar ../pages/png` and `./render out easel ../pages/png` |
+| `notes` | `./render out notes` (`notes-still` writes only the key frames and the strip) |
 | `capture-archive` | `./render out capture` and `./render out archive` |
 | `mini-card` | `./render out mini ../pages/png` and `./render out card 10 "Sam Rivera"` |
 | `startpage` | `./render out startpage ../pages/png/kite.png` |

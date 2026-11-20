@@ -374,6 +374,33 @@
    ],
    "dissolve": 0.4,
    "length": 5.8
+  },
+  {
+   "name": "notes",
+   "segments": [
+    {
+     "source": "../notes/out/notes.mov",
+     "in": 0.35,
+     "out": 11.65
+    }
+   ],
+   "camera": [
+    [
+     0.0,
+     716.0,
+     400.0,
+     860.0
+    ],
+    [
+     11.3,
+     716.0,
+     400.0,
+     860.0,
+     "hold"
+    ]
+   ],
+   "dissolve": 0.4,
+   "length": 11.3
   }
  ]
 }
