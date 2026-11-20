@@ -161,6 +161,18 @@ struct NoteMathTypesetter {
         }
     }
 
+    func scriptLevel(_ style: NoteMathStyle) -> Int {
+        switch style.level {
+        case .display, .text: return 0
+        case .script: return 1
+        case .scriptScript: return 2
+        }
+    }
+
+    private func sized(_ glyph: CGGlyph, _ context: NoteMathContext) -> CGGlyph {
+        font.scriptGlyph(glyph, level: scriptLevel(context.style))
+    }
+
     private func scale(_ context: NoteMathContext) -> CGFloat { size(context.style) / font.unitsPerEm }
 
     private func em(_ context: NoteMathContext) -> CGFloat { size(context.style) }
@@ -346,14 +358,19 @@ struct NoteMathTypesetter {
 
     private func character(_ symbol: String, _ context: NoteMathContext) -> NoteMathBox {
         let mapped = NoteMathAlphabet.map(symbol, variant: context.variant)
-        if let glyph = singleGlyph(mapped) { return glyphBox(glyph, size: size(context.style), color: context.color) }
+        if let glyph = singleGlyph(mapped) { return glyphBox(sized(glyph, context), size: size(context.style), color: context.color) }
         if mapped != symbol, let glyph = singleGlyph(symbol) {
-            return glyphBox(glyph, size: size(context.style), color: context.color)
+            return glyphBox(sized(glyph, context), size: size(context.style), color: context.color)
         }
         return textRun(mapped, context, style: .roman)
     }
 
     func textRun(_ text: String, _ context: NoteMathContext, style: NoteMathTextStyle, font override: CTFont? = nil) -> NoteMathBox {
+        if override == nil, scriptLevel(context.style) > 0, let glyphs = scriptTextGlyphs(text, style: style) {
+            var row = NoteMathRow()
+            for glyph in glyphs { row.append(glyphBox(sized(glyph, context), size: size(context.style), color: context.color)) }
+            return row.box.withoutGlyphIdentity()
+        }
         let ctFont = override ?? font.font(size: size(context.style))
         let attributes: [CFString: Any] = [kCTFontAttributeName: ctFont, kCTForegroundColorFromContextAttributeName: kCFBooleanTrue as Any]
         let mapped = override == nil ? NoteMathAlphabet.mapText(text, style: style) : text
@@ -372,6 +389,16 @@ struct NoteMathTypesetter {
         return box
     }
 
+    private func scriptTextGlyphs(_ text: String, style: NoteMathTextStyle) -> [CGGlyph]? {
+        var glyphs: [CGGlyph] = []
+        for scalar in NoteMathAlphabet.mapText(text, style: style).unicodeScalars {
+            let glyph = font.glyph(for: scalar)
+            guard glyph != 0, !scalar.properties.isWhitespace else { return nil }
+            glyphs.append(glyph)
+        }
+        return glyphs.isEmpty ? nil : glyphs
+    }
+
     private func largeOperator(_ symbol: String, _ context: NoteMathContext) -> NoteMathBox {
         guard var glyph = singleGlyph(symbol) else { return character(symbol, context) }
         if context.style.isDisplay, let construction = font.verticalConstruction(glyph) {
@@ -383,7 +410,7 @@ struct NoteMathTypesetter {
                 }
             }
         }
-        let box = glyphBox(glyph, size: size(context.style), color: context.color)
+        let box = glyphBox(sized(glyph, context), size: size(context.style), color: context.color)
         let shift = (box.ascent - box.descent) / 2 - constant(.axisHeight, context)
         return box.raised(by: -shift)
     }
@@ -644,8 +671,8 @@ struct NoteMathTypesetter {
         guard let glyph = singleGlyph(symbol) else { return character(symbol, context.with(variant: .roman)) }
         let scale = self.scale(context)
         let size = self.size(context.style)
-        if font.metrics(glyph).bounds.height * scale >= target { return glyphBox(glyph, size: size, color: context.color) }
-        guard let construction = font.verticalConstruction(glyph) else { return glyphBox(glyph, size: size, color: context.color) }
+        if font.metrics(glyph).bounds.height * scale >= target { return glyphBox(sized(glyph, context), size: size, color: context.color) }
+        guard let construction = font.verticalConstruction(glyph) else { return glyphBox(sized(glyph, context), size: size, color: context.color) }
         for variant in construction.variants where variant.advance * scale >= target {
             return glyphBox(variant.glyph, size: size, color: context.color)
         }
@@ -657,8 +684,8 @@ struct NoteMathTypesetter {
         guard let glyph = singleGlyph(symbol) else { return nil }
         let scale = self.scale(context)
         let size = self.size(context.style)
-        if font.metrics(glyph).advance * scale >= target { return glyphBox(glyph, size: size, color: context.color) }
-        guard let construction = font.horizontalConstruction(glyph) else { return glyphBox(glyph, size: size, color: context.color) }
+        if font.metrics(glyph).advance * scale >= target { return glyphBox(sized(glyph, context), size: size, color: context.color) }
+        guard let construction = font.horizontalConstruction(glyph) else { return glyphBox(sized(glyph, context), size: size, color: context.color) }
         for variant in construction.variants where variant.advance * scale >= target {
             return glyphBox(variant.glyph, size: size, color: context.color)
         }
@@ -853,6 +880,11 @@ struct NoteMathTypesetter {
             for variant in construction.variants {
                 if variant.advance * scale <= base.width * 1.05 { glyph = variant.glyph } else { break }
             }
+        }
+        if base.ascent > constant(.flattenedAccentBaseHeight, context), let flattened = font.flattenedAccent(glyph) {
+            glyph = flattened
+        } else {
+            glyph = sized(glyph, context)
         }
         let accent = glyphBox(glyph, size: size(context.style), color: context.color)
         let accentAttachment = accent.accentAttachment ?? font.metrics(glyph).bounds.midX * scale

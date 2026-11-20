@@ -77,6 +77,8 @@ final class NoteMathFont {
     private let kerns: [CGGlyph: NoteMathKernSet]
     private let verticalConstructions: [CGGlyph: NoteMathGlyphConstruction]
     private let horizontalConstructions: [CGGlyph: NoteMathGlyphConstruction]
+    private let scriptAlternates: [CGGlyph: [CGGlyph]]
+    private let flattenedAccents: [CGGlyph: CGGlyph]
     private let lock = NSLock()
     private var sizedFonts: [CGFloat: CTFont] = [:]
     private var metricsCache: [CGGlyph: NoteMathGlyphMetrics] = [:]
@@ -102,6 +104,11 @@ final class NoteMathFont {
         self.descriptor = descriptor
         unitsPerEm = units
         unitFont = CTFontCreateWithFontDescriptor(descriptor, units, nil)
+        let substitutions = CTFontCopyTable(unitFont, CTFontTableTag(0x4753_5542), []).map { [UInt8]($0 as Data) } ?? []
+        let substitutionReader = NoteMathTableReader(bytes: substitutions)
+        let scriptStyle = substitutionReader.substitutions(feature: 0x7373_7479)
+        scriptAlternates = scriptStyle.alternates.merging(scriptStyle.singles.mapValues { [$0] }) { current, _ in current }
+        flattenedAccents = substitutionReader.substitutions(feature: 0x666C_6163).singles
         let table = CTFontCopyTable(unitFont, CTFontTableTag(0x4D41_5448), []).map { [UInt8]($0 as Data) } ?? []
         let reader = NoteMathTableReader(bytes: table)
         hasMathTable = reader.u16(0) == 1
@@ -212,6 +219,21 @@ final class NoteMathFont {
     func verticalConstruction(_ glyph: CGGlyph) -> NoteMathGlyphConstruction? { verticalConstructions[glyph] }
 
     func horizontalConstruction(_ glyph: CGGlyph) -> NoteMathGlyphConstruction? { horizontalConstructions[glyph] }
+
+    var hasScriptAlternates: Bool { !scriptAlternates.isEmpty }
+
+    func scriptGlyph(_ glyph: CGGlyph, level: Int) -> CGGlyph {
+        guard level > 0, let alternates = scriptAlternates[glyph], !alternates.isEmpty else { return glyph }
+        let alternate = alternates[min(level, alternates.count) - 1]
+        return alternate == 0 ? glyph : alternate
+    }
+
+    func flattenedAccent(_ glyph: CGGlyph) -> CGGlyph? { flattenedAccents[glyph] }
+}
+
+private struct NoteMathSubstitutions {
+    var singles: [CGGlyph: CGGlyph] = [:]
+    var alternates: [CGGlyph: [CGGlyph]] = [:]
 }
 
 private struct NoteMathTableReader {
@@ -225,6 +247,60 @@ private struct NoteMathTableReader {
     func i16(_ offset: Int) -> Int {
         let value = u16(offset)
         return value >= 0x8000 ? value - 0x10000 : value
+    }
+
+    func u32(_ offset: Int) -> Int { u16(offset) << 16 | u16(offset + 2) }
+
+    func lookupOffsets(feature tag: Int) -> [Int] {
+        guard bytes.count > 10 else { return [] }
+        let featureList = u16(6), lookupList = u16(8)
+        guard featureList > 0, lookupList > 0 else { return [] }
+        var lookups: [Int] = []
+        for index in 0..<u16(featureList) {
+            let record = featureList + 2 + index * 6
+            guard u32(record) == tag else { continue }
+            let feature = featureList + u16(record + 4)
+            for item in 0..<u16(feature + 2) {
+                let lookup = u16(feature + 4 + item * 2)
+                let offset = lookupList + u16(lookupList + 2 + lookup * 2)
+                if !lookups.contains(offset) { lookups.append(offset) }
+            }
+        }
+        return lookups
+    }
+
+    func substitutions(feature tag: Int) -> NoteMathSubstitutions {
+        var result = NoteMathSubstitutions()
+        for lookup in lookupOffsets(feature: tag) {
+            for index in 0..<u16(lookup + 4) {
+                var subtable = lookup + u16(lookup + 6 + index * 2)
+                var kind = u16(lookup)
+                if kind == 7 {
+                    kind = u16(subtable + 2)
+                    subtable += u32(subtable + 4)
+                }
+                let glyphs = coverage(at: subtable + u16(subtable + 2))
+                switch (kind, u16(subtable)) {
+                case (1, 1):
+                    let delta = i16(subtable + 4)
+                    for glyph in glyphs where result.singles[glyph] == nil {
+                        result.singles[glyph] = CGGlyph(truncatingIfNeeded: (Int(glyph) + delta) & 0xFFFF)
+                    }
+                case (1, 2):
+                    for index in 0..<min(u16(subtable + 4), glyphs.count) where result.singles[glyphs[index]] == nil {
+                        result.singles[glyphs[index]] = CGGlyph(u16(subtable + 6 + index * 2))
+                    }
+                case (3, 1):
+                    for index in 0..<min(u16(subtable + 4), glyphs.count) where result.alternates[glyphs[index]] == nil {
+                        let set = subtable + u16(subtable + 6 + index * 2)
+                        result.alternates[glyphs[index]] = (0..<u16(set)).map { CGGlyph(u16(set + 2 + $0 * 2)) }
+                    }
+                default:
+                    break
+                }
+            }
+        }
+        return result
     }
 
     func coverage(at offset: Int) -> [CGGlyph] {

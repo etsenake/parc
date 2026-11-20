@@ -22,6 +22,10 @@ struct NoteMathLayoutTests {
         font.glyph(for: symbol.unicodeScalars.first!)
     }
 
+    static func scriptGlyph(_ symbol: String, _ level: Int) -> CGGlyph {
+        font.scriptGlyph(glyph(symbol), level: level)
+    }
+
     static func inks(_ box: NoteMathBox, glyph target: CGGlyph) -> [NoteMathInk] {
         box.inks.filter { ink in
             if case .glyph(let glyph, _) = ink.content { return glyph == target }
@@ -56,6 +60,7 @@ struct NoteMathLayoutTests {
         delimiters()
         accents()
         environments()
+        scriptSizes()
         renderer()
         bitmaps()
         samples()
@@ -103,7 +108,7 @@ struct NoteMathLayoutTests {
         expect(abs(box("-b").width - (font.metrics(glyph("\u{2212}")).advance * size / 1000 + b)) < 0.01, "a leading minus is unary")
         expect(box("a,b").width > a + b + font.metrics(glyph(",")).advance * size / 1000 + 0.1, "punctuation gets a thin space")
         let scriptSum = box("x^{a+b}").width - box("x^{ab}").width
-        expect(abs(scriptSum - font.metrics(glyph("+")).advance * size * 0.7 / 1000) < 0.01, "no medium space inside scripts")
+        expect(abs(scriptSum - font.metrics(scriptGlyph("+", 1)).advance * size * 0.7 / 1000) < 0.01, "no medium space inside scripts")
         expect(abs(box("a\\quad b").width - (a + b + size)) < 0.01, "quad is one em")
         expect(box("\\sin x").width > box("sinx").width - 3, "function names are upright and spaced")
     }
@@ -111,23 +116,23 @@ struct NoteMathLayoutTests {
     static func scripts() {
         let base = box("x")
         let raised = box("x^2")
-        let two = inks(raised, glyph: glyph("2"))
+        let two = inks(raised, glyph: scriptGlyph("2", 1))
         expect(two.count == 1 && two[0].origin.y > size * 0.25, "superscripts are raised")
         expect(raised.ascent > base.ascent && raised.width > base.width, "superscript grows the box")
         if case .glyph(_, let scriptFont) = two[0].content { expect(abs(CTFontGetSize(scriptFont) - size * 0.7) < 0.01, "script size is 70%") }
         let lowered = box("x_2")
-        let sub = inks(lowered, glyph: glyph("2"))
+        let sub = inks(lowered, glyph: scriptGlyph("2", 1))
         expect(sub.count == 1 && sub[0].origin.y < 0 && lowered.descent > base.descent, "subscripts are lowered")
         let both = box("x_2^2")
-        let pair = inks(both, glyph: glyph("2")).sorted { $0.origin.y > $1.origin.y }
+        let pair = inks(both, glyph: scriptGlyph("2", 1)).sorted { $0.origin.y > $1.origin.y }
         expect(pair.count == 2 && pair[0].origin.y > 0 && pair[1].origin.y < 0, "superscript above subscript")
         let gap = extent([pair[0]]).minY - extent([pair[1]]).maxY
         expect(gap >= font.constants[.subSuperscriptGapMin] * size / 1000 - 0.01, "sub and superscript keep their gap")
         expect(pair[0].origin.x > pair[1].origin.x, "superscript is nudged by the italic correction")
         let prime = box("f'")
-        expect(inks(prime, glyph: glyph("′")).first.map { $0.origin.y > 0 } == true, "primes ride high")
+        expect(inks(prime, glyph: scriptGlyph("′", 1)).first.map { $0.origin.y > 0 } == true, "primes ride high")
         let nested = box("e^{x^2}")
-        let nestedTwo = inks(nested, glyph: glyph("2"))
+        let nestedTwo = inks(nested, glyph: scriptGlyph("2", 2))
         if case .glyph(_, let tiny)? = nestedTwo.first?.content {
             expect(abs(CTFontGetSize(tiny) - size * 0.55) < 0.01, "second-level scripts are 55%")
         } else {
@@ -183,18 +188,18 @@ struct NoteMathLayoutTests {
         let sumDisplay = extent(display.inks.filter { if case .glyph(let g, _) = $0.content { return font.verticalConstruction(glyph("∑"))?.variants.contains { $0.glyph == g } == true }; return false })
         let sumText = extent(inks(text, glyph: glyph("∑")))
         expect(sumDisplay.height > sumText.height, "display sums are bigger")
-        let n = inks(display, glyph: glyph("𝑛"))
+        let n = inks(display, glyph: scriptGlyph("𝑛", 1))
         expect(n.count == 1 && extent(n).minY > sumDisplay.maxY, "display limits sit above")
-        let i = inks(display, glyph: glyph("𝑖")).sorted { $0.origin.y < $1.origin.y }
+        let i = inks(display, glyph: scriptGlyph("𝑖", 1)).sorted { $0.origin.y < $1.origin.y }
         expect(extent([i[0]]).maxY < sumDisplay.minY, "lower limit sits below")
-        let textN = inks(text, glyph: glyph("𝑛"))
+        let textN = inks(text, glyph: scriptGlyph("𝑛", 1))
         expect(textN.count == 1 && textN[0].origin.x > sumText.maxX - 1, "text-style limits go beside")
         let integral = box("\\int_0^1 f")
-        let one = inks(integral, glyph: glyph("1"))
-        let zero = inks(integral, glyph: glyph("0"))
+        let one = inks(integral, glyph: scriptGlyph("1", 1))
+        let zero = inks(integral, glyph: scriptGlyph("0", 1))
         expect(one.count == 1 && zero.count == 1 && one[0].origin.x > zero[0].origin.x, "integral limits go beside, nudged by its slant")
         let limited = box("\\int\\limits_0^1 f")
-        let stackedOne = inks(limited, glyph: glyph("1"))
+        let stackedOne = inks(limited, glyph: scriptGlyph("1", 1))
         expect(stackedOne.count == 1 && stackedOne[0].origin.y > one[0].origin.y, "\\limits stacks integral limits")
         let lim = box("\\lim_{x\\to 0} f")
         expect(lim.descent > box("\\lim f").descent + size * 0.3, "lim puts its limit underneath in display")
@@ -236,7 +241,7 @@ struct NoteMathLayoutTests {
         let accentInk = inks(hat, glyph: glyph("\u{0302}"))
         expect(accentInk.count == 1, "hat uses the combining circumflex")
         let tall = box("\\hat{A}")
-        let tallAccent = inks(tall, glyph: glyph("\u{0302}"))
+        let tallAccent = inks(tall, glyph: font.flattenedAccent(glyph("\u{0302}")) ?? glyph("\u{0302}"))
         expect(tallAccent.first.map { $0.origin.y > 0 } == true, "accents rise over tall bases")
         let wide = box("\\widehat{xyz}")
         expect(inks(wide, glyph: glyph("\u{0302}")).isEmpty, "widehat picks a wider variant")
@@ -294,6 +299,42 @@ struct NoteMathLayoutTests {
         let centred = inks(box("x \\\\ xxx"), glyph: glyph("𝑥"))
         let top = extent(centred.filter { $0.origin.y > 0 }), bottom = extent(centred.filter { $0.origin.y < 0 })
         expect(abs(top.midX - bottom.midX) < 0.6 && top.width < bottom.width, "lines are centred")
+    }
+
+    static func scriptSizes() {
+        expect(font.hasScriptAlternates, "STIX Two Math carries ssty alternates")
+        for symbol in ["𝑥", "2", "+", "(", "∑", "′"] {
+            let one = scriptGlyph(symbol, 1), two = scriptGlyph(symbol, 2)
+            expect(one != glyph(symbol) && two != one && two != glyph(symbol), "\(symbol) has distinct ssty levels")
+        }
+        let level1 = box("x^{y}")
+        expect(inks(level1, glyph: scriptGlyph("𝑦", 1)).count == 1 && inks(level1, glyph: glyph("𝑦")).isEmpty, "superscripts use ssty level 1")
+        let level2 = box("x^{y^{z}}")
+        expect(inks(level2, glyph: scriptGlyph("𝑧", 2)).count == 1, "second-level scripts use ssty level 2")
+        if case .glyph(_, let tiny)? = inks(level2, glyph: scriptGlyph("𝑧", 2)).first?.content {
+            expect(abs(CTFontGetSize(tiny) - size * 0.55) < 0.01, "ssty glyphs still use the MATH script scale")
+        }
+        let styled = box("\\scriptstyle a \\scriptscriptstyle b")
+        expect(inks(styled, glyph: scriptGlyph("𝑎", 1)).count == 1 && inks(styled, glyph: scriptGlyph("𝑏", 2)).count == 1,
+               "style switches pick the matching ssty level")
+        expect(inks(box("e^{\\sin x}"), glyph: scriptGlyph("s", 1)).count == 1, "function names in scripts use ssty")
+        expect(inks(box("\\frac{a}{b}", display: false), glyph: scriptGlyph("𝑎", 1)).count == 1, "text-style fractions use script glyphs")
+        expect(inks(box("x_{\\left( a \\right)}"), glyph: scriptGlyph("(", 1)).count == 1, "small delimiters in scripts use ssty")
+        expect(font.metrics(scriptGlyph("2", 1)).advance > font.metrics(glyph("2")).advance, "script-size 2 is wider than the text 2")
+        guard let flat = font.flattenedAccent(glyph("\u{0302}")) else { failTest("STIX Two Math has a flattened circumflex") }
+        expect(inks(box("\\hat{A}"), glyph: flat).count == 1, "tall bases get the flattened accent")
+        expect(inks(box("\\hat{x}"), glyph: flat).isEmpty && inks(box("\\hat{x}"), glyph: glyph("\u{0302}")).count == 1,
+               "short bases keep the full accent")
+        let typesetter = NoteMathTypesetter(font: font, baseSize: 40)
+        func rendered(_ glyph: CGGlyph) -> Bitmap {
+            let entry = NoteMathLayoutEntry(box: typesetter.glyphBox(glyph, size: 28, color: .inherited), error: nil, isEmpty: false)
+            return bitmap(NoteMathRendering(source: "2", fontSize: 28, color: .black, display: true, entry: entry), scale: 4)
+        }
+        let plain = rendered(glyph("2")).ink(x: 0...1, y: 0...1)
+        let optical = rendered(scriptGlyph("2", 1)).ink(x: 0...1, y: 0...1)
+        expect(Double(optical) > Double(plain) * 1.05, "script-size glyphs draw heavier strokes than shrunken text glyphs (\(optical) vs \(plain))")
+        let power = bitmap(NoteMathRenderer.render("x^{2}", fontSize: 40, color: .black, display: true), scale: 4)
+        expect(power.ink(x: 0.62...1, y: 0...0.45) > 30, "the ssty superscript draws")
     }
 
     static func renderer() {
