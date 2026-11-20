@@ -88,10 +88,3 @@ final class NotePageEditor {
         handles.layoutDidChange()
     }
 }
-
-@MainActor
-enum NoteBlockViewFactory {
-    static func make(_ block: NoteBlock, editor: NotePageEditor) -> NoteBlockView {
-        NotePlaceholderBlockView(block: block, editor: editor)
-    }
-}
