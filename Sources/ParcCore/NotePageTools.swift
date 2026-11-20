@@ -449,3 +449,62 @@ struct NotePageHistoryPolicy: Hashable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+enum NotePageExport {
+    static func markdownForCopy(body: String, title: String) -> String {
+        let trimmedBody = body.trimmingCharacters(in: .newlines)
+        let heading = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !heading.isEmpty else { return trimmedBody + "\n" }
+        return trimmedBody.isEmpty ? "# " + heading + "\n" : "# " + heading + "\n\n" + trimmedBody + "\n"
+    }
+
+    static func isImageSource(_ value: String) -> Bool {
+        let lower = value.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.hasPrefix("file:") { return true }
+        let ext = (value as NSString).pathExtension.lowercased()
+        return ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "tif", "tiff", "bmp", "svg", "avif"].contains(ext)
+    }
+
+    static func relativeAssetSources(in page: NotePage) -> [String] {
+        var sources: [String] = []
+        if let cover = page.settings.cover?.source { sources.append(cover) }
+        if let icon = page.settings.icon, isImageSource(icon) { sources.append(icon) }
+        for block in page.allBlocks() where block.kind.isMedia {
+            if let source = block.props.source { sources.append(source) }
+        }
+        var seen = Set<String>()
+        return sources.filter { source in
+            guard !source.isEmpty, URL(string: source)?.scheme == nil, !source.hasPrefix("/"), !source.hasPrefix("~"),
+                  !seen.contains(source) else { return false }
+            let decoded = source.removingPercentEncoding ?? source
+            guard !decoded.split(separator: "/").contains("..") else { return false }
+            seen.insert(source)
+            return true
+        }
+    }
+
+    static func markdownCopyURL(for source: URL, exists: (URL) -> Bool) -> URL {
+        let folder = source.deletingLastPathComponent()
+        let base = source.deletingPathExtension().lastPathComponent
+        var candidate = folder.appendingPathComponent(base).appendingPathExtension("md")
+        var counter = 2
+        while exists(candidate) {
+            candidate = folder.appendingPathComponent("\(base) \(counter)").appendingPathExtension("md")
+            counter += 1
+        }
+        return candidate
+    }
+
+    static func validatedLink(_ text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              let host = url.host, host.contains(".") || host == "localhost" else { return nil }
+        return url
+    }
+
+    static func flattenedTitle(_ text: String) -> String {
+        var value = text.replacingOccurrences(of: "\r\n", with: " ")
+        for separator in ["\n", "\r", "\u{2028}", "\u{2029}", "\t"] { value = value.replacingOccurrences(of: separator, with: " ") }
+        return value
+    }
+}

@@ -119,13 +119,6 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
         }
     }
 
-    static func validatedLink(_ text: String) -> URL? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
-              let host = url.host, host.contains(".") || host == "localhost" else { return nil }
-        return url
-    }
-
     func select(_ next: Tab) {
         tab = next
         for (item, button) in tabButtons { button.isChecked = item == next }
@@ -208,7 +201,7 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
     }
 
     private func useLink() {
-        guard let url = Self.validatedLink(linkField.text) else {
+        guard let url = NotePageExport.validatedLink(linkField.text) else {
             linkHint.stringValue = "That doesn't look like a link. Try one that starts with https://"
             linkHint.textColor = NoteTheme.destructiveInk
             NoteAnimation.pop(linkField, from: 0.97, spring: .pill)
@@ -512,7 +505,7 @@ final class NotePageIconPicker: NSView, NoteFloatingPanelContent {
     }
 
     private func useLink(_ text: String) {
-        guard let url = NoteCoverPicker.validatedLink(text) else {
+        guard let url = NotePageExport.validatedLink(text) else {
             NoteAnimation.pop(linkField, from: 0.97, spring: .pill)
             NSSound.beep()
             return

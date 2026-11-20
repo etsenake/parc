@@ -70,6 +70,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             subscriptions.insert(file.urlChanges.sink { [weak self] url in
                 self?.fileDidMove(to: url)
             })
+            NotePageHistory.track(file)
         }
     }
 
@@ -518,12 +519,6 @@ final class NotePageTitleView: NSTextView {
 
     override var readablePasteboardTypes: [NSPasteboard.PasteboardType] { [.string] }
 
-    static func flattened(_ text: String) -> String {
-        var value = text.replacingOccurrences(of: "\r\n", with: " ")
-        for separator in ["\n", "\r", "\u{2028}", "\u{2029}", "\t"] { value = value.replacingOccurrences(of: separator, with: " ") }
-        return value
-    }
-
     func height(forWidth width: CGFloat) -> CGFloat {
         let font = self.font ?? NoteTheme.titleFont(.standard)
         let line = ceil(font.ascender - font.descender + font.leading)
@@ -538,9 +533,9 @@ final class NotePageTitleView: NSTextView {
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
         if let text = string as? String {
-            super.insertText(Self.flattened(text), replacementRange: replacementRange)
+            super.insertText(NotePageExport.flattenedTitle(text), replacementRange: replacementRange)
         } else if let text = string as? NSAttributedString {
-            super.insertText(Self.flattened(text.string), replacementRange: replacementRange)
+            super.insertText(NotePageExport.flattenedTitle(text.string), replacementRange: replacementRange)
         } else {
             super.insertText(string, replacementRange: replacementRange)
         }
@@ -548,14 +543,14 @@ final class NotePageTitleView: NSTextView {
 
     override func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
         guard let text = pboard.string(forType: .string) else { return false }
-        let flat = Self.flattened(text)
+        let flat = NotePageExport.flattenedTitle(text)
         insertText(flat, replacementRange: rangeForUserTextChange)
         return true
     }
 
     override func paste(_ sender: Any?) {
         guard let text = NSPasteboard.general.string(forType: .string) else { return }
-        insertText(Self.flattened(text), replacementRange: rangeForUserTextChange)
+        insertText(NotePageExport.flattenedTitle(text), replacementRange: rangeForUserTextChange)
     }
 
     override func pasteAsPlainText(_ sender: Any?) { paste(sender) }
@@ -652,12 +647,7 @@ final class NotePageImageLoader {
         return data
     }
 
-    static func isImageSource(_ value: String) -> Bool {
-        let lower = value.lowercased()
-        if lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.hasPrefix("file:") { return true }
-        let ext = (value as NSString).pathExtension.lowercased()
-        return ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "tif", "tiff", "bmp", "svg", "avif"].contains(ext)
-    }
+    static func isImageSource(_ value: String) -> Bool { NotePageExport.isImageSource(value) }
 }
 
 @MainActor

@@ -38,13 +38,26 @@ final class NotePageHistory {
         subscriptions.insert(file.urlChanges.sink { url in Self.rekey(file: file, to: url) })
     }
 
+    private static var terminationObserver: NSObjectProtocol?
+
     @discardableResult
     static func track(_ file: NoteFileSession) -> NotePageHistory {
+        observeTermination()
         let key = file.url.standardizedFileURL.path
         if let existing = recorders[key] { return existing }
         let recorder = NotePageHistory(file: file)
         recorders[key] = recorder
         return recorder
+    }
+
+    private static func observeTermination() {
+        guard terminationObserver == nil else { return }
+        terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil,
+                                                                     queue: .main) { _ in
+            MainActor.assumeIsolated {
+                for recorder in recorders.values { recorder.record(.close) }
+            }
+        }
     }
 
     static func recorder(for file: NoteFileSession) -> NotePageHistory? {

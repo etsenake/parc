@@ -13,6 +13,7 @@ struct NotePageToolsTests {
         properties()
         history()
         relativeTime()
+        exporting()
         print("NotePageToolsTests passed")
     }
 
@@ -191,6 +192,38 @@ struct NotePageToolsTests {
                "closing records any real change")
         expect(!policy.shouldRecord(.idle, current: "a", lastRecorded: "a", lastRecordedAt: start, now: start.addingTimeInterval(999)),
                "an unchanged page never records")
+    }
+
+    static func exporting() {
+        expect(NotePageExport.markdownForCopy(body: "Hello\n\n", title: " Trip ") == "# Trip\n\nHello\n", "copied Markdown leads with the title")
+        expect(NotePageExport.markdownForCopy(body: "Hello", title: "") == "Hello\n", "an untitled page copies just the body")
+        expect(NotePageExport.markdownForCopy(body: "\n", title: "Empty") == "# Empty\n", "an empty body copies just the title")
+        var settings = NotePageSettings()
+        settings.cover = NoteCover(source: "Attachments/cover.jpg")
+        settings.icon = "Attachments/icon.png"
+        var image = NoteBlockProps(); image.source = "Attachments/photo%20one.png"
+        var remote = NoteBlockProps(); remote.source = "https://example.com/a.png"
+        var absolute = NoteBlockProps(); absolute.source = "/Users/somebody/b.png"
+        var sneaky = NoteBlockProps(); sneaky.source = "../outside/c.png"
+        var again = NoteBlockProps(); again.source = "Attachments/cover.jpg"
+        let item = NoteBlock(.bulletedItem, text: "x", children: [NoteBlock(.image, props: image)])
+        let page = NotePage(settings: settings, blocks: [item, NoteBlock(.image, props: remote), NoteBlock(.file, props: absolute),
+                                                         NoteBlock(.video, props: sneaky), NoteBlock(.image, props: again)])
+        expect(NotePageExport.relativeAssetSources(in: page) == ["Attachments/cover.jpg", "Attachments/icon.png", "Attachments/photo%20one.png"],
+               "exports copy the cover, image icon and nested media, skipping links, absolute paths, escapes and repeats")
+        var emojiSettings = NotePageSettings(); emojiSettings.icon = "🌳"
+        expect(NotePageExport.relativeAssetSources(in: NotePage(settings: emojiSettings)).isEmpty, "an emoji icon isn't a file")
+        let source = URL(fileURLWithPath: "/tmp/notes/Draft.txt")
+        let taken: Set<String> = ["/tmp/notes/Draft.md", "/tmp/notes/Draft 2.md"]
+        expect(NotePageExport.markdownCopyURL(for: source) { taken.contains($0.path) }.path == "/tmp/notes/Draft 3.md",
+               "a Markdown copy never overwrites a neighbour")
+        expect(NotePageExport.markdownCopyURL(for: source) { _ in false }.path == "/tmp/notes/Draft.md", "the copy keeps the name when it can")
+        expect(NotePageExport.validatedLink(" https://example.com/cover.jpg ")?.host == "example.com", "image links trim and validate")
+        expect(NotePageExport.validatedLink("ftp://example.com/a.png") == nil, "only web links count")
+        expect(NotePageExport.validatedLink("https://nodot") == nil, "a host needs a dot")
+        expect(NotePageExport.validatedLink("not a link") == nil, "words aren't links")
+        expect(NotePageExport.flattenedTitle("One\ntwo\r\nthree\tfour") == "One two three four", "pasted titles flatten to one line")
+        expect(NotePageExport.isImageSource("Attachments/a.HEIC") && !NotePageExport.isImageSource("🌳"), "image icons are told apart from emoji")
     }
 
     static func relativeTime() {
