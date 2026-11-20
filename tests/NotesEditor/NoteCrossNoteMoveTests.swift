@@ -27,6 +27,9 @@ struct NoteCrossNoteMoveTests {
         unrelatedUndoLeavesTargetAlone()
         undoInSourceRestoresBoth()
         undoInTargetRestoresSource()
+        undoInSourceThenRedoInTarget()
+        undoInTargetThenRedoInSource()
+        targetEditOnTopKeepsItsHistory()
         editedCopiesSurviveRoundTrip()
         unreachableSourceKeepsCopies()
         unreachableTargetKeepsOriginals()
@@ -79,10 +82,54 @@ struct NoteCrossNoteMoveTests {
         expect(texts(source) == ["a", "c"], "redo in the target removes the block from the source")
         source.undo()
         expect(texts(source) == ["a", "b", "c"] && texts(target) == ["x", "b"], "either side can reverse it next")
-        target.undo()
-        expect(texts(source) == ["a", "c"] && texts(target) == ["x", "b", "b"], "undoing the reversal in the target reapplies the move")
+        target.redo()
+        expect(texts(source) == ["a", "c"] && texts(target) == ["x", "b", "b"], "redo in the target reapplies a move the source reversed")
         source.undo()
         expect(texts(source) == ["a", "b", "c"] && texts(target) == ["x", "b"], "undo in the source reverses it again")
+    }
+
+    static func undoInSourceThenRedoInTarget() {
+        let (source, target, move) = pair()
+        source.undo()
+        expect(texts(target) == ["x", "b"] && !target.canUndo && target.redoActionName == "Move Here",
+               "the target's half is undone as a real undo step")
+        target.redo()
+        expect(texts(source) == ["a", "c"] && texts(target) == ["x", "b", "b"], "redo in the target reapplies the move in both notes")
+        expect(move.isApplied && source.undoDepth == 1 && target.undoDepth == 1 && !source.canRedo && !target.canRedo,
+               "both notes take the step back onto their undo history")
+        target.undo()
+        expect(texts(source) == ["a", "b", "c"] && texts(target) == ["x", "b"], "undo in the target reverses it again")
+        source.redo()
+        expect(texts(source) == ["a", "c"] && texts(target) == ["x", "b", "b"] && move.isApplied, "and redo in the source brings it back")
+    }
+
+    static func undoInTargetThenRedoInSource() {
+        let (source, target, move) = pair()
+        target.undo()
+        expect(texts(source) == ["a", "b", "c"] && !source.canUndo && source.redoActionName == "Move to “T”",
+               "the source's half is undone as a real undo step")
+        source.redo()
+        expect(texts(source) == ["a", "c"] && texts(target) == ["x", "b", "b"], "redo in the source reapplies the move in both notes")
+        expect(move.isApplied && source.undoDepth == 1 && target.undoDepth == 1 && !source.canRedo && !target.canRedo,
+               "both notes take the step back onto their undo history")
+        source.undo()
+        expect(texts(source) == ["a", "b", "c"] && texts(target) == ["x", "b"], "undo in the source reverses it again")
+        target.redo()
+        expect(texts(source) == ["a", "c"] && texts(target) == ["x", "b", "b"] && move.isApplied, "and redo in the target brings it back")
+    }
+
+    static func targetEditOnTopKeepsItsHistory() {
+        let (source, target, move) = pair()
+        target.edit("Type") { page in page.blocks[0].text = NoteText("y") }
+        source.undo()
+        expect(texts(source) == ["a", "b", "c"] && texts(target) == ["y", "b"], "undo removes the copy past the target's newer edit")
+        expect(target.undoDepth == 3 && target.undoActionName == "Undo Move", "the target records that as a step on top of its own")
+        source.redo()
+        expect(texts(source) == ["a", "c"] && texts(target) == ["y", "b", "b"] && move.isApplied, "redo in the source brings the copy back")
+        target.undo()
+        expect(texts(target) == ["x", "b", "b"] && texts(source) == ["a", "c"], "the target's own edit is still there to undo")
+        target.undo()
+        expect(texts(target) == ["x", "b"] && texts(source) == ["a", "b", "c"], "and the move itself comes after it")
     }
 
     static func editedCopiesSurviveRoundTrip() {
@@ -97,10 +144,10 @@ struct NoteCrossNoteMoveTests {
         expect(texts(target) == ["x", "b"], "the moved copy is found by ID wherever it went")
         expect(texts(source) == ["a", "b", "c"], "the source gets its block back")
         source.redo()
-        expect(texts(target) == ["x", "b", "b edited"], "redo restores the edited copy once, not a stale duplicate")
+        expect(texts(target) == ["b edited", "x", "b"], "redo restores the edited copy once, right where it was, not a stale duplicate")
         source.edit("Type") { page in page.blocks[0].text = NoteText("a!") }
         source.undo()
-        expect(texts(target) == ["x", "b", "b edited"], "unrelated undos never re-add copies")
+        expect(texts(target) == ["b edited", "x", "b"], "unrelated undos never re-add copies")
     }
 
     static func unreachableSourceKeepsCopies() {

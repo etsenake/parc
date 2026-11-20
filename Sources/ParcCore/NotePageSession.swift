@@ -13,6 +13,7 @@ struct NotePageChange {
 struct NoteUndoEffect {
     var undo: @MainActor () -> Void
     var redo: @MainActor () -> Void
+    var owner: ObjectIdentifier? = nil
 }
 
 enum NoteEditCoalescing: Hashable {
@@ -168,6 +169,20 @@ final class NotePageSession {
         pushUndo(HistoryStep(page: page.withoutIndex, selectionBefore: step.selectionBefore,
                              selectionAfter: step.selectionAfter, name: step.name, effects: step.effects))
         restore(step.page, selection: step.selectionAfter)
+    }
+
+    @discardableResult
+    func undo(ifTopBelongsTo owner: ObjectIdentifier) -> Bool {
+        guard openGroup == nil, !isReadOnly, undoStack.last?.effects.contains(where: { $0.owner == owner }) == true else { return false }
+        undo()
+        return true
+    }
+
+    @discardableResult
+    func redo(ifTopBelongsTo owner: ObjectIdentifier) -> Bool {
+        guard openGroup == nil, !isReadOnly, redoStack.last?.effects.contains(where: { $0.owner == owner }) == true else { return false }
+        redo()
+        return true
     }
 
     func updateBlockMetadata(_ id: NoteBlockID, kind: NotePageChange.Kind = .text, _ transform: (inout NoteBlock) -> Void) {

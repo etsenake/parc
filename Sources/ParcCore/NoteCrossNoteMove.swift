@@ -94,11 +94,11 @@ final class NoteCrossNoteMove {
     }
 
     private func effect(_ side: Side) -> NoteUndoEffect {
-        NoteUndoEffect(undo: { [self] in reverse(by: side) }, redo: { [self] in reapply(by: side) })
+        NoteUndoEffect(undo: { [self] in reverse(by: side) }, redo: { [self] in reapply(by: side) }, owner: ObjectIdentifier(self))
     }
 
     private func reversal(_ side: Side) -> NoteUndoEffect {
-        NoteUndoEffect(undo: { [self] in reapply(by: side) }, redo: { [self] in reverse(by: side) })
+        NoteUndoEffect(undo: { [self] in reapply(by: side) }, redo: { [self] in reverse(by: side) }, owner: ObjectIdentifier(self))
     }
 
     private func reverse(by side: Side) {
@@ -106,11 +106,13 @@ final class NoteCrossNoteMove {
         isApplied = false
         switch side {
         case .source:
-            _ = target { other in removeCopies(from: other) }
+            _ = target { other in
+                if !retrace(other, undoing: true) { removeCopies(from: other) }
+            }
         case .target:
             var restored = false
             _ = source { other in
-                restoreOriginals(in: other)
+                if !retrace(other, undoing: true) { restoreOriginals(in: other) }
                 restored = originalIDs.allSatisfy(other.page.contains)
             }
             guard !restored else { return }
@@ -129,7 +131,7 @@ final class NoteCrossNoteMove {
         case .source:
             var landed = false
             _ = target { other in
-                append(to: other, label: "Move Here")
+                if !retrace(other, undoing: false) { append(to: other, label: "Move Here") }
                 landed = copyIDs.allSatisfy(other.page.contains)
             }
             guard !landed else { return }
@@ -139,8 +141,16 @@ final class NoteCrossNoteMove {
                 _ = move.source { other in move.restoreOriginals(in: other) }
             }
         case .target:
-            _ = source { other in removeOriginals(from: other, label: name, caret: false) }
+            _ = source { other in
+                if !retrace(other, undoing: false) { removeOriginals(from: other, label: name, caret: false) }
+            }
         }
+    }
+
+    private func retrace(_ session: NotePageSession, undoing: Bool) -> Bool {
+        let owner = ObjectIdentifier(self)
+        return undoing ? session.undo(ifTopBelongsTo: owner) || session.redo(ifTopBelongsTo: owner)
+            : session.redo(ifTopBelongsTo: owner) || session.undo(ifTopBelongsTo: owner)
     }
 
     private func settle(_ body: @escaping @MainActor (NoteCrossNoteMove) -> Void) {
