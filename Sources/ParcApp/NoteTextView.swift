@@ -785,11 +785,19 @@ class NoteTextView: NSTextView {
     private func perform(_ rule: NoteInputRule, in block: NoteBlock, editor: NotePageEditor) {
         switch rule {
         case .inline(let conversion):
+            if let literal = conversion.literal {
+                editor.session.setText(literal, of: (block.id, field), origin: self,
+                                       selection: .caret(NotePosition(block.id, conversion.literalCaret, field: field)))
+            }
             editor.session.breakCoalescing()
             apply(conversion.text, selection: conversion.caret..<conversion.caret)
             typingMarks = conversion.typingMarks
             editor.session.applyInlineConversion(conversion, to: block.id, field: field, origin: self)
         case .block(let conversion):
+            if let literal = conversion.literal {
+                editor.session.setText(literal, of: (block.id, field), origin: self,
+                                       selection: .caret(NotePosition(block.id, literal.length, field: field)))
+            }
             editor.session.breakCoalescing()
             guard let position = editor.session.applyBlockShortcut(conversion, to: block.id) else { return }
             editor.focus(position)

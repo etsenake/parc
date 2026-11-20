@@ -26,7 +26,9 @@ struct NoteTextInputRulesTests {
         blockShortcuts()
         inlineMarks()
         equationsAndLinks()
+        symbols()
         sessionApplication()
+        symbolUndo()
         print("NoteTextInputRulesTests passed")
     }
 
@@ -135,6 +137,87 @@ struct NoteTextInputRulesTests {
         expect(inline("localhost ") == nil, "plain words aren't links")
         let linked = NoteText(pieces: [("https://a.com", marks { $0.link = "https://b.com" }), (" ", .plain)])
         expect(inline("", text: linked) == nil, "existing links are left alone")
+    }
+
+    static func symbols() {
+        let pairs: [(String, String)] = [
+            ("a->", "a\u{2192}"), ("<-", "\u{2190}"), ("x <->", "x \u{2194}"), ("so =>", "so \u{21D2}"), ("a >=", "a \u{2265}"),
+            ("b <=", "b \u{2264}"), ("wait--", "wait\u{2014}"), ("--", "\u{2014}"),
+        ]
+        for (typedText, expected) in pairs {
+            let result = inline(typedText)
+            expectEqual(result?.text.string, expected, "\(typedText) turns into \(expected)")
+            expectEqual(result?.caret, (expected as NSString).length, "the caret sits after \(expected)")
+        }
+        let joined = inline("", text: NoteText("\u{2190}>"))
+        expectEqual(joined?.text.string, "\u{2194}", "finishing <-> after the left arrow makes a double arrow")
+        expectEqual(joined?.literal?.string, "<->", "the double arrow remembers what was typed")
+        expectEqual(joined?.literalCaret, 3, "the typed form keeps the caret after it")
+        expect(inline("a->")?.literal == nil, "a plain arrow needs no rewrite")
+        expectEqual(inline("a->")?.name, "Arrow", "the undo step is called Arrow")
+        expectEqual(inline("--")?.name, "Em Dash", "the undo step is called Em Dash")
+        expect(inline("a-->") == nil, "a longer run of hyphens stays as typed")
+        expect(inline("x >>=") == nil && inline("x <<=") == nil && inline("x ==>") == nil, "operators made of more symbols stay as typed")
+        expect(inline("a---") == nil, "a third hyphen after an undone dash stays as typed")
+        expect(inline("", text: NoteText("run a->", marks: marks { $0.code = true })) == nil, "inline code keeps its arrows")
+        let halfCode = NoteText(pieces: [("x -", marks { $0.code = true }), (">", .plain)])
+        expect(inline("", text: halfCode) == nil, "a sequence that starts inside inline code stays as typed")
+        let afterEquation = NoteText.atom(.equation("x")) + NoteText("->")
+        expectEqual(inline("", text: afterEquation)?.text.string, NoteAtom.character + "\u{2192}", "an arrow right after an equation still converts")
+        let bold = inline("", text: NoteText("go->", marks: marks { $0.bold = true }))
+        expect(bold?.text.marks(at: 2).bold == true, "the arrow keeps the bold it was typed in")
+        expect(NoteInputRules.afterTyping(">", text: NoteText("->"), caret: 2, block: NoteBlock(.code, text: NoteText("->"))) == nil,
+               "code blocks keep their arrows")
+        expect(NoteInputRules.afterTyping(">", text: NoteText("->"), caret: 2, block: NoteBlock(.equation, text: NoteText("->"))) == nil,
+               "block equations keep their arrows")
+        if case .block(let divider) = typed("\u{2014}-") {
+            expectEqual(divider.conversion, .divider, "a dash and a hyphen at the start still make a divider")
+            expectEqual(divider.literal?.string, "---", "the divider remembers the three hyphens")
+            expectEqual(divider.prefixLength, 3, "all three hyphens are consumed")
+        } else { failTest("an em dash and a hyphen should make a divider") }
+        expect(typed("x\u{2014}-") == nil, "a dash and a hyphen after text stay text")
+    }
+
+    static func symbolUndo() {
+        let line = para("")
+        let session = NotePageSession(page: NotePage(blocks: [line]))
+        func type(_ value: String) { session.setText(NoteText(value), of: (line.id, .body), selection: .caret(NotePosition(line.id, NoteText(value).length))) }
+        func convert(_ conversion: NoteInlineConversion) {
+            if let literal = conversion.literal {
+                session.setText(literal, of: (line.id, .body), selection: .caret(NotePosition(line.id, conversion.literalCaret)))
+            }
+            session.breakCoalescing()
+            session.applyInlineConversion(conversion, to: line.id)
+        }
+        type("<")
+        type("<-")
+        guard let left = inline("<-") else { failTest("expected a left arrow") }
+        convert(left)
+        expectEqual(session.page.blocks[0].text.string, "\u{2190}", "<- becomes a left arrow")
+        type("\u{2190}>")
+        guard let both = inline("", text: NoteText("\u{2190}>")) else { failTest("expected a double arrow") }
+        convert(both)
+        expectEqual(session.page.blocks[0].text.string, "\u{2194}", "<-> becomes a double arrow")
+        session.undo()
+        expectEqual(session.page.blocks[0].text.string, "<->", "one undo brings back exactly what was typed")
+        expectEqual(session.selection.caret, NotePosition(line.id, 3), "the caret sits after the typed characters")
+        session.redo()
+        expectEqual(session.page.blocks[0].text.string, "\u{2194}", "redo puts the double arrow back")
+
+        let dash = para("")
+        let dashSession = NotePageSession(page: NotePage(blocks: [dash]))
+        dashSession.setText(NoteText("--"), of: (dash.id, .body), selection: .caret(NotePosition(dash.id, 2)))
+        guard let emDash = inline("--") else { failTest("expected an em dash") }
+        dashSession.breakCoalescing()
+        dashSession.applyInlineConversion(emDash, to: dash.id)
+        dashSession.setText(NoteText("\u{2014}-"), of: (dash.id, .body), selection: .caret(NotePosition(dash.id, 2)))
+        guard case .block(let rule) = typed("\u{2014}-"), let literal = rule.literal else { failTest("expected a divider") }
+        dashSession.setText(literal, of: (dash.id, .body), selection: .caret(NotePosition(dash.id, literal.length)))
+        dashSession.breakCoalescing()
+        dashSession.applyBlockShortcut(rule, to: dash.id)
+        expectEqual(outline(dashSession.page.blocks), "divider\np", "--- still makes a divider through the em dash")
+        dashSession.undo()
+        expectEqual(dashSession.page.blocks[0].text.string, "---", "undo brings back three hyphens")
     }
 
     static func sessionApplication() {

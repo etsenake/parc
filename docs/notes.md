@@ -90,8 +90,10 @@ Plain-text notes stay flat, since a `.txt` file can't keep levels.
 Notion's Markdown shortcuts work as you type: `# ` through `###### `, `- `, `* `,
 `1. `, `[] `, `> ` (toggle), `" ` (quote), ```` ``` ```` plus a language,
 `---` (divider), `$$` (equation), and inline `**bold**`, `*italic*`,
-`` `code` ``, `~strike~` or `~~strike~~`, `==highlight==` and `$math$`. One
-⌘Z undoes a shortcut back to the characters you typed. `/` opens the block menu,
+`` `code` ``, `~strike~` or `~~strike~~`, `==highlight==` and `$math$`. Typing
+`->`, `<-`, `<->`, `=>`, `>=`, `<=` or `--` gives →, ←, ↔, ⇒, ≥, ≤ or an em
+dash, except in code and equations. One ⌘Z undoes a shortcut back to the
+characters you typed. `/` opens the block menu,
 `@` or `[[` mentions a note or a date, and `:` plus two letters suggests emoji. Date reminders are local notifications that
 follow the note through renames and moves and disappear when it's trashed.
 

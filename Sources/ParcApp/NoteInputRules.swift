@@ -8,6 +8,7 @@ struct NoteBlockShortcut: Hashable {
     var bulletMarker: String?
     var orderedDelimiter: String?
     var language: String?
+    var literal: NoteText?
 
     var adjustsProps: Bool {
         checked || listStart != nil || bulletMarker != nil || orderedDelimiter != nil || !(language ?? "").isEmpty
@@ -31,6 +32,8 @@ struct NoteInlineConversion: Hashable {
     var caret: Int
     var typingMarks: NoteMarks
     var name: String
+    var literal: NoteText?
+    var literalCaret = 0
 }
 
 enum NoteInputRule: Hashable {
@@ -46,6 +49,7 @@ enum NoteInputRules {
         let marks = text.marks(at: caret - 1)
         if marks.code && typed != "`" { return nil }
         if let inline = inlineConversion(typed: typed, text: text, caret: caret) { return .inline(inline) }
+        if let symbol = symbolConversion(typed: typed, text: text, caret: caret) { return .inline(symbol) }
         if typed == " ", let link = autolink(text: text, caret: caret) { return .inline(link) }
         return nil
     }
@@ -73,6 +77,9 @@ enum NoteInputRules {
         guard let prefix = plainPrefix(text, caret) else { return nil }
         if typed == "-", prefix == "---", text.length == 3, block.kind != .divider {
             return NoteBlockShortcut(conversion: .divider, prefixLength: 3)
+        }
+        if typed == "-", prefix == "\u{2014}-", text.length == 2, block.kind != .divider {
+            return NoteBlockShortcut(conversion: .divider, prefixLength: 3, literal: NoteText("---"))
         }
         if typed == "$", prefix == "$$", text.length == 2 {
             return NoteBlockShortcut(conversion: .equation, prefixLength: 2)
@@ -184,6 +191,49 @@ enum NoteInputRules {
                 delimiter.clear(&typing)
                 return NoteInlineConversion(text: result, caret: range.upperBound, typingMarks: typing, name: delimiter.name)
             }
+        }
+        return nil
+    }
+
+    private struct Symbol {
+        var typed: String
+        var shown: String
+        var name: String
+        var literal: String?
+    }
+
+    private static let symbols: [Symbol] = [
+        Symbol(typed: "<->", shown: "\u{2194}", name: "Arrow", literal: nil),
+        Symbol(typed: "\u{2190}>", shown: "\u{2194}", name: "Arrow", literal: "<->"),
+        Symbol(typed: "<-", shown: "\u{2190}", name: "Arrow", literal: nil),
+        Symbol(typed: "->", shown: "\u{2192}", name: "Arrow", literal: nil),
+        Symbol(typed: "=>", shown: "\u{21D2}", name: "Arrow", literal: nil),
+        Symbol(typed: ">=", shown: "\u{2265}", name: "Greater or Equal", literal: nil),
+        Symbol(typed: "<=", shown: "\u{2264}", name: "Less or Equal", literal: nil),
+        Symbol(typed: "--", shown: "\u{2014}", name: "Em Dash", literal: nil),
+    ]
+
+    private static func symbolConversion(typed: Character, text: NoteText, caret: Int) -> NoteInlineConversion? {
+        let string = text.string as NSString
+        for symbol in symbols {
+            let length = (symbol.typed as NSString).length
+            guard let last = symbol.typed.last, last == typed, caret >= length,
+                  string.substring(with: NSRange(location: caret - length, length: length)) == symbol.typed else { continue }
+            let range = (caret - length)..<caret
+            if range.lowerBound > 0, string.character(at: range.lowerBound - 1) == (symbol.typed as NSString).character(at: 0) { continue }
+            guard !text.runs(in: range).contains(where: { $0.marks.code || $0.marks.atom != nil }) else { continue }
+            let marks = text.marks(at: range.lowerBound).withoutAtom
+            var result = text
+            result.replace(range, with: NoteText(symbol.shown, marks: marks))
+            let end = range.lowerBound + (symbol.shown as NSString).length
+            var conversion = NoteInlineConversion(text: result, caret: end, typingMarks: result.typingMarks(at: end), name: symbol.name)
+            if let literal = symbol.literal {
+                var original = text
+                original.replace(range, with: NoteText(literal, marks: marks))
+                conversion.literal = original
+                conversion.literalCaret = range.lowerBound + (literal as NSString).length
+            }
+            return conversion
         }
         return nil
     }
