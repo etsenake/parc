@@ -278,6 +278,7 @@ struct BrowserTab: Codable, Identifiable, Equatable {
     var archiveProvenance: ArchiveProvenance? = nil
     var referrerID: UUID? = nil
     var activeTabBeforeCreationID: UUID? = nil
+    var noteVisit: TabNoteVisit? = nil
 }
 
 enum SavedTabURLComparison {
@@ -324,7 +325,8 @@ extension BrowserTab {
 
     private enum CodingKeys: String, CodingKey {
         case id, spaceID, profileID, url, title, kind, folderID, createdAt, lastAccessed,
-             archivedAt, savedURL, savedTitle, customTitle, isMuted, isUnread, archiveProvenance, referrerID, activeTabBeforeCreationID
+             archivedAt, savedURL, savedTitle, customTitle, isMuted, isUnread, archiveProvenance, referrerID, activeTabBeforeCreationID,
+             noteVisit
     }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -346,6 +348,7 @@ extension BrowserTab {
         archiveProvenance = try values.decodeIfPresent(ArchiveProvenance.self, forKey: .archiveProvenance)
         referrerID = try values.decodeIfPresent(UUID.self, forKey: .referrerID)
         activeTabBeforeCreationID = try values.decodeIfPresent(UUID.self, forKey: .activeTabBeforeCreationID)
+        noteVisit = try? values.decodeIfPresent(TabNoteVisit.self, forKey: .noteVisit)
     }
 }
 
@@ -1112,6 +1115,7 @@ struct BrowserState: Codable, Equatable {
                     && current.archiveProvenance == prior.archiveProvenance
                     && current.referrerID == prior.referrerID
                     && current.activeTabBeforeCreationID == prior.activeTabBeforeCreationID
+                    && current.noteVisit?.showsNote == prior.noteVisit?.showsNote
             }
     }
 
@@ -2888,12 +2892,44 @@ final class BrowserStore: ObservableObject {
         }
         return id
     }
+    @discardableResult
+    func openNoteOverPage(_ id: UUID, url: URL, title: String) -> Bool {
+        guard !isEphemeral, !retiringTabIDs.contains(id), let index = state.tabIndex(id, where: { $0.archivedAt == nil }),
+              !isProfileRemovalPending(state.tabs[index].profileID) else { return false }
+        var next = state
+        guard next.tabs[index].openNoteVisit(url: url, title: title) else { return false }
+        next.tabs[index].lastAccessed = clock()
+        state = next
+        changed()
+        return true
+    }
+
+    @discardableResult
+    func stepNoteVisit(_ id: UUID, forward: Bool) -> Bool {
+        guard !retiringTabIDs.contains(id), let index = state.tabIndex(id, where: { $0.archivedAt == nil }) else { return false }
+        var next = state
+        guard forward ? next.tabs[index].stepForwardToNote() : next.tabs[index].stepBackFromNote() else { return false }
+        next.tabs[index].lastAccessed = clock()
+        state = next
+        changed()
+        return true
+    }
+
+    func updatePageUnderNote(_ id: UUID, title: String? = nil, url: String? = nil) {
+        guard let index = state.tabIndex(id) else { return }
+        var next = state
+        guard next.tabs[index].followPageUnderNote(url: url, title: title) else { return }
+        state = next
+        changed()
+    }
+
     func updateNoteFile(from old: URL, to new: URL, title: String) {
         guard let source = InternalPage.noteFile(old), let destination = InternalPage.noteFile(new) else { return }
         let from = InternalPage.note(source).matcher(), to = InternalPage.note(destination).canonical
         let name = InternalPage.noteTitle(title, file: destination)
         var next = state, didChange = false
         for index in next.tabs.indices {
+            if next.tabs[index].followNoteRename(from: from, to: to.urlString, title: name) { didChange = true }
             if from(next.tabs[index].url) {
                 if next.tabs[index].url != to.urlString { next.tabs[index].url = to.urlString; didChange = true }
                 if next.tabs[index].title != name { next.tabs[index].title = name; didChange = true }
@@ -2911,7 +2947,7 @@ final class BrowserStore: ObservableObject {
                              completion: @escaping (Error?) -> Void) {
         let file = page.noteURL, names = page.matcher()
         func references(_ tab: BrowserTab) -> Bool {
-            (file != nil || tab.profileID == profileID) && (names(tab.url) || names(tab.savedURL))
+            tab.noteVisit == nil && (file != nil || tab.profileID == profileID) && (names(tab.url) || names(tab.savedURL))
         }
         func owners(_ state: BrowserState) -> [UUID] {
             file == nil ? [profileID] : state.profiles.map(\.id).filter { owner in state.tabs.contains { $0.profileID == owner && references($0) } }
@@ -2942,6 +2978,7 @@ final class BrowserStore: ObservableObject {
             do {
                 var next = self.state
                 next.tabs.removeAll { ids.contains($0.id) }; next.selectedTabIDs.removeAll { ids.contains($0) }
+                if file != nil { for index in next.tabs.indices { next.tabs[index].forgetNote(matching: names) } }
                 next.recentlyClosedIDs.removeAll { ids.contains($0) }
                 next.splitLayouts = next.splitLayouts.compactMap { original in
                     var layout = original
@@ -2996,7 +3033,7 @@ final class BrowserStore: ObservableObject {
         let names = page.matcher()
         let matches = state.tabs.indices.filter { index in
             let tab = state.tabs[index]
-            return tab.profileID == profileID
+            return tab.profileID == profileID && tab.noteVisit == nil
                 && !retiringTabIDs.contains(tab.id)
                 && !archivePreviewOverlaps([tab.id])
                 && (names(tab.url) || names(tab.savedURL))
@@ -3190,6 +3227,7 @@ final class BrowserStore: ObservableObject {
         let nextSavedTitle = current.kind == .today ? nextTitle : current.savedTitle
         var historyTitle: String?
         var appendHistory = false
+        let leavesNoteVisit = current.noteVisit != nil && url != nil && nextURL != current.url
         if let url, url.hasPrefix("https://") || url.hasPrefix("http://") {
             if let last = state.history.last, last.url == url, last.profileID == current.profileID,
                clock().timeIntervalSince(last.visitedAt) < 2 {
@@ -3200,10 +3238,11 @@ final class BrowserStore: ObservableObject {
         }
         if nextTitle == current.title, nextURL == current.url,
            nextSavedURL == current.savedURL, nextSavedTitle == current.savedTitle,
-           historyTitle == nil, !appendHistory {
+           historyTitle == nil, !appendHistory, !leavesNoteVisit {
             return
         }
         var next = state
+        if leavesNoteVisit { next.tabs[index].noteVisit = nil }
         next.tabs[index].title = nextTitle
         next.tabs[index].url = nextURL
         next.tabs[index].savedURL = nextSavedURL
