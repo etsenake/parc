@@ -151,7 +151,8 @@ copy's `•••` offers Go to Original and Unsync, which leaves ordinary block
 original's Unsync All frees every copy, even in closed notes. An open copy keeps
 its original's note open in the background and finds an original that moved by
 its id; if it's gone, the copy shows its last content and "Can't find the
-original". Copies keep a [Markdown snapshot](notes-format.md#synced-blocks).
+original". Copies keep a [Markdown snapshot](notes-format.md#synced-blocks),
+which closed notes catch up on a couple of seconds after the original changes.
 
 Any text block can hold nested blocks, as in Notion: paragraphs, headings, list
 items, to-dos, toggles, quotes and callouts, plus columns. Tab on a line after a

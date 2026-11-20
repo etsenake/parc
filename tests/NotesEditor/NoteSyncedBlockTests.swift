@@ -90,6 +90,7 @@ struct NoteSyncedBlockTests {
         infoListsOtherNotes()
         syncedBlocksNeverNest()
         backspaceStaysInside()
+        closedCopiesCatchUp()
         print("NoteSyncedBlockTests passed")
     }
 
@@ -462,5 +463,28 @@ struct NoteSyncedBlockTests {
         let b = session([original("k3x9qa", ["", "Keep"])])
         b.mergeBackward(site(b).children[0].id)
         expectEqual(texts(b), ["Keep"], "an empty first line just goes away")
+    }
+
+    static func closedCopiesCatchUp() {
+        let engine = makeEngine()
+        let a = session([original("k3x9qa", ["One"])])
+        attach(engine, a, "A.md")
+        let closed = session([copy("A.md#k3x9qa", ["One"])])
+        var opened = 0, ended = 0
+        engine.noteFinder = { _, _ in [url("Closed.md")] }
+        engine.opener = { target in
+            guard target.lastPathComponent == "Closed.md" else { return nil }
+            opened += 1
+            attach(engine, closed, "Closed.md")
+            return NoteSyncedLease {
+                ended += 1
+                engine.detach(closed)
+            }
+        }
+        type("Two", in: a)
+        engine.refreshClosedCopies(of: NoteSyncedGroup(file: NoteFilePaths.key(for: url("A.md")), anchor: "k3x9qa"))
+        expectEqual(opened, 1, "a closed note with a copy opens in the background")
+        expectEqual(texts(closed), ["Two"], "its snapshot catches up")
+        expectEqual(ended, 1, "and it's let go again to save and close")
     }
 }

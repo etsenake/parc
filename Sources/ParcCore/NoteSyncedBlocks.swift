@@ -202,6 +202,8 @@ final class NoteSyncedBlocks {
     var noteFinder: @MainActor (String, URL) -> [URL] = { _, _ in [] }
     var libraryChanges: @MainActor (URL) -> AnyPublisher<Void, Never>? = { _ in nil }
     var usesNoteFiles = false
+    var closedCopyDelay: TimeInterval = 2
+    private var closedRefreshes: [NoteSyncedGroup: Int] = [:]
     private var documents: [ObjectIdentifier: Document] = [:]
     private var depth = 0
     private var pendingReconcile: Set<NoteSyncedGroup> = []
@@ -416,7 +418,9 @@ final class NoteSyncedBlocks {
         }
         batch {
             if change.isUndoRedo || change.kind == .replaced {
-                pendingReconcile.formUnion(groups(in: document))
+                let groups = groups(in: document)
+                pendingReconcile.formUnion(groups)
+                for group in groups where original(of: group)?.0 === document { scheduleClosedCopies(group) }
                 refreshSeen(document)
                 announce = true
             } else {
@@ -482,7 +486,31 @@ final class NoteSyncedBlocks {
             edit.groups.insert(item.group)
             edit.after[item.group] = item.content
             spread(item.content, of: item.group, skipping: (document, item.source), edit: edit)
+            scheduleClosedCopies(item.group)
         }
+    }
+
+    private func scheduleClosedCopies(_ group: NoteSyncedGroup) {
+        guard usesNoteFiles else { return }
+        let generation = (closedRefreshes[group] ?? 0) + 1
+        closedRefreshes[group] = generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + closedCopyDelay) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.closedRefreshes[group] == generation else { return }
+                self.refreshClosedCopies(of: group)
+            }
+        }
+    }
+
+    func refreshClosedCopies(of group: NoteSyncedGroup) {
+        closedRefreshes[group] = nil
+        guard let found = original(of: group), let here = found.0.url else { return }
+        let open = Set(documents.values.compactMap(\.key))
+        var leases: [NoteSyncedLease] = []
+        for url in noteFinder(group.anchor, here) where !open.contains(NoteFilePaths.key(for: url)) {
+            if let lease = opener(url) { leases.append(lease) }
+        }
+        for lease in leases { lease.end() }
     }
 
     private func arrived(_ block: NoteBlock, in document: Document) {
