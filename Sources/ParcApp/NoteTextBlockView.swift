@@ -156,7 +156,9 @@ final class NoteTextBlockView: NoteBlockView, NoteTextHost {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        needsDisplay = true
+        redisplayChromeSubtree()
+        checkbox?.refreshAppearance()
+        disclosure?.refreshAppearance()
     }
 
     override func measureHeight(width: CGFloat) -> CGFloat {
@@ -217,26 +219,28 @@ final class NoteTextBlockView: NoteBlockView, NoteTextHost {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        let metrics = self.metrics
-        let ink = NoteTextRendering.metrics(presentation).ink
-        switch block.kind {
-        case .bulletedItem:
-            drawBullet(level: NoteListMarker.bullets.firstIndex(of: marker ?? "") ?? 0, metrics: metrics, ink: ink)
-        case .numberedItem:
-            guard let marker else { break }
-            let string = Self.markerString(marker, presentation)
-            let size = string.size()
-            let line = textView.lineHeight
-            string.draw(with: NSRect(x: metrics.leading - 6 - ceil(size.width), y: metrics.top, width: ceil(size.width) + 2, height: line),
-                        options: [.usesLineFragmentOrigin])
-        case .quote:
-            let color = presentation.color.map { $0.isBackground ? NoteTheme.quoteBar : NoteTheme.color($0) } ?? NoteTheme.quoteBar
-            color.setFill()
-            let bar = NSRect(x: 1, y: metrics.top, width: NoteTheme.quoteBarWidth, height: max(0, bounds.height - metrics.top - metrics.bottom - metrics.hint))
-            NSBezierPath(roundedRect: bar, xRadius: NoteTheme.quoteBarWidth / 2, yRadius: NoteTheme.quoteBarWidth / 2).fill()
-        default:
-            break
+        drawInOwnAppearance {
+            super.draw(dirtyRect)
+            let metrics = self.metrics
+            let ink = NoteTextRendering.metrics(presentation).ink
+            switch block.kind {
+            case .bulletedItem:
+                drawBullet(level: NoteListMarker.bullets.firstIndex(of: marker ?? "") ?? 0, metrics: metrics, ink: ink)
+            case .numberedItem:
+                guard let marker else { break }
+                let string = Self.markerString(marker, presentation)
+                let size = string.size()
+                let line = textView.lineHeight
+                string.draw(with: NSRect(x: metrics.leading - 6 - ceil(size.width), y: metrics.top, width: ceil(size.width) + 2, height: line),
+                            options: [.usesLineFragmentOrigin])
+            case .quote:
+                let color = presentation.color.map { $0.isBackground ? NoteTheme.quoteBar : NoteTheme.color($0) } ?? NoteTheme.quoteBar
+                color.setFill()
+                let bar = NSRect(x: 1, y: metrics.top, width: NoteTheme.quoteBarWidth, height: max(0, bounds.height - metrics.top - metrics.bottom - metrics.hint))
+                NSBezierPath(roundedRect: bar, xRadius: NoteTheme.quoteBarWidth / 2, yRadius: NoteTheme.quoteBarWidth / 2).fill()
+            default:
+                break
+            }
         }
     }
 
@@ -666,20 +670,22 @@ final class NoteCalloutIconButton: PointingHandButton {
     private var isImageSource: Bool { icon.contains("/") || icon.lowercased().hasSuffix(".png") || icon.lowercased().hasSuffix(".svg") }
 
     override func draw(_ dirtyRect: NSRect) {
-        if isHovered, isEnabled {
-            NoteTheme.hoverFill.setFill()
-            NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
+        drawInOwnAppearance {
+            if isHovered, isEnabled {
+                NoteTheme.hoverFill.setFill()
+                NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
+            }
+            if isImageSource, let image = resolveImage?(icon) {
+                let side = NoteTheme.calloutIconSize - 2
+                image.draw(in: NSRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side),
+                           from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                return
+            }
+            let font = NSFont(name: "Apple Color Emoji", size: NoteTheme.calloutIconSize - 4) ?? .systemFont(ofSize: NoteTheme.calloutIconSize - 4)
+            let string = NSAttributedString(string: icon, attributes: [.font: font])
+            let size = string.size()
+            string.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))
         }
-        if isImageSource, let image = resolveImage?(icon) {
-            let side = NoteTheme.calloutIconSize - 2
-            image.draw(in: NSRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side),
-                       from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            return
-        }
-        let font = NSFont(name: "Apple Color Emoji", size: NoteTheme.calloutIconSize - 4) ?? .systemFont(ofSize: NoteTheme.calloutIconSize - 4)
-        let string = NSAttributedString(string: icon, attributes: [.font: font])
-        let size = string.size()
-        string.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))
     }
 
     override func updateTrackingAreas() {
@@ -721,15 +727,17 @@ final class NoteToggleHintView: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        if isHovered {
-            NoteTheme.hoverFill.setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 0, dy: 2), xRadius: NoteTheme.controlRadius, yRadius: NoteTheme.controlRadius).fill()
+        drawInOwnAppearance {
+            if isHovered {
+                NoteTheme.hoverFill.setFill()
+                NSBezierPath(roundedRect: bounds.insetBy(dx: 0, dy: 2), xRadius: NoteTheme.controlRadius, yRadius: NoteTheme.controlRadius).fill()
+            }
+            let font = NoteTheme.nunitoRegular(NoteTheme.smallBodySize)
+            let string = NSAttributedString(string: Self.text, attributes: [.font: font, .foregroundColor: NoteTheme.tertiaryInk])
+            let size = string.size()
+            string.draw(with: NSRect(x: 4, y: (bounds.height - size.height) / 2, width: max(0, bounds.width - 8), height: size.height),
+                        options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         }
-        let font = NoteTheme.nunitoRegular(NoteTheme.smallBodySize)
-        let string = NSAttributedString(string: Self.text, attributes: [.font: font, .foregroundColor: NoteTheme.tertiaryInk])
-        let size = string.size()
-        string.draw(with: NSRect(x: 4, y: (bounds.height - size.height) / 2, width: max(0, bounds.width - 8), height: size.height),
-                    options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 
     override func updateTrackingAreas() {

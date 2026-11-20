@@ -255,6 +255,7 @@ final class NotePropertyRowView: NSView, NSTextFieldDelegate {
     private(set) var index = 0
     var isEditable = true { didSet { refreshEditable() } }
     private var isHovered = false
+    private var isLifted = false
     private var hoverArea: NSTrackingArea?
     private var editingOriginal: String?
 
@@ -393,19 +394,34 @@ final class NotePropertyRowView: NSView, NSTextFieldDelegate {
         guard value != isHovered else { return }
         isHovered = value
         if let layer = handle.layer { NoteAnimation.fade(layer, to: value && isEditable ? 1 : 0, duration: NoteAnimation.hoverDuration) }
+        refreshBackground()
+    }
+
+    private func refreshBackground() {
         NoteAnimation.withoutAnimation {
-            layer?.backgroundColor = value && isEditable ? NoteTheme.resolved(NoteTheme.hoverFill.withAlphaComponent(0.5), in: self) : nil
+            if isLifted {
+                layer?.backgroundColor = NoteTheme.resolved(NoteTheme.menuFill, in: self)
+            } else {
+                layer?.backgroundColor = isHovered && isEditable ? NoteTheme.resolved(NoteTheme.hoverFill.withAlphaComponent(0.5), in: self) : nil
+            }
         }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshBackground()
+        redisplayChromeSubtree()
     }
 
     func setLifted(_ lifted: Bool) {
         guard let layer else { return }
+        isLifted = lifted
         NoteAnimation.withoutAnimation {
             layer.shadowColor = NSColor.black.cgColor
             layer.shadowRadius = lifted ? 8 : 0
             layer.shadowOffset = CGSize(width: 0, height: 3)
-            layer.backgroundColor = lifted ? NoteTheme.resolved(NoteTheme.menuFill, in: self) : nil
         }
+        refreshBackground()
         let center = NoteAnimation.layerPoint(NSPoint(x: bounds.midX, y: bounds.midY), in: self)
         let target = lifted ? NoteAnimation.scaleTransform(NoteAnimation.liftScale, about: center) : CATransform3DIdentity
         NoteAnimation.animate(layer, "transform", to: NSValue(caTransform3D: target), spring: lifted ? .lift : .settle,
@@ -483,11 +499,13 @@ final class NotePropertyHandle: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        NoteTheme.handleInk.setFill()
-        for column in 0..<2 {
-            for row in 0..<3 {
-                let center = NSPoint(x: bounds.midX - 2.5 + CGFloat(column) * 5, y: bounds.midY - 5 + CGFloat(row) * 5)
-                NSBezierPath(ovalIn: NSRect(x: center.x - 1.25, y: center.y - 1.25, width: 2.5, height: 2.5)).fill()
+        drawInOwnAppearance {
+            NoteTheme.handleInk.setFill()
+            for column in 0..<2 {
+                for row in 0..<3 {
+                    let center = NSPoint(x: bounds.midX - 2.5 + CGFloat(column) * 5, y: bounds.midY - 5 + CGFloat(row) * 5)
+                    NSBezierPath(ovalIn: NSRect(x: center.x - 1.25, y: center.y - 1.25, width: 2.5, height: 2.5)).fill()
+                }
             }
         }
     }
@@ -694,17 +712,19 @@ final class NotePropertyTagChip: NSView {
     override func mouseExited(with event: NSEvent) { isHovered = false; remove.isHidden = true; needsDisplay = true }
 
     override func draw(_ dirtyRect: NSRect) {
-        let color = NotePropertiesView.tagColor(label)
-        let pill = NSBezierPath(roundedRect: bounds.insetBy(dx: 0, dy: 2), xRadius: 6, yRadius: 6)
-        NoteTheme.color(.background(color)).setFill()
-        pill.fill()
-        let attributes: [NSAttributedString.Key: Any] = [.font: chipFont, .foregroundColor: NoteTheme.color(.text(color))]
-        let size = (label as NSString).size(withAttributes: attributes)
-        (label as NSString).draw(with: NSRect(x: 8, y: (bounds.height - size.height) / 2, width: bounds.width - 16, height: size.height),
-                               options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes)
-        guard isHovered, removable else { return }
-        NoteTheme.color(.background(color)).setFill()
-        NSBezierPath(roundedRect: NSRect(x: bounds.width - 22, y: 2, width: 22, height: bounds.height - 4), xRadius: 6, yRadius: 6).fill()
+        drawInOwnAppearance {
+            let color = NotePropertiesView.tagColor(label)
+            let pill = NSBezierPath(roundedRect: bounds.insetBy(dx: 0, dy: 2), xRadius: 6, yRadius: 6)
+            NoteTheme.color(.background(color)).setFill()
+            pill.fill()
+            let attributes: [NSAttributedString.Key: Any] = [.font: chipFont, .foregroundColor: NoteTheme.color(.text(color))]
+            let size = (label as NSString).size(withAttributes: attributes)
+            (label as NSString).draw(with: NSRect(x: 8, y: (bounds.height - size.height) / 2, width: bounds.width - 16, height: size.height),
+                                   options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes)
+            guard isHovered, removable else { return }
+            NoteTheme.color(.background(color)).setFill()
+            NSBezierPath(roundedRect: NSRect(x: bounds.width - 22, y: 2, width: 22, height: bounds.height - 4), xRadius: 6, yRadius: 6).fill()
+        }
     }
 }
 
@@ -736,11 +756,13 @@ final class NotePropertyValueButton: NoteControlButton {
     }
 
     override func drawContent(in bounds: NSRect, ink: NSColor) {
-        let color = value == nil ? NoteTheme.tertiaryInk : NoteTheme.ink
-        let attributes: [NSAttributedString.Key: Any] = [.font: valueFont, .foregroundColor: color]
-        let size = (shown as NSString).size(withAttributes: attributes)
-        (shown as NSString).draw(with: NSRect(x: 8, y: (bounds.height - size.height) / 2, width: bounds.width - 16, height: size.height),
-                                 options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes)
+        drawInOwnAppearance {
+            let color = value == nil ? NoteTheme.tertiaryInk : NoteTheme.ink
+            let attributes: [NSAttributedString.Key: Any] = [.font: valueFont, .foregroundColor: color]
+            let size = (shown as NSString).size(withAttributes: attributes)
+            (shown as NSString).draw(with: NSRect(x: 8, y: (bounds.height - size.height) / 2, width: bounds.width - 16, height: size.height),
+                                     options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes)
+        }
     }
 }
 

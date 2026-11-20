@@ -501,6 +501,11 @@ final class NoteFindBar: NSView {
         needsLayout = true
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        redisplayChromeSubtree()
+    }
+
     func setReplaceEnabled(_ enabled: Bool) {
         disclosure.isEnabled = enabled
         replaceField.textField.isEditable = enabled

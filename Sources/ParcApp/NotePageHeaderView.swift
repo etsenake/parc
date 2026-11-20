@@ -222,6 +222,16 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         refreshAffordanceVisibility()
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        redisplayChromeSubtree()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        redisplayChromeSubtree()
+    }
+
     private func refreshAffordanceVisibility() {
         let visible = isHovered && isEditable
         guard let layer = affordances.layer else { return }
@@ -615,9 +625,11 @@ final class NotePageTitleErrorView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let symbol = NoteIconRenderer.symbol("exclamationmark.circle.fill", pointSize: 12, weight: .semibold) else { return }
-        let box = NSRect(x: 0, y: ((bounds.height - Self.iconSide) / 2).rounded(), width: Self.iconSide, height: Self.iconSide)
-        NoteIconRenderer.drawTemplate(symbol, centeredIn: box, tint: NoteTheme.destructiveInk)
+        drawInOwnAppearance {
+            guard let symbol = NoteIconRenderer.symbol("exclamationmark.circle.fill", pointSize: 12, weight: .semibold) else { return }
+            let box = NSRect(x: 0, y: ((bounds.height - Self.iconSide) / 2).rounded(), width: Self.iconSide, height: Self.iconSide)
+            NoteIconRenderer.drawTemplate(symbol, centeredIn: box, tint: NoteTheme.destructiveInk)
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -793,11 +805,13 @@ final class NotePageTitleView: NSTextView, NoteFindPaintable {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard string.isEmpty, !hasMarkedText() else { return }
-        let font = self.font ?? NoteTheme.titleFont(.standard)
-        (placeholder as NSString).draw(at: NSPoint(x: textContainerOrigin.x, y: textContainerOrigin.y),
-                                       withAttributes: [.font: font, .foregroundColor: NoteTheme.titlePlaceholderInk])
+        drawInOwnAppearance {
+            super.draw(dirtyRect)
+            guard string.isEmpty, !hasMarkedText() else { return }
+            let font = self.font ?? NoteTheme.titleFont(.standard)
+            (placeholder as NSString).draw(at: NSPoint(x: textContainerOrigin.x, y: textContainerOrigin.y),
+                                           withAttributes: [.font: font, .foregroundColor: NoteTheme.titlePlaceholderInk])
+        }
     }
 }
 
@@ -884,31 +898,33 @@ final class NotePageIconView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        if isEditable && (isHovered || isPressed) {
-            (isPressed ? NoteTheme.pressedFill : NoteTheme.hoverFill).setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
-        }
-        guard let icon else { return }
-        if NotePageImageLoader.isImageSource(icon) {
-            let box = bounds.insetBy(dx: 8, dy: 8)
-            guard let image, image.size.width > 0, image.size.height > 0 else {
-                NoteTheme.mediaPlaceholderFill.setFill()
-                NSBezierPath(roundedRect: box, xRadius: 8, yRadius: 8).fill()
+        drawInOwnAppearance {
+            if isEditable && (isHovered || isPressed) {
+                (isPressed ? NoteTheme.pressedFill : NoteTheme.hoverFill).setFill()
+                NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
+            }
+            guard let icon else { return }
+            if NotePageImageLoader.isImageSource(icon) {
+                let box = bounds.insetBy(dx: 8, dy: 8)
+                guard let image, image.size.width > 0, image.size.height > 0 else {
+                    NoteTheme.mediaPlaceholderFill.setFill()
+                    NSBezierPath(roundedRect: box, xRadius: 8, yRadius: 8).fill()
+                    return
+                }
+                let scale = min(box.width / image.size.width, box.height / image.size.height)
+                let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+                let rect = NSRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2, width: size.width, height: size.height)
+                NSGraphicsContext.saveGraphicsState()
+                NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).addClip()
+                image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
+                NSGraphicsContext.restoreGraphicsState()
                 return
             }
-            let scale = min(box.width / image.size.width, box.height / image.size.height)
-            let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
-            let rect = NSRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2, width: size.width, height: size.height)
-            NSGraphicsContext.saveGraphicsState()
-            NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).addClip()
-            image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
-            NSGraphicsContext.restoreGraphicsState()
-            return
+            let font = NSFont(name: "AppleColorEmoji", size: 62) ?? .systemFont(ofSize: 62)
+            let text = NSAttributedString(string: icon, attributes: [.font: font])
+            let size = text.size()
+            text.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))
         }
-        let font = NSFont(name: "AppleColorEmoji", size: 62) ?? .systemFont(ofSize: 62)
-        let text = NSAttributedString(string: icon, attributes: [.font: font])
-        let size = text.size()
-        text.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2))
     }
 
     override func updateTrackingAreas() {

@@ -513,6 +513,7 @@ final class NotePageHistoryView: NSView, NoteFloatingPanelContent {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         refreshAppearance()
+        redisplayChromeSubtree()
     }
 
     private func refreshAppearance() {

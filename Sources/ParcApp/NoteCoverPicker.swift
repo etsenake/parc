@@ -171,6 +171,7 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         refreshAppearance()
+        redisplayChromeSubtree()
     }
 
     private func refreshAppearance() {
@@ -274,27 +275,29 @@ final class NoteCoverTile: PointingHandButton {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let rect = bounds.insetBy(dx: 2, dy: 2)
-        let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
-        NSGraphicsContext.saveGraphicsState()
-        path.addClip()
-        if let thumbnail {
-            thumbnail.draw(in: rect, from: .zero, operation: .sourceOver, fraction: isBusy ? 0.5 : 1, respectFlipped: true,
-                           hints: [.interpolation: NSImageInterpolation.high])
-        } else {
-            NoteTheme.mediaPlaceholderFill.setFill()
-            rect.fill()
-        }
-        NSGraphicsContext.restoreGraphicsState()
-        if isHovered || isHighlighted {
-            NoteTheme.accent.setStroke()
-            let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7)
-            ring.lineWidth = 2
-            ring.stroke()
-        } else {
-            NoteTheme.menuHairline.setStroke()
-            path.lineWidth = 0.5
-            path.stroke()
+        drawInOwnAppearance {
+            let rect = bounds.insetBy(dx: 2, dy: 2)
+            let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
+            NSGraphicsContext.saveGraphicsState()
+            path.addClip()
+            if let thumbnail {
+                thumbnail.draw(in: rect, from: .zero, operation: .sourceOver, fraction: isBusy ? 0.5 : 1, respectFlipped: true,
+                               hints: [.interpolation: NSImageInterpolation.high])
+            } else {
+                NoteTheme.mediaPlaceholderFill.setFill()
+                rect.fill()
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            if isHovered || isHighlighted {
+                NoteTheme.accent.setStroke()
+                let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7)
+                ring.lineWidth = 2
+                ring.stroke()
+            } else {
+                NoteTheme.menuHairline.setStroke()
+                path.lineWidth = 0.5
+                path.stroke()
+            }
         }
     }
 }
@@ -349,15 +352,17 @@ final class NotePageImageDropZone: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 10, yRadius: 10)
-        if isTargeted {
-            NoteTheme.checkedFill.setFill()
-            path.fill()
+        drawInOwnAppearance {
+            let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 10, yRadius: 10)
+            if isTargeted {
+                NoteTheme.checkedFill.setFill()
+                path.fill()
+            }
+            (isTargeted ? NoteTheme.accent : NoteTheme.separator).setStroke()
+            path.lineWidth = 1.5
+            path.setLineDash([5, 4], count: 2, phase: 0)
+            path.stroke()
         }
-        (isTargeted ? NoteTheme.accent : NoteTheme.separator).setStroke()
-        path.lineWidth = 1.5
-        path.setLineDash([5, 4], count: 2, phase: 0)
-        path.stroke()
     }
 
     static func imageURL(from info: NSDraggingInfo) -> URL? {
@@ -490,6 +495,7 @@ final class NotePageIconPicker: NSView, NoteFloatingPanelContent {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         refreshAppearance()
+        redisplayChromeSubtree()
     }
 
     private func refreshAppearance() {

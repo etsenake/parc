@@ -535,6 +535,7 @@ final class NotePageMenuView: NSView, NoteFloatingPanelContent {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         refreshAppearance()
+        redisplayChromeSubtree()
     }
 
     private func refreshAppearance() {
@@ -566,9 +567,11 @@ final class NotePageMenuSwitch: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let radius = bounds.height / 2
-        NoteTheme.hoverFill.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        drawInOwnAppearance {
+            let radius = bounds.height / 2
+            NoteTheme.hoverFill.setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -634,24 +637,26 @@ final class NotePageFontCard: NoteControlButton {
     }
 
     override func drawContent(in bounds: NSRect, ink: NSColor) {
-        if let fill = fill(hovered: isHovered, pressed: isPressed, checked: false) {
-            fill.setFill()
-            NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
+        drawInOwnAppearance {
+            if let fill = fill(hovered: isHovered, pressed: isPressed, checked: false) {
+                fill.setFill()
+                NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
+            }
+            if isCurrent {
+                NoteTheme.accent.setStroke()
+                let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7)
+                ring.lineWidth = 2
+                ring.stroke()
+            }
+            let sampleInk = isCurrent ? NoteTheme.checkedInk : NoteTheme.menuInk
+            let sample = NSAttributedString(string: "Ag", attributes: [.font: Self.sampleFont(pageFont), .foregroundColor: sampleInk])
+            let size = sample.size()
+            sample.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: 30 - size.height / 2 + 2))
+            let label = NSAttributedString(string: Self.name(pageFont), attributes: [
+                .font: NoteTheme.nunitoBold(11.5), .foregroundColor: isCurrent ? NoteTheme.checkedInk : NoteTheme.menuSecondaryInk])
+            let labelSize = label.size()
+            label.draw(at: NSPoint(x: bounds.midX - labelSize.width / 2, y: bounds.maxY - labelSize.height - 7))
         }
-        if isCurrent {
-            NoteTheme.accent.setStroke()
-            let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7)
-            ring.lineWidth = 2
-            ring.stroke()
-        }
-        let sampleInk = isCurrent ? NoteTheme.checkedInk : NoteTheme.menuInk
-        let sample = NSAttributedString(string: "Ag", attributes: [.font: Self.sampleFont(pageFont), .foregroundColor: sampleInk])
-        let size = sample.size()
-        sample.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: 30 - size.height / 2 + 2))
-        let label = NSAttributedString(string: Self.name(pageFont), attributes: [
-            .font: NoteTheme.nunitoBold(11.5), .foregroundColor: isCurrent ? NoteTheme.checkedInk : NoteTheme.menuSecondaryInk])
-        let labelSize = label.size()
-        label.draw(at: NSPoint(x: bounds.midX - labelSize.width / 2, y: bounds.maxY - labelSize.height - 7))
     }
 }
 

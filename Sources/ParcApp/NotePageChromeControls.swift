@@ -176,3 +176,14 @@ final class NotePageChromeGroup: NSView {
         setFrameSize(NSSize(width: x - spacing + inset, height: height + inset * 2))
     }
 }
+
+extension NSView {
+    func drawInOwnAppearance(_ body: () -> Void) {
+        effectiveAppearance.performAsCurrentDrawingAppearance(body)
+    }
+
+    func redisplayChromeSubtree() {
+        needsDisplay = true
+        for view in subviews { view.redisplayChromeSubtree() }
+    }
+}
