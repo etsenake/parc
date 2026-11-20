@@ -126,6 +126,20 @@ stays) and unmerge it again. ⌘D fills down and ⌘R fills right. Tab and Shift
 step through cells, Tab in the last cell adds a row, and Escape selects the cell,
 then the whole table.
 
+Buttons (`/button` or `/template`) work like Notion's. A button is a pill with an
+emoji and a name; pressing it runs its actions in order: Insert blocks (below or
+above the button, or at the top or bottom of the note), Show confirmation, which
+asks before carrying on, and Open a note or link. Each press is one undo step,
+even when it waits on a confirmation, and blocks it adds briefly glow. The gear
+that appears on hover (or Edit Button in the block menu) opens the editor: name,
+emoji, the actions to add, reorder or delete, and the blocks to insert, edited
+right in the card with the full note editor. Changes save as you go and undo as
+one step. Turn into Button keeps a block's first line as the name and its nested
+blocks as what it inserts, and turning a button back into text, or Turn into
+Blocks, brings them out again. A locked note still opens links from its buttons
+but won't let them add anything. The file keeps buttons as
+[GitHub-friendly details](notes-format.md#buttons).
+
 Any text block can hold nested blocks, as in Notion: paragraphs, headings, list
 items, to-dos, toggles, quotes and callouts, plus columns. Tab on a line after a
 paragraph nests it there, Shift-Tab takes the lines after it along as its

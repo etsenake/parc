@@ -202,6 +202,47 @@ in the summary: `<summary><h2>Section</h2></summary>`. Leave a blank line
 after `<summary>` and before `</details>` so the blocks inside are read as
 Markdown.
 
+## Buttons
+
+A button is a `<details>` block whose summary carries the `button` flag, so
+GitHub shows its name and, when opened, the blocks it inserts:
+
+```markdown
+<details>
+<summary>✅ Add a task <!-- parc button icon="✅" --></summary>
+
+- [ ] New task
+
+</details>
+```
+
+The summary is the icon and the name; `icon` keeps the emoji apart from the
+name, and `color` and `id` work as for any block. When the button only inserts
+blocks below itself, the blocks simply sit inside. Anything else spells out each
+action, in order, as its own comment line, and an insert's blocks follow its
+line:
+
+```markdown
+<details>
+<summary>🚀 Launch <!-- parc button icon="🚀" --></summary>
+
+<!-- parc confirm="Ready to launch?" -->
+
+<!-- parc insert="top" -->
+
+## Launch log
+
+<!-- parc open="Release%20plan.md" -->
+
+</details>
+```
+
+`insert` takes `below`, `above`, `top` or `bottom`; `confirm` holds the message
+(empty for the plain "Are you sure?"); `open` holds a web address or a relative
+link to a note. A button with no actions closes its `<details>` right after the
+summary, and `open` on `<details>` is kept as you wrote it. Blocks written before
+the first action line count as inserted below.
+
 ## Columns
 
 Columns use directive fences, which Pandoc also understands:
