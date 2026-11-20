@@ -40,6 +40,7 @@ struct NoteMathParserTests {
         cellScopes()
         chemistry()
         units()
+        mhchemManual()
         tags()
         print("NoteMathParserTests passed")
     }
@@ -412,8 +413,8 @@ struct NoteMathParserTests {
         expect(parse("\\ce{{}^{14}_{6}C}") == parse("\\ce{^{14}_{6}C}"), "braced isotope form")
         expect(parse("\\ce{2H2O}") == parse("{2\\mathrm{H}_{2}\\mathrm{O}}"), "stoichiometric number")
         expect(parse("\\ce{1/2O2}") == parse("{\\tfrac{1}{2}\\mathrm{O}_{2}}"), "fractional stoichiometric number")
-        expect(parse("\\ce{NaCl(aq)}") == parse("{\\mathrm{Na}\\mathrm{Cl}\\mathrm{(aq)}}"), "aqueous state")
-        expect(parse("\\ce{H2O(l)}") == parse("{\\mathrm{H}_{2}\\mathrm{O}\\mathrm{(l)}}") && parse("\\ce{Fe(s)}") == parse("{\\mathrm{Fe}\\mathrm{(s)}}"),
+        expect(parse("\\ce{NaCl(aq)}") == parse("{\\mathrm{Na}\\mathrm{Cl}\\mathrm{(}\\mathrm{aq}\\mathrm{)}}"), "aqueous state")
+        expect(parse("\\ce{H2O(l)}") == parse("{\\mathrm{H}_{2}\\mathrm{O}\\mathrm{(}\\mathrm{l}\\mathrm{)}}") && parse("\\ce{Fe(s)}") == parse("{\\mathrm{Fe}\\mathrm{(}\\mathrm{s}\\mathrm{)}}"),
                "liquid and solid states")
         expect(parse("\\ce{Fe(CN)6^3-}") == parse("{\\mathrm{Fe}(\\mathrm{C}\\mathrm{N})_{6}^{3-}}"), "capital parentheses are groups, not states")
         expect(parse("\\ce{C6H5-CHO}") == parse("{\\mathrm{C}_{6}\\mathrm{H}_{5}{-}\\mathrm{C}\\mathrm{H}\\mathrm{O}}"), "single bond")
@@ -444,6 +445,52 @@ struct NoteMathParserTests {
         let unclosed = failure("x + \\ce{A ->[heat B}")
         expect(unclosed.message == "Missing ] in this formula" && unclosed.offset == 4, "chemistry errors point at \\ce")
         expect(failure("\\ce").message == "\\ce needs {…} after it", "ce needs an argument")
+    }
+
+    static func mhchemManual() {
+        expect(parse("\\ce{A\\bond{-}B\\bond{=}C\\bond{#}D}") == parse("\\ce{A-B=C#D}"), "bond commands match bond characters")
+        expect(parse("\\ce{A\\bond{1}B\\bond{2}C\\bond{3}D}") == parse("\\ce{A-B=C#D}"), "numbered bonds")
+        for bond in ["~", "~-", "~=", "~--", "-~-", "...", "....", "->", "<-"] {
+            let nodes = parse("\\ce{A\\bond{\(bond)}B}")
+            expect(nodes.count == 1 && !parse("\\ce{AB}").isEmpty && nodes != parse("\\ce{AB}"), "bond \(bond) draws something")
+        }
+        expect(contains(parse("\\ce{A\\bond{->}B}")) { $0 == .char("→", .rel) }, "arrow bond")
+        expect(failure("\\ce{A\\bond{?}B}").message == "\\bond doesn't know \u{201C}?\u{201D}", "unknown bonds explain themselves")
+        expect(parse("\\ce{OCO^{.-}}") == parse("{\\mathrm{O}\\mathrm{C}\\mathrm{O}^{\\cdot -}}"), "radical anion")
+        expect(parse("\\ce{NO^{(2.)-}}") == parse("{\\mathrm{N}\\mathrm{O}^{(2\\cdot )-}}"), "radical with a count")
+        expect(parse("\\ce{Mg^.}") == parse("{\\mathrm{Mg}^{\\cdot}}") && parse("\\ce{M^{..}_i}") == parse("{\\mathrm{M}^{\\cdot \\cdot }_{i}}"),
+               "electron dots")
+        expect(parse("\\ce{NO^*}") == parse("{\\mathrm{N}\\mathrm{O}^{*}}"), "excited state keeps its asterisk")
+        expect(parse("\\ce{NO_x}") == parse("{\\mathrm{N}\\mathrm{O}_{x}}") && parse("\\ce{Fe^n+}") == parse("{\\mathrm{Fe}^{n+}}"),
+               "variables are italic")
+        expect(parse("\\ce{[Pt(\\eta^2-C2H4)Cl3]-}") == parse("{\\lbrack\\mathrm{Pt}(\\eta ^{2}{-}\\mathrm{C}_{2}\\mathrm{H}_{4})\\mathrm{Cl}_{3}\\rbrack^{-}}"),
+               "hapticity then a bond")
+        expect(parse("\\ce{\\beta +}") == parse("{\\beta ^{+}}"), "a space after a Greek letter is ignored")
+        expect(parse("\\ce{CO3^2-_{(aq)}}") == parse("{\\mathrm{C}\\mathrm{O}_{3}^{2-}{}_{(\\mathrm{aq})}}"), "a second subscript gets its own base")
+        expect(parse("\\ce{NaOH(aq,$\\infty$)}") == parse("{\\mathrm{Na}\\mathrm{O}\\mathrm{H}\\mathrm{(}\\mathrm{aq}{,}{\\infty}\\mathrm{)}}"),
+               "math inside a state")
+        expect(parse("\\ce{ZnS(\\ca$c$)}") == parse("{\\mathrm{Zn}\\mathrm{S}({\\sim}{c})}"), "circa")
+        expect(parse("\\ce{{Gluconic Acid} + H2O2}") == parse("{\\text{Gluconic Acid} + \\mathrm{H}_{2}\\mathrm{O}_{2}}"), "braces make upright text")
+        expect(parse("\\ce{$cis${-}[PtCl2(NH3)2]}") == parse("{{cis}\\text{-}\\lbrack\\mathrm{Pt}\\mathrm{Cl}_{2}(\\mathrm{N}\\mathrm{H}_{3})_{2}\\rbrack}"),
+               "a braced hyphen isn't a bond")
+        expect(parse("\\ce{A - B}") == parse("{\\mathrm{A} - \\mathrm{B}}"), "a spaced minus is an operator")
+        expect(contains(parse("\\ce{A v B (v) -> B ^ B (^)}")) { $0 == .classed(.rel, [.char("(", .open), .char("↓", .rel), .char(")", .close)]) },
+               "precipitate in parentheses")
+        expect(parse("\\ce{H^3HO}") == parse("{\\mathrm{H}{}^{\\hphantom{3}}{}^{\\mathllap{3}}\\mathrm{H}\\mathrm{O}}"), "a bare mass number belongs to the next element")
+        expect(parse("\\ce{1s^2-N}") == parse("{1\\mathrm{s}^{2}{-}\\mathrm{N}}"), "orbitals")
+        expect(parse("\\ce{n-Pr}") == parse("{n{-}\\mathrm{Pr}}") && parse("\\ce{iPr}") == parse("{i\\mathrm{Pr}}"), "italic prefixes")
+        expect(parse("\\ce{\\frac{[Hg^2+][Hg]}{[Hg2^2+]}}") ==
+               parse("{\\frac{\\lbrack\\mathrm{Hg}^{2+}\\rbrack\\lbrack\\mathrm{Hg}\\rbrack}{\\lbrack\\mathrm{Hg}_{2}^{2+}\\rbrack}}"),
+               "chemistry inside \\frac")
+        expect(parse("\\ce{A~B}") == parse("{\\mathrm{A}\\ \\mathrm{B}}"), "a tilde is a space")
+        expect(parse("\\pu{1,2e3 kJ}") == parse("{1{,}2\\cdot 10^{3}~\\mathrm{kJ}}"), "comma decimals stay commas")
+        expect(parse("\\pu{1.2x10^3 kJ}") == parse("{1.2\\times 10^{3}~\\mathrm{kJ}}") && parse("\\pu{1.2*10^-3 m}") == parse("{1.2\\cdot 10^{-3}~\\mathrm{m}}"),
+               "written-out powers of ten")
+        expect(parse("\\pu{1.2e3 kJ mol-1}") == parse("{1.2\\cdot 10^{3}~\\mathrm{kJ}\\,\\mathrm{mol}^{-1}}"), "number, product and exponent")
+        expect(parse("\\pu{123 J*s}") == parse("{123~\\mathrm{J}\\cdot \\mathrm{s}}") && parse("\\pu{123 J.s}") == parse("\\pu{123 J*s}"), "products")
+        expect(parse("\\pu{75.3 J // mol K}") == parse("{75.3~\\frac{\\mathrm{J}}{\\mathrm{mol}\\,\\mathrm{K}}}"), "quotient with a spaced denominator")
+        expect(parse("\\pu{10-20 K}") == parse("{10\\text{\u{2013}}20~\\mathrm{K}}"), "ranges get an en dash")
+        expect(parse("\\pu{3 m^{-2}}") == parse("{3~\\mathrm{m}^{-2}}"), "braced exponents")
     }
 
     static func units() {

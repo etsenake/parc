@@ -81,17 +81,47 @@ enum NoteMathChemistry {
             return "{" + String(characters[start..<(index - 1)]) + "}"
         }
 
+        static let bonds: [String: String] = {
+            let dash = "{-}\\mkern-3mu{-}\\mkern-3mu{-}"
+            return [
+                "-": "{-}", "1": "{-}", "=": "{=}", "2": "{=}", "#": "{\\equiv}", "3": "{\\equiv}",
+                "~": "{\\scriptstyle " + dash + "}", "~-": "{\\overset{" + dash + "}{-}}", "~=": "{\\overset{" + dash + "}{=}}",
+                "~--": "{\\overset{" + dash + "}{=}}", "-~-": "{\\overset{-}{\\underset{-}{" + dash + "}}}",
+                "...": "{{\\cdot}{\\cdot}{\\cdot}}", "....": "{{\\cdot}{\\cdot}{\\cdot}{\\cdot}}",
+                "->": "{\\rightarrow}", "<-": "{\\leftarrow}", "<": "{<}", ">": "{>}",
+            ]
+        }()
+
+        static let ceArguments: Set<String> = ["frac", "dfrac", "tfrac", "overset", "underset", "underbrace", "overbrace"]
+
         mutating func command() throws(NoteMathParseError) -> String {
             let start = index
             index += 1
+            var isWord = false
             if index < characters.count, characters[index].isASCII, characters[index].isLetter {
                 while index < characters.count, characters[index].isASCII, characters[index].isLetter { index += 1 }
+                isWord = true
             } else if index < characters.count {
                 index += 1
             }
+            let name = String(characters[(start + 1)..<index])
+            if name == "bond" {
+                guard peek() == "{" else { throw failure("\\bond needs a bond type, like \\bond{=}") }
+                let kind = try balanced(open: "{", close: "}").trimmingCharacters(in: .whitespaces)
+                guard let bond = Self.bonds[kind] else { throw failure("\\bond doesn't know \u{201C}\(kind)\u{201D}") }
+                return bond
+            }
+            if name == "ca" {
+                while let character = peek(), character.isWhitespace { index += 1 }
+                return "{\\sim}"
+            }
             var result = String(characters[start..<index])
             while peek() == "{" {
-                result += "{" + (try balanced(open: "{", close: "}")) + "}"
+                let argument = try balanced(open: "{", close: "}")
+                result += "{" + (Self.ceArguments.contains(name) ? try NoteMathChemistry.formula(argument) : argument) + "}"
+            }
+            if isWord, peek() != "{" {
+                while let character = peek(), character.isWhitespace, peek(1).map({ "+-^_".contains($0) }) == true { index += 1 }
             }
             return result + " "
         }
@@ -112,6 +142,11 @@ enum NoteMathChemistry {
                     parts.append(try reactionArrow(arrow.command))
                     continue
                 }
+                if spaced, character == "(", let mark = peek(1), mark == "v" || mark == "^", peek(2) == ")", isBoundary(3) {
+                    index += 3
+                    parts.append(mark == "v" ? "\\mathrel{(\\downarrow)}" : "\\mathrel{(\\uparrow)}")
+                    continue
+                }
                 if spaced, isBoundary(1) {
                     switch character {
                     case "+":
@@ -121,6 +156,10 @@ enum NoteMathChemistry {
                     case "=":
                         index += 1
                         parts.append("=")
+                        continue
+                    case "-":
+                        index += 1
+                        parts.append("-")
                         continue
                     case "v":
                         index += 1
@@ -172,6 +211,32 @@ enum NoteMathChemistry {
             return digits
         }
 
+        static func stateText(_ text: String) -> String {
+            var result = ""
+            var letters = ""
+            var characters = Array(text)[...]
+            func flush() {
+                if !letters.isEmpty { result += "\\mathrm{" + letters + "}" }
+                letters = ""
+            }
+            while let character = characters.first {
+                characters = characters.dropFirst()
+                if character == "$" {
+                    flush()
+                    let math = characters.prefix { $0 != "$" }
+                    characters = characters.dropFirst(math.count + 1)
+                    result += "{" + String(math) + "}"
+                } else if character == "," {
+                    flush()
+                    result += "{,}"
+                } else {
+                    letters.append(character)
+                }
+            }
+            flush()
+            return result
+        }
+
         func stateEnd(from position: Int) -> Int? {
             guard position < characters.count, characters[position] == "(" else { return nil }
             var cursor = position + 1
@@ -201,10 +266,18 @@ enum NoteMathChemistry {
             if peek() == "{" { return superscriptText(try balanced(open: "{", close: "}")) }
             var run = ""
             while let character = peek(), character.isNumber || "+-".contains(character)
-                    || (run.isEmpty && (character.isLetter || character == ".")) {
+                    || ((run.isEmpty || run.allSatisfy({ $0 == "." })) && character == ".")
+                    || (run.isEmpty && character.isLetter) {
+                if "+-".contains(character), !run.isEmpty, let after = peek(1), after.isLetter || "([".contains(after) { break }
                 run.append(character)
                 index += 1
-                if character.isLetter || character == "." { break }
+                if character.isLetter {
+                    while let sign = peek(), "+-".contains(sign), !(peek(1).map { $0.isLetter || "([".contains($0) } ?? false) {
+                        run.append(sign)
+                        index += 1
+                    }
+                    break
+                }
             }
             if run.isEmpty, let character = peek() {
                 index += 1
@@ -240,7 +313,8 @@ enum NoteMathChemistry {
                 } else {
                     flush()
                     switch character {
-                    case ".", "*": result += "\\cdot "
+                    case ".": result += "\\cdot "
+                    case "*": result += "*"
                     case "{", "}": result.append(character)
                     default: result.append(character)
                     }
@@ -250,9 +324,23 @@ enum NoteMathChemistry {
             return result
         }
 
+        static func italicizingVariables(_ text: String) -> String {
+            var result = text
+            for letter in "abcdefghijklmnopqrstuvwxyz" {
+                result = result.replacingOccurrences(of: "\\mathrm{\(letter)}", with: String(letter))
+            }
+            return result
+        }
+
+        mutating func prescripts(raised: String) throws(NoteMathParseError) -> String {
+            "{}^{\\hphantom{" + raised + "}}{}^{\\mathllap{" + raised + "}}"
+        }
+
         mutating func compound() throws(NoteMathParseError) -> String {
             var output = ""
             var canTakeScripts = false
+            var superscripted = false
+            var subscripted = false
             if let amount = coefficient() {
                 output += amount
                 if atEnd || characters[index].isWhitespace { return output }
@@ -274,6 +362,8 @@ enum NoteMathChemistry {
                     }
                     output += "\\mathrm{" + element + "}"
                     canTakeScripts = true
+                    superscripted = false
+                    subscripted = false
                 } else if character.isLetter {
                     var letters = String(character)
                     index += 1
@@ -281,20 +371,25 @@ enum NoteMathChemistry {
                         letters.append(next)
                         index += 1
                     }
-                    output += "\\mathrm{" + letters + "}"
+                    let prefix = letters.count == 1 && (peek()?.isUppercase == true || (peek() == "-" && peek(1)?.isUppercase == true))
+                    output += prefix ? letters : "\\mathrm{" + letters + "}"
                     canTakeScripts = true
+                    superscripted = false
+                    subscripted = false
                 } else if character.isNumber {
                     var digits = ""
                     while let next = peek(), next.isNumber {
                         digits.append(next)
                         index += 1
                     }
+                    if canTakeScripts, subscripted { output += "{}" }
                     output += canTakeScripts ? "_{" + digits + "}" : digits
+                    if canTakeScripts { subscripted = true }
                 } else {
                     switch character {
                     case "(":
                         if let end = stateEnd(from: index) {
-                            output += "\\mathrm{(" + String(characters[(index + 1)..<end]) + ")}"
+                            output += "\\mathrm{(}" + Self.stateText(String(characters[(index + 1)..<end])) + "\\mathrm{)}"
                             index = end + 1
                             canTakeScripts = false
                         } else {
@@ -306,6 +401,8 @@ enum NoteMathChemistry {
                         output += ")"
                         index += 1
                         canTakeScripts = true
+                        superscripted = false
+                        subscripted = false
                     case "[":
                         output += "\\lbrack "
                         index += 1
@@ -314,12 +411,27 @@ enum NoteMathChemistry {
                         output += "\\rbrack "
                         index += 1
                         canTakeScripts = true
+                        superscripted = false
+                        subscripted = false
                     case "^":
                         index += 1
-                        output += "^{" + (try scriptContent()) + "}"
+                        var digits = 0
+                        while let next = peek(digits), next.isNumber { digits += 1 }
+                        if digits > 0, let after = peek(digits), after.isUppercase {
+                            output += try prescripts(raised: String(characters[index..<(index + digits)]))
+                            index += digits
+                            superscripted = false
+                            subscripted = false
+                            continue
+                        }
+                        if superscripted { output += "{}" }
+                        output += "^{" + Self.italicizingVariables(try scriptContent()) + "}"
+                        superscripted = true
                     case "_":
                         index += 1
-                        output += "_{" + (try scriptContent()) + "}"
+                        if subscripted { output += "{}" }
+                        output += "_{" + Self.italicizingVariables(try scriptContent()) + "}"
+                        subscripted = true
                     case "+", "-":
                         let next = peek(1)
                         let bond = character == "-" && next.map { $0.isLetter || $0.isNumber || "([{\\$".contains($0) } == true
@@ -332,7 +444,9 @@ enum NoteMathChemistry {
                                 charge.append(mark)
                                 index += 1
                             }
+                            if superscripted { output += "{}" }
                             output += "^{" + charge + "}"
+                            superscripted = true
                         }
                     case "=":
                         output += "{=}"
@@ -348,13 +462,24 @@ enum NoteMathChemistry {
                     case "$":
                         output += try mathEscape()
                         canTakeScripts = true
+                        superscripted = false
+                        subscripted = false
                     case "{":
-                        output += "{" + (try balanced(open: "{", close: "}")) + "}"
+                        let inner = try balanced(open: "{", close: "}")
+                        let plain = !inner.isEmpty && !inner.contains("\\") && !inner.contains("$") && !inner.contains("{")
+                        output += plain ? "\\text{" + inner + "}" : "{" + inner + "}"
                         canTakeScripts = true
+                        superscripted = false
+                        subscripted = false
                     case "\\":
                         output += try command()
                         canTakeScripts = true
-                    case "&", "%", "~":
+                        superscripted = false
+                        subscripted = false
+                    case "~":
+                        output += "\\ "
+                        index += 1
+                    case "&", "%":
                         output += "\\" + String(character)
                         index += 1
                     case "'":
@@ -403,7 +528,9 @@ enum NoteMathChemistry {
                 integer.append(character)
                 index += 1
             }
+            var separator = "."
             if let mark = peek(), mark == "." || mark == ",", let next = peek(1), next.isASCII, next.isNumber {
+                if mark == "," { separator = "{,}" }
                 index += 1
                 var digits = ""
                 while let character = peek(), character.isASCII, character.isNumber {
@@ -414,7 +541,7 @@ enum NoteMathChemistry {
             }
             guard !integer.isEmpty || fraction != nil else { return nil }
             var result = grouped(integer.isEmpty ? "0" : integer, fromLeft: false)
-            if let fraction { result += "." + grouped(fraction, fromLeft: true) }
+            if let fraction { result += separator + grouped(fraction, fromLeft: true) }
             return result
         }
 
@@ -450,6 +577,21 @@ enum NoteMathChemistry {
                     index += 1
                 }
                 result += (mark == "e" ? "\\cdot " : "\\times ") + "10^{" + exponent + "}"
+            } else if let mark = peek(), mark == "x" || mark == "*" || mark == "\u{00D7}" || mark == "\u{00B7}",
+                      peek(1) == "1", peek(2) == "0", peek(3) == "^" {
+                index += 4
+                var exponent = ""
+                if peek() == "{" {
+                    exponent = try balanced(open: "{", close: "}")
+                } else {
+                    if let sign = peek(), sign == "-" || sign == "+" { exponent.append(sign); index += 1 }
+                    while let character = peek(), character.isNumber { exponent.append(character); index += 1 }
+                }
+                result += (mark == "x" || mark == "\u{00D7}" ? "\\times " : "\\cdot ") + "10^{" + exponent + "}"
+            }
+            if let dash = peek(), dash == "-" || dash == "\u{2013}", let next = peek(1), next.isNumber {
+                index += 1
+                if let upper = plainNumber() { result += "\\text{\u{2013}}" + upper }
             }
             return result
         }
