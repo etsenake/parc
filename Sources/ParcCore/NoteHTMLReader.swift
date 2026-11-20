@@ -704,12 +704,21 @@ final class NoteHTMLConversion {
                 row.cells.flatMap { cell in flow(cell.children, derive(style, cell, sheet.declarations(for: cell), block: true)) }
             }
         }
-        var grid: [[NoteText]] = []
+        var values: [NoteTableCell: NoteText] = [:]
+        var occupied = Set<NoteTableCell>()
+        var merges: [NoteTableMerge] = []
+        var colors: [NoteTableCell: NoteColorStyle] = [:]
         var alignments: [NoteAlignment?] = []
+        var width = 0
         for (index, row) in cellRows.enumerated() {
-            var values: [NoteText] = []
+            var column = 0
             for cell in row.cells {
+                while occupied.contains(NoteTableCell(row: index, column: column)) { column += 1 }
                 let css = sheet.declarations(for: cell)
+                let columns = span(cell)
+                let requested = Int(cell["rowspan"] ?? "") ?? 1
+                let remaining = cellRows.count - index
+                let height = min(max(1, requested <= 0 ? remaining : requested), remaining, 50)
                 if index == 0 {
                     let alignment: NoteAlignment?
                     switch (cell["align"] ?? css["text-align"] ?? "").lowercased() {
@@ -718,12 +727,22 @@ final class NoteHTMLConversion {
                     case "left", "start": alignment = .left
                     default: alignment = nil
                     }
-                    alignments.append(contentsOf: Array(repeating: alignment, count: span(cell)))
+                    while alignments.count < column { alignments.append(nil) }
+                    alignments.append(contentsOf: Array(repeating: alignment, count: columns))
                 }
-                values.append(cellText(cell, derive(style, cell, css, block: true)))
-                values.append(contentsOf: Array(repeating: NoteText(), count: span(cell) - 1))
+                let position = NoteTableCell(row: index, column: column)
+                values[position] = cellText(cell, derive(style, cell, css, block: true))
+                if let color = blockColor(cell) { colors[position] = color }
+                for covered in index..<(index + height) {
+                    for offset in column..<(column + columns) { occupied.insert(NoteTableCell(row: covered, column: offset)) }
+                }
+                if columns * height > 1 { merges.append(NoteTableMerge(row: index, column: column, rowSpan: height, columnSpan: columns)) }
+                column += columns
+                width = max(width, column)
             }
-            grid.append(values)
+        }
+        var grid: [[NoteText]] = (0..<cellRows.count).map { row in
+            (0..<max(1, width)).map { values[NoteTableCell(row: row, column: $0)] ?? NoteText() }
         }
         let allBold: (NoteText) -> Bool = { $0.allHave(.bold, in: 0..<$0.length) }
         var headerRow = cellRows[0].head || cellRows[0].cells.allSatisfy { $0.name == "th" }
@@ -739,6 +758,8 @@ final class NoteHTMLConversion {
         let headerColumn = !body.isEmpty && !everyCellIsHeader && body.allSatisfy { $0.cells.first?.name == "th" }
         var value = NoteTable(rows: grid, headerRow: headerRow, headerColumn: headerColumn)
         value.alignments = alignments
+        value.merges = merges
+        value.cellColors = colors
         value.normalize()
         var block = NoteBlock(.table, color: blockColor(node))
         block.props.table = value

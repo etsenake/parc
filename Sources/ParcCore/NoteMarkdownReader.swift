@@ -738,6 +738,8 @@ struct NoteMDReader {
                 table.columnWidths = parts.map { Double($0.trimmingCharacters(in: .whitespaces)) }
                 table.normalize()
             }
+            if let merge = values["merge"] { table.applyMergeAttribute(merge) }
+            if let colors = values["colors"] { table.applyColorsAttribute(colors) }
             block.props.table = table
         }
         if block.kind == .code, block.props.fence == "    ", !NoteMDWriter.writesIndentedCode(block, afterList: false) { block.props.fence = nil }

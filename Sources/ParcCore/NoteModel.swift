@@ -414,12 +414,29 @@ struct NoteTable: Hashable, Codable {
     var headerColumn = false
     var alignments: [NoteAlignment?] = []
     var columnWidths: [Double?] = []
+    var merges: [NoteTableMerge] = []
+    var cellColors: [NoteTableCell: NoteColorStyle] = [:]
 
     init(rows: [[NoteText]], headerRow: Bool = true, headerColumn: Bool = false) {
         self.rows = rows
         self.headerRow = headerRow
         self.headerColumn = headerColumn
         normalize()
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rows, headerRow, headerColumn, alignments, columnWidths, merges, cellColors
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rows = try container.decode([[NoteText]].self, forKey: .rows)
+        headerRow = try container.decodeIfPresent(Bool.self, forKey: .headerRow) ?? true
+        headerColumn = try container.decodeIfPresent(Bool.self, forKey: .headerColumn) ?? false
+        alignments = try container.decodeIfPresent([NoteAlignment?].self, forKey: .alignments) ?? []
+        columnWidths = try container.decodeIfPresent([Double?].self, forKey: .columnWidths) ?? []
+        merges = try container.decodeIfPresent([NoteTableMerge].self, forKey: .merges) ?? []
+        cellColors = try container.decodeIfPresent([NoteTableCell: NoteColorStyle].self, forKey: .cellColors) ?? [:]
     }
 
     static func empty(rows: Int = 3, columns: Int = 3) -> NoteTable {
@@ -439,6 +456,7 @@ struct NoteTable: Hashable, Codable {
         if alignments.count > columns { alignments.removeLast(alignments.count - columns) }
         if columnWidths.count < columns { columnWidths += Array(repeating: nil, count: columns - columnWidths.count) }
         if columnWidths.count > columns { columnWidths.removeLast(columnWidths.count - columns) }
+        normalizeSpans()
     }
 
     func cell(_ row: Int, _ column: Int) -> NoteText? {
@@ -447,57 +465,45 @@ struct NoteTable: Hashable, Codable {
     }
 
     mutating func insertRow(at index: Int) {
-        normalize()
-        rows.insert(Array(repeating: NoteText(), count: max(1, columnCount)), at: min(max(0, index), rows.count))
+        insertRows(at: index, count: 1)
     }
 
     @discardableResult
     mutating func deleteRow(at index: Int) -> Bool {
         guard rows.count > 1, rows.indices.contains(index) else { return false }
-        rows.remove(at: index)
-        return true
+        return removeRows(index..<(index + 1))
     }
 
     @discardableResult
     mutating func duplicateRow(at index: Int) -> Bool {
         guard rows.indices.contains(index) else { return false }
-        rows.insert(rows[index], at: index + 1)
+        insertRows(at: index + 1, count: 1, copying: index)
         return true
     }
 
     @discardableResult
     mutating func moveRow(from source: Int, to destination: Int) -> Bool {
         guard rows.indices.contains(source), rows.indices.contains(destination), source != destination else { return false }
-        let row = rows.remove(at: source)
-        rows.insert(row, at: destination)
+        reorderRows { NoteTable.movedIndex($0, from: source, to: destination) }
         return true
     }
 
     mutating func insertColumn(at index: Int) {
-        normalize()
-        let position = min(max(0, index), columnCount)
-        for row in rows.indices { rows[row].insert(NoteText(), at: position) }
-        alignments.insert(nil, at: position)
-        columnWidths.insert(nil, at: position)
+        insertColumns(at: index, count: 1)
     }
 
     @discardableResult
     mutating func deleteColumn(at index: Int) -> Bool {
         normalize()
         guard columnCount > 1, index >= 0, index < columnCount else { return false }
-        for row in rows.indices { rows[row].remove(at: index) }
-        alignments.remove(at: index)
-        columnWidths.remove(at: index)
-        return true
+        return removeColumns(index..<(index + 1))
     }
 
     @discardableResult
     mutating func duplicateColumn(at index: Int) -> Bool {
         normalize()
         guard index >= 0, index < columnCount else { return false }
-        for row in rows.indices { rows[row].insert(rows[row][index], at: index + 1) }
-        alignments.insert(alignments[index], at: index + 1)
-        columnWidths.insert(columnWidths[index], at: index + 1)
+        insertColumns(at: index + 1, count: 1, copying: index)
         return true
     }
 
@@ -506,14 +512,7 @@ struct NoteTable: Hashable, Codable {
         normalize()
         let count = columnCount
         guard source >= 0, source < count, destination >= 0, destination < count, source != destination else { return false }
-        for row in rows.indices {
-            let cell = rows[row].remove(at: source)
-            rows[row].insert(cell, at: destination)
-        }
-        let alignment = alignments.remove(at: source)
-        alignments.insert(alignment, at: destination)
-        let width = columnWidths.remove(at: source)
-        columnWidths.insert(width, at: destination)
+        reorderColumns { NoteTable.movedIndex($0, from: source, to: destination) }
         return true
     }
 

@@ -168,42 +168,21 @@ enum NoteTableChange: Hashable {
 enum NoteTableTransforms {
     static func apply(_ change: NoteTableChange, to table: inout NoteTable) {
         table.normalize()
-        let columns = table.columnCount
         switch change {
         case .insertRows(let at, let count):
-            let index = min(max(0, at), table.rowCount)
-            table.rows.insert(contentsOf: Array(repeating: Array(repeating: NoteText(), count: columns), count: max(0, count)), at: index)
+            table.insertRows(at: at, count: max(0, count))
         case .deleteRows(let at, let count):
-            let lower = min(max(0, at), table.rowCount), upper = min(table.rowCount, lower + max(0, count))
-            guard upper - lower < table.rowCount else { return }
-            table.rows.removeSubrange(lower..<upper)
+            let lower = min(max(0, at), table.rowCount)
+            table.removeRows(lower..<min(table.rowCount, lower + max(0, count)))
         case .moveRow(let from, let to):
-            guard table.rows.indices.contains(from), table.rows.indices.contains(to), from != to else { return }
-            let row = table.rows.remove(at: from)
-            table.rows.insert(row, at: to)
+            table.moveRow(from: from, to: to)
         case .insertColumns(let at, let count):
-            let index = min(max(0, at), columns), amount = max(0, count)
-            for row in table.rows.indices {
-                table.rows[row].insert(contentsOf: Array(repeating: NoteText(), count: amount), at: index)
-            }
-            table.alignments.insert(contentsOf: Array(repeating: nil, count: amount), at: index)
-            table.columnWidths.insert(contentsOf: Array(repeating: nil, count: amount), at: index)
+            table.insertColumns(at: at, count: max(0, count))
         case .deleteColumns(let at, let count):
-            let lower = min(max(0, at), columns), upper = min(columns, lower + max(0, count))
-            guard upper - lower < columns else { return }
-            for row in table.rows.indices { table.rows[row].removeSubrange(lower..<upper) }
-            table.alignments.removeSubrange(lower..<upper)
-            table.columnWidths.removeSubrange(lower..<upper)
+            let lower = min(max(0, at), table.columnCount)
+            table.removeColumns(lower..<min(table.columnCount, lower + max(0, count)))
         case .moveColumn(let from, let to):
-            guard (0..<columns).contains(from), (0..<columns).contains(to), from != to else { return }
-            for row in table.rows.indices {
-                let cell = table.rows[row].remove(at: from)
-                table.rows[row].insert(cell, at: to)
-            }
-            let alignment = table.alignments.remove(at: from)
-            table.alignments.insert(alignment, at: to)
-            let width = table.columnWidths.remove(at: from)
-            table.columnWidths.insert(width, at: to)
+            table.moveColumn(from: from, to: to)
         }
         table.normalize()
     }
@@ -234,9 +213,11 @@ enum NoteTableTransforms {
         guard height > 0, width > 0 else { return nil }
         let start = target?.topLeft ?? origin
         if height == 1, width == 1, let target, !target.isSingleCell {
-            for cell in target.cells where table.rows.indices.contains(cell.row) && table.rows[cell.row].indices.contains(cell.column) {
+            for cell in target.cells where table.rows.indices.contains(cell.row) && table.rows[cell.row].indices.contains(cell.column)
+                && !table.isCovered(cell) {
                 table.rows[cell.row][cell.column] = grid[0][0]
             }
+            table.normalize()
             return target
         }
         grow(&table, rows: start.row + height, columns: start.column + width)
@@ -245,6 +226,7 @@ enum NoteTableTransforms {
                 table.rows[start.row + rowOffset][start.column + column] = column < row.count ? row[column] : NoteText()
             }
         }
+        table.normalize()
         return NoteTableRect(rows: start.row...(start.row + height - 1), columns: start.column...(start.column + width - 1))
     }
 

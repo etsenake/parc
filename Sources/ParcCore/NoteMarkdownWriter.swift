@@ -622,6 +622,8 @@ struct NoteMDWriter {
         if table.columnWidths.contains(where: { $0 != nil }) {
             items.append(("widths", table.columnWidths.map { $0.map(Self.number) ?? "" }.joined(separator: ",")))
         }
+        if let merge = table.mergeAttribute { items.append(("merge", merge)) }
+        if let colors = table.colorsAttribute { items.append(("colors", colors)) }
         items += blockAttributes(block)
         return lines + trailingAttributes(items)
     }

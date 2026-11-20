@@ -629,24 +629,50 @@ struct NotePageHTMLWriter {
         grid.normalize()
         let border = mode == .fragment ? "border:1px solid #D9D8E3;padding:6px 10px;vertical-align:top;" : ""
         output += "<table" + colorClass(block.color, adding: []) + (mode == .fragment ? " style=\"border-collapse:collapse\"" : "") + ">"
-        func cell(_ tag: String, _ text: NoteText, column: Int, scope: String) -> String {
-            var style = border
-            if grid.alignments.indices.contains(column), let alignment = grid.alignments[column] { style += "text-align:" + alignment.rawValue + ";" }
-            return "<" + tag + scope + (style.isEmpty ? "" : " style=\"" + style + "\"") + ">" + inline(text) + "</" + tag + ">"
+        if grid.columnWidths.contains(where: { $0 != nil }) {
+            output += "<colgroup>" + grid.columnWidths.map { width in
+                width.map { "<col style=\"width:" + NoteMDWriter.number($0.rounded()) + "px\">" } ?? "<col>"
+            }.joined() + "</colgroup>"
         }
-        var rows = grid.rows[...]
-        if grid.headerRow, let head = rows.first {
-            output += "<thead><tr>" + head.enumerated().map { cell("th", $0.element, column: $0.offset, scope: " scope=\"col\"") }.joined() + "</tr></thead>"
-            rows = rows.dropFirst()
+        let covered = grid.coveredCells
+        let mode = self.mode
+        func cell(_ position: NoteTableCell) -> String {
+            let header = (grid.headerRow && position.row == 0) || (grid.headerColumn && position.column == 0)
+            let tag = header ? "th" : "td"
+            var attributes = header ? (position.row == 0 && grid.headerRow ? " scope=\"col\"" : " scope=\"row\"") : ""
+            let span = grid.span(of: position)
+            if span.columnSpan > 1 { attributes += " colspan=\"" + String(span.columnSpan) + "\"" }
+            if span.rowSpan > 1 { attributes += " rowspan=\"" + String(span.rowSpan) + "\"" }
+            var style = border
+            if grid.alignments.indices.contains(position.column), let alignment = grid.alignments[position.column] {
+                style += "text-align:" + alignment.rawValue + ";"
+            }
+            if let color = grid.cellColors[position] {
+                if mode == .document {
+                    attributes += " class=\"block-color-" + NoteHTMLColor.token(color) + "\""
+                } else {
+                    let palette = NotePageHTMLStyle.palette[color.color] ?? NotePageHTMLStyle.palette[.gray]!
+                    attributes += " data-color=\"" + NoteHTMLColor.token(color) + "\""
+                    style += color.isBackground ? "background-color:#" + palette.background + ";" : "color:#" + palette.text + ";"
+                }
+            }
+            if !style.isEmpty { attributes += " style=\"" + style + "\"" }
+            return "<" + tag + attributes + ">" + inline(grid.rows[position.row][position.column]) + "</" + tag + ">"
+        }
+        func row(_ index: Int) -> String {
+            "<tr>" + (0..<grid.columnCount).compactMap { column in
+                let position = NoteTableCell(row: index, column: column)
+                return covered.contains(position) ? nil : cell(position)
+            }.joined() + "</tr>"
+        }
+        let splitsHead = grid.merges.contains { $0.row == 0 && $0.rowSpan > 1 }
+        var first = 0
+        if grid.headerRow, !splitsHead {
+            output += "<thead>" + row(0) + "</thead>"
+            first = 1
         }
         output += "<tbody>"
-        for row in rows {
-            output += "<tr>"
-            for (column, text) in row.enumerated() {
-                output += grid.headerColumn && column == 0 ? cell("th", text, column: column, scope: " scope=\"row\"") : cell("td", text, column: column, scope: "")
-            }
-            output += "</tr>"
-        }
+        for index in first..<grid.rowCount { output += row(index) }
         output += "</tbody></table>"
     }
 

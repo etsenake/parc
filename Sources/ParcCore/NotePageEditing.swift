@@ -1403,12 +1403,13 @@ extension NotePageSession {
             return page.topLevelSelection(ids).compactMap { page.block($0)?.withFreshIDs() }
         case .cells(let table, let anchor, let head):
             guard let grid = page.block(table)?.props.table else { return [] }
-            let rows = min(anchor.row, head.row)...max(anchor.row, head.row)
-            let columns = min(anchor.column, head.column)...max(anchor.column, head.column)
-            let picked = rows.compactMap { row in grid.rows.indices.contains(row)
-                ? columns.compactMap { grid.cell(row, $0) } : nil }
+            let area = grid.expanded(rows: min(anchor.row, head.row)...max(anchor.row, head.row),
+                                     columns: min(anchor.column, head.column)...max(anchor.column, head.column))
+            var picked = grid.slice(rows: area.rows, columns: area.columns)
+            picked.headerRow = false
+            picked.headerColumn = false
             var props = NoteBlockProps()
-            props.table = NoteTable(rows: picked, headerRow: false)
+            props.table = picked
             return [NoteBlock(.table, props: props)]
         case .text(let anchor, let head):
             let (start, end) = orderedEnds(anchor, head)
@@ -1543,16 +1544,14 @@ extension NotePageSession {
 
     private func pasteIntoCells(_ blocks: [NoteBlock], table: NoteBlockID, origin: NoteTableCell, clearing target: NotePageSelection) {
         guard page.block(table)?.props.table != nil else { return }
-        if blocks.count == 1, blocks[0].kind == .table, let source = blocks[0].props.table {
+        if blocks.count == 1, blocks[0].kind == .table, var source = blocks[0].props.table {
+            source.normalize()
+            let pasted = source
             edit("Paste", selection: .cells(table: table, anchor: origin,
-                                            head: NoteTableCell(row: origin.row + source.rowCount - 1, column: origin.column + source.columnCount - 1))) { page in
+                                            head: NoteTableCell(row: origin.row + pasted.rowCount - 1, column: origin.column + pasted.columnCount - 1))) { page in
                 page.update(table) { block in
                     guard var grid = block.props.table else { return }
-                    while grid.rowCount < origin.row + source.rowCount { grid.insertRow(at: grid.rowCount) }
-                    while grid.columnCount < origin.column + source.columnCount { grid.insertColumn(at: grid.columnCount) }
-                    for (rowOffset, row) in source.rows.enumerated() {
-                        for (columnOffset, cell) in row.enumerated() { grid.rows[origin.row + rowOffset][origin.column + columnOffset] = cell }
-                    }
+                    grid.paste(pasted, at: origin)
                     block.props.table = grid
                 }
             }
@@ -1756,6 +1755,43 @@ extension NotePageSession {
             table.setAlignment(alignment, at: column)
             return true
         }) { $0 }
+    }
+
+    @discardableResult
+    func mergeTableCells(_ id: NoteBlockID, rows: ClosedRange<Int>, columns: ClosedRange<Int>) -> Bool {
+        guard let table = page.block(id)?.props.table, table.canMerge(rows: rows, columns: columns) else { return false }
+        let area = table.expanded(rows: rows, columns: columns)
+        let anchor = NoteTableCell(row: area.rows.lowerBound, column: area.columns.lowerBound)
+        return editTable(id, name: "Merge Cells", kind: .text, select: .cells(table: id, anchor: anchor, head: anchor),
+                         { $0.mergeCells(rows: rows, columns: columns) }) { cell in
+            area.rows.contains(cell.row) && area.columns.contains(cell.column) ? anchor : cell
+        }
+    }
+
+    @discardableResult
+    func unmergeTableCells(_ id: NoteBlockID, rows: ClosedRange<Int>, columns: ClosedRange<Int>) -> Bool {
+        guard let table = page.block(id)?.props.table, table.hasMerges(intersecting: rows, columns: columns) else { return false }
+        let area = table.expanded(rows: rows, columns: columns)
+        let select = NotePageSelection.cells(table: id, anchor: NoteTableCell(row: area.rows.lowerBound, column: area.columns.lowerBound),
+                                             head: NoteTableCell(row: area.rows.upperBound, column: area.columns.upperBound))
+        return editTable(id, name: "Unmerge Cells", kind: .text, select: select, { $0.unmergeCells(rows: area.rows, columns: area.columns) }) { $0 }
+    }
+
+    @discardableResult
+    func setTableCellColor(_ id: NoteBlockID, _ style: NoteColorStyle?, rows: ClosedRange<Int>, columns: ClosedRange<Int>,
+                           name: String = "Cell Color") -> Bool {
+        editTable(id, name: name, kind: .text, { $0.setColor(style, rows: rows, columns: columns) }) { $0 }
+    }
+
+    @discardableResult
+    func fillTableCells(_ id: NoteBlockID, _ direction: NoteTableFill, rows: ClosedRange<Int>, columns: ClosedRange<Int>) -> Bool {
+        editTable(id, name: direction == .down ? "Fill Down" : "Fill Right", kind: .text,
+                  { $0.fill(direction, rows: rows, columns: columns) }) { $0 }
+    }
+
+    @discardableResult
+    func resizeTable(_ id: NoteBlockID, rows: Int, columns: Int, name: String = "Resize Table") -> Bool {
+        editTable(id, name: name, { $0.resize(rows: rows, columns: columns) }) { $0 }
     }
 
     @discardableResult

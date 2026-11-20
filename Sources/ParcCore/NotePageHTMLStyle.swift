@@ -191,6 +191,7 @@ enum NotePageHTMLStyle {
     table{border-collapse:collapse;margin:.8em 0;font-size:.95em;display:block;overflow-x:auto;max-width:100%}
     th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;vertical-align:top;min-width:4em}
     thead th,tbody th{background:var(--fill);font-weight:700}
+    th[class*=block-color-],td[class*=block-color-]{border-radius:0}
     nav.table-of-contents{margin:.6em 0}
     nav.table-of-contents ul{list-style:none;padding:0;margin:0}
     nav.table-of-contents li{margin:.1em 0}
