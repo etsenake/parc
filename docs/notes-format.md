@@ -117,7 +117,7 @@ after it:
 
 The comment always starts with `parc`, followed by words and `name="value"`
 pairs. Parc writes `color`, `icon`, `width`, `height` (an embed's page height),
-`align`, `crop` and `mask` (an image's framing), `caption`, `wrap` (code that wraps), the table flags `no-header-row`, `header-column` and
+`align`, `crop` and `mask` (an image's framing), `caption`, `wrap` (code that wraps), `view` (`code` or `split` for a Mermaid block; Preview writes nothing), the table flags `no-header-row`, `header-column` and
 `widths="120,,80"`, the bookmark fields, and a block kind (`paragraph`,
 `image`, `video`, `audio`, `file`, `embed` or `bookmark`) when the file
 wouldn't otherwise make the kind clear. An empty paragraph that has a colour is

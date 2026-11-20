@@ -76,6 +76,20 @@ to five) and a table of contents. Inline text can be bold, italic, underlined,
 struck, code, a link, coloured or highlighted in Notion's nine colours, and can
 hold note mentions, dates and reminders, link mentions and inline equations.
 
+Code blocks in Mermaid draw their diagram, as in Notion. The code block's toolbar
+and the block menu's View switch between Code, Preview and Split. Preview is the
+default, and clicking the drawing or moving the caret into it shows the code
+above it until you leave. The diagram redraws 0.3 seconds after you stop typing.
+A broken diagram keeps its last good drawing, shows Mermaid's message below it
+and underlines the line it names. Parc runs the bundled Mermaid (see
+[its provenance](../Resources/NoteMermaid/PROVENANCE.md)) in one windowless
+WebKit view that never touches the network, gets a transparent vector PDF back
+and caches it by source, appearance and page font. Diagrams use the note's ink,
+Notion's palette and the page font, redraw when the appearance changes, and
+scroll sideways when wider than the page. The file keeps a plain
+```` ```mermaid ```` fence, so GitHub still draws it; HTML exports embed the SVG
+for light and dark, and PDF exports print the drawing as vectors.
+
 Any text block can hold nested blocks, as in Notion: paragraphs, headings, list
 items, to-dos, toggles, quotes and callouts, plus columns. Tab on a line after a
 paragraph nests it there, Shift-Tab takes the lines after it along as its
