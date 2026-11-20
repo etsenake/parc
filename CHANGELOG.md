@@ -1,5 +1,94 @@
 # Changelog
 
+## 2.12.0 (2026-11-20)
+
+### New
+
+- **notes:** Pick where new notes live in Settings, like downloads
+- **notes:** Put Parc on Finder's Open With list for Markdown and text files, so they open as notes you can actually edit
+- **notes:** Draw dividers, and a table of contents that keeps up with your headings and waves at the one you jump to
+- **notes:** Give every Notes menu a real Parc card that pops open, glides its highlight and tucks itself away
+- **notes:** Hover any block to find a + and a grip waiting in the margin, ready to add a line or pick the block up
+- **notes:** Hand Notes squishy toolbar buttons, chips, Parc keycaps and a search field that filters menus as you type
+- **notes:** Typeset equations natively in STIX Two Math, with brackets that grow, limits that stack and matrices that line up
+- **notes:** Pick emoji from a bouncy grid with search, skin tones, recents and a Random button for the indecisive
+- **notes:** Give code blocks live colours, a language picker, Wrap and a Copy that says thanks, and let equations and leftover Markdown look the part
+- **notes:** Label arrows with \xrightarrow, cross things out with \cancel and write \R for the reals in equations
+- **notes:** Colour code blocks by kind in Parc's palette and keep inline code sitting on the same line as its words
+- **notes:** Find and replace inside a note, with every match glowing, ⌘G to hop between them and Replace All as one tidy undo
+- **notes:** Lay pages out like a proper editor, with columns you can drag wider, callouts that hug their kids and blocks that glide into place
+- **notes:** Give equation scripts their proper small-print glyphs and flatten accents on tall letters instead of just shrinking everything
+- **notes:** Teach equations your own \newcommand shortcuts and write chemistry with \ce and \pu, arrows, charges, isotopes and all
+- **notes:** Drag a selection across blocks, rubber-band whole blocks from the margin and arrow between them like they were one page
+- **notes:** Number display equations with \tag, \tag* and auto-numbered align, gather and equation, tags hugging the right edge
+- **notes:** Find notes in the command bar by what's written inside them, not just their names
+- **notes:** Click a block's grip for a searchable menu of everything it can do, or drag it anywhere, even into columns, with the page scrolling along
+- **notes:** Drop Markdown and text files on the sidebar to open them as notes
+- **notes:** Type like it's Notion, with Markdown shortcuts that become blocks, rounded code and highlight pills, live inline math, mention pills and to-dos that pop when you tick them
+- **notes:** Dress pages up with a cover, a big emoji icon, a title that renames the file, properties and a time machine for older versions
+- **notes:** Let code blocks say "Write some code" when empty, keep Markdown shortcuts out of code, and tuck an empty caption away when you leave it
+- **notes:** Add tables you can Tab through, drag wider, shuffle by their grips and fill straight from a spreadsheet paste
+- **notes:** Highlight some text and a toolbar floats up to bold it, link it, paint it or turn it into a heading, plus a hover card for every link
+- **notes:** Copy, cut and paste in text blocks through the Notes clipboard, so blocks, links and Markdown travel intact
+- **notes:** Give properties tidy dates and tags that only show their little x on hover, and let the find bar's chevron flip without fighting the press bounce
+- **notes:** Tuck fonts, small text, full width, lock, copy, export, history and the trash into a page menu that counts your words
+- **notes:** Copy notes as rich text that Mail, Pages and Docs understand, and paste web pages and docs back in as real blocks
+- **notes:** Type / for every block with a peek at each, @ for notes, dates and reminders, and :smile: for emoji
+- **notes:** Click a date or reminder in your text to change it in the date picker
+- **notes:** Give notes real images, videos, sounds, files, bookmarks and note links that shimmer in, resize on a spring and zoom when you double-click
+- **notes:** Pop the math editor open the moment / adds an inline equation, and let a click back in the text close the emoji picker
+- **notes:** List your Notes folder in the Library with emoji, a peek at the text and when you last touched it, plus Show in Finder and Move to Trash
+- **notes:** Let the command bar find words inside notes you have open, even ones saved outside your Notes folder
+- **notes:** Pin a page menu to every note's top corner, let Print and every Find command reach notes, and keep ⌘⇧H on your last colour instead of a surprise Heading 1
+- **notes:** Click a note reminder and Parc opens that note for you, in a regular window and never a private one
+- **notes:** Copy a link to any block with ⌃⌘L, peek at media with Space, and drag callouts around with their real boxes on
+- **notes:** Drag Markdown or text files onto the sidebar and the insertion line shows where they'll land, then they open right there
+- **notes:** Open a note link with a #heading or block anchor from Finder, a page, a reminder or another note and Parc scrolls straight to that spot
+- **notes:** Open the find bar just under the page menu button so the two stop playing Tetris in the corner
+- **notes:** Give GitHub and Obsidian alert callouts their proper emoji and colour without scribbling defaults into the file
+- **notes:** Keep your selection a soft Parc purple when the window steps away, and teach text to line up left, centre or right on its own
+- **notes:** Let code sit snug in its box, with language, caption, wrap and copy floating in only when you hover
+- **notes:** Find now lights up titles, captions and table cells, the title tucks in under its icon, rename slip-ups show right below it, and → steps into an equation to edit it
+- **notes:** Lift dragged blocks as a crisp full-size ghost on Retina screens instead of a shrunken copy in the corner
+- **notes:** Paint tip, warning, caution and friends' callout boxes in their alert colours unless you pick one yourself
+- **notes:** Give Small Text, Full Width and Lock Page real little switches in the page menu so you can see what's on at a glance
+- **notes:** Stretch tables to the same right edge as everything else, with the add-column bar peeking in from outside on hover
+- **notes:** Embeds now hold a real live page right in your note, sign-ins and all, with a tidy header and a handle to make it taller
+- **notes:** Give live embeds a Caption button in their header, so a page can still get a little footnote
+- **notes:** Export to PDF prints the real page with its cover, icon, colours and page breaks between blocks, and HTML exports typeset your equations
+
+### Fixed
+
+- **notes:** Keep typed code in Space Mono with its tab stops, let Cmd-Return leave a code block, and tint the exact TeX typo
+- **notes:** Hand a block its new text before measuring it, so a merged line gets the room it needs right away
+- **notes:** Stop reminders from nagging about notes you already sent to the Trash
+- **notes:** Open a page's Markdown links straight into a note tab, leaving the page and its back button right where you left them
+- **notes:** Keep property tags, page menus, find and cover pickers readable the moment your Space flips between light and dark
+- **notes:** Let the Library and command bar notice when the note index wakes up, so your first body search actually finds things
+- **notes:** Keep big tables from crashing when undo or a delete pulls a row out from under the cursor, and keep tab-indented code in one cell
+- **notes:** Make drops beside a block and links pasted over a selection undo in one go, and refuse to open javascript, vbscript and data links
+- **notes:** Guess an embed's height from its real size so the page stops jumping when one scrolls in, and retire the old bookmark-style embed
+- **notes:** Drop in a giant video or an iCloud file and keep typing, it shimmers in while the copy happens behind the scenes
+- **notes:** Let ⌘F, ⌘G and friends search the live page you're clicked into instead of the note wrapped around it
+- **notes:** Make menu picks swallow the whole query, close on a click away, and let reminders follow notes through renames, moves and the trash
+- **notes:** Copying a note as rich text never phones home for pictures, it just writes their alt text instead
+- **notes:** Turn away javascript: and data: links, stop the fading toolbar from formatting old selections, and tidy up after image menus and audio players
+- **notes:** Stop /tog from dragging Link to note along, so the slash menu only shows near-misses when nothing really matches
+- **notes:** Tuck blocks inside a GitHub-style tip or warning in past its icon, even when the icon comes free with the alert
+- **notes:** Give every note one tab and one save brain, however you spell its path, so Plan.md, plan.md and that symlinked folder stop fighting over the same file
+- **notes:** Show hand-written GitHub NOTE alerts in blue with their ℹ️, while Parc's own plain callouts stay plain after a reload
+- **notes:** Print the real page with its cover, colours and all, and show rename slip-ups right under the title where they stick around long enough to read
+- **notes:** Notes never save a placeholder mid-copy anymore, so quitting early still leaves a link that works, and Replace and cover uploads copy in the background too
+- **notes:** Hang on to unsaved words when a file vanishes, moves or won't save, answer other apps' save requests without stalling, and spot renamed folders with dots in their names
+- **notes:** Stop calling every note an Easel in the sidebar's address pill, so Plan.md finally gets to be Plan.md
+- **notes:** Give note tabs their own emoji instead of a generic page glyph, in the sidebar, Favorites, the switcher and the command bar
+- **notes:** Make Put It Back actually put a vanished note back, folders and all, even when nothing was unsaved, and say so when something else took its spot
+- **notes:** Scan big notes folders in the background, so the Library and command bar show names right away and stop freezing while 20,000 files get a once-over
+- **notes:** Saving a note never quietly changes what it means, so a divider up top stays a divider, a [x] before a line break stays text, and stray HTML under a link definition, callout title or empty tag stays exactly where you left it
+- **notes:** Polish the Notes wording so menus, toasts and errors say exactly what happens, and save block downloads to your Space's download folder
+- **notes:** Hook the Put It Back button up to the thing that actually puts it back
+- **notes:** Curl the last stray apostrophes in media and cover errors, and name the conflict undo after the button you pressed
+
 ## 2.11.0 (2026-11-18)
 
 ### New

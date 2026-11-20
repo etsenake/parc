@@ -1,6 +1,499 @@
 {
   "releases": [
     {
+      "version": "2.12.0",
+      "build": 48,
+      "date": "2026-11-20",
+      "changes": [
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Pick where new notes live in Settings, like downloads",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Put Parc on Finder's Open With list for Markdown and text files, so they open as notes you can actually edit",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Draw dividers, and a table of contents that keeps up with your headings and waves at the one you jump to",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Give every Notes menu a real Parc card that pops open, glides its highlight and tucks itself away",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Hover any block to find a + and a grip waiting in the margin, ready to add a line or pick the block up",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Hand Notes squishy toolbar buttons, chips, Parc keycaps and a search field that filters menus as you type",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Typeset equations natively in STIX Two Math, with brackets that grow, limits that stack and matrices that line up",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Pick emoji from a bouncy grid with search, skin tones, recents and a Random button for the indecisive",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Give code blocks live colours, a language picker, Wrap and a Copy that says thanks, and let equations and leftover Markdown look the part",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Label arrows with \\xrightarrow, cross things out with \\cancel and write \\R for the reals in equations",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Colour code blocks by kind in Parc's palette and keep inline code sitting on the same line as its words",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Find and replace inside a note, with every match glowing, \u2318G to hop between them and Replace All as one tidy undo",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Lay pages out like a proper editor, with columns you can drag wider, callouts that hug their kids and blocks that glide into place",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Keep typed code in Space Mono with its tab stops, let Cmd-Return leave a code block, and tint the exact TeX typo",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Give equation scripts their proper small-print glyphs and flatten accents on tall letters instead of just shrinking everything",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Hand a block its new text before measuring it, so a merged line gets the room it needs right away",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Teach equations your own \\newcommand shortcuts and write chemistry with \\ce and \\pu, arrows, charges, isotopes and all",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Drag a selection across blocks, rubber-band whole blocks from the margin and arrow between them like they were one page",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Number display equations with \\tag, \\tag* and auto-numbered align, gather and equation, tags hugging the right edge",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Find notes in the command bar by what's written inside them, not just their names",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Click a block's grip for a searchable menu of everything it can do, or drag it anywhere, even into columns, with the page scrolling along",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Drop Markdown and text files on the sidebar to open them as notes",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Type like it's Notion, with Markdown shortcuts that become blocks, rounded code and highlight pills, live inline math, mention pills and to-dos that pop when you tick them",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Dress pages up with a cover, a big emoji icon, a title that renames the file, properties and a time machine for older versions",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Let code blocks say \"Write some code\" when empty, keep Markdown shortcuts out of code, and tuck an empty caption away when you leave it",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Add tables you can Tab through, drag wider, shuffle by their grips and fill straight from a spreadsheet paste",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Highlight some text and a toolbar floats up to bold it, link it, paint it or turn it into a heading, plus a hover card for every link",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Copy, cut and paste in text blocks through the Notes clipboard, so blocks, links and Markdown travel intact",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Give properties tidy dates and tags that only show their little x on hover, and let the find bar's chevron flip without fighting the press bounce",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Tuck fonts, small text, full width, lock, copy, export, history and the trash into a page menu that counts your words",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Copy notes as rich text that Mail, Pages and Docs understand, and paste web pages and docs back in as real blocks",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Type / for every block with a peek at each, @ for notes, dates and reminders, and :smile: for emoji",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Click a date or reminder in your text to change it in the date picker",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Give notes real images, videos, sounds, files, bookmarks and note links that shimmer in, resize on a spring and zoom when you double-click",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Pop the math editor open the moment / adds an inline equation, and let a click back in the text close the emoji picker",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "List your Notes folder in the Library with emoji, a peek at the text and when you last touched it, plus Show in Finder and Move to Trash",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Let the command bar find words inside notes you have open, even ones saved outside your Notes folder",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Pin a page menu to every note's top corner, let Print and every Find command reach notes, and keep \u2318\u21e7H on your last colour instead of a surprise Heading 1",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Click a note reminder and Parc opens that note for you, in a regular window and never a private one",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Copy a link to any block with \u2303\u2318L, peek at media with Space, and drag callouts around with their real boxes on",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Drag Markdown or text files onto the sidebar and the insertion line shows where they'll land, then they open right there",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Open a note link with a #heading or block anchor from Finder, a page, a reminder or another note and Parc scrolls straight to that spot",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Open the find bar just under the page menu button so the two stop playing Tetris in the corner",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Stop reminders from nagging about notes you already sent to the Trash",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Give GitHub and Obsidian alert callouts their proper emoji and colour without scribbling defaults into the file",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Keep your selection a soft Parc purple when the window steps away, and teach text to line up left, centre or right on its own",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Let code sit snug in its box, with language, caption, wrap and copy floating in only when you hover",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Find now lights up titles, captions and table cells, the title tucks in under its icon, rename slip-ups show right below it, and \u2192 steps into an equation to edit it",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Lift dragged blocks as a crisp full-size ghost on Retina screens instead of a shrunken copy in the corner",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Paint tip, warning, caution and friends' callout boxes in their alert colours unless you pick one yourself",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Give Small Text, Full Width and Lock Page real little switches in the page menu so you can see what's on at a glance",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Open a page's Markdown links straight into a note tab, leaving the page and its back button right where you left them",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Keep property tags, page menus, find and cover pickers readable the moment your Space flips between light and dark",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Stretch tables to the same right edge as everything else, with the add-column bar peeking in from outside on hover",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Embeds now hold a real live page right in your note, sign-ins and all, with a tidy header and a handle to make it taller",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Give live embeds a Caption button in their header, so a page can still get a little footnote",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Let the Library and command bar notice when the note index wakes up, so your first body search actually finds things",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Keep big tables from crashing when undo or a delete pulls a row out from under the cursor, and keep tab-indented code in one cell",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Make drops beside a block and links pasted over a selection undo in one go, and refuse to open javascript, vbscript and data links",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Guess an embed's height from its real size so the page stops jumping when one scrolls in, and retire the old bookmark-style embed",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Drop in a giant video or an iCloud file and keep typing, it shimmers in while the copy happens behind the scenes",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Let \u2318F, \u2318G and friends search the live page you're clicked into instead of the note wrapped around it",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "notes",
+          "summary": "Export to PDF prints the real page with its cover, icon, colours and page breaks between blocks, and HTML exports typeset your equations",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Make menu picks swallow the whole query, close on a click away, and let reminders follow notes through renames, moves and the trash",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Copying a note as rich text never phones home for pictures, it just writes their alt text instead",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Turn away javascript: and data: links, stop the fading toolbar from formatting old selections, and tidy up after image menus and audio players",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Stop /tog from dragging Link to note along, so the slash menu only shows near-misses when nothing really matches",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Tuck blocks inside a GitHub-style tip or warning in past its icon, even when the icon comes free with the alert",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Give every note one tab and one save brain, however you spell its path, so Plan.md, plan.md and that symlinked folder stop fighting over the same file",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Show hand-written GitHub NOTE alerts in blue with their \u2139\ufe0f, while Parc's own plain callouts stay plain after a reload",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Print the real page with its cover, colours and all, and show rename slip-ups right under the title where they stick around long enough to read",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Notes never save a placeholder mid-copy anymore, so quitting early still leaves a link that works, and Replace and cover uploads copy in the background too",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Hang on to unsaved words when a file vanishes, moves or won't save, answer other apps' save requests without stalling, and spot renamed folders with dots in their names",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Stop calling every note an Easel in the sidebar's address pill, so Plan.md finally gets to be Plan.md",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Give note tabs their own emoji instead of a generic page glyph, in the sidebar, Favorites, the switcher and the command bar",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Make Put It Back actually put a vanished note back, folders and all, even when nothing was unsaved, and say so when something else took its spot",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Scan big notes folders in the background, so the Library and command bar show names right away and stop freezing while 20,000 files get a once-over",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Saving a note never quietly changes what it means, so a divider up top stays a divider, a [x] before a line break stays text, and stray HTML under a link definition, callout title or empty tag stays exactly where you left it",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Polish the Notes wording so menus, toasts and errors say exactly what happens, and save block downloads to your Space's download folder",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Hook the Put It Back button up to the thing that actually puts it back",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "notes",
+          "summary": "Curl the last stray apostrophes in media and cover errors, and name the conflict undo after the button you pressed",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.11.0",
       "build": 47,
       "date": "2026-11-18",
