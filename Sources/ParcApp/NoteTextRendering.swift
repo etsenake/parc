@@ -440,12 +440,15 @@ enum NoteListMarker {
         case .bulletedItem:
             return bullet(level: level(of: block.id, kind: .bulletedItem, in: page))
         case .numberedItem:
-            guard let value = number(of: block.id, in: page) else { return nil }
             let siblings = page.siblings(of: block.id)
             var first = siblings.firstIndex { $0.id == block.id } ?? 0
             while first > 0, siblings[first - 1].kind == .numberedItem { first -= 1 }
-            return numberLabel(value, level: level(of: block.id, kind: .numberedItem, in: page),
-                               delimiter: siblings.indices.contains(first) ? siblings[first].props.orderedDelimiter : nil)
+            let delimiter = siblings.indices.contains(first) ? siblings[first].props.orderedDelimiter : block.props.orderedDelimiter
+            if let indexed = page.listNumber(for: block.id) {
+                return numberLabel(indexed.value, level: indexed.level, delimiter: delimiter)
+            }
+            guard let value = number(of: block.id, in: page) else { return nil }
+            return numberLabel(value, level: level(of: block.id, kind: .numberedItem, in: page), delimiter: delimiter)
         default:
             return nil
         }
