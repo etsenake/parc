@@ -508,12 +508,14 @@ final class NoteBlockHandleController {
     }
 
     private static func access(_ file: NoteFileSession) -> NoteCrossNoteMove.Access {
-        { body in
-            if let live = NoteFileSession.session(for: file.url), live !== file { return false }
-            file.retain()
-            defer { file.release() }
-            guard !file.page.isReadOnly else { return false }
-            body(file.page)
+        var current = file
+        return { body in
+            guard let live = try? NoteFileSession.open(current.url) else { return false }
+            current = live
+            live.retain()
+            defer { live.release() }
+            guard !live.page.isReadOnly else { return false }
+            body(live.page)
             return true
         }
     }

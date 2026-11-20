@@ -6,11 +6,12 @@ final class NoteCrossNoteMove {
 
     private enum Side { case source, target }
 
-    private let source: Access
-    private let target: Access
+    private let reachSource: Access
+    private let reachTarget: Access
+    private var seen: [Side: NotePageSession] = [:]
     private let name: String
     private var originals: [NoteBlock]
-    private let placements: [NoteInsertion]
+    private var placements: [NoteInsertion]
     private var copies: [NoteBlock]
     private(set) var isApplied = false
 
@@ -22,8 +23,48 @@ final class NoteCrossNoteMove {
         self.originals = originals
         self.placements = placements
         self.copies = originals.map { $0.withFreshIDs() }
-        self.source = source
-        self.target = target
+        self.reachSource = source
+        self.reachTarget = target
+    }
+
+    private func source(_ body: (NotePageSession) -> Void) -> Bool { reach(.source, body) }
+    private func target(_ body: (NotePageSession) -> Void) -> Bool { reach(.target, body) }
+
+    private func reach(_ side: Side, _ body: (NotePageSession) -> Void) -> Bool {
+        let access = side == .source ? reachSource : reachTarget
+        return access { session in
+            if let previous = seen[side], previous !== session { rekey(side, from: previous.page, to: session.page) }
+            seen[side] = session
+            body(session)
+        }
+    }
+
+    private func rekey(_ side: Side, from old: NotePage, to new: NotePage) {
+        let carried = NoteFileReconciler.preservingIdentity(of: old, in: new)
+        var current: [NoteBlockID: NoteBlockID] = [:]
+        for (kept, fresh) in zip(carried.allBlocks(), new.allBlocks()) where kept.id != fresh.id { current[kept.id] = fresh.id }
+        guard !current.isEmpty else { return }
+        func swap(_ id: NoteBlockID) -> NoteBlockID { current[id] ?? id }
+        func swapped(_ block: NoteBlock) -> NoteBlock {
+            var block = block
+            block.id = swap(block.id)
+            return block
+        }
+        switch side {
+        case .target:
+            copies = copies.map(swapped)
+        case .source:
+            originals = originals.map(swapped)
+            placements = placements.map { placement in
+                switch placement {
+                case .after(let id): .after(swap(id))
+                case .before(let id): .before(swap(id))
+                case .firstChild(let id): .firstChild(of: swap(id))
+                case .lastChild(let id): .lastChild(of: swap(id))
+                case .top(let index): .top(index)
+                }
+            }
+        }
     }
 
     static func perform(_ ids: [NoteBlockID], from session: NotePageSession, name: String,
@@ -39,8 +80,9 @@ final class NoteCrossNoteMove {
         }
         let move = NoteCrossNoteMove(name: name, originals: blocks, placements: top.map { placement(of: $0, in: page) },
                                      source: sourceAccess, target: target)
+        move.seen[.source] = session
         var landed = false
-        let reached = target { other in
+        let reached = move.target { other in
             guard other !== session else { return }
             move.append(to: other, label: "Move Here")
             landed = move.copyIDs.allSatisfy(other.page.contains)
@@ -73,7 +115,10 @@ final class NoteCrossNoteMove {
             }
             guard !restored else { return }
             isApplied = true
-            _ = target { other in append(to: other, label: "Move Here") }
+            settle { move in
+                guard move.isApplied else { return }
+                _ = move.target { other in move.append(to: other, label: "Move Here") }
+            }
         }
     }
 
@@ -82,9 +127,25 @@ final class NoteCrossNoteMove {
         isApplied = true
         switch side {
         case .source:
-            _ = target { other in append(to: other, label: "Move Here") }
+            var landed = false
+            _ = target { other in
+                append(to: other, label: "Move Here")
+                landed = copyIDs.allSatisfy(other.page.contains)
+            }
+            guard !landed else { return }
+            isApplied = false
+            settle { move in
+                guard !move.isApplied else { return }
+                _ = move.source { other in move.restoreOriginals(in: other) }
+            }
         case .target:
             _ = source { other in removeOriginals(from: other, label: name, caret: false) }
+        }
+    }
+
+    private func settle(_ body: @escaping @MainActor (NoteCrossNoteMove) -> Void) {
+        DispatchQueue.main.async { [self] in
+            MainActor.assumeIsolated { body(self) }
         }
     }
 

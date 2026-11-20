@@ -29,6 +29,8 @@ struct NoteCrossNoteMoveTests {
         undoInTargetRestoresSource()
         editedCopiesSurviveRoundTrip()
         unreachableSourceKeepsCopies()
+        unreachableTargetKeepsOriginals()
+        reopenedTargetStillFindsCopies()
         print("NoteCrossNoteMoveTests passed")
     }
 
@@ -114,7 +116,49 @@ struct NoteCrossNoteMoveTests {
         let move = NoteCrossNoteMove.perform([id], from: source, name: "Move", target: access(target), source: gate)!
         reachable = false
         target.undo()
+        settle()
         expect(texts(target) == ["x", "b"], "when the source can't take the blocks back, the target keeps them")
         expect(move.isApplied, "the move stays applied so nothing is lost")
+        target.redo()
+        settle()
+        expect(texts(target) == ["x", "b"] && texts(source) == ["a"], "a redo after the bounce keeps one copy")
+    }
+
+    static func unreachableTargetKeepsOriginals() {
+        let source = NotePageSession(page: NotePage(blocks: [.paragraph("a"), .paragraph("b")]))
+        let target = NotePageSession(page: NotePage(blocks: [.paragraph("x")]))
+        let id = source.page.blocks[1].id
+        let move = NoteCrossNoteMove.perform([id], from: source, name: "Move", target: access(target), source: access(source))!
+        source.undo()
+        expect(texts(source) == ["a", "b"] && texts(target) == ["x"], "undo restores the source first")
+        target.isReadOnly = true
+        source.redo()
+        settle()
+        expect(texts(source) == ["a", "b"], "when the target can't take the blocks, a redo leaves them in the source")
+        expect(texts(target) == ["x"] && !move.isApplied, "the move stays reversed so nothing is lost")
+        target.isReadOnly = false
+        source.undo()
+        expect(texts(source) == ["a"] && texts(target) == ["x", "b"], "once the target is writable, undoing the bounce moves them for real")
+    }
+
+    static func reopenedTargetStillFindsCopies() {
+        let source = NotePageSession(page: NotePage(blocks: [.paragraph("a"), .paragraph("b")]))
+        var target = NotePageSession(page: NotePage(blocks: [.paragraph("b"), .paragraph("x")]))
+        let reach: NoteCrossNoteMove.Access = { body in body(target); return true }
+        let id = source.page.blocks[1].id
+        let move = NoteCrossNoteMove.perform([id], from: source, name: "Move", target: reach, source: access(source))!
+        let stale = move.copyIDs
+        target = NotePageSession(page: NotePage(blocks: target.page.blocks.map { $0.withFreshIDs() }))
+        target.edit("Type") { page in page.insert([.paragraph("new")], .top(0)) }
+        source.undo()
+        expect(texts(target) == ["new", "b", "x"], "a reopened note still loses exactly the moved copy, not its twin")
+        expect(texts(source) == ["a", "b"], "and the source gets it back")
+        expect(move.copyIDs != stale, "the move follows the reopened note's block IDs")
+        source.redo()
+        expect(texts(target) == ["new", "b", "x", "b"] && texts(source) == ["a"], "redo lands in the reopened note")
+    }
+
+    static func settle() {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
     }
 }
