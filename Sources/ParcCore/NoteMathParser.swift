@@ -287,7 +287,7 @@ struct NoteMathParser {
         "colorbox", "fcolorbox", "href", "url", "rule", "tripledash", "relax", "nobreak", "allowbreak", "mathstrut", "pmb",
         "operatornamewithlimits", "varlimsup", "varliminf", "varinjlim", "varprojlim", "char", "verb", "TextOrMath",
         "htmlClass", "htmlId", "htmlStyle", "htmlData", "TeX", "LaTeX", "KaTeX", "mathchoice", "vcenter", "pod",
-        "angln", "underbar",
+        "angln", "underbar", "bra", "ket", "braket", "Bra", "Ket", "Braket", "set", "Set",
     ]
 
     private mutating func parseFormula() throws(NoteMathParseError) -> [NoteMathNode] {
@@ -834,6 +834,32 @@ struct NoteMathParser {
             return .vcenter(try parseArgument(for: name, count: 1))
         case "angln":
             return .decorated(.actuarialAngle, [.char("n", .ord)])
+        case "bra", "ket", "braket":
+            let argument = try parseArgument(for: name, count: 1)
+            let left: NoteMathNode = name == "ket" ? .char("|", .open) : .char("\u{27E8}", .open)
+            let right: NoteMathNode = name == "bra" ? .char("|", .close) : .char("\u{27E9}", .close)
+            return .classed(.inner, [left] + argument + [right])
+        case "Bra", "Ket":
+            let argument = try parseArgument(for: name, count: 1)
+            return .fenced(left: name == "Ket" ? "|" : "\u{27E8}", right: name == "Bra" ? "|" : "\u{27E9}", middles: [], segments: [argument])
+        case "Braket":
+            let parts = Self.splitBars(try parseArgument(for: name, count: 1), all: true)
+            let thin = NoteMathNode.space(3.0 / 18)
+            let segments = parts.segments.enumerated().map { index, segment in
+                (index > 0 ? [thin] : []) + segment + (index < parts.segments.count - 1 ? [thin] : [])
+            }
+            return .fenced(left: "\u{27E8}", right: "\u{27E9}", middles: parts.bars, segments: segments)
+        case "set":
+            let parts = Self.splitBars(try parseArgument(for: name, count: 1), all: false)
+            var inside = parts.segments[0]
+            if parts.segments.count > 1 { inside += [.char("\u{2223}", .rel)] + parts.segments[1] }
+            return .group([.char("{", .open), .space(3.0 / 18)] + inside + [.space(3.0 / 18), .char("}", .close)])
+        case "Set":
+            let parts = Self.splitBars(try parseArgument(for: name, count: 1), all: false)
+            var segments = parts.segments
+            segments[0] = [.space(4.0 / 18)] + segments[0] + (segments.count > 1 ? [.space(5.0 / 18)] : [.space(4.0 / 18)])
+            if segments.count > 1 { segments[1] = [.space(5.0 / 18)] + segments[1] + [.space(4.0 / 18)] }
+            return .fenced(left: "{", right: "}", middles: parts.bars, segments: segments)
         case "underbar":
             return .decorated(.underline, Self.contents(try parseText(.roman, command: lexeme, name: name)))
         case "tag", "notag", "nonumber", "label":
@@ -841,6 +867,20 @@ struct NoteMathParser {
         default:
             throw failure("Unknown command \\\(name)", lexeme)
         }
+    }
+
+    private static func splitBars(_ nodes: [NoteMathNode], all: Bool) -> (segments: [[NoteMathNode]], bars: [String?]) {
+        var segments: [[NoteMathNode]] = [[]]
+        var bars: [String?] = []
+        for node in nodes {
+            if all || bars.isEmpty, case .char(let symbol, _) = node, symbol == "|" || symbol == "\u{2016}" {
+                bars.append(symbol)
+                segments.append([])
+            } else {
+                segments[segments.count - 1].append(node)
+            }
+        }
+        return (segments, bars)
     }
 
     private static func modSpace(_ mu: Double) -> NoteMathNode {

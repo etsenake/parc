@@ -23,6 +23,21 @@ struct NoteMathParserTests {
         }
     }
 
+    static func katexBraketAndSets() {
+        let x: NoteMathNode = .char("x", .ord), y: NoteMathNode = .char("y", .ord)
+        expect(parse("\\bra{x}") == [.classed(.inner, [.char("⟨", .open), x, .char("|", .close)])], "bra")
+        expect(parse("\\ket{x}") == [.classed(.inner, [.char("|", .open), x, .char("⟩", .close)])], "ket")
+        expect(parse("\\braket{x}") == [.classed(.inner, [.char("⟨", .open), x, .char("⟩", .close)])], "braket")
+        expect(parse("\\Bra{x}") == [.fenced(left: "⟨", right: "|", middles: [], segments: [[x]])], "Bra")
+        expect(parse("\\Ket{x}") == [.fenced(left: "|", right: "⟩", middles: [], segments: [[x]])], "Ket")
+        let thin = NoteMathNode.space(3.0 / 18)
+        expect(parse("\\Braket{x|y}") == [.fenced(left: "⟨", right: "⟩", middles: ["|"], segments: [[x, thin], [thin, y]])], "Braket splits at bars")
+        expect(parse("\\set{x|y}") == [.group([.char("{", .open), thin, x, .char("∣", .rel), y, thin, .char("}", .close)])], "set uses mid")
+        guard case .fenced("{", "}", let middles, let segments) = parse("\\Set{x|y|z}")[0] else { failTest("Set is fenced") }
+        expect(middles == ["|"] && segments.count == 2, "Set splits only the first bar")
+        for name in ["bra", "ket", "braket", "Bra", "Ket", "Braket", "set", "Set"] { expect(NoteMathParser.isBuiltIn(name), "\\\(name) is built in") }
+    }
+
     static func katexTextMode() {
         expect(parse("\\text{\\'e\\`a\\^o\\~n\\=u\\u{a}\\.z\\\"o\\r a\\H o\\v c}") == [.text("éàôñūăżöåőč", .roman)], "text accents compose")
         expect(parse("\\text{\\'{\\i}}") == [.text("ı\u{0301}", .roman)], "accents sit on dotless i")
@@ -171,6 +186,7 @@ struct NoteMathParserTests {
         katexSymbolsAndShorthands()
         katexStretchyMarks()
         katexTextMode()
+        katexBraketAndSets()
         katexEnvironments()
         commutativeDiagrams()
         chemistry()
