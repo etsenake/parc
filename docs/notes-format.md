@@ -197,7 +197,42 @@ Right side
 ```
 
 A bare line of three or more colons closes the innermost column. Columns can
-nest. Blocks placed directly inside `columns` get a column of their own.
+nest, and outer fences grow a colon per level inside. Blocks placed directly
+inside `columns` get a column of their own.
+
+## Nested blocks under text
+
+Lists, quotes, callouts and toggles nest the usual Markdown way. A paragraph or
+plain heading has no Markdown container of its own, so its children go in an
+`indent` directive fence right after it:
+
+```markdown
+Plans for the weekend
+
+::: indent
+Saturday is for the market.
+
+- Apples
+- Bread
+:::
+
+## Packing
+
+:::: indent
+Clothes
+
+::: indent
+Socks, lots of socks.
+:::
+::::
+```
+
+The fence belongs to the block just before it. An outer fence is one colon
+longer than any fence inside it (columns follow the same rule), though any line
+of three or more colons closes the innermost one, as in Pandoc. A fence with no
+block before it gets an empty line as its parent, and one after a list item,
+quote, callout or toggle nests inside that block. GitHub and Obsidian show the
+fence lines as plain text with the nested blocks between them.
 
 ## Equations
 
