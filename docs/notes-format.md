@@ -307,7 +307,7 @@ A **page link** is a link to another note on its own line:
 
 - **Page mentions** are `[[Note name]]` or `[[Folder/Note|Shown as]]` wiki
   links, or a relative link whose text is the note's name, such as
-  `[Roadmap](Roadmap.md)`. When Parc renames or moves a note it rewrites these,
+  `[Roadmap](Roadmap.md)`. When a note is renamed or moved, in Parc or Finder, Parc rewrites these,
   and plain links to the file, in place, keeping wiki links as wiki links.
 - **Date mentions** are `<time datetime="2026-11-20">2026-11-20</time>`. Add a
   time with `T09:30` and a reminder with `data-remind`. More settings are

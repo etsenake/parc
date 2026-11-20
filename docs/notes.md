@@ -200,7 +200,8 @@ picking one opens it at the linking section. The menu's Backlinks item shows the
 list inline under the title instead (Expanded) or hides it (Off), saved in the
 note's front matter. The index reads files off the main thread and follows
 folder changes, so counts update as other notes are edited. Renaming or moving a
-note in Parc rewrites the links to it in other notes, changing only the link in
+note, in Parc or in Finder (recognised by the file's identity), keeps its count
+steady and rewrites the links to it in other notes, changing only the link in
 files that aren't open.
 
 ⌘F finds and replaces across the whole note, including its title, captions and

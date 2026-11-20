@@ -249,6 +249,7 @@ final class NoteBacklinkIndex {
         var modifiedAt: Date
         var size: Int
         var identity: String?
+        var node: NoteFileNode?
         var links: [NoteOutgoingLink]?
     }
 
@@ -264,14 +265,20 @@ final class NoteBacklinkIndex {
         var modifiedAt: Date
         var size: Int
         var identity: String
+        var node: NoteFileNode?
         var links: [NoteOutgoingLink]
+    }
+
+    private struct Departure {
+        var source: Source
+        var at: Date
     }
 
     static let shared = NoteBacklinkIndex()
     static var worker = NoteFileWorker(label: "org.parc.notes.backlinks", qos: .utility)
     static var clock: NoteFileClock = NoteFileSystemClock.shared
     static var followDelay: TimeInterval = 1.5
-    static var aliasGrace: TimeInterval = 3
+    static var departureWindow: TimeInterval = 10
     static let chunkSize = 200
 
     let changes = PassthroughSubject<Void, Never>()
@@ -280,6 +287,7 @@ final class NoteBacklinkIndex {
     private var tracked: [ObjectIdentifier: AnyCancellable] = [:]
     private var creation: AnyCancellable?
     private var sources: [String: Source] = [:]
+    private var departed: [String: Departure] = [:]
     private var incoming: [String: [NoteBacklink]] = [:]
     private var queue: [String] = []
     private var queued: Set<String> = []
@@ -287,9 +295,7 @@ final class NoteBacklinkIndex {
     private var refreshTimer: NoteFileTimer?
     private var moves: [(from: URL, to: URL)] = []
     private var aliases: [String: String] = [:]
-    private var expiring: Set<String> = []
     private var followTimer: NoteFileTimer?
-    private var expiryTimer: NoteFileTimer?
     private var rewriting = 0
 
     var isSettled: Bool {
@@ -319,17 +325,44 @@ final class NoteBacklinkIndex {
         guard old.isFileURL, new.isFileURL, old.path != new.path else { return }
         activate()
         track(NoteLibrary.library(for: new))
-        let fromKey = NoteFilePaths.key(for: old), toKey = NoteFilePaths.key(for: new)
-        if fromKey != toKey {
-            aliases[fromKey] = toKey
-            rebuild()
+        let fromKey = NoteFilePaths.key(for: old)
+        let path = sources[old.path] != nil ? old.path : sources.first(where: { $0.value.identity == fromKey })?.key
+        if let path, let source = sources.removeValue(forKey: path) {
+            queued.remove(path)
+            queue.removeAll { $0 == path }
+            place(source, from: old, at: new, title: new.deletingPathExtension().lastPathComponent, icon: source.icon,
+                  modifiedAt: source.modifiedAt, size: source.size)
         }
+        recordMove(from: old, to: new)
+    }
+
+    private func recordMove(from old: URL, to new: URL) {
+        let fromKey = NoteFilePaths.key(for: old), toKey = NoteFilePaths.key(for: new)
+        guard !moves.contains(where: { $0.from.path == old.path && $0.to.path == new.path }) else { return }
+        if fromKey != toKey { aliases[fromKey] = toKey }
+        rebuild()
         moves.append((old, new))
         followTimer?.cancel()
         followTimer = Self.clock.schedule(after: Self.followDelay) { [weak self] in
             self?.followTimer = nil
             self?.scheduleRefresh()
         }
+    }
+
+    private func place(_ source: Source, from old: URL, at new: URL, title: String, icon: String?, modifiedAt: Date, size: Int) {
+        var moved = source
+        let previous = sources[new.path]
+        moved.url = new
+        moved.title = title
+        moved.icon = icon
+        moved.identity = NoteFilePaths.key(for: new)
+        moved.node = previous?.node ?? source.node
+        let refolded = old.deletingLastPathComponent().path != new.deletingLastPathComponent().path
+        let restamped = moved.modifiedAt != modifiedAt || moved.size != size
+        moved.modifiedAt = modifiedAt
+        moved.size = size
+        sources[new.path] = moved
+        if refolded || restamped { enqueue(new.path) }
     }
 
     private func track(_ library: NoteLibrary) {
@@ -357,18 +390,29 @@ final class NoteBacklinkIndex {
             for entry in entries { listed[entry.url.path] = entry }
         }
         var changed = false
+        if complete {
+            let now = Self.clock.now
+            departed = departed.filter { now.timeIntervalSince($0.value.at) < Self.departureWindow }
+            for path in Array(sources.keys) where listed[path] == nil {
+                guard let source = sources.removeValue(forKey: path) else { continue }
+                if source.node != nil { departed[path] = Departure(source: source, at: now) }
+                queued.remove(path)
+                changed = true
+            }
+            queue.removeAll { !queued.contains($0) }
+            if adoptMoves(listed) { changed = true }
+        }
         for (path, entry) in listed {
             guard var source = sources[path] else {
-                let isMarkdown = NoteFileKind(url: entry.url) == .markdown
                 sources[path] = Source(url: entry.url, title: entry.title, icon: entry.icon, modifiedAt: entry.modifiedAt, size: entry.size,
-                                       identity: nil, links: isMarkdown ? nil : [])
-                if isMarkdown { enqueue(path) }
+                                       identity: nil, node: nil, links: nil)
+                enqueue(path)
                 continue
             }
             if source.modifiedAt != entry.modifiedAt || source.size != entry.size {
                 source.modifiedAt = entry.modifiedAt
                 source.size = entry.size
-                if NoteFileKind(url: entry.url) == .markdown { enqueue(path) }
+                enqueue(path)
             }
             if source.title != entry.title || source.icon != entry.icon || source.url != entry.url {
                 source.title = entry.title
@@ -378,16 +422,25 @@ final class NoteBacklinkIndex {
             }
             sources[path] = source
         }
-        if complete {
-            for path in Array(sources.keys) where listed[path] == nil {
-                sources[path] = nil
-                queued.remove(path)
-                changed = true
-            }
-            queue.removeAll { !queued.contains($0) }
-        }
         if changed { rebuild() }
         readNext(settling: complete)
+    }
+
+    private func adoptMoves(_ listed: [String: NoteLibrary.Entry]) -> Bool {
+        guard !departed.isEmpty else { return false }
+        var adopted = false
+        for (path, entry) in listed where sources[path] == nil {
+            guard let node = NoteFileNode(path: path),
+                  let match = departed.first(where: { $0.value.source.node == node && $0.value.source.size == entry.size
+                                                        && $0.value.source.modifiedAt == entry.modifiedAt }) else { continue }
+            departed[match.key] = nil
+            let old = match.value.source.url
+            place(match.value.source, from: old, at: entry.url, title: entry.title, icon: entry.icon ?? match.value.source.icon,
+                  modifiedAt: entry.modifiedAt, size: entry.size)
+            recordMove(from: old, to: entry.url)
+            adopted = true
+        }
+        return adopted
     }
 
     private func enqueue(_ path: String) {
@@ -411,7 +464,7 @@ final class NoteBacklinkIndex {
         Self.worker.perform({
             jobs.map { job in
                 Reading(path: job.path, modifiedAt: job.modifiedAt, size: job.size, identity: NoteFilePaths.key(for: job.url),
-                        links: NoteBacklinkScanner.outgoing(fileAt: job.url))
+                        node: NoteFileNode(path: job.path), links: NoteBacklinkScanner.outgoing(fileAt: job.url))
             }
         }) { [weak self] readings in
             self?.finishReading(readings)
@@ -426,6 +479,7 @@ final class NoteBacklinkIndex {
             if source.links != reading.links || source.identity != reading.identity { changed = true }
             source.links = reading.links
             source.identity = reading.identity
+            source.node = reading.node ?? source.node
             sources[reading.path] = source
         }
         if changed { rebuild() }
@@ -438,21 +492,6 @@ final class NoteBacklinkIndex {
         let pending = moves
         moves = []
         follow(pending)
-    }
-
-    private func scheduleExpiry() {
-        expiryTimer?.cancel()
-        expiryTimer = Self.clock.schedule(after: Self.aliasGrace) { [weak self] in
-            guard let self else { return }
-            self.expiryTimer = nil
-            guard self.isSettled else {
-                self.scheduleExpiry()
-                return
-            }
-            for key in self.expiring { self.aliases[key] = nil }
-            self.expiring = []
-            self.rebuild()
-        }
     }
 
     private func resolved(_ key: String) -> String {
@@ -496,6 +535,16 @@ final class NoteBacklinkIndex {
         return first.source.path < second.source.path
     }
 
+    private func retarget(_ path: String, from fromKey: String, to toKey: String) {
+        guard fromKey != toKey, var source = sources[path], let links = source.links, links.contains(where: { $0.target == fromKey }) else { return }
+        source.links = links.map { link in
+            var moved = link
+            if moved.target == fromKey { moved.target = toKey }
+            return moved
+        }
+        sources[path] = source
+    }
+
     private func follow(_ pending: [(from: URL, to: URL)]) {
         var finals: [(key: String, from: URL, to: URL)] = []
         for move in pending {
@@ -514,46 +563,53 @@ final class NoteBacklinkIndex {
                 guard !session.page.isReadOnly else { continue }
                 let folder = session.url.deletingLastPathComponent()
                 let resolving = identity == toKey ? item.from.deletingLastPathComponent() : folder
-                Self.rewrite(session.page, resolvingFrom: resolving, writingFrom: folder, move: move)
+                guard Self.rewrite(session.page, resolvingFrom: resolving, writingFrom: folder, move: move) else { continue }
+                for (path, source) in sources where source.identity == identity { retarget(path, from: item.key, to: toKey) }
             }
-            var closed: [URL] = []
-            for source in sources.values where source.links?.contains(where: { $0.target == item.key }) == true {
+            var closed: [(path: String, url: URL)] = []
+            for (path, source) in sources where source.identity == toKey || source.links?.contains(where: { $0.target == item.key }) == true {
                 guard let identity = source.identity, !handled.contains(identity), NoteFileSession.session(for: source.url) == nil,
                       NoteFilePaths.itemExists(source.url) else { continue }
                 handled.insert(identity)
-                closed.append(source.url)
+                closed.append((path, source.url))
             }
             guard !closed.isEmpty else {
                 finishFollowing(move)
                 continue
             }
             rewriting += 1
+            let from = item.from
             NoteFileSession.worker.perform({
-                for url in closed {
-                    let folder = url.deletingLastPathComponent()
-                    let resolving = NoteFilePaths.key(for: url) == toKey ? item.from.deletingLastPathComponent() : folder
-                    _ = NoteBacklinkRewriter.rewriteFile(at: url, resolvingFrom: resolving, writingFrom: folder, move: move)
+                closed.filter { entry in
+                    let folder = entry.url.deletingLastPathComponent()
+                    let resolving = NoteFilePaths.key(for: entry.url) == toKey ? from.deletingLastPathComponent() : folder
+                    return NoteBacklinkRewriter.rewriteFile(at: entry.url, resolvingFrom: resolving, writingFrom: folder, move: move)
                 }
-            }) { [weak self] _ in
+            }) { [weak self] rewritten in
                 guard let self else { return }
                 self.rewriting -= 1
-                NoteLibrary.filesRewritten(closed)
+                for entry in rewritten { self.retarget(entry.path, from: move.fromKey, to: toKey) }
+                NoteLibrary.filesRewritten(closed.map(\.url))
                 self.finishFollowing(move)
             }
         }
     }
 
     private func finishFollowing(_ move: NoteBacklinkMove) {
-        if aliases[move.fromKey] != nil { expiring.insert(move.fromKey) }
+        if !moves.contains(where: { NoteFilePaths.key(for: $0.from) == move.fromKey }) { aliases[move.fromKey] = nil }
+        rebuild()
         scheduleRefresh()
-        scheduleExpiry()
     }
 
-    private static func rewrite(_ session: NotePageSession, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) {
+    @discardableResult
+    private static func rewrite(_ session: NotePageSession, resolvingFrom folder: URL, writingFrom newFolder: URL, move: NoteBacklinkMove) -> Bool {
+        var changed = false
         for block in session.page.allBlocks() {
             var copy = block
             guard NoteBacklinkRewriter.rewrite(&copy, resolvingFrom: folder, writingFrom: newFolder, move: move) else { continue }
             session.updateBlockMetadata(block.id) { NoteBacklinkRewriter.rewrite(&$0, resolvingFrom: folder, writingFrom: newFolder, move: move) }
+            changed = true
         }
+        return changed
     }
 }

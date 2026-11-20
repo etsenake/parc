@@ -189,18 +189,49 @@ struct NoteBacklinkIndexTests {
         expectEqual(index.backlinks(to: target).count, 2, "new links show up")
 
         let renamed = try NoteLibrary.rename(target, to: "Destination")
-        settle()
-        expectEqual(index.backlinks(to: renamed).map(\.title), ["Alpha", "Beta"], "backlinks follow a renamed note")
-        clock.advance(NoteBacklinkIndex.followDelay + 0.1)
-        settle()
+        expectEqual(index.backlinks(to: renamed).map(\.title), ["Alpha", "Beta"], "backlinks follow a renamed note right away")
+        steadily(index, renamed, ["Alpha", "Beta"], "after a rename")
         expectEqual(NoteFileTestSupport.read(alpha), "Back to [[Destination]].\n", "links in other notes follow the rename")
         expect(NoteFileTestSupport.read(root.appendingPathComponent("Deep/Beta.md")).contains("[the target](../Destination.md)"),
                "relative links from other folders follow too")
         expect(NoteFileTestSupport.read(renamed).contains("[[Destination]]"), "a note's link to itself follows its new name")
-        clock.advance(NoteBacklinkIndex.aliasGrace + 0.1)
-        settle()
-        expectEqual(index.backlinks(to: renamed).map(\.title), ["Alpha", "Beta"], "the rewritten links keep counting after the move settles")
         expectEqual(index.backlinks(to: target), [], "nothing points at the old name any more")
+
+        let moved = root.appendingPathComponent("Moved/Final.md")
+        try FileManager.default.createDirectory(at: moved.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: renamed, to: moved)
+        library.refresh()
+        clock.advance(0.3)
+        expectEqual(index.backlinks(to: moved).map(\.title), ["Alpha", "Beta"], "a Finder move of a closed note is recognised by file identity")
+        expectEqual(index.backlinks(to: renamed), [], "the old place has no backlinks")
+        steadily(index, moved, ["Alpha", "Beta"], "after a Finder move")
+        expectEqual(NoteFileTestSupport.read(alpha), "Back to [[Moved/Final]].\n", "links in closed notes follow a Finder move")
+        expect(NoteFileTestSupport.read(root.appendingPathComponent("Deep/Beta.md")).contains("[the target](../Moved/Final.md)"),
+               "relative links follow a Finder move too")
+        expect(NoteFileTestSupport.read(moved).contains("[[Final]]"), "the moved note's link to itself follows it into the new folder")
+
+        let alphaTwo = root.appendingPathComponent("Alpha Two.md")
+        try FileManager.default.moveItem(at: alpha, to: alphaTwo)
+        library.refresh()
+        clock.advance(0.3)
+        expectEqual(index.backlinks(to: moved).map(\.title), ["Alpha Two", "Beta"], "a renamed source keeps its links and takes its new name at once")
+        steadily(index, moved, ["Alpha Two", "Beta"], "after a source moves")
+
+        NoteFileTestSupport.write("Copy of [[Moved/Final]].\n", to: root.appendingPathComponent("Copy.md"))
+        try FileManager.default.removeItem(at: root.appendingPathComponent("Gamma.md"))
+        library.refresh()
+        settle()
+        expectEqual(index.backlinks(to: moved).map(\.title), ["Alpha Two", "Beta", "Copy"], "a deleted note and a new one aren't mistaken for a move")
+        expectEqual(NoteFileTestSupport.read(alphaTwo), "Back to [[Moved/Final]].\n", "unrelated arrivals rewrite nothing")
+    }
+
+    static func steadily(_ index: NoteBacklinkIndex, _ note: URL, _ titles: [String], _ context: String) {
+        for step in 0..<80 {
+            clock.advance(0.1)
+            let now = index.backlinks(to: note).map(\.title)
+            if now != titles { failTest("the count dipped \(context) at step \(step): \(now)") }
+        }
+        expect(index.isSettled, "the index settles \(context)")
     }
 
     static func settle() {
