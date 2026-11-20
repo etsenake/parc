@@ -173,6 +173,9 @@ final class NoteButtonBlockView: NoteBlockView {
     private var isHovered = false
     private var press: NoteButtonPress?
     private var tracking: NSTrackingArea?
+    private var panel: NoteFloatingPanel?
+    private var editorView: NoteButtonEditorView?
+    private var outsideMonitor: Any?
 
     override init(block: NoteBlock, editor: NotePageEditor?) {
         super.init(block: block, editor: editor)
@@ -190,7 +193,7 @@ final class NoteButtonBlockView: NoteBlockView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    var isEditing: Bool { false }
+    var isEditing: Bool { panel != nil }
 
     private var pageSettings: NotePageSettings { editor?.session.page.settings ?? NotePageSettings() }
     private var scale: CGFloat { pageSettings.smallText ? NoteTheme.smallBodySize / NoteTheme.bodySize : 1 }
@@ -202,6 +205,7 @@ final class NoteButtonBlockView: NoteBlockView {
     }
 
     override func readOnlyDidChange() {
+        if isReadOnly { closeEditor(reselect: false, animated: true) }
         refreshGear(animated: false)
         window?.invalidateCursorRects(for: self)
     }
@@ -236,6 +240,17 @@ final class NoteButtonBlockView: NoteBlockView {
             pill.frame = NSRect(x: 0, y: Self.verticalPadding, width: width.rounded(.up), height: height)
             gear.frame = NSRect(x: pill.frame.maxX + Self.gearGap, y: pill.frame.midY - gearSide / 2, width: gearSide, height: gearSide)
         }
+        repositionPanel()
+    }
+
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        repositionPanel()
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil { closeEditor(reselect: false, animated: false) }
     }
 
     override func setBlockSelected(_ selected: Bool, animated: Bool) {
@@ -292,7 +307,66 @@ final class NoteButtonBlockView: NoteBlockView {
         return true
     }
 
-    func openEditor() {}
+    func openEditor() {
+        guard canEdit, panel == nil, let editor, window != nil, editor.session.page.contains(blockID) else { return }
+        let content = NoteButtonEditorView(block: block, editor: editor)
+        content.frame.size = content.fittingSize
+        content.onClose = { [weak self] in self?.closeEditor(reselect: true, animated: true) }
+        let floating = NoteFloatingPanel(content: content)
+        floating.alignment = .leading
+        floating.onDismiss = { [weak self, weak floating] in
+            guard let self, let floating, self.panel === floating else { return }
+            self.finishEditing()
+        }
+        panel = floating
+        editorView = content
+        let host = editor.canvas.overlayView
+        floating.present(in: host, anchor: anchorRect(in: host), edge: .below)
+        content.didPresent()
+        pill.isActive = true
+        refreshGear(animated: true)
+        outsideMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, let content = self.editorView, let window = self.window, event.window === window else { return }
+                if self.pill.bounds.contains(self.pill.convert(event.locationInWindow, from: nil)) { return }
+                let root = window.contentView?.superview ?? window.contentView
+                guard let hit = root?.hitTest(event.locationInWindow) else { return }
+                if !content.contains(hit) && hit !== self.gear { self.closeEditor(reselect: false, animated: true) }
+            }
+            return event
+        }
+    }
+
+    func closeEditor(reselect: Bool, animated: Bool) {
+        guard let floating = panel else { return }
+        let hadFocus = editorView?.hasFocus ?? false
+        finishEditing()
+        floating.dismiss(animated: animated)
+        guard let editor, reselect || hadFocus, window != nil, editor.session.page.contains(blockID) else { return }
+        window?.makeFirstResponder(editor.canvas)
+        editor.session.setSelection(.blocks([blockID]))
+        editor.restoreFocus()
+    }
+
+    private func finishEditing() {
+        if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }
+        outsideMonitor = nil
+        editorView?.tearDown()
+        editorView = nil
+        panel = nil
+        pill.isActive = false
+        refreshGear(animated: true)
+    }
+
+    private func anchorRect(in host: NSView) -> NSRect {
+        host.convert(pill.frame, from: self)
+    }
+
+    private func repositionPanel() {
+        guard let panel, let host = panel.superview else { return }
+        panel.reposition(anchor: anchorRect(in: host), edge: panel.resolvedEdge, animated: false)
+        editorView?.syncOverlays()
+    }
 
     func pressButton() {
         guard press == nil, !isEditing, let editor else { return }
