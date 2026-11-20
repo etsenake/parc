@@ -594,7 +594,7 @@ extension BrowserWindowController {
     }
 
     func nativePage(forTabID id: UUID) -> PCNativePage? {
-        guard let page = browsers[id]?.nativePage, !page.isClosed else { return nil }
+        guard let page = (browsers[id] ?? coveredPages[id]?.browser)?.nativePage, !page.isClosed else { return nil }
         return page
     }
     func holdsContent(forTabID id: UUID) -> Bool {

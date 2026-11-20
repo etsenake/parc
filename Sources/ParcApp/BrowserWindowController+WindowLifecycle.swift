@@ -38,6 +38,7 @@ extension BrowserWindowController {
         }
     }
     func browserViewDidRequestClose(_ view: PCBrowserView) {
+        if let covered = coveredTabID(for: view), view.nativePage?.isClosed == true { releaseCoveredPage(covered); return }
         guard let id = id(for: view), view.nativePage?.isClosed == true else { return }
         releaseClosedTab(id, updateSavedTab: !wholeWindowClose && !modelRetirementIDs.contains(id) && !transferringTabIDs.contains(id))
     }

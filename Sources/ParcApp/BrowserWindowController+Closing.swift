@@ -229,16 +229,17 @@ extension BrowserWindowController {
 
     func persistTabHistory(all: Bool = false) {
         tabHistoryCapture?.cancel(); tabHistoryCapture = nil
-        let ids = all ? Set(browsers.keys) : tabHistoryChanged
+        let ids = all ? Set(browsers.keys).union(coveredPages.keys) : tabHistoryChanged
         tabHistoryChanged.removeAll()
         guard let archive = store.tabHistory,
               PCNativePage.instancesRespond(to: #selector(PCNativePage.archivedNavigationState)) else { return }
         for id in ids where !closingTabIDs.contains(id) {
-            guard let page = browsers[id]?.nativePage, !page.isClosed,
+            guard let page = (browsers[id] ?? coveredPages[id]?.browser)?.nativePage, !page.isClosed,
                   let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
-                  tab.profileID == browserProfiles[id],
+                  tab.profileID == (browserProfiles[id] ?? coveredPages[id]?.profileID),
                   let navigation = page.archivedNavigationState() else { continue }
-            archive.store(.init(url: tab.url, profileID: tab.profileID, navigation: navigation), for: id)
+            let url = tab.showsNoteOverPage ? tab.noteVisit?.page.url ?? tab.url : tab.url
+            archive.store(.init(url: url, profileID: tab.profileID, navigation: navigation), for: id)
         }
     }
 
@@ -308,6 +309,8 @@ extension BrowserWindowController {
         }
         if closed, browsers[id]?.nativePage === page {
             releaseClosedTab(id, updateSavedTab: false)
+        } else if closed, coveredPages[id]?.browser.nativePage === page {
+            releaseCoveredPage(id)
         }
     }
 

@@ -24,7 +24,8 @@ extension BrowserWindowController {
             && window.map { PCNativeBrowserApplication.canPresentTabSwitcher(in: $0) } == true
         toolbar.update(url: browser.url,
             fullURL: BrowserToolbarPreferences.shared.state.showsFullURL,
-            enabled: enabled, canBack: page.canShowBackHistory, canForward: page.canShowForwardHistory,
+            enabled: enabled, canBack: page.canShowBackHistory,
+            canForward: page.canShowForwardHistory || tabID.flatMap { store.state.tab($0)?.hasNoteAhead } == true,
             loading: page.loading, canReload: page.canPerformNavigation(page.loading ? .stop : .reload),
             canCopy: selected ? canCopyCurrentURL : browser.url != nil && page.canCopyLink(as: .plain),
             canShowSiteInfo: true,
@@ -81,7 +82,7 @@ extension BrowserWindowController {
             && window?.isKeyWindow == true
             && window.map { PCNativeBrowserApplication.canPresentTabSwitcher(in: $0) } == true
         toolbar.update(url: nil, documentTitle: tab.title.isEmpty ? "New tab" : tab.title,
-            fullURL: false, enabled: enabled, canBack: false, canForward: false, loading: false,
+            fullURL: false, enabled: enabled, canBack: tab.showsNoteOverPage, canForward: false, loading: false,
             canReload: false, canCopy: false, canShowSiteInfo: false, canSplit: true,
             close: activeSplitLayout != nil, showSidebar: leading && sidebarPresentation != .locked,
             siteControls: false, extensionItems: [])
@@ -93,7 +94,9 @@ extension BrowserWindowController {
             if self.focusedTabID != tabID { self.focusedTabID = tabID; self.requestNativeSelection(); self.updateNavigation() }
             return self.currentTabID == tabID
         }
-        toolbar.onNavigation = { _ in nil }
+        toolbar.onNavigation = { [weak self] kind in
+            guard admit() else { return nil }; return self?.noteVisitInteraction(kind)
+        }
         toolbar.onEscape = { [weak self] in guard admit() else { return }; self?.focusSelectedLocalContent() }
         toolbar.onTitleMenu = { [weak self] in
             guard let self else { return nil }

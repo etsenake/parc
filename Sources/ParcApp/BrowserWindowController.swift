@@ -203,6 +203,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             && PeekBackdrop.peekStays(parent: $0.parentPage, hostPage: browsers[id]?.nativePage) }
     }
     var browserProfiles: [UUID: UUID] = [:]
+    var coveredPages: [UUID: CoveredPage] = [:]
     var easelImageDestination: EaselImageDestinationController?
     var privateMediaSource: (catalog: BrowserStore, profileID: UUID, media: ExternalMediaLibrary)?
     var pageCapture: PageCaptureController?

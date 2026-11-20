@@ -21,6 +21,7 @@ extension BrowserWindowController {
         let state = presentation.projected(sharedState)
         rendering = true
         defer { rendering = false }
+        reconcileCoveredPages(state)
         let liveIDs = Set(state.openTabs.map(\.id))
         for id in Array(browsers.keys) where !liveIDs.contains(id)
             || state.tab(id)?.profileID != browserProfiles[id]
@@ -238,6 +239,9 @@ extension BrowserWindowController {
 
     private func needsNativeLoad(_ sharedState: BrowserState) -> Bool {
         let state = presentation.projected(sharedState)
+        if coveredPages.keys.contains(where: { id in
+            state.tab(id, where: { $0.archivedAt == nil }).map { !$0.showsNoteOverPage } ?? true
+        }) { return true }
         return state.tabs.contains { tab in
             tab.archivedAt == nil && !InternalPage.isInternal(tab.url)
                 && browsers[tab.id] != nil && !closingTabIDs.contains(tab.id)
@@ -306,8 +310,8 @@ extension BrowserWindowController {
         refreshFavoriteOverlays(from: state)
         let published = publishedShareableAndAudio()
         if !sidebar.applyLivePageMetadata(state: state, focusedTabID: currentTabID, loading: loadingTabs,
-            canBack: navigationPage?.canShowBackHistory ?? false,
-            canForward: navigationPage?.canShowForwardHistory ?? false,
+            canBack: navigationCanShowBack,
+            canForward: navigationCanShowForward,
             captures: capturePresentations, shareable: published.shareable, audio: published.audio,
             applyShareableAudio: published.changed) {
             return false

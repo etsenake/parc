@@ -180,6 +180,7 @@ extension BrowserWindowController {
             showNoteError(NoteFilePaths.itemExists(file) ? NoteFileError.notANote : NoteFileError.missing)
             return true
         }
+        if !background, page.loading, openNoteOverPage(file, url: url, sourceID: sourceID, page: page) { return true }
         if !background { closeLibrary(restoreFocus: false) }
         let title = NoteFileSession.session(for: file)?.title ?? file.deletingPathExtension().lastPathComponent
         let creation = TabCreationProvenance(referrerID: sourceID, activeTabID: currentTabID,
@@ -369,8 +370,8 @@ extension BrowserWindowController {
         let state = presentedState
         refreshFavoriteOverlays(from: state)
         let published = publishedShareableAndAudio()
-        let canBack = navigationPage?.canShowBackHistory ?? false
-        let canForward = navigationPage?.canShowForwardHistory ?? false
+        let canBack = navigationCanShowBack
+        let canForward = navigationCanShowForward
         if !sidebar.applyLivePageMetadata(state: state, focusedTabID: currentTabID,
                                           loading: loadingTabs, canBack: canBack, canForward: canForward,
                                           captures: capturePresentations, shareable: published.shareable,
@@ -417,8 +418,8 @@ extension BrowserWindowController {
     func refreshNavigationControls() {
         sidebar.updateSpaceAvailability()
         let page = navigationPage, loading = page?.loading == true
-        sidebar.updateNavigation(canBack: navigationPage?.canShowBackHistory ?? false,
-                                 canForward: navigationPage?.canShowForwardHistory ?? false,
+        sidebar.updateNavigation(canBack: navigationCanShowBack,
+                                 canForward: navigationCanShowForward,
                                  loading: loading, enabled: canPerformNavigation(loading ? .stop : reloadAction),
                                  developerReload: developerReloadPage != nil,
                                  forceReload: DeveloperReloadPreference.state == .forceReload)
@@ -427,6 +428,7 @@ extension BrowserWindowController {
 
     private func performNavigation(_ action: PCNativeNavigationAction) {
         navigationHistory?.dismiss()
+        if let id = noteVisitTarget(action) { stepNoteVisit(id, forward: action == .forward); return }
         if let page = navigationPage {
             if page.performNavigation(action, inNewTab: false), action != .stop { navigationRequested(on: page) }
         }
@@ -479,6 +481,7 @@ extension BrowserWindowController {
     func stopLoading() { performNavigation(.stop) }
 
     func prepareNavigationInteraction(_ kind: NavigationControlKind) -> NavigationControlInteraction? {
+        if let interaction = noteVisitInteraction(kind) { return interaction }
         guard let page = navigationPage else {
             guard kind == .reload, canPerformNavigation(.reload), let id = currentTabID else { return nil }
             return NavigationControlInteraction(activate: { [weak self] alternate in

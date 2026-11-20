@@ -687,6 +687,7 @@ extension BrowserWindowController {
         return page
     }
     func canPerformNavigation(_ action: PCNativeNavigationAction) -> Bool {
+        if noteVisitTarget(action) != nil { return true }
         if let page = navigationPage { return page.canPerformNavigation(action) }
         return action == .reload && !isClosing && !wholeWindowClose && !windowClosePending &&
             libraryView == nil && activePeek == nil && window?.attachedSheet == nil &&

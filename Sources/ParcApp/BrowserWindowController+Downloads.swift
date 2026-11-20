@@ -338,7 +338,7 @@ extension BrowserWindowController {
             && transferringTabIDs.isEmpty && collectionTransfer == nil
     }
     func browserView(_ view: PCBrowserView, didChangeTitle title: String) {
-        guard let id = id(for: view) else { return }
+        guard let id = id(for: view) else { _ = followCoveredPage(view, title: title); return }
         let revision = store.stateRevision
         store.updateTab(id, title: title)
         if store.stateRevision == revision || !publicationRefreshesChrome,
@@ -347,6 +347,7 @@ extension BrowserWindowController {
     func browserView(_ view: PCBrowserView, didChangeURL url: URL) {
         if selectedTabIDs.contains(where: { browsers[$0] === view }) { pageHost.cancelDrop() }
         if view === pendingCommandSplitBrowser { cancelPendingCommandSplit() }
+        if followCoveredPage(view, url: url) { return }
         if let id = id(for: view) {
             requestedURLs[id] = url.absoluteString
             let revision = store.stateRevision
