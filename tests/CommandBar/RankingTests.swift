@@ -129,9 +129,9 @@ import Foundation
         let wide = many + (0..<12).map { tab("New tab \($0)", "https://example\($0).com") }
         expect(CommandBarRanking.rank(wide, query: "new").count == 15, "the result stops at 15")
 
-        let note = C(archetype: .document, key: "document:1", texts: ["Trip plans"])
-        expect(order([search("trip", 0), note], "trip").contains("document:1"), "a Note without a tab is a result")
-        let tabbed = [note, C(archetype: .tab, key: "document:1", texts: ["Trip plans"])]
+        let note = C(archetype: .document, key: "note:/Trip plans.md", texts: ["Trip plans"])
+        expect(order([search("trip", 0), note], "trip").contains("note:/Trip plans.md"), "a Note without a tab is a result")
+        let tabbed = [note, C(archetype: .tab, key: "note:/Trip plans.md", texts: ["Trip plans"])]
         expect(CommandBarRanking.rank(tabbed, query: "trip") == [1], "a Note open in a tab appears once, as its tab")
         let noteURL = URL(fileURLWithPath: "/Users/parc-sample/Documents/Parc Notes/Packing.md")
         expect(CommandBarDocument.noteKey(noteURL) == CommandBarDocument.noteKey(URL(fileURLWithPath: "/Users/parc-sample/Documents/./Parc Notes/Packing.md")),

@@ -245,6 +245,6 @@ struct CommandBarDocument: Equatable {
     let title: String
     var url: URL? = nil
     var icon: String? = nil
-    var key: String { url.map(Self.noteKey) ?? (kind == .note ? "document:" : "easel:") + id.uuidString.lowercased() }
+    var key: String { url.map(Self.noteKey) ?? (kind == .note ? "note:" : "easel:") + id.uuidString.lowercased() }
     static func noteKey(_ url: URL) -> String { "note:" + url.standardizedFileURL.path }
 }

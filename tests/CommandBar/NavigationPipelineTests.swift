@@ -30,6 +30,7 @@ final class PCNativeOmniboxScope {
     var result: PCNativeSearchNavigation?
     var extensionAction: PCNativeOmniboxExtensionAction?
     var isExtension = false
+    var isLearned = false
     init(_ host: String) { searchHost = host }
 }
 enum KeyboardShortcuts { struct MenuCommand { let id: String; let title: String; let group: String } }
@@ -65,6 +66,8 @@ struct TabCandidatesFixture {
     var extensionDisposition: Bool? = true
     var tabs: [BrowserTab] = []
     var documents: [CommandBarDocument] = []
+    var noteLibrary: NoteLibrary?
+    var noteMatches: (query: String, notes: [CommandBarDocument])?
     var topDomainList: [CommandBarRanking.Domain] = []
     var commands: [KeyboardShortcuts.MenuCommand] = []
     var commandSearch: [(title: String, text: String)] = []
@@ -107,6 +110,7 @@ struct TabCandidatesFixture {
     var rebuilds = 0
     static func matchType(of value: PCNativeSearchNavigation) -> String? { value.matchType }
     static func site(of scope: PCNativeOmniboxScope) -> Site? { Site(host: scope.searchHost) }
+    static func isLearned(_ scope: PCNativeOmniboxScope) -> Bool { scope.isLearned }
     func caption(for tab: BrowserTab) -> CommandBarResultText.TabCaption { .switchToTab }
     func dismiss(restoreFocus: Bool) { dismissed = true }
     func respond(to event: CommandBarLifetime.Event) {
@@ -259,11 +263,12 @@ struct TabCandidatesFixture {
         }
 
         let websiteTab = tab("https://example.com/", title: "Example")
-        let note = CommandBarDocument(kind: .note, id: UUID(), title: "Example Note")
+        let noteFile = URL(fileURLWithPath: "/Users/parc-sample/Documents/Parc Notes/Example Note.md")
+        let note = CommandBarDocument(kind: .note, id: UUID(), title: "Example Note", url: noteFile)
         let easel = CommandBarDocument(kind: .easel, id: UUID(), title: "Example Easel")
         for addressOnly in [false, true] {
             let f = NavigationFixture(); f.addressOnly = addressOnly
-            f.tabs = [websiteTab, tab(InternalPage.note(note.id).urlString, title: note.title)]
+            f.tabs = [websiteTab, tab(InternalPage.note(noteFile).urlString, title: note.title)]
             f.documents = [note, easel]
             f.adoptCommands([.init(id: "copyCurrentURL:", title: "Copy Current URL", group: "Edit")])
             expect(f.commands.isEmpty == addressOnly, "menu adoption distinguishes compact editor from the full palette")

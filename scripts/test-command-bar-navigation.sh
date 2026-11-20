@@ -118,6 +118,7 @@ PY
 xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -whole-module-optimization -parse-as-library \
   "$repo_root"/Sources/ParcCore/*.swift \
   "$repo_root/Sources/ParcApp/CommandBarRanking.swift" \
+  "$repo_root/Sources/ParcApp/CommandBarNotes.swift" \
   "$repo_root/Sources/ParcApp/CommandBarTitleSearch.swift" \
   "$repo_root/Sources/ParcApp/CommandBarCommandCandidate.swift" \
   "$repo_root/Sources/ParcApp/CommandBarRowDiff.swift" \

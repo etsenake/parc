@@ -70,7 +70,14 @@ import SwiftUI
     private var submissionDepth = 0
     var onManagePasswords: (() -> Void)?
     var onOpenDocument: ((CommandBarDocument) -> Void)?
-    var noteLibrary: NoteLibrary?
+    var noteLibrary: NoteLibrary? {
+        didSet {
+            noteMatches = nil
+            noteLibrarySubscription = noteLibrary?.changes.sink { [weak self] in self?.noteMatches = nil }
+        }
+    }
+    private var noteLibrarySubscription: AnyCancellable?
+    private var noteMatches: (query: String, notes: [CommandBarDocument])?
     var onRestoreArchived: ((UUID) -> Bool)?
     var onMuteAllTabs: ((Bool) -> Bool)?
     var onManageSiteSearch: (() -> Void)?
@@ -1096,7 +1103,7 @@ import SwiftUI
         return passwords + matchedCommands
     }
     private static func isAddressSuggestion(_ value: String) -> Bool {
-        guard let scheme = URL(string: value)?.scheme?.lowercased() else { return false }
+        guard let scheme = URL(string: value)?.scheme?.lowercased(), !InternalPage.isInternal(value) else { return false }
         return ["http", "https", "file", "chrome", "about"].contains(scheme)
     }
     private func tabResult(_ tab: BrowserTab) -> Result {
@@ -1181,13 +1188,15 @@ import SwiftUI
         for (entry, score) in zip(titled, CommandBarTitleMatch.resolve(titled.map { ($0.key, $0.score, $0.keepsWeak) })) {
             candidates[entry.index].titleScore = score
         }
-        for document in (addressOnly ? [] : documents) {
+        func addDocument(_ document: CommandBarDocument, contentScore: Double? = nil) {
             add(Result(id: document.key, title: document.title.isEmpty ? (document.kind == .note ? "Untitled" : "Untitled Easel") : document.title,
                        detail: document.kind == .note ? "Note" : "Easel",
                        symbol: document.kind == .note ? "note.text" : InternalPage.easel(document.id).sidebarFallbackSymbol,
                        document: document),
-                .init(archetype: .document, key: document.key, texts: [document.title]))
+                .init(archetype: .document, key: document.key, texts: [document.title], contentScore: contentScore))
         }
+        for document in (addressOnly ? [] : documents) { addDocument(document) }
+        for note in (addressOnly ? [] : noteContentMatches(query)) { addDocument(note, contentScore: CommandBarRanking.noteContentScore) }
         for domain in topDomainList where CommandBarRanking.domainCompletion(typed: query, host: domain.host) != nil {
             add(Result(id: "top-domain:" + domain.host, title: domain.title.isEmpty ? domain.host : domain.title, detail: "",
                        symbol: "globe", subtitle: domain.title.isEmpty ? nil : CommandBarResultText.urlSubtitle(domain.url.absoluteString),
@@ -1196,6 +1205,12 @@ import SwiftUI
                       urlKey: CommandBarRowDiff.pageKey(domain.url)))
         }
         return CommandBarRanking.rank(candidates, query: query, leadingPage: lead?.page).map { pool[$0] }
+    }
+    private func noteContentMatches(_ query: String) -> [CommandBarDocument] {
+        if let noteMatches, noteMatches.query == query { return noteMatches.notes }
+        let notes = CommandBarNotes.contentMatches(query, in: noteLibrary)
+        noteMatches = (query, notes)
+        return notes
     }
     private func automaticCompletion(for result: Result) -> String? {
         guard let host = result.completionHost else { return result.navigation?.inlineCompletionText }
