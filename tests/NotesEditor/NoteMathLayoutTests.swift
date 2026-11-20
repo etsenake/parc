@@ -127,6 +127,7 @@ struct NoteMathLayoutTests {
         katexBoxesSizesAndLinks()
         katexChoicesAndCentering()
         katexStretchyMarks()
+        katexTextMode()
         samples()
         print("NoteMathLayoutTests passed")
     }
@@ -655,6 +656,13 @@ struct NoteMathLayoutTests {
         expect(picture.ink(x: 0.55...1, y: 0...1) > 40, "the reference number draws")
         let pictureMissing = bitmap(missing)
         expect(pictureMissing.ink(x: 0.55...1, y: 0...1) > 40, "the missing marker draws")
+    }
+
+    static func katexTextMode() {
+        expect(abs(box("\\text{\\'e}", display: false).width - box("\\text{é}", display: false).width) < 0.01, "a composed accent is one letter")
+        expect(box("\\text{\\Huge a}", display: false).width > box("\\text{a}", display: false).width * 2, "sizes work in text")
+        let linked = box("\\text{see \\href{https://a.b}{this}}", display: false)
+        expect(linked.links.first?.url == "https://a.b", "links work inside text")
     }
 
     static func katexStretchyMarks() {

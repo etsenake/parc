@@ -194,6 +194,7 @@ struct NoteMathParser {
         case inlineMath(Int)
         case diagramLabel(Character, Int)
         case stack(Int)
+        case parenMath(Int)
     }
 
     private static let maximumDepth = 120
@@ -401,11 +402,13 @@ struct NoteMathParser {
                 case .fence(let open): throw failure("Missing \\right to close this \\left", from: open, to: open + 5)
                 case .bracket(let open): throw failure("Missing ] to close this [", from: open, to: open + 1)
                 case .inlineMath(let open): throw failure("Missing $ to close this $", from: open, to: open + 1)
+                case .parenMath(let open): throw failure("Missing \\) to close this \\(", from: open, to: open + 2)
                 case .diagramLabel(let stop, let open): throw failure("This arrow needs another \(stop) to finish", from: open, to: open + 1)
                 }
             case .character("}"):
                 if case .group = scope { return finish(nodes) }
                 if case .stack = scope { return finish(nodes) }
+                if case .parenMath(let open) = scope { throw failure("Missing \\) to close this \\(", from: open, to: open + 2) }
                 throw failure("There's a } without a matching {", lexeme)
             case .character("]"):
                 if case .bracket = scope { return finish(nodes) }
@@ -417,6 +420,9 @@ struct NoteMathParser {
             case .character("&"):
                 if case .cell = scope { return finish(nodes) }
                 throw failure("& only works inside an environment like aligned or matrix", lexeme)
+            case .command(")"):
+                if case .parenMath = scope { return finish(nodes) }
+                throw failure("\\) without a matching \\(", lexeme)
             case .command("\\"), .command("cr"), .command("newline"):
                 switch scope {
                 case .cell, .top, .stack: return finish(nodes)
@@ -1179,11 +1185,17 @@ struct NoteMathParser {
             throw failure("\\\(name) needs {text} after it", command)
         }
         index = start + 1
+        let segments = try parseTextBody(style, command: command, name: name)
+        if segments.isEmpty { return .text("", style) }
+        if segments.count == 1, case .text = segments[0] { return segments[0] }
+        return .group(segments)
+    }
+
+    private mutating func parseTextBody(_ style: NoteMathTextStyle, command: Lexeme, name: String) throws(NoteMathParseError) -> [NoteMathNode] {
         var segments: [NoteMathNode] = []
         var buffer = ""
-        var nesting = 0
         func flush() {
-            if !buffer.isEmpty { segments.append(.text(buffer, style)) }
+            if !buffer.isEmpty { segments.append(.text(style == .monospace ? buffer : Self.textLigatures(buffer), style)) }
             buffer = ""
         }
         while true {
@@ -1191,16 +1203,18 @@ struct NoteMathParser {
             let character = characters[index]
             switch character {
             case "{":
-                nesting += 1
                 index += 1
+                let inner = try parseTextBody(style, command: command, name: name)
+                if inner.count == 1, case .text(let text, let innerStyle) = inner[0], innerStyle == style {
+                    buffer += text
+                } else {
+                    flush()
+                    segments += inner
+                }
             case "}":
                 index += 1
-                if nesting == 0 {
-                    if segments.isEmpty { return .text(buffer, style) }
-                    flush()
-                    return .group(segments)
-                }
-                nesting -= 1
+                flush()
+                return segments
             case "$":
                 let open = index
                 index += 1
@@ -1210,17 +1224,52 @@ struct NoteMathParser {
                 depth -= 1
                 advance(past: peek())
                 segments.append(.mathStyle(.text, nodes))
+            case "~":
+                buffer += "\u{00A0}"
+                index += 1
             case "\\":
                 let escape = lexeme(at: index)
-                guard case .command(let escaped) = escape.token else { break }
+                guard case .command(let escaped) = escape.token else {
+                    index += 1
+                    continue
+                }
                 index = escape.end
-                if let replacement = Self.textEscapes[escaped] {
+                if escaped.first.map(Self.isLetter) == true {
+                    while index < characters.count, characters[index] == " " || characters[index] == "\t" { index += 1 }
+                }
+                if let replacement = Self.textEscapes[escaped] ?? Self.textSymbols[escaped] {
                     buffer += replacement
+                } else if let mark = Self.textAccents[escaped] {
+                    buffer += try parseAccentedText(mark, at: escape, name: name)
                 } else if escaped == "ref" || escaped == "eqref" {
                     flush()
                     segments.append(try parseReference(escaped, escape))
+                } else if let inner = Self.textCommands[escaped] {
+                    flush()
+                    segments += Self.contents(try parseText(inner, command: escape, name: escaped))
+                } else if let switched = Self.textSwitches[escaped] {
+                    flush()
+                    segments += try parseTextBody(switched, command: command, name: name)
+                    return segments
+                } else if escaped == "color" {
+                    flush()
+                    let color = try parseColor(after: escaped)
+                    segments.append(.colored(color, try parseTextBody(style, command: command, name: name)))
+                    return segments
+                } else if let factor = Self.sizeSwitches[escaped] {
+                    flush()
+                    segments.append(.sized(factor, try parseTextBody(style, command: command, name: name)))
+                    return segments
+                } else if escaped == "(" {
+                    flush()
+                    try enter(command)
+                    let nodes = try parseList(.parenMath(escape.start))
+                    depth -= 1
+                    advance(past: peek())
+                    segments.append(.mathStyle(.text, nodes))
                 } else {
-                    throw failure("\\\(escaped) doesn't work inside \\\(name)", escape)
+                    flush()
+                    segments.append(try parseTextCommand(escaped, escape, style: style, within: name))
                 }
             default:
                 if character.isWhitespace {
@@ -1231,6 +1280,107 @@ struct NoteMathParser {
                 index += 1
             }
         }
+    }
+
+    private mutating func parseTextCommand(_ name: String, _ lexeme: Lexeme, style: NoteMathTextStyle,
+                                           within: String) throws(NoteMathParseError) -> NoteMathNode {
+        if let space = NoteMathSymbols.spaces[name] { return .space(space) }
+        switch name {
+        case "textcolor":
+            let color = try parseColor(after: name)
+            return .colored(color, Self.contents(try parseText(style, command: lexeme, name: name)))
+        case "hspace", "hskip", "kern", "mkern", "mskip":
+            _ = consumeStar()
+            return .space(try parseDimensionArgument(for: name, at: lexeme))
+        case "href":
+            let target = try parseURL(for: name)
+            return .link(target, Self.contents(try parseText(style, command: lexeme, name: name)))
+        case "smash":
+            var top = true, bottom = true
+            if let option = try parseOptionalWord(for: name) {
+                switch option {
+                case "t": bottom = false
+                case "b": top = false
+                case "tb", "bt", "": break
+                default: throw failure("\\smash takes [t] or [b], not [\(option)]", lexeme)
+                }
+            }
+            return .smashed(Self.contents(try parseText(style, command: lexeme, name: name)), top: top, bottom: bottom)
+        case "phantom", "hphantom", "vphantom":
+            return .phantom(Self.contents(try parseText(style, command: lexeme, name: name)), keepsWidth: name != "vphantom",
+                            keepsHeight: name != "hphantom")
+        case "llap", "mathllap", "rlap", "mathrlap", "clap", "mathclap":
+            let side: NoteMathLap = name.hasSuffix("llap") ? .left : name.hasSuffix("rlap") ? .right : .center
+            return .lap(side, Self.contents(try parseText(style, command: lexeme, name: name)))
+        case "underline", "overline":
+            return .decorated(name == "underline" ? .underline : .overline, Self.contents(try parseText(style, command: lexeme, name: name)))
+        case "fbox", "boxed":
+            return .boxed(Self.contents(try parseText(style, command: lexeme, name: name)))
+        case "textcircled":
+            return Self.circled(Self.contents(try parseText(style, command: lexeme, name: name)), style)
+        case "TextOrMath":
+            let text = try parseText(style, command: lexeme, name: name)
+            _ = try parseArgument(for: name, count: 2)
+            return text
+        case "char":
+            if case .char(let symbol, _) = try parseCommand(name, lexeme) { return .text(symbol, style) }
+            throw failure("\\char needs a character code, like \\char\"263A or \\char65", lexeme)
+        case "url", "rule", "raisebox", "colorbox", "fcolorbox", "verb", "TeX", "LaTeX", "KaTeX", "underbar", "htmlClass", "htmlId",
+             "htmlStyle", "htmlData":
+            return try parseCommand(name, lexeme)
+        default:
+            throw failure("\\\(name) doesn't work inside \\\(within)", lexeme)
+        }
+    }
+
+    private mutating func parseAccentedText(_ mark: String, at accent: Lexeme, name: String) throws(NoteMathParseError) -> String {
+        let position = skipIndex(from: index)
+        guard position < characters.count, characters[position] != "}" else { return "\u{00A0}" + mark }
+        var base: String
+        if characters[position] == "{" {
+            index = position + 1
+            let inner = try parseTextBody(.roman, command: accent, name: name)
+            base = inner.map { node -> String in
+                if case .text(let text, _) = node { return text }
+                return ""
+            }.joined()
+        } else if characters[position] == "\\" {
+            let inner = lexeme(at: position)
+            guard case .command(let symbolName) = inner.token, let symbol = Self.textSymbols[symbolName] ?? Self.textEscapes[symbolName] else {
+                throw failure("Text accents go on letters, like \\'{e}", inner)
+            }
+            index = inner.end
+            base = symbol
+        } else {
+            base = String(characters[position])
+            index = position + 1
+        }
+        guard let first = base.first else { return "\u{00A0}" + mark }
+        return (String(first) + mark + base.dropFirst()).precomposedStringWithCanonicalMapping
+    }
+
+    private static func textLigatures(_ text: String) -> String {
+        guard text.contains(where: { $0 == "-" || $0 == "`" || $0 == "'" }) else { return text }
+        return text.replacingOccurrences(of: "---", with: "\u{2014}").replacingOccurrences(of: "--", with: "\u{2013}")
+            .replacingOccurrences(of: "``", with: "\u{201C}").replacingOccurrences(of: "''", with: "\u{201D}")
+            .replacingOccurrences(of: "`", with: "\u{2018}").replacingOccurrences(of: "'", with: "\u{2019}")
+    }
+
+    private static func circled(_ nodes: [NoteMathNode], _ style: NoteMathTextStyle) -> NoteMathNode {
+        guard nodes.count == 1, case .text(let text, _) = nodes[0], text.unicodeScalars.count == 1, let scalar = text.unicodeScalars.first else {
+            return .group(nodes + [.text("\u{20DD}", style)])
+        }
+        let value = scalar.value
+        let circled: UInt32?
+        switch value {
+        case 0x41...0x5A: circled = 0x24B6 + value - 0x41
+        case 0x61...0x7A: circled = 0x24D0 + value - 0x61
+        case 0x31...0x39: circled = 0x2460 + value - 0x31
+        case 0x30: circled = 0x24EA
+        default: circled = nil
+        }
+        if let circled, let result = Unicode.Scalar(circled) { return .text(String(Character(result)), style) }
+        return .text(text + "\u{20DD}", style)
     }
 
     private mutating func parseEnvironment(_ lexeme: Lexeme) throws(NoteMathParseError) -> NoteMathNode {
@@ -1504,6 +1654,29 @@ struct NoteMathParser {
     private static let textCommands: [String: NoteMathTextStyle] = [
         "text": .roman, "textrm": .roman, "textnormal": .roman, "textup": .roman, "mbox": .roman, "hbox": .roman,
         "textbf": .bold, "textmd": .roman, "textit": .italic, "emph": .italic, "textsf": .sansSerif, "texttt": .monospace,
+    ]
+
+    private static let textSwitches: [String: NoteMathTextStyle] = [
+        "bf": .bold, "bfseries": .bold, "it": .italic, "itshape": .italic, "rm": .roman, "rmfamily": .roman, "sf": .sansSerif,
+        "sffamily": .sansSerif, "tt": .monospace, "ttfamily": .monospace, "mdseries": .roman, "upshape": .roman, "normalfont": .roman,
+    ]
+
+    private static let textAccents: [String: String] = [
+        "'": "\u{0301}", "`": "\u{0300}", "^": "\u{0302}", "~": "\u{0303}", "=": "\u{0304}", "u": "\u{0306}", ".": "\u{0307}",
+        "\"": "\u{0308}", "r": "\u{030A}", "H": "\u{030B}", "v": "\u{030C}",
+    ]
+
+    private static let textSymbols: [String: String] = [
+        "textdollar": "$", "textunderscore": "_", "textquoteleft": "\u{2018}", "textquoteright": "\u{2019}",
+        "textquotedblleft": "\u{201C}", "textquotedblright": "\u{201D}", "textellipsis": "\u{2026}", "textless": "<",
+        "textgreater": ">", "textbar": "|", "textbardbl": "\u{2016}", "textbraceleft": "{", "textbraceright": "}",
+        "textdagger": "\u{2020}", "textdaggerdbl": "\u{2021}", "dag": "\u{2020}", "ddag": "\u{2021}", "textsection": "\u{00A7}",
+        "textparagraph": "\u{00B6}", "textregistered": "\u{00AE}", "circledR": "\u{00AE}", "texttrademark": "\u{2122}",
+        "textdegree": "\u{00B0}", "degree": "\u{00B0}", "textcopyright": "\u{00A9}", "textsterling": "\u{00A3}",
+        "pounds": "\u{00A3}", "textyen": "\u{00A5}", "yen": "\u{00A5}", "euro": "\u{20AC}", "aa": "\u{00E5}", "AA": "\u{00C5}",
+        "ae": "\u{00E6}", "AE": "\u{00C6}", "oe": "\u{0153}", "OE": "\u{0152}", "o": "\u{00F8}", "O": "\u{00D8}",
+        "ss": "\u{00DF}", "i": "\u{0131}", "j": "\u{0237}", "L": "\u{0141}", "l": "\u{0142}", "textvisiblespace": "\u{2423}",
+        "checkmark": "\u{2713}", "maltese": "\u{2720}", "nobreakspace": "\u{00A0}", "space": " ", "textbullet": "\u{2022}",
     ]
 
     private static let textEscapes: [String: String] = [

@@ -23,6 +23,30 @@ struct NoteMathParserTests {
         }
     }
 
+    static func katexTextMode() {
+        expect(parse("\\text{\\'e\\`a\\^o\\~n\\=u\\u{a}\\.z\\\"o\\r a\\H o\\v c}") == [.text("éàôñūăżöåőč", .roman)], "text accents compose")
+        expect(parse("\\text{\\'{\\i}}") == [.text("ı\u{0301}", .roman)], "accents sit on dotless i")
+        expect(parse("\\text{a \\textbf{b} c}") == [.group([.text("a ", .roman), .text("b", .bold), .text(" c", .roman)])], "nested text styles")
+        expect(parse("\\text{a {\\bf b} c}") == [.group([.text("a ", .roman), .text("b", .bold), .text(" c", .roman)])], "text switches stop at the brace")
+        let red = NoteMathSymbols.color(named: "red")!
+        expect(parse("\\text{a {\\color{red} b}}") == [.group([.text("a ", .roman), .colored(red, [.text(" b", .roman)])])], "color in text")
+        expect(parse("\\text{\\textcolor{red}{b}}") == [.group([.colored(red, [.text("b", .roman)])])], "textcolor in text")
+        expect(parse("\\text{\\tiny a}") == [.group([.sized(0.5, [.text("a", .roman)])])], "sizes in text")
+        expect(parse("\\text{\\textdollar\\textless\\textunderscore\\textquotedblleft\\pounds\\aa\\ss\\o}") == [.text("$<_“£åßø", .roman)],
+               "text symbols")
+        expect(parse("\\text{a---b--c ``q'' it's}") == [.text("a—b–c “q” it’s", .roman)], "text ligatures")
+        expect(parse("\\texttt{a--b}") == [.text("a--b", .monospace)], "typewriter text keeps its dashes")
+        expect(parse("\\text{a~b}") == [.text("a\u{00A0}b", .roman)], "tie is a no-break space")
+        expect(parse("\\text{a\\hspace{1em}b}") == [.group([.text("a", .roman), .space(1), .text("b", .roman)])], "spacing in text")
+        expect(parse("\\text{\\href{https://a.b}{go}}") == [.group([.link("https://a.b", [.text("go", .roman)])])], "href in text")
+        expect(parse("\\text{\\textcircled{a}}") == [.text("ⓐ", .roman)], "textcircled")
+        expect(parse("\\text{\\underline{a}}") == [.group([.decorated(.underline, [.text("a", .roman)])])], "underline in text")
+        expect(parse("\\text{\\(x\\)}") == [.group([.mathStyle(.text, [.char("x", .ord)])])], "paren math in text")
+        expect(parse("\\text{\\KaTeX}").count == 1 && parse("\\text{\\verb|a|}").count == 1, "logos and verb in text")
+        expect(failure("\\text{\\(x}").message.hasPrefix("Missing \\) to close"), "unclosed paren math")
+        expect(failure("x \\)").message == "\\) without a matching \\(", "stray close paren math")
+    }
+
     static func katexStretchyMarks() {
         let ab: [NoteMathNode] = [.char("A", .ord), .char("B", .ord)]
         expect(parse("\\utilde{AB}") == [.decorated(.underArrow("\u{0330}"), ab)], "utilde")
@@ -146,6 +170,7 @@ struct NoteMathParserTests {
         katexBoxesSizesAndLinks()
         katexSymbolsAndShorthands()
         katexStretchyMarks()
+        katexTextMode()
         katexEnvironments()
         commutativeDiagrams()
         chemistry()
