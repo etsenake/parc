@@ -14,7 +14,7 @@ A pane name saved as Profiles by an earlier version opens Spaces.
 | Pane | Current controls |
 |---|---|
 | General | Default browser, Warn before quitting, Window frame (Adjust), Previews Settings, Replay onboarding |
-| Spaces | Space list (icon and name) and New Space; a Removing old data row while a background removal runs; Edit Space with rename, Share data with, search engine, suggestions and Manage search, download location, Archive tabs after, native data/settings destinations, Clear Browsing Data and Delete Space |
+| Spaces | Space list (icon and name) and New Space; a Removing old data row while a background removal runs; Edit Space with rename, Share data with, search engine, suggestions and Manage search, download location, Notes folder, Archive tabs after, native data/settings destinations, Clear Browsing Data and Delete Space |
 | Links | Ordered Air Traffic Control rules |
 | Shortcuts | Search, bindings, priority, conflict resolution and Reset All |
 | Icon | Available application icons |
@@ -56,8 +56,9 @@ Edit Space holds:
   menu and moves the Space; see
   [Space management](space-management.md#sharing-data-between-spaces).
 - **Search engine**, **Manage search** and **Include search engine suggestions**, and
-  **Download location** with Ask every time and Other…, for this Space's data. A note
-  under them names the other Spaces they also apply to.
+  **Download location** with Ask every time and Other…, and **Notes folder** with
+  Other… and Show in Finder, for this Space's data. A note under them names the
+  other Spaces they also apply to.
 - **Archive tabs after** for this Space alone, with no all-Spaces question.
 - Privacy and Security, Passwords, Credit Cards and Notifications, which open the
   edited Space's browser settings, and **Clear Browsing Data…**.
@@ -126,6 +127,15 @@ location picker offers its folder, Other… and Ask every time. Choosing Other�
 the folder, then turns prompting off. Managed values disable the picker. Callbacks
 validate window and preference identity, and leaving Spaces or closing Settings
 cancels an open folder panel. See [downloads](download-library.md).
+
+**Notes folder** sits under its own **Notes** heading after Downloads, with the same
+picker look: the folder with its Finder icon, Other… (a folder sheet that can make a
+new folder) and Show in Finder, which creates the folder first if it isn't there yet.
+The line under it reads "New notes land here. Notes saved anywhere else still open
+fine." `NoteFolderPreferences` keeps the choice per Space data in user defaults, with
+Documents/Parc Notes as the default, and forgets it when that data is removed.
+Changing it only moves where new notes go and what Library lists; existing notes stay
+put and keep opening from wherever they are.
 
 Automatic archive is a per-Space interval saved when chosen. Education is consumed
 by actual automatic archival; its Settings link opens Edit Space for the original

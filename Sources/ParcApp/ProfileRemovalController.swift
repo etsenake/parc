@@ -142,6 +142,7 @@ final class ProfileRemovalController: ObservableObject {
         case .removed:
             do {
                 try store.finishProfileRemoval(record)
+                NoteFolderPreferences.removeProfile(record.profileID)
                 progress.removeValue(forKey: record.profileID); revision &+= 1
             } catch {
                 set(record.profileID, message: "The browser data was removed, but Parc couldn’t save the final change. Retry to finish. " + error.localizedDescription,

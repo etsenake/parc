@@ -115,6 +115,10 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private var downloadFolderPanel: NSOpenPanel?
     private var downloadPreferencesGeneration: UInt64 = 0
     private let downloadRetry = PointingHandButton(title: "Retry", target: nil, action: nil)
+    private let noteLocationPicker = NoteLocationPicker()
+    private let noteFolderHelp = NSTextField(labelWithString: NoteLocationPicker.helpText)
+    private var noteFolderPanel: NSOpenPanel?
+    private var noteFolderSubscription: AnyCancellable?
     private var subscription: AnyCancellable?
     private struct Snapshot: Equatable {
         let settings: BrowserSettings
@@ -266,6 +270,11 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         downloadLocationPicker.onChoose = { [weak self] choice in self?.downloadLocationChosen(choice) }
         downloadRetry.target = self; downloadRetry.action = #selector(retryDownloadPreferences)
         downloadRetry.bezelStyle = .rounded; downloadRetry.isHidden = true
+        noteLocationPicker.onChoose = { [weak self] choice in self?.noteLocationChosen(choice) }
+        noteFolderSubscription = NoteFolderPreferences.changes.sink { [weak self] _ in self?.renderNoteFolder() }
+        noteFolderHelp.font = .systemFont(ofSize: 11); noteFolderHelp.textColor = .secondaryLabelColor
+        noteFolderHelp.lineBreakMode = .byTruncatingTail
+        noteFolderHelp.toolTip = NoteLocationPicker.helpText
         moreSettings.target = self; moreSettings.action = #selector(openMoreSettings)
         exportData.target = self; exportData.action = #selector(exportBrowserData)
         replay.target = self; replay.action = #selector(replayWelcome)
@@ -572,6 +581,14 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         place(downloadHelp, in: downloads, NSRect(x: 12, y: 50, width: SettingsLayout.groupWidth - 120, height: 32))
         place(downloadRetry, in: downloads, NSRect(x: SettingsLayout.groupWidth - 82, y: 52, width: 70, height: 28))
 
+        let notesTitle = SettingsSectionHeading(title: "Notes")
+        content.addSubview(notesTitle)
+        let notes = group(in: content, y: 0, height: SettingsLayout.noteRowHeight)
+        noteLocationPicker.rowTitle = label("Notes folder", in: notes, NSRect(x: 12, y: 10, width: 160, height: 18))
+        place(noteFolderHelp, in: notes, NSRect(x: 12, y: 30, width: SettingsLayout.groupWidth - 36 - NoteLocationPicker.width, height: 16))
+        place(noteLocationPicker, in: notes, NSRect(x: SettingsLayout.groupWidth - 12 - NoteLocationPicker.width, y: 14,
+                                                    width: NoteLocationPicker.width, height: 28))
+
         sharedNote.frame = NSRect(x: SettingsLayout.margin + SettingsLayout.rowInset, y: 0,
                                   width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 2, height: 16)
         content.addSubview(sharedNote)
@@ -596,8 +613,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         if let clear = profilePageButton(.clearBrowsingData) as? SettingsPillButton { content.addSubview(clear) }
         content.addSubview(deleteSpace)
         spaceEditorLayout = SpaceEditorLayout(identity: identity,
-            sections: [(searchTitle, searching), (downloadsTitle, downloads), (browsingTitle, tabs), (dataTitle, data)],
-            downloads: downloads, content: content)
+            sections: [(searchTitle, searching), (downloadsTitle, downloads), (notesTitle, notes), (browsingTitle, tabs), (dataTitle, data)],
+            downloads: downloads, notes: notes, content: content)
         layoutSpaceCards()
         return scroll
     }
@@ -606,6 +623,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         let identity: SettingsGroupView
         let sections: [(NSTextField, SettingsGroupView)]
         let downloads: SettingsGroupView
+        let notes: SettingsGroupView
         let content: LayoutView
     }
     private var spaceEditorLayout: SpaceEditorLayout?
@@ -628,7 +646,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
                                  y: top - SettingsLayout.headingGap - SettingsLayout.headingHeight,
                                  width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 2, height: SettingsLayout.headingHeight)
             bottom = group.frame.maxY
-            if group === layout.downloads, !sharedNote.isHidden {
+            if group === layout.notes, !sharedNote.isHidden {
                 sharedNote.setFrameOrigin(NSPoint(x: sharedNote.frame.minX, y: bottom + 8))
                 bottom = sharedNote.frame.maxY
             }
@@ -737,6 +755,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         do { try store.saveSettingsSelection(pane: Pane.spaces.rawValue, profileID: space.profileID) }
         catch { reportProfileSettingsError(error); return false }
         cancelDownloadFolderSelection()
+        cancelNoteFolderSelection()
         selectedSpaceID = spaceID
         show(.space(spaceID), persist: false)
         refresh()
@@ -782,6 +801,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
                 catch { syncChrome(); reportProfileSettingsError(error); return false }
             }
             cancelDownloadFolderSelection()
+            cancelNoteFolderSelection()
             selectedSpaceID = id
             refresh()
         } else if persist {
@@ -794,6 +814,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         }
         if selectedPane != pane {
             cancelDownloadFolderSelection()
+            cancelNoteFolderSelection()
         }
         if pane == .general { DefaultBrowserController.shared.refresh() }
         if record { navigation.visit(destination) }
@@ -1015,6 +1036,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         sharedNote.stringValue = alsoApplies.isEmpty ? "" : "Also applies to " + alsoApplies.joined(separator: ", ") + "."
         sharedNote.toolTip = sharedNote.stringValue.isEmpty ? nil : sharedNote.stringValue
         sharedNote.isHidden = alsoApplies.isEmpty
+        renderNoteFolder()
         if editedProfileID != loadedPreferencesProfileID {
             loadedPreferencesProfileID = editedProfileID
             refreshSearchPreferences()
@@ -1040,6 +1062,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     func windowDidBecomeKey(_ notification: Notification) {
         if window?.firstResponder === window || window?.firstResponder == nil { restorePaneFocus() }
         refreshDownloadPreferences(); refreshSearchPreferences()
+        renderNoteFolder()
         reportRemovalFailures()
         DefaultBrowserController.shared.refresh()
     }
@@ -1090,6 +1113,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         shortcutsPane.endRecording()
         searchGeneration &+= 1; searchPreferences = nil
         cancelDownloadFolderSelection()
+        cancelNoteFolderSelection()
         if let window { SettingsFocusState.cancelAttachedSheets(of: window) }
         window?.makeFirstResponder(nil)
         focusState.forget()
@@ -1336,6 +1360,58 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
 
     private var editedProfileID: UUID? { profilePageSpace()?.profileID }
+
+    private func cancelNoteFolderSelection() {
+        let panel = noteFolderPanel
+        noteFolderPanel = nil
+        panel?.cancel(nil)
+        if panel != nil { renderNoteFolder() }
+    }
+    private func renderNoteFolder() {
+        let profileID = editedProfileID
+        noteLocationPicker.update(profileID.map { NoteFolderPreferences.folder(for: $0) }, enabled: profileID != nil,
+                                  panelOpen: noteFolderPanel != nil)
+    }
+    private func noteLocationChosen(_ choice: NoteLocationPicker.Choice) {
+        guard let profileID = editedProfileID else { renderNoteFolder(); return }
+        switch choice {
+        case .folder: renderNoteFolder()
+        case .other: chooseNoteFolder(for: profileID)
+        case .showInFinder: showNoteFolderInFinder(for: profileID)
+        }
+    }
+    private func chooseNoteFolder(for profileID: UUID) {
+        guard let window, window.attachedSheet == nil, noteFolderPanel == nil else { noteLocationPicker.revert(); return }
+        let current = NoteFolderPreferences.folder(for: profileID)
+        let panel = NSOpenPanel()
+        panel.prompt = "Choose"
+        panel.canChooseFiles = false; panel.canChooseDirectories = true
+        panel.canCreateDirectories = true; panel.allowsMultipleSelection = false
+        panel.directoryURL = FileManager.default.fileExists(atPath: current.path) ? current : current.deletingLastPathComponent()
+        noteFolderPanel = panel
+        renderNoteFolder()
+        panel.beginSheetModal(for: window) { [weak self, weak panel, weak window] response in
+            guard let self, let panel, self.noteFolderPanel === panel else { return }
+            self.noteFolderPanel = nil
+            guard response == .OK, let window, self.window === window, window.isVisible,
+                  self.editedProfileID == profileID, let url = panel.url else { self.renderNoteFolder(); return }
+            NoteFolderPreferences.setFolder(url, for: profileID)
+            self.renderNoteFolder()
+        }
+    }
+    private func showNoteFolderInFinder(for profileID: UUID) {
+        let folder = NoteFolderPreferences.folder(for: profileID)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            NSWorkspace.shared.activateFileViewerSelecting([folder])
+        } catch {
+            if let window {
+                ParcDialog.inform(in: window, .init(title: "Parc couldn’t open your Notes folder.", message: error.localizedDescription),
+                                  queued: true)
+            }
+        }
+        renderNoteFolder()
+    }
 
     @objc private func retryDownloadPreferences() { refreshDownloadPreferences() }
     private func refreshDownloadPreferences(message: String? = nil) {
