@@ -121,6 +121,9 @@ enum NoteMDFrontMatter {
             settings.fullWidth = true
         case ("locked", .checkbox(true)) where !settings.locked:
             settings.locked = true
+        case ("backlinks", .text(let text)):
+            guard let display = NoteBacklinksDisplay(rawValue: text), settings.backlinks == nil else { return false }
+            settings.backlinks = display
         default:
             return false
         }
@@ -331,6 +334,7 @@ enum NoteMDFrontMatter {
         if settings.smallText { lines.append("small-text: true") }
         if settings.fullWidth { lines.append("full-width: true") }
         if settings.locked { lines.append("locked: true") }
+        if let backlinks = settings.backlinks { lines.append("backlinks: " + backlinks.rawValue) }
         for property in settings.properties {
             let key = keyText(property.key)
             switch property.value {

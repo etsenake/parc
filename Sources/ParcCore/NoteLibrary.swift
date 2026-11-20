@@ -37,6 +37,10 @@ final class NoteLibrary {
     nonisolated private static let bundleExtensions: Set<String> = [
         "textbundle", "textpack", "app", "bundle", "framework", "plugin", "photoslibrary", "xcodeproj", "xcworkspace", "playground"]
 
+    static let opened = PassthroughSubject<NoteLibrary, Never>()
+
+    static var known: [NoteLibrary] { Array(libraries.values) + Array(shallowLibraries.values) }
+
     static var defaultFolder: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Parc Notes", isDirectory: true)
@@ -48,6 +52,7 @@ final class NoteLibrary {
         if let existing = libraries[key] { return existing }
         let library = NoteLibrary(folder: canonical, recursive: true)
         libraries[key] = library
+        opened.send(library)
         return library
     }
 
@@ -59,6 +64,7 @@ final class NoteLibrary {
         if let existing = libraries[key] ?? shallowLibraries[key] { return existing }
         let library = NoteLibrary(folder: parent, recursive: false)
         shallowLibraries[key] = library
+        opened.send(library)
         return library
     }
 
@@ -84,7 +90,16 @@ final class NoteLibrary {
         try NoteFileIO.move(source, to: target, presenter: nil)
         let renamed = NoteFilePaths.canonical(target.deletingLastPathComponent()).appendingPathComponent(target.lastPathComponent)
         invalidateLibraries(containing: [source, renamed])
+        noteDidMove(from: source, to: renamed)
         return renamed
+    }
+
+    static func noteDidMove(from source: URL, to destination: URL) {
+        NoteBacklinkIndex.shared.noteMoved(from: source, to: destination)
+    }
+
+    static func filesRewritten(_ urls: [URL]) {
+        invalidateLibraries(containing: urls.map(NoteFilePaths.canonical))
     }
 
     private static func invalidateLibraries(containing urls: [URL]) {
@@ -97,6 +112,7 @@ final class NoteLibrary {
     let folder: URL
     let isRecursive: Bool
     let changes = PassthroughSubject<Void, Never>()
+    let listingChanges = PassthroughSubject<Void, Never>()
 
     private var entries: [String: Entry] = [:]
     private var hasListing = false
@@ -173,6 +189,15 @@ final class NoteLibrary {
         folderChanged(events: [], broad: true)
     }
 
+    func listedEntries() -> [Entry]? {
+        if !(listingIsCurrent && watcher != nil) {
+            guard NoteFilePaths.isDirectory(folder) else { return hasListing ? Array(entries.values) : [] }
+            startWatchingIfNeeded()
+            if !isScanning && refreshTimer == nil { scan() }
+        }
+        return hasListing ? Array(entries.values) : nil
+    }
+
     private func refreshListing() throws {
         if listingIsCurrent && watcher != nil { return }
         guard NoteFilePaths.isDirectory(folder) else {
@@ -226,6 +251,7 @@ final class NoteLibrary {
         if changed { contentIsCurrent = false }
         if scanAgain { scan() } else { listingIsCurrent = watcher != nil }
         if wantsContents && !contentIsCurrent { indexContents() }
+        if changed || !wasListed { listingChanges.send() }
         if changed && wasListed { changes.send() }
     }
 
@@ -253,7 +279,10 @@ final class NoteLibrary {
             }
         }
         folderChanged(events: files.map { NoteFolderEvent(path: $0.path) }, broad: false)
-        if announce { changes.send() }
+        if announce {
+            listingChanges.send()
+            changes.send()
+        }
     }
 
     private func indexContents() {
@@ -294,7 +323,10 @@ final class NoteLibrary {
             self.refreshTimer = nil
             let hadEntries = !self.entries.isEmpty
             try? self.refreshListing()
-            if hadEntries && !self.hasListing { self.changes.send() }
+            if hadEntries && !self.hasListing {
+                self.listingChanges.send()
+                self.changes.send()
+            }
         }
     }
 

@@ -452,6 +452,7 @@ final class NoteFileSession {
     }
 
     private func relocate(to destination: URL) {
+        let previous = url
         if Self.sessions[registryKey] === self { Self.sessions[registryKey] = nil }
         url = destination
         registryKey = NoteFilePaths.identityKey(ofCanonicalPath: destination.path)
@@ -459,6 +460,7 @@ final class NoteFileSession {
         fileEnvironment.move(to: destination)
         watcher?.update(url: destination)
         urlChanges.send(destination)
+        NoteLibrary.noteDidMove(from: previous, to: destination)
     }
 
     private func pageChanged(_ change: NotePageChange) {

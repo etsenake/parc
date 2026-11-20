@@ -697,6 +697,10 @@ enum NotePageFont: String, Hashable, Codable, CaseIterable {
     case standard, serif, mono, wide
 }
 
+enum NoteBacklinksDisplay: String, Hashable, Codable, CaseIterable {
+    case expanded, popup, off
+}
+
 struct NoteCover: Hashable, Codable {
     var source: String
     var position = 0.5
@@ -723,10 +727,16 @@ struct NotePageSettings: Hashable, Codable {
     var smallText = false
     var fullWidth = false
     var locked = false
+    var backlinks: NoteBacklinksDisplay?
     var properties: [NotePageProperty] = []
     var preservedFrontMatter: [String] = []
 
     var isDefault: Bool { self == NotePageSettings() }
+
+    var backlinksDisplay: NoteBacklinksDisplay {
+        get { backlinks ?? .popup }
+        set { backlinks = newValue == .popup ? nil : newValue }
+    }
 }
 
 struct NoteListNumber: Hashable {

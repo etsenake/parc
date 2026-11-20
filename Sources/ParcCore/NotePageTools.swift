@@ -193,6 +193,7 @@ struct NotePageHeaderGeometry: Equatable {
         var title: CGRect
         var error: CGRect?
         var properties: CGRect?
+        var backlinks: CGRect?
         var height: CGFloat
     }
 
@@ -205,6 +206,7 @@ struct NotePageHeaderGeometry: Equatable {
     static let coverAffordanceGap: CGFloat = 14
     static let errorGap: CGFloat = 4
     static let propertiesGap: CGFloat = 8
+    static let backlinksGap: CGFloat = 6
     static let bottomPadding: CGFloat = 14
 
     var width: CGFloat
@@ -219,6 +221,8 @@ struct NotePageHeaderGeometry: Equatable {
     var errorHeight: CGFloat?
     var propertiesHeight: CGFloat?
     var propertiesGutter: CGFloat = 0
+    var backlinksHeight: CGFloat?
+    var backlinksGutter: CGFloat = 0
 
     var hasCover: Bool { (coverHeight ?? 0) > 0 && !isPlainText }
 
@@ -266,8 +270,15 @@ struct NotePageHeaderGeometry: Equatable {
             properties = frame
             y = frame.maxY
         }
+        var backlinks: CGRect?
+        if let backlinksHeight, backlinksHeight > 0 {
+            y += Self.backlinksGap
+            let frame = CGRect(x: column.minX - backlinksGutter, y: y, width: column.width + backlinksGutter, height: backlinksHeight)
+            backlinks = frame
+            y = frame.maxY
+        }
         return Layout(cover: cover, icon: icon, affordances: affordances, title: title, error: error, properties: properties,
-                      height: (y + Self.bottomPadding).rounded(.up))
+                      backlinks: backlinks, height: (y + Self.bottomPadding).rounded(.up))
     }
 }
 
