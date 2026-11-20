@@ -12,6 +12,13 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     var onNavigate: ((URL) -> Bool)?
     var onDone: (() -> Void)?
     var onOpen: ((URL) -> Void)?
+    var onCaption: (() -> Void)? {
+        didSet {
+            guard captionButton.isHidden != (onCaption == nil) else { return }
+            captionButton.isHidden = onCaption == nil
+            needsLayout = true
+        }
+    }
     var interactive = false {
         didSet {
             guard interactive != oldValue else { return }
@@ -32,6 +39,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
     private let reloadButton = NoteToolbarButton(icon: .symbol("arrow.clockwise"), label: "Reload")
     private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open in a tab")
     private let doneButton = NoteToolbarButton(icon: .symbol("checkmark"), label: "Back to the note")
+    private let captionButton = NoteToolbarButton(icon: .symbol("text.below.photo"), label: "Caption")
     private let fallback: NoteEmbedFallbackView
     private var status: String?
     private var faviconSource: String?
@@ -83,7 +91,9 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         openButton.onPress = { [weak self] in self?.openInTab() }
         doneButton.onPress = { [weak self] in self?.onDone?() }
         doneButton.isHidden = true
-        for button in [backButton, reloadButton, openButton, doneButton] { content.addSubview(button) }
+        captionButton.onPress = { [weak self] in self?.onCaption?() }
+        captionButton.isHidden = true
+        for button in [captionButton, backButton, reloadButton, openButton, doneButton] { content.addSubview(button) }
         layer?.addSublayer(ring)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -195,7 +205,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
         fallback.frame = pageRect
         let size = NoteTheme.toolbarButtonSize
         var trailing = width - 6
-        for button in [doneButton, openButton, reloadButton, backButton] where !button.isHidden {
+        for button in [doneButton, openButton, reloadButton, backButton, captionButton] where !button.isHidden {
             button.frame = NSRect(x: trailing - size.width, y: (Self.headerHeight - size.height) / 2, width: size.width, height: size.height)
             trailing = button.frame.minX - 2
         }

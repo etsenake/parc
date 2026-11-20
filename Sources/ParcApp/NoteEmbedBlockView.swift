@@ -83,6 +83,7 @@ final class NoteEmbedBlockView: NoteCaptionedBlockView {
             if surface !== next { detachSurface() }
             surface = next
             next.selected = isBlockSelected
+            refreshCaptionButton()
             standby?.removeFromSuperview()
             standby = nil
         } else {
@@ -98,6 +99,13 @@ final class NoteEmbedBlockView: NoteCaptionedBlockView {
         }
         needsLayout = true
     }
+
+    private func refreshCaptionButton() {
+        guard let surface, surface.superview === self else { return }
+        surface.onCaption = canEdit && !captionVisible ? { [weak self] in self?.revealCaption() } : nil
+    }
+
+    override func captionRevealDidChange() { refreshCaptionButton() }
 
     private func detachSurface() {
         if let surface, surface.superview === self { surface.removeFromSuperview() }
