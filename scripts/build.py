@@ -1115,7 +1115,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                                        "CFBundleURLSchemes": ["http", "https"]}],
                     CFBundleDocumentTypes=[
                         {"CFBundleTypeName": name, "CFBundleTypeRole": role,
-                         "LSHandlerRank": "Alternate", "LSItemContentTypes": list(kinds)}
+                         "LSHandlerRank": "Default" if role == "Editor" else "Alternate", "LSItemContentTypes": list(kinds)}
                         for name, role, kinds in DOCUMENT_TYPES],
                     UTImportedTypeDeclarations=[
                         {"UTTypeIdentifier": kind, "UTTypeDescription": description,

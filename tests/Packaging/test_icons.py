@@ -203,8 +203,8 @@ class PackagingIconTests(unittest.TestCase):
             editors = {kind for document in info["CFBundleDocumentTypes"] if document["CFBundleTypeRole"] == "Editor"
                        for kind in document["LSItemContentTypes"]}
             self.assertEqual(editors, {"net.daringfireball.markdown", "public.plain-text"})
-            self.assertTrue(all(document["CFBundleTypeRole"] in ("Viewer", "Editor")
-                                and document["LSHandlerRank"] == "Alternate"
+            self.assertTrue(all((document["CFBundleTypeRole"], document["LSHandlerRank"]) in
+                                (("Viewer", "Alternate"), ("Editor", "Default"))
                                 for document in info["CFBundleDocumentTypes"]))
             markdown = next(kind for kind in info["UTImportedTypeDeclarations"]
                             if kind["UTTypeIdentifier"] == "net.daringfireball.markdown")
