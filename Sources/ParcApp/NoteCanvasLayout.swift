@@ -786,7 +786,10 @@ enum NoteCanvasEstimate {
             return count * metrics.codeLineHeight + 16 * scale
         case .equation: return 56 * scale
         case .divider: return 13 * scale
-        case .image, .video, .embed:
+        case .embed:
+            guard block.props.source?.isEmpty == false else { return 60 + caption }
+            return CGFloat(NoteEmbedSizing.height(of: block.props)) + 38 + caption
+        case .image, .video:
             let used = block.props.width.map { CGFloat($0) <= 1 ? width * CGFloat($0) : min(width, CGFloat($0)) } ?? width
             return min(used * 0.5625, 480) + caption
         case .audio: return 54 * scale + caption

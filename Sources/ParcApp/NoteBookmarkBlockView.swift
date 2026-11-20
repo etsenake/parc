@@ -10,16 +10,12 @@ class NoteLinkBlockView: NoteCaptionedBlockView {
     private var hovering = false
     private var fetching: URL?
     private let toolbar = NoteMediaToolbar()
-    private let openButton = NoteToolbarButton(icon: .symbol("arrow.up.right.square"), label: "Open")
     private let copyButton = NoteToolbarButton(icon: .symbol("link"), label: "Copy link")
     private let captionButton = NoteToolbarButton(icon: .symbol("text.below.photo"), label: "Caption")
     private let deleteButton = NoteToolbarButton(icon: .symbol("trash"), label: "Delete")
 
-    var style: Style { .bookmark }
-
     override init(block: NoteBlock, editor: NotePageEditor?) {
         super.init(block: block, editor: editor)
-        openButton.onPress = { [weak self] in self?.openLink() }
         copyButton.onPress = { [weak self] in self?.copyLink() }
         captionButton.onPress = { [weak self] in self?.revealCaption() }
         deleteButton.onPress = { [weak self] in self?.deleteBlock() }
@@ -49,7 +45,7 @@ class NoteLinkBlockView: NoteCaptionedBlockView {
         if let url {
             entry?.removeFromSuperview()
             entry = nil
-            let view = card ?? NoteLinkCardView(style: style == .embed ? .embed : .bookmark)
+            let view = card ?? NoteLinkCardView(style: .bookmark)
             if card == nil {
                 view.onOpen = { [weak self] in self?.openLink() }
                 view.onHeightChange = { [weak self] in self?.invalidateMeasuredHeight() }
@@ -64,7 +60,7 @@ class NoteLinkBlockView: NoteCaptionedBlockView {
         } else {
             card?.removeFromSuperview()
             card = nil
-            let view = entry ?? NoteLinkEntryView(style: style)
+            let view = entry ?? NoteLinkEntryView(style: .bookmark)
             if entry == nil {
                 view.onSubmit = { [weak self] url in self?.create(url) }
                 addSubview(view, positioned: .below, relativeTo: toolbar)
@@ -115,8 +111,7 @@ class NoteLinkBlockView: NoteCaptionedBlockView {
     private func create(_ url: URL) {
         guard canEdit, let session = editor?.session else { return }
         let id = blockID
-        let name = style == .embed ? "Embed Link" : "Add Bookmark"
-        session.edit(name, coalescing: .typing(id, .body), affected: [id]) { page in
+        session.edit("Add Bookmark", coalescing: .typing(id, .body), affected: [id]) { page in
             page.update(id) {
                 $0.props.source = url.absoluteString
                 $0.props.bookmark = nil
@@ -144,9 +139,7 @@ class NoteLinkBlockView: NoteCaptionedBlockView {
     }
 
     private func configureToolbar() {
-        var buttons: [NoteControlButton] = []
-        if style == .embed { buttons.append(openButton) }
-        buttons.append(copyButton)
+        var buttons: [NoteControlButton] = [copyButton]
         if canEdit {
             if !captionVisible { buttons.append(captionButton) }
             buttons.append(deleteButton)
@@ -160,7 +153,7 @@ class NoteLinkBlockView: NoteCaptionedBlockView {
     private func refreshAccessibility() {
         guard let url else { return }
         let title = (storedPreview ?? NoteLinkMetadata.shared.cached(url))?.title ?? NoteMediaFormat.displayHost(url)
-        card?.setAccessibilityLabel((style == .embed ? "Embed: " : "Bookmark: ") + title)
+        card?.setAccessibilityLabel("Bookmark: " + title)
     }
 
     private static let inset: CGFloat = 4
@@ -225,15 +218,12 @@ class NoteLinkBlockView: NoteCaptionedBlockView {
 }
 
 @MainActor
-final class NoteBookmarkBlockView: NoteLinkBlockView {
-    override var style: Style { .bookmark }
-}
+final class NoteBookmarkBlockView: NoteLinkBlockView {}
 
 @MainActor
 final class NoteLinkCardView: NSView {
-    enum Layout { case bookmark, embed }
+    enum Layout { case bookmark }
 
-    let cardLayout: Layout
     var onOpen: (() -> Void)?
     var onHeightChange: (() -> Void)?
     private let card = CALayer()
@@ -250,12 +240,10 @@ final class NoteLinkCardView: NSView {
     private var loading = false
     private var hovered = false
     private var pressed = false
-    private var previewSize: CGSize?
     private var hasPreviewImage = false
 
     init(style: Layout) {
-        cardLayout = style
-        title = NoteMediaStyle.label("", font: NoteTheme.nunitoBold(style == .embed ? 15.5 : 14.5), color: NoteTheme.ink)
+        title = NoteMediaStyle.label("", font: NoteTheme.nunitoBold(14.5), color: NoteTheme.ink)
         summary = NoteMediaStyle.label("", font: NoteTheme.nunitoRegular(13), color: NoteTheme.secondaryInk, lines: 2)
         summary.lineBreakMode = .byWordWrapping
         summary.cell?.truncatesLastVisibleLine = true
@@ -305,7 +293,7 @@ final class NoteLinkCardView: NSView {
         let host = NoteMediaFormat.displayHost(url)
         title.stringValue = info?.title ?? host
         summary.stringValue = info?.summary ?? ""
-        site.stringValue = siteLine(url: url, host: host)
+        site.stringValue = siteLine(url: url)
         setAccessibilityValue(url.absoluteString)
         setAccessibilityHelp(loading ? "Fetching a preview." : "Opens the link.")
         if changedImage { loadPreview() }
@@ -314,16 +302,11 @@ final class NoteLinkCardView: NSView {
         needsLayout = true
     }
 
-    private func siteLine(url: URL, host: String) -> String {
-        switch cardLayout {
-        case .bookmark:
-            var text = url.absoluteString
-            if text.hasPrefix("https://") { text.removeFirst(8) } else if text.hasPrefix("http://") { text.removeFirst(7) }
-            if text.hasSuffix("/") { text.removeLast() }
-            return text
-        case .embed:
-            return info?.siteName ?? host
-        }
+    private func siteLine(url: URL) -> String {
+        var text = url.absoluteString
+        if text.hasPrefix("https://") { text.removeFirst(8) } else if text.hasPrefix("http://") { text.removeFirst(7) }
+        if text.hasSuffix("/") { text.removeLast() }
+        return text
     }
 
     private func refreshShimmer() {
@@ -334,7 +317,6 @@ final class NoteLinkCardView: NSView {
 
     private func loadPreview() {
         hasPreviewImage = false
-        previewSize = nil
         NoteMediaMotion.instant { preview.contents = nil; preview.opacity = 0 }
         guard let link = info?.imageURL, let imageURL = URL(string: link) else { refreshShimmer(); return }
         let expected = url
@@ -342,10 +324,8 @@ final class NoteLinkCardView: NSView {
             guard let self, self.url == expected, self.info?.imageURL == link else { return }
             if case .success(let image) = result {
                 self.hasPreviewImage = true
-                self.previewSize = image.pointSize
                 NoteMediaMotion.instant { self.preview.contents = image.first }
                 NoteMediaMotion.fadeIn(self.preview)
-                if self.cardLayout == .embed { self.onHeightChange?() }
             }
             self.refreshShimmer()
             self.needsLayout = true
@@ -365,38 +345,17 @@ final class NoteLinkCardView: NSView {
     var showsPreview: Bool { info?.imageURL != nil }
 
     func height(for width: CGFloat) -> CGFloat {
-        switch cardLayout {
-        case .bookmark:
-            let hasSummary = !(info?.summary ?? "").isEmpty || loading
-            return hasSummary || (showsPreview && width >= 360) ? 106 : 72
-        case .embed:
-            let hasSummary = !(info?.summary ?? "").isEmpty || loading
-            return embedMediaHeight(for: width) + (hasSummary ? 112 : 76)
-        }
-    }
-
-    private func embedMediaHeight(for width: CGFloat) -> CGFloat {
-        guard showsPreview || loading else { return 0 }
-        let aspect = previewSize.map { NoteMediaLayout.aspect(of: $0) } ?? 0.5
-        return min(320, max(140, (width * min(aspect, 0.56)).rounded()))
+        let hasSummary = !(info?.summary ?? "").isEmpty || loading
+        return hasSummary || (showsPreview && width >= 360) ? 106 : 72
     }
 
     override func layout() {
         super.layout()
         let bounds = self.bounds
-        let previewRect: NSRect
-        let textRect: NSRect
-        switch cardLayout {
-        case .bookmark:
-            let showsImage = showsPreview && bounds.width >= 360
-            let previewWidth = showsImage ? min(250, (bounds.width * 0.33).rounded()) : 0
-            previewRect = NSRect(x: bounds.width - previewWidth, y: 0, width: previewWidth, height: bounds.height)
-            textRect = NSRect(x: 16, y: 14, width: max(0, bounds.width - previewWidth - 32), height: bounds.height - 28)
-        case .embed:
-            let mediaHeight = embedMediaHeight(for: bounds.width)
-            previewRect = NSRect(x: 0, y: 0, width: bounds.width, height: mediaHeight)
-            textRect = NSRect(x: 16, y: mediaHeight + 14, width: max(0, bounds.width - 32), height: bounds.height - mediaHeight - 28)
-        }
+        let showsImage = showsPreview && bounds.width >= 360
+        let previewWidth = showsImage ? min(250, (bounds.width * 0.33).rounded()) : 0
+        let previewRect = NSRect(x: bounds.width - previewWidth, y: 0, width: previewWidth, height: bounds.height)
+        let textRect = NSRect(x: 16, y: 14, width: max(0, bounds.width - previewWidth - 32), height: bounds.height - 28)
         NoteMediaMotion.instant {
             card.frame = bounds
             preview.frame = previewRect

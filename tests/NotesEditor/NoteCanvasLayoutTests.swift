@@ -280,6 +280,14 @@ struct NoteCanvasLayoutTests {
         expect(result.decorations(in: CGRect(x: 0, y: 1500, width: 10, height: 10)).isEmpty, "regions filter decorations")
         expect(result.decorations(of: [callout.id]).map(\.style) == [.callout(.background(.blue))], "one block's decorations on request")
         expect(result.decorations(of: [inside.id]).isEmpty, "plain blocks have none")
+        var embed = NoteBlock(.embed)
+        embed.props.source = "https://www.youtube.com/watch?v=abc"
+        var tall = embed
+        tall.props.height = 600
+        let metrics = NoteCanvasMetrics()
+        expect(NoteCanvasEstimate.height(of: embed, width: 720, metrics: metrics) == 458, "an unshown embed is guessed at its real default height")
+        expect(NoteCanvasEstimate.height(of: tall, width: 720, metrics: metrics) == 638, "and at its stored height when it has one")
+        expect(NoteCanvasEstimate.height(of: NoteBlock(.embed), width: 720, metrics: metrics) == 60, "an empty embed is just its link field")
 
         var tip = NoteBlock(.callout, text: "tip")
         tip.props.alert = "TIP"
