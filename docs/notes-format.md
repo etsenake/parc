@@ -326,6 +326,7 @@ A **page link** is a link to another note on its own line:
   other apps. A `<time>` tag with anything Parc doesn't recognise is kept as
   written.
 - **Link mentions** are `<a href="https://…" data-mention>Page title</a>`.
+- **Custom emoji** are `:name:`; see [custom emoji](#custom-emoji).
 - **Table of contents** is `<!-- toc -->` on its own line.
 
 Inline things Parc can't edit as text are kept verbatim: an image in the
@@ -333,6 +334,33 @@ middle of a sentence, `<kbd>` and other unknown HTML, footnote markers,
 Obsidian embeds like `![[diagram.png]]`, and inline `$$…$$`. A link wrapped
 around an image (such as a README badge) keeps the link on the image. HTML
 blocks, reference definitions and footnotes stay as you wrote them.
+
+## Custom emoji
+
+A note's custom emoji library is the `.parc/emoji` folder in the nearest
+folder above the note that has one, up to the Space's Notes folder; without one
+it's the Notes folder holding the note, or the note's own folder. Each emoji is
+an image named after it, such as `.parc/emoji/party-parrot.png`, and
+`emoji.json` beside them lists the names and any old names:
+
+```json
+{
+  "emoji" : [
+    { "aliases" : [ "parrot" ], "file" : "party-parrot.png", "name" : "party-parrot" }
+  ],
+  "version" : 1
+}
+```
+
+Names are lowercase letters, digits, `-`, `_` and `+`. An image dropped into the
+folder by hand joins the library under its file name. In text, `:party-parrot:`
+shows the image when the library has that name (or had it before a rename) and
+stays plain text otherwise, so `:tada:` in a README is left alone. When the
+library does have the name, text that should stay text is saved as
+`\:party-parrot:`. Icons use the same shortcode: `icon: ":party-parrot:"` in
+front matter and `<!-- parc icon=":party-parrot:" -->` on a callout. HTML and
+PDF exports embed the images. Move or copy the folder with its `.parc` folder
+and the emoji come along.
 
 ## What changes when Parc saves
 

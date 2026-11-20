@@ -130,6 +130,17 @@ Reminders are blue, turn red on their day or once they've rung, and are local
 notifications that follow the note through renames and moves and disappear
 when it's trashed.
 
+Custom emoji live with the notes folder. The emoji picker's `+` takes an image
+(chosen, dropped or pasted, scaled to 280 px) and a name, and Save adds it and
+uses it right away. Custom emoji get their own section in the picker, show up
+first in `:` suggestions, complete when you type `:name:`, and work inline, as
+page icons and as callout icons. The section's Edit button, a right-click or
+Delete on a highlighted one opens it to rename or delete; a renamed emoji keeps
+answering to its old name in notes that use it, and a deleted one turns back
+into its `:name:` text. The icon picker's Upload tab can also add an upload to
+the folder's emoji. Open notes, tab icons and menus update at once
+([format](notes-format.md#custom-emoji)).
+
 Return, Backspace, Delete and Tab follow Notion's rules: lists continue, an empty
 item outdents and then becomes text, Backspace at the start of a block turns it
 into text, then outdents, then merges. Notion's keyboard shortcuts apply inside a
