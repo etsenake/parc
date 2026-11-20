@@ -16,6 +16,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
     let coverView: NotePageCoverView
     let iconView: NotePageIconView
     let properties: NotePropertiesView
+    let backlinks = NotePageBacklinksView()
     let addIcon = NoteChip("Add icon", icon: .featherSmile, style: .ghost)
     let addCover = NoteChip("Add cover", icon: .featherImage, style: .ghost)
     let addProperties = NoteChip("Add properties", icon: .symbol("list.bullet.rectangle"), style: .ghost)
@@ -57,9 +58,11 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         addSubview(titleView)
         addSubview(errorView)
         addSubview(properties)
+        addSubview(backlinks)
         addSubview(iconView)
         configureTitle()
         configureActions()
+        configureBacklinks()
         apply(editor.session.page.settings, animated: false)
         subscriptions.insert(editor.session.changes.sink { [weak self] change in
             guard let self, change.kind != .selection, change.kind != .text else { return }
@@ -144,6 +147,8 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         geometry.errorHeight = reservesErrorSpace && !isPrinting ? NotePageTitleErrorView.height : nil
         geometry.propertiesHeight = showsProperties ? properties.preferredHeight(width: column.width + NotePropertiesView.gutter) : nil
         geometry.propertiesGutter = NotePropertiesView.gutter
+        geometry.backlinksHeight = backlinks.isShowing && !isPrinting ? backlinks.preferredHeight : nil
+        geometry.backlinksGutter = NotePageBacklinksView.gutter
         return geometry
     }
 
@@ -182,6 +187,8 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             }
             properties.isHidden = layout.properties == nil
             if let frame = layout.properties { properties.frame = frame }
+            backlinks.isHidden = layout.backlinks == nil
+            if let frame = layout.backlinks { backlinks.frame = frame }
         }
         lastHeight = layout.height
     }
@@ -247,6 +254,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             reservesErrorSpace = false
             errorView.isHidden = true
             titleView.findHighlights = []
+            backlinks.closePopover(animated: false)
         }
         apply(settings, animated: false)
         needsLayout = true
@@ -317,6 +325,20 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         titleView.onMoveDown = { [weak self] in self?.moveIntoBody(offset: 0) }
     }
 
+    private func configureBacklinks() {
+        backlinks.onOpen = { [weak self] url in self?.editor.open(url) }
+        backlinks.onHeightChange = { [weak self] in self?.relayoutIfHeightChanged() }
+        backlinks.overlayHost = { [weak self] in self?.editor.canvas.overlayView }
+        subscriptions.insert(NoteBacklinkIndex.shared.changes.sink { [weak self] in self?.refreshBacklinks() })
+    }
+
+    func refreshBacklinks() {
+        let display = isPlainText ? NoteBacklinksDisplay.popup : settings.backlinksDisplay
+        let found: [NoteBacklink]
+        if isPrinting || display == .off { found = [] } else { found = file.map { NoteBacklinkIndex.shared.backlinks(to: $0.url) } ?? [] }
+        backlinks.update(found, display: display)
+    }
+
     private func configureActions() {
         addIcon.setToolTip("Add icon")
         addCover.setToolTip("Add cover")
@@ -371,6 +393,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         }
         properties.isEditable = editable
         properties.reload(next.properties)
+        refreshBacklinks()
         if previous?.locked != next.locked {
             refreshAffordanceVisibility()
             if animated, next.locked, let layer = lockChip.layer { NoteAnimation.pop(layer, from: 0.9, spring: .pill) }
@@ -381,6 +404,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
     private func fileDidMove(to url: URL) {
         let name = url.deletingPathExtension().lastPathComponent
         committedTitle = name
+        refreshBacklinks()
         guard window?.firstResponder !== titleView, titleView.string != name else { return }
         titleView.string = name
         relayoutIfHeightChanged()

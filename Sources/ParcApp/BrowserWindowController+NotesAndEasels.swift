@@ -155,6 +155,7 @@ extension BrowserWindowController {
 
     func configureNoteOwner(_ tab: BrowserTab, editor: NotePageViewController) {
         let tabID = tab.id, profileID = tab.profileID
+        NoteBacklinkIndex.shared.include(NoteFolderPreferences.library(for: profileID))
         var current = editor.file.url
         editor.onTitleChange = { [weak self, weak editor] title in
             guard let self, let editor, self.noteEditors[tabID]?.editor === editor else { return }

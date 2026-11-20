@@ -39,6 +39,7 @@ final class NotePageMenu {
     var onOpenHistory: (() -> Void)?
     private var popover: NotePagePopover?
     private var exportPopover: NotePagePopover?
+    private var backlinksPopover: NotePagePopover?
     private weak var content: NotePageMenuView?
     private var subscription: AnyCancellable?
 
@@ -98,6 +99,7 @@ final class NotePageMenu {
 
     func close(animated: Bool = true) {
         exportPopover?.close(animated: animated)
+        backlinksPopover?.close(animated: animated)
         popover?.close(animated: animated)
     }
 
@@ -127,6 +129,8 @@ final class NotePageMenu {
         if !isPlainText {
             result.append(toggleItem("small-text", "Small Text", symbol: "textformat.size.smaller"))
             result.append(toggleItem("full-width", "Full Width", symbol: "arrow.left.and.right"))
+            result.append(.init(id: "backlinks", title: "Backlinks", icon: .symbol("arrow.turn.up.left"), isEnabled: !editor.session.isReadOnly,
+                                hasSubmenu: true))
         }
         result.append(toggleItem("lock", "Lock Note", symbol: settings.locked ? "lock.fill" : "lock"))
         var copy = NoteMenuList.Item(id: "copy-markdown", title: isPlainText ? "Copy Text" : "Copy as Markdown", icon: .symbol("doc.on.doc"))
@@ -156,6 +160,7 @@ final class NotePageMenu {
         case "copy-markdown": close(); copyMarkdown()
         case "copy-link": close(); copyLink()
         case "export": presentExport(from: row)
+        case "backlinks": presentBacklinks(from: row)
         case "reveal": close(); revealInFinder()
         case "history": close(); showHistory()
         case "turn-markdown": close(); turnIntoMarkdown()
@@ -258,6 +263,45 @@ final class NotePageMenu {
         let side = NSRect(x: panelFrame.minX, y: anchor.minY, width: panelFrame.width, height: anchor.height)
         child.present(in: overlay, anchor: side, edge: .leading)
         if NSApp.currentEvent?.type == .keyDown { list.prepare(origin: .keyboard); list.moveHighlight(by: 1) }
+    }
+
+    static let backlinkChoices: [(display: NoteBacklinksDisplay, title: String, symbol: String)] = [
+        (.expanded, "Expanded", "list.bullet"), (.popup, "Show in Popup", "rectangle.on.rectangle"), (.off, "Off", "eye.slash"),
+    ]
+
+    private func presentBacklinks(from row: NSRect?) {
+        guard let popover, popover.isOpen else { return }
+        backlinksPopover?.close(animated: false)
+        let current = editor.session.page.settings.backlinksDisplay
+        let list = NoteMenuList(items: Self.backlinkChoices.map { choice in
+            NoteMenuList.Item(id: choice.display.rawValue, title: choice.title, icon: .symbol(choice.symbol), isChecked: choice.display == current)
+        })
+        list.minimumWidth = 200
+        let child = NotePagePopover(content: list, parent: popover)
+        list.onActivate = { [weak self] item in
+            guard let self, let display = NoteBacklinksDisplay(rawValue: item.id) else { return }
+            self.close()
+            self.setBacklinks(display)
+        }
+        list.onCancel = { [weak child] in child?.close() }
+        list.onCollapse = { [weak child] in child?.close() }
+        child.onKeyDown = { [weak list] event in list?.handleKeyDown(event) ?? false }
+        child.onClose = { [weak self] in self?.backlinksPopover = nil }
+        backlinksPopover = child
+        let overlay = editor.canvas.overlayView
+        let panelFrame = popover.panel.frame
+        let anchor = row.map { overlay.convert($0, from: content) } ?? NSRect(x: panelFrame.minX, y: panelFrame.midY, width: panelFrame.width, height: 30)
+        child.present(in: overlay, anchor: NSRect(x: panelFrame.minX, y: anchor.minY, width: panelFrame.width, height: anchor.height), edge: .leading)
+        if NSApp.currentEvent?.type == .keyDown { list.prepare(origin: .keyboard); list.moveHighlight(by: 1) }
+    }
+
+    func setBacklinks(_ display: NoteBacklinksDisplay) {
+        let settings = editor.session.page.settings
+        guard settings.backlinksDisplay != display || settings.properties.contains(where: { $0.key == "backlinks" }) else { return }
+        editor.session.updateSettings(name: "Backlinks") { settings in
+            settings.backlinksDisplay = display
+            settings.properties.removeAll { $0.key == "backlinks" }
+        }
     }
 
     func export(_ format: ExportFormat) {

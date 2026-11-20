@@ -1,12 +1,2 @@
-Sources/ParcCore/NoteBacklink*.swift
-Sources/ParcCore/NoteLibrary.swift
-Sources/ParcCore/NoteFile*.swift
-Sources/ParcCore/NoteMarkdown*.swift
-Sources/ParcCore/NoteModel.swift
-Sources/ParcCore/NotePageTools.swift
-Sources/ParcCore/NotePageSession.swift
-Sources/ParcCore/NotePageEditing.swift
-Sources/ParcCore/NoteEnvironment.swift
-Sources/ParcCore/NoteAttachments.swift
-Sources/ParcCore/WindowFrame.swift
+Sources/ParcCore/*.swift
 tests/NotesEditor/NoteFileTestSupport.swift
