@@ -25,8 +25,10 @@ final class NotePageEditor {
     var onFocusTitle: (() -> Void)?
     var onPrint: (() -> Void)?
     var onChange: ((NotePageChange) -> Void)?
+    var onCanvasLayout: (() -> Void)?
     var pasteboard: NSPasteboard = .general
     private var subscription: AnyCancellable?
+    private var layoutSubscription: AnyCancellable?
     private var isApplying = false
     private var pasteMenu: NotePasteLinkMenu?
     private var lastReadOnly: Bool?
@@ -41,6 +43,7 @@ final class NotePageEditor {
         handles = NoteBlockHandleController(editor: self)
         find = NoteFindController(editor: self)
         subscription = session.changes.sink { [weak self] change in self?.sessionDidChange(change) }
+        layoutSubscription = canvas.layoutDidChange.sink { [weak self] in self?.canvasDidLayout() }
         canvas.reload()
         lastReadOnly = isReadOnly
     }
@@ -149,6 +152,12 @@ final class NotePageEditor {
         formatBar.selectionDidChange()
         handles.layoutDidChange()
         onChange?(change)
+    }
+
+    private func canvasDidLayout() {
+        formatBar.layoutDidChange()
+        handles.layoutDidChange()
+        onCanvasLayout?()
     }
 
     private func applyReadOnly() {
@@ -393,7 +402,7 @@ final class NotePageEditor {
         if handles.handleKey(event) { return true }
         if event.modifierFlags.intersection([.command, .control, .option]).isEmpty == false || host == nil,
            performKeyEquivalent(event) { return true }
-        guard host == nil || session.selection.isBlockSelection else { return false }
+        guard host == nil || session.selection.isBlockSelection || selectedTableView != nil else { return false }
         return handleSelectionKey(event)
     }
 
@@ -405,6 +414,11 @@ final class NotePageEditor {
             guard blocks else { return false }
             return enterBlockSelection()
         case 51 where flags.isEmpty, 117 where flags.isEmpty:
+            if let table = selectedTableView {
+                guard !isReadOnly else { NSSound.beep(); return true }
+                table.clearRange()
+                return true
+            }
             guard blocks || isCrossBlockSelection else { return false }
             guard !isReadOnly else { NSSound.beep(); return true }
             dismissOverlaysForStructure()
@@ -457,12 +471,17 @@ final class NotePageEditor {
         if command.isEdit && isReadOnly { return false }
         let page = session.page
         switch command {
-        case .mark, .inlineEquation:
+        case .mark:
+            return !isPlainText && (hasTextRange || typingTextView != nil)
+        case .inlineEquation:
+            return !isPlainText && hasTextRange && !isCrossBlockSelection
+        case .focusToolbar:
             return !isPlainText && hasTextRange
         case .lastColor:
-            return !isPlainText && Self.lastUsedColor != nil && (hasTextRange || session.selection.isBlockSelection)
+            return !isPlainText && NoteColorRecents.load().first != nil && (hasTextRange || session.selection.isBlockSelection)
         case .link:
-            return !isPlainText && hasTextRange && !isCrossBlockSelection
+            guard !isPlainText, !isCrossBlockSelection, case .text(_, let head) = session.selection else { return false }
+            return session.page.block(head.block)?.kind.hasRichText == true || head.field != .body
         case .turnInto(let target):
             guard !isPlainText else { return false }
             if target == .page { return environment.documentURL != nil && targetBlocks.contains { page.block($0)?.kind.hasRichText == true } }
@@ -497,18 +516,21 @@ final class NotePageEditor {
         if command.isEdit && isReadOnly { NSSound.beep(); return true }
         switch command {
         case .mark(let key):
-            guard hasTextRange else { return false }
-            session.toggleMark(key)
+            if hasTextRange {
+                session.toggleMark(key)
+                return true
+            }
+            guard let view = typingTextView else { return false }
+            view.toggleTypingMark(key)
             return true
         case .inlineEquation:
-            return convertToEquation()
+            return formatBar.toggleEquation()
+        case .focusToolbar:
+            return formatBar.focusToolbar()
         case .link:
-            return false
+            return formatBar.openLinkEditor()
         case .lastColor:
-            guard let color = Self.lastUsedColor else { return false }
-            session.setColor(color)
-            Self.lastUsedColor = color
-            return true
+            return formatBar.applyLastColor()
         case .turnInto(let target):
             return turnInto(target)
         case .duplicate:
@@ -562,7 +584,7 @@ final class NotePageEditor {
         case .delete:
             guard hasCopyableSelection else { return false }
             dismissOverlaysForStructure()
-            session.deleteSelection()
+            if let table = selectedTableView { table.clearRange() } else { session.deleteSelection() }
             return true
         case .find:
             find.show(replacing: false)
@@ -600,13 +622,23 @@ final class NotePageEditor {
             switch command {
             case .undo: menuItem.title = session.undoActionName.map { "Undo " + $0 } ?? "Undo"
             case .redo: menuItem.title = session.redoActionName.map { "Redo " + $0 } ?? "Redo"
-            case .mark(let key): menuItem.state = hasTextRange && session.hasMark(key) ? .on : .off
+            case .mark(let key):
+                let active = hasTextRange ? session.hasMark(key) : typingTextView?.typingMarks[key] ?? false
+                menuItem.state = active ? .on : .off
             case .turnInto(let target): menuItem.state = isCurrentKind(target) ? .on : .off
             case .link: menuItem.title = currentLink != nil ? TextFormatCommand.editLinkTitle : TextFormatCommand.addLinkTitle
             default: break
             }
         }
         return validate(command)
+    }
+
+    private var typingTextView: NoteTextView? {
+        guard case .text(let anchor, let head) = session.selection, anchor == head, let host = focusedTextHost,
+              host.blockID == head.block, host.field == head.field, host.textView.selectedOffsets.isEmpty,
+              host.textView.isEditable, let block = session.page.block(head.block),
+              block.kind.hasRichText || head.field != .body else { return nil }
+        return host.textView
     }
 
     private var currentLink: String? {
@@ -684,18 +716,6 @@ final class NotePageEditor {
         return candidate
     }
 
-    private func convertToEquation() -> Bool {
-        guard case .text(let anchor, let head) = session.selection, anchor.block == head.block, anchor.field == head.field,
-              anchor != head, let block = session.page.block(head.block), block.kind.hasRichText,
-              let text = block.text(in: head.field) else { return false }
-        let range = min(anchor.offset, head.offset)..<max(anchor.offset, head.offset)
-        let source = text.slice(range).plainText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !source.isEmpty else { return false }
-        let atom = NoteText.atom(.equation(source), marks: text.marks(at: range.lowerBound).withoutAtom)
-        session.replaceText(at: NotePosition(head.block, range.lowerBound, field: head.field), length: range.count, with: atom)
-        return true
-    }
-
     private func modifyBlocks() -> Bool {
         let page = session.page
         let ids = targetBlocks
@@ -756,8 +776,23 @@ final class NotePageEditor {
         return pasteboard.availableType(from: readable) != nil
     }
 
+    private var selectedTableView: NoteTableBlockView? {
+        guard case .cells(let table, _, _) = session.selection else { return nil }
+        return canvas.blockView(for: table) as? NoteTableBlockView
+    }
+
+    private var focusedCell: (table: NoteTableBlockView, cell: NoteTableCellTextView)? {
+        guard let host = focusedTextHost, host.field.isCell, let cell = host.textView as? NoteTableCellTextView,
+              let table = canvas.existingBlockView(for: host.blockID) as? NoteTableBlockView else { return nil }
+        return (table, cell)
+    }
+
     @discardableResult
     func copySelection() -> Bool {
+        if let table = selectedTableView {
+            table.copyRange(cut: false)
+            return true
+        }
         let target = session.selection
         guard hasCopyableSelection else { return false }
         let fragment = session.fragment(of: target)
@@ -773,6 +808,10 @@ final class NotePageEditor {
     @discardableResult
     func cutSelection() -> Bool {
         guard !isReadOnly else { NSSound.beep(); return true }
+        if let table = selectedTableView {
+            table.copyRange(cut: true)
+            return true
+        }
         guard copySelection() else { return false }
         dismissOverlaysForStructure()
         session.deleteSelection()
@@ -784,6 +823,11 @@ final class NotePageEditor {
         guard !isReadOnly else { NSSound.beep(); return true }
         guard !hasMarkedText else { return false }
         dismissPasteMenu()
+        if !plainText, let table = selectedTableView {
+            table.pasteIntoRange()
+            return true
+        }
+        if !plainText, let focused = focusedCell, focused.table.pasteIntoCell(focused.cell) { return true }
         let reading = NoteClipboard.read(pasteboard)
         let plainOnly = plainText || isPlainText || caretIsInPlainField
         switch NoteClipboard.choose(reading, plainOnly: plainOnly, canReadHTML: false) {

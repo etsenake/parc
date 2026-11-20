@@ -52,6 +52,7 @@ enum NoteKeyCommand: Hashable {
     case modifyBlock
     case toggleAllToggles
     case blockActions
+    case focusToolbar
     case indent
     case outdent
     case undo
@@ -74,7 +75,7 @@ enum NoteKeyCommand: Hashable {
         case .mark, .inlineEquation, .link, .lastColor, .turnInto, .duplicate, .moveBlocks, .modifyBlock,
              .indent, .outdent, .undo, .redo, .cut, .paste, .pastePlainText, .delete, .findAndReplace:
             return true
-        case .toggleAllToggles, .blockActions, .selectAll, .copy, .find, .findNext, .findPrevious,
+        case .toggleAllToggles, .blockActions, .focusToolbar, .selectAll, .copy, .find, .findNext, .findPrevious,
              .useSelectionForFind, .print:
             return false
         }
@@ -133,10 +134,10 @@ struct NoteKeyChord: Hashable, CustomStringConvertible {
     }
 
     private static let digitKeyCodes: [UInt16: Int] = [29: 0, 18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9]
-    private static let symbolsIgnoringShift: Set<String> = ["/"]
+    private static let shiftedSymbols: [String: String] = ["?": "/"]
 
     init?(characters: String?, keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
-        var flags = modifiers.intersection(Self.relevantModifiers)
+        let flags = modifiers.intersection(Self.relevantModifiers)
         if let digit = Self.digitKeyCodes[keyCode] {
             self.init(.digit(digit), flags)
             return
@@ -148,8 +149,8 @@ struct NoteKeyChord: Hashable, CustomStringConvertible {
         default: break
         }
         guard let characters, characters.count == 1 else { return nil }
-        let lowered = characters.lowercased()
-        if Self.symbolsIgnoringShift.contains(lowered) { flags.remove(.shift) }
+        var lowered = characters.lowercased()
+        if let base = Self.shiftedSymbols[lowered], flags.contains(.shift) { lowered = base }
         self.init(.character(lowered), flags)
     }
 
@@ -176,6 +177,7 @@ enum NoteKeyCommands {
             NoteKeyChord(.returnKey, .command): .modifyBlock,
             NoteKeyChord(.character("t"), [.command, .option]): .toggleAllToggles,
             NoteKeyChord(.character("/"), .command): .blockActions,
+            NoteKeyChord(.character("/"), [.command, .shift]): .focusToolbar,
             NoteKeyChord(.character("z"), .command): .undo,
             NoteKeyChord(.character("z"), [.command, .shift]): .redo,
             NoteKeyChord(.character("y"), .command): .redo,
