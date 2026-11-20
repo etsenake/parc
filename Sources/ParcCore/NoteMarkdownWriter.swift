@@ -558,6 +558,8 @@ struct NoteMDWriter {
             items.append(("credit", credit.name))
             if let link = credit.link { items.append(("credit-url", link)) }
         }
+        if let crop = block.props.crop { items.append(("crop", crop.attribute)) }
+        if let mask = block.props.mask { items.append(("mask", mask.rawValue)) }
         items += blockAttributes(block)
         return line + suffix(items)
     }

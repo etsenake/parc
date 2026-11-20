@@ -523,6 +523,8 @@ struct NoteBlockProps: Hashable, Codable {
     var info: String?
     var source: String?
     var alt: String?
+    var crop: NoteImageCrop?
+    var mask: NoteImageMask?
     var width: Double?
     var height: Double?
     var alignment: NoteAlignment = .center

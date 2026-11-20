@@ -893,6 +893,8 @@ final class NoteHTMLConversion {
         var block = NoteBlock(.image)
         block.props.source = resolve(source)
         if let alt = node["alt"]?.trimmingCharacters(in: .whitespacesAndNewlines), !alt.isEmpty { block.props.alt = alt }
+        if let crop = node["data-crop"].flatMap(NoteImageCrop.init(attribute:)) { block.props.crop = crop }
+        if let mask = node["data-mask"].flatMap({ NoteImageMask(rawValue: $0.lowercased()) }) { block.props.mask = mask }
         return block
     }
 

@@ -116,6 +116,10 @@ enum NoteMDMedia {
         "open.spotify.com", "soundcloud.com", "gist.github.com", "codesandbox.io", "miro.com", "maps.google.com",
     ]
 
+    static func writesFraming(_ kind: NoteBlockKind) -> Bool {
+        kind == .image || kind == .video || kind == .audio || kind == .file || kind == .embed
+    }
+
     static func pathExtension(_ source: String) -> String {
         var path = Substring(source)
         if let cut = path.firstIndex(where: { $0 == "?" || $0 == "#" }) { path = path[..<cut] }
@@ -705,6 +709,10 @@ struct NoteMDReader {
         if let width = values["width"], let number = Double(width) { block.props.width = number }
         if let height = values["height"], let number = Double(height) { block.props.height = number }
         if let align = values["align"], let alignment = NoteAlignment(rawValue: align.lowercased()) { block.props.alignment = alignment }
+        if NoteMDMedia.writesFraming(block.kind) {
+            if let value = values["crop"], let crop = NoteImageCrop(attribute: value) { block.props.crop = crop }
+            if let value = values["mask"], let mask = NoteImageMask(rawValue: value.lowercased()) { block.props.mask = mask }
+        }
         if let caption = values["caption"] { block.props.caption = self.caption(caption) }
         if let anchor = values["id"], NoteAnchor.isValid(anchor) { block.props.anchor = anchor }
         if attributes.flags.contains("wrap") { block.props.wrap = true }

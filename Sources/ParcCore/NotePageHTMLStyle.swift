@@ -43,6 +43,14 @@ enum NotePageHTMLStyle {
         }.joined()
     }
 
+    static func maskRules(for page: NotePage) -> String {
+        let used = Set(page.allBlocks().compactMap { $0.kind == .image ? $0.props.mask : nil })
+        return NoteImageMask.allCases.filter { used.contains($0) && $0.borderRadius(frameAspect: nil) == nil }.map { mask in
+            let image = "url(\"" + mask.maskImageURL + "\") center/100% 100% no-repeat"
+            return ".image-frame.mask-" + mask.rawValue + "{-webkit-mask:" + image + ";mask:" + image + "}\n"
+        }.joined()
+    }
+
     static let css: String = """
     :root{--ink:#1F1B2E;--title:#220C7F;--muted:rgba(31,27,46,.62);--faint:rgba(31,27,46,.38);\
     --line:rgba(31,27,46,.12);--accent:#2702C2;--link:#220C7F;--paper:#FFFFFF;--fill:rgba(31,27,46,.045);\
@@ -142,6 +150,10 @@ enum NotePageHTMLStyle {
     figure.pdf.align-right{margin-right:0}
     .pdf-frame{display:block;width:100%;aspect-ratio:17/22;max-height:88vh;border:1px solid var(--line);border-radius:8px;\
     background:var(--fill)}
+    .image-frame{display:inline-block;position:relative;max-width:100%;overflow:hidden;line-height:0;vertical-align:top}
+    figure.image .image-frame img{border-radius:0}figure.image[style*=width] .image-frame{width:100%}
+    figure.image .image-frame:not([class*=mask-]){border-radius:8px}
+    figure.image .image-frame.cropped img{position:absolute;max-width:none;height:auto}
     video,audio{display:block;max-width:100%;border-radius:8px}
     audio{width:100%}
     figcaption{margin-top:.45em;color:var(--muted);font-size:.86em;text-align:left}

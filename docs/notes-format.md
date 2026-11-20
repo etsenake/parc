@@ -116,7 +116,7 @@ after it:
 
 The comment always starts with `parc`, followed by words and `name="value"`
 pairs. Parc writes `color`, `icon`, `width`, `height` (an embed's page height),
-`align`, `caption`, `wrap` (code that wraps), the table flags `no-header-row`, `header-column` and
+`align`, `crop` and `mask` (an image's framing), `caption`, `wrap` (code that wraps), the table flags `no-header-row`, `header-column` and
 `widths="120,,80"`, the bookmark fields, and a block kind (`paragraph`,
 `image`, `video`, `audio`, `file`, `embed` or `bookmark`) when the file
 wouldn't otherwise make the kind clear. An empty paragraph that has a colour is
@@ -260,8 +260,22 @@ nothing ([embedded pages](embedded-pages.md#live-embeds-in-notes)).
 ![report.pdf](Attachments/report.pdf)
 ```
 
-The text in brackets is the alt text and the quoted title is the caption.
-Pasted and dropped files live in an `Attachments` folder beside the note.
+The text in brackets is the alt text, which screen readers announce and the
+exports use, and the quoted title is the caption. Pasted and dropped files live
+in an `Attachments` folder beside the note.
+
+Cropping and shapes never touch the picture itself. They're saved in the
+comment, so other apps simply show the whole image:
+
+```markdown
+![Our team](Attachments/team.jpg) <!-- parc crop="0.1,0.05,0.8,0.9" mask="rounded" -->
+```
+
+`crop` lists the left edge, top edge, width and height of the part to show, as
+fractions of the whole picture with up to four decimals; a crop that spills over
+the edge is pulled back inside. `mask` is `rounded`, `circle`, `squircle`,
+`arch`, `diamond`, `hexagon`, `star` or `heart`. HTML exports draw both with CSS,
+and PDF exports match the editor.
 
 A **bookmark** is a link on its own line plus its cached preview:
 

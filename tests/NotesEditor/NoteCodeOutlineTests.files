@@ -1,2 +1,3 @@
 Sources/ParcCore/NoteModel.swift
+Sources/ParcCore/NoteImageFraming.swift
 Sources/ParcCore/NoteOutline.swift

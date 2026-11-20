@@ -20,11 +20,13 @@ enum NotePageHTML {
 
     static func document(_ page: NotePage, title: String, assets: (String) -> URL?, embedImages: Bool,
                          equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)? = nil,
-                         diagramArt: ((NoteBlock) -> NoteDiagramArt?)? = nil) -> String {
+                         diagramArt: ((NoteBlock) -> NoteDiagramArt?)? = nil,
+                         imageSize: ((String) -> CGSize?)? = nil) -> String {
         withoutActuallyEscaping(assets) { assets in
             var writer = NotePageHTMLWriter(mode: .document, assets: assets, embedImages: embedImages,
                                             equationArt: equationArt, blocks: page.blocks)
             writer.diagramArt = diagramArt
+            writer.imageSize = imageSize
             writer.write(page.blocks)
             let settings = page.settings
             let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -37,7 +39,8 @@ enum NotePageHTML {
             var html = "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n"
             html += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
             html += "<meta name=\"generator\" content=\"Parc\">\n"
-            html += "<title>" + NotePageHTMLWriter.escape(name) + "</title>\n<style>\n" + NotePageHTMLStyle.css + "</style>\n</head>\n"
+            html += "<title>" + NotePageHTMLWriter.escape(name) + "</title>\n<style>\n" + NotePageHTMLStyle.css
+                + NotePageHTMLStyle.maskRules(for: page) + "</style>\n</head>\n"
             html += "<body class=\"" + classes.joined(separator: " ") + "\">\n"
             if let cover = settings.cover {
                 let position = Int((min(max(cover.position, 0), 1) * 100).rounded())
@@ -76,6 +79,7 @@ struct NotePageHTMLWriter {
     let embedImages: Bool
     let equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)?
     var diagramArt: ((NoteBlock) -> NoteDiagramArt?)?
+    var imageSize: ((String) -> CGSize?)?
     private(set) var output = ""
     private var anchors: [NoteBlockID: String] = [:]
     private var mathNumbering = NotePageMathNumbering()
@@ -499,7 +503,15 @@ struct NotePageHTMLWriter {
         switch block.kind {
         case .image:
             let alt = block.props.alt.map { " alt=\"" + Self.attribute($0) + "\"" } ?? " alt=\"\""
-            output += "<img src=\"" + Self.attribute(source(raw)) + "\"" + alt + ">"
+            var framing = ""
+            if let crop = block.props.crop { framing += " data-crop=\"" + crop.attribute + "\"" }
+            if let mask = block.props.mask { framing += " data-mask=\"" + mask.rawValue + "\"" }
+            let src = "<img src=\"" + Self.attribute(source(raw)) + "\"" + alt + framing
+            if mode == .document, block.props.crop?.isFull == false || block.props.mask != nil {
+                output += framedImage(src, block: block)
+            } else {
+                output += src + ">"
+            }
         case .video:
             output += "<video src=\"" + Self.attribute(link(raw)) + "\" controls preload=\"metadata\"></video>"
         default:
@@ -553,6 +565,37 @@ struct NotePageHTMLWriter {
             return "data:application/pdf;base64," + data.base64EncodedString()
         }
         return url.absoluteString
+    }
+
+    private func framedImage(_ image: String, block: NoteBlock) -> String {
+        let crop = block.props.crop.flatMap { $0.isFull ? nil : $0 }
+        let natural = imageSize?(block.props.source ?? "").flatMap { $0.width > 0 && $0.height > 0 ? $0 : nil }
+        let aspect = NoteImageFraming.frameAspect(crop: crop, natural: natural)
+        var classes = ["image-frame"]
+        var frameStyle: [String] = []
+        var imageStyle: [String] = []
+        if let mask = block.props.mask {
+            classes.append("mask-" + mask.rawValue)
+            if let radius = mask.borderRadius(frameAspect: aspect) { frameStyle.append("border-radius:" + radius) }
+        }
+        if let crop {
+            func percent(_ value: Double) -> String { NoteImageCrop.format(value * 100) + "%" }
+            if let natural {
+                let size = crop.croppedSize(of: natural)
+                classes.append("cropped")
+                frameStyle.append("aspect-ratio:" + NoteImageCrop.format(Double(size.width)) + "/" + NoteImageCrop.format(Double(size.height)))
+                if block.props.width == nil { frameStyle.append("width:" + String(Int(size.width.rounded())) + "px") }
+                imageStyle.append("width:" + percent(1 / crop.width))
+                imageStyle.append("left:" + percent(-crop.x / crop.width))
+                imageStyle.append("top:" + percent(-crop.y / crop.height))
+            } else {
+                let insets = [crop.y, 1 - crop.x - crop.width, 1 - crop.y - crop.height, crop.x].map { percent(max(0, $0)) }
+                imageStyle.append("object-view-box:inset(" + insets.joined(separator: " ") + ")")
+            }
+        }
+        let frameAttributes = frameStyle.isEmpty ? "" : " style=\"" + frameStyle.joined(separator: ";") + "\""
+        let imageAttributes = imageStyle.isEmpty ? "" : " style=\"" + imageStyle.joined(separator: ";") + "\""
+        return "<span class=\"" + classes.joined(separator: " ") + "\"" + frameAttributes + ">" + image + imageAttributes + "></span>"
     }
 
     private mutating func bookmark(_ block: NoteBlock) {
