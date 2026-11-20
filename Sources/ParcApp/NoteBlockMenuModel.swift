@@ -100,6 +100,7 @@ enum NoteBlockMenuModel {
         (NoteBlockStyle(.heading, level: 1, toggleable: true), "Toggle Heading 1", .glyph("▸H1"), ["collapse", "h1"]),
         (NoteBlockStyle(.heading, level: 2, toggleable: true), "Toggle Heading 2", .glyph("▸H2"), ["collapse", "h2"]),
         (NoteBlockStyle(.heading, level: 3, toggleable: true), "Toggle Heading 3", .glyph("▸H3"), ["collapse", "h3"]),
+        (NoteBlockStyle(.heading, level: 4, toggleable: true), "Toggle Heading 4", .glyph("▸H4"), ["collapse", "h4"]),
     ]
 
     static let languages: [(id: String, title: String)] = [

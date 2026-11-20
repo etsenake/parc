@@ -1044,7 +1044,7 @@ final class NoteBlockPreviewCard: NSView {
         case .heading(let level), .toggleHeading(let level):
             let toggles: Bool
             if case .toggleHeading = block { toggles = true } else { toggles = false }
-            let font = NoteTheme.nunitoExtraBold([20, 17, 15][min(max(level, 1), 3) - 1])
+            let font = NoteTheme.nunitoExtraBold([20, 17, 15, 14][min(max(level, 1), 4) - 1])
             let indent: CGFloat = toggles ? 18 : 0
             if toggles { triangle(at: NSPoint(x: x + 2, y: y + font.ascender * 0.55), open: true) }
             text("Heading \(level)", font, at: NSPoint(x: x + indent, y: y))

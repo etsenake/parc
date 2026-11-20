@@ -22,6 +22,7 @@ enum NoteTurnIntoMenu {
         case .toggleHeading1: return .glyph("▸H1")
         case .toggleHeading2: return .glyph("▸H2")
         case .toggleHeading3: return .glyph("▸H3")
+        case .toggleHeading4: return .glyph("▸H4")
         }
     }
 

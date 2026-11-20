@@ -8,7 +8,7 @@ struct NoteOutlineEntry: Hashable {
 }
 
 enum NoteOutline {
-    static func entries(in page: NotePage, levels: ClosedRange<Int> = 1...3) -> [NoteOutlineEntry] {
+    static func entries(in page: NotePage, levels: ClosedRange<Int> = 1...4) -> [NoteOutlineEntry] {
         var found: [(id: NoteBlockID, level: Int, title: String)] = []
         func walk(_ blocks: [NoteBlock]) {
             for block in blocks {

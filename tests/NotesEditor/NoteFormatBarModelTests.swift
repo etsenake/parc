@@ -179,7 +179,7 @@ struct NoteFormatBarModelTests {
         let deep = NoteBlock.heading(5, "Small")
         expect(NoteTurnIntoOption(block: deep) == nil && NoteTurnIntoOption.label(for: deep) == "Heading 5",
                "deeper headings still get a name")
-        expect(NoteTurnIntoOption.allCases.first == .text && NoteTurnIntoOption.allCases.count == 16, "the list starts at Text")
+        expect(NoteTurnIntoOption.allCases.first == .text && NoteTurnIntoOption.allCases.count == 17, "the list starts at Text")
         expect(NoteTurnIntoOption(block: NoteBlock.heading(4, "Four")) == .heading4, "Heading 4 sits in the list like Notion's")
         expect(NoteTurnIntoOption.heading1.chord?.display == "⌥⌘1", "turn-into shortcuts read in Parc's modifier order")
     }

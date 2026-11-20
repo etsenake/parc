@@ -27,8 +27,9 @@ struct NoteSlashCatalogTests {
         expect(unfiltered.first?.id == "text" && unfiltered.map(\.id).prefix(4) == ["text", "heading1", "heading2", "heading3"],
                "Text then the headings lead the menu")
         let basic = unfiltered.filter { $0.section == .basic }.map(\.id)
-        expect(basic == ["text", "heading1", "heading2", "heading3", "bulleted", "numbered", "todo", "toggle",
-                         "toggleHeading1", "toggleHeading2", "toggleHeading3", "quote", "callout", "divider", "newNote", "linkToNote", "table"],
+        expect(basic == ["text", "heading1", "heading2", "heading3", "heading4", "bulleted", "numbered", "todo", "toggle",
+                         "toggleHeading1", "toggleHeading2", "toggleHeading3", "toggleHeading4", "quote", "callout", "divider", "newNote",
+                         "linkToNote", "table"],
                "basic blocks follow Notion's order: \(basic)")
         expect(unfiltered.filter { $0.section == .media }.map(\.id) == ["image", "video", "audio", "file", "bookmark", "embed"], "media order")
         expect(unfiltered.filter { $0.section == .advanced }.map(\.id) == ["tableOfContents", "equation", "code", "columns2", "columns3", "columns4", "columns5"],
@@ -36,7 +37,8 @@ struct NoteSlashCatalogTests {
         expect(unfiltered.filter { $0.section == .inline }.map(\.id) == ["mention", "date", "emoji", "inlineEquation"], "inline order")
 
         let aliases: [(String, String)] = [
-            ("h1", "heading1"), ("#", "heading1"), ("##", "heading2"), ("###", "heading3"), ("todo", "todo"), ("[]", "todo"),
+            ("h1", "heading1"), ("#", "heading1"), ("##", "heading2"), ("###", "heading3"), ("h4", "heading4"), ("####", "heading4"),
+            ("th4", "toggleHeading4"), ("toggle h4", "toggleHeading4"), ("todo", "todo"), ("[]", "todo"),
             ("ul", "bulleted"), ("ol", "numbered"), ("num", "numbered"), ("img", "image"), ("hr", "divider"), ("div", "divider"),
             ("---", "divider"), ("math", "equation"), ("tex", "equation"), ("latex", "equation"), ("plain", "text"), ("call", "callout"),
             ("book", "bookmark"), ("web", "bookmark"), ("toc", "tableOfContents"), ("red", "color.red"), ("red background", "background.red"),
@@ -51,8 +53,9 @@ struct NoteSlashCatalogTests {
             expect(found == expected, "/\(query) puts \(expected) first, got \(found ?? "nothing")")
         }
 
-        expect(ids("h").prefix(6) == ["heading1", "heading2", "heading3", "toggleHeading1", "toggleHeading2", "toggleHeading3"],
-               "a lone h lists every heading before anything an alias drags in: \(ids("h").prefix(6))")
+        expect(ids("h").prefix(8) == ["heading1", "heading2", "heading3", "heading4", "toggleHeading1", "toggleHeading2", "toggleHeading3",
+                                      "toggleHeading4"],
+               "a lone h lists every heading before anything an alias drags in: \(ids("h").prefix(8))")
         expect(ids("list").prefix(4) == ["bulleted", "numbered", "todo", "toggle"], "list finds every list, in catalog order")
         let back = ids("back")
         expect(back.count == 9 && back.allSatisfy { $0.hasPrefix("background.") }, "/back lists the nine backgrounds: \(back)")
@@ -71,6 +74,7 @@ struct NoteSlashCatalogTests {
         expect(turn.count == NoteCatalogBlock.turnIntoTargets.count && turn.allSatisfy { $0.hasPrefix("turn.") }, "/turn lists every Turn into")
         expect(top("turnbullet") == "turn.bulleted", "/turnbullet goes straight to Turn into Bulleted list")
         expect(top("turn into h1") == "turn.heading1", "/turn into h1 works")
+        expect(top("turn into h4") == "turn.heading4", "/turn into h4 reaches the new heading")
         expect(top("turninto quote") == "turn.quote", "/turninto quote works")
         expect(top("turn callout") == "turn.callout", "/turn callout works")
 
@@ -83,7 +87,8 @@ struct NoteSlashCatalogTests {
         expect(!ids("page", nested).contains("newNote"), "New note hides when there's no folder to put it in")
 
         let menu = NoteBlockCatalog.results(for: "", in: .turnInto)
-        expect(menu.map(\.title).prefix(4) == ["Text", "Heading 1", "Heading 2", "Heading 3"], "Turn into lists plain block names")
+        expect(menu.map(\.title).prefix(5) == ["Text", "Heading 1", "Heading 2", "Heading 3", "Heading 4"], "Turn into lists plain block names")
+        expect(menu.contains { $0.id == "into.toggleHeading4" }, "Turn into offers Toggle heading 4")
         expect(menu.allSatisfy { if case .turnInto = $0.effect { return true } else { return false } }, "Turn into rows only convert")
         expect(NoteBlockCatalog.results(for: "quo", in: .turnInto).first?.id == "into.quote", "Turn into filters too")
 
@@ -100,6 +105,10 @@ struct NoteSlashCatalogTests {
         expect(callout.kind == .callout && callout.props.icon != nil, "a fresh callout gets an icon")
         let heading = NoteCatalogBlock.toggleHeading(1).makeBlock()
         expect(heading.kind == .heading && heading.props.toggleable && heading.props.expanded && heading.props.level == 1, "toggle heading 1 is a folding H1")
+        let fourth = NoteCatalogBlock.heading(4).makeBlock()
+        expect(fourth.kind == .heading && !fourth.props.toggleable && fourth.props.level == 4, "heading 4 is a plain H4")
+        let foldingFourth = NoteCatalogBlock.toggleHeading(4).makeBlock()
+        expect(foldingFourth.props.toggleable && foldingFourth.props.level == 4, "toggle heading 4 folds")
         print("NoteSlashCatalogTests passed")
     }
 }

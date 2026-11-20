@@ -24,8 +24,8 @@ enum NoteCatalogBlock: Hashable {
     case tableOfContents, equation, code, columns(Int)
 
     static let turnIntoTargets: [NoteCatalogBlock] = [
-        .text, .heading(1), .heading(2), .heading(3), .bulleted, .numbered, .todo, .toggle,
-        .toggleHeading(1), .toggleHeading(2), .toggleHeading(3), .quote, .callout, .code, .equation,
+        .text, .heading(1), .heading(2), .heading(3), .heading(4), .bulleted, .numbered, .todo, .toggle,
+        .toggleHeading(1), .toggleHeading(2), .toggleHeading(3), .toggleHeading(4), .quote, .callout, .code, .equation,
     ]
 
     var kind: NoteBlockKind {
@@ -301,6 +301,8 @@ enum NoteBlockCatalog {
                   aliases: ["h2", "##", "heading2", "subtitle"], keywords: ["header", "medium"], .heading(2)),
             block("heading3", "Heading 3", "A small heading, quietly in charge.", .basic, .text("H3"), hint: "###",
                   aliases: ["h3", "###", "heading3"], keywords: ["header", "small"], .heading(3)),
+            block("heading4", "Heading 4", "The tiniest heading, for the fine print.", .basic, .text("H4"), hint: "####",
+                  aliases: ["h4", "####", "heading4"], keywords: ["header", "smaller", "tiny"], .heading(4)),
             block("bulleted", "Bulleted list", "A simple list of points.", .basic, .symbol("list.bullet"), hint: "-",
                   aliases: ["ul", "-", "*", "bullet", "bullets", "unordered"], keywords: ["list", "points", "dots"], .bulleted),
             block("numbered", "Numbered list", "A list that counts for you.", .basic, .symbol("list.number"), hint: "1.",
@@ -315,6 +317,8 @@ enum NoteBlockCatalog {
                   aliases: ["th2", "toggle h2", "toggleh2"], keywords: ["toggle", "heading", "collapse", "fold"], .toggleHeading(2)),
             block("toggleHeading3", "Toggle heading 3", "A small heading that folds up.", .basic, .text("▸H3"), hint: "> ###",
                   aliases: ["th3", "toggle h3", "toggleh3"], keywords: ["toggle", "heading", "collapse", "fold"], .toggleHeading(3)),
+            block("toggleHeading4", "Toggle heading 4", "A tiny heading that folds up.", .basic, .text("▸H4"), hint: "> ####",
+                  aliases: ["th4", "toggle h4", "toggleh4"], keywords: ["toggle", "heading", "collapse", "fold"], .toggleHeading(4)),
             block("quote", "Quote", "When someone said it best.", .basic, .symbol("text.quote"), hint: "\"",
                   aliases: ["\"", "|", "blockquote", "cite"], keywords: ["quotation", "citation", "pull quote"], .quote),
             block("callout", "Callout", "Make something stand out.", .basic, .symbol("lightbulb"),

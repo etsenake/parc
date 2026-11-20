@@ -122,7 +122,7 @@ enum NoteFormatItem: String, CaseIterable, Hashable {
 
 enum NoteTurnIntoOption: String, CaseIterable, Hashable {
     case text, heading1, heading2, heading3, heading4, bulletedList, numberedList, todoList, toggleList
-    case code, quote, callout, blockEquation, toggleHeading1, toggleHeading2, toggleHeading3
+    case code, quote, callout, blockEquation, toggleHeading1, toggleHeading2, toggleHeading3, toggleHeading4
 
     var title: String {
         switch self {
@@ -142,13 +142,14 @@ enum NoteTurnIntoOption: String, CaseIterable, Hashable {
         case .toggleHeading1: return "Toggle Heading 1"
         case .toggleHeading2: return "Toggle Heading 2"
         case .toggleHeading3: return "Toggle Heading 3"
+        case .toggleHeading4: return "Toggle Heading 4"
         }
     }
 
     var kind: NoteBlockKind {
         switch self {
         case .text: return .paragraph
-        case .heading1, .heading2, .heading3, .heading4, .toggleHeading1, .toggleHeading2, .toggleHeading3: return .heading
+        case .heading1, .heading2, .heading3, .heading4, .toggleHeading1, .toggleHeading2, .toggleHeading3, .toggleHeading4: return .heading
         case .bulletedList: return .bulletedItem
         case .numberedList: return .numberedItem
         case .todoList: return .todo
@@ -165,12 +166,12 @@ enum NoteTurnIntoOption: String, CaseIterable, Hashable {
         case .heading1, .toggleHeading1: return 1
         case .heading2, .toggleHeading2: return 2
         case .heading3, .toggleHeading3: return 3
-        case .heading4: return 4
+        case .heading4, .toggleHeading4: return 4
         default: return nil
         }
     }
 
-    var isToggleHeading: Bool { self == .toggleHeading1 || self == .toggleHeading2 || self == .toggleHeading3 }
+    var isToggleHeading: Bool { self == .toggleHeading1 || self == .toggleHeading2 || self == .toggleHeading3 || self == .toggleHeading4 }
 
     var chord: NoteFormatShortcut? {
         switch self {
@@ -199,6 +200,7 @@ enum NoteTurnIntoOption: String, CaseIterable, Hashable {
             case (1, true): self = .toggleHeading1
             case (2, true): self = .toggleHeading2
             case (3, true): self = .toggleHeading3
+            case (4, true): self = .toggleHeading4
             default: return nil
             }
         case .bulletedItem: self = .bulletedList
