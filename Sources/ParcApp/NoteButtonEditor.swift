@@ -332,7 +332,7 @@ final class NoteButtonEditorView: NSView, NoteFloatingPanelContent {
     private let nameField = NoteSearchField(placeholder: "Button name")
     private let header = NSTextField(labelWithString: "When pressed")
     private let emptyLabel = NSTextField(labelWithString: "Nothing happens yet. Add an action and give it a job.")
-    private let scroll = NSScrollView()
+    private let cardScroll = NSScrollView()
     private let stack = NoteButtonCardStack()
     private var cards: [NoteButtonActionCard] = []
     private let addButton = NoteChip("New action", icon: .symbol("plus"))
@@ -372,18 +372,18 @@ final class NoteButtonEditorView: NSView, NoteFloatingPanelContent {
         emptyLabel.font = NoteTheme.nunitoRegular(13)
         emptyLabel.textColor = NoteTheme.menuSecondaryInk
         addSubview(emptyLabel)
-        scroll.drawsBackground = false
-        scroll.borderType = .noBorder
-        scroll.hasVerticalScroller = true
-        scroll.hasHorizontalScroller = false
-        scroll.autohidesScrollers = true
-        scroll.scrollerStyle = .overlay
-        scroll.automaticallyAdjustsContentInsets = false
-        scroll.contentView.drawsBackground = false
-        scroll.documentView = stack
-        addSubview(scroll)
-        scroll.contentView.postsBoundsChangedNotifications = true
-        clipObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scroll.contentView,
+        cardScroll.drawsBackground = false
+        cardScroll.borderType = .noBorder
+        cardScroll.hasVerticalScroller = true
+        cardScroll.hasHorizontalScroller = false
+        cardScroll.autohidesScrollers = true
+        cardScroll.scrollerStyle = .overlay
+        cardScroll.automaticallyAdjustsContentInsets = false
+        cardScroll.contentView.drawsBackground = false
+        cardScroll.documentView = stack
+        addSubview(cardScroll)
+        cardScroll.contentView.postsBoundsChangedNotifications = true
+        clipObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: cardScroll.contentView,
                                                               queue: nil) { [weak self] _ in
             MainActor.assumeIsolated { self?.syncOverlays() }
         }
@@ -430,10 +430,10 @@ final class NoteButtonEditorView: NSView, NoteFloatingPanelContent {
             nameField.frame = NSRect(x: iconButton.frame.maxX + 8, y: inset, width: bounds.width - iconButton.frame.maxX - 8 - inset,
                                      height: NoteTheme.fieldHeight)
             header.frame = NSRect(x: inset + 2, y: nameField.frame.maxY + 14, width: contentWidth, height: 16)
-            scroll.frame = NSRect(x: inset, y: header.frame.maxY + 6, width: contentWidth, height: scrollHeight)
-            emptyLabel.frame = NSRect(x: inset + 2, y: scroll.frame.minY + 2, width: contentWidth, height: 18)
+            cardScroll.frame = NSRect(x: inset, y: header.frame.maxY + 6, width: contentWidth, height: scrollHeight)
+            emptyLabel.frame = NSRect(x: inset + 2, y: cardScroll.frame.minY + 2, width: contentWidth, height: 18)
             emptyLabel.isHidden = !cards.isEmpty
-            let rowY = scroll.frame.maxY + 12
+            let rowY = cardScroll.frame.maxY + 12
             let addWidth = addButton.intrinsicContentSize.width
             addButton.frame = NSRect(x: inset - 4, y: rowY, width: addWidth, height: NoteTheme.chipHeight)
             let doneWidth = doneButton.intrinsicContentSize.width
@@ -561,7 +561,7 @@ final class NoteButtonEditorView: NSView, NoteFloatingPanelContent {
         auxiliary = nil
     }
 
-    private func menu(_ items: [NoteMenuList.Item], from anchor: NSView, alignment: NoteFloatingPanel.Alignment = .leading,
+    private func showMenu(_ items: [NoteMenuList.Item], from anchor: NSView, alignment: NoteFloatingPanel.Alignment = .leading,
                       onPick: @escaping (String) -> Void) {
         let list = NoteMenuList(items: items)
         list.rowStyle = items.contains { $0.subtitle != nil } ? .detailed : .compact
@@ -610,7 +610,7 @@ final class NoteButtonEditorView: NSView, NoteFloatingPanelContent {
         var open = NoteMenuList.Item(id: NoteButtonAction.Kind.open.rawValue, title: "Open a note or link")
         open.subtitle = "Jump to a note or a web page"
         open.icon = .symbol("arrow.up.right.square")
-        menu([insert, confirm, open], from: addButton) { [weak self] id in
+        showMenu([insert, confirm, open], from: addButton) { [weak self] id in
             guard let kind = NoteButtonAction.Kind(rawValue: id) else { return }
             self?.append(.blank(kind))
         }
@@ -645,7 +645,7 @@ final class NoteButtonEditorView: NSView, NoteFloatingPanelContent {
         delete.icon = .symbol("trash")
         delete.isDestructive = true
         delete.separatorBefore = true
-        menu([up, down, duplicate, delete], from: anchor, alignment: .trailing) { [weak self] id in
+        showMenu([up, down, duplicate, delete], from: anchor, alignment: .trailing) { [weak self] id in
             switch id {
             case "up": self?.move(card, by: -1)
             case "down": self?.move(card, by: 1)
@@ -698,7 +698,7 @@ final class NoteButtonEditorView: NSView, NoteFloatingPanelContent {
             item.isChecked = placement == current
             return item
         }
-        menu(items, from: anchor, alignment: .trailing) { [weak card] id in
+        showMenu(items, from: anchor, alignment: .trailing) { [weak card] id in
             guard let placement = NoteButtonPlacement(rawValue: id) else { return }
             card?.setPlacement(placement)
         }
