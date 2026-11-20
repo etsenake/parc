@@ -207,7 +207,17 @@ struct NoteCanvasLayoutTests {
         expect(stay?.action == .move(.after(nested.id)), "staying at the child depth stays a sibling")
         let cFrame = result.frame(of: c.id)!
         let paragraph = result.dropTarget(at: CGPoint(x: 300, y: cFrame.maxY - 2), dragging: [moving.id], leadingX: 220)
-        expect(paragraph?.action == .move(.after(c.id)), "paragraphs never take children")
+        expect(paragraph?.action == .move(.firstChild(of: c.id)) && paragraph?.depth == 1, "moving right nests under paragraphs")
+        let besideParagraph = result.dropTarget(at: CGPoint(x: 300, y: cFrame.maxY - 2), dragging: [moving.id], leadingX: 140)
+        expect(besideParagraph?.action == .move(.after(c.id)), "staying left keeps a sibling")
+        let head = NoteBlock.heading(2, "head"), kid = NoteBlock.paragraph("kid")
+        var parentHeading = head
+        parentHeading.children = [kid]
+        let headed = layout([parentHeading, moving])
+        expect(headed.frame(of: kid.id)?.minX == 166, "a plain heading's children sit one indent in, always shown")
+        let headFrame = headed.frame(of: head.id)!
+        let intoHeading = headed.dropTarget(at: CGPoint(x: 300, y: headFrame.maxY - 2), dragging: [moving.id], leadingX: 140)
+        expect(intoHeading?.action == .move(.firstChild(of: head.id)), "a heading with children takes drops as its first child")
         expect(result.dropTarget(at: CGPoint(x: 300, y: nestedFrame.midY), dragging: [b.id]) == nil,
                "nothing drops into its own descendants")
         expect(result.dropTarget(at: CGPoint(x: 300, y: bFrame.midY - 2), dragging: [b.id]) == nil, "nothing drops onto itself")
@@ -240,7 +250,7 @@ struct NoteCanvasLayoutTests {
         expect(left?.action == .placeBeside(a.id, .left) && left?.isVertical == true, "the far left margin makes a column")
         let right = result.dropTarget(at: CGPoint(x: 820, y: aFrame.midY), dragging: [moving.id])
         expect(right?.action == .placeBeside(a.id, .right), "the right edge makes a column")
-        let middle = result.dropTarget(at: CGPoint(x: 400, y: aFrame.midY + 2), dragging: [moving.id])
+        let middle = result.dropTarget(at: CGPoint(x: 400, y: aFrame.midY + 2), dragging: [moving.id], leadingX: 140)
         expect(middle?.action == .move(.after(a.id)), "the middle stays a plain move")
         let child = NoteBlock(.bulletedItem, text: "child")
         let parent = NoteBlock(.bulletedItem, text: "parent", children: [child])
@@ -266,6 +276,13 @@ struct NoteCanvasLayoutTests {
         expect(refused?.isVertical == false, "five columns is the limit")
         let refusedRow = inColumns.dropTarget(at: CGPoint(x: 60, y: inColumns.frame(of: moving.id)!.midY), dragging: [row.id])
         expect(refusedRow?.isVertical == false, "columns never nest inside columns")
+        let flat = NoteCanvasLayout(page: NotePage(blocks: [a, b, moving]), width: 1000, headerHeight: 100, metrics: NoteCanvasMetrics(),
+                                    flat: true, measure: measure)
+        let flatFrame = flat.frame(of: a.id)!
+        let flatLeft = flat.dropTarget(at: CGPoint(x: 60, y: flatFrame.midY), dragging: [moving.id])
+        let flatRight = flat.dropTarget(at: CGPoint(x: 820, y: flatFrame.maxY - 2), dragging: [moving.id], leadingX: 220)
+        expect(flatLeft?.isVertical == false && flatRight?.action == .move(.after(a.id)),
+               "plain-text pages only reorder lines, never columns or nesting")
     }
 
     static func washes() {

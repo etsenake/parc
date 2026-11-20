@@ -608,6 +608,7 @@ final class NotePageCanvasView: NSView {
         syncMeasureBudget = 160
         let next = NoteCanvasLayout(
             page: page, width: width, headerHeight: header, metrics: metrics, columnFractions: columnOverrides,
+            flat: editor.session.isFlat,
             measure: NoteCanvasMeasure(
                 height: { [unowned self] block, width in self.measuredHeight(block, width: width, previous: previous) },
                 childIndent: { [unowned self] block in self.measurer.childIndent(of: block, live: self.views[block.id]) }))

@@ -153,8 +153,10 @@ final class NoteFileSession {
         format = contents.format
         disk = NoteFileDisk(text: contents.text)
         let parsed = Self.parse(contents, kind: kind)
-        page = NotePageSession(page: parsed)
-        baseline = page.page
+        let session = NotePageSession(page: parsed)
+        session.isFlat = kind == .plainText
+        page = session
+        baseline = session.page
         fileEnvironment = NoteFileEnvironment(documentURL: url, isPlainText: kind == .plainText)
         environment = fileEnvironment
         changeSubscription = page.changes.sink { [weak self] change in self?.pageChanged(change) }

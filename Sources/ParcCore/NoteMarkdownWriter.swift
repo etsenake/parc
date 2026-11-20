@@ -239,8 +239,8 @@ struct NoteMDWriter {
 
     private func block(_ block: NoteBlock, afterList: Bool) -> [String] {
         switch block.kind {
-        case .paragraph: return paragraph(block)
-        case .heading: return block.props.toggleable ? toggle(block) : heading(block)
+        case .paragraph: return indented(paragraph(block), children: block.children)
+        case .heading: return block.props.toggleable ? toggle(block) : indented(heading(block), children: block.children)
         case .bulletedItem, .numberedItem, .todo: return listItem(block, number: 1)
         case .toggle: return toggle(block)
         case .quote, .callout: return quote(block)
@@ -261,6 +261,28 @@ struct NoteMDWriter {
         case .columns: return columns(block)
         case .column: return columns(NoteBlock(.columns, children: [block]))
         case .html, .raw: return block.text.string.components(separatedBy: "\n")
+        }
+    }
+
+    private func indented(_ lines: [String], children: [NoteBlock]) -> [String] {
+        guard !children.isEmpty else { return lines }
+        let fence = String(repeating: ":", count: 3 + Self.directiveDepth(children))
+        return lines + ["", fence + " " + NoteMDDirective.indent] + sequence(children, frame: .container(leading: 0, trailing: 0)) + [fence]
+    }
+
+    static func writesIndent(_ block: NoteBlock) -> Bool {
+        !block.children.isEmpty && (block.kind == .paragraph || (block.kind == .heading && !block.props.toggleable))
+    }
+
+    static func directiveDepth(_ blocks: [NoteBlock]) -> Int {
+        blocks.reduce(0) { deepest, block in
+            let own: Int
+            switch block.kind {
+            case .columns: own = 2 + directiveDepth(block.children.flatMap { $0.kind == .column ? $0.children : [$0] })
+            case .column: own = 2 + directiveDepth(block.children)
+            default: own = (writesIndent(block) ? 1 : 0) + directiveDepth(block.children)
+            }
+            return max(deepest, own)
         }
     }
 
@@ -586,18 +608,20 @@ struct NoteMDWriter {
     }
 
     private func columns(_ block: NoteBlock) -> [String] {
-        var lines = [":::: columns"]
+        let inner = String(repeating: ":", count: 3 + Self.directiveDepth(block.children.flatMap { $0.kind == .column ? $0.children : [$0] }))
+        let outer = inner + ":"
+        var lines = [outer + " columns"]
         for column in block.children {
             let children = column.kind == .column ? column.children : [column]
             if column.kind == .column, let width = column.props.width {
-                lines.append("::: {.column width=\"\(NoteMDDirective.percent(fromRatio: width))%\"}")
+                lines.append(inner + " {.column width=\"\(NoteMDDirective.percent(fromRatio: width))%\"}")
             } else {
-                lines.append("::: column")
+                lines.append(inner + " column")
             }
             lines.append(contentsOf: sequence(children, frame: .container(leading: 0, trailing: 0)))
-            lines.append(":::")
+            lines.append(inner)
         }
-        lines.append("::::")
+        lines.append(outer)
         return lines + trailingAttributes(blockAttributes(block))
     }
 

@@ -116,6 +116,7 @@ enum NotePageHTMLStyle {
     display:inline;margin:0}
     details>summary:has(h1,h2,h3,h4,h5,h6){margin:1.2em 0 .3em}
     .toggle-body{padding-left:1.5em}
+    .indented{padding-left:1.5em}
     hr{border:0;border-top:1px solid var(--line);margin:1.4em 0}
     code{font-family:var(--mono);font-size:.84em;color:var(--code-ink);background:var(--code-fill);border-radius:5px;\
     padding:.12em .36em}

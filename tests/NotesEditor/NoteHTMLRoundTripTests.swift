@@ -73,6 +73,9 @@ struct NoteHTMLRoundTripTests {
                 $0.expanded = false
             },
             .paragraph(richText),
+            block(.paragraph, "Text with kids", children: [.paragraph("Nested text"), block(.heading, "Nested heading", children: [
+                block(.bulletedItem, "Under the heading")]) { $0.level = 3 }]),
+            block(.paragraph, children: [.paragraph("Under an empty line")]),
             .paragraph(),
             block(.bulletedItem, "Bullet", children: [.paragraph("A child paragraph"), block(.bulletedItem, "Nested bullet")]),
             block(.bulletedItem, "Second bullet", color: .background(.green)),
@@ -150,6 +153,11 @@ struct NoteHTMLRoundTripTests {
         expect(html.contains("<pre><code class=\"language-swift\">"), "code language class")
         expect(html.contains("<thead><tr><th scope=\"col\""), "table header row")
         expect(html.contains("two &nbsp;spaces"), "runs of spaces survive")
+        expect(html.contains("<p>Text with kids</p><div class=\"indented\" style=\"padding-left:1.5em\"><p>Nested text</p>"),
+               "text children sit in an indented div right after their parent")
+        let notion = NoteHTMLReader.blocks(from: "<p>Parent</p><div class=\"indented\"><p>Child</p></div><h2>Head</h2><div class=\"indented\"><p>Kid</p></div>", baseURL: nil)
+        expect(notion.count == 2 && notion[0].children.map(\.text.string) == ["Child"] && notion[1].children.map(\.text.string) == ["Kid"],
+               "Notion's exported indented divs nest under the block before them")
         let blank = NotePageHTML.fragment([])
         expect(blank.isEmpty, "nothing in, nothing out")
         let resolved = NotePageHTML.fragment([block(.image) { $0.source = "Attachments/a.png" }]) { source in
@@ -185,8 +193,9 @@ struct NoteHTMLRoundTripTests {
         expect(html.contains("class=\"bookmark-card\""), "bookmarks render as cards")
         expect(!html.contains("/*"), "no comments sneak into the CSS")
         let images = NotePageHTML.document(NotePage(blocks: [block(.equation, "E=mc^2"), .paragraph(.atom(.equation("a")))]), title: "",
-                                           assets: { _ in nil }, embedImages: false) { tex, display in
+                                           assets: { _ in nil }, embedImages: false) { tex, display, _ in
             URL(string: "https://math.example/" + (display ? "block" : "inline") + "/" + (tex == "a" ? "a" : "e") + ".svg")
+                .map { NoteEquationArt(url: $0) }
         }
         expect(images.contains("<title>Untitled</title>"), "empty titles get a name")
         expect(images.contains("src=\"https://math.example/block/e.svg\"") && images.contains("src=\"https://math.example/inline/a.svg\""),

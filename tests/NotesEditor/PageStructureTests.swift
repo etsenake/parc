@@ -234,7 +234,7 @@ struct PageStructureTests {
         let nested = makeSession([para("Start"), bullet("list", [bullet("child", [bullet("grand")]), bullet("sibling")]), para("after")])
         nested.setSelection(.text(anchor: NotePosition(nested.id("Start"), 2), head: NotePosition(nested.id("child"), 3)))
         nested.deleteSelection()
-        expectOutline(nested.page, "p Stld\nul grand\nul sibling\np after", "deleting into a nested item keeps what follows in order")
+        expectOutline(nested.page, "p Stld\n  ul grand\nul sibling\np after", "deleting into a nested item keeps what follows in order, children nested")
         expectEqual(nested.selection, .caret(NotePosition(nested.id("Stld"), 2)), "caret at the join")
 
         let adopt = makeSession([bullet("one"), bullet("two", [bullet("kid")])])

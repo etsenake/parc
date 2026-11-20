@@ -46,6 +46,7 @@ final class NotePageSession {
     private(set) var revision: UInt64 = 0
     let changes = PassthroughSubject<NotePageChange, Never>()
     var isReadOnly = false
+    var isFlat = false
     var now: () -> Date = Date.init
     var undoLimit = 300
     var typingCoalesceInterval: TimeInterval = 1.5

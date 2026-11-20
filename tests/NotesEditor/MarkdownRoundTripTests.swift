@@ -152,6 +152,9 @@ struct MarkdownPageGenerator {
         }
         if random.chance(12) { block.color = random.chance(50) ? .text(random.pick(NoteColor.allCases)) : .background(random.pick(NoteColor.allCases)) }
         if block.kind == .code, block.props.fence == "    ", block.color != nil || block.props.wrap || !block.props.caption.isEmpty { block.props.fence = nil }
+        if block.kind == .paragraph || block.kind == .heading, depth < 3, random.chance(20) {
+            block.children = blocks(depth: depth + 1, count: random.int(1...3), trailingEmpty: true)
+        }
         return block
     }
 
@@ -316,7 +319,7 @@ struct MarkdownRoundTripTests {
 
     static let sourcePieces = ["# ", "## ", "> ", "- ", "* ", "+ ", "1. ", "2) ", "- [ ] ", "- [x] ", "    ", "  ", "\t", "```", "~~~", "---", "***", "===",
                                "| a | b |", "| --- | :-: |", "<div>", "</div>", "<!-- c -->", "<details>", "<summary>S</summary>", "</details>",
-                               ":::: columns", "::: column", ":::", "$$", "$x$", "$5", "**", "*", "_", "__", "~~", "==", "`", "[", "]", "(", ")",
+                               ":::: columns", "::: column", ":::", "::: indent", ":::: indent", "$$", "$x$", "$5", "**", "*", "_", "__", "~~", "==", "`", "[", "]", "(", ")",
                                "[a](b)", "![i](p.png)", "[[W]]", "<u>", "</u>", "<span data-color=\"red\">", "</span>", "<b>", "&amp;", "&#32;",
                                "\\", "\\*", "text", "more words", "https://x.y/z", "www.a.bc", "m@x.io", "[^1]", "[^1]: note", "[r]: /url",
                                "> [!NOTE]", "> [!tip]- T", "<!-- parc color=\"red\" -->", "<!-- toc -->", "<time datetime=\"2026-01-02\">d</time>"]

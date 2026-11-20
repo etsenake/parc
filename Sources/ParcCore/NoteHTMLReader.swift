@@ -243,7 +243,12 @@ final class NoteHTMLConversion {
         if isHidden(node, css) { return }
         if let blocks = block(node, style, css) {
             flush(sink)
-            sink.blocks.append(contentsOf: blocks)
+            if node.hasClass("indented") || node["data-block"] == "indent", let last = sink.blocks.indices.last,
+               sink.blocks[last].acceptsChildren, !sink.blocks[last].kind.isColumnStructure {
+                sink.blocks[last].children += blocks
+            } else {
+                sink.blocks.append(contentsOf: blocks)
+            }
             return
         }
         inline(node, style, css, sink)

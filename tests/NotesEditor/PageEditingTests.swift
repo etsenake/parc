@@ -17,6 +17,7 @@ struct PageEditingTests {
         turnIntoRules()
         blockShortcuts()
         moveRules()
+        flatPages()
         duplicateAndDelete()
         colourRules()
         numberedLabels()
@@ -61,6 +62,13 @@ struct PageEditingTests {
         top.setSelection(.caret(NotePosition(empty, 0)))
         expectEqual(top.splitBlock(at: NotePosition(empty, 0)), empty, "Enter on an empty item reports the same block")
         expectOutline(top.page, "ul a\np", "an empty top-level list item turns into text")
+
+        let underText = makeSession([block(.paragraph, "lead", [bullet()])])
+        underText.splitBlock(at: NotePosition(underText.page.blocks[0].children[0].id, 0))
+        expectOutline(underText.page, "p lead\nul", "an empty item nested under text outdents first")
+        let textParent = makeSession([block(.heading, "Head", [para("kid")]) { $0.level = 2 }])
+        textParent.splitBlock(at: NotePosition(textParent.id("Head"), 4))
+        expectOutline(textParent.page, "h2 Head\n  p\n  p kid", "Enter at the end of a heading with children opens a first child")
 
         let nested = makeSession([bullet("a", [bullet("b"), bullet(), bullet("c")])])
         let blank = nested.page.blocks[0].children[1].id
@@ -159,7 +167,15 @@ struct PageEditingTests {
 
         let middle = makeSession([toggle("T", expanded: true, [para("one"), para("two")])])
         middle.mergeBackward(middle.id("one"))
-        expectOutline(middle.page, "toggle Tone\n  p two", "a nested line with siblings after merges instead of outdenting")
+        expectOutline(middle.page, "toggle T\np one\n  p two", "a nested line outdents first and adopts the lines after it")
+        middle.mergeBackward(middle.id("one"))
+        expectOutline(middle.page, "toggle Tone\n  p two", "then merges, and its children stay nested")
+
+        let underText = makeSession([block(.paragraph, "lead", [para("kid")])])
+        underText.mergeBackward(underText.id("kid"))
+        expectOutline(underText.page, "p lead\np kid", "Backspace outdents a line nested under text")
+        underText.mergeBackward(underText.id("kid"))
+        expectOutline(underText.page, "p leadkid", "then merges it into the line above")
 
         let first = makeSession([para("Only")])
         expect(!first.mergeBackward(first.id("Only")), "Backspace at the very start does nothing")
@@ -243,7 +259,8 @@ struct PageEditingTests {
         let session = makeSession([bullet("a"), bullet("b"), para("p"), bullet("c")])
         expect(session.indent([session.id("b")]), "a list item indents under its sibling")
         expectOutline(session.page, "ul a\n  ul b\np p\nul c")
-        expect(!session.indent([session.id("c")]), "nothing nests under a paragraph")
+        expect(session.indent([session.id("c")]), "a list item nests under a paragraph")
+        expectOutline(session.page, "ul a\n  ul b\np p\n  ul c")
         expect(!session.indent([session.id("a")]), "the first block has nothing to nest under")
 
         let shut = makeSession([toggle("Fold", expanded: false, [para("old")]), para("new")])
@@ -260,6 +277,11 @@ struct PageEditingTests {
         mixed.indent([mixed.id("b"), mixed.id("d")])
         expectOutline(mixed.page, "ul a\n  ul b\np x\nul c\n  ul d", "separate runs each nest under their own sibling")
 
+        let text = makeSession([para("one"), para("two"), heading(2, "Head"), para("three")])
+        expect(text.indent([text.id("two")]), "a paragraph nests under the paragraph before it")
+        expect(text.indent([text.id("three")]), "and under a plain heading")
+        expectOutline(text.page, "p one\n  p two\nh2 Head\n  p three", "text blocks hold children like Notion")
+
         let columnsPage = makeSession([columns([[bullet("x")], [bullet("y")]])])
         expect(!columnsPage.indent([columnsPage.id("y")]), "the first block of a column can't jump into the previous column")
     }
@@ -270,9 +292,8 @@ struct PageEditingTests {
         expectOutline(session.page, "ul a\n  ul b\nul c\n  ul d", "following siblings become its children")
 
         let blocked = makeSession([toggle("T", expanded: true, [para("one"), para("two")])])
-        expect(!blocked.outdent([blocked.id("one")]), "a paragraph with siblings after it can't adopt them, so it stays")
-        expect(blocked.outdent([blocked.id("two")]), "the last child outdents")
-        expectOutline(blocked.page, "toggle T\n  p one\np two")
+        expect(blocked.outdent([blocked.id("one")]), "a paragraph with siblings after it outdents")
+        expectOutline(blocked.page, "toggle T\np one\n  p two", "and adopts them as its children")
 
         let shut = makeSession([bullet("a", [toggle("t", expanded: false, [para("inside")]), bullet("after")])])
         shut.outdent([shut.id("t")])
@@ -296,11 +317,15 @@ struct PageEditingTests {
         let session = makeSession([bullet("Parent", [bullet("kid")])])
         let parent = session.id("Parent")
         session.turnInto([parent], kind: .paragraph)
-        expectOutline(session.page, "p Parent\nul kid", "text can't hold children, so they move out after it")
+        expectOutline(session.page, "p Parent\n  ul kid", "text keeps its children")
+        session.turnInto([parent], conversion: .heading(2))
+        expectOutline(session.page, "h2 Parent\n  ul kid", "and so do plain headings")
+        session.turnInto([parent], conversion: .code)
+        expectOutline(session.page, "code Parent\nul kid", "code can't hold children, so they move out after it")
 
         let nestedTargets = makeSession([bullet("P", [bullet("C", [bullet("G")]), bullet("D")]), bullet("Q")])
         nestedTargets.turnInto([nestedTargets.id("P"), nestedTargets.id("C"), nestedTargets.id("Q")], kind: .paragraph)
-        expectOutline(nestedTargets.page, "p P\np C\nul G\nul D\np Q", "turning nested blocks into text lifts every level in order")
+        expectOutline(nestedTargets.page, "p P\n  p C\n    ul G\n  ul D\np Q", "turning nested blocks into text keeps every level")
 
         let toToggle = makeSession([bullet("Parent", [bullet("kid")])])
         toToggle.turnInto([toToggle.id("Parent")], conversion: .toggle)
@@ -310,9 +335,10 @@ struct PageEditingTests {
         fold.turnInto([fold.id("Fold")], conversion: .heading(2))
         expectOutline(fold.page, "th2- Fold\n  p kid", "a toggle turned into a heading becomes a toggle heading and stays closed")
         fold.turnInto([fold.id("Fold")], conversion: .heading(1))
-        expectOutline(fold.page, "h1 Fold\np kid", "a toggle heading turned into a plain heading lets its children out")
+        expectOutline(fold.page, "h1 Fold\n  p kid", "a toggle heading turned into a plain heading keeps its children, always shown")
+        expect(fold.page.blocks[0].showsChildren, "plain headings never hide children")
         fold.turnInto([fold.id("Fold")], conversion: .toggleHeading(3))
-        expectOutline(fold.page, "th3 Fold\np kid", "a new toggle heading starts open")
+        expectOutline(fold.page, "th3 Fold\n  p kid", "a new toggle heading starts open")
 
         var atomMarks = NoteMarks.plain
         atomMarks.atom = .equation("x^2")
@@ -373,14 +399,31 @@ struct PageEditingTests {
         columnsPage.moveBlocks([columnsPage.id("y")], .down)
         expectOutline(columnsPage.page, "columns\n  column\n    p x\n    p y\n  column\n    p z", "moves stop at column edges")
 
-        let refused = makeSession([para("a"), para("b")])
+        let refused = makeSession([para("a"), para("b"), code("c")])
         refused.moveBlocks([refused.id("b")], to: .firstChild(of: refused.id("a")))
-        expectOutline(refused.page, "p a\np b", "nothing can be moved inside a paragraph")
+        expectOutline(refused.page, "p a\n  p b\ncode c", "blocks can be moved inside a paragraph")
+        refused.moveBlocks([refused.id("b")], to: .firstChild(of: refused.id("c")))
+        expectOutline(refused.page, "p a\n  p b\ncode c", "but never inside code")
         refused.moveBlocks([refused.id("a")], to: .before(refused.id("a")))
-        expectOutline(refused.page, "p a\np b", "a block can't move relative to itself")
+        expectOutline(refused.page, "p a\n  p b\ncode c", "a block can't move relative to itself")
         let shut = makeSession([toggle("t", expanded: false), para("x")])
         shut.moveBlocks([shut.id("x")], to: .lastChild(of: shut.id("t")))
         expectOutline(shut.page, "toggle t\n  p x", "dropping into a closed toggle opens it")
+    }
+
+    static func flatPages() {
+        let flat = makeSession([para("one"), para("two"), bullet("a"), bullet("b")])
+        flat.isFlat = true
+        expect(!flat.indent([flat.id("b")]), "plain-text pages never nest")
+        flat.moveBlocks([flat.id("two")], to: .firstChild(of: flat.id("a")))
+        flat.placeBeside([flat.id("one")], target: flat.id("two"), side: .right)
+        expectOutline(flat.page, "p one\np two\nul a\nul b", "drops never nest or make columns in a plain-text page")
+        flat.moveBlocks([flat.id("b")], to: .before(flat.id("one")))
+        expectOutline(flat.page, "ul b\np one\np two\nul a", "plain moves still work")
+
+        let nested = makeSession([bullet("a", [bullet("b")])])
+        nested.isFlat = true
+        expect(!nested.outdent([nested.id("b")]), "and never reshuffle levels either")
     }
 
     static func duplicateAndDelete() {

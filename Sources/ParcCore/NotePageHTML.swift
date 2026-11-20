@@ -240,7 +240,7 @@ struct NotePageHTMLWriter {
         switch block.kind {
         case .paragraph:
             output += block.text.isEmpty ? "<p data-block=\"paragraph\"" + color + "><br></p>" : "<p" + color + ">" + inline(block.text) + "</p>"
-            write(block.children)
+            indented(block.children)
         case .heading:
             let level = min(max(block.props.level, 1), 6)
             let anchor = anchors[block.id].map { " id=\"" + Self.attribute($0) + "\"" } ?? ""
@@ -249,7 +249,7 @@ struct NotePageHTMLWriter {
                 details(block, summary: heading)
             } else {
                 output += heading
-                write(block.children)
+                indented(block.children)
             }
         case .bulletedItem, .numberedItem, .todo:
             list([block])
@@ -315,6 +315,13 @@ struct NotePageHTMLWriter {
             let source = block.text.string
             output += "<pre data-block=\"raw\" data-source=\"" + Self.attribute(source) + "\">" + Self.escape(source) + "</pre>"
         }
+    }
+
+    private mutating func indented(_ children: [NoteBlock]) {
+        guard !children.isEmpty else { return }
+        output += mode == .fragment ? "<div class=\"indented\" style=\"padding-left:1.5em\">" : "<div class=\"indented\">"
+        write(children)
+        output += "</div>"
     }
 
     private mutating func details(_ block: NoteBlock, summary: String) {

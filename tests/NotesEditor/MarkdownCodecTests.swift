@@ -140,6 +140,10 @@ struct MarkdownCodecTests {
             ("toggle heading", "<details>\n<summary><h2>Section</h2></summary>\n\n- child\n\n</details>\n"),
             ("nested toggles", "<details open>\n<summary>Outer</summary>\n\n<details>\n<summary>Inner</summary>\n\nDeep.\n\n</details>\n\n</details>\n"),
             ("columns", ":::: columns\n::: column\nLeft side\n:::\n::: {.column width=\"40%\"}\nRight side\n\n- with a list\n:::\n::::\n"),
+            ("indented text", "Parent paragraph\n\n::: indent\nA child\n\n- and a list\n:::\n\n## Heading <!-- parc color=\"red\" -->\n\n:::: indent\nUnder the heading\n\n::: indent\nDeeper\n:::\n::::\n\nAfter\n"),
+            ("indented empty parent", "<!-- parc paragraph -->\n\n::: indent\nOnly the child\n:::\n"),
+            ("indent in a list", "- item\n\n  Text\n\n  ::: indent\n  nested\n  :::\n- next\n"),
+            ("indent around columns", "Lead\n\n:::::: indent\n::::: columns\n:::: column\nLeft\n\n::: indent\nkid\n:::\n::::\n:::: column\nRight\n::::\n:::::\n::::::\n"),
             ("image", "![A cat](Attachments/cat.png \"A *cute* cat\") <!-- parc width=\"320\" align=\"left\" -->\n"),
             ("video audio file", "![](Attachments/clip.mp4)\n\n![](Attachments/song.mp3)\n\n![report.pdf](Attachments/report.pdf)\n"),
             ("embed", "![](https://www.youtube.com/watch?v=dQw4w9WgXcQ)\n\n![](https://example.com/widget) <!-- parc embed -->\n"),
@@ -447,6 +451,16 @@ struct MarkdownCodecTests {
 
         let columns = blocks("::: {.columns}\nloose\n\n::: column\ninside\n:::\n:::\n")[0]
         expect(columns.kind == .columns && columns.children.count == 2 && columns.children.allSatisfy { $0.kind == .column }, "loose blocks get their own column")
+        let indented = blocks("Para\n\n::: indent\nkid\n:::\n\n# Head\n::: {.indent}\nunder\n:::\n")
+        expect(indented.count == 2 && indented[0].children.map(\.text.string) == ["kid"] && indented[1].children.map(\.text.string) == ["under"],
+               "an indent fence nests under the block before it")
+        let orphan = blocks("::: indent\nalone\n:::\n\n---\n\n::: indent\nafter rule\n:::\n")
+        expect(orphan.map(\.kind) == [.paragraph, .divider, .paragraph] && orphan[0].text.isEmpty && orphan[2].children.first?.text.string == "after rule",
+               "an indent with nothing to hold it gets an empty line as its parent")
+        let listed = blocks("- item\n\n::: indent\nkid\n:::\n")
+        expect(listed.count == 1 && listed[0].children.first?.text.string == "kid", "an indent after a list item nests in the item")
+        MarkdownCheck.checkModelRoundTrip(NotePage(blocks: [NoteBlock(.paragraph, text: ":::", children: [.paragraph(":::"), .paragraph("::: indent")]),
+                                                            .paragraph("::: indent")]), "colons inside indents")
         let unknown = blocks(":::tip\nDocusaurus\n:::\n")
         expect(unknown.count == 1 && unknown[0].kind == .paragraph, "unknown directives stay text")
         let fenced = blocks("::: column\n```\n:::\n```\n:::\n")[0]

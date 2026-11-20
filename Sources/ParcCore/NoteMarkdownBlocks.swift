@@ -881,9 +881,12 @@ enum NoteMDTableRow {
 }
 
 enum NoteMDDirective {
+    static let indent = "indent"
+    static let names: Set<String> = ["columns", "column", indent]
+
     static func parse(_ rest: String) -> (String, Double?)? {
         let lowered = rest.lowercased()
-        if lowered == "columns" || lowered == "column" { return (lowered, nil) }
+        if names.contains(lowered) { return (lowered, nil) }
         guard rest.hasPrefix("{"), rest.hasSuffix("}") else { return nil }
         let inner = rest.dropFirst().dropLast()
         var name: String?
@@ -891,7 +894,7 @@ enum NoteMDDirective {
         for token in tokens(String(inner)) {
             if token.hasPrefix(".") {
                 let value = token.dropFirst().lowercased()
-                if value == "columns" || value == "column" { name = value } else { return nil }
+                if names.contains(value) { name = value } else { return nil }
             } else if token.lowercased().hasPrefix("width=") {
                 var value = String(token.dropFirst(6))
                 if value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 { value = String(value.dropFirst().dropLast()) }

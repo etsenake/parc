@@ -220,6 +220,17 @@ struct NoteMDReader {
                     result.append(block)
                 }
                 if !node.ordered { lastNumber = nil }
+            case .directive where node.directiveName == NoteMDDirective.indent:
+                var children = sequence(node.children[...], documentEdges: false, trailingBlank: node.trailingBlank)
+                if result.last?.kind.isListItem == true {
+                    while let tail = children.last, NoteMDWriter.isBareEmptyParagraph(tail) { children.removeLast() }
+                }
+                if let last = result.indices.last, result[last].acceptsChildren, !result[last].kind.isColumnStructure {
+                    result[last].children += children
+                } else if !children.isEmpty {
+                    result.append(NoteBlock(.paragraph, children: children))
+                    lastNumber = nil
+                }
             default:
                 var converted = block(node)
                 if converted.kind == .code, converted.props.fence == "    ", !NoteMDWriter.writesIndentedCode(converted, afterList: Self.followsList(result)) {
@@ -582,6 +593,9 @@ struct NoteMDReader {
     }
 
     private func directive(_ node: NoteMDBlock) -> NoteBlock {
+        if node.directiveName == NoteMDDirective.indent {
+            return NoteBlock(.paragraph, children: sequence(node.children[...], documentEdges: false, trailingBlank: node.trailingBlank))
+        }
         if node.directiveName == "column" {
             var columns = NoteBlock(.columns)
             columns.children = [column(node)]

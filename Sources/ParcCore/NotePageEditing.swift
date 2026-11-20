@@ -396,6 +396,8 @@ extension NoteBlock {
         }
     }
 
+    var indentsChildren: Bool { kind.isListItem || kind == .toggle || kind == .heading || kind == .paragraph }
+
     var continuationKind: NoteBlockKind {
         switch kind {
         case .bulletedItem, .numberedItem, .todo, .toggle: return kind
@@ -502,7 +504,7 @@ extension NotePageSession {
         let caret = NotePageSelection.caret(NotePosition(block.id, 0))
         switch block.kind {
         case .bulletedItem, .numberedItem, .todo, .toggle:
-            if let parentID = page.parent(of: block.id), let parent = page.block(parentID), parent.kind.isListItem || parent.isToggle,
+            if let parentID = page.parent(of: block.id), let parent = page.block(parentID), parent.indentsChildren,
                outdent([block.id], selection: caret) {
                 return block.id
             }
@@ -572,7 +574,7 @@ extension NotePageSession {
             return true
         }
         if let parentID = page.parent(of: id), let parent = page.block(parentID), !parent.kind.isColumnStructure,
-           parent.children.last?.id == id, outdent([id], selection: caret) {
+           outdent([id], selection: caret) {
             return true
         }
         guard let previousID = page.previousContent(before: id), let previous = page.block(previousID) else { return false }
@@ -691,6 +693,7 @@ extension NotePageSession {
     }
 
     private func indent(_ ids: [NoteBlockID], selection after: NotePageSelection) -> Bool {
+        guard !isFlat else { return false }
         let targets = page.topLevelSelection(ids).filter { page.block($0)?.kind.isColumnStructure == false }
         var moves: [(run: [NoteBlockID], parent: NoteBlockID)] = []
         for run in siblingRuns(targets) {
@@ -714,6 +717,7 @@ extension NotePageSession {
     }
 
     private func outdent(_ ids: [NoteBlockID], selection after: NotePageSelection) -> Bool {
+        guard !isFlat else { return false }
         let targets = page.topLevelSelection(ids).filter { page.block($0)?.kind.isColumnStructure == false }
         var moves: [(run: [NoteBlockID], parent: NoteBlockID)] = []
         for run in siblingRuns(targets) {
@@ -868,7 +872,7 @@ extension NotePageSession {
         case .firstChild(let anchor), .lastChild(let anchor): parent = anchor
         }
         guard let parent else { return !movesColumn }
-        guard let parentBlock = page.block(parent) else { return false }
+        guard !isFlat, let parentBlock = page.block(parent) else { return false }
         if parentBlock.kind == .columns { return blocks.allSatisfy { $0.kind == .column } }
         if movesColumn { return false }
         if carriesColumns && (parentBlock.kind == .column || page.containingColumn(of: parent) != nil) { return false }
@@ -926,7 +930,7 @@ extension NotePageSession {
 
     func placeBeside(_ ids: [NoteBlockID], target: NoteBlockID, side: NoteDropSide) {
         let moving = page.topLevelSelection(ids)
-        guard !moving.isEmpty, !moving.contains(target), !moving.contains(where: { page.isAncestor($0, of: target) }) else { return }
+        guard !isFlat, !moving.isEmpty, !moving.contains(target), !moving.contains(where: { page.isAncestor($0, of: target) }) else { return }
         let carriesColumns = moving.contains { id in
             guard let block = page.block(id) else { return true }
             return block.kind.isColumnStructure || block.children.contains { $0.kind.isColumnStructure }

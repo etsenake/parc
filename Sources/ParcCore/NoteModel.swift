@@ -336,12 +336,7 @@ enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
     }
     var isListItem: Bool { self == .bulletedItem || self == .numberedItem || self == .todo }
     var isColumnStructure: Bool { self == .columns || self == .column }
-    var acceptsChildren: Bool {
-        switch self {
-        case .bulletedItem, .numberedItem, .todo, .toggle, .quote, .callout, .columns, .column: return true
-        default: return false
-        }
-    }
+    var acceptsChildren: Bool { hasRichText || isColumnStructure }
     var hasCaption: Bool {
         switch self {
         case .image, .video, .audio, .file, .bookmark, .embed, .code: return true
@@ -598,7 +593,7 @@ struct NoteBlock: Hashable, Identifiable, Codable {
     }
 
     var isToggle: Bool { kind == .toggle || (kind == .heading && props.toggleable) }
-    var acceptsChildren: Bool { kind.acceptsChildren || (kind == .heading && props.toggleable) }
+    var acceptsChildren: Bool { kind.acceptsChildren }
     var showsChildren: Bool { !isToggle || props.expanded }
     var isCollapsed: Bool { isToggle && !props.expanded }
 

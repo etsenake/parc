@@ -279,6 +279,7 @@ struct NoteCanvasLayout {
     private(set) var blocks: [NoteBlockID: NoteBlock] = [:]
     private(set) var columnsRows: [NoteBlockID: ColumnsRow] = [:]
     private(set) var flows: [[Int]] = [[]]
+    private(set) var isFlat = false
     private var flowBottoms: [CGFloat] = [0]
     private var indexByID: [NoteBlockID: Int] = [:]
 
@@ -286,8 +287,9 @@ struct NoteCanvasLayout {
                                         measure: NoteCanvasMeasure(height: { _, _ in 0 }, childIndent: { _ in 0 }))
 
     init(page: NotePage, width: CGFloat, headerHeight: CGFloat, metrics: NoteCanvasMetrics,
-         columnFractions overrides: [NoteBlockID: [CGFloat]] = [:], measure: NoteCanvasMeasure) {
+         columnFractions overrides: [NoteBlockID: [CGFloat]] = [:], flat: Bool = false, measure: NoteCanvasMeasure) {
         self.metrics = metrics
+        isFlat = flat
         self.width = width
         let column = metrics.pageColumn(width: width)
         columnX = column.x
@@ -432,8 +434,8 @@ struct NoteCanvasLayout {
         let excluded = excludedIndices(ids)
         guard !excluded.contains(index) else { return nil }
         let target = entries[index]
-        if let side = columnSide(for: index, point: point, dragging: ids) { return besideTarget(index, side: side) }
-        if target.isToggle, !target.isCollapsed, !target.hasVisibleChildren,
+        if !isFlat, let side = columnSide(for: index, point: point, dragging: ids) { return besideTarget(index, side: side) }
+        if !isFlat, target.isToggle, !target.isCollapsed, !target.hasVisibleChildren,
            point.y > target.frame.maxY - metrics.toggleHintHeight, target.frame.height > metrics.toggleHintHeight {
             let y = target.frame.maxY - metrics.toggleHintHeight / 2
             return NoteCanvasDropTarget(action: .move(.firstChild(of: target.id)),
@@ -450,11 +452,11 @@ struct NoteCanvasLayout {
         var candidates: [(insertion: NoteInsertion, x: CGFloat, y: CGFloat, maxX: CGFloat, depth: Int)] = []
         if target.kind == .columns {
             candidates.append((.after(target.id), target.outerFrame.minX, slotBelow(index), target.outerFrame.maxX, target.depth))
-        } else if target.hasVisibleChildren, index + 1 < entries.count {
+        } else if !isFlat, target.hasVisibleChildren, index + 1 < entries.count {
             let y = (target.frame.maxY + entries[index + 1].outerFrame.minY) / 2
             candidates.append((.firstChild(of: target.id), target.childX, y, target.frame.maxX, target.depth + 1))
         } else {
-            if target.acceptsChildren && target.kind != .column {
+            if target.acceptsChildren && target.kind != .column && !isFlat {
                 let room = target.outerFrame.maxY - target.frame.maxY
                 let y = room > 0.5 ? target.frame.maxY + min(room / 2, metrics.slotGap / 2) : slotBelow(index)
                 candidates.append((target.isCollapsed ? .lastChild(of: target.id) : .firstChild(of: target.id),
