@@ -140,12 +140,9 @@ final class NoteCanvasMeasurer {
 
     func childIndent(of block: NoteBlock, live: NoteBlockView?) -> CGFloat {
         switch block.kind {
-        case .callout:
+        case .callout, .quote:
             let inset = live?.contentLeadingInset ?? 0
-            return inset > 0 ? inset : (block.props.icon == nil ? metrics.calloutInsets.left : metrics.calloutChildIndent)
-        case .quote:
-            let inset = live?.contentLeadingInset ?? 0
-            return inset > 0 ? inset : metrics.quoteChildIndent
+            return inset > 0 ? inset : metrics.childIndent(of: block)
         default:
             return metrics.indentWidth
         }

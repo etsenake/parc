@@ -72,6 +72,14 @@ struct NoteCanvasMetrics: Equatable {
                                  after: max(blockSpacing, (value.after * scale).rounded()))
     }
 
+    func childIndent(of block: NoteBlock) -> CGFloat {
+        switch block.kind {
+        case .callout: return block.calloutDisplayIcon == nil ? calloutInsets.left : calloutChildIndent
+        case .quote: return quoteChildIndent
+        default: return indentWidth
+        }
+    }
+
     func headingLineHeight(_ level: Int) -> CGFloat {
         guard !headingLineHeights.isEmpty else { return bodyLineHeight }
         return headingLineHeights[min(max(level, 1), headingLineHeights.count) - 1]
@@ -764,7 +772,7 @@ enum NoteCanvasEstimate {
             switch block.kind {
             case .paragraph: inset = 0; padding = 6
             case .quote: inset = metrics.quoteChildIndent; padding = 6
-            case .callout: inset = metrics.calloutChildIndent + metrics.calloutInsets.right; padding = metrics.calloutInsets.top * 2
+            case .callout: inset = metrics.childIndent(of: block) + metrics.calloutInsets.right; padding = metrics.calloutInsets.top * 2
             default: inset = metrics.indentWidth; padding = 6
             }
             let hint = block.isToggle && block.props.expanded && block.children.isEmpty ? metrics.toggleHintHeight : 0

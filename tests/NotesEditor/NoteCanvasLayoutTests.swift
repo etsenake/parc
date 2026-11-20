@@ -155,6 +155,29 @@ struct NoteCanvasLayoutTests {
         let quote = NoteBlock(.quote, text: "q", children: [quoteChild])
         let quoted = layout([quote])
         expect(quoted.frame(of: quoteChild.id)?.minX == 157, "quote children align with the quote text")
+        calloutIcons()
+    }
+
+    static func calloutIcons() {
+        let metrics = NoteCanvasMetrics()
+        let byIcon = NoteCanvasMeasure(height: measure.height, childIndent: { metrics.childIndent(of: $0) })
+        func childX(alert: String?, icon: String?) -> CGFloat? {
+            let child = NoteBlock.paragraph("inside")
+            var callout = NoteBlock(.callout, text: "note", children: [child])
+            callout.props.alert = alert
+            callout.props.icon = icon
+            let result = NoteCanvasLayout(page: NotePage(blocks: [callout]), width: 1000, headerHeight: 100, metrics: metrics,
+                                          columnFractions: [:], measure: byIcon)
+            return result.frame(of: child.id)?.minX
+        }
+        expect(childX(alert: "TIP", icon: nil) == 186, "an alert's default icon pushes its children past the icon")
+        expect(childX(alert: "NOTE", icon: nil) == 186, "a GitHub note's info icon does too")
+        expect(childX(alert: nil, icon: "🔥") == 186, "a picked icon indents children")
+        expect(childX(alert: nil, icon: nil) == 154, "an iconless callout keeps children at its padding")
+        expect(childX(alert: "TIP", icon: "") == 154, "a removed alert icon gives the room back")
+        expect(childX(alert: "mystery", icon: nil) == 154, "an unknown alert has no icon to clear")
+        expect(metrics.childIndent(of: NoteBlock(.quote)) == metrics.quoteChildIndent
+               && metrics.childIndent(of: NoteBlock(.bulletedItem)) == metrics.indentWidth, "quotes and lists keep their indents")
     }
 
     static func drops() {
