@@ -218,13 +218,6 @@ final class NoteBlockHandleController {
     static let addTooltip = "Click to add below, Option-click to add above"
     static let gripTooltip = "Drag to move, click for options"
 
-    private struct CrossNoteMove {
-        var target: URL
-        var originals: [NoteBlockID]
-        var copies: [NoteBlock]
-        var markdown: String
-    }
-
     unowned let editor: NotePageEditor
     let bar = NoteHandleBar()
     var presentToast: ((ParcToastContent) -> Void)?
@@ -244,7 +237,6 @@ final class NoteBlockHandleController {
     private var hiddenForTyping = false
     private var typingMouseLocation: NSPoint?
     private var cachedTargets: [NoteHandleTarget]?
-    private var moves: [CrossNoteMove] = []
     private var lastMenuTarget: [NoteBlockID] = []
     private var lastMenuCloseEvent: TimeInterval?
     private var subscriptions: Set<AnyCancellable> = []
@@ -381,7 +373,6 @@ final class NoteBlockHandleController {
             hide()
         }
         if editor.isReadOnly { hide(animated: false) }
-        if change.isUndoRedo, !moves.isEmpty { reconcileMoves() }
     }
 
     private func show(_ target: NoteHandleTarget) {
@@ -491,66 +482,40 @@ final class NoteBlockHandleController {
     }
 
     func move(_ ids: [NoteBlockID], to url: URL, title: String?) {
-        let page = editor.session.page
-        let top = page.topLevelSelection(ids)
-        let blocks = top.compactMap { page.block($0) }
-        guard !blocks.isEmpty else { return }
+        let session = editor.session
+        guard !session.page.topLevelSelection(ids).isEmpty else { return }
         let name = title ?? url.deletingPathExtension().lastPathComponent
-        let copies = blocks.map { $0.withFreshIDs() }
         let file: NoteFileSession
         do { file = try NoteFileSession.open(url) } catch {
             presentToast?(.standard("Couldn’t open “\(name)”. Your blocks stayed put."))
             return
         }
+        guard file.page !== session else { return }
         file.retain()
         defer { file.release() }
         guard !file.page.isReadOnly, !file.page.page.settings.locked else {
             presentToast?(.standard("“\(name)” is locked or read-only, so your blocks stayed put."))
             return
         }
-        Self.append(copies, to: file.page)
-        editor.session.deleteBlocks(top)
-        moves.append(CrossNoteMove(target: url, originals: top, copies: copies,
-                                   markdown: NoteMarkdown.serialize(NotePage(blocks: copies))))
-        if moves.count > 20 { moves.removeFirst(moves.count - 20) }
-        presentToast?(.undoable("Moved to “\(name)”"))
-        if let caret = editor.session.selection.caret { editor.focus(caret) }
-    }
-
-    private static func append(_ blocks: [NoteBlock], to session: NotePageSession) {
-        let lone = session.page.blocks.count == 1 && session.page.blocks[0].kind == .paragraph
-            && session.page.blocks[0].text.isEmpty && session.page.blocks[0].children.isEmpty
-        session.edit("Move Here", selection: lone ? NotePageSelection.none : session.selection) { page in
-            if lone { page.blocks = blocks } else { page.blocks.append(contentsOf: blocks) }
+        let home = NoteFileSession.openSessions.first { $0.page === session }
+        guard NoteCrossNoteMove.perform(ids, from: session, name: "Move to “\(name)”", target: Self.access(file),
+                                        source: home.map(Self.access)) != nil else {
+            presentToast?(.standard("Couldn’t move those blocks. They stayed put."))
+            return
         }
+        presentToast?(.undoable("Moved to “\(name)”"))
+        if let caret = session.selection.caret { editor.focus(caret) }
     }
 
-    private func reconcileMoves() {
-        let page = editor.session.page
-        for move in moves.reversed() {
-            let back = move.originals.allSatisfy { page.block($0) != nil }
-            let gone = move.originals.allSatisfy { page.block($0) == nil }
-            guard back || gone, let file = try? NoteFileSession.open(move.target) else { continue }
+    private static func access(_ file: NoteFileSession) -> NoteCrossNoteMove.Access {
+        { body in
+            if let live = NoteFileSession.session(for: file.url), live !== file { return false }
             file.retain()
             defer { file.release() }
-            let target = file.page
-            let run = Self.run(of: move, in: target.page)
-            if back, let run {
-                target.edit("Undo Move", selection: target.selection) { page in page.blocks.removeSubrange(run) }
-            } else if gone, run == nil {
-                Self.append(move.copies.map { $0.withFreshIDs() }, to: target)
-            }
+            guard !file.page.isReadOnly else { return false }
+            body(file.page)
+            return true
         }
-    }
-
-    private static func run(of move: CrossNoteMove, in page: NotePage) -> Range<Int>? {
-        let count = move.copies.count
-        guard count > 0, page.blocks.count >= count else { return nil }
-        for start in stride(from: page.blocks.count - count, through: 0, by: -1) {
-            let slice = Array(page.blocks[start..<(start + count)])
-            if NoteMarkdown.serialize(NotePage(blocks: slice)) == move.markdown { return start..<(start + count) }
-        }
-        return nil
     }
 
     func download(_ source: String) {
