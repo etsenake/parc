@@ -28,6 +28,16 @@ extension BrowserWindowController {
         focusSelectedLocalContent()
         return opened != nil
     }
+    func openDroppedNoteFiles(_ files: [URL]) -> Bool {
+        guard !files.isEmpty else { return false }
+        if isPrivateBrowsing || isPopupWindow {
+            guard let handoff = onOpenNoteInRegularWindow else { return false }
+            files.forEach(handoff)
+            return true
+        }
+        guard canCreateNote else { return false }
+        return files.reduce(false) { opened, file in openNote(url: file) || opened }
+    }
     func createNote(inSplit: Bool = false) {
         guard inSplit ? canCreateNoteInSplit : canCreateNote else { return }
         do {

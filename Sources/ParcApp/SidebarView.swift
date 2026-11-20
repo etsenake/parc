@@ -1164,6 +1164,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     var onNewFolder: (() -> Void)?
     var onNewEasel: (() -> Void)?
     var onNewNote: (() -> Void)?
+    var onOpenNoteFiles: (([URL]) -> Bool)?
     var onNewSplit: (() -> Void)?
     var plusMenuCanCreateEasel: () -> Bool = { false }
     var plusMenuCanCreateNote: () -> Bool = { false }
@@ -1870,7 +1871,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        registerForDraggedTypes([SidebarMoveSession.pasteboardType])
+        registerForDraggedTypes([SidebarMoveSession.pasteboardType, .fileURL])
         addSubview(spaceCreationFeedback)
         addSubview(contentSurface)
         for view in [favoritesHost, addressBackground, addressButton, shareQuote, copyQuote, pageActions, paymentAction, blockedSign, extensionToolbar, pageStrip, miniPlayers] { contentSurface.addSubview(view) }
@@ -4770,8 +4771,19 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
         dropFeedback.isInsertion = false; dropFeedback.targetRect = convert(button.bounds, from: button)
         return copying ? .copy : .move
     }
+    private func noteFiles(_ sender: NSDraggingInfo) -> [URL]? {
+        guard creationView == nil, onOpenNoteFiles != nil, dragSession(sender) == nil,
+              let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+              !urls.isEmpty else { return nil }
+        let files = urls.compactMap(InternalPage.noteFile)
+        return files.count == urls.count ? files : nil
+    }
     private func updateDrop(_ sender: NSDraggingInfo) -> NSDragOperation {
         springCandidate = nil; springPinnedCandidate = nil
+        if noteFiles(sender) != nil {
+            clearDrop(); updateSpringLoading(nil); updatePinnedSpringLoading(nil)
+            return .copy
+        }
         let operation = proposeDrop(sender)
         updateSpringLoading(operation.isEmpty ? nil : springCandidate)
         updatePinnedSpringLoading(operation.isEmpty ? nil : springPinnedCandidate)
@@ -4975,6 +4987,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     }
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { !updateDrop(sender).isEmpty }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if let files = noteFiles(sender) {
+            clearDrop(); updateSpringLoading(nil); updatePinnedSpringLoading(nil)
+            return onOpenNoteFiles?(files) ?? false
+        }
         guard !updateDrop(sender).isEmpty, let (session, destination, before) = dropProposal else { return false }
         let external = windowDropAction, copy = copyDropAction, dock = dockDropAction
         clearDrop(); updateSpringLoading(nil); updatePinnedSpringLoading(nil); sprungFolders = []; sprungPinned = nil
