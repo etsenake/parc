@@ -122,6 +122,21 @@ that wraps), the table flags `no-header-row`, `header-column` and
 wouldn't otherwise make the kind clear. An empty paragraph that has a colour is
 written as `<!-- parc paragraph color="…" -->` on its own line.
 
+### Block links
+
+Copy Link to Block gives a block a short, stable `id` the first time you copy
+its link, and saves it in the same comment:
+
+```markdown
+Ship the beta on Friday. <!-- parc id="k3x9qa" -->
+```
+
+The link is the note's `file://` URL with `#k3x9qa` on the end. Opening it
+scrolls to that block. Headings also answer to their GitHub-style slug, so
+`Plans.md#next-steps` and `Plans.md#Next%20Steps` both find `## Next steps`,
+and an `id` on a heading doesn't change its slug. Copies of a block don't keep
+its `id`.
+
 ## Callouts
 
 Callouts are GitHub alerts, which Obsidian reads as callouts:
