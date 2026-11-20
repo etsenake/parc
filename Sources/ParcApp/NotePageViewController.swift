@@ -388,8 +388,8 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
             break
         }
         if let transientError { return .notice(transientError) }
-        if file.page.page.settings.locked { return .locked }
         if file.page.isReadOnly { return .readOnly }
+        if file.page.page.settings.locked { return .locked }
         if file.kind == .plainText { return .plainText }
         return .none
     }
@@ -413,6 +413,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         case .useFile:
             file.resolveConflict(keepMine: false)
         case .unlock:
+            guard !file.page.isReadOnly else { break }
             editor.session.updateSettings(name: "Unlock Note") { $0.locked = false }
         case .dismiss:
             transientError = nil

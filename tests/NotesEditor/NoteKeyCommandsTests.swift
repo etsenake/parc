@@ -51,6 +51,9 @@ struct NoteKeyCommandsTests {
         expect(command("", .command, keyCode: 126) == nil, "⌘↑ is left to the text view")
         expect(NoteKeyCommands.shortcutLabel(for: .mark(.strikethrough)) == "⇧⌘S", "labels use Parc keycap order")
         expect(NoteKeyCommands.shortcutLabel(for: .turnInto(.heading1)) == "⌥⌘1", "turn-into labels read well")
+        expect(command("y", .command) == .redo, "⌘Y still redoes")
+        expect(NoteKeyCommands.shortcutLabel(for: .redo) == "⇧⌘Z", "Redo shows the Mac chord, not ⌘Y")
+        expect(NoteKeyCommands.shortcutLabel(for: .pastePlainText) == "⇧⌘V", "plain paste shows its shortest chord")
         expect(NoteKeyCommands.command(forAction: NSSelectorFromString("undo:")) == .undo, "menu undo routes to the session")
         expect(NoteKeyCommands.command(forAction: NSSelectorFromString("pasteAsPlainText:")) == .pastePlainText, "Paste and Match Style is plain")
         expect(NoteKeyCommands.command(forAction: NSSelectorFromString("copy:")) == .copy, "menu copy routes to the clipboard")
@@ -62,6 +65,7 @@ struct NoteKeyCommandsTests {
         expect(NoteKeyCommands.command(forAction: format, tag: TextFormatCommand.bigger.rawValue) == nil, "Bigger has no Notes meaning")
         expect(NoteKeyCommands.command(forAction: NSSelectorFromString("terminate:")) == nil, "other actions pass through")
         expect(NoteKeyCommand.copy.isEdit == false && NoteKeyCommand.paste.isEdit, "read-only pages can copy but not paste")
+        expect(NoteKeyCommand.modifyBlock.isEdit == false, "⌘↩ can still open a page link in a locked note")
         var seen: [NoteKeyChord: NoteKeyCommand] = [:]
         for (chord, value) in NoteKeyCommands.table {
             expect(seen[chord] == nil, "chord \(chord) is bound once")

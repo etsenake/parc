@@ -72,11 +72,11 @@ enum NoteKeyCommand: Hashable {
 
     var isEdit: Bool {
         switch self {
-        case .mark, .inlineEquation, .link, .lastColor, .turnInto, .duplicate, .moveBlocks, .modifyBlock,
+        case .mark, .inlineEquation, .link, .lastColor, .turnInto, .duplicate, .moveBlocks,
              .indent, .outdent, .undo, .redo, .cut, .paste, .pastePlainText, .delete, .findAndReplace:
             return true
-        case .toggleAllToggles, .blockActions, .focusToolbar, .selectAll, .copy, .find, .findNext, .findPrevious,
-             .useSelectionForFind, .print:
+        case .modifyBlock, .toggleAllToggles, .blockActions, .focusToolbar, .selectAll, .copy, .find, .findNext,
+             .findPrevious, .useSelectionForFind, .print:
             return false
         }
     }
@@ -210,8 +210,15 @@ enum NoteKeyCommands {
         NoteKeyChord(event: event).flatMap(command(for:))
     }
 
+    private static let canonicalChords: [NoteKeyCommand: NoteKeyChord] = [
+        .redo: NoteKeyChord(.character("z"), [.command, .shift]),
+    ]
+
     static func chord(for command: NoteKeyCommand) -> NoteKeyChord? {
-        table.filter { $0.value == command }.keys.min { $0.description.count < $1.description.count }
+        if let canonical = canonicalChords[command], table[canonical] == command { return canonical }
+        return table.filter { $0.value == command }.keys.min {
+            ($0.description.count, $0.description) < ($1.description.count, $1.description)
+        }
     }
 
     static func shortcutLabel(for command: NoteKeyCommand) -> String? { chord(for: command)?.description }
