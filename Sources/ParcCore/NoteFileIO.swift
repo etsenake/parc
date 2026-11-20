@@ -139,7 +139,11 @@ enum NoteFileIO {
 
     private static func replace(_ target: URL, with data: Data) throws {
         let manager = FileManager.default
-        let scratch = try manager.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: target, create: true)
+        guard let scratch = try? manager.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: target, create: true)
+        else {
+            try data.write(to: target, options: .atomic)
+            return
+        }
         defer { try? manager.removeItem(at: scratch) }
         let staged = scratch.appendingPathComponent(target.lastPathComponent)
         try data.write(to: staged)

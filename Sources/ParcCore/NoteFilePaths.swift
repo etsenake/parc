@@ -36,6 +36,11 @@ enum NoteFilePaths {
         return stat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
     }
 
+    static func isDataless(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && info.st_flags & UInt32(SF_DATALESS) != 0
+    }
+
     static func isSameFile(_ first: URL, _ second: URL) -> Bool {
         var a = stat(), b = stat()
         guard stat(first.path, &a) == 0, stat(second.path, &b) == 0 else { return false }

@@ -8,10 +8,14 @@ struct NoteFileSummary: Hashable, Sendable {
     static let snippetLength = 160
 
     static func read(_ url: URL, kind: NoteFileKind) -> NoteFileSummary {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return NoteFileSummary(icon: nil, snippet: "") }
+        guard let head = readHead(url, kind: kind, upTo: headSize) else { return NoteFileSummary(icon: nil, snippet: "") }
+        return make(fromHead: head, kind: kind)
+    }
+
+    static func readHead(_ url: URL, kind: NoteFileKind, upTo limit: Int) -> String? {
+        guard !NoteFilePaths.isDataless(url), let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
-        let data = (try? handle.read(upToCount: headSize)) ?? Data()
-        return make(fromHead: decodedHead(data, kind: kind), kind: kind)
+        return decodedHead((try? handle.read(upToCount: limit)) ?? Data(), kind: kind)
     }
 
     static func decodedHead(_ data: Data, kind: NoteFileKind) -> String {

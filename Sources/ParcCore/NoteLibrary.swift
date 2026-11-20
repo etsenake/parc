@@ -278,10 +278,8 @@ final class NoteLibrary {
                 result[key] = known
                 continue
             }
-            guard let kind = NoteFileKind(url: entry.url), let handle = try? FileHandle(forReadingFrom: entry.url) else { continue }
-            let data = (try? handle.read(upToCount: indexedBytes)) ?? Data()
-            try? handle.close()
-            let text = NoteFileSummary.decodedHead(data, kind: kind)
+            guard let kind = NoteFileKind(url: entry.url),
+                  let text = NoteFileSummary.readHead(entry.url, kind: kind, upTo: indexedBytes) else { continue }
             result[key] = IndexedContent(modifiedAt: entry.modifiedAt, size: entry.size, folded: fold(text))
         }
         return result
