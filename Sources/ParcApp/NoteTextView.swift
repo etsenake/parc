@@ -359,25 +359,25 @@ class NoteTextView: NSTextView {
     override var readablePasteboardTypes: [NSPasteboard.PasteboardType] { [.string] }
 
     override func copy(_ sender: Any?) {
-        copyPlain()
+        guard let editor else { copyPlain(); return }
+        editor.copySelection()
     }
 
     override func cut(_ sender: Any?) {
-        guard isEditable, !selectedOffsets.isEmpty else { return }
-        copyPlain()
-        insertText("", replacementRange: selectedRange())
+        guard let editor else { return }
+        editor.cutSelection()
     }
 
     override func paste(_ sender: Any?) {
-        pastePlain()
+        editor?.paste(plainText: false)
     }
 
     override func pasteAsPlainText(_ sender: Any?) {
-        pastePlain()
+        editor?.paste(plainText: true)
     }
 
     override func pasteAsRichText(_ sender: Any?) {
-        pastePlain()
+        editor?.paste(plainText: false)
     }
 
     private func copyPlain() {
@@ -388,10 +388,9 @@ class NoteTextView: NSTextView {
         pasteboard.setString(noteText.slice(range).plainText, forType: .string)
     }
 
-    private func pastePlain() {
-        guard isEditable, let value = NSPasteboard.general.string(forType: .string), !value.isEmpty else { return }
-        let normalized = value.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
-        insertText(normalized, replacementRange: selectedRange())
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if let editor, let result = editor.validateMenuAction(item) { return result }
+        return super.validateUserInterfaceItem(item)
     }
 
     override func mouseDown(with event: NSEvent) {
