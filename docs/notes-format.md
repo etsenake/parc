@@ -65,6 +65,7 @@ status: draft
 | `cover-credit`, `cover-credit-url` | Who took the cover photo and a link to them |
 | `font` | `serif`, `mono` or `wide`; leave it out for the default |
 | `small-text`, `full-width`, `locked` | `true` to turn on; Parc leaves them out when off |
+| `backlinks` | `expanded` or `off`; left out for the default popup |
 
 Any other simple key becomes a page property: text, numbers, `true`/`false`,
 dates (`2026-11-20` or `2026-11-20T09:30`) and lists of words. Lists can be
@@ -293,7 +294,8 @@ A **page link** is a link to another note on its own line:
 
 - **Page mentions** are `[[Note name]]` or `[[Folder/Note|Shown as]]` wiki
   links, or a relative link whose text is the note's name, such as
-  `[Roadmap](Roadmap.md)`.
+  `[Roadmap](Roadmap.md)`. When Parc renames or moves a note it rewrites these,
+  and plain links to the file, in place, keeping wiki links as wiki links.
 - **Date mentions** are `<time datetime="2026-11-20">2026-11-20</time>`. Add a
   time with `T09:30` and a reminder with `data-remind`. More settings are
   attributes, written in this order, and left out when they're the default:
