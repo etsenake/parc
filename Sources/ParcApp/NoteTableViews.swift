@@ -470,6 +470,7 @@ final class NoteTableAddBar: NSView {
     enum Axis { case row, column }
     let axis: Axis
     var onAdd: (() -> Void)?
+    var onHoverChange: ((Bool) -> Void)?
     private var isHovered = false { didSet { if oldValue != isHovered { needsDisplay = true } } }
     private var isPressed = false { didSet { if oldValue != isPressed { needsDisplay = true } } }
     private var hoverArea: NSTrackingArea?
@@ -493,9 +494,19 @@ final class NoteTableAddBar: NSView {
         super.updateTrackingAreas()
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true }
-    override func mouseExited(with event: NSEvent) { isHovered = false }
-    override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        onHoverChange?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        onHoverChange?(false)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if alphaValue > 0.01 { NSCursor.pointingHand.set() } else { super.cursorUpdate(with: event) }
+    }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {

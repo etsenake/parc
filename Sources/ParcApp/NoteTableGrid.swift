@@ -267,11 +267,16 @@ enum NoteTableMetrics {
     static let defaultFixedWidth: Double = 160
 
     static func resolvedWidths(_ widths: [Double?], available: Double) -> [Double] {
-        guard !widths.isEmpty else { return [] }
+        guard let lastUnset = widths.lastIndex(where: { $0 == nil }) else { return widths.map { max(minimumColumnWidth, $0 ?? 0) } }
         let fixed = widths.compactMap { $0.map { max(minimumColumnWidth, $0) } }
         let unset = widths.count - fixed.count
-        let share = unset > 0 ? max(minimumSharedWidth, (available - fixed.reduce(0, +)) / Double(unset)) : 0
-        return widths.map { $0.map { max(minimumColumnWidth, $0) } ?? share.rounded(.down) }
+        let room = available - fixed.reduce(0, +)
+        let share = max(minimumSharedWidth, room / Double(unset)).rounded(.down)
+        let last = max(share, room - share * Double(unset - 1))
+        return widths.enumerated().map { index, width in
+            if let width { return max(minimumColumnWidth, width) }
+            return index == lastUnset ? last : share
+        }
     }
 
     static func resized(_ widths: [Double], column: Int, by delta: Double) -> [Double] {

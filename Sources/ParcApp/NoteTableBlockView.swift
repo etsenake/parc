@@ -167,9 +167,9 @@ final class NoteTableBlockView: NoteBlockView {
         resizeIndicator.color = NoteTableStyle.resizeLine
         resizeIndicator.isHidden = true
         surface.addSubview(resizeIndicator)
-        documentView.addSubview(addColumnBar)
         documentView.addSubview(columnGrip)
         addSubview(addRowBar)
+        addSubview(addColumnBar)
         addSubview(rowGrip)
         for bar in [addRowBar, addColumnBar] { bar.alphaValue = 0 }
         for grip in [rowGrip, columnGrip] {
@@ -180,6 +180,7 @@ final class NoteTableBlockView: NoteBlockView {
         }
         addRowBar.onAdd = { [weak self] in self?.appendRow() }
         addColumnBar.onAdd = { [weak self] in self?.appendColumn() }
+        addColumnBar.onHoverChange = { [weak self] hovering in if !hovering { self?.pointerLeftColumnBar() } }
     }
 
     override func update(_ block: NoteBlock) {
@@ -262,6 +263,7 @@ final class NoteTableBlockView: NoteBlockView {
         for grip in [rowGrip, columnGrip] where !grip.isHidden && grip.alphaValue > 0.01 {
             if grip.convert(grip.bounds, to: self).contains(local) { return grip }
         }
+        if addColumnBar.alphaValue > 0.01, !addColumnBar.isHidden, addColumnBar.frame.contains(local) { return addColumnBar }
         return super.hitTest(point)
     }
 
@@ -304,7 +306,7 @@ final class NoteTableBlockView: NoteBlockView {
 
     private func makeGeometry(width: CGFloat) -> NoteTableGeometry {
         let current = table
-        let available = max(0, width - NoteTableStyle.barGap - NoteTableStyle.barThickness)
+        let available = max(0, width)
         let widths = liveWidths ?? NoteTableMetrics.resolvedWidths(current.columnWidths, available: Double(available)).map { CGFloat($0) }
         let heights = current.rows.enumerated().map { rowIndex, row in
             row.enumerated().reduce(CGFloat(0)) { tallest, entry in
@@ -368,7 +370,7 @@ final class NoteTableBlockView: NoteBlockView {
     private func layoutChrome() {
         let shown = displayGeometry
         let tableHeight = shown.height, tableWidth = shown.width
-        let documentWidth = max(bounds.width, tableWidth + NoteTableStyle.barGap + NoteTableStyle.barThickness)
+        let documentWidth = max(bounds.width, tableWidth)
         let scrollHeight = NoteTableStyle.topInset + tableHeight + 1
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -377,7 +379,7 @@ final class NoteTableBlockView: NoteBlockView {
         surface.frame = NSRect(x: 0, y: NoteTableStyle.topInset, width: tableWidth, height: tableHeight)
         frameView.frame = surface.bounds
         selectionView.frame = surface.bounds
-        addColumnBar.frame = NSRect(x: tableWidth + NoteTableStyle.barGap, y: NoteTableStyle.topInset,
+        addColumnBar.frame = NSRect(x: columnBarX(tableWidth: tableWidth), y: NoteTableStyle.topInset,
                                     width: NoteTableStyle.barThickness, height: tableHeight)
         let visibleTable = max(0, min(tableWidth - scrollView.horizontalOffset, bounds.width))
         addRowBar.frame = NSRect(x: 0, y: NoteTableStyle.topInset + tableHeight + NoteTableStyle.barGap,
@@ -404,6 +406,10 @@ final class NoteTableBlockView: NoteBlockView {
         CATransaction.commit()
         scrollView.updateFade()
         syncSelection()
+    }
+
+    private func columnBarX(tableWidth: CGFloat) -> CGFloat {
+        max(0, min(tableWidth - scrollView.horizontalOffset, bounds.width)) + NoteTableStyle.barGap
     }
 
     private func layoutRules(_ shown: NoteTableGeometry) {
@@ -866,7 +872,14 @@ final class NoteTableBlockView: NoteBlockView {
     override func mouseExited(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if [rowGrip, columnGrip].contains(where: { !$0.isHidden && $0.frame(in: self).insetBy(dx: -4, dy: -4).contains(point) }) { return }
+        if isHovering, addColumnBar.frame.insetBy(dx: -NoteTableStyle.barGap - 2, dy: -4).contains(point) { return }
         hideHoverChrome(animated: true)
+    }
+
+    private func pointerLeftColumnBar() {
+        guard let window, isHovering else { return }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        if !bounds.contains(point) { hideHoverChrome(animated: true) }
     }
 
     private func pointerMoved(_ event: NSEvent) {
@@ -928,6 +941,7 @@ final class NoteTableBlockView: NoteBlockView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         addRowBar.frame.size.width = max(0, min(shown.width - scrollView.horizontalOffset, bounds.width))
+        addColumnBar.frame.origin.x = columnBarX(tableWidth: shown.width)
         CATransaction.commit()
         if isVirtualizing { layoutCells() }
     }
@@ -1113,7 +1127,7 @@ final class NoteTableBlockView: NoteBlockView {
         let barShift = NSRect(x: addRowBar.frame.minX, y: NoteTableStyle.topInset + old.height + NoteTableStyle.barGap,
                               width: addRowBar.frame.width, height: addRowBar.frame.height)
         NoteTableMotion.slide(addRowBar, from: barShift)
-        NoteTableMotion.slide(addColumnBar, from: NSRect(x: old.width + NoteTableStyle.barGap, y: addColumnBar.frame.minY,
+        NoteTableMotion.slide(addColumnBar, from: NSRect(x: columnBarX(tableWidth: old.width), y: addColumnBar.frame.minY,
                                                          width: addColumnBar.frame.width, height: old.height))
         NoteTableMotion.resize(addColumnBar, from: NSSize(width: addColumnBar.frame.width, height: old.height))
         if let snapshot = motionSnapshot {
