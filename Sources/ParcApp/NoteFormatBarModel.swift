@@ -504,12 +504,21 @@ enum NoteColorRecents {
 }
 
 enum NoteLinkInput {
+    static let unsafeSchemes: Set<String> = ["javascript", "vbscript", "data"]
+
+    static func isUnsafe(_ link: String) -> Bool {
+        let scalars = link.unicodeScalars.filter { $0.value > 0x20 && $0.value != 0x7F && !$0.properties.isWhitespace }
+        let compact = String(String.UnicodeScalarView(scalars))
+        guard let colon = compact.firstIndex(of: ":") else { return false }
+        return unsafeSchemes.contains(compact[..<colon].lowercased())
+    }
+
     static func normalize(_ raw: String) -> String? {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         for (open, close) in [("<", ">"), ("\"", "\""), ("'", "'"), ("(", ")")] where value.count >= 2 && value.hasPrefix(open) && value.hasSuffix(close) {
             value = String(value.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        guard !value.isEmpty, !value.contains(where: \.isNewline) else { return nil }
+        guard !value.isEmpty, !value.contains(where: \.isNewline), !isUnsafe(value) else { return nil }
         if value.hasPrefix("#") { return value.count > 1 && !value.contains(" ") ? value : nil }
         if value.hasPrefix("~/") { value = (value as NSString).expandingTildeInPath }
         if value.hasPrefix("/") { return URL(fileURLWithPath: value).absoluteString }

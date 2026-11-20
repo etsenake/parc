@@ -337,7 +337,7 @@ final class NoteImageContentView: NoteMediaContentView {
     }
 
     private func toggleAlignmentMenu() {
-        if menu != nil { dismissMenu(); return }
+        if alignmentMenu != nil { dismissMenu(); return }
         guard let overlay = host?.editor?.canvas.overlayView else { return }
         let list = NoteMenuList()
         list.items = NoteAlignment.allCases.map { alignment in
@@ -350,10 +350,11 @@ final class NoteImageContentView: NoteMediaContentView {
             self.host?.setAlignment(alignment)
         }
         let panel = NoteFloatingPanel(content: list)
-        panel.onDismiss = { [weak self] in self?.menuDidClose() }
+        panel.onDismiss = { [weak self, weak panel] in self?.menuDidClose(panel) }
         let anchor = overlay.convert(alignChip.bounds, from: alignChip)
         panel.present(in: overlay, anchor: anchor, edge: .below)
         alignmentMenu = panel
+        removeMenuMonitor()
         menuMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
             let isKey = event.type == .keyDown, keyCode = event.keyCode
             let location = event.locationInWindow, windowNumber = event.windowNumber
@@ -389,14 +390,20 @@ final class NoteImageContentView: NoteMediaContentView {
     private func dismissMenu() {
         guard let panel = alignmentMenu else { return }
         alignmentMenu = nil
+        removeMenuMonitor()
         panel.dismiss(animated: true)
     }
 
-    private func menuDidClose() {
+    private func menuDidClose(_ panel: NoteFloatingPanel?) {
+        guard alignmentMenu == nil || alignmentMenu === panel else { return }
         alignmentMenu = nil
+        removeMenuMonitor()
+        setHovered(hovered)
+    }
+
+    private func removeMenuMonitor() {
         if let menuMonitor { NSEvent.removeMonitor(menuMonitor) }
         menuMonitor = nil
-        setHovered(hovered)
     }
 }
 

@@ -378,7 +378,7 @@ final class NoteFormatBarController {
     }
 
     private func perform(_ item: NoteFormatItem, button: NoteToolbarButton, origin: NoteMenuList.Origin) {
-        guard let state = eligibleState() ?? self.state else { return }
+        guard let state = eligibleState() else { return }
         if let menu {
             let same = menu.item == item
             closeMenu(restoreFocus: false, animated: true)
@@ -552,6 +552,7 @@ final class NoteFormatBarController {
         let selection = current.selection
         switch action {
         case .apply(let link):
+            guard !NoteLinkInput.isUnsafe(link) else { return }
             closeMenu(restoreFocus: false, animated: true)
             editor.session.setLink(link, in: selection)
             if case .text(let anchor, let head) = selection {
@@ -590,8 +591,12 @@ final class NoteFormatBarController {
         return URL(string: link)
     }
 
+    static func canOpen(_ link: String) -> Bool {
+        !link.hasPrefix("#") && !NoteLinkInput.isUnsafe(link)
+    }
+
     func open(_ link: String) {
-        guard !link.hasPrefix("#"), let url = resolve(link) else { return }
+        guard Self.canOpen(link), let url = resolve(link), !NoteLinkInput.isUnsafe(url.absoluteString) else { return }
         editor.open(url)
     }
 
@@ -658,14 +663,31 @@ final class NoteLinkHoverController: NSResponder {
 
     private var editor: NotePageEditor { controller.editor }
 
+    deinit {
+        let area = self.area, host = self.host, panel = self.panel
+        pendingShow?.cancel()
+        pendingHide?.cancel()
+        MainActor.assumeIsolated {
+            if let area { host?.removeTrackingArea(area) }
+            panel?.dismiss(animated: false)
+        }
+    }
+
     func attach(to view: NSView) {
         guard host !== view else { return }
-        if let area, let host { host.removeTrackingArea(area) }
+        detach()
         let made = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
                                   owner: self)
         view.addTrackingArea(made)
         host = view
         area = made
+    }
+
+    func detach() {
+        hide(animated: false)
+        if let area { host?.removeTrackingArea(area) }
+        area = nil
+        host = nil
     }
 
     var isShowing: Bool { panel?.isPresented == true }
@@ -754,7 +776,7 @@ final class NoteLinkHoverController: NSResponder {
         guard let line = rects.first(where: { $0.insetBy(dx: -2, dy: -2).contains(lastPoint) }) ?? rects.first else { return }
         let presentation = Self.presentation(for: target.link, controller: controller)
         let actions: [NoteLinkHoverCard.Action] = (editor.isReadOnly ? [.open, .copy] : NoteLinkHoverCard.Action.allCases)
-            .filter { $0 != .open || !target.link.hasPrefix("#") }
+            .filter { $0 != .open || NoteFormatBarController.canOpen(target.link) }
         let card = NoteLinkHoverCard(title: presentation.title, icon: presentation.icon, actions: actions)
         card.onAction = { [weak self] action in self?.perform(action, on: target) }
         let previous = panel

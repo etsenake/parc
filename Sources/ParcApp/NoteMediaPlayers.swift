@@ -363,6 +363,7 @@ final class NoteAudioContentView: NoteMediaCardView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     deinit {
+        if let timeObserver { player?.removeTimeObserver(timeObserver) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
     }
 
@@ -427,18 +428,14 @@ final class NoteAudioContentView: NoteMediaCardView {
     }
 
     private func ensurePlayer() -> AVPlayer? {
-        if let player { return player }
+        if let player {
+            observeTime(of: player)
+            return player
+        }
         guard let url = source.url else { return nil }
         let created = AVPlayer(url: url)
         created.actionAtItemEnd = .pause
-        timeObserver = created.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak self] now in
-            MainActor.assumeIsolated {
-                guard let self, !self.scrubber.isTracking else { return }
-                self.position = now.seconds.isFinite ? now.seconds : 0
-                if let total = created.currentItem?.duration, total.isNumeric, total.seconds > 0 { self.duration = total.seconds }
-                self.refreshTime()
-            }
-        }
+        observeTime(of: created)
         endObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: created.currentItem, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -449,6 +446,23 @@ final class NoteAudioContentView: NoteMediaCardView {
         }
         player = created
         return created
+    }
+
+    private func observeTime(of player: AVPlayer) {
+        guard timeObserver == nil else { return }
+        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak self, weak player] now in
+            MainActor.assumeIsolated {
+                guard let self, !self.scrubber.isTracking else { return }
+                self.position = now.seconds.isFinite ? now.seconds : 0
+                if let total = player?.currentItem?.duration, total.isNumeric, total.seconds > 0 { self.duration = total.seconds }
+                self.refreshTime()
+            }
+        }
+    }
+
+    private func stopObservingTime() {
+        if let timeObserver { player?.removeTimeObserver(timeObserver) }
+        timeObserver = nil
     }
 
     private func togglePlayback() {
@@ -486,8 +500,7 @@ final class NoteAudioContentView: NoteMediaCardView {
     }
 
     private func teardown() {
-        if let timeObserver { player?.removeTimeObserver(timeObserver) }
-        timeObserver = nil
+        stopObservingTime()
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
         player?.pause()
@@ -497,7 +510,10 @@ final class NoteAudioContentView: NoteMediaCardView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil { player?.pause(); refreshPlayback() }
+        guard window == nil else { return }
+        player?.pause()
+        stopObservingTime()
+        refreshPlayback()
     }
 }
 

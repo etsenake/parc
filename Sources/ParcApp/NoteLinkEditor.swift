@@ -99,7 +99,7 @@ final class NoteLinkEditorView: NSView, NoteFloatingPanelContent {
             var open = NoteMenuList.Item(id: "open", title: "Open Link")
             open.icon = .symbol("arrow.up.right.square")
             open.section = "This Link"
-            open.isEnabled = !existingLink.hasPrefix("#")
+            open.isEnabled = NoteFormatBarController.canOpen(existingLink)
             items.append(open)
             var remove = NoteMenuList.Item(id: "remove", title: "Remove Link")
             remove.icon = .symbol("trash")

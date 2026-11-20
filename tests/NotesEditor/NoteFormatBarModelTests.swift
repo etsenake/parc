@@ -260,6 +260,13 @@ struct NoteFormatBarModelTests {
             ("example.c", nil),
             ("-bad-.com", nil),
             ("one\ntwo.com", nil),
+            ("javascript:alert(1)", nil),
+            ("  JavaScript:alert(document.cookie)", nil),
+            ("<javascript:void(0)>", nil),
+            ("java\tscript:alert(1)", nil),
+            ("vbscript:msgbox(1)", nil),
+            ("data:text/html,<script>alert(1)</script>", nil),
+            ("DATA:image/png;base64,AAAA", nil),
         ]
         for (input, expected) in cases {
             let actual = NoteLinkInput.normalize(input)
@@ -272,6 +279,12 @@ struct NoteFormatBarModelTests {
         expect(NoteLinkInput.isRelative("Ideas.md") && !NoteLinkInput.isRelative("https://x.com") && !NoteLinkInput.isRelative("#a"),
                "relative links are told apart from web links and anchors")
         expect(NoteLinkInput.isNotePath("Plan%20B.md") && !NoteLinkInput.isNotePath("photo.png"), "note paths are .md or .txt")
+        for unsafe in ["javascript:alert(1)", " \u{01}JAVASCRIPT:x", "java\nscript:x", "vbscript:x", "data:text/html,hi", "jav\u{00A0}ascript:x"] {
+            expect(NoteLinkInput.isUnsafe(unsafe), "\(unsafe.debugDescription) is refused as a link")
+        }
+        for safe in ["https://example.com/javascript:x", "Ideas.md", "./data:notes.md", "mailto:hi@parc.example", "#data:x", "datas:x"] {
+            expect(!NoteLinkInput.isUnsafe(safe), "\(safe.debugDescription) is an ordinary link")
+        }
     }
 
     static func chords() {
