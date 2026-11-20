@@ -40,7 +40,8 @@ enum NoteTableStyle {
     static let gripTooltip = "Drag to move, click for options"
 
     static func presentation(_ style: NoteTableCellStyle) -> NoteTextPresentation {
-        NoteTextPresentation(role: style.header ? .tableHeader : .tableCell, pageFont: style.font, small: style.small)
+        NoteTextPresentation(role: style.header ? .tableHeader : .tableCell, pageFont: style.font, small: style.small,
+                             alignment: textAlignment(style.alignment))
     }
 
     static func textAlignment(_ alignment: NoteAlignment?) -> NSTextAlignment {
@@ -49,12 +50,6 @@ enum NoteTableStyle {
         case .right: return .right
         case .left, nil: return .natural
         }
-    }
-
-    static func aligned(_ style: NSParagraphStyle?, _ alignment: NSTextAlignment) -> NSParagraphStyle {
-        let result = (style?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
-        result.alignment = alignment
-        return result
     }
 }
 
@@ -68,46 +63,11 @@ final class NoteTableCellTextView: NoteTextView {
 
     var isHeaderCell: Bool { cellStyle.header }
 
-    private var textAlignment: NSTextAlignment { NoteTableStyle.textAlignment(cellStyle.alignment) }
-
     func configure(_ style: NoteTableCellStyle) {
         guard !isConfigured || style != cellStyle else { return }
         isConfigured = true
-        let alignmentChanged = style.alignment != cellStyle.alignment
         cellStyle = style
-        defaultParagraphStyle = NoteTableStyle.aligned(defaultParagraphStyle, textAlignment)
-        let next = NoteTableStyle.presentation(style)
-        if presentation != next { presentation = next } else if alignmentChanged { alignStorage() }
-        let typing = typingAttributes
-        typingAttributes = typing
-    }
-
-    override func apply(_ text: NoteText, selection: Range<Int>?) {
-        super.apply(text, selection: selection)
-        alignStorage()
-    }
-
-    override var typingAttributes: [NSAttributedString.Key: Any] {
-        get { super.typingAttributes }
-        set {
-            var value = newValue
-            value[.paragraphStyle] = NoteTableStyle.aligned(newValue[.paragraphStyle] as? NSParagraphStyle, textAlignment)
-            super.typingAttributes = value
-        }
-    }
-
-    private func alignStorage() {
-        guard let storage = textStorage, storage.length > 0 else { return }
-        let alignment = textAlignment
-        var edits: [(NSRange, NSParagraphStyle)] = []
-        storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
-            let current = value as? NSParagraphStyle
-            if current?.alignment != alignment { edits.append((range, NoteTableStyle.aligned(current, alignment))) }
-        }
-        guard !edits.isEmpty else { return }
-        storage.beginEditing()
-        for (range, style) in edits { storage.addAttribute(.paragraphStyle, value: style, range: range) }
-        storage.endEditing()
+        presentation = NoteTableStyle.presentation(style)
     }
 
     override func keyDown(with event: NSEvent) {
