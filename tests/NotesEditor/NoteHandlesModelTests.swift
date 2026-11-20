@@ -99,6 +99,16 @@ struct NoteHandlesModelTests {
         expect(!mixed[2].children.contains(where: \.isChecked), "mixed types check nothing in Turn Into")
         let withImage = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [one, NoteBlock(.image)]))
         expect(ids(withImage) == ["delete", "duplicate"], "an image in the mix drops Turn Into and Color")
+        let splittable = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [one, two], columnLimit: 3))
+        let splits = splittable[2].children.filter { if case .turnIntoColumns = $0.action { return true } else { return false } }
+        expect(splits.map(\.title) == ["2 Columns", "3 Columns"], "several blocks can become as many columns as there are blocks")
+        expect(splits.map(\.action) == [.turnIntoColumns(2), .turnIntoColumns(3)] && splits.allSatisfy { $0.section == "Turn Into" },
+               "column rows sit in Turn Into")
+        let imageSplit = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [one, NoteBlock(.image)], columnLimit: 2))
+        expect(ids(imageSplit) == ["delete", "duplicate", "turn"] && imageSplit[2].children.map(\.id) == ["turn.columns2"],
+               "an image in the mix still offers columns, and only columns")
+        let crowd = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [one, two], columnLimit: 9))
+        expect(crowd[2].children.last?.id == "turn.columns5", "five columns is the most on offer")
         var redOne = one, redTwo = two
         redOne.color = .text(.red); redTwo.color = .text(.red)
         let red = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [redOne, redTwo]))

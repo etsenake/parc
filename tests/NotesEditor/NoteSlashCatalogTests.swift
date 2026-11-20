@@ -92,6 +92,17 @@ struct NoteSlashCatalogTests {
         expect(menu.allSatisfy { if case .turnInto = $0.effect { return true } else { return false } }, "Turn into rows only convert")
         expect(NoteBlockCatalog.results(for: "quo", in: .turnInto).first?.id == "into.quote", "Turn into filters too")
 
+        expect(NoteBlockCatalog.turnIntoMenuItems(columnLimit: 1).map(\.id) == NoteBlockCatalog.turnIntoMenuItems.map(\.id),
+               "a single block gets no column choices")
+        let split = NoteBlockCatalog.turnIntoMenuItems(columnLimit: 3).filter { $0.id.hasPrefix("into.columns") }
+        expect(split.map(\.id) == ["into.columns2", "into.columns3"] && split.map(\.title) == ["2 columns", "3 columns"],
+               "several blocks get 2 columns up to their count")
+        expect(split.first?.effect == .turnInto(.columns(2)), "column choices turn the blocks into columns")
+        expect(NoteBlockCatalog.turnIntoMenuItems(columnLimit: 8).last?.id == "into.columns5", "the list stops at five columns")
+        let lone = NoteBlock.paragraph("Solo")
+        expect(NoteCatalogApplier.apply(.turnInto(.columns(2)), to: NotePage(blocks: [lone]), at: NotePosition(lone.id, 0), removing: 0..<0) == nil,
+               "one block never turns into a bare column set")
+
         let todo = NoteBlock(.todo)
         expect(NoteCatalogBlock.todo.describes(todo) && !NoteCatalogBlock.text.describes(todo), "templates recognise their blocks")
         var toggleHeading = NoteBlock.heading(2)

@@ -399,8 +399,11 @@ final class NoteFormatBarController {
     }
 
     private func openTurnInto(from button: NoteToolbarButton, state: NoteFormatState, origin: NoteMenuList.Origin) {
-        let list = NoteTurnIntoMenu.makeList(for: state, origin: origin, onPick: { [weak self] option in
+        let columns = editor.session.columnSplitLimit(state.bodyBlocks)
+        let list = NoteTurnIntoMenu.makeList(for: state, origin: origin, columns: columns, onPick: { [weak self] option in
             self?.turnInto(option)
+        }, onColumns: { [weak self] count in
+            self?.turnIntoColumns(count)
         }, onCancel: { [weak self] in
             self?.closeMenu(restoreFocus: true, animated: true)
         })
@@ -494,6 +497,14 @@ final class NoteFormatBarController {
         let origin = menu?.origin
         closeMenu(restoreFocus: false, animated: true)
         editor.session.turnInto(state.bodyBlocks, kind: option.kind, configure: option.configure)
+        if origin == .keyboard || focusedTextView() == nil { restoreTextFocus(state.selection) }
+    }
+
+    private func turnIntoColumns(_ count: Int) {
+        guard let state else { return }
+        let origin = menu?.origin
+        closeMenu(restoreFocus: false, animated: true)
+        editor.session.turnIntoColumns(state.bodyBlocks, count: count)
         if origin == .keyboard || focusedTextView() == nil { restoreTextFocus(state.selection) }
     }
 

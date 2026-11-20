@@ -964,6 +964,46 @@ extension NotePageSession {
         }
     }
 
+    func columnSplitLimit(_ ids: [NoteBlockID]) -> Int {
+        guard !isFlat, !isReadOnly else { return 0 }
+        let targets = page.topLevelSelection(ids)
+        guard targets.count >= 2, let first = targets.first, page.containingColumn(of: first) == nil else { return 0 }
+        let parent = page.parent(of: first)
+        guard targets.allSatisfy({ page.parent(of: $0) == parent }) else { return 0 }
+        let blocks = targets.compactMap { page.block($0) }
+        guard blocks.count == targets.count, !blocks.contains(where: Self.holdsColumns) else { return 0 }
+        return min(Self.maximumColumns, targets.count)
+    }
+
+    func turnIntoColumns(_ ids: [NoteBlockID], count: Int) {
+        let targets = page.topLevelSelection(ids)
+        guard count >= 2, count <= columnSplitLimit(targets), let first = targets.first else { return }
+        edit("Turn Into", selecting: { $0.clamped(self.selection) }) { page in
+            guard let head = page.block(first) else { return }
+            let rest = page.removeBlocks(targets.dropFirst())
+            let groups = Self.columnGroups([head] + rest, count: count)
+            page.update(first) { $0 = NoteBlock(.columns, children: groups.map { NoteBlock(.column, children: $0) }) }
+        }
+    }
+
+    nonisolated static func columnGroups<Item>(_ items: [Item], count: Int) -> [[Item]] {
+        guard count > 0, !items.isEmpty else { return [] }
+        let columns = min(count, items.count)
+        let base = items.count / columns, extra = items.count % columns
+        var result: [[Item]] = []
+        var start = 0
+        for index in 0..<columns {
+            let size = base + (index < extra ? 1 : 0)
+            result.append(Array(items[start..<(start + size)]))
+            start += size
+        }
+        return result
+    }
+
+    nonisolated private static func holdsColumns(_ block: NoteBlock) -> Bool {
+        block.kind.isColumnStructure || block.children.contains(where: holdsColumns)
+    }
+
     func setColumnWidths(_ columnsID: NoteBlockID, _ fractions: [Double]) {
         guard let columns = page.block(columnsID), columns.kind == .columns, fractions.count == columns.children.count,
               fractions.allSatisfy({ $0.isFinite && $0 > 0 }) else { return }

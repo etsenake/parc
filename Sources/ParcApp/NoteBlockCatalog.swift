@@ -158,6 +158,16 @@ enum NoteBlockCatalog {
         items.first { $0.effect == .block(block) }
     }
 
+    static func turnIntoMenuItems(columnLimit: Int) -> [NoteCatalogItem] {
+        guard columnLimit >= 2 else { return turnIntoMenuItems }
+        return turnIntoMenuItems + (2...min(columnLimit, NotePageSession.maximumColumns)).compactMap { count in
+            guard let base = item(for: .columns(count)) else { return nil }
+            return NoteCatalogItem(id: "into." + base.id, title: base.title, summary: "Line these blocks up side by side.", section: .actions,
+                                   icon: base.icon, hint: nil, aliases: base.aliases, keywords: base.keywords + [base.title],
+                                   effect: .turnInto(.columns(count)))
+        }
+    }
+
     static func results(for query: String, in context: NoteCatalogContext = .slash) -> [NoteCatalogItem] {
         let normalized = normalize(query)
         if context.mode == .turnInto { return rank(turnIntoMenuItems, normalized, keepEmpty: true) }
@@ -589,7 +599,7 @@ enum NoteCatalogApplier {
         case .block(let template):
             return place(template.makeBlock(), template: template, into: page, at: position, removing: range, name: "Insert")
         case .turnInto(let template):
-            guard position.field == .body else { return nil }
+            guard position.field == .body, !template.kind.isColumnStructure else { return nil }
             var converted = block
             converted.text = remaining
             converted = converted.converted(to: template.kind, configure: template.configure)

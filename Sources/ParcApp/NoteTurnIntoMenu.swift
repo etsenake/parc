@@ -26,8 +26,10 @@ enum NoteTurnIntoMenu {
         }
     }
 
-    static func items(for state: NoteFormatState) -> [NoteMenuList.Item] {
-        NoteTurnIntoOption.allCases.map { option in
+    static let columnsPrefix = "columns"
+
+    static func items(for state: NoteFormatState, columns: Int = 0) -> [NoteMenuList.Item] {
+        let options = NoteTurnIntoOption.allCases.map { option in
             var item = NoteMenuList.Item(id: option.rawValue, title: option.title)
             item.icon = icon(for: option)
             item.shortcut = option.chord?.display
@@ -36,15 +38,30 @@ enum NoteTurnIntoMenu {
             item.accessibilityLabel = "Turn into " + option.title
             return item
         }
+        guard columns >= 2 else { return options }
+        return options + (2...min(columns, NotePageSession.maximumColumns)).map { count in
+            var item = NoteMenuList.Item(id: columnsPrefix + String(count), title: "\(count) Columns")
+            item.icon = .symbol("rectangle.split.\(min(count, 3))x1")
+            item.section = title
+            item.accessibilityLabel = "Turn into \(count) columns"
+            return item
+        }
     }
 
-    static func makeList(for state: NoteFormatState, origin: NoteMenuList.Origin,
-                         onPick: @escaping (NoteTurnIntoOption) -> Void, onCancel: @escaping () -> Void) -> NoteMenuList {
-        let list = NoteMenuList(items: items(for: state))
+    static func columnCount(for id: String) -> Int? {
+        guard id.hasPrefix(columnsPrefix), let count = Int(id.dropFirst(columnsPrefix.count)) else { return nil }
+        return count
+    }
+
+    static func makeList(for state: NoteFormatState, origin: NoteMenuList.Origin, columns: Int = 0,
+                         onPick: @escaping (NoteTurnIntoOption) -> Void, onColumns: @escaping (Int) -> Void = { _ in },
+                         onCancel: @escaping () -> Void) -> NoteMenuList {
+        let list = NoteMenuList(items: items(for: state, columns: columns))
         list.minimumWidth = 236
         list.maximumHeight = 440
         list.onActivate = { item in
             if let option = NoteTurnIntoOption(rawValue: item.id) { onPick(option) }
+            else if let count = columnCount(for: item.id) { onColumns(count) }
         }
         list.onCancel = onCancel
         list.prepare(origin: origin)

@@ -133,7 +133,8 @@ final class NoteBlockMenuController: NSObject {
         let top = page.topLevelSelection(ids)
         let blocks = top.compactMap { page.block($0) }
         let context = NoteBlockMenuContext(blocks: blocks, isReadOnly: editor.isReadOnly, canMoveToNotes: canMoveToNotes,
-                                           supportsBlockLinks: editor.canLinkBlocks, tableEntries: Self.tableEntries(for: blocks))
+                                           supportsBlockLinks: editor.canLinkBlocks, tableEntries: Self.tableEntries(for: blocks),
+                                           columnLimit: editor.session.columnSplitLimit(top))
         let available = NoteBlockMenuModel.entries(for: context)
         guard !blocks.isEmpty, !available.isEmpty else { return }
         targets = top
@@ -518,6 +519,8 @@ final class NoteBlockMenuController: NSObject {
             return
         case .turnInto(let style):
             session.turnInto(live, kind: style.kind) { style.configure(&$0) }
+        case .turnIntoColumns(let count):
+            session.turnIntoColumns(live, count: count)
         case .color(let style):
             session.setColor(style, in: .blocks(live))
             if let style { NoteColorRecents.record(style) }

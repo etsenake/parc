@@ -7,6 +7,7 @@ struct PageStructureTests {
         tableHeadersWidthsAlignment()
         columnLayouts()
         columnMoves()
+        turningIntoColumns()
         selectAllProgression()
         captions()
         segments()
@@ -169,6 +170,47 @@ struct PageStructureTests {
         expectEqual(invalid.page.blocks.count, 2, "columns can't move inside another column")
         invalid.moveBlocks([invalid.id("a")], to: .firstChild(of: invalid.page.blocks[0].id))
         expect(invalid.page.blocks[0].children.allSatisfy { $0.kind == .column }, "only columns can sit directly in a column set")
+    }
+
+    static func turningIntoColumns() {
+        expectEqual(NotePageSession.columnGroups([1, 2, 3, 4, 5], count: 2), [[1, 2, 3], [4, 5]], "the first columns take the extra blocks")
+        expectEqual(NotePageSession.columnGroups([1, 2, 3], count: 3), [[1], [2], [3]], "one block per column when they match")
+        expectEqual(NotePageSession.columnGroups([1, 2], count: 5), [[1], [2]], "never more columns than blocks")
+
+        let session = makeSession([para("a"), bullet("b", [bullet("b1")]), para("c"), para("d"), para("e")])
+        let picked = [session.id("a"), session.id("b"), session.id("c"), session.id("d")]
+        expectEqual(session.columnSplitLimit(picked), 4, "four blocks can make up to four columns")
+        expectEqual(session.columnSplitLimit([session.id("a")]), 0, "one block can't become columns")
+        expectEqual(session.columnSplitLimit([session.id("a"), session.id("b1")]), 0, "blocks at different levels can't become columns")
+        session.setSelection(.blocks(picked))
+        session.turnIntoColumns(picked, count: 2)
+        expectOutline(session.page, "columns\n  column\n    p a\n    ul b\n      ul b1\n  column\n    p c\n    p d\np e",
+                      "Turn into 2 columns splits the selection in order, children and all")
+        expectEqual(session.selection, .blocks(picked), "the same blocks stay selected")
+        expectEqual(session.undoActionName, "Turn Into", "it's one Turn Into step")
+        expectEqual(session.columnSplitLimit([session.id("a"), session.id("c")]), 0, "blocks already in columns can't nest more columns")
+        session.undo()
+        expectOutline(session.page, "p a\nul b\n  ul b1\np c\np d\np e", "undo puts the blocks back")
+
+        let six = makeSession((1...6).map { para(String($0)) })
+        let all = six.page.blocks.map(\.id)
+        expectEqual(six.columnSplitLimit(all), 5, "six blocks still stop at five columns")
+        six.turnIntoColumns(all, count: 5)
+        expectEqual(six.page.blocks[0].children.map { $0.children.count }, [2, 1, 1, 1, 1], "five columns share six blocks")
+        six.turnIntoColumns([six.id("1"), six.id("2")], count: 2)
+        expectEqual(six.page.allBlocks().filter { $0.kind == .columns }.count, 1, "no columns inside columns")
+
+        let toggle = makeSession([NoteBlock(.toggle, text: "t", children: [para("x"), para("y")])])
+        toggle.turnIntoColumns([toggle.id("x"), toggle.id("y")], count: 2)
+        let inner = toggle.page.blocks[0].children
+        expect(inner.count == 1 && inner[0].kind == .columns && inner[0].children.map { $0.children.map(\.text.plainText) } == [["x"], ["y"]],
+               "columns can form inside a toggle")
+
+        let carrying = makeSession([columns([[para("l")], [para("r")]]), para("z")])
+        expectEqual(carrying.columnSplitLimit([carrying.page.blocks[0].id, carrying.id("z")]), 0, "a selection holding columns can't nest them")
+        let flat = makeSession([para("p"), para("q")])
+        flat.isFlat = true
+        expectEqual(flat.columnSplitLimit([flat.id("p"), flat.id("q")]), 0, "plain-text notes stay flat")
     }
 
     static func selectAllProgression() {

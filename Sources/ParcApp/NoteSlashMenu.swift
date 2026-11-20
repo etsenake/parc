@@ -273,7 +273,7 @@ final class NoteSlashMenuController {
         list.noResultsTitle = "No blocks by that name. Keep typing?"
         list.setAccessibilityLabel("Turn into")
         list.prepare(origin: keyboard ? .keyboard : .pointer)
-        list.items = NoteBlockCatalog.turnIntoMenuItems.map { item in
+        list.items = NoteBlockCatalog.turnIntoMenuItems(columnLimit: editor.session.columnSplitLimit(targets)).map { item in
             var entry = self.row(for: item, filtering: true)
             entry.section = "Turn into"
             entry.isChecked = item.block == current
@@ -427,10 +427,15 @@ final class NoteSlashMenuController {
         case .blocks:
             if let chosen = results.first(where: { $0.id == item.id }) { choose(chosen) }
         case .turnInto(let ids):
-            guard let block = NoteBlockCatalog.turnIntoMenuItems.first(where: { $0.id == item.id })?.block else { return }
+            let choices = NoteBlockCatalog.turnIntoMenuItems(columnLimit: NotePageSession.maximumColumns)
+            guard let block = choices.first(where: { $0.id == item.id })?.block else { return }
             dismiss()
             guard !editor.isReadOnly else { return }
-            editor.session.turnInto(ids, kind: block.kind, configure: block.configure)
+            if case .columns(let count) = block {
+                editor.session.turnIntoColumns(ids, count: count)
+            } else {
+                editor.session.turnInto(ids, kind: block.kind, configure: block.configure)
+            }
         case .mention(let scope):
             if let choice = mentionChoices[item.id] { chooseMention(choice, scope: scope) }
         default:

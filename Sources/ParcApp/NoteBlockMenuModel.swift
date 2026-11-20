@@ -35,6 +35,7 @@ enum NoteBlockAction: Hashable {
     case delete
     case duplicate
     case turnInto(NoteBlockStyle)
+    case turnIntoColumns(Int)
     case color(NoteColorStyle?)
     case copyLink
     case moveTo
@@ -72,6 +73,7 @@ struct NoteBlockMenuContext {
     var canMoveToNotes = false
     var supportsBlockLinks = false
     var tableEntries: [NoteBlockMenuEntry] = []
+    var columnLimit = 0
 }
 
 enum NoteBlockMenuModel {
@@ -144,9 +146,11 @@ enum NoteBlockMenuModel {
                                              keywords: ["remove", "erase", "trash"], group: 0, isDestructive: true, action: .delete))
             result.append(NoteBlockMenuEntry(id: "duplicate", title: "Duplicate", icon: .symbol("plus.square.on.square"), shortcut: "⌘D",
                                              keywords: ["copy", "clone"], group: 0, action: .duplicate))
-            if blocks.allSatisfy(turnable) {
+            let restyles = blocks.allSatisfy(turnable)
+            if restyles || context.columnLimit >= 2 {
                 result.append(NoteBlockMenuEntry(id: "turn", title: turnIntoTitle, icon: .symbol("arrow.triangle.2.circlepath"),
-                                                 keywords: ["convert", "change", "type"], group: 0, children: turnIntoEntries(for: blocks)))
+                                                 keywords: ["convert", "change", "type"], group: 0,
+                                                 children: turnIntoEntries(for: blocks, columns: context.columnLimit, restyles: restyles)))
             }
         }
         if sameKind { result += kindEntries(for: blocks, kind: first.kind, editable: editable, single: single) }
@@ -167,12 +171,22 @@ enum NoteBlockMenuModel {
         return result
     }
 
-    static func turnIntoEntries(for blocks: [NoteBlock]) -> [NoteBlockMenuEntry] {
+    static func turnIntoEntries(for blocks: [NoteBlock], columns: Int = 0, restyles: Bool = true) -> [NoteBlockMenuEntry] {
         let current = Set(blocks.map(NoteBlockStyle.init(of:)))
-        return turnIntoStyles.map { option in
+        let styles = restyles ? turnIntoStyles.map { option in
             NoteBlockMenuEntry(id: "turn." + styleKey(option.style), title: option.title, icon: option.icon,
                                keywords: option.keywords, section: turnIntoTitle,
                                isChecked: current.count == 1 && current.contains(option.style), action: .turnInto(option.style))
+        } : []
+        return styles + columnEntries(limit: columns)
+    }
+
+    static func columnEntries(limit: Int) -> [NoteBlockMenuEntry] {
+        guard limit >= 2 else { return [] }
+        return (2...min(limit, NotePageSession.maximumColumns)).map { count in
+            NoteBlockMenuEntry(id: "turn.columns\(count)", title: "\(count) Columns", icon: .symbol("rectangle.split.\(min(count, 3))x1"),
+                               keywords: ["columns", "layout", "side by side", "split"], section: turnIntoTitle,
+                               action: .turnIntoColumns(count))
         }
     }
 

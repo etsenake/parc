@@ -114,7 +114,8 @@ hovering a link shows a card to open, copy, edit or remove it.
 
 Selections cross blocks like one page. Dragging from the margin, or pressing
 Escape, selects whole blocks, which can then be moved, coloured, duplicated,
-deleted or copied together. Hovering a block reveals `+` (add below, ⌥ for
+deleted or copied together. With several sibling blocks selected, Turn into also
+offers 2 to 5 columns and lays them out side by side in order. Hovering a block reveals `+` (add below, ⌥ for
 above) and a grip; clicking the grip opens a searchable action menu (Delete,
 Duplicate, Turn into, Colour, Copy link to block, Move to another note, and kind
 specific items), and dragging it moves blocks anywhere, including beside a block
