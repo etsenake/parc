@@ -65,6 +65,7 @@ struct NoteMathLayoutTests {
         tags()
         renderer()
         bitmaps()
+        fallbackGlyphs()
         samples()
         print("NoteMathLayoutTests passed")
     }
@@ -537,6 +538,40 @@ struct NoteMathLayoutTests {
         let matrix = bitmap(NoteMathRenderer.render("\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}", fontSize: 40, color: .black, display: true))
         expect(matrix.ink(x: 0...0.12, y: 0.1...0.9) > 50 && matrix.ink(x: 0.88...1, y: 0.1...0.9) > 50, "brackets on both sides")
         expect(matrix.ink(x: 0.2...0.45, y: 0...0.5) > 30 && matrix.ink(x: 0.55...0.8, y: 0.5...1) > 30, "cells in their quadrants")
+    }
+
+    static func lineInks(_ box: NoteMathBox) -> [NoteMathInk] {
+        box.inks.filter { if case .line = $0.content { return true } else { return false } }
+    }
+
+    static func fallbackGlyphs() {
+        for text in ["日本", "😀"] {
+            let full = box("x\\text{\(text)}")
+            let script = box("x_{\\text{\(text)}}")
+            let fullLine = lineInks(full), scriptLine = lineInks(script)
+            expect(fullLine.count == 1 && scriptLine.count == 1, "\(text) falls back to one system run")
+            guard case .line(let fullRun)? = fullLine.first?.content, case .line(let scriptRun)? = scriptLine.first?.content else { continue }
+            let fullFont = (CTRunGetAttributes((CTLineGetGlyphRuns(fullRun) as! [CTRun])[0]) as NSDictionary)[kCTFontAttributeName] as! CTFont
+            let scriptFont = (CTRunGetAttributes((CTLineGetGlyphRuns(scriptRun) as! [CTRun])[0]) as NSDictionary)[kCTFontAttributeName] as! CTFont
+            expect(abs(CTFontGetSize(fullFont) - size) < 0.01, "\(text) uses the text size: \(CTFontGetSize(fullFont))")
+            expect(abs(CTFontGetSize(scriptFont) - size * font.constants.scriptPercentScaleDown / 100) < 0.01,
+                   "\(text) in a subscript scales to script size: \(CTFontGetSize(scriptFont))")
+            expect(CTFontCopyPostScriptName(scriptFont) as String != "STIXTwoMath-Regular", "\(text) isn't drawn with the math font")
+            expect(script.width < full.width, "\(text) in a subscript is narrower")
+            let subscriptRun = scriptLine[0]
+            expect(subscriptRun.origin.y < -0.5, "the subscript run sits below the baseline: \(subscriptRun.origin.y)")
+            let typographic = box("\\text{\(text)}")
+            expect(typographic.ascent > 0 && typographic.ascent < size * 1.3 && typographic.descent < size * 0.5,
+                   "\(text) keeps sensible metrics: \(typographic.ascent) \(typographic.descent)")
+        }
+        let mixed = box("x_{\\text{a日}}")
+        expect(!inks(mixed, glyph: scriptGlyph("a", 1)).isEmpty && lineInks(mixed).count == 1,
+               "covered letters keep the script glyph and only the gap falls back")
+        let symbol = box("x^{★}")
+        expect(symbol.width > box("x").width, "a symbol from either font draws in a superscript")
+        let picture = bitmap(NoteMathRenderer.render("x_{\\text{日本}}", fontSize: 40, color: .black, display: true))
+        expect(picture.ink(x: 0.4...1, y: 0.35...1) > 30, "fallback subscript ink at the bottom right")
+        expect(picture.ink(x: 0.45...1, y: 0...0.2) == 0, "nothing floats above the fallback subscript")
     }
 
     static func samples() {

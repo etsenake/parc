@@ -396,32 +396,70 @@ struct NoteMathTypesetter {
     }
 
     func textRun(_ text: String, _ context: NoteMathContext, style: NoteMathTextStyle, font override: CTFont? = nil) -> NoteMathBox {
-        if override == nil, scriptLevel(context.style) > 0, let glyphs = scriptTextGlyphs(text, style: style) {
+        if let override { return lineBox(text, font: override, context, typographic: false) }
+        let mapped = NoteMathAlphabet.mapText(text, style: style)
+        let segments = coverage(mapped)
+        guard segments.contains(where: { !$0.covered }) else { return coveredRun(mapped, context) }
+        var row = NoteMathRow()
+        for segment in segments {
+            row.append(segment.covered ? coveredRun(segment.text, context) : fallbackRun(segment.text, context))
+        }
+        return row.box.withoutGlyphIdentity()
+    }
+
+    private func coverage(_ text: String) -> [(text: String, covered: Bool)] {
+        var segments: [(text: String, covered: Bool)] = []
+        for character in text {
+            let covered = character.unicodeScalars.allSatisfy { $0.properties.isWhitespace || font.glyph(for: $0) != 0 }
+                && !(character.unicodeScalars.count > 1 && character.unicodeScalars.contains { $0.properties.isEmojiPresentation })
+            if let last = segments.last, last.covered == covered {
+                segments[segments.count - 1].text.append(character)
+            } else {
+                segments.append((String(character), covered))
+            }
+        }
+        return segments
+    }
+
+    private func coveredRun(_ mapped: String, _ context: NoteMathContext) -> NoteMathBox {
+        if scriptLevel(context.style) > 0, let glyphs = scriptGlyphs(mapped) {
             var row = NoteMathRow()
             for glyph in glyphs { row.append(glyphBox(sized(glyph, context), size: size(context.style), color: context.color)) }
             return row.box.withoutGlyphIdentity()
         }
-        let ctFont = override ?? font.font(size: size(context.style))
+        return lineBox(mapped, font: font.font(size: size(context.style)), context, typographic: false)
+    }
+
+    private func fallbackRun(_ text: String, _ context: NoteMathContext) -> NoteMathBox {
+        let system = CTFontCreateUIFontForLanguage(.system, size(context.style), nil) ?? font.font(size: size(context.style))
+        return lineBox(text, font: system, context, typographic: true)
+    }
+
+    private func lineBox(_ text: String, font ctFont: CTFont, _ context: NoteMathContext, typographic: Bool) -> NoteMathBox {
         let attributes: [CFString: Any] = [kCTFontAttributeName: ctFont, kCTForegroundColorFromContextAttributeName: kCFBooleanTrue as Any]
-        let mapped = override == nil ? NoteMathAlphabet.mapText(text, style: style) : text
-        guard let string = CFAttributedStringCreate(kCFAllocatorDefault, mapped as CFString, attributes as CFDictionary) else {
+        guard let string = CFAttributedStringCreate(kCFAllocatorDefault, text as CFString, attributes as CFDictionary) else {
             return NoteMathBox()
         }
         let line = CTLineCreateWithAttributedString(string)
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
         var box = NoteMathBox()
-        box.width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        box.width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
         let ink = CTLineGetImageBounds(line, nil)
         if !ink.isNull, !ink.isEmpty {
-            box.ascent = max(0, ink.maxY)
-            box.descent = max(0, -ink.minY)
+            box.ascent = typographic ? min(ascent, max(0, ink.maxY)) : max(0, ink.maxY)
+            box.descent = typographic ? min(descent, max(0, -ink.minY)) : max(0, -ink.minY)
+        } else if typographic, !text.allSatisfy(\.isWhitespace) {
+            box.ascent = ascent
+            box.descent = descent
         }
         box.inks = [NoteMathInk(content: .line(line), origin: .zero, color: context.color)]
         return box
     }
 
-    private func scriptTextGlyphs(_ text: String, style: NoteMathTextStyle) -> [CGGlyph]? {
+    private func scriptGlyphs(_ mapped: String) -> [CGGlyph]? {
         var glyphs: [CGGlyph] = []
-        for scalar in NoteMathAlphabet.mapText(text, style: style).unicodeScalars {
+        for scalar in mapped.unicodeScalars {
             let glyph = font.glyph(for: scalar)
             guard glyph != 0, !scalar.properties.isWhitespace else { return nil }
             glyphs.append(glyph)
