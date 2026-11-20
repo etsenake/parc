@@ -23,6 +23,22 @@ struct NoteMathParserTests {
         }
     }
 
+    static func katexStretchyMarks() {
+        let ab: [NoteMathNode] = [.char("A", .ord), .char("B", .ord)]
+        expect(parse("\\utilde{AB}") == [.decorated(.underArrow("\u{0330}"), ab)], "utilde")
+        expect(parse("\\Overrightarrow{AB}") == [.decorated(.overArrow("\u{21D2}"), ab)], "Overrightarrow")
+        expect(parse("\\overleftharpoon{AB}") == [.decorated(.overArrow("\u{21BC}"), ab)], "overleftharpoon")
+        expect(parse("\\overrightharpoon{AB}") == [.decorated(.overArrow("\u{21C0}"), ab)], "overrightharpoon")
+        expect(parse("\\overlinesegment{AB}") == [.decorated(.lineSegment(true), ab)], "overlinesegment")
+        expect(parse("\\underlinesegment{AB}") == [.decorated(.lineSegment(false), ab)], "underlinesegment")
+        expect(parse("\\phase{AB}") == [.decorated(.phase, ab)], "phase")
+        expect(parse("\\angl{n}") == [.decorated(.actuarialAngle, [.char("n", .ord)])] && parse("\\angln") == parse("\\angl{n}"), "angl")
+        expect(parse("\\underbar{ab}") == [.decorated(.underline, [.text("ab", .roman)])], "underbar underlines text")
+        expect(parse("\\xlongequal{a}") == [.extensibleArrow("=", over: [.char("a", .ord)], under: nil)], "xlongequal")
+        expect(parse("\\xtwoheadrightarrow{a}") == [.extensibleArrow("↠", over: [.char("a", .ord)], under: nil)], "xtwoheadrightarrow")
+        expect(parse("\\xtwoheadleftarrow[b]{a}") == [.extensibleArrow("↞", over: [.char("a", .ord)], under: [.char("b", .ord)])], "xtwoheadleftarrow")
+    }
+
     static func katexSymbolsAndShorthands() {
         let names = """
             maltese Vvdash nvdash nvDash nVdash nVDash minuso ratio shortmid nshortmid shortparallel nshortparallel mathellipsis \
@@ -129,6 +145,7 @@ struct NoteMathParserTests {
         cellScopes()
         katexBoxesSizesAndLinks()
         katexSymbolsAndShorthands()
+        katexStretchyMarks()
         katexEnvironments()
         commutativeDiagrams()
         chemistry()

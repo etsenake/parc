@@ -49,6 +49,9 @@ enum NoteMathDecoration: Equatable, Sendable {
     case backCancel
     case crossCancel
     case strike
+    case lineSegment(Bool)
+    case phase
+    case actuarialAngle
 }
 
 enum NoteMathLap: Equatable, Sendable {
@@ -283,6 +286,7 @@ struct NoteMathParser {
         "colorbox", "fcolorbox", "href", "url", "rule", "tripledash", "relax", "nobreak", "allowbreak", "mathstrut", "pmb",
         "operatornamewithlimits", "varlimsup", "varliminf", "varinjlim", "varprojlim", "char", "verb", "TextOrMath",
         "htmlClass", "htmlId", "htmlStyle", "htmlData", "TeX", "LaTeX", "KaTeX", "mathchoice", "vcenter", "pod",
+        "angln", "underbar",
     ]
 
     private mutating func parseFormula() throws(NoteMathParseError) -> [NoteMathNode] {
@@ -822,6 +826,10 @@ struct NoteMathParser {
             return .choice(branches)
         case "vcenter":
             return .vcenter(try parseArgument(for: name, count: 1))
+        case "angln":
+            return .decorated(.actuarialAngle, [.char("n", .ord)])
+        case "underbar":
+            return .decorated(.underline, Self.contents(try parseText(.roman, command: lexeme, name: name)))
         case "tag", "notag", "nonumber", "label":
             throw failure("\\\(name) has to stand on its own, not inside a script or argument", lexeme)
         default:
@@ -1513,7 +1521,10 @@ struct NoteMathParser {
         "widehat": .wideAccent("\u{0302}"), "widetilde": .wideAccent("\u{0303}"), "widecheck": .wideAccent("\u{030C}"),
         "overline": .overline, "underline": .underline, "overbrace": .overbrace, "underbrace": .underbrace,
         "overrightarrow": .overArrow("\u{2192}"), "overleftarrow": .overArrow("\u{2190}"),
-        "overleftrightarrow": .overArrow("\u{2194}"), "overgroup": .overArrow("\u{23E0}"), "undergroup": .underArrow("\u{23E1}"), "underrightarrow": .underArrow("\u{2192}"),
+        "overleftrightarrow": .overArrow("\u{2194}"), "overgroup": .overArrow("\u{23E0}"), "undergroup": .underArrow("\u{23E1}"),
+        "utilde": .underArrow("\u{0330}"), "Overrightarrow": .overArrow("\u{21D2}"), "overleftharpoon": .overArrow("\u{21BC}"),
+        "overrightharpoon": .overArrow("\u{21C0}"), "overlinesegment": .lineSegment(true), "underlinesegment": .lineSegment(false),
+        "phase": .phase, "angl": .actuarialAngle, "underrightarrow": .underArrow("\u{2192}"),
         "underleftarrow": .underArrow("\u{2190}"), "underleftrightarrow": .underArrow("\u{2194}"),
         "cancel": .cancel, "bcancel": .backCancel, "xcancel": .crossCancel, "sout": .strike,
     ]
@@ -1524,6 +1535,7 @@ struct NoteMathParser {
         "xrightharpoonup": "⇀", "xrightharpoondown": "⇁", "xleftharpoonup": "↼", "xleftharpoondown": "↽",
         "xrightleftharpoons": "⇌", "xleftrightharpoons": "⇋", "xrightleftarrows": "⇄", "xtofrom": "⇄",
         "xrightequilibrium": "⥂", "xleftequilibrium": "⥄",
+        "xtwoheadrightarrow": "↠", "xtwoheadleftarrow": "↞", "xlongequal": "=",
     ]
 
     private static let sizedDelimiters: [String: (Int, NoteMathAtomKind)] = [

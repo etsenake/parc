@@ -126,6 +126,7 @@ struct NoteMathLayoutTests {
         references()
         katexBoxesSizesAndLinks()
         katexChoicesAndCentering()
+        katexStretchyMarks()
         samples()
         print("NoteMathLayoutTests passed")
     }
@@ -654,6 +655,43 @@ struct NoteMathLayoutTests {
         expect(picture.ink(x: 0.55...1, y: 0...1) > 40, "the reference number draws")
         let pictureMissing = bitmap(missing)
         expect(pictureMissing.ink(x: 0.55...1, y: 0...1) > 40, "the missing marker draws")
+    }
+
+    static func katexStretchyMarks() {
+        let plain = box("ABCD", display: false)
+        let rules = { (target: NoteMathBox) in target.inks.filter { if case .rule = $0.content { return true } else { return false } } }
+        expect(box("\\utilde{ABCD}", display: false).descent > plain.descent + 0.1 * size, "utilde hangs a tilde below")
+        for mark in ["Overrightarrow", "overleftharpoon", "overrightharpoon"] {
+            let marked = box("\\\(mark){ABCDEFGH}", display: false), base = box("ABCDEFGH", display: false)
+            let arrowInk = inkSpan(marked, above: base.ascent)
+            expect(marked.ascent > base.ascent + 0.15 * size && arrowInk > base.width * 0.9, "\\\(mark) stretches over its base")
+        }
+        let over = box("\\overlinesegment{ABCD}", display: false), under = box("\\underlinesegment{ABCD}", display: false)
+        expect(abs(over.ascent - plain.ascent - 0.522 * size) < 0.01 && rules(over).count == 3, "overlinesegment matches KaTeX's box")
+        expect(abs(under.descent - plain.descent - 0.522 * size) < 0.01 && rules(under).count == 3, "underlinesegment hangs below")
+        let phase = box("\\phase{-78^\\circ}", display: false), phaseBase = box("-78^\\circ", display: false)
+        expect(phase.width > phaseBase.width + 0.3 * size && phase.descent > phaseBase.descent + 0.15 * size, "phase draws its angle")
+        expect(phase.inks.contains { if case .segment = $0.content { return true } else { return false } }, "phase has its slanted stroke")
+        let angle = box("\\angl{n}", display: false), letter = box("n", display: false)
+        expect(rules(angle).count == 2 && abs(angle.ascent - letter.ascent - 0.16 * size) < 0.01, "angl roofs its content")
+        let short = box("\\xtwoheadrightarrow{a}", display: false), long = box("\\xtwoheadrightarrow{abcdefgh}", display: false)
+        expect(long.width > short.width + 2 * size, "two-headed arrows stretch")
+        expect(box("\\xtwoheadleftarrow{abcdefgh}", display: false).width > short.width + 2 * size, "left two-headed arrows stretch")
+        let equal = box("\\xlongequal{abcdefgh}", display: false)
+        expect(rules(equal).count == 2 && equal.width > 3 * size, "xlongequal draws two long bars")
+    }
+
+    static func inkSpan(_ target: NoteMathBox, above floor: CGFloat) -> CGFloat {
+        var low = CGFloat.infinity, high = -CGFloat.infinity
+        for ink in target.inks {
+            guard case .glyph(let glyph, let ctFont) = ink.content else { continue }
+            let scale = CTFontGetSize(ctFont) / font.unitsPerEm
+            let bounds = font.metrics(glyph).bounds
+            guard ink.origin.y + bounds.minY * scale > floor else { continue }
+            low = min(low, ink.origin.x + bounds.minX * scale)
+            high = max(high, ink.origin.x + bounds.maxX * scale)
+        }
+        return high - low
     }
 
     static func katexChoicesAndCentering() {

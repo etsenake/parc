@@ -982,6 +982,81 @@ struct NoteMathTypesetter {
             return stretchedStack(arrow, over: false, content, context)
         case .cancel, .backCancel, .crossCancel, .strike:
             return cancelled(decoration, content, context)
+        case .lineSegment(let above):
+            return lineSegment(above: above, content, context)
+        case .phase:
+            return phase(content, context)
+        case .actuarialAngle:
+            return actuarialAngle(content, context)
+        }
+    }
+
+    private func lineSegment(above: Bool, _ content: [NoteMathNode], _ context: NoteMathContext) -> NoteMathBox {
+        let base = layoutList(content, above ? context.with(style: context.style.crampedStyle) : context).withoutGlyphIdentity()
+        let em = self.em(context)
+        let line = 0.04 * em, span = 0.522 * em, tick = 0.334 * em
+        var box = NoteMathBox(width: base.width, ascent: base.ascent, descent: base.descent)
+        box.draw(base, at: .zero)
+        let bottom = above ? base.ascent : -(base.descent + span)
+        if above { box.ascent += span } else { box.descent += span }
+        let pieces = [
+            CGRect(x: 0, y: bottom + 0.241 * em, width: base.width, height: line),
+            CGRect(x: 0, y: bottom + 0.094 * em, width: line, height: tick),
+            CGRect(x: base.width - line, y: bottom + 0.094 * em, width: line, height: tick),
+        ]
+        for rect in pieces { box.inks.append(NoteMathInk(content: .rule(rect.size), origin: rect.origin, color: context.color)) }
+        return box
+    }
+
+    private func phase(_ content: [NoteMathNode], _ context: NoteMathContext) -> NoteMathBox {
+        let inner = layoutList(content, context).withoutGlyphIdentity()
+        let em = self.em(context)
+        let weight = 0.06 * em, clearance = 0.35 * 0.431 * em
+        let height = inner.height + weight + clearance
+        let pad = height / 2 + weight
+        var box = NoteMathBox(width: pad + inner.width, ascent: inner.ascent, descent: inner.descent + weight + clearance)
+        box.draw(inner, at: CGPoint(x: pad, y: 0))
+        box.inks.append(NoteMathInk(content: .rule(CGSize(width: box.width, height: weight)), origin: CGPoint(x: 0, y: -box.descent),
+                                    color: context.color))
+        box.inks.append(NoteMathInk(content: .segment(CGVector(dx: height / 2, dy: height - weight / 2), weight),
+                                    origin: CGPoint(x: weight / 2, y: -box.descent + weight / 2), color: context.color))
+        return box
+    }
+
+    private func actuarialAngle(_ content: [NoteMathNode], _ context: NoteMathContext) -> NoteMathBox {
+        let inner = layoutList(content, context).withoutGlyphIdentity()
+        let em = self.em(context)
+        let rule = 0.04 * em, side = 0.03889 * em
+        let top = inner.ascent + 4 * rule, bottom = inner.descent + max(0, 0.25 * em - inner.descent)
+        let framed = inner.width + side * 2
+        var box = NoteMathBox(width: framed + side, ascent: top, descent: bottom)
+        box.draw(inner, at: CGPoint(x: side, y: 0))
+        for rect in [CGRect(x: 0, y: top - rule, width: framed, height: rule), CGRect(x: framed - rule, y: -bottom, width: rule, height: top + bottom)] {
+            box.inks.append(NoteMathInk(content: .rule(rect.size), origin: rect.origin, color: context.color))
+        }
+        return box
+    }
+
+    private func composedArrow(_ arrow: String, target: CGFloat, _ context: NoteMathContext) -> NoteMathBox? {
+        switch arrow {
+        case "=":
+            let em = self.em(context), axis = constant(.axisHeight, context), line = 0.04 * em
+            var box = NoteMathBox(width: target, ascent: axis + 0.117 * em, descent: max(0, 0.117 * em - axis))
+            for y in [axis + 0.077 * em, axis - 0.117 * em] {
+                box.inks.append(NoteMathInk(content: .rule(CGSize(width: target, height: line)), origin: CGPoint(x: 0, y: y), color: context.color))
+            }
+            return box
+        case "↠", "↞":
+            let right = arrow == "↠"
+            guard let shaft = horizontalStretch(right ? "→" : "←", target: target, context), let glyph = singleGlyph(arrow) else { return nil }
+            let heads = glyphBox(sized(glyph, context), size: size(context.style), color: context.color)
+            let width = max(shaft.width, heads.width)
+            var box = NoteMathBox(width: width, ascent: max(shaft.ascent, heads.ascent), descent: max(shaft.descent, heads.descent))
+            box.draw(shaft, at: CGPoint(x: right ? width - shaft.width : 0, y: 0))
+            box.draw(heads, at: CGPoint(x: right ? width - heads.width : 0, y: 0))
+            return box
+        default:
+            return nil
         }
     }
 
@@ -1015,7 +1090,9 @@ struct NoteMathTypesetter {
         let em = self.em(context)
         let target = max(max(overBox.width, underBox?.width ?? 0) + 0.6 * em, minimumWidth ?? 1.4 * em)
         let paired = Self.pairedArrows[arrow].flatMap { pairedArrow($0, target: target, context) }
-        guard let stretched = paired ?? horizontalStretch(arrow, target: target, context) else { return overBox }
+        guard let stretched = paired ?? composedArrow(arrow, target: target, context) ?? horizontalStretch(arrow, target: target, context) else {
+            return overBox
+        }
         let ink = inkExtent(stretched)
         let width = max(stretched.width, overBox.width, underBox?.width ?? 0)
         var box = NoteMathBox(width: width, ascent: max(stretched.ascent, 0), descent: max(stretched.descent, 0))
