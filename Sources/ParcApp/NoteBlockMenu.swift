@@ -529,6 +529,8 @@ final class NoteBlockMenuController: NSObject {
         case .wrapCode:
             let wrap = !live.allSatisfy { page.block($0)?.props.wrap == true }
             update(live, name: wrap ? "Wrap Code" : "Unwrap Code") { $0.props.wrap = wrap }
+        case .diagramMode(let mode):
+            update(live, name: "Diagram View") { $0.props.diagramMode = mode == .preview ? nil : mode }
         case .align(let alignment):
             update(live, name: "Align") { $0.props.alignment = alignment }
         case .tableItem(let id):

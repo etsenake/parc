@@ -42,6 +42,7 @@ enum NoteBlockAction: Hashable {
     case moveToNote(URL)
     case language(String)
     case wrapCode
+    case diagramMode(NoteDiagramMode)
     case align(NoteAlignment)
     case download
     case viewOriginal
@@ -82,6 +83,7 @@ enum NoteBlockMenuModel {
     static let turnIntoTitle = "Turn Into"
     static let colorTitle = "Color"
     static let languageTitle = "Language"
+    static let diagramViewTitle = "View"
     static let alignmentTitle = "Alignment"
     static let moveTitle = "Move to"
 
@@ -221,6 +223,20 @@ enum NoteBlockMenuModel {
         }
     }
 
+    static func diagramModeEntries(current: NoteDiagramMode?) -> [NoteBlockMenuEntry] {
+        NoteDiagramMode.allCases.map { mode in
+            let symbol: String
+            switch mode {
+            case .code: symbol = "chevron.left.forwardslash.chevron.right"
+            case .preview: symbol = "eye"
+            case .split: symbol = "rectangle.split.1x2"
+            }
+            return NoteBlockMenuEntry(id: "diagramView." + mode.rawValue, title: mode.title, icon: .symbol(symbol),
+                                      keywords: ["view", "diagram", "mermaid"], section: diagramViewTitle,
+                                      isChecked: current == mode, action: .diagramMode(mode))
+        }
+    }
+
     static func alignmentEntries(current: NoteAlignment?) -> [NoteBlockMenuEntry] {
         let options: [(NoteAlignment, String, String)] = [(.left, "Left", "text.alignleft"), (.center, "Center", "text.aligncenter"),
                                                          (.right, "Right", "text.alignright")]
@@ -243,6 +259,13 @@ enum NoteBlockMenuModel {
             result.append(NoteBlockMenuEntry(id: "wrap", title: "Wrap Code", icon: .symbol("text.word.spacing"),
                                              keywords: ["soft wrap", "lines"], group: 1,
                                              isChecked: blocks.allSatisfy(\.props.wrap), action: .wrapCode))
+            if blocks.allSatisfy(NoteMermaid.isDiagram) {
+                let modes = Set(blocks.map(NoteMermaid.storedMode(of:)))
+                let current = modes.count == 1 ? modes.first : nil
+                result.append(NoteBlockMenuEntry(id: "diagramView", title: diagramViewTitle, icon: .symbol("rectangle.split.1x2"),
+                                                 subtitle: current?.title, keywords: ["mermaid", "diagram", "preview", "split", "code"],
+                                                 group: 1, children: diagramModeEntries(current: current)))
+            }
         case .image, .video, .audio, .file:
             if editable && kind == .image {
                 let alignments = Set(blocks.map(\.props.alignment))
