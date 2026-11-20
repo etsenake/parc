@@ -5,8 +5,8 @@ import Combine
 final class NoteHandleButton: NSView {
     enum Role { case add, grip }
 
-    static let idleOpacity: Float = 0.33
-    static let pressedScale: CGFloat = 0.95
+    static let idleOpacity = Float(NoteTheme.idleHandleOpacity)
+    static let pressedScale = NoteAnimation.pressedScale
 
     let role: Role
     var onPress: ((NSEvent) -> Void)?
@@ -151,11 +151,11 @@ final class NoteHandleButton: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            glyph.fillColor = NoteTheme.secondaryInk.cgColor
+            glyph.fillColor = (isHovered || isPressed ? NoteTheme.secondaryInk : NoteTheme.handleInk).cgColor
             plate.backgroundColor = (isPressed ? NoteTheme.pressedFill : NoteTheme.hoverFill).cgColor
         }
         glyph.opacity = isLit ? 1 : Self.idleOpacity
-        plate.opacity = isLit ? 1 : 0
+        plate.opacity = isHovered || isPressed ? 1 : 0
         CATransaction.commit()
     }
 }
@@ -175,6 +175,10 @@ final class NoteHandleBar: NSView {
         addSubview(plus)
         addSubview(grip)
         setAccessibilityElement(false)
+        NoteAnimation.observeReduceMotion(self) { [weak self] in
+            guard let self else { return }
+            NoteAnimation.settle(self)
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -198,7 +202,7 @@ final class NoteHandleBar: NSView {
             plus.setHovered(false)
             grip.setHovered(false)
         }
-        NoteAnimation.fade(self, visible: shown, duration: animated ? 0.1 : 0) { [weak self] in
+        NoteAnimation.fade(self, visible: shown, duration: animated ? NoteAnimation.hoverDuration : 0) { [weak self] in
             guard let self, self.generation == token, !self.isShown else { return }
             self.isHidden = true
         }
@@ -214,22 +218,43 @@ final class NoteBlockHandleController {
     static let addTooltip = "Click to add below, ⌥-click to add above"
     static let gripTooltip = "Drag to move, click for options"
 
+    private struct CrossNoteMove {
+        var target: URL
+        var originals: [NoteBlockID]
+        var copies: [NoteBlock]
+        var markdown: String
+    }
+
     unowned let editor: NotePageEditor
     let bar = NoteHandleBar()
+    var presentToast: ((ParcToastContent) -> Void)?
+    private(set) lazy var menu: NoteBlockMenuController = {
+        let controller = NoteBlockMenuController(editor: editor)
+        controller.onClose = { [weak self] in self?.menuDidClose() }
+        return controller
+    }()
+    private(set) lazy var drag: NoteDragController = {
+        let controller = NoteDragController(editor: editor)
+        controller.onFinish = { [weak self] in self?.refreshFromPointer() }
+        return controller
+    }()
     private(set) var hoveredBlock: NoteBlockID?
     private(set) var pinnedBlock: NoteBlockID?
     private var hiddenForTyping = false
     private var typingMouseLocation: NSPoint?
     private var cachedTargets: [NoteHandleTarget]?
-    private var repositionScheduled = false
-    private var subscription: AnyCancellable?
+    private var moves: [CrossNoteMove] = []
+    private var lastMenuTarget: [NoteBlockID] = []
+    private var lastMenuCloseEvent: TimeInterval?
+    private var subscriptions: Set<AnyCancellable> = []
 
     init(editor: NotePageEditor) {
         self.editor = editor
         bar.plus.onActivate = { [weak self] modifiers in self?.addBlock(above: modifiers.contains(.option)) }
         bar.grip.onPress = { [weak self] event in self?.gripPressed(event) }
-        bar.grip.onActivate = { [weak self] _ in self?.gripClicked() }
-        subscription = editor.session.changes.sink { [weak self] change in self?.sessionDidChange(change) }
+        bar.grip.onActivate = { [weak self] _ in self?.gripClicked(event: nil) }
+        editor.session.changes.sink { [weak self] change in self?.sessionDidChange(change) }.store(in: &subscriptions)
+        editor.canvas.layoutDidChange.sink { [weak self] in self?.canvasDidLayout() }.store(in: &subscriptions)
     }
 
     var activeBlock: NoteBlockID? { pinnedBlock ?? hoveredBlock }
@@ -241,7 +266,7 @@ final class NoteBlockHandleController {
             hiddenForTyping = false
             typingMouseLocation = nil
         }
-        guard pinnedBlock == nil else { return }
+        guard pinnedBlock == nil, !drag.isDragging else { return }
         guard !editor.isReadOnly, let target = target(at: point) else {
             if bar.isShown, bar.frame.contains(editor.canvas.overlayView.convert(point, from: editor.canvas)) { return }
             hide()
@@ -251,26 +276,50 @@ final class NoteBlockHandleController {
     }
 
     func pointerExited() {
-        guard pinnedBlock == nil else { return }
+        guard pinnedBlock == nil, !drag.isDragging else { return }
         hide()
     }
 
     func layoutDidChange() {
         cachedTargets = nil
-        guard bar.isShown, !repositionScheduled else { return }
-        repositionScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.repositionScheduled = false
-            self.reposition()
-        }
+    }
+
+    private func canvasDidLayout() {
+        cachedTargets = nil
+        if bar.isShown { reposition() }
+    }
+
+    private func refreshFromPointer() {
+        guard let window = editor.canvas.window else { return }
+        let point = editor.canvas.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        if editor.canvas.visibleRect.contains(point) { pointerMoved(to: point) } else { hide() }
     }
 
     func handleKey(_ event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if menu.isOpen, menu.handleKey(event) { return true }
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        let key = event.charactersIgnoringModifiers?.lowercased()
+        if modifiers == .command, key == "/" { return openBlockActions() }
+        if modifiers == [.command, .shift], key == "p" { return openBlockActions(startInMoveTo: true) }
         if modifiers.contains(.command) || modifiers.contains(.control) { return false }
         if let characters = event.characters, !characters.isEmpty { hideForTyping() }
         return false
+    }
+
+    @discardableResult
+    func openBlockActions(startInMoveTo: Bool = false) -> Bool {
+        let selection = editor.session.selection
+        let ids = blocksForMenu(selection)
+        guard let first = ids.first, !menu.isOpen else { return menu.isOpen }
+        editor.session.setSelection(.blocks(ids))
+        editor.canvas.layoutSubtreeIfNeeded()
+        editor.canvas.scrollBlockToVisible(first)
+        pin(first)
+        let anchor = handleRects(for: first)?.grip ?? editor.canvas.overlayView.convert(editor.canvas.frame(of: first) ?? .zero, from: editor.canvas)
+        lastMenuTarget = ids
+        menu.open(for: ids, anchor: anchor, keyboard: true, previousSelection: selection, startInMoveTo: startInMoveTo)
+        if !menu.isOpen { pin(nil) }
+        return true
     }
 
     func pin(_ id: NoteBlockID?) {
@@ -290,6 +339,25 @@ final class NoteBlockHandleController {
         bar.setShown(false, animated: animated)
     }
 
+    private func blocksForMenu(_ selection: NotePageSelection) -> [NoteBlockID] {
+        let page = editor.session.page
+        switch selection {
+        case .none: return []
+        case .blocks(let ids): return page.topLevelSelection(ids).filter { page.block($0)?.kind != .column }
+        case .cells(let table, _, _): return page.block(table) == nil ? [] : [table]
+        case .text(let anchor, let head):
+            if anchor == head { return page.block(head.block) == nil ? [] : [head.block] }
+            let touched = editor.session.textSegments(of: selection).map(\.position.block)
+            return page.topLevelSelection(touched.isEmpty ? [head.block] : touched)
+        }
+    }
+
+    private func menuDidClose() {
+        lastMenuCloseEvent = NSApp.currentEvent?.timestamp
+        pin(nil)
+        refreshFromPointer()
+    }
+
     private func hideForTyping() {
         guard pinnedBlock == nil else { return }
         hiddenForTyping = true
@@ -304,6 +372,7 @@ final class NoteBlockHandleController {
             hide()
         }
         if editor.isReadOnly { hide(animated: false) }
+        if change.isUndoRedo, !moves.isEmpty { reconcileMoves() }
     }
 
     private func show(_ target: NoteHandleTarget) {
@@ -332,25 +401,27 @@ final class NoteBlockHandleController {
     }
 
     private func fallbackTarget(_ id: NoteBlockID) -> NoteHandleTarget? {
-        guard let frame = editor.canvas.frame(of: id) else { return nil }
-        let depth = editor.session.page.path(of: id).map { $0.count - 1 } ?? 0
-        return NoteHandleTarget(id: id, frame: frame, depth: depth, anchorY: editor.canvas.blockView(for: id)?.handleAnchorY ?? 14)
+        let canvas = editor.canvas!
+        canvas.updateLayoutIfNeeded()
+        guard let entry = canvas.canvasLayout.entry(id) else { return nil }
+        return Self.target(for: entry, canvas: canvas)
+    }
+
+    private static func target(for entry: NoteCanvasEntry, canvas: NotePageCanvasView) -> NoteHandleTarget {
+        let leading = entry.kind == .callout ? min(entry.outerFrame.minX, entry.frame.minX) : entry.frame.minX
+        let frame = CGRect(x: leading, y: entry.frame.minY, width: max(0, entry.frame.maxX - leading), height: entry.frame.height)
+        return NoteHandleTarget(id: entry.id, frame: frame, depth: entry.depth, anchorY: canvas.handleAnchorY(for: entry.id))
     }
 
     func targets() -> [NoteHandleTarget] {
         if let cachedTargets { return cachedTargets }
         let canvas = editor.canvas!
-        var result: [NoteHandleTarget] = []
-        func walk(_ blocks: [NoteBlock], depth: Int) {
-            for block in blocks {
-                if block.kind != .columns && block.kind != .column, let frame = canvas.frame(of: block.id) {
-                    result.append(NoteHandleTarget(id: block.id, frame: frame, depth: depth,
-                                                   anchorY: canvas.blockView(for: block.id)?.handleAnchorY ?? 14))
-                }
-                if block.showsChildren { walk(block.children, depth: depth + 1) }
-            }
+        canvas.updateLayoutIfNeeded()
+        let result = canvas.canvasLayout.entries.compactMap { entry -> NoteHandleTarget? in
+            guard entry.isRow, entry.kind != .columns, entry.kind != .column,
+                  entry.frame.width > 0, entry.frame.height > 0 else { return nil }
+            return Self.target(for: entry, canvas: canvas)
         }
-        walk(editor.session.page.blocks, depth: 0)
         cachedTargets = result
         return result
     }
@@ -359,7 +430,7 @@ final class NoteBlockHandleController {
         guard !editor.isReadOnly, let id = activeBlock, let block = editor.session.page.block(id) else { return }
         let empty = block.kind == .paragraph && block.text.isEmpty && block.children.isEmpty
         let target: NoteBlockID
-        if empty {
+        if empty && !above {
             target = id
             editor.session.setSelection(.caret(NotePosition(id, 0)))
         } else {
@@ -378,23 +449,139 @@ final class NoteBlockHandleController {
     }
 
     private func gripPressed(_ event: NSEvent) {
-        guard !editor.isReadOnly, let id = activeBlock else { return }
-        var moved = false
+        guard let id = activeBlock else { return }
+        if editor.isReadOnly { gripClicked(event: event); return }
+        var dragEvent: NSEvent?
         let start = event.locationInWindow
         editor.canvas.window?.trackEvents(matching: [.leftMouseDragged, .leftMouseUp], timeout: .infinity, mode: .eventTracking) { tracked, stop in
             guard let tracked else { stop.pointee = true; return }
             if tracked.type == .leftMouseUp { stop.pointee = true; return }
             if NoteDragPlan.crossesThreshold(from: start, to: tracked.locationInWindow) {
-                moved = true
+                dragEvent = tracked
                 stop.pointee = true
             }
         }
-        if !moved { gripClicked(id) }
+        guard let dragEvent else { gripClicked(event: event, block: id); return }
+        bar.grip.setPressed(false)
+        hide(animated: true)
+        drag.run(grabbing: id, mouseDown: event, current: dragEvent)
     }
 
-    private func gripClicked(_ id: NoteBlockID? = nil) {
-        guard let id = id ?? activeBlock, editor.session.page.block(id) != nil else { return }
-        let ids = NoteDragPlan.draggedBlocks(grabbing: id, selection: editor.session.selection, page: editor.session.page)
-        editor.session.setSelection(.blocks(ids.isEmpty ? [id] : ids))
+    private func gripClicked(event: NSEvent?, block: NoteBlockID? = nil) {
+        guard let id = block ?? activeBlock, editor.session.page.block(id) != nil else { return }
+        let previous = editor.session.selection
+        let dragged = NoteDragPlan.draggedBlocks(grabbing: id, selection: previous, page: editor.session.page)
+        let ids = dragged.isEmpty ? [id] : dragged
+        if let event, let closed = lastMenuCloseEvent, closed == event.timestamp, lastMenuTarget == ids { return }
+        editor.session.setSelection(.blocks(ids))
+        pin(id)
+        guard let anchor = handleRects(for: id)?.grip else { pin(nil); return }
+        lastMenuTarget = ids
+        menu.open(for: ids, anchor: anchor, keyboard: event == nil, previousSelection: previous)
+        if !menu.isOpen { pin(nil) }
+    }
+
+    func move(_ ids: [NoteBlockID], to url: URL, title: String?) {
+        let page = editor.session.page
+        let top = page.topLevelSelection(ids)
+        let blocks = top.compactMap { page.block($0) }
+        guard !blocks.isEmpty else { return }
+        let name = title ?? url.deletingPathExtension().lastPathComponent
+        let copies = blocks.map { $0.withFreshIDs() }
+        let file: NoteFileSession
+        do { file = try NoteFileSession.open(url) } catch {
+            presentToast?(.standard("Couldn’t open “\(name)”. Your blocks stayed put."))
+            return
+        }
+        file.retain()
+        defer { file.release() }
+        guard !file.page.isReadOnly, !file.page.page.settings.locked else {
+            presentToast?(.standard("“\(name)” is locked, so your blocks stayed put."))
+            return
+        }
+        Self.append(copies, to: file.page)
+        editor.session.deleteBlocks(top)
+        moves.append(CrossNoteMove(target: url, originals: top, copies: copies,
+                                   markdown: NoteMarkdown.serialize(NotePage(blocks: copies))))
+        if moves.count > 20 { moves.removeFirst(moves.count - 20) }
+        presentToast?(.undoable("Moved to “\(name)”"))
+        if let caret = editor.session.selection.caret { editor.focus(caret) }
+    }
+
+    private static func append(_ blocks: [NoteBlock], to session: NotePageSession) {
+        let lone = session.page.blocks.count == 1 && session.page.blocks[0].kind == .paragraph
+            && session.page.blocks[0].text.isEmpty && session.page.blocks[0].children.isEmpty
+        session.edit("Move Here", selection: lone ? NotePageSelection.none : session.selection) { page in
+            if lone { page.blocks = blocks } else { page.blocks.append(contentsOf: blocks) }
+        }
+    }
+
+    private func reconcileMoves() {
+        let page = editor.session.page
+        for move in moves.reversed() {
+            let back = move.originals.allSatisfy { page.block($0) != nil }
+            let gone = move.originals.allSatisfy { page.block($0) == nil }
+            guard back || gone, let file = try? NoteFileSession.open(move.target) else { continue }
+            file.retain()
+            defer { file.release() }
+            let target = file.page
+            let run = Self.run(of: move, in: target.page)
+            if back, let run {
+                target.edit("Undo Move", selection: target.selection) { page in page.blocks.removeSubrange(run) }
+            } else if gone, run == nil {
+                Self.append(move.copies.map { $0.withFreshIDs() }, to: target)
+            }
+        }
+    }
+
+    private static func run(of move: CrossNoteMove, in page: NotePage) -> Range<Int>? {
+        let count = move.copies.count
+        guard count > 0, page.blocks.count >= count else { return nil }
+        for start in stride(from: page.blocks.count - count, through: 0, by: -1) {
+            let slice = Array(page.blocks[start..<(start + count)])
+            if NoteMarkdown.serialize(NotePage(blocks: slice)) == move.markdown { return start..<(start + count) }
+        }
+        return nil
+    }
+
+    func download(_ source: String) {
+        guard let url = editor.environment.resolve(source) else { return }
+        let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        if url.isFileURL {
+            do {
+                let saved = try Self.copy(url, into: folder, suggestedName: url.lastPathComponent)
+                presentToast?(.standard("Saved to Downloads", icon: "arrow.down.circle.fill", subLabel: saved.lastPathComponent))
+            } catch {
+                presentToast?(.standard("Couldn’t save that file. Maybe try again?"))
+            }
+            return
+        }
+        Task { @MainActor [weak self] in
+            do {
+                let (temporary, response) = try await URLSession.shared.download(from: url)
+                defer { try? FileManager.default.removeItem(at: temporary) }
+                let name = response.suggestedFilename ?? url.lastPathComponent
+                let saved = try Self.copy(temporary, into: folder, suggestedName: name.isEmpty ? "Download" : name)
+                self?.presentToast?(.standard("Saved to Downloads", icon: "arrow.down.circle.fill", subLabel: saved.lastPathComponent))
+            } catch {
+                self?.presentToast?(.standard("Couldn’t download that. Maybe try again?"))
+            }
+        }
+    }
+
+    private static func copy(_ source: URL, into folder: URL, suggestedName: String) throws -> URL {
+        let manager = FileManager.default
+        try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+        let base = (suggestedName as NSString).deletingPathExtension
+        let ext = (suggestedName as NSString).pathExtension
+        var candidate = folder.appendingPathComponent(suggestedName)
+        var counter = 2
+        while manager.fileExists(atPath: candidate.path) {
+            let name = ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)"
+            candidate = folder.appendingPathComponent(name)
+            counter += 1
+        }
+        try manager.copyItem(at: source, to: candidate)
+        return candidate
     }
 }

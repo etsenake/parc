@@ -18,6 +18,7 @@ struct NoteHandlesModelTests {
         hoverTargets()
         autoscroll()
         dragOrdering()
+        columnCopies()
         print("NoteHandlesModelTests passed")
     }
 
@@ -26,7 +27,7 @@ struct NoteHandlesModelTests {
         paragraph.color = .background(.yellow)
         let entries = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [paragraph], canMoveToNotes: true))
         expect(ids(entries) == ["delete", "duplicate", "turn", "move", "color"], "a paragraph gets Notion's order without block links")
-        expect(entries[0].shortcut == "⌫" && entries[0].isDestructive, "Delete shows ⌫ and reads as destructive")
+        expect(entries[0].shortcut == "Del" && entries[0].isDestructive, "Delete shows Del and reads as destructive")
         expect(entries[1].shortcut == "⌘D", "Duplicate shows ⌘D")
         expect(entries[3].shortcut == "⇧⌘P" && entries[3].hasSubmenu, "Move To shows ⇧⌘P and opens a note picker")
         let turn = entries[2].children
@@ -178,6 +179,30 @@ struct NoteHandlesModelTests {
         expect(tiny == 0, "a short view keeps a still middle")
         expect(NoteAutoscroll.step(velocity: 600, elapsed: 1.0 / 60) == 10, "a frame moves velocity × time")
         expect(NoteAutoscroll.step(velocity: 600, elapsed: 2) == 30, "a stalled frame never jumps far")
+    }
+
+    static func columnCopies() {
+        let a = NoteBlock.paragraph("a"), b = NoteBlock.paragraph("b")
+        var page = NotePage(blocks: [a, b])
+        let copy = NoteBlock.paragraph("copy")
+        page.place([copy], beside: b.id, side: .left)
+        expect(page.blocks.count == 2 && page.blocks[1].kind == .columns, "dropping beside a block makes columns in its place")
+        expect(page.blocks[1].children.map { $0.children.map(\.text.string) } == [["copy"], ["b"]], "the left side puts the copy first")
+        let row = page.blocks[1].id
+        let third = NoteBlock.paragraph("third")
+        var widened = page
+        widened.update(row) { columns in for index in columns.children.indices { columns.children[index].props.width = 0.5 } }
+        widened.place([third], beside: b.id, side: .right)
+        let columns = widened.block(row)!.children
+        expect(columns.map { $0.children.map(\.text.string) } == [["copy"], ["b"], ["third"]], "beside a column block adds a column next to it")
+        expect(columns.allSatisfy { $0.props.width == nil }, "a new column evens out the widths")
+        var full = NotePage(blocks: [NoteBlock(.columns, children: (0..<5).map { NoteBlock(.column, children: [NoteBlock.paragraph(NoteText("\($0)"))]) })])
+        let before = full
+        full.place([NoteBlock.paragraph("six")], beside: full.blocks[0].children[2].children[0].id, side: .right)
+        expect(full == before, "five columns is the limit")
+        var empty = NotePage(blocks: [a])
+        empty.place([], beside: a.id, side: .right)
+        expect(empty.blocks == [a], "placing nothing changes nothing")
     }
 
     static func dragOrdering() {

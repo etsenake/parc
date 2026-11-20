@@ -131,7 +131,7 @@ enum NoteBlockMenuModel {
         let editable = !context.isReadOnly
         var result: [NoteBlockMenuEntry] = []
         if editable {
-            result.append(NoteBlockMenuEntry(id: "delete", title: "Delete", icon: .symbol("trash"), shortcut: "⌫",
+            result.append(NoteBlockMenuEntry(id: "delete", title: "Delete", icon: .symbol("trash"), shortcut: "Del",
                                              keywords: ["remove", "erase", "trash"], group: 0, isDestructive: true, action: .delete))
             result.append(NoteBlockMenuEntry(id: "duplicate", title: "Duplicate", icon: .symbol("plus.square.on.square"), shortcut: "⌘D",
                                              keywords: ["copy", "clone"], group: 0, action: .duplicate))

@@ -15,8 +15,8 @@ struct NoteHandleRects: Hashable {
 }
 
 enum NoteHandleGeometry {
-    static let buttonSize = CGSize(width: 20, height: 24)
-    static let buttonGap: CGFloat = 1
+    static let buttonSize = CGSize(width: 18, height: 24)
+    static let buttonGap: CGFloat = 2
     static let contentGap: CGFloat = 4
     static let gutterReach: CGFloat = 52
     static let verticalSlop: CGFloat = 2
@@ -135,5 +135,22 @@ enum NoteDragPlan {
 
     static func copies(of ids: [NoteBlockID], in page: NotePage) -> [NoteBlock] {
         page.topLevelSelection(ids).compactMap { page.block($0)?.withFreshIDs() }
+    }
+}
+
+extension NotePage {
+    mutating func place(_ moved: [NoteBlock], beside target: NoteBlockID, side: NoteDropSide) {
+        guard !moved.isEmpty else { return }
+        if let parentID = parent(of: target), block(parentID)?.kind == .column,
+           let columnsID = parent(of: parentID), let columns = block(columnsID) {
+            guard columns.children.count < NoteDragPlan.maximumColumns else { return }
+            insert([NoteBlock(.column, children: moved)], side == .left ? .before(parentID) : .after(parentID))
+            update(columnsID) { block in for index in block.children.indices { block.children[index].props.width = nil } }
+        } else if let original = block(target) {
+            let existing = NoteBlock(.column, children: [original])
+            let added = NoteBlock(.column, children: moved)
+            update(target) { $0 = NoteBlock(.columns, children: side == .left ? [added, existing] : [existing, added]) }
+        }
+        collapseEmptyColumns()
     }
 }
