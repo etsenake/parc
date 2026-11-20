@@ -154,7 +154,6 @@ final class NotePageCanvasView: NSView {
         case .structure:
             measurer.invalidateAll()
             measurer.invalidateContents()
-            updateViews(for: change.blocks, page: page)
             wantsAnimation = true
         }
         invalidateCanvasLayout()
@@ -505,16 +504,13 @@ final class NotePageCanvasView: NSView {
 
     private func updateViews(for ids: Set<NoteBlockID>, page: NotePage) {
         for id in ids {
-            guard let view = views[id] else { continue }
-            guard let block = page.block(id) else { continue }
-            if block.kind != view.block.kind && !(block.kind.hasRichText && view.block.kind.hasRichText) {
-                let focused = isFirstResponderInside(view)
-                discard(id)
-                if focused { refocusAfterLayout(id) }
-                continue
-            }
+            guard let view = views[id], let block = page.block(id), !needsNewView(view, for: block) else { continue }
             view.update(block)
         }
+    }
+
+    private func needsNewView(_ view: NoteBlockView, for block: NoteBlock) -> Bool {
+        block.kind != view.block.kind && !(block.kind.hasRichText && view.block.kind.hasRichText)
     }
 
     private func refocusAfterLayout(_ id: NoteBlockID) {
@@ -553,7 +549,7 @@ final class NotePageCanvasView: NSView {
     }
 
     private func performLayout() {
-        guard let editor, !isLayingOut else { return }
+        guard let editor, !isLayingOut, bounds.width >= 1 else { return }
         isLayingOut = true
         defer { isLayingOut = false }
         for pass in 0..<3 {
@@ -712,7 +708,14 @@ final class NotePageCanvasView: NSView {
         for entry in next.entries {
             let box = entry.kind == .callout ? entry.outerFrame : entry.frame
             if let view = views[entry.id] {
-                place(view, entry: entry, block: next.blocks[entry.id])
+                guard let block = next.blocks[entry.id], needsNewView(view, for: block) else {
+                    place(view, entry: entry, block: next.blocks[entry.id])
+                    continue
+                }
+                let focused = isFirstResponderInside(view)
+                discard(entry.id)
+                if (focused || box.intersects(window)), materialize(entry) != nil { created.append(entry.id) }
+                if focused { refocusAfterLayout(entry.id) }
             } else if box.intersects(window) {
                 if materialize(entry) != nil { created.append(entry.id) }
             }
