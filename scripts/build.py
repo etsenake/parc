@@ -871,6 +871,16 @@ def plist(path: Path, data: dict) -> None:
     path.write_bytes(plistlib.dumps(data))
 
 
+def unsplash_access_key() -> str | None:
+    key = os.environ.get("PARC_UNSPLASH_ACCESS_KEY", "").strip()
+    if key:
+        return key
+    found = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", "org.parc.unsplash", "-a", "access-key", "-w"],
+                           text=True, capture_output=True)
+    key = found.stdout.strip() if found.returncode == 0 else ""
+    return key or None
+
+
 def info_plist(name: str, bundle_id: str, version: dict) -> dict:
     return {"CFBundleDevelopmentRegion": "en", "CFBundleExecutable": name,
             "CFBundleIdentifier": bundle_id, "CFBundleName": name,
@@ -1109,6 +1119,9 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                 raise Refusal("Swift runtime lacks ARM64: " + library.name)
         info = info_plist("Parc", "org.parc.Browser", version)
         info["ParcChromiumVersion"] = read_json(repo / "Engine/source-lock.json")["chromium"]["tag"]
+        unsplash_key = unsplash_access_key()
+        if unsplash_key:
+            info["NoteUnsplashAccessKey"] = unsplash_key
         info.update(CFBundleIconFile=icon_file, NSDockTilePlugIn="ParcDockTile.plugin", NSPrincipalClass="ParcApplication", NSUserNotificationAlertStyle="banner",
                     NSAppleScriptEnabled=True, OSAScriptingDefinition="Parc.sdef", LSEnvironment={"MallocNanoZone": "0"},
                     CFBundleURLTypes=[{"CFBundleTypeRole": "Viewer", "CFBundleURLName": "Webpage URL",

@@ -91,7 +91,9 @@ enum NoteUnsplash {
 
     static func accessKey(defaults: UserDefaults = .standard) -> String? {
         let stored = defaults.string(forKey: accessKeyDefaultsKey)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let key = stored.isEmpty ? builtInAccessKey.trimmingCharacters(in: .whitespacesAndNewlines) : stored
+        let bundled = (Bundle.main.object(forInfoDictionaryKey: accessKeyDefaultsKey) as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let fallback = bundled.isEmpty ? builtInAccessKey.trimmingCharacters(in: .whitespacesAndNewlines) : bundled
+        let key = stored.isEmpty ? fallback : stored
         return key.isEmpty ? nil : key
     }
 
