@@ -242,6 +242,10 @@ enum NoteAnimation {
         return CATransform3DTranslate(transform, -point.x, -point.y, 0)
     }
 
+    static func layerCenter(_ layer: CALayer) -> CGPoint {
+        CGPoint(x: layer.bounds.width * (0.5 - layer.anchorPoint.x), y: layer.bounds.height * (0.5 - layer.anchorPoint.y))
+    }
+
     static func layerPoint(_ point: NSPoint, in view: NSView) -> CGPoint {
         let superFlipped = view.superview?.isFlipped ?? view.isFlipped
         return CGPoint(x: point.x, y: superFlipped == view.isFlipped ? point.y : view.bounds.height - point.y)
@@ -259,7 +263,7 @@ enum NoteAnimation {
     @discardableResult
     static func pop(_ layer: CALayer, from scale: CGFloat = checkPopScale, spring: NoteSpring = .check,
                     about point: CGPoint? = nil) -> NoteAnimationToken {
-        let center = point ?? CGPoint(x: layer.bounds.midX, y: layer.bounds.midY)
+        let center = point ?? layerCenter(layer)
         guard !reduceMotion else {
             layer.removeAnimation(forKey: popKey)
             return advanceGeneration(of: layer, key: popKey)
@@ -423,15 +427,12 @@ enum NoteAnimation {
         let from = CGRect(x: 0, y: 0, width: layer.bounds.width, height: expanded ? min(presentation.height, fullHeight) : presentation.height)
         let start = expanded && presentation.height >= fullHeight ? CGRect(x: 0, y: 0, width: layer.bounds.width, height: 0) : from
         let animation = basic("bounds", from: NSValue(rect: start), to: NSValue(rect: target), duration: duration, curve: NoteCurve.easeOut)
-        if !expanded {
-            animation.fillMode = .forwards
-            animation.isRemovedOnCompletion = false
-        }
         _ = run(animation, on: layer, key: revealKey)
     }
 
     static func lift(_ layer: CALayer, lifted: Bool) {
-        springScale(layer, to: lifted ? liftScale : 1, spring: .lift, key: keyPrefix + "lift")
+        let target = lifted ? scaleTransform(liftScale, about: layerCenter(layer)) : CATransform3DIdentity
+        spring(layer, "transform", to: NSValue(caTransform3D: target), spring: .lift, key: keyPrefix + "lift")
         spring(layer, "shadowOpacity", to: Float(lifted ? 0.18 : 0), spring: .lift, key: keyPrefix + "lift.shadow")
     }
 

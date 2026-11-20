@@ -347,14 +347,14 @@ enum NoteTheme {
             base = NSFont(name: bold ? "ParcWide-SemiBold" : "ParcWide-Regular", size: size - 2)
                 ?? .systemFont(ofSize: size - 2, weight: bold ? .semibold : .regular)
         }
-        guard italic else { return base }
-        let converted = NSFontManager.shared.convert(base, toHaveTrait: .italicFontMask)
-        if converted.fontDescriptor.symbolicTraits.contains(.italic) { return converted }
-        let skew = AffineTransform(m11: 1, m12: 0, m21: 0.2, m22: 1, tX: 0, tY: 0)
-        var matrix = AffineTransform(scale: base.pointSize)
-        matrix.append(skew)
-        let descriptor = base.fontDescriptor.addingAttributes([.matrix: matrix])
-        return NSFont(descriptor: descriptor, size: 0) ?? base
+        return italic ? slanted(base) : base
+    }
+
+    static func slanted(_ font: NSFont) -> NSFont {
+        let converted = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+        if converted.fontDescriptor.symbolicTraits.contains(.italic), converted.pointSize == font.pointSize { return converted }
+        var skew = CGAffineTransform(a: 1, b: 0, c: 0.2, d: 1, tx: 0, ty: 0)
+        return CTFontCreateCopyWithAttributes(font as CTFont, font.pointSize, &skew, nil) as NSFont
     }
 
     static func headingFont(_ level: Int, font: NotePageFont, small: Bool = false) -> NSFont {

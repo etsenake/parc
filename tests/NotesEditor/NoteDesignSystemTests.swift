@@ -6,7 +6,20 @@ struct NoteDesignSystemTests {
         if !value { failTest(message) }
     }
 
+    static func registerBundledFonts() {
+        guard CommandLine.arguments.count > 1 else { return }
+        let resources = URL(fileURLWithPath: CommandLine.arguments[1]).appendingPathComponent("Resources")
+        for folder in ["NoteFonts", "EaselFonts"] {
+            let directory = resources.appendingPathComponent(folder)
+            for file in (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+            where ["ttf", "otf"].contains(file.pathExtension) {
+                CTFontManagerRegisterFontsForURL(file as CFURL, .process, nil)
+            }
+        }
+    }
+
     static func main() {
+        registerBundledFonts()
         springs()
         placement()
         menuNavigation()
@@ -35,6 +48,17 @@ struct NoteDesignSystemTests {
         let first = NoteAnimation.advanceGeneration(of: layer, key: "k")
         let second = NoteAnimation.advanceGeneration(of: layer, key: "k")
         expect(!first.isCurrent && second.isCurrent, "a newer generation retires the older token")
+        let centred = CALayer()
+        centred.bounds = CGRect(x: 0, y: 0, width: 100, height: 40)
+        NoteAnimation.lift(centred, lifted: true)
+        expect(centred.transform.m11 == NoteAnimation.liftScale && centred.transform.m41 == 0, "centred layers lift about their middle")
+        let cornered = CALayer()
+        cornered.anchorPoint = .zero
+        cornered.bounds = CGRect(x: 0, y: 0, width: 100, height: 40)
+        NoteAnimation.lift(cornered, lifted: true)
+        expect(abs(cornered.transform.m41 + 50 * (NoteAnimation.liftScale - 1)) < 0.0001, "view layers lift about their middle too")
+        NoteAnimation.lift(cornered, lifted: false)
+        expect(CATransform3DIsIdentity(cornered.transform), "dropping settles back to rest")
     }
 
     static func placement() {
@@ -226,7 +250,15 @@ struct NoteDesignSystemTests {
         expect(NoteTheme.textStyle(.inlineCode).runAttributes[.paragraphStyle] == nil, "run attributes leave the paragraph alone")
         for font in NotePageFont.allCases {
             expect(NoteTheme.titleFont(font, small: false).pointSize > NoteTheme.bodyFont(font).pointSize, "titles beat body text in \(font)")
+            let upright = NoteTheme.bodyFont(font)
+            let italic = NoteTheme.bodyFont(font, italic: true)
+            let width = NSAttributedString(string: "Slanted words", attributes: [.font: italic]).size().width
+            let uprightWidth = NSAttributedString(string: "Slanted words", attributes: [.font: upright]).size().width
+            expect(abs(italic.pointSize - upright.pointSize) < 0.01 && width < uprightWidth * 1.3,
+                   "\(font) italics keep their size (\(italic.pointSize) vs \(upright.pointSize))")
+            expect(italic.fontDescriptor.symbolicTraits.contains(.italic) || italic.matrix[2] > 0.1, "\(font) italics actually lean")
         }
+        expect(NoteTheme.bodyFont(.serif).fontName.contains("Garamond"), "the serif page font is EB Garamond")
     }
 
     static func controls() {
