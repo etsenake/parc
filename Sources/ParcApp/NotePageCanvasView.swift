@@ -528,7 +528,10 @@ final class NotePageCanvasView: NSView {
     }
 
     private func measuredHeight(_ block: NoteBlock, width: CGFloat, previous: NoteCanvasLayout) -> CGFloat {
-        if let live = views[block.id] { return measurer.height(of: block, width: width, live: live) }
+        if let live = views[block.id], !needsNewView(live, for: block) {
+            if live.block != block { live.update(block) }
+            return measurer.height(of: block, width: width, live: live)
+        }
         if let cached = measurer.cachedHeight(of: block, width: width) { return cached }
         let nearby = previous.frame(of: block.id).map { $0.intersects(materializationRect()) } ?? true
         if nearby, syncMeasureBudget > 0, NoteCanvasMeasurer.measuresOffscreen(block.kind) {
