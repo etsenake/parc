@@ -92,6 +92,11 @@ final class NoteImageContentView: NoteMediaContentView {
         needsLayout = true
     }
 
+    override func rebind(to source: NoteMediaSource) {
+        guard image != nil else { return }
+        self.source = source
+    }
+
     private var editable: Bool { host?.canEdit == true }
 
     private func displayWidth(for column: CGFloat) -> CGFloat {

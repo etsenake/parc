@@ -188,6 +188,11 @@ final class NoteVideoContentView: NoteMediaContentView {
         needsLayout = true
     }
 
+    override func rebind(to source: NoteMediaSource) {
+        guard playerView != nil || shimmer.isHidden else { return }
+        self.source = source
+    }
+
     private func loadFacts() {
         guard let url = source.url else { return }
         let expected = source

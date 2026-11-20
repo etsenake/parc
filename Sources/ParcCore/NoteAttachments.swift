@@ -3,19 +3,23 @@ import Foundation
 
 enum NoteAttachments {
     static let folderName = "Attachments"
+    static let stagingFolder = FileManager.default.temporaryDirectory.appendingPathComponent("Parc Note Imports", isDirectory: true)
 
     static func folder(for note: URL) -> URL {
         note.deletingLastPathComponent().appendingPathComponent(folderName, isDirectory: true)
     }
 
-    static func importFile(_ source: URL, into note: URL) throws -> String {
+    static func existingSource(for file: URL, in note: URL) -> String? {
         let noteFolder = NoteFilePaths.canonical(note.deletingLastPathComponent())
+        let original = NoteFilePaths.canonical(file)
+        guard NoteFilePaths.contains(folder: noteFolder, item: original) else { return nil }
+        return NoteFilePaths.relativePath(from: noteFolder, to: original)
+    }
+
+    static func importFile(_ source: URL, into note: URL) throws -> String {
         let original = NoteFilePaths.canonical(source)
         guard NoteFilePaths.itemExists(original) else { throw NoteFileError.missing }
-        if NoteFilePaths.contains(folder: noteFolder, item: original),
-           let relative = NoteFilePaths.relativePath(from: noteFolder, to: original) {
-            return relative
-        }
+        if let relative = existingSource(for: original, in: note) { return relative }
         let destinationFolder = folder(for: note)
         try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
         let pathExtension = original.pathExtension
@@ -24,7 +28,8 @@ enum NoteAttachments {
         let directory = NoteFilePaths.isDirectory(original)
         for candidate in NoteFileNaming.candidates(in: destinationFolder, base: base, pathExtension: pathExtension).prefix(10_000) {
             if NoteFilePaths.itemExists(candidate) {
-                if !directory, FileManager.default.contentsEqual(atPath: candidate.path, andPath: original.path) {
+                if !directory, fileSize(candidate) == fileSize(original),
+                   FileManager.default.contentsEqual(atPath: candidate.path, andPath: original.path) {
                     return relativeLink(to: candidate)
                 }
                 continue
@@ -53,7 +58,9 @@ enum NoteAttachments {
         try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
         for candidate in NoteFileNaming.candidates(in: destinationFolder, base: base, pathExtension: pathExtension).prefix(10_000) {
             if NoteFilePaths.itemExists(candidate) {
-                if let existing = try? Data(contentsOf: candidate), existing == data { return relativeLink(to: candidate) }
+                if fileSize(candidate) == data.count, let existing = try? Data(contentsOf: candidate), existing == data {
+                    return relativeLink(to: candidate)
+                }
                 continue
             }
             do {
@@ -64,6 +71,24 @@ enum NoteAttachments {
             }
         }
         throw NoteFileError.nameTaken(base)
+    }
+
+    static func stage(_ data: Data, fileExtension: String, suggestedName: String) throws -> URL {
+        var base = NoteFileNaming.sanitizedTitle(suggestedName)
+        if base.isEmpty { base = "Attachment" }
+        let folder = stagingFolder.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent(NoteFileNaming.fileName(base: base, pathExtension: NoteFileNaming.sanitizedExtension(fileExtension)))
+        try data.write(to: file, options: .withoutOverwriting)
+        return NoteFilePaths.canonical(file)
+    }
+
+    static func isStaged(_ file: URL) -> Bool {
+        file.isFileURL && NoteFilePaths.contains(folder: stagingFolder, item: file)
+    }
+
+    private static func fileSize(_ file: URL) -> Int? {
+        try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize
     }
 
     private static func relativeLink(to file: URL) -> String {
@@ -82,73 +107,145 @@ enum NoteAttachments {
     }
 }
 
-enum NoteAttachmentImportState: Equatable {
-    case pending
-    case imported(String)
-    case failed(missing: Bool)
+enum NoteAttachmentError: LocalizedError, Equatable {
+    case leftInPlace(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .leftInPlace(let name): return "Couldn’t copy “\(name)” into Attachments, so the note still links to where it lives."
+        }
+    }
 }
 
 @MainActor
 final class NoteAttachmentImports {
-    private struct Healer {
+    private final class Ledger {
         weak var session: NotePageSession?
-        var subscription: AnyCancellable
+        var pending: [String: Int] = [:]
+        var tried: Set<String> = []
+        var landed: [String: String] = [:]
+        var failures: [String: Error] = [:]
+        var healer: AnyCancellable?
+
+        init(_ session: NotePageSession) { self.session = session }
     }
 
     static let shared = NoteAttachmentImports()
-    nonisolated static let scheme = "parc-attachment"
 
     var worker = NoteFileWorker(label: "org.parc.notes.attachments")
     let changes = PassthroughSubject<String, Never>()
-    private var states: [String: NoteAttachmentImportState] = [:]
-    private var healers: [String: Healer] = [:]
+    private var ledgers: [ObjectIdentifier: Ledger] = [:]
+    private var originals: Set<String> = []
+    private var orphans: [String: [String: String]] = [:]
 
-    nonisolated static func isToken(_ source: String?) -> Bool {
-        source?.hasPrefix(scheme + ":") == true
+    func isPending(_ source: String?, in session: NotePageSession) -> Bool {
+        guard let source, let ledger = existingLedger(for: session) else { return false }
+        return ledger.pending[source] != nil
     }
 
-    func state(of source: String?) -> NoteAttachmentImportState? {
-        guard let source, Self.isToken(source) else { return nil }
-        return states[source] ?? .failed(missing: true)
+    func hasTried(_ source: String?, in session: NotePageSession) -> Bool {
+        guard let source, let ledger = existingLedger(for: session) else { return false }
+        return ledger.tried.contains(source)
     }
 
-    func begin(in session: NotePageSession, _ work: @escaping () throws -> String) -> String {
-        let token = Self.scheme + ":" + UUID().uuidString
-        states[token] = .pending
+    func landedPath(for source: String?, in session: NotePageSession) -> String? {
+        guard let source else { return nil }
+        return existingLedger(for: session)?.landed[source]
+    }
+
+    func takeFailure(of source: String?, in session: NotePageSession) -> Error? {
+        guard let source, let ledger = existingLedger(for: session) else { return nil }
+        return ledger.failures.removeValue(forKey: source)
+    }
+
+    func mayImport(_ file: URL) -> Bool {
+        guard file.isFileURL else { return false }
+        return originals.contains(NoteFilePaths.canonical(file).path) || NoteAttachments.isStaged(file)
+    }
+
+    func begin(_ source: String, from original: URL, in session: NotePageSession, note: URL, _ work: @escaping () throws -> String) {
+        let ledger = ledger(for: session)
+        ledger.pending[source, default: 0] += 1
+        ledger.tried.insert(source)
+        ledger.failures[source] = nil
+        originals.insert(NoteFilePaths.canonical(original).path)
         worker.perform({ Result { try work() } }) { [weak self, weak session] result in
-            self?.finish(token, result, session: session)
+            self?.finish(source, result, from: session, note: note)
         }
-        return token
     }
 
-    private func finish(_ token: String, _ result: Result<String, Error>, session: NotePageSession?) {
+    private func finish(_ source: String, _ result: Result<String, Error>, from origin: NotePageSession?, note: URL) {
+        ledgers = ledgers.filter { $0.value.session != nil }
+        if let origin, let ledger = existingLedger(for: origin), let count = ledger.pending[source] {
+            ledger.pending[source] = count > 1 ? count - 1 : nil
+        }
         switch result {
         case .success(let path):
-            states[token] = .imported(path)
-            healers = healers.filter { $0.value.session != nil }
-            if let session {
-                Self.settle(token, as: path, in: session)
-                let subscription = session.changes.filter(\.isUndoRedo).sink { [weak session] _ in
-                    _ = NoteFileSystemClock.shared.schedule(after: 0) { [weak session] in
-                        guard let session else { return }
-                        Self.settle(token, as: path, in: session)
-                    }
-                }
-                healers[token] = Healer(session: session, subscription: subscription)
+            if let target = Self.liveSession(origin, note: note) {
+                land([source: path], in: target)
+            } else {
+                orphans[NoteFilePaths.key(for: note), default: [:]][source] = path
             }
         case .failure(let error):
-            states[token] = .failed(missing: (error as? NoteFileError) == .missing)
+            if let origin { ledger(for: origin).failures[source] = error }
         }
-        changes.send(token)
+        changes.send(source)
     }
 
-    static func settle(_ token: String, as path: String, in session: NotePageSession) {
-        let page = session.page
-        let waiting = page.documentOrder(includingCollapsed: true).filter { page.block($0)?.props.source == token }
-        for id in waiting {
-            session.updateBlockMetadata(id, kind: .structure) { block in
-                if block.props.source == token { block.props.source = path }
+    func adoptOrphans(of note: URL, in session: NotePageSession) {
+        guard !orphans.isEmpty, let found = orphans.removeValue(forKey: NoteFilePaths.key(for: note)) else { return }
+        let folder = note.deletingLastPathComponent()
+        land(found.filter { NoteFilePaths.itemExists(folder.appendingPathComponent($0.value.removingPercentEncoding ?? $0.value)) }, in: session)
+    }
+
+    private func land(_ replacements: [String: String], in session: NotePageSession) {
+        guard !replacements.isEmpty else { return }
+        let ledger = ledger(for: session)
+        ledger.landed.merge(replacements) { $1 }
+        Self.settle(replacements, in: session)
+        heal(ledger)
+    }
+
+    private func heal(_ ledger: Ledger) {
+        guard ledger.healer == nil, let session = ledger.session else { return }
+        ledger.healer = session.changes.filter(\.isUndoRedo).sink { [weak ledger] _ in
+            _ = NoteFileSystemClock.shared.schedule(after: 0) { [weak ledger] in
+                guard let ledger, let session = ledger.session else { return }
+                Self.settle(ledger.landed, in: session)
             }
+        }
+    }
+
+    private func existingLedger(for session: NotePageSession) -> Ledger? {
+        guard let ledger = ledgers[ObjectIdentifier(session)], ledger.session === session else { return nil }
+        return ledger
+    }
+
+    private func ledger(for session: NotePageSession) -> Ledger {
+        if let existing = existingLedger(for: session) { return existing }
+        let ledger = Ledger(session)
+        ledgers[ObjectIdentifier(session)] = ledger
+        return ledger
+    }
+
+    private static func liveSession(_ origin: NotePageSession?, note: URL) -> NotePageSession? {
+        if let origin, NoteFileSession.openSessions.contains(where: { $0.page === origin }) { return origin }
+        return NoteFileSession.session(for: note)?.page
+    }
+
+    static func settle(_ replacements: [String: String], in session: NotePageSession) {
+        guard !replacements.isEmpty else { return }
+        let page = session.page
+        for id in page.documentOrder(includingCollapsed: true) {
+            guard let block = page.block(id), block.kind.isMedia, let source = block.props.source,
+                  let path = replacements[source] else { continue }
+            session.updateBlockMetadata(id, kind: .structure) { block in
+                if block.props.source == source { block.props.source = path }
+            }
+        }
+        session.updateSettingsMetadata { settings in
+            if let source = settings.cover?.source, let path = replacements[source] { settings.cover?.source = path }
+            if let icon = settings.icon, let path = replacements[icon] { settings.icon = path }
         }
     }
 }

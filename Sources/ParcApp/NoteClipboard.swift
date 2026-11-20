@@ -271,7 +271,7 @@ enum NoteClipboard {
             }
             do {
                 var props = NoteBlockProps()
-                props.source = try importedSource(from: url, environment: environment)
+                props.source = try NoteMediaImport.source(importing: url, environment: environment)
                 let kind = mediaKind(for: url)
                 if kind == .image { props.alt = url.deletingPathExtension().lastPathComponent }
                 if kind == .file { props.caption = NoteText(url.lastPathComponent) }
@@ -293,45 +293,8 @@ enum NoteClipboard {
     @MainActor
     static func imageBlock(data: Data, fileExtension: String, environment: NoteEnvironment) throws -> NoteBlock {
         var props = NoteBlockProps()
-        props.source = try importedSource(suggestedName: "Pasted Image", environment: environment) {
-            normalizedImage(data, fileExtension: fileExtension)
-        }
+        props.source = try NoteMediaImport.source(importing: data, fileExtension: fileExtension, suggestedName: "Pasted Image", environment: environment)
         return NoteBlock(.image, props: props)
-    }
-
-    static func normalizedImage(_ data: Data, fileExtension: String) -> (data: Data, fileExtension: String) {
-        guard fileExtension == "tiff", let image = NSBitmapImageRep(data: data),
-              let png = image.representation(using: .png, properties: [:]) else { return (data, fileExtension) }
-        return (png, "png")
-    }
-
-    @MainActor
-    static func attachmentTarget(for environment: NoteEnvironment) -> (note: URL, date: Date, session: NotePageSession)? {
-        guard let file = environment as? NoteFileEnvironment, let note = file.documentURL,
-              let session = NoteFileSession.openSessions.first(where: { $0.environment === environment })?.page else { return nil }
-        return (note, file.now(), session)
-    }
-
-    @MainActor
-    static func importedSource(from url: URL, environment: NoteEnvironment) throws -> String {
-        guard url.isFileURL, let target = attachmentTarget(for: environment) else { return try environment.importAsset(from: url) }
-        let note = target.note
-        return NoteAttachmentImports.shared.begin(in: target.session) { try NoteAttachments.importFile(url, into: note) }
-    }
-
-    @MainActor
-    static func importedSource(suggestedName: String, environment: NoteEnvironment,
-                               bytes: @escaping () throws -> (data: Data, fileExtension: String)) throws -> String {
-        guard let target = attachmentTarget(for: environment) else {
-            let produced = try bytes()
-            return try environment.importAsset(data: produced.data, fileExtension: produced.fileExtension, suggestedName: suggestedName)
-        }
-        let note = target.note, date = target.date
-        return NoteAttachmentImports.shared.begin(in: target.session) {
-            let produced = try bytes()
-            return try NoteAttachments.importData(produced.data, fileExtension: produced.fileExtension,
-                                                  suggestedName: suggestedName, into: note, date: date)
-        }
     }
 
     static func isMediaDataURL(_ source: String) -> Bool { mediaDataURLHeader(source) != nil }
@@ -367,11 +330,9 @@ enum NoteClipboard {
             var copy = block
             if block.kind.isMedia, let source = block.props.source, isMediaDataURL(source) {
                 do {
-                    copy.props.source = try importedSource(suggestedName: "Pasted " + (block.kind == .image ? "Image" : "File"),
-                                                           environment: environment) {
-                        guard let decoded = decodeDataURL(source) else { throw NoteFileError.unreadable("That pasted media came through empty.") }
-                        return decoded
-                    }
+                    copy.props.source = try NoteMediaImport.source(importingDataURL: source,
+                                                                   suggestedName: "Pasted " + (block.kind == .image ? "Image" : "File"),
+                                                                   environment: environment)
                 } catch {
                     failures.append(error)
                 }
@@ -404,18 +365,22 @@ enum NoteClipboard {
     @MainActor
     static func rebase(_ archive: Archive, into environment: NoteEnvironment) -> [NoteBlock] {
         let destination = environment.documentURL?.deletingLastPathComponent().standardizedFileURL
-        guard let written = archive.base, written.isFileURL else { return archive.blocks }
-        let base = URL(fileURLWithPath: written.standardizedFileURL.path, isDirectory: true).standardizedFileURL
-        guard base != destination else { return archive.blocks }
-        let mediaFolder = trustedMediaFolder(base)
+        let base = archive.base.flatMap { written -> URL? in
+            guard written.isFileURL else { return nil }
+            let folder = URL(fileURLWithPath: written.standardizedFileURL.path, isDirectory: true).standardizedFileURL
+            return folder == destination ? nil : folder
+        }
+        let carries = archive.blocks.contains { carriesImport($0) }
+        guard base != nil || carries else { return archive.blocks }
+        let mediaFolder = base.flatMap(trustedMediaFolder)
         func absolute(_ source: String) -> URL? {
-            guard !source.isEmpty, URL(string: source)?.scheme == nil, !source.hasPrefix("/"), !source.hasPrefix("#") else { return nil }
+            guard let base, !source.isEmpty, URL(string: source)?.scheme == nil, !source.hasPrefix("/"), !source.hasPrefix("#") else { return nil }
             let decoded = source.removingPercentEncoding ?? source
             return URL(fileURLWithPath: decoded, relativeTo: base).standardizedFileURL
         }
         func importedMedia(_ url: URL) -> String? {
-            guard let mediaFolder, mayImportMedia(url, from: base, trusted: mediaFolder) else { return nil }
-            return try? importedSource(from: url, environment: environment)
+            guard let base, let mediaFolder, mayImportMedia(url, from: base, trusted: mediaFolder) else { return nil }
+            return try? NoteMediaImport.source(importing: url, environment: environment)
         }
         func relink(_ target: String) -> String {
             guard let url = absolute(target) else { return target }
@@ -440,9 +405,13 @@ enum NoteClipboard {
             var copy = block
             copy.text = fix(block.text)
             copy.props.caption = fix(block.props.caption)
-            if let source = block.props.source, let url = absolute(source) {
-                if block.kind.isMedia, let imported = importedMedia(url) { copy.props.source = imported }
-                else if !block.kind.isMedia { copy.props.source = relink(source) }
+            if let source = block.props.source {
+                if block.kind.isMedia, let carried = NoteMediaImport.carriedSource(source, environment: environment) {
+                    copy.props.source = carried
+                } else if let url = absolute(source) {
+                    if block.kind.isMedia, let imported = importedMedia(url) { copy.props.source = imported }
+                    else if !block.kind.isMedia { copy.props.source = relink(source) }
+                }
             }
             if let target = block.props.target, absolute(target) != nil { copy.props.target = relink(target) }
             if var table = block.props.table {
@@ -453,6 +422,13 @@ enum NoteClipboard {
             return copy
         }
         return archive.blocks.map(walk)
+    }
+
+    @MainActor
+    private static func carriesImport(_ block: NoteBlock) -> Bool {
+        if block.kind.isMedia, let source = block.props.source, let url = URL(string: source), url.isFileURL,
+           NoteAttachmentImports.shared.mayImport(url) { return true }
+        return block.children.contains { carriesImport($0) }
     }
 
     private static func trimmedTrailingNewlines(_ value: String) -> String {

@@ -39,12 +39,6 @@ enum NoteMediaActions {
         }
     }
 
-    static func importAsset(_ url: URL, into environment: NoteEnvironment) throws -> String {
-        let access = url.startAccessingSecurityScopedResource()
-        defer { if access { url.stopAccessingSecurityScopedResource() } }
-        return try environment.importAsset(from: url)
-    }
-
     static func saveCopy(of source: NoteMediaSource, suggestedName: String, in window: NSWindow?,
                          completion: @escaping (Error?) -> Void) {
         guard let origin = source.url else { completion(NoteMediaActionError.unavailable("There's nothing to save yet.")); return }

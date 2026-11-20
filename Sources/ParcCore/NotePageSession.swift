@@ -191,6 +191,22 @@ final class NotePageSession {
         changes.send(NotePageChange(kind: kind, blocks: [id], origin: nil, revision: revision))
     }
 
+    func updateSettingsMetadata(_ transform: (inout NotePageSettings) -> Void) {
+        guard !isReadOnly else { return }
+        for index in undoStack.indices { transform(&undoStack[index].page.settings) }
+        for index in redoStack.indices { transform(&redoStack[index].page.settings) }
+        if var group = openGroup {
+            transform(&group.page.settings)
+            openGroup = group
+        }
+        var settings = page.settings
+        transform(&settings)
+        guard settings != page.settings else { return }
+        page.settings = settings
+        revision &+= 1
+        changes.send(NotePageChange(kind: .settings, blocks: [], origin: nil, revision: revision))
+    }
+
     @discardableResult
     func ensureAnchor(for id: NoteBlockID) -> String? {
         var generator = SystemRandomNumberGenerator()

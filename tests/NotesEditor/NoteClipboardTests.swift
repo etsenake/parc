@@ -45,6 +45,11 @@ struct NoteClipboardTests {
         inlineMedia()
         rebaseRefusals()
         asyncImports()
+        quitMidCopy()
+        failedImportKeepsOriginal()
+        crossNotePaste()
+        stagedResume()
+        asyncReplace()
         offlineRichText()
         print("NoteClipboardTests passed")
     }
@@ -52,6 +57,47 @@ struct NoteClipboardTests {
     static func wait(_ done: () -> Bool) {
         let deadline = Date().addingTimeInterval(10)
         while !done() && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+    }
+
+    static func folder(_ name: String) -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-clipboard-\(name)-" + UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
+    }
+
+    static func note(_ path: URL, _ text: String = "Hello\n") -> NoteFileSession {
+        try? FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? Data(text.utf8).write(to: path)
+        guard let file = try? NoteFileSession.open(path) else { failTest("\(path.lastPathComponent) opens") }
+        return file
+    }
+
+    static func stallImports() -> () -> Void {
+        let imports = NoteAttachmentImports.shared
+        let previous = imports.worker
+        let gate = DispatchSemaphore(value: 0)
+        imports.worker = NoteFileWorker(label: "parc.tests.stalled-imports." + UUID().uuidString)
+        imports.worker.perform({ gate.wait() }) { _ in }
+        return {
+            gate.signal()
+            imports.worker = previous
+        }
+    }
+
+    static func fileExists(_ source: String?) -> Bool {
+        guard let source, let url = URL(string: source), url.isFileURL else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    static func image(_ source: String?, kind: NoteBlockKind = .image) -> NoteBlock {
+        var block = NoteBlock(kind)
+        block.props.source = source
+        return block
+    }
+
+    static func bitmapTIFF(side: Int) -> Data {
+        NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                         isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)?.tiffRepresentation ?? Data()
     }
 
     static func offlineRichText() {
@@ -134,20 +180,18 @@ struct NoteClipboardTests {
     }
 
     static func asyncImports() {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-clipboard-imports-" + UUID().uuidString, isDirectory: true)
+        let root = folder("imports")
         let notes = root.appendingPathComponent("Notes", isDirectory: true)
         let outside = root.appendingPathComponent("Outside", isDirectory: true)
         let other = root.appendingPathComponent("Other", isDirectory: true)
-        for folder in [notes, outside, other.appendingPathComponent("Attachments")] {
+        for folder in [outside, other.appendingPathComponent("Attachments")] {
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         }
         defer { try? FileManager.default.removeItem(at: root) }
-        let pagePath = notes.appendingPathComponent("Trip.md")
-        try? Data("Hello\n".utf8).write(to: pagePath)
         let photo = outside.appendingPathComponent("Beach.png")
         try? Data([0x89, 0x50, 0x4E, 0x47, 1, 2, 3]).write(to: photo)
         try? Data([7, 7]).write(to: other.appendingPathComponent("Attachments/cat.png"))
-        guard let file = try? NoteFileSession.open(pagePath) else { failTest("the note opens") }
+        let file = note(notes.appendingPathComponent("Trip.md"))
         let session = file.page
         let imports = NoteAttachmentImports.shared
         func attachment(_ source: String?) -> Data? {
@@ -156,54 +200,256 @@ struct NoteClipboardTests {
         }
 
         let dropped = NoteClipboard.blocks(forFiles: [photo, outside.appendingPathComponent("Gone.mov")], environment: file.environment)
-        let tokens = dropped.blocks.compactMap(\.props.source)
-        expect(dropped.failures.isEmpty && tokens.count == 2, "dropped files become blocks right away")
-        expect(tokens.allSatisfy { NoteAttachmentImports.isToken($0) && imports.state(of: $0) == .pending },
-               "they start with a pending source while the copy runs in the background")
+        let sources = dropped.blocks.compactMap(\.props.source)
+        expect(dropped.failures.isEmpty && sources.count == 2, "dropped files become blocks right away")
+        expect(sources.allSatisfy { $0.hasPrefix("file://") && imports.isPending($0, in: session) },
+               "they point at the originals while the copy runs in the background: \(sources)")
+        expect(fileExists(sources[0]) && URL(string: sources[0])?.lastPathComponent == "Beach.png", "so the picture shows up straight away")
         let ids = session.insertBlocks(dropped.blocks, .top(session.page.blocks.count))
-        wait { tokens.allSatisfy { imports.state(of: $0) != .pending } }
+        wait { !sources.contains { imports.isPending($0, in: session) } }
         expect(session.page.block(ids[0])?.props.source == "Attachments/Beach.png", "the finished copy becomes the block's source")
         expect(attachment("Attachments/Beach.png") == (try? Data(contentsOf: photo)), "and the copy is byte for byte")
-        expect(imports.state(of: tokens[1]) == .failed(missing: true) && session.page.block(ids[1])?.props.source == tokens[1],
-               "a file that vanished leaves a broken block behind")
+        expect(session.page.block(ids[1])?.props.source == sources[1] && imports.takeFailure(of: sources[1], in: session) != nil,
+               "a file that vanished keeps its link and remembers why it didn't copy")
+        expect(NoteMediaSource(sources[1], resolve: { file.environment.resolve($0) }).readiness(for: .video, importing: false) == .missing,
+               "and reads as missing")
         session.undo()
         expect(session.page.block(ids[0]) == nil, "undo takes the drop back")
         session.redo()
         expect(session.page.block(ids[0])?.props.source == "Attachments/Beach.png", "redo brings back the finished source")
 
-        let tiff = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 2, pixelsHigh: 2, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
-                                    isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)?.tiffRepresentation ?? Data()
-        guard let pasted = try? NoteClipboard.imageBlock(data: tiff, fileExtension: "tiff", environment: file.environment),
-              let pastedToken = pasted.props.source else { failTest("a pasted picture becomes a block") }
-        expect(imports.state(of: pastedToken) == .pending, "a pasted picture is converted off the main thread")
-        session.insertBlocks([pasted], .top(session.page.blocks.count))
+        let small = bitmapTIFF(side: 2)
+        guard let pasted = try? NoteClipboard.imageBlock(data: small, fileExtension: "tiff", environment: file.environment),
+              let smallSource = pasted.props.source else { failTest("a pasted picture becomes a block") }
+        expect(!imports.isPending(smallSource, in: session) && smallSource.hasSuffix(".png"), "a small pasted picture lands right away: \(smallSource)")
+        expect(attachment(smallSource)?.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]), "and a TIFF lands as a PNG")
+
+        let big = bitmapTIFF(side: 1200)
+        expect(big.count > NoteMediaImport.stagingThreshold, "the big picture is big: \(big.count)")
+        guard let bigBlock = try? NoteClipboard.imageBlock(data: big, fileExtension: "tiff", environment: file.environment),
+              let bigSource = bigBlock.props.source, let staged = URL(string: bigSource) else { failTest("a big pasted picture becomes a block") }
+        expect(NoteAttachments.isStaged(staged) && (try? Data(contentsOf: staged)) == big, "a big paste waits in a temporary file with the real bytes")
+        expect(imports.isPending(bigSource, in: session), "while its copy runs in the background")
+        session.insertBlocks([bigBlock], .top(session.page.blocks.count))
         session.undo()
-        wait { imports.state(of: pastedToken) != .pending }
-        guard case .imported(let pastedPath)? = imports.state(of: pastedToken) else { failTest("the pasted picture is saved") }
-        expect(pastedPath.hasSuffix(".png") && attachment(pastedPath)?.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]), "TIFF lands as a PNG")
+        wait { !imports.isPending(bigSource, in: session) }
+        guard let bigPath = imports.landedPath(for: bigSource, in: session) else { failTest("the big picture is saved") }
+        expect(bigPath.hasSuffix(".png") && attachment(bigPath)?.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]), "a big TIFF lands as a PNG too")
         session.redo()
-        wait { session.page.block(pasted.id)?.props.source != pastedToken }
-        expect(session.page.block(pasted.id)?.props.source == pastedPath, "redoing a paste that finished while undone heals its source")
+        wait { session.page.block(bigBlock.id)?.props.source != bigSource }
+        expect(session.page.block(bigBlock.id)?.props.source == bigPath, "redoing a paste that finished while undone heals its source")
 
         let bytes = Data([0x89, 0x50, 0x4E, 0x47, 9, 9])
-        var inline = NoteBlock(.image)
-        inline.props.source = "data:image/png;base64," + bytes.base64EncodedString()
+        let inline = image("data:image/png;base64," + bytes.base64EncodedString())
         let decoded = NoteClipboard.importInlineMedia([inline], environment: file.environment)
-        let inlineToken = decoded.blocks[0].props.source
-        expect(decoded.failures.isEmpty && NoteAttachmentImports.isToken(inlineToken), "data URLs decode in the background")
-        session.insertBlocks(decoded.blocks, .top(session.page.blocks.count))
-        wait { imports.state(of: inlineToken) != .pending }
-        expect(attachment(session.page.block(decoded.blocks[0].id)?.props.source) == bytes, "and land in Attachments")
+        let inlineSource = decoded.blocks[0].props.source
+        expect(decoded.failures.isEmpty && attachment(inlineSource) == bytes, "small data URLs land in Attachments straight away")
 
-        var cat = NoteBlock(.image)
-        cat.props.source = "Attachments/cat.png"
+        let cat = image("Attachments/cat.png")
         let rebased = NoteClipboard.rebase(NoteClipboard.Archive(blocks: [cat], base: other, inline: false), into: file.environment)
-        expect(NoteAttachmentImports.isToken(rebased[0].props.source), "media from another note's folder copies in the background too")
+        let catSource = rebased[0].props.source
+        expect(catSource?.hasPrefix("file://") == true && fileExists(catSource) && imports.isPending(catSource, in: session),
+               "media from another note's folder shows from there while it copies")
         session.insertBlocks(rebased, .top(session.page.blocks.count))
-        wait { imports.state(of: rebased[0].props.source) != .pending }
+        wait { !imports.isPending(catSource, in: session) }
         expect(attachment(session.page.block(rebased[0].id)?.props.source) == Data([7, 7]), "and arrives intact")
-        expect(imports.state(of: "Attachments/cat.png") == nil, "ordinary sources aren't imports")
-        expect(imports.state(of: NoteAttachmentImports.scheme + ":forgotten") == .failed(missing: true), "a token from an earlier run reads as broken")
+        expect(!imports.isPending("Attachments/cat.png", in: session), "ordinary sources aren't imports")
+    }
+
+    static func quitMidCopy() {
+        let root = folder("quit")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let outside = root.appendingPathComponent("Outside", isDirectory: true)
+        try? FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        let movie = outside.appendingPathComponent("Big Trip.mov")
+        try? Data(repeating: 3, count: 2048).write(to: movie)
+        let page = root.appendingPathComponent("Notes/Trip.md")
+        let file = note(page)
+        file.retain()
+        let session = file.page
+        let imports = NoteAttachmentImports.shared
+        let release = stallImports()
+        let dropped = NoteClipboard.blocks(forFiles: [movie], environment: file.environment).blocks
+        let huge = Data(repeating: 0xAB, count: NoteMediaImport.stagingThreshold + 1)
+        guard let pasted = try? NoteClipboard.imageBlock(data: huge, fileExtension: "png", environment: file.environment) else {
+            failTest("a huge paste becomes a block")
+        }
+        session.insertBlocks(dropped + [pasted], .top(session.page.blocks.count))
+        let sources = (dropped + [pasted]).compactMap(\.props.source)
+        expect(sources.allSatisfy { imports.isPending($0, in: session) }, "both copies are still running")
+        file.release()
+        guard let text = try? String(contentsOf: page, encoding: .utf8) else { failTest("the note was saved on close") }
+        expect(!text.contains("parc-attachment"), "no placeholder token is ever written: \(text)")
+        let saved = NoteMarkdown.parse(text).blocks.filter(\.kind.isMedia)
+        let environment = NoteFileEnvironment(documentURL: page, isPlainText: false)
+        expect(saved.count == 2 && saved.allSatisfy { block in
+            guard let url = block.props.source.flatMap(environment.resolve) else { return false }
+            return FileManager.default.fileExists(atPath: url.path)
+        }, "the saved note links to files that really exist: \(saved.map(\.props.source))")
+        expect(saved.map(\.kind) == [.video, .image], "and keeps what kind of media each one is")
+        release()
+        wait { !sources.contains { imports.isPending($0, in: session) } }
+        guard let after = try? String(contentsOf: page, encoding: .utf8) else { failTest("the note is still there") }
+        expect(after == text, "a copy finishing after the note closed leaves the file alone")
+        let reopened = note(page, text)
+        reopened.retain()
+        defer { reopened.release() }
+        expect(reopened.page !== session, "reopening gives a fresh session")
+        let reopenedSources = reopened.page.page.blocks.compactMap(\.props.source)
+        expect(reopenedSources == sources, "the reopened note starts from the working links")
+        NoteMediaImport.resume(reopenedSources[0], environment: reopened.environment)
+        expect(reopened.page.page.blocks.compactMap(\.props.source) == ["Attachments/Big%20Trip.mov", "Attachments/Pasted%20Image.png"],
+               "reopening in the same run picks up the copies that finished meanwhile: \(reopened.page.page.blocks.compactMap(\.props.source))")
+        expect((try? Data(contentsOf: page.deletingLastPathComponent().appendingPathComponent("Attachments/Pasted Image.png"))) == huge,
+               "the huge paste arrived whole")
+    }
+
+    static func failedImportKeepsOriginal() {
+        let root = folder("failed")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let photo = root.appendingPathComponent("Sunset.jpg")
+        try? Data([0xFF, 0xD8, 0xFF, 1]).write(to: photo)
+        let page = root.appendingPathComponent("Notes/Trip.md")
+        let file = note(page)
+        try? Data("not a folder".utf8).write(to: page.deletingLastPathComponent().appendingPathComponent("Attachments"))
+        let session = file.page
+        let imports = NoteAttachmentImports.shared
+        let dropped = NoteClipboard.blocks(forFiles: [photo], environment: file.environment)
+        guard let source = dropped.blocks.first?.props.source else { failTest("the drop makes a block") }
+        session.insertBlocks(dropped.blocks, .top(session.page.blocks.count))
+        wait { !imports.isPending(source, in: session) }
+        expect(session.page.block(dropped.blocks[0].id)?.props.source == source, "a copy that fails keeps the original link")
+        expect(imports.landedPath(for: source, in: session) == nil, "nothing claims to have landed")
+        expect(imports.takeFailure(of: source, in: session) != nil, "the failure is remembered once")
+        expect(imports.takeFailure(of: source, in: session) == nil, "and only reported once")
+        let media = NoteMediaSource(source) { file.environment.resolve($0) }
+        expect(media.readiness(for: .image, importing: false) == .ready, "the block still shows the original, not a broken card")
+        expect(media.readiness(for: .file, importing: false) == .ready, "even for plain files")
+        expect(media.readiness(for: .file, importing: true) == .importing, "files shimmer only while the copy runs")
+        try? FileManager.default.removeItem(at: photo)
+        expect(media.readiness(for: .image, importing: false) == .missing, "it reads as broken only once the original is gone")
+        expect(NoteAttachmentError.leftInPlace("Sunset.jpg").errorDescription?.contains("Sunset.jpg") == true, "the heads-up names the file")
+    }
+
+    static func crossNotePaste() {
+        let root = folder("cross")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let photo = root.appendingPathComponent("Shared/Beach.png")
+        try? FileManager.default.createDirectory(at: photo.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47, 4, 4, 4])
+        try? bytes.write(to: photo)
+        let first = note(root.appendingPathComponent("A/Trip.md"))
+        let second = note(root.appendingPathComponent("B/Plan.md"))
+        let imports = NoteAttachmentImports.shared
+        let release = stallImports()
+        let dropped = NoteClipboard.blocks(forFiles: [photo], environment: first.environment).blocks
+        guard let source = dropped.first?.props.source else { failTest("the drop makes a block") }
+        first.page.insertBlocks(dropped, .top(first.page.page.blocks.count))
+        let payload = NoteClipboard.payload(for: dropped, inline: false, base: root.appendingPathComponent("A", isDirectory: true), plainTextFile: false)
+        guard let data = NoteClipboard.encode(payload.archive), let archive = NoteClipboard.decode(data) else { failTest("the copy round-trips") }
+        expect(archive.blocks[0].props.source == source && fileExists(source), "a block copied mid-copy carries a link that works")
+        expect(payload.markdown?.contains(source) == true && payload.markdown?.contains("parc-attachment") == false,
+               "and so does its Markdown: \(payload.markdown ?? "")")
+        let pasted = NoteClipboard.rebase(archive, into: second.environment).map { $0.withFreshIDs() }
+        expect(pasted[0].props.source == source && imports.isPending(source, in: second.page), "pasting it into another note starts that note's own copy")
+        second.page.insertBlocks(pasted, .top(second.page.page.blocks.count))
+        release()
+        wait { !imports.isPending(source, in: first.page) && !imports.isPending(source, in: second.page) }
+        let secondFolder = root.appendingPathComponent("B", isDirectory: true)
+        expect(first.page.page.block(dropped[0].id)?.props.source == "Attachments/Beach.png", "the first note gets its copy")
+        expect(second.page.page.block(pasted[0].id)?.props.source == "Attachments/Beach.png", "and the second note gets one too")
+        expect((try? Data(contentsOf: secondFolder.appendingPathComponent("Attachments/Beach.png"))) == bytes, "in its own Attachments folder")
+
+        let late = NoteClipboard.rebase(archive, into: second.environment).map { $0.withFreshIDs() }
+        second.page.insertBlocks(late, .top(second.page.page.blocks.count))
+        wait { second.page.page.block(late[0].id)?.props.source != source }
+        expect(second.page.page.block(late[0].id)?.props.source == "Attachments/Beach.png", "pasting the old copy later still lands in Attachments")
+        expect(!FileManager.default.fileExists(atPath: secondFolder.appendingPathComponent("Attachments/Beach 2.png").path), "without a duplicate")
+
+        let secret = root.appendingPathComponent("Secrets/id_rsa")
+        try? FileManager.default.createDirectory(at: secret.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? Data([1]).write(to: secret)
+        let forged = NoteClipboard.Archive(blocks: [image(secret.absoluteString, kind: .file)], base: nil, inline: false)
+        let refused = NoteClipboard.rebase(forged, into: second.environment)
+        expect(refused[0].props.source == secret.absoluteString && !imports.isPending(secret.absoluteString, in: second.page),
+               "a pasted file link Parc never imported isn't copied anywhere")
+    }
+
+    static func stagedResume() {
+        let root = folder("resume")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bytes = Data(repeating: 0x42, count: 64)
+        guard let staged = try? NoteAttachments.stage(bytes, fileExtension: "gif", suggestedName: "Pasted Image") else { failTest("staging works") }
+        defer { try? FileManager.default.removeItem(at: staged.deletingLastPathComponent()) }
+        let page = root.appendingPathComponent("Notes/Left Open.md")
+        let file = note(page, "![](" + staged.absoluteString + ")\n")
+        let session = file.page
+        guard let source = session.page.blocks.first?.props.source else { failTest("the note has its picture") }
+        expect(source == staged.absoluteString, "a note saved mid-copy opens with the temporary link: \(source)")
+        NoteMediaImport.resume(source, environment: file.environment)
+        expect(NoteAttachmentImports.shared.isPending(source, in: session), "showing it picks the copy back up")
+        wait { !NoteAttachmentImports.shared.isPending(source, in: session) }
+        expect(session.page.blocks.first?.props.source == "Attachments/Pasted%20Image.gif", "and finishes it into Attachments")
+        NoteMediaImport.resume("Attachments/Pasted%20Image.gif", environment: file.environment)
+        expect(!NoteAttachmentImports.shared.isPending("Attachments/Pasted%20Image.gif", in: session), "settled sources are left alone")
+    }
+
+    static func asyncReplace() {
+        let root = folder("replace")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let photo = root.appendingPathComponent("Pick/Beach.png")
+        let sky = root.appendingPathComponent("Pick/Sky.jpg")
+        try? FileManager.default.createDirectory(at: photo.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? Data([0x89, 0x50, 0x4E, 0x47, 5]).write(to: photo)
+        try? Data([0xFF, 0xD8, 0xFF, 6]).write(to: sky)
+        let page = root.appendingPathComponent("Notes/Trip.md")
+        try? FileManager.default.createDirectory(at: page.deletingLastPathComponent().appendingPathComponent("Attachments"), withIntermediateDirectories: true)
+        try? Data([1]).write(to: page.deletingLastPathComponent().appendingPathComponent("Attachments/Old.png"))
+        let file = note(page, "![](Attachments/Old.png)\n")
+        let session = file.page
+        let imports = NoteAttachmentImports.shared
+        guard let id = session.page.blocks.first?.id else { failTest("the note has a picture") }
+        let attachments = page.deletingLastPathComponent().appendingPathComponent("Attachments")
+
+        var release = stallImports()
+        do { try NoteMediaImport.replace(id, with: photo, name: "Replace Image", in: session, environment: file.environment) }
+        catch { failTest("replace starts: \(error)") }
+        guard let source = session.page.block(id)?.props.source else { failTest("the block has a source") }
+        expect(source.hasPrefix("file://") && fileExists(source) && imports.isPending(source, in: session),
+               "Replace swaps in the picked file right away and copies it in the background")
+        expect(!FileManager.default.fileExists(atPath: attachments.appendingPathComponent("Beach.png").path), "nothing was copied on the main thread")
+        expect(session.undoActionName == "Replace Image", "it's one undo step")
+        release()
+        wait { !imports.isPending(source, in: session) }
+        expect(session.page.block(id)?.props.source == "Attachments/Beach.png", "the copy lands as the source")
+        session.undo()
+        expect(session.page.block(id)?.props.source == "Attachments/Old.png", "undo puts the old picture back in one go")
+        session.redo()
+        expect(session.page.block(id)?.props.source == "Attachments/Beach.png", "redo brings the copied one back")
+
+        release = stallImports()
+        do { try NoteMediaImport.replace(id, with: sky, name: "Replace Image", in: session, environment: file.environment) }
+        catch { failTest("a second replace starts: \(error)") }
+        guard let skySource = session.page.block(id)?.props.source else { failTest("the block has the new source") }
+        session.undo()
+        release()
+        wait { !imports.isPending(skySource, in: session) }
+        expect(session.page.block(id)?.props.source == "Attachments/Beach.png", "undoing mid-copy keeps the previous picture")
+        session.redo()
+        wait { session.page.block(id)?.props.source != skySource }
+        expect(session.page.block(id)?.props.source == "Attachments/Sky.jpg", "redo after the copy lands heals to the copied file")
+
+        release = stallImports()
+        guard let coverSource = try? NoteMediaImport.source(importing: sky, environment: file.environment, scoped: true) else { failTest("upload starts") }
+        session.updateSettings(name: "Change Cover") { $0.cover = NoteCover(source: coverSource, position: 0.5) }
+        expect(coverSource.hasPrefix("file://") && imports.isPending(coverSource, in: session), "a cover upload shows the picked file while it copies")
+        release()
+        wait { !imports.isPending(coverSource, in: session) }
+        expect(session.page.settings.cover?.source == "Attachments/Sky.jpg", "the cover settles on the copy")
+        session.undo()
+        expect(session.page.settings.cover == nil, "undo removes the cover in one step")
+        session.redo()
+        expect(session.page.settings.cover?.source == "Attachments/Sky.jpg", "redo brings back the copied cover")
     }
 
     static func sniffing() {

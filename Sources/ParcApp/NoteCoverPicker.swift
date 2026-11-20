@@ -195,7 +195,7 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
 
     private func importFile(_ url: URL) {
         do {
-            onChoose?(try environment.importAsset(from: url))
+            onChoose?(try NoteMediaImport.source(importing: url, environment: environment, scoped: true))
         } catch {
             onError?(error)
         }
@@ -504,7 +504,7 @@ final class NotePageIconPicker: NSView, NoteFloatingPanelContent {
 
     private func importFile(_ url: URL) {
         do {
-            onImage?(try environment.importAsset(from: url))
+            onImage?(try NoteMediaImport.source(importing: url, environment: environment, scoped: true))
         } catch {
             onError?(error)
         }

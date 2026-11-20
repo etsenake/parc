@@ -19,12 +19,17 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     private var observers: [NSObjectProtocol] = []
     private var failure: (source: String, problem: NoteMediaProblem)?
     private var importWatch: AnyCancellable?
-    private var watchedImport: String?
     private(set) var isHovering = false
 
     override init(block: NoteBlock, editor: NotePageEditor?) {
         super.init(block: block, editor: editor)
         setAccessibilityElement(true)
+        if editor != nil {
+            importWatch = NoteAttachmentImports.shared.changes.sink { [weak self] source in
+                guard let self, source == self.block.props.source else { return }
+                self.importDidFinish()
+            }
+        }
         rebuild(notify: false)
     }
 
@@ -36,25 +41,19 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
 
     var source: NoteMediaSource {
         let environment = editor?.environment
-        var written = block.props.source
-        switch NoteAttachmentImports.shared.state(of: written) {
-        case .imported(let path)?: written = path
-        case .pending?, .failed?: return .unresolved(written ?? "")
-        case nil: break
-        }
-        return NoteMediaSource(written) { environment?.resolve($0) ?? URL(string: $0) }
+        return NoteMediaSource(block.props.source) { environment?.resolve($0) ?? URL(string: $0) }
     }
 
-    private func watchImport() {
-        let written = block.props.source
-        guard NoteAttachmentImports.isToken(written) else { importWatch = nil; watchedImport = nil; return }
-        guard written != watchedImport else { return }
-        watchedImport = written
-        importWatch = NoteAttachmentImports.shared.changes.filter { $0 == written }.sink { [weak self] _ in
-            guard let self else { return }
-            self.mode = nil
-            self.rebuild()
-        }
+    var isImporting: Bool {
+        guard let session = editor?.session else { return false }
+        return NoteAttachmentImports.shared.isPending(block.props.source, in: session)
+    }
+
+    private func importDidFinish() {
+        let copyError = editor.flatMap { NoteAttachmentImports.shared.takeFailure(of: block.props.source, in: $0.session) }
+        rebuild()
+        guard copyError != nil, canEdit, case .local(let url) = source, FileManager.default.fileExists(atPath: url.path) else { return }
+        reportMediaError(NoteAttachmentError.leftInPlace(url.lastPathComponent))
     }
 
     var kind: NoteBlockKind { block.kind }
@@ -64,24 +63,24 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         let previous = self.block
         super.update(block)
         if previous.kind != block.kind || previous.props.source != block.props.source { failure = nil }
+        if previous.kind == block.kind, previous.props.source != block.props.source, let session = editor?.session,
+           let landed = NoteAttachmentImports.shared.landedPath(for: previous.props.source, in: session), landed == block.props.source {
+            content?.rebind(to: source)
+        }
         rebuild(notify: false)
     }
 
     private func resolveMode() -> Mode {
         let source = self.source
         if let failure, failure.source == block.props.source { return .problem(failure.problem) }
-        switch NoteAttachmentImports.shared.state(of: block.props.source) {
-        case .pending?: return kind == .image ? .image : kind == .video ? .video : .pending
-        case .failed(let missing)?: return .problem(missing ? .missing : .unreadable)
-        case .imported?, nil: break
-        }
-        switch source {
+        switch source.readiness(for: kind, importing: isImporting) {
         case .empty: return .empty
-        case .unresolved: return .problem(.missing)
-        case .local(let url):
-            if !FileManager.default.fileExists(atPath: url.path) { return .problem(.missing) }
-        case .remote(let url):
-            if kind == .image, let error = NoteMediaImageLoader.shared.failure(for: url) { return .problem(Self.problem(for: error)) }
+        case .missing: return .problem(.missing)
+        case .importing: return .pending
+        case .ready: break
+        }
+        if case .remote(let url) = source, kind == .image, let error = NoteMediaImageLoader.shared.failure(for: url) {
+            return .problem(Self.problem(for: error))
         }
         switch kind {
         case .image: return .image
@@ -99,8 +98,16 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
         }
     }
 
+    private func scheduleResume() {
+        guard canEdit, block.props.source?.hasPrefix("file:") == true else { return }
+        _ = NoteFileSystemClock.shared.schedule(after: 0) { [weak self] in
+            guard let self, self.canEdit, let environment = self.editor?.environment else { return }
+            NoteMediaImport.resume(self.block.props.source, environment: environment)
+        }
+    }
+
     private func rebuild(notify: Bool = true) {
-        watchImport()
+        scheduleResume()
         let next = resolveMode()
         if next != mode || content == nil {
             mode = next
@@ -258,9 +265,10 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
 
     func importFile(_ url: URL) {
         guard canEdit, let editor else { return }
+        let name = (block.props.source == nil ? "Add " : "Replace ") + NoteMediaCopy.title(for: kind)
+        failure = nil
         do {
-            let path = try NoteMediaActions.importAsset(url, into: editor.environment)
-            setSource(path, name: block.props.source == nil ? "Add " + NoteMediaCopy.title(for: kind) : "Replace " + NoteMediaCopy.title(for: kind))
+            try NoteMediaImport.replace(blockID, with: url, name: name, in: editor.session, environment: editor.environment)
         } catch {
             reportMediaError(error)
         }
@@ -269,8 +277,9 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
     func importData(_ data: Data, fileExtension: String, suggestedName: String?) {
         guard canEdit, let editor else { return }
         do {
-            let path = try editor.environment.importAsset(data: data, fileExtension: fileExtension, suggestedName: suggestedName)
-            setSource(path, name: "Add " + NoteMediaCopy.title(for: kind))
+            let source = try NoteMediaImport.source(importing: data, fileExtension: fileExtension, suggestedName: suggestedName,
+                                                    environment: editor.environment)
+            setSource(source, name: "Add " + NoteMediaCopy.title(for: kind))
         } catch {
             reportMediaError(error)
         }
@@ -455,6 +464,7 @@ class NoteMediaContentView: NSView {
     func update(block: NoteBlock, source: NoteMediaSource) {}
     func setHovered(_ hovered: Bool) {}
     func setSelected(_ selected: Bool) {}
+    func rebind(to source: NoteMediaSource) {}
     func readOnlyDidChange() {}
     func visibilityDidChange() {}
     func captionSpan(width: CGFloat) -> (x: CGFloat, width: CGFloat) { (0, width) }
@@ -764,9 +774,9 @@ final class NoteMediaProblemCard: NoteMediaCardView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     static func writtenPath(_ written: String?, source: NoteMediaSource) -> String {
-        guard let written = written?.trimmingCharacters(in: .whitespacesAndNewlines), !written.isEmpty,
-              !NoteAttachmentImports.isToken(written) else { return "" }
+        guard let written = written?.trimmingCharacters(in: .whitespacesAndNewlines), !written.isEmpty else { return "" }
         if case .remote = source { return written }
+        if case .local = source, written.lowercased().hasPrefix("file:") { return source.displayPath(original: written) }
         return written.removingPercentEncoding ?? written
     }
 

@@ -105,6 +105,10 @@ enum NoteMediaFormat {
     }
 }
 
+enum NoteMediaReadiness: Equatable {
+    case empty, missing, importing, ready
+}
+
 enum NoteMediaSource: Equatable {
     case empty
     case local(URL)
@@ -130,6 +134,17 @@ enum NoteMediaSource: Equatable {
     }
 
     var isEmpty: Bool { self == .empty }
+
+    func readiness(for kind: NoteBlockKind, importing: Bool) -> NoteMediaReadiness {
+        switch self {
+        case .empty: return .empty
+        case .unresolved: return .missing
+        case .local(let url):
+            guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
+            return importing && kind != .image && kind != .video ? .importing : .ready
+        case .remote: return .ready
+        }
+    }
 
     func displayPath(original: String?) -> String {
         switch self {
