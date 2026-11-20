@@ -489,7 +489,7 @@ final class NoteUnsplashThumb: PointingHandButton {
     let photo: NoteUnsplashPhoto
     var onPress: (() -> Void)?
     var isBusy = false { didSet { needsDisplay = true } }
-    private var image: CGImage?
+    private var picture: CGImage?
     private var isHovered = false
     private var hoverArea: NSTrackingArea?
 
@@ -518,12 +518,12 @@ final class NoteUnsplashThumb: PointingHandButton {
     func load() {
         guard let url = NoteUnsplash.thumbnailURL(for: photo, width: 400) else { return }
         if let cached = NoteMediaImageLoader.shared.cached(url, pixels: 400) {
-            image = cached.frames.first
+            picture = cached.frames.first
             return
         }
         NoteMediaImageLoader.shared.load(url, pixels: 400) { [weak self] result in
             guard let self, case .success(let loaded) = result, let frame = loaded.frames.first else { return }
-            self.image = frame
+            self.picture = frame
             if let layer = self.layer, self.window != nil {
                 let transition = CATransition()
                 transition.type = .fade
@@ -573,8 +573,8 @@ final class NoteUnsplashThumb: PointingHandButton {
             path.addClip()
             placeholder.setFill()
             rect.fill()
-            if let image, let context = NSGraphicsContext.current?.cgContext {
-                let size = CGSize(width: image.width, height: image.height)
+            if let picture, let context = NSGraphicsContext.current?.cgContext {
+                let size = CGSize(width: picture.width, height: picture.height)
                 let scale = max(rect.width / max(size.width, 1), rect.height / max(size.height, 1))
                 let drawn = CGSize(width: size.width * scale, height: size.height * scale)
                 let frame = CGRect(x: rect.midX - drawn.width / 2, y: rect.midY - drawn.height / 2, width: drawn.width, height: drawn.height)
@@ -583,7 +583,7 @@ final class NoteUnsplashThumb: PointingHandButton {
                 context.scaleBy(x: 1, y: -1)
                 context.interpolationQuality = .high
                 context.setAlpha(isBusy ? 0.55 : 1)
-                context.draw(image, in: frame)
+                context.draw(picture, in: frame)
                 context.restoreGState()
             }
             NSGraphicsContext.restoreGraphicsState()
