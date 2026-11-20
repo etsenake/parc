@@ -386,12 +386,12 @@ final class NoteSyncedChromeView: NSView {
             guard let self else { return }
             self.controller?.showNotes(for: self.site, from: self.convert(self.label.frame, to: self.superview))
         }
-        tools.copy.onPress = { [weak self] in
+        tools.copyButton.onPress = { [weak self] in
             guard let self else { return }
-            self.tools.copy.flash()
+            self.tools.copyButton.flash()
             self.controller?.copyAndSync(self.site)
         }
-        tools.more.onPress = { [weak self] in
+        tools.moreButton.onPress = { [weak self] in
             guard let self else { return }
             self.controller?.showActions(for: self.site, from: self.convert(self.tools.frame, to: self.superview))
         }
@@ -427,8 +427,8 @@ final class NoteSyncedChromeView: NSView {
         label.setToolTipText(missing ? "Its note moved or the block was deleted. You’re seeing the last saved copy." :
             (count == 0 ? nil : "See where else this lives"))
         badge.isHidden = !info.isOriginal
-        tools.copy.isHidden = false
-        tools.more.isHidden = false
+        tools.copyButton.isHidden = false
+        tools.moreButton.isHidden = false
         setAccessibilityLabel(missing ? "Synced copy, can’t find the original" : info.isOriginal ? "Original synced block" : "Synced copy")
         let changed = next != phase
         phase = next
@@ -505,10 +505,10 @@ final class NoteSyncedChromeView: NSView {
 
 @MainActor
 final class NoteSyncedLabelButton: NoteControlButton {
-    private var title = ""
-    private var icon: String?
-    private var tint: NSColor = NoteTheme.syncedAccent
-    private var font: NSFont { NoteTheme.chromeFont(11.5) }
+    private var labelText = ""
+    private var labelSymbol: String?
+    private var labelTint: NSColor = NoteTheme.syncedAccent
+    private var labelFont: NSFont { NoteTheme.chromeFont(11.5) }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -519,10 +519,10 @@ final class NoteSyncedLabelButton: NoteControlButton {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func configure(title: String, icon: String?, tint: NSColor, enabled: Bool) {
-        let changed = title != self.title || icon != self.icon
-        self.title = title
-        self.icon = icon
-        self.tint = tint
+        let changed = title != labelText || icon != labelSymbol
+        labelText = title
+        labelSymbol = icon
+        labelTint = tint
         isEnabled = true
         alphaValue = 1
         setAccessibilityLabel(title)
@@ -548,8 +548,8 @@ final class NoteSyncedLabelButton: NoteControlButton {
     override var fittingSize: NSSize { intrinsicContentSize }
 
     override var intrinsicContentSize: NSSize {
-        let width = ceil(NSAttributedString(string: title, attributes: [.font: font]).size().width)
-        return NSSize(width: width + (icon == nil ? 20 : 38), height: NoteTheme.syncedHeaderHeight)
+        let width = ceil(NSAttributedString(string: labelText, attributes: [.font: labelFont]).size().width)
+        return NSSize(width: width + (labelSymbol == nil ? 20 : 38), height: NoteTheme.syncedHeaderHeight)
     }
 
     override func fill(hovered: Bool, pressed: Bool, checked: Bool) -> NSColor? {
@@ -563,13 +563,13 @@ final class NoteSyncedLabelButton: NoteControlButton {
         card.lineWidth = 1
         card.stroke()
         var x = bounds.minX + 10
-        if let icon {
-            NoteIconRenderer.draw(.symbol(icon), in: NSRect(x: x - 1, y: bounds.midY - 7, width: 14, height: 14), tint: tint,
+        if let labelSymbol {
+            NoteIconRenderer.draw(.symbol(labelSymbol), in: NSRect(x: x - 1, y: bounds.midY - 7, width: 14, height: 14), tint: labelTint,
                                   pointSize: 10.5, weight: .bold)
             x += 18
         }
-        let height = ceil(font.ascender - font.descender)
-        NSAttributedString(string: title, attributes: [.font: font, .foregroundColor: tint])
+        let height = ceil(labelFont.ascender - labelFont.descender)
+        NSAttributedString(string: labelText, attributes: [.font: labelFont, .foregroundColor: labelTint])
             .draw(with: NSRect(x: x, y: (bounds.midY - height / 2).rounded(), width: bounds.maxX - x - 8, height: height),
                   options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
@@ -577,8 +577,8 @@ final class NoteSyncedLabelButton: NoteControlButton {
 
 @MainActor
 final class NoteSyncedBadge: NSView {
-    private var font: NSFont { NoteTheme.chromeFont(9.5) }
-    private let text = "ORIGINAL"
+    private var badgeFont: NSFont { NoteTheme.chromeFont(9.5) }
+    private let badgeText = "ORIGINAL"
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -592,7 +592,7 @@ final class NoteSyncedBadge: NSView {
     override var isFlipped: Bool { true }
 
     override var fittingSize: NSSize {
-        let size = NSAttributedString(string: text, attributes: [.font: font, .kern: 0.8]).size()
+        let size = NSAttributedString(string: badgeText, attributes: [.font: badgeFont, .kern: 0.8]).size()
         return NSSize(width: ceil(size.width) + 12, height: 16)
     }
 
@@ -604,8 +604,8 @@ final class NoteSyncedBadge: NSView {
         plate.fill()
         NoteTheme.syncedBadgeFill.setFill()
         plate.fill()
-        let height = ceil(font.ascender - font.descender)
-        NSAttributedString(string: text, attributes: [.font: font, .kern: 0.8, .foregroundColor: NoteTheme.syncedAccent])
+        let height = ceil(badgeFont.ascender - badgeFont.descender)
+        NSAttributedString(string: badgeText, attributes: [.font: badgeFont, .kern: 0.8, .foregroundColor: NoteTheme.syncedAccent])
             .draw(with: NSRect(x: 6, y: (bounds.midY - height / 2).rounded(), width: bounds.width - 12, height: height),
                   options: [.usesLineFragmentOrigin])
     }
@@ -613,8 +613,8 @@ final class NoteSyncedBadge: NSView {
 
 @MainActor
 final class NoteSyncedToolStrip: NSView {
-    let copy = NoteSyncedToolButton(symbol: "doc.on.doc", label: "Copy and sync")
-    let more = NoteSyncedToolButton(symbol: "ellipsis", label: "More actions")
+    let copyButton = NoteSyncedToolButton(symbol: "doc.on.doc", label: "Copy and sync")
+    let moreButton = NoteSyncedToolButton(symbol: "ellipsis", label: "More actions")
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -622,8 +622,8 @@ final class NoteSyncedToolStrip: NSView {
         layer?.cornerRadius = NoteTheme.syncedHeaderHeight / 2
         layer?.cornerCurve = .continuous
         layer?.borderWidth = 1
-        addSubview(copy)
-        addSubview(more)
+        addSubview(copyButton)
+        addSubview(moreButton)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -635,8 +635,8 @@ final class NoteSyncedToolStrip: NSView {
     override func layout() {
         super.layout()
         let size = NSSize(width: 26, height: bounds.height - 2)
-        copy.frame = NSRect(x: 4, y: 1, width: size.width, height: size.height)
-        more.frame = NSRect(x: copy.frame.maxX, y: 1, width: size.width, height: size.height)
+        copyButton.frame = NSRect(x: 4, y: 1, width: size.width, height: size.height)
+        moreButton.frame = NSRect(x: copyButton.frame.maxX, y: 1, width: size.width, height: size.height)
     }
 
     override func updateLayer() {
