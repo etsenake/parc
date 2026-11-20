@@ -1,0 +1,6 @@
+Sources/ParcCore/*.swift
+Sources/ParcApp/NoteTheme.swift
+Sources/ParcApp/NoteTextRendering.swift
+Sources/ParcApp/NoteTextAttachments.swift
+Sources/ParcApp/NoteMath*.swift
+tests/NotesEditor/NotesTestKit.swift
