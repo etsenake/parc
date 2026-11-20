@@ -217,6 +217,16 @@ content::WebContents* NativeBrowserWebContentsDelegate::AddNewContents(
     bool user_gesture,
     bool* was_blocked) {
   if (new_contents) {
+    const auto note_browser_weak = browser_->GetWeakPtr();
+    const auto note_child_weak = new_contents->GetWeakPtr();
+    if (OpenNativeCreatedNoteLink(browser_.get(), source, target_url,
+                                  disposition, user_gesture) ||
+        !note_browser_weak || !note_child_weak) {
+      if (!note_child_weak) {
+        new_contents.release();
+      }
+      return nullptr;
+    }
     const auto browser_weak = browser_->GetWeakPtr();
     const auto source_weak =
         source ? source->GetWeakPtr() : base::WeakPtr<content::WebContents>();

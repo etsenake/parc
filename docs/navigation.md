@@ -87,8 +87,9 @@ Back past it drops that Forward step. The tab's address, title and URL pill foll
 shows, and the session saves both steps: after a restart, or when the tab comes back from the
 archive, it shows the note and Back loads the page with its saved history. Closing the tab asks
 the hidden page before it leaves, as closing any page does. A Command-click or middle-click opens
-the note in its own tab, in the background unless Shift is held. A private window hands the note
-to a regular window.
+the note in its own tab, in the background unless Shift is held, and a Shift-click opens it in a
+new window. A link that opens a new window, such as `target="_blank"`, opens the note straight in a
+new tab without a page tab first. A private window hands the note to a regular window.
 
 `TabNoteVisit` on the tab holds the page and note steps and which one shows; the store is the
 source of truth and each render covers or uncovers the tab's live page to match. If the hidden
@@ -98,14 +99,17 @@ trashing it sends a tab showing it back to its page. Swipes and the held-arrow h
 know the note step yet: a swipe over a note does nothing, and Forward's list on the page shows
 only the page's own entries.
 
-The file types match the note editor's. For a same-tab click, Parc's navigation throttle holds the
-navigation for one task and asks the window through `openNoteFile`; for a new-tab click, Parc's
-web-contents delegate asks before Chromium creates the tab. Both arrive as the same request, so
-the window treats it as a same-tab click while the page is mid-navigation; a Shift-Command-click
-on a page that's still loading opens the note in place too. Only user-initiated link navigations
-from a page that has already loaded are offered, never history moves, reloads or form posts. A
-link that opens a new window, such as `target="_blank"`, still opens a tab that turns into the
-note, and so does any click while the window can't take a note, such as with a Peek or sheet open.
+The file types match the note editor's. Every request reaches the window through `openNoteFile`
+with the click's disposition: in place, foreground tab, background tab or new window. For a
+same-tab click, Parc's navigation throttle holds the navigation for one task and asks in place.
+For a modified click, Parc's web-contents delegate asks before Chromium opens the tab or window.
+For a link that creates a new page, the delegate asks before the new page joins the window and
+drops it when the window takes the note, so no raw-text page shows. `NoteLinkDisposition` maps
+each disposition to its routes; only an in-place request may cover the page, and it falls back
+to a foreground tab when the page can't take the note. Only user-initiated link navigations from
+a page that has already loaded are offered, never history moves, reloads or form posts. A click
+while the window can't take a note, such as with a Peek or sheet open, still opens a page tab
+that turns into the note.
 
 ## Sidebar controls and URL pill
 

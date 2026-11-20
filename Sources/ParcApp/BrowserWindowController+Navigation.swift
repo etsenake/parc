@@ -165,12 +165,14 @@ extension BrowserWindowController {
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, openNoteFile url: URL, from page: PCNativePage,
-                       inBackground background: Bool) -> Bool {
+                       disposition: PCNativeNoteLinkDisposition) -> Bool {
         guard browser === nativeBinding, !isClosing, !wholeWindowClose, !page.isClosed,
               PCNativeBrowserApplication.owner(of: page) === browser, let file = InternalPage.noteFile(url),
+              let linkDisposition = NoteLinkDisposition(disposition),
               let sourceID = browsers.first(where: { $0.value.nativePage === page })?.key,
               let source = store.state.tab(sourceID, where: { $0.archivedAt == nil }) else { return false }
-        if isPrivateBrowsing || isPopupWindow {
+        let routes = linkDisposition.routes(inRegularWindow: !isPrivateBrowsing && !isPopupWindow)
+        if routes.contains(.regularWindow) {
             guard let handoff = onOpenNoteInRegularWindow else { return false }
             handoff(url)
             return true
@@ -180,7 +182,22 @@ extension BrowserWindowController {
             showNoteError(NoteFilePaths.itemExists(file) ? NoteFileError.notANote : NoteFileError.missing)
             return true
         }
-        if !background, page.loading, openNoteOverPage(file, url: url, sourceID: sourceID, page: page) { return true }
+        for route in routes {
+            switch route {
+            case .regularWindow:
+                return false
+            case .overPage:
+                if openNoteOverPage(file, url: url, sourceID: sourceID, page: page) { return true }
+            case .foregroundTab, .backgroundTab:
+                return openNoteLinkTab(file, url: url, sourceID: sourceID, background: route == .backgroundTab)
+            case .newWindow:
+                return onOpenNoteInNewWindow?(url) ?? false
+            }
+        }
+        return false
+    }
+
+    private func openNoteLinkTab(_ file: URL, url: URL, sourceID: UUID, background: Bool) -> Bool {
         if !background { closeLibrary(restoreFocus: false) }
         let title = NoteFileSession.session(for: file)?.title ?? file.deletingPathExtension().lastPathComponent
         let creation = TabCreationProvenance(referrerID: sourceID, activeTabID: currentTabID,
@@ -565,4 +582,16 @@ extension BrowserWindowController {
         }
     }
     var canRestoreClosedTab: Bool { reopenClosedStep != nil }
+}
+
+private extension NoteLinkDisposition {
+    init?(_ disposition: PCNativeNoteLinkDisposition) {
+        switch disposition {
+        case .inPlace: self = .inPlace
+        case .foregroundTab: self = .foregroundTab
+        case .backgroundTab: self = .backgroundTab
+        case .newWindow: self = .newWindow
+        @unknown default: return nil
+        }
+    }
 }

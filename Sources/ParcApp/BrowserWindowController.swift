@@ -226,6 +226,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var noteFailures: [UUID: (destination: String, message: String)] = [:]
     var pendingNoteAnchors: [UUID: String] = [:]
     var onOpenNoteInRegularWindow: ((URL) -> Void)?
+    var onOpenNoteInNewWindow: ((URL) -> Bool)?
     var easelEditors: [UUID: EaselPane] = [:]
     var easelFailures: [UUID: (destination: String, message: String)] = [:]
     var panes: [UUID: BrowserPane] = [:]

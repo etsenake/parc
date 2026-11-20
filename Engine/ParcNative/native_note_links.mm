@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -53,19 +54,34 @@ bool IsLinkTransition(ui::PageTransition transition) {
          !(transition & ui::PAGE_TRANSITION_FORWARD_BACK);
 }
 
+std::optional<PCNativeNoteLinkDisposition> NewNoteLinkDisposition(
+    WindowOpenDisposition disposition) {
+  switch (disposition) {
+    case WindowOpenDisposition::NEW_FOREGROUND_TAB:
+      return PCNativeNoteLinkDispositionForegroundTab;
+    case WindowOpenDisposition::NEW_BACKGROUND_TAB:
+      return PCNativeNoteLinkDispositionBackgroundTab;
+    case WindowOpenDisposition::NEW_WINDOW:
+    case WindowOpenDisposition::NEW_POPUP:
+      return PCNativeNoteLinkDispositionNewWindow;
+    default:
+      return std::nullopt;
+  }
+}
+
 bool OfferNoteLink(content::WebContents& source, PCNativeBrowserWindow* expected,
-                   const GURL& url, bool background) {
+                   const GURL& url, PCNativeNoteLinkDisposition disposition) {
   PCNativePage* page = ExistingNativePage(&source);
   PCNativeBrowserWindow* binding =
       page && !page.closed ? [PCNativeBrowserApplication ownerForPage:page] : nil;
   NSURL* target = [NSURL URLWithString:base::SysUTF8ToNSString(url.spec())];
   return target && binding && (!expected || binding == expected) &&
          [binding.client respondsToSelector:
-             @selector(nativeBrowser:openNoteFileURL:fromPage:inBackground:)] &&
+             @selector(nativeBrowser:openNoteFileURL:fromPage:disposition:)] &&
          [binding.client nativeBrowser:binding
                        openNoteFileURL:target
                               fromPage:page
-                          inBackground:background];
+                           disposition:disposition];
 }
 
 class NoteLinkThrottle final : public content::NavigationThrottle {
@@ -82,7 +98,8 @@ class NoteLinkThrottle final : public content::NavigationThrottle {
   void Offer() {
     const auto self = weak_factory_.GetWeakPtr();
     const bool opened = OfferNoteLink(*navigation_handle()->GetWebContents(), nil,
-                                      navigation_handle()->GetURL(), false);
+                                      navigation_handle()->GetURL(),
+                                      PCNativeNoteLinkDispositionInPlace);
     if (!self) {
       return;
     }
@@ -110,14 +127,26 @@ void AddNativeNoteLinkThrottle(content::NavigationThrottleRegistry& registry) {
 
 bool OpenNativeNoteLink(BrowserWindowInterface& browser, content::WebContents& source,
                         const content::OpenURLParams& params) {
-  const bool background = params.disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB;
-  if ((!background && params.disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB) ||
-      params.native_route_token || (params.is_renderer_initiated && !params.user_gesture) ||
+  const auto disposition = NewNoteLinkDisposition(params.disposition);
+  if (!disposition || params.native_route_token ||
+      (params.is_renderer_initiated && !params.user_gesture) ||
       !IsLinkTransition(params.transition) || !IsNoteFileURL(params.url) ||
       source.GetBrowserContext() != browser.GetProfile()) {
     return false;
   }
   PCNativeBrowserWindow* binding = AppKitBindingForBrowser(&browser);
-  return binding && OfferNoteLink(source, binding, params.url, background);
+  return binding && OfferNoteLink(source, binding, params.url, *disposition);
+}
+
+bool OpenNativeCreatedNoteLink(BrowserWindowInterface& browser, content::WebContents* source,
+                               const GURL& url, WindowOpenDisposition disposition,
+                               bool user_gesture) {
+  const auto offered = NewNoteLinkDisposition(disposition);
+  if (!source || !offered || !user_gesture || !IsNoteFileURL(url) ||
+      source->GetBrowserContext() != browser.GetProfile()) {
+    return false;
+  }
+  PCNativeBrowserWindow* binding = AppKitBindingForBrowser(&browser);
+  return binding && OfferNoteLink(*source, binding, url, *offered);
 }
 }

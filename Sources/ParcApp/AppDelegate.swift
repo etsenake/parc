@@ -1524,6 +1524,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             guard let self, !self.terminationInProgress else { return }
             self.application(NSApp, open: [url])
         }
+        controller.onOpenNoteInNewWindow = { [weak self, weak controller] url in
+            guard let self, let controller, !self.terminationInProgress, self.started, self.initialBrowserOpened,
+                  !self.requiresOnboarding, self.onboarding == nil else { return false }
+            do {
+                let owner = try self.makeBrowserWindow(renderInitialSelection: true,
+                                                       preferredProfileID: controller.activeProfileID)
+                guard owner.openExternalURL(url, inSpace: owner.activeSpaceID) else { return false }
+                self.lastActiveWindow = owner
+                owner.showWindow(nil)
+                owner.window?.makeKeyAndOrderFront(nil)
+                return true
+            } catch {
+                self.presentWindowCreationError(error)
+                return true
+            }
+        }
         controller.onRequestBrowserTab = { [weak self, weak controller] input in
             guard let self, let controller, !self.terminationInProgress else { return }
             let profileID = controller.activeProfileID, privateParentID = controller.store.privateParentProfileID

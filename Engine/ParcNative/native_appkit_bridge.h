@@ -278,6 +278,13 @@ typedef NS_ENUM(NSInteger, PCNativePageDisposition) {
   PCNativePageDispositionSplitTab,
 };
 
+typedef NS_ENUM(NSInteger, PCNativeNoteLinkDisposition) {
+  PCNativeNoteLinkDispositionInPlace,
+  PCNativeNoteLinkDispositionForegroundTab,
+  PCNativeNoteLinkDispositionBackgroundTab,
+  PCNativeNoteLinkDispositionNewWindow,
+};
+
 NS_SWIFT_UI_ACTOR
 __attribute__((visibility("default")))
 @interface PCNativeContextImage : NSObject
@@ -680,8 +687,9 @@ NS_SWIFT_UI_ACTOR
   allowsPeekWithShift:(BOOL)shift
     NS_SWIFT_NAME(nativeBrowser(_:allowsPeekWithShift:));
 - (BOOL)nativeBrowser:(PCNativeBrowserWindow*)browser
-    openNoteFileURL:(NSURL*)url fromPage:(PCNativePage*)page inBackground:(BOOL)background
-    NS_SWIFT_NAME(nativeBrowser(_:openNoteFile:from:inBackground:));
+    openNoteFileURL:(NSURL*)url fromPage:(PCNativePage*)page
+        disposition:(PCNativeNoteLinkDisposition)disposition
+    NS_SWIFT_NAME(nativeBrowser(_:openNoteFile:from:disposition:));
 - (void)nativeBrowser:(PCNativeBrowserWindow*)browser
     downloadDidBegin:(PCNativeDownloadArrival*)arrival
     NS_SWIFT_NAME(nativeBrowser(_:downloadDidBegin:));
