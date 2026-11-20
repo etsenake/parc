@@ -136,7 +136,8 @@ final class NoteImageCropEditor: NSView {
     private func layoutBar() {
         let y = imageRect.maxY + Self.barGap
         let compact = leftCard.fittingWidth + chipWidth(full: true) + 8 > bounds.width
-        rightCard.setButtons(compact ? [resetIcon, cancelIcon, saveIcon] : [resetChip, cancelChip, saveChip])
+        let buttons: [NoteControlButton] = compact ? [resetIcon, cancelIcon, saveIcon] : [resetChip, cancelChip, saveChip]
+        if buttons.map(ObjectIdentifier.init) != rightCard.buttons.map(ObjectIdentifier.init) { rightCard.setButtons(buttons) }
         let leftWidth = leftCard.fittingWidth, rightWidth = rightCard.fittingWidth
         let leftX = max(0, min(imageRect.minX, bounds.width - leftWidth - rightWidth - 8))
         let rightX = min(bounds.width - rightWidth, max(leftX + leftWidth + 8, imageRect.maxX - rightWidth))
@@ -333,11 +334,13 @@ final class NoteImageCropEditor: NSView {
 
     private func scale(by factor: CGFloat) {
         let rect = cropRect
-        let width = rect.width * factor, height = rect.height * factor
-        let grown = CGRect(x: rect.midX - width / 2, y: rect.midY - height / 2, width: width, height: height)
-        let resized = NoteImageCropGeometry.resize(grown, handle: .bottomRight, by: .zero, within: imageRect, minimum: Self.minimumSide,
-                                                   aspect: ratio ?? (rect.height > 0 ? rect.width / rect.height : nil))
-        setDraft(NoteImageCropGeometry.move(resized, by: .zero, within: imageRect), animated: true)
+        guard rect.width > 0, rect.height > 0 else { return }
+        let limit = min(imageRect.width / rect.width, imageRect.height / rect.height)
+        let floor = min(1, Self.minimumSide / min(rect.width, rect.height))
+        let applied = min(max(factor, floor), limit)
+        let size = CGSize(width: rect.width * applied, height: rect.height * applied)
+        let scaled = CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height)
+        setDraft(NoteImageCropGeometry.move(scaled, by: .zero, within: imageRect), animated: true)
         refreshControls()
     }
 
