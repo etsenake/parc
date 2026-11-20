@@ -100,7 +100,7 @@ final class NoteEmojiCatalog {
     private var availableCache: [NoteEmoji]?
     private var recentsCache: [String]?
 
-    var availability: ((NoteEmoji) -> Bool)? {
+    var availability: (@MainActor (NoteEmoji) -> Bool)? {
         didSet { availableCache = nil }
     }
 
@@ -121,7 +121,7 @@ final class NoteEmojiCatalog {
     var available: [NoteEmoji] {
         if let availableCache { return availableCache }
         let entries = index.entries
-        let filtered = availability.map { check in entries.filter(check) } ?? entries
+        let filtered = availability.map { check in entries.filter { check($0) } } ?? entries
         availableCache = filtered
         return filtered
     }
