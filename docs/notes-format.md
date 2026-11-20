@@ -265,9 +265,9 @@ Weekly goals
 <!-- parc /synced -->
 ```
 
-Parc refreshes a copy's snapshot whenever its note is open and rewrites `from`
-when the original's note moves or is renamed. An opener without a closer stays
-as written.
+Parc refreshes a copy's snapshot whenever the original changes and rewrites
+`from` when the original's note moves or is renamed. An opener without a closer
+stays as written.
 
 ## Columns
 
