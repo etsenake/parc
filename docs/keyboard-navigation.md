@@ -280,6 +280,14 @@ standard key. Show Fonts, Show Colors, alignment, checklists, quotes, highlight,
 monospace and Copy/Paste Style are omitted because these editors lack them;
 Easel typefaces and text fill stay in the style bar.
 
+Inside a note the open menu shows the note's own shortcuts instead: Heading 1–3
+⌥⌘1–3, Body ⌥⌘0, Bulleted List ⌥⌘5, Numbered List ⌥⌘6 and Strikethrough ⇧⌘S,
+with none for Bigger, Smaller and Indentation. Closing the menu puts Parc's chords
+back, so Easels and saved custom shortcuts never change. A Format chord that the
+note uses for something else gives way to the note: ⇧⌘H reapplies the last colour
+in a note and does nothing when there is none, instead of making a Heading 1.
+Format chords the note doesn't use, such as ⇧⌘7, still work there.
+
 ## Shortcut key text
 
 `display` and `keyLabel` supply text labels; `symbols` supplies Settings caps;
