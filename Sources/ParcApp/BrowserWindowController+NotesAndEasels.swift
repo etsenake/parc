@@ -134,7 +134,7 @@ extension BrowserWindowController {
             noteFailures.removeValue(forKey: tab.id)
             configureNoteOwner(tab, editor: editor)
             pane.showNote(editor)
-            if let anchor = pendingNoteAnchors.removeValue(forKey: tab.id) { editor.reveal(anchor: anchor) }
+            if let anchor = pendingNoteAnchors.removeValue(forKey: tab.id) ?? URL(string: tab.url)?.fragment, !anchor.isEmpty { editor.reveal(anchor: anchor) }
             if tab.title != editor.file.title || InternalPage.note(editor.file.url) != .note(url) {
                 DispatchQueue.main.async { [weak self, weak editor] in
                     guard let self, let editor, self.noteEditors[tab.id]?.editor === editor else { return }
