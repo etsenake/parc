@@ -125,6 +125,7 @@ struct NoteMathLayoutTests {
         fallbackGlyphs()
         references()
         katexBoxesSizesAndLinks()
+        katexChoicesAndCentering()
         samples()
         print("NoteMathLayoutTests passed")
     }
@@ -653,6 +654,21 @@ struct NoteMathLayoutTests {
         expect(picture.ink(x: 0.55...1, y: 0...1) > 40, "the reference number draws")
         let pictureMissing = bitmap(missing)
         expect(pictureMissing.ink(x: 0.55...1, y: 0...1) > 40, "the missing marker draws")
+    }
+
+    static func katexChoicesAndCentering() {
+        let choice = "\\mathchoice{MMMM}{MM}{M}{i}"
+        expect(box(choice).width > box(choice, display: false).width * 1.5, "mathchoice picks the display branch in display")
+        expect(abs(box("x^{" + choice + "}", display: false).width - box("x^{M}", display: false).width) < 0.01, "mathchoice picks the script branch")
+        expect(abs(box("a\\mathchoice{+}{+}{+}{+}b", display: false).width - box("a+b", display: false).width) < 0.01,
+               "mathchoice is invisible to spacing")
+        let centered = box("\\vcenter{\\frac{a}{b}}", display: false), axis = font.constants[.axisHeight] * size / font.unitsPerEm
+        expect(abs((centered.ascent - centered.descent) / 2 - axis) < 0.01, "vcenter centres on the axis")
+        expect(box("\\pmod{a}").width > box("\\pmod{a}", display: false).width, "pmod spreads out in display")
+        let strut = box("\\mathstrut", display: false)
+        expect(strut.width == 0 && strut.ascent > 0 && strut.descent > 0, "mathstrut is a parenthesis tall")
+        for logo in ["\\TeX", "\\LaTeX", "\\KaTeX"] { expect(box(logo, display: false).width > 0.9 * size, "\(logo) draws") }
+        expect(box("\\pmb{x}", display: false).width > box("x", display: false).width, "pmb doubles up")
     }
 
     static func katexBoxesSizesAndLinks() {

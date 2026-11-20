@@ -23,6 +23,55 @@ struct NoteMathParserTests {
         }
     }
 
+    static func katexSymbolsAndShorthands() {
+        let names = """
+            maltese Vvdash nvdash nvDash nVdash nVDash minuso ratio shortmid nshortmid shortparallel nshortparallel mathellipsis \
+            vcentcolon dblcolon coloneqq Coloneqq coloneq Coloneq eqqcolon Eqqcolon eqcolon Eqcolon approxcolon Approxcolon \
+            simcolon Simcolon colonapprox Colonapprox colonsim Colonsim approxcoloncolon simcoloncolon colondash Colondash \
+            dashcolon Dashcolon lt gt doteqdot Doteq origof imageof llless gggtr lessgtr gtrless lesseqgtr gtreqless lesseqqgtr \
+            gtreqqless lessdot gtrdot lessapprox gtrapprox lneqq gneqq lvertneqq gvertneqq lnsim gnsim lnapprox gnapprox \
+            nleqslant ngeqslant nleqq ngeqq precsim succsim precapprox succapprox preccurlyeq succcurlyeq curlyeqprec \
+            curlyeqsucc precneqq succneqq precnsim succnsim precnapprox succnapprox nprec nsucc npreceq nsucceq subseteqq \
+            supseteqq subsetneqq supsetneqq varsubsetneq varsupsetneq varsubsetneqq varsupsetneqq nsubseteqq nsupseteqq notni \
+            backepsilon backsimeq eqcirc circeq bumpeq Bumpeq smallsmile smallfrown vartriangle ntriangleleft ntriangleright \
+            ntrianglelefteq ntrianglerighteq blacktriangleleft blacktriangleright eqslantless eqslantgtr leftthreetimes \
+            rightthreetimes doublebarwedge Cap Cup doublecap doublecup bigcirc And darr dArr Darr lang rang uarr uArr Uarr harr \
+            hArr Harr larr lArr Larr rarr rArr Rarr lrarr lrArr Lrarr alef alefsym clubs cnums Dagger diamonds empty exist hearts \
+            image isin plusmn real sdot sect spades sub sube supe thetasym weierp bull leftrightsquigarrow looparrowleft \
+            looparrowright restriction Lleftarrow Rrightarrow arctg arcctg ch cosec cotg ctg cth sh tg th mathstrut nobreak \
+            allowbreak relax KaTeX LaTeX TeX lparen rparen textbackslash
+            """.split(whereSeparator: \.isWhitespace).filter { $0 != "\\" }
+        for name in names {
+            expect(NoteMathParser.isBuiltIn(String(name)), "\\\(name) is built in")
+            _ = parse("\\\(name)")
+        }
+        expect(parse("a \\lt b") == [.char("a", .ord), .char("<", .rel), .char("b", .ord)], "lt is a relation")
+        expect(parse("\\Coloneq") == [.classed(.rel, [.char("\u{2237}", .ord), .space(-1.2 / 18), .char("\u{2212}", .ord)])], "colon pairs kern together")
+        expect(parse("\\char\"263A \\char65 \\char`b \\char'101") == [.char("☺", .ord), .char("A", .ord), .char("b", .ord), .char("A", .ord)],
+               "char reads hex, decimal, backtick and octal codes")
+        expect(parse("\\verb|x_1 \\y|") == [.text("x_1 \\y", .monospace)], "verb keeps its text")
+        expect(parse("\\verb*|a b|") == [.text("a\u{2423}b", .monospace)], "verb star shows spaces")
+        expect(failure("\\verb|abc").message.hasPrefix("\\verb never finds"), "unclosed verb")
+        expect(parse("\\TextOrMath{t}{m}") == [.group([.char("m", .ord)])], "TextOrMath picks math")
+        expect(parse("\\htmlClass{big}{x}") == [.group([.char("x", .ord)])], "html wrappers keep their content")
+        expect(parse("\\mathchoice{a}{b}{c}{d}") == [.choice([[.char("a", .ord)], [.char("b", .ord)], [.char("c", .ord)], [.char("d", .ord)]])],
+               "mathchoice keeps four branches")
+        expect(parse("\\vcenter{x}") == [.vcenter([.char("x", .ord)])], "vcenter")
+        expect(parse("\\relax x") == [.space(0), .char("x", .ord)], "relax does nothing")
+        expect(parse("\\bold{x}") == [.styled(.bold, [.char("x", .ord)])], "bold is mathbf")
+        expect(parse("\\frak{g}") == [.styled(.fraktur, [.char("g", .ord)])], "frak is mathfrak")
+        guard case .operatorName(let lim, .auto) = parse("\\varlimsup")[0], case .decorated(.overline, _) = lim[0] else {
+            failTest("varlimsup is an overlined lim")
+        }
+        guard case .classed(.bin, _) = parse("\\pmb{+}")[0] else { failTest("pmb keeps a binary class") }
+        expect(abs(NoteMathParser.dimension("1px")! - 0.100375) < 1e-12 && abs(NoteMathParser.dimension("1ex")! - 0.431) < 1e-12, "px and ex match KaTeX")
+        expect(abs(NoteMathParser.dimension("10dd")! - 1.0700086430423511) < 1e-9 && abs(NoteMathParser.dimension("65536sp")! - 0.1) < 1e-12,
+               "dd and sp units")
+        expect(NoteMathParser.dimension("1cc") != nil && NoteMathParser.dimension("1nd") != nil && NoteMathParser.dimension("1nc") != nil,
+               "cc, nd and nc units")
+        expect(parse("\\left\\lparen x \\right\\rang").count == 1, "new delimiter names work with left and right")
+    }
+
     static func katexBoxesSizesAndLinks() {
         expect(parse("a \\Huge b c") == [.char("a", .ord), .sized(2.488, [.char("b", .ord), .char("c", .ord)])], "size switches cover the rest")
         expect(parse("{\\tiny x} y") == [.group([.sized(0.5, [.char("x", .ord)])]), .char("y", .ord)], "size switches stop at the brace")
@@ -79,6 +128,7 @@ struct NoteMathParserTests {
         expansionPrimitives()
         cellScopes()
         katexBoxesSizesAndLinks()
+        katexSymbolsAndShorthands()
         katexEnvironments()
         commutativeDiagrams()
         chemistry()

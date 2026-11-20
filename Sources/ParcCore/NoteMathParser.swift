@@ -122,6 +122,8 @@ indirect enum NoteMathNode: Equatable {
     case colorBox(NoteMathColor, frame: NoteMathColor?, [NoteMathNode])
     case link(String, [NoteMathNode])
     case rule(width: Double, height: Double, raise: Double)
+    case choice([[NoteMathNode]])
+    case vcenter([NoteMathNode])
 }
 
 enum NoteMathLabelTarget: Equatable {
@@ -267,7 +269,7 @@ struct NoteMathParser {
             || NoteMathSymbols.spaces[name] != nil || fontCommands[name] != nil || textCommands[name] != nil
             || decorations[name] != nil || sizedDelimiters[name] != nil || classCommands[name] != nil
             || styleSwitches[name] != nil || fontSwitches[name] != nil || extensibleArrows[name] != nil
-            || sizeSwitches[name] != nil
+            || sizeSwitches[name] != nil || colonForms[name] != nil
             || structuralCommands.contains(name)
     }
 
@@ -278,7 +280,9 @@ struct NoteMathParser {
         "nolimits", "displaylimits", "over", "choose", "atop", "brack", "brace", "tag", "notag", "nonumber", "hline",
         "hdashline", "\\", "cr", "newline", "newcommand", "renewcommand", "providecommand", "def", "gdef", "edef",
         "xdef", "let", "global", "ce", "pu", "label", "eqref", "ref", "raisebox", "smash", "substack", "genfrac",
-        "colorbox", "fcolorbox", "href", "url", "rule", "tripledash",
+        "colorbox", "fcolorbox", "href", "url", "rule", "tripledash", "relax", "nobreak", "allowbreak", "mathstrut", "pmb",
+        "operatornamewithlimits", "varlimsup", "varliminf", "varinjlim", "varprojlim", "char", "verb", "TextOrMath",
+        "htmlClass", "htmlId", "htmlStyle", "htmlData", "TeX", "LaTeX", "KaTeX", "mathchoice", "vcenter", "pod",
     ]
 
     private mutating func parseFormula() throws(NoteMathParseError) -> [NoteMathNode] {
@@ -710,13 +714,13 @@ struct NoteMathParser {
             return .group([.space(2.0 / 18), .char(":", .punct), .space(6.0 / 18)])
         case "bmod":
             return .classed(.bin, [.function("mod", .beside)])
-        case "pmod":
+        case "pod", "pmod":
             let argument = try parseArgument(for: name, count: 1)
-            return .group([.space(1), .char("(", .open), .text("mod", .roman), .space(1.0 / 3.0)]
-                          + argument + [.char(")", .close)])
+            let inside: [NoteMathNode] = name == "pmod" ? [.text("mod", .roman), .space(1.0 / 3.0)] + argument : argument
+            return .group([Self.modSpace(8), .char("(", .open)] + inside + [.char(")", .close)])
         case "mod":
             let argument = try parseArgument(for: name, count: 1)
-            return .group([.space(1), .text("mod", .roman), .space(1.0 / 3.0)] + argument)
+            return .group([Self.modSpace(12), .text("mod", .roman), .space(1.0 / 6.0), .space(1.0 / 6.0)] + argument)
         case "phantom", "hphantom", "vphantom":
             return .phantom(try parseArgument(for: name, count: 1), keepsWidth: name != "vphantom",
                             keepsHeight: name != "hphantom")
@@ -781,11 +785,105 @@ struct NoteMathParser {
             let width = try parseDimensionArgument(for: name, at: lexeme)
             let height = try parseDimensionArgument(for: name, at: lexeme)
             return .rule(width: width, height: height, raise: raise)
+        case _ where Self.colonForms[name] != nil:
+            let pieces = Self.colonForms[name]!
+            return .classed(.rel, [.char(pieces.0, .ord), .space(-1.2 / 18), .char(pieces.1, .ord)])
+        case "relax", "nobreak", "allowbreak":
+            return .space(0)
+        case "mathstrut":
+            return .phantom([.char("(", .open)], keepsWidth: false, keepsHeight: true)
+        case "pmb":
+            let argument = try parseArgument(for: name, count: 1)
+            let doubled = NoteMathNode.group([.lap(.right, argument), .space(0.0501875)] + argument)
+            if argument.count == 1, case .char(_, let kind) = argument[0], kind == .bin || kind == .rel { return .classed(kind, [doubled]) }
+            return doubled
+        case "operatornamewithlimits":
+            return .operatorName(try parseArgument(for: name, count: 1), .auto)
+        case "varlimsup", "varliminf", "varinjlim", "varprojlim":
+            let lim: [NoteMathNode] = [.char("l", .ord), .char("i", .ord), .char("m", .ord)]
+            let decoration: NoteMathDecoration = name == "varlimsup" ? .overline : name == "varliminf" ? .underline
+                : name == "varinjlim" ? .underArrow("\u{2192}") : .underArrow("\u{2190}")
+            return .operatorName([.decorated(decoration, lim)], .auto)
+        case "char":
+            return try parseCharacterCode(lexeme)
+        case "verb":
+            return try parseVerbatim(lexeme)
+        case "TextOrMath":
+            _ = try parseText(.roman, command: lexeme, name: name)
+            return .group(try parseArgument(for: name, count: 2))
+        case "htmlClass", "htmlId", "htmlStyle", "htmlData":
+            _ = try parseRawGroup(for: name, what: "an attribute")
+            return .group(try parseArgument(for: name, count: 2))
+        case "TeX", "LaTeX", "KaTeX":
+            return .group(Self.logo(name))
+        case "mathchoice":
+            var branches: [[NoteMathNode]] = []
+            for _ in 0..<4 { branches.append(try parseArgument(for: name, count: 4)) }
+            return .choice(branches)
+        case "vcenter":
+            return .vcenter(try parseArgument(for: name, count: 1))
         case "tag", "notag", "nonumber", "label":
             throw failure("\\\(name) has to stand on its own, not inside a script or argument", lexeme)
         default:
             throw failure("Unknown command \\\(name)", lexeme)
         }
+    }
+
+    private static func modSpace(_ mu: Double) -> NoteMathNode {
+        .choice([[.space(1)], [.space(mu / 18)], [.space(mu / 18)], [.space(mu / 18)]])
+    }
+
+    private static func logo(_ name: String) -> [NoteMathNode] {
+        let tex: [NoteMathNode] = [.text("T", .roman), .space(-0.1667), .raised(-0.5 * 0.431, [.text("E", .roman)]), .space(-0.125),
+                                   .text("X", .roman)]
+        let raisedA = NoteMathNode.raised(0.205, [.mathStyle(.script, [.text("A", .roman)])])
+        switch name {
+        case "LaTeX": return [.text("L", .roman), .space(-0.36), raisedA, .space(-0.15)] + tex
+        case "KaTeX": return [.text("K", .roman), .space(-0.17), raisedA, .space(-0.15)] + tex
+        default: return tex
+        }
+    }
+
+    private mutating func parseCharacterCode(_ lexeme: Lexeme) throws(NoteMathParseError) -> NoteMathNode {
+        var position = skipIndex(from: index)
+        var radix = 10
+        if position < characters.count, characters[position] == "`" {
+            position += 1
+            if position < characters.count, characters[position] == "\\" { position += 1 }
+            guard position < characters.count else { throw failure("\\char` needs a character after it", lexeme) }
+            index = position + 1
+            return .char(String(characters[position]), .ord)
+        }
+        if position < characters.count, characters[position] == "\"" { radix = 16; position += 1 }
+        else if position < characters.count, characters[position] == "'" { radix = 8; position += 1 }
+        var digits = ""
+        while position < characters.count, characters[position].isASCII, characters[position].isHexDigit,
+              Int(String(characters[position]), radix: radix) != nil {
+            digits.append(characters[position])
+            position += 1
+        }
+        guard let code = Int(digits, radix: radix), let scalar = Unicode.Scalar(code) else {
+            throw failure("\\char needs a character code, like \\char\"263A or \\char65", lexeme)
+        }
+        index = position
+        return .char(String(Character(scalar)), .ord)
+    }
+
+    private mutating func parseVerbatim(_ lexeme: Lexeme) throws(NoteMathParseError) -> NoteMathNode {
+        var position = index
+        let visibleSpaces = position < characters.count && characters[position] == "*"
+        if visibleSpaces { position += 1 }
+        guard position < characters.count, !Self.isLetter(characters[position]), !characters[position].isWhitespace else {
+            throw failure("\\verb needs a delimiter, like \\verb|x|", lexeme)
+        }
+        let delimiter = characters[position]
+        var end = position + 1
+        while end < characters.count, characters[end] != delimiter { end += 1 }
+        guard end < characters.count else { throw failure("\\verb never finds its closing \(delimiter)", lexeme) }
+        var text = String(characters[(position + 1)..<end])
+        if visibleSpaces { text = text.replacingOccurrences(of: " ", with: "\u{2423}") }
+        index = end + 1
+        return .text(text, .monospace)
     }
 
     private static func contents(_ node: NoteMathNode) -> [NoteMathNode] {
@@ -1031,10 +1129,15 @@ struct NoteMathParser {
         guard let number = Double(numberText == "-" || numberText == "+" ? numberText + "1" : numberText) else { return nil }
         switch trimmed[numberEnd...].lowercased() {
         case "em": return number
-        case "ex": return number * 0.43
+        case "ex": return number * 0.431
         case "mu": return number / 18
-        case "pt", "px": return number / 10
-        case "bp": return number * 1.00375 / 10
+        case "pt": return number / 10
+        case "bp", "px": return number * 1.00375 / 10
+        case "dd": return number * 1238 / 1157 / 10
+        case "cc": return number * 14856 / 1157 / 10
+        case "nd": return number * 685 / 642 / 10
+        case "nc": return number * 1370 / 107 / 10
+        case "sp": return number / 65536 / 10
         case "pc": return number * 1.2
         case "mm": return number * 0.284528
         case "cm": return number * 2.84528
@@ -1366,6 +1469,15 @@ struct NoteMathParser {
         "displaystyle": .display, "textstyle": .text, "scriptstyle": .script, "scriptscriptstyle": .scriptScript,
     ]
 
+    private static let colonForms: [String: (String, String)] = [
+        "coloneq": ("\u{2236}", "\u{2212}"), "Coloneq": ("\u{2237}", "\u{2212}"), "Eqqcolon": ("=", "\u{2237}"),
+        "Eqcolon": ("\u{2212}", "\u{2237}"), "colonapprox": ("\u{2236}", "\u{2248}"), "Colonapprox": ("\u{2237}", "\u{2248}"),
+        "colonsim": ("\u{2236}", "\u{223C}"), "Colonsim": ("\u{2237}", "\u{223C}"), "approxcolon": ("\u{2248}", "\u{2236}"),
+        "Approxcolon": ("\u{2248}", "\u{2237}"), "simcolon": ("\u{223C}", "\u{2236}"), "Simcolon": ("\u{223C}", "\u{2237}"),
+        "approxcoloncolon": ("\u{2248}", "\u{2237}"), "simcoloncolon": ("\u{223C}", "\u{2237}"), "colondash": ("\u{2236}", "\u{2212}"),
+        "Colondash": ("\u{2237}", "\u{2212}"), "dashcolon": ("\u{2212}", "\u{2236}"), "Dashcolon": ("\u{2212}", "\u{2237}"),
+    ]
+
     private static let sizeSwitches: [String: Double] = [
         "tiny": 0.5, "sixptsize": 0.6, "scriptsize": 0.7, "footnotesize": 0.8, "small": 0.9, "normalsize": 1,
         "large": 1.2, "Large": 1.44, "LARGE": 1.728, "huge": 2.074, "Huge": 2.488,
@@ -1378,12 +1490,12 @@ struct NoteMathParser {
     private static let fontCommands: [String: NoteMathVariant] = [
         "mathrm": .roman, "mathup": .roman, "mathbf": .bold, "mathit": .italic, "mathbb": .doubleStruck,
         "mathcal": .script, "mathscr": .script, "mathfrak": .fraktur, "mathsf": .sansSerif, "mathtt": .monospace,
-        "boldsymbol": .boldItalic, "bm": .boldItalic, "mathnormal": .normal, "Bbb": .doubleStruck,
+        "boldsymbol": .boldItalic, "bm": .boldItalic, "mathnormal": .normal, "Bbb": .doubleStruck, "bold": .bold, "frak": .fraktur,
     ]
 
     private static let textCommands: [String: NoteMathTextStyle] = [
         "text": .roman, "textrm": .roman, "textnormal": .roman, "textup": .roman, "mbox": .roman, "hbox": .roman,
-        "textbf": .bold, "textit": .italic, "emph": .italic, "textsf": .sansSerif, "texttt": .monospace,
+        "textbf": .bold, "textmd": .roman, "textit": .italic, "emph": .italic, "textsf": .sansSerif, "texttt": .monospace,
     ]
 
     private static let textEscapes: [String: String] = [
@@ -1396,7 +1508,7 @@ struct NoteMathParser {
     private static let decorations: [String: NoteMathDecoration] = [
         "hat": .accent("\u{0302}"), "check": .accent("\u{030C}"), "tilde": .accent("\u{0303}"),
         "acute": .accent("\u{0301}"), "grave": .accent("\u{0300}"), "dot": .accent("\u{0307}"),
-        "ddot": .accent("\u{0308}"), "dddot": .accent("\u{20DB}"), "breve": .accent("\u{0306}"),
+        "ddot": .accent("\u{0308}"), "dddot": .accent("\u{20DB}"), "ddddot": .accent("\u{20DC}"), "breve": .accent("\u{0306}"),
         "bar": .accent("\u{0304}"), "vec": .accent("\u{20D7}"), "mathring": .accent("\u{030A}"),
         "widehat": .wideAccent("\u{0302}"), "widetilde": .wideAccent("\u{0303}"), "widecheck": .wideAccent("\u{030C}"),
         "overline": .overline, "underline": .underline, "overbrace": .overbrace, "underbrace": .underbrace,
@@ -1492,7 +1604,9 @@ enum NoteMathSymbols {
         ("vdots", "⋮"), ("bigstar", "★"), ("diagup", "╱"), ("diagdown", "╲"), ("blacktriangle", "▲"),
         ("triangledown", "▽"), ("blacktriangledown", "▼"), ("varkappa", "ϰ"), ("infin", "∞"), ("Bbbk", "𝕜"),
         ("R", "ℝ"), ("Reals", "ℝ"), ("reals", "ℝ"), ("N", "ℕ"), ("natnums", "ℕ"), ("Z", "ℤ"), ("Q", "ℚ"),
-        ("C", "ℂ"), ("Complex", "ℂ"),
+        ("C", "ℂ"), ("Complex", "ℂ"), ("maltese", "✠"), ("textbackslash", "\\"), ("alef", "ℵ"), ("alefsym", "ℵ"),
+        ("clubs", "♣"), ("cnums", "ℂ"), ("diamonds", "♢"), ("empty", "∅"), ("exist", "∃"), ("hearts", "♡"), ("image", "ℑ"),
+        ("real", "ℜ"), ("sect", "§"), ("spades", "♠"), ("thetasym", "ϑ"), ("weierp", "℘"),
     ]
 
     static let binary: [(String, String)] = [
@@ -1506,7 +1620,9 @@ enum NoteMathSymbols {
         ("ltimes", "⋉"), ("rtimes", "⋊"), ("boxplus", "⊞"), ("boxminus", "⊟"), ("boxtimes", "⊠"),
         ("boxdot", "⊡"), ("divideontimes", "⋇"), ("dotplus", "∔"), ("barwedge", "⊼"), ("veebar", "⊻"),
         ("curlyvee", "⋎"), ("curlywedge", "⋏"), ("intercal", "⊺"), ("circledast", "⊛"),
-        ("circledcirc", "⊚"), ("circleddash", "⊝"),
+        ("circledcirc", "⊚"), ("circleddash", "⊝"), ("leftthreetimes", "⋋"), ("rightthreetimes", "⋌"),
+        ("doublebarwedge", "⩞"), ("Cap", "⋒"), ("Cup", "⋓"), ("doublecap", "⋒"), ("doublecup", "⋓"), ("bigcirc", "◯"),
+        ("And", "&"), ("plusmn", "±"), ("sdot", "⋅"), ("bull", "∙"), ("Dagger", "‡"), ("minuso", "⦵"),
     ]
 
     static let relations: [(String, String)] = [
@@ -1526,7 +1642,24 @@ enum NoteMathSymbols {
         ("fallingdotseq", "≒"), ("backsim", "∽"), ("eqsim", "≂"), ("thicksim", "∼"), ("thickapprox", "≈"),
         ("varpropto", "∝"), ("between", "≬"), ("pitchfork", "⋔"), ("Subset", "⋐"),
         ("Supset", "⋑"), ("vartriangleleft", "⊲"), ("vartriangleright", "⊳"), ("trianglelefteq", "⊴"),
-        ("trianglerighteq", "⊵"), ("coloneq", "≔"), ("dashleftarrow", "⇠"),
+        ("trianglerighteq", "⊵"), ("dashleftarrow", "⇠"), ("lt", "<"), ("gt", ">"), ("Vvdash", "⊪"), ("nvdash", "⊬"),
+        ("nvDash", "⊭"), ("nVdash", "⊮"), ("nVDash", "⊯"), ("shortmid", "∣"), ("nshortmid", "∤"), ("shortparallel", "∥"),
+        ("nshortparallel", "∦"), ("doteqdot", "≑"), ("Doteq", "≑"), ("origof", "⊶"), ("imageof", "⊷"), ("llless", "⋘"),
+        ("gggtr", "⋙"), ("lessgtr", "≶"), ("gtrless", "≷"), ("lesseqgtr", "⋚"), ("gtreqless", "⋛"), ("lesseqqgtr", "⪋"),
+        ("gtreqqless", "⪌"), ("lessdot", "⋖"), ("gtrdot", "⋗"), ("lessapprox", "⪅"), ("gtrapprox", "⪆"), ("lneqq", "≨"),
+        ("gneqq", "≩"), ("lvertneqq", "≨\u{FE00}"), ("gvertneqq", "≩\u{FE00}"), ("lnsim", "⋦"), ("gnsim", "⋧"),
+        ("lnapprox", "⪉"), ("gnapprox", "⪊"), ("nleqslant", "⩽\u{0338}"), ("ngeqslant", "⩾\u{0338}"), ("nleqq", "≦\u{0338}"),
+        ("ngeqq", "≧\u{0338}"), ("precsim", "≾"), ("succsim", "≿"), ("precapprox", "⪷"), ("succapprox", "⪸"),
+        ("preccurlyeq", "≼"), ("succcurlyeq", "≽"), ("curlyeqprec", "⋞"), ("curlyeqsucc", "⋟"), ("precneqq", "⪵"),
+        ("succneqq", "⪶"), ("precnsim", "⋨"), ("succnsim", "⋩"), ("precnapprox", "⪹"), ("succnapprox", "⪺"), ("nprec", "⊀"),
+        ("nsucc", "⊁"), ("npreceq", "⋠"), ("nsucceq", "⋡"), ("subseteqq", "⫅"), ("supseteqq", "⫆"), ("subsetneqq", "⫋"),
+        ("supsetneqq", "⫌"), ("varsubsetneq", "⊊\u{FE00}"), ("varsupsetneq", "⊋\u{FE00}"), ("varsubsetneqq", "⫋\u{FE00}"),
+        ("varsupsetneqq", "⫌\u{FE00}"), ("nsubseteqq", "⫅\u{0338}"), ("nsupseteqq", "⫆\u{0338}"), ("notni", "∌"),
+        ("backepsilon", "϶"), ("backsimeq", "⋍"), ("eqcirc", "≖"), ("circeq", "≗"), ("bumpeq", "≏"), ("Bumpeq", "≎"),
+        ("smallsmile", "⌣"), ("smallfrown", "⌢"), ("vartriangle", "△"), ("ntriangleleft", "⋪"), ("ntriangleright", "⋫"),
+        ("ntrianglelefteq", "⋬"), ("ntrianglerighteq", "⋭"), ("blacktriangleleft", "◀"), ("blacktriangleright", "▶"),
+        ("eqslantless", "⪕"), ("eqslantgtr", "⪖"), ("isin", "∈"), ("sub", "⊂"), ("sube", "⊆"), ("supe", "⊇"),
+        ("vcentcolon", "∶"), ("ratio", "∶"), ("dblcolon", "∷"), ("Coloneqq", "⩴"), ("eqcolon", "∹"),
     ]
 
     static let arrows: [(String, String)] = [
@@ -1546,18 +1679,22 @@ enum NoteMathSymbols {
         ("nleftarrow", "↚"), ("nrightarrow", "↛"), ("nLeftarrow", "⇍"), ("nRightarrow", "⇏"),
         ("nleftrightarrow", "↮"), ("nLeftrightarrow", "⇎"), ("dashrightarrow", "⇢"), ("multimap", "⊸"),
         ("upharpoonleft", "↿"), ("upharpoonright", "↾"), ("downharpoonleft", "⇃"), ("downharpoonright", "⇂"),
+        ("darr", "↓"), ("dArr", "⇓"), ("Darr", "⇓"), ("uarr", "↑"), ("uArr", "⇑"), ("Uarr", "⇑"), ("harr", "↔"), ("hArr", "⇔"),
+        ("Harr", "⇔"), ("larr", "←"), ("lArr", "⇐"), ("Larr", "⇐"), ("rarr", "→"), ("rArr", "⇒"), ("Rarr", "⇒"), ("lrarr", "↔"),
+        ("lrArr", "⇔"), ("Lrarr", "⇔"), ("leftrightsquigarrow", "↭"), ("looparrowleft", "↫"), ("looparrowright", "↬"),
+        ("restriction", "↾"), ("Lleftarrow", "⇚"), ("Rrightarrow", "⇛"),
     ]
 
     static let opening: [(String, String)] = [
         ("{", "{"), ("lbrace", "{"), ("langle", "⟨"), ("lceil", "⌈"), ("lfloor", "⌊"), ("lvert", "|"),
         ("lVert", "‖"), ("lgroup", "⟮"), ("lbrack", "["), ("ulcorner", "⌜"), ("llcorner", "⌞"),
-        ("llbracket", "⟦"), ("lmoustache", "⎰"),
+        ("llbracket", "⟦"), ("lmoustache", "⎰"), ("lparen", "("), ("lang", "⟨"),
     ]
 
     static let closing: [(String, String)] = [
         ("}", "}"), ("rbrace", "}"), ("rangle", "⟩"), ("rceil", "⌉"), ("rfloor", "⌋"), ("rvert", "|"),
         ("rVert", "‖"), ("rgroup", "⟯"), ("rbrack", "]"), ("urcorner", "⌝"), ("lrcorner", "⌟"),
-        ("rrbracket", "⟧"), ("rmoustache", "⎱"),
+        ("rrbracket", "⟧"), ("rmoustache", "⎱"), ("rparen", ")"), ("rang", "⟩"),
     ]
 
     static let punctuation: [(String, String)] = [
@@ -1566,7 +1703,7 @@ enum NoteMathSymbols {
 
     static let inner: [(String, String)] = [
         ("ldots", "…"), ("dots", "…"), ("dotsc", "…"), ("dotso", "…"), ("cdots", "⋯"), ("dotsb", "⋯"),
-        ("dotsm", "⋯"), ("dotsi", "⋯"), ("ddots", "⋱"), ("iddots", "⋰"),
+        ("dotsm", "⋯"), ("dotsi", "⋯"), ("ddots", "⋱"), ("iddots", "⋰"), ("mathellipsis", "…"),
     ]
 
     static let largeOperators: [String: (String, Bool)] = [
@@ -1589,6 +1726,9 @@ enum NoteMathSymbols {
         "liminf": ("lim\u{2009}inf", true), "limsup": ("lim\u{2009}sup", true), "max": ("max", true),
         "min": ("min", true), "Pr": ("Pr", true), "sup": ("sup", true), "argmax": ("arg\u{2009}max", true),
         "argmin": ("arg\u{2009}min", true), "injlim": ("inj\u{2009}lim", true), "projlim": ("proj\u{2009}lim", true),
+        "arctg": ("arctg", false), "arcctg": ("arcctg", false), "ch": ("ch", false), "cosec": ("cosec", false),
+        "cotg": ("cotg", false), "ctg": ("ctg", false), "cth": ("cth", false), "sh": ("sh", false), "tg": ("tg", false),
+        "th": ("th", false),
     ]
 
     static let spaces: [String: Double] = [
@@ -1610,6 +1750,7 @@ enum NoteMathSymbols {
         "Uparrow": "⇑", "Downarrow": "⇓", "Updownarrow": "⇕", "lbrack": "[", "rbrack": "]", "lgroup": "⟮",
         "rgroup": "⟯", "ulcorner": "⌜", "urcorner": "⌝", "llcorner": "⌞", "lrcorner": "⌟",
         "lmoustache": "⎰", "rmoustache": "⎱", "llbracket": "⟦", "rrbracket": "⟧", "mid": "∣",
+        "lparen": "(", "rparen": ")", "lang": "⟨", "rang": "⟩", "lt": "⟨", "gt": "⟩",
     ]
 
     static let negations: [String: String] = [

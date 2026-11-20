@@ -283,6 +283,8 @@ struct NoteMathTypesetter {
                 collectAtoms(content, context.with(style: NoteMathStyle(level: level, cramped: context.style.cramped)), into: &atoms)
             case .space(let amount):
                 atoms.append(Atom(kind: nil, box: NoteMathBox(width: CGFloat(amount) * em(context)), style: context.style))
+            case .choice(let branches):
+                collectAtoms(Self.branch(branches, context), context, into: &atoms)
             case .sized(let factor, let content):
                 let sized = resized(CGFloat(factor), context)
                 var inner: [Atom] = []
@@ -416,6 +418,11 @@ struct NoteMathTypesetter {
             box.links.append(NoteMathLinkMark(key: target, rect: CGRect(x: 0, y: -box.descent, width: box.width, height: box.height),
                                               resolved: true, url: target))
             return (box, atomKind(content.count == 1 ? content[0] : nil))
+        case .choice(let branches):
+            return (layoutList(Self.branch(branches, context), context), .ord)
+        case .vcenter(let content):
+            let inner = layoutList(content, context).withoutGlyphIdentity()
+            return (inner.raised(by: constant(.axisHeight, context) - (inner.ascent - inner.descent) / 2), .ord)
         case .rule(let width, let height, let raise):
             let em = em(context)
             let size = CGSize(width: max(0, CGFloat(width) * em), height: max(0, CGFloat(height) * em))
@@ -425,6 +432,17 @@ struct NoteMathTypesetter {
             }
             return (box, .ord)
         }
+    }
+
+    private static func branch(_ branches: [[NoteMathNode]], _ context: NoteMathContext) -> [NoteMathNode] {
+        let index: Int
+        switch context.style.level {
+        case .display: index = 0
+        case .text: index = 1
+        case .script: index = 2
+        case .scriptScript: index = 3
+        }
+        return index < branches.count ? branches[index] : branches.last ?? []
     }
 
     private func resized(_ factor: CGFloat, _ context: NoteMathContext) -> (typesetter: NoteMathTypesetter, context: NoteMathContext) {
