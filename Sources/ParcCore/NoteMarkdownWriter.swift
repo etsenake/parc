@@ -4,7 +4,7 @@ struct NoteMDWriter {
     let reader: NoteMDReader
     let inline: NoteMDInlineWriter
 
-    init(page: NotePage) {
+    init(page: NotePage, customEmoji: Set<String> = []) {
         var references: [String: NoteMDLinkReference] = [:]
         var labels: [String: String] = [:]
         var footnotes: Set<String> = []
@@ -32,7 +32,8 @@ struct NoteMDWriter {
                 position = lineEnd + 1
             }
         }
-        reader = NoteMDReader(references: references, footnotes: footnotes)
+        reader = NoteMDReader(references: references, footnotes: footnotes,
+                              customEmoji: customEmoji.union(NoteCustomEmojiName.names(in: page)))
         inline = NoteMDInlineWriter(reader: reader, referenceLabels: labels)
     }
 
@@ -315,7 +316,8 @@ struct NoteMDWriter {
     }
 
     private func standaloneHazard(_ markdown: String) -> Bool {
-        let tree = NoteMDInlineParser.parse(Array(markdown.utf8), references: reader.references, footnotes: reader.footnotes)
+        let tree = NoteMDInlineParser.parse(Array(markdown.utf8), references: reader.references, footnotes: reader.footnotes,
+                                            customEmoji: reader.customEmoji)
         let children = tree.children(of: 0)
         if let last = children.last, tree.nodes[last].kind == .html, NoteMDAttributes.parse(tree.nodes[last].literal) != nil { return true }
         guard children.count == 1 else { return false }

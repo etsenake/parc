@@ -132,6 +132,7 @@ enum NoteMDLinks {
 struct NoteMDReader {
     let references: [String: NoteMDLinkReference]
     let footnotes: Set<String>
+    var customEmoji: Set<String> = []
 
     private struct Event {
         enum Content {
@@ -322,7 +323,7 @@ struct NoteMDReader {
     }
 
     func paragraph(_ content: [UInt8]) -> NoteBlock {
-        var tree = NoteMDInlineParser.parse(content, references: references, footnotes: footnotes)
+        var tree = NoteMDInlineParser.parse(content, references: references, footnotes: footnotes, customEmoji: customEmoji)
         var children = tree.children(of: 0)
         let attributes = Self.stripTrailingAttributes(&tree, &children)
         let kindHint = attributes?.kind
@@ -377,7 +378,7 @@ struct NoteMDReader {
     }
 
     func caption(_ title: String) -> NoteText {
-        let tree = NoteMDInlineParser.parseVerbatim(Array(title.utf8), references: references, footnotes: footnotes)
+        let tree = NoteMDInlineParser.parseVerbatim(Array(title.utf8), references: references, footnotes: footnotes, customEmoji: customEmoji)
         return text(tree, children: tree.children(of: 0))
     }
 
@@ -677,14 +678,14 @@ struct NoteMDReader {
     }
 
     func inline(_ content: [UInt8]) -> (NoteText, NoteMDAttributes?) {
-        var tree = NoteMDInlineParser.parse(content, references: references, footnotes: footnotes)
+        var tree = NoteMDInlineParser.parse(content, references: references, footnotes: footnotes, customEmoji: customEmoji)
         var children = tree.children(of: 0)
         let attributes = Self.stripTrailingAttributes(&tree, &children)
         return (text(tree, children: children), attributes)
     }
 
     func cellText(_ content: [UInt8]) -> NoteText {
-        let tree = NoteMDInlineParser.parse(content, references: references, footnotes: footnotes)
+        let tree = NoteMDInlineParser.parse(content, references: references, footnotes: footnotes, customEmoji: customEmoji)
         return text(tree, children: tree.children(of: 0))
     }
 
@@ -764,6 +765,8 @@ struct NoteMDReader {
             events.append(Event(content: .atom(.raw(tree.source(of: index))), marks: marks))
         case .math:
             events.append(Event(content: .atom(.equation(node.literal)), marks: marks))
+        case .customEmoji:
+            events.append(Event(content: .atom(.customEmoji(node.literal)), marks: marks))
         case .wiki:
             events.append(Event(content: .atom(.page(target: node.destination, title: node.title ?? node.destination)), marks: marks))
         case .html:

@@ -1,7 +1,7 @@
 import Foundation
 
 struct NoteMDInlineNode {
-    enum Kind { case root, text, softBreak, hardBreak, code, emphasis, strong, strike, highlight, link, image, html, math, rawSource, wiki, autolink }
+    enum Kind { case root, text, softBreak, hardBreak, code, emphasis, strong, strike, highlight, link, image, html, math, rawSource, wiki, autolink, customEmoji }
 
     var kind: Kind
     var literal = ""
@@ -46,6 +46,7 @@ struct NoteMDInlineTree {
             case .text, .code, .autolink, .math: result += value.literal
             case .softBreak, .hardBreak: result += " "
             case .wiki: result += value.title ?? value.destination
+            case .customEmoji: result += NoteCustomEmojiName.reference(value.literal)
             default: break
             }
             var child = value.first
@@ -86,6 +87,7 @@ final class NoteMDInlineParser {
     private let end: Int
     private let references: [String: NoteMDLinkReference]
     private let footnotes: Set<String>
+    private let customEmoji: Set<String>
     private var nodes: [NoteMDInlineNode] = [NoteMDInlineNode(kind: .root)]
     private var position = 0
     private var delimiters: [Delimiter] = []
@@ -98,23 +100,35 @@ final class NoteMDInlineParser {
     private var backtickRuns: [Int: [Int]]?
     private var backtickCursor: [Int: Int] = [:]
 
-    init(_ bytes: [UInt8], references: [String: NoteMDLinkReference], footnotes: Set<String>) {
+    init(_ bytes: [UInt8], references: [String: NoteMDLinkReference], footnotes: Set<String>, customEmoji: Set<String> = []) {
         self.bytes = bytes
         end = bytes.count
         self.references = references
         self.footnotes = footnotes
+        self.customEmoji = customEmoji
     }
 
-    static func parse(_ bytes: [UInt8], references: [String: NoteMDLinkReference] = [:], footnotes: Set<String> = []) -> NoteMDInlineTree {
+    static func parse(_ bytes: [UInt8], references: [String: NoteMDLinkReference] = [:], footnotes: Set<String> = [],
+                      customEmoji: Set<String> = []) -> NoteMDInlineTree {
         var content = bytes[...]
         while let first = content.first, NoteMDByte.isWhitespace(first) { content = content.dropFirst() }
         while let last = content.last, NoteMDByte.isWhitespace(last) { content = content.dropLast() }
-        let parser = NoteMDInlineParser(Array(content), references: references, footnotes: footnotes)
+        let parser = NoteMDInlineParser(Array(content), references: references, footnotes: footnotes, customEmoji: customEmoji)
         return parser.run()
     }
 
-    static func parseVerbatim(_ bytes: [UInt8], references: [String: NoteMDLinkReference] = [:], footnotes: Set<String> = []) -> NoteMDInlineTree {
-        NoteMDInlineParser(bytes, references: references, footnotes: footnotes).run()
+    static func parseVerbatim(_ bytes: [UInt8], references: [String: NoteMDLinkReference] = [:], footnotes: Set<String> = [],
+                              customEmoji: Set<String> = []) -> NoteMDInlineTree {
+        NoteMDInlineParser(bytes, references: references, footnotes: footnotes, customEmoji: customEmoji).run()
+    }
+
+    static func customEmojiEnd(_ bytes: [UInt8], at start: Int, upTo end: Int, names: Set<String>) -> Int? {
+        guard !names.isEmpty, start < end, bytes[start] == 58 else { return nil }
+        var index = start + 1
+        while index < end, index - start <= NoteCustomEmojiName.maximumLength, NoteCustomEmojiName.isNameByte(bytes[index]) { index += 1 }
+        guard index < end, index > start + 1, bytes[index] == 58 else { return nil }
+        let name = String(decoding: bytes[(start + 1)..<index], as: UTF8.self)
+        return names.contains(name) ? index + 1 : nil
     }
 
     private func run() -> NoteMDInlineTree {
@@ -244,6 +258,7 @@ final class NoteMDInlineParser {
                 position += 1
             }
         case 36: dollar()
+        case 58: colon()
         case 64: email()
         case 104, 72, 119, 87:
             if isBoundary(before: position), let (destination, length) = extendedAutolink(at: position) {
@@ -272,6 +287,7 @@ final class NoteMDInlineParser {
     private func isSpecial(_ byte: UInt8) -> Bool {
         switch byte {
         case NoteMDByte.newline, 92, 96, 42, 95, 126, 61, 33, 91, 93, 60, 38, 36, 64, 104, 72, 119, 87: return true
+        case 58: return !customEmoji.isEmpty
         default: return false
         }
     }
@@ -285,6 +301,20 @@ final class NoteMDInlineParser {
         _ = append(NoteMDInlineNode(kind: isHard ? .hardBreak : .softBreak))
         position += 1
         while position < end, NoteMDByte.isSpaceOrTab(bytes[position]) { position += 1 }
+    }
+
+    private func colon() {
+        guard let close = Self.customEmojiEnd(bytes, at: position, upTo: end, names: customEmoji) else {
+            pendingLiteral(58)
+            position += 1
+            return
+        }
+        flush()
+        var node = NoteMDInlineNode(kind: .customEmoji, literal: String(decoding: bytes[(position + 1)..<(close - 1)], as: UTF8.self))
+        node.sourceStart = position
+        node.sourceEnd = close
+        _ = append(node)
+        position = close
     }
 
     private func backslash() {

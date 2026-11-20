@@ -44,6 +44,7 @@ enum NoteAtom: Hashable, Codable {
     case date(NoteDateMention)
     case link(url: String, title: String)
     case raw(String)
+    case customEmoji(String)
 
     static let character = "\u{FFFC}"
 
@@ -53,6 +54,7 @@ enum NoteAtom: Hashable, Codable {
         case .page(_, let title): return title
         case .link(let url, let title): return title.isEmpty ? url : title
         case .raw(let source): return source
+        case .customEmoji(let name): return NoteCustomEmojiName.reference(name)
         case .date(let date):
             var value = String(format: "%04d-%02d-%02d", date.year, date.month, date.day)
             if let hour = date.hour { value += String(format: " %02d:%02d", hour, date.minute ?? 0) }

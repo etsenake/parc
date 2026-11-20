@@ -79,15 +79,15 @@ struct NoteMDInlineWriter {
             source = cells[0]
         case .line, .verbatim:
             if style.insideLink {
-                let tree = NoteMDInlineParser.parse(Array("[".utf8) + source + Array("](<>)".utf8), references: reader.references, footnotes: reader.footnotes)
+                let tree = NoteMDInlineParser.parse(Array("[".utf8) + source + Array("](<>)".utf8), references: reader.references, footnotes: reader.footnotes, customEmoji: reader.customEmoji)
                 let children = tree.children(of: 0)
                 guard children.count == 1, tree.nodes[children[0]].kind == .link else { return false }
                 return reader.text(tree, children: tree.children(of: children[0])) == text
             }
         }
         let tree = style.shape == .verbatim
-            ? NoteMDInlineParser.parseVerbatim(source, references: reader.references, footnotes: reader.footnotes)
-            : NoteMDInlineParser.parse(source, references: reader.references, footnotes: reader.footnotes)
+            ? NoteMDInlineParser.parseVerbatim(source, references: reader.references, footnotes: reader.footnotes, customEmoji: reader.customEmoji)
+            : NoteMDInlineParser.parse(source, references: reader.references, footnotes: reader.footnotes, customEmoji: reader.customEmoji)
         return reader.text(tree, children: tree.children(of: 0)) == text
     }
 
@@ -420,6 +420,19 @@ struct NoteMDInlineWriter {
         return result
     }
 
+    static func opensCustomEmoji(_ scalars: [Unicode.Scalar], at index: Int, names: Set<String>) -> Bool {
+        guard !names.isEmpty else { return false }
+        var name = ""
+        var probe = index + 1
+        while probe < scalars.count, scalars[probe].isASCII, NoteCustomEmojiName.isNameByte(UInt8(scalars[probe].value)),
+              name.utf8.count < NoteCustomEmojiName.maximumLength + 1 {
+            name.unicodeScalars.append(scalars[probe])
+            probe += 1
+        }
+        guard probe < scalars.count, scalars[probe] == ":", !name.isEmpty else { return false }
+        return names.contains(name)
+    }
+
     static func entityLike(_ scalars: [Unicode.Scalar], at index: Int) -> Bool {
         var probe = index + 1
         guard probe < scalars.count else { return false }
@@ -473,6 +486,8 @@ struct NoteMDInlineWriter {
             return "<time datetime=\"\(value)\"\(date.remind ? " data-remind" : "")>\(atom.fallbackText)</time>"
         case .link(let url, let title):
             return "<a href=\"\(NoteMDText.escapeAttribute(url))\" data-mention>\(Self.escapeLight(title))</a>"
+        case .customEmoji(let name):
+            return NoteCustomEmojiName.reference(name)
         }
     }
 
@@ -745,6 +760,8 @@ struct NoteMDInlineWriter {
             return opens && (hazards.lastGreater > index || style.htmlSafe)
         case "&":
             return Self.entityLike(all, at: index)
+        case ":":
+            return Self.opensCustomEmoji(all, at: index, names: reader.customEmoji)
         case "$":
             guard let after = after ?? (hazards.lastDollar == Int.max ? "x" : nil), !NoteMDByte.isUnicodeWhitespace(after) else { return false }
             if after == "$" || hazards.lastDollar == Int.max { return true }

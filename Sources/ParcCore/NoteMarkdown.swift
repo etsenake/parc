@@ -1,7 +1,7 @@
 import Foundation
 
 enum NoteMarkdown {
-    static func parse(_ source: String) -> NotePage {
+    static func parse(_ source: String, customEmoji: Set<String> = []) -> NotePage {
         var bytes = Array(source.utf8)
         if bytes.starts(with: [0xEF, 0xBB, 0xBF]) { bytes.removeFirst(3) }
         var settings = NotePageSettings()
@@ -13,15 +13,15 @@ enum NoteMarkdown {
             hasFrontMatter = true
         }
         let document = NoteMDBlockParser.parse(Array(body))
-        let reader = NoteMDReader(references: document.references, footnotes: document.footnotes)
+        let reader = NoteMDReader(references: document.references, footnotes: document.footnotes, customEmoji: customEmoji)
         var blocks = reader.sequence(document.root.children[...], documentEdges: !hasFrontMatter, trailingBlank: 0)
         let trailing = hasFrontMatter && document.root.children.isEmpty ? max(0, document.root.trailingBlank - 1) : document.root.trailingBlank
         blocks += Array(repeating: NoteBlock.paragraph(), count: trailing)
         return NotePage(settings: settings, blocks: blocks)
     }
 
-    static func serialize(_ page: NotePage) -> String {
-        NoteMDWriter(page: page).write(page)
+    static func serialize(_ page: NotePage, customEmoji: Set<String> = []) -> String {
+        NoteMDWriter(page: page, customEmoji: customEmoji).write(page)
     }
 }
 

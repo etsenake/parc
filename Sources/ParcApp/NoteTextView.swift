@@ -526,7 +526,7 @@ class NoteTextView: NSTextView {
                     editor.slashMenu.openDatePicker(at: NotePosition(host.blockID, index, field: host.field))
                     return
                 }
-            case .page, .link, .raw:
+            case .page, .link, .raw, .customEmoji:
                 break
             }
         }
@@ -568,7 +568,7 @@ class NoteTextView: NSTextView {
         if let atom = marks.atom {
             switch atom {
             case .page, .link: return (.atom(atom), index..<(index + 1))
-            case .equation, .date, .raw: return nil
+            case .equation, .date, .raw, .customEmoji: return nil
             }
         }
         guard let link = marks.link else { return nil }

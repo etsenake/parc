@@ -51,7 +51,10 @@ enum NotePageHTML {
             }
             html += "<article class=\"page\">\n<header class=\"page-header\">\n"
             if let icon = settings.icon, !icon.isEmpty {
-                if NotePageHTMLWriter.isImageReference(icon) {
+                if let custom = writer.customEmojiSource(icon) {
+                    html += "<img class=\"page-icon page-icon-image custom-emoji\" alt=\"" + NotePageHTMLWriter.attribute(icon) + "\" src=\""
+                        + NotePageHTMLWriter.attribute(custom) + "\">\n"
+                } else if NotePageHTMLWriter.isImageReference(icon) {
                     html += "<img class=\"page-icon page-icon-image\" alt=\"\" src=\"" + NotePageHTMLWriter.attribute(writer.source(icon)) + "\">\n"
                 } else {
                     html += "<div class=\"page-icon\">" + NotePageHTMLWriter.escape(icon) + "</div>\n"
@@ -188,6 +191,11 @@ struct NotePageHTMLWriter {
     func link(_ value: String) -> String {
         if let url = URL(string: value), url.scheme != nil { return value }
         return assets(value)?.absoluteString ?? value
+    }
+
+    func customEmojiSource(_ value: String) -> String? {
+        guard NoteCustomEmojiName.isReference(value), assets(value) != nil else { return nil }
+        return source(value)
     }
 
     func source(_ value: String) -> String {
@@ -397,7 +405,10 @@ struct NotePageHTMLWriter {
             output += "<aside" + colorClass(block.color, adding: ["callout"]) + attributes + tint + ">"
         }
         let fallback = explicitIcon == nil ? " data-default-icon=\"true\"" : ""
-        if Self.isImageReference(icon) {
+        if let custom = customEmojiSource(icon) {
+            let sizing = mode == .fragment ? " style=\"width:1.4em;height:1.4em;object-fit:contain\"" : ""
+            output += "<img class=\"callout-icon custom-emoji\"" + sizing + " alt=\"" + Self.attribute(icon) + "\" src=\"" + Self.attribute(custom) + "\">"
+        } else if Self.isImageReference(icon) {
             output += "<img class=\"callout-icon\"" + fallback + " alt=\"\" src=\"" + Self.attribute(source(icon)) + "\">"
         } else {
             output += "<span class=\"callout-icon\"" + fallback + ">" + Self.escape(icon) + "</span>"
@@ -721,6 +732,11 @@ struct NotePageHTMLWriter {
         if case .link(let url, let title) = atom {
             return "<a class=\"link-mention\" data-mention=\"link\" href=\"" + Self.attribute(url) + "\">"
                 + Self.escape(title.isEmpty ? url : title) + "</a>"
+        }
+        if case .customEmoji = atom, let custom = customEmojiSource(atom.fallbackText) {
+            let sizing = mode == .fragment ? " style=\"height:1.2em;width:auto;vertical-align:-0.2em\"" : ""
+            return "<img class=\"custom-emoji inline-emoji\"" + sizing + " alt=\"" + Self.attribute(atom.fallbackText) + "\" title=\""
+                + Self.attribute(atom.fallbackText) + "\" src=\"" + Self.attribute(custom) + "\">"
         }
         return Self.escape(atom.fallbackText)
     }

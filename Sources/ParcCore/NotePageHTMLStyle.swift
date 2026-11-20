@@ -109,6 +109,9 @@ enum NotePageHTMLStyle {
     aside.callout[class*=block-color-]:not([class*=_background]){background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
     .callout-icon{flex:0 0 auto;font-size:1.25em;line-height:1.3}
     img.callout-icon{width:1.4em;height:1.4em;object-fit:cover;border-radius:4px}
+    img.inline-emoji{display:inline-block;height:1.2em;width:auto;vertical-align:-0.2em;border-radius:0;object-fit:contain}
+    body.has-icon img.page-icon-image.custom-emoji,img.callout-icon.custom-emoji{object-fit:contain;border-radius:0;box-shadow:none}
+    img.callout-icon.custom-emoji{width:1.4em;height:1.4em}
     .callout-body{flex:1 1 auto;min-width:0}
     .callout-body>:first-child{margin-top:0}.callout-body>:last-child{margin-bottom:0}
     details.toggle{margin:.25em 0}

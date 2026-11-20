@@ -189,6 +189,8 @@ enum NoteAtomRendering {
             let text = title.isEmpty ? (URL(string: url)?.host ?? url) : title
             return NoteAtomFace(label: label(text, NoteTheme.mentionInk), icon: symbol("link"),
                                 iconTint: NoteTheme.secondaryInk, fill: NoteTheme.hoverFill)
+        case .customEmoji(let name):
+            return NoteAtomFace(label: label(NoteCustomEmojiName.reference(name), ink, font), horizontalPadding: 0)
         case .raw(let source):
             return NoteAtomFace(label: label(source.isEmpty ? "◇" : source, NoteTheme.tertiaryInk,
                                              NoteTheme.codeFont(size: (font.pointSize * 0.78).rounded())),
@@ -210,6 +212,7 @@ enum NoteAtomRendering {
         case .link(let url, let title): return "Link, " + (title.isEmpty ? url : title)
         case .date(let date): return (date.remind ? "Reminder, " : "Date, ") + dateLabel(date, now: Date())
         case .raw(let source): return source
+        case .customEmoji(let name): return "Emoji, " + name
         }
     }
 
