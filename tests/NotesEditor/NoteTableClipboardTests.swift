@@ -18,7 +18,15 @@ struct NoteTableClipboardTests {
     static func parsing() {
         expect(NoteTableClipboard.grid(fromDelimited: "a\tb\nc\td\n") == [["a", "b"], ["c", "d"]], "tsv with a trailing newline")
         expect(NoteTableClipboard.grid(fromDelimited: "a\tb\r\nc\td") == [["a", "b"], ["c", "d"]], "tsv with windows line endings")
-        expect(NoteTableClipboard.grid(fromDelimited: "a\tb\tc\nd") == [["a", "b", "c"], ["d", "", ""]], "ragged rows pad out")
+        expect(NoteTableClipboard.grid(fromDelimited: "a\tb\tc\nd", fromSpreadsheet: true) == [["a", "b", "c"], ["d", "", ""]],
+               "ragged spreadsheet rows pad out")
+        expect(NoteTableClipboard.grid(fromDelimited: "a\tb\tc\nd") == nil, "ragged plain text isn't a grid")
+        expect(NoteTableClipboard.grid(fromDelimited: "func f() {\n\treturn 1\n}") == nil, "tab-indented code stays in one cell")
+        expect(NoteTableClipboard.grid(fromDelimited: "\tlet a = 1\n\tlet b = 2") == nil, "evenly indented code stays in one cell too")
+        expect(NoteTableClipboard.grid(fromDelimited: "\tindented") == nil, "a single indented line isn't a grid")
+        expect(NoteTableClipboard.grid(fromDelimited: "\"unfinished\tb\nc\td") == [["\"unfinished", "b"], ["c", "d"]],
+               "an unmatched quote is just a character and doesn't swallow the rest")
+        expect(NoteTableClipboard.parse("a,\"b\nc,d", separator: ",") == [["a", "\"b"], ["c", "d"]], "a quote with no partner anywhere turns literal")
         expect(NoteTableClipboard.grid(fromDelimited: "one\ttwo") == [["one", "two"]], "a single tab-separated line is tabular")
         expect(NoteTableClipboard.grid(fromDelimited: "\"line one\nline two\"\tb\nc\td") == [["line one\nline two", "b"], ["c", "d"]],
                "quoted tsv cells keep their line breaks")
@@ -31,6 +39,11 @@ struct NoteTableClipboardTests {
         expect(NoteTableClipboard.grid(fromDelimited: "line one\nline two") == nil, "lines without separators are not tabular")
         expect(NoteTableClipboard.grid(fromDelimited: "") == nil, "empty is nothing")
         expect(NoteTableClipboard.parse("a,,b", separator: ",") == [["a", "", "b"]], "empty fields survive")
+        let html = "<table><tr><th>Name</th><th>Score</th></tr><tr><td><b>Ada</b></td><td>36</td></tr></table>"
+        let fromHTML = NoteTableClipboard.grid(fromHTML: html)
+        expect(fromHTML?.map { $0.map(\.string) } == [["Name", "Score"], ["Ada", "36"]] && fromHTML?[1][0].marks(at: 0).bold == true,
+               "an HTML table pastes as a grid and keeps its formatting")
+        expect(NoteTableClipboard.grid(fromHTML: "<p>Hello <b>there</b></p>") == nil, "HTML without a table isn't a grid")
     }
 
     static func writing() {

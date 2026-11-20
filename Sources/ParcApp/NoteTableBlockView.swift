@@ -357,6 +357,7 @@ final class NoteTableBlockView: NoteBlockView {
         geometry = makeGeometry(width: bounds.width)
         geometryWidth = bounds.width
         geometrySource = table
+        revalidateGrips()
         layoutChrome()
         layoutCells()
         if let change = pendingChange {
@@ -434,6 +435,24 @@ final class NoteTableBlockView: NoteBlockView {
         }
     }
 
+    private func revalidateGrips() {
+        let current = table
+        if let cell = hoverCell, cell.row >= current.rowCount || cell.column >= current.columnCount { hoverCell = nil }
+        if let target = menuTarget, target.index >= (target.axis == .row ? current.rowCount : current.columnCount) { dismissMenu() }
+        for grip in [rowGrip, columnGrip] where grip.index >= (grip.axis == .row ? current.rowCount : current.columnCount) {
+            grip.index = 0
+            NoteAnimation.withoutAnimation { grip.alphaValue = 0 }
+            grip.isHidden = true
+        }
+    }
+
+    private func commitComposition() {
+        guard let host = focusedHost(), host.cellView.hasMarkedText() else { return }
+        host.cellView.unmarkText()
+        host.cellView.inputContext?.discardMarkedText()
+        editor?.textDidChange(in: host)
+    }
+
     private func layoutGrips(_ shown: NoteTableGeometry) {
         if let cell = hoverCell, shown.contains(cell) || menuTarget != nil {
             let row = menuTarget?.axis == .row ? menuTarget!.index : cell.row
@@ -465,17 +484,10 @@ final class NoteTableBlockView: NoteBlockView {
         let visible = convert(visibleRect, to: surface)
         let clip = documentView.convert(scrollView.contentView.bounds, to: surface)
         let shown = displayGeometry
-        if let rows = NoteTableMetrics.visibleRange(from: Double(visible.minY), to: Double(visible.maxY), sizes: shown.rowHeights.map(Double.init)),
-           let columns = NoteTableMetrics.visibleRange(from: Double(clip.minX), to: Double(clip.maxX), sizes: shown.columnWidths.map(Double.init)) {
-            for row in max(0, rows.lowerBound - 1)...min(current.rowCount - 1, rows.upperBound + 1) {
-                for column in max(0, columns.lowerBound - 1)...min(current.columnCount - 1, columns.upperBound + 1) {
-                    wanted.insert(NoteTableCell(row: row, column: column))
-                }
-            }
-        }
-        if let focused = focusedHost()?.cell { wanted.insert(focused) }
-        wanted.formUnion(pinnedCells.filter { $0.row < current.rowCount && $0.column < current.columnCount })
-        return wanted
+        let rows = NoteTableMetrics.visibleRange(from: Double(visible.minY), to: Double(visible.maxY), sizes: shown.rowHeights.map(Double.init))
+        let columns = NoteTableMetrics.visibleRange(from: Double(clip.minX), to: Double(clip.maxX), sizes: shown.columnWidths.map(Double.init))
+        let extra = Array(pinnedCells) + (focusedHost().map { [$0.cell] } ?? [])
+        return NoteTableMetrics.keptCells(rows: rows, columns: columns, also: extra, rowCount: current.rowCount, columnCount: current.columnCount)
     }
 
     private func layoutCells() {
@@ -522,6 +534,7 @@ final class NoteTableBlockView: NoteBlockView {
     }
 
     private func bind(_ host: NoteTableCellHost, cell: NoteTableCell, table current: NoteTable) {
+        guard current.rows.indices.contains(cell.row), current.rows[cell.row].indices.contains(cell.column) else { return }
         host.cell = cell
         let view = host.cellView
         view.configure(cellStyle(cell, in: current))
@@ -947,6 +960,7 @@ final class NoteTableBlockView: NoteBlockView {
     }
 
     private func gripPressed(_ grip: NoteTableGripView, event: NSEvent) {
+        commitComposition()
         guard let window else { openMenu(for: grip); return }
         let axis: Axis = grip.axis == .row ? .row : .column
         let index = grip.index
@@ -1235,10 +1249,12 @@ final class NoteTableBlockView: NoteBlockView {
         if let data = pasteboard.data(forType: cellsPasteboardType), let rows = try? JSONDecoder().decode([[NoteText]].self, from: data), !rows.isEmpty {
             return rows
         }
-        for type in [NSPasteboard.PasteboardType.tabularText, .string] {
-            if let text = pasteboard.string(forType: type), let grid = NoteTableClipboard.grid(fromDelimited: text) {
-                return NoteTableClipboard.cells(from: grid)
-            }
+        if let text = pasteboard.string(forType: .tabularText), let grid = NoteTableClipboard.grid(fromDelimited: text, fromSpreadsheet: true) {
+            return NoteTableClipboard.cells(from: grid)
+        }
+        if let html = pasteboard.string(forType: .html), let rows = NoteTableClipboard.grid(fromHTML: html) { return rows }
+        if let text = pasteboard.string(forType: .string), let grid = NoteTableClipboard.grid(fromDelimited: text) {
+            return NoteTableClipboard.cells(from: grid)
         }
         return nil
     }
@@ -1321,6 +1337,7 @@ final class NoteTableBlockView: NoteBlockView {
 
     private func performMenuItem(_ id: String, axis: Axis, index: Int) {
         let current = table
+        guard index >= 0, index < (axis == .row ? current.rowCount : current.columnCount) else { return }
         switch id {
         case "header": setHeader(axis, !(axis == .row ? current.headerRow : current.headerColumn))
         case "insertBefore": axis == .row ? insertRow(at: index) : insertColumn(at: index)
@@ -1339,9 +1356,14 @@ final class NoteTableBlockView: NoteBlockView {
 
     private func openMenu(for grip: NoteTableGripView) {
         guard let editor, !isReadOnly else { return }
+        commitComposition()
         dismissMenu()
         let axis: Axis = grip.axis == .row ? .row : .column
         let index = grip.index
+        guard index >= 0, index < (axis == .row ? table.rowCount : table.columnCount) else {
+            revalidateGrips()
+            return
+        }
         let list = NoteMenuList()
         list.items = menuItems(axis: axis, index: index)
         list.onActivate = { [weak self] item in

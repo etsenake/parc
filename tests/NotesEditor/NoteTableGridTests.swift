@@ -26,6 +26,14 @@ struct NoteTableGridTests {
         expect(NoteTableMetrics.resolvedWidths([10, 300], available: 720) == [NoteTableMetrics.minimumColumnWidth, 300], "fixed widths respect the minimum")
         expect(NoteTableMetrics.resolvedWidths([120, 130], available: 720) == [120, 130], "all-fixed tables keep their own width")
         expect(NoteTableMetrics.resolvedWidths([], available: 720).isEmpty, "no columns, no widths")
+        let kept = NoteTableMetrics.keptCells(rows: 58...59, columns: 0...2, also: [NoteTableCell(row: 60, column: 1), NoteTableCell(row: 3, column: 0)],
+                                              rowCount: 60, columnCount: 3)
+        expect(!kept.contains(NoteTableCell(row: 60, column: 1)) && kept.contains(NoteTableCell(row: 3, column: 0)) && kept.contains(NoteTableCell(row: 59, column: 2)),
+               "a focused cell from a row that undo just removed is dropped, live ones stay")
+        expect(NoteTableMetrics.keptCells(rows: 70...80, columns: 0...2, also: [], rowCount: 60, columnCount: 3).isEmpty,
+               "stale visible rows past the end keep nothing instead of crashing")
+        expect(NoteTableMetrics.keptCells(rows: 0...1, columns: 5...6, also: [NoteTableCell(row: 0, column: -1)], rowCount: 2, columnCount: 3).isEmpty,
+               "columns that vanished and negative cells are ignored")
         let thirds = NoteTableMetrics.resolvedWidths([nil, nil, nil], available: 700)
         expect(thirds == [233, 233, 234] && thirds.reduce(0, +) == 700, "shared columns fill the width exactly, the last takes the spare points")
         expect(NoteTableMetrics.resolvedWidths([nil, 120, nil], available: 700.5).reduce(0, +) == 700.5, "even a fractional width fills to the edge")

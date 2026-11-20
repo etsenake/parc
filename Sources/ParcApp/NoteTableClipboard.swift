@@ -1,13 +1,17 @@
 import Foundation
 
 enum NoteTableClipboard {
-    static func grid(fromDelimited text: String) -> [[String]]? {
+    static func grid(fromDelimited text: String, fromSpreadsheet: Bool = false) -> [[String]]? {
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         let trimmed = normalized.hasSuffix("\n") ? String(normalized.dropLast()) : normalized
         guard !trimmed.isEmpty else { return nil }
         if trimmed.contains("\t") {
             let rows = parse(trimmed, separator: "\t")
-            return rows.count > 1 || (rows.first?.count ?? 0) > 1 ? padded(rows) : nil
+            guard rows.count > 1 || (rows.first?.count ?? 0) > 1 else { return nil }
+            if !fromSpreadsheet {
+                guard Set(rows.map(\.count)).count == 1, !rows.allSatisfy({ $0.first?.isEmpty ?? true }) else { return nil }
+            }
+            return padded(rows)
         }
         guard trimmed.contains(","), trimmed.contains("\n") else { return nil }
         let rows = parse(trimmed, separator: ",")
@@ -17,31 +21,25 @@ enum NoteTableClipboard {
     }
 
     static func parse(_ text: String, separator: Character) -> [[String]] {
+        let characters = Array(text)
         var rows: [[String]] = []
         var row: [String] = []
         var field = ""
-        var quoted = false
         var atFieldStart = true
-        var characters = text.makeIterator()
-        var pending: Character?
-        while let character = pending ?? characters.next() {
-            pending = nil
-            if quoted {
-                if character == "\"" {
-                    if let next = characters.next() {
-                        if next == "\"" { field.append("\"") } else { quoted = false; pending = next }
-                    } else {
-                        quoted = false
-                    }
-                } else {
-                    field.append(character)
+        var index = 0
+        while index < characters.count {
+            let character = characters[index]
+            if character == "\"", atFieldStart, let close = closingQuote(in: characters, after: index) {
+                var position = index + 1
+                while position < close {
+                    field.append(characters[position])
+                    position += characters[position] == "\"" ? 2 : 1
                 }
+                index = close + 1
+                atFieldStart = false
                 continue
             }
-            if character == "\"", atFieldStart {
-                quoted = true
-                atFieldStart = false
-            } else if character == separator {
+            if character == separator {
                 row.append(field)
                 field = ""
                 atFieldStart = true
@@ -55,10 +53,30 @@ enum NoteTableClipboard {
                 field.append(character)
                 atFieldStart = false
             }
+            index += 1
         }
         row.append(field)
         rows.append(row)
         return rows
+    }
+
+    private static func closingQuote(in characters: [Character], after opening: Int) -> Int? {
+        var index = opening + 1
+        while index < characters.count {
+            if characters[index] == "\"" {
+                if index + 1 < characters.count, characters[index + 1] == "\"" { index += 2; continue }
+                return index
+            }
+            index += 1
+        }
+        return nil
+    }
+
+    static func grid(fromHTML html: String) -> [[NoteText]]? {
+        guard html.range(of: "<table", options: .caseInsensitive) != nil,
+              let table = NoteHTMLReader.blocks(from: html, baseURL: nil).first(where: { $0.kind == .table })?.props.table,
+              table.rowCount * table.columnCount > 1 else { return nil }
+        return table.rows
     }
 
     static func cells(from grid: [[String]]) -> [[NoteText]] {

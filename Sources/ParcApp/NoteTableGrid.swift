@@ -324,6 +324,21 @@ enum NoteTableMetrics {
         return sizes.indices.filter { $0 != source && position > all[$0] + sizes[$0] / 2 }.count
     }
 
+    static func keptCells(rows: ClosedRange<Int>?, columns: ClosedRange<Int>?, also extra: some Sequence<NoteTableCell>,
+                          rowCount: Int, columnCount: Int) -> Set<NoteTableCell> {
+        var result = Set<NoteTableCell>()
+        guard rowCount > 0, columnCount > 0 else { return result }
+        if let rows, let columns {
+            let top = max(0, rows.lowerBound - 1), bottom = min(rowCount - 1, rows.upperBound + 1)
+            let left = max(0, columns.lowerBound - 1), right = min(columnCount - 1, columns.upperBound + 1)
+            if top <= bottom, left <= right {
+                for row in top...bottom { for column in left...right { result.insert(NoteTableCell(row: row, column: column)) } }
+            }
+        }
+        for cell in extra where cell.row >= 0 && cell.column >= 0 && cell.row < rowCount && cell.column < columnCount { result.insert(cell) }
+        return result
+    }
+
     static func visibleRange(from lower: Double, to upper: Double, sizes: [Double]) -> ClosedRange<Int>? {
         guard !sizes.isEmpty, upper > lower else { return nil }
         let all = edges(sizes)
