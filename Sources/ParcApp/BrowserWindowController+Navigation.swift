@@ -224,8 +224,11 @@ extension BrowserWindowController {
                 return self.libraryView === view && self.activeProfileID == profileID && !self.isClosing
             }
             switch page {
-            case .note:
-                self.store.deleteLocalDocument(page, profileID: profileID, ownerValid: ownerValid, completion: done)
+            case .note(let file):
+                self.store.deleteLocalDocument(page, profileID: profileID, ownerValid: ownerValid) { error in
+                    if error == nil { NoteReminderCenter.shared.forget(document: file) }
+                    done(error)
+                }
             case .easel(let id):
                 do {
                     let easel = try EaselEditorViewController.sharedStore(directory: self.store.easelsDirectory(for: profileID)).load(id)

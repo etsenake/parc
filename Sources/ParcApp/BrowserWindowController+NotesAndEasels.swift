@@ -183,6 +183,7 @@ extension BrowserWindowController {
 
     func retireTrashedNote(_ url: URL, profileID: UUID) {
         guard let file = InternalPage.noteFile(url) else { return }
+        NoteReminderCenter.shared.forget(document: file)
         store.deleteLocalDocument(.note(file), profileID: profileID, ownerValid: { [weak self] in
             guard let self else { return false }
             return !self.isClosing && !self.wholeWindowClose
