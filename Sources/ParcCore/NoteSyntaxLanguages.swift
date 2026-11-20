@@ -30,6 +30,7 @@ struct NoteCodeLanguage: Hashable, Sendable {
         NoteCodeLanguage(id: "lua", name: "Lua", aliases: ["luau"]),
         NoteCodeLanguage(id: "makefile", name: "Makefile", aliases: ["make", "mk", "mak", "gnumake"]),
         NoteCodeLanguage(id: "markdown", name: "Markdown", aliases: ["md", "mdown", "mkd", "gfm"]),
+        NoteCodeLanguage(id: "mermaid", name: "Mermaid", aliases: ["mmd", "mermaidjs"]),
         NoteCodeLanguage(id: "objectivec", name: "Objective-C", aliases: ["objc", "obj-c", "objective-c", "objectivec", "m", "mm"]),
         NoteCodeLanguage(id: "php", name: "PHP", aliases: ["php8", "phtml"]),
         NoteCodeLanguage(id: "powershell", name: "PowerShell", aliases: ["ps1", "psm1", "pwsh", "posh", "ps"]),

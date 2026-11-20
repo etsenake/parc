@@ -134,6 +134,13 @@ enum NotePageHTMLStyle {
     audio{width:100%}
     figcaption{margin-top:.45em;color:var(--muted);font-size:.86em;text-align:left}
     figure.image figcaption{text-align:center}
+    figure.diagram{margin:.7em 0}
+    .diagram-art{padding:18px 20px;border-radius:10px;background:var(--fill);overflow-x:auto;text-align:center;line-height:0}
+    .diagram-art svg{display:inline-block;max-width:none;height:auto;vertical-align:top}
+    figure.diagram.split pre{margin:0;border-radius:10px 10px 0 0}
+    figure.diagram.split .diagram-art{border-radius:0 0 10px 10px;border-top:1px solid var(--line)}
+    .diagram-dark{display:none}
+    @media screen and (prefers-color-scheme:dark){.diagram-light{display:none}.diagram-dark{display:block}}
     .file-link,.embed-link{display:inline-flex;gap:.4em;align-items:center;padding:.35em .7em;border-radius:8px;\
     background:var(--fill);text-decoration:none;color:var(--ink)}
     .bookmark-card{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:10px;overflow:hidden;\
@@ -175,7 +182,8 @@ enum NotePageHTMLStyle {
     .columns{flex-direction:column;gap:.4em}.page-icon{font-size:60px}}
     @media print{@page{margin:18mm 16mm}body{font-size:12pt}.page{max-width:none;padding:0}.page-cover{max-height:220px;margin-bottom:24px}\
     body.has-cover .page-header{padding-top:0}pre,aside,figure,table,blockquote,.bookmark-card{break-inside:avoid}\
-    h1,h2,h3,h4{break-after:avoid}a{color:inherit}pre{white-space:pre-wrap}}
+    h1,h2,h3,h4{break-after:avoid}a{color:inherit}pre{white-space:pre-wrap}\
+    .diagram-art{overflow:visible}.diagram-art svg{max-width:100%}}
 
     """
 }

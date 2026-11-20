@@ -29,6 +29,7 @@ enum NoteSyntaxGrammars {
         case "haskell": return haskell
         case "elixir": return elixir
         case "graphql": return graphql
+        case "mermaid": return mermaid
         case "zig": return zig
         default: return nil
         }
@@ -438,6 +439,28 @@ enum NoteSyntaxGrammars {
                   NoteSyntaxStringRule("'", multiline: true, interpolation: .hashBrace)],
         features: [.callsAreFunctions, .memberProperties, .capitalizedTypes, .symbols, .elixirSigils],
         wordSuffixes: "?!", atKind: .attribute)
+
+    static let mermaid = NoteSyntaxGrammar(
+        keywords: """
+        graph flowchart subgraph end direction sequenceDiagram participant actor as Note note over left right of loop \
+        alt else opt par and rect critical break autonumber activate deactivate box create destroy link links \
+        classDiagram class namespace interface annotation stateDiagram state erDiagram gantt title dateFormat \
+        axisFormat tickInterval excludes includes weekday todayMarker section pie showData journey gitGraph commit \
+        branch checkout merge cherry mindmap timeline quadrantChart sankey xychart line bar block columns space \
+        C4Context C4Container C4Component C4Dynamic C4Deployment requirementDiagram requirement element kanban \
+        architecture group service junction packet radar classDef style linkStyle click call href callback \
+        accTitle accDescr id type tag order
+        """,
+        types: """
+        Person Person_Ext System System_Ext SystemDb SystemQueue Container ContainerDb ContainerQueue Component \
+        ComponentDb ComponentQueue Boundary Enterprise_Boundary System_Boundary Container_Boundary Rel BiRel \
+        Rel_Up Rel_Down Rel_Left Rel_Right UpdateElementStyle UpdateRelStyle
+        """,
+        constants: "TB TD BT RL LR true false",
+        lineComments: ["%%"],
+        strings: [NoteSyntaxStringRule("\"", escapes: false)],
+        features: [.callsAreFunctions],
+        operators: "-=<>.|~:&*+!", punctuation: "()[]{};,")
 
     static let graphql = NoteSyntaxGrammar(
         keywords: """

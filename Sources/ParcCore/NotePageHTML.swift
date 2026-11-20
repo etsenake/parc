@@ -19,10 +19,12 @@ enum NotePageHTML {
     }
 
     static func document(_ page: NotePage, title: String, assets: (String) -> URL?, embedImages: Bool,
-                         equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)? = nil) -> String {
+                         equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)? = nil,
+                         diagramArt: ((NoteBlock) -> NoteDiagramArt?)? = nil) -> String {
         withoutActuallyEscaping(assets) { assets in
             var writer = NotePageHTMLWriter(mode: .document, assets: assets, embedImages: embedImages,
                                             equationArt: equationArt, blocks: page.blocks)
+            writer.diagramArt = diagramArt
             writer.write(page.blocks)
             let settings = page.settings
             let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -65,6 +67,7 @@ struct NotePageHTMLWriter {
     let assets: (String) -> URL?
     let embedImages: Bool
     let equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)?
+    var diagramArt: ((NoteBlock) -> NoteDiagramArt?)?
     private(set) var output = ""
     private var anchors: [NoteBlockID: String] = [:]
     private var mathNumbering = NotePageMathNumbering()
@@ -399,6 +402,11 @@ struct NotePageHTMLWriter {
     private mutating func code(_ block: NoteBlock) {
         let language = block.props.language.trimmingCharacters(in: .whitespaces)
         let languageClass = language.isEmpty ? "" : " class=\"language-" + Self.attribute(language) + "\""
+        let stored = NoteMermaid.storedMode(of: block)
+        if mode == .document, NoteMermaid.isDiagram(block), stored != .code, let art = diagramArt?(block) {
+            diagram(block, art: art, showsCode: stored == .split, languageClass: languageClass)
+            return
+        }
         var pre = "<pre" + colorAttributes(block.color)
         if !language.isEmpty, mode == .document { pre += " data-language=\"" + Self.attribute(language) + "\"" }
         let body = block.text.string
@@ -409,6 +417,18 @@ struct NotePageHTMLWriter {
         }
         output += "<figure class=\"code\"" + (mode == .fragment ? " style=\"margin:1em 0\"" : "") + ">" + pre
             + "<figcaption>" + inline(block.props.caption) + "</figcaption></figure>"
+    }
+
+    private mutating func diagram(_ block: NoteBlock, art: NoteDiagramArt, showsCode: Bool, languageClass: String) {
+        var html = "<figure data-language=\"mermaid\"" + colorClass(block.color, adding: ["diagram"] + (showsCode ? ["split"] : [])) + ">"
+        if showsCode {
+            let body = block.text.string
+            html += "<pre><code" + languageClass + ">" + (body.hasPrefix("\n") ? "\n" : "") + Self.escape(body) + "</code></pre>"
+        }
+        html += "<div class=\"diagram-art diagram-light\">" + art.light + "</div>"
+        if let dark = art.dark { html += "<div class=\"diagram-art diagram-dark\">" + dark + "</div>" }
+        if !block.props.caption.isEmpty { html += "<figcaption>" + inline(block.props.caption) + "</figcaption>" }
+        output += html + "</figure>"
     }
 
     private mutating func equation(_ block: NoteBlock) {

@@ -457,6 +457,7 @@ struct NoteMDWriter {
         var items: [(String, String?)] = []
         if !block.props.caption.isEmpty { items.append(("caption", inline.write(block.props.caption, style: .verbatim))) }
         if block.props.wrap { items.append(("wrap", nil)) }
+        if NoteMermaid.isDiagram(block), let mode = block.props.diagramMode, mode != .preview { items.append(("view", mode.rawValue)) }
         items += blockAttributes(block)
         if Self.writesIndentedCode(block, afterList: afterList) {
             return lines.map { $0.isEmpty ? "" : "    " + $0 }

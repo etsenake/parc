@@ -636,6 +636,9 @@ struct NoteMDReader {
         if let caption = values["caption"] { block.props.caption = self.caption(caption) }
         if let anchor = values["id"], NoteAnchor.isValid(anchor) { block.props.anchor = anchor }
         if attributes.flags.contains("wrap") { block.props.wrap = true }
+        if block.kind == .code, let view = values["view"], let mode = NoteDiagramMode(rawValue: view.lowercased()) {
+            block.props.diagramMode = mode == .preview ? nil : mode
+        }
         if block.kind == .bookmark {
             var bookmark = block.props.bookmark ?? NoteBookmark()
             if let value = values["summary"] { bookmark.summary = value }

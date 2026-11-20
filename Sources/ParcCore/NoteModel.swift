@@ -514,6 +514,7 @@ struct NoteBlockProps: Hashable, Codable {
     var table: NoteTable?
     var target: String?
     var anchor: String?
+    var diagramMode: NoteDiagramMode?
 }
 
 private final class NoteBlockPropsStorage {
