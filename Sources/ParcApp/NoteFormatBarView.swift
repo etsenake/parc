@@ -199,12 +199,12 @@ final class NoteFormatBarView: NSView, NoteFloatingPanelContent {
 
     static func tooltip(for item: NoteFormatItem) -> String {
         switch item {
-        case .turnInto: return "Turn Into"
-        case .link: return "Add a Link"
-        case .code: return "Inline Code"
-        case .equation: return "Inline Equation"
-        case .color: return "Text and Background Color"
-        case .mention: return "Mention a Note or Date"
+        case .turnInto: return "Turn into"
+        case .link: return "Add a link"
+        case .code: return "Inline code"
+        case .equation: return "Inline equation"
+        case .color: return "Text and background color"
+        case .mention: return "Mention a note or date"
         default: return item.title
         }
     }

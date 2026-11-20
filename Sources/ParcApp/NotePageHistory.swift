@@ -339,7 +339,7 @@ final class NotePageHistoryView: NSView, NoteFloatingPanelContent {
     var preferredSizeDidChange: (() -> Void)?
     private(set) var versions: [NotePageVersion] = []
     private(set) var selected = 0
-    private let titleLabel = NSTextField(labelWithString: "Page History")
+    private let titleLabel = NSTextField(labelWithString: "Note History")
     private let subtitleLabel = NSTextField(labelWithString: "Parc keeps a snapshot every few minutes while you write.")
     private let list = NoteMenuList()
     private let divider = NSView()
@@ -349,7 +349,7 @@ final class NotePageHistoryView: NSView, NoteFloatingPanelContent {
     private let emptyLabel = NSTextField(wrappingLabelWithString: "No snapshots yet. Keep writing and Parc will tuck one away every few minutes.")
     private let restore = NoteChip("Restore", icon: .symbol("clock.arrow.circlepath"), style: .filled)
     private let cancel = NoteChip("Close", style: .ghost)
-    private let lockedHint = NSTextField(labelWithString: "Unlock the page to restore an older version.")
+    private let lockedHint = NSTextField(labelWithString: "Unlock the note to restore an older version.")
 
     init(editor: NotePageEditor, file: NoteFileSession) {
         self.editor = editor
@@ -357,7 +357,7 @@ final class NotePageHistoryView: NSView, NoteFloatingPanelContent {
         super.init(frame: NSRect(origin: .zero, size: Self.size))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Page History")
+        setAccessibilityLabel("Note History")
         titleLabel.font = NoteTheme.nunitoExtraBold(16)
         titleLabel.textColor = NoteTheme.menuInk
         subtitleLabel.font = NoteTheme.nunitoRegular(12.5)

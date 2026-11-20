@@ -29,7 +29,7 @@ struct NoteHandlesModelTests {
         expect(ids(entries) == ["delete", "duplicate", "turn", "move", "color"], "a paragraph gets Notion's order without block links")
         expect(entries[0].shortcut == "⌫" && entries[0].isDestructive, "Delete shows a ⌫ keycap and reads as destructive")
         expect(entries[1].shortcut == "⌘D", "Duplicate shows ⌘D")
-        expect(entries[3].shortcut == "⇧⌘P" && entries[3].hasSubmenu, "Move To shows ⇧⌘P and opens a note picker")
+        expect(entries[3].shortcut == "⇧⌘P" && entries[3].hasSubmenu, "Move to shows ⇧⌘P and opens a note picker")
         let turn = entries[2].children
         expect(turn.first?.title == "Text" && turn.first?.isChecked == true, "Turn Into checks the paragraph's own type")
         expect(turn.filter(\.isChecked).count == 1, "only one Turn Into row is checked")
@@ -118,7 +118,7 @@ struct NoteHandlesModelTests {
         expect(ids(NoteBlockMenuModel.filter(entries, query: "  DEL ")) == ["delete"], "search ignores case and spaces")
         expect(ids(NoteBlockMenuModel.filter(entries, query: "remove")) == ["delete"], "aliases find Delete")
         expect(NoteBlockMenuModel.filter(entries, query: "turn").count == NoteBlockMenuModel.turnIntoStyles.count, "matching a submenu shows its rows")
-        expect(ids(NoteBlockMenuModel.filter(entries, query: "move")) == ["move"], "Move To is searchable")
+        expect(ids(NoteBlockMenuModel.filter(entries, query: "move")) == ["move"], "Move to is searchable")
         expect(NoteBlockMenuModel.filter(entries, query: "zzz").isEmpty, "no match means no rows")
         expect(ids(NoteBlockMenuModel.filter(entries, query: "todo")) == ["turn.todo"], "To-do is found without its hyphen")
         var code = NoteBlock(.code)

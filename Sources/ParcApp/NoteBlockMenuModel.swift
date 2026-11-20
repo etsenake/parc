@@ -81,7 +81,7 @@ enum NoteBlockMenuModel {
     static let colorTitle = "Color"
     static let languageTitle = "Language"
     static let alignmentTitle = "Alignment"
-    static let moveTitle = "Move To"
+    static let moveTitle = "Move to"
 
     static let turnIntoStyles: [(style: NoteBlockStyle, title: String, icon: NoteActionIcon, keywords: [String])] = [
         (NoteBlockStyle(.paragraph), "Text", .symbol("textformat"), ["paragraph", "plain"]),

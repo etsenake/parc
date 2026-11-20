@@ -343,7 +343,7 @@ enum NoteBlockCatalog {
                   aliases: ["toc", "contents", "outline"], keywords: ["index", "headings", "navigation"], .tableOfContents),
             block("equation", "Block equation", "Write TeX, get beautiful math.", .advanced, .symbol("function"), hint: "$$",
                   aliases: ["math", "tex", "latex", "equation", "$$"], keywords: ["katex", "formula", "maths"], .equation),
-            block("code", "Code", "Code, with colours that make sense.", .advanced, .symbol("curlybraces"), hint: "```",
+            block("code", "Code", "Code, with colors that make sense.", .advanced, .symbol("curlybraces"), hint: "```",
                   aliases: ["```", "snippet", "pre"], keywords: ["program", "syntax", "script", "monospace"], .code),
         ]
         let counts = ["two", "three", "four", "five"]
@@ -1232,8 +1232,8 @@ final class NoteReminderBook {
     nonisolated static let identifierPrefix = "parc.notes.reminder|"
     static let recordsKey = "parc.notes.reminderNotes"
     static let legacyKey = "parc.notes.reminderDocuments"
-    nonisolated static let fallbackTitle = "Parc Notes"
-    nonisolated static let fallbackBody = "Here's the nudge you asked for."
+    nonisolated static let fallbackTitle = "Untitled"
+    nonisolated static let fallbackBody = "Here’s the nudge you asked for."
 
     private struct Signature: Equatable {
         var plans: [NoteReminderPlan]

@@ -36,7 +36,7 @@ enum NoteTurnIntoTarget: Int, CaseIterable, Hashable {
         case .numbered: return "Numbered List"
         case .toggle: return "Toggle List"
         case .code: return "Code"
-        case .page: return "Page"
+        case .page: return "Note"
         }
     }
 }

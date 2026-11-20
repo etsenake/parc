@@ -228,11 +228,11 @@ final class NoteDatePickerView: NSView, NoteFloatingPanelContent {
 
     private func hintText() -> String {
         guard mention.remind else { return "" }
-        guard let fire = parser.fireDate(for: mention), fire > parser.now else { return "That moment's passed. Pick a later one for a nudge." }
+        guard let fire = parser.fireDate(for: mention), fire > parser.now else { return "That moment’s passed. Pick a later one for a nudge." }
         var nudge = mention
         nudge.hour = mention.hour ?? 9
         nudge.minute = mention.hour == nil ? 0 : mention.minute
-        return "We'll nudge you \(NoteDateFormatting.label(nudge, now: parser.now, calendar: parser.calendar, locale: parser.locale))."
+        return "We’ll nudge you \(NoteDateFormatting.label(nudge, now: parser.now, calendar: parser.calendar, locale: parser.locale))."
     }
 }
 

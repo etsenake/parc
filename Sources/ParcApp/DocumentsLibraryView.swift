@@ -267,7 +267,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private func delete(_ row: Row) {
         guard valid, let window, window.attachedSheet == nil else { return }
         let note = row.item.isNote
-        ParcDialog.confirm(in: window, title: note ? "Move this note to the Trash?" : "Are you sure you want to delete this Easel?",
+        ParcDialog.confirm(in: window, title: note ? "Move “\(row.title)” to the Trash?" : "Are you sure you want to delete this Easel?",
                           message: note ? "Any tabs showing it close too. You can fish it out of the Trash later." : "Doing so will delete the Easel permanently.",
                           confirm: note ? "Move to Trash" : "Delete", destructive: true) { [weak self] approved in
             guard let self, approved, self.valid else { return }

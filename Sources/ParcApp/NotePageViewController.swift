@@ -11,6 +11,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
     var onOpenNote: ((URL) -> Void)?
     var onToast: ((ParcToastContent) -> Void)?
     var onTrashed: ((URL) -> Void)?
+    var downloadFolder: (@MainActor () async -> URL?)?
     private let root = NotePageRootView()
     private let scroll = NSScrollView()
     private let status = NotePageStatusView()
@@ -53,6 +54,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         editor.onPrint = { [weak self] in self?.printPage() }
         editor.onChange = { [weak self] change in self?.pageDidChange(change) }
         editor.handles.presentToast = { [weak self] content in self?.onToast?(content) }
+        editor.handles.downloadFolder = { [weak self] in await self?.downloadFolder?() }
         editor.formatBar.onToast = { [weak self] content in self?.onToast?(content) }
 
         root.controller = self
@@ -409,7 +411,7 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         case .useFile:
             file.resolveConflict(keepMine: false)
         case .unlock:
-            editor.session.updateSettings(name: "Unlock Page") { $0.locked = false }
+            editor.session.updateSettings(name: "Unlock Note") { $0.locked = false }
         case .dismiss:
             transientError = nil
         }
@@ -535,8 +537,8 @@ enum NotePageStatus: Equatable {
     var actions: [(Action, String)] {
         switch self {
         case .failed: return [(.retry, "Retry")]
-        case .conflict: return [(.keepMine, "Keep mine"), (.useFile, "Use the file’s version")]
-        case .missing: return [(.restore, "Put it back")]
+        case .conflict: return [(.keepMine, "Keep Mine"), (.useFile, "Use the File’s Version")]
+        case .missing: return [(.restore, "Put It Back")]
         case .locked: return [(.unlock, "Unlock")]
         case .notice: return [(.dismiss, "OK")]
         case .none, .slowSave, .readOnly, .plainText: return []

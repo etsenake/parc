@@ -215,7 +215,7 @@ final class NoteHandleBar: NSView {
 
 @MainActor
 final class NoteBlockHandleController {
-    static let addTooltip = "Click to add below, ⌥-click to add above"
+    static let addTooltip = "Click to add below, Option-click to add above"
     static let gripTooltip = "Drag to move, click for options"
 
     private struct CrossNoteMove {
@@ -228,6 +228,7 @@ final class NoteBlockHandleController {
     unowned let editor: NotePageEditor
     let bar = NoteHandleBar()
     var presentToast: ((ParcToastContent) -> Void)?
+    var downloadFolder: (@MainActor () async -> URL?)?
     private(set) lazy var menu: NoteBlockMenuController = {
         let controller = NoteBlockMenuController(editor: editor)
         controller.onClose = { [weak self] in self?.menuDidClose() }
@@ -504,7 +505,7 @@ final class NoteBlockHandleController {
         file.retain()
         defer { file.release() }
         guard !file.page.isReadOnly, !file.page.page.settings.locked else {
-            presentToast?(.standard("“\(name)” is locked, so your blocks stayed put."))
+            presentToast?(.standard("“\(name)” is locked or read-only, so your blocks stayed put."))
             return
         }
         Self.append(copies, to: file.page)
@@ -554,27 +555,41 @@ final class NoteBlockHandleController {
 
     func download(_ source: String) {
         guard let url = editor.environment.resolve(source) else { return }
-        let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        if url.isFileURL {
-            do {
-                let saved = try Self.copy(url, into: folder, suggestedName: url.lastPathComponent)
-                presentToast?(.standard("Saved to Downloads", icon: "arrow.down.circle.fill", subLabel: saved.lastPathComponent))
-            } catch {
-                presentToast?(.standard("Couldn’t save that file. Maybe try again?"))
-            }
-            return
-        }
+        let chosenFolder = downloadFolder
         Task { @MainActor [weak self] in
+            let folder = await chosenFolder?() ?? Self.fallbackDownloadFolder
+            if url.isFileURL {
+                do {
+                    let saved = try Self.copy(url, into: folder, suggestedName: url.lastPathComponent)
+                    self?.announceDownload(saved, in: folder)
+                } catch {
+                    self?.presentToast?(.standard("Couldn’t save that file. Maybe try again?"))
+                }
+                return
+            }
             do {
                 let (temporary, response) = try await URLSession.shared.download(from: url)
                 defer { try? FileManager.default.removeItem(at: temporary) }
                 let name = response.suggestedFilename ?? url.lastPathComponent
                 let saved = try Self.copy(temporary, into: folder, suggestedName: name.isEmpty ? "Download" : name)
-                self?.presentToast?(.standard("Saved to Downloads", icon: "arrow.down.circle.fill", subLabel: saved.lastPathComponent))
+                self?.announceDownload(saved, in: folder)
             } catch {
                 self?.presentToast?(.standard("Couldn’t download that. Maybe try again?"))
             }
         }
+    }
+
+    static var fallbackDownloadFolder: URL {
+        FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads", isDirectory: true)
+    }
+
+    static func downloadToastTitle(for folder: URL) -> String {
+        "Saved to \(FileManager.default.displayName(atPath: folder.path))"
+    }
+
+    private func announceDownload(_ saved: URL, in folder: URL) {
+        presentToast?(.standard(Self.downloadToastTitle(for: folder), icon: "arrow.down.circle.fill", subLabel: saved.lastPathComponent))
     }
 
     private static func copy(_ source: URL, into folder: URL, suggestedName: String) throws -> URL {

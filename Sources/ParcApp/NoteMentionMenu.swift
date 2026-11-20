@@ -87,9 +87,9 @@ enum NoteMentionMenu {
 
     static func noResultsTitle(for scope: Scope) -> String {
         switch scope {
-        case .dates: return "That doesn't look like a date yet."
+        case .dates: return "That doesn’t look like a date yet."
         case .notes, .noteBlock: return "No notes by that name. Keep typing?"
-        case .everything: return "Nothing yet. Try a note's name or a date."
+        case .everything: return "Nothing yet. Try a note’s name or a date."
         }
     }
 

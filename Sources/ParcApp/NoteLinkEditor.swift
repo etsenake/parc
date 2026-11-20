@@ -107,7 +107,7 @@ final class NoteLinkEditorView: NSView, NoteFloatingPanelContent {
             remove.isDestructive = true
             items.append(remove)
         }
-        list.noResultsTitle = query.isEmpty ? "Paste a link, or type to find a note" : "That's not a link, and no notes match"
+        list.noResultsTitle = query.isEmpty ? "Paste a link or find a note" : "That’s not a link, and no notes match."
         list.setItems(items, keepingHighlight: false)
         if let first = items.first(where: \.isEnabled), !query.isEmpty || existingLink == nil {
             list.highlight(id: first.id, animated: false)

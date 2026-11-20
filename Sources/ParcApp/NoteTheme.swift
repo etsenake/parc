@@ -454,7 +454,7 @@ enum NoteTheme {
         case .bulletedItem, .numberedItem: return "List"
         case .todo: return "To-do"
         case .toggle: return "Toggle"
-        case .quote: return "Empty quote"
+        case .quote: return "Quote someone wise"
         case .callout: return "Say something worth a callout"
         case .code: return "Write some code"
         case .equation: return "E = mc²"

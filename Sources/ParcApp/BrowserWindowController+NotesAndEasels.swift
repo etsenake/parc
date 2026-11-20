@@ -184,6 +184,7 @@ extension BrowserWindowController {
             guard let self, let editor, self.noteEditors[tabID]?.editor === editor else { return }
             self.retireTrashedNote(url, profileID: profileID)
         }
+        editor.downloadFolder = { [weak self] in await self?.downloadFolder(profileID: profileID) }
         configureNoteEmbeds(tab, editor: editor)
     }
 
@@ -292,6 +293,14 @@ extension BrowserWindowController {
         })
     }
 
+    func downloadFolder(profileID: UUID) async -> URL? {
+        guard !store.isProfileRemovalPending(profileID) else { return nil }
+        let path = store.independentEngineProfilePath(for: profileID)
+        guard let preferences = try? await PCNativeBrowserApplication.downloadPreferences(profilePath: path),
+              preferences.profilePath == path else { return nil }
+        return preferences.directoryURL
+    }
+
     func retireTrashedNote(_ url: URL, profileID: UUID) {
         guard let file = InternalPage.noteFile(url) else { return }
         NoteReminderCenter.shared.forget(document: file)
@@ -383,7 +392,7 @@ enum NoteTabError: LocalizedError {
     case retiredAddress, changed
     var errorDescription: String? {
         switch self {
-        case .retiredAddress: return "This old note can’t open anymore. Notes live in files in your Notes folder now."
+        case .retiredAddress: return "This note uses Parc’s old format, so it can’t open anymore. New notes save as Markdown files."
         case .changed: return "This changed in another window. Give it another try."
         }
     }

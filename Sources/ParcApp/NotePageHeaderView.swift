@@ -46,7 +46,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         wantsLayer = true
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Page Header")
+        setAccessibilityLabel("Note Header")
         affordances.wantsLayer = true
         for chip in [addIcon, addCover, addProperties] { affordances.addSubview(chip) }
         affordances.layer?.opacity = 0
@@ -326,7 +326,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
         addCover.onPress = { [weak self] in self?.addRandomCover() }
         addProperties.onPress = { [weak self] in self?.revealProperties() }
         lockChip.onPress = { [weak self] in
-            self?.editor.session.updateSettings(name: "Unlock Page") { $0.locked = false }
+            self?.editor.session.updateSettings(name: "Unlock Note") { $0.locked = false }
         }
         iconView.onPress = { [weak self] in self?.presentIconPicker() }
         coverView.onChange = { [weak self] in
@@ -882,7 +882,7 @@ final class NotePageIconView: NSView {
 
     private func updateAccessibility() {
         let name = icon.flatMap { NoteEmojiCatalog.shared.entry(for: $0)?.displayName }
-        setAccessibilityLabel(name.map { "Page icon, \($0)" } ?? (icon == nil ? "Page icon" : "Page icon, image"))
+        setAccessibilityLabel(name.map { "Note icon, \($0)" } ?? (icon == nil ? "Note icon" : "Note icon, image"))
         setAccessibilityHelp("Change icon")
     }
 
@@ -998,7 +998,7 @@ final class NotePageCoverView: NSView {
     private let controls = NotePageChromeGroup()
     private let hint = NotePageChromeGroup()
     private let hintLabel = NSTextField(labelWithString: "Drag image to reposition")
-    private let failureLabel = NSTextField(labelWithString: "Can't load this cover")
+    private let failureLabel = NSTextField(labelWithString: "Can’t load this cover")
     private let imageLayer = CALayer()
     private var image: NSImage?
     private var cover: NoteCover?
@@ -1020,7 +1020,7 @@ final class NotePageCoverView: NSView {
         layer?.addSublayer(imageLayer)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
-        setAccessibilityLabel("Page cover")
+        setAccessibilityLabel("Note cover")
         hintLabel.font = NoteTheme.chromeFont(12.5)
         hintLabel.textColor = NoteTheme.menuInk
         hint.addSubview(hintLabel)

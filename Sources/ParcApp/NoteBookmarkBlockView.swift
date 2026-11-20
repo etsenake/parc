@@ -466,7 +466,7 @@ final class NoteLinkEntryView: NoteMediaContentHostlessCard, NSTextFieldDelegate
         submit = NoteChip(style == .embed ? "Embed link" : "Create bookmark", icon: .symbol(style == .embed ? "rectangle.on.rectangle" : "bookmark"))
         readOnlyLabel = NoteMediaStyle.label(style == .embed ? "No embed here yet" : "No bookmark here yet",
                                              font: NoteMediaStyle.titleFont, color: NoteTheme.secondaryInk)
-        hint = NoteMediaStyle.label("That doesn't look like a link", font: NoteMediaStyle.smallFont, color: NoteMediaStyle.warningInk)
+        hint = NoteMediaStyle.label("That doesn’t look like a link.", font: NoteMediaStyle.smallFont, color: NoteMediaStyle.warningInk)
         super.init(frame: .zero)
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.contentTintColor = NoteTheme.tertiaryInk

@@ -10,7 +10,7 @@ final class NoteLocationPicker: PointingHandPopUpButton {
     static let otherTitle = DownloadLocationPicker.otherTitle
     static let showInFinderTitle = "Show in Finder"
     static let unavailableTitle = DownloadLocationPicker.unavailableTitle
-    static let helpText = "New notes land here. Notes saved anywhere else still open fine."
+    static let helpText = "New notes land here. Notes anywhere else still open fine."
 
     static func folderIcon(_ url: URL) -> NSImage {
         var isDirectory: ObjCBool = false

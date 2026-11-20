@@ -10,7 +10,7 @@ final class NoteSelectionResponder: NSView, @preconcurrency NSTextInputClient, N
         super.init(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Page selection")
+        setAccessibilityLabel("Note selection")
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }

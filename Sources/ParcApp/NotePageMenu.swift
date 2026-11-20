@@ -128,18 +128,18 @@ final class NotePageMenu {
             result.append(toggleItem("small-text", "Small Text", symbol: "textformat.size.smaller"))
             result.append(toggleItem("full-width", "Full Width", symbol: "arrow.left.and.right"))
         }
-        result.append(toggleItem("lock", "Lock Page", symbol: settings.locked ? "lock.fill" : "lock"))
+        result.append(toggleItem("lock", "Lock Note", symbol: settings.locked ? "lock.fill" : "lock"))
         var copy = NoteMenuList.Item(id: "copy-markdown", title: isPlainText ? "Copy Text" : "Copy as Markdown", icon: .symbol("doc.on.doc"))
         copy.separatorBefore = true
         result.append(copy)
         result.append(.init(id: "copy-link", title: "Copy Link", icon: .symbol("link"), isEnabled: hasFile))
         result.append(.init(id: "export", title: "Export", icon: .symbol("square.and.arrow.up"), hasSubmenu: true))
         result.append(.init(id: "reveal", title: "Show in Finder", icon: .symbol("folder"), isEnabled: hasFile))
-        result.append(.init(id: "history", title: "Page History", icon: .symbol("clock.arrow.circlepath"), isEnabled: hasFile))
+        result.append(.init(id: "history", title: "Note History", icon: .symbol("clock.arrow.circlepath"), isEnabled: hasFile))
         if isPlainText {
-            result.append(.init(id: "turn-markdown", title: "Turn into a Markdown Note", icon: .symbol("doc.richtext"), isEnabled: hasFile))
+            result.append(.init(id: "turn-markdown", title: "Save a Markdown Copy", icon: .symbol("doc.richtext"), isEnabled: hasFile))
         }
-        var trash = NoteMenuList.Item(id: "trash", title: "Move to Trash", icon: .symbol("trash"), isEnabled: hasFile, isDestructive: true)
+        var trash = NoteMenuList.Item(id: "trash", title: "Move to Trash…", icon: .symbol("trash"), isEnabled: hasFile, isDestructive: true)
         trash.separatorBefore = true
         result.append(trash)
         return result
@@ -151,7 +151,7 @@ final class NotePageMenu {
         case "full-width": toggleSetting("Full Width") { $0.fullWidth.toggle() }
         case "lock":
             let locked = editor.session.page.settings.locked
-            editor.session.updateSettings(name: locked ? "Unlock Page" : "Lock Page") { $0.locked.toggle() }
+            editor.session.updateSettings(name: locked ? "Unlock Note" : "Lock Note") { $0.locked.toggle() }
             content?.refresh()
         case "copy-markdown": close(); copyMarkdown()
         case "copy-link": close(); copyLink()
@@ -166,7 +166,7 @@ final class NotePageMenu {
 
     func setFont(_ font: NotePageFont) {
         guard editor.session.page.settings.font != font else { return }
-        crossfade { self.editor.session.updateSettings(name: "Page Font") { $0.font = font } }
+        crossfade { self.editor.session.updateSettings(name: "Note Font") { $0.font = font } }
         content?.refresh()
     }
 
@@ -345,7 +345,7 @@ final class NotePageMenu {
         guard let url, let window = editor.canvas.window else { return }
         let name = title
         ParcDialog.confirm(in: window, title: "Move “\(name)” to the Trash?",
-                           message: "You can fish it back out of the Trash in Finder.",
+                           message: "Any tabs showing it close too. You can fish it out of the Trash later.",
                            confirm: "Move to Trash", destructive: true) { [weak self] (confirmed: Bool) in
             guard confirmed, let self else { return }
             do {
@@ -712,7 +712,7 @@ final class NotePageMenuView: NSView, NoteFloatingPanelContent {
         super.init(frame: NSRect(x: 0, y: 0, width: Self.width, height: 400))
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Page Options")
+        setAccessibilityLabel("Note Options")
         if showsFonts {
             for font in NotePageFont.allCases {
                 let card = NotePageFontCard(font: font)
@@ -961,7 +961,7 @@ final class NotePageFontCard: NoteControlButton {
 final class NotePageMenuButton: NSView {
     static let size = NSSize(width: 30, height: 30)
     unowned let pageMenu: NotePageMenu
-    let button = NoteToolbarButton(icon: .symbol("ellipsis"), label: "Page Options")
+    let button = NoteToolbarButton(icon: .symbol("ellipsis"), label: "Note Options")
     private weak var trackedView: NSView?
     private var paneArea: NSTrackingArea?
     private var isPaneHovered = false

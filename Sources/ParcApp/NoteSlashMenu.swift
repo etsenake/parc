@@ -270,7 +270,7 @@ final class NoteSlashMenuController {
         list.filterText = ""
         list.fixedWidth = Self.turnIntoMenuWidth
         list.rowStyle = .compact
-        list.noResultsTitle = "No block by that name."
+        list.noResultsTitle = "No blocks by that name. Keep typing?"
         list.setAccessibilityLabel("Turn into")
         list.prepare(origin: keyboard ? .keyboard : .pointer)
         list.items = NoteBlockCatalog.turnIntoMenuItems.map { item in

@@ -135,7 +135,7 @@ final class NoteCodeLanguagePicker: NSView, NoteFloatingPanelContent {
         let selected = NoteCodeLanguage.named(current)?.id ?? NoteCodeLanguage.plainText.id
         list.fixedWidth = Self.width
         list.maximumHeight = 300
-        list.noResultsTitle = "No language by that name"
+        list.noResultsTitle = "No language by that name."
         list.items = NoteCodeLanguage.all.map {
             NoteMenuList.Item(id: $0.id, title: $0.name, isChecked: $0.id == selected, keywords: $0.aliases)
         }

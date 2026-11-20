@@ -283,7 +283,7 @@ final class NoteEquationBlockView: NoteBlockView {
     private func rerender() {
         rendering = isBlank ? nil : NoteMathRenderer.render(source, fontSize: mathSize, color: ink, display: true)
         let label: String
-        if isBlank { label = "Empty equation" } else if let error = rendering?.error { label = "Equation that won't typeset: \(source). \(error)" }
+        if isBlank { label = "Empty equation" } else if let error = rendering?.error { label = "Equation that won’t typeset: \(source). \(error)" }
         else { label = "Equation: \(source)" }
         setAccessibilityLabel(label)
         setAccessibilityHelp(isReadOnly ? nil : "Click to edit the TeX")

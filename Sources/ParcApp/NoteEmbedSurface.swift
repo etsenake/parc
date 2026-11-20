@@ -142,7 +142,7 @@ final class NoteEmbedSurface: NSView, EmbeddedPageSurface {
 
     private static func friendly(_ text: String) -> String {
         switch text {
-        case "Loading webpage…": return "Warming up the page…"
+        case "Loading webpage…": return "Waking the page up…"
         case "Webpage closed": return "This page closed. Give it another go?"
         case "This webpage owner is unavailable.": return "Live pages wake up when the note is open in a window."
         default: return text

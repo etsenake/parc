@@ -493,7 +493,7 @@ final class NotePageEditor {
         pasteboard.declareTypes([.URL, .string], owner: nil)
         pasteboard.setString(url.absoluteString, forType: .URL)
         pasteboard.setString(url.absoluteString, forType: .string)
-        handles.presentToast?(.standard("Copied link to block", icon: "link"))
+        handles.presentToast?(.standard("Copied Link to Block", icon: "link"))
         return true
     }
 
@@ -789,7 +789,7 @@ final class NotePageEditor {
         guard !replacements.isEmpty else { return true }
         let effect = NoteUndoEffect(undo: { for file in created.reversed() { file.withdraw() } },
                                     redo: { for file in created { file.restore() } })
-        session.edit("Turn Into Page", affected: Set(replacements.keys), selection: .blocks(Array(replacements.keys)), effect: effect) { page in
+        session.edit("Turn Into Note", affected: Set(replacements.keys), selection: .blocks(Array(replacements.keys)), effect: effect) { page in
             for (id, block) in replacements { page.update(id) { $0 = block } }
         }
         return true
@@ -1250,7 +1250,7 @@ final class NotePasteLinkMenu {
             .init(id: Choice.bookmark.rawValue, title: "Bookmark", subtitle: "A card with a preview", icon: .symbol("bookmark"), section: "Paste as"),
         ]
         if embeddable {
-            items.append(.init(id: Choice.embed.rawValue, title: "Embed", subtitle: "Show it right in the page",
+            items.append(.init(id: Choice.embed.rawValue, title: "Embed", subtitle: "Show it right in the note",
                                icon: .symbol("play.rectangle"), section: "Paste as"))
         }
         list.rowStyle = .detailed
