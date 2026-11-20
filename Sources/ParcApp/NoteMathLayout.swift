@@ -25,6 +25,11 @@ struct NoteMathInk {
     }
 }
 
+struct NoteMathTagMark {
+    var box: NoteMathBox
+    var baseline: CGFloat
+}
+
 struct NoteMathBox {
     var width: CGFloat = 0
     var ascent: CGFloat = 0
@@ -34,6 +39,7 @@ struct NoteMathBox {
     var glyph: CGGlyph?
     var glyphSize: CGFloat = 0
     var inks: [NoteMathInk] = []
+    var tags: [NoteMathTagMark] = []
 
     var height: CGFloat { ascent + descent }
 
@@ -44,6 +50,10 @@ struct NoteMathBox {
             ink.origin.y += point.y
             inks.append(ink)
         }
+        for var tag in box.tags {
+            tag.baseline += point.y
+            tags.append(tag)
+        }
     }
 
     func raised(by amount: CGFloat) -> NoteMathBox {
@@ -51,6 +61,7 @@ struct NoteMathBox {
         result.ascent += amount
         result.descent -= amount
         for index in result.inks.indices { result.inks[index].origin.y += amount }
+        for index in result.tags.indices { result.tags[index].baseline += amount }
         return result
     }
 
@@ -151,6 +162,18 @@ struct NoteMathTypesetter {
 
     func typeset(_ nodes: [NoteMathNode], display: Bool) -> NoteMathBox {
         layoutList(nodes, NoteMathContext(style: NoteMathStyle(level: display ? .display : .text, cramped: false)))
+    }
+
+    func typeset(_ equation: NoteMathEquation, display: Bool) -> NoteMathBox {
+        var box = typeset(equation.nodes, display: display)
+        guard let tag = equation.tag else { return box }
+        let tagBox = layoutList(tag, NoteMathContext(style: NoteMathStyle(level: .text, cramped: false)))
+        var baseline: CGFloat = 0
+        if equation.nodes.count == 1, case .lines = equation.nodes[0] {
+            baseline = (box.ascent - box.descent) / 2 - (tagBox.ascent - tagBox.descent) / 2
+        }
+        box.tags.append(NoteMathTagMark(box: tagBox, baseline: baseline))
+        return box
     }
 
     func size(_ style: NoteMathStyle) -> CGFloat {
@@ -313,6 +336,7 @@ struct NoteMathTypesetter {
         case .phantom(let content, let keepsWidth, let keepsHeight):
             var box = layoutList(content, context).withoutGlyphIdentity()
             box.inks = []
+            box.tags = []
             if !keepsWidth { box.width = 0 }
             if !keepsHeight {
                 box.ascent = 0
@@ -1114,6 +1138,11 @@ struct NoteMathTypesetter {
         }
         for rule in rules {
             box.inks.append(NoteMathInk(content: .rule(rule.size), origin: rule.origin, color: context.color))
+        }
+        let tagContext = context.with(style: NoteMathStyle(level: .text, cramped: false))
+        for (row, tag) in environment.tags.enumerated() where row < baselines.count {
+            guard let tag else { continue }
+            box.tags.append(NoteMathTagMark(box: layoutList(tag, tagContext), baseline: baselines[row]))
         }
         box.ascent = top
         box.descent = -bottom

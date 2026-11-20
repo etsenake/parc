@@ -353,12 +353,12 @@ final class NoteEquationBlockView: NoteBlockView {
                 NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
             }
             let available = bounds.width - Self.horizontalInset * 2
-            let x = rendering.size.width <= available ? ((bounds.width - rendering.size.width) / 2).rounded()
-                : Self.horizontalInset - scrollOffset
+            let fits = rendering.size.width <= available
+            let x = fits ? Self.horizontalInset : Self.horizontalInset - scrollOffset
             let y = ((bounds.height - rendering.size.height) / 2).rounded()
             context.saveGState()
-            context.clip(to: bounds.insetBy(dx: rendering.size.width <= available ? 0 : Self.horizontalInset / 2, dy: 0))
-            rendering.drawFlipped(in: context, at: CGPoint(x: x, y: y))
+            context.clip(to: bounds.insetBy(dx: fits ? 0 : Self.horizontalInset / 2, dy: 0))
+            rendering.drawFlipped(in: context, at: CGPoint(x: x, y: y), width: fits ? available : rendering.size.width)
             context.restoreGState()
         }
         if isEditing {

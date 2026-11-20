@@ -66,6 +66,7 @@ struct NoteMathEnvironment: Equatable {
     var kind: NoteMathEnvironmentKind
     var rows: [[[NoteMathNode]]]
     var columns: [NoteMathColumnAlignment]
+    var tags: [[NoteMathNode]?] = []
     var columnRules: [Int] = []
     var rowRules: [Int] = []
     var rowSpacing: [Int: Double] = [:]
@@ -98,6 +99,11 @@ indirect enum NoteMathNode: Equatable {
     case phantom([NoteMathNode], keepsWidth: Bool, keepsHeight: Bool)
     case boxed([NoteMathNode])
     case lap(NoteMathLap, [NoteMathNode])
+}
+
+struct NoteMathEquation: Equatable {
+    var nodes: [NoteMathNode]
+    var tag: [NoteMathNode]?
 }
 
 struct NoteMathParseError: Error, Equatable, CustomStringConvertible {
@@ -134,18 +140,30 @@ struct NoteMathParser {
     private let characters: [Character]
     private let origins: [Range<Int>]
     private let sourceLength: Int
+    private let display: Bool
     private var index = 0
     private var depth = 0
+    private var pendingTag: (nodes: [NoteMathNode], lexeme: Lexeme)?
+    private var suppressesNumber = false
+    private var equationNumber = 0
 
-    private init(_ source: NoteMathSource) {
+    private init(_ source: NoteMathSource, display: Bool) {
         characters = source.characters
         origins = source.origins
         sourceLength = source.length
+        self.display = display
     }
 
     static func parse(_ source: String) throws(NoteMathParseError) -> [NoteMathNode] {
-        var parser = NoteMathParser(try NoteMathExpander.expand(source))
-        return try parser.parseFormula()
+        try parseEquation(source, display: true).nodes
+    }
+
+    static func parseEquation(_ source: String, display: Bool) throws(NoteMathParseError) -> NoteMathEquation {
+        var parser = NoteMathParser(try NoteMathExpander.expand(source), display: display)
+        let nodes = try parser.parseFormula()
+        guard let tag = parser.pendingTag else { return NoteMathEquation(nodes: nodes) }
+        if !display { throw parser.failure("\\tag only works in display equations", tag.lexeme) }
+        return NoteMathEquation(nodes: nodes, tag: tag.nodes)
     }
 
     static func isBuiltIn(_ name: String) -> Bool {
@@ -309,6 +327,12 @@ struct NoteMathParser {
                 try attachScript(to: &nodes, superscript: lexeme.token == .character("^"), at: lexeme)
             case .character("'"):
                 try attachPrimes(to: &nodes, at: lexeme)
+            case .command("tag"):
+                advance(past: lexeme)
+                try parseTag(lexeme)
+            case .command("notag"), .command("nonumber"):
+                advance(past: lexeme)
+                suppressesNumber = true
             case .command("limits"), .command("nolimits"), .command("displaylimits"):
                 advance(past: lexeme)
                 let limits: NoteMathLimits = lexeme.token == .command("limits") ? .above
@@ -593,11 +617,40 @@ struct NoteMathParser {
             throw failure("\\\(name) has to come right after an operator like \\sum", lexeme)
         case "":
             throw failure("A lone \\ needs a command name after it", lexeme)
-        case "tag":
-            throw failure("Equation tags aren't supported here", lexeme)
+        case "tag", "notag", "nonumber":
+            throw failure("\\\(name) has to stand on its own, not inside a script or argument", lexeme)
         default:
             throw failure("Unknown command \\\(name)", lexeme)
         }
+    }
+
+    private mutating func parseTag(_ lexeme: Lexeme) throws(NoteMathParseError) {
+        let literal = consumeStar()
+        if pendingTag != nil { throw failure("Only one \\tag per line", lexeme) }
+        let label = try parseText(.roman, command: lexeme, name: "tag")
+        var nodes: [NoteMathNode]
+        switch label {
+        case .text(let text, let style) where !literal:
+            nodes = [.text("(" + text + ")", style)]
+        case .group(let parts) where !literal:
+            nodes = [.text("(", .roman)] + parts + [.text(")", .roman)]
+        case .group(let parts):
+            nodes = parts
+        default:
+            nodes = literal ? [label] : [.text("(", .roman), label, .text(")", .roman)]
+        }
+        pendingTag = (nodes, lexeme)
+    }
+
+    private mutating func rowTag(numbered: Bool) -> [NoteMathNode]? {
+        defer {
+            pendingTag = nil
+            suppressesNumber = false
+        }
+        if let tag = pendingTag { return tag.nodes }
+        guard numbered, !suppressesNumber else { return nil }
+        equationNumber += 1
+        return [.text("(\(equationNumber))", .roman)]
     }
 
     private mutating func parseDelimiter(after command: String, at lexeme: Lexeme) throws(NoteMathParseError) -> String? {
@@ -791,6 +844,14 @@ struct NoteMathParser {
             throw failure("Unknown environment \u{201C}\(name.text)\u{201D}", from: name.start, to: name.end)
         }
         var environment = NoteMathEnvironment(kind: shape.kind, rows: [], columns: [], left: shape.left, right: shape.right)
+        let tagsRows = display && depth == 1 && Self.numberedEnvironments[name.text] != nil
+        let numbered = tagsRows && Self.numberedEnvironments[name.text] == true
+        let outerTag = pendingTag
+        let outerSuppression = suppressesNumber
+        if tagsRows {
+            pendingTag = nil
+            suppressesNumber = false
+        }
         var specified: [NoteMathColumnAlignment]?
         if shape.kind == .array {
             let spec = try parseRawGroup(for: "begin{array}", what: "columns like lcr")
@@ -825,13 +886,22 @@ struct NoteMathParser {
                 guard closing.text == name.text else {
                     throw failure("\\begin{\(name.text)} ends with \\end{\(closing.text)}", from: closing.start, to: closing.end)
                 }
-                let trailingEmpty = row.count == 1 && row[0].isEmpty
-                if !trailingEmpty || environment.rows.isEmpty { environment.rows.append(row) }
+                let trailingEmpty = row.count == 1 && row[0].isEmpty && pendingTag == nil
+                if !trailingEmpty || environment.rows.isEmpty {
+                    environment.rows.append(row)
+                    if tagsRows { environment.tags.append(rowTag(numbered: numbered)) }
+                }
+                if tagsRows {
+                    if environment.tags.allSatisfy({ $0 == nil }) { environment.tags = [] }
+                    pendingTag = outerTag
+                    suppressesNumber = outerSuppression
+                }
                 let columnCount = environment.rows.map(\.count).max() ?? 1
                 environment.columns = specified ?? Self.defaultColumns(for: shape.kind, count: columnCount)
                 return .environment(environment)
             default:
                 environment.rows.append(row)
+                if tagsRows { environment.tags.append(rowTag(numbered: numbered)) }
                 row = []
                 if let spacing = try parseOptionalRowSpacing() { environment.rowSpacing[environment.rows.count - 1] = spacing }
                 consumeRowRules(into: &environment, row: environment.rows.count)
@@ -862,7 +932,12 @@ struct NoteMathParser {
         "smallmatrix": (.smallMatrix, nil, nil), "cases": (.cases, "{", nil), "rcases": (.cases, nil, "}"),
         "aligned": (.aligned, nil, nil), "align": (.aligned, nil, nil), "align*": (.aligned, nil, nil),
         "split": (.aligned, nil, nil), "gathered": (.gathered, nil, nil), "gather": (.gathered, nil, nil),
-        "gather*": (.gathered, nil, nil), "array": (.array, nil, nil),
+        "gather*": (.gathered, nil, nil), "array": (.array, nil, nil), "equation": (.gathered, nil, nil),
+        "equation*": (.gathered, nil, nil),
+    ]
+
+    private static let numberedEnvironments: [String: Bool] = [
+        "align": true, "gather": true, "equation": true, "align*": false, "gather*": false, "equation*": false,
     ]
 
     private static let styleSwitches: [String: NoteMathStyleLevel] = [

@@ -37,6 +37,7 @@ struct NoteMathParserTests {
         macroErrors()
         chemistry()
         units()
+        tags()
         print("NoteMathParserTests passed")
     }
 
@@ -389,6 +390,72 @@ struct NoteMathParserTests {
         expect(parse("\\pu{1.2+-0.1 mm}") == parse("{1.2\\pm 0.1~\\mathrm{mm}}"), "uncertainty")
         expect(parse("\\pu{-40 K}") == parse("{-40~\\mathrm{K}}"), "negative numbers")
         expect(parse("\\pu{5 µm}") == parse("{5~\\mu \\mathrm{m}}"), "micro sign")
+    }
+
+    static func equation(_ source: String, display: Bool = true, line: UInt = #line) -> NoteMathEquation {
+        do {
+            return try NoteMathParser.parseEquation(source, display: display)
+        } catch {
+            failTest("\(source) failed to parse: \(error.message) at \(error.offset)", line: line)
+        }
+    }
+
+    static func rowTags(_ source: String, line: UInt = #line) -> [[NoteMathNode]?] {
+        guard case .environment(let environment)? = equation(source, line: line).nodes.first else {
+            failTest("\(source) parses as an environment", line: line)
+        }
+        return environment.tags
+    }
+
+    static func tags() {
+        let plain = equation("E = mc^2 \\tag{1}")
+        expect(plain.tag == [.text("(1)", .roman)] && plain.nodes == parse("E = mc^2"), "tag wraps its label in parentheses")
+        expect(equation("x \\tag*{A.1}").tag == [.text("A.1", .roman)], "tag* keeps the label as written")
+        expect(equation("x \\tag{$\\ast$}").tag == [.text("(", .roman), .mathStyle(.text, [.char("∗", .bin)]), .text(")", .roman)],
+               "math inside a tag")
+        expect(equation("\\tag{eq} x").tag == [.text("(eq)", .roman)], "a tag can come first")
+        expect(equation("x \\notag").tag == nil && equation("x \\nonumber").nodes == parse("x"), "notag on its own is harmless")
+        expect(parse("x \\tag{1}") == parse("x"), "parse drops the tag from the formula")
+        let inline = failure("x \\tag{1}", display: false)
+        expect(inline.message == "\\tag only works in display equations" && inline.offset == 2 && inline.length == 4, "inline tags explain themselves")
+        expect(failure("x \\tag{1} \\tag{2}").message == "Only one \\tag per line", "one tag per line")
+        expect(failure("x^\\tag{1}").message == "\\tag has to stand on its own, not inside a script or argument", "tag inside a script")
+        expect(failure("x \\tag").message == "\\tag needs {text} after it", "tag needs a label")
+        expect(equation("x \\tag 1").tag == [.text("(1)", .roman)], "a one-character tag needs no braces")
+        let one: [NoteMathNode] = [.text("(1)", .roman)], two: [NoteMathNode] = [.text("(2)", .roman)]
+        expect(rowTags("\\begin{align} a &= b \\\\ c &= d \\end{align}") == [one, two], "align numbers every row")
+        expect(rowTags("\\begin{align} a &= b \\\\ c &= d \\\\ \\end{align}") == [one, two], "a trailing break doesn't number an empty row")
+        expect(rowTags("\\begin{align} a &= b \\notag \\\\ c &= d \\end{align}") == [nil, one], "notag skips a row")
+        expect(rowTags("\\begin{align} a &= b \\nonumber \\\\ c &= d \\nonumber \\end{align}") == [], "nonumber everywhere leaves no tags")
+        expect(rowTags("\\begin{align} a &= b \\tag{x} \\\\ c &= d \\end{align}") == [[.text("(x)", .roman)], one],
+               "an explicit tag doesn't use up a number")
+        expect(rowTags("\\begin{align*} a &= b \\\\ c &= d \\tag{y} \\end{align*}") == [nil, [.text("(y)", .roman)]],
+               "align* only shows explicit tags, here on its last line")
+        expect(rowTags("\\begin{align*} a \\\\ b \\end{align*}") == [], "align* has no numbers")
+        expect(rowTags("\\begin{gather} a \\\\ b \\end{gather}") == [one, two], "gather numbers rows")
+        expect(rowTags("\\begin{equation} E = mc^2 \\end{equation}") == [one], "equation is numbered")
+        expect(rowTags("\\begin{equation*} E = mc^2 \\tag{$\\star$} \\end{equation*}").count == 1, "equation* takes a tag")
+        let aligned = equation("\\begin{aligned} a &= b \\tag{1} \\\\ c &= d \\end{aligned}")
+        expect(aligned.tag == one, "a tag inside aligned tags the whole equation")
+        if case .environment(let environment)? = aligned.nodes.first { expect(environment.tags.isEmpty, "aligned rows carry no tags") }
+        let after = equation("\\begin{aligned} a &= b \\\\ c &= d \\end{aligned} \\tag{2}")
+        expect(after.tag == two, "a tag after aligned tags the whole equation")
+        if case .environment(let environment)? = (try? NoteMathParser.parseEquation("\\begin{align} a \\\\ b \\end{align}", display: false))?.nodes.first {
+            expect(environment.tags.isEmpty, "inline align stays unnumbered")
+        } else {
+            failTest("inline align parses")
+        }
+        expect(failure("\\begin{align} a \\tag{1} \\tag{2} \\end{align}").message == "Only one \\tag per line", "one tag per align row")
+        expect(equation("\\newcommand{\\eq}[1]{\\tag{#1}} x \\eq{7}").tag == [.text("(7)", .roman)], "tags from macros")
+    }
+
+    static func failure(_ source: String, display: Bool, line: UInt = #line) -> NoteMathParseError {
+        do {
+            let parsed = try NoteMathParser.parseEquation(source, display: display)
+            failTest("\(source) should fail but parsed as \(parsed)", line: line)
+        } catch {
+            return error
+        }
     }
 
     static func errors() {

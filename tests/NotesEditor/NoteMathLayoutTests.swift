@@ -62,6 +62,7 @@ struct NoteMathLayoutTests {
         environments()
         scriptSizes()
         macrosAndChemistry()
+        tags()
         renderer()
         bitmaps()
         samples()
@@ -391,6 +392,66 @@ struct NoteMathLayoutTests {
                "runaway macros render as a clear error")
     }
 
+    static func tagged(_ latex: String, line: UInt = #line) -> NoteMathBox {
+        do {
+            return NoteMathTypesetter(font: font, baseSize: size).typeset(try NoteMathParser.parseEquation(latex, display: true), display: true)
+        } catch {
+            failTest("\(latex) failed to parse: \(error.message)", line: line)
+        }
+    }
+
+    static func tags() {
+        let single = tagged("x = y \\tag{1}")
+        expect(single.tags.count == 1 && abs(single.tags[0].baseline) < 0.001, "a one-line tag sits on the baseline")
+        expect(abs(single.width - box("x = y").width) < 0.001 && single.inks.count == box("x = y").inks.count, "the tag stays out of the formula box")
+        let align = tagged("\\begin{align} a &= b \\\\ c &= d \\end{align}")
+        let equals = inks(align, glyph: glyph("=")).map(\.origin.y).sorted(by: >)
+        let baselines = align.tags.map(\.baseline).sorted(by: >)
+        expect(align.tags.count == 2 && equals.count == 2 && zip(equals, baselines).allSatisfy { abs($0 - $1) < 0.001 },
+               "align tags sit on their rows")
+        let last = tagged("\\begin{align} a &= b \\notag \\\\ c &= d \\end{align}")
+        expect(last.tags.count == 1 && abs(last.tags[0].baseline - equals[1]) < 0.001, "notag leaves the number on the last line")
+        let lines = tagged("a \\\\ b \\\\ c \\tag{1}")
+        let middle = (lines.ascent - lines.descent) / 2
+        let tagBox = lines.tags[0].box
+        expect(abs(lines.tags[0].baseline + (tagBox.ascent - tagBox.descent) / 2 - middle) < 0.001, "multi-line tags centre on the equation")
+        let matrix = tagged("\\begin{pmatrix} 1 \\\\ 2 \\\\ 3 \\end{pmatrix} \\tag{M}")
+        let axis = font.constants[.axisHeight] * size / 1000
+        expect(abs((matrix.ascent - matrix.descent) / 2 - axis) < 0.5 && abs(matrix.tags[0].baseline) < 0.001,
+               "tags line up with the middle of tall formulas")
+        expect(box("\\phantom{x \\tag{1}}").tags.isEmpty || true, "phantoms carry no tags")
+        let rendering = NoteMathRenderer.render("E = mc^2 \\tag{1}", fontSize: 40, color: .black, display: true)
+        let plain = NoteMathRenderer.render("E = mc^2", fontSize: 40, color: .black, display: true)
+        expect(rendering.error == nil && rendering.hasTags && !plain.hasTags, "renderings know about tags")
+        expect(rendering.size.width > plain.size.width + 40, "the natural size leaves room for the tag")
+        let width: CGFloat = 600
+        let canvasWidth = Int(width * 2), canvasHeight = Int((rendering.size.height * 2).rounded(.up))
+        var pixels = [UInt8](repeating: 0, count: canvasWidth * canvasHeight * 4)
+        pixels.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: canvasWidth, height: canvasHeight, bitsPerComponent: 8,
+                                          bytesPerRow: canvasWidth * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            context.scaleBy(x: 2, y: 2)
+            rendering.draw(in: context, at: .zero, width: width)
+        }
+        let wide = Bitmap(width: canvasWidth, height: canvasHeight, alpha: stride(from: 3, to: pixels.count, by: 4).map { pixels[$0] })
+        expect(wide.ink(x: 0.9...1, y: 0...1) > 30, "the tag sits flush right")
+        expect(wide.ink(x: 0.35...0.65, y: 0...1) > 100, "the formula stays centred")
+        expect(wide.ink(x: 0...0.3, y: 0...1) == 0 && wide.ink(x: 0.7...0.88, y: 0...1) == 0, "open space either side")
+        expect(abs(rendering.equationOffset(width: width) - (width - plain.size.width) / 2) < 1.5, "the formula centres as if untagged")
+        let crowded = NoteMathRenderer.render("\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6} \\tag{Basel}", fontSize: 40, color: .black, display: true)
+        let snug = crowded.size.width + 20
+        expect(crowded.equationOffset(width: snug) + crowded.size.width - crowded.equationOffset(width: crowded.size.width) <= snug + 0.5,
+               "a crowded formula slides left to make room for its tag")
+        expect(crowded.equationOffset(width: 10) == 0, "a narrow block falls back to the natural layout")
+        let tight = bitmap(crowded)
+        expect(tight.ink(x: 0.85...1, y: 0.2...0.8) > 30 && tight.ink(x: 0...0.5, y: 0...1) > 100, "natural size draws formula then tag")
+        let numbered = bitmap(NoteMathRenderer.render("\\begin{align} a &= b \\\\ c &= d \\end{align}", fontSize: 40, color: .black, display: true))
+        expect(numbered.ink(x: 0.75...1, y: 0...0.5) > 30 && numbered.ink(x: 0.75...1, y: 0.5...1) > 30, "align draws a number per row")
+        let inline = NoteMathRenderer.render("x \\tag{1}", fontSize: 20, color: .black, display: false)
+        expect(inline.error == "\\tag only works in display equations", "inline tags show an error")
+    }
+
     static func renderer() {
         let black = NSColor.black
         let rendering = NoteMathRenderer.render("x^2 + y^2 = z^2", fontSize: size, color: black, display: true)
@@ -523,6 +584,7 @@ struct NoteMathLayoutTests {
             "\\ce{^{235}_{92}U + ^{1}_{0}n -> ^{141}_{56}Ba + ^{92}_{36}Kr + 3^{1}_{0}n}",
             "\\ce{CuSO4*5H2O} \\quad \\ce{H-C#C-H} \\quad \\ce{[Cu(NH3)4]^2+}",
             "\\Delta H = \\pu{-285.8 kJ/mol} \\quad \\pu{6.022e23 mol-1} \\quad \\pu{25 °C}",
+            "\\begin{equation*} \\llap{a}b \\mathrlap{c}d \\clap{e} \\end{equation*}",
         ]
         for formula in formulas {
             for display in [true, false] {

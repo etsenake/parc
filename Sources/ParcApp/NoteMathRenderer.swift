@@ -4,14 +4,28 @@ import CoreText
 final class NoteMathLayoutEntry {
     let box: NoteMathBox
     let frame: CGRect
+    let equationFrame: CGRect
+    let tagFrames: [CGRect]
+    let tagGap: CGFloat
     let error: NoteMathParseError?
     let isEmpty: Bool
 
-    init(box: NoteMathBox, error: NoteMathParseError?, isEmpty: Bool) {
+    init(box: NoteMathBox, error: NoteMathParseError?, isEmpty: Bool, tagGap: CGFloat = 0) {
         self.box = box
         self.error = error
         self.isEmpty = isEmpty
-        frame = isEmpty ? .zero : NoteMathLayoutEntry.inkFrame(box)
+        self.tagGap = tagGap
+        let equation = isEmpty ? .zero : NoteMathLayoutEntry.inkFrame(box)
+        let tags = isEmpty ? [] : box.tags.map { NoteMathLayoutEntry.inkFrame($0.box).offsetBy(dx: 0, dy: $0.baseline) }
+        equationFrame = equation
+        tagFrames = tags
+        if let widest = tags.map(\.width).max() {
+            let minY = tags.reduce(equation.minY) { min($0, $1.minY) }
+            let maxY = tags.reduce(equation.maxY) { max($0, $1.maxY) }
+            frame = CGRect(x: equation.minX, y: minY, width: equation.width + tagGap + widest, height: maxY - minY)
+        } else {
+            frame = equation
+        }
     }
 
     private static func inkFrame(_ box: NoteMathBox) -> CGRect {
@@ -64,27 +78,57 @@ final class NoteMathRendering {
 
     var descent: CGFloat { size.height - baseline }
 
+    var hasTags: Bool { !entry.tagFrames.isEmpty }
+
     var accessibilityLabel: String {
         isEmpty ? "Empty equation" : error == nil ? "Equation: \(source)" : "Equation with a typo: \(source)"
     }
 
     func draw(in context: CGContext, at origin: CGPoint) {
-        draw(in: context, at: origin, ink: color.cgColor, muted: Self.mutedInk(for: color))
+        draw(in: context, at: origin, width: size.width)
+    }
+
+    func draw(in context: CGContext, at origin: CGPoint, width: CGFloat) {
+        draw(in: context, at: origin, width: width, ink: color.cgColor, muted: Self.mutedInk(for: color))
     }
 
     func drawFlipped(in context: CGContext, at topLeft: CGPoint) {
+        drawFlipped(in: context, at: topLeft, width: size.width)
+    }
+
+    func drawFlipped(in context: CGContext, at topLeft: CGPoint, width: CGFloat) {
         context.saveGState()
         context.translateBy(x: topLeft.x, y: topLeft.y + size.height)
         context.scaleBy(x: 1, y: -1)
-        draw(in: context, at: .zero)
+        draw(in: context, at: .zero, width: width)
         context.restoreGState()
     }
 
-    private func draw(in context: CGContext, at origin: CGPoint, ink: CGColor, muted: CGColor) {
-        let base = CGPoint(x: origin.x - entry.frame.minX, y: origin.y - entry.frame.minY)
+    func equationOffset(width: CGFloat) -> CGFloat {
+        let available = max(width, size.width)
+        let equation = entry.equationFrame
+        var offset = (available - equation.width) / 2
+        if let widest = entry.tagFrames.map(\.width).max() {
+            offset = min(offset, available - widest - entry.tagGap - equation.width)
+        }
+        return max(0, offset).rounded()
+    }
+
+    private func draw(in context: CGContext, at origin: CGPoint, width: CGFloat, ink: CGColor, muted: CGColor) {
+        let available = max(width, size.width)
+        let baselineY = origin.y - entry.frame.minY
+        draw(entry.box.inks, in: context, at: CGPoint(x: origin.x + equationOffset(width: width) - entry.equationFrame.minX, y: baselineY),
+             ink: ink, muted: muted)
+        for (mark, frame) in zip(entry.box.tags, entry.tagFrames) {
+            draw(mark.box.inks, in: context, at: CGPoint(x: (origin.x + available - frame.maxX).rounded(), y: baselineY + mark.baseline),
+                 ink: ink, muted: muted)
+        }
+    }
+
+    private func draw(_ inks: [NoteMathInk], in context: CGContext, at base: CGPoint, ink: CGColor, muted: CGColor) {
         context.saveGState()
         context.textMatrix = .identity
-        for item in entry.box.inks {
+        for item in inks {
             let fill: CGColor
             switch item.color {
             case .inherited: fill = ink
@@ -133,7 +177,7 @@ final class NoteMathRendering {
         let image = NSImage(size: size, flipped: false) { [self] _ in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             if let fixed {
-                draw(in: context, at: .zero, ink: fixed.ink, muted: fixed.muted)
+                draw(in: context, at: .zero, width: size.width, ink: fixed.ink, muted: fixed.muted)
             } else {
                 draw(in: context, at: .zero)
             }
@@ -215,9 +259,9 @@ enum NoteMathRenderer {
             return NoteMathLayoutEntry(box: errorBox(latex, fontSize: fontSize), error: failure, isEmpty: false)
         }
         do {
-            let nodes = try NoteMathParser.parse(latex)
-            let box = NoteMathTypesetter(font: font, baseSize: fontSize).typeset(nodes, display: display)
-            return NoteMathLayoutEntry(box: box, error: nil, isEmpty: false)
+            let equation = try NoteMathParser.parseEquation(latex, display: display)
+            let box = NoteMathTypesetter(font: font, baseSize: fontSize).typeset(equation, display: display)
+            return NoteMathLayoutEntry(box: box, error: nil, isEmpty: false, tagGap: fontSize)
         } catch {
             return NoteMathLayoutEntry(box: errorBox(latex, fontSize: fontSize), error: error, isEmpty: false)
         }
