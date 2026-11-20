@@ -14,8 +14,10 @@ enum CommandBarRanking {
         var bump: Double = 0
         var samePage: String? = nil
         var titleScore: Double? = nil
+        var contentScore: Double? = nil
     }
     static let limit = 15
+    static let noteContentScore = 0.55
     static let caps: [Archetype: Int] = [.tab: 5, .document: 3, .typeTravel: 5, .archived: 3, .chromium: 8, .history: 3, .topDomain: 1]
     static let titleAndHostSites: Set<String> = ["figma.com", "maps.google.com", "notion.so", "app.notion.com", "zoom.us",
         "opentable.com", "zillow.com", "github.com", "app.mode.com", "console.cloud.google.com"]
@@ -108,7 +110,8 @@ enum CommandBarRanking {
         var pageKeys: [Int: Set<String>] = [:]
         func absorb(_ loser: Int, into winner: Int) {
             let own = candidates[loser].archetype == .chromium ? nativeScore(candidates[loser]) : 0
-            let value = max(absorbed[winner] ?? 0, absorbed[loser] ?? 0, own, lifts[candidates[loser].key] ?? 0)
+            let value = max(absorbed[winner] ?? 0, absorbed[loser] ?? 0, own, lifts[candidates[loser].key] ?? 0,
+                            candidates[loser].contentScore ?? 0)
             if value > 0 { absorbed[winner] = value }
             pageKeys[winner, default: []].formUnion(pageKeys[loser] ?? [])
         }
@@ -146,7 +149,7 @@ enum CommandBarRanking {
         for index in Set(kept.values) {
             let candidate = candidates[index]
             let quality = candidate.archetype == .chromium || index == defaultIndex ? 1 : match(prepared, candidate.texts)
-            guard quality > 0 || lifts[candidate.key] != nil || absorbed[index] != nil else { continue }
+            guard quality > 0 || lifts[candidate.key] != nil || absorbed[index] != nil || candidate.contentScore != nil else { continue }
             var score: Double
             switch candidate.archetype {
             case .chromium: score = nativeScore(candidate)
@@ -156,7 +159,7 @@ enum CommandBarRanking {
             case .topDomain: score = 0.78 * quality
             case .archived, .history: score = 0
             }
-            score = max(score, lifts[candidate.key] ?? 0, absorbed[index] ?? 0)
+            score = max(score, lifts[candidate.key] ?? 0, absorbed[index] ?? 0, candidate.contentScore ?? 0)
             scored.append((index, score, quality))
         }
         scored.sort { lhs, rhs in
@@ -240,5 +243,8 @@ struct CommandBarDocument: Equatable {
     let kind: Kind
     let id: UUID
     let title: String
-    var key: String { (kind == .note ? "document:" : "easel:") + id.uuidString.lowercased() }
+    var url: URL? = nil
+    var icon: String? = nil
+    var key: String { url.map(Self.noteKey) ?? (kind == .note ? "document:" : "easel:") + id.uuidString.lowercased() }
+    static func noteKey(_ url: URL) -> String { "note:" + url.standardizedFileURL.path }
 }

@@ -133,6 +133,20 @@ import Foundation
         expect(order([search("trip", 0), note], "trip").contains("document:1"), "a Note without a tab is a result")
         let tabbed = [note, C(archetype: .tab, key: "document:1", texts: ["Trip plans"])]
         expect(CommandBarRanking.rank(tabbed, query: "trip") == [1], "a Note open in a tab appears once, as its tab")
+        let noteURL = URL(fileURLWithPath: "/Users/parc-sample/Documents/Parc Notes/Packing.md")
+        expect(CommandBarDocument.noteKey(noteURL) == CommandBarDocument.noteKey(URL(fileURLWithPath: "/Users/parc-sample/Documents/./Parc Notes/Packing.md")),
+               "a note file has one key however its path is spelled")
+        let fileNote = CommandBarDocument(kind: .note, id: UUID(), title: "Packing", url: noteURL)
+        expect(fileNote.key == CommandBarDocument.noteKey(noteURL), "a note file's document key is its file key")
+        let bodyOnly = C(archetype: .document, key: fileNote.key, texts: ["Packing"], contentScore: CommandBarRanking.noteContentScore)
+        expect(order([search("passport", 0), bodyOnly], "passport").contains(fileNote.key), "a note whose body matches is a result")
+        let titled = C(archetype: .document, key: "note:/Passport renewal.md", texts: ["Passport renewal"])
+        expect(order([bodyOnly, titled], "passport") == ["note:/Passport renewal.md", fileNote.key],
+               "a title match outranks a body match")
+        let bodyTab = [bodyOnly, C(archetype: .tab, key: fileNote.key, texts: ["Packing"])]
+        expect(CommandBarRanking.rank(bodyTab, query: "passport") == [1], "a body match on a note open in a tab shows its tab")
+        let quiet = C(archetype: .document, key: "note:/Other.md", texts: ["Other"])
+        expect(!order([search("passport", 0), quiet], "passport").contains("note:/Other.md"), "a note matching nothing stays out")
         let visits: [(url: String, title: String)] = [("https://www.youtube.com/", "YouTube"), ("https://youtube.com/watch?v=1", "A video"),
                                                        ("https://example.com/a", ""), ("ftp://files.example.com/", "")]
         let domains = CommandBarRanking.topDomains(visits)
