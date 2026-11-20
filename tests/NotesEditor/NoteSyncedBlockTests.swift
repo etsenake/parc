@@ -88,6 +88,7 @@ struct NoteSyncedBlockTests {
         holdsOpenOriginalsAndLetsThemGo()
         holdsFindMovedOriginalsInTheLibrary()
         infoListsOtherNotes()
+        syncedBlocksNeverNest()
         print("NoteSyncedBlockTests passed")
     }
 
@@ -438,5 +439,13 @@ struct NoteSyncedBlockTests {
         let fromOriginal = engine.info(for: site(a).id, in: a)
         expectEqual(fromOriginal?.notes.map(\.lastPathComponent), ["B.md", "C.md"], "the original lists every other note")
         expect(fromOriginal?.isOriginal == true, "and knows it's the original")
+    }
+
+    static func syncedBlocksNeverNest() {
+        let a = session([original("k3x9qa", ["Inside"]), copy("#k3x9qa", ["Inside"])])
+        let target = site(a, 0).children[0].id
+        a.moveBlocks([site(a, 1).id], to: .after(target))
+        expectEqual(a.page.syncedSites().count, 2, "a synced block can't be dragged into another one")
+        expectEqual(texts(a, 0), ["Inside"], "the original keeps its content")
     }
 }

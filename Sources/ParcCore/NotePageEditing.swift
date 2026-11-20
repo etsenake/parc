@@ -880,6 +880,7 @@ extension NotePageSession {
         }
         guard let parent else { return !movesColumn }
         guard !isFlat, let parentBlock = page.block(parent) else { return false }
+        if blocks.contains(where: \.containsSynced), page.syncedSite(containing: parent) != nil { return false }
         if parentBlock.kind == .columns { return blocks.allSatisfy { $0.kind == .column } }
         if movesColumn { return false }
         if carriesColumns && (parentBlock.kind == .column || page.containingColumn(of: parent) != nil) { return false }

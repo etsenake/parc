@@ -1212,7 +1212,7 @@ final class NotePageEditor {
             return false
         case .blocks:
             guard let archive = reading.archive else { return false }
-            blocks = NoteClipboard.rebase(archive, into: environment).map { $0.withFreshIDs() }
+            blocks = synced.droppedBlocks(NoteClipboard.rebase(archive, into: environment), at: target).map { $0.withFreshIDs() }
         case .files:
             let result = NoteClipboard.blocks(forFiles: reading.files, environment: environment)
             blocks = result.blocks

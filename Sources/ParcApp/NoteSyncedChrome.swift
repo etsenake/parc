@@ -320,6 +320,26 @@ final class NoteSyncedController {
         return Self.unwrappingSynced(localized)
     }
 
+    func droppedBlocks(_ blocks: [NoteBlock], at target: NoteCanvasDropTarget?) -> [NoteBlock] {
+        guard let editor else { return blocks }
+        let localized = blocks.map { $0.localizingSyncedTargets(documentURL: editor.environment.documentURL) }
+        let page = editor.session.page
+        var inside = editor.isPlainText
+        switch target?.action {
+        case .move(let insertion)?:
+            switch insertion {
+            case .before(let id), .after(let id): inside = inside || page.parent(of: id).flatMap(page.syncedSite(containing:)) != nil
+            case .firstChild(let id), .lastChild(let id): inside = inside || page.syncedSite(containing: id) != nil
+            case .top: break
+            }
+        case .placeBeside(let id, _)?:
+            inside = inside || page.syncedSite(containing: id) != nil
+        case nil:
+            break
+        }
+        return inside ? Self.unwrappingSynced(localized) : localized
+    }
+
     static func unwrappingSynced(_ blocks: [NoteBlock]) -> [NoteBlock] {
         blocks.flatMap { block -> [NoteBlock] in
             if block.kind == .synced { return unwrappingSynced(block.children) }
