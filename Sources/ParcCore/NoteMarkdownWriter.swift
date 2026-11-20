@@ -49,7 +49,7 @@ struct NoteMDWriter {
     }
 
     private static func isBareEmptyParagraph(_ block: NoteBlock) -> Bool {
-        block.kind == .paragraph && block.text.isEmpty && block.color == nil && block.children.isEmpty
+        block.kind == .paragraph && block.text.isEmpty && block.color == nil && block.children.isEmpty && block.props.anchor == nil
     }
 
     private static func orderedDelimiter(_ block: NoteBlock) -> String? {
@@ -181,8 +181,11 @@ struct NoteMDWriter {
         return result + " -->"
     }
 
-    private func colorAttribute(_ block: NoteBlock) -> [(String, String?)] {
-        block.color.map { [("color", NoteMDColor.name($0))] } ?? []
+    private func blockAttributes(_ block: NoteBlock) -> [(String, String?)] {
+        var items: [(String, String?)] = []
+        if let color = block.color { items.append(("color", NoteMDColor.name(color))) }
+        if let anchor = block.props.anchor, NoteAnchor.isValid(anchor) { items.append(("id", anchor)) }
+        return items
     }
 
     private func suffix(_ items: [(String, String?)]) -> String {
@@ -229,7 +232,7 @@ struct NoteMDWriter {
         case .quote, .callout: return quote(block)
         case .divider:
             let fence = block.props.fence.flatMap { Self.isThematicBreak($0) ? $0 : nil } ?? "---"
-            return [fence] + trailingAttributes(colorAttribute(block))
+            return [fence] + trailingAttributes(blockAttributes(block))
         case .code: return code(block, afterList: afterList)
         case .equation: return equation(block)
         case .image, .video, .audio, .file, .embed: return [media(block)]
@@ -238,9 +241,9 @@ struct NoteMDWriter {
             var label = block.text
             label.updateMarks(in: 0..<label.length) { $0.link = nil }
             let text = inline.write(label, style: NoteMDInlineStyle(shape: .line, insideLink: true, trailingComment: true))
-            return ["[" + text + "](" + NoteMDInlineWriter.destination(block.props.target ?? "") + ")" + suffix(colorAttribute(block))]
+            return ["[" + text + "](" + NoteMDInlineWriter.destination(block.props.target ?? "") + ")" + suffix(blockAttributes(block))]
         case .table: return table(block)
-        case .tableOfContents: return ["<!-- toc -->"] + trailingAttributes(colorAttribute(block))
+        case .tableOfContents: return ["<!-- toc -->"] + trailingAttributes(blockAttributes(block))
         case .columns: return columns(block)
         case .column: return columns(NoteBlock(.columns, children: [block]))
         case .html, .raw: return block.text.string.components(separatedBy: "\n")
@@ -258,7 +261,7 @@ struct NoteMDWriter {
     }
 
     private func paragraph(_ block: NoteBlock) -> [String] {
-        var items = colorAttribute(block)
+        var items = blockAttributes(block)
         if block.text.isEmpty { return [attributes([("paragraph", nil)] + items)] }
         var style = NoteMDInlineStyle.paragraph
         style.trailingComment = !items.isEmpty
@@ -285,7 +288,7 @@ struct NoteMDWriter {
     }
 
     private func heading(_ block: NoteBlock) -> [String] {
-        let items = colorAttribute(block)
+        let items = blockAttributes(block)
         let level = min(max(block.props.level, 1), 6)
         if level <= 2, !block.text.isEmpty, block.props.fence == (level == 1 ? "=" : "-") {
             let lines = textLines(block.text, style: .paragraph, attributes: items)
@@ -307,7 +310,7 @@ struct NoteMDWriter {
         }
         let indent = String(repeating: " ", count: marker.count + 1)
         if block.kind == .todo { marker += block.props.checked ? " [x]" : " [ ]" }
-        let items = colorAttribute(block)
+        let items = blockAttributes(block)
         var textLines: [String]
         let firstChildIsParagraph = Self.writesAsParagraph(block.children.first)
         if block.text.isEmpty {
@@ -327,7 +330,7 @@ struct NoteMDWriter {
             let hasFirstLine = !textLines.isEmpty || block.kind == .todo
             var leading = hasFirstLine ? 1 : 0
             if let first = block.children.first, first.kind.isListItem, hasFirstLine {
-                let firstLineHasContent = !first.text.isEmpty || first.color != nil || first.kind == .todo || Self.writesAsParagraph(first.children.first)
+                let firstLineHasContent = !first.text.isEmpty || first.color != nil || first.props.anchor != nil || first.kind == .todo || Self.writesAsParagraph(first.children.first)
                 let interrupts = firstLineHasContent && (Self.orderedDelimiter(first) == nil || (first.props.listStart ?? 1) == 1)
                 leading = interrupts ? 0 : 1
             }
@@ -340,7 +343,7 @@ struct NoteMDWriter {
 
     private func quote(_ block: NoteBlock) -> [String] {
         var inner: [String] = []
-        let items = (block.kind == .callout ? (block.props.icon.map { [("icon", $0)] } ?? []) : []) + colorAttribute(block)
+        let items = (block.kind == .callout ? (block.props.icon.map { [("icon", $0)] } ?? []) : []) + blockAttributes(block)
         let firstChildIsParagraph = Self.writesAsParagraph(block.children.first)
         var leading = 1
         var children = block.children
@@ -362,7 +365,8 @@ struct NoteMDWriter {
             } else {
                 let title = inline.write(block.text, style: NoteMDInlineStyle(shape: .line, trailingComment: !items.isEmpty))
                 inner.append(marker + (title.isEmpty ? "" : " " + title) + suffix(items))
-                if let first = children.first, first.kind == .paragraph, !first.text.isEmpty, first.color == nil, first.children.isEmpty {
+                if let first = children.first, first.kind == .paragraph, !first.text.isEmpty, first.color == nil, first.props.anchor == nil,
+                   first.children.isEmpty {
                     inner.append(contentsOf: paragraph(first))
                     children.removeFirst()
                 }
@@ -382,7 +386,7 @@ struct NoteMDWriter {
     }
 
     private func toggle(_ block: NoteBlock) -> [String] {
-        let content = inline.write(block.text, style: NoteMDInlineStyle(shape: .line, htmlSafe: true, trailingComment: block.color != nil)) + suffix(colorAttribute(block))
+        let content = inline.write(block.text, style: NoteMDInlineStyle(shape: .line, htmlSafe: true, trailingComment: !blockAttributes(block).isEmpty)) + suffix(blockAttributes(block))
         let summary: String
         if block.kind == .heading {
             let level = min(max(block.props.level, 1), 6)
@@ -401,7 +405,7 @@ struct NoteMDWriter {
         var items: [(String, String?)] = []
         if !block.props.caption.isEmpty { items.append(("caption", inline.write(block.props.caption, style: .verbatim))) }
         if block.props.wrap { items.append(("wrap", nil)) }
-        items += colorAttribute(block)
+        items += blockAttributes(block)
         if block.props.fence == "    ", block.props.language.isEmpty, block.props.info == nil, items.isEmpty, !afterList,
            let first = lines.first, !first.trimmingCharacters(in: .whitespaces).isEmpty,
            let last = lines.last, !last.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -442,7 +446,7 @@ struct NoteMDWriter {
     private func equation(_ block: NoteBlock) -> [String] {
         let text = block.text.string
         let lines = text.components(separatedBy: "\n")
-        let items = colorAttribute(block)
+        let items = blockAttributes(block)
         if block.props.fence != nil || Self.equationNeedsFence(text) {
             let fence = Self.fence(for: text, preferred: block.props.fence, info: "math")
             return [fence + "math"] + (text.isEmpty ? [] : lines) + [fence] + trailingAttributes(items)
@@ -478,7 +482,7 @@ struct NoteMDWriter {
         }
         if let width = block.props.width { items.append(("width", Self.number(width))) }
         if block.props.alignment != .center { items.append(("align", block.props.alignment.rawValue)) }
-        items += colorAttribute(block)
+        items += blockAttributes(block)
         return line + suffix(items)
     }
 
@@ -501,7 +505,7 @@ struct NoteMDWriter {
         if let value = bookmark.siteName { items.append(("site", value)) }
         if let value = bookmark.iconURL { items.append(("favicon", value)) }
         if let value = bookmark.imageURL { items.append(("thumbnail", value)) }
-        items += colorAttribute(block)
+        items += blockAttributes(block)
         return line + suffix(items)
     }
 
@@ -540,7 +544,7 @@ struct NoteMDWriter {
         if table.columnWidths.contains(where: { $0 != nil }) {
             items.append(("widths", table.columnWidths.map { $0.map(Self.number) ?? "" }.joined(separator: ",")))
         }
-        items += colorAttribute(block)
+        items += blockAttributes(block)
         return lines + trailingAttributes(items)
     }
 
@@ -557,7 +561,7 @@ struct NoteMDWriter {
             lines.append(":::")
         }
         lines.append("::::")
-        return lines + trailingAttributes(colorAttribute(block))
+        return lines + trailingAttributes(blockAttributes(block))
     }
 
     static func number(_ value: Double) -> String {

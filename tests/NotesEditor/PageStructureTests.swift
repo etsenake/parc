@@ -84,6 +84,26 @@ struct PageStructureTests {
         let moved = session.page.blocks[0].props.table!
         expect(moved.alignments == [nil, .right] && moved.columnWidths == [180, NoteTable.minimumColumnWidth], "alignment and width travel with their column")
         expect(!session.setTableColumnAlignment(id, column: 9, .left), "missing columns are refused")
+
+        let named = makeSession([table([["a", "b"], ["c", "d"]])])
+        let grid2 = named.page.blocks[0].id
+        let landing = cellCaret(grid2, 2, 1)
+        named.insertTableRow(grid2, at: 2, name: "Add Row", select: landing)
+        expectEqual(named.undoActionName, "Add Row", "callers can name a table step")
+        expectEqual(named.selection, landing, "and say where the caret lands")
+        var changes: [NotePageChange.Kind] = []
+        let subscription = named.changes.sink { changes.append($0.kind) }
+        named.setTableHeaderRow(grid2, false)
+        named.setTableColumnAlignment(grid2, column: 0, .center)
+        named.insertTableColumn(grid2, at: 0)
+        expectEqual(changes, [.text, .text, .structure], "flag and alignment tweaks are light, new columns are structural")
+        subscription.cancel()
+        expect(named.setTableColumnWidths(grid2, [120, nil, 240], name: "Resize Column"), "widths can be set all at once")
+        expectEqual(named.page.blocks[0].props.table?.columnWidths, [120, nil, 240], "every column takes its width")
+        expect(!named.setTableColumnWidths(grid2, [120, nil, 240]), "setting the same widths again changes nothing")
+        expect(named.setTableColumnWidths(grid2, [], name: "Fit to Width"), "an empty list fits the table to the page")
+        expectEqual(named.page.blocks[0].props.table?.columnWidths, [nil, nil, nil], "all widths clear")
+        expectEqual(named.undoActionName, "Fit to Width", "with the caller's name")
     }
 
     static func columnLayouts() {
@@ -117,6 +137,16 @@ struct PageStructureTests {
         nested.placeBeside([nested.id("w")], target: nested.id("y"), side: .right)
         expect(nested.page.blocks[0].children.count == 3 && nested.page.allBlocks().filter { $0.kind == .columns }.count == 1,
                "dropping beside a nested block in a column adds a column instead of nesting columns")
+
+        let fullRow = makeSession([columns([[para("1")], [para("2")], [para("3")], [para("4")], [para("5")]]), para("more")])
+        fullRow.placeBeside([fullRow.id("more")], target: fullRow.page.blocks[0].id, side: .right)
+        expect(fullRow.page.blocks.count == 2 && fullRow.page.allBlocks().filter { $0.kind == .columns }.count == 1 && !fullRow.canUndo,
+               "a whole row with five columns refuses instead of nesting columns")
+        fullRow.placeBeside([fullRow.id("more")], target: fullRow.page.blocks[0].children[2].id, side: .left)
+        expect(fullRow.page.blocks.count == 2 && !fullRow.canUndo, "so does one of its columns")
+        let pair = makeSession([columns([[para("l")], [para("r")]]), para("new")])
+        pair.placeBeside([pair.id("new")], target: pair.page.blocks[0].id, side: .left)
+        expectOutline(pair.page, "columns\n  column\n    p new\n  column\n    p l\n  column\n    p r", "dropping beside a whole row adds an edge column")
 
         let refuse = makeSession([columns([[para("x")], [para("y")]]), para("z")])
         refuse.placeBeside([refuse.page.blocks[0].id], target: refuse.id("z"), side: .right)

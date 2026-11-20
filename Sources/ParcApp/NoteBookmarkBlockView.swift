@@ -4,8 +4,6 @@ import AppKit
 class NoteLinkBlockView: NoteCaptionedBlockView {
     enum Style { case bookmark, embed }
 
-    private static var written: Set<String> = []
-
     private var entry: NoteLinkEntryView?
     private var card: NoteLinkCardView?
     private var tracking: NSTrackingArea?
@@ -105,13 +103,12 @@ class NoteLinkBlockView: NoteCaptionedBlockView {
     }
 
     private func storeIfNeeded(_ preview: NoteLinkPreview, for url: URL) {
-        guard canEdit, block.props.bookmark == nil, !preview.isEmpty, let session = editor?.session else { return }
-        let key = blockID.description + "|" + (block.props.source ?? "")
-        guard !Self.written.contains(key) else { return }
-        Self.written.insert(key)
-        let id = blockID
-        session.edit("Link Preview", coalescing: .typing(id, .body), affected: [id]) { page in
-            page.update(id) { $0.props.bookmark = preview.bookmark }
+        guard canEdit, block.props.bookmark == nil, !preview.isEmpty, let session = editor?.session,
+              let source = block.props.source else { return }
+        let stored = preview.bookmark
+        session.updateBlockMetadata(blockID, kind: .structure) { block in
+            guard block.props.source == source, block.props.bookmark == nil else { return }
+            block.props.bookmark = stored
         }
     }
 

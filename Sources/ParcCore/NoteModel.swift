@@ -517,6 +517,7 @@ struct NoteBlockProps: Hashable, Codable {
     var bookmark: NoteBookmark?
     var table: NoteTable?
     var target: String?
+    var anchor: String?
 }
 
 private final class NoteBlockPropsStorage {
@@ -614,6 +615,7 @@ struct NoteBlock: Hashable, Identifiable, Codable {
     func withFreshIDs() -> NoteBlock {
         var copy = self
         copy.id = NoteBlockID()
+        if copy.props.anchor != nil { copy.props.anchor = nil }
         copy.children = children.map { $0.withFreshIDs() }
         return copy
     }
@@ -1129,5 +1131,99 @@ enum NotePageSelection: Hashable {
     var caret: NotePosition? {
         if case .text(let anchor, let head) = self, anchor == head { return head }
         return nil
+    }
+}
+
+enum NoteAnchor {
+    static let length = 6
+    private static let letters = Array("abcdefghijkmnpqrstuvwxyz")
+    private static let alphabet = Array("abcdefghijkmnpqrstuvwxyz23456789")
+
+    static func make<Generator: RandomNumberGenerator>(using generator: inout Generator) -> String {
+        var result = String(letters.randomElement(using: &generator)!)
+        while result.count < length { result.append(alphabet.randomElement(using: &generator)!) }
+        return result
+    }
+
+    static func isValid(_ value: String) -> Bool {
+        !value.isEmpty && value.count <= 64 && value.unicodeScalars.allSatisfy { scalar in
+            scalar.isASCII && (CharacterSet.alphanumerics.contains(scalar) || scalar == "-" || scalar == "_")
+        }
+    }
+
+    static func githubSlug(_ text: String) -> String {
+        var result = ""
+        for scalar in text.lowercased().unicodeScalars {
+            if scalar == " " { result.append("-"); continue }
+            if scalar == "-" || scalar == "_" { result.unicodeScalars.append(scalar); continue }
+            switch scalar.properties.generalCategory {
+            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
+                 .nonspacingMark, .spacingMark, .enclosingMark, .decimalNumber, .letterNumber, .otherNumber,
+                 .connectorPunctuation:
+                result.unicodeScalars.append(scalar)
+            default:
+                continue
+            }
+        }
+        return result
+    }
+
+    static func fragment(_ value: String) -> String {
+        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("#") { trimmed.removeFirst() }
+        return trimmed.removingPercentEncoding ?? trimmed
+    }
+}
+
+extension NotePage {
+    func headingSlugs() -> [(id: NoteBlockID, slug: String)] {
+        var counts: [String: Int] = [:]
+        var used: Set<String> = []
+        var result: [(id: NoteBlockID, slug: String)] = []
+        for block in allBlocks() where block.kind == .heading {
+            let base = NoteAnchor.githubSlug(block.text.plainText.trimmingCharacters(in: .whitespacesAndNewlines))
+            var slug = base
+            var count = counts[base] ?? 0
+            while used.contains(slug) {
+                count += 1
+                slug = base + "-" + String(count)
+            }
+            counts[base] = count
+            used.insert(slug)
+            result.append((block.id, slug))
+        }
+        return result
+    }
+
+    var blockAnchors: Set<String> {
+        Set(allBlocks().compactMap(\.props.anchor))
+    }
+
+    var takenAnchorNames: Set<String> {
+        blockAnchors.union(headingSlugs().map(\.slug))
+    }
+
+    func block(forAnchor value: String) -> NoteBlockID? {
+        let fragment = NoteAnchor.fragment(value)
+        guard !fragment.isEmpty else { return nil }
+        if let match = allBlocks().first(where: { $0.props.anchor == fragment }) { return match.id }
+        let slugs = headingSlugs()
+        let lowered = fragment.lowercased()
+        if let match = slugs.first(where: { $0.slug == lowered }) { return match.id }
+        let slugged = NoteAnchor.githubSlug(fragment)
+        guard !slugged.isEmpty else { return nil }
+        return slugs.first(where: { $0.slug == slugged })?.id
+    }
+
+    func uniqueAnchor<Generator: RandomNumberGenerator>(using generator: inout Generator, avoiding extra: Set<String> = []) -> String {
+        let taken = takenAnchorNames.union(extra)
+        var candidate = NoteAnchor.make(using: &generator)
+        var attempts = 0
+        while taken.contains(candidate) {
+            attempts += 1
+            candidate = NoteAnchor.make(using: &generator)
+            if attempts > 64 { candidate += String(attempts) }
+        }
+        return candidate
     }
 }

@@ -937,6 +937,13 @@ extension NotePageSession {
             let moved = page.removeBlocks(moving)
             page.collapseEmptyColumns()
             guard let targetBlock = page.block(target) else { page = original; return }
+            if targetBlock.kind == .columns {
+                guard targetBlock.children.count < Self.maximumColumns else { page = original; return }
+                page.insert([NoteBlock(.column, children: moved)], side == .left ? .firstChild(of: target) : .lastChild(of: target))
+                page.update(target) { block in for index in block.children.indices { block.children[index].props.width = nil } }
+                page.collapseEmptyColumns()
+                return
+            }
             let column = targetBlock.kind == .column ? target : page.containingColumn(of: target)
             if let column {
                 guard let columnsID = page.parent(of: column), let columns = page.block(columnsID),
@@ -1580,7 +1587,8 @@ extension NotePageSession {
     }
 
     @discardableResult
-    private func editTable(_ id: NoteBlockID, name: String, coalescing: NoteEditCoalescing = .none,
+    private func editTable(_ id: NoteBlockID, name: String, kind: NotePageChange.Kind = .structure, coalescing: NoteEditCoalescing = .none,
+                           select: NotePageSelection? = nil,
                            _ transform: (inout NoteTable) -> Bool, remap: (NoteTableCell) -> NoteTableCell?) -> Bool {
         guard var table = page.block(id)?.props.table, transform(&table) else { return false }
         table.normalize()
@@ -1604,73 +1612,73 @@ extension NotePageSession {
         case .cells(let table, let anchor, let head) where table == id: after = .cells(table: id, anchor: movedCell(anchor), head: movedCell(head))
         default: after = current
         }
-        edit(name, coalescing: coalescing, affected: [id], selection: after) { page in
+        edit(name, kind: kind, coalescing: coalescing, affected: [id], selection: select ?? after) { page in
             page.update(id) { $0.props.table = updated }
         }
         return true
     }
 
     @discardableResult
-    func insertTableRow(_ id: NoteBlockID, at index: Int) -> Bool {
-        editTable(id, name: "Insert Row", { table in table.insertRow(at: index); return true }) { cell in
+    func insertTableRow(_ id: NoteBlockID, at index: Int, name: String = "Insert Row", select: NotePageSelection? = nil) -> Bool {
+        editTable(id, name: name, select: select, { table in table.insertRow(at: index); return true }) { cell in
             NoteTableCell(row: cell.row >= index ? cell.row + 1 : cell.row, column: cell.column)
         }
     }
 
     @discardableResult
-    func deleteTableRow(_ id: NoteBlockID, at index: Int) -> Bool {
-        editTable(id, name: "Delete Row", { $0.deleteRow(at: index) }) { cell in
+    func deleteTableRow(_ id: NoteBlockID, at index: Int, name: String = "Delete Row") -> Bool {
+        editTable(id, name: name, { $0.deleteRow(at: index) }) { cell in
             if cell.row == index { return nil }
             return NoteTableCell(row: cell.row > index ? cell.row - 1 : cell.row, column: cell.column)
         }
     }
 
     @discardableResult
-    func duplicateTableRow(_ id: NoteBlockID, at index: Int) -> Bool {
-        editTable(id, name: "Duplicate Row", { $0.duplicateRow(at: index) }) { cell in
+    func duplicateTableRow(_ id: NoteBlockID, at index: Int, name: String = "Duplicate Row") -> Bool {
+        editTable(id, name: name, { $0.duplicateRow(at: index) }) { cell in
             NoteTableCell(row: cell.row > index ? cell.row + 1 : cell.row, column: cell.column)
         }
     }
 
     @discardableResult
-    func moveTableRow(_ id: NoteBlockID, from source: Int, to destination: Int) -> Bool {
-        editTable(id, name: "Move Row", { $0.moveRow(from: source, to: destination) }) { cell in
+    func moveTableRow(_ id: NoteBlockID, from source: Int, to destination: Int, name: String = "Move Row") -> Bool {
+        editTable(id, name: name, { $0.moveRow(from: source, to: destination) }) { cell in
             NoteTableCell(row: NoteTable.movedIndex(cell.row, from: source, to: destination), column: cell.column)
         }
     }
 
     @discardableResult
-    func insertTableColumn(_ id: NoteBlockID, at index: Int) -> Bool {
-        editTable(id, name: "Insert Column", { table in table.insertColumn(at: index); return true }) { cell in
+    func insertTableColumn(_ id: NoteBlockID, at index: Int, name: String = "Insert Column", select: NotePageSelection? = nil) -> Bool {
+        editTable(id, name: name, select: select, { table in table.insertColumn(at: index); return true }) { cell in
             NoteTableCell(row: cell.row, column: cell.column >= index ? cell.column + 1 : cell.column)
         }
     }
 
     @discardableResult
-    func deleteTableColumn(_ id: NoteBlockID, at index: Int) -> Bool {
-        editTable(id, name: "Delete Column", { $0.deleteColumn(at: index) }) { cell in
+    func deleteTableColumn(_ id: NoteBlockID, at index: Int, name: String = "Delete Column") -> Bool {
+        editTable(id, name: name, { $0.deleteColumn(at: index) }) { cell in
             if cell.column == index { return nil }
             return NoteTableCell(row: cell.row, column: cell.column > index ? cell.column - 1 : cell.column)
         }
     }
 
     @discardableResult
-    func duplicateTableColumn(_ id: NoteBlockID, at index: Int) -> Bool {
-        editTable(id, name: "Duplicate Column", { $0.duplicateColumn(at: index) }) { cell in
+    func duplicateTableColumn(_ id: NoteBlockID, at index: Int, name: String = "Duplicate Column") -> Bool {
+        editTable(id, name: name, { $0.duplicateColumn(at: index) }) { cell in
             NoteTableCell(row: cell.row, column: cell.column > index ? cell.column + 1 : cell.column)
         }
     }
 
     @discardableResult
-    func moveTableColumn(_ id: NoteBlockID, from source: Int, to destination: Int) -> Bool {
-        editTable(id, name: "Move Column", { $0.moveColumn(from: source, to: destination) }) { cell in
+    func moveTableColumn(_ id: NoteBlockID, from source: Int, to destination: Int, name: String = "Move Column") -> Bool {
+        editTable(id, name: name, { $0.moveColumn(from: source, to: destination) }) { cell in
             NoteTableCell(row: cell.row, column: NoteTable.movedIndex(cell.column, from: source, to: destination))
         }
     }
 
     @discardableResult
     func setTableHeaderRow(_ id: NoteBlockID, _ enabled: Bool) -> Bool {
-        editTable(id, name: "Header Row", { table in
+        editTable(id, name: "Header Row", kind: .text, { table in
             guard table.headerRow != enabled else { return false }
             table.headerRow = enabled
             return true
@@ -1679,7 +1687,7 @@ extension NotePageSession {
 
     @discardableResult
     func setTableHeaderColumn(_ id: NoteBlockID, _ enabled: Bool) -> Bool {
-        editTable(id, name: "Header Column", { table in
+        editTable(id, name: "Header Column", kind: .text, { table in
             guard table.headerColumn != enabled else { return false }
             table.headerColumn = enabled
             return true
@@ -1688,7 +1696,7 @@ extension NotePageSession {
 
     @discardableResult
     func setTableColumnWidth(_ id: NoteBlockID, column: Int, width: Double?) -> Bool {
-        editTable(id, name: "Resize Column", coalescing: .adjusting(id), { table in
+        editTable(id, name: "Resize Column", kind: .text, coalescing: .adjusting(id), { table in
             guard column >= 0, column < table.columnCount else { return false }
             table.setColumnWidth(width, at: column)
             return true
@@ -1697,10 +1705,19 @@ extension NotePageSession {
 
     @discardableResult
     func setTableColumnAlignment(_ id: NoteBlockID, column: Int, _ alignment: NoteAlignment?) -> Bool {
-        editTable(id, name: "Align Column", { table in
+        editTable(id, name: "Align Column", kind: .text, { table in
             guard column >= 0, column < table.columnCount else { return false }
             table.setAlignment(alignment, at: column)
             return true
+        }) { $0 }
+    }
+
+    @discardableResult
+    func setTableColumnWidths(_ id: NoteBlockID, _ widths: [Double?], name: String = "Resize Column") -> Bool {
+        editTable(id, name: name, kind: .text, { table in
+            let before = table.columnWidths
+            for index in table.columnWidths.indices { table.setColumnWidth(index < widths.count ? widths[index] : nil, at: index) }
+            return table.columnWidths != before
         }) { $0 }
     }
 }

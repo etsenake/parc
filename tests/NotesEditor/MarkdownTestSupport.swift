@@ -88,6 +88,7 @@ enum MarkdownCheck {
         if let value = props.bookmark { parts.append("bookmark=\(value)") }
         if let value = props.table { parts.append("table=\(value.rows.map { $0.map(\.string) }) align=\(value.alignments) header=\(value.headerRow)/\(value.headerColumn) widths=\(value.columnWidths)") }
         if let value = props.target { parts.append("target=\(value)") }
+        if let value = props.anchor { parts.append("anchor=\(value)") }
         return parts.joined(separator: " ")
     }
 

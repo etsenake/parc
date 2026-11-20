@@ -611,6 +611,7 @@ struct NoteMDReader {
         if let width = values["width"], let number = Double(width) { block.props.width = number }
         if let align = values["align"], let alignment = NoteAlignment(rawValue: align.lowercased()) { block.props.alignment = alignment }
         if let caption = values["caption"] { block.props.caption = self.caption(caption) }
+        if let anchor = values["id"], NoteAnchor.isValid(anchor) { block.props.anchor = anchor }
         if attributes.flags.contains("wrap") { block.props.wrap = true }
         if block.kind == .bookmark {
             var bookmark = block.props.bookmark ?? NoteBookmark()
