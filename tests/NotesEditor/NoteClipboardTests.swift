@@ -45,12 +45,50 @@ struct NoteClipboardTests {
         inlineMedia()
         rebaseRefusals()
         asyncImports()
+        offlineRichText()
         print("NoteClipboardTests passed")
     }
 
     static func wait(_ done: () -> Bool) {
         let deadline = Date().addingTimeInterval(10)
         while !done() && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+    }
+
+    static func offlineRichText() {
+        let scrub = NoteOfflineHTML.scrub
+        expect(scrub("<p>Hi <img src=\"https://tracker.example/p.gif\" alt=\"Cat &amp; dog\"> there</p>") == "<p>Hi Cat &amp; dog there</p>",
+               "a remote picture becomes its alt text")
+        expect(scrub("<img alt='<b>x</b>' src=//cdn.example/a.png>") == "&lt;b&gt;x&lt;/b&gt;", "alt text can't smuggle markup back in")
+        for local in ["<img src=\"file:///tmp/a.png\" alt=\"x\">", "<img src=\"Attachments/a%20b.png\">", "<img src=\"data:image/png;base64,AAAA\">",
+                      "<a href=\"https://example.com\">link</a>", "<p style=\"color: red\">red</p>", "<span data-color=\"red\">x</span>",
+                      "<video controls></video>", "<br/>", "<!DOCTYPE html>", "<p>1 < 2</p>"] {
+            let kept = local == "<p>1 < 2</p>" ? "<p>1 &lt; 2</p>" : local
+            expect(scrub(local) == kept, "\(local) stays as it is: \(scrub(local))")
+        }
+        let hostile = [
+            "<img src=\"h&#116;tps://x.example/a.png\">", "<img src=\" https://x.example/a.png\">", "<img src=\"java&#x0A;script:x\">",
+            "<img src=\"a.png\" srcset=\"https://x.example/a2.png 2x, b.png 1x\">", "<link rel=\"stylesheet\" href=\"https://x.example/s.css\">",
+            "<base href=\"https://x.example/\"><img src=\"a.png\">", "<iframe src=\"https://x.example\">fallback</iframe>",
+            "<script src=\"https://x.example/s.js\"></script>", "<object data=\"https://x.example/o\"><img src=\"https://x.example/i\"></object>",
+            "<embed src=\"https://x.example/e\">", "<video src=\"https://x.example/v.mp4\" poster=\"https://x.example/p.jpg\"></video>",
+            "<audio><source src=\"https://x.example/a.mp3\"></audio>", "<svg><image href=\"https://x.example/i.png\"/></svg>",
+            "<svg><use xlink:href=\"https://x.example/s.svg#a\"/></svg>", "<table background=\"https://x.example/t.png\"><tr><td>x</td></tr></table>",
+            "<style>@import url(https://x.example/s.css); p { background: url('https://x.example/bg.png') }</style>",
+            "<style>@import 'https://x.example/s.css';</style>", "<p style=\"background-image:url(&quot;https://x.example/bg.png&quot;)\">x</p>",
+            "<p style=\"background:-webkit-image-set('https://x.example/a.png' 1x)\">x</p>", "<p style=\"background:u\\72l(https://x.example/a)\">x</p>",
+            "<meta http-equiv=\"refresh\" content=\"0;url=https://x.example\">", "<input type=\"image\" src=\"https://x.example/b.png\">",
+            "<!--[if IE]><img src=\"https://x.example/ie.png\"><![endif]-->", "<IMG SRC=\"HTTPS://x.example/a.png\">",
+        ]
+        for html in hostile {
+            let clean = scrub(html)
+            expect(!clean.lowercased().contains("x.example"), "\(html) loses its remote subresource: \(clean)")
+        }
+        expect(scrub("<video src=\"https://x.example/v.mp4\" controls></video>") == "<video controls></video>", "a remote video keeps its element")
+        expect(scrub("<img src=\"a.png\" srcset=\"https://x.example/a2.png 2x\" alt=\"pic\">") == "<img src=\"a.png\" alt=\"pic\">",
+               "a local picture just loses its remote extra sizes")
+        expect(scrub("<iframe src=\"https://x.example\">fallback</iframe><p>after</p>") == "<p>after</p>", "dropped frames don't swallow what follows")
+        expect(NoteOfflineHTML.offlineCSS("p { color: red; background: url(Attachments/bg.png) }") == "p { color: red; background: url(Attachments/bg.png) }",
+               "local CSS images stay")
     }
 
     static func rebaseRefusals() {

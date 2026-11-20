@@ -479,12 +479,12 @@ final class NoteRichTextProvider: NSObject, NSPasteboardItemDataProvider, @unche
     }
 
     func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
-        guard type == .rtf, let data = html.data(using: .utf8) else { return }
+        guard type == .rtf, let data = NoteOfflineHTML.scrub(html).data(using: .utf8) else { return }
         var options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
             .documentType: NSAttributedString.DocumentType.html,
             .characterEncoding: String.Encoding.utf8.rawValue,
         ]
-        if let base { options[.baseURL] = base }
+        if let base, base.isFileURL { options[.baseURL] = base }
         guard let rich = try? NSAttributedString(data: data, options: options, documentAttributes: nil),
               let rtf = rich.rtf(from: NSRange(location: 0, length: rich.length), documentAttributes: [:]) else { return }
         item.setData(rtf, forType: .rtf)
@@ -494,5 +494,295 @@ final class NoteRichTextProvider: NSObject, NSPasteboardItemDataProvider, @unche
         DispatchQueue.main.async {
             MainActor.assumeIsolated { NoteRichTextProvider.live.removeAll { $0 === self } }
         }
+    }
+}
+
+enum NoteOfflineHTML {
+    private struct Attribute {
+        var name: String
+        var value: String?
+        var raw: String
+    }
+
+    private struct Tag {
+        var name: String
+        var attributes: [Attribute]
+        var selfClosing: Bool
+        var end: Int
+
+        func value(_ key: String) -> String? { attributes.first { $0.name == key }?.value }
+    }
+
+    private static let droppedWithContent: Set<String> = [
+        "script", "iframe", "object", "applet", "frameset", "noembed", "noframes", "template", "portal", "fencedframe",
+    ]
+    private static let droppedTags: Set<String> = ["base", "link", "meta", "embed", "source", "track", "param", "frame", "bgsound", "keygen"]
+    private static let pictureTags: Set<String> = ["img", "image"]
+    private static let primarySources: Set<String> = ["src", "href", "xlink:href"]
+    private static let resourceAttributes: Set<String> = [
+        "src", "poster", "background", "lowsrc", "dynsrc", "data", "codebase", "archive", "longdesc", "profile", "manifest", "icon", "ping",
+    ]
+    private static let candidateAttributes: Set<String> = ["srcset", "imagesrcset"]
+    private static let linkTags: Set<String> = ["a", "area"]
+    private static let localSchemes: Set<String> = ["file", "data", "about", "cid"]
+    private static let namedEntities: [String: String] = [
+        "amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'", "colon": ":", "sol": "/", "bsol": "\\", "period": ".",
+        "tab": "\t", "newline": "\n", "nbsp": " ", "num": "#", "quest": "?", "lpar": "(", "rpar": ")",
+    ]
+
+    static func scrub(_ html: String) -> String {
+        let input = Array(html.unicodeScalars)
+        var output = String.UnicodeScalarView()
+        var index = 0
+        func append(_ text: String) { output.append(contentsOf: text.unicodeScalars) }
+        while index < input.count {
+            guard input[index] == "<" else {
+                let next = input[index...].firstIndex(of: "<") ?? input.count
+                output.append(contentsOf: input[index..<next])
+                index = next
+                continue
+            }
+            if starts(input, at: index, with: "<!--") {
+                index = find(input, "-->", from: index + 4).map { $0 + 3 } ?? input.count
+                continue
+            }
+            guard index + 1 < input.count else { append("&lt;"); index += 1; continue }
+            let next = input[index + 1]
+            if next == "!" || next == "?" || next == "/" {
+                let end = (input[(index + 1)...].firstIndex(of: ">") ?? input.count - 1) + 1
+                output.append(contentsOf: input[index..<end])
+                index = end
+                continue
+            }
+            guard next.isASCII, next.properties.isAlphabetic, let tag = parseTag(input, at: index) else {
+                if next.isASCII, next.properties.isAlphabetic { break }
+                append("&lt;")
+                index += 1
+                continue
+            }
+            let start = index
+            index = tag.end
+            if droppedWithContent.contains(tag.name) {
+                if !tag.selfClosing { index = closingTag(input, tag.name, from: index).map { tagEnd(input, from: $0) } ?? input.count }
+                continue
+            }
+            if droppedTags.contains(tag.name) { continue }
+            let picture = pictureTags.contains(tag.name) || (tag.name == "input" && tag.value("type")?.lowercased() == "image")
+            if picture, tag.attributes.contains(where: { primarySources.contains($0.name) && refersRemotely($0, in: tag.name) }) {
+                append(escapedText(tag.value("alt") ?? ""))
+                continue
+            }
+            append(render(tag, raw: String(String.UnicodeScalarView(input[start..<tag.end]))))
+            if tag.name == "style", !tag.selfClosing {
+                let close = closingTag(input, "style", from: index) ?? input.count
+                append(offlineCSS(String(String.UnicodeScalarView(input[index..<close]))))
+                index = close
+            }
+        }
+        return String(output)
+    }
+
+    static func offlineCSS(_ css: String) -> String {
+        if css.contains("\\") {
+            let decoded = cssUnescaped(css).lowercased()
+            if ["url(", "@import", "image(", "image-set(", "src("].contains(where: decoded.contains) { return "" }
+        }
+        var result = css.replacingOccurrences(of: "@import[^;]*;?", with: "", options: [.regularExpression, .caseInsensitive])
+        result = replacing(#"url\(\s*("[^"]*"|'[^']*'|[^)]*?)\s*\)"#, in: result) { match in
+            let target = match.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            return isRemote(target) ? "none" : nil
+        }
+        result = replacing(#"(?:-webkit-)?image-set\((?:[^()]|\([^()]*\))*\)"#, in: result) { match in
+            let strings = match.split(whereSeparator: { $0 == "\"" || $0 == "'" }).enumerated().filter { $0.offset % 2 == 1 }.map { String($0.element) }
+            return strings.contains(where: isRemote) ? "none" : nil
+        }
+        return result
+    }
+
+    static func isRemote(_ raw: String) -> Bool {
+        let decoded = decodeEntities(raw)
+        let compact = String(String.UnicodeScalarView(decoded.unicodeScalars.filter { $0.value > 0x20 && $0.value != 0x7F && !$0.properties.isWhitespace }))
+        if compact.isEmpty { return false }
+        if compact.hasPrefix("//") || compact.hasPrefix("\\") || compact.hasPrefix("/\\") || compact.hasPrefix("\\/") { return true }
+        let head = compact.prefix { $0 != "/" && $0 != "?" && $0 != "#" }
+        if head.contains("&") || head.contains("\\") { return true }
+        guard let colon = head.firstIndex(of: ":") else { return false }
+        return !localSchemes.contains(head[..<colon].lowercased())
+    }
+
+    private static func refersRemotely(_ attribute: Attribute, in tag: String) -> Bool {
+        guard let value = attribute.value else { return false }
+        if candidateAttributes.contains(attribute.name) {
+            return value.split(separator: ",").contains { candidate in
+                isRemote(String(candidate.split(whereSeparator: \.isWhitespace).first ?? ""))
+            }
+        }
+        let resource = resourceAttributes.contains(attribute.name)
+            || ((attribute.name == "href" || attribute.name == "xlink:href") && !linkTags.contains(tag))
+        return resource && isRemote(value)
+    }
+
+    private static func render(_ tag: Tag, raw: String) -> String {
+        var changed = false
+        var parts: [String] = []
+        for attribute in tag.attributes {
+            if refersRemotely(attribute, in: tag.name) {
+                changed = true
+                continue
+            }
+            if attribute.name == "style", let value = attribute.value {
+                let decoded = decodeEntities(value)
+                let cleaned = offlineCSS(decoded)
+                if cleaned != decoded {
+                    changed = true
+                    parts.append("style=\"" + cleaned.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;") + "\"")
+                    continue
+                }
+            }
+            parts.append(attribute.raw)
+        }
+        guard changed else { return raw }
+        return "<" + tag.name + parts.map { " " + $0 }.joined() + (tag.selfClosing ? " />" : ">")
+    }
+
+    private static func escapedText(_ value: String) -> String {
+        value.replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+    }
+
+    private static func parseTag(_ input: [Unicode.Scalar], at start: Int) -> Tag? {
+        var index = start + 1
+        var name = ""
+        while index < input.count, isNameScalar(input[index]) { name.unicodeScalars.append(input[index]); index += 1 }
+        var attributes: [Attribute] = []
+        var selfClosing = false
+        while index < input.count {
+            let scalar = input[index]
+            if scalar == ">" { return Tag(name: name.lowercased(), attributes: attributes, selfClosing: selfClosing, end: index + 1) }
+            if scalar.properties.isWhitespace { index += 1; continue }
+            if scalar == "/" { selfClosing = true; index += 1; continue }
+            selfClosing = false
+            let attributeStart = index
+            var attributeName = ""
+            while index < input.count, !input[index].properties.isWhitespace, input[index] != "=", input[index] != ">", input[index] != "/" {
+                attributeName.unicodeScalars.append(input[index])
+                index += 1
+            }
+            var probe = index
+            while probe < input.count, input[probe].properties.isWhitespace { probe += 1 }
+            var value: String?
+            if probe < input.count, input[probe] == "=" {
+                probe += 1
+                while probe < input.count, input[probe].properties.isWhitespace { probe += 1 }
+                guard probe < input.count else { return nil }
+                if input[probe] == "\"" || input[probe] == "'" {
+                    let quote = input[probe]
+                    guard let close = input[(probe + 1)...].firstIndex(of: quote) else { return nil }
+                    value = String(String.UnicodeScalarView(input[(probe + 1)..<close]))
+                    index = close + 1
+                } else {
+                    var end = probe
+                    while end < input.count, !input[end].properties.isWhitespace, input[end] != ">" { end += 1 }
+                    value = String(String.UnicodeScalarView(input[probe..<end]))
+                    index = end
+                }
+            }
+            if attributeName.isEmpty { index = max(index, attributeStart + 1); continue }
+            attributes.append(Attribute(name: attributeName.lowercased(), value: value,
+                                        raw: String(String.UnicodeScalarView(input[attributeStart..<index]))))
+        }
+        return nil
+    }
+
+    private static func isNameScalar(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.isASCII && (scalar.properties.isAlphabetic || ("0"..."9").contains(scalar) || scalar == "-" || scalar == ":" || scalar == "_")
+    }
+
+    private static func starts(_ input: [Unicode.Scalar], at index: Int, with prefix: String) -> Bool {
+        let scalars = Array(prefix.unicodeScalars)
+        guard index + scalars.count <= input.count else { return false }
+        return zip(input[index..<(index + scalars.count)], scalars).allSatisfy { lowered($0) == lowered($1) }
+    }
+
+    private static func lowered(_ scalar: Unicode.Scalar) -> Unicode.Scalar {
+        ("A"..."Z").contains(scalar) ? Unicode.Scalar(scalar.value + 32) ?? scalar : scalar
+    }
+
+    private static func find(_ input: [Unicode.Scalar], _ needle: String, from start: Int) -> Int? {
+        var index = start
+        while index < input.count {
+            if starts(input, at: index, with: needle) { return index }
+            index += 1
+        }
+        return nil
+    }
+
+    private static func closingTag(_ input: [Unicode.Scalar], _ name: String, from start: Int) -> Int? {
+        var index = start
+        while let found = find(input, "</" + name, from: index) {
+            let after = found + 2 + name.unicodeScalars.count
+            if after >= input.count || !isNameScalar(input[after]) { return found }
+            index = after
+        }
+        return nil
+    }
+
+    private static func tagEnd(_ input: [Unicode.Scalar], from start: Int) -> Int {
+        (input[start...].firstIndex(of: ">") ?? input.count - 1) + 1
+    }
+
+    private static func decodeEntities(_ value: String) -> String {
+        guard value.contains("&") else { return value }
+        let pattern = try! NSRegularExpression(pattern: "&(#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z]+);?")
+        var result = ""
+        let text = value as NSString
+        var cursor = 0
+        for match in pattern.matches(in: value, range: NSRange(location: 0, length: text.length)) {
+            result += text.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            let body = text.substring(with: match.range(at: 1))
+            var replacement: String?
+            if body.hasPrefix("#x") || body.hasPrefix("#X") {
+                replacement = UInt32(body.dropFirst(2), radix: 16).flatMap(Unicode.Scalar.init).map { String(Character($0)) }
+            } else if body.hasPrefix("#") {
+                replacement = UInt32(body.dropFirst()).flatMap(Unicode.Scalar.init).map { String(Character($0)) }
+            } else {
+                replacement = namedEntities[body.lowercased()]
+            }
+            result += replacement ?? text.substring(with: match.range)
+            cursor = match.range.location + match.range.length
+        }
+        return result + text.substring(from: cursor)
+    }
+
+    private static func cssUnescaped(_ css: String) -> String {
+        var output = String.UnicodeScalarView()
+        let input = Array(css.unicodeScalars)
+        var index = 0
+        while index < input.count {
+            guard input[index] == "\\", index + 1 < input.count else { output.append(input[index]); index += 1; continue }
+            var hex = ""
+            var probe = index + 1
+            while probe < input.count, hex.count < 6, input[probe].properties.isASCIIHexDigit { hex.unicodeScalars.append(input[probe]); probe += 1 }
+            if hex.isEmpty {
+                output.append(input[index + 1])
+                index += 2
+                continue
+            }
+            if probe < input.count, input[probe].properties.isWhitespace { probe += 1 }
+            if let scalar = UInt32(hex, radix: 16).flatMap(Unicode.Scalar.init) { output.append(scalar) }
+            index = probe
+        }
+        return String(output)
+    }
+
+    private static func replacing(_ pattern: String, in text: String, _ transform: (String) -> String?) -> String {
+        guard let expression = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return text }
+        let mutable = NSMutableString(string: text)
+        for match in expression.matches(in: text, range: NSRange(location: 0, length: mutable.length)).reversed() {
+            let inner = match.numberOfRanges > 1 && match.range(at: 1).location != NSNotFound ? match.range(at: 1) : match.range
+            if let replacement = transform(mutable.substring(with: inner)) {
+                mutable.replaceCharacters(in: match.range, with: replacement)
+            }
+        }
+        return mutable as String
     }
 }
