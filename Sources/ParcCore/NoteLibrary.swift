@@ -194,7 +194,7 @@ final class NoteLibrary {
         let folded = needles.map(Self.fold)
         let marker = Self.fold("parc synced")
         return entries.values.compactMap { entry -> URL? in
-            guard let body = contents[entry.url.path]?.folded, body.contains(marker), folded.contains { body.contains($0) } else { return nil }
+            guard let body = contents[entry.url.path]?.folded, body.contains(marker), folded.contains(where: { body.contains($0) }) else { return nil }
             return entry.url
         }.sorted { $0.path < $1.path }
     }
