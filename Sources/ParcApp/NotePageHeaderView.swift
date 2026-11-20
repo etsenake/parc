@@ -248,7 +248,7 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
             self.onTitleChange?(text)
             self.scheduleCommit()
         }
-        titleView.onEndEditing = { [weak self] in self?.commitTitle() }
+        titleView.onEndEditing = { [weak self] in self?.commitTitle(ending: true) }
         titleView.onReturn = { [weak self] in self?.splitIntoBody() }
         titleView.onMoveDown = { [weak self] in self?.moveIntoBody(offset: 0) }
     }
@@ -328,33 +328,41 @@ final class NotePageHeaderView: NSView, NoteCanvasHeader {
     }
 
     func commitTitle() {
+        commitTitle(ending: window?.firstResponder !== titleView)
+    }
+
+    private func commitTitle(ending: Bool) {
         commitTimer?.invalidate()
         commitTimer = nil
         guard !titleView.hasMarkedText() else { return }
         let value = titleView.string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else {
-            if window?.firstResponder !== titleView {
-                titleView.string = committedTitle
-                relayoutIfHeightChanged()
+            if ending { showCommittedTitle() }
+            return
+        }
+        if value != committedTitle {
+            let previous = committedTitle
+            committedTitle = value
+            if let onTitleCommit {
+                onTitleCommit(value)
+            } else if let file {
+                do {
+                    _ = try file.rename(to: value)
+                } catch {
+                    committedTitle = previous
+                    editor.onError?(error)
+                }
             }
-            return
+            if let file { committedTitle = file.title }
         }
-        guard value != committedTitle else { return }
-        let previous = committedTitle
-        committedTitle = value
-        if let onTitleCommit {
-            onTitleCommit(value)
-            return
-        }
-        guard let file else { return }
-        do {
-            let url = try file.rename(to: value)
-            committedTitle = url.deletingPathExtension().lastPathComponent
-        } catch {
-            committedTitle = previous
-            if window?.firstResponder !== titleView { titleView.string = previous }
-            editor.onError?(error)
-        }
+        if ending { showCommittedTitle() }
+    }
+
+    private func showCommittedTitle() {
+        guard titleView.string != committedTitle else { return }
+        titleView.string = committedTitle
+        titleView.needsDisplay = true
+        relayoutIfHeightChanged()
     }
 
     private func splitIntoBody() {
