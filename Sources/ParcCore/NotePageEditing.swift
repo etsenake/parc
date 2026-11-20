@@ -579,8 +579,18 @@ extension NotePageSession {
             convert([id], name: "Turn Into", selection: caret) { $0.convertBlock(id, to: .paragraph) }
             return true
         }
+        if let parentID = page.parent(of: id), let parent = page.block(parentID), parent.kind == .synced,
+           parent.children.first?.id == id {
+            if block.text.isEmpty && block.children.isEmpty && parent.children.count > 1 {
+                let next = parent.children[1].id
+                edit("Delete", selecting: { $0.caretSelection(atStartOf: next) }) { page in page.remove(id) }
+            } else {
+                setSelection(.blocks([parentID]))
+            }
+            return true
+        }
         if let parentID = page.parent(of: id), let parent = page.block(parentID), !parent.kind.isColumnStructure,
-           outdent([id], selection: caret) {
+           parent.kind != .synced, outdent([id], selection: caret) {
             return true
         }
         guard let previousID = page.previousContent(before: id), let previous = page.block(previousID) else { return false }

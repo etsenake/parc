@@ -89,6 +89,7 @@ struct NoteSyncedBlockTests {
         holdsFindMovedOriginalsInTheLibrary()
         infoListsOtherNotes()
         syncedBlocksNeverNest()
+        backspaceStaysInside()
         print("NoteSyncedBlockTests passed")
     }
 
@@ -447,5 +448,19 @@ struct NoteSyncedBlockTests {
         a.moveBlocks([site(a, 1).id], to: .after(target))
         expectEqual(a.page.syncedSites().count, 2, "a synced block can't be dragged into another one")
         expectEqual(texts(a, 0), ["Inside"], "the original keeps its content")
+    }
+
+    static func backspaceStaysInside() {
+        let a = session([.paragraph("Before"), original("k3x9qa", ["One", "Two"])])
+        let synced = site(a).id
+        let first = site(a).children[0].id, second = site(a).children[1].id
+        a.mergeBackward(second)
+        expectEqual(texts(a), ["OneTwo"], "backspace inside joins lines within the synced block")
+        a.mergeBackward(first)
+        expectEqual(texts(a), ["OneTwo"], "backspace at the very start never pulls content out")
+        expectEqual(a.selection, .blocks([synced]), "it selects the synced block instead")
+        let b = session([original("k3x9qa", ["", "Keep"])])
+        b.mergeBackward(site(b).children[0].id)
+        expectEqual(texts(b), ["Keep"], "an empty first line just goes away")
     }
 }
