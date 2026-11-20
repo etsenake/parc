@@ -594,9 +594,9 @@ final class NoteEmojiGridView: NSView {
 
     private func resolveCurrent() {
         guard let currentCharacter else { current = nil; return }
-        let base = items.first { $0.character == currentCharacter }?.emoji.character
+        let bare = NoteEmojiCatalog.unqualified(currentCharacter)
         current = items.firstIndex { $0.character == currentCharacter }
-            ?? items.firstIndex { $0.emoji.character == (base ?? currentCharacter) || $0.emoji.tone(of: currentCharacter) != nil }
+            ?? items.firstIndex { $0.emoji.tone(of: currentCharacter) != nil || NoteEmojiCatalog.unqualified($0.emoji.character) == bare }
     }
 
     override func draw(_ dirtyRect: NSRect) {
