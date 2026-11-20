@@ -1156,6 +1156,22 @@ final class NoteBlockPreviewCard: NSView {
             path.stroke()
         case .image, .video, .audio, .file, .pdf, .embed, .bookmark:
             mediaSample(in: NSRect(x: x, y: y, width: width, height: rect.height))
+        case .breadcrumb:
+            let font = NoteTheme.nunitoRegular(13)
+            let parts: [(symbol: String, name: String)] = [("note.text", "Notes"), ("folder", "Trips"), ("doc.text", "Lisbon")]
+            var left = x
+            let top = rect.midY - 10
+            for (index, part) in parts.enumerated() {
+                let last = index == parts.count - 1
+                icon(part.symbol, in: NSRect(x: left, y: top, width: 16, height: 20), size: 11, tint: last ? NoteTheme.ink : nil)
+                left += 20
+                text(part.name, font, at: NSPoint(x: left, y: top + 1), color: last ? NoteTheme.ink : NoteTheme.secondaryInk)
+                left += NSAttributedString(string: part.name, attributes: [.font: font]).size().width + 7
+                if !last {
+                    text("/", font, at: NSPoint(x: left, y: top + 1), color: NoteTheme.tertiaryInk)
+                    left += 13
+                }
+            }
         case .tableOfContents:
             for (index, indent) in ([0, 14, 14, 0, 14] as [CGFloat]).enumerated() {
                 bar(x + indent, y + 4, (width - indent) * (index % 2 == 0 ? 0.55 : 0.45), alpha: 0.8)

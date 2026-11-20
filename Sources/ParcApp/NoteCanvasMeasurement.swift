@@ -179,7 +179,12 @@ final class NoteCanvasMeasurer {
             content = hasher.finalize()
             contentHashes[block.id] = content
         }
-        let salt = block.kind == .tableOfContents || block.kind == .numberedItem ? contentsSalt : 0
+        let salt: Int
+        switch block.kind {
+        case .tableOfContents, .numberedItem: salt = contentsSalt
+        case .breadcrumb: salt = editor?.breadcrumbSalt ?? 0
+        default: salt = 0
+        }
         return Key(content: content, width: Int((width * 2).rounded()), font: font, small: small, salt: salt)
     }
 

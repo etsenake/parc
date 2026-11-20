@@ -348,7 +348,8 @@ final class NotePageMenu {
         return NotePageHTML.document(editor.session.page, title: title, assets: { environment.resolve($0) }, embedImages: true,
                                      equationArt: { tex, display, numbering in NotePageEquationArtwork.art(tex, display: display, numbering: numbering) },
                                      diagramArt: diagrams,
-                                     imageSize: { source in environment.resolve(source).flatMap { NoteMediaImageLoader.shared.naturalSize(of: $0) } })
+                                     imageSize: { source in environment.resolve(source).flatMap { NoteMediaImageLoader.shared.naturalSize(of: $0) } },
+                                     breadcrumb: editor.breadcrumbTrail)
     }
 
     private func loadFramedImageSizes(then completion: @escaping () -> Void) {

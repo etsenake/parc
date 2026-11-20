@@ -259,6 +259,7 @@ struct NoteMDWriter {
             return ["[" + text + "](" + NoteMDInlineWriter.destination(block.props.target ?? "") + ")" + suffix(blockAttributes(block))]
         case .table: return table(block)
         case .tableOfContents: return ["<!-- toc -->"] + trailingAttributes(blockAttributes(block))
+        case .breadcrumb: return [attributes([("breadcrumb", nil)] + blockAttributes(block))]
         case .columns: return columns(block)
         case .column: return columns(NoteBlock(.columns, children: [block]))
         case .html, .raw: return block.text.string.components(separatedBy: "\n")

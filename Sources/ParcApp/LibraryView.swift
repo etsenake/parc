@@ -256,6 +256,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
 
         settleFilterAnimation()
         let shownKind = renderedKind
+        if kind == .documents { documentsView.scope(to: nil) }
         self.kind = kind
         table.allowsMultipleSelection = kind != .archive
         filtersExpanded = false
@@ -268,6 +269,11 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         focusSearch()
         if kind == .downloads { onLoadDownloads?() }
         onShowKind?(kind)
+    }
+    func showDocuments(in folder: URL) {
+        show(.documents)
+        guard kind == .documents else { return }
+        documentsView.scope(to: folder)
     }
     func focusSearch() {
         if kind == .spaces { spaceManager.focusFirst() }

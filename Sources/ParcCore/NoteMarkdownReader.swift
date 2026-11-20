@@ -8,7 +8,7 @@ struct NoteMDAttributes: Equatable {
 
     static let kindNames: [String: NoteBlockKind] = [
         "paragraph": .paragraph, "image": .image, "video": .video, "audio": .audio, "file": .file,
-        "embed": .embed, "bookmark": .bookmark, "pdf": .pdf,
+        "embed": .embed, "bookmark": .bookmark, "pdf": .pdf, "breadcrumb": .breadcrumb,
     ]
 
     var kind: NoteBlockKind? {
@@ -216,9 +216,9 @@ struct NoteMDReader {
                     index = close + 1
                     continue
                 }
-                if attributes.kind == .paragraph {
+                if let kind = attributes.kind, kind == .paragraph || kind == .breadcrumb {
                     appendEmpties(isFirst && documentEdges ? node.blankBefore : max(0, node.blankBefore - 1))
-                    var block = NoteBlock.paragraph()
+                    var block = kind == .paragraph ? NoteBlock.paragraph() : NoteBlock(.breadcrumb)
                     apply(attributes, to: &block)
                     result.append(block)
                     lastNumber = nil
@@ -379,7 +379,7 @@ struct NoteMDReader {
         let kindHint = attributes?.kind
         if children.count == 1 {
             let node = tree.nodes[children[0]]
-            if node.kind == .image, kindHint == nil || (kindHint != .paragraph && kindHint != .bookmark) {
+            if node.kind == .image, kindHint == nil || (kindHint != .paragraph && kindHint != .bookmark && kindHint != .breadcrumb) {
                 var block = NoteBlock(kindHint ?? NoteMDMedia.inferredKind(node.destination))
                 block.props.source = node.destination
                 let alt = tree.plainText(of: children[0])

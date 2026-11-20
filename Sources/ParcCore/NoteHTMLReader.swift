@@ -985,6 +985,8 @@ final class NoteHTMLConversion {
             return flow(node.children, inner)
         case "tableOfContents":
             return [NoteBlock(.tableOfContents, color: blockColor(node))]
+        case "breadcrumb":
+            return [NoteBlock(.breadcrumb, color: blockColor(node))]
         case "bookmark", "embed", "file", "pdf", "pageLink":
             let link = node.name == "a" ? node : node.first { $0.name == "a" }
             let source = node["data-source"] ?? node["data-target"] ?? link?["href"] ?? ""

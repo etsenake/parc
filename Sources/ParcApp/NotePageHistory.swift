@@ -288,6 +288,10 @@ enum NotePagePreviewRenderer {
                 base[.foregroundColor] = NoteTheme.tertiaryInk
                 result.append(NSAttributedString(string: "Table of contents\n", attributes: base))
                 return
+            case .breadcrumb:
+                base[.foregroundColor] = NoteTheme.tertiaryInk
+                result.append(NSAttributedString(string: "📁  Breadcrumb\n", attributes: base))
+                return
             case .columns, .column, .synced:
                 return
             case .paragraph:

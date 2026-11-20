@@ -11,9 +11,10 @@ struct NoteEquationArt {
 }
 
 enum NotePageHTML {
-    static func fragment(_ blocks: [NoteBlock], assets: ((String) -> URL?)? = nil) -> String {
+    static func fragment(_ blocks: [NoteBlock], assets: ((String) -> URL?)? = nil, breadcrumb: [NoteBreadcrumbSegment] = []) -> String {
         var writer = NotePageHTMLWriter(mode: .fragment, assets: assets ?? { _ in nil }, embedImages: false,
                                         equationArt: nil, blocks: blocks)
+        writer.breadcrumb = breadcrumb
         writer.write(blocks)
         return writer.output
     }
@@ -21,12 +22,13 @@ enum NotePageHTML {
     static func document(_ page: NotePage, title: String, assets: (String) -> URL?, embedImages: Bool,
                          equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)? = nil,
                          diagramArt: ((NoteBlock) -> NoteDiagramArt?)? = nil,
-                         imageSize: ((String) -> CGSize?)? = nil) -> String {
+                         imageSize: ((String) -> CGSize?)? = nil, breadcrumb: [NoteBreadcrumbSegment] = []) -> String {
         withoutActuallyEscaping(assets) { assets in
             var writer = NotePageHTMLWriter(mode: .document, assets: assets, embedImages: embedImages,
                                             equationArt: equationArt, blocks: page.blocks)
             writer.diagramArt = diagramArt
             writer.imageSize = imageSize
+            writer.breadcrumb = breadcrumb
             writer.write(page.blocks)
             let settings = page.settings
             let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -79,6 +81,7 @@ struct NotePageHTMLWriter {
     let embedImages: Bool
     let equationArt: ((String, Bool, NoteMathNumberingContext) -> NoteEquationArt?)?
     var diagramArt: ((NoteBlock) -> NoteDiagramArt?)?
+    var breadcrumb: [NoteBreadcrumbSegment] = []
     var imageSize: ((String) -> CGSize?)?
     private(set) var output = ""
     private var anchors: [NoteBlockID: String] = [:]
@@ -344,6 +347,8 @@ struct NotePageHTMLWriter {
             table(block)
         case .tableOfContents:
             contents(block)
+        case .breadcrumb:
+            trail(block)
         case .columns:
             let style = mode == .fragment ? " style=\"display:flex;gap:24px\"" : ""
             output += "<div data-block=\"columns\" class=\"columns\"" + style + ">"
@@ -674,6 +679,15 @@ struct NotePageHTMLWriter {
         output += "<tbody>"
         for index in first..<grid.rowCount { output += row(index) }
         output += "</tbody></table>"
+    }
+
+    private mutating func trail(_ block: NoteBlock) {
+        output += "<nav data-block=\"breadcrumb\" aria-label=\"Breadcrumb\"" + colorClass(block.color, adding: ["breadcrumb"]) + "><ol>"
+        for segment in breadcrumb {
+            let current = segment.kind == .note ? " aria-current=\"page\"" : ""
+            output += "<li class=\"crumb-" + segment.kind.rawValue + "\"" + current + ">" + Self.escape(segment.name) + "</li>"
+        }
+        output += "</ol></nav>"
     }
 
     private mutating func contents(_ block: NoteBlock) {

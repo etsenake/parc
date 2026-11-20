@@ -49,6 +49,21 @@ struct DocumentsLibraryCatalogTests {
         expect(inputs() == after, "a quiet change after that is skipped")
     }
 
+    static func folderScopes() {
+        let root = "/Users/parc-sample/Documents/Parc Notes/"
+        func at(_ path: String) -> NoteReference {
+            NoteReference(url: URL(fileURLWithPath: root + path), title: (path as NSString).lastPathComponent, modifiedAt: Date())
+        }
+        let notes = [at("Inbox.md"), at("Trips/Lisbon.md"), at("Trips/Food/Pastries.md"), at("Tripsy.md"), at("Work/Plan.md")]
+        let trips = URL(fileURLWithPath: root + "Trips", isDirectory: true)
+        expect(DocumentsLibraryCatalog.scoped(notes, to: trips).map(\.title) == ["Lisbon.md", "Pastries.md"],
+               "a folder scope keeps the notes inside it and its subfolders, not lookalike names")
+        expect(DocumentsLibraryCatalog.scoped(notes, to: nil).count == notes.count, "no scope keeps every note")
+        expect(DocumentsLibraryCatalog.scoped(notes, to: URL(fileURLWithPath: root + "Trips/")).count == 2, "a trailing slash means the same folder")
+        expect(DocumentsLibraryCatalog.emptyMessage(query: "", scoped: true) == "No notes in this folder yet.", "an empty folder says so")
+        expect(DocumentsLibraryCatalog.emptyMessage(query: "x", scoped: true) == DocumentsLibraryCatalog.noMatchesText, "a search still says nothing matched")
+    }
+
     static func main() {
         let trip = note("Trip to Lisbon", 5, icon: "🧳", snippet: "Pack the passport.\n\n  Book   the tram.")
         let groceries = note("Groceries", 9, icon: "Attachments/cart.png", snippet: "Pastéis de nata, coffee")
@@ -56,6 +71,7 @@ struct DocumentsLibraryCatalogTests {
         let easel = EaselSummary(id: UUID(), title: "Moodboard", modifiedAt: Date(timeIntervalSince1970: 8 * 86_400), itemCount: 3)
         let blank = EaselSummary(id: UUID(), title: "  ", modifiedAt: Date(timeIntervalSince1970: 1), itemCount: 0)
         let items = DocumentsLibraryCatalog.items(notes: [trip, groceries, journal], easels: [easel, blank])
+        folderScopes()
 
         expect(items.count == 5, "notes and Easels share one catalog")
         expect(items[0].noteURL == trip.url && items[0].isNote && items[0].easelID == nil, "a note keeps its file")

@@ -46,6 +46,8 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private var subscription: AnyCancellable?
     private var folderSubscription: AnyCancellable?
     private var observedInputs: DocumentsLibraryInputs?
+    private let scopeBar = DocumentsFolderScopeBar()
+    private(set) var folderScope: URL?
     var ownerValid: (() -> Bool)?
     var onOpen: ((InternalPage, String) -> Void)?
     var onCreate: (() -> Void)?
@@ -57,6 +59,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
             searchBackdrop.ink = .labelColor
             empty.textColor = .secondaryLabelColor
             createButton.contentTintColor = .labelColor
+            scopeBar.restyle()
             rebuildCards()
         }
     }
@@ -90,7 +93,9 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         empty.font = .systemFont(ofSize: 13)
         empty.textColor = .secondaryLabelColor
         empty.alignment = .center
-        for view in [searchBackdrop, createButton, scroll, empty] { addSubview(view) }
+        scopeBar.isHidden = true
+        scopeBar.onClear = { [weak self] in self?.scope(to: nil) }
+        for view in [searchBackdrop, createButton, scopeBar, scroll, empty] { addSubview(view) }
         if !store.isEphemeral {
             folderSubscription = NoteFolderPreferences.changes.filter { $0 == profileID }.sink { [weak self] _ in
                 self?.bindLibrary(); self?.reload(force: true)
@@ -103,8 +108,30 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private var chromeDark: Bool {
         palette?.isDark ?? (effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
     }
+    func scope(to folder: URL?) {
+        var next = folder.map { URL(fileURLWithPath: NoteFilePaths.canonical($0).path, isDirectory: true) }
+        if let chosen = next, !store.isEphemeral, chosen.path == NoteFolderPreferences.library(for: profileID).folder.path { next = nil }
+        guard next?.path != folderScope?.path else { return }
+        folderScope = next
+        scopeBar.isHidden = next == nil
+        if let next { scopeBar.show(next) }
+        let title = next.map { "New Note in " + DocumentsFolderScopeBar.name(of: $0) } ?? "New Note"
+        createButton.setAccessibilityLabel(title)
+        LiveShortcutToolTip.set(createButton, title)
+        selectedPage = nil
+        guard !store.isEphemeral else { return }
+        bindLibrary()
+        reload(force: true)
+        needsLayout = true
+    }
     private func bindLibrary() {
-        let next = NoteFolderPreferences.library(for: profileID)
+        let space = NoteFolderPreferences.library(for: profileID)
+        let next: NoteLibrary
+        if let folderScope, folderScope.path != space.folder.path, !space.contains(folderScope) {
+            next = NoteLibrary.browsing(folderScope)
+        } else {
+            next = space
+        }
         guard next !== library else { return }
         library = next
         subscription = next.changes.sink { [weak self] in self?.reload() }
@@ -123,11 +150,12 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
             let directory = store.easelsDirectory(for: profileID)
             let inputs = try DocumentsLibraryCatalog.inputs(
                 library: library, easels: { try EaselEditorViewController.sharedStore(directory: directory).list() },
-                pending: store.isProfileRemovalPending(profileID), query: search.stringValue, searchLimit: Self.searchLimit)
+                pending: store.isProfileRemovalPending(profileID), query: search.stringValue, searchLimit: Self.searchLimit,
+                folder: folderScope)
             if !force && inputs == observedInputs { return }
             observedInputs = inputs
             let next = DocumentsLibraryCatalog.visible(inputs).compactMap(Self.row)
-            empty.stringValue = next.isEmpty ? DocumentsLibraryCatalog.emptyMessage(query: inputs.query) : ""
+            empty.stringValue = next.isEmpty ? DocumentsLibraryCatalog.emptyMessage(query: inputs.query, scoped: folderScope != nil) : ""
             empty.isHidden = !next.isEmpty
             selectedPage = next.contains(where: { $0.page == selected }) ? selected : nil
             let sameCards = next == rows
@@ -229,7 +257,14 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         if !search.stringValue.isEmpty { search.stringValue = ""; reload(force: true); return }
         onClose?()
     }
-    @objc private func createNote() { guard valid else { return }; onCreate?() }
+    @objc private func createNote() {
+        guard valid else { return }
+        guard let folderScope else { onCreate?(); return }
+        do {
+            let url = try NoteLibrary.createNote(in: folderScope, title: nil)
+            onOpen?(.note(url), url.deletingPathExtension().lastPathComponent)
+        } catch { report(error) }
+    }
     private func open(_ row: Row) { guard valid else { return }; onOpen?(row.page, row.title) }
     private func report(_ error: Error) {
         guard let window else { return }
@@ -283,10 +318,90 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         let create = LibraryPageHeader.height, inset = LibraryPageHeader.inset, top = LibraryPageHeader.top
         searchBackdrop.frame = NSRect(x: inset, y: top, width: max(0, w - 2 * inset - LibraryPageHeader.spacing - create), height: create)
         createButton.frame = NSRect(x: max(inset, w - inset - create), y: top, width: create, height: create)
-        scroll.frame = NSRect(x: 0, y: LibraryPageHeader.contentTop, width: w, height: max(0, h - LibraryPageHeader.contentTop))
+        let scopeHeight: CGFloat = scopeBar.isHidden ? 0 : DocumentsFolderScopeBar.height + 4
+        scopeBar.frame = NSRect(x: inset, y: LibraryPageHeader.contentTop, width: max(0, w - 2 * inset), height: DocumentsFolderScopeBar.height)
+        let contentTop = LibraryPageHeader.contentTop + scopeHeight
+        scroll.frame = NSRect(x: 0, y: contentTop, width: w, height: max(0, h - contentTop))
         let cardSide = min(DocumentCardChrome.side, max(0, (scroll.contentSize.width - 36) / 2))
         if grid.rowHeight != cardSide + 24 { grid.rowHeight = cardSide + 24 }
-        empty.frame = NSRect(x: 24, y: 110, width: max(0, w - 48), height: 48)
+        empty.frame = NSRect(x: 24, y: 110 + scopeHeight, width: max(0, w - 48), height: 48)
+    }
+}
+
+@MainActor
+private final class DocumentsFolderScopeBar: NSView {
+    static let height: CGFloat = 30
+    private let icon = NSImageView()
+    private let label = NSTextField(labelWithString: "")
+    private let clear = ActionButton("", symbol: "xmark")
+    var onClear: (() -> Void)?
+    override var isFlipped: Bool { true }
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.cornerCurve = .continuous
+        icon.imageScaling = .scaleProportionallyDown
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        icon.setAccessibilityElement(false)
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.lineBreakMode = .byTruncatingMiddle
+        label.setAccessibilityElement(false)
+        clear.actionBlock = { [weak self] in self?.onClear?() }
+        clear.focusRingCornerRadius = 6
+        clear.setAccessibilityLabel("Show All Notes")
+        LiveShortcutToolTip.set(clear, "Show All Notes")
+        for view in [icon, label, clear] as [NSView] { addSubview(view) }
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        restyle()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    static func name(of folder: URL) -> String {
+        let name = FileManager.default.displayName(atPath: folder.path)
+        return name.isEmpty ? folder.lastPathComponent : name
+    }
+
+    static func symbol(for folder: URL) -> String {
+        if folder.path == "/" || folder.deletingLastPathComponent().path == "/Volumes" { return "internaldrive" }
+        if folder.path == FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path { return "house" }
+        return "folder"
+    }
+
+    func show(_ folder: URL) {
+        let name = Self.name(of: folder)
+        icon.image = NSImage(systemSymbolName: Self.symbol(for: folder), accessibilityDescription: nil)
+        label.stringValue = name
+        LiveShortcutToolTip.set(self, (folder.path as NSString).abbreviatingWithTildeInPath)
+        setAccessibilityLabel("Showing notes in " + name)
+        needsLayout = true
+    }
+
+    func restyle() {
+        icon.contentTintColor = .secondaryLabelColor
+        label.textColor = .labelColor
+        clear.contentTintColor = .secondaryLabelColor
+        needsDisplay = true
+    }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        layer?.backgroundColor = NSColor(white: dark ? 1 : 0, alpha: dark ? 0.08 : 0.05).cgColor
+    }
+
+    override func layout() {
+        super.layout()
+        let h = bounds.height
+        icon.frame = NSRect(x: 9, y: (h - 18) / 2, width: 18, height: 18)
+        clear.frame = NSRect(x: bounds.width - 4 - 24, y: (h - 24) / 2, width: 24, height: 24)
+        let labelHeight = ceil(label.intrinsicContentSize.height)
+        label.frame = NSRect(x: icon.frame.maxX + 6, y: (h - labelHeight) / 2, width: max(0, clear.frame.minX - icon.frame.maxX - 12),
+                             height: labelHeight)
     }
 }
 

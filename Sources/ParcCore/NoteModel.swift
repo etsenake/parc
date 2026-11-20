@@ -347,7 +347,7 @@ struct NoteText: Hashable, Codable, ExpressibleByStringLiteral {
 
 enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
     case paragraph, heading, bulletedItem, numberedItem, todo, toggle, quote, callout, divider
-    case code, equation, image, video, audio, file, pdf, bookmark, embed, table, tableOfContents
+    case code, equation, image, video, audio, file, pdf, bookmark, embed, table, tableOfContents, breadcrumb
     case columns, column, pageLink, html, raw, synced
 
     var hasRichText: Bool {
@@ -378,7 +378,7 @@ enum NoteBlockKind: String, Hashable, Codable, CaseIterable {
         default: return false
         }
     }
-    var supportsColor: Bool { hasRichText || self == .tableOfContents || self == .table }
+    var supportsColor: Bool { hasRichText || self == .tableOfContents || self == .breadcrumb || self == .table }
 }
 
 enum NoteDiagramMode: String, Codable, CaseIterable, Hashable, Sendable {

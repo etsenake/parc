@@ -32,7 +32,7 @@ struct NoteSlashCatalogTests {
                          "linkToNote", "table"],
                "basic blocks follow Notion's order: \(basic)")
         expect(unfiltered.filter { $0.section == .media }.map(\.id) == ["image", "video", "audio", "file", "pdf", "bookmark", "embed"], "media order")
-        expect(unfiltered.filter { $0.section == .advanced }.map(\.id) == ["tableOfContents", "equation", "code", "columns2", "columns3", "columns4", "columns5"],
+        expect(unfiltered.filter { $0.section == .advanced }.map(\.id) == ["tableOfContents", "equation", "code", "breadcrumb", "columns2", "columns3", "columns4", "columns5"],
                "advanced order")
         expect(unfiltered.filter { $0.section == .inline }.map(\.id) == ["mention", "date", "emoji", "inlineEquation"], "inline order")
 
@@ -41,7 +41,7 @@ struct NoteSlashCatalogTests {
             ("th4", "toggleHeading4"), ("toggle h4", "toggleHeading4"), ("todo", "todo"), ("[]", "todo"),
             ("ul", "bulleted"), ("ol", "numbered"), ("num", "numbered"), ("img", "image"), ("hr", "divider"), ("div", "divider"),
             ("---", "divider"), ("math", "equation"), ("tex", "equation"), ("latex", "equation"), ("plain", "text"), ("call", "callout"),
-            ("book", "bookmark"), ("web", "bookmark"), ("toc", "tableOfContents"), ("red", "color.red"), ("red background", "background.red"),
+            ("book", "bookmark"), ("web", "bookmark"), ("toc", "tableOfContents"), ("bread", "breadcrumb"), ("breadcrumb", "breadcrumb"), ("red", "color.red"), ("red background", "background.red"),
             ("red b", "background.red"), ("grey", "color.gray"), ("default", "color.default"), ("del", "action.delete"),
             ("dup", "action.duplicate"), ("code", "code"), ("```", "code"), ("quote", "quote"), ("\"", "quote"), (">", "toggle"),
             ("page", "newNote"), ("link", "linkToNote"), ("2 col", "columns2"), ("3col", "columns3"), ("emoji", "emoji"),
@@ -112,6 +112,13 @@ struct NoteSlashCatalogTests {
         let columns = NoteCatalogBlock.columns(3).makeBlock()
         expect(columns.kind == .columns && columns.children.count == 3 && columns.children.allSatisfy { $0.kind == .column && $0.children.first?.kind == .paragraph },
                "3 columns builds three columns with an empty paragraph each")
+        let crumb = NoteCatalogBlock.breadcrumb.makeBlock()
+        expect(crumb.kind == .breadcrumb && crumb.text.isEmpty && crumb.children.isEmpty, "/bread makes an empty breadcrumb block")
+        let line = NoteBlock.paragraph("/bread")
+        if let placed = NoteCatalogApplier.apply(.block(.breadcrumb), to: NotePage(blocks: [line]), at: NotePosition(line.id, 0), removing: 0..<6) {
+            expect(placed.page.blocks.map(\.kind) == [.breadcrumb, .paragraph], "the breadcrumb takes the empty line and a fresh line follows")
+            expect(placed.selection.caret?.block == placed.page.blocks[1].id, "the caret lands on the fresh line")
+        } else { failTest("/bread should place a breadcrumb") }
         let callout = NoteCatalogBlock.callout.makeBlock()
         expect(callout.kind == .callout && callout.props.icon != nil, "a fresh callout gets an icon")
         let heading = NoteCatalogBlock.toggleHeading(1).makeBlock()

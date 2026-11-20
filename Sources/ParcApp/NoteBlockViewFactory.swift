@@ -10,6 +10,7 @@ enum NoteBlockViewFactory {
         case .equation: return NoteEquationBlockView(block: block, editor: editor)
         case .divider: return NoteDividerBlockView(block: block, editor: editor)
         case .tableOfContents: return NoteTOCBlockView(block: block, editor: editor)
+        case .breadcrumb: return NoteBreadcrumbBlockView(block: block, editor: editor)
         case .html, .raw: return NoteRawBlockView(block: block, editor: editor)
         case .table: return NoteTableBlockView(block: block, editor: editor)
         case .image, .video, .audio, .file, .pdf: return NoteMediaBlockView(block: block, editor: editor)

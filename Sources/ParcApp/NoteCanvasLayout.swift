@@ -57,7 +57,7 @@ struct NoteCanvasMetrics: Equatable {
     func spacing(for block: NoteBlock) -> NoteCanvasSpacing {
         let value: (before: CGFloat, after: CGFloat)
         switch block.kind {
-        case .paragraph, .bulletedItem, .numberedItem, .todo, .toggle, .quote, .divider, .pageLink, .tableOfContents, .html, .raw:
+        case .paragraph, .bulletedItem, .numberedItem, .todo, .toggle, .quote, .divider, .pageLink, .tableOfContents, .breadcrumb, .html, .raw:
             return textSpacing
         case .heading:
             switch block.props.level {
@@ -823,6 +823,7 @@ enum NoteCanvasEstimate {
         case .bookmark: return 104 * scale + caption
         case .pageLink: return metrics.bodyLineHeight + 4 * scale
         case .tableOfContents: return 3 * metrics.bodyLineHeight
+        case .breadcrumb: return metrics.bodyLineHeight + 8 * scale
         case .table:
             let rows = CGFloat(max(1, block.props.table?.rowCount ?? 3))
             return rows * (metrics.bodyLineHeight + 10 * scale) + 2

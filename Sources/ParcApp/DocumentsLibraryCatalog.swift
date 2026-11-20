@@ -42,6 +42,7 @@ enum DocumentsLibraryCatalog {
     static let previewLimit = 160
     static let emptyText = "Your local Easels and Notes will appear here."
     static let noMatchesText = "Nothing matches that. Try fewer words?"
+    static let emptyFolderText = "No notes in this folder yet."
 
     static func items(notes: [NoteReference], easels: [EaselSummary]) -> [DocumentsLibraryItem] {
         notes.map { note in
@@ -55,12 +56,19 @@ enum DocumentsLibraryCatalog {
 
     @MainActor
     static func inputs(library: NoteLibrary, easels: () throws -> [EaselSummary], pending: Bool, query: String,
-                       searchLimit: Int) throws -> DocumentsLibraryInputs {
-        let notes = try library.notes()
-        let easels = try easels()
+                       searchLimit: Int, folder: URL? = nil) throws -> DocumentsLibraryInputs {
+        let notes = scoped(try library.notes(), to: folder)
+        let easels = folder == nil ? try easels() : []
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let matches = trimmed.isEmpty ? [] : library.search(trimmed, limit: searchLimit).map(\.url)
+        let matches = trimmed.isEmpty ? [] : scoped(library.search(trimmed, limit: searchLimit), to: folder).map(\.url)
         return DocumentsLibraryInputs(notes: notes, easels: easels, pending: pending, query: trimmed, noteMatches: matches)
+    }
+
+    static func scoped(_ notes: [NoteReference], to folder: URL?) -> [NoteReference] {
+        guard let folder else { return notes }
+        let path = folder.standardizedFileURL.path
+        let prefix = path.hasSuffix("/") ? path : path + "/"
+        return notes.filter { $0.url.standardizedFileURL.path.hasPrefix(prefix) }
     }
 
     static func visible(_ inputs: DocumentsLibraryInputs) -> [DocumentsLibraryItem] {
@@ -95,8 +103,9 @@ enum DocumentsLibraryCatalog {
         }
     }
 
-    static func emptyMessage(query: String) -> String {
-        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? emptyText : noMatchesText
+    static func emptyMessage(query: String, scoped: Bool = false) -> String {
+        guard query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return noMatchesText }
+        return scoped ? emptyFolderText : emptyText
     }
 
     static func emoji(_ icon: String?) -> String? {

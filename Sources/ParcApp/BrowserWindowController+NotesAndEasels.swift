@@ -84,6 +84,11 @@ extension BrowserWindowController {
             openNote(url: file, inSplit: inSplit)
         } catch { showNoteError(error) }
     }
+    func showNotesLibrary(folder: URL) {
+        showLibrary(.documents)
+        guard let libraryView, libraryView.profileID == activeProfileID else { return }
+        libraryView.showDocuments(in: folder)
+    }
     var canShowNotesFolder: Bool { canCreateNote }
     func showNotesFolder() {
         guard canShowNotesFolder else { return }
@@ -180,6 +185,12 @@ extension BrowserWindowController {
         editor.onToast = { [weak self, weak editor] content in
             guard let self, let editor, self.noteEditors[tabID]?.editor === editor, !self.isClosing else { return }
             self.showToast(content, at: .window)
+        }
+        editor.notesFolder = { NoteFolderPreferences.folder(for: profileID) }
+        editor.onOpenFolder = { [weak self, weak editor] folder in
+            guard let self, let editor, self.noteEditors[tabID]?.editor === editor,
+                  self.activeProfileID == profileID, !self.isClosing else { return }
+            self.showNotesLibrary(folder: folder)
         }
         editor.onTrashed = { [weak self, weak editor] url in
             guard let self, let editor, self.noteEditors[tabID]?.editor === editor else { return }

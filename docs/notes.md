@@ -82,7 +82,11 @@ with syntax highlighting for 39 languages, equations typeset natively from TeX
 and `\label` with `\eqref` or `\ref` that link up in the editor and in HTML and
 PDF exports), simple tables, images, video, audio, files, inline PDFs,
 bookmarks with a cached preview card, embeds, links to other notes, columns (two
-to five) and a table of contents. Inline text can be bold, italic, underlined,
+to five), a table of contents and a breadcrumb (`/bread`). The breadcrumb shows
+where the note lives, from the Notes folder (or the home folder or disk for notes
+elsewhere) down to the note's own icon and title, keeps up when the note moves
+or is renamed, and each folder in it opens that folder in Easels & Notes, where
+New Note creates notes right there. Inline text can be bold, italic, underlined,
 struck, code, a link, coloured or highlighted in Notion's nine colours, and can
 hold note mentions, dates and reminders, link mentions and inline equations.
 

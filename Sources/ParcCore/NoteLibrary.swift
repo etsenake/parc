@@ -56,6 +56,15 @@ final class NoteLibrary {
         return library
     }
 
+    static func browsing(_ folder: URL) -> NoteLibrary {
+        let canonical = NoteFilePaths.canonical(folder)
+        let key = NoteFilePaths.identityKey(ofCanonicalPath: canonical.path)
+        if let existing = libraries[key] ?? shallowLibraries[key] { return existing }
+        let library = NoteLibrary(folder: canonical, recursive: false)
+        shallowLibraries[key] = library
+        return library
+    }
+
     static func library(for note: URL) -> NoteLibrary {
         let containing = libraries.values.filter { $0.contains(note) }
         if let deepest = containing.max(by: { $0.folder.path.count < $1.folder.path.count }) { return deepest }

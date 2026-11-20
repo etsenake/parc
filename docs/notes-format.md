@@ -328,6 +328,9 @@ A **page link** is a link to another note on its own line:
 - **Link mentions** are `<a href="https://…" data-mention>Page title</a>`.
 - **Custom emoji** are `:name:`; see [custom emoji](#custom-emoji).
 - **Table of contents** is `<!-- toc -->` on its own line.
+- **Breadcrumb** is `<!-- parc breadcrumb -->` on its own line. The path itself
+  isn't saved, since it follows wherever the file lives; a colour or block link
+  goes in the same comment, as in `<!-- parc breadcrumb color="gray" -->`.
 
 Inline things Parc can't edit as text are kept verbatim: an image in the
 middle of a sentence, `<kbd>` and other unknown HTML, footnote markers,

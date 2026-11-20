@@ -21,7 +21,7 @@ enum NoteCatalogBlock: Hashable {
     case text, heading(Int), toggleHeading(Int), bulleted, numbered, todo, toggle, quote, callout, divider
     case newNote, linkToNote, table
     case image, video, audio, file, pdf, bookmark, embed
-    case tableOfContents, equation, code, columns(Int)
+    case tableOfContents, breadcrumb, equation, code, columns(Int)
 
     static let turnIntoTargets: [NoteCatalogBlock] = [
         .text, .heading(1), .heading(2), .heading(3), .heading(4), .bulleted, .numbered, .todo, .toggle,
@@ -49,6 +49,7 @@ enum NoteCatalogBlock: Hashable {
         case .bookmark: return .bookmark
         case .embed: return .embed
         case .tableOfContents: return .tableOfContents
+        case .breadcrumb: return .breadcrumb
         case .equation: return .equation
         case .code: return .code
         case .columns: return .columns
@@ -362,6 +363,8 @@ enum NoteBlockCatalog {
                   aliases: ["math", "tex", "latex", "equation", "$$"], keywords: ["katex", "formula", "maths"], .equation),
             block("code", "Code", "Code, with colors that make sense.", .advanced, .symbol("curlybraces"), hint: "```",
                   aliases: ["```", "snippet", "pre"], keywords: ["program", "syntax", "script", "monospace"], .code),
+            block("breadcrumb", "Breadcrumb", "Where this note lives, folder by folder.", .advanced, .symbol("signpost.right"),
+                  aliases: ["bread", "crumbs", "path", "location"], keywords: ["folder", "where", "navigation", "trail"], .breadcrumb),
         ]
         let counts = ["two", "three", "four", "five"]
         let blurbs = ["Put blocks side by side.", "Three blocks, shoulder to shoulder.", "Four columns, getting cosy.", "Five columns. Bold move."]
@@ -726,7 +729,7 @@ private extension NoteCatalogOutcome {
         var result = self
         guard let block = page.block(id) else { return result }
         switch block.kind {
-        case .divider, .tableOfContents:
+        case .divider, .tableOfContents, .breadcrumb:
             let siblings = page.siblings(of: id)
             if let index = siblings.firstIndex(where: { $0.id == id }), index + 1 < siblings.count,
                siblings[index + 1].kind == .paragraph, siblings[index + 1].text.isEmpty {

@@ -27,6 +27,8 @@ final class NotePageEditor {
     var onPrint: (() -> Void)?
     var onChange: ((NotePageChange) -> Void)?
     var onCanvasLayout: (() -> Void)?
+    var onOpenFolder: ((URL) -> Void)?
+    var notesFolder: (() -> URL?)?
     var pasteboard: NSPasteboard = .general
     private var subscription: AnyCancellable?
     private var layoutSubscription: AnyCancellable?
@@ -66,6 +68,22 @@ final class NotePageEditor {
     }
 
     var isPlainText: Bool { environment.isPlainText }
+
+    var breadcrumbTrail: [NoteBreadcrumbSegment] {
+        guard let document = environment.documentURL else { return [] }
+        return NoteBreadcrumbCache.trail(for: document, notesFolder: notesFolder?())
+    }
+
+    var breadcrumbSalt: Int {
+        var hasher = Hasher()
+        hasher.combine(environment.documentURL)
+        hasher.combine(notesFolder?())
+        return hasher.finalize()
+    }
+
+    func openFolder(_ folder: URL) {
+        if let onOpenFolder { onOpenFolder(folder) } else { NSWorkspace.shared.open(folder) }
+    }
 
     func makeBlockView(for block: NoteBlock) -> NoteBlockView {
         let view = NoteBlockViewFactory.make(block, editor: self)
@@ -924,7 +942,7 @@ final class NotePageEditor {
         var inline = false
         if case .text = target { inline = true }
         let environment = environment
-        let html = isPlainText ? nil : NotePageHTML.fragment(fragment, assets: { environment.resolve($0) })
+        let html = isPlainText ? nil : NotePageHTML.fragment(fragment, assets: { environment.resolve($0) }, breadcrumb: breadcrumbTrail)
         let payload = NoteClipboard.payload(for: fragment, inline: inline,
                                             base: environment.documentURL?.deletingLastPathComponent(),
                                             plainTextFile: isPlainText, html: html)

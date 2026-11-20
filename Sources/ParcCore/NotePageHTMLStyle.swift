@@ -193,6 +193,10 @@ enum NotePageHTMLStyle {
     thead th,tbody th{background:var(--fill);font-weight:700}
     th[class*=block-color-],td[class*=block-color-]{border-radius:0}
     nav.table-of-contents{margin:.6em 0}
+    nav.breadcrumb{margin:.4em 0;color:var(--muted)}
+    nav.breadcrumb ol{list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:.2em .45em}
+    nav.breadcrumb li+li::before{content:"/";margin-right:.45em;opacity:.6}
+    nav.breadcrumb li[aria-current]{color:inherit;font-weight:600}
     nav.table-of-contents ul{list-style:none;padding:0;margin:0}
     nav.table-of-contents li{margin:.1em 0}
     nav.table-of-contents a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line)}

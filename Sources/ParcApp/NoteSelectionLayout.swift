@@ -33,7 +33,7 @@ final class NoteSelectionCanvasLayout: NoteSelectionLayout {
         switch block.kind {
         case .columns, .synced: return .layout
         case .column: return .column
-        case .divider, .tableOfContents: return .decoration
+        case .divider, .tableOfContents, .breadcrumb: return .decoration
         default:
             if let view { return view.textHost(for: .body) != nil ? .text : .object }
             switch block.kind {

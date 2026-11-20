@@ -11,6 +11,8 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
     var onOpenNote: ((URL) -> Void)?
     var onToast: ((ParcToastContent) -> Void)?
     var onTrashed: ((URL) -> Void)?
+    var onOpenFolder: ((URL) -> Void)?
+    var notesFolder: (() -> URL?)?
     var downloadFolder: (@MainActor () async -> URL?)?
     private let root = NotePageRootView()
     private let scroll = NSScrollView()
@@ -49,6 +51,8 @@ final class NotePageViewController: NSViewController, NSMenuItemValidation, NSUs
         self.editor = editor
         editor.onOpenURL = { [weak self] url in self?.onOpenURL?(url) }
         editor.onOpenNote = { [weak self] url in self?.onOpenNote?(url) }
+        editor.onOpenFolder = { [weak self] url in self?.onOpenFolder?(url) }
+        editor.notesFolder = { [weak self] in self?.notesFolder?() }
         editor.onError = { [weak self] error in self?.showTransientError(error) }
         editor.onFocusTitle = { [weak self] in self?.focusTitle(selectAll: false) }
         editor.onPrint = { [weak self] in self?.printPage() }

@@ -148,7 +148,7 @@ enum NoteBlockMenuModel {
     }
 
     static func colorable(_ block: NoteBlock) -> Bool {
-        block.kind.hasRichText || block.kind == .tableOfContents
+        block.kind.hasRichText || block.kind == .tableOfContents || block.kind == .breadcrumb
     }
 
     static func languageTitle(for id: String) -> String {
