@@ -990,11 +990,12 @@ struct NoteMathTypesetter {
         return box
     }
 
-    private func extensibleArrow(_ arrow: String, over: [NoteMathNode], under: [NoteMathNode]?, _ context: NoteMathContext) -> NoteMathBox {
+    private func extensibleArrow(_ arrow: String, over: [NoteMathNode], under: [NoteMathNode]?, _ context: NoteMathContext,
+                                 minimumWidth: CGFloat? = nil) -> NoteMathBox {
         let overBox = layoutList(over, context.with(style: context.style.superscriptStyle))
         let underBox = under.map { layoutList($0, context.with(style: context.style.subscriptStyle)) }
         let em = self.em(context)
-        let target = max(max(overBox.width, underBox?.width ?? 0) + 0.6 * em, 1.4 * em)
+        let target = max(max(overBox.width, underBox?.width ?? 0) + 0.6 * em, minimumWidth ?? 1.4 * em)
         let paired = Self.pairedArrows[arrow].flatMap { pairedArrow($0, target: target, context) }
         guard let stretched = paired ?? horizontalStretch(arrow, target: target, context) else { return overBox }
         let ink = inkExtent(stretched)
@@ -1162,6 +1163,7 @@ struct NoteMathTypesetter {
         var rowGap: CGFloat
         var padsRelations: Bool
         var rowAlignments: [Int: NoteMathColumnAlignment] = [:]
+        var placedCells: [[NoteMathBox?]] = []
     }
 
     private func environment(_ environment: NoteMathEnvironment, _ context: NoteMathContext) -> NoteMathBox {
@@ -1208,6 +1210,13 @@ struct NoteMathTypesetter {
             }
         case .array:
             shape.outerPadding = 0.5 * em
+        case .commutativeDiagram:
+            shape.cellStyle = .display
+            shape.gaps = { _ in 0.5 * em }
+            shape.rowGap = 0.3 * em
+            let arrowContext = context.with(style: NoteMathStyle(level: .display, cramped: false))
+            shape.placedCells = environment.arrows.map { row in row.map { $0.map { diagramArrow($0, arrowContext) } } }
+            return containingOverhang(grid(environment, shape: shape, context))
         }
         if environment.displayCells { shape.cellStyle = .display }
         let grid = self.grid(environment, shape: shape, context)
@@ -1228,12 +1237,60 @@ struct NoteMathTypesetter {
         return grid(environment, shape: shape, context)
     }
 
+    private func diagramArrow(_ arrow: NoteMathDiagramArrow, _ context: NoteMathContext) -> NoteMathBox {
+        let em = self.em(context)
+        switch arrow.direction {
+        case .right, .left:
+            return extensibleArrow(arrow.direction == .right ? "\u{2192}" : "\u{2190}", over: arrow.first,
+                                   under: arrow.second.isEmpty ? nil : arrow.second, context, minimumWidth: 3 * em)
+        case .equals:
+            let axis = constant(.axisHeight, context)
+            let width = 3 * em, thickness = 0.04 * em
+            var box = NoteMathBox(width: width, ascent: axis + 0.117 * em, descent: max(0.117 * em - axis, 0))
+            for y in [axis + 0.077 * em, axis - 0.117 * em] {
+                box.inks.append(NoteMathInk(content: .rule(CGSize(width: width, height: thickness)), origin: CGPoint(x: 0, y: y),
+                                            color: context.color))
+            }
+            return box
+        case .parallel:
+            return sizedDelimiter("\u{2016}", level: 2, context)
+        case .empty:
+            return NoteMathBox()
+        case .up, .down:
+            var box = sizedDelimiter(arrow.direction == .up ? "\u{2191}" : "\u{2193}", level: 2, context)
+            let labelContext = context.with(style: context.style.superscriptStyle)
+            let baseline = 0.8 * em - box.descent
+            if !arrow.first.isEmpty {
+                let label = layoutList(arrow.first, labelContext)
+                box.draw(label, at: CGPoint(x: box.width / 2 - 0.3 * em - label.width, y: baseline))
+            }
+            if !arrow.second.isEmpty {
+                let label = layoutList(arrow.second, labelContext)
+                box.draw(label, at: CGPoint(x: box.width / 2 + 0.3 * em, y: baseline))
+            }
+            return box
+        }
+    }
+
+    private func containingOverhang(_ grid: NoteMathBox) -> NoteMathBox {
+        let extent = inkExtent(grid)
+        guard !grid.inks.isEmpty, extent.minX < 0 || extent.maxX > grid.width else { return grid }
+        let shift = max(-extent.minX, 0)
+        var box = NoteMathBox(width: max(grid.width, extent.maxX) + shift, ascent: grid.ascent, descent: grid.descent)
+        box.draw(grid, at: CGPoint(x: shift, y: 0))
+        return box
+    }
+
     private func grid(_ environment: NoteMathEnvironment, shape: GridShape, _ context: NoteMathContext) -> NoteMathBox {
         let em = self.em(context)
         let cellContext = context.with(style: NoteMathStyle(level: shape.cellStyle, cramped: false))
         let columnCount = max(shape.columns.count, environment.rows.map(\.count).max() ?? 0, 1)
-        let cells: [[NoteMathBox]] = environment.rows.map { row in
+        let cells: [[NoteMathBox]] = environment.rows.enumerated().map { rowIndex, row in
             row.enumerated().map { column, nodes in
+                if rowIndex < shape.placedCells.count, column < shape.placedCells[rowIndex].count,
+                   let placed = shape.placedCells[rowIndex][column] {
+                    return placed
+                }
                 let padded = shape.padsRelations && !column.isMultiple(of: 2) ? [NoteMathNode.group([])] + nodes : nodes
                 return layoutList(padded, cellContext)
             }

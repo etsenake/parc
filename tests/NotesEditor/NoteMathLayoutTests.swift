@@ -79,6 +79,25 @@ struct NoteMathLayoutTests {
         expect(ruleCount(box("\\begin{array}{cc} a & b \\\\ \\hdashline c & d \\end{array}")) > 2, "hdashline draws as dashes")
     }
 
+    static func commutativeDiagrams() {
+        let plain = box("\\begin{CD} A @>>> B \\end{CD}")
+        let objects = box("A").width + box("B").width
+        expect(plain.width >= objects + 3 * size + size - 0.5, "CD arrows reach at least 3em with half-em gaps: \(plain.width)")
+        let labelled = box("\\begin{CD} A @>{\\text{a long label}}>> B \\end{CD}")
+        expect(labelled.width > plain.width + size && labelled.ascent > plain.ascent, "labels above stretch the arrow")
+        let below = box("\\begin{CD} A @>>{g}> B \\end{CD}")
+        expect(below.descent > plain.descent, "labels below hang under the arrow")
+        expect(ruleCount(box("\\begin{CD} A @= B \\end{CD}")) == 2, "@= draws a long equals")
+        let column = box("\\begin{CD} A \\\\ @VVV \\\\ B \\end{CD}")
+        expect(column.height > box("\\begin{matrix} A \\\\ B \\end{matrix}").height + 0.8 * size, "a vertical arrow row sits between objects")
+        let sides = box("\\begin{CD} A \\\\ @VfVgV \\\\ B \\end{CD}")
+        expect(sides.width > column.width + 0.3 * size, "side labels widen the diagram instead of spilling out")
+        let sideInk = extent(sides.inks)
+        expect(sideInk.minX >= -0.01 && sideInk.maxX <= sides.width + 0.01, "side labels stay inside the diagram: \(sideInk) in \(sides.width)")
+        let grid = box("\\begin{CD} A @>>> B \\\\ @VVV @AAA \\\\ C @<<< D \\end{CD}")
+        expect(grid.width >= 2 * box("A").width + 3 * size && grid.height > 2.5 * size, "a square diagram lays out")
+    }
+
     static func main() {
         let repository = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : FileManager.default.currentDirectoryPath)
         let url = repository.appendingPathComponent("Resources/NoteFonts/STIXTwoMath-Regular.otf")
@@ -97,6 +116,7 @@ struct NoteMathLayoutTests {
         accents()
         environments()
         katexEnvironments()
+        commutativeDiagrams()
         scriptSizes()
         macrosAndChemistry()
         tags()

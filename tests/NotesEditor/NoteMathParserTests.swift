@@ -80,6 +80,7 @@ struct NoteMathParserTests {
         cellScopes()
         katexBoxesSizesAndLinks()
         katexEnvironments()
+        commutativeDiagrams()
         chemistry()
         units()
         mhchemManual()
@@ -147,6 +148,28 @@ struct NoteMathParserTests {
         }
         expect(dashed.columnRules == [1, 2] && dashed.columnRuleDashes == [true, false], "colons draw dashed columns")
         expect(dashed.rowRules == [1, 2] && dashed.rowRuleDashes == [true, false], "hdashline draws a dashed row rule")
+    }
+
+    static func commutativeDiagrams() {
+        let source = "\\begin{CD} A @>a>b> B \\\\ @VcVdV @AAA \\\\ C @<<< D @= E \\\\ @| @. \\\\ \\end{CD}"
+        guard case .environment(let diagram)? = parse(source).first else { failTest("CD parses") }
+        expect(diagram.kind == .commutativeDiagram && diagram.rows.count == 4 && diagram.arrows.count == 4, "CD keeps object and arrow rows")
+        expect(diagram.rows[0].count == 3 && diagram.rows[0][0] == parse("A") && diagram.rows[0][2] == parse("B"), "objects sit between arrows")
+        expect(diagram.arrows[0][1] == NoteMathDiagramArrow(direction: .right, first: parse("a"), second: parse("b")),
+               "@>a>b> puts a above and b below: \(diagram.arrows[0])")
+        expect(diagram.arrows[0][0] == nil && diagram.arrows[0][2] == nil, "object cells aren't arrows")
+        expect(diagram.arrows[1].count == 3 && diagram.arrows[1][0] == NoteMathDiagramArrow(direction: .down, first: parse("c"), second: parse("d")),
+               "@VcVdV labels both sides: \(diagram.arrows[1])")
+        expect(diagram.arrows[1][2]?.direction == .up && diagram.arrows[1][1] == nil, "@AAA points up under the next object")
+        expect(diagram.arrows[2][1]?.direction == .left && diagram.arrows[2][3]?.direction == .equals, "@<<< and @=")
+        expect(diagram.arrows[3][0]?.direction == .parallel && diagram.arrows[3][2]?.direction == .empty, "@| and @.")
+        expect(diagram.columns == Array(repeating: .center, count: 5), "CD centres every column")
+        expect((try? NoteMathParser.parseEquation(source, display: true).automaticNumbers) == 0, "CD never takes a number")
+        expect(failure("\\begin{CD} A @>a B \\end{CD}").message.contains("needs another >"), "an unfinished arrow says so")
+        expect(failure("\\begin{CD} A @>a @>>> B \\end{CD}").message.contains("needs another >"), "a new arrow can't start inside a label")
+        expect(failure("\\begin{CD} A @x B \\end{CD}").message.contains("follow it with"), "unknown arrow letters explain themselves")
+        expect(failure("\\begin{CD} A @>>> B").message == "Missing \\end{CD}", "an unclosed CD")
+        expect(failure("\\begin{CD} A \\end{matrix}").message.contains("ends with"), "mismatched CD end")
     }
 
     static func atomsAndClasses() {

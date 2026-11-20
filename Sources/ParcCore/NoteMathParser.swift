@@ -60,7 +60,17 @@ enum NoteMathColumnAlignment: Equatable, Sendable {
 }
 
 enum NoteMathEnvironmentKind: Equatable, Sendable {
-    case matrix, smallMatrix, cases, aligned, alignedAt, gathered, multline, array, subarray
+    case matrix, smallMatrix, cases, aligned, alignedAt, gathered, multline, array, subarray, commutativeDiagram
+}
+
+enum NoteMathDiagramArrowDirection: Equatable, Sendable {
+    case right, left, up, down, equals, parallel, empty
+}
+
+struct NoteMathDiagramArrow: Equatable {
+    var direction: NoteMathDiagramArrowDirection
+    var first: [NoteMathNode] = []
+    var second: [NoteMathNode] = []
 }
 
 struct NoteMathEnvironment: Equatable {
@@ -76,6 +86,7 @@ struct NoteMathEnvironment: Equatable {
     var displayCells = false
     var columnRuleDashes: [Bool] = []
     var rowRuleDashes: [Bool] = []
+    var arrows: [[NoteMathDiagramArrow?]] = []
 }
 
 indirect enum NoteMathNode: Equatable {
@@ -176,6 +187,7 @@ struct NoteMathParser {
         case fence(Int)
         case bracket(Int)
         case inlineMath(Int)
+        case diagramLabel(Character, Int)
         case stack(Int)
     }
 
@@ -365,6 +377,13 @@ struct NoteMathParser {
 
         while true {
             let lexeme = peek()
+            if case .diagramLabel(let stop, _) = scope {
+                if lexeme.token == .character(stop) { return finish(nodes) }
+                if [.character("@"), .command("end"), .command("\\"), .command("cr"), .character("&")].contains(lexeme.token) {
+                    throw failure("This arrow needs another \(stop) to finish", lexeme)
+                }
+            }
+            if case .cell("CD", _) = scope, lexeme.token == .character("@") { return finish(nodes) }
             switch lexeme.token {
             case .end:
                 switch scope {
@@ -374,6 +393,7 @@ struct NoteMathParser {
                 case .fence(let open): throw failure("Missing \\right to close this \\left", from: open, to: open + 5)
                 case .bracket(let open): throw failure("Missing ] to close this [", from: open, to: open + 1)
                 case .inlineMath(let open): throw failure("Missing $ to close this $", from: open, to: open + 1)
+                case .diagramLabel(let stop, let open): throw failure("This arrow needs another \(stop) to finish", from: open, to: open + 1)
                 }
             case .character("}"):
                 if case .group = scope { return finish(nodes) }
@@ -1111,6 +1131,7 @@ struct NoteMathParser {
         }
         var environment = NoteMathEnvironment(kind: shape.kind, rows: [], columns: [], left: shape.left, right: shape.right)
         environment.displayCells = Self.displayEnvironments.contains(name.text)
+        if shape.kind == .commutativeDiagram { return try parseCommutativeDiagram(environment, begin: lexeme) }
         let tagsRows = display && depth == 1 && Self.numberedEnvironments[name.text] != nil
         let rowsTagged = tagsRows && shape.kind != .multline
         let numbered = tagsRows && Self.numberedEnvironments[name.text] == true
@@ -1220,6 +1241,78 @@ struct NoteMathParser {
         }
     }
 
+    private mutating func parseCommutativeDiagram(_ start: NoteMathEnvironment, begin: Lexeme) throws(NoteMathParseError) -> NoteMathNode {
+        var environment = start
+        var lineIndex = 0
+        while true {
+            var cells: [[NoteMathNode]] = []
+            var arrows: [NoteMathDiagramArrow?] = []
+            var cell = try parseList(.cell("CD", begin.start))
+            var next = peek()
+            while next.token == .character("@") {
+                advance(past: next)
+                cells.append(cell)
+                arrows.append(nil)
+                arrows.append(try parseDiagramArrow(after: next))
+                cells.append([])
+                cell = try parseList(.cell("CD", begin.start))
+                next = peek()
+            }
+            let emptyLine = cells.isEmpty && cell.isEmpty
+            if lineIndex.isMultiple(of: 2) {
+                cells.append(cell)
+                arrows.append(nil)
+            } else if !cells.isEmpty {
+                cells.removeFirst()
+                arrows.removeFirst()
+            }
+            advance(past: next)
+            switch next.token {
+            case .character("&"), .command("\\"), .command("cr"), .command("newline"):
+                environment.rows.append(cells)
+                environment.arrows.append(arrows)
+                lineIndex += 1
+            case .command("end"):
+                let closing = try parseRawGroup(for: "end", what: "an environment name")
+                guard closing.text == "CD" else {
+                    throw failure("\\begin{CD} ends with \\end{\(closing.text)}", from: closing.start, to: closing.end)
+                }
+                if !emptyLine || environment.rows.isEmpty {
+                    environment.rows.append(cells)
+                    environment.arrows.append(arrows)
+                }
+                let columnCount = environment.rows.map(\.count).max() ?? 1
+                environment.columns = Array(repeating: .center, count: max(columnCount, 1))
+                return .environment(environment)
+            default:
+                throw failure("Expected \\\\ or \\end{CD} here", next)
+            }
+        }
+    }
+
+    private mutating func parseDiagramArrow(after at: Lexeme) throws(NoteMathParseError) -> NoteMathDiagramArrow {
+        let symbol = peek()
+        guard case .character(let character) = symbol.token, "<>AV=|.".contains(character) else {
+            throw failure("@ starts a CD arrow: follow it with >, <, V, A, =, | or .", symbol)
+        }
+        advance(past: symbol)
+        let direction: NoteMathDiagramArrowDirection
+        switch character {
+        case ">": direction = .right
+        case "<": direction = .left
+        case "V": direction = .down
+        case "A": direction = .up
+        case "=": return NoteMathDiagramArrow(direction: .equals)
+        case "|": return NoteMathDiagramArrow(direction: .parallel)
+        default: return NoteMathDiagramArrow(direction: .empty)
+        }
+        let first = try parseList(.diagramLabel(character, at.start))
+        advance(past: peek())
+        let second = try parseList(.diagramLabel(character, at.start))
+        advance(past: peek())
+        return NoteMathDiagramArrow(direction: direction, first: first, second: second)
+    }
+
     private mutating func parseMatrixAlignment(for name: String) throws(NoteMathParseError) -> NoteMathColumnAlignment {
         let open = peek()
         guard open.token == .character("[") else { return .center }
@@ -1259,7 +1352,7 @@ struct NoteMathParser {
         "Vmatrix*": (.matrix, "\u{2016}", "\u{2016}"), "dcases": (.cases, "{", nil), "drcases": (.cases, nil, "}"),
         "darray": (.array, nil, nil), "alignat": (.alignedAt, nil, nil), "alignat*": (.alignedAt, nil, nil),
         "alignedat": (.alignedAt, nil, nil), "multline": (.multline, nil, nil), "multline*": (.multline, nil, nil),
-        "subarray": (.subarray, nil, nil),
+        "subarray": (.subarray, nil, nil), "CD": (.commutativeDiagram, nil, nil),
     ]
 
     private static let displayEnvironments: Set<String> = ["dcases", "drcases", "darray"]
