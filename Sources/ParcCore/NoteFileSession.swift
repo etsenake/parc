@@ -416,7 +416,7 @@ final class NoteFileSession {
         let selection = NoteFileReconciler.mapSelection(page.selection, from: page.page, to: parsed)
         applyingDisk = true
         if undoable && !page.isReadOnly {
-            page.edit("Use Their Version", kind: .replaced, selection: selection) { $0 = parsed }
+            page.edit("Use the File’s Version", kind: .replaced, selection: selection) { $0 = parsed }
         } else {
             page.replacePage(parsed, selection: selection, keepHistory: false)
         }

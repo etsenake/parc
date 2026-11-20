@@ -41,7 +41,7 @@ enum NoteMediaActions {
 
     static func saveCopy(of source: NoteMediaSource, suggestedName: String, in window: NSWindow?,
                          completion: @escaping (Error?) -> Void) {
-        guard let origin = source.url else { completion(NoteMediaActionError.unavailable("There's nothing to save yet.")); return }
+        guard let origin = source.url else { completion(NoteMediaActionError.unavailable("There’s nothing to save yet.")); return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = suggestedName.isEmpty ? origin.lastPathComponent : suggestedName
         panel.canCreateDirectories = true

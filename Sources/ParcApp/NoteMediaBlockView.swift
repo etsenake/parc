@@ -437,10 +437,10 @@ enum NoteMediaCopy {
         default: thing = "file"
         }
         switch problem {
-        case .missing: return "Couldn't find this \(thing)"
-        case .unreachable: return "Couldn't load this \(thing)"
-        case .unreadable: return "This \(thing) won't open"
-        case .unsupported: return "This \(thing) can't play here"
+        case .missing: return "Couldn’t find this \(thing)"
+        case .unreachable: return "Couldn’t load this \(thing)"
+        case .unreadable: return "This \(thing) won’t open"
+        case .unsupported: return "This \(thing) can’t play here"
         }
     }
 }
@@ -540,7 +540,7 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
         linkChip = NoteChip("Embed link", icon: .symbol("link"))
         embedChip = NoteChip("Embed", icon: .symbol("return"))
         fieldUploadChip = NoteChip("Upload", icon: .symbol(kind == .file ? "arrow.up.doc" : "square.and.arrow.up"))
-        hint = NoteMediaStyle.label("That doesn't look like a link", font: NoteMediaStyle.smallFont, color: NoteMediaStyle.warningInk)
+        hint = NoteMediaStyle.label("That doesn’t look like a link.", font: NoteMediaStyle.smallFont, color: NoteMediaStyle.warningInk)
         super.init(host: host)
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.contentTintColor = NoteTheme.tertiaryInk

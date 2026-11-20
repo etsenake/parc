@@ -203,7 +203,7 @@ final class NoteCoverPicker: NSView, NoteFloatingPanelContent {
 
     private func useLink() {
         guard let url = NotePageExport.validatedLink(linkField.text) else {
-            linkHint.stringValue = "That doesn't look like a link. Try one that starts with https://"
+            linkHint.stringValue = "That doesn’t look like a link. Try one starting with https://."
             linkHint.textColor = NoteTheme.destructiveInk
             NoteAnimation.pop(linkField, from: 0.97, spring: .pill)
             needsLayout = true
