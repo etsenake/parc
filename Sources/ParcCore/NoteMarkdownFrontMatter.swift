@@ -41,6 +41,7 @@ enum NoteMDFrontMatter {
     static func read(_ yaml: String) -> NotePageSettings {
         var settings = NotePageSettings()
         var coverPosition: Double?
+        var coverCredit: (name: String?, link: String?) = (nil, nil)
         var lines = yaml.components(separatedBy: "\n")
         if lines.last == "" { lines.removeLast() }
         var index = 0
@@ -66,7 +67,7 @@ enum NoteMDFrontMatter {
                 continue
             }
             let value = classify(rest, continuation: Array(entry.dropFirst()))
-            if apply(key: key, value: value, to: &settings, coverPosition: &coverPosition) { continue }
+            if apply(key: key, value: value, to: &settings, coverPosition: &coverPosition, coverCredit: &coverCredit) { continue }
             switch value {
             case .scalar(let scalar): settings.properties.append(NotePageProperty(key: key, value: propertyValue(scalar)))
             case .list(let items): settings.properties.append(NotePageProperty(key: key, value: .list(items)))
@@ -77,6 +78,13 @@ enum NoteMDFrontMatter {
             if settings.cover != nil { settings.cover?.position = coverPosition } else {
                 settings.properties.append(NotePageProperty(key: "cover-position", value: .number(coverPosition)))
             }
+        }
+        if settings.cover != nil, let credit = NoteMediaCredit(name: coverCredit.name, link: coverCredit.link),
+           credit.name == coverCredit.name, credit.link == coverCredit.link {
+            settings.cover?.credit = credit
+        } else {
+            if let name = coverCredit.name { settings.properties.append(NotePageProperty(key: "cover-credit", value: .text(name))) }
+            if let link = coverCredit.link { settings.properties.append(NotePageProperty(key: "cover-credit-url", value: .text(link))) }
         }
         return settings
     }
@@ -90,7 +98,8 @@ enum NoteMDFrontMatter {
         }
     }
 
-    private static func apply(key: String, value: Value, to settings: inout NotePageSettings, coverPosition: inout Double?) -> Bool {
+    private static func apply(key: String, value: Value, to settings: inout NotePageSettings, coverPosition: inout Double?,
+                              coverCredit: inout (name: String?, link: String?)) -> Bool {
         guard case .scalar(let scalar) = value else { return false }
         switch (key, scalar) {
         case ("icon", .text(let text)) where !text.isEmpty && settings.icon == nil:
@@ -99,6 +108,10 @@ enum NoteMDFrontMatter {
             settings.cover = NoteCover(source: text)
         case ("cover-position", .number(let number)) where coverPosition == nil:
             coverPosition = number
+        case ("cover-credit", .text(let text)) where coverCredit.name == nil:
+            coverCredit.name = text
+        case ("cover-credit-url", .text(let text)) where coverCredit.link == nil:
+            coverCredit.link = text
         case ("font", .text(let text)):
             guard let font = NotePageFont(rawValue: text), font != .standard, settings.font == .standard else { return false }
             settings.font = font
@@ -309,6 +322,10 @@ enum NoteMDFrontMatter {
         if let cover = settings.cover {
             lines.append("cover: " + scalarText(cover.source))
             if cover.position != 0.5 { lines.append("cover-position: " + numberText(cover.position)) }
+            if let credit = cover.credit, !credit.name.isEmpty {
+                lines.append("cover-credit: " + scalarText(credit.name))
+                if let link = credit.link { lines.append("cover-credit-url: " + scalarText(link)) }
+            }
         }
         if settings.font != .standard { lines.append("font: " + settings.font.rawValue) }
         if settings.smallText { lines.append("small-text: true") }

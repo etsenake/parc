@@ -70,6 +70,10 @@ enum NoteMDColor {
 }
 
 enum NoteMDMedia {
+    static func carriesCredit(_ kind: NoteBlockKind) -> Bool {
+        kind.isMedia || kind == .embed
+    }
+
     static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "svg", "heic", "heif", "tif", "tiff", "bmp", "ico", "avif", "apng", "jfif"]
     static let videoExtensions: Set<String> = ["mp4", "m4v", "mov", "webm", "ogv", "mkv", "avi", "mpg", "mpeg", "3gp"]
     static let audioExtensions: Set<String> = ["mp3", "m4a", "wav", "aac", "flac", "ogg", "oga", "opus", "aif", "aiff", "caf", "weba", "mid", "midi"]
@@ -638,6 +642,9 @@ struct NoteMDReader {
         if attributes.flags.contains("wrap") { block.props.wrap = true }
         if block.kind == .code, let view = values["view"], let mode = NoteDiagramMode(rawValue: view.lowercased()) {
             block.props.diagramMode = mode == .preview ? nil : mode
+        }
+        if NoteMDMedia.carriesCredit(block.kind), let credit = NoteMediaCredit(name: values["credit"], link: values["credit-url"]) {
+            block.props.credit = credit
         }
         if block.kind == .bookmark {
             var bookmark = block.props.bookmark ?? NoteBookmark()

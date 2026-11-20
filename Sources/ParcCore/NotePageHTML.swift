@@ -41,8 +41,13 @@ enum NotePageHTML {
             html += "<body class=\"" + classes.joined(separator: " ") + "\">\n"
             if let cover = settings.cover {
                 let position = Int((min(max(cover.position, 0), 1) * 100).rounded())
-                html += "<img class=\"page-cover\" alt=\"\" src=\"" + NotePageHTMLWriter.attribute(writer.source(cover.source))
-                    + "\" style=\"object-position:center " + String(position) + "%\">\n"
+                let image = "<img class=\"page-cover\" alt=\"\" src=\"" + NotePageHTMLWriter.attribute(writer.source(cover.source))
+                    + "\" style=\"object-position:center " + String(position) + "%\">"
+                if let credit = cover.credit, !credit.name.isEmpty {
+                    html += "<div class=\"page-cover-frame\">" + image + "<p class=\"cover-credit\">" + NotePageHTMLWriter.credit(credit) + "</p></div>\n"
+                } else {
+                    html += image + "\n"
+                }
             }
             html += "<article class=\"page\">\n<header class=\"page-header\">\n"
             if let icon = settings.icon, !icon.isEmpty {
@@ -141,6 +146,15 @@ struct NotePageHTMLWriter {
             }
         }
         return result
+    }
+
+    static func credit(_ credit: NoteMediaCredit) -> String {
+        "<span class=\"credit\">" + credit.parts.map { part -> String in
+            switch part {
+            case .text(let text): return escape(text)
+            case .link(let text, let url): return "<a href=\"" + attribute(url.absoluteString) + "\">" + escape(text) + "</a>"
+            }
+        }.joined() + "</span>"
     }
 
     static func attribute(_ value: String) -> String {
@@ -395,8 +409,17 @@ struct NotePageHTMLWriter {
     private mutating func figure(_ kind: String, _ block: NoteBlock, attributes: String = "", content: String) {
         let style = mode == .fragment ? " style=\"margin:1em 0\"" : ""
         output += "<figure data-block=\"" + kind + "\"" + attributes + colorClass(block.color, adding: [kind]) + style + ">" + content
-        if !block.props.caption.isEmpty { output += "<figcaption>" + inline(block.props.caption) + "</figcaption>" }
+        figureCaption(block)
         output += "</figure>"
+    }
+
+    private mutating func figureCaption(_ block: NoteBlock) {
+        let credit = NoteMDMedia.carriesCredit(block.kind) ? block.props.credit.map(Self.credit) : nil
+        guard !block.props.caption.isEmpty || credit != nil else { return }
+        output += "<figcaption>"
+        if !block.props.caption.isEmpty { output += inline(block.props.caption) }
+        if let credit { output += (block.props.caption.isEmpty ? "" : "<br>") + credit }
+        output += "</figcaption>"
     }
 
     private mutating func code(_ block: NoteBlock) {
@@ -465,7 +488,7 @@ struct NotePageHTMLWriter {
         default:
             output += "<audio src=\"" + Self.attribute(link(raw)) + "\" controls preload=\"metadata\"></audio>"
         }
-        if !block.props.caption.isEmpty { output += "<figcaption>" + inline(block.props.caption) + "</figcaption>" }
+        figureCaption(block)
         output += "</figure>"
     }
 

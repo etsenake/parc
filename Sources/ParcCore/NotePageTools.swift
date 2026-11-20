@@ -443,7 +443,7 @@ extension NotePropertyValue {
 }
 
 enum NotePropertyEditing {
-    static let reservedKeys: Set<String> = ["icon", "cover", "cover-position", "font", "small-text", "full-width", "locked", "title"]
+    static let reservedKeys: Set<String> = ["icon", "cover", "cover-position", "cover-credit", "cover-credit-url", "font", "small-text", "full-width", "locked", "title"]
 
     static let calendar: Calendar = {
         var value = Calendar(identifier: .gregorian)

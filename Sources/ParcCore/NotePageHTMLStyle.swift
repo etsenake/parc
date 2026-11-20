@@ -67,6 +67,11 @@ enum NotePageHTMLStyle {
     .page{max-width:780px;margin:0 auto;padding:72px 48px 120px}
     body.full-width .page{max-width:none;padding-left:72px;padding-right:72px}
     .page-cover{display:block;width:100%;height:30vh;min-height:180px;max-height:320px;object-fit:cover}
+    .page-cover-frame{position:relative}
+    .cover-credit{position:absolute;right:12px;bottom:10px;margin:0;padding:3px 9px;border-radius:7px;background:rgba(18,15,46,.55);\
+    color:#fff;font-size:11.5px;line-height:1.4}
+    .cover-credit a,figcaption .credit a{color:inherit}
+    figcaption .credit{font-size:.92em}
     body.has-cover .page{padding-top:0}
     body.has-cover.has-icon .page-icon{margin-top:-0.55em}
     body.has-cover:not(.has-icon) .page-header{padding-top:48px}
@@ -181,6 +186,7 @@ enum NotePageHTMLStyle {
     @media (max-width:640px){.page{padding:40px 20px 80px}body.full-width .page{padding-left:20px;padding-right:20px}\
     .columns{flex-direction:column;gap:.4em}.page-icon{font-size:60px}}
     @media print{@page{margin:18mm 16mm}body{font-size:12pt}.page{max-width:none;padding:0}.page-cover{max-height:220px;margin-bottom:24px}\
+    .page-cover-frame{margin-bottom:24px}.page-cover-frame .page-cover{margin-bottom:0}\
     body.has-cover .page-header{padding-top:0}pre,aside,figure,table,blockquote,.bookmark-card{break-inside:avoid}\
     h1,h2,h3,h4{break-after:avoid}a{color:inherit}pre{white-space:pre-wrap}\
     .diagram-art{overflow:visible}.diagram-art svg{max-width:100%}}

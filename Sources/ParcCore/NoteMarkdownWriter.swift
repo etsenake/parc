@@ -542,6 +542,10 @@ struct NoteMDWriter {
         if let width = block.props.width { items.append(("width", Self.number(width))) }
         if let height = block.props.height { items.append(("height", Self.number(height))) }
         if block.props.alignment != .center { items.append(("align", block.props.alignment.rawValue)) }
+        if let credit = block.props.credit, !credit.name.isEmpty {
+            items.append(("credit", credit.name))
+            if let link = credit.link { items.append(("credit-url", link)) }
+        }
         items += blockAttributes(block)
         return line + suffix(items)
     }

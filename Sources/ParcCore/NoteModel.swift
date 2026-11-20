@@ -530,6 +530,7 @@ struct NoteBlockProps: Hashable, Codable {
     var target: String?
     var anchor: String?
     var diagramMode: NoteDiagramMode?
+    var credit: NoteMediaCredit?
 }
 
 private final class NoteBlockPropsStorage {
@@ -660,6 +661,7 @@ enum NotePageFont: String, Hashable, Codable, CaseIterable {
 struct NoteCover: Hashable, Codable {
     var source: String
     var position = 0.5
+    var credit: NoteMediaCredit?
 }
 
 enum NotePropertyValue: Hashable, Codable {
@@ -1253,5 +1255,77 @@ enum NoteLinkPolicy {
         guard let colon = trimmed.firstIndex(of: ":") else { return true }
         let scheme = trimmed[..<colon].filter { !$0.isWhitespace && !$0.unicodeScalars.allSatisfy(CharacterSet.controlCharacters.contains) }
         return !blockedSchemes.contains(scheme.lowercased())
+    }
+}
+
+struct NoteMediaCredit: Hashable, Codable {
+    struct Provider: Hashable {
+        var name: String
+        var url: URL
+    }
+
+    enum Part: Hashable {
+        case text(String)
+        case link(String, URL)
+    }
+
+    var name: String
+    var link: String?
+
+    init(name: String, link: String? = nil) {
+        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = link?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.link = trimmed.isEmpty ? nil : trimmed
+    }
+
+    init?(name: String?, link: String?) {
+        guard let name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        self.init(name: name, link: link)
+    }
+
+    static let referralSource = "parc"
+
+    var profileURL: URL? {
+        guard let link, let url = URL(string: link), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              url.host?.isEmpty == false else { return nil }
+        return Self.referral(url)
+    }
+
+    var provider: Provider? {
+        guard let host = profileURL?.host?.lowercased(), Self.isUnsplash(host) else { return nil }
+        return Provider(name: "Unsplash", url: Self.referral(URL(string: "https://unsplash.com/")!))
+    }
+
+    var parts: [Part] {
+        var result: [Part] = [.text("Photo by ")]
+        if let profileURL { result.append(.link(name, profileURL)) } else { result.append(.text(name)) }
+        if let provider {
+            result.append(.text(" on "))
+            result.append(.link(provider.name, provider.url))
+        }
+        return result
+    }
+
+    var sentence: String {
+        parts.map { part in
+            switch part {
+            case .text(let text): return text
+            case .link(let text, _): return text
+            }
+        }.joined()
+    }
+
+    static func isUnsplash(_ host: String) -> Bool {
+        host == "unsplash.com" || host.hasSuffix(".unsplash.com")
+    }
+
+    static func referral(_ url: URL) -> URL {
+        guard let host = url.host?.lowercased(), isUnsplash(host),
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        var items = components.queryItems ?? []
+        if !items.contains(where: { $0.name == "utm_source" }) { items.append(URLQueryItem(name: "utm_source", value: referralSource)) }
+        if !items.contains(where: { $0.name == "utm_medium" }) { items.append(URLQueryItem(name: "utm_medium", value: "referral")) }
+        components.queryItems = items
+        return components.url ?? url
     }
 }
