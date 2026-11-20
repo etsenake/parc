@@ -40,6 +40,10 @@ struct CommandBarNotesTests {
         }
         expect(found.map(\.title) == ["Packing"], "a word from a note's body finds it")
         expect(found.first?.key == CommandBarDocument.noteKey(packing), "a body match shares the note's key")
+        expect(CommandBarNotes.refreshedMatches(for: "passport", replacing: [], in: filled) == found,
+               "once the index is ready, an empty search comes back with fresh matches")
+        expect(CommandBarNotes.refreshedMatches(for: "passport", replacing: found, in: filled) == nil,
+               "matches that didn't change leave the results alone")
 
         let elsewhere = FileManager.default.temporaryDirectory.appendingPathComponent("parc-command-bar-elsewhere-" + UUID().uuidString + ".md")
         try? Data("Ferry times to the islands.\n".utf8).write(to: elsewhere)

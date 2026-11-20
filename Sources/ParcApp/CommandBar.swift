@@ -73,7 +73,7 @@ import SwiftUI
     var noteLibrary: NoteLibrary? {
         didSet {
             noteMatches = nil
-            noteLibrarySubscription = noteLibrary?.changes.sink { [weak self] in self?.noteMatches = nil }
+            noteLibrarySubscription = noteLibrary?.changes.sink { [weak self] in self?.noteLibraryChanged() }
         }
     }
     private var noteLibrarySubscription: AnyCancellable?
@@ -1206,12 +1206,27 @@ import SwiftUI
         }
         return CommandBarRanking.rank(candidates, query: query, leadingPage: lead?.page).map { pool[$0] }
     }
+    private var openNoteURLs: [URL] {
+        noteLibrary == nil ? [] : tabs.compactMap { InternalPage(urlString: $0.url)?.noteURL }
+    }
     private func noteContentMatches(_ query: String) -> [CommandBarDocument] {
         if let noteMatches, noteMatches.query == query { return noteMatches.notes }
-        let open = noteLibrary == nil ? [] : tabs.compactMap { InternalPage(urlString: $0.url)?.noteURL }
-        let notes = CommandBarNotes.contentMatches(query, in: noteLibrary, openNotes: open)
+        let notes = CommandBarNotes.contentMatches(query, in: noteLibrary, openNotes: openNoteURLs)
         noteMatches = (query, notes)
         return notes
+    }
+    private func noteLibraryChanged() {
+        guard let previous = noteMatches else { return }
+        noteMatches = nil
+        guard !dismissed, !previous.query.isEmpty else { return }
+        guard let fresh = CommandBarNotes.refreshedMatches(for: previous.query, replacing: previous.notes,
+                                                           in: noteLibrary, openNotes: openNoteURLs) else {
+            noteMatches = previous
+            return
+        }
+        noteMatches = (previous.query, fresh)
+        lastOpenResultsFingerprint = nil
+        refreshResults(requestNative: false)
     }
     private func automaticCompletion(for result: Result) -> String? {
         guard let host = result.completionHost else { return result.navigation?.inlineCompletionText }

@@ -23,6 +23,14 @@ struct DocumentsLibraryItem: Equatable {
     }
 }
 
+struct DocumentsLibraryInputs: Equatable {
+    let notes: [NoteReference]
+    let easels: [EaselSummary]
+    let pending: Bool
+    let query: String
+    let noteMatches: [URL]
+}
+
 enum DocumentsLibraryRenameError: LocalizedError {
     case changed
     var errorDescription: String? { "This changed in another window. Give it another try." }
@@ -43,6 +51,20 @@ enum DocumentsLibraryCatalog {
             DocumentsLibraryItem(identity: .easel(easel.id), title: displayTitle(easel.title, untitled: untitledEasel), emoji: nil,
                                  preview: "", detail: "Easel · \(easel.itemCount) objects", modified: easel.modifiedAt)
         }
+    }
+
+    @MainActor
+    static func inputs(library: NoteLibrary, easels: () throws -> [EaselSummary], pending: Bool, query: String,
+                       searchLimit: Int) throws -> DocumentsLibraryInputs {
+        let notes = try library.notes()
+        let easels = try easels()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matches = trimmed.isEmpty ? [] : library.search(trimmed, limit: searchLimit).map(\.url)
+        return DocumentsLibraryInputs(notes: notes, easels: easels, pending: pending, query: trimmed, noteMatches: matches)
+    }
+
+    static func visible(_ inputs: DocumentsLibraryInputs) -> [DocumentsLibraryItem] {
+        visible(items(notes: inputs.notes, easels: inputs.easels), query: inputs.query, noteMatches: inputs.noteMatches)
     }
 
     static func visible(_ items: [DocumentsLibraryItem], query: String, noteMatches: [URL] = []) -> [DocumentsLibraryItem] {

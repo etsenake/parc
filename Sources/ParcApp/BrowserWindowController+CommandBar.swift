@@ -686,7 +686,8 @@ extension BrowserWindowController {
             classifyBackground(original.url, typed, stillOriginal, complete)
         }
         panel.onManagePasswords = { [weak self] in if isOriginal() { self?.showPasswordManager() } }
-        panel.noteLibrary = isPrivateBrowsing || isPopupWindow ? nil : NoteFolderPreferences.library(for: commandProfile)
+        panel.noteLibrary = isPrivateBrowsing || isPopupWindow || store.isProfileRemovalPending(commandProfile)
+            ? nil : NoteFolderPreferences.library(for: commandProfile)
         panel.onOpenDocument = { [weak self] document in
             guard isOriginal(), let self else { return }
             if let url = document.url { self.openNote(url: url) }

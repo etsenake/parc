@@ -39,4 +39,10 @@ enum CommandBarNotes {
         }
         return found
     }
+
+    static func refreshedMatches(for query: String, replacing previous: [CommandBarDocument], in library: NoteLibrary?,
+                                 openNotes: [URL] = []) -> [CommandBarDocument]? {
+        let fresh = contentMatches(query, in: library, openNotes: openNotes)
+        return fresh == previous ? nil : fresh
+    }
 }

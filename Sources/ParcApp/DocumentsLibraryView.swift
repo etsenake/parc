@@ -45,10 +45,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private var library: NoteLibrary?
     private var subscription: AnyCancellable?
     private var folderSubscription: AnyCancellable?
-    private var observedNotes: [NoteReference] = []
-    private var observedEasels: [EaselSummary] = []
-    private var observedProfileRemovalPending = false
-    private var observedQuery = ""
+    private var observedInputs: DocumentsLibraryInputs?
     var ownerValid: (() -> Bool)?
     var onOpen: ((InternalPage, String) -> Void)?
     var onCreate: (() -> Void)?
@@ -115,33 +112,30 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     func focusSearch() { window?.makeFirstResponder(search); search.selectText(nil) }
     func reload(force: Bool = false) {
         let selected = selectedPage
-        let query = search.stringValue
         guard !store.isEphemeral, let library else {
-            observedNotes = []; observedEasels = []
+            observedInputs = nil
             rows = []; selectedPage = nil; rebuildCards()
             empty.isHidden = true
             createButton.isEnabled = false
             return
         }
         do {
-            let notes = try library.notes()
-            let easels = try EaselEditorViewController.sharedStore(directory: store.easelsDirectory(for: profileID)).list()
-            let pending = store.isProfileRemovalPending(profileID)
-            if !force && shouldSkipCatalogReload(notes: notes, easels: easels, pending: pending, query: query) { return }
-            rememberAppliedCatalog(notes: notes, easels: easels, pending: pending, query: query)
-            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            let matches = trimmed.isEmpty ? [] : library.search(trimmed, limit: Self.searchLimit).map(\.url)
-            let next = DocumentsLibraryCatalog.visible(DocumentsLibraryCatalog.items(notes: notes, easels: easels),
-                                                       query: trimmed, noteMatches: matches).compactMap(Self.row)
-            empty.stringValue = next.isEmpty ? DocumentsLibraryCatalog.emptyMessage(query: trimmed) : ""
+            let directory = store.easelsDirectory(for: profileID)
+            let inputs = try DocumentsLibraryCatalog.inputs(
+                library: library, easels: { try EaselEditorViewController.sharedStore(directory: directory).list() },
+                pending: store.isProfileRemovalPending(profileID), query: search.stringValue, searchLimit: Self.searchLimit)
+            if !force && inputs == observedInputs { return }
+            observedInputs = inputs
+            let next = DocumentsLibraryCatalog.visible(inputs).compactMap(Self.row)
+            empty.stringValue = next.isEmpty ? DocumentsLibraryCatalog.emptyMessage(query: inputs.query) : ""
             empty.isHidden = !next.isEmpty
             selectedPage = next.contains(where: { $0.page == selected }) ? selected : nil
             let sameCards = next == rows
             rows = next
             if !sameCards { rebuildCards() }
-            createButton.isEnabled = !pending
+            createButton.isEnabled = !inputs.pending
         } catch {
-            observedNotes = []; observedEasels = []; observedProfileRemovalPending = false
+            observedInputs = nil
             rows = []; selectedPage = nil; rebuildCards()
             empty.stringValue = error.localizedDescription; empty.isHidden = false
             createButton.isEnabled = !store.isProfileRemovalPending(profileID)
@@ -151,20 +145,6 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private static func row(_ item: DocumentsLibraryItem) -> Row? {
         if let url = item.noteURL { return Row(item: item, page: .note(url)) }
         return item.easelID.map { Row(item: item, page: .easel($0)) }
-    }
-
-    private func shouldSkipCatalogReload(notes: [NoteReference], easels: [EaselSummary], pending: Bool, query: String) -> Bool {
-        notes == observedNotes
-            && easels == observedEasels
-            && pending == observedProfileRemovalPending
-            && query == observedQuery
-    }
-
-    private func rememberAppliedCatalog(notes: [NoteReference], easels: [EaselSummary], pending: Bool, query: String) {
-        observedNotes = notes
-        observedEasels = easels
-        observedProfileRemovalPending = pending
-        observedQuery = query
     }
     private var current: Row? { rows.first { $0.page == selectedPage } }
     private var valid: Bool { window != nil && ownerValid?() == true }

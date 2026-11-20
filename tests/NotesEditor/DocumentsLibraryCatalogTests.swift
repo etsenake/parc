@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 @main @MainActor
@@ -11,6 +12,35 @@ struct DocumentsLibraryCatalogTests {
                                       icon: icon, modifiedAt: Date(timeIntervalSince1970: day * 86_400))
         reference.snippet = snippet
         return reference
+    }
+
+    static func indexReadyChangesTheInputs() {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("parc-library-catalog-" + UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let filler = String(repeating: "Socks, chargers and a spare umbrella for the drizzle. ", count: 40)
+        try? Data("\(filler)\n\nDon't forget the sardine tin opener.\n".utf8).write(to: folder.appendingPathComponent("Packing.md"))
+        let library = NoteLibrary.shared(folder: folder)
+        func inputs() -> DocumentsLibraryInputs? {
+            try? DocumentsLibraryCatalog.inputs(library: library, easels: { [] }, pending: false, query: "  sardine ", searchLimit: 100)
+        }
+        guard let before = inputs() else { failTest("a readable folder gives catalog inputs") }
+        expect(before.query == "sardine" && before.noteMatches.isEmpty, "a cold index has no body matches yet")
+        expect(DocumentsLibraryCatalog.visible(before).isEmpty, "so the body word finds nothing at first")
+        var changed = false
+        let watch = library.changes.sink { changed = true }
+        defer { watch.cancel() }
+        var after = before
+        let deadline = Date().addingTimeInterval(10)
+        while after.noteMatches.isEmpty && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            guard changed else { continue }
+            changed = false
+            after = inputs() ?? before
+        }
+        expect(after != before, "the index finishing changes the inputs, so the Library reloads instead of skipping")
+        expect(DocumentsLibraryCatalog.visible(after).map(\.title) == ["Packing"], "and the body word now finds its note")
+        expect(inputs() == after, "a quiet change after that is skipped")
     }
 
     static func main() {
@@ -59,6 +89,7 @@ struct DocumentsLibraryCatalogTests {
         }
         expect(DocumentsLibraryRenameError.changed.localizedDescription == "This changed in another window. Give it another try.",
                "a stale rename says what happened")
+        indexReadyChangesTheInputs()
         print("DocumentsLibraryCatalogTests passed")
     }
 }
