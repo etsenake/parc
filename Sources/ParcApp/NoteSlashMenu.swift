@@ -451,6 +451,7 @@ final class NoteSlashMenuController {
         editor.canvas.layoutSubtreeIfNeeded()
         if let id = outcome.activate {
             editor.canvas.scrollBlockToVisible(id)
+            editor.canvas.layoutSubtreeIfNeeded()
             _ = editor.canvas.blockView(for: id)?.focus(at: outcome.selection.caret?.offset, field: .body)
         } else if let caret = outcome.selection.caret {
             editor.focus(caret)
@@ -470,6 +471,8 @@ final class NoteSlashMenuController {
         case .pickNote(let position):
             openMention(Anchor(block: position.block, field: position.field, start: position.offset, trigger: ""), scope: .noteBlock)
         case .editEquation(let position):
+            editor.canvas.layoutSubtreeIfNeeded()
+            if editor.canvas.textHost(for: position)?.textView.editEquation(at: position.offset) == true { return }
             let range = position.offset..<(position.offset + 1)
             editor.session.setSelection(.text(anchor: position, head: NotePosition(position.block, range.upperBound, field: position.field)))
             editor.canvas.textHost(for: position)?.textView.selectedOffsets = range
@@ -758,6 +761,7 @@ final class NoteSlashMenuController {
             }
         case .emojiPicker:
             if let anchor, page.block(anchor.block) == nil { dismiss(animated: false) }
+            else if change.kind == .selection { dismiss() }
         case .blocks, .mention, .emoji:
             guard let query = liveQuery() else {
                 dismiss(animated: change.kind == .selection)
@@ -770,12 +774,15 @@ final class NoteSlashMenuController {
     }
 
     private func recordText() {
-        previousText = latestText
         guard case .text(_, let head) = editor.session.selection, let text = page.text(of: head) else {
+            previousText = latestText
             latestText = nil
             return
         }
-        latestText = (TextKey(block: head.block, field: head.field), text.string)
+        let key = TextKey(block: head.block, field: head.field)
+        if let latestText, latestText.key == key, latestText.text == text.string { return }
+        previousText = latestText
+        latestText = (key, text.string)
     }
 
     private func scheduleReminderSync(after delay: TimeInterval) {

@@ -677,7 +677,7 @@ private extension NoteCatalogOutcome {
         case .columns:
             if let first = block.children.first?.children.first { result.selection = .caret(NotePosition(first.id, 0)) }
         case .equation:
-            result.selection = .caret(NotePosition(id, block.text.length))
+            result.selection = .blocks([id])
             result.activate = id
         default:
             if block.kind.hasRichText || block.kind.hasPlainText {
