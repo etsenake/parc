@@ -756,7 +756,7 @@ extension BrowserWindowController {
         let panes = renderedPaneIDs.map { id in
             let tab = store.state.tab(id)
             let browser = tab == nil ? nil : browsers[id]
-            return HistorySwipeTargets.Pane(easelPage: easelEditors[id]?.editor.pageObjects?.selectedPage,
+            return HistorySwipeTargets.Pane(easelPage: embeddedPagePool(forTabID: id)?.selectedPage,
                                             page: browser?.nativePage,
                                             isInternal: tab.map { InternalPage.isInternal($0.url) } ?? true,
                                             isHidden: browser?.isHiddenOrHasHiddenAncestor ?? true)

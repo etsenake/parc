@@ -2,9 +2,9 @@ import AppKit
 import Combine
 
 extension BrowserWindowController {
-    private func embeddedCaptureOwner(_ identity: UUID) -> (UUID, EaselBrowserObjects, PCBrowserView)? {
-        for (tabID, pane) in easelEditors {
-            if let objects = pane.editor.pageObjects, let view = objects.ownedViews[identity] { return (tabID, objects, view) }
+    private func embeddedCaptureOwner(_ identity: UUID) -> (UUID, EmbeddedPagePool, PCBrowserView)? {
+        for (tabID, pool) in embeddedPagePools {
+            if let view = pool.ownedViews[identity] { return (tabID, pool, view) }
         }
         return nil
     }
@@ -318,8 +318,8 @@ extension BrowserWindowController {
         for peek in peeks.values where !peek.page.isClosed && peek.browser.window === window {
             if let state = peek.browser.captureState, state.active { next[peek.identity] = CaptureIndicatorPresentation(state) }
         }
-        for pane in easelEditors.values {
-            for (identity, view) in pane.editor.pageObjects?.ownedViews ?? [:] {
+        for pool in embeddedPagePools.values {
+            for (identity, view) in pool.ownedViews {
                 if view.window === window, let state = view.captureState, state.active {
                     next[identity] = CaptureIndicatorPresentation(state)
                 }
@@ -438,7 +438,7 @@ extension BrowserWindowController {
 
     func captureOwnerIDs(of tabID: UUID) -> [UUID] {
         [tabID] + peeks.values.filter { $0.parentTabID == tabID }.map(\.identity)
-            + Array(easelEditors[tabID]?.editor.pageObjects?.ownedViews.keys ?? Dictionary<UUID, PCBrowserView>().keys)
+            + Array(embeddedPagePool(forTabID: tabID)?.ownedViews.keys ?? Dictionary<UUID, PCBrowserView>().keys)
     }
 
     func showCaptureMenu(tabID: UUID, anchor: NSView) {

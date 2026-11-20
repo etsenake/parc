@@ -226,12 +226,18 @@ extension BrowserWindowController {
         refreshNavigationControls()
     }
 
-    func embeddedEaselPages(forTabID id: UUID) -> [PCNativePage] { easelEditors[id]?.editor.pageObjects?.pages ?? [] }
-    func embeddedEaselOwner(_ page: PCNativePage) -> (UUID, EaselBrowserObjects)? {
+    func embeddedPages(forTabID id: UUID) -> [PCNativePage] { embeddedPagePool(forTabID: id)?.pages ?? [] }
+    func embeddedPageOwner(_ page: PCNativePage) -> (UUID, EmbeddedPagePool)? {
         for (id, pane) in easelEditors {
             if let objects = pane.editor.pageObjects, objects.contains(page) { return (id, objects) }
         }
+        for (id, note) in noteEditors {
+            if let pool = NoteEmbeddedPages.pool(for: note.editor), pool.contains(page) { return (id, pool) }
+        }
         return nil
+    }
+    func embeddedPagePool(containing page: PCNativePage) -> EmbeddedPagePool? {
+        embeddedPageOwner(page)?.1 ?? NoteEmbeddedPages.lingering(containing: page)
     }
     func retireEaselAfterModelChange(_ id: UUID, cached: EaselPane) {
         guard !closingTabIDs.contains(id), let objects = cached.editor.pageObjects else { return }

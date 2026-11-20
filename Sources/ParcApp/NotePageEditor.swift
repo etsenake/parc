@@ -73,6 +73,7 @@ final class NotePageEditor {
         guard let responder = canvas.window?.firstResponder as? NSView else { return false }
         guard responder === canvas || responder.isDescendant(of: canvas) else { return false }
         if let header = canvas.headerView, responder.isDescendant(of: header) { return false }
+        if sequence(first: responder, next: \.superview).contains(where: { $0 is EmbeddedPageSurface }) { return false }
         return !responder.isDescendant(of: canvas.overlayView)
     }
 

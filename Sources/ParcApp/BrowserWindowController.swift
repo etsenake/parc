@@ -588,6 +588,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   easelPagesCanSleep(pane) else { continue }
             releaseIdleEaselPages(id, cached: pane)
         }
+        for (id, note) in noteEditors where !shown.contains(id) && !closingTabIDs.contains(id) && !transferringTabIDs.contains(id) {
+            guard let tab = store.state.tab(id, where: { $0.archivedAt == nil }),
+                  notePagesCanSleep(note, lastShown: tab.lastAccessed) else { continue }
+            releaseIdleNotePages(id, cached: note)
+        }
     }
 
     var visibleTabIDsForActivity: Set<UUID> {
@@ -606,8 +611,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if state != .eligible { protected.insert(id) }
             if state == .unknown { unavailable += 1 }
         }
-        for (id, pane) in easelEditors {
-            for view in pane.editor.pageObjects?.ownedViews.values ?? Dictionary<UUID, PCBrowserView>().values {
+        for (id, pool) in embeddedPagePools {
+            for view in pool.ownedViews.values {
                 let state = view.automaticArchiveProtectionState
                 if state != .eligible { protected.insert(id) }
                 if state == .unknown { unavailable += 1 }
@@ -617,8 +622,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     var hasPageInUse: Bool {
         let inUse = { (view: PCBrowserView) in view.automaticArchiveProtectionState == .protected }
-        return browsers.values.contains(where: inUse) || easelEditors.values.contains { pane in
-            pane.editor.pageObjects?.ownedViews.values.contains(where: inUse) == true
+        return browsers.values.contains(where: inUse) || embeddedPagePools.values.contains { pool in
+            pool.ownedViews.values.contains(where: inUse)
         }
     }
     func windowDidChangeOcclusionState(_ notification: Notification) {
@@ -1222,10 +1227,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let peek = activePeek, peek.isLeaving { return peek.parentPage }
         if let page = currentBrowser?.nativePage { return page }
         guard let id = currentTabID else { return nil }
-        return easelEditors[id]?.editor.pageObjects?.selectedPage
+        return embeddedPagePool(forTabID: id)?.selectedPage
     }
     func paneNativePage(_ id: UUID) -> PCNativePage? {
-        paneBrowser(id)?.nativePage ?? easelEditors[id]?.editor.pageObjects?.selectedPage
+        paneBrowser(id)?.nativePage ?? embeddedPagePool(forTabID: id)?.selectedPage
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, allowsHistorySwipeFor page: PCNativePage) -> Bool {
@@ -1351,7 +1356,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let browser = browsers[id], !browser.isHiddenOrHasHiddenAncestor else { return nil }
             return browser.nativePage
         }
-        let embedded = renderedPaneIDs.flatMap { easelEditors[$0]?.editor.pageObjects?.visiblePages ?? [] }
+        let embedded = renderedPaneIDs.flatMap { embeddedPagePool(forTabID: $0)?.visiblePages ?? [] }
         let held: [PCNativePage] = switchHold.held.compactMap { pane in
             guard pane.superview === splitView, let browser = pane.browser, !browser.isHiddenOrHasHiddenAncestor else { return nil }
             return browser.nativePage
@@ -1363,7 +1368,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                        disposition: PCNativePageDisposition) -> NSView? {
         guard browser === nativeBinding, !wholeWindowClose, !isClosing, !page.isClosed else { return nil }
         if let peek = peeks[page.identifier] { return peek.browser }
-        if page.isEmbedded { return embeddedEaselOwner(page)?.1.container(for: page) }
+        if page.isEmbedded { return embeddedPagePool(containing: page)?.container(for: page) }
         if disposition == .peek { return adoptPeek(page, binding: browser) }
         if let pending = peekUndoOpen, page.creationSourcePage?.identifier == pending.parent { peekUndoOpen = nil }
         if let container = transferContainers[page.identifier] { return container }
@@ -1441,7 +1446,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, didClose page: PCNativePage) {
         if browser === nativeBinding, page.isEmbedded {
-            embeddedEaselOwner(page)?.1.didClose(page); refreshCaptureIndicators(); return
+            embeddedPagePool(containing: page)?.didClose(page); refreshCaptureIndicators(); return
         }
         if browser === nativeBinding, let peek = peeks[page.identifier] { removePeek(peek); return }
         if browser === nativeBinding, !wholeWindowClose {
@@ -1608,6 +1613,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let nativeIDs: [UUID]
         let easelTransfers: [UUID: EaselBrowserObjects.WindowTransfer]
         var begunEasels: Set<UUID> = []
+        let noteTransfers: [UUID: EmbeddedPagePool.WindowTransfer]
+        var begunNotes: Set<UUID> = []
         let notes: [UUID: NotePane]
         let easels: [UUID: EaselPane]
         var reservation: NativePageOwnership.CollectionTransfer?
@@ -1638,11 +1645,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             notes = source.noteEditors.filter { plan.tabIDs.contains($0.key) }
             easels = source.easelEditors.filter { plan.tabIDs.contains($0.key) }
             easelTransfers = easels.compactMapValues { $0.editor.pageObjects?.snapshotForWindowTransfer() }
+            noteTransfers = notes.compactMapValues { NoteEmbeddedPages.pool(for: $0.editor)?.snapshotForWindowTransfer() }
             var originals = wrappers
             var ordered: [UUID] = []
             for id in plan.tabIDs {
                 if wrappers[id] != nil { ordered.append(id) }
-                if let transfer = easelTransfers[id] {
+                for transfer in [easelTransfers[id], noteTransfers[id]].compactMap({ $0 }) {
                     for child in transfer.views.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
                         guard originals[child] == nil else { return nil }
                         originals[child] = transfer.views[child]; ordered.append(child)
@@ -1676,6 +1684,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                       guard let objects = pane.editor.pageObjects else { return easelTransfers[id] == nil }
                       guard let transfer = easelTransfers[id] else { return false }
                       return objects.isCurrent(transfer)
+                  }), notes.allSatisfy({ id, pane in
+                      guard let pool = NoteEmbeddedPages.pool(for: pane.editor) else { return noteTransfers[id] == nil }
+                      guard let transfer = noteTransfers[id] else { return false }
+                      return pool.isCurrent(transfer)
                   }) else { return false }
             return pages.allSatisfy { id, page in
                 !page.isClosed && allWrappers[id]?.nativePage === page && allWrappers[id]?.window === sourceWindow
@@ -1708,6 +1720,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     failure = "An Easel changed before it could move."; resolve(); return false
                 }
                 begunEasels.insert(id)
+            }
+            for id in plan.tabIDs {
+                guard let transfer = noteTransfers[id] else { continue }
+                guard let note = notes[id], NoteEmbeddedPages.pool(for: note.editor)?.beginWindowTransfer(transfer) == true else {
+                    failure = "A note changed before it could move."; resolve(); return false
+                }
+                begunNotes.insert(id)
             }
             for id in nativeIDs {
                 let container = NSView(frame: destination.pageHost.bounds)
@@ -1742,6 +1761,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   easels.allSatisfy({ id, pane in
                       guard let transfer = easelTransfers[id] else { return pane.editor.pageObjects == nil }
                       return begunEasels.contains(id) && pane.editor.pageObjects?.isCurrent(transfer) == true
+                  }),
+                  notes.allSatisfy({ id, pane in
+                      guard let transfer = noteTransfers[id] else { return NoteEmbeddedPages.pool(for: pane.editor) == nil }
+                      return begunNotes.contains(id) && NoteEmbeddedPages.pool(for: pane.editor)?.isCurrent(transfer) == true
                   }) else { return false }
             do { committed = try plan.commit(source.store); return committed }
             catch { failure = error.localizedDescription; return false }
@@ -1785,12 +1808,32 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         windowTransfer: transfer) else { presentRecovery(); return }
                 }
             }
+            for id in plan.tabIDs {
+                guard let note = notes[id], let tab = source.store.state.tab(id),
+                      let transfer = noteTransfers[id], begunNotes.contains(id) else { continue }
+                let pane = target.panes[id] ?? target.makePane(tab); target.panes[id] = pane
+                if pane.superview == nil { target.parkedPages.addSubview(pane) }
+                pane.showNote(note.editor)
+                guard let pool = NoteEmbeddedPages.pool(for: note.editor), pool.isCurrent(transfer, checkingDocument: false) else { presentRecovery(); return }
+                for (child, page) in transfer.pages where !page.isClosed {
+                    guard let view = transfer.views[child], view.window === targetWindow,
+                          target.nativeBinding?.pageDidAttach(page, container: view) == true,
+                          page.embeddedOwnerValid, PCNativeBrowserApplication.owner(of: page) === target.nativeBinding else { presentRecovery(); return }
+                }
+                guard target.configureNoteEmbeds(tab, editor: note.editor, windowTransfer: transfer) else { presentRecovery(); return }
+            }
             guard begunEasels.allSatisfy({ id in
                 guard let transfer = easelTransfers[id] else { return false }
                 return easels[id]?.editor.pageObjects?.canFinishWindowTransfer(transfer) == true
+            }), begunNotes.allSatisfy({ id in
+                guard let transfer = noteTransfers[id], let note = notes[id] else { return false }
+                return NoteEmbeddedPages.pool(for: note.editor)?.canFinishWindowTransfer(transfer) == true
             }), source.ownership.finishCollection(reservation, moved: committed, closed: closed) else { presentRecovery(); return }
             for id in begunEasels {
                 if let transfer = easelTransfers[id] { _ = easels[id]?.editor.pageObjects?.finishWindowTransfer(transfer) }
+            }
+            for id in begunNotes {
+                if let transfer = noteTransfers[id], let note = notes[id] { _ = NoteEmbeddedPages.pool(for: note.editor)?.finishWindowTransfer(transfer) }
             }
             if committed {
                 for id in plan.tabIDs {

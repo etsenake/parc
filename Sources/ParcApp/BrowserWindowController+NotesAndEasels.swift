@@ -119,6 +119,7 @@ extension BrowserWindowController {
         if let cached = noteEditors[tab.id], cached.profileID == tab.profileID,
            InternalPage.note(url) == .note(cached.url) || InternalPage.note(url) == InternalPage(urlString: cached.originalTab.url) {
             pane.showNote(cached.editor)
+            configureNoteEmbeds(tab, editor: cached.editor)
             if let anchor = pendingNoteAnchors.removeValue(forKey: tab.id) { cached.editor.reveal(anchor: anchor) }
             return
         }
@@ -134,6 +135,7 @@ extension BrowserWindowController {
             noteFailures.removeValue(forKey: tab.id)
             configureNoteOwner(tab, editor: editor)
             pane.showNote(editor)
+            configureNoteEmbeds(tab, editor: editor)
             if let anchor = pendingNoteAnchors.removeValue(forKey: tab.id) ?? URL(string: tab.url)?.fragment, !anchor.isEmpty { editor.reveal(anchor: anchor) }
             if tab.title != editor.file.title || InternalPage.note(editor.file.url) != .note(url) {
                 DispatchQueue.main.async { [weak self, weak editor] in
@@ -179,6 +181,112 @@ extension BrowserWindowController {
             guard let self, let editor, self.noteEditors[tabID]?.editor === editor else { return }
             self.retireTrashedNote(url, profileID: profileID)
         }
+        configureNoteEmbeds(tab, editor: editor)
+    }
+
+    func embeddedPagePool(forTabID id: UUID) -> EmbeddedPagePool? {
+        if let easel = easelEditors[id] { return easel.editor.pageObjects }
+        return noteEditors[id].flatMap { NoteEmbeddedPages.pool(for: $0.editor) }
+    }
+
+    var embeddedPagePools: [UUID: EmbeddedPagePool] {
+        var pools: [UUID: EmbeddedPagePool] = [:]
+        for (id, easel) in easelEditors { if let objects = easel.editor.pageObjects { pools[id] = objects } }
+        for (id, note) in noteEditors where pools[id] == nil { if let pool = NoteEmbeddedPages.pool(for: note.editor) { pools[id] = pool } }
+        return pools
+    }
+
+    @discardableResult
+    func configureNoteEmbeds(_ tab: BrowserTab, editor: NotePageViewController,
+                             windowTransfer: EmbeddedPagePool.WindowTransfer? = nil) -> Bool {
+        guard let binding = nativeBinding, !isPrivateBrowsing, !isPopupWindow else { return windowTransfer == nil }
+        let tabID = tab.id, profileID = tab.profileID
+        return NoteEmbeddedPages.configure(editor, binding: binding,
+            profilePath: store.independentEngineProfilePath(for: profileID),
+            validOwner: { [weak self, weak editor, weak binding] in
+                guard let self, let editor, let binding,
+                      self.noteEditors[tabID]?.editor === editor, self.noteEditors[tabID]?.profileID == profileID,
+                      binding === self.nativeBinding, editor.isViewLoaded, editor.view.window === self.window,
+                      let actual = self.store.state.tab(tabID, where: { $0.archivedAt == nil }),
+                      actual.profileID == profileID, InternalPage(urlString: actual.url)?.noteURL != nil,
+                      !self.store.isProfileRemovalPending(profileID),
+                      !self.transferringTabIDs.contains(tabID) else { return false }
+                return !self.isClosing && !self.wholeWindowClose && !self.windowCloseApproved
+            }, activeOwner: { [weak self] in
+                guard let self else { return false }
+                return !self.transferringTabIDs.contains(tabID) && self.currentTabID == tabID && self.activePeek == nil
+                    && self.libraryView == nil && self.commandBar == nil && !self.windowClosePending && !self.isClosing
+            }, selectionChanged: { [weak self] in
+                guard let self, !self.isClosing else { return }
+                self.nativeBinding?.synchronizeSelectionAndLayout()
+                self.refreshCaptureIndicators(); self.refreshNavigationControls()
+                self.windowKeyViews.relink()
+            }, metadataChanged: { [weak self] in self?.refreshLivePageChromeOrRender() },
+            contextImage: { [weak self] view, image in self?.browserView(view, addContextImageToEasel: image) },
+            open: { [weak self, weak editor] url in
+                guard let self, let editor, self.noteEditors[tabID]?.editor === editor,
+                      self.activeProfileID == profileID, !self.isClosing, !self.wholeWindowClose else { return }
+                self.openInput(url.absoluteString)
+            }, windowTransfer: windowTransfer)
+    }
+
+    func notePagesCanSleep(_ note: NotePane, lastShown: Date) -> Bool {
+        guard let pool = NoteEmbeddedPages.pool(for: note.editor) else { return false }
+        let candidate = EmbeddedPageSleepPolicy.Candidate(lastShown: lastShown, shown: false, closing: false, transferring: false,
+            editing: !note.editor.canAcceptExternalDrop, pendingCreation: pool.hasPendingCreation,
+            pages: pool.ownedViews.values.map { view -> EmbeddedPageSleepPolicy.Protection in
+                switch view.automaticArchiveProtectionState {
+                case .eligible: return .eligible
+                case .protected: return .protected
+                default: return .unknown
+                }
+            })
+        return EmbeddedPageSleepPolicy.shouldSleep(candidate, now: Date())
+    }
+
+    func releaseIdleNotePages(_ id: UUID, cached: NotePane) {
+        guard !closingTabIDs.contains(id), let pool = NoteEmbeddedPages.pool(for: cached.editor) else { return }
+        let pages = pool.pages, expected = store.state.tab(id)
+        closingTabIDs.insert(id)
+        PCNativeBrowserApplication.requestClosePages(pages, shouldCommit: { [weak self, weak pool] in
+            MainActor.assumeIsolated {
+                guard let self, let pool, let current = self.noteEditors[id], current.editor === cached.editor,
+                      NoteEmbeddedPages.pool(for: current.editor) === pool else { return false }
+                let shown = self.renderedPaneIDs.contains(id) || self.selectedTabIDs.contains(id) || self.pendingNativeSelection?.tabID == id
+                return !self.isClosing && !self.wholeWindowClose && !shown && !self.transferringTabIDs.contains(id)
+                    && self.store.state.tab(id) == expected
+                    && self.notePagesCanSleep(current, lastShown: expected?.lastAccessed ?? .distantFuture)
+            }
+        }, completion: { [weak self, weak pool] allowed in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.closingTabIDs.remove(id)
+                if allowed, let pool, NoteEmbeddedPages.pool(for: cached.editor) === pool { NoteEmbeddedPages.retire(cached.editor) }
+            }
+        })
+    }
+
+    func retireNoteAfterModelChange(_ id: UUID, cached: NotePane) {
+        guard !closingTabIDs.contains(id), let pool = NoteEmbeddedPages.pool(for: cached.editor) else { return }
+        let pages = pool.pages, expected = store.state.tab(id)
+        closingTabIDs.insert(id); modelRetirementIDs.insert(id)
+        PCNativeBrowserApplication.requestClosePages(pages, shouldCommit: { [weak self, weak pool] in
+            MainActor.assumeIsolated {
+                guard let self, let pool else { return false }
+                return !self.isClosing && self.noteEditors[id]?.editor === cached.editor
+                    && NoteEmbeddedPages.pool(for: cached.editor) === pool && self.store.state.tab(id) == expected
+            }
+        }, completion: { [weak self] allowed in
+            MainActor.assumeIsolated {
+                guard let self, self.noteEditors[id]?.editor === cached.editor else { return }
+                self.closingTabIDs.remove(id); self.modelRetirementIDs.remove(id)
+                if allowed, cached.editor.prepareToClose() {
+                    NoteEmbeddedPages.retire(cached.editor)
+                    self.retireNoteEditor(id)
+                } else { _ = self.store.restoreLiveTab(cached.originalTab, replacing: expected) }
+                self.render(self.store.state); self.requestNativeSelection()
+            }
+        })
     }
 
     func retireTrashedNote(_ url: URL, profileID: UUID) {
@@ -298,6 +406,7 @@ enum NotePaneRetention {
             guard !after.contains(key), seen.insert(key).inserted, let count = holders[key] else { continue }
             if count > 1 { holders[key] = count - 1; continue }
             holders.removeValue(forKey: key)
+            NoteEmbeddedPages.retire(pane.editor)
             pane.editor.teardown()
             pane.editor.file.release()
         }

@@ -604,7 +604,7 @@ extension BrowserWindowController {
     func hasPendingNativePage(in ids: Set<UUID>) -> Bool {
         ids.contains { id in
             (browsers[id].map { $0.nativePage == nil && $0.isLoading } ?? false)
-                || easelEditors[id]?.editor.pageObjects?.hasPendingCreation == true
+                || embeddedPagePool(forTabID: id)?.hasPendingCreation == true
         }
     }
 

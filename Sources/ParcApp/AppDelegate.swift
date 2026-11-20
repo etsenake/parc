@@ -811,7 +811,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         for owner in windows {
             for id in ids {
                 let attached = owner.nativePage(forTabID: id).map { [$0] } ?? []
-                let children = owner.peekPages(forTabID: id) + owner.embeddedEaselPages(forTabID: id)
+                let children = owner.peekPages(forTabID: id) + owner.embeddedPages(forTabID: id)
                 if !attached.isEmpty || !children.isEmpty {
                     guard owner.canBeginPageRetirement(id) else { completion(false); return }
                     for page in attached + children {

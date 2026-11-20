@@ -564,7 +564,7 @@ extension BrowserWindowController {
         let wrappers = ids.compactMap { id -> (UUID, PCBrowserView, PCNativePage?)? in
             browsers[id].map { (id, $0, $0.nativePage) }
         }
-        let embedded = ids.flatMap { embeddedEaselPages(forTabID: $0) }
+        let embedded = ids.flatMap { embeddedPages(forTabID: $0) }
         let editors = Dictionary(uniqueKeysWithValues: ids.compactMap { id in easelEditors[id].map { (id, ObjectIdentifier($0.editor)) } })
         let notes = Dictionary(uniqueKeysWithValues: ids.compactMap { id in noteEditors[id].map { (id, ObjectIdentifier($0.editor)) } })
         let valid: () -> Bool = { [weak self, weak window] in
@@ -578,7 +578,7 @@ extension BrowserWindowController {
                   ids.compactMap({ self.browsers[$0] }).count == wrappers.count,
                   Dictionary(uniqueKeysWithValues: ids.compactMap { id in self.easelEditors[id].map { (id, ObjectIdentifier($0.editor)) } }) == editors,
                   Dictionary(uniqueKeysWithValues: ids.compactMap { id in self.noteEditors[id].map { (id, ObjectIdentifier($0.editor)) } }) == notes,
-                  Set(ids.flatMap { self.embeddedEaselPages(forTabID: $0) }.map(ObjectIdentifier.init)) == Set(embedded.map(ObjectIdentifier.init)) else { return false }
+                  Set(ids.flatMap { self.embeddedPages(forTabID: $0) }.map(ObjectIdentifier.init)) == Set(embedded.map(ObjectIdentifier.init)) else { return false }
             for (id, browser, page) in wrappers {
                 guard self.browsers[id] === browser, browser.nativePage === page else { return false }
                 if let page {

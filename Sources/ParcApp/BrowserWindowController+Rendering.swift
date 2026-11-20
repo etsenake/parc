@@ -33,6 +33,9 @@ extension BrowserWindowController {
             let page = tab.flatMap { InternalPage(urlString: $0.url) }
             let sameNote = page == .note(cached.url) || (page?.noteURL != nil && page == InternalPage(urlString: cached.originalTab.url))
             if tab?.profileID != cached.profileID || !sameNote {
+                if !(NoteEmbeddedPages.pool(for: cached.editor)?.pages.isEmpty ?? true) {
+                    retireNoteAfterModelChange(id, cached: cached); continue
+                }
                 guard cached.editor.prepareToClose() else {
                     _ = store.restoreLiveTab(cached.originalTab, replacing: store.state.tab(id))
                     continue
@@ -47,7 +50,7 @@ extension BrowserWindowController {
             guard let cached = easelEditors[id] else { continue }
             let tab = state.tab(id, where: { $0.archivedAt == nil })
             if tab?.profileID != cached.profileID || tab.flatMap({ InternalPage(urlString: $0.url)?.easelID }) != cached.documentID {
-                if !embeddedEaselPages(forTabID: id).isEmpty {
+                if !embeddedPages(forTabID: id).isEmpty {
                     retireEaselAfterModelChange(id, cached: cached); continue
                 }
                 cached.editor.retirePageOwner()

@@ -125,8 +125,9 @@ extension BrowserWindowController {
                 if applied { self.focusedTabID = nextSelection.focusedTabID }
                 for id in ids where !self.selectedTabIDs.contains(id)
                     && self.store.state.containsTab(id, where: { $0.archivedAt == nil }) {
-                    if let note = self.noteEditors[id], note.editor.prepareToClose() { self.retireNoteEditor(id) }
-                    if let easel = self.easelEditors[id], self.embeddedEaselPages(forTabID: id).isEmpty {
+                    if let note = self.noteEditors[id], self.embeddedPages(forTabID: id).isEmpty,
+                       note.editor.prepareToClose() { self.retireNoteEditor(id) }
+                    if let easel = self.easelEditors[id], self.embeddedPages(forTabID: id).isEmpty {
                         easel.editor.retirePageOwner(); self.panes[id]?.clearNativeContent()
                         self.easelEditors.removeValue(forKey: id); self.easelFailures.removeValue(forKey: id)
                     }
@@ -269,7 +270,7 @@ extension BrowserWindowController {
     }
 
     func canBeginPageRetirement(_ id: UUID) -> Bool {
-        !wholeWindowClose && !isClosing && !closingTabIDs.contains(id) && !transferringTabIDs.contains(id) && (nativePage(forTabID: id) != nil || !embeddedEaselPages(forTabID: id).isEmpty)
+        !wholeWindowClose && !isClosing && !closingTabIDs.contains(id) && !transferringTabIDs.contains(id) && (nativePage(forTabID: id) != nil || !embeddedPages(forTabID: id).isEmpty)
     }
 
     func beginPageRetirement(_ id: UUID) {
@@ -285,12 +286,12 @@ extension BrowserWindowController {
     func canCommitPageRetirement(_ id: UUID, page: PCNativePage) -> Bool {
         !wholeWindowClose && !isClosing && modelRetirementIDs.contains(id)
             && (nativePage(forTabID: id) === page || peekPages(forTabID: id).contains { $0 === page }
-                || embeddedEaselPages(forTabID: id).contains { $0 === page })
+                || embeddedPages(forTabID: id).contains { $0 === page })
     }
 
     func finishPageRetirement(_ id: UUID, page: PCNativePage, closed: Bool) {
         if page.isEmbedded {
-            if closed || page.isClosed { easelEditors[id]?.editor.pageObjects?.didClose(page) }
+            if closed || page.isClosed { embeddedPagePool(forTabID: id)?.didClose(page) }
             closingTabIDs.remove(id); modelRetirementIDs.remove(id)
             return
         }

@@ -175,7 +175,7 @@ extension BrowserWindowController {
         let claims = Dictionary(uniqueKeysWithValues: allIDs.map { ($0, ownership.claimSnapshot($0)) })
         let noteOwners = Dictionary(uniqueKeysWithValues: allIDs.compactMap { id in noteEditors[id].map { (id, ObjectIdentifier($0.editor)) } })
         let easelOwners = Dictionary(uniqueKeysWithValues: allIDs.compactMap { id in easelEditors[id].map { (id, ObjectIdentifier($0.editor)) } })
-        let embedded = allIDs.flatMap { embeddedEaselPages(forTabID: $0) }
+        let embedded = allIDs.flatMap { embeddedPages(forTabID: $0) }
         let creation = TabCreationProvenance(referrerID: nil, activeTabID: focusID, profileID: profileID, state: store.state)
         let identities = selection.compactMap { splitPaneIdentity($0) }
         guard hierarchy != nil, originals.count == allIDs.count, identities.count == selection.count, selection.allSatisfy({ panes[$0] != nil }),
@@ -198,7 +198,7 @@ extension BrowserWindowController {
                   } }),
                   Dictionary(uniqueKeysWithValues: allIDs.compactMap { id in self.noteEditors[id].map { (id, ObjectIdentifier($0.editor)) } }) == noteOwners,
                   Dictionary(uniqueKeysWithValues: allIDs.compactMap { id in self.easelEditors[id].map { (id, ObjectIdentifier($0.editor)) } }) == easelOwners,
-                  Set(allIDs.flatMap { self.embeddedEaselPages(forTabID: $0) }.map(ObjectIdentifier.init)) == Set(embedded.map(ObjectIdentifier.init)),
+                  Set(allIDs.flatMap { self.embeddedPages(forTabID: $0) }.map(ObjectIdentifier.init)) == Set(embedded.map(ObjectIdentifier.init)),
                   embedded.allSatisfy({ !$0.isClosed && $0.embeddedOwnerValid && PCNativeBrowserApplication.owner(of: $0) === self.nativeBinding }),
                   self.store.state.splitLayouts.filter({ $0.spaceID == spaceID }) == groups,
                   let actual = self.store.state.tab(sourceID),
@@ -467,7 +467,7 @@ extension BrowserWindowController {
 
     func closeLocalDocumentEditors(_ ids: Set<UUID>) -> Bool {
         guard ids.allSatisfy({ noteEditors[$0]?.editor.prepareToClose() ?? true }),
-              ids.allSatisfy({ embeddedEaselPages(forTabID: $0).isEmpty && !hasPendingNativePage(in: [$0]) }),
+              ids.allSatisfy({ embeddedPages(forTabID: $0).isEmpty && !hasPendingNativePage(in: [$0]) }),
               easelEditorsForRelocation(in: ids).values.allSatisfy({ $0.canPrepareForProfileRelocation }),
               easelEditorsForRelocation(in: ids).values.allSatisfy({ $0.prepareForProfileRelocation() }) else { return false }
         for id in ids {
@@ -592,7 +592,7 @@ extension BrowserWindowController {
         var movedIn = Set<UUID>()
         let all = Set(request.selection + candidates.map(\.id))
         let originalCandidates = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
-        let embedded = Dictionary(uniqueKeysWithValues: all.map { ($0, embeddedEaselPages(forTabID: $0)) })
+        let embedded = Dictionary(uniqueKeysWithValues: all.map { ($0, embeddedPages(forTabID: $0)) })
         let claims = Dictionary(uniqueKeysWithValues: all.map { ($0, ownership.claimSnapshot($0)) })
         let wrappers = Dictionary(uniqueKeysWithValues: all.compactMap { id in browsers[id].map { (id, $0) } })
         let pages = Dictionary(uniqueKeysWithValues: all.compactMap { id in browsers[id]?.nativePage.map { (id, $0) } })
@@ -609,7 +609,7 @@ extension BrowserWindowController {
                   self.ownership.claimSnapshot(id) == claims[id],
                   self.browsers[id] === wrappers[id], self.browsers[id]?.nativePage === pages[id],
                   self.noteEditors[id]?.editor === notes[id], self.easelEditors[id]?.editor === easels[id],
-                  Set(self.embeddedEaselPages(forTabID: id).map(ObjectIdentifier.init)) == Set((embedded[id] ?? []).map(ObjectIdentifier.init)),
+                  Set(self.embeddedPages(forTabID: id).map(ObjectIdentifier.init)) == Set((embedded[id] ?? []).map(ObjectIdentifier.init)),
                   (embedded[id] ?? []).allSatisfy({ !$0.isClosed && $0.embeddedOwnerValid && PCNativeBrowserApplication.owner(of: $0) === binding }) else { return false }
             if let page = pages[id] {
                 return !page.isClosed && PCNativeBrowserApplication.owner(of: page) === binding

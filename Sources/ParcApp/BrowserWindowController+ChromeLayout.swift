@@ -108,6 +108,7 @@ extension BrowserWindowController {
         if peekLayer.subviews.contains(where: \.needsLayout) { flushedHostedLayout = true }
         layoutPeeks()
         for pane in easelEditors.values { pane.editor.refreshPageVisibility() }
+        for note in noteEditors.values { NoteEmbeddedPages.pool(for: note.editor)?.refreshVisibility() }
         if flushedHostedLayout {
             synchronizeNativeLayout()
         }
