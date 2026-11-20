@@ -13,7 +13,7 @@ struct FavoriteMoveTests {
         let active = BrowserSpace(id: UUID(), name: "Active", symbol: "circle", color: "AABBCC", profileID: profile.id)
         let other = BrowserSpace(id: UUID(), name: "Other", symbol: "circle", color: "AABBCC", profileID: foreign.id)
         let folder = BrowserFolder(id: UUID(), spaceID: active.id, name: "Destination")
-        let noteID = UUID(), easelID = UUID()
+        let noteID = URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md"), easelID = UUID()
         func tab(_ title: String, kind: TabKind = .favorite, url: String? = nil, space: UUID? = nil, profileID: UUID? = nil) -> BrowserTab {
             let url = url ?? "https://example.invalid/" + title
             return BrowserTab(id: UUID(), spaceID: space ?? home.id, profileID: profileID ?? profile.id,

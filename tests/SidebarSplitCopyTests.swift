@@ -157,7 +157,7 @@ struct SidebarSplitCopyTests {
         let note = tab("Note"), web = tab("Web")
         var withNote = store.state
         let noteSplit = BrowserSplitLayout(sidebarAnchorID: note.id, spaceID: here.id, tabIDs: [note.id, web.id], widthFactors: [0.5, 0.5])
-        var typedNote = note; let noteID = UUID(); typedNote.url = InternalPage.note(noteID).urlString; typedNote.savedURL = typedNote.url
+        var typedNote = note; let noteID = URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md"); typedNote.url = InternalPage.note(noteID).urlString; typedNote.savedURL = typedNote.url
         withNote.tabs += [typedNote, web]; withNote.splitLayouts.append(noteSplit)
         let noteRoot = root.appendingPathComponent("Notes-" + UUID().uuidString)
         try encoder.encode(withNote).write(to: noteRoot.appendingPathComponent("session.json", isDirectory: false), options: [], createDirectory: noteRoot)
@@ -165,7 +165,7 @@ struct SidebarSplitCopyTests {
         let noteCopy = SidebarItemsCopy(items: [.split(noteSplit.id)], spaceID: here.id, profileID: profile.id, state: noteStore.state)!
         let noteDocs = [typedNote.id: SidebarDocumentReference(page: .note(noteID), profileID: profile.id) {}]
         let noteURLs = [typedNote.id: typedNote.savedURL, web.id: "https://live.invalid/web"]
-        try check(!noteStore.canCopySidebarItems(noteCopy, to: elsewherePinned, before: nil, destinations: noteURLs, documents: noteDocs), "A split with a Note child cannot copy into another Profile")
+        try check(noteStore.canCopySidebarItems(noteCopy, to: elsewherePinned, before: nil, destinations: noteURLs, documents: noteDocs), "A split with a Note child copies into another Profile, since note files belong to none")
         try check(noteStore.canCopySidebarItems(noteCopy, to: pinned, before: nil, destinations: noteURLs, documents: noteDocs), "The same split copies within its Profile as a document alias")
 
         let stale = SidebarItemsCopy(items: [.split(split.id)], spaceID: here.id, profileID: profile.id, state: store.state)!
@@ -258,7 +258,7 @@ struct SidebarSplitCopyTests {
             return .init(id: UUID(), spaceID: here.id, profileID: profile.id, url: url, title: title, kind: kind, folderID: folder,
                          createdAt: Date(timeIntervalSince1970: 10), lastAccessed: Date(timeIntervalSince1970: 10), savedURL: url, savedTitle: title)
         }
-        let noteID = UUID()
+        let noteID = URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")
         let loose = tab("Loose"), today = tab("Today", kind: .today), favorite = tab("Favorite", kind: .favorite)
         let inOuter = tab("InOuter", folder: outer.id), inNested = tab("InNested", folder: nested.id)
         let pairA = tab("PairA", folder: nested.id), pairB = tab("PairB", folder: nested.id)

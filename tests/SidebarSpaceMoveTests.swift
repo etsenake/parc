@@ -179,7 +179,7 @@ struct SidebarSpaceMoveTests {
         let outside = BrowserFolder(id: UUID(), spaceID: source.id, name: "Stays", parentID: nil, isExpanded: false)
         nestedMixed.folders.append(outside)
         nestedMixed.tabs[0].folderID = outside.id
-        nestedMixed.tabs[0].url = InternalPage.note(UUID()).urlString
+        nestedMixed.tabs[0].url = InternalPage.note(URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")).urlString
         nestedMixed.tabs[0].savedURL = nestedMixed.tabs[0].url
         nestedMixed.tabs[1].url = InternalPage.easel(UUID()).urlString
         nestedMixed.tabs[1].savedURL = nestedMixed.tabs[1].url

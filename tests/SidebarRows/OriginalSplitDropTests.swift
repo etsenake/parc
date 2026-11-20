@@ -100,11 +100,11 @@ import Foundation
         try check(store.dropTabIntoSplit(c, expectedSelection: [a,b], expectedLayout: current,
             target: .insert(2), orientation: .horizontal, savedHomeIDs: [c:bHome]), "same original receipt may retry after save failure")
         try check(store.state.tabs.filter { $0.id == bHome }.count == 1, "retry produces exactly one home")
-        let notes = try NoteStore(directory: root.appendingPathComponent("notes"), diskSaveDelay: 0), note = try notes.create()
+        let noteFile = root.appendingPathComponent("Shared Note.md"); try Data().write(to: noteFile)
         let easels = try EaselStore(directory: root.appendingPathComponent("easels")), easel = try easels.create()
-        let references = [SidebarDocumentReference(page: .note(note.document.id), profileID: profile) { try notes.validateReference(note.document.id) },
+        let references = [SidebarDocumentReference(page: .note(noteFile), profileID: profile) { guard FileManager.default.fileExists(atPath: noteFile.path) else { throw CocoaError(.fileNoSuchFile) } },
                           SidebarDocumentReference(page: .easel(easel.document.id), profileID: profile) { try easels.validateReference(easel.document.id) }]
-        let addresses = ["parc://note/" + note.document.id.uuidString, "parc://easel/" + easel.document.id.uuidString]
+        let addresses = [InternalPage.note(noteFile).urlString, "parc://easel/" + easel.document.id.uuidString]
         for index in references.indices {
             let directory = root.appendingPathComponent("alias-\(index)")
             var typed = pinned; typed.tabs[ai].url = addresses[index]; typed.tabs[ai].savedURL = addresses[index]
@@ -119,7 +119,7 @@ import Foundation
                 target: .insert(1), orientation: .horizontal, savedHomeIDs: [a:home], documents: [a:references[index]]), "actual typed original validates and commits")
             try check(model.state.tabs.first { $0.id == home }?.url == addresses[index] && model.state.tabs.first { $0.id == a }?.url == addresses[index], "original and home share exact authored document")
         }
-        try check(try notes.load(note.document.id) === note && easels.load(easel.document.id) === easel, "original shared sessions never recreated")
+        try check(FileManager.default.fileExists(atPath: noteFile.path) && easels.load(easel.document.id) === easel, "original shared documents never recreated")
         try stackDrops(root.appendingPathComponent("stacks"))
         print("PASS: \(count) original split placement/store/alias assertions")
     }

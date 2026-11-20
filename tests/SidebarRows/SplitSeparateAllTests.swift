@@ -142,10 +142,10 @@ import Foundation
         try check(store.state.selectedTabIDs == [focusTab, far] && store.activeSpaceID == home
                   && store.state.tabs.first { $0.id == far }?.spaceID == home, "It joins this split without a Space switch")
 
-        let notes = try NoteStore(directory: root.appendingPathComponent("notes"), diskSaveDelay: 0)
-        let farNote = try notes.create(), farNote2 = try notes.create()
+        let farNote = root.appendingPathComponent("Far Note.md"), farNote2 = root.appendingPathComponent("Far Note 2.md")
+        try Data().write(to: farNote); try Data().write(to: farNote2)
         store.selectSpace(other)
-        let noteTab = store.openNote(id: farNote.document.id, title: "Far Note")!, noteTab2 = store.openNote(id: farNote2.document.id, title: "Far Note 2")!
+        let noteTab = store.openNote(url: farNote, title: "Far Note")!, noteTab2 = store.openNote(url: farNote2, title: "Far Note 2")!
         store.setKind(noteTab, .pinned); store.setKind(noteTab2, .pinned)
         store.selectSpace(home)
         let notePane = store.open("https://note-pane.invalid"); store.setSplit([notePane])
@@ -154,14 +154,14 @@ import Foundation
                                                      target: .insert(noteDraft.index), orientation: noteDraft.orientation, spaceID: home)!
         try check(noteHomes.map(\.id) == [noteTab], "The pinned Note is planned a home before the move")
         let noteProfile = store.activeSpace.profileID
-        let noteRef = SidebarDocumentReference(page: .note(farNote.document.id), profileID: noteProfile) { try notes.validateReference(farNote.document.id) }
+        let noteRef = SidebarDocumentReference(page: .note(farNote), profileID: noteProfile) { guard FileManager.default.fileExists(atPath: farNote.path) else { throw CocoaError(.fileNoSuchFile) } }
         let noteHomeID = UUID()
         try check(store.insertSplitPane(noteDraft, tabID: noteTab, navigationURL: nil, creation: nil,
                                         savedHomeIDs: [noteTab: noteHomeID], documents: [noteTab: noteRef]),
                   "Add Split accepts a pinned Note from another Space")
         try check(store.state.tabs.first { $0.id == noteHomeID }?.spaceID == other && store.state.selectedTabIDs.contains(noteTab),
                   "Its saved home stays in its Space and the Note joins")
-        let ref2 = SidebarDocumentReference(page: .note(farNote2.document.id), profileID: noteProfile) { try notes.validateReference(farNote2.document.id) }
+        let ref2 = SidebarDocumentReference(page: .note(farNote2), profileID: noteProfile) { guard FileManager.default.fileExists(atPath: farNote2.path) else { throw CocoaError(.fileNoSuchFile) } }
         let homeID2 = UUID(), noteSelection = store.state.selectedTabIDs
         try check(store.insertCommandBarSplit(after: noteTab, expectedSelection: noteSelection, tabID: noteTab2,
                                               savedHomeIDs: [noteTab2: homeID2], documents: [noteTab2: ref2]),

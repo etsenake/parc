@@ -245,7 +245,7 @@ import Foundation
         let b = BrowserSpace(id: UUID(), name: "Beta", symbol: "circle", color: "B9B5D4", profileID: p.id)
         let c = BrowserSpace(id: UUID(), name: "Gamma", symbol: "circle", color: "B9B5D4", profileID: q.id)
         state.profiles.append(q); state.spaces += [b, c]
-        let page = InternalPage.note(UUID())
+        let page = InternalPage.easel(UUID())
         var plans = tab(a, page.urlString); plans.title = "Plans"; plans.savedTitle = "Plans"
         let web = tab(a, "https://a.example")
         var relocated: [[InternalPage]] = []
@@ -273,7 +273,7 @@ import Foundation
             let store = try load(extra)
             let before = store.state
             let block = store.sharingDocumentBlock(forSpace: a.id, to: sharing)
-            try check(block?.title == title && block?.message == "The Note “Plans” is still used elsewhere on Alpha’s current data: " + places + ".",
+            try check(block?.title == title && block?.message == "The Easel “Plans” is still used elsewhere on Alpha’s current data: " + places + ".",
                       reason + " explains why the data can’t change")
             try check(try change(store, sharing) == nil && store.state == before && relocated.isEmpty,
                       reason + " still refuses the change exactly as before")
@@ -282,7 +282,7 @@ import Foundation
         let store = try load([])
         try check(store.sharingDocumentBlock(forSpace: a.id, to: .share(withSpace: c.id)) == nil
                   && store.sharingDocumentBlock(forSpace: a.id, to: .separate) == nil,
-                  "a Note used only in the changing Space has nothing to explain")
+                  "an Easel used only in the changing Space has nothing to explain")
         try check(store.sharingDocumentBlock(forSpace: b.id, to: .share(withSpace: a.id)) == nil
                   && store.sharingDocumentBlock(forSpace: c.id, to: .separate) == nil
                   && store.sharingDocumentBlock(forSpace: a.id, to: .share(withSpace: UUID())) == nil,
@@ -292,7 +292,7 @@ import Foundation
         let joined = try change(store, .share(withSpace: c.id))
         try check(joined == SpaceSharingChange(spaceID: a.id, profileID: q.id, previousProfileID: p.id, unusedProfile: nil)
                   && store.state.tabs.allSatisfy { $0.profileID == q.id } && relocated == [[page]],
-                  "a data change with no shared Notes or Easels proceeds and carries its Note along")
+                  "a data change with no shared Easels proceeds and carries its Easel along")
     }
 
     static func deletion() throws {

@@ -53,12 +53,12 @@ struct SplitSubmissionTests {
         expect(store.state == full, "Already-visible tab does not reorder or duplicate panes")
         let laterHost = store.openResolvedURL(URL(string: "https://example.test/later-host")!)
         store.selectTab(laterHost)
-        let noteID = store.openNote(id: UUID(), title: "Later Note")!
+        let noteID = store.openNote(url: URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md"), title: "Later Note")!
         store.selectTab(laterHost)
         expect(store.insertCommandBarSplit(after: laterHost, expectedSelection: [laterHost], tabID: noteID),
                "A Today Note joins as a later pane")
         expect(store.state.selectedTabIDs == [laterHost, noteID], "The Note is not promoted to the first tab")
-        expect(store.state.tabs.filter { InternalPage(urlString: $0.url)?.noteID != nil }.count == 1,
+        expect(store.state.tabs.filter { InternalPage(urlString: $0.url)?.noteURL != nil }.count == 1,
                "Joining a Today Note does not leave a home")
         let easelHost = store.openResolvedURL(URL(string: "https://example.test/easel-host")!)
         store.selectTab(easelHost)

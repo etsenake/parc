@@ -70,19 +70,20 @@ import Foundation
         privateStore.setSplit([pa,pb])
         try check(privateStore.separateSplitPane(pb) && privateStore.state.selectedTabIDs == [pb], "Private original split uses same focus contract")
         try check(!FileManager.default.fileExists(atPath: privateDirectory.path), "Private separation never persists")
-        let notes = try NoteStore(directory: root.appendingPathComponent("notes"), diskSaveDelay: 0)
+        let noteFile = root.appendingPathComponent("Shared Note.md"), originalNote = Data("Shared\n".utf8)
+        try originalNote.write(to: noteFile)
         let easels = try EaselStore(directory: root.appendingPathComponent("easels"))
-        let note = try notes.create(), easel = try easels.create()
-        let noteID = store.openNote(id: note.document.id, title: "Shared Note")!
+        let easel = try easels.create()
+        let noteID = store.openNote(url: noteFile, title: "Shared Note")!
         let easelID = store.openEasel(id: easel.document.id, title: "Shared Easel")!
-        let originalNote = note.document, originalEasel = easel.document
+        let originalEasel = easel.document
         store.setSplit([a,noteID,easelID]); let localGroup = store.activeSplitLayout!
         var closeRequests = 0
         store.requestPageRetirement = { _, _, _ in closeRequests += 1 }
         try check(store.separateTabFromSplit(noteID, expected: localGroup, focusedID: noteID), "Original local Note separates through same transaction")
         try check(store.state.selectedTabIDs == [noteID] && closeRequests == 0, "Local separation never requests retirement or consent")
-        try check(try notes.load(note.document.id) === note && easels.load(easel.document.id) === easel, "Original shared local sessions are not replaced")
-        try check(note.document == originalNote && easel.document == originalEasel, "Shared document content and asset identity stay unchanged")
+        try check(try easels.load(easel.document.id) === easel, "Original shared local sessions are not replaced")
+        try check(try Data(contentsOf: noteFile) == originalNote && easel.document == originalEasel, "Shared document content and asset identity stay unchanged")
         try check(store.state.tabs.first { $0.id == easelID }?.url == InternalPage.easel(easel.document.id).urlString, "Surviving embedded-page owner retains original Easel reference")
         store.requestPageRetirement = nil
         store.setSplit([a,b,c]); let failing = store.activeSplitLayout!, failureState = store.state

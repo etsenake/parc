@@ -11,7 +11,6 @@ CONTROLS = "NSButton|NSPopUpButton|NSSwitch|NSSegmentedControl|NSColorWell"
 KEEP_CURSOR = {
     "CommandBarScopeHint": "a hint with no action",
     "FavoriteTile": "a tab, which keeps the arrow like the sidebar's rows",
-    "NoteFormatButton": "a row of the note format menus",
     "PictureInPictureBarControl": "its own cursor rect: the PiP panel is rarely key",
     "SidebarPlusRowButton": "a menu row",
     "ThemeIconButton": "the hand, enabled or not",

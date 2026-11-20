@@ -32,11 +32,11 @@ import Foundation
         expect(CommandBarRanking.rank([search("close unpinned tabs", 0), clear], query: "close unpinned tabs").contains(1),
                "a menu command found only by its trigger is kept")
 
-        let exportNotes = menu("exportNotes:", "Export Notes…", group: "File")
-        expect(exportNotes.bump == 1.5 * CommandBarMenuItemInfo.bumpWeight, "Export Notes carries its weighted bump")
-        expect(0.85 + exportNotes.bump < 0.95, "the largest bump keeps an exact command under an exact tab")
+        let notesFolder = menu("showNotesFolder:", "Show Notes Folder", group: "File")
+        expect(notesFolder.bump == 1.5 * CommandBarMenuItemInfo.bumpWeight, "Show Notes Folder carries its weighted bump")
+        expect(0.85 + notesFolder.bump < 0.95, "the largest bump keeps an exact command under an exact tab")
         let notesTab = tab("Notes", "https://example.com/notes")
-        expect(first([exportNotes, notesTab], "notes") == notesTab.key, "a bumped word-matched command doesn't pass an exact tab")
+        expect(first([notesFolder, notesTab], "notes") == notesTab.key, "a bumped word-matched command doesn't pass an exact tab")
         let general = typed(.settingsPane(.general)), links = typed(.settingsPane(.links))
         expect(general.bump > links.bump, "General's 0.6 orders above the other panes' 0.5")
         print("CommandRankingTests: \(count) checks passed")

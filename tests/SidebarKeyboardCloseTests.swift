@@ -14,17 +14,20 @@ struct SidebarKeyboardCloseTests {
         let profile = BrowserProfile(id: UUID(), name: "Original")
         let space = BrowserSpace(id: UUID(), name: "Here", symbol: "circle", color: "ABCDEF", profileID: profile.id)
         let folder = BrowserFolder(id: UUID(), spaceID: space.id, name: "Saved")
-        let notes = try NoteStore.sharedStore(directory: root.appendingPathComponent("Notes"), diskSaveDelay: 0)
-        let note = try notes.create()
-        try note.updateTitle("Original", replacing: note.document.title)
-        let noteFile = notes.directory.appendingPathComponent(note.document.id.uuidString.lowercased() + ".json")
+        let notesFolder = root.appendingPathComponent("Parc Notes")
+        try FileManager.default.createDirectory(at: notesFolder, withIntermediateDirectories: true)
+        let noteFile = notesFolder.appendingPathComponent("Original.md")
+        try Data("Original body\n".utf8).write(to: noteFile)
+        let noteAvailable: @MainActor () throws -> Void = {
+            guard FileManager.default.fileExists(atPath: noteFile.path) else { throw CocoaError(.fileNoSuchFile) }
+        }
         let bytes = try Data(contentsOf: noteFile)
         func tab(_ title: String, kind: TabKind, folderID: UUID? = nil, url: String = "https://original.invalid/") -> BrowserTab {
             .init(id: UUID(), spaceID: space.id, profileID: profile.id, url: url, title: title,
                 kind: kind, folderID: folderID, createdAt: Date(timeIntervalSince1970: 1),
                 lastAccessed: Date(timeIntervalSince1970: 2), savedURL: url, savedTitle: title)
         }
-        let n = tab("Note", kind: .pinned, folderID: folder.id, url: InternalPage.note(note.document.id).urlString)
+        let n = tab("Note", kind: .pinned, folderID: folder.id, url: InternalPage.note(noteFile).urlString)
         var w = tab("Saved", kind: .pinned, folderID: folder.id)
         w.url = "https://original.invalid/away"; w.title = "Away"
         let a = tab("Today one", kind: .today), b = tab("Today two", kind: .today)
@@ -89,7 +92,7 @@ struct SidebarKeyboardCloseTests {
         try check(savedDisk.state.splitLayouts.contains(group), "Saved split retention survives actual persistence")
         try check(savedDisk.state.tabs.first { $0.id == w.id }?.url == w.savedURL, "Persisted close result contains the real saved destination reset")
         let mixedStore = try store("mixed")
-        let docs = [n.id: SidebarDocumentReference(page: .note(note.document.id), profileID: profile.id) { try notes.validateReference(note.document.id) }]
+        let docs = [n.id: SidebarDocumentReference(page: .note(noteFile), profileID: profile.id, validate: noteAvailable)]
         var result: Result<Bool,Error>?, undo: FolderDeletionUndo?, admissions = 0
         mixedStore.requestPageRetirement = { ids, validate, done in requested = ids; authorize = validate; finish = done; admissions += 1 }
         mixedStore.deleteFolder(mixed.items, documents: docs, shouldCommit: { current }, didCommit: { undo = $0 }) { result = $0 }
@@ -102,7 +105,7 @@ struct SidebarKeyboardCloseTests {
         try check((try result?.get()) == true && mixedStore.state.folders.isEmpty, "Mixed branch removes original ordinary folders after consent")
         try check(mixedStore.state.tabs.filter { requested.contains($0.id) }.allSatisfy { $0.archivedAt != nil }, "Mixed command archives saved, Today and typed references together")
         try check(mixedStore.state.tabs.first { $0.id == alias.id } == alias, "Unselected shared-document alias is untouched")
-        try check(try Data(contentsOf: noteFile) == bytes && notes.load(note.document.id) === note, "Original Note bytes and shared session never change")
+        try check(try Data(contentsOf: noteFile) == bytes, "Original Note bytes never change")
         try check(mixedStore.state.splitLayouts.isEmpty, "Archived complete groups leave no dangling live sidebar split")
         let todayIntent = ClosedItemIntent(ids: Set([a.id,b.id]), state: initial,
             spaceID: space.id, profileID: profile.id, focusedTabID: b.id)!

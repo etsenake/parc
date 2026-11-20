@@ -125,12 +125,20 @@ import Foundation
         try check(joined.splitLayouts.first { $0.id == layout.id }?.tabIDs == [f.d1.id, f.d2.id, f.today.id], "existing destination group identity retained")
         let replaced = try unwrap(propose(request(f, f.today, target: .replace(0))), "center replacement")
         try check(replaced.selectedTabIDs == [f.today.id] && replaced.tabs.contains { $0.id == f.d1.id && $0.archivedAt == nil }, "displaced page survives")
-        var note = f.state; let noteID = UUID(); note.tabs[0].url = InternalPage.note(noteID).urlString; note.tabs[0].savedURL = note.tabs[0].url
-        let movedNote = try unwrap(propose(request(f, note.tabs[0]), note), "Today Note crosses Profiles")
-        try check(InterProfileMove.documents(moving: [f.today.id], after: movedNote) == [.note(noteID)], "its document moves to the destination store")
-        var pinnedNote = f.state; pinnedNote.tabs[1].url = InternalPage.note(noteID).urlString; pinnedNote.tabs[1].savedURL = pinnedNote.tabs[1].url
-        let split = try unwrap(propose(request(f, pinnedNote.tabs[1]), pinnedNote), "pinned Note proposal")
+        var easelState = f.state; let easelID = UUID(); easelState.tabs[0].url = InternalPage.easel(easelID).urlString; easelState.tabs[0].savedURL = easelState.tabs[0].url
+        let movedEasel = try unwrap(propose(request(f, easelState.tabs[0]), easelState), "Today Easel crosses Profiles")
+        try check(InterProfileMove.documents(moving: [f.today.id], after: movedEasel) == [.easel(easelID)], "its document moves to the destination store")
+        var pinnedEasel = f.state; pinnedEasel.tabs[1].url = InternalPage.easel(easelID).urlString; pinnedEasel.tabs[1].savedURL = pinnedEasel.tabs[1].url
+        let split = try unwrap(propose(request(f, pinnedEasel.tabs[1]), pinnedEasel), "pinned Easel proposal")
         try check(InterProfileMove.documents(moving: [f.pinned.id], after: split) == nil, "a home alias left in the source Profile keeps the document there")
+        let noteFile = URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")
+        var note = f.state; note.tabs[0].url = InternalPage.note(noteFile).urlString; note.tabs[0].savedURL = note.tabs[0].url
+        let movedNote = try unwrap(propose(request(f, note.tabs[0]), note), "Today Note crosses Profiles")
+        try check(InterProfileMove.documents(moving: [f.today.id], after: movedNote) == [], "a note file belongs to no Profile, so nothing relocates")
+        var pinnedNote = f.state; pinnedNote.tabs[1].url = InternalPage.note(noteFile).urlString; pinnedNote.tabs[1].savedURL = pinnedNote.tabs[1].url
+        let noteSplit = try unwrap(propose(request(f, pinnedNote.tabs[1]), pinnedNote), "pinned Note proposal")
+        try check(InterProfileMove.documents(moving: [f.pinned.id], after: noteSplit) == [], "a note alias left behind in another Profile never blocks the move")
+        try check(InterProfileDocumentBlock(moving: [f.pinned.id], before: pinnedNote, after: noteSplit) == nil, "a shared note file needs no explanation")
         var favorite = f.state; favorite.tabs[0].kind = .favorite
         try check(propose(request(f, favorite.tabs[0]), favorite) == nil, "Profile-wide Favorite refuses")
         var navigated = f.state; navigated.tabs[0].url = "https://live.invalid/next"; navigated.tabs[0].title = "Next"
@@ -326,7 +334,7 @@ import Foundation
         plain.rememberInterProfileMoveChoice()
         try check(plain.bypassesInterProfileMoveConfirmation, "Don’t ask again stores the preference")
         try encoder.encode(f.state).write(to: file)
-        var withNote = f.state; let noteID = UUID(); withNote.tabs[0].url = InternalPage.note(noteID).urlString
+        var withNote = f.state; let noteID = UUID(); withNote.tabs[0].url = InternalPage.easel(noteID).urlString
         try encoder.encode(withNote).write(to: file)
         let documents = try BrowserStore(directory: directory)
         let noteProposal: (BrowserState) -> BrowserState? = { InterProfileSplitDropShim.proposal(r, $0) }
@@ -361,7 +369,7 @@ import Foundation
         documents.requestPageRetirement = { _, shouldCommit, completion in completion(shouldCommit()) }
         result = nil
         documents.moveAcrossProfiles([f.today.id], proposal: noteProposal) { result = $0 }
-        try check((try? result?.get()) == true && relocated == [.note(noteID)] && fromProfile == f.p.id && toProfile == f.q.id && reversed == 0, "documents relocate source → destination before publication")
+        try check((try? result?.get()) == true && relocated == [.easel(noteID)] && fromProfile == f.p.id && toProfile == f.q.id && reversed == 0, "documents relocate source → destination before publication")
         try encoder.encode(withNote).write(to: file)
         let failingDocs = try BrowserStore(directory: directory)
         failingDocs.relocateLocalDocuments = { _, _, _, _ in { reversed += 1 } }
@@ -418,16 +426,16 @@ import Foundation
         let f = fixture()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-mixed-profile-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let notes = try NoteStore(directory: root.appendingPathComponent("source/Notes"), diskSaveDelay: 0)
         let easels = try EaselStore(directory: root.appendingPathComponent("source/Easels"))
-        let targetNotes = try NoteStore(directory: root.appendingPathComponent("target/Notes"), diskSaveDelay: 0)
         let targetEasels = try EaselStore(directory: root.appendingPathComponent("target/Easels"))
-        let note = try notes.create(), easel = try easels.create()
+        let easel = try easels.create()
+        let noteFile = root.appendingPathComponent("Parc Notes/Original Note.md"), noteBytes = Data("Original note\n".utf8)
+        try FileManager.default.createDirectory(at: noteFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try noteBytes.write(to: noteFile)
         let browser = EaselItem(kind: .browser, frame: .init(x: 0, y: 0, width: 320, height: 200), url: "https://example.com/embedded")
-        try note.updateTitle("Original Note", replacing: note.document.title)
         try easel.perform("Browser") { $0.items = [browser] }
         var initial = f.state
-        for (tabID, page) in [(f.g1.id, InternalPage.note(note.document.id)), (f.g2.id, InternalPage.easel(easel.document.id))] {
+        for (tabID, page) in [(f.g1.id, InternalPage.note(noteFile)), (f.g2.id, InternalPage.easel(easel.document.id))] {
             let index = initial.tabs.firstIndex { $0.id == tabID }!
             initial.tabs[index].url = page.urlString; initial.tabs[index].savedURL = page.urlString
         }
@@ -442,29 +450,26 @@ import Foundation
         store.requestPageRetirement = { _, validate, complete in complete(validate()) }
         store.relocateLocalDocuments = { _, pages, source, destination in
             precondition(source == f.p.id && destination == f.q.id)
-            precondition(Set(pages.map(\.urlString)) == Set([InternalPage.note(note.document.id).urlString, InternalPage.easel(easel.document.id).urlString]))
-            try notes.retireSessionForRelocation(note.document.id)
+            precondition(pages == [.easel(easel.document.id)])
             try easels.retireSessionForRelocation(easel.document.id)
-            try notes.relocate(note.document.id, to: targetNotes)
             let copied = try easels.relocate(easel.document.id, to: targetEasels)
             return {
                 _ = try? targetEasels.relocate(easel.document.id, to: easels); targetEasels.removeAssets(copied)
-                try? targetNotes.relocate(note.document.id, to: notes)
             }
         }
         var result: Result<Bool, Error>?
         editorValid = false
         store.moveAcrossProfiles(Set(move.tabIDs), proposal: { move.applying(to: $0) }) { result = $0 }
-        try check((try? result?.get()) == false && (try notes.load(note.document.id)) === note && (try easels.load(easel.document.id)) === easel,
-                  "mixed collection draft refusal preserves both original stores and sessions")
+        try check((try? result?.get()) == false && (try easels.load(easel.document.id)) === easel && (try Data(contentsOf: noteFile)) == noteBytes,
+                  "mixed collection draft refusal preserves the original Easel store and the note file")
         editorValid = true
         store.moveAcrossProfiles(Set(move.tabIDs), proposal: { move.applying(to: $0) }) { result = $0 }
         try check((try? result?.get()) == true && move.tabIDs.allSatisfy { id in store.state.tabs.first { $0.id == id }?.profileID == f.q.id },
                   "mixed Note/Easel split commits its exact original records to the destination Profile")
-        try check((try? notes.load(note.document.id)) == nil && (try? easels.load(easel.document.id)) == nil,
-                  "mixed collection leaves neither document in the source Profile")
-        try check((try targetNotes.load(note.document.id)).document == note.document && (try targetEasels.load(easel.document.id)).document == easel.document,
-                  "mixed destination documents retain original saved contents with old owners still retained")
+        try check((try? easels.load(easel.document.id)) == nil && (try targetEasels.load(easel.document.id)).document == easel.document,
+                  "the Easel moves to the destination Profile with its saved contents")
+        try check((try Data(contentsOf: noteFile)) == noteBytes && store.state.tabs.first { $0.id == f.g1.id }?.url == InternalPage.note(noteFile).urlString,
+                  "the note file stays where it is and the moved tab still points at it")
     }
 
     static func sharedAssetRollback() throws {
@@ -520,19 +525,6 @@ import Foundation
     static func documentRelocation() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-doc-relocate-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let x = try NoteStore(directory: root.appendingPathComponent("X/Notes"), diskSaveDelay: 0), y = try NoteStore(directory: root.appendingPathComponent("Y/Notes"), diskSaveDelay: 0)
-        var session: NoteSession? = try x.create()
-        let id = session!.document.id
-        try session!.updateTitle("Plan", replacing: session!.document.title)
-        do { try x.relocate(id, to: y); try check(false, "a live note session refuses relocation") } catch { try check(true, "live note session refuses") }
-        let retained = session!; session = nil
-        try x.retireSessionForRelocation(id)
-        try x.relocate(id, to: y)
-        do { try retained.updateTitle("Late callback", replacing: "Plan"); try check(false, "retired Note must not recreate the source file") }
-        catch { try check(true, "retained original Note callback is revoked before relocation") }
-        try check((try? x.load(id)) == nil && (try y.load(id)).document.title == "Plan", "exact note document moves to the destination store")
-        try y.relocate(id, to: x)
-        try check((try x.load(id)).document.title == "Plan", "reverse move restores the source")
         let ex = try EaselStore(directory: root.appendingPathComponent("X/Easels")), ey = try EaselStore(directory: root.appendingPathComponent("Y/Easels"))
         var easel: EaselSession? = try ex.create(title: "Board")
         let easelID = easel!.document.id
@@ -551,7 +543,7 @@ import Foundation
 
     static func documentBlocks() throws {
         let f = fixture()
-        let note = InternalPage.note(UUID()).urlString, easel = InternalPage.easel(UUID()).urlString
+        let note = InternalPage.easel(UUID()).urlString, easel = InternalPage.easel(UUID()).urlString
         let research = BrowserFolder(id: UUID(), spaceID: f.s.id, name: "Research")
         func set(_ id: UUID, _ url: String, title: String? = nil, in state: inout BrowserState) {
             let index = state.tabs.firstIndex { $0.id == id }!
@@ -583,7 +575,7 @@ import Foundation
 
         var clean = f.state; set(f.today.id, note, in: &clean)
         let (none, cleanRefused) = try block([.tab(f.today.id)], clean)
-        try check(none == nil && !cleanRefused, "a Note with no other entries has nothing to explain and still moves")
+        try check(none == nil && !cleanRefused, "an Easel with no other entries has nothing to explain and still moves")
         let (web, webRefused) = try block([.split(f.group.id)], f.state)
         try check(web == nil && !webRefused, "web pages never produce a document explanation")
         try check(InterProfileDocumentBlock(moving: [f.today.id], before: f.state, after: nil) == nil, "a move that no longer applies explains nothing")
@@ -595,7 +587,7 @@ import Foundation
         try check(copyRefused, "the explanation matches a move the store refuses")
         try check(folder.places == [.sidebar(.folder("Research"), split: false, otherSpace: nil)], "the duplicate is placed in its folder")
         try check(folder.title == "Can’t move to Office", "the title names the destination Space")
-        try check(folder.message == "This Note is still used elsewhere in Home: in the folder “Research”.", "folder duplicate wording")
+        try check(folder.message == "This Easel is still used elsewhere in Home: in the folder “Research”.", "folder duplicate wording")
 
         var archived = f.state; set(f.today.id, easel, in: &archived)
         archived.tabs.append(alias(easel, f.s, .today, archived: true))
@@ -614,12 +606,12 @@ import Foundation
         let awayIndex = away.tabs.firstIndex { $0.id == f.pinned.id }!
         away.tabs[awayIndex].savedURL = note; away.tabs[awayIndex].savedTitle = "Plans"; away.tabs[awayIndex].title = "Docs page"
         let (navigated, navigatedRefused) = try block([.tab(f.pinned.id)], away)
-        try check(navigatedRefused && navigated?.message == "The Note “Plans” is still used elsewhere in Home: in Today.",
-                  "a pinned tab showing a web page names the Note saved in it")
+        try check(navigatedRefused && navigated?.message == "The Easel “Plans” is still used elsewhere in Home: in Today.",
+                  "a pinned tab showing a web page names the Easel saved in it")
         let (spot, spotRefused) = try block([.split(f.group.id)], joined)
-        let saved = try unwrap(spot, "the saved spot a pinned Note left when it joined a split blocks the move")
+        let saved = try unwrap(spot, "the saved spot a pinned Easel left when it joined a split blocks the move")
         try check(spotRefused && saved.places == [.sidebar(.pinned, split: false, otherSpace: nil)], "the saved spot is reported where it is pinned")
-        try check(saved.message == "The Note “Plans” is still used elsewhere in Home: in Pinned.", "a multi-tab move names the Note that blocks it")
+        try check(saved.message == "The Easel “Plans” is still used elsewhere in Home: in Pinned.", "a multi-tab move names the Easel that blocks it")
 
         var pinnedSplit = clean
         for id in f.group.tabIDs { pinnedSplit.tabs[pinnedSplit.tabs.firstIndex { $0.id == id }!].kind = .pinned }
@@ -627,16 +619,16 @@ import Foundation
         let (split, splitRefused) = try block([.tab(f.today.id)], pinnedSplit)
         let paired = try unwrap(split, "a copy inside a pinned split blocks the move")
         try check(splitRefused && paired.places == [.sidebar(.pinned, split: true, otherSpace: nil)], "a pinned split member is reported as a split")
-        try check(paired.message == "This Note is still used elsewhere in Home: in a pinned split.", "pinned split wording")
+        try check(paired.message == "This Easel is still used elsewhere in Home: in a pinned split.", "pinned split wording")
 
         var dragged = f.state; set(f.pinned.id, note, in: &dragged)
         let dragRequest = ForeignSplitDrop.Request(source: dragged.tab(f.pinned.id)!, sourceHomeID: UUID(), spaceID: f.d.id, profileID: f.q.id,
             selection: [f.d1.id], layout: nil, target: .insert(1), orientation: .horizontal, destinationHomeIDs: [:])
         let dropped = ForeignSplitDrop.proposal(dragRequest, state: dragged, now: Date(timeIntervalSince1970: 7), creation: nil)
         let behind = try unwrap(InterProfileDocumentBlock(moving: [f.pinned.id], before: dragged, after: dropped),
-                                "dragging a pinned Note into another data’s split leaves its pinned spot behind")
+                                "dragging a pinned Easel into another data’s split leaves its pinned spot behind")
         try check(behind.places == [.leftBehind(.pinned, split: false)], "the spot this move would leave is reported as left behind")
-        try check(behind.message == "This Note is still used elsewhere in Home: in the pinned spot it leaves behind.", "left-behind spot wording")
+        try check(behind.message == "This Easel is still used elsewhere in Home: in the pinned spot it leaves behind.", "left-behind spot wording")
 
         let work = BrowserSpace(id: UUID(), name: "Work", symbol: "circle", color: "AABBCC", profileID: f.p.id)
         var shared = duplicated; shared.spaces.append(work)
@@ -646,10 +638,10 @@ import Foundation
         let many = try unwrap(spread, "entries in a Space sharing the same data block the move")
         try check(spreadRefused && many.places == [.sidebar(.today, split: false, otherSpace: "Work"), .sidebar(.favorites, split: false, otherSpace: nil),
                                                    .sidebar(.folder("Research"), split: false, otherSpace: nil)], "every distinct place is kept once, in a stable order")
-        try check(many.message == "This Note is still used elsewhere: in Today in Work, in Favorites and in the folder “Research” in Home.",
+        try check(many.message == "This Easel is still used elsewhere: in Today in Work, in Favorites and in the folder “Research” in Home.",
                   "entries outside the source Space name their Space")
         shared.tabs.append(alias(note, f.s, .today, archived: true))
-        try check(try block([.tab(f.today.id)], shared).0?.message == "This Note is still used elsewhere: in Today in Work, in Favorites and 2 more places.",
+        try check(try block([.tab(f.today.id)], shared).0?.message == "This Easel is still used elsewhere: in Today in Work, in Favorites and 2 more places.",
                   "a long list stays short")
 
         var pair = duplicated
@@ -660,7 +652,7 @@ import Foundation
         let first = try unwrap(both, "a split with two blocked documents refuses")
         try check(bothRefused && first.document == InternalPage(urlString: note) && first.others == [InternalPage(urlString: easel)!],
                   "the first blocked document is explained and the other is counted")
-        try check(first.message == "The Note “Plans” is still used elsewhere in Home: in the folder “Research”. 1 more Easel is too.",
+        try check(first.message == "The Easel “Plans” is still used elsewhere in Home: in the folder “Research”. 1 more Easel is too.",
                   "a multi-item move explains once and counts the rest")
         var onlyEasel = pair; onlyEasel.tabs.removeAll { $0.folderID == research.id }
         let (one, oneRefused) = try block([.split(f.group.id)], onlyEasel)
@@ -668,11 +660,11 @@ import Foundation
                   "a multi-item move names the one item that blocks it")
 
         var draft = try unwrap(SidebarNewSpaceDraft(items: [.tab(f.today.id)], from: SidebarHierarchySnapshot(state: duplicated, spaceID: f.s.id, profileID: f.p.id)!,
-                                                    state: duplicated), "New Space draft with the Note")
+                                                    state: duplicated), "New Space draft with the Easel")
         draft.name = "Fresh"; draft.keepSeparate()
         let fresh = try unwrap(InterProfileDocumentBlock(moving: Set(draft.tabIDs), before: duplicated, after: draft.applying(to: duplicated)),
                                "a New Space that keeps separate data is blocked the same way")
-        try check(fresh.message == "This Note is still used elsewhere in Home: in the folder “Research”.", "the New Space form shows the same explanation")
+        try check(fresh.message == "This Easel is still used elsewhere in Home: in the folder “Research”.", "the New Space form shows the same explanation")
     }
 
     static func dataChangeBlocks() throws {
@@ -680,7 +672,7 @@ import Foundation
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-data-change-block-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let note = InternalPage.note(UUID()).urlString, easel = InternalPage.easel(UUID()).urlString
+        let note = InternalPage.easel(UUID()).urlString, easel = InternalPage.easel(UUID()).urlString
         let work = BrowserSpace(id: UUID(), name: "Work", symbol: "circle", color: "AABBCC", profileID: f.p.id)
         func set(_ id: UUID, _ url: String, title: String, in state: inout BrowserState) {
             let index = state.tabs.firstIndex { $0.id == id }!
@@ -707,13 +699,13 @@ import Foundation
         let quiet = try stored(state)
         try check(quiet.sharingDocumentBlock(forSpace: f.s.id, to: .separate) == nil
                   && quiet.sharingDocumentBlock(forSpace: f.s.id, to: .share(withSpace: f.d.id)) == nil && !refused(quiet),
-                  "a Note used only in the Space changing its data has nothing to explain and is not refused")
+                  "an Easel used only in the Space changing its data has nothing to explain and is not refused")
 
         var spread = state; spread.tabs.append(alias(note, work, .today))
         let separate = try unwrap(try stored(spread).sharingDocumentBlock(forSpace: f.s.id, to: .separate),
-                                  "a Note open in another Space on the old data blocks Keep separate")
+                                  "an Easel open in another Space on the old data blocks Keep separate")
         try check(separate.change == .keepSeparate && separate.title == "Can’t keep Home separate", "Keep separate names the Space it can’t separate")
-        try check(separate.message == "The Note “Plans” is still used elsewhere on Home’s current data: in Today in Work.",
+        try check(separate.message == "The Easel “Plans” is still used elsewhere on Home’s current data: in Today in Work.",
                   "an entry in a Space sharing the old data is named with its Space")
 
         var kept = state; kept.tabs += [alias(note, f.s, .favorite), alias(note, f.s, .today, archived: true)]
@@ -722,22 +714,22 @@ import Foundation
                                "a Favorite and an archived entry block sharing other data")
         try check(refused(keptStore), "the explanation matches a data change the store refuses")
         try check(share.change == .share(target: "Office") && share.title == "Can’t share Office’s data with Home", "sharing names both Spaces")
-        try check(share.message == "The Note “Plans” is still used elsewhere on Home’s current data: in Favorites and in the Archive.",
+        try check(share.message == "The Easel “Plans” is still used elsewhere on Home’s current data: in Favorites and in the Archive.",
                   "Favorites and the Archive stay with the old data")
 
         var pair = spread; set(f.g1.id, easel, title: "Board", in: &pair)
         pair.tabs.append(alias(easel, f.s, .today, archived: true))
         try check(try stored(pair).sharingDocumentBlock(forSpace: f.s.id, to: .separate)?.message
-                  == "The Note “Plans” is still used elsewhere on Home’s current data: in Today in Work. 1 more Easel is too.",
+                  == "The Easel “Plans” is still used elsewhere on Home’s current data: in Today in Work. 1 more Easel is too.",
                   "a data change explains the first document and counts the rest")
 
         var after = kept; after.tabs[after.tabs.firstIndex { $0.id == f.today.id }!].profileID = UUID()
         let lone = try unwrap(InterProfileDocumentBlock(moving: [f.today.id], before: kept, after: after, sharing: .separate),
-                              "a lone Note still blocks a data change")
-        try check(lone.subject == "The Note “Plans”", "a data change names the Note even when it is the Space’s only item")
+                              "a lone Easel still blocks a data change")
+        try check(lone.subject == "The Easel “Plans”", "a data change names the Easel even when it is the Space’s only item")
         let moved = try unwrap(InterProfileDocumentBlock(moving: [f.today.id], before: kept, after: after), "the same entries block a move")
-        try check(moved.change == .move && moved.subject == "This Note" && moved.title == "Can’t move to Home"
-                  && moved.message == "This Note is still used elsewhere in Home: in Favorites and in the Archive.",
+        try check(moved.change == .move && moved.subject == "This Easel" && moved.title == "Can’t move to Home"
+                  && moved.message == "This Easel is still used elsewhere in Home: in Favorites and in the Archive.",
                   "move wording is unchanged when no data change is given")
     }
 

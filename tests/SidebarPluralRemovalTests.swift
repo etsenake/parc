@@ -17,23 +17,26 @@ struct SidebarPluralRemovalTests {
         let second = BrowserFolder(id: UUID(), spaceID: space.id, name: "Second")
         let empty = BrowserFolder(id: UUID(), spaceID: space.id, name: "Empty")
         let remaining = BrowserFolder(id: UUID(), spaceID: space.id, name: "Keep")
-        let notes = try NoteStore.sharedStore(directory: root.appendingPathComponent("Notes"), diskSaveDelay: 0)
-        let note = try notes.create()
-        try note.updateTitle("Shared", replacing: note.document.title)
-        let noteFile = notes.directory.appendingPathComponent(note.document.id.uuidString.lowercased() + ".json")
+        let notesFolder = root.appendingPathComponent("Parc Notes")
+        try FileManager.default.createDirectory(at: notesFolder, withIntermediateDirectories: true)
+        let noteFile = notesFolder.appendingPathComponent("Shared.md")
+        try Data("Original body\n".utf8).write(to: noteFile)
+        let noteAvailable: @MainActor () throws -> Void = {
+            guard FileManager.default.fileExists(atPath: noteFile.path) else { throw CocoaError(.fileNoSuchFile) }
+        }
         let noteBytes = try Data(contentsOf: noteFile)
         func tab(_ title: String, folder: UUID?, kind: TabKind = .pinned, url: String = "https://original.invalid/") -> BrowserTab {
             .init(id: UUID(), spaceID: space.id, profileID: profile.id, url: url, title: title,
                 kind: kind, folderID: folder, createdAt: Date(timeIntervalSince1970: 10),
                 lastAccessed: Date(timeIntervalSince1970: 10), savedURL: url, savedTitle: title)
         }
-        let n = tab("Note", folder: nested.id, url: InternalPage.note(note.document.id).urlString)
+        let n = tab("Note", folder: nested.id, url: InternalPage.note(noteFile).urlString)
         let w = tab("Web", folder: nested.id)
         let b = tab("Second child", folder: second.id)
         let loose = tab("Loose pinned", folder: remaining.id)
         let today = tab("Today", folder: nil, kind: .today)
         let keep = tab("Survivor", folder: nil)
-        let alias = tab("Surviving alias", folder: nil, url: InternalPage.note(note.document.id).urlString)
+        let alias = tab("Surviving alias", folder: nil, url: InternalPage.note(noteFile).urlString)
         let split = BrowserSplitLayout(sidebarAnchorID: n.id, customTitle: "Mixed", spaceID: space.id,
             tabIDs: [n.id,w.id], orientation: .vertical, widthFactors: [0.3,0.7])
         var oldArchived = tab("Earlier archive", folder: nested.id); oldArchived.archivedAt = Date(timeIntervalSince1970: 20)
@@ -60,7 +63,7 @@ struct SidebarPluralRemovalTests {
         try check(FolderRemovalTarget(items: proposed, spaceID: space.id, profileID: profile.id, state: foreign) == nil, "Foreign descendant cannot partially participate")
         var malformed = initial; malformed.tabs[0].kind = .today
         try check(FolderRemovalTarget(items: proposed, spaceID: space.id, profileID: profile.id, state: malformed) == nil, "Folder descendants retain the saved-kind invariant")
-        let docs = [n.id: SidebarDocumentReference(page: .note(note.document.id), profileID: profile.id) { try notes.validateReference(note.document.id) }]
+        let docs = [n.id: SidebarDocumentReference(page: .note(noteFile), profileID: profile.id, validate: noteAvailable)]
         let selection = FolderRemovalSelection.resolve(target: target, state: initial, selected: split.tabIDs, focused: w.id, available: { _ in true })!
         try check(!selection.tabIDs.isEmpty && Set(selection.tabIDs).isDisjoint(with: target.tabs.map(\.id)), "Next focus excludes every removed root")
         var authorize: (() -> Bool)?, finish: ((Bool) -> Void)?, requested = Set<UUID>(), admissions = 0
@@ -79,9 +82,10 @@ struct SidebarPluralRemovalTests {
         remove(target); finish?(false)
         try check(store.state == initial && undo == nil, "Any native beforeunload refusal cancels the whole collection")
         remove(target)
-        try Data("invalid".utf8).write(to: noteFile)
+        let movedNote = notesFolder.appendingPathComponent("Moved away.md")
+        try FileManager.default.moveItem(at: noteFile, to: movedNote)
         try check(authorize?() == false, "Typed reference loss invalidates all roots during native consent")
-        finish?(false); try noteBytes.write(to: noteFile)
+        finish?(false); try FileManager.default.moveItem(at: movedNote, to: noteFile)
         try check(store.state == initial, "Typed refusal archives no unrelated web root")
         remove(target)
         try check(authorize?() == true, "Original owners remain eligible")
@@ -97,7 +101,7 @@ struct SidebarPluralRemovalTests {
         try check(archived.tabs.filter { target.tabs.map(\.id).contains($0.id) }.allSatisfy { $0.archivedAt != nil }, "Original Today, pinned, typed and split records all archived")
         try check(archived.tabs.first { $0.id == keep.id } == keep && archived.tabs.first { $0.id == alias.id } == alias, "Unselected page and document alias untouched")
         try check(archived.tabs.first { $0.id == oldArchived.id }?.folderID == nil, "Earlier archive safely detached from deleted folder")
-        try check(try Data(contentsOf: noteFile) == noteBytes && notes.load(note.document.id) === note, "No document write or session clone")
+        try check(try Data(contentsOf: noteFile) == noteBytes, "No document write or session clone")
         try check(record.roots == target.roots && record.locations.count == 3 && record.groups == [split], "Undo retains roots across three original containers")
         var independent = archived
         let inserted = tab("Inserted later", folder: nil)

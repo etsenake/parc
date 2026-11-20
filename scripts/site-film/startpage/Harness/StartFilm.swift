@@ -176,7 +176,7 @@ enum Curve {
             isFavorite: false, isInActiveSpace: false, spaceName: "Home", isInSplit: false).text, isTab: true,
             icon: Favicons.specs[Canon.picnic.url].map(Favicons.image))
         let note = BarRow(id: "note:picnic", title: "Picnic packing list", detail: "Note",
-                          icon: Self.symbol(InternalPage.note(UUID()).sidebarFallbackSymbol))
+                          icon: Self.symbol(InternalPage.note(URL(fileURLWithPath: "/Picnic packing list.md")).sidebarFallbackSymbol))
         let pottery = BarRow(id: "tab:pottery", title: "Pottery wheel notes", accessory: CommandBarResultText.TabCaption.switchToTab.text,
                              isTab: true, icon: Favicons.specs["https://notes.example.com/pottery-wheel"].map(Favicons.image))
         let command: BarRow = folder.map {

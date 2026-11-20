@@ -1749,8 +1749,8 @@ struct BrowserStoreTests {
             let pinnedRoot = SidebarContainerLocation(spaceID: space, folderID: nil, section: .pinned)
             let todayBox = SidebarContainerLocation(spaceID: space, folderID: nil, section: .today)
 
-            let documentID = UUID()
-            let note = store.openNote(id: documentID, title: "Note")!
+            let documentID = URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")
+            let note = store.openNote(url: documentID, title: "Note")!
             store.selectTab(note)
             let todayJoin = UUID()
             try expect(store.commandBarSplitHomes(after: note, expectedSelection: [note], tabID: todayJoin, isNew: true)?.isEmpty == true,
@@ -1820,13 +1820,11 @@ struct BrowserStoreTests {
                        "Closing a Favorite split pane from another Space removes it from the one split")
             store.selectSpace(space)
             let other = store.createProfile(name: "Other")
-            store.relocateLocalDocuments = { ids, pages, from, to in
-                try expect(ids.contains(note) && ids.contains(noteHome.id) && pages == [.note(documentID)],
-                           "Profile assignment delegates the original Note and alias together")
-                try expect(from == profile && to == other, "Profile assignment binds both storage Profiles")
-                return {}
-            }
+            var relocatedNote = false
+            store.relocateLocalDocuments = { _, _, _, _ in relocatedNote = true; return {} }
             store.assignProfile(other, toSpace: space)
+            try expect(!relocatedNote && (try tab(note, in: store)).profileID == other && (try tab(noteHome.id, in: store)).profileID == other,
+                       "Profile assignment carries the Note and its alias along while the note file stays put")
             let kept = store.state.splitLayouts.first { $0.id == favoriteSplit.id }
             try expect(kept?.spaceID == second && kept?.tabIDs == [f1, f3], "A Favorite split survives its storing Space changing Profile")
         }
@@ -2112,7 +2110,7 @@ struct BrowserStoreTests {
         try expect(canonical == "parc://easel/" + id.uuidString.lowercased(), "Easel routes must use a canonical opaque document ID")
         try expect(InternalPage(urlString: canonical) == .easel(id), "The internal route must round-trip its typed identity")
         try expect(InternalPage.easel(id).sidebarFallbackSymbol == "square.on.square"
-                   && InternalPage.note(id).sidebarFallbackSymbol == "note.text"
+                   && InternalPage.note(URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")).sidebarFallbackSymbol == "note.text"
                    && InternalPage.sidebarFallbackSymbol(urlString: "https://example.org") == "globe",
                    "Easel and Note rows keep distinct still glyphs; web rows keep the globe fallback")
         for address in ["parc://easel/not-a-uuid", "parc://easel/" + id.uuidString + "/more",
@@ -2559,7 +2557,7 @@ struct BrowserStoreTests {
             let first = store.open("https://mixed-today.example")
             let second = store.open("https://mixed-pinned.example")
             store.setSplit([first, second])
-            let note = store.openResolvedURL(URL(string: InternalPage.note(UUID()).urlString)!)
+            let note = store.openResolvedURL(URL(string: InternalPage.note(URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")).urlString)!)
             let easel = store.openResolvedURL(URL(string: InternalPage.easel(UUID()).urlString)!)
             let malformed = store.openResolvedURL(URL(string: "parc://note/not-a-document")!)
             let folder = store.createFolder(name: "Saved")
@@ -3388,10 +3386,10 @@ struct BrowserStoreTests {
                        "A split row's Favorite from another Space is copied alike from the sidebar and the split menu")
             try expect(FolderLinks.links(in: original, items: [.folder(folder)], spaceID: space, profileID: profile)?.map(\.tabID) == [a, b],
                        "One selected folder copies its contents")
-            let documents = [InternalPage.note(UUID()).urlString, InternalPage.easel(UUID()).urlString, "parc://settings/", "about:blank"]
+            let documents = [InternalPage.note(URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")).urlString, InternalPage.easel(UUID()).urlString, "parc://settings/", "about:blank"]
                 .map { store.openResolvedURL(URL(string: $0)!) }
-            try expect(FolderLinks.links(in: store.state, items: documents.map { .tab($0) } + [.tab(c)], spaceID: space, profileID: profile)?.map(\.tabID) == [c],
-                       "Notes, Easels, Parc pages and blank tabs have no address to copy")
+            try expect(FolderLinks.links(in: store.state, items: documents.map { .tab($0) } + [.tab(c)], spaceID: space, profileID: profile)?.map(\.tabID) == [documents[0], c],
+                       "Notes copy their file's address, while Easels, Parc pages and blank tabs have no address to copy")
             let rich = [FolderLinks.Link(tabID: UUID(), title: "A [label]\nnext", url: "https://example.com/a?x=1&y=2"),
                         FolderLinks.Link(tabID: UUID(), title: " ", url: "https://example.com/\"c\"")]
             try expect(FolderLinks.html(for: rich) == "<meta charset=\"utf-8\"><a href=\"https://example.com/a?x=1&amp;y=2\">A [label] next</a><br>\n"

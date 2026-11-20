@@ -181,13 +181,12 @@ import Foundation
         try check(!(try stackStore.dropExternalURLIntoSplit(destination, tabID: UUID(), spaceID: space, profileID: p,
             expectedSelection: fullStack.selectedTabIDs, expectedLayout: stackStore.activeSplitLayout, target: .stack(0, after: false),
             orientation: .horizontal, creation: receipt)) && stackStore.state == fullStack, "a full stacked split refuses another link stack")
-        let notes = try NoteStore(directory: root.appendingPathComponent("notes"), diskSaveDelay: 0)
-        let note = try notes.create()
+        let noteFile = root.appendingPathComponent("Shared Note.md"); try Data().write(to: noteFile)
         let easels = try EaselStore(directory: root.appendingPathComponent("easels"))
         let easel = try easels.create()
-        let noteRef = SidebarDocumentReference(page: .note(note.document.id), profileID: p) { try notes.validateReference(note.document.id) }
+        let noteRef = SidebarDocumentReference(page: .note(noteFile), profileID: p) { guard FileManager.default.fileExists(atPath: noteFile.path) else { throw CocoaError(.fileNoSuchFile) } }
         let easelRef = SidebarDocumentReference(page: .easel(easel.document.id), profileID: p) { try easels.validateReference(easel.document.id) }
-        for (name, reference, address) in [("note", noteRef, "parc://note/" + note.document.id.uuidString),
+        for (name, reference, address) in [("note", noteRef, InternalPage.note(noteFile).urlString),
                                             ("easel", easelRef, "parc://easel/" + easel.document.id.uuidString)] {
             for savedKind in [TabKind.favorite, .pinned] {
             var documentState = savedKind == .favorite ? favorite : pinned
@@ -207,7 +206,7 @@ import Foundation
                       "typed original and home share exact existing document identity")
             }
         }
-        try check(try notes.load(note.document.id) === note && easels.load(easel.document.id) === easel, "original shared sessions remain exact")
+        try check(FileManager.default.fileExists(atPath: noteFile.path) && easels.load(easel.document.id) === easel, "original shared documents remain exact")
         var decorated = original; var decoratedGroup = group
         decoratedGroup.customTitle = "Original group"; decoratedGroup.customIcon = .emoji("🌙")
         decorated.splitLayouts = [decoratedGroup]

@@ -57,6 +57,7 @@ core_sources=(
   "$repo_root/Sources/ParcCore/SidebarFolderFromItems.swift"
   "$repo_root/Sources/ParcCore/TabHistoryArchive.swift"
   "$repo_root/Sources/ParcCore/SessionBackups.swift"
+  "$repo_root/Sources/ParcCore/NoteFileKind.swift"
 )
 mkdir -p "$repo_root/build/tests/tooltip"
 tooltip_sources=()
@@ -139,7 +140,6 @@ step compile_and_run folder-undo-manager FolderUndoManagerTests \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift"
 step compile_and_run folder-document-close FolderDocumentCloseTests \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift" \
-  "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
 step compile_and_run profile-removal ProfileRemovalTests
@@ -148,19 +148,16 @@ step compile_and_run profile-removal-controller ProfileRemovalControllerTests \
   "$repo_root/tests/ProfileRemovalTestSupport.swift"
 
 step compile_and_run sidebar-plural-duplicate SidebarPluralDuplicateTests \
-  "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
 step compile_and_run sidebar-split-copy SidebarSplitCopyTests
 step compile_and_run duplicate-undo DuplicateUndoTests \
-  "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift" \
   "$repo_root/Sources/ParcApp/DuplicateUndo.swift"
 
 step compile_and_run sidebar-plural-removal SidebarPluralRemovalTests \
-  "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift"
@@ -169,13 +166,11 @@ step compile_and_run archived-folder-paths ArchivedFolderPathTests
 step python3 "$repo_root/tests/FolderDeletion/check.py"
 
 step compile_and_run sidebar-keyboard-close SidebarKeyboardCloseTests \
-  "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcApp/FolderUndoManager.swift"
 
 step compile_and_run closed-items ClosedItemsTests \
-  "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift"
@@ -281,7 +276,6 @@ step compile_and_run command-bar-compact-layout CommandBar/CompactLayoutTests \
 
 step compile_and_run command-bar-folder-copy CommandBar/FolderCopyTests
 step compile_and_run command-bar-document-alias CommandBar/DocumentAliasTests \
-  "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
 
@@ -371,9 +365,6 @@ step compile_and_run layout-chrome-geometry-skip LayoutChromeGeometrySkipTests \
 step python3 "$repo_root/tests/LayoutChromeGeometrySkip/check.py"
 step python3 "$repo_root/tests/LayoutChromePageHostSkip/check.py"
 
-step compile_and_run note-editor-chrome-layout-skip NoteEditorChromeLayoutSkipTests
-step python3 "$repo_root/tests/NoteEditorChromeLayoutSkip/check.py"
-
 step python3 "$repo_root/tests/DocumentsLibraryCatalogSkip/check.py"
 
 step compile_and_run sidebar-new-space SidebarNewSpaceTests
@@ -415,7 +406,6 @@ step python3 "$repo_root/tests/PopupChrome/check.py"
 
 step compile_and_run sidebar-window-move SidebarWindowMoveTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift" \
-  "$repo_root/Sources/ParcCore/NoteStore.swift" \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift"
 

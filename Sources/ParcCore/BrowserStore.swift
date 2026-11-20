@@ -2911,7 +2911,7 @@ final class BrowserStore: ObservableObject {
         let archiveGroups = profiles.flatMap { archivedItems(profileID: $0) }.filter { !ids.isDisjoint(with: Set($0.tabs.map(\.id))) }.map(\.tabs)
         let retiring = ids.union(archiveGroups.flatMap { $0.map(\.id) })
         guard retiring.isDisjoint(with: retiringTabIDs) else { completion(CocoaError(.userCancelled)); return }
-        let removeDocument = deleteDocument ?? { if let file { try NoteLibrary.trash(file) } }
+        let removeDocument = deleteDocument ?? { if let file { try FileManager.default.trashItem(at: file, resultingItemURL: nil) } }
         func current() -> Bool {
             ownerValid() && !self.isProfileRemovalPending(profileID)
                 && self.state.profiles.contains(where: { $0.id == profileID })

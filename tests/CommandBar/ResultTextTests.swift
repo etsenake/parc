@@ -164,7 +164,7 @@ import Foundation
         expect(Command.symbol(commandID: "toggleReaderMode:", title: "Exit Reader") == "newspaper", "Exit Reader")
         expect(Command.symbol(commandID: "closeTab:", title: "Close Settings") == "archivebox",
                "Archive Tab keeps its icon while it reads Close Settings")
-        expect(Command.symbol(commandID: "exportNotes:", title: "Exporting Notes…") == "arrow.down.doc", "Exporting Notes…")
+        expect(Command.symbol(commandID: "showNotesFolder:", title: "Show Notes Folder") == "folder", "Show Notes Folder")
         expect(Command.symbol(commandID: "thirdSplitPane:", title: "Switch to Split View 3") == "square.split.2x1", "split panes")
         expect(Command.symbol(commandID: "item3", title: "Go to Sidebar Item 3", group: "Tabs") == "arrow.right", "numbered items")
         expect(Command.symbol(commandID: "space-1", title: "Personal", group: "Spaces") == "rectangle.portrait.on.rectangle.portrait",

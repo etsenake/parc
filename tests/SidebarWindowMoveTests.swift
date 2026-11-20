@@ -25,10 +25,11 @@ struct SidebarWindowMoveTests {
             return BrowserTab(id: UUID(), spaceID: source.id, profileID: profile.id, url: url, title: title,
                 kind: .pinned, folderID: parent, createdAt: Date(timeIntervalSince1970: 1), lastAccessed: Date(timeIntervalSince1970: 1), savedURL: url, savedTitle: title)
         }
-        let notes = try NoteStore.sharedStore(directory: directory.appendingPathComponent("Notes"), diskSaveDelay: 0)
+        let noteFile = directory.appendingPathComponent("Original.md")
+        try Data("Original\n".utf8).write(to: noteFile)
         let easels = try EaselStore(directory: directory.appendingPathComponent("Easels"))
-        let note = try notes.create(), easel = try easels.create(title: "Original")
-        let n = tab("Note", parent: child.id, url: InternalPage.note(note.document.id).urlString)
+        let easel = try easels.create(title: "Original")
+        let n = tab("Note", parent: child.id, url: InternalPage.note(noteFile).urlString)
         var e = tab("Easel", url: InternalPage.easel(easel.document.id).urlString)
         e.kind = .today
         let web = tab("Web", parent: folder.id), keep = tab("Keep")
@@ -101,7 +102,7 @@ struct SidebarWindowMoveTests {
         let after = store.state
         try check(Set(after.tabs.map(\.id)) == Set(initial.tabs.map(\.id)) && after.tabs.count == initial.tabs.count, "No tab clone or URL replay")
         try check(after.tabs.first { $0.id == n.id }?.url == n.url && after.tabs.first { $0.id == e.id }?.url == e.url, "Typed document identity unchanged")
-        try check(try notes.load(note.document.id) === note && easels.load(easel.document.id) === easel, "Original local shared sessions survive")
+        try check(FileManager.default.fileExists(atPath: noteFile.path) && easels.load(easel.document.id) === easel, "Original local documents survive")
         try check(after.tabs.filter { split.tabIDs.contains($0.id) }.allSatisfy { $0.folderID == child.id && $0.kind == .pinned && $0.spaceID == target.id }, "Nested split descendants adopt the moved original anchor container")
         try check(after.folders.first { $0.id == folder.id }?.parentID == destinationFolder.id, "Original folder adopts exact parent")
         try check(after.folders.first { $0.id == child.id }?.parentID == folder.id, "Nested parent identity preserved")

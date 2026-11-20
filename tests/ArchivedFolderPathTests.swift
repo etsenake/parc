@@ -53,7 +53,7 @@ struct ArchivedFolderPathTests {
         let w1 = tab("WorkFirst", folder: work.id), w2 = tab("WorkLast", folder: work.id)
         let i1 = tab("InnerFirst", folder: inner.id)
         var i2 = tab("InnerLast", folder: inner.id)
-        let notePage = InternalPage.note(UUID())
+        let notePage = InternalPage.note(URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md"))
         if archivedNote {
             i2.url = notePage.urlString; i2.savedURL = notePage.urlString
             i2.archivedAt = Date(timeIntervalSince1970: 1_800_000_000)

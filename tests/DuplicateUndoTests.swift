@@ -16,11 +16,15 @@ struct DuplicateUndoTests {
         let nested = BrowserFolder(id: UUID(), spaceID: space.id, name: "Nested", parentID: first.id, isExpanded: false)
         let second = BrowserFolder(id: UUID(), spaceID: space.id, name: "Second")
         let target = BrowserFolder(id: UUID(), spaceID: space.id, name: "Target")
-        let notes = try NoteStore.sharedStore(directory: root.appendingPathComponent("Notes"), diskSaveDelay: 0)
+        let notesFolder = root.appendingPathComponent("Parc Notes")
+        try FileManager.default.createDirectory(at: notesFolder, withIntermediateDirectories: true)
+        let noteFile = notesFolder.appendingPathComponent("Original Note.md")
+        try Data("Original body\n".utf8).write(to: noteFile)
+        let noteAvailable: @MainActor () throws -> Void = {
+            guard FileManager.default.fileExists(atPath: noteFile.path) else { throw CocoaError(.fileNoSuchFile) }
+        }
         let easels = try EaselStore(directory: root.appendingPathComponent("Easels"))
-        let note = try notes.create(), easel = try easels.create(title: "Shared Easel")
-        try note.updateTitle("Original Note", replacing: note.document.title)
-        let noteFile = notes.directory.appendingPathComponent(note.document.id.uuidString.lowercased() + ".json")
+        let easel = try easels.create(title: "Shared Easel")
         let noteBytes = try Data(contentsOf: noteFile)
         func tab(_ title: String, parent: UUID? = nil, kind: TabKind = .pinned, url: String? = nil) -> BrowserTab {
             let url = url ?? "https://saved.invalid/" + title
@@ -28,7 +32,7 @@ struct DuplicateUndoTests {
                          kind: kind, folderID: parent, createdAt: Date(timeIntervalSince1970: 10),
                          lastAccessed: Date(timeIntervalSince1970: 10), savedURL: url, savedTitle: title)
         }
-        let n = tab("Note", parent: nested.id, url: InternalPage.note(note.document.id).urlString)
+        let n = tab("Note", parent: nested.id, url: InternalPage.note(noteFile).urlString)
         let w = tab("Web", parent: nested.id)
         let e = tab("Easel", parent: second.id, url: InternalPage.easel(easel.document.id).urlString)
         let loose = tab("Loose", parent: second.id), today = tab("Today", kind: .today), keep = tab("Keep")
@@ -52,9 +56,9 @@ struct DuplicateUndoTests {
         let containers = [pinned, todayLocation, secondLocation, targetLocation, firstLocation, nestedLocation]
         func layout(_ state: BrowserState) -> [[SidebarItemReference]] { containers.map { SidebarHierarchy.children(in: $0, state: state) } }
         var documentsBlocked = false
-        let references = [n.id: SidebarDocumentReference(page: .note(note.document.id), profileID: profile.id) {
+        let references = [n.id: SidebarDocumentReference(page: .note(noteFile), profileID: profile.id) {
                               if documentsBlocked { throw CocoaError(.fileReadNoPermission) }
-                              try notes.validateReference(note.document.id) },
+                              try noteAvailable() },
                           e.id: SidebarDocumentReference(page: .easel(easel.document.id), profileID: profile.id) { try easels.validateReference(easel.document.id) }]
         let items: [SidebarItemReference] = [.folder(first.id), .tab(e.id), .tab(today.id)]
         let duplicate = SidebarDuplicateTarget(items: items, spaceID: space.id, profileID: profile.id, state: initial)!
@@ -104,7 +108,7 @@ struct DuplicateUndoTests {
         try check(undone.folders == initial.folders && undone.splitLayouts == initial.splitLayouts, "Copied folders and split leave; originals keep their records")
         try check(layout(undone) == layout(initial), "Every container returns to its pre-Duplicate order")
         try check(undone.selectedTabIDs == initial.selectedTabIDs && undone.activeSpaceID == initial.activeSpaceID, "Undo keeps the window's selection")
-        try check(try Data(contentsOf: noteFile) == noteBytes && notes.load(note.document.id) === note && easels.load(easel.document.id) === easel, "Undo never touches the shared Note or Easel")
+        try check(try Data(contentsOf: noteFile) == noteBytes && easels.load(easel.document.id) === easel, "Undo never touches the shared Note or Easel")
         try check(store.archivedItems(profileID: profile.id).allSatisfy { $0.tabs.allSatisfy { !copiedIDs.contains($0.id) } }, "Undone copies do not land in the archive")
         try check(manager.canRedo && manager.redoMenuItemTitle == "Redo Duplicate" && !manager.canUndo, "Undo moves the step to Redo")
         let reloaded = try BrowserStore(directory: root)

@@ -503,15 +503,14 @@ struct ClosedItemsTests {
         try FileManager.default.removeItem(at: file); try FileManager.default.moveItem(at: backup, to: file)
         try expect(try store.restoreClosedItem(retry) && first.consume(retry), "bulk saved retry commits original target before consumption")
 
-        let notes = try NoteStore.sharedStore(directory: store.notesDirectory(for: profile), diskSaveDelay: 0)
-        let note = try notes.create()
-        try note.updateTitle("Shared Note", replacing: note.document.title)
+        let notePath = store.directory.appendingPathComponent("Parc Notes/Shared Note.md")
+        try FileManager.default.createDirectory(at: notePath.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("Shared body\n".utf8).write(to: notePath)
         let easels = try EaselStore(directory: store.easelsDirectory(for: profile))
         let easel = try easels.create(title: "Shared Easel")
-        let notePath = notes.directory.appendingPathComponent(note.document.id.uuidString.lowercased() + ".json")
         let easelPath = easels.directory.appendingPathComponent("documents/" + easel.document.id.uuidString.lowercased() + ".json")
         let noteBytes = try Data(contentsOf: notePath), easelBytes = try Data(contentsOf: easelPath)
-        let n = store.openNote(id: note.document.id, title: note.document.title)!
+        let n = store.openNote(url: notePath, title: "Shared Note")!
         let e = store.openEasel(id: easel.document.id, title: easel.document.title)!
         store.setKind(n, .today); store.setKind(e, .today)
         store.setSplit([n,e]); _ = store.setSplitLayout(orientation: .vertical, widthFactors: [0.3,0.7])
@@ -570,9 +569,8 @@ struct ClosedItemsTests {
         try expect(disk.state.splitLayouts.filter { $0.id == split.id } == [split], "saved split restoration survives persistence with one original group")
         try expect(try Data(contentsOf: notePath) == noteBytes && Data(contentsOf: easelPath) == easelBytes,
             "saved typed restoration never changes Note/Easel document bytes")
-        try expect(notes.load(note.document.id) === note && (try easels.load(easel.document.id)) === easel,
-            "saved restoration retains actual shared Note and Easel sessions")
-        try expect(store.state.tabs.first { $0.id == n }?.url == InternalPage.note(note.document.id).urlString
+        try expect((try easels.load(easel.document.id)) === easel, "saved restoration retains the actual shared Easel session")
+        try expect(store.state.tabs.first { $0.id == n }?.url == InternalPage.note(notePath).urlString
             && store.state.tabs.first { $0.id == e }?.url == InternalPage.easel(easel.document.id).urlString,
             "typed aliases reopen original document IDs without clones or URL substitutes")
     }

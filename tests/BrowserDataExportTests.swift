@@ -28,7 +28,7 @@ struct BrowserDataExportTests {
         let today = tab("https://today.example/", kind: .today)
         let nested = tab("https://nested.example/", folderID: folder.id)
         let pane1 = tab("https://pane-one.example/"), pane2 = tab("https://pane-two.example/")
-        let note = tab(InternalPage.note(UUID()).urlString)
+        let note = tab(InternalPage.note(URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")).urlString)
         let easel = tab(InternalPage.easel(UUID()).urlString)
         var archived = tab("https://archived.example/"); archived.archivedAt = Date()
         let foreign = tab("https://other-profile.example/", kind: .favorite, owner: third)

@@ -16,14 +16,15 @@ struct SidebarPluralDuplicateTests {
         let nested = BrowserFolder(id: UUID(), spaceID: space.id, name: "Nested", parentID: first.id, isExpanded: false)
         let second = BrowserFolder(id: UUID(), spaceID: space.id, name: "Second")
         let empty = BrowserFolder(id: UUID(), spaceID: space.id, name: "Empty")
-        let notes = try NoteStore.sharedStore(directory: root.appendingPathComponent("Notes"), diskSaveDelay: 0)
+        let notesFolder = root.appendingPathComponent("Parc Notes")
+        try FileManager.default.createDirectory(at: notesFolder, withIntermediateDirectories: true)
+        let noteFile = notesFolder.appendingPathComponent("Original Note.md")
+        try Data("Original body\n".utf8).write(to: noteFile)
         let easels = try EaselStore(directory: root.appendingPathComponent("Easels"))
-        let note = try notes.create(), easel = try easels.create(title: "Shared Easel")
-        try note.updateTitle("Original Note", replacing: note.document.title)
+        let easel = try easels.create(title: "Shared Easel")
         let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3uoAAAAASUVORK5CYII=")!
         let asset = try easel.importPNG(png)
         try easel.perform("Image") { $0.items = [EaselItem(kind: .image, frame: .init(x: 0, y: 0, width: 100, height: 80), assetID: asset)] }
-        let noteFile = notes.directory.appendingPathComponent(note.document.id.uuidString.lowercased() + ".json")
         let noteBytes = try Data(contentsOf: noteFile), assetBytes = try Data(contentsOf: easel.assetURL(asset))
         func tab(_ title: String, parent: UUID? = nil, kind: TabKind = .pinned, url: String? = nil) -> BrowserTab {
             let url = url ?? "https://saved.invalid/" + title
@@ -31,7 +32,7 @@ struct SidebarPluralDuplicateTests {
                          kind: kind, folderID: parent, createdAt: Date(timeIntervalSince1970: 10),
                          lastAccessed: Date(timeIntervalSince1970: 10), savedURL: url, savedTitle: title)
         }
-        let n = tab("Note", parent: nested.id, url: InternalPage.note(note.document.id).urlString)
+        let n = tab("Note", parent: nested.id, url: InternalPage.note(noteFile).urlString)
         let w = tab("Web", parent: nested.id)
         let e = tab("Easel", parent: second.id, url: InternalPage.easel(easel.document.id).urlString)
         let loose = tab("Loose", parent: second.id), today = tab("Today", kind: .today), keep = tab("Keep")
@@ -65,13 +66,15 @@ struct SidebarPluralDuplicateTests {
         try check(SidebarDuplicateTarget(items: proposed, spaceID: space.id, profileID: profile.id, state: malformed) == nil, "Malformed split refused")
         malformed = initial; malformed.tabs[5].kind = .favorite
         try check(SidebarDuplicateTarget(items: [.tab(keep.id)], spaceID: space.id, profileID: profile.id, state: malformed) == nil, "Favorite context is outside this owner")
-        let references = [n.id: SidebarDocumentReference(page: .note(note.document.id), profileID: profile.id) { try notes.validateReference(note.document.id) },
+        let references = [n.id: SidebarDocumentReference(page: .note(noteFile), profileID: profile.id) {
+            guard FileManager.default.fileExists(atPath: noteFile.path) else { throw CocoaError(.fileNoSuchFile) }
+        },
                           e.id: SidebarDocumentReference(page: .easel(easel.document.id), profileID: profile.id) { try easels.validateReference(easel.document.id) }]
         let urls = Dictionary(uniqueKeysWithValues: target.tabs.map { ($0.id, InternalPage(urlString: $0.savedURL) == nil ? "https://live.invalid/" + $0.id.uuidString : $0.savedURL) })
         try check(try store.duplicateSidebarItems(target, destinations: urls) == nil && store.state == initial, "Missing typed capability refuses entire mixed collection")
         var badURLs = urls; badURLs[w.id] = n.savedURL
         try check(try store.duplicateSidebarItems(target, destinations: badURLs, documents: references) == nil && store.state == initial, "No fake web-to-document URL copy")
-        var badDocs = references; badDocs[n.id] = SidebarDocumentReference(page: .note(note.document.id), profileID: UUID()) {}
+        var badDocs = references; badDocs[n.id] = SidebarDocumentReference(page: .note(noteFile), profileID: UUID()) {}
         try check(try store.duplicateSidebarItems(target, destinations: urls, documents: badDocs) == nil && store.state == initial, "Wrong original document Profile refuses all roots")
         var nativeCompletion: ((Bool) -> Void)?
         store.requestPageRetirement = { _,_,done in nativeCompletion = done }
@@ -103,9 +106,10 @@ struct SidebarPluralDuplicateTests {
         try check(copiedGroup.id != split.id && copiedGroup.tabIDs == Array(copy.tabIDs.prefix(2)), "Whole split receives fresh mapped IDs")
         try check(copiedGroup.sidebarAnchorID == copy.tabIDs[0] && copiedGroup.widthFactors == split.widthFactors && copiedGroup.orientation == split.orientation && copiedGroup.customTitle == split.customTitle, "Original split anchor and rendered layout preserved")
         try check(try Data(contentsOf: noteFile) == noteBytes && Data(contentsOf: easel.assetURL(asset)) == png, "Original files remain identical after committed copy")
-        try check(try notes.load(note.document.id) === note && easels.load(easel.document.id) === easel, "Copied aliases retain same real shared sessions")
-        try note.updateTitle("Shared later edit", replacing: note.document.title)
-        try check(try notes.load(InternalPage(urlString: copiedTabs[0].savedURL)!.noteID!).document.title == "Shared later edit", "Alias observes original shared draft owner")
+        try check(try easels.load(easel.document.id) === easel, "Copied aliases retain same real shared sessions")
+        try Data("Shared later edit\n".utf8).write(to: noteFile)
+        try check(try String(contentsOf: InternalPage(urlString: copiedTabs[0].savedURL)!.noteURL!, encoding: .utf8) == "Shared later edit\n",
+                  "Alias observes the same original note file")
         try check(try store.duplicateSidebarItems(target, destinations: urls, documents: references) == nil, "Original menu snapshot cannot execute again after hierarchy changed")
         let reload = try BrowserStore(directory: root)
         try check(copy.tabIDs.allSatisfy { id in reload.state.tabs.contains { $0.id == id } } && reload.state.splitLayouts.contains(copiedGroup), "All committed identities durably reload")

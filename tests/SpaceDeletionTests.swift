@@ -25,7 +25,7 @@ import Foundation
                 kind: kind, folderID: folderID, createdAt: now, lastAccessed: now, savedURL: url, savedTitle: url)
         }
         let saved = tab(.pinned, folder.id), today = tab(.today), favorite1 = tab(.favorite), favorite2 = tab(.favorite)
-        let page = InternalPage.note(UUID()), note = tab(.pinned, folder.id, page.urlString)
+        let page = InternalPage.easel(UUID()), note = tab(.pinned, folder.id, page.urlString)
         initial.tabs = [saved, today, favorite1, favorite2, note]
         let favorites = BrowserSplitLayout(sidebarAnchorID: favorite1.id, spaceID: source.id,
             tabIDs: [favorite1.id, favorite2.id], widthFactors: [0.4, 0.6])

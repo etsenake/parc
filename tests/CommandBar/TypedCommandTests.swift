@@ -107,7 +107,7 @@ struct TypedCommandTests {
         check(Command(kind: .settingsPane(.profiles)).matches(query: "profile"), "Profile stays a hidden keyword for Space Preferences")
 
         check(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "toggleSidebar:") == 0.5, "Sidebar bump")
-        check(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "exportNotes:") == 1.5, "Export Notes bump")
+        check(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "showNotesFolder:") == 1.5, "Show Notes Folder bump")
         check(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "newTab:") == nil, "No bump without data")
         check(CommandBarMenuItemInfo.searchText(forMenuCommand: "clearToday:").contains("Close Unpinned Tabs"), "Clear Today triggers")
         check(CommandBarMenuItemInfo.searchText(forMenuCommand: "showReleaseNotes:").contains("Changelog"), "Release Notes triggers")

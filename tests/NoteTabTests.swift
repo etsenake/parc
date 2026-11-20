@@ -10,80 +10,146 @@ struct NoteTabTests {
     static func runChecks() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-note-tabs-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = try BrowserStore(directory: directory), documentID = UUID()
+        let notes = directory.appendingPathComponent("Parc Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notes, withIntermediateDirectories: true)
+        let project = notes.appendingPathComponent("Project.md")
+        try Data("# Plans\n".utf8).write(to: project)
+        try addresses(project)
+        try tabs(directory, project: project)
+        try deletion(directory, notes: notes)
+        print("NoteTabs: \(assertions) assertions passed")
+    }
+
+    static func addresses(_ project: URL) throws {
+        let page = InternalPage.note(project)
+        try expect(InternalPage(urlString: page.urlString) == page, "A note tab's address is its file URL and round-trips")
+        try expect(page.urlString == project.absoluteString && page.noteURL?.path == project.path, "The address is the plain file URL")
+        let spaced = URL(fileURLWithPath: "/tmp/Parc Notes/Trip plan.md")
+        try expect(InternalPage(urlString: spaced.absoluteString)?.noteURL?.path == "/tmp/Parc Notes/Trip plan.md", "Spaces in note paths survive")
+        try expect(InternalPage(urlString: "file:///tmp/a/../Notes/x.md") == .note(URL(fileURLWithPath: "/tmp/Notes/x.md")),
+                   "Equivalent paths name the same note")
+        try expect(InternalPage(urlString: project.absoluteString + "#heading") == page, "A heading anchor still opens the same note")
+        try expect(InternalPage(urlString: "file:///tmp/readme.TXT")?.noteURL != nil && InternalPage(urlString: "file:///tmp/a.markdown")?.noteURL != nil,
+                   "Text and every Markdown extension open as notes")
+        try expect(InternalPage(urlString: "file:///tmp/page.html") == nil && !InternalPage.isInternal("file:///tmp/page.html"),
+                   "Other local files keep going to the web view")
+        try expect(InternalPage(urlString: "https://example.com/readme.md") == nil, "Markdown on the web stays a web page")
+        try expect(InternalPage(urlString: "file://server.example/share/x.md") == nil, "Files on another host never become notes")
+        try expect(InternalPage.isInternal(project.absoluteString) && NavigationInput.resolve(project.absoluteString) == nil,
+                   "The web resolver never turns a note into a webpage")
+        let retired = "parc://note/" + UUID().uuidString.lowercased()
+        try expect(InternalPage(urlString: retired) == nil && InternalPage.isInternal(retired) && InternalPage.isRetiredNoteAddress(retired),
+                   "Old parc://note addresses resolve to nothing but stay reserved, so they fail instead of reaching Chromium")
+        try expect(BrowserInternalURL.publicString("chrome://note/x") == "chrome://note/x", "Chromium's own hosts never become note addresses")
+        try expect(InternalPage.noteTitle("  ", file: project) == "Project" && InternalPage.noteTitle("Named", file: project) == "Named",
+                   "An empty title falls back to the file name")
+        try expect(page.sidebarFallbackSymbol == "note.text" && page.untitledTitle == "Untitled", "Note rows keep their glyph")
+    }
+
+    static func tabs(_ directory: URL, project: URL) throws {
+        let store = try BrowserStore(directory: directory.appendingPathComponent("tabs"))
         let first = store.open("https://example.test/one"), second = store.open("https://example.test/two")
         store.setSplit([first, second])
-        let note = store.openNote(id: documentID, title: "Project", inSplit: true)!
-        let group = store.activeSplitLayout!
-        try expect(store.state.selectedTabIDs == [first, second, note], "New Note in Split preserves original pane IDs")
-        try expect(group.tabIDs == [first, second, note], "Original model split owns all panes")
-        try expect(store.openNote(id: documentID, title: "Project") == note, "Opening existing note reuses original saved item")
-        try expect(store.state.tabs.filter { InternalPage(urlString: $0.url)?.noteID == documentID }.count == 1, "Library reopening does not duplicate saved tab")
-        try expect(store.state.tabs.first { $0.id == note }?.kind == .today, "A new Note is a Today tab")
-        let profile = store.activeSpace.profileID
-        store.updateNoteTitle(id: documentID, profileID: profile, title: "Changed title")
-        try expect(store.state.tabs.first { $0.id == note }?.savedTitle == "Changed title", "Native title updates exact saved item")
+        let note = try unwrap(store.openNote(url: project, title: "Project", inSplit: true), "New Note in Split")
+        let group = try unwrap(store.activeSplitLayout, "split layout")
+        try expect(store.state.selectedTabIDs == [first, second, note] && group.tabIDs == [first, second, note],
+                   "New Note in Split preserves the original panes and joins last")
+        try expect(store.openNote(url: project, title: "Project") == note, "Opening an open note reuses its tab")
+        try expect(store.openNote(url: URL(string: project.absoluteString + "#top")!, title: "Project") == note, "An anchored link reuses it too")
+        try expect(store.state.tabs.filter { InternalPage(urlString: $0.url) == .note(project) }.count == 1, "Reopening never duplicates the tab")
+        try expect(store.state.tabs.first { $0.id == note }?.kind == .today, "A new note is a Today tab")
+        store.updateNoteFile(from: project, to: project, title: "Typing a title")
+        try expect(store.state.tabs.first { $0.id == note }?.title == "Typing a title"
+                   && store.state.tabs.first { $0.id == note }?.savedTitle == "Typing a title", "Title changes reach the tab")
+        let renamed = project.deletingLastPathComponent().appendingPathComponent("Renamed.md")
+        store.updateNoteFile(from: project, to: renamed, title: "Renamed")
+        let moved = try unwrap(store.state.tabs.first { $0.id == note }, "renamed tab")
+        try expect(moved.url == InternalPage.note(renamed).urlString && moved.savedURL == moved.url && moved.title == "Renamed",
+                   "Renaming moves the tab's address and title")
+        let stamp = store.stateRevision
+        store.updateNoteFile(from: project, to: renamed, title: "Renamed")
+        try expect(store.stateRevision == stamp, "A repeated rename from another window changes nothing")
         store.closeTabs([note])
-        try expect(store.state.tabs.first { $0.id == note }?.archivedAt != nil, "Closing a Note archives the tab")
-        try expect(store.openNote(id: documentID, title: "Changed title") == note, "Library reopen restores the archived Note")
-        try expect(store.state.tabs.first { $0.id == note }?.archivedAt == nil && store.state.tabs.first { $0.id == note }?.kind == .today,
-                   "Restored Notes return as live Today tabs")
-        let url = InternalPage.note(documentID).urlString
-        try expect(InternalPage(urlString: url) == .note(documentID), "Typed note address retains exact local identity")
-        try expect(NavigationInput.resolve(url) == nil, "Native navigation resolver cannot turn local document into a webpage")
-        try expect(InternalPage.isInternal("parc://note/invalid") && InternalPage(urlString: "parc://note/invalid") == nil, "Malformed reserved note never becomes browser page")
-        try expect(BrowserInternalURL.publicString("chrome://note/" + documentID.uuidString) == "chrome://note/" + documentID.uuidString, "Chromium host never acquires local note identity")
-        try expect(InternalPage(urlString: url + "?replace=true") == nil, "Unexpected query cannot address a note")
+        try expect(store.state.tabs.first { $0.id == note }?.archivedAt != nil, "Closing a note archives its tab")
+        try expect(store.openNote(url: renamed, title: "Renamed") == note, "Reopening restores the archived tab")
+        try expect(store.state.tabs.first { $0.id == note }.map { $0.archivedAt == nil && $0.kind == .today } == true,
+                   "Restored notes come back as live Today tabs")
+        let host = store.open("https://example.test/host")
+        store.selectTab(host)
+        let other = directory.appendingPathComponent("Other.txt")
+        let plain = try unwrap(store.openNote(url: other, title: ""), "plain text note")
+        try expect(store.state.tabs.first { $0.id == plain }?.title == "Other", "A text file's tab is named after the file")
+        try expect(store.openNote(url: URL(fileURLWithPath: "/tmp/page.html"), title: "Page") == nil, "Only note files open as notes")
+        let easelID = UUID()
+        store.selectTab(host)
+        let easel = try unwrap(store.openEasel(id: easelID, title: "Board", inSplit: true), "Easel in split")
+        try expect(store.state.selectedTabIDs == [host, easel] && store.state.tabs.first { $0.id == easel }?.url == "parc://easel/" + easelID.uuidString.lowercased(),
+                   "Easels keep their parc://easel addresses")
+        let privateStore = BrowserStore(privateParentProfileID: store.activeSpace.profileID, engineProfilePath: "/tmp/parc-private-notes",
+                                        directory: directory.appendingPathComponent("private"), settings: store.state.settings)
+        try expect(privateStore.openNote(url: renamed, title: "Renamed") == nil, "Private windows never open notes")
+    }
+
+    static func deletion(_ directory: URL, notes: URL) throws {
+        let store = try BrowserStore(directory: directory.appendingPathComponent("deletion"))
+        let profile = store.activeSpace.profileID
+        let file = notes.appendingPathComponent("Doomed.md")
+        try Data("bye\n".utf8).write(to: file)
+        let first = store.open("https://example.test/one"), second = store.open("https://example.test/two")
+        store.setSplit([first, second])
+        let note = try unwrap(store.openNote(url: file, title: "Doomed", inSplit: true), "note in split")
+        let group = try unwrap(store.activeSplitLayout, "split")
+        let otherProfile = store.createProfile(name: "Elsewhere")
+        let away = store.createSpace(name: "Away")
+        store.assignProfile(otherProfile, toSpace: away)
+        let alias = try unwrap(store.openNote(url: file, title: "Doomed"), "note in another Profile")
+        try expect(store.state.tabs.first { $0.id == alias }?.profileID == otherProfile && store.state.tabs.first { $0.id == alias }?.spaceID == away,
+                   "Any Profile can open the same note file in its own tab")
         var requested = Set<UUID>(), validate: (() -> Bool)?, finish: ((Bool) -> Void)?
         store.requestPageRetirement = { ids, gate, done in requested = ids; validate = gate; finish = done }
         var deleted = 0, replies: [Bool] = []
-        func remove() { store.deleteLocalDocument(.note(documentID), profileID: profile, ownerValid: { true }, deleteDocument: { deleted += 1 }) { replies.append($0 == nil) } }
+        func remove() {
+            store.deleteLocalDocument(.note(file), profileID: profile, ownerValid: { true }, deleteDocument: { deleted += 1 }) { replies.append($0 == nil) }
+        }
         remove()
-        try expect(requested == [note] && deleted == 0, "Delete waits for exact original tab retirement")
+        try expect(requested == [note, alias] && deleted == 0, "Deleting a note waits for every tab on that file, in every Profile, to retire")
         finish?(false)
-        try expect(deleted == 0 && replies == [false] && store.state.tabs.contains { $0.id == note }, "Refusal preserves document and tab")
+        try expect(deleted == 0 && replies == [false] && store.state.tabs.contains { $0.id == note }, "Refusal keeps the file and its tabs")
         remove(); store.updateTab(note, title: "Changed while waiting")
-        try expect(validate?() == false, "Stale original saved-item snapshot refuses deletion")
+        try expect(validate?() == false, "A tab that changed during consent refuses the deletion")
         finish?(false)
-        remove(); store.updateTab(first, url: url)
-        try expect(validate?() == false, "A newly added document consumer invalidates the original close set")
+        remove(); store.updateTab(first, url: file.absoluteString)
+        try expect(validate?() == false, "A tab that started showing the note during consent refuses too")
         finish?(false); store.updateTab(first, url: "https://example.test/one")
-        remove(); try expect(validate?() == true, "Fresh original snapshot authorizes retirement")
+        remove(); try expect(validate?() == true, "A fresh snapshot authorizes the deletion")
         finish?(true)
-        try expect(deleted == 1 && replies == [false, false, false, true], "Delete executes once after genuine approval")
-        try expect(!store.state.tabs.contains { $0.id == note }, "Accepted deletion removes exact saved item")
+        try expect(deleted == 1 && replies == [false, false, false, true], "The file is removed once, after real approval")
+        try expect(!store.state.tabs.contains { $0.id == note || $0.id == alias }, "Every tab on the deleted note retires")
         let retained = store.state.splitLayouts.first { $0.id == group.id }
-        try expect(retained?.tabIDs == [first, second] && retained?.widthFactors.count == 2, "Deleting a Note preserves surviving original split group and geometry")
-        try expect(store.state.tabs.contains { $0.id == first } && store.state.tabs.contains { $0.id == second }, "Other live page identities survive")
-        let empty = UUID()
-        store.deleteLocalDocument(.note(empty), profileID: UUID(), ownerValid: { true }, deleteDocument: { deleted += 1 }) { replies.append($0 == nil) }
-        try expect(deleted == 1 && replies.last == false, "Missing profile cannot delete local document")
+        try expect(retained?.tabIDs == [first, second] && retained?.widthFactors.count == 2, "The surviving split keeps its panes and geometry")
+        store.deleteLocalDocument(.note(file), profileID: UUID(), ownerValid: { true }, deleteDocument: { deleted += 1 }) { replies.append($0 == nil) }
+        try expect(deleted == 1 && replies.last == false, "An unknown Profile cannot delete a note")
         store.requestPageRetirement = nil
-        let recoverID = UUID(), recoverTab = store.openNote(id: recoverID, title: "Retryable")!
+        let trashable = notes.appendingPathComponent("Trash me.md")
+        try Data("x".utf8).write(to: trashable)
+        let tab = try unwrap(store.openNote(url: trashable, title: "Trash me"), "note to fail")
         try store.save()
-        let stateURL = directory.appendingPathComponent("session.json"), stateBytes = try Data(contentsOf: stateURL)
+        let stateURL = store.directory.appendingPathComponent("session.json"), stateBytes = try Data(contentsOf: stateURL)
         try FileManager.default.removeItem(at: stateURL); try FileManager.default.createDirectory(at: stateURL, withIntermediateDirectories: false)
-        var removalCalls = 0, failure: Error?
-        store.deleteLocalDocument(.note(recoverID), profileID: profile, ownerValid: { true }, deleteDocument: { removalCalls += 1 }) { failure = $0 }
-        try expect(failure != nil && removalCalls == 0 && store.state.tabs.contains { $0.id == recoverTab }, "Session-file failure leaves original document and metadata intact")
+        var failure: Error?, removals = 0
+        store.deleteLocalDocument(.note(trashable), profileID: profile, ownerValid: { true }, deleteDocument: { removals += 1 }) { failure = $0 }
+        try expect(failure != nil && removals == 0 && store.state.tabs.contains { $0.id == tab }, "A session save failure leaves the file and tab alone")
         try FileManager.default.removeItem(at: stateURL); try stateBytes.write(to: stateURL)
-        store.deleteLocalDocument(.note(recoverID), profileID: profile, ownerValid: { true }, deleteDocument: {
-            removalCalls += 1; throw CocoaError(.fileWriteNoPermission)
+        store.deleteLocalDocument(.note(trashable), profileID: profile, ownerValid: { true }, deleteDocument: {
+            removals += 1; throw CocoaError(.fileWriteNoPermission)
         }) { failure = $0 }
-        try expect(failure != nil && removalCalls == 1 && !store.state.tabs.contains { $0.id == recoverTab }, "Document failure reports error after references retire, leaving Library deletion retryable")
-        store.deleteLocalDocument(.note(recoverID), profileID: profile, ownerValid: { true }, deleteDocument: { removalCalls += 1 }) { failure = $0 }
-        try expect(failure == nil && removalCalls == 2, "Retry with no original tab references completes the same document deletion")
-        let laterPage = store.open("https://example.test/easel-first")
-        store.selectTab(laterPage)
-        let easelID = UUID()
-        let easel = store.openEasel(id: easelID, title: "Board", inSplit: true)!
-        try expect(store.state.selectedTabIDs == [laterPage, easel], "New Easel joins as a later pane")
-        try expect(store.activeSplitLayout?.tabIDs == [laterPage, easel], "The Easel keeps the original page identity")
-        try expect(store.state.tabs.first { $0.id == easel }?.kind == .today, "A new Easel is a Today tab")
-        try expect(store.separateTabFromSplit(easel, expected: store.activeSplitLayout!, focusedID: laterPage)
-                   && store.state.selectedTabIDs == [laterPage], "Separating the Easel leaves the original first tab")
-        try expect(store.openEasel(id: easelID, title: "Board", inSplit: true) == easel, "An existing Easel joins without cloning")
-        try expect(store.state.selectedTabIDs == [laterPage, easel], "Open-in-split keeps the webpage as the first tab")
-        print("NoteTabs: \(assertions) assertions passed")
+        try expect(failure != nil && removals == 1 && !store.state.tabs.contains { $0.id == tab }, "A file failure reports after the tabs retire")
+        store.deleteLocalDocument(.note(trashable), profileID: profile, ownerValid: { true }, deleteDocument: { removals += 1 }) { failure = $0 }
+        try expect(failure == nil && removals == 2, "Retrying with no tabs left finishes the deletion")
+    }
+
+    static func unwrap<T>(_ value: T?, _ message: String) throws -> T {
+        guard let value else { throw NSError(domain: message, code: 2) }
+        return value
     }
 }

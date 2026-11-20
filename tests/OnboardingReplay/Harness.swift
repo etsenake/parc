@@ -2,18 +2,14 @@ import Foundation
 struct NSRect: Equatable { var x, y, width, height: Int }
 
 enum BrowserScriptError: Error { case busy, missing }
-final class Text { var isEditable = true }
-final class View { var needsLayout = false }
-final class Document { var deleted = false }
-final class Session { let document = Document() }
-final class NoteEditorViewController {
-    let text = Text(), titleText = Text(), view = View(), session = Session()
-}
-struct Note { let editor: NoteEditorViewController }
+final class View {}
+final class NotePageSession { var isReadOnly = false }
+final class NoteFileSession { let page = NotePageSession(); static func flushAll() throws {} }
+final class NotePageViewController { let file = NoteFileSession() }
+struct Note { let editor: NotePageViewController }
 struct BrowserWindowRecord { let id: UUID }
 struct SavedWindowFrame { let rect: NSRect }
 final class BrowserStore { var state = 0; func save() throws {} }
-enum NoteStore { static func flushAllSharedDelayedDiskSaves() throws {} }
 final class Settings {
     var window: NSWindow?; var allowsClose = true
     func attemptClose() -> Bool { allowsClose }
@@ -68,7 +64,7 @@ final class BrowserWindowController {
     var isPopupWindow = false, isPrivateBrowsing = false, hasReadyPresentation = true
     var isClosing = false, wholeWindowClose = false, windowClosePending = false, windowCloseApproved = false
     var closeAfterEjecting = false, pendingApprovedWindowClose = false, onboardingCloseRequested = false
-    var onboardingCloseNotes: [(editor: NoteEditorViewController, bodyEditable: Bool, titleEditable: Bool)]?
+    var onboardingCloseNotes: [(file: NoteFileSession, wasReadOnly: Bool)]?
     var scriptingWindowCloseCompletions: [(Bool) -> Void] = []
     var noteEditors: [UUID: Note] = [:], settings: Settings?
     var collectionTransfer: Transfer?, transferRecoveries: [UUID: () -> Void] = [:]
@@ -131,19 +127,19 @@ func fixture() -> (AppDelegate, BrowserWindowController, BrowserWindowController
     return (app, origin, other, flow)
 }
 do {
-    let (app, origin, other, flow) = fixture(), editor = NoteEditorViewController()
+    let (app, origin, other, flow) = fixture(), editor = NotePageViewController()
     origin.noteEditors[UUID()] = Note(editor: editor)
     try app.startOnboardingReplay(flow, closing: origin)
-    precondition(!editor.text.isEditable && !editor.titleText.isEditable)
+    precondition(editor.file.page.isReadOnly)
     app.requestApplicationTermination(nil)
     precondition(app.globalQuitRequests == 0 && origin.wholeWindowClose)
     origin.nativeBinding?.resolve(false); drain()
-    precondition(editor.text.isEditable && editor.titleText.isEditable)
+    precondition(!editor.file.page.isReadOnly)
     precondition(app.onboarding == nil && !flow.presented && other.window!.isVisible)
     precondition(app.globalQuitRequests == 0 && app.replayReturnOwner == nil && app.abandonedTerminations == 1)
 }
 do {
-    let (app, origin, other, flow) = fixture(), editor = NoteEditorViewController()
+    let (app, origin, other, flow) = fixture(), editor = NotePageViewController()
     origin.noteEditors[UUID()] = Note(editor: editor)
     let frame = origin.window!.frame, id = origin.sessionID
     try app.startOnboardingReplay(flow, closing: origin)
@@ -234,11 +230,11 @@ do {
     precondition(app.lastActiveWindow?.store === app.store && !app.replaySessionActive)
 }
 do {
-    let (app, origin, _, flow) = fixture(), editor = NoteEditorViewController()
+    let (app, origin, _, flow) = fixture(), editor = NotePageViewController()
+    editor.file.page.isReadOnly = true
     origin.noteEditors[UUID()] = Note(editor: editor)
     try app.startOnboardingReplay(flow, closing: origin)
-    editor.session.document.deleted = true
     origin.nativeBinding?.resolve(false); drain()
-    precondition(!editor.text.isEditable && !editor.titleText.isEditable)
+    precondition(editor.file.page.isReadOnly)
 }
 print("Onboarding replay: consent, note freeze, late refusal, recovery, Quit and exact auxiliary ownership passed")

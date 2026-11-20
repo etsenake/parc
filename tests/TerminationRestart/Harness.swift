@@ -18,9 +18,10 @@ enum PCBrowserEngine {
     static func requestTermination(completion: @escaping (Bool) -> Void) { reply = completion }
     static func resolve(_ allowed: Bool) { let callback = reply; reply = nil; callback?(allowed) }
 }
-enum NoteStore {
+final class HistorySpotlightIndexer { var flushes = 0; func flush() { flushes += 1 } }
+enum NoteFileSession {
     static var fails = false
-    static func flushAllSharedDelayedDiskSaves() throws { if fails { throw NoteFlushFailure() } }
+    static func flushAll() throws { if fails { throw NoteFlushFailure() } }
 }
 struct QuitWarningState { var isEnabled = true }
 final class QuitWarningPreferences {
@@ -68,6 +69,7 @@ final class AppDelegate {
     var applicationRestart: ApplicationRestart?, browserImport: BrowserImportWindow?, onboarding: OnboardingWindow?
     var privateWindowCreations: [UUID: PrivateWindowCreation] = [:]
     var restartCancellations: [String] = [], shutdowns = 0
+    var historySpotlight: HistorySpotlightIndexer? = HistorySpotlightIndexer()
     func cancelApplicationRestart(_ message: String) { restartCancellations.append(message) }
     func resumeOnboardingAfterCancelledTermination() {}
     func recordWindowSessions() {}
@@ -87,7 +89,7 @@ func fixture() -> (AppDelegate, BrowserWindowController) {
     let app = AppDelegate(), owner = BrowserWindowController()
     app.windows = [owner]; app.quitWarningOwner = owner
     PCNativeBrowserApplication.restartArmed = true; PCNativeBrowserApplication.cancelledQuits = 0
-    PCBrowserEngine.reply = nil; NoteStore.fails = false; ApplicationQuitWarning.shown = nil
+    PCBrowserEngine.reply = nil; NoteFileSession.fails = false; ApplicationQuitWarning.shown = nil
     return (app, owner)
 }
 func quitsCleanlyAfterwards(_ app: AppDelegate, _ piece: String) {
@@ -106,11 +108,11 @@ func abandons(_ piece: String, _ setUp: (AppDelegate, BrowserWindowController) -
           && application.approvedTerminations == approved && app.shutdowns == 0,
           piece + ": Parc stays open with its own restart cancelled")
     owner.notesCanSave = true; owner.settingsSave = true
-    app.applicationSettings?.prepares = true; app.applicationSettings?.closes = true; NoteStore.fails = false
+    app.applicationSettings?.prepares = true; app.applicationSettings?.closes = true; NoteFileSession.fails = false
     quitsCleanlyAfterwards(app, piece)
 }
 abandons("Notes that can't close", { $1.notesCanSave = false })
-abandons("A note that can't save", { _, _ in NoteStore.fails = true })
+abandons("A note that can't save", { _, _ in NoteFileSession.fails = true })
 abandons("Settings that can't save", { app, _ in app.applicationSettings?.prepares = false })
 abandons("A window's settings that can't save", { $1.settingsSave = false })
 abandons("Settings that can't close", { app, _ in app.applicationSettings?.closes = false })

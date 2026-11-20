@@ -62,17 +62,15 @@ import Foundation
         _ = store.separateSplitPane(b)
         let single = SplitPaneInsertion(paneID: b, operation: .addAfter, state: store.state)!
         try check(single.selection.count == 1 && single.index == 1, "Main Add supports a single original content")
-        let noteStore = try NoteStore(directory: root.appendingPathComponent("notes"), diskSaveDelay: 0)
-        let note = try noteStore.create()
-        let noteID = store.openNote(id: note.document.id, title: "Shared Note")!
+        let noteFile = root.appendingPathComponent("Shared Note.md")
+        let noteID = store.openNote(url: noteFile, title: "Shared Note")!
         store.selectTab(b)
         let local = SplitPaneInsertion(paneID: b, operation: .addBelow, state: store.state)!
         let oldNote = store.state.tabs.first { $0.id == noteID }!
         try check(store.insertSplitPane(local, tabID: noteID, navigationURL: nil, creation: nil, savedHomeIDs: [:], documents: [:]), "Existing original local Note can fill a blank pane")
         try check(store.state.tabs.first { $0.id == noteID }?.url == oldNote.url && store.state.selectedTabIDs == [b,noteID], "Original local record is moved, never cloned")
-        try check(store.state.tabs.filter { InternalPage(urlString: $0.url)?.noteID == note.document.id }.count == 1,
+        try check(store.state.tabs.filter { InternalPage(urlString: $0.url) == .note(noteFile) }.count == 1,
                   "A Today Note does not leave a saved home")
-        try check(try noteStore.load(note.document.id) === note, "Shared editor session remains original")
         try check(store.separateTabFromSplit(noteID, expected: store.activeSplitLayout!, focusedID: b)
                   && store.state.selectedTabIDs == [b], "Separating the Note restores the original first pane")
         let easels = try EaselStore(directory: root.appendingPathComponent("easels"))
@@ -88,22 +86,22 @@ import Foundation
         try check(try easels.load(easel.document.id) === easel, "Shared Easel session remains original")
         let laterHost = store.open("https://later.invalid/host")
         store.selectTab(laterHost)
-        let createdNote = try noteStore.create()
+        let createdNote = root.appendingPathComponent("Untitled.md")
         let createdNoteTab = UUID()
         let addLeft = SplitPaneInsertion(paneID: laterHost, operation: .addBefore, state: store.state)!
         try check(addLeft.index == 0 && addLeft.orientation == .horizontal && addLeft.selection == [laterHost], "Add Left drafts the first slot")
         let beforeCreatedNote = store.state
         try check(!store.insertSplitPane(addLeft, tabID: UUID(), navigationURL: url, creation: nil, savedHomeIDs: [:], documents: [:],
-            localPage: .note(createdNote.document.id), localTitle: createdNote.displayTitle) && store.state == beforeCreatedNote,
+            localPage: .note(createdNote), localTitle: "Untitled") && store.state == beforeCreatedNote,
                   "A local page and a navigation URL cannot materialize together")
         try check(store.insertSplitPane(addLeft, tabID: createdNoteTab, navigationURL: nil, creation: nil, savedHomeIDs: [:], documents: [:],
-            localPage: .note(createdNote.document.id), localTitle: createdNote.displayTitle),
+            localPage: .note(createdNote), localTitle: "Untitled"),
                   "A new Note occupies Add Split's drafted slot")
         try check(store.state.selectedTabIDs == [createdNoteTab, laterHost], "Add Left puts the new Note in the first slot, not after the host")
         try check(store.activeSplitLayout?.orientation == .horizontal, "Add Left keeps the drafted horizontal orientation")
-        try check(store.state.tabs.first { $0.id == createdNoteTab }?.url == InternalPage.note(createdNote.document.id).urlString,
+        try check(store.state.tabs.first { $0.id == createdNoteTab }?.url == InternalPage.note(createdNote).urlString,
                   "The new Note tab addresses the created document")
-        try check(store.state.tabs.filter { InternalPage(urlString: $0.url)?.noteID == createdNote.document.id }.count == 1,
+        try check(store.state.tabs.filter { InternalPage(urlString: $0.url) == .note(createdNote) }.count == 1,
                   "A new Today Note does not leave a saved home")
         try check(store.separateTabFromSplit(createdNoteTab, expected: store.activeSplitLayout!, focusedID: laterHost)
                   && store.state.selectedTabIDs == [laterHost], "Separating the new Note restores the original host")
@@ -113,7 +111,7 @@ import Foundation
         try check(addTop.index == 0 && addTop.orientation == .vertical && addTop.selection == [laterHost], "Add Top drafts a vertical first slot")
         let beforeClone = store.state
         try check(!store.insertSplitPane(addTop, tabID: UUID(), navigationURL: nil, creation: nil, savedHomeIDs: [:], documents: [:],
-            localPage: .note(createdNote.document.id), localTitle: createdNote.displayTitle) && store.state == beforeClone,
+            localPage: .note(createdNote), localTitle: "Untitled") && store.state == beforeClone,
                   "The same new Note document cannot open a second tab")
         try check(store.insertSplitPane(addTop, tabID: createdEaselTab, navigationURL: nil, creation: nil, savedHomeIDs: [:], documents: [:],
             localPage: .easel(createdEasel.document.id), localTitle: createdEasel.document.title),
@@ -148,15 +146,15 @@ import Foundation
         try check(store.insertSplitPane(pending, tabID: failureID, navigationURL: url, creation: nil, savedHomeIDs: [:], documents: [:]), "Same original receipt retries after storage recovery")
         try check(store.persistenceError == nil, "Successful retry clears durable error")
         let space = store.activeSpaceID, profile = store.activeSpace.profileID
-        let linkNote = store.openResolvedURL(URL(string: InternalPage.note(UUID()).urlString)!)
+        let linkNote = store.openResolvedURL(URL(string: InternalPage.note(URL(fileURLWithPath: NSTemporaryDirectory() + "Parc Notes/" + UUID().uuidString + ".md")).urlString)!)
         let linkEasel = store.openResolvedURL(URL(string: InternalPage.easel(UUID()).urlString)!)
         let linkSettings = store.openResolvedURL(URL(string: "parc://settings/")!)
         let linkBlank = store.openResolvedURL(URL(string: "about:blank")!)
         try check(FolderLinks.links(in: store.state, tabIDs: [c, a, b], spaceID: space, profileID: profile).map(\.tabID) == [c, a, b],
                   "Copy Links copies every page's address in pane order")
-        try check(FolderLinks.links(in: store.state, tabIDs: [linkNote, b, linkSettings, linkEasel, a, linkBlank, b], spaceID: space, profileID: profile).map(\.tabID) == [b, a],
-                  "Notes, Easels, Parc pages and blank tabs are skipped, and a page is copied once")
-        try check(FolderLinks.links(in: store.state, tabIDs: [linkNote, linkSettings], spaceID: space, profileID: profile).isEmpty,
+        try check(FolderLinks.links(in: store.state, tabIDs: [linkNote, b, linkSettings, linkEasel, a, linkBlank, b], spaceID: space, profileID: profile).map(\.tabID) == [linkNote, b, a],
+                  "Notes copy their file, Easels, Parc pages and blank tabs are skipped, and a page is copied once")
+        try check(FolderLinks.links(in: store.state, tabIDs: [linkEasel, linkSettings], spaceID: space, profileID: profile).isEmpty,
                   "A split without a web page has nothing to copy, so its Copy Links stays disabled")
         try check(FolderLinks.links(in: store.state, tabIDs: [a, b], spaceID: space, profileID: UUID()).isEmpty,
                   "Another Profile's pages are never copied")
