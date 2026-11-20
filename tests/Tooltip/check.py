@@ -49,9 +49,23 @@ assert 'button.parcTooltip = TooltipConfiguration(space.name.isEmpty ? "Untitled
 assert sidebar.count('"Copy Quote as URL", commandID: "copyCurrentURLAsQuote:")') == 2 \
     and "Copy a link to the selected text" not in sidebar, "quote mode's buttons show the Copy Quote as URL label"
 center = source("SiteControlCenter.swift")
-assert not re.search(r"^\s*\.help\(", center, re.M) and center.count(".parcTooltip(TooltipConfiguration(") == 8 \
-    and ".parcTooltip(TooltipConfiguration(button.title, shortcut: button.commandID.map { .command($0) }))" in center, \
-    "Site Control Center's SwiftUI controls (the four buttons, plus the headers, rows and footer) show the Parc tooltip through the bridge"
+center_tooltips = (
+    "TooltipConfiguration(button.title, shortcut: button.commandID.map { .command($0) })",
+    "TooltipConfiguration(tooltip)",
+    "TooltipConfiguration(item.tooltip.isEmpty ? item.name : item.tooltip)",
+    'TooltipConfiguration("Add Extension")',
+    'TooltipConfiguration(isPinned ? "Unpin" : "Pin")',
+    "TooltipConfiguration(accessory.help)",
+    "TooltipConfiguration(setting.title)",
+    'TooltipConfiguration(isSecure ? "Secure" : "Insecure")',
+    'TooltipConfiguration("More")',
+)
+missing_center_tooltips = [tooltip for tooltip in center_tooltips if f".parcTooltip({tooltip})" not in center]
+assert not re.search(r"^\s*\.help\(", center, re.M) and not missing_center_tooltips \
+    and center.count(".parcTooltip(TooltipConfiguration(") == len(center_tooltips), \
+    "Site Control Center's SwiftUI controls (the action buttons, section headers, extension rows, Add Extension, Pin, " \
+    "permission rows and their Settings button, the security badge and More) show the Parc tooltip through the bridge; " \
+    f"missing {missing_center_tooltips}, found {center.count('.parcTooltip(TooltipConfiguration(')} of {len(center_tooltips)}"
 for name in ("SidebarView.swift", "SidebarRowActionButton.swift", "SplitPaneControl.swift", "SplitDragView.swift",
              "SidebarSplitTitleView.swift", "SidebarSpaceHeader.swift", "SidebarMoveAttentionView.swift", "SpaceManagerView.swift",
              "SpaceCreationView.swift", "SpaceThemeEditorView.swift", "MiniPlayerView.swift", "PageFindView.swift",
