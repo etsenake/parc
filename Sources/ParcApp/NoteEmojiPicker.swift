@@ -481,6 +481,8 @@ final class NoteEmojiGridView: NSView {
     private var sectionStarts: [(category: NoteEmojiCategory?, y: CGFloat)] = []
     private var columns = 1
     private var originX: CGFloat = 0
+    private(set) var span: CGFloat = 0
+    private(set) var gutter: CGFloat = 0
     private let overlay = CALayer()
     private let plate = CALayer()
     private let glyph = CALayer()
@@ -515,17 +517,24 @@ final class NoteEmojiGridView: NSView {
 
     func contains(_ index: Int) -> Bool { items.indices.contains(index) }
 
-    func setSections(_ sections: [Section], width: CGFloat, minimumHeight: CGFloat) {
+    func setSections(_ sections: [Section], width: CGFloat, minimumHeight: CGFloat, span: CGFloat? = nil, gutter: CGFloat = 0) {
         self.sections = sections
         highlighted = nil
         highlightFromKeyboard = false
         pressed = nil
-        layoutGrid(width: width, minimumHeight: minimumHeight)
+        layoutGrid(width: width, minimumHeight: minimumHeight, span: span, gutter: gutter)
     }
 
-    func layoutGrid(width: CGFloat, minimumHeight: CGFloat) {
-        columns = max(1, Int((width - 2 * Self.inset) / Self.cell))
-        originX = floor((width - CGFloat(columns) * Self.cell) / 2)
+    static func columnLayout(span: CGFloat, gutter: CGFloat) -> (columns: Int, originX: CGFloat) {
+        let margin = inset + max(0, gutter)
+        let columns = max(1, Int(floor((span - 2 * margin) / cell)))
+        return (columns, floor((span - CGFloat(columns) * cell) / 2))
+    }
+
+    func layoutGrid(width: CGFloat, minimumHeight: CGFloat, span: CGFloat? = nil, gutter: CGFloat = 0) {
+        self.span = max(width, span ?? width)
+        self.gutter = gutter
+        (columns, originX) = Self.columnLayout(span: self.span, gutter: gutter)
         rows = []
         rowOfItem = []
         headers = []
@@ -878,6 +887,7 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
     private var query = ""
     private var keyboardNavigating = false
     private var programmaticScroll = false
+    private var fittingGrid = false
     private var observers: [NSObjectProtocol] = []
     private var motionObserver: NSObjectProtocol?
 
@@ -907,6 +917,7 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
         scrollView.scrollerStyle = .overlay
         scrollView.horizontalScrollElasticity = .none
         scrollView.contentView.postsBoundsChangedNotifications = true
+        scrollView.contentView.postsFrameChangedNotifications = true
         emptyLabel.font = .systemFont(ofSize: 13)
         emptyLabel.textColor = NoteTheme.secondaryInk
         emptyLabel.alignment = .center
@@ -921,6 +932,14 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
         observers.append(NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scrollView.contentView,
                                                                 queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.scrolled() }
+        })
+        observers.append(NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scrollView.contentView,
+                                                                queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitGrid() }
+        })
+        observers.append(NotificationCenter.default.addObserver(forName: NSScroller.preferredScrollerStyleDidChangeNotification, object: nil,
+                                                                queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitGrid() }
         })
         motionObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -969,7 +988,10 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
             let items = results.map { NoteEmojiGridView.Item(emoji: $0, character: $0.character(with: tone)) }
             sections.append(NoteEmojiGridView.Section(category: nil, title: nil, items: items))
         }
-        grid.setSections(sections, width: scrollView.contentSize.width, minimumHeight: scrollView.contentSize.height)
+        scrollView.tile()
+        grid.setSections(sections, width: scrollView.contentView.frame.width, minimumHeight: scrollView.contentSize.height,
+                         span: scrollView.frame.width, gutter: scrollerGutter)
+        fitGrid()
         grid.currentCharacter = currentEmoji
         emptyLabel.isHidden = !(grid.isEmpty && !query.isEmpty)
         if !query.isEmpty, !grid.isEmpty { grid.setHighlight(0, fromKeyboard: true, animated: false) }
@@ -1001,13 +1023,29 @@ final class NoteEmojiPicker: NSView, NSTextFieldDelegate {
         toneStrip.frame = NSRect(x: padding, y: padding, width: bounds.width - 2 * padding, height: rowHeight)
         let gridTop = padding + rowHeight + 6
         categoryBar.frame = NSRect(x: 0, y: bounds.height - Self.barHeight, width: bounds.width, height: Self.barHeight)
-        let previousWidth = scrollView.frame.width
         scrollView.frame = NSRect(x: 0, y: gridTop, width: bounds.width, height: max(0, categoryBar.frame.minY - gridTop))
         emptyLabel.frame = NSRect(x: padding, y: scrollView.frame.minY + 40, width: bounds.width - 2 * padding, height: 20)
-        if scrollView.frame.width != previousWidth || grid.frame.width != scrollView.contentSize.width
-            || grid.frame.height < scrollView.contentSize.height {
+        fitGrid()
+    }
+
+    private var scrollerGutter: CGFloat {
+        guard scrollView.hasVerticalScroller, let scroller = scrollView.verticalScroller else { return 0 }
+        return max(scroller.frame.width, NSScroller.scrollerWidth(for: scroller.controlSize, scrollerStyle: scrollView.scrollerStyle))
+    }
+
+    private func fitGrid() {
+        guard !fittingGrid else { return }
+        fittingGrid = true
+        defer { fittingGrid = false }
+        for _ in 0..<3 {
+            scrollView.tile()
+            let width = scrollView.contentView.frame.width
+            let span = scrollView.frame.width
+            let gutter = scrollerGutter
+            guard grid.frame.width != width || grid.span != max(width, span) || grid.gutter != gutter
+                || grid.frame.height < scrollView.contentSize.height else { return }
             let anchor = scrollView.contentView.bounds.minY
-            grid.layoutGrid(width: scrollView.contentSize.width, minimumHeight: scrollView.contentSize.height)
+            grid.layoutGrid(width: width, minimumHeight: scrollView.contentSize.height, span: span, gutter: gutter)
             scrollTo(y: anchor)
         }
     }
