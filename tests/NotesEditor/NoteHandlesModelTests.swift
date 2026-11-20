@@ -67,7 +67,7 @@ struct NoteHandlesModelTests {
         image.props.source = "Attachments/cat.png"
         image.props.alignment = .left
         let imageEntries = NoteBlockMenuModel.entries(for: NoteBlockMenuContext(blocks: [image], canMoveToNotes: true))
-        expect(ids(imageEntries) == ["delete", "duplicate", "align", "download", "original", "move"], "images get alignment, download and the original")
+        expect(ids(imageEntries) == ["delete", "duplicate", "align", "crop", "mask", "alt", "download", "original", "move"], "images get alignment, crop, mask, alt text, download and the original")
         expect(imageEntries[2].children.filter(\.isChecked).map(\.title) == ["Left"], "the image's alignment is checked")
         var pdf = NoteBlock(.pdf)
         pdf.props.source = "Attachments/report.pdf"

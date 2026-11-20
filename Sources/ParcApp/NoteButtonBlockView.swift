@@ -162,11 +162,11 @@ final class NoteButtonPillView: NSView {
 
 @MainActor
 final class NoteButtonBlockView: NoteBlockView {
-    nonisolated static let verticalPadding: CGFloat = 4
+    nonisolated static let verticalPadding: CGFloat = NoteButtonMetrics.verticalPadding
     static let gearGap: CGFloat = 4
 
-    nonisolated static func pillHeight(scale: CGFloat) -> CGFloat { (32 * scale).rounded() }
-    nonisolated static func height(scale: CGFloat) -> CGFloat { pillHeight(scale: scale) + verticalPadding * 2 }
+    nonisolated static func pillHeight(scale: CGFloat) -> CGFloat { NoteButtonMetrics.pillHeight(scale: scale) }
+    nonisolated static func height(scale: CGFloat) -> CGFloat { NoteButtonMetrics.height(scale: scale) }
 
     let pill = NoteButtonPillView()
     private let gear = NoteToolbarButton(icon: .symbol("gearshape"), label: "Edit button")

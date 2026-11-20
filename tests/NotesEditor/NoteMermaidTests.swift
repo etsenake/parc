@@ -105,9 +105,11 @@ struct NoteMermaidTests {
         }
         expect(code.lowerBound < drawing.lowerBound, "Split puts the code above the drawing")
         let codeOnly = html(.code, art: art)
-        expect(!codeOnly.contains("diagram-art") && codeOnly.contains("data-language=\"mermaid\"><code"), "Code exports a plain code block")
+        let codeBody = codeOnly.components(separatedBy: "<main").last ?? codeOnly
+        expect(!codeBody.contains("diagram-art") && codeBody.contains("data-language=\"mermaid\"><code"), "Code exports a plain code block")
         let missing = html(nil, art: nil)
-        expect(!missing.contains("diagram-art") && missing.contains("language-mermaid"), "without a drawing the code still exports")
+        let missingBody = missing.components(separatedBy: "<main").last ?? missing
+        expect(!missingBody.contains("diagram-art") && missingBody.contains("language-mermaid"), "without a drawing the code still exports")
         expect(NotePageHTMLStyle.css.contains(".diagram-dark{display:none}"), "the dark drawing hides in light mode")
         let fragment = NotePageHTML.fragment([diagram(source)])
         expect(fragment.contains("language-mermaid") && !fragment.contains("diagram-art"), "clipboard HTML keeps plain code")

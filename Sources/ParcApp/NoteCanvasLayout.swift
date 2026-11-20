@@ -823,7 +823,7 @@ enum NoteCanvasEstimate {
                 + 12 + caption
         case .bookmark: return 104 * scale + caption
         case .pageLink: return metrics.bodyLineHeight + 4 * scale
-        case .button: return NoteButtonBlockView.height(scale: scale)
+        case .button: return NoteButtonMetrics.height(scale: scale)
         case .tableOfContents: return 3 * metrics.bodyLineHeight
         case .breadcrumb: return metrics.bodyLineHeight + 8 * scale
         case .table:

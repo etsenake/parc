@@ -1,6 +1,4 @@
-Sources/ParcCore/NoteModel.swift
-Sources/ParcCore/NoteCustomEmojiName.swift
-Sources/ParcCore/NoteImageFraming.swift
+Sources/ParcCore/*.swift
 Sources/ParcApp/NoteTheme.swift
 Sources/ParcApp/NoteAnimation.swift
 Sources/ParcApp/NoteFloatingPanel.swift
@@ -8,4 +6,4 @@ Sources/ParcApp/NoteControls.swift
 Sources/ParcApp/PointerCover.swift
 Sources/ParcApp/PointingHand.swift
 tests/NotesEditor/NoteDesignSystemStubs.swift
-Sources/ParcCore/NoteSyntax*.swift
+Sources/ParcApp/NoteCustomEmojiImages.swift

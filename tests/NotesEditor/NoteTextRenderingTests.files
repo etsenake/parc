@@ -4,3 +4,10 @@ Sources/ParcApp/NoteTextRendering.swift
 Sources/ParcApp/NoteTextAttachments.swift
 Sources/ParcApp/NoteMath*.swift
 tests/NotesEditor/NotesTestKit.swift
+Sources/ParcApp/NoteCustomEmojiImages.swift
+Sources/ParcApp/NoteFloatingPanel.swift
+Sources/ParcApp/NoteAnimation.swift
+Sources/ParcApp/NoteControls.swift
+Sources/ParcApp/PointerCover.swift
+Sources/ParcApp/PointingHand.swift
+tests/NotesEditor/NoteDesignSystemStubs.swift

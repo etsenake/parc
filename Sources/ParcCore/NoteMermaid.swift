@@ -22,7 +22,7 @@ enum NoteMermaid {
     }
 
     static func normalizedSource(_ text: String) -> String {
-        guard text.contains("\r") else { return text }
+        guard text.unicodeScalars.contains("\r") else { return text }
         return text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
     }
 
