@@ -7,7 +7,11 @@ enum DocumentCardChrome {
     static let artwork: CGFloat = 18
     static let radius: CGFloat = 12
     static let titleSize: CGFloat = 15
+    static let previewSize: CGFloat = 12
+    static let dateSize: CGFloat = 11
+    static let emojiSize: CGFloat = 16
     static let gap: CGFloat = 8
+    static let lineGap: CGFloat = 4
     static func fill(dark: Bool) -> NSColor {
         dark ? NSColor(srgbRed: 0.20, green: 0.20, blue: 0.20, alpha: 1) : .white
     }
@@ -23,11 +27,11 @@ enum DocumentCardChrome {
 @MainActor
 final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
     private struct Row: Equatable {
+        let item: DocumentsLibraryItem
         let page: InternalPage
-        let title: String
-        let searchableText: String
-        let modified: Date
+        var title: String { item.title }
     }
+    private static let searchLimit = 10_000
     private let store: BrowserStore
     private let profileID: UUID
     private let searchBackdrop = DownloadSearchBackdrop()
@@ -38,10 +42,13 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private let scroll = NSScrollView()
     private let empty = NSTextField(wrappingLabelWithString: "")
     private var rows: [Row] = []
+    private var library: NoteLibrary?
     private var subscription: AnyCancellable?
+    private var folderSubscription: AnyCancellable?
     private var observedNotes: [NoteReference] = []
     private var observedEasels: [EaselSummary] = []
     private var observedProfileRemovalPending = false
+    private var observedQuery = ""
     var ownerValid: (() -> Bool)?
     var onOpen: ((InternalPage, String) -> Void)?
     var onCreate: (() -> Void)?
@@ -87,32 +94,49 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         empty.textColor = .secondaryLabelColor
         empty.alignment = .center
         for view in [searchBackdrop, createButton, scroll, empty] { addSubview(view) }
-        subscription = NoteFolderPreferences.library(for: profileID).changes.sink { [weak self] in self?.reload() }
+        if !store.isEphemeral {
+            folderSubscription = NoteFolderPreferences.changes.filter { $0 == profileID }.sink { [weak self] _ in
+                self?.bindLibrary(); self?.reload(force: true)
+            }
+            bindLibrary()
+        }
         reload(force: true)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     private var chromeDark: Bool {
         palette?.isDark ?? (effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
     }
+    private func bindLibrary() {
+        let next = NoteFolderPreferences.library(for: profileID)
+        guard next !== library else { return }
+        library = next
+        subscription = next.changes.sink { [weak self] in self?.reload() }
+    }
     func focusSearch() { window?.makeFirstResponder(search); search.selectText(nil) }
     func reload(force: Bool = false) {
         let selected = selectedPage
+        let query = search.stringValue
+        guard !store.isEphemeral, let library else {
+            observedNotes = []; observedEasels = []
+            rows = []; selectedPage = nil; rebuildCards()
+            empty.isHidden = true
+            createButton.isEnabled = false
+            return
+        }
         do {
-            let notes = try NoteFolderPreferences.library(for: profileID).notes()
+            let notes = try library.notes()
             let easels = try EaselEditorViewController.sharedStore(directory: store.easelsDirectory(for: profileID)).list()
             let pending = store.isProfileRemovalPending(profileID)
-            if !force && shouldSkipCatalogReload(notes: notes, easels: easels, pending: pending) { return }
-            rememberAppliedCatalog(notes: notes, easels: easels, pending: pending)
-            let all = notes.map { Row(page: .note($0.url), title: InternalPage.noteTitle($0.title, file: $0.url),
-                                      searchableText: $0.url.lastPathComponent, modified: $0.modifiedAt) }
-                + easels.map { Row(page: .easel($0.id), title: $0.title, searchableText: "Easel · \($0.itemCount) objects", modified: $0.modifiedAt) }
-            let next = all.filter { search.stringValue.isEmpty || $0.title.localizedCaseInsensitiveContains(search.stringValue)
-                    || $0.searchableText.localizedCaseInsensitiveContains(search.stringValue) }
-                .sorted { $0.modified == $1.modified ? $0.page.urlString < $1.page.urlString : $0.modified > $1.modified }
-            empty.stringValue = next.isEmpty ? "Your local Easels and Notes will appear here." : ""
+            if !force && shouldSkipCatalogReload(notes: notes, easels: easels, pending: pending, query: query) { return }
+            rememberAppliedCatalog(notes: notes, easels: easels, pending: pending, query: query)
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            let matches = trimmed.isEmpty ? [] : library.search(trimmed, limit: Self.searchLimit).map(\.url)
+            let next = DocumentsLibraryCatalog.visible(DocumentsLibraryCatalog.items(notes: notes, easels: easels),
+                                                       query: trimmed, noteMatches: matches).compactMap(Self.row)
+            empty.stringValue = next.isEmpty ? DocumentsLibraryCatalog.emptyMessage(query: trimmed) : ""
             empty.isHidden = !next.isEmpty
             selectedPage = next.contains(where: { $0.page == selected }) ? selected : nil
-            let sameCards = zip(next, rows).allSatisfy { $0.page == $1.page && $0.title == $1.title } && next.count == rows.count
+            let sameCards = next == rows
             rows = next
             if !sameCards { rebuildCards() }
             createButton.isEnabled = !pending
@@ -124,16 +148,23 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         }
     }
 
-    private func shouldSkipCatalogReload(notes: [NoteReference], easels: [EaselSummary], pending: Bool) -> Bool {
+    private static func row(_ item: DocumentsLibraryItem) -> Row? {
+        if let url = item.noteURL { return Row(item: item, page: .note(url)) }
+        return item.easelID.map { Row(item: item, page: .easel($0)) }
+    }
+
+    private func shouldSkipCatalogReload(notes: [NoteReference], easels: [EaselSummary], pending: Bool, query: String) -> Bool {
         notes == observedNotes
             && easels == observedEasels
             && pending == observedProfileRemovalPending
+            && query == observedQuery
     }
 
-    private func rememberAppliedCatalog(notes: [NoteReference], easels: [EaselSummary], pending: Bool) {
+    private func rememberAppliedCatalog(notes: [NoteReference], easels: [EaselSummary], pending: Bool, query: String) {
         observedNotes = notes
         observedEasels = easels
         observedProfileRemovalPending = pending
+        observedQuery = query
     }
     private var current: Row? { rows.first { $0.page == selectedPage } }
     private var valid: Bool { window != nil && ownerValid?() == true }
@@ -150,10 +181,10 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     func numberOfRows(in tableView: NSTableView) -> Int { (rows.count + 1) / 2 }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let container = LayoutView()
-        let dark = chromeDark
+        let dark = chromeDark, now = Date()
         for index in (row * 2)..<min(rows.count, row * 2 + 2) {
             let item = rows[index]
-            let card = DocumentCard(title: item.title, isNote: item.page.noteURL != nil, dark: dark)
+            let card = DocumentCard(item: item.item, dark: dark, now: now)
             card.identifier = NSUserInterfaceItemIdentifier("document-\(index)")
             card.isSelected = item.page == selectedPage
             card.select = { [weak self] in self?.selectedPage = item.page; self?.updateSelection() }
@@ -162,6 +193,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
             }
             card.move = { [weak self] delta in self?.moveSelection(from: index, by: delta) ?? false }
             card.rename = { [weak self] in self?.rename(item) }
+            card.reveal = { [weak self] in self?.reveal(item) }
             card.delete = { [weak self] in self?.delete(item) }
             card.dismiss = { [weak self] in self?.onClose?() }
             container.addSubview(card)
@@ -219,43 +251,50 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     }
     @objc private func createNote() { guard valid else { return }; onCreate?() }
     private func open(_ row: Row) { guard valid else { return }; onOpen?(row.page, row.title) }
+    private func report(_ error: Error) {
+        guard let window else { return }
+        ParcDialog.inform(in: window, .init(error: error), queued: true)
+    }
     private func rename(_ row: Row) {
         guard valid, let window, window.attachedSheet == nil else { return }
-        let dialog = ParcDialog(.init(title: [(row.page.noteURL == nil ? "Rename Easel" : "Rename Note", false)],
+        let dialog = ParcDialog(.init(title: [(row.item.isNote ? "Rename Note" : "Rename Easel", false)],
             confirm: "Rename", cancel: "Cancel", field: .init(value: row.title, placeholder: "", required: false)))
         guard let field = dialog.textField else { return }
         _ = dialog.begin(for: window) { [weak self] result in
             guard let self, result == .confirm, self.valid else { return }
             do {
-                if let url = row.page.noteURL {
-                    let session = try NoteFileSession.open(url)
-                    let renamed = try session.rename(to: field.stringValue)
-                    self.store.updateNoteFile(from: url, to: renamed, title: session.title)
-                    self.onRename?(.note(renamed), session.title)
-                } else if let id = row.page.easelID {
+                if let url = row.item.noteURL {
+                    let renamed = try NoteLibrary.rename(url, to: field.stringValue)
+                    let title = renamed.deletingPathExtension().lastPathComponent
+                    self.store.updateNoteFile(from: url, to: renamed, title: title)
+                    if self.selectedPage == row.page { self.selectedPage = .note(renamed) }
+                    self.onRename?(.note(renamed), title)
+                } else if let id = row.item.easelID {
                     let session = try EaselEditorViewController.sharedStore(directory: self.store.easelsDirectory(for: self.profileID)).load(id)
-                    guard session.document.title == row.title else { throw NoteTabError.changed }
-                    try session.perform("Rename Easel") { $0.title = field.stringValue.isEmpty ? "Untitled Easel" : field.stringValue }
+                    guard session.document.title == row.title else { throw DocumentsLibraryRenameError.changed }
+                    try session.perform("Rename Easel") { $0.title = field.stringValue.isEmpty ? DocumentsLibraryCatalog.untitledEasel : field.stringValue }
                     self.onRename?(row.page, field.stringValue)
                 }
                 self.reload()
-            } catch { self.empty.stringValue = error.localizedDescription; self.empty.isHidden = self.rows.isEmpty == false }
+            } catch { self.reload(); self.report(error) }
         }
+    }
+    private func reveal(_ row: Row) {
+        guard valid, let url = row.item.noteURL else { return }
+        guard FileManager.default.fileExists(atPath: url.path) else { reload(force: true); report(NoteFileError.missing); return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
     private func delete(_ row: Row) {
         guard valid, let window, window.attachedSheet == nil else { return }
-        let note = row.page.noteURL != nil
-        ParcDialog.confirm(in: window, title: note ? "Are you sure you want to delete this note?" : "Are you sure you want to delete this Easel?",
-                          message: note ? "Doing so will move the note’s file to the Trash." : "Doing so will delete the Easel permanently.",
-                          confirm: "Delete", destructive: true) { [weak self] approved in
+        let note = row.item.isNote
+        ParcDialog.confirm(in: window, title: note ? "Move this note to the Trash?" : "Are you sure you want to delete this Easel?",
+                          message: note ? "Any tabs showing it close too. You can fish it out of the Trash later." : "Doing so will delete the Easel permanently.",
+                          confirm: note ? "Move to Trash" : "Delete", destructive: true) { [weak self] approved in
             guard let self, approved, self.valid else { return }
             self.onDelete?(row.page) { [weak self] error in
                 guard let self else { return }
                 self.reload()
-                if let error {
-                    self.empty.stringValue = error.localizedDescription
-                    self.empty.isHidden = self.rows.isEmpty == false
-                }
+                if let error, (error as? CocoaError)?.code != .userCancelled { self.report(error) }
             }
         }
     }
@@ -276,11 +315,15 @@ private final class DocumentCard: NSView {
     var open: (() -> Void)?
     var select: (() -> Void)?
     var rename: (() -> Void)?
+    var reveal: (() -> Void)?
     var delete: (() -> Void)?
     var dismiss: (() -> Void)?
     var move: ((Int) -> Bool)?
     var isSelected = false { didSet { needsDisplay = true } }
     private let titleLabel: NSTextField
+    private let previewLabel: NSTextField
+    private let dateLabel: NSTextField
+    private let emojiLabel: NSTextField
     private let icon = NSImageView()
     private let isNote: Bool
     private let dark: Bool
@@ -291,27 +334,44 @@ private final class DocumentCard: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override var wantsUpdateLayer: Bool { true }
-    init(title: String, isNote: Bool, dark: Bool) {
-        self.isNote = isNote
+    init(item: DocumentsLibraryItem, dark: Bool, now: Date) {
+        isNote = item.isNote
         self.dark = dark
-        titleLabel = NSTextField(wrappingLabelWithString: title)
+        titleLabel = NSTextField(wrappingLabelWithString: item.title)
+        previewLabel = NSTextField(wrappingLabelWithString: item.preview)
+        let age = DocumentsLibraryCatalog.edited(item.modified, now: now)
+        dateLabel = NSTextField(labelWithString: age)
+        emojiLabel = NSTextField(labelWithString: item.emoji ?? "")
         super.init(frame: .zero)
         setAccessibilityRole(.button)
-        setAccessibilityLabel(title)
-        setAccessibilityHelp(isNote ? "Note" : "Easel")
+        setAccessibilityLabel(item.title)
+        setAccessibilityHelp((isNote ? "Note" : "Easel") + ", edited " + age.lowercased())
+        if !item.preview.isEmpty { setAccessibilityValue(item.preview) }
         wantsLayer = true; focusRingType = .exterior
         updateArtwork()
         icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.isHidden = item.emoji != nil
+        emojiLabel.isHidden = item.emoji == nil
+        emojiLabel.font = .systemFont(ofSize: DocumentCardChrome.emojiSize)
+        emojiLabel.alignment = .center
         titleLabel.font = .systemFont(ofSize: DocumentCardChrome.titleSize, weight: .semibold)
         titleLabel.textColor = DocumentCardChrome.title(dark: dark)
         titleLabel.lineBreakMode = .byWordWrapping
-        titleLabel.maximumNumberOfLines = 5
         titleLabel.cell?.truncatesLastVisibleLine = true
-        for view in [icon, titleLabel, more] { addSubview(view) }
+        previewLabel.font = .systemFont(ofSize: DocumentCardChrome.previewSize)
+        previewLabel.textColor = DocumentCardChrome.title(dark: dark).withAlphaComponent(0.55)
+        previewLabel.lineBreakMode = .byWordWrapping
+        previewLabel.cell?.truncatesLastVisibleLine = true
+        previewLabel.isHidden = item.preview.isEmpty
+        dateLabel.font = .systemFont(ofSize: DocumentCardChrome.dateSize)
+        dateLabel.textColor = DocumentCardChrome.title(dark: dark).withAlphaComponent(0.4)
+        dateLabel.lineBreakMode = .byTruncatingTail
+        for label in [titleLabel, previewLabel, dateLabel, emojiLabel] { label.setAccessibilityElement(false) }
+        for view in [icon, titleLabel, emojiLabel, previewLabel, dateLabel, more] { addSubview(view) }
         more.isBordered = false
         more.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "More")
         more.contentTintColor = DocumentCardChrome.title(dark: dark).withAlphaComponent(0.45)
-        more.target = self; more.action = #selector(showMenu); more.setAccessibilityLabel("More actions for \(title)")
+        more.target = self; more.action = #selector(showMenu); more.setAccessibilityLabel("More actions for \(item.title)")
         more.alphaValue = 0
         more.tab = { [weak self] backwards in
             guard let self else { return false }
@@ -350,12 +410,26 @@ private final class DocumentCard: NSView {
         let pad = DocumentCardChrome.padding
         let art = DocumentCardChrome.artwork
         icon.frame = NSRect(x: pad, y: pad, width: art, height: art)
+        emojiLabel.frame = NSRect(x: pad - 3, y: pad - 2, width: art + 6, height: art + 4)
         more.frame = NSRect(x: max(0, bounds.width - 36), y: 4, width: 32, height: 32)
         let textWidth = max(0, bounds.width - pad * 2)
+        let dateHeight = ceil(dateLabel.intrinsicContentSize.height)
+        dateLabel.frame = NSRect(x: pad, y: max(0, bounds.height - pad - dateHeight), width: textWidth, height: dateHeight)
         let titleTop = pad + art + DocumentCardChrome.gap
-        let titleHeight = titleLabel.sizeThatFits(NSSize(width: textWidth, height: bounds.height - titleTop - pad)).height
-        titleLabel.frame = NSRect(x: pad, y: titleTop, width: textWidth,
-                                  height: min(bounds.height - titleTop - pad, max(18, titleHeight)))
+        let bottom = dateLabel.frame.minY - DocumentCardChrome.lineGap
+        let titleLine = ceil(titleLabel.font.map { $0.ascender - $0.descender + $0.leading } ?? 18)
+        let titleRoom = max(titleLine, floor(max(0, bottom - titleTop) / titleLine) * titleLine)
+        titleLabel.maximumNumberOfLines = 0
+        let titleFit = ceil(titleLabel.sizeThatFits(NSSize(width: textWidth, height: .greatestFiniteMagnitude)).height)
+        let titleHeight = min(titleRoom, max(titleLine, titleFit))
+        titleLabel.maximumNumberOfLines = max(1, Int((titleRoom / titleLine).rounded()))
+        titleLabel.frame = NSRect(x: pad, y: titleTop, width: textWidth, height: titleHeight)
+        let previewTop = titleLabel.frame.maxY + DocumentCardChrome.lineGap
+        let previewLine = ceil(previewLabel.font.map { $0.ascender - $0.descender + $0.leading } ?? 15)
+        let previewLines = previewLabel.stringValue.isEmpty ? 0 : Int(max(0, bottom - previewTop) / previewLine)
+        previewLabel.isHidden = previewLines == 0
+        previewLabel.maximumNumberOfLines = previewLines
+        previewLabel.frame = NSRect(x: pad, y: previewTop, width: textWidth, height: CGFloat(previewLines) * previewLine)
         needsDisplay = true
     }
     override func updateTrackingAreas() {
@@ -400,7 +474,14 @@ private final class DocumentCard: NSView {
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(DocumentActionItem(title: "Rename…", invoke: { [weak self] in self?.rename?() }))
-        menu.addItem(DocumentActionItem(title: "Delete…", invoke: { [weak self] in self?.delete?() })); return menu
+        if isNote {
+            menu.addItem(DocumentActionItem(title: "Show in Finder", invoke: { [weak self] in self?.reveal?() }))
+            menu.addItem(.separator())
+            menu.addItem(DocumentActionItem(title: "Move to Trash…", invoke: { [weak self] in self?.delete?() }))
+        } else {
+            menu.addItem(DocumentActionItem(title: "Delete…", invoke: { [weak self] in self?.delete?() }))
+        }
+        return menu
     }
     override func menu(for event: NSEvent) -> NSMenu? { makeMenu() }
     override func keyDown(with event: NSEvent) {

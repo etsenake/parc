@@ -131,11 +131,20 @@ private final class LiveCloud: ExternalMediaCloudObservation, @unchecked Sendabl
   }
   let create = all(documents).compactMap { $0 as? NSButton }.first { $0.accessibilityLabel() == "New Note" }!
   expect(create.title.isEmpty && abs(create.frame.width - 36) < 0.01 && abs(create.frame.height - 36) < 0.01, "New Note is a 36pt icon-only control")
-  let notes = try NoteStore.sharedStore(directory: store.notesDirectory(for: profile))
-  let createdNote = try notes.create()
+  let noteDefaultsSuite = "parc.tests.library-notes." + UUID().uuidString
+  NoteFolderPreferences.defaults = UserDefaults(suiteName: noteDefaultsSuite)!
+  defer { NoteFolderPreferences.defaults.removePersistentDomain(forName: noteDefaultsSuite); NoteFolderPreferences.defaults = .standard }
+  func settle(_ until: () -> Bool = { false }) {
+   let deadline = Date(timeIntervalSinceNow: 3)
+   repeat { RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02)) } while !until() && Date() < deadline
+  }
+  NoteFolderPreferences.setFolder(directory.appendingPathComponent("Library Notes", isDirectory: true), for: profile)
+  let notes = NoteFolderPreferences.library(for: profile)
+  let createdNote = try notes.createNote()
   documents.needsLayout = true; documents.layoutSubtreeIfNeeded()
   let documentsGrid = all(documents).compactMap { $0 as? NSTableView }.first!
-  expect(documentsGrid.numberOfRows == 2, "A newly persisted note appears in the documents grid")
+  settle { documentsGrid.numberOfRows == 2 }
+  expect(documentsGrid.numberOfRows == 2, "A newly created note file appears in the documents grid")
   func documentTitles() -> [String] {
    (0..<documentsGrid.numberOfRows).flatMap { row -> [String] in
     guard let view = documentsGrid.view(atColumn: 0, row: row, makeIfNecessary: true) else { return [] }
@@ -145,17 +154,15 @@ private final class LiveCloud: ExternalMediaCloudObservation, @unchecked Sendabl
    }
   }
   let visibleTitles = documentTitles()
-  expect(visibleTitles.contains("Untitled Note"), "The new note's title is visible")
+  expect(visibleTitles.contains("Untitled"), "The new note's file name is its visible title")
   expect(documentWindow.makeFirstResponder(documentsGrid.view(atColumn: 0, row: 0, makeIfNecessary: true)?.subviews.first) == true, "Document selection stays on a card")
-  var body = createdNote.document.body
-  body.text = "keystroke body that is not a card title"
-  body.richText = .init(runs: [.init(location: 0, length: body.text.utf16.count,
-    attributes: .init(font: .init(name: "Helvetica", size: 15), ink: "#252525FF"))])
-  try createdNote.updateBody(body, replacing: createdNote.document.body)
-  expect(documentsGrid.numberOfRows == 2 && documentTitles() == visibleTitles, "Body-only persist keeps visible document cards and titles")
-  expect(documentWindow.firstResponder is NSView, "Body-only persist does not clear document card selection")
-  try createdNote.updateTitle("Named Library Note", replacing: createdNote.document.title)
-  expect(documentTitles().contains("Named Library Note"), "A note title change still refreshes the Documents catalog")
+  try Data("keystroke body that is not a card title\n".utf8).write(to: createdNote)
+  settle()
+  expect(documentsGrid.numberOfRows == 2 && documentTitles() == visibleTitles, "A body-only save keeps visible document cards and titles")
+  expect(documentWindow.firstResponder is NSView, "A body-only save does not clear document card selection")
+  let namedNote = try NoteLibrary.rename(createdNote, to: "Named Library Note")
+  settle { documentTitles().contains("Named Library Note") }
+  expect(documentTitles().contains("Named Library Note"), "Renaming a note's file refreshes the Documents catalog")
   let titlesAfterTitle = documentTitles()
   let rowsAfterTitle = documentsGrid.numberOfRows
   let selectedAfterTitle = documentWindow.firstResponder
@@ -174,15 +181,14 @@ private final class LiveCloud: ExternalMediaCloudObservation, @unchecked Sendabl
   documentsSearch.stringValue = ""
   documents.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: documentsSearch))
   expect(documentTitles() == titlesAfterTitle, "Clearing Documents search force-reloads membership")
+  expect(FileManager.default.fileExists(atPath: namedNote.path), "The renamed note file is where the Library says")
   documentWindow.contentView = nil
   let documentsFingerprintRoot = directory.appendingPathComponent("documents-fingerprint", isDirectory: true)
   let documentsFingerprintStore = try BrowserStore(directory: documentsFingerprintRoot)
   let documentsFingerprintProfile = documentsFingerprintStore.activeSpace.profileID
-  let documentsFingerprintNotes = try NoteStore.sharedStore(
-   directory: documentsFingerprintStore.notesDirectory(for: documentsFingerprintProfile), diskSaveDelay: 0)
-  let documentsFingerprintNote = try documentsFingerprintNotes.create()
-  try documentsFingerprintNote.updateTitle("Documents fingerprint note",
-                                           replacing: documentsFingerprintNote.document.title)
+  NoteFolderPreferences.setFolder(documentsFingerprintRoot.appendingPathComponent("Notes", isDirectory: true), for: documentsFingerprintProfile)
+  let documentsFingerprintNotes = NoteFolderPreferences.library(for: documentsFingerprintProfile)
+  let documentsFingerprintNote = try documentsFingerprintNotes.createNote(title: "Documents fingerprint note")
   let documentsFingerprintView = DocumentsLibraryView(store: documentsFingerprintStore,
                                                       profileID: documentsFingerprintProfile)
   documentsFingerprintView.ownerValid = { true }
@@ -208,32 +214,30 @@ private final class LiveCloud: ExternalMediaCloudObservation, @unchecked Sendabl
   for _ in 0..<5 { RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01)) }
   expect(documentsFingerprintTitles() == documentsFingerprintBefore,
          "Identical isolated Documents re-publish remains a fingerprint no-op")
-  var documentsFingerprintBody = documentsFingerprintNote.document.body
-  documentsFingerprintBody.text = "documents-fingerprint-body-match"
-  documentsFingerprintBody.richText = .init(runs: [.init(location: 0,
-    length: documentsFingerprintBody.text.utf16.count,
-    attributes: .init(font: .init(name: "Helvetica", size: 15), ink: "#252525FF"))])
-  try documentsFingerprintNote.updateBody(documentsFingerprintBody,
-                                          replacing: documentsFingerprintNote.document.body)
-  for _ in 0..<5 { RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01)) }
+  try Data("documents-fingerprint-body-match\n".utf8).write(to: documentsFingerprintNote)
   let documentsFingerprintSearch = all(documentsFingerprintView).compactMap { $0 as? NSTextField }
    .first { $0.placeholderString == "Search Easels & Notes…" }!
   documentsFingerprintSearch.stringValue = "fingerprint-body-match"
-  documentsFingerprintView.controlTextDidChange(
-   Notification(name: NSControl.textDidChangeNotification, object: documentsFingerprintSearch))
+  settle {
+   documentsFingerprintView.controlTextDidChange(
+    Notification(name: NSControl.textDidChangeNotification, object: documentsFingerprintSearch))
+   return documentsFingerprintTitles() == ["Documents fingerprint note"]
+  }
   expect(documentsFingerprintTitles() == ["Documents fingerprint note"],
-         "Body persist still reloads Documents-visible searchable text for filters")
+         "A body save reaches the Documents search")
   documentsFingerprintSearch.stringValue = "no-match-filter"
   documentsFingerprintView.controlTextDidChange(
    Notification(name: NSControl.textDidChangeNotification, object: documentsFingerprintSearch))
   expect(documentsFingerprintTitles().isEmpty, "Non-matching Documents search clears rows")
-  try documentsFingerprintNote.updateTitle("Documents fingerprint renamed",
-                                           replacing: documentsFingerprintNote.document.title)
+  _ = try NoteLibrary.rename(documentsFingerprintNote, to: "Documents fingerprint renamed")
   documentsFingerprintSearch.stringValue = ""
-  documentsFingerprintView.controlTextDidChange(
-   Notification(name: NSControl.textDidChangeNotification, object: documentsFingerprintSearch))
+  settle {
+   documentsFingerprintView.controlTextDidChange(
+    Notification(name: NSControl.textDidChangeNotification, object: documentsFingerprintSearch))
+   return documentsFingerprintTitles() == ["Documents fingerprint renamed"]
+  }
   expect(documentsFingerprintTitles() == ["Documents fingerprint renamed"],
-         "A note title change still refreshes the isolated Documents catalog")
+         "Renaming a note's file refreshes the isolated Documents catalog")
   documentsFingerprintWindow.contentView = nil
   documentsFingerprintWindow.close()
   SystemOverrides.reduceMotion = true
