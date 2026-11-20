@@ -3,6 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import struct
 import subprocess
@@ -195,13 +196,24 @@ class PackagingIconTests(unittest.TestCase):
                 "public.html", "public.xhtml", "org.ietf.mhtml", "com.adobe.pdf",
                 "com.compuserve.gif", "public.jpeg", "public.png", "public.svg-image",
                 "org.webmproject.webp", "public.avif", "com.microsoft.bmp", "com.microsoft.ico",
-                "public.plain-text", "public.json", "public.xml", "public.css",
+                "net.daringfireball.markdown", "public.plain-text", "public.json", "public.xml", "public.css",
                 "public.mp3", "com.apple.m4a-audio", "com.microsoft.waveform-audio",
                 "org.xiph.flac", "org.xiph.ogg-audio",
                 "public.mpeg-4", "org.webmproject.webm", "org.xiph.ogv"})
-            self.assertTrue(all(document["CFBundleTypeRole"] == "Viewer"
+            editors = {kind for document in info["CFBundleDocumentTypes"] if document["CFBundleTypeRole"] == "Editor"
+                       for kind in document["LSItemContentTypes"]}
+            self.assertEqual(editors, {"net.daringfireball.markdown", "public.plain-text"})
+            self.assertTrue(all(document["CFBundleTypeRole"] in ("Viewer", "Editor")
                                 and document["LSHandlerRank"] == "Alternate"
                                 for document in info["CFBundleDocumentTypes"]))
+            markdown = next(kind for kind in info["UTImportedTypeDeclarations"]
+                            if kind["UTTypeIdentifier"] == "net.daringfireball.markdown")
+            self.assertEqual(markdown["UTTypeConformsTo"], ["public.plain-text"])
+            self.assertEqual(markdown["UTTypeTagSpecification"]["public.mime-type"], "text/markdown")
+            note_kinds = (REPO / "Sources/ParcCore/NoteFileKind.swift").read_text()
+            declared = re.search(r"markdownExtensions: Set<String> = \[([^\]]*)\]", note_kinds).group(1)
+            self.assertEqual(set(markdown["UTTypeTagSpecification"]["public.filename-extension"]),
+                             set(re.findall(r'"([^"]+)"', declared)))
             imported = {kind["UTTypeIdentifier"] for kind in info["UTImportedTypeDeclarations"]}
             self.assertLessEqual(imported, documents)
             self.assertTrue(all(kind["UTTypeTagSpecification"]["public.filename-extension"]

@@ -66,17 +66,21 @@ CHROMIUM_USAGE_DESCRIPTIONS = "chrome/tools/build/mac/infoplist_strings_util.cc"
 PINNED_INPUTS = (("chromium", "LICENSE"),
                  ("chromium", "chrome/app/app-entitlements.plist"),
                  ("chromium", CHROMIUM_USAGE_DESCRIPTIONS))
+MARKDOWN_EXTENSIONS = ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdtxt", "mdtext"]
 DOCUMENT_TYPES = (
-    ("Web page", ("public.html", "public.xhtml", "org.ietf.mhtml")),
-    ("PDF document", ("com.adobe.pdf",)),
-    ("Image", ("com.compuserve.gif", "public.jpeg", "public.png", "public.svg-image",
-               "org.webmproject.webp", "public.avif", "com.microsoft.bmp", "com.microsoft.ico")),
-    ("Text", ("public.plain-text", "public.json", "public.xml", "public.css")),
-    ("Audio", ("public.mp3", "com.apple.m4a-audio", "com.microsoft.waveform-audio",
-               "org.xiph.flac", "org.xiph.ogg-audio")),
-    ("Video", ("public.mpeg-4", "org.webmproject.webm", "org.xiph.ogv")),
+    ("Web page", "Viewer", ("public.html", "public.xhtml", "org.ietf.mhtml")),
+    ("PDF document", "Viewer", ("com.adobe.pdf",)),
+    ("Image", "Viewer", ("com.compuserve.gif", "public.jpeg", "public.png", "public.svg-image",
+                         "org.webmproject.webp", "public.avif", "com.microsoft.bmp", "com.microsoft.ico")),
+    ("Markdown document", "Editor", ("net.daringfireball.markdown",)),
+    ("Plain text document", "Editor", ("public.plain-text",)),
+    ("Text", "Viewer", ("public.json", "public.xml", "public.css")),
+    ("Audio", "Viewer", ("public.mp3", "com.apple.m4a-audio", "com.microsoft.waveform-audio",
+                         "org.xiph.flac", "org.xiph.ogg-audio")),
+    ("Video", "Viewer", ("public.mpeg-4", "org.webmproject.webm", "org.xiph.ogv")),
 )
 IMPORTED_TYPES = (
+    ("net.daringfireball.markdown", "Markdown document", ["public.plain-text"], MARKDOWN_EXTENSIONS, "text/markdown"),
     ("org.ietf.mhtml", "MHTML web archive", ["public.data", "public.content"], ["mht", "mhtml"], "multipart/related"),
     ("public.avif", "AVIF image", ["public.heif-standard"], ["avif"], "image/avif"),
     ("public.css", "CSS style sheet", ["public.text"], ["css"], "text/css"),
@@ -1110,9 +1114,9 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                     CFBundleURLTypes=[{"CFBundleTypeRole": "Viewer", "CFBundleURLName": "Webpage URL",
                                        "CFBundleURLSchemes": ["http", "https"]}],
                     CFBundleDocumentTypes=[
-                        {"CFBundleTypeName": name, "CFBundleTypeRole": "Viewer",
+                        {"CFBundleTypeName": name, "CFBundleTypeRole": role,
                          "LSHandlerRank": "Alternate", "LSItemContentTypes": list(kinds)}
-                        for name, kinds in DOCUMENT_TYPES],
+                        for name, role, kinds in DOCUMENT_TYPES],
                     UTImportedTypeDeclarations=[
                         {"UTTypeIdentifier": kind, "UTTypeDescription": description,
                          "UTTypeConformsTo": conforms,
