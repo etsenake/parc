@@ -118,8 +118,17 @@ Notion's Markdown shortcuts work as you type: `# ` through `###### `, `- `, `* `
 `->`, `<-`, `<->`, `=>`, `>=`, `<=` or `--` gives →, ←, ↔, ⇒, ≥, ≤ or an em
 dash, except in code and equations. One ⌘Z undoes a shortcut back to the
 characters you typed. `/` opens the block menu,
-`@` or `[[` mentions a note or a date, and `:` plus two letters suggests emoji. Date reminders are local notifications that
-follow the note through renames and moves and disappear when it's trashed.
+`@` or `[[` mentions a note or a date, and `:` plus two letters suggests emoji.
+`@Jan 3 → Jan 5`, `@Jan 3 - 5` or `@3-5pm` makes a range, and a month and day
+without a year mean the nearest one. Clicking a date opens its picker: a
+calendar that shades ranges, End date and Include time switches, a Format page
+(relative, full, short or numeric dates and a 12 or 24 hour clock), a time zone
+search and a Remind list (at the time, or 5 minutes to 2 days before; for a
+whole day, 9 AM on the day or up to a week before). Dates say Today, Tomorrow
+or Yesterday while they can and switch to the full date as days pass.
+Reminders are blue, turn red on their day or once they've rung, and are local
+notifications that follow the note through renames and moves and disappear
+when it's trashed.
 
 Return, Backspace, Delete and Tab follow Notion's rules: lists continue, an empty
 item outdents and then becomes text, Backspace at the start of a block turns it
