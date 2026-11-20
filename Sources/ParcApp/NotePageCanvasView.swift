@@ -765,6 +765,7 @@ final class NotePageCanvasView: NSView {
         if dimmedBlocks().contains(entry.id) { view.alphaValue = 0.4 }
         if case .blocks(let ids) = editor.session.selection, ids.contains(entry.id) { view.setBlockSelected(true, animated: false) }
         blockViewDidMaterialize.send(view)
+        editor.selection.blockViewDidAppear(view)
         return view
     }
 
