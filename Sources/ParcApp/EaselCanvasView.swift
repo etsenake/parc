@@ -75,6 +75,14 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         synchronizeAccessibleObjects()
         return items.compactMap { accessibleObjects[$0.id] }
     }
+    var canvasOwnsKeyFocus: Bool {
+        window?.firstResponder === self || (window?.firstResponder as? EaselAccessibleObject)?.canvas === self
+    }
+    var textEditorOwnsKeyFocus: Bool {
+        guard let editor, let responder = window?.firstResponder as? NSView else { return false }
+        return responder === editor || responder.isDescendant(of: editor)
+    }
+    func refreshDecorations() { decoration.needsDisplay = true; needsDisplay = true }
     private lazy var decoration = EaselCanvasDecoration(canvas: self)
     private var trackedItems: [UUID: EaselItem] = [:]
     private var trackedSelection = Set<UUID>()
@@ -115,11 +123,12 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var marqueeRect: NSRect?
     private var marqueeEnd: NSPoint?
     private var tentativeSelection: Set<UUID>?
-    private var hoveredObjectID: UUID?
+    var hoveredObjectID: UUID?
     private var appearanceTracking: NSTrackingArea?
     private var stroke: [NSPoint] = []
     private var guides: EaselAlignmentGuides?
-    private var alignmentGuidesEnabled = true
+    var alignmentGuidesEnabled = true
+    var arrangeState = EaselCanvasArrangeState()
     private var lastDragTimestamp: TimeInterval?
     private var dragVelocity = EaselPoint(x: 0, y: 0)
     var editor: EaselStyledTextView?
@@ -457,7 +466,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     private func accessibleManipulationControls() -> [NSAccessibilityElement] {
         guard accessibleOwnerAvailable, editor == nil, let owner = window,
-              let edit = EaselGeometryEdit(document: session.document, selection: selection) else { return [] }
+              let edit = EaselGeometryEdit(document: session.document, selection: movableSelection) else { return [] }
         func make(_ label: String, frame: EaselRect, handle: EaselResizeHandle? = nil,
                   endpoint: EaselArrowEndpoint? = nil) -> NSAccessibilityElement {
             let node = NSAccessibilityElement()
@@ -469,7 +478,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             }.map { name, x, y in
                 NSAccessibilityCustomAction(name: name) { [weak self, weak owner] in
                     guard let self, let owner, self.window === owner, self.accessibleOwnerAvailable,
-                          self.editor == nil, self.selection == edit.ids, edit.isCurrent(in: self.session.document) else { return false }
+                          self.editor == nil, self.movableSelection == edit.ids, edit.isCurrent(in: self.session.document) else { return false }
                     let proposal: [EaselItem]?
                     if let endpoint {
                         guard self.showsArrowAnnotation(endpoint) else { return false }
@@ -572,7 +581,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         return true
     }
-    private func invalidateIncrementalDisplay(layout: Bool = false) {
+    func invalidateIncrementalDisplay(layout: Bool = false) {
         if layout { needsLayout = true }
         if presentationMatchesPaintedArtwork() {
             presentationNoOpSkipCount += 1
@@ -792,7 +801,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     fileprivate func drawDecorations(in dirtyRect: NSRect) {
         onDrawOverlay?(dirtyRect, canvasScale)
-        for item in items where displayedSelection.contains(item.id) || item.id == hoveredObjectID {
+        for item in items where displayedSelection.contains(item.id) || (item.id == hoveredObjectID && !item.isLocked) {
             if displayBounds(of: item).intersects(dirtyRect) {
                 drawSelectionOutline(item, exclusive: displayedSelection == [item.id])
             }
@@ -835,6 +844,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 color.setStroke(); path.stroke()
             }
         }
+        drawArrangeDecorations(in: dirtyRect)
         if session.document.items.isEmpty && editor == nil {
             let placeholder = NSRect(x: 40, y: 50, width: max(180, bounds.width - 80), height: 106)
             if placeholder.intersects(dirtyRect) {
@@ -893,7 +903,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let next = !drawing && start == nil && editor == nil && !session.isClosed
-            && isTopmost(atWindowPoint: event.locationInWindow) ? object(at: point)?.id : nil
+            && isTopmost(atWindowPoint: event.locationInWindow) ? (object(at: point) ?? object(at: point, includingLocked: true))?.id : nil
         if hoveredObjectID != next { hoveredObjectID = next; invalidateIncrementalDisplay() }
         super.mouseMoved(with: event)
     }
@@ -919,7 +929,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var selectedArrow: EaselItem? {
         guard !drawing, editor == nil, marqueeRect == nil, displayedSelection.count == 1,
               let item = items.first(where: { displayedSelection.contains($0.id) }),
-              item.kind == .arrow, item.points.count == 2 else { return nil }
+              item.kind == .arrow, item.points.count == 2, !item.isLocked else { return nil }
         return item
     }
     private func arrowEndpoint(at point: NSPoint) -> EaselArrowEndpoint? {
@@ -931,7 +941,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     private var resizeBounds: EaselRect? {
         guard !drawing, editor == nil, marqueeRect == nil, selectedArrow == nil else { return nil }
-        return EaselGeometryEdit.bounds(of: items.filter { displayedSelection.contains($0.id) })
+        return EaselGeometryEdit.bounds(of: items.filter { displayedSelection.contains($0.id) && !$0.isLocked })
     }
     private func resizeHandle(at point: NSPoint) -> EaselResizeHandle? {
         guard let frame = resizeBounds else { return nil }
@@ -941,7 +951,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     @discardableResult
-    private func commit(_ name: String, coalescing group: UUID? = nil, _ change: (inout EaselDocument) throws -> Void) -> Bool {
+    func commit(_ name: String, coalescing group: UUID? = nil, _ change: (inout EaselDocument) throws -> Void) -> Bool {
         defer { invalidateIncrementalDisplay(layout: true) }
         do { try session.perform(name, coalescing: group, change); return true }
         catch { onError?(error); return false }
@@ -1033,7 +1043,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         try importImage(Data(contentsOf: url, options: .mappedIfSafe))
     }
     private func beginEditing(_ item: EaselItem, at point: NSPoint? = nil) {
-        guard item.kind == .text else { return }
+        guard item.kind == .text, !item.isLocked else { return }
         guard finishEditing(), session.document.items.contains(where: { $0 == item }) else { return }
         editingID = item.id; textUndoGroup = UUID()
         let text = EaselStyledTextView(frame: rect(item))
@@ -1092,7 +1102,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     @discardableResult
-    private func finishEditing(removingEmpty: Bool = true) -> Bool {
+    func finishEditing(removingEmpty: Bool = true) -> Bool {
         guard !finishingEditor else { return false }
         guard let text = editor, let id = editingID else { return true }
         finishingEditor = true
@@ -1272,7 +1282,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         return false
     }
-    private func cancelPointerInteraction() {
+    func cancelPointerInteraction() {
+        abandonDuplicateDrag()
         let hadPointerOwner = start != nil || geometryEdit != nil || draft != nil || marqueeRect != nil
         if !stroke.isEmpty, start != nil { selection = selectionBeforeGesture.intersection(session.document.items.map(\.id)) }
         draft = nil; start = nil; original = []; stroke = []; geometryEdit = nil
@@ -1308,8 +1319,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let rect = EaselCanvasSelection.marquee(from: .init(x: start.x, y: start.y), to: .init(x: point.x, y: point.y))
         marqueeRect = NSRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height); marqueeEnd = point
         let operation: EaselCanvasSelection.Operation = flags.contains(.shift) ? .add : flags.contains(.command) ? .subtract : .replace
-        tentativeSelection = EaselCanvasSelection.selecting(in: rect, items: session.document.items,
-                                                           original: selectionBeforeGesture, operation: operation)
+        tentativeSelection = marqueeSelection(in: rect, items: session.document.items, original: selectionBeforeGesture, operation: operation)
         invalidateIncrementalDisplay()
     }
     override func flagsChanged(with event: NSEvent) {
@@ -1334,6 +1344,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let point = convert(event.locationInWindow, from: nil); start = point; original = session.document.items
         selectionBeforeGesture = selection; lastDragLocation = event.locationInWindow; lastDragTimestamp = event.timestamp
         if drawing { stroke = [point]; selection.removeAll(); return }
+        if offerUnlock(at: point) { cancelPointerInteraction(); return }
         if let endpoint = arrowEndpoint(at: point) {
             arrowEndpoint = endpoint; beginGeometry()
             lastGeometryPoint = point; invalidateIncrementalDisplay(layout: true); return
@@ -1343,16 +1354,16 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             beginGeometry()
             lastGeometryPoint = point; invalidateIncrementalDisplay(layout: true); return
         }
-        let hit = object(at: point)
+        let hit = object(at: point, includingLocked: event.modifierFlags.contains(.shift))
         guard let hit else {
             if event.clickCount == 2 { insert(kind: .text, edit: true, at: point); return }
             marqueeRect = NSRect(origin: point, size: .zero); updateMarquee(to: point, flags: event.modifierFlags); return
         }
-        if event.modifierFlags.contains(.shift) { if !selection.insert(hit.id).inserted { selection.remove(hit.id) } }
-        else if !selection.contains(hit.id) { selection = [hit.id] }
+        let enteredGroup = selectForClick(hit, extending: event.modifierFlags.contains(.shift), clickCount: event.clickCount)
         guard selection.contains(hit.id) else { cancelPointerInteraction(); return }
         beginGeometry()
-        if event.clickCount == 2 {
+        arrangeState.duplicateDragArmed = event.modifierFlags.contains(.option) && !hit.isLocked
+        if event.clickCount == 2, !enteredGroup {
             cancelPointerInteraction()
             if hit.kind == .text { beginEditing(hit, at: point) }
             else if !hit.ownsEmbeddedPage, let raw = hit.url, let url = URL(string: raw) { onOpenURL?(url) }
@@ -1368,6 +1379,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             draft = [strokeItem()]; invalidateIncrementalDisplay(); return
         }
         recordDragTravel(event.locationInWindow, timestamp: event.timestamp)
+        if arrangeState.duplicateDragArmed, dragDistance > 3, !resizing, beginDuplicateDrag() { beginGeometry() }
         updateGeometry(to: point, flags: event.modifierFlags)
         autoscroll(with: event)
     }
@@ -1382,12 +1394,12 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         lastDragLocation = point; lastDragTimestamp = timestamp
     }
-    private func object(at point: NSPoint) -> EaselItem? {
-        items.reversed().first { EaselContentHitTest.contains(.init(x: point.x, y: point.y), item: $0,
+    func object(at point: NSPoint, includingLocked: Bool = false) -> EaselItem? {
+        items.reversed().first { (includingLocked || !$0.isLocked) && EaselContentHitTest.contains(.init(x: point.x, y: point.y), item: $0,
                                                              selected: selection.contains($0.id)) }
     }
     private func beginGeometry() {
-        geometryEdit = EaselGeometryEdit(document: session.document, selection: selection)
+        geometryEdit = EaselGeometryEdit(document: session.document, selection: movableSelection)
         if let edit = geometryEdit {
             let v = visibleRect
             guides = EaselAlignmentGuides(edit: edit, items: session.document.items,
@@ -1397,11 +1409,12 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private func updateGeometry(to point: NSPoint, flags: NSEvent.ModifierFlags) {
         guard let start else { return }
         lastGeometryPoint = point
-        guard let edit = geometryEdit, edit.ids == selection, edit.isCurrent(in: session.document),
+        guard let edit = geometryEdit, edit.ids == movableSelection, edit.isCurrent(in: session.document),
               guides?.matchesCanvas(width: bounds.width) == true else {
             cancelPointerInteraction(); return
         }
-        let translation = EaselPoint(x: point.x - start.x, y: point.y - start.y)
+        let translation = EaselArrange.axisLocked(EaselPoint(x: point.x - start.x, y: point.y - start.y),
+                                                  when: flags.contains(.shift) && resizeHandle == nil && arrowEndpoint == nil)
         var intrinsicGuideRatio: Double?
         if flags.contains(.shift), edit.originals.count == 1, let item = edit.originals.first {
             switch item.kind {
@@ -1440,10 +1453,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if commit("Draw", { $0.items.append(contentsOf: draft) }) {
                 selection = Set(draft.map(\.id)); selectionBeforeGesture = selection
             }
-        } else if let edit = geometryEdit, edit.ids == selection, edit.isCurrent(in: session.document),
+        } else if let edit = geometryEdit, edit.ids == movableSelection, edit.isCurrent(in: session.document),
                   guides?.matchesCanvas(width: bounds.width) == true {
             guard resizing || dragDistance > 3 else { return }
-            commit(arrowEndpoint != nil ? "Move arrow endpoint" : resizing ? "Resize objects" : "Move objects") { document in
+            commit(arrowEndpoint != nil ? "Move arrow endpoint" : resizing ? "Resize objects" : "Move objects", coalescing: finishDuplicateDrag()) { document in
                 guard let next = edit.applying(draft, to: document) else { return }
                 document = next
             }
@@ -1472,10 +1485,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         else if !drawing, selection.isEmpty, let onImageEditingCancel { onImageEditingCancel() }
         else { drawing = false; selection.removeAll(); invalidateIncrementalDisplay(layout: true) }
     }
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if onKeyEquivalent?(event) == true { return true }
-        return super.performKeyEquivalent(with: event)
-    }
     override func keyDown(with event: NSEvent) {
         guard window?.firstResponder === self || (window?.firstResponder as? EaselAccessibleObject)?.canvas === self else {
             super.keyDown(with: event); return
@@ -1487,6 +1496,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         if event.keyCode == 53 { cancelOperation(nil); return }
         guard start == nil else { return }
+        if handleArrangeKey(event) { return }
         if event.keyCode == 1, event.modifierFlags.intersection([.command, .shift, .option, .control]) == [.command, .shift],
            let onExportImage { onExportImage(); return }
         if event.keyCode == 51 || event.keyCode == 117 { deleteObjects(nil); return }
@@ -1497,7 +1507,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let step = event.modifierFlags.contains(.shift) ? 10.0 : 1.0
         let delta: (Double, Double)? = [123: (-step, 0), 124: (step, 0), 125: (0, step), 126: (0, -step)][Int(event.keyCode)]
         if let (dx, dy) = delta, event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
-            guard let edit = EaselGeometryEdit(document: session.document, selection: selection) else { return }
+            guard let edit = EaselGeometryEdit(document: session.document, selection: movableSelection) else { return }
             let changes = edit.translated(x: dx, y: dy)
             commit("Move objects") { document in
                 if let next = edit.applying(changes, to: document) { document = next }
@@ -1522,7 +1532,8 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     override func selectAll(_ sender: Any?) {
-        cancelPointerInteraction(); selection = Set(session.document.items.map(\.id)); invalidateIncrementalDisplay(layout: true)
+        cancelPointerInteraction(); arrangeState.enteredGroup = nil
+        selection = Set(items.filter { !$0.isLocked }.map(\.id)); invalidateIncrementalDisplay(layout: true)
     }
     private func hasCurrentMenuOwner(_ sender: Any?) -> Bool {
         guard let item = sender as? NSMenuItem, let target = item.representedObject as? MenuTarget else { return true }
@@ -1548,7 +1559,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if self.commit("Delete objects", { $0.items.removeAll { command.ids.contains($0.id) } }) { self.selection.subtract(command.ids) }
         }
     }
-    private func prepareReplacement(_ next: EaselDocument, commit: @escaping () -> Void) {
+    func prepareReplacement(_ next: EaselDocument, commit: @escaping () -> Void) {
         let original = session.document, originalSelection = selection
         let owner = window
         let valid = { [weak self, weak owner] in
@@ -1560,23 +1571,12 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         else if valid() { commit() }
     }
     @objc @discardableResult func duplicateObjects(_ sender: Any?) -> Bool {
-        cancelPointerInteraction(); guard finishEditing() else { return false }
-        guard let command = command(for: sender), let copies = command.duplicates(in: session.document) else { return false }
-        guard commit("Duplicate objects", { $0.items.append(contentsOf: copies) }) else { return false }
-        selection = Set(copies.map(\.id)); return true
+        guard command(for: sender) != nil else { return false }
+        return duplicateSelection()
     }
     @objc @discardableResult func bringToFront(_ sender: Any?) -> Bool {
-        cancelPointerInteraction(); guard finishEditing() else { return false }
-        guard let command = command(for: sender),
-              (session.document.items.map(\.zIndex).max() ?? 0) <= Int.max - command.originals.count else { return false }
-        return commit("Bring to front") { document in
-            let maximum = document.items.map(\.zIndex).max() ?? 0
-            guard maximum <= Int.max - command.originals.count else { return }
-            for (offset, original) in command.originals.enumerated() {
-                guard let i = document.items.firstIndex(where: { $0.id == original.id }) else { continue }
-                document.items[i].zIndex = maximum + offset + 1; document.items[i].movedToFrontAt = Date()
-            }
-        }
+        guard command(for: sender) != nil else { return false }
+        return moveLayer(.front)
     }
     @objc func copy(_ sender: Any?) {
         guard let command = command(for: sender), command.originals.count == 1, let item = command.originals.first,
