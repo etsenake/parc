@@ -417,7 +417,7 @@ final class NoteDatePickerView: NSView, NoteFloatingPanelContent {
         remindRow.value = mention.remind
             ? NoteReminderLead.title(mention.reminderLead, allDay: !mention.includesTime, timeFormat: mention.timeFormat, locale: parser.locale)
             : "None"
-        hint.stringValue = hintText()
+        hint.stringValue = parser.reminderHint(for: mention)
         setAccessibilityValue(NoteDateFormatting.longLabel(mention, calendar: parser.calendar, locale: parser.locale))
         if page != .main { list.setItems(items(for: page), keepingHighlight: true) }
         invalidateIntrinsicContentSize()
@@ -456,14 +456,6 @@ final class NoteDatePickerView: NSView, NoteFloatingPanelContent {
         case .twelveHour?: return "12 hour"
         case .twentyFourHour?: return "24 hour"
         }
-    }
-
-    private func hintText() -> String {
-        guard mention.remind else { return "" }
-        guard let fire = parser.fireDate(for: mention), fire > parser.now else { return "That moment’s passed. Pick a later one for a nudge." }
-        let parts = parser.calendar.dateComponents([.hour, .minute], from: fire)
-        guard let nudge = parser.mention(on: fire, time: (parts.hour ?? NoteDateMention.reminderHour, parts.minute ?? 0)) else { return "" }
-        return "We’ll nudge you \(NoteDateFormatting.label(nudge, now: parser.now, calendar: parser.calendar, locale: parser.locale))."
     }
 
     private func show(_ next: Page) {

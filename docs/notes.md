@@ -186,7 +186,9 @@ whole day, 9 AM on the day or up to a week before). Dates say Today, Tomorrow
 or Yesterday while they can and switch to the full date as days pass.
 Reminders are blue, turn red on their day or once they've rung, and are local
 notifications with the default sound that follow the note through renames and
-moves and disappear when it's trashed.
+moves and disappear when it's trashed. Suggestions, the picker's nudge line and
+notifications name days like `Tue, Nov 24`, never a bare weekday, and a
+notification reads as of the moment it rings, so it says Today or Tomorrow.
 
 Custom emoji live with the notes folder. The emoji picker's `+` takes an image
 (chosen, dropped or pasted, scaled to 280 px) and a name, and Save adds it and

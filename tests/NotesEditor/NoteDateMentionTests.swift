@@ -123,6 +123,30 @@ struct NoteDateMentionTests {
                                                                                                               hour: 15, minute: 30, remind: true))))]),
                                                parser: parser)
         expectEqual(ordinary.first?.key, "2026-11-21T15:30", "plain reminders keep their old key")
+
+        func body(_ mention: NoteDateMention) -> String {
+            plain(NoteReminderPlan.reminders(in: NotePage(blocks: [.paragraph(NoteText("Call Sam ") + .atom(.date(mention)))]), parser: parser)
+                .first?.body ?? "")
+        }
+        expectEqual(body(NoteDateMention(year: 2026, month: 11, day: 24, hour: 9, minute: 0, remind: true)), "Call Sam Today 9:00 AM",
+                    "a notification names its day as it reads when it rings")
+        var dayBefore = NoteDateMention(year: 2026, month: 11, day: 24, remind: true)
+        dayBefore.remindBefore = NoteReminderLead.day
+        expectEqual(body(dayBefore), "Call Sam Tomorrow", "a day-early nudge says Tomorrow")
+        var twoBefore = NoteDateMention(year: 2026, month: 12, day: 3, remind: true)
+        twoBefore.remindBefore = 2 * NoteReminderLead.day
+        expectEqual(body(twoBefore), "Call Sam Thu, Dec 3", "an earlier nudge names the date, never a bare weekday")
+
+        func nudge(_ mention: NoteDateMention) -> String { plain(parser.reminderHint(for: mention)) }
+        expectEqual(nudge(NoteDateMention(year: 2026, month: 11, day: 24, remind: true)), "We’ll nudge you Tue, Nov 24 9:00 AM.",
+                    "the picker's nudge line dates days this week")
+        expectEqual(nudge(NoteDateMention(year: 2026, month: 11, day: 21, hour: 15, minute: 30, remind: true)), "We’ll nudge you Tomorrow 3:30 PM.",
+                    "and keeps Tomorrow")
+        expectEqual(nudge(NoteDateMention(year: 2027, month: 1, day: 3, remind: true)), "We’ll nudge you Sun, Jan 3, 2027 9:00 AM.",
+                    "and the year when it isn't this year")
+        expectEqual(nudge(NoteDateMention(year: 2026, month: 11, day: 24)), "", "dates without a reminder say nothing")
+        expectEqual(nudge(NoteDateMention(year: 2026, month: 11, day: 19, remind: true)), "That moment’s passed. Pick a later one for a nudge.",
+                    "passed reminders say so")
     }
 
     static func hints() {

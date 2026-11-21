@@ -135,7 +135,7 @@ struct NoteSlashDatesTests {
         let fire = parser.fireDate(for: NoteDateMention(year: 2026, month: 12, day: 3, remind: true))
         expect(fire == calendar.date(from: DateComponents(year: 2026, month: 12, day: 3, hour: 9)), "all-day reminders fire at 9 AM")
         let label = NoteDateFormatting.label(NoteDateMention(year: 2027, month: 1, day: 2), now: now, calendar: calendar, locale: Locale(identifier: "en_US"))
-        expect(label == "Jan 2, 2027", "other years show the year: \(label)")
+        expect(plain(label) == "Sat, Jan 2, 2027", "other years show the weekday, date and year: \(label)")
         let long = NoteDateFormatting.longLabel(NoteDateMention(year: 2026, month: 12, day: 3, hour: 17, minute: 5), calendar: calendar,
                                                 locale: Locale(identifier: "en_US"))
         expect(plain(long) == "Thursday, December 3, 2026 5:05 PM", "long labels spell everything out: \(long)")

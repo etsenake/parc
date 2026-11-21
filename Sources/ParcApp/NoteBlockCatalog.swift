@@ -1017,7 +1017,7 @@ struct NoteDateParser {
     }
 
     private func suggestion(_ mention: NoteDateMention) -> NoteDateSuggestion {
-        NoteDateSuggestion(mention: mention, title: NoteDateFormatting.label(mention, now: now, calendar: calendar, locale: locale, nearbyWeekdays: false))
+        NoteDateSuggestion(mention: mention, title: NoteDateFormatting.label(mention, now: now, calendar: calendar, locale: locale))
     }
 
     func isPlausiblePrefix(_ query: String) -> Bool {
@@ -1092,6 +1092,14 @@ struct NoteDateParser {
 
     func date(of mention: NoteDateMention) -> Date? {
         mention.startDate(in: calendar)
+    }
+
+    func reminderHint(for mention: NoteDateMention) -> String {
+        guard mention.remind else { return "" }
+        guard let fire = fireDate(for: mention), fire > now else { return "That moment’s passed. Pick a later one for a nudge." }
+        let parts = calendar.dateComponents([.hour, .minute], from: fire)
+        guard let nudge = self.mention(on: fire, time: (parts.hour ?? NoteDateMention.reminderHour, parts.minute ?? 0)) else { return "" }
+        return "We’ll nudge you \(NoteDateFormatting.label(nudge, now: now, calendar: calendar, locale: locale))."
     }
 
     func mention(on date: Date, time: (hour: Int, minute: Int)?) -> NoteDateMention? {
@@ -1348,20 +1356,20 @@ struct NoteDateParser {
 
 enum NoteDateFormatting {
     static func label(_ mention: NoteDateMention, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent,
-                      locale: Locale = .autoupdatingCurrent, nearbyWeekdays: Bool = true) -> String {
+                      locale: Locale = .autoupdatingCurrent) -> String {
         var start = mention
         start.end = nil
-        let first = dayLabel(start, now: now, calendar: calendar, locale: locale, nearbyWeekdays: nearbyWeekdays)
+        let first = dayLabel(start, now: now, calendar: calendar, locale: locale)
         guard let end = mention.end else { return first }
         let finish = NoteDateMention(year: end.year, month: end.month, day: end.day, hour: end.hour, minute: end.minute)
         if end.year == mention.year, end.month == mention.month, end.day == mention.day, mention.includesTime, end.hour != nil,
            let date = calendar.date(from: finish.components) {
             return first + NoteDateText.arrow + format(date, template: "jmm", calendar: calendar, locale: locale)
         }
-        return first + NoteDateText.arrow + dayLabel(finish, now: now, calendar: calendar, locale: locale, nearbyWeekdays: nearbyWeekdays)
+        return first + NoteDateText.arrow + dayLabel(finish, now: now, calendar: calendar, locale: locale)
     }
 
-    private static func dayLabel(_ mention: NoteDateMention, now: Date, calendar: Calendar, locale: Locale, nearbyWeekdays: Bool) -> String {
+    private static func dayLabel(_ mention: NoteDateMention, now: Date, calendar: Calendar, locale: Locale) -> String {
         guard let date = calendar.date(from: DateComponents(year: mention.year, month: mention.month, day: mention.day,
                                                             hour: mention.hour ?? 12, minute: mention.minute ?? 0)) else {
             return NoteAtom.date(mention).fallbackText
@@ -1375,8 +1383,7 @@ enum NoteDateFormatting {
         case -1: day = "Yesterday"
         default:
             let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
-            let template = sameYear ? (nearbyWeekdays && days > 1 && days < 7 ? "EEEE" : "EEEMMMd") : (nearbyWeekdays ? "MMMdy" : "EEEMMMdy")
-            day = format(date, template: template, calendar: calendar, locale: locale)
+            day = format(date, template: sameYear ? "EEEMMMd" : "EEEMMMdy", calendar: calendar, locale: locale)
         }
         if mention.includesTime { day += " " + format(date, template: "jmm", calendar: calendar, locale: locale) }
         return day
@@ -1432,18 +1439,18 @@ struct NoteReminderPlan: Hashable {
                     if mention.reminderLead > 0 { key += "-" + NoteReminderLead.token(mention.reminderLead) }
                     if mention.includesTime, let zone = mention.timeZone { key += "@" + zone }
                     guard seen.insert(key).inserted else { continue }
-                    result.append(NoteReminderPlan(key: key, mention: mention, fireDate: fire, body: summary(of: text, parser: parser)))
+                    result.append(NoteReminderPlan(key: key, mention: mention, fireDate: fire, body: summary(of: text, parser: parser, at: fire)))
                 }
             }
         }
         return result.sorted { $0.fireDate < $1.fireDate }
     }
 
-    static func summary(of text: NoteText, parser: NoteDateParser) -> String {
+    static func summary(of text: NoteText, parser: NoteDateParser, at moment: Date) -> String {
         var words = ""
         for run in text.runs() {
             switch run.marks.atom {
-            case .date(let mention)?: words += NoteDateFormatting.label(mention, now: parser.now, calendar: parser.calendar, locale: parser.locale)
+            case .date(let mention)?: words += NoteDateFormatting.label(mention, now: moment, calendar: parser.calendar, locale: parser.locale)
             case let atom?: words += atom.fallbackText
             case nil: words += (text.string as NSString).substring(with: NSRange(location: run.range.lowerBound, length: run.range.count))
             }
