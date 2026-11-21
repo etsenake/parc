@@ -130,8 +130,12 @@ import AppKit
     var onOpen: (() -> Void)?
     var onRetry: (() -> Void)?
     let retryChip = NoteChip("Retry", icon: .symbol("arrow.clockwise"))
-    init(address: URL) { super.init(frame: .zero); retryChip.isHidden = true; addSubview(retryChip) }
+    private let statusLabel = NSTextField(labelWithString: "")
+    init(address: URL) { super.init(frame: .zero); retryChip.isHidden = true; addSubview(statusLabel); addSubview(retryChip) }
     required init?(coder: NSCoder) { fatalError() }
     func configure(preview: NoteLinkPreview?) {}
-    func configure(status: String?, retryTitle: String?) { retryChip.chipTitle = retryTitle ?? "Retry"; retryChip.isHidden = retryTitle == nil }
+    func configure(status: String?, retryTitle: String?) {
+        statusLabel.stringValue = status ?? ""
+        retryChip.chipTitle = retryTitle ?? "Retry"; retryChip.isHidden = retryTitle == nil
+    }
 }

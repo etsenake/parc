@@ -10,6 +10,10 @@ import AppKit
         if let browser = view as? PCBrowserView { return browser }
         return view.subviews.lazy.compactMap { browser(in: $0) }.first
     }
+    @MainActor static func label(in view: NSView, showing text: String) -> NSTextField? {
+        if let field = view as? NSTextField, field.stringValue == text { return field }
+        return view.subviews.lazy.compactMap { label(in: $0, showing: text) }.first
+    }
     @MainActor static func crossProfileRetirement(captured: Bool) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-profile-pool-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -114,7 +118,7 @@ import AppKit
         let page = livePage(for: item, frame: NSRect(x: 40, y: 20, width: 480, height: 320))
         let secondPage = livePage(for: second, frame: NSRect(x: 40, y: 400, width: 300, height: 200))
         let unplacedPage = livePage(for: unplaced, frame: .zero)
-        page.snapshotImage = NSImage(size: NSSize(width: 480, height: 288), flipped: false) { rect in
+        page.snapshotImage = NSImage(size: NSSize(width: 480, height: 320 - NoteEmbedSurface.headerHeight), flipped: false) { rect in
             NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1).setFill(); rect.fill(); return true
         }
         unplacedPage.snapshotImage = page.snapshotImage
@@ -133,7 +137,7 @@ import AppKit
         NSApp.appearance = NSAppearance(named: .aqua)
         defer { NSApp.appearance = nil }
         guard let pages = collect(), let snapshot = pages[item.id] else { fatalError("No live page snapshot was collected") }
-        expect(page.snapshotRequests == 1 && snapshot.pageFrame == NSRect(x: 0, y: 32, width: 480, height: 288)
+        expect(page.snapshotRequests == 1 && snapshot.pageFrame == NSRect(x: 0, y: NoteEmbedSurface.headerHeight, width: 480, height: 320 - NoteEmbedSurface.headerHeight)
                && snapshot.visibleFrame == snapshot.pageFrame, "The snapshot keeps the page's place below the surface's control strip")
         expect(secondPage.snapshotRequests == 1 && pages[second.id] == nil && pages.count == 1,
                "A reply without pixels leaves that object to its card while the others export")
@@ -198,7 +202,7 @@ import AppKit
         expect(pool.focusPage(for: item.id) && sourceWindow.firstResponder === page.nativeView, "Keyboard entry focuses the actual retained native page")
         let crash = PCNativeRendererCrash(); page.rendererCrash = crash
         pool.browserView(wrapper, didChangeRendererCrash: crash)
-        expect(pool.focusPage(for: item.id) && (sourceWindow.firstResponder as? NSButton)?.title == crash.actionTitle,
+        expect(pool.focusPage(for: item.id) && (sourceWindow.firstResponder as? NoteChip)?.chipTitle == crash.actionTitle,
                "A selected crashed page enters its existing recovery button, never its unusable native renderer")
         page.rendererCrash = nil; pool.browserView(wrapper, didChangeRendererCrash: nil)
         expect(pool.focusPage(for: item.id) && sourceWindow.firstResponder === page.nativeView,
@@ -302,7 +306,7 @@ import AppKit
         let surface = pool.surface(for: item)!
         if surface.superview == nil { canvas.addSubview(surface) }
         surface.frame = NSRect(x: 0, y: 0, width: 480, height: 320); surface.layoutSubtreeIfNeeded()
-        let wrapper = surface.subviews.flatMap(\.subviews).compactMap { $0 as? PCBrowserView }.first!
+        let wrapper = browser(in: surface)!
         expect(wrapper.creations == 1 && pool.hasPendingCreation, "Live capture owns an actual pending auxiliary request")
         let page = PCNativePage(); page.owner = binding; wrapper.request!.reply(page)
         canvas.selectBrowserObject(item.id); surface.needsLayout = true; surface.layoutSubtreeIfNeeded(); drain()
@@ -343,13 +347,14 @@ import AppKit
         expect(pool.finishWindowTransfer(moving), "Live capture transfer settles")
         pool.refreshVisibility(); surface.layoutSubtreeIfNeeded()
         expect(page.positions.count == beforeMovePositions + 1, "Same-size destination retries suspended original region positioning")
-        let status = surface.subviews.compactMap { $0 as? NSTextField }.first!
-        expect(status.stringValue == "Positioning live capture…" && !status.isHidden, "Destination exposes its own pending positioning status")
+        let lining = EmbeddedPageStatusText.friendly("Positioning live capture…", document: "")
+        let status = label(in: surface, showing: lining)!
+        expect(!status.isHiddenOrHasHiddenAncestor, "Destination exposes its own pending positioning status")
         staleReply(false); drain()
-        expect(page.positions.count == beforeMovePositions + 1 && status.stringValue == "Positioning live capture…" && !status.isHidden,
+        expect(page.positions.count == beforeMovePositions + 1 && status.stringValue == lining && !status.isHiddenOrHasHiddenAncestor,
             "Late source positioning callback cannot replace destination work or its status")
         page.positionReplies.last!(true); drain()
-        expect(status.isHidden && status.stringValue.isEmpty, "Only current successful reply reveals the live region")
+        expect(status.isHiddenOrHasHiddenAncestor && status.stringValue.isEmpty, "Only current successful reply reveals the live region")
         let completedCount = page.positions.count
         let rollback = pool.snapshotForWindowTransfer()!
         expect(pool.beginWindowTransfer(rollback), "Completed live region begins next transfer")
