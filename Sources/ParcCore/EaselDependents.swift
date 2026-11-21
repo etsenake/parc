@@ -3,7 +3,7 @@ import Foundation
 enum EaselDependents {
     static func settle(_ next: EaselDocument, previous: EaselDocument, moved: Set<UUID>) -> EaselDocument {
         let sections = carrySectionContents(next, previous: previous, moved: moved)
-        let attached = followAttachments(sections.document, previous: previous)
+        let attached = followAttachments(sections.document, previous: previous, moved: sections.moved)
         return rerouteConnectors(attached, previous: previous, moved: sections.moved)
     }
 
@@ -19,12 +19,12 @@ enum EaselDependents {
         EaselBoardObjects.carryingSectionContents(next, previous: previous, moved: moved)
     }
 
-    private static func followAttachments(_ next: EaselDocument, previous: EaselDocument) -> EaselDocument {
-        next
+    private static func followAttachments(_ next: EaselDocument, previous: EaselDocument, moved: Set<UUID>) -> EaselDocument {
+        EaselAttachments.carry(next, previous: previous, moved: moved)
     }
 
     private static func attachedDependents(of ids: Set<UUID>, in document: EaselDocument) -> Set<UUID> {
-        []
+        EaselAttachments.dependents(of: ids, in: document)
     }
 
     private static func rerouteConnectors(_ next: EaselDocument, previous: EaselDocument, moved: Set<UUID>) -> EaselDocument {
