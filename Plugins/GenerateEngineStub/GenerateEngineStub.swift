@@ -84,7 +84,8 @@ struct GenerateEngineStub: CommandPlugin {
         }
         classes.forEach(visit)
         let body = ordered.map { name in
-            "@interface \(name) : \(superclasses[name] ?? "NSObject")\n@end\n\n@implementation \(name)\n@end\n"
+            if name == "PCNativeShortcutCommand" { return "#include \"ShortcutCommandDouble.inc\"\n" }
+            return "@interface \(name) : \(superclasses[name] ?? "NSObject")\n@end\n\n@implementation \(name)\n@end\n"
         }
         return "#import <AppKit/AppKit.h>\n\n" + body.joined(separator: "\n")
     }

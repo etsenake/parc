@@ -396,11 +396,7 @@
 @implementation PCNativeSharedQuoteSelection
 @end
 
-@interface PCNativeShortcutCommand : NSObject
-@end
-
-@implementation PCNativeShortcutCommand
-@end
+#include "ShortcutCommandDouble.inc"
 
 @interface PCNativeTabPreview : NSObject
 @end
