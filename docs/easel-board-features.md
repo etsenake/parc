@@ -2,7 +2,7 @@
 
 Board-wide tools that work across a whole Easel rather than on one object:
 find and replace, links to a single object, Easel History, selection
-export and the timer. They sit beside
+export, templates and the timer. They sit beside
 the [Easel editing contract](easels.md) and use the Notes look
 ([appearance](easel-appearance.md)) and motion rules ([motion](easel-motion.md)).
 
@@ -114,6 +114,24 @@ sticky in reading order, as UTF-8 with a byte order mark so spreadsheets read
 accents. `EaselSelectionExport` in ParcCore picks the objects and writes the
 CSV.
 
+## Templates
+
+Seven starter boards built from everyday Easel objects: Brainstorm, Retro,
+Kanban, Flowchart, Weekly Plan, Mind Map and Moodboard. The gallery opens
+from the toolbar's Templates button, Templates… in the ••• menu and the Add
+search, and it sits under the welcome words on an empty Easel. Each card
+shows the board drawn by the canvas itself, on the Easel's light or dark
+paper. Arrow keys move between cards, Return or Space adds one and Escape
+closes the panel.
+
+Adding a template is one undo step. It lands centred in the view above
+everything already there, never off the board's top or left edge, and comes
+in selected so it can be dragged straight away; a board bigger than the view
+is zoomed to fit. Stickies sit inside their sections, so moving a section
+carries them along, and flowchart and mind map connectors are real
+connectors that follow their shapes. `EaselTemplates` in ParcCore holds the
+boards; `EaselTemplateGallery` is a self-contained view any surface can place.
+
 ## Timer
 
 The timer button sits in the Easel's top-right chrome, before Undo. It opens a
@@ -137,6 +155,6 @@ board logic: find order, visibility, matching, replacement across rich text
 runs, per-object and per-table refusals, the find session's replace and
 refresh rules, viewport focus, object links, history names, caps and
 recording against a temporary store, selection export scope and the sticky
-CSV. Build it with every `Sources/ParcCore` file
+CSV, and that every template is a valid Easel. Build it with every `Sources/ParcCore` file
 plus `tests/Support/TestFailure.swift` and run the binary. The views are
 checked by compiling only.

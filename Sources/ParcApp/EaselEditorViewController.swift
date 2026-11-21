@@ -30,6 +30,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private let recenter = NoteChip("Recenter", icon: .symbol("scope"), style: .filled)
     private var recenterShown = false
     private let quickActions = EaselQuickActions()
+    var emptyTemplates: EaselTemplateGallery?
     private(set) var pageObjects: EaselBrowserObjects?
     private var webpageInput: EaselWebInput?
     private var webpageOwnerValid: (() -> Bool)?
@@ -142,6 +143,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         }
         palette.update(tool: canvas.tool, shape: canvas.toolState.shape)
         palette.showsMermaid = canvas.acceptsMermaid
+        palette.showsTemplates = canvas.acceptsTemplates
         self.palette = palette
         recenter.onPress = { [weak self] in self?.canvas.zoomToFit(maximum: 1) }
         recenter.setToolTip("Bring everything back into view")
@@ -174,6 +176,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         root.addSubview(palette)
         root.addSubview(chrome)
         root.addSubview(recenter)
+        installEmptyTemplates(in: root)
         var lastChromeSize = NSSize(width: -1, height: -1)
         timer.onResize = { [weak root] in lastChromeSize = NSSize(width: -1, height: -1); root?.needsLayout = true }
         root.onLayout = { [weak self, weak root, weak palette, weak chrome, weak timer] in
@@ -210,12 +213,14 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             self.onTitleChange?(doc.title)
             self.undoButton.isEnabled = self.canvas.canUndo; self.redoButton.isEnabled = self.canvas.canRedo
             self.status.stringValue = "Saved on this Mac · \(doc.items.count) object\(doc.items.count == 1 ? "" : "s")"
+            self.refreshEmptyTemplates()
             self.viewportChanged()
         }
     }
     @objc private func viewportChanged() {
         guard isViewLoaded else { return }
         palette?.setZoom(percent: EaselZoom.percent(Double(scroll.magnification)))
+        refreshEmptyTemplates()
         let away = canvas.contentIsOutOfView
         guard away != recenterShown else { return }
         recenterShown = away
@@ -245,6 +250,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         var inserts: [(EaselToolPalette.Insert, [String])] = [(.image, ["picture", "photo", "file"]), (.link, ["url", "bookmark", "address"]),
                                                               (.webpage, ["site", "browser", "page", "web"])]
         if canvas.acceptsMermaid { inserts.append((.mermaid, ["flowchart", "diagram", "chart", "er"])) }
+        if canvas.acceptsTemplates { inserts.append((.templates, ["template", "starter", "kanban", "retro", "brainstorm", "board"])) }
         let actions = inserts.map { insert, keywords in
             EaselQuickActions.Action(id: "insert-" + insert.rawValue, title: EaselToolPalette.title(for: insert),
                                      icon: EaselToolPalette.icon(for: insert), shortcut: nil, keywords: keywords, section: "Inserts",
@@ -261,7 +267,7 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         case .link: addLink(control)
         case .webpage: addWebpage()
         case .mermaid: _ = canvas.showMermaidSheet()
-        case .templates: break
+        case .templates: EaselTemplatePanel.present(editor: self, from: control)
         }
     }
     private func dragTool(_ tool: EaselTool, to point: NSPoint?, ended: Bool) {
