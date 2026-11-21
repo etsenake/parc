@@ -112,6 +112,8 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselTextAttachment.swift" \
   "$repo_root/Sources/ParcApp/EaselParagraphEditing.swift" \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
+  "$repo_root/Sources/ParcApp/EaselStickyText.swift" \
+  "$repo_root/Sources/ParcApp/EaselCanvasTextPresentation.swift" \
   "$repo_root/tests/EaselTextStyleTests.swift" \
   -o "$style_bundle/MacOS/EaselTextStyle"
 "$style_bundle/MacOS/EaselTextStyle"
