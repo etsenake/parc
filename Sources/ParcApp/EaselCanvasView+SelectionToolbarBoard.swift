@@ -92,7 +92,7 @@ extension EaselCanvasView {
         let selected = document.items.filter { ids.contains($0.id) }
         let allLocked = !selected.isEmpty && selected.allSatisfy(\.isLocked)
         let sections = selectedSections
-        var entries: [EaselToolbarMenuEntry] = []
+        var entries: [EaselToolbarMenuEntry] = equationToolbarEntries(selected, ready: ready)
         if !sections.isEmpty, !allLocked {
             let hidden = sections.allSatisfy { $0.contentsHidden == true }
             entries.append(EaselToolbarMenuEntry(id: "section.lockAll", title: "Lock All", symbol: "lock", isEnabled: ready))
@@ -186,6 +186,7 @@ extension EaselCanvasView {
     }
 
     private func performSelectionToolbarMore(_ id: String) -> Bool {
+        if let equation = performEquationToolbar(id) { return equation }
         if id.hasPrefix("layer."), let move = EaselLayerMove(rawValue: String(id.dropFirst("layer.".count))) { return moveLayer(move) }
         switch id {
         case "duplicate": return duplicateSelection()

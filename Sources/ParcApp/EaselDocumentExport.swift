@@ -176,7 +176,9 @@ enum EaselDocumentExport {
                 art.mediaDetails[item.id] = EaselMediaArt.detail(for: item) { item.assetID.flatMap { try? session.assetData($0) } }
             case .pdf:
                 mediaArt(item, session: session, scale: scale, into: &art)
-            case .freehand, .link, .equation:
+            case .equation:
+                art.equations[item.id] = EaselEquationArtwork.vector(item.text)
+            case .freehand, .link:
                 break
             }
         }

@@ -27,8 +27,8 @@ enum EaselToolbarSubject: String, CaseIterable, Equatable {
 
     var takesStyle: Bool {
         switch self {
-        case .text, .sticky, .shape, .connector, .section, .drawing, .icon: return true
-        case .image, .page, .table, .code, .stamp, .media, .equation: return false
+        case .text, .sticky, .shape, .connector, .section, .drawing, .icon, .equation: return true
+        case .image, .page, .table, .code, .stamp, .media: return false
         }
     }
 }
@@ -96,7 +96,9 @@ enum EaselSelectionToolbarPlan {
             return [[.crop, .imageMask, .replaceImage, .altText]]
         case .drawing:
             return [[.color, .pattern]]
-        case .page, .stamp, .media, .equation:
+        case .equation:
+            return [[.color]]
+        case .page, .stamp, .media:
             return []
         case .table:
             return editingText

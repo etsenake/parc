@@ -82,6 +82,7 @@ protocol EaselCanvasMenuSlots {
     func mediaMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
     func tableMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
     func codeMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
+    func equationMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
     func drawingMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
     func stampMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
     func zoomMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow]
@@ -101,6 +102,7 @@ extension EaselCanvasMenuSlots {
     func mediaMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
     func tableMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
     func codeMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
+    func equationMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
     func drawingMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
     func stampMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
     func zoomMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] { [] }
@@ -268,7 +270,7 @@ extension EaselCanvasView {
             object += EaselMenuRow.bridging(connector.submenu?.items ?? [], prefix: "connector", anchors: [connector])
         }
         object += mindMapMenuRows(context) + textMenuRows(context) + linkMenuRows(context) + mediaMenuRows(context) + tableMenuRows(context)
-            + codeMenuRows(context) + connectorMenuRows(context) + styleMenuRows(context) + drawingMenuRows(context)
+            + codeMenuRows(context) + equationMenuRows(context) + connectorMenuRows(context) + styleMenuRows(context) + drawingMenuRows(context)
             + stampMenuRows(context)
         let view = [row("copy-image", "Copy as Image", "photo.on.rectangle") { $0.copySelectionAsImage() }, exportSelectionMenuRow(), selectAll]
             + zoomMenuRows(context)

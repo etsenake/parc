@@ -37,6 +37,11 @@ xcrun swiftc "$repo_root/tests/Support/TestFailure.swift" -warnings-as-errors -p
   "$repo_root/Sources/ParcApp/NoteFloatingPanel.swift" \
   "$repo_root/Sources/ParcApp/NoteCursor.swift" \
   "$repo_root/Sources/ParcApp/NoteControls.swift" \
+  "$repo_root/Sources/ParcApp/NoteMathFont.swift" \
+  "$repo_root/Sources/ParcApp/NoteMathLayout.swift" \
+  "$repo_root/Sources/ParcApp/NoteMathRenderer.swift" \
+  "$repo_root/Sources/ParcApp/NoteEquationArtwork.swift" \
+  "$repo_root/Sources/ParcApp/NoteCodeFont.swift" \
   "$repo_root/Sources/ParcApp/NoteCustomEmojiImages.swift" \
   "$repo_root/Sources/ParcApp/DocumentDefaultIcon.swift" \
   "$repo_root/Sources/ParcApp/LibraryArtwork.swift" \

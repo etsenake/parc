@@ -164,6 +164,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var finishingEditor = false
     lazy var selectionToolbar: EaselSelectionToolbarPresenting? = Self.selectionToolbarFactory?()
     let codeBlocks = EaselCodeBlockState()
+    let equations = EaselEquationState()
     let objectMotion = EaselCanvasObjectMotionState()
     let onboarding = EaselCanvasOnboardingState()
     private var snapshotHeader: NSView?
@@ -518,6 +519,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if expected.kind == .image || expected.kind == .video { return openMedia(expected) }
         if expected.kind == .table { return activateTable(expected) }
         if expected.kind == .code { return beginCodeEditing(expected) }
+        if expected.kind == .equation { return beginEquationEditing(expected.id) }
         if pageObjects?.focusPage(for: expected.id) == true { return true }
         return false
     }
@@ -532,6 +534,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         case "Add next": return quickCreate(from: item, side: .right)
         case "Bring to front": return bringToFront(sender)
         case "Copy code": return copyCode(item.id)
+        case "Copy TeX": return copyEquationTeX(item.id)
         case "Change language": return showCodeLanguageMenu(item.id)
         case "Rotate left", "Rotate right":
             guard rotateSelection(by: name == "Rotate left" ? -EaselRotation.largeKeyStep : EaselRotation.largeKeyStep) else { return false }
@@ -853,7 +856,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         synchronizeHostedObjects(interacting: interacting)
     }
     override func layout() {
-        super.layout(); motion.bind(enclosingScrollView); refreshTextControls(); synchronizeAccessibleObjects()
+        super.layout(); motion.bind(enclosingScrollView); refreshTextControls(); synchronizeAccessibleObjects(); refreshEquationChrome()
         layoutVideoSurface()
         refreshSnapshotHeader()
         positionSectionTitleField()
@@ -956,7 +959,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             case .audio, .file, .pdf:
                 drawMediaObject(item, in: r)
             case .equation:
-                break
+                drawEquation(item, in: r, ink: ink, showsEditor: showsEditor)
             }
     }
     private func drawText(_ item: EaselItem, showsEditor: Bool) {
@@ -1414,7 +1417,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     @discardableResult
     func finishEditing(removingEmpty: Bool = true) -> Bool {
-        guard finishCodeEditing() else { return false }
+        guard finishCodeEditing(), finishEquationEditing(removingEmpty: removingEmpty) else { return false }
         guard !finishingEditor else { return false }
         commitPendingSectionRename()
         guard let text = editor, let id = editingID else { return true }
@@ -1846,6 +1849,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             if hit.kind.holdsText { beginEditing(hit, at: point) }
             else if hit.kind == .image || hit.kind == .video { openMedia(hit) }
             else if hit.kind == .code { beginCodeEditing(hit, at: point) }
+            else if hit.kind == .equation { beginEquationEditing(hit.id) }
             else if !hit.ownsEmbeddedPage, let raw = hit.url, let url = URL(string: raw) { onOpenURL?(url) }
         }
         invalidateIncrementalDisplay(layout: true)
@@ -2527,7 +2531,8 @@ private final class EaselAccessibleObject: NSView {
         case .code: return "Code block, " + EaselCodeBlock.displayName(item.language)
         case .stamp: return EaselStampArtwork.accessibilityLabel(item)
         case .arrow: return "Connector"
-        case .image, .video, .audio, .file, .pdf, .equation: return EaselMediaPlacement.accessibilityLabel(item)
+        case .equation: return canvas?.equationAccessibilityLabel(item)
+        case .image, .video, .audio, .file, .pdf: return EaselMediaPlacement.accessibilityLabel(item)
         default: return item.kind.rawValue.capitalized
         }
     }
@@ -2535,7 +2540,7 @@ private final class EaselAccessibleObject: NSView {
         canvas?.accessibleItem(id)?.kind == .section ? NSAccessibility.Subrole(rawValue: "AXLandmarkRegion") : nil
     }
     override func accessibilityValue() -> Any? {
-        guard let item = canvas?.accessibleItem(id), item.kind != .stamp else { return nil }
+        guard let item = canvas?.accessibleItem(id), item.kind != .stamp, item.kind != .equation else { return nil }
         let value: String?
         if item.kind.isMedia { value = item.altText ?? item.fileName ?? item.url }
         else if let table = item.table { value = table.accessibilitySummary }
@@ -2566,12 +2571,13 @@ private final class EaselAccessibleObject: NSView {
         if item.url != nil { names.insert("Open source", at: 0) }
         names += canvas.boardActionNames(item) + canvas.mindMapActionNames(item)
         if item.kind == .code { names.insert(contentsOf: ["Copy code", "Change language"], at: 0) }
+        if item.kind == .equation { names.insert("Copy TeX", at: 0) }
         if item.kind == .arrow, !item.isLocked { names.insert("Edit label", at: 0) }
         if canvas.quickCreates(item), canvas.fixedCanvasSize == nil { names.insert("Add next", at: 0) }
-        if item.kind.holdsText || item.kind == .table || item.kind == .code || !canvas.accessibleChildren(id).isEmpty || item.ownsEmbeddedPage { names.insert("Activate", at: 0) }
+        if item.kind.holdsText || item.kind == .table || item.kind == .code || item.kind == .equation || !canvas.accessibleChildren(id).isEmpty || item.ownsEmbeddedPage { names.insert("Activate", at: 0) }
         let linked = EaselObjectLink.link(of: item) != nil
         return names.map { name in
-            let title = name == "Activate" ? (item.kind.holdsText ? "Edit text" : item.kind == .table ? "Edit cells" : item.kind == .code ? "Edit code" : "Interact with webpage")
+            let title = name == "Activate" ? (item.kind.holdsText ? "Edit text" : item.kind == .table ? "Edit cells" : item.kind == .code ? "Edit code" : item.kind == .equation ? "Edit TeX" : "Interact with webpage")
                 : name == "Open source" && linked ? "Open link" : name.hasPrefix("Rotate") ? name + " 15°" : name
             return NSAccessibilityCustomAction(name: title) { [weak canvas, weak owner] in
                 canvas?.accessibleAction(name, item: item, owner: owner) == true
