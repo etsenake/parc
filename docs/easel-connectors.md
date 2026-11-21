@@ -135,7 +135,7 @@ reuse the canvas drawing.
 
 ## Checks
 
-`scripts/test-notes-editor.sh EaselConnectorRouting` runs the windowless suite:
+`swift test --filter EaselConnectorRoutingTests` runs the windowless suite:
 magnets on outlines and rotated objects, pinned points, snapping, all three
 routes (including same-side loops, objects facing away and overlapping objects),
 manual bends, segment dragging, every head, labels, hit bands at every zoom,

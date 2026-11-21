@@ -115,7 +115,7 @@ when drawing.
 
 ## Checks
 
-`bash scripts/test-notes-editor.sh EaselTransformTests` covers the transform
+`swift test --filter EaselTransformTests` covers the transform
 maths, the kind rules, turned hit tests and selection boxes, turned resizing,
 group turns and flips, the drag's snapping, the selection chrome and the SVG
 output. The canvas glue is compile-checked with the app.
