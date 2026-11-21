@@ -874,6 +874,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     private weak var extensionMenu: ParcContextMenu?
     private var keptOpen = 0
     private var pendingShow: UUID?
+    private let scheduleShow: (DispatchTimeInterval, @escaping @MainActor () -> Void) -> Void
     var onClose: (() -> Void)?
     var onDidClose: (() -> Void)?
     var onDetach: (() -> Void)?
@@ -884,8 +885,12 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
 
     private static var closingPresses: [ObjectIdentifier: Int] = [:]
 
-    init(model: SiteControlCenterModel) {
+    init(model: SiteControlCenterModel,
+         scheduleShow: @escaping (DispatchTimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, work in
+             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { work() }
+         }) {
         self.model = model
+        self.scheduleShow = scheduleShow
         host = NSHostingController(rootView: SiteControlCenterView(model: model))
         host.sizingOptions = []
         card = SiteControlCenterCard(content: host.view, colors: model.colors.menu)
@@ -991,13 +996,11 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
             pendingShow = nil; present(relativeTo: rect, of: view, below: below); return
         }
         let token = UUID(); pendingShow = token
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak view, weak originalWindow] in
-            MainActor.assumeIsolated {
-                guard let self, self.pendingShow == token else { return }
-                self.pendingShow = nil
-                guard let view, let originalWindow, view.window === originalWindow, valid() else { self.close(); return }
-                self.present(relativeTo: rect, of: view, below: below)
-            }
+        scheduleShow(delay) { [weak self, weak view, weak originalWindow] in
+            guard let self, self.pendingShow == token else { return }
+            self.pendingShow = nil
+            guard let view, let originalWindow, view.window === originalWindow, valid() else { self.close(); return }
+            self.present(relativeTo: rect, of: view, below: below)
         }
     }
 
