@@ -125,7 +125,7 @@ enum EaselTool: String, CaseIterable, Equatable {
         case .section: return (EaselBoardObjects.sectionWidth, EaselBoardObjects.sectionHeight)
         case .table: return (360, 160)
         case .stamp: return (48, 48)
-        case .codeBlock: return (420, 180)
+        case .codeBlock: return (EaselCodeBlock.defaultWidth, EaselCodeBlock.height(lines: EaselCodeBlock.starterLineCount))
         case .select, .hand, .marker, .highlighter, .washi, .eraser: return (0, 0)
         }
     }

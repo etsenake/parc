@@ -311,7 +311,7 @@ extension EaselCanvasView {
         switch tool {
         case .table: return nil
         case .stamp: return nil
-        case .codeBlock: return nil
+        case .codeBlock: return codeBlockItem(frame: proposed, id: id)
         default: break
         }
         guard let kind = tool.kind, tool.placesObjects else { return nil }
