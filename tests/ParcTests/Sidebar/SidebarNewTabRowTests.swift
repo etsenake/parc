@@ -19,8 +19,8 @@ struct SidebarNewTabRowTests {
         }
 
         init() {
-            SidebarApplicationActivity.set(true)
             window = sidebarTestWindow(containing: sidebar)
+            window.applicationActive = true
             window.pointer = NSPoint(x: -100, y: -100)
             var base = state
             let space = base.spaces[0]
@@ -31,7 +31,6 @@ struct SidebarNewTabRowTests {
         }
 
         deinit {
-            SidebarApplicationActivity.set(nil)
             MainActor.assumeIsolated { window.contentView = nil }
         }
 

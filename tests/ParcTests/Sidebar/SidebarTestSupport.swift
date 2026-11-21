@@ -1,12 +1,13 @@
 import AppKit
-import ObjectiveC
 @testable import Parc
 
-final class SidebarTestWindow: NSWindow {
+final class SidebarTestWindow: NSWindow, ApplicationActivityReporting {
     var key = true
     override var isKeyWindow: Bool { key }
     var pointer: NSPoint?
     override var mouseLocationOutsideOfEventStream: NSPoint { pointer ?? super.mouseLocationOutsideOfEventStream }
+    var applicationActive = false
+    var reportsApplicationActive: Bool { applicationActive }
 }
 
 final class SidebarAreaEvent: NSEvent {
@@ -24,55 +25,28 @@ func sidebarTestWindow(containing view: NSView, deferred: Bool = true) -> Sideba
     return window
 }
 
-enum SidebarApplicationActivity {
-    nonisolated(unsafe) static var override: Bool?
-    nonisolated(unsafe) private static var installed = false
+final class SidebarLayerWrites: NSObject {
+    private static let layerKeys = ["frame", "bounds", "position", "transform", "opacity", "cornerRadius", "maskedCorners", "shadowPath"]
+    private static let shapeKeys = ["path", "strokeStart", "strokeEnd"]
+    private var count = 0
 
-    static func install() {
-        guard !installed else { return }
-        installed = true
-        guard let original = class_getInstanceMethod(NSApplication.self, #selector(getter: NSApplication.isActive)),
-              let replacement = class_getInstanceMethod(NSApplication.self, #selector(getter: NSApplication.sidebarObservedIsActive)) else {
-            preconditionFailure("missing -[NSApplication isActive]")
+    @MainActor static func count(byLayersOf view: NSView, during body: () -> Void) -> Int {
+        let recorder = SidebarLayerWrites()
+        let observed = ownedLayers(view.layer?.sublayers ?? []).map { layer in
+            (layer, layerKeys + (layer is CAShapeLayer ? shapeKeys : []))
         }
-        method_exchangeImplementations(original, replacement)
-    }
-
-    static func set(_ active: Bool?) {
-        install()
-        override = active
-    }
-}
-
-extension NSApplication {
-    @objc dynamic var sidebarObservedIsActive: Bool { SidebarApplicationActivity.override ?? self.sidebarObservedIsActive }
-}
-
-enum SidebarCursorSets {
-    nonisolated(unsafe) static var log: [NSCursor]?
-    nonisolated(unsafe) private static var installed = false
-
-    static func install() {
-        guard !installed else { return }
-        installed = true
-        guard let original = class_getInstanceMethod(NSCursor.self, #selector(NSCursor.set)),
-              let replacement = class_getInstanceMethod(NSCursor.self, #selector(NSCursor.sidebarObservedSet)) else {
-            preconditionFailure("missing -[NSCursor set]")
-        }
-        method_exchangeImplementations(original, replacement)
-    }
-
-    @MainActor static func during(_ body: () -> Void) -> [NSCursor] {
-        install()
-        log = []
-        defer { log = nil }
+        for (layer, keys) in observed { for key in keys { layer.addObserver(recorder, forKeyPath: key, options: [], context: nil) } }
         body()
-        return log ?? []
+        for (layer, keys) in observed { for key in keys { layer.removeObserver(recorder, forKeyPath: key) } }
+        return recorder.count
     }
-}
 
-extension NSCursor {
-    @objc dynamic func sidebarObservedSet() {
-        if SidebarCursorSets.log != nil { SidebarCursorSets.log?.append(self) } else { sidebarObservedSet() }
+    private static func ownedLayers(_ layers: [CALayer]) -> [CALayer] {
+        layers.filter { !($0.delegate is NSView) }.flatMap { [$0] + ownedLayers($0.sublayers ?? []) }
+    }
+
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?,
+                               context: UnsafeMutableRawPointer?) {
+        count += 1
     }
 }

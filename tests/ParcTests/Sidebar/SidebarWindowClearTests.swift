@@ -28,6 +28,20 @@ private final class WindowDrop: NSObject, NSDraggingInfo {
     func resetSpringLoading() {}
 }
 
+@MainActor private final class ManualClock {
+    private var now: TimeInterval = 0
+    private var pending: [(at: TimeInterval, work: () -> Void)] = []
+
+    func schedule(after delay: TimeInterval, _ work: @escaping () -> Void) { pending.append((now + delay, work)) }
+
+    func advance(by seconds: TimeInterval) {
+        now += seconds
+        while let index = pending.indices.filter({ pending[$0].at <= now }).min(by: { pending[$0].at < pending[$1].at }) {
+            pending.remove(at: index).work()
+        }
+    }
+}
+
 @MainActor
 struct SidebarWindowClearTests {
     typealias Chrome = SidebarChromeLayout
@@ -37,6 +51,7 @@ struct SidebarWindowClearTests {
         let window: SidebarTestWindow
         var state = BrowserState.initial()
         let pinned: BrowserTab
+        let clock = ManualClock()
         var cleared = 0
 
         static func tab(_ name: String, _ kind: TabKind, in space: BrowserSpace) -> BrowserTab {
@@ -45,17 +60,20 @@ struct SidebarWindowClearTests {
         }
 
         init(handler: Bool = true) {
-            SidebarApplicationActivity.set(true)
             window = sidebarTestWindow(containing: sidebar, deferred: false)
+            window.applicationActive = true
             let space = state.spaces[0]
             pinned = Self.tab("pinned", .pinned, in: space)
             state.tabs = [pinned, Self.tab("today", .today, in: space), Self.tab("later", .today, in: space)]
             if handler { sidebar.onClearToday = { [weak self] in self?.cleared += 1 } }
+            sidebar.fadeClear = { [clock] button, alpha, done in
+                button.alphaValue = alpha
+                clock.schedule(after: SidebarClearAppearance.revealDuration, done)
+            }
             render(state)
         }
 
         deinit {
-            SidebarApplicationActivity.set(nil)
             MainActor.assumeIsolated { window.contentView = nil }
         }
 
@@ -102,10 +120,14 @@ struct SidebarWindowClearTests {
             sidebar.mouseExited(with: reveal)
         }
 
+        func fade() {
+            clock.advance(by: SidebarClearAppearance.revealDuration)
+            relayout()
+        }
+
         func revealed() -> WindowSidebar {
             enter()
-            clear!.alphaValue = 1
-            relayout()
+            fade()
             return self
         }
     }
@@ -175,6 +197,12 @@ struct SidebarWindowClearTests {
         let s = WindowSidebar()
         s.enter()
         #expect(!s.clear!.isHidden)
+    }
+
+    @Test func aRevealedClearIsOpaqueAfterItsFadeIn() {
+        let clear = WindowSidebar().revealed().clear!
+        #expect(!clear.isHidden)
+        #expect(clear.alphaValue == 1)
     }
 
     @Test func aRevealedClearIsAnAccessibilityChild() {
@@ -255,11 +283,54 @@ struct SidebarWindowClearTests {
         #expect(s.line.frame.maxX == s.clear!.frame.minX - Chrome.sectionDividerSpacing)
     }
 
+    @Test func clearIsStillShownJustBeforeItsFadeOutEnds() {
+        let s = WindowSidebar().revealed()
+        s.exit()
+        s.clock.advance(by: SidebarClearAppearance.revealDuration / 2)
+        #expect(!s.clear!.isHidden)
+    }
+
+    @Test func afterItsFadeOutClearIsHiddenAgain() {
+        let s = WindowSidebar().revealed()
+        s.exit()
+        s.fade()
+        #expect(s.clear!.isHidden)
+        #expect(s.clear!.alphaValue == 0)
+    }
+
+    @Test func aClearHiddenAgainTakesNoClicksKeyFocusOrAccessibility() {
+        let s = WindowSidebar().revealed()
+        s.exit()
+        s.fade()
+        #expect(!s.exposed())
+        #expect(!s.clear!.canBecomeKeyView)
+        #expect(s.section.hitTest(s.centre(of: s.clear!)) !== s.clear)
+    }
+
+    @Test func afterClearFadesOutTheBorderSpansTheRowAgain() {
+        let s = WindowSidebar().revealed()
+        s.exit()
+        s.fade()
+        #expect(s.line.frame.maxX == s.section.bounds.width - Chrome.sectionDividerInset)
+    }
+
     @Test func reenteringDuringTheFadeOutKeepsClearRevealed() {
         let s = WindowSidebar().revealed()
         s.exit()
         s.enter()
+        s.fade()
         #expect(!s.clear!.isHidden)
+        #expect(s.clear!.alphaValue == 1)
+    }
+
+    @Test func leavingDuringTheFadeInStillFadesClearOut() {
+        let s = WindowSidebar()
+        s.enter()
+        s.clock.advance(by: SidebarClearAppearance.revealDuration * 0.9)
+        s.exit()
+        #expect(!s.clear!.isHidden)
+        s.fade()
+        #expect(s.clear!.isHidden)
     }
 
     @Test func aRenderWhileTheSidebarIsHoveredStartsClearRevealed() {
@@ -272,6 +343,17 @@ struct SidebarWindowClearTests {
         #expect(rendered !== before)
         #expect(!rendered.isHidden)
         #expect(rendered.alphaValue == 1)
+    }
+
+    @Test func leavingHidesTheClearARenderStartedRevealed() {
+        let s = WindowSidebar().revealed()
+        var grown = s.state
+        grown.tabs.append(WindowSidebar.tab("grown", .today, in: grown.spaces[0]))
+        s.render(grown)
+        let rendered = s.clear!
+        s.exit()
+        s.fade()
+        #expect(rendered.isHidden)
     }
 
     private func withoutToday(_ s: WindowSidebar) {

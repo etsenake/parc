@@ -22,8 +22,8 @@ struct SidebarListChromeTests {
         }
 
         init() {
-            SidebarApplicationActivity.set(true)
             window = sidebarTestWindow(containing: sidebar)
+            window.applicationActive = true
             window.pointer = NSPoint(x: -100, y: -100)
             let initial = BrowserState.initial()
             let active = initial.activeSpaceID
@@ -43,7 +43,6 @@ struct SidebarListChromeTests {
         }
 
         deinit {
-            SidebarApplicationActivity.set(nil)
             MainActor.assumeIsolated { window.contentView = nil }
         }
 
