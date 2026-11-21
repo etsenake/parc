@@ -56,7 +56,7 @@ enum EaselObjectLink {
 
     static func item(at point: EaselPoint, in items: [EaselItem], scale: Double) -> EaselItem? {
         items.reversed().first { item in
-            hasLink(item) && EaselContentHitTest.contains(point, rect: badgeRect(for: item.frame, scale: scale)) && link(of: item) != nil
+            hasLink(item) && EaselContentHitTest.contains(point, rect: badgeRect(for: EaselRotation.bounds(of: item), scale: scale)) && link(of: item) != nil
         }
     }
 }

@@ -40,6 +40,7 @@ struct EaselTransformTests {
         groupResize()
         labels()
         vectorExport()
+        chrome()
         print("EaselTransformTests passed")
     }
 
@@ -159,6 +160,8 @@ struct EaselTransformTests {
         expect(near(EaselRotation.canvasPoint(EaselPoint(x: corner.frame.x, y: corner.frame.y), in: corner), anchor),
                "The opposite corner stays put on screen")
         expect(near(corner.frame.width, 130) && near(corner.frame.height, 50), "Corner drags map into the object's axes")
+        let local = EaselRect(x: 0, y: 0, width: 140, height: 60)
+        expect(near(EaselRotation.localFrame(bar, from: EaselRotation.recentred(bar, frame: local)), local), "Placed and local frames round-trip")
         guard let centered = edit.resized(using: .right, x: 0, y: 10, centering: .both)?.first else { failTest("Centred resize succeeds") }
         expect(near(EaselRotation.center(of: centered.frame), EaselRotation.center(of: bar.frame)), "Option keeps the centre")
         let arrowShape = item(.rectangle, 300, 300, 100, 40, rotation: 90)
@@ -284,5 +287,28 @@ struct EaselTransformTests {
         let bounds = EaselVectorExport.contentBounds([item(.image, 0, 0, 100, 40, rotation: 90)], margin: 0)
         expect(near(bounds, EaselRect(x: 26, y: -34, width: 48, height: 108)), "Export bounds include turned corners")
         expect(EaselVectorExport.matrix(.rotation(degrees: 90, around: EaselPoint(x: 0, y: 0))) == "matrix(0 1 -1 0 0 0)", "Matrices print plainly")
+    }
+
+    static func chrome() {
+        let turned = item(.image, 100, 100, 100, 40, rotation: 90)
+        let box = EaselRotation.bounds(of: turned)
+        let single = EaselSelectionChrome(frame: box, items: [turned])
+        expect(single.isTurned && single.frame == turned.frame, "A single turned object keeps its own frame for handles")
+        expect(near(single.point(.topLeft), EaselPoint(x: 170, y: 70)), "Handles sit on the turned corners")
+        let tip = single.point(.bottomRight)
+        expect(single.handle(at: EaselPoint(x: tip.x + 3, y: tip.y - 3), scale: 1, where: { _ in true }) == .bottomRight, "Turned handles are hit where drawn")
+        let outward = single.outward(.topLeft)
+        expect(near(outward, EaselPoint(x: sqrt(0.5), y: -sqrt(0.5))), "The rotate zone points away from the turned corner")
+        guard let zone = single.rotateZones(scale: 1).first(where: { $0.corner == .topLeft })?.rect else { failTest("Zones exist") }
+        let middle = EaselPoint(x: zone.x + zone.width / 2, y: zone.y + zone.height / 2)
+        expect(single.rotateZone(at: middle, scale: 1) == .topLeft, "Rotate zones find their corner")
+        expect(!EaselContentHitTest.contains(middle, item: turned, selected: true), "Rotate zones sit outside the object")
+        let group = EaselSelectionChrome(frame: EaselRect(x: 0, y: 0, width: 300, height: 100), items: [turned, item(.text, 0, 0, 10, 10)])
+        expect(!group.isTurned && near(group.point(.bottomRight), EaselPoint(x: 300, y: 100)), "Groups keep an upright box")
+        let flippedOnly = EaselSelectionChrome(frame: EaselRect(x: 0, y: 0, width: 10, height: 10), items: [item(.image, 0, 0, 10, 10, flipH: true)])
+        expect(!flippedOnly.isTurned, "Mirrored but upright objects keep upright handles")
+        let zoomed = EaselSelectionChrome(frame: EaselRect(x: 0, y: 0, width: 100, height: 100), items: [])
+        guard let small = zoomed.rotateZones(scale: 2).first?.rect else { failTest("Zoomed zones exist") }
+        expect(near(small.width, 9), "Rotate zones keep their on-screen size when zoomed")
     }
 }

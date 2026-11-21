@@ -16,9 +16,9 @@ enum EaselCanvasRotation {
         return value
     }
 
-    static func begin(_ item: EaselItem, upright: Bool) -> Bool {
-        guard !upright else { return false }
-        let transform = EaselRotation.transform(for: item)
+    static func begin(_ item: EaselItem, straight: Bool) -> Bool {
+        let transform = straight ? EaselTransform.mirror(horizontally: EaselRotation.mirrorsHorizontally(item),
+            vertically: EaselRotation.mirrorsVertically(item), around: EaselRotation.center(of: item.frame)) : EaselRotation.transform(for: item)
         guard !transform.isIdentity else { return false }
         NSGraphicsContext.saveGraphicsState()
         affine(transform).concat()
@@ -75,35 +75,30 @@ enum EaselCanvasRotation {
         return cursor
     }
 
-    private static var badgeAttributes: [NSAttributedString.Key: Any] {
-        [.font: NoteTheme.nunitoBold(NoteTheme.menuSubtitleSize), .foregroundColor: EaselAppearance.text]
-    }
-
     static func badgeRect(at point: NSPoint, scale: CGFloat) -> NSRect {
-        let widest = ("\u{2212}188.8°" as NSString).size(withAttributes: badgeAttributes)
-        let width = (ceil(widest.width) + 18) / scale, height = 22 / scale
-        return NSRect(x: point.x + 14 / scale, y: point.y + 16 / scale, width: width, height: height)
+        let scale = max(scale, 0.05)
+        let widest = ("\u{2212}188.8°" as NSString).size(withAttributes: [.font: NoteTheme.chromeFont(11)])
+        return NSRect(x: point.x + 14 / scale, y: point.y + 16 / scale, width: (ceil(widest.width) + 18) / scale, height: 22 / scale)
     }
 
     static func drawBadge(_ label: String, at point: NSPoint, scale: CGFloat) {
-        let frame = badgeRect(at: point, scale: scale)
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NoteTheme.menuShadow; shadow.shadowBlurRadius = 6 / scale
-        shadow.shadowOffset = NSSize(width: 0, height: -1 / scale)
-        shadow.set()
-        let pill = NSBezierPath(roundedRect: frame, xRadius: frame.height / 2, yRadius: frame.height / 2)
-        EaselAppearance.surface.setFill(); pill.fill()
-        NSGraphicsContext.restoreGraphicsState()
-        let border = NSBezierPath(roundedRect: frame.insetBy(dx: 0.5 / scale, dy: 0.5 / scale),
-                                  xRadius: frame.height / 2, yRadius: frame.height / 2)
-        border.lineWidth = 1 / scale; EaselAppearance.outline.setStroke(); border.stroke()
-        NSGraphicsContext.saveGraphicsState()
-        let zoom = NSAffineTransform()
-        zoom.translateX(by: frame.midX, yBy: frame.midY); zoom.scale(by: 1 / scale)
-        zoom.concat()
-        let text = label as NSString, size = text.size(withAttributes: badgeAttributes)
-        text.draw(at: NSPoint(x: -size.width / 2, y: -size.height / 2), withAttributes: badgeAttributes)
-        NSGraphicsContext.restoreGraphicsState()
+        EaselTextLayout.drawSizeBadge(label, in: badgeRect(at: point, scale: scale), scale: scale)
+    }
+}
+
+extension EaselCanvasView {
+    func transformMenuRows(_ context: EaselMenuContext) -> [EaselMenuRow] {
+        let flips = EaselRotation.canFlip(context.items), turns = EaselRotation.canRotate(context.items)
+        guard flips || turns else { return [] }
+        return [
+            EaselMenuRow(id: "flip-horizontal", title: "Flip Horizontal", symbol: "arrow.left.and.right.righttriangle.left.righttriangle.right",
+                         shortcut: "⇧H", isEnabled: flips, perform: guardedMenuAction { _ = $0.flipSelection(horizontal: true) }),
+            EaselMenuRow(id: "flip-vertical", title: "Flip Vertical", symbol: "arrow.up.and.down.righttriangle.up.righttriangle.down",
+                         shortcut: "⇧V", isEnabled: flips, perform: guardedMenuAction { _ = $0.flipSelection(horizontal: false) }),
+            EaselMenuRow(id: "rotate-left", title: "Rotate 90° Left", symbol: "rotate.left",
+                         isEnabled: turns, perform: guardedMenuAction { _ = $0.rotateSelection(by: -90) }),
+            EaselMenuRow(id: "rotate-right", title: "Rotate 90° Right", symbol: "rotate.right",
+                         isEnabled: turns, perform: guardedMenuAction { _ = $0.rotateSelection(by: 90) })
+        ]
     }
 }

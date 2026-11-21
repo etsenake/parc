@@ -129,7 +129,7 @@ extension EaselCanvasView {
             guard enclosingScrollView?.allowsMagnification == true else { return false }
             self.zoom(zoom)
             return true
-        case .flip: return false
+        case .flip(let horizontal): flipSelection(horizontal: horizontal); return true
         case .layer: return false
         }
     }

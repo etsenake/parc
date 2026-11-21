@@ -92,7 +92,8 @@ extension EaselCanvasView {
     }
 
     private func selectionToolbarFrame(_ item: EaselItem) -> NSRect {
-        NSRect(x: item.frame.x, y: item.frame.y, width: max(1, item.frame.width), height: max(1, item.frame.height))
+        let box = EaselRotation.bounds(of: item)
+        return NSRect(x: box.x, y: box.y, width: max(1, box.width), height: max(1, box.height))
     }
 
     private var selectionToolbarStyles: [EaselTextStyle] {

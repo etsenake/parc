@@ -133,9 +133,11 @@ Travel of three points or less cancels a body drag.
 
 Corner handles have 20-point hit regions; edges have ten-point regions. Small
 objects under 30 points hide idle handles. Option resizes around the captured
-center. Crossing an edge reflects geometry/freehand paths without reflecting
-payload text/images. Invalid geometry rejects the whole transaction. Modifier
-changes recompute from the original geometry instead of accumulating drift.
+center. Crossing an edge mirrors shapes, images and drawings and keeps text
+readable; turned objects resize along their own sides
+([rotate and flip](easel-rotation.md)). Invalid geometry rejects the whole
+transaction. Modifier changes recompute from the original geometry instead of
+accumulating drift.
 
 ## Content hits and transient alignment guides
 

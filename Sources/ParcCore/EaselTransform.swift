@@ -235,6 +235,14 @@ enum EaselRotation {
                          width: next.width, height: next.height)
     }
 
+    static func localFrame(_ item: EaselItem, from placed: EaselRect) -> EaselRect {
+        guard let inverse = transform(for: item).inverted else { return placed }
+        let original = center(of: item.frame), middle = center(of: placed)
+        let shift = inverse.applyVector(EaselPoint(x: middle.x - original.x, y: middle.y - original.y))
+        return EaselRect(x: original.x + shift.x - placed.width / 2, y: original.y + shift.y - placed.height / 2,
+                         width: placed.width, height: placed.height)
+    }
+
     static func scaledSize(_ item: EaselItem, scaleX: Double, scaleY: Double) -> (width: Double, height: Double) {
         let radians = degrees(of: item) * .pi / 180, cosine = cos(radians), sine = sin(radians)
         return (item.frame.width * hypot(scaleX * cosine, scaleY * sine),
@@ -264,7 +272,7 @@ enum EaselRotation {
                 return mirrored(item, horizontally: horizontally, across: pivot, moves: moves)
             }
             if moves, item.kind == .arrow, !item.isLocked {
-                return reshaped(item, pivot: pivot) { point in
+                return reshaped(item) { point in
                     horizontally ? EaselPoint(x: 2 * pivot.x - point.x, y: point.y) : EaselPoint(x: point.x, y: 2 * pivot.y - point.y)
                 }
             }
@@ -285,12 +293,12 @@ enum EaselRotation {
                 next.rotation = stored(degrees(of: item) + delta)
                 return next
             }
-            if moves, item.kind == .arrow, !item.isLocked { return reshaped(item, pivot: pivot, turn.apply) }
+            if moves, item.kind == .arrow, !item.isLocked { return reshaped(item, turn.apply) }
             return item
         }
     }
 
-    static func reshaped(_ item: EaselItem, pivot: EaselPoint, _ map: (EaselPoint) -> EaselPoint) -> EaselItem {
+    static func reshaped(_ item: EaselItem, _ map: (EaselPoint) -> EaselPoint) -> EaselItem {
         guard !item.points.isEmpty else { return item }
         var next = item
         let absolute = item.points.map { map(EaselPoint(x: item.frame.x + $0.x, y: item.frame.y + $0.y)) }
@@ -329,5 +337,53 @@ struct EaselRotationDrag: Equatable {
         guard !free else { return raw }
         if let baseRotation { return EaselRotation.snapped(baseRotation + raw) - baseRotation }
         return EaselRotation.snapped(raw)
+    }
+}
+
+struct EaselSelectionChrome: Equatable {
+    let frame: EaselRect
+    let transform: EaselTransform
+
+    init(frame: EaselRect, items: [EaselItem]) {
+        if items.count == 1, let item = items.first, EaselRotation.isRotated(item) {
+            self.frame = item.frame; transform = EaselRotation.transform(for: item)
+        } else {
+            self.frame = frame; transform = .identity
+        }
+    }
+
+    var isTurned: Bool { !transform.isIdentity }
+    var corners: [EaselPoint] { EaselRotation.corners(of: frame).map(transform.apply) }
+    var center: EaselPoint { transform.apply(EaselRotation.center(of: frame)) }
+
+    func point(_ handle: EaselResizeHandle) -> EaselPoint { transform.apply(handle.point(in: frame)) }
+    func local(_ point: EaselPoint) -> EaselPoint { transform.inverted?.apply(point) ?? point }
+
+    func handle(at point: EaselPoint, scale: Double, where shows: (EaselResizeHandle) -> Bool) -> EaselResizeHandle? {
+        let inside = local(point)
+        return EaselResizeHandle.allCases.first { handle in
+            guard shows(handle), let r = handle.hitRect(in: frame, scale: scale) else { return false }
+            return EaselContentHitTest.contains(inside, rect: r)
+        }
+    }
+
+    func outward(_ handle: EaselResizeHandle) -> EaselPoint {
+        let x = handle.movesLeft ? -1.0 : handle.movesRight ? 1 : 0, y = handle.movesTop ? -1.0 : handle.movesBottom ? 1 : 0
+        let vector = transform.applyVector(EaselPoint(x: x, y: y)), length = hypot(vector.x, vector.y)
+        return length > 0 ? EaselPoint(x: vector.x / length, y: vector.y / length) : EaselPoint(x: 0, y: -1)
+    }
+
+    func rotateZones(scale: Double) -> [(corner: EaselResizeHandle, rect: EaselRect)] {
+        guard scale.isFinite, scale > 0 else { return [] }
+        let offset = 19 / scale, half = 9 / scale
+        return EaselResizeHandle.allCases.filter(\.isCorner).map { corner in
+            let tip = point(corner), direction = outward(corner)
+            let middle = EaselPoint(x: tip.x + direction.x * offset, y: tip.y + direction.y * offset)
+            return (corner, EaselRect(x: middle.x - half, y: middle.y - half, width: 2 * half, height: 2 * half))
+        }
+    }
+
+    func rotateZone(at point: EaselPoint, scale: Double) -> EaselResizeHandle? {
+        rotateZones(scale: scale).first { EaselContentHitTest.contains(point, rect: $0.rect) }?.corner
     }
 }

@@ -121,6 +121,9 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var start: NSPoint?
     var original: [EaselItem] = []
     private var resizeHandle: EaselResizeHandle?
+    private var rotationDrag: EaselRotationDrag?
+    private var rotationTurn: Double?
+    private var rotationDirty = NSRect.null
     var resizing: Bool { resizeHandle != nil }
     private var lastGeometryPoint: NSPoint?
     private var lastDragLocation: NSPoint?
@@ -478,6 +481,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         case "Bring to front": return bringToFront(sender)
         case "Copy code": return copyCode(item.id)
         case "Change language": return showCodeLanguageMenu(item.id)
+        case "Rotate left", "Rotate right":
+            guard rotateSelection(by: name == "Rotate left" ? -EaselRotation.largeKeyStep : EaselRotation.largeKeyStep) else { return false }
+            announceTurn(of: item.id); return true
+        case "Flip horizontal", "Flip vertical": return flipSelection(horizontal: name == "Flip horizontal")
         case "Delete": deleteObjects(sender)
         case "Open source":
             guard onOpenURL != nil else { return false }
@@ -522,11 +529,13 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             return node
         }
         if selectedConnector != nil { return accessibleConnectorControls(owner: owner) }
-        guard let frame = resizeBounds else { return [] }
+        guard let chrome = selectionChrome else { return [] }
         let labels = ["Top left", "Top right", "Bottom left", "Bottom right", "Top", "Left", "Bottom", "Right"]
         return EaselResizeHandle.allCases.compactMap { handle in
             guard showsFrameAnnotation(handle) else { return nil }
-            return handleRect(handle, in: frame).map { make("Resize " + labels[handle.rawValue], frame: $0, handle: handle) }
+            return handleRect(handle, in: chrome.frame).map {
+                make("Resize " + labels[handle.rawValue], frame: chrome.transform.bounds(of: $0), handle: handle)
+            }
         }
     }
     func rect(_ item: EaselItem) -> NSRect {
@@ -775,7 +784,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         drawObject(item)
     }
     private func drawObject(_ item: EaselItem, showsEditor: Bool = true) {
-            let turned = EaselCanvasRotation.begin(item, upright: showsEditor && editingID == item.id)
+            let turned = EaselCanvasRotation.begin(item, straight: showsEditor && editingID == item.id)
             defer { if turned { NSGraphicsContext.restoreGraphicsState() } }
             let r = rect(item), ink = color(item.color)
             ink.setStroke()
@@ -824,25 +833,31 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 drawSelectionOutline(item, exclusive: displayedSelection == [item.id])
             }
         }
-        if let frame = resizeBounds {
+        if let frame = resizeBounds, let chrome = selectionChrome {
             let group = NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
             let pad = 16 / max(canvasScale, 0.2) + 16
             if group.insetBy(dx: -pad, dy: -pad).intersects(dirtyRect) {
                 if displayedSelection.count > 1 {
                     easelSelectionColor.setStroke()
-                    let outline = NSBezierPath(rect: group); outline.lineWidth = 2.5 / canvasScale; outline.stroke()
+                    let outline = rotationOutline ?? NSBezierPath(rect: group); outline.lineWidth = 2.5 / canvasScale; outline.stroke()
                 }
                 for location in EaselResizeHandle.allCases where location.isCorner && showsFrameAnnotation(location) {
-                    let point = location.point(in: frame)
+                    let point = chrome.point(location)
                     EaselAppearance.drawHandle(at: NSPoint(x: point.x, y: point.y), scale: canvasScale)
                 }
-                let sides = EaselTextSizing.sideHandlePoints(in: frame, items: items.filter { displayedSelection.contains($0.id) })
+                let sides = EaselTextSizing.sideHandlePoints(in: chrome.frame, items: items.filter { displayedSelection.contains($0.id) })
+                NSGraphicsContext.saveGraphicsState()
+                if chrome.isTurned { EaselCanvasRotation.affine(chrome.transform).concat() }
                 for (location, point) in zip([EaselResizeHandle.left, .right], sides) where showsFrameAnnotation(location) {
                     EaselTextLayout.drawWidthHandle(at: NSPoint(x: point.x, y: point.y), scale: canvasScale)
                 }
+                NSGraphicsContext.restoreGraphicsState()
             }
         }
         drawConnectorChrome(in: dirtyRect)
+        if let rotationTurn, let point = lastGeometryPoint, rotationDirty.intersects(dirtyRect) {
+            EaselCanvasRotation.drawBadge(EaselRotation.turnLabel(rotationTurn), at: point, scale: canvasScale)
+        }
         drawTableDecorations(in: dirtyRect)
         if let marqueeRect, marqueeRect.insetBy(dx: -2, dy: -2).intersects(dirtyRect) {
             easelSelectionColor.withAlphaComponent(0.073).setFill(); marqueeRect.fill()
@@ -864,7 +879,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         drawArrangeDecorations(in: dirtyRect)
         for item in items where EaselObjectLink.hasLink(item) {
-            let r = EaselObjectLink.badgeRect(for: item.frame, scale: canvasScale), badge = NSRect(x: r.x, y: r.y, width: r.width, height: r.height)
+            let r = EaselObjectLink.badgeRect(for: EaselRotation.bounds(of: item), scale: canvasScale), badge = NSRect(x: r.x, y: r.y, width: r.width, height: r.height)
             if badge.intersects(dirtyRect) { EaselTextLayout.drawLinkBadge(in: badge, scale: canvasScale) }
         }
         if let badge = textSizeBadge, badge.rect.intersects(dirtyRect) { EaselTextLayout.drawSizeBadge(badge.label, in: badge.rect, scale: canvasScale) }
@@ -877,7 +892,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
     }
     private func drawSelectionOutline(_ item: EaselItem, exclusive: Bool) {
-        let turned = EaselCanvasRotation.begin(item, upright: editingID == item.id)
+        let turned = EaselCanvasRotation.begin(item, straight: editingID == item.id)
         defer { if turned { NSGraphicsContext.restoreGraphicsState() } }
         let r = rect(item), path: NSBezierPath
         var width: CGFloat = 2.5
@@ -947,7 +962,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     var canPresentMotion: Bool { !session.isDeleted && !session.isClosed }
     var hidesPassiveAnnotations: Bool { motion.isInteracting || (geometryEdit != nil && draft != nil) || connectors.travelled }
     private func showsFrameAnnotation(_ handle: EaselResizeHandle) -> Bool {
-        allowsFrameHandle(handle) && showsCodeHandle(handle) && !motion.isInteracting && (!hidesPassiveAnnotations || displayedSelection.count > 1 || resizeHandle == handle)
+        allowsFrameHandle(handle) && showsCodeHandle(handle) && !motion.isInteracting && rotationDrag == nil && (!hidesPassiveAnnotations || displayedSelection.count > 1 || resizeHandle == handle)
     }
     func refreshMotionOwnership() {
         if !canPresentMotion || isHiddenOrHasHiddenAncestor || window == nil { motion.cancel() }
@@ -957,12 +972,58 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return EaselGeometryEdit.bounds(of: items.filter { displayedSelection.contains($0.id) && !$0.isLocked })
     }
     private func resizeHandle(at point: NSPoint) -> EaselResizeHandle? {
-        guard let frame = resizeBounds else { return nil }
+        guard let chrome = selectionChrome else { return nil }
         let selected = items.filter { displayedSelection.contains($0.id) }
+        let local = chrome.local(EaselPoint(x: point.x, y: point.y))
         return EaselTextSizing.handleOrder(for: selected).first { handle in
-            guard showsFrameAnnotation(handle), let r = handleRect(handle, in: frame, items: selected) else { return false }
-            return NSRect(x: r.x, y: r.y, width: r.width, height: r.height).contains(point)
+            guard showsFrameAnnotation(handle), let r = handleRect(handle, in: chrome.frame, items: selected) else { return false }
+            return NSRect(x: r.x, y: r.y, width: r.width, height: r.height).contains(NSPoint(x: local.x, y: local.y))
         }
+    }
+    private var selectionChrome: EaselSelectionChrome? {
+        guard let frame = resizeBounds else { return nil }
+        return EaselSelectionChrome(frame: frame, items: items.filter { displayedSelection.contains($0.id) && !$0.isLocked })
+    }
+    private var showsRotateZones: Bool {
+        !motion.isInteracting && !hidesPassiveAnnotations && rotationDrag == nil
+            && EaselRotation.canRotate(items.filter { displayedSelection.contains($0.id) })
+    }
+    private func rotateZone(at point: NSPoint) -> EaselResizeHandle? {
+        guard showsRotateZones, let chrome = selectionChrome else { return nil }
+        return chrome.rotateZone(at: EaselPoint(x: point.x, y: point.y), scale: canvasScale)
+    }
+    private var rotationOutline: NSBezierPath? {
+        guard let drag = rotationDrag, drag.baseRotation == nil, let turn = rotationTurn, let box = geometryEdit?.bounds else { return nil }
+        let spin = EaselTransform.rotation(degrees: turn, around: drag.pivot)
+        return EaselCanvasRotation.polygonPath(EaselRotation.corners(of: box).map(spin.apply))
+    }
+    private func invalidateRotationChrome() {
+        var next = NSRect.null
+        if rotationTurn != nil, let point = lastGeometryPoint { next = EaselCanvasRotation.badgeRect(at: point, scale: canvasScale) }
+        if let outline = rotationOutline { next = next.union(outline.bounds) }
+        let pad = 8 / max(canvasScale, 0.2) + 8
+        if !next.isNull { next = next.insetBy(dx: -pad, dy: -pad) }
+        let dirty = rotationDirty.union(next)
+        rotationDirty = next
+        guard !dirty.isNull else { return }
+        if usesObjectSurfaces { decoration.setNeedsDisplay(dirty) } else { setNeedsDisplay(dirty) }
+    }
+    @discardableResult
+    func rotateSelection(by degrees: Double) -> Bool {
+        cancelPointerInteraction(); guard finishEditing() else { return false }
+        guard let edit = EaselGeometryEdit(document: session.document, selection: movableSelection), edit.canRotate,
+              let box = EaselGeometryEdit.bounds(of: edit.originals) else { return false }
+        let pivot = edit.originals.count == 1 ? edit.originals.first.map { EaselRotation.center(of: $0.frame) } ?? EaselRotation.center(of: box)
+            : EaselRotation.center(of: box)
+        guard let turned = edit.rotated(by: degrees, around: pivot), let next = edit.applying(turned, to: session.document) else { return false }
+        return commit("Rotate objects", moved: edit.ids) { $0 = next }
+    }
+    @discardableResult
+    func flipSelection(horizontal: Bool) -> Bool {
+        cancelPointerInteraction(); guard finishEditing() else { return false }
+        guard let edit = EaselGeometryEdit(document: session.document, selection: movableSelection), edit.canFlip,
+              let flipped = edit.flipped(horizontally: horizontal), let next = edit.applying(flipped, to: session.document) else { return false }
+        return commit(horizontal ? "Flip horizontal" : "Flip vertical", moved: edit.ids) { $0 = next }
     }
     private func handleRect(_ handle: EaselResizeHandle, in frame: EaselRect, items selected: [EaselItem]? = nil) -> EaselRect? {
         EaselTextSizing.handleRect(handle, in: frame, items: selected ?? items.filter { displayedSelection.contains($0.id) }, scale: canvasScale)
@@ -1430,6 +1491,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         selectionBeforeGesture = []; resizeHandle = nil; guides = nil
         resetSectionGesture()
         cancelConnectorGesture()
+        rotationDrag = nil; rotationTurn = nil; invalidateRotationChrome()
         lastDragTimestamp = nil; dragVelocity = .init(x: 0, y: 0)
         lastGeometryPoint = nil; lastDragLocation = nil; dragDistance = 0
         updateTextSizeBadge()
@@ -1506,6 +1568,11 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
            let url = EaselObjectLink.link(of: linked), let onOpenURL {
             cancelPointerInteraction(); onOpenURL(url); return
         }
+        if rotateZone(at: point) != nil,
+           let drag = EaselRotationDrag(items: items.filter { movableSelection.contains($0.id) }, pointer: EaselPoint(x: point.x, y: point.y)) {
+            rotationDrag = drag; beginGeometry()
+            lastGeometryPoint = point; invalidateIncrementalDisplay(layout: true); return
+        }
         var hit = object(at: point, includingLocked: event.modifierFlags.contains(.shift))
         switch sectionPress(at: point, hit: hit, event: event) {
         case .handled: return
@@ -1578,6 +1645,15 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
               guides?.matchesCanvas(width: bounds.width) == true else {
             cancelPointerInteraction(); return
         }
+        if let drag = rotationDrag {
+            let pointer = EaselPoint(x: point.x, y: point.y)
+            guard let delta = drag.delta(to: pointer, free: flags.contains(.command)),
+                  let turned = edit.rotated(by: delta, around: drag.pivot) else { return }
+            draft = turned
+            rotationTurn = drag.baseRotation.map { EaselRotation.normalized($0 + delta) } ?? EaselRotation.normalized(delta)
+            EaselCanvasRotation.cursor(toward: EaselPoint(x: pointer.x - drag.pivot.x, y: pointer.y - drag.pivot.y)).set()
+            invalidateRotationChrome(); invalidateIncrementalDisplay(layout: true); return
+        }
         let translation = EaselArrange.axisLocked(EaselPoint(x: point.x - start.x, y: point.y - start.y),
                                                   when: flags.contains(.shift) && resizeHandle == nil)
         var intrinsicGuideRatio: Double?
@@ -1625,11 +1701,13 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                                                          centered: centered, single: edit.originals.count == 1, naturalWidth: natural) {
                     Double(EaselTextLayout.Layout(value, width: $0).height)
                 }
+                if edit.resizesRotated { next.frame = EaselRotation.recentred(original, frame: next.frame) }
             } else {
                 var item = original
-                item.frame = proposal[index].frame
+                item.frame = edit.resizesRotated ? EaselRotation.localFrame(original, from: proposal[index].frame) : proposal[index].frame
                 let value = textMeasure(item)
                 next = EaselTextSizing.widthResized(item) { Double(EaselTextLayout.Layout(value, width: $0).height) }
+                if edit.resizesRotated { next.frame = EaselRotation.recentred(original, frame: next.frame) }
             }
             proposal[index].frame = next.frame
             changes[next.id] = next
@@ -1695,14 +1773,19 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         } else if let edit = geometryEdit, edit.ids == movableSelection, edit.isCurrent(in: session.document),
                   guides?.matchesCanvas(width: bounds.width) == true {
             guard resizing || dragDistance > 3 else { return }
-            commit(resizing ? "Resize objects" : "Move objects", coalescing: finishDuplicateDrag(), moved: edit.ids) { document in
+            commit(rotationDrag != nil ? "Rotate objects" : resizing ? "Resize objects" : "Move objects", coalescing: finishDuplicateDrag(), moved: edit.ids) { document in
                 guard let next = edit.applying(draft, to: document) else { return }
-                document = fittedTables(textPreview.isEmpty ? next : EaselTextSizing.merging(Array(textPreview.values), into: next), ids: edit.ids)
+                let fitted = fittedTables(textPreview.isEmpty ? next : EaselTextSizing.merging(Array(textPreview.values), into: next), ids: edit.ids)
+                document = fitted
             }
         }
     }
     override func resetCursorRects() {
         if addImageCropCursorRects() { return }
+        if let drag = rotationDrag, let point = lastGeometryPoint {
+            addCursorRect(bounds, cursor: EaselCanvasRotation.cursor(toward: EaselPoint(x: point.x - drag.pivot.x, y: point.y - drag.pivot.y)))
+            return
+        }
         addCursorRect(bounds, cursor: toolCursor)
         guard !toolState.spaceHeld, toolState.pan == nil, tool == .select else { return }
         addImageBadgeCursorRects()
@@ -1710,17 +1793,27 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         addSectionCursorRects()
         if !drawing, onOpenURL != nil {
             for item in items where EaselObjectLink.hasLink(item) {
-                let r = EaselObjectLink.badgeRect(for: item.frame, scale: canvasScale)
+                let r = EaselObjectLink.badgeRect(for: EaselRotation.bounds(of: item), scale: canvasScale)
                 addCursorRect(NSRect(x: r.x, y: r.y, width: r.width, height: r.height), cursor: .pointingHand)
             }
         }
         addConnectorCursorRects()
-        guard let frame = resizeBounds else { return }
+        guard let chrome = selectionChrome else { return }
         let selected = items.filter { displayedSelection.contains($0.id) }
+        if showsRotateZones {
+            for zone in chrome.rotateZones(scale: canvasScale) {
+                let r = zone.rect
+                addCursorRect(NSRect(x: r.x, y: r.y, width: r.width, height: r.height), cursor: EaselCanvasRotation.cursor(toward: chrome.outward(zone.corner)))
+            }
+        }
         for handle in EaselTextSizing.handleOrder(for: selected).reversed() where showsFrameAnnotation(handle) {
-            guard let r = handleRect(handle, in: frame, items: selected) else { continue }
-            let cursor: NSCursor = handle.isCorner ? .crosshair :
-                (handle.movesTop || handle.movesBottom ? .resizeUpDown : .resizeLeftRight)
+            guard var r = handleRect(handle, in: chrome.frame, items: selected) else { continue }
+            if chrome.isTurned {
+                let middle = chrome.point(handle), half = (handle.isCorner ? 10 : 7) / canvasScale
+                r = EaselRect(x: middle.x - half, y: middle.y - half, width: 2 * half, height: 2 * half)
+            }
+            let direction = chrome.outward(handle)
+            let cursor: NSCursor = handle.isCorner ? .crosshair : (abs(direction.y) > abs(direction.x) ? .resizeUpDown : .resizeLeftRight)
             addCursorRect(NSRect(x: r.x, y: r.y, width: r.width, height: r.height), cursor: cursor)
         }
     }
@@ -1757,6 +1850,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             _ = activateAccessibleObject(item); return
         }
         let step = event.modifierFlags.contains(.shift) ? 10.0 : 1.0
+        if [UInt16(123), UInt16(124)].contains(event.keyCode), event.modifierFlags.intersection([.command, .control, .option]) == [.option],
+           rotateSelection(by: (event.keyCode == 123 ? -1 : 1) * (event.modifierFlags.contains(.shift) ? EaselRotation.largeKeyStep : EaselRotation.keyStep)) {
+            return
+        }
         let delta: (Double, Double)? = [123: (-step, 0), 124: (step, 0), 125: (0, step), 126: (0, -step)][Int(event.keyCode)]
         if let (dx, dy) = delta, event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
             guard !selection.isEmpty else { panByKeyboard(dx: dx, dy: dy, fast: event.modifierFlags.contains(.shift)); return }
@@ -1937,6 +2034,16 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         addTableMenuItems(to: menu)
         if let connector = makeConnectorMenu() { menu.addItem(.separator()); menu.addItem(connector) }
         menu.addItem(.separator())
+        if let originals = captured.command?.originals, EaselRotation.canRotate(originals) || EaselRotation.canFlip(originals) {
+            let rows: [(String, Selector, String)] = [("Flip Horizontal", #selector(flipObjectsHorizontally), "h"), ("Flip Vertical", #selector(flipObjectsVertically), "v"),
+                                                      ("Rotate 90° Left", #selector(rotateObjectsLeft), ""), ("Rotate 90° Right", #selector(rotateObjectsRight), "")]
+            for (title, action, key) in rows {
+                let row = NSMenuItem(title: title, action: action, keyEquivalent: key)
+                row.keyEquivalentModifierMask = key.isEmpty ? [] : [.shift]
+                row.target = self; row.representedObject = captured; menu.addItem(row)
+            }
+            menu.addItem(.separator())
+        }
         let alignment = NSMenuItem(title: "Use Alignment Guides", action: #selector(toggleAlignmentGuides), keyEquivalent: "")
         alignment.target = self; alignment.representedObject = captured
         alignment.state = alignmentGuidesEnabled ? .on : .off; menu.addItem(alignment)
@@ -1977,6 +2084,16 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
               let item = command.originals.first, item.kind == .webCard, item.captureLayout != nil else { return }
         setLiveCapture(item.id, enabled: item.liveCapture != true)
     }
+    @objc private func flipObjectsHorizontally(_ sender: Any?) { if command(for: sender) != nil { flipSelection(horizontal: true) } }
+    @objc private func flipObjectsVertically(_ sender: Any?) { if command(for: sender) != nil { flipSelection(horizontal: false) } }
+    @objc private func rotateObjectsLeft(_ sender: Any?) { if command(for: sender) != nil { rotateSelection(by: -90) } }
+    @objc private func rotateObjectsRight(_ sender: Any?) { if command(for: sender) != nil { rotateSelection(by: 90) } }
+    private func announceTurn(of id: UUID) {
+        guard let item = session.document.items.first(where: { $0.id == id }) else { return }
+        NSAccessibility.post(element: self, notification: .announcementRequested,
+                             userInfo: [.announcement: "Rotated to " + EaselRotation.turnLabel(EaselRotation.degrees(of: item)),
+                                        .priority: NSAccessibilityPriorityLevel.high.rawValue])
+    }
     @objc private func toggleAlignmentGuides(_ sender: Any?) {
         guard hasCurrentMenuOwner(sender) else { return }
         cancelPointerInteraction(); alignmentGuidesEnabled.toggle(); invalidateIncrementalDisplay()
@@ -1993,6 +2110,12 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 menuItem.title = target.url == nil ? TextFormatCommand.addLinkTitle : TextFormatCommand.editLinkTitle
             }
             return canFormat(command)
+        }
+        if menuItem.action == #selector(flipObjectsHorizontally) || menuItem.action == #selector(flipObjectsVertically) {
+            return command(for: menuItem).map { EaselRotation.canFlip($0.originals) } == true
+        }
+        if menuItem.action == #selector(rotateObjectsLeft) || menuItem.action == #selector(rotateObjectsRight) {
+            return command(for: menuItem).map { EaselRotation.canRotate($0.originals) } == true
         }
         if menuItem.action == #selector(toggleAlignmentGuides) {
             menuItem.state = alignmentGuidesEnabled ? .on : .off; return true
@@ -2205,6 +2328,8 @@ private final class EaselAccessibleObject: NSView {
     override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
         guard let canvas, let item = canvas.accessibleItem(id), let owner = window, acceptsFirstResponder else { return [] }
         var names = ["Duplicate", "Bring to front", "Delete"]
+        if EaselRotation.canRotate(item) { names += ["Rotate left", "Rotate right"] }
+        if EaselRotation.canFlip(item) { names += ["Flip horizontal", "Flip vertical"] }
         if item.url != nil { names.insert("Open source", at: 0) }
         names += canvas.boardActionNames(item)
         if item.kind == .code { names.insert(contentsOf: ["Copy code", "Change language"], at: 0) }
@@ -2213,7 +2338,7 @@ private final class EaselAccessibleObject: NSView {
         let linked = EaselObjectLink.link(of: item) != nil
         return names.map { name in
             let title = name == "Activate" ? (item.kind == .text ? "Edit text" : item.kind == .table ? "Edit cells" : item.kind == .code ? "Edit code" : "Interact with webpage")
-                : name == "Open source" && linked ? "Open link" : name
+                : name == "Open source" && linked ? "Open link" : name.hasPrefix("Rotate") ? name + " 15°" : name
             return NSAccessibilityCustomAction(name: title) { [weak canvas, weak owner] in
                 canvas?.accessibleAction(name, item: item, owner: owner) == true
             }
