@@ -8,6 +8,7 @@ final class EaselInlineDates {
     private final class Watch {
         weak var session: EaselSession?
         let file: URL
+        let openedAt = Date()
         var subscription: AnyCancellable?
         var task: Task<Void, Never>?
         init(session: EaselSession, file: URL) { self.session = session; self.file = file }
@@ -15,11 +16,12 @@ final class EaselInlineDates {
 
     private var watches: [UUID: Watch] = [:]
     private var refresher: NoteDateRefresher?
-    private let openedAt = Date()
+    private var directories: [URL] = []
 
     func attach(to store: EaselStore) {
         let created = store.onSessionCreated, removed = store.onDocumentRemoved
         let documents = store.documentsDirectory
+        if !directories.contains(documents) { directories.append(documents) }
         store.onSessionCreated = { [weak self] session in
             created?(session)
             self?.follow(session, file: documents.appendingPathComponent(session.document.id.uuidString.lowercased() + ".json"))
@@ -49,8 +51,16 @@ final class EaselInlineDates {
 
     private func forget(_ id: UUID, file: URL) {
         watches.removeValue(forKey: id)?.task?.cancel()
+        defer { refresher?.reschedule() }
+        if let moved = EaselReminderOwner.destination(of: id, in: directories.filter { $0 != file.deletingLastPathComponent() },
+                                                      exists: { FileManager.default.fileExists(atPath: $0.path) }) {
+            guard let data = try? Data(contentsOf: moved, options: .mappedIfSafe), data.count <= EaselStore.maximumDocumentBytes,
+                  let document = try? JSONDecoder().decode(EaselDocument.self, from: data) else { return }
+            NoteReminderCenter.shared.reconcile(page: document.reminderPage, document: moved,
+                                                title: document.title.isEmpty ? "Untitled Easel" : document.title, openedAt: Date())
+            return
+        }
         NoteReminderCenter.shared.forget(document: file)
-        refresher?.reschedule()
     }
 
     private func sync(_ watch: Watch) {
@@ -58,7 +68,7 @@ final class EaselInlineDates {
         let document = session.document
         if FileManager.default.fileExists(atPath: watch.file.path) {
             NoteReminderCenter.shared.reconcile(page: document.reminderPage, document: watch.file,
-                                                title: document.title.isEmpty ? "Untitled Easel" : document.title, openedAt: openedAt)
+                                                title: document.title.isEmpty ? "Untitled Easel" : document.title, openedAt: watch.openedAt)
         }
         if refresher == nil, !document.dateMentions.isEmpty {
             refresher = NoteDateRefresher(mentions: { [weak self] in self?.mentions() }, refresh: { [weak self] in
