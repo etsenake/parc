@@ -611,7 +611,15 @@ extension BrowserWindowController {
                     destinationID: destinationID, newTitle: image.pageTitle)
                 self.pageCapture?.dismiss(restoreFocus: false)
                 withExtendedLifetime(result) { self.openEasel(id: result.id, title: result.title) }
-            }, finished: { [weak self, weak browser, weak parent] restoreFocus in
+            }, noteDestinations: allowsCaptureNoteDestinations ? { [weak self] in
+                guard let self, valid() else { throw CocoaError(.userCancelled) }
+                return try self.captureNoteDestinations(profileID: profileID)
+            } : nil, addToNote: allowsCaptureNoteDestinations ? { [weak self, weak parent] image, target in
+                guard let self, let parent, parent.isKeyWindow, parent.attachedSheet == nil, valid() else {
+                    throw CocoaError(.userCancelled)
+                }
+                try self.placeCaptureInNote(image, target: target, profileID: profileID)
+            } : nil, finished: { [weak self, weak browser, weak parent] restoreFocus in
                 guard let self else { return }
                 self.pageCapture = nil
                 self.sharedQuotes.bind(self.selectedNativePage(), window: self.window)

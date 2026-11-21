@@ -121,7 +121,8 @@ struct CapturePaletteTests {
         expect(Keys.command(.down, focus: .main, highlighted: nil) == .move(1)
                && Keys.command(.up, focus: .main, highlighted: .copy) == .move(-1), "Arrows move the single highlight")
         expect(Keys.command(.enter, focus: .main, highlighted: .copy) == .activate, "Return activates the highlighted action")
-        expect(Keys.command(.enter, focus: .main, highlighted: nil) == .consume, "Return without a highlight does nothing")
+        expect(Keys.command(.enter, focus: .main, highlighted: nil) == .move(1),
+               "Return without a highlight reveals the first row instead of acting unseen")
         expect(Keys.command(.enter, focus: .main, highlighted: .easels) == .open(.easels), "Return on Easel opens its submenu")
         expect(Keys.command(.right, focus: .main, highlighted: .notes) == .open(.notes), "Right opens the highlighted submenu")
         expect(Keys.command(.right, focus: .main, highlighted: .notes, caretAtEnd: false) == .pass,

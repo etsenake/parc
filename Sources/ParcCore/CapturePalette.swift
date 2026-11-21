@@ -88,10 +88,10 @@ enum CapturePaletteAction: Equatable {
         case .frame: return "photo.artframe"
         case .removeFrame: return "photo"
         case .retake: return "camera"
-        case .easels: return "scribble"
-        case .notes: return CaptureNoteTarget.noteSymbol
+        case .easels: return InternalPage.easelFallbackSymbol
+        case .notes: return InternalPage.noteFallbackSymbol
         case .newEasel, .newNote: return "plus"
-        case .document(let document): return document.kind == .easel ? "scribble" : CaptureNoteTarget.noteSymbol
+        case .document(let document): return document.kind == .easel ? InternalPage.easelFallbackSymbol : InternalPage.noteFallbackSymbol
         }
     }
 
@@ -244,7 +244,7 @@ enum CapturePaletteKeys {
             case .down: return .move(1)
             case .enter:
                 if let submenu = highlighted?.submenu { return .open(submenu) }
-                return highlighted == nil ? .consume : .activate
+                return highlighted == nil ? .move(1) : .activate
             case .right:
                 guard caretAtEnd, let submenu = highlighted?.submenu else { return .pass }
                 return .open(submenu)

@@ -78,44 +78,43 @@ import AppKit
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
         let pixels = context.makeImage()!
         overlay.showPreview(pixels); overlay.layoutSubtreeIfNeeded(); overlay.focusPreferredControl()
-        check(overlay.searchField.currentEditor() === window.firstResponder, "Preview starts in the real native search editor")
-        var keys: [NSView] = [overlay.searchField]
-        var next = overlay.searchField.nextKeyView
-        while let candidate = next, candidate !== overlay.searchField, keys.count < 30 {
-            keys.append(candidate); next = candidate.nextKeyView
-        }
-        check(keys.count > 5 && keys.count < 30, "Preview owns a finite searchable-action key loop")
-        check(overlay.searchField.previousKeyView === keys.last, "Shift-Tab from search returns to the last enabled action")
-        var previous = overlay.searchField.previousKeyView
-        for expected in keys.dropFirst().reversed() {
-            check(previous === expected, "Reverse traversal stays in the same action ring"); previous = previous?.previousKeyView
-        }
-        check(previous === overlay.searchField, "The complete backward loop returns to search")
-        check(keys.allSatisfy { !$0.isHiddenOrHasHiddenAncestor }, "Hidden capture controls are absent from preview traversal")
-        check(keys.compactMap { $0 as? NSButton }.allSatisfy(\.isEnabled), "Unavailable destination rows are skipped")
-        if let row = keys.compactMap({ $0 as? NSButton }).first {
-            window.makeFirstResponder(row); overlay.setLibrarySaved(true)
-            check(overlay.searchField.currentEditor() === window.firstResponder, "Rebuilding the focused row returns to the live search owner")
-        }
-        var outputs = 0; overlay.onAction = { _ in outputs += 1 }
+        let palette = overlay.palette, search = palette.view.search
+        check(search.textField.currentEditor() === window.firstResponder, "Preview starts in the palette's native search editor")
+        check(palette.isPresented && palette.card.superview === overlay && overlay.bounds.contains(palette.card.frame),
+              "The palette is a Notes card inside the capture overlay")
+        check(palette.card.frame.minX >= overlay.imageRect.maxX || palette.card.frame.maxX <= overlay.imageRect.minX
+              || palette.card.frame.minY >= overlay.imageRect.maxY, "The palette sits beside the captured image")
+        check(palette.view.list.highlightedItem == nil, "No row is filled before the pointer or keyboard picks one")
+        check(overlay.nextKeyView == nil, "Preview keeps focus in the palette instead of a row key loop")
+        check(palette.perform(#selector(NSResponder.insertTab(_:)), in: .main, editor: nil), "Tab stays in the palette like Notes menus")
+        overlay.setEaselDestinations([CaptureEaselDestination(id: UUID(), title: "Moodboard", lastActive: nil)])
+        check(palette.perform(#selector(NSResponder.moveDown(_:)), in: .main, editor: nil)
+              && palette.highlightedRow?.id == "library", "The first arrow press highlights the first row")
+        var outputs: [CapturePaletteAction] = []; overlay.onAction = { outputs.append($0) }
         let marked = MarkedEditor()
-        let handled = overlay.control(overlay.searchField, textView: marked, doCommandBy: #selector(NSResponder.insertNewline(_:)))
-        check(!handled && outputs == 0, "IME composition never dispatches a capture destination")
-        overlay.setPersistentDestinationsAvailable(false)
-        var privateKeys: [NSView] = []
-        next = overlay.searchField.nextKeyView
-        while let candidate = next, candidate !== overlay.searchField, privateKeys.count < 30 {
-            privateKeys.append(candidate); next = candidate.nextKeyView
-        }
-        let privateTitles = privateKeys.compactMap { ($0 as? NSButton)?.title }
+        let handled = palette.perform(#selector(NSResponder.insertNewline(_:)), in: .main, editor: marked)
+        check(!handled && outputs.isEmpty, "IME composition never dispatches a capture destination")
+        overlay.setLibrarySaved(true)
+        check(search.textField.currentEditor() === window.firstResponder && palette.highlightedRow?.id == "library"
+              && palette.highlightedRow?.isChecked == true, "Saving keeps the search focused and the same highlighted row")
+        while palette.highlightedRow?.id != "easels" { _ = palette.perform(#selector(NSResponder.moveDown(_:)), in: .main, editor: nil) }
+        check(palette.perform(#selector(NSResponder.moveRight(_:)), in: .main, editor: nil) && palette.hasSubmenu,
+              "Right opens the Easel submenu beside its row")
+        _ = palette.perform(#selector(NSResponder.cancelOperation(_:)), in: .submenu(.easels), editor: nil)
+        check(!palette.hasSubmenu && search.textField.currentEditor() === window.firstResponder,
+              "Escape closes just the submenu and returns to the palette search")
+        overlay.setDestinationAvailability(library: false, easels: false)
+        let privateTitles = palette.rows.map(\.title)
         check(privateTitles.contains("Copy") && privateTitles.contains("Save…") &&
-              !privateTitles.contains("Save to Library") && !privateTitles.contains("New Easel"),
-              "Private capture's real key loop only offers permitted output destinations")
+              !privateTitles.contains("Save to Library") && !privateTitles.contains("Easel"),
+              "Private capture only offers permitted output destinations")
         overlay.setOutputBusy(true)
-        check(overlay.searchField.nextKeyView === overlay.searchField, "Composer busy state removes disabled rows from the key loop")
+        check(palette.rows.allSatisfy { !$0.isEnabled } && palette.view.statusText == "Finish or cancel in Messages.",
+              "An open composer disables every row and says why")
         overlay.showSelection(); overlay.layoutSubtreeIfNeeded()
-        check(overlay.nextKeyView !== overlay.searchField && overlay.nextKeyView?.isHidden == false,
-              "Returning to selection retires the palette key loop")
+        check(!palette.isPresented, "Returning to selection dismisses the palette card")
+        check(overlay.nextKeyView != nil && overlay.nextKeyView?.isHidden == false,
+              "Returning to selection restores the capture controls' key loop")
 
         FrameSources.install()
         SystemOverrides.install()

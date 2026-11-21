@@ -13,7 +13,8 @@ Drag selects a freeform rectangle. Return with no selected target captures the
 visible page. Tab/Shift-Tab and accessibility actions reach the native controls.
 
 The searchable output palette offers Save to Library, Copy, Save…, Send via
-iMessage…, Edit, Retake, New Easel and existing Easels. Edit uses the shared image
+iMessage…, Edit, Crop, Frame and Retake, with Easel and Note submenus for
+sending to a new or existing document. Edit uses the shared image
 canvas; crop preserves accepted annotations. Easel insertion uses the same asset,
 document mutation and Undo transaction as other image imports. The source URL
 is provenance and is never replayed to obtain pixels. See

@@ -13,15 +13,19 @@ viewport. Pixels fit without distortion. Crop and Portrait changes fit the new
 aspect ratio in that same context without resampling the retained source PNG.
 
 The preview uses a four-point frame, seven-point outer corners and 3.5-point
-image corners. The normal palette is 273 points wide with ten-point page margins
-and image spacing. It prefers the image's right side when it fits, otherwise
-its left, with top/bottom anchoring constrained by the page. Rows are 32 points
-high, with 14-point medium labels, seven-point horizontal padding and six-point
-corners. The search field is 30 points high with 13-point medium text.
+image corners. The palette is a 273-point Notes menu card (`CapturePaletteView`
+on `NoteFloatingPanel` with `NoteMenuList` rows) with ten-point page margins and
+image spacing. It prefers the image's right side when it fits, otherwise its
+left, with top/bottom anchoring constrained by the page, and glides to its new
+place when its height changes. It uses the Notes menu tokens: the Notes search
+field, 34-point rows with Nunito titles and 20-point icon boxes, extra-bold
+section headers, hairline dividers and the 12-point continuous card corners.
+Easel and Note rows wear the Library's Easel and note marks, and their submenus
+use 46-point detailed rows with an Edited subtitle.
 
 Narrow split panes below twice the palette width plus 30 use separate image and
 palette bands. The palette occupies at most 62% of available height and scrolls
-its genuine actions. The crop editor maps its clipped selection back to an
+its rows. The crop editor maps its clipped selection back to an
 outward-rounded pixel rectangle; only `CapturedImage` commits the result.
 
 The selection lens uses two live-page layers: grayscale/color blending and a
@@ -30,10 +34,12 @@ it has a four-point border and seven-point corners. The instruction card uses
 14-point semibold text, 25-point padding, 16-point corners and a static gradient.
 [Capture motion](capture-motion.md) owns transitions separately.
 
-Appearance updates resolve native text and layer colors. Idle, hover, keyboard
-selection, combined selection, saved-toggle and disabled rows have distinct ink.
-Busy Library/Messages states retain callback gates and status text; an empty
-search retains its empty-result surface. Starting capture/configuration clears
+Appearance updates resolve native text and layer colors. Rows share one
+highlight plate for the pointer and the keyboard, Saved to Library shows a
+check, and unavailable rows draw at the Notes disabled opacity. Busy
+Library/Messages states keep their callback gates and a status line at the
+card's foot, which also carries errors; an empty search shows the Notes
+no-results row. Starting capture/configuration clears
 old outlines and image frames. Cancel and visible-area capture remain explicit
 keyboard-accessible controls.
 

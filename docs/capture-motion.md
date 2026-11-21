@@ -12,11 +12,13 @@ extend a document lease or prove delivery to a message recipient.
 | Newly acquired image | One-second opacity reveal with cubic (0.215, 0.61, 0.355, 1). Edits and catalog refreshes do not restart it. |
 | Selection instruction | 0.2-second ease-in-out crossfade; one accessible instruction. |
 | Portrait preview | Response 0.5, damping 0.7 spring blends owned preview bitmaps, never committed output bytes. |
+| Output palette | Notes card pop (scale 0.95 to 1 with a short fade, 0.07-second close); the highlight glides on the Notes spring; submenus pop beside their row; the card glides to new sizes and pages push over 0.22 seconds. |
 | Saved Library preview | Opening damping/response 0.9/0.25; closing 0.95/0.15 from the current presentation transform. |
 
 New selection targets retain current position and velocity. Clearing the target,
 beginning a drag, retiring capture or detaching cancels its pending timer.
-Reduce Motion settles the latest target and shows final images immediately.
+Reduce Motion settles the latest target, shows final images immediately and
+turns the palette's pops, glides and pushes into short fades.
 Changing phase cancels reveals; a newer Portrait preview settles the old blend.
 
 ## Library preview
@@ -34,13 +36,14 @@ leases and clipboard/thumbnail cancellation stay with the Library coordinator.
 
 ## Focus, keyboard and accessibility
 
-Selection owns the overlay, Visible Area and Cancel loop. Preview owns the search
-field followed by its enabled real action rows. Crop, Portrait and the actual
-image editor own their own loops; hidden controls never remain in the active
-loop. Rebuilding a focused action returns focus to its live search field. Row
-focus updates the selected destination and Up/Down traverses enabled rows.
-Search Up/Down/Return retains CAP20's genuine stable action identity and expansion
-policy; active marked text remains with the native input method. Modified
+Selection owns the overlay, Visible Area and Cancel loop. Preview keeps focus in
+the palette's search field; its rows are a menu whose items VoiceOver reads, and
+Up/Down/Return, Right/Left and Escape drive the rows and submenus from the field,
+whose help names the highlighted row. Each submenu focuses its own search.
+Crop, Portrait and the actual image editor own their own loops; hidden controls
+never remain in the active loop. Rebuilding rows keeps the search focused and the
+highlighted row by identity; active marked text remains with the native input
+method. Modified
 plain-action keys are not interpreted as unmodified capture or deletion commands.
 Selection messages, selected destinations and real failures expose native AX
 values/notifications; errors additionally announce their actual message. The

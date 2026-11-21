@@ -47,7 +47,8 @@ write("EaselStoreOwner.swift", easel[:easel.index("    private let session:")] +
 extra = ["CaptureLibraryView", "DocumentsLibraryView", "DocumentDefaultIcon", "DownloadLibraryTable", "DownloadLibraryView", "DownloadThumbnailProvider",
          "ExternalMediaLibrary", "CaptureLibrarySharing", "MediaLibraryContext", "CaptureMotion", "DownloadArrivalMotion",
          "LibraryRailTile", "LibraryRailIcon", "TopBarColorClient", "CapturePresentation", "ParcBrandMark",
-         "CapturedImage", "PeekWindowLayout", "PeekControls"]
+         "CapturedImage", "PeekWindowLayout", "PeekControls", "CapturePaletteView", "NoteTheme", "NoteAnimation",
+         "NoteFloatingPanel", "NoteControls", "NoteCustomEmojiImages"]
 sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [app / name for name in names] + [app / f"{n}.swift" for n in extra] + extracted
 sources += [root / "tests/KeyboardNavigation/NativeShortcutStub.swift", root / "tests/SpaceManager/NativeHostStub.swift",
             root / "tests/Support/TestFailure.swift"]

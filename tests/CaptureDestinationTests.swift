@@ -50,40 +50,6 @@ struct CaptureDestinationTests {
         ], profileID: profile)
         expect(CaptureEaselDestination.ranked(destinations).map(\.id) == [first, secondID, inactive],
                "Last activity wins over document edits; another profile never contributes recency")
-        func menu(_ query: String = "", expanded: Bool = false, framed: Bool = false, saved: Bool = false) -> [CaptureDestinationAction] {
-            CaptureDestinationMenu.actions(destinations: destinations, query: query, expanded: expanded, framed: framed, librarySaved: saved)
-        }
-        let collapsed = menu()
-        expect(Array(collapsed.prefix(5)) == [.library, .copy, .save, .message, .edit], "Fixed action order survives ranking")
-        expect(Array(collapsed.suffix(3)) == [.easel(first, "Design"), .easel(secondID, "Travel"), .expand],
-               "Only the two most active Easels precede the explicit expansion row")
-        expect(menu(expanded: true).last == .easel(inactive, "Research") && !menu(expanded: true).contains(.expand),
-               "Expansion exposes every real destination without duplicating its control")
-        expect(menu("RESEARCH") == [.easel(inactive, "Research")], "Search reaches hidden destinations in original rank")
-        expect(menu("saved", saved: true) == [.library] && menu("save to", saved: true).isEmpty,
-               "Search matches the actual current toggle title")
-        expect(menu("zzzz").isEmpty && menu(" research").isEmpty, "No-match and literal space queries stay empty")
-        expect(menu(framed: true).contains(.removeFrame) && !menu().contains(.removeFrame), "Unified reversible Portrait actions survive")
-        let privateActions = CaptureDestinationMenu.actions(destinations: destinations, query: "", expanded: true, framed: false, librarySaved: false, persistentDestinations: false)
-        expect(privateActions.contains(.copy) && privateActions.contains(.save) && !privateActions.contains(.library) && !privateActions.contains(.newEasel) && !privateActions.contains(.easel(first, "Design")),
-               "Private capture offers explicit output without persistent catalog or Easel destinations")
-        expect(CaptureDestinationMenu.actions(destinations: destinations, query: "research", expanded: false, framed: false, librarySaved: false, persistentDestinations: false).isEmpty,
-               "Search cannot expose persistent destinations from a private capture")
-        let privateLibraryActions = CaptureDestinationMenu.actions(destinations: destinations, query: "", expanded: true,
-            framed: false, librarySaved: false, persistentDestinations: true, easelDestinationsAvailable: false)
-        expect(privateLibraryActions.contains(.library) && !privateLibraryActions.contains(.newEasel)
-               && !privateLibraryActions.contains(.easel(first, "Design")),
-               "Private capture can save to its parent Library without exposing unfinished Easel destinations")
-        expect(CaptureDestinationMenu.actions(destinations: destinations, query: "research", expanded: true,
-            framed: false, librarySaved: false, persistentDestinations: true, easelDestinationsAvailable: false).isEmpty,
-               "Search cannot expose unavailable Easel destinations")
-        let renamed: [CaptureDestinationAction] = [.copy, .easel(first, "Renamed")]
-        expect(CaptureDestinationMenu.selectedIndex(actions: renamed, previousID: CaptureDestinationAction.easel(first, "Design").id,
-            enabled: { _ in true }) == 1, "Renaming preserves exact selected UUID")
-        expect(CaptureDestinationMenu.selectedIndex(actions: [.message, .save], previousID: "message", enabled: { $0 != .message }) == 1,
-               "Unavailable Messages is skipped when restoring selection")
-        expect(CaptureDestinationMenu.selectedIndex(actions: [], previousID: "copy", enabled: { _ in true }) == nil,
-               "No results cannot accidentally select an output")
         let input = EaselImageInput(pngData: png, sourceURL: url, pageTitle: "Captured page", valid: { true })
         let created = try EaselImagePlacement.place(input, in: store, destinationID: nil, newTitle: "Captured page")
         expect(created.title == "Captured page", "New Easel uses the supplied title")

@@ -24,6 +24,8 @@ final class PageCaptureController: NSObject {
     private let finished: (Bool) -> Void
     private let easelDestinations: () throws -> [CaptureEaselDestination]
     private let addToEasel: (EaselImageInput, UUID?) throws -> Void
+    private let noteDestinations: (() throws -> [CaptureNoteDestination])?
+    private let addToNote: ((EaselImageInput, CaptureNoteTarget) throws -> Void)?
     private var messageSharing: CaptureMessageSharing?
     private let overlay = PageCaptureOverlay()
     private lazy var edgeGuard = PageCaptureEdgeGuard(overlay: overlay)
@@ -53,14 +55,19 @@ final class PageCaptureController: NSObject {
          valid: @escaping () -> Bool, destination: CaptureLibraryDestination?,
          easelDestinations: @escaping () throws -> [CaptureEaselDestination],
          addToEasel: @escaping (EaselImageInput, UUID?) throws -> Void,
+         noteDestinations: (() throws -> [CaptureNoteDestination])? = nil,
+         addToNote: ((EaselImageInput, CaptureNoteTarget) throws -> Void)? = nil,
          finished: @escaping (Bool) -> Void) {
         self.destination = destination
         self.lease = lease; self.sourceView = sourceView; self.containerView = containerView
         self.host = host; self.parent = parent
         self.valid = valid; self.easelDestinations = easelDestinations
         self.addToEasel = addToEasel; self.finished = finished
+        self.noteDestinations = addToNote == nil ? nil : noteDestinations
+        self.addToNote = noteDestinations == nil ? nil : addToNote
         super.init()
-        overlay.setDestinationAvailability(library: destination != nil, easels: destination?.allowsEasels == true)
+        overlay.setDestinationAvailability(library: destination != nil, easels: destination?.allowsEasels == true,
+                                           notes: self.addToNote != nil)
         lease.invalidated = { [weak self] in
             MainActor.assumeIsolated { self?.dismiss(restoreFocus: false) }
         }
@@ -314,7 +321,7 @@ final class PageCaptureController: NSObject {
         overlay.showPreview(image.pixels, sourceRect: capturePreviewRect)
         overlay.setMessageAvailable(CaptureMessageSharing.isAvailable(for:
             CaptureMessagePayload(png: image.pngData, sourceAddress: sourceURL)))
-        refreshEaselDestinations()
+        refreshDestinations()
         if changed {
             libraryNeedsUpdate = savedCapture != nil
             overlay.setLibrarySaved(false)
@@ -359,8 +366,13 @@ final class PageCaptureController: NSObject {
             else { capture(acquisitionMode) }
         case .message: shareMessage()
         case .newEasel: placeOnEasel(nil)
-        case .easel(let id, _): placeOnEasel(id)
-        case .expand: break
+        case .newNote: placeInNote(.newNote)
+        case .document(let document):
+            switch document.target {
+            case .easel(let id): placeOnEasel(id)
+            case .note(let url): placeInNote(.note(url))
+            }
+        case .easels, .notes: break
         }
     }
 
@@ -390,15 +402,20 @@ final class PageCaptureController: NSObject {
         } catch { overlay.showError(error.localizedDescription) }
     }
 
-    private func refreshEaselDestinations() {
-        guard let destination else { overlay.setEaselDestinations([]); return }
-        do { overlay.setEaselDestinations(try destination.easels(easelDestinations)) }
-        catch { overlay.setEaselDestinations([]); overlay.showError(error.localizedDescription) }
+    private func refreshDestinations() {
+        var failure: Error?
+        if let destination {
+            do { overlay.setEaselDestinations(try destination.easels(easelDestinations)) }
+            catch { overlay.setEaselDestinations([]); failure = error }
+        } else { overlay.setEaselDestinations([]) }
+        if let noteDestinations {
+            do { overlay.setNoteDestinations(try noteDestinations()) }
+            catch { overlay.setNoteDestinations([]); failure = failure ?? error }
+        }
+        if let failure { overlay.showError(failure.localizedDescription) }
     }
 
-    private func placeOnEasel(_ id: UUID?) {
-        guard destination?.allowsEasels == true, let pngData, let parent, parent.isKeyWindow, parent.attachedSheet == nil else { return }
-        state = .output
+    private func documentInput(_ pngData: Data) -> EaselImageInput {
         var input = EaselImageInput(pngData: pngData, sourceURL: URL(string: sourceURL),
                                    pageTitle: lease.pageTitle, valid: { [weak self] in
             guard let self else { return false }
@@ -407,14 +424,30 @@ final class PageCaptureController: NSObject {
         input.capturedPage = true
         input.capturedAt = capturedAt
         input.captureLayout = image?.isOriginalOutput == true ? captureLayout : nil
+        return input
+    }
+
+    private func placeOnEasel(_ id: UUID?) {
+        guard destination?.allowsEasels == true, let pngData, let parent, parent.isKeyWindow, parent.attachedSheet == nil else { return }
+        state = .output
+        deliver { try self.addToEasel(self.documentInput(pngData), id) }
+    }
+
+    private func placeInNote(_ target: CaptureNoteTarget) {
+        guard let addToNote, let pngData, let parent, parent.isKeyWindow, parent.attachedSheet == nil else { return }
+        state = .output
+        deliver { try addToNote(self.documentInput(pngData), target) }
+    }
+
+    private func deliver(_ placement: () throws -> Void) {
         do {
-            try addToEasel(input, id)
+            try placement()
             if state != .finished { dismiss(restoreFocus: false) }
         } catch {
             guard state != .finished else { return }
             state = .preview; reconcile()
             guard state == .preview else { return }
-            refreshEaselDestinations(); overlay.showError(error.localizedDescription)
+            refreshDestinations(); overlay.showError(error.localizedDescription)
             focusPreview()
         }
     }
@@ -509,44 +542,27 @@ final class PageCaptureController: NSObject {
 }
 
 @MainActor
-final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
-    typealias Action = CaptureDestinationAction
+final class PageCaptureOverlay: NSView {
+    typealias Action = CapturePaletteAction
     var onCancel: (() -> Void)?
     var onRegion: ((NSRect) -> Void)?
     var onHover: ((NSPoint?) -> Void)?
     var onElement: ((PCNativePageCaptureTarget?, NSPoint) -> Void)?
     var onViewport: (() -> Void)?
     var onAction: ((Action) -> Void)?
-    let searchField = NSSearchField()
+    let palette = CapturePalette()
     private let picture = CapturePreviewImageView()
     private let pictureFrame = CaptureFlippedView()
-    private let palette = CaptureFlippedView()
-    private let paletteShadow = CaptureFlippedView()
-    private let actionScroll = NSScrollView()
-    private let actionContent = CaptureFlippedView()
-    private let emptyResults = NSTextField(labelWithString: "No matching destinations")
     private let selectionShade = CaptureSelectionShade()
     private let elementLens = CaptureElementLens()
     private let hint = CaptureHintView()
     private let viewport = ActionButton("Capture Visible Area", symbol: "camera")
     private let cancel = ActionButton("Cancel", symbol: "xmark")
-    private let status = NSTextField(wrappingLabelWithString: "")
     private let spinner = NSProgressIndicator()
-    private var buttons: [CaptureActionButton] = []
-    private var destinations: [CaptureEaselDestination] = []
-    private var destinationsExpanded = false
-    private var actions: [Action] = []
-    private var separators: [NSView] = []
-    private var rowOffsets: [CGFloat] = []
-    private var contentHeight: CGFloat = 0
-    private var messageAvailable = false
+    private var paletteShown = false
+    private var committedPixels: CGImage?
     private var outputBusy = false
-    private var framed = false
-    private var persistentDestinationsAvailable = true
-    private var easelDestinationsAvailable = true
-    private var librarySaved = false
     private var libraryBusy = false
-    private var selectedAction = 0
     private var selection: NSRect?
     private var start: NSPoint?
     private var target: PCNativePageCaptureTarget?
@@ -585,34 +601,11 @@ final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
         cancel.actionBlock = { [weak self] in self?.onCancel?() }; addSubview(cancel)
         updateKeyLoop()
         setAccessibilityHelp("Move over an area and click to capture it, or drag to select. Escape cancels. Tab reaches capture controls.")
-        paletteShadow.wantsLayer = true; paletteShadow.layer?.cornerRadius = CapturePresentation.cornerRadius
-        paletteShadow.layer?.shadowOpacity = 0.1; paletteShadow.layer?.shadowRadius = 12
-        paletteShadow.layer?.shadowOffset = NSSize(width: 0, height: 2); addSubview(paletteShadow)
-        palette.wantsLayer = true; palette.layer?.cornerRadius = CapturePresentation.cornerRadius
-        palette.layer?.shadowOpacity = 0.1; palette.layer?.shadowRadius = 2
-        palette.layer?.shadowOffset = NSSize(width: 0, height: 2); addSubview(palette)
-        actionScroll.drawsBackground = false; actionScroll.hasVerticalScroller = true
-        actionScroll.autohidesScrollers = true; actionScroll.documentView = actionContent
-        palette.addSubview(actionScroll)
-        emptyResults.font = .systemFont(ofSize: 12); emptyResults.textColor = NSColor.white.withAlphaComponent(0.65)
-        emptyResults.alignment = .center; emptyResults.isHidden = true
-        emptyResults.setAccessibilityLabel("No matching capture destinations")
-        actionContent.addSubview(emptyResults)
-        searchField.placeholderString = "Send To…"; searchField.delegate = self
-        searchField.font = .systemFont(ofSize: 13, weight: .medium)
-        searchField.drawsBackground = true
-        searchField.isBordered = false; searchField.focusRingType = .none
-        searchField.wantsLayer = true; searchField.layer?.cornerRadius = 6; searchField.layer?.masksToBounds = true
-        if let cell = searchField.cell as? NSSearchFieldCell {
-            cell.searchButtonCell = nil; cell.cancelButtonCell = nil
-            cell.placeholderAttributedString = NSAttributedString(string: "Send To…", attributes: [.foregroundColor: NSColor.white.withAlphaComponent(0.55)])
-        }
-        searchField.setAccessibilityLabel("Capture action search"); palette.addSubview(searchField)
-        status.setAccessibilityLabel("Capture status")
-        status.font = .systemFont(ofSize: 12); status.textColor = .white
-        palette.addSubview(status)
+        palette.onAction = { [weak self] action in self?.onAction?(action) }
+        palette.onCancel = { [weak self] in self?.onCancel?() }
+        palette.onSizeChange = { [weak self] in self?.needsLayout = true }
         spinner.style = .spinning; spinner.controlSize = .regular; addSubview(spinner)
-        rebuildActions(); updateAppearance()
+        updateAppearance()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
@@ -622,7 +615,7 @@ final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
         selecting = true; editing = false; busy = false; selection = nil; start = nil
         elementLens.isHidden = false; elementLens.setTarget(nil, animated: false)
         selectionShade.region = nil
-        picture.isHidden = true; pictureFrame.isHidden = true; palette.isHidden = true; paletteShadow.isHidden = true; spinner.stopAnimation(nil); spinner.isHidden = true
+        picture.isHidden = true; pictureFrame.isHidden = true; setPaletteShown(false); spinner.stopAnimation(nil); spinner.isHidden = true
         hint.stringValue = message ?? "Drag to capture a portion of this page"
         hint.isHidden = false; viewport.isHidden = false; cancel.isHidden = false
         needsLayout = true; needsDisplay = true; window?.invalidateCursorRects(for: self)
@@ -633,7 +626,7 @@ final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
         settlePresentation()
         endSelection()
         selecting = false; editing = false; busy = false; selection = nil; start = nil
-        picture.isHidden = true; pictureFrame.isHidden = true; palette.isHidden = true; paletteShadow.isHidden = true; hint.isHidden = true
+        picture.isHidden = true; pictureFrame.isHidden = true; setPaletteShown(false); hint.isHidden = true
         viewport.isHidden = true; cancel.isHidden = true
         spinner.stopAnimation(nil); spinner.isHidden = true
         updateKeyLoop()
@@ -642,55 +635,52 @@ final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
     func showBusy() {
         settlePresentation()
         endSelection()
-        selecting = false; editing = false; busy = true; palette.isHidden = true; paletteShadow.isHidden = true
+        selecting = false; editing = false; busy = true; setPaletteShown(false)
         picture.isHidden = true; pictureFrame.isHidden = true
         hint.stringValue = "Capturing…"; hint.isHidden = false; viewport.isHidden = true; cancel.isHidden = false
         spinner.isHidden = false; spinner.startAnimation(nil); needsLayout = true; needsDisplay = true
         updateKeyLoop(); setAccessibilityValue("Capturing image")
     }
     func showPreview(_ image: CGImage, sourceRect: NSRect? = nil) {
-        settlePresentation()
-        previewSourceRect = sourceRect
-        endSelection()
-        editing = false; selecting = false; busy = false; selection = nil
-        picture.image = NSImage(cgImage: image, size: .zero); imageSize = NSSize(width: image.width, height: image.height)
-        picture.isHidden = false; pictureFrame.isHidden = false; palette.isHidden = false; paletteShadow.isHidden = false; hint.isHidden = true
-        viewport.isHidden = true; cancel.isHidden = true; spinner.stopAnimation(nil); spinner.isHidden = true
-        searchField.stringValue = ""; status.stringValue = ""; destinationsExpanded = false
-        selectedAction = 0; rebuildActions(resetSelection: true)
+        showImage(image, sourceRect: sourceRect, palette: true)
         setAccessibilityValue("Captured image. Choose a destination or edit.")
-        needsLayout = true; needsDisplay = true; window?.invalidateCursorRects(for: self)
     }
     func showEditing(_ image: CGImage) {
-        let sourceRect = previewSourceRect
-        showPreview(image, sourceRect: sourceRect); editing = true; selecting = true; palette.isHidden = true; paletteShadow.isHidden = true
+        showImage(image, sourceRect: previewSourceRect, palette: false); editing = true; selecting = true
         hint.isHidden = false; hint.stringValue = "Drag to crop. Return keeps the full image. Escape returns to preview."
         cancel.isHidden = false; updateKeyLoop(); needsLayout = true; needsDisplay = true
         setAccessibilityValue("Crop captured image. Escape returns to preview.")
     }
+    private func showImage(_ image: CGImage, sourceRect: NSRect?, palette shown: Bool) {
+        settlePresentation()
+        previewSourceRect = sourceRect
+        endSelection()
+        editing = false; selecting = false; busy = false; selection = nil
+        committedPixels = image
+        picture.image = NSImage(cgImage: image, size: .zero); imageSize = NSSize(width: image.width, height: image.height)
+        picture.isHidden = false; pictureFrame.isHidden = false; hint.isHidden = true
+        viewport.isHidden = true; cancel.isHidden = true; spinner.stopAnimation(nil); spinner.isHidden = true
+        if shown { palette.reset() }
+        setPaletteShown(shown); updateKeyLoop()
+        needsLayout = true; needsDisplay = true; window?.invalidateCursorRects(for: self)
+    }
     func showError(_ message: String) {
-        status.stringValue = message; needsLayout = true
-        NSAccessibility.post(element: status, notification: .valueChanged)
+        palette.setStatus(message)
         CaptureMotion.announce(message, from: self)
+    }
+    private func setPaletteShown(_ shown: Bool) {
+        guard shown != paletteShown else { return }
+        paletteShown = shown
+        needsLayout = true
+        if shown { layoutSubtreeIfNeeded() } else { palette.hide(animated: window != nil) }
     }
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance(); updateAppearance()
     }
     private func updateAppearance() {
         let dark = CaptureAppearance.dark(effectiveAppearance)
-        palette.layer?.backgroundColor = CaptureAppearance.background(dark).cgColor
-        paletteShadow.layer?.backgroundColor = CaptureAppearance.background(dark).cgColor
         pictureFrame.layer?.backgroundColor = CaptureAppearance.imageBackground(dark).cgColor
-        searchField.textColor = CaptureAppearance.text(dark)
-        searchField.backgroundColor = CaptureAppearance.field(dark)
-        if let cell = searchField.cell as? NSSearchFieldCell {
-            cell.placeholderAttributedString = NSAttributedString(string: "Send To…", attributes: [
-                .foregroundColor: CaptureAppearance.text(dark).withAlphaComponent(0.45)])
-        }
-        status.textColor = CaptureAppearance.text(dark)
         viewport.contentTintColor = .white; cancel.contentTintColor = .white
-        emptyResults.textColor = CaptureAppearance.text(dark).withAlphaComponent(0.45)
-        for separator in separators { separator.layer?.backgroundColor = CaptureAppearance.text(dark).withAlphaComponent(0.12).cgColor }
         needsDisplay = true
     }
     override func layout() {
@@ -701,23 +691,15 @@ final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
         viewport.frame = NSRect(x: max(4, (bounds.width - 180) / 2), y: max(64, bounds.height - 40), width: min(180, max(1, bounds.width - 8)), height: 28)
         cancel.frame = NSRect(x: max(4, bounds.width - 90), y: 10, width: min(80, max(1, bounds.width - 8)), height: 28)
         spinner.frame = NSRect(x: bounds.midX - 16, y: bounds.midY - 16, width: 32, height: 32)
-        let statusHeight: CGFloat = status.stringValue.isEmpty ? 0 : 58
         let geometry = CapturePresentation.layout(bounds: bounds, pixels: imageSize, source: previewSourceRect,
-            paletteHeight: 60 + contentHeight + statusHeight, editing: editing, editingFooterHeight: hintHeight + 60)
-        palette.frame = geometry.palette
-        paletteShadow.frame = palette.frame; paletteShadow.isHidden = palette.isHidden
-        let paletteWidth = palette.bounds.width, paletteHeight = palette.bounds.height
-        searchField.frame = NSRect(x: 10, y: 10, width: max(1, paletteWidth - 20), height: 30)
-        actionScroll.frame = NSRect(x: 10, y: 50, width: max(1, paletteWidth - 20), height: max(1, paletteHeight - 60 - statusHeight))
-        actionContent.frame = NSRect(x: 0, y: 0, width: actionScroll.contentSize.width, height: contentHeight)
-        emptyResults.frame = NSRect(x: 4, y: 8, width: max(0, actionContent.bounds.width - 8), height: 26)
-        for (index, button) in buttons.enumerated() { button.frame = NSRect(x: 0, y: rowOffsets[index], width: actionContent.bounds.width, height: CapturePresentation.rowHeight) }
-        for separator in separators { separator.frame.size.width = max(0, actionContent.bounds.width - 12) }
-        status.frame = NSRect(x: 14, y: max(0, paletteHeight - statusHeight - 4), width: max(1, paletteWidth - 28), height: statusHeight)
+            paletteHeight: palette.view.naturalHeight, editing: editing, editingFooterHeight: hintHeight + 60)
         imageRect = geometry.image; picture.frame = imageRect
         pictureFrame.frame = imageRect.insetBy(dx: -CapturePresentation.imageBorder, dy: -CapturePresentation.imageBorder)
         elementLens.frame = bounds; selectionShade.frame = bounds
         selectionShade.region = editing ? selection : nil; selectionShade.dimmingRect = editing ? imageRect : nil
+        if paletteShown, geometry.palette.width > 0, geometry.palette.height > 0 {
+            palette.place(geometry.palette, image: pictureFrame.frame, in: self)
+        }
     }
     override func draw(_ dirtyRect: NSRect) {
         if selecting && !editing { return }
@@ -797,6 +779,7 @@ final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
         return NSPoint(x: min(max(p.x, limit.minX), limit.maxX), y: min(max(p.y, limit.minY), limit.maxY))
     }
     override func mouseDown(with event: NSEvent) {
+        if !selecting { palette.closeSubmenu() }
         guard selecting, !busy else { return }
         let p = point(event)
         if editing && !imageRect.contains(convert(event.locationInWindow, from: nil)) { return }
@@ -862,102 +845,38 @@ final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
         } else { super.keyDown(with: event) }
     }
     override func cancelOperation(_ sender: Any?) { onCancel?() }
-    func controlTextDidChange(_ obj: Notification) { rebuildActions(resetSelection: true) }
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        if textView.hasMarkedText() { return false }
-        if commandSelector == #selector(NSResponder.cancelOperation(_:)) { onCancel?(); return true }
-        if commandSelector == #selector(NSResponder.moveDown(_:)) || commandSelector == #selector(NSResponder.moveUp(_:)) {
-            if !actions.isEmpty {
-                moveSelection(forward: commandSelector == #selector(NSResponder.moveDown(_:)))
-            }; return true
-        }
-        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-            if actions.indices.contains(selectedAction), buttons[selectedAction].isEnabled { activate(actions[selectedAction]) }; return true
-        }
-        return false
+    func setFramed(_ framed: Bool) { palette.update { $0.framed = framed } }
+    func setDestinationAvailability(library: Bool, easels: Bool, notes: Bool = false) {
+        palette.update { $0.libraryAvailable = library; $0.easelsAvailable = easels; $0.notesAvailable = notes }
     }
-    func setFramed(_ framed: Bool) { self.framed = framed; rebuildActions() }
-    func setPersistentDestinationsAvailable(_ available: Bool) { setDestinationAvailability(library: available, easels: available) }
-    func setDestinationAvailability(library: Bool, easels: Bool) {
-        persistentDestinationsAvailable = library; easelDestinationsAvailable = easels; rebuildActions()
-    }
-    func setLibrarySaved(_ saved: Bool) { librarySaved = saved; rebuildActions() }
+    func setLibrarySaved(_ saved: Bool) { palette.update { $0.librarySaved = saved } }
     func setLibraryBusy(_ busy: Bool) {
-        libraryBusy = busy; status.stringValue = busy ? "Saving Library changes…" : ""
-        rebuildActions(); needsLayout = true
+        libraryBusy = busy
+        palette.setStatus(busy ? "Saving Library changes…" : nil)
+        let blocked = libraryBusy || outputBusy
+        palette.update { $0.busy = blocked }
     }
-    func setEaselDestinations(_ items: [CaptureEaselDestination]) { destinations = items; rebuildActions() }
-    func setMessageAvailable(_ available: Bool) { messageAvailable = available; rebuildActions() }
+    func setEaselDestinations(_ items: [CaptureEaselDestination]) { palette.update { $0.easels = items } }
+    func setNoteDestinations(_ items: [CaptureNoteDestination]) { palette.update { $0.notes = items } }
+    func setMessageAvailable(_ available: Bool) { palette.update { $0.messageAvailable = available } }
     func setOutputBusy(_ busy: Bool) {
-        outputBusy = busy; status.stringValue = busy ? "Finish or cancel in Messages." : ""
-        rebuildActions(); needsLayout = true
-    }
-    private func title(for action: Action) -> String {
-        action.title(librarySaved: librarySaved, framed: framed)
-    }
-    private func rebuildActions(resetSelection: Bool = false) {
-        let replacingFocusedRow = buttons.contains { $0 === window?.firstResponder }
-        let previouslySelected = !resetSelection && actions.indices.contains(selectedAction) ? actions[selectedAction].id : nil
-        buttons.forEach { $0.removeFromSuperview() }; separators.forEach { $0.removeFromSuperview() }
-        separators = []; rowOffsets = []; contentHeight = 0
-        actions = CaptureDestinationMenu.actions(destinations: destinations, query: searchField.stringValue,
-            expanded: destinationsExpanded, framed: framed, librarySaved: librarySaved,
-            persistentDestinations: persistentDestinationsAvailable, easelDestinationsAvailable: easelDestinationsAvailable)
-        emptyResults.isHidden = !actions.isEmpty
-        if actions.isEmpty { contentHeight = 40 }
-        var previousGroup: Int?
-        buttons = actions.map { action in
-            if searchField.stringValue.isEmpty, let previousGroup, action.group != previousGroup {
-                let divider = NSView(frame: NSRect(x: 6, y: contentHeight + 3, width: 200, height: 1))
-                divider.wantsLayer = true; divider.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.12).cgColor
-                actionContent.addSubview(divider); separators.append(divider); contentHeight += 8
-            }
-            previousGroup = action.group; rowOffsets.append(contentHeight); contentHeight += CapturePresentation.rowHeight
-            let title = title(for: action)
-            let symbol = action == .library && librarySaved ? "checkmark.circle.fill" : action.symbol
-            let button = CaptureActionButton(title, symbol: symbol) { [weak self] in self?.activate(action) }
-            button.alignment = .left; button.font = .systemFont(ofSize: 14, weight: .medium)
-            button.isSavedToggle = action == .library && librarySaved; button.wantsLayer = true; button.layer?.cornerRadius = 6
-            button.isEnabled = !libraryBusy && !outputBusy && (action != .message || messageAvailable)
-            button.lineBreakMode = .byTruncatingTail
-            if action == .message && !messageAvailable { button.toolTip = "Messages is not available for this image." }
-            if action == .library { button.setAccessibilityValue(librarySaved ? "Saved" : "Not saved") }
-            if case .easel(_, let title) = action { button.toolTip = title; button.setAccessibilityLabel("Add image to Easel: " + title) }
-            button.onFocus = { [weak self] in
-                guard let self, let index = self.actions.firstIndex(where: { $0.id == action.id }) else { return }
-                self.selectedAction = index; self.updateSelectedAction()
-            }
-            button.onMoveFocus = { [weak self] forward in
-                guard let self else { return }
-                self.moveSelection(forward: forward)
-                if self.buttons.indices.contains(self.selectedAction) { self.window?.makeFirstResponder(self.buttons[self.selectedAction]) }
-            }
-            button.focusRingType = .exterior; actionContent.addSubview(button); return button
-        }
-        selectedAction = CaptureDestinationMenu.selectedIndex(actions: actions, previousID: previouslySelected) {
-            !libraryBusy && !outputBusy && ($0 != .message || messageAvailable)
-        } ?? 0
-        updateSelectedAction(); updateAppearance(); updateKeyLoop(); needsLayout = true
-        if replacingFocusedRow { focusPreferredControl() }
-    }
-    private func activate(_ action: Action) {
-        guard !libraryBusy, !outputBusy else { return }
-        if action == .expand {
-            let next = actions.firstIndex(of: .expand) ?? 0
-            destinationsExpanded = true; rebuildActions(); layoutSubtreeIfNeeded()
-            selectedAction = min(next, max(0, actions.count - 1)); updateSelectedAction()
-            window?.makeFirstResponder(searchField)
-        } else { onAction?(action) }
+        outputBusy = busy
+        palette.setStatus(busy ? "Finish or cancel in Messages." : nil)
+        let blocked = libraryBusy || outputBusy
+        palette.update { $0.busy = blocked }
     }
     func focusPreferredControl() {
         guard let window, window.isKeyWindow, window.attachedSheet == nil else { return }
-        window.makeFirstResponder(palette.isHidden ? self : searchField)
+        if paletteShown {
+            layoutSubtreeIfNeeded()
+            palette.focusSearch()
+        } else { window.makeFirstResponder(self) }
     }
     private func updateKeyLoop() {
         nextKeyView = nil
-        let controls: [NSView] = palette.isHidden
+        let controls: [NSView] = !paletteShown
             ? ([self] + (viewport.isHidden ? [] : [viewport]) + (cancel.isHidden ? [] : [cancel]))
-            : ([searchField] + buttons.filter(\.isEnabled))
+            : []
         guard let first = controls.first else { return }
         for (index, control) in controls.enumerated() { control.nextKeyView = index + 1 < controls.count ? controls[index + 1] : first }
         if first !== self { nextKeyView = nil }
@@ -984,25 +903,6 @@ final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
         } else { retirePresentation() }
     }
     deinit { if let motionObserver { NSWorkspace.shared.notificationCenter.removeObserver(motionObserver) } }
-    private func moveSelection(forward: Bool) {
-        guard !buttons.isEmpty else { return }
-        for _ in buttons.indices {
-            selectedAction = (selectedAction + (forward ? 1 : buttons.count - 1)) % buttons.count
-            if buttons[selectedAction].isEnabled { break }
-        }
-        updateSelectedAction()
-    }
-    private func updateSelectedAction() {
-        for (index, button) in buttons.enumerated() {
-            button.chosen = index == selectedAction && button.isEnabled
-            button.setAccessibilitySelected(index == selectedAction && button.isEnabled)
-        }
-        if buttons.indices.contains(selectedAction) {
-            actionContent.scrollToVisible(buttons[selectedAction].frame)
-            searchField.setAccessibilityHelp("Selected destination: " + buttons[selectedAction].title + ". Use Up and Down, then Return.")
-        } else { searchField.setAccessibilityHelp("No matching destinations") }
-        NSAccessibility.post(element: actionContent, notification: .selectedChildrenChanged)
-    }
 }
 
 @MainActor
@@ -1131,70 +1031,6 @@ private final class CaptureSelectionShade: CaptureFlippedView {
         if let region {
             CaptureAppearance.imageBackground(CaptureAppearance.dark(effectiveAppearance)).setStroke(); let border = NSBezierPath(rect: region); border.lineWidth = 4; border.stroke()
         }
-    }
-}
-
-@MainActor
-private final class CaptureActionButton: PointingHandButton {
-    var onFocus: (() -> Void)?
-    var onMoveFocus: ((Bool) -> Void)?
-    var chosen = false { didSet { needsDisplay = true } }
-    var isSavedToggle = false { didSet { needsDisplay = true } }
-    override var isEnabled: Bool { didSet { needsDisplay = true } }
-    private var hovered = false
-    private var pressed = false
-    private var tracking: NSTrackingArea?
-    private let invokeAction: () -> Void
-    init(_ title: String, symbol: String, action: @escaping () -> Void) {
-        invokeAction = action
-        super.init(frame: .zero)
-        self.title = title; image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        imagePosition = .imageLeading; isBordered = false; bezelStyle = .regularSquare
-        target = self; self.action = #selector(invoke)
-        setAccessibilityLabel(title)
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    override func becomeFirstResponder() -> Bool {
-        let accepted = super.becomeFirstResponder()
-        if accepted { onFocus?() }; return accepted
-    }
-    override func keyDown(with event: NSEvent) {
-        if event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
-           event.keyCode == 125 || event.keyCode == 126 { onMoveFocus?(event.keyCode == 125); return }
-        super.keyDown(with: event)
-    }
-    @objc private func invoke() { invokeAction() }
-    override func updateTrackingAreas() {
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
-        tracking = area; addTrackingArea(area); super.updateTrackingAreas()
-    }
-    override func mouseEntered(with event: NSEvent) { hovered = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { hovered = false; needsDisplay = true }
-    override func mouseDown(with event: NSEvent) {
-        pressed = true; needsDisplay = true; super.mouseDown(with: event)
-        pressed = false; needsDisplay = true
-    }
-    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
-    override func draw(_ dirtyRect: NSRect) {
-        let dark = CaptureAppearance.dark(effectiveAppearance)
-        let active = isEnabled && chosen
-        let background = !isEnabled ? CaptureAppearance.background(dark) : active
-            ? (hovered || pressed ? CaptureAppearance.hoveredSelected : CaptureAppearance.selected)
-            : hovered || pressed ? CaptureAppearance.hover(dark) : CaptureAppearance.background(dark)
-        background.setFill(); NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
-        let ink = active ? CaptureAppearance.selectedText(dark) : isSavedToggle
-            ? CaptureAppearance.toggle(dark) : CaptureAppearance.text(dark)
-        let color = ink.withAlphaComponent(ink.alphaComponent * (isEnabled ? 1 : 0.35))
-        let symbolRect = NSRect(x: 7, y: (bounds.height - 16) / 2, width: 16, height: 16)
-        let symbolColors = isSavedToggle ? [background, color] : [color]
-        if let image, let tinted = image.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: symbolColors)) {
-            tinted.draw(in: symbolRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-        }
-        let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 14, weight: .medium), .foregroundColor: color, .paragraphStyle: paragraph]
-        let height = (title as NSString).size(withAttributes: attributes).height
-        (title as NSString).draw(in: NSRect(x: 31, y: (bounds.height - height) / 2, width: max(0, bounds.width - 38), height: height), withAttributes: attributes)
     }
 }
 
