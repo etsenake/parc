@@ -324,7 +324,7 @@ extension EaselCanvasView {
             let end = creation.flags.contains(.shift)
                 ? EaselToolGeometry.snappedLineEnd(from: EaselPoint(creation.start), to: EaselPoint(creation.end))
                 : EaselPoint(creation.end)
-            return connectorItem(tool, from: creation.start, to: NSPoint(x: end.x, y: end.y), id: creation.id)
+            return connectorItem(tool, from: creation.start, to: NSPoint(x: end.x, y: end.y), id: creation.id, live: true)
         }
         guard creation.dragged, tool != .sticky else {
             return placedItem(tool, frame: EaselToolGeometry.placedFrame(tool, at: EaselPoint(creation.dragged ? creation.end : creation.start)),
@@ -352,9 +352,9 @@ extension EaselCanvasView {
         return item
     }
 
-    func connectorItem(_ tool: EaselTool, from start: NSPoint, to end: NSPoint, id: UUID) -> EaselItem {
-        let first = snappedConnectorEnd(constrainedToCanvas(start), flags: [], other: nil, excluding: nil)
-        let last = snappedConnectorEnd(constrainedToCanvas(end), flags: [], other: first.point, excluding: first.connection?.itemID)
+    func connectorItem(_ tool: EaselTool, from start: NSPoint, to end: NSPoint, id: UUID, live: Bool = false) -> EaselItem {
+        let first = snappedConnectorEnd(constrainedToCanvas(start), flags: [], other: nil, excluding: nil, feedback: false)
+        let last = snappedConnectorEnd(constrainedToCanvas(end), flags: [], other: first.point, excluding: first.connection?.itemID, feedback: live)
         connectors.magnet = nil
         let highest = session.document.items.map(\.zIndex).max() ?? 0
         let lookup = connectorLookup()

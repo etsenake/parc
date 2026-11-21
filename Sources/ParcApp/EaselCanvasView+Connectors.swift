@@ -478,17 +478,19 @@ extension EaselCanvasView {
         }
     }
 
-    func snappedConnectorEnd(_ point: NSPoint, flags: NSEvent.ModifierFlags, other: EaselPoint?, excluding id: UUID?) -> (connection: EaselConnection?, point: EaselPoint) {
+    func snappedConnectorEnd(_ point: NSPoint, flags: NSEvent.ModifierFlags, other: EaselPoint?, excluding id: UUID?,
+                             feedback: Bool = true) -> (connection: EaselConnection?, point: EaselPoint) {
         var location = EaselPoint(x: point.x, y: point.y)
         let target = connectorTarget(at: point, excluding: id)
-        let previous = connectors.magnet
-        defer { noteConnectorMagnet(from: previous) }
+        defer { if feedback { noteConnectorMagnet() } }
         if let target {
             let snap = EaselConnectorAttachment.snap(location, to: target, pin: flags.contains(.command), scale: canvasScale)
-            connectors.magnet = snap.connection.map { EaselConnectorCanvasState.Magnet(target: $0.itemID, side: $0.side, pinned: $0.anchor == nil ? nil : snap.point) }
+            if feedback {
+                connectors.magnet = snap.connection.map { EaselConnectorCanvasState.Magnet(target: $0.itemID, side: $0.side, pinned: $0.anchor == nil ? nil : snap.point) }
+            }
             return snap
         }
-        connectors.magnet = nil
+        if feedback { connectors.magnet = nil }
         if flags.contains(.shift), let other { location = EaselToolGeometry.snappedLineEnd(from: other, to: location) }
         location = EaselPoint(x: max(0, location.x), y: max(0, location.y))
         return (nil, location)
@@ -500,6 +502,7 @@ extension EaselCanvasView {
             switch chrome {
             case .endpoint(let item, let end):
                 connectors.gesture = .endpoint(id: item.id, end: end, original: item)
+                primeConnectorMagnet(attachedMagnet(item, end: end))
             case .segment(let item, let index, let vertices):
                 connectors.gesture = .segment(id: item.id, index: index, original: item, vertices: vertices, origin: point)
             case .curve(let item, let handle):
@@ -509,6 +512,7 @@ extension EaselCanvasView {
                 connectors.gesture = .label(id: item.id, original: item, origin: point)
             case .quickCreate(let item, let side):
                 connectors.gesture = .quickCreate(source: item, side: side, origin: point)
+                primeConnectorMagnet(nil)
             }
             invalidateIncrementalDisplay(layout: true)
             return true
@@ -670,8 +674,7 @@ extension EaselCanvasView {
 
     func beginConnectorCreation(_ routing: EaselConnectorRouting?, at point: NSPoint, flags: NSEvent.ModifierFlags) {
         let snap = snappedConnectorEnd(point, flags: flags.subtracting(.shift), other: nil, excluding: nil)
-        canvasFeedback.magnetTicker.prime(Set([connectors.magnet.map(magnetKey)].compactMap { $0 }))
-        canvasFeedback.glow = nil; canvasFeedback.dot = nil
+        primeConnectorMagnet(connectors.magnet)
         connectors.travelled = false
         connectors.gesture = .create(routing: routing, origin: point, start: snap.connection, startPoint: snap.point)
         invalidateIncrementalDisplay(layout: true)
@@ -1168,8 +1171,27 @@ extension EaselCanvasView {
         EaselMagnetSnapKey(target: magnet.target, place: magnet.pinned != nil ? "pin" : magnet.side?.rawValue ?? "outline")
     }
 
-    func noteConnectorMagnet(from previous: EaselConnectorCanvasState.Magnet?) {
-        let magnet = connectors.magnet
+    func attachedMagnet(_ item: EaselItem, end: EaselArrowEndpoint) -> EaselConnectorCanvasState.Magnet? {
+        guard let connection = end == .start ? item.startConnection : item.endConnection else { return nil }
+        let points = EaselConnectorRouter.absolutePoints(item)
+        let tip = (end == .start ? points.first : points.last) ?? EaselPoint(x: 0, y: 0)
+        return EaselConnectorCanvasState.Magnet(target: connection.itemID, side: connection.side, pinned: connection.anchor == nil ? nil : tip)
+    }
+
+    func primeConnectorMagnet(_ magnet: EaselConnectorCanvasState.Magnet?) {
+        canvasFeedback.magnetTicker.prime(Set([magnet.map(magnetKey)].compactMap { $0 }))
+        canvasFeedback.movingMagnet = magnet
+        canvasFeedback.glow = magnet.map { ($0.target, -.infinity) }
+        if let magnet, magnet.pinned == nil, let side = magnet.side {
+            canvasFeedback.dot = (magnet.target, side, -.infinity, 6)
+        } else {
+            canvasFeedback.dot = nil
+        }
+    }
+
+    func noteConnectorMagnet() {
+        let magnet = connectors.magnet, previous = canvasFeedback.movingMagnet
+        canvasFeedback.movingMagnet = magnet
         canvasFeedback.magnetTicker.update(Set([magnet.map(magnetKey)].compactMap { $0 }))
         let now = CACurrentMediaTime()
         var animate = false
