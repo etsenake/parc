@@ -895,7 +895,7 @@ final class NoteHTMLConversion {
 
     private func figure(_ node: NoteHTMLNode, _ style: NoteHTMLInline) -> [NoteBlock] {
         let caption = node.children.first { $0.name == "figcaption" }
-        var blocks = flow(node.children.filter { $0 !== caption }, style)
+        var blocks = flow(node.children.filter { $0 !== caption && !$0.hasClass("capture-source") }, style)
         guard let caption else { return blocks }
         let text = flowText(caption.children, derive(style, caption, sheet.declarations(for: caption), block: true))
         guard !text.isEmpty else { return blocks }
@@ -916,6 +916,10 @@ final class NoteHTMLConversion {
         if let alt = node["alt"]?.trimmingCharacters(in: .whitespacesAndNewlines), !alt.isEmpty { block.props.alt = alt }
         if let crop = node["data-crop"].flatMap(NoteImageCrop.init(attribute:)) { block.props.crop = crop }
         if let mask = node["data-mask"].flatMap({ NoteImageMask(rawValue: $0.lowercased()) }) { block.props.mask = mask }
+        block.props.capture = NoteCapture(values: [
+            NoteCapture.sourceKey: node["data-capture"], NoteCapture.dateKey: node["data-captured"],
+            NoteCapture.viewportKey: node["data-viewport"], NoteCapture.scrollKey: node["data-scroll"], NoteCapture.regionKey: node["data-region"],
+        ].compactMapValues { $0 }, flags: node["data-live"] == nil ? [] : [NoteCapture.liveFlag])
         return block
     }
 

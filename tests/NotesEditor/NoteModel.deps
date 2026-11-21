@@ -6,3 +6,4 @@ Sources/ParcCore/NoteFileKind.swift
 Sources/ParcCore/NoteMarkdown*.swift
 Sources/ParcCore/NoteMermaid.swift
 Sources/ParcCore/NoteSyntaxLanguages.swift
+Sources/ParcCore/NoteCaptureModel.swift

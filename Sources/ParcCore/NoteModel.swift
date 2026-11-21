@@ -568,6 +568,7 @@ struct NoteBlockProps: Hashable, Codable {
     var diagramMode: NoteDiagramMode?
     var credit: NoteMediaCredit?
     var button: NoteButton?
+    var capture: NoteCapture?
 }
 
 private final class NoteBlockPropsStorage {

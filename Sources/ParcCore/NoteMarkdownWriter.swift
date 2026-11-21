@@ -583,6 +583,7 @@ struct NoteMDWriter {
         }
         if let crop = block.props.crop { items.append(("crop", crop.attribute)) }
         if let mask = block.props.mask { items.append(("mask", mask.rawValue)) }
+        if block.kind == .image, let capture = block.props.capture { items += capture.attributes }
         items += blockAttributes(block)
         return line + suffix(items)
     }

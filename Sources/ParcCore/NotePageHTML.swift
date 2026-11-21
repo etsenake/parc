@@ -530,6 +530,9 @@ struct NotePageHTMLWriter {
             var framing = ""
             if let crop = block.props.crop { framing += " data-crop=\"" + crop.attribute + "\"" }
             if let mask = block.props.mask { framing += " data-mask=\"" + mask.rawValue + "\"" }
+            for (key, value) in block.props.capture?.attributes ?? [] {
+                framing += " data-" + key + (value.map { "=\"" + Self.attribute($0) + "\"" } ?? "")
+            }
             let src = "<img src=\"" + Self.attribute(source(raw)) + "\"" + alt + framing
             if mode == .document, block.props.crop?.isFull == false || block.props.mask != nil {
                 output += framedImage(src, block: block)
@@ -540,6 +543,11 @@ struct NotePageHTMLWriter {
             output += "<video src=\"" + Self.attribute(link(raw)) + "\" controls preload=\"metadata\"></video>"
         default:
             output += "<audio src=\"" + Self.attribute(link(raw)) + "\" controls preload=\"metadata\"></audio>"
+        }
+        if block.kind == .image, let capture = block.props.capture, !capture.sourceURL.isEmpty {
+            let label = capture.sourceAddress.map(NoteCaptureText.displayHost) ?? capture.sourceURL
+            output += "<p class=\"capture-source\"><em>Captured from <a href=\"" + Self.attribute(capture.sourceURL) + "\">"
+                + Self.escape(label) + "</a></em></p>"
         }
         figureCaption(block)
         output += "</figure>"

@@ -55,7 +55,7 @@ enum NoteMDExport {
             else { return [media(block)] + credit(block) }
             return [link(block)] + credit(block)
         case .image:
-            return [media(block)] + credit(block)
+            return [media(block)] + credit(block) + captureSource(block)
         case .code where !block.props.caption.isEmpty:
             var caption = block.props.caption
             caption.updateMarks(in: 0..<caption.length) { $0.italic = true }
@@ -87,7 +87,18 @@ enum NoteMDExport {
         plain.props.crop = nil
         plain.props.mask = nil
         plain.props.credit = nil
+        plain.props.capture = nil
         return plain
+    }
+
+    private static func captureSource(_ block: NoteBlock) -> [NoteBlock] {
+        guard let capture = block.props.capture, !capture.sourceURL.isEmpty else { return [] }
+        let label = capture.sourceAddress.map(NoteCaptureText.displayHost) ?? capture.sourceURL
+        var italic = NoteMarks.plain
+        italic.italic = true
+        var link = italic
+        link.link = capture.sourceURL
+        return [NoteBlock.paragraph(NoteText(pieces: [("Captured from ", italic), (label, link)]))]
     }
 
     private static func link(_ block: NoteBlock) -> NoteBlock {

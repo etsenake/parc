@@ -725,6 +725,7 @@ struct NoteMDReader {
         if NoteMDMedia.carriesCredit(block.kind), let credit = NoteMediaCredit(name: values["credit"], link: values["credit-url"]) {
             block.props.credit = credit
         }
+        if block.kind == .image, let capture = NoteCapture(values: values, flags: attributes.flags) { block.props.capture = capture }
         if block.kind == .bookmark {
             var bookmark = block.props.bookmark ?? NoteBookmark()
             if let value = values["summary"] { bookmark.summary = value }
