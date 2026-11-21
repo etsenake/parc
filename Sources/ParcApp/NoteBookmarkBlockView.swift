@@ -9,6 +9,7 @@ class NoteLinkBlockView: NoteCaptionedBlockView {
     private var tracking: NSTrackingArea?
     private var hovering = false
     private var fetching: URL?
+    private var attempted: URL?
     private let toolbar = NoteMediaToolbar()
     private let copyButton = NoteToolbarButton(icon: .symbol("link"), label: "Copy link")
     private let captionButton = NoteToolbarButton(icon: .symbol("text.below.photo"), label: "Caption")
@@ -88,8 +89,9 @@ class NoteLinkBlockView: NoteCaptionedBlockView {
     }
 
     private func fetchMetadata(for url: URL) {
-        guard fetching != url else { return }
+        guard fetching != url, attempted != url else { return }
         fetching = url
+        attempted = url
         NoteLinkMetadata.shared.fetch(url) { [weak self] result in
             guard let self, self.url == url else { return }
             self.fetching = nil
@@ -241,6 +243,7 @@ final class NoteLinkCardView: NSView {
     private var hovered = false
     private var pressed = false
     private var hasPreviewImage = false
+    private var previewFailed = false
 
     init(style: Layout) {
         title = NoteMediaStyle.label("", font: NoteTheme.nunitoBold(14.5), color: NoteTheme.ink)
@@ -312,20 +315,25 @@ final class NoteLinkCardView: NSView {
     private func refreshShimmer() {
         let showLines = loading && summary.stringValue.isEmpty
         for line in shimmerLines { line.isHidden = !showLines }
-        previewShimmer.isHidden = !(loading || (info?.imageURL != nil && !hasPreviewImage))
+        previewShimmer.isHidden = !showsPreview || (hasPreviewImage && !loading)
     }
 
     private func loadPreview() {
         hasPreviewImage = false
+        previewFailed = false
         NoteMediaMotion.instant { preview.contents = nil; preview.opacity = 0 }
         guard let link = info?.imageURL, let imageURL = URL(string: link) else { refreshShimmer(); return }
         let expected = url
         NoteMediaImageLoader.shared.load(imageURL, pixels: 1024) { [weak self] result in
             guard let self, self.url == expected, self.info?.imageURL == link else { return }
-            if case .success(let image) = result {
+            switch result {
+            case .success(let image):
                 self.hasPreviewImage = true
                 NoteMediaMotion.instant { self.preview.contents = image.first }
                 NoteMediaMotion.fadeIn(self.preview)
+            case .failure:
+                self.previewFailed = true
+                self.onHeightChange?()
             }
             self.refreshShimmer()
             self.needsLayout = true
@@ -342,7 +350,7 @@ final class NoteLinkCardView: NSView {
         }
     }
 
-    var showsPreview: Bool { info?.imageURL != nil }
+    var showsPreview: Bool { info?.imageURL != nil && !previewFailed }
 
     func height(for width: CGFloat) -> CGFloat {
         let hasSummary = !(info?.summary ?? "").isEmpty || loading

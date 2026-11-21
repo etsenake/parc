@@ -207,6 +207,15 @@ enum NoteMediaFileType {
         }
     }
 
+    static func isNetworkFailure(_ error: Error) -> Bool {
+        var current: NSError? = error as NSError
+        while let error = current {
+            if error.domain == NSURLErrorDomain { return true }
+            current = error.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return false
+    }
+
     static func isAnimatable(_ url: URL) -> Bool {
         ["gif", "png", "apng", "webp", "heics"].contains(url.pathExtension.lowercased())
     }

@@ -8,6 +8,12 @@ enum NoteMediaAssets {
         var playable: Bool
         var naturalSize: CGSize?
         var duration: Double?
+        var unreachable = false
+
+        var problem: NoteMediaProblem? {
+            if unreachable { return .unreachable }
+            return playable ? nil : .unsupported
+        }
     }
 
     private static var facts: [URL: Facts] = [:]
@@ -23,19 +29,27 @@ enum NoteMediaAssets {
         let asset = AVURLAsset(url: url)
         Task { @MainActor in
             var result = Facts(playable: false, naturalSize: nil, duration: nil)
-            if let (playable, duration) = try? await asset.load(.isPlayable, .duration) {
+            do {
+                let (playable, duration) = try await asset.load(.isPlayable, .duration)
                 result.playable = playable
                 result.duration = duration.isNumeric ? duration.seconds : nil
+            } catch {
+                result.unreachable = !url.isFileURL && NoteMediaFileType.isNetworkFailure(error)
             }
             if let track = try? await asset.loadTracks(withMediaType: .video).first,
                let (size, transform) = try? await track.load(.naturalSize, .preferredTransform) {
                 let turned = size.applying(transform)
                 result.naturalSize = CGSize(width: abs(turned.width), height: abs(turned.height))
             }
-            facts[url] = result
+            if url.isFileURL || result.playable { facts[url] = result }
             let callbacks = waiting.removeValue(forKey: url) ?? []
             for callback in callbacks { callback(result) }
         }
+    }
+
+    static func forget(_ url: URL) {
+        facts.removeValue(forKey: url)
+        posters.removeObject(forKey: url as NSURL)
     }
 
     static func cachedPoster(_ url: URL) -> CGImage? { posters.object(forKey: url as NSURL)?.image }
@@ -198,7 +212,7 @@ final class NoteVideoContentView: NoteMediaContentView {
         let expected = source
         NoteMediaAssets.loadFacts(url) { [weak self] facts in
             guard let self, self.source == expected else { return }
-            guard facts.playable else { self.host?.contentDidFail(.unsupported); return }
+            if let problem = facts.problem { self.host?.contentDidFail(problem); return }
             if let size = facts.naturalSize, size != self.natural {
                 self.natural = size
                 self.host?.invalidateMeasuredHeight()
@@ -386,7 +400,7 @@ final class NoteAudioContentView: NoteMediaCardView {
                 let expected = source
                 NoteMediaAssets.loadFacts(url) { [weak self] facts in
                     guard let self, self.source == expected else { return }
-                    guard facts.playable else { self.host?.contentDidFail(.unsupported); return }
+                    if let problem = facts.problem { self.host?.contentDidFail(problem); return }
                     self.duration = facts.duration
                     self.refreshTime()
                 }

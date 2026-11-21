@@ -283,7 +283,10 @@ final class NoteMediaBlockView: NoteCaptionedBlockView {
 
     func retry() {
         failure = nil
-        if case .remote(let url) = source { NoteMediaImageLoader.shared.forget(url) }
+        if case .remote(let url) = source {
+            NoteMediaImageLoader.shared.forget(url)
+            NoteMediaAssets.forget(url)
+        }
         mode = nil
         rebuild()
     }
@@ -732,7 +735,7 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
             self.host?.presentUnsplash(from: self)
         }
         for view in [icon, title, uploadChip, linkChip, unsplashChip, field, embedChip, fieldUploadChip, hint] as [NSView] { addSubview(view) }
-        registerForDraggedTypes([.fileURL, .png, .tiff])
+        registerForDraggedTypes([.fileURL, .URL] + NoteClipboard.imageTypes.map(\.type))
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel(NoteMediaCopy.addPrompt(for: kind))
@@ -887,14 +890,26 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
     private func acceptedImageData(_ info: NSDraggingInfo) -> (Data, String)? {
         guard host?.kind == .image else { return nil }
         let board = info.draggingPasteboard
-        if let data = board.data(forType: .png) { return (data, "png") }
-        if let data = board.data(forType: .tiff), let bitmap = NSBitmapImageRep(data: data),
-           let png = bitmap.representation(using: .png, properties: [:]) { return (png, "png") }
+        for candidate in NoteClipboard.imageTypes {
+            if let data = board.data(forType: candidate.type), !data.isEmpty { return (data, candidate.fileExtension) }
+        }
         return nil
     }
 
+    private func acceptedLink(_ info: NSDraggingInfo) -> URL? {
+        let board = info.draggingPasteboard
+        guard board.availableType(from: [.fileURL]) == nil else { return nil }
+        if let link = board.readObjects(forClasses: [NSURL.self], options: nil)?.first as? URL,
+           let scheme = link.scheme?.lowercased(), scheme == "http" || scheme == "https" { return link }
+        return board.string(forType: .string).flatMap(NoteMediaSource.webURL(from:))
+    }
+
+    private func acceptsImageData(_ info: NSDraggingInfo) -> Bool {
+        host?.kind == .image && info.draggingPasteboard.availableType(from: NoteClipboard.imageTypes.map(\.type)) != nil
+    }
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard editable, acceptedFile(sender) != nil || sender.draggingPasteboard.availableType(from: [.png, .tiff]) != nil && host?.kind == .image else { return [] }
+        guard editable, acceptedFile(sender) != nil || acceptsImageData(sender) || acceptedLink(sender) != nil else { return [] }
         cardHighlighted = true
         title.stringValue = "Drop it right here"
         return .copy
@@ -911,6 +926,7 @@ final class NoteMediaEmptyCard: NoteMediaCardView, NSTextFieldDelegate {
         cardHighlighted = false
         if let url = acceptedFile(sender) { host?.importFile(url); return true }
         if let (data, ext) = acceptedImageData(sender) { host?.importData(data, fileExtension: ext, suggestedName: nil); return true }
+        if let link = acceptedLink(sender) { host?.embed(link); return true }
         applyMode()
         return false
     }

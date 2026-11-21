@@ -18,6 +18,7 @@ struct NoteMediaImageTests {
         animatedImages()
         asyncLoading()
         frontMatterIcons()
+        networkFailures()
         print("NoteMediaImageTests passed")
     }
 
@@ -126,6 +127,15 @@ struct NoteMediaImageTests {
         try? "---\nicon: 🧳\n---\n- Sunscreen\n".write(to: note, atomically: true, encoding: .utf8)
         expect(NoteLinkedNote.icon(for: note) == "🧳", "icons come from the file")
         expect(NoteLinkedNote.title(fromTarget: "Trips/Packing%20List.md") == "Packing List", "link titles come from file names")
+    }
+
+    static func networkFailures() {
+        let offline = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)
+        expect(NoteMediaFileType.isNetworkFailure(offline), "a URL error is a network failure")
+        let wrapped = NSError(domain: "AVFoundationErrorDomain", code: -11800, userInfo: [NSUnderlyingErrorKey: offline])
+        expect(NoteMediaFileType.isNetworkFailure(wrapped), "a wrapped URL error is a network failure")
+        let unplayable = NSError(domain: "AVFoundationErrorDomain", code: -11828)
+        expect(!NoteMediaFileType.isNetworkFailure(unplayable), "an unplayable file is not a network failure")
     }
 
     static func spin(until done: () -> Bool) {
